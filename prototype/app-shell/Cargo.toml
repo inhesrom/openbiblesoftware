@@ -1,0 +1,25 @@
+[package]
+name = "obs-app-shell-prototype"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+description = "PROTOTYPE - throwaway app shell for issue #13. Not production code."
+
+[dependencies]
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+egui = "0.37"
+egui_tiles = "0.18"
+harfrust = "0.12"
+skrifa = "0.44"
+vello_cpu = "0.2"
+unicode-bidi = "0.3"
+unicode-linebreak = "0.1"
+unicode-segmentation = "1.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.dev]
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 3
