@@ -129,6 +129,14 @@ _Avoid_: Install, Download
 The summary shown after an Import: what was brought in, which markup was dropped, how many Unmapped and Absent verses the Bible has, and any licence information that was missing.
 _Avoid_: Import log, Conversion warnings
 
+**Search index**:
+A cache built from one Resource so that it can be searched. It is derived data, never shipped as part of the Resource and never user data, and it can be rebuilt at any time.
+_Avoid_: Index (unqualified), Search database
+
+**Search scope**:
+What a search runs over: a Passage list and a set of Resources (or Notebooks for notes). It is chosen beside the query, not written inside it.
+_Avoid_: Filter, Range (for the scope)
+
 **Resource revision**:
 A corrected release of the same Resource, such as a typo fix in a Bible. It replaces the earlier revision and keeps the Resource's identity, so its Preferred order and Annotations carry over. A different edition is a different Resource, not a revision.
 _Avoid_: Update, Version (for a correction)
@@ -182,19 +190,23 @@ _Avoid_: Autosave layout
 ### Guides
 
 **Guide**:
-A Tab that takes one Key and shows a report made of ordered Guide sections. The order of the sections is remembered for each kind of Guide.
+A Tab that takes one Key and shows a report made of ordered Guide sections. Its Guide arrangement is remembered for each kind of Guide.
 _Avoid_: Report, Dashboard
+
+**Guide arrangement**:
+The order of a Guide's sections, which ones are collapsed, and which are hidden. It is remembered for each kind of Guide, not for each Tab.
+_Avoid_: Guide layout, Section settings
 
 **Guide section**:
 One block of a Guide that gathers related results (for example commentaries or Cross-references) for the Guide's Key.
 _Avoid_: Panel, Card, Widget
 
 **Passage Guide**:
-The Guide whose Key is a Passage.
+The Guide whose Key is a Passage. Its sections in v0.1 are Commentaries, Cross-references, Key words, and People & places.
 _Avoid_: Exegetical Guide
 
 **Word Study**:
-The Guide whose Key is a Strong's number.
+The Guide whose Key is a Strong's number. Its sections in v0.1 are Lexicon entries, Translated as, Occurrences, and Forms.
 _Avoid_: Bible Word Study, Lexical study
 
 ### Annotations
@@ -230,3 +242,11 @@ _Avoid_: Reference anchor, Verse anchor
 **Text-range anchor**:
 An Anchor on a Text range in one specific Resource, shown only in that Resource. Used for non-Bible Resources and for Unmapped verses in a Bible.
 _Avoid_: Offset anchor, Location anchor
+
+**Orphaned annotation**:
+An Annotation whose Text-range anchor could no longer be found after its Resource changed. It is kept with the text it quoted until the user re-attaches it, detaches it, or deletes it. Nothing is ever orphaned silently or deleted automatically.
+_Avoid_: Broken note, Lost highlight
+
+**User database**:
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements and preferences. Resources and Search indexes are never part of it.
+_Avoid_: Profile, User library, Settings file
