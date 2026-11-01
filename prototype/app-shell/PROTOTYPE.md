@@ -2,6 +2,15 @@
 
 > **Question:** what should the main window feel like? This is a rough egui shell to react to before the UI gets specced. It isn't production code: there are no tests beyond a reference-parser smoke test, no persistence, and the error handling is minimal. It lives only on the `prototype/app-shell` branch.
 
+## Verdict
+
+The user tried the prototype hands-on and picked these:
+
+- **Chrome:** variant **B, panel headers**. Each Tab has its own header strip with a link chip, back/forward and a reference box. This was the closest to Logos. A's global toolbar box and C's drawer and palette were not adopted.
+- **Link sets:** followers track **continuously** while the user scrolls. A jump also flashes the target in every member.
+- **Commentary gaps:** when a Commentary has nothing for the verse, it shows the **nearest earlier section**.
+- **Word Info:** updates on **hover**, and keeps the last word after the pointer leaves.
+
 ## Run
 
 ```sh
