@@ -122,8 +122,16 @@ The set of Resources bundled with the installer, available offline from first la
 _Avoid_: Default library, Base package
 
 **Import**:
-Adding a Resource to the library from a local file in an open format (USFM or SWORD in v0.1).
+Adding a Resource to the library from a local file in an open format (USFM or SWORD in v0.1). Every Import produces an Import report.
 _Avoid_: Install, Download
+
+**Import report**:
+The summary shown after an Import: what was brought in, which markup was dropped, how many Unmapped and Absent verses the Bible has, and any licence information that was missing.
+_Avoid_: Import log, Conversion warnings
+
+**Resource revision**:
+A corrected release of the same Resource, such as a typo fix in a Bible. It replaces the earlier revision and keeps the Resource's identity, so its Preferred order and Annotations carry over. A different edition is a different Resource, not a revision.
+_Avoid_: Update, Version (for a correction)
 
 **Attribution**:
 The license and credit text that a Resource requires to be shown, displayed in that Resource's About view.
