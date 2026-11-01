@@ -14,23 +14,31 @@ _Avoid_: Book (unqualified)
 One point in Scripture, given by Bible book, chapter and verse number in a particular Versification.
 
 **Versification**:
-A scheme for numbering chapters and verses. Every Bible declares one. Different traditions number some passages differently (English Ps 3:1 is Hebrew Ps 3:2).
+A scheme for numbering chapters and verses. Every Bible has its own, which is the numbering it shows; it need not match any named tradition exactly. Different traditions number some passages differently (English Ps 3:1 is Hebrew Ps 3:2).
 _Avoid_: Verse system, Canon (for numbering)
 
 **Standard versification**:
-The one Versification that the app treats as shared. Link sets, Annotations and Cross-reference sets speak it, so they work across Bibles that number differently.
+The one Versification that the app treats as shared: KJV numbering of the 66-book Protestant canon, with a title slot for each Psalm superscription. Link sets, Annotations, Cross-reference sets and every Passage-keyed Resource other than a Bible speak it, so they work across Bibles that number differently.
 _Avoid_: Canonical versification, Master versification
 
 **Verse map**:
-A correspondence between the Verses of one Versification and the Verses of the Standard versification.
+A correspondence between the Verses of one Bible and the Verses of the Standard versification. Each Bible has its own Verse map, made when the Bible is imported. It works in whole Verses: one Verse may correspond to several, and some Verses correspond to none.
 _Avoid_: Mapping table, Versification map
+
+**Unmapped verse**:
+A Verse in a Bible that has no counterpart in the Standard versification, such as deuterocanonical text. It can be read, but Link sets do not follow it and Annotations on it use a Text-range anchor.
+_Avoid_: Extra verse, Orphan verse
+
+**Absent verse**:
+A Verse of the Standard versification that a particular Bible does not contain (Mt 17:21 in some modern texts). That Bible shows a gap where it would be.
+_Avoid_: Missing verse, Omitted verse
 
 **Passage**:
 A contiguous range of Verses. It may cross chapters or Bible books. One Verse or a whole chapter is still a Passage.
 _Avoid_: Range, Reference (for the location itself)
 
 **Bible reference**:
-The written form of one or more Passages, such as "Jn 3:16-18; Rom 5:8", as typed by the user or found in a Resource's text. It parses to a Passage list.
+The written form of one or more Passages, such as "Jn 3:16-18; Rom 5:8", as typed by the user or found in a Resource's text. It parses to a Passage list. It is read in the Versification of where it is written: a Bible's own numbering when typed into that Bible's Tab or found in that Bible's text, the Standard versification everywhere else.
 _Avoid_: Ref, Citation
 
 **Passage list**:
@@ -208,9 +216,9 @@ What ties an Annotation to the text. It is either a Passage anchor or a Text-ran
 _Avoid_: Attachment, Link
 
 **Passage anchor**:
-An Anchor on a Passage in the Standard versification, used for Bible Annotations. It shows in every Bible that contains the Passage. It may also carry a Text range in the Bible where it was made, so that one Bible can render it word by word.
+An Anchor on a Passage in the Standard versification, used for Bible Annotations on any text that is not an Unmapped verse. It shows in every Bible that contains the Passage. It may also carry a Text range in the Bible where it was made, so that one Bible can render it word by word.
 _Avoid_: Reference anchor, Verse anchor
 
 **Text-range anchor**:
-An Anchor on a Text range in one specific non-Bible Resource, shown only in that Resource.
+An Anchor on a Text range in one specific Resource, shown only in that Resource. Used for non-Bible Resources and for Unmapped verses in a Bible.
 _Avoid_: Offset anchor, Location anchor
