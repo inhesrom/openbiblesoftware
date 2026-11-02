@@ -1,4 +1,33 @@
-//! Bidi, line breaking, blocks, colour roles, hit-testing and selection for Resource text.
+//! Layout of Resource text: spans → styled runs with colour roles, UAX #9 bidi, UAX #14 line
+//! breaking, blocks, line boxes, and hit-testing back to `(unit, byte)` (ADR 0004, #14).
 //!
-//! Layer L2. This crate must stay free of UI dependencies and compile for
-//! `wasm32-unknown-unknown` (checked by `cargo xtask layers` and `cargo xtask wasm`).
+//! Layer L2. No UI, no RGB: colours are [`ColorRole`]s that the painter resolves (#21).
+//! Compiles for `wasm32-unknown-unknown`.
+//!
+//! ```
+//! use obs_layout::{TextSettings, layout, snippet_paragraph, ColorRole};
+//! use obs_fonts::ShapeCache;
+//!
+//! let para = snippet_paragraph("In the beginning God created", ColorRole::Ink, false, &TextSettings::default());
+//! let block = layout(&para, 120.0, ShapeCache::shared());
+//! assert!(block.lines.len() >= 2);
+//! let hit = block.hit(block.lines[0].items[0].x + 1.0, block.lines[0].baseline - 2.0).unwrap();
+//! assert_eq!(hit.bytes.start, 0);
+//! ```
+
+mod estimate;
+mod layout;
+mod paragraph;
+mod present;
+mod spans;
+mod style;
+
+pub use estimate::estimate_height;
+pub use layout::{Hit, LaidBlock, LaidItem, LaidLine, UnitPos, layout};
+pub use paragraph::{Align, InlineObject, Paragraph, Run, RunSource};
+pub use present::{BlockKind, BlockSource, block_paragraph, snippet_paragraph, unit_blocks};
+pub use spans::SpanIndex;
+pub use style::{ColorRole, RunStyle, TextSettings};
+
+#[cfg(test)]
+mod tests;

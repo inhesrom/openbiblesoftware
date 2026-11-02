@@ -129,3 +129,22 @@ fn shape_reports_glyphs_and_writes_svg() {
     );
     let _ = std::fs::remove_file(&svg);
 }
+
+#[test]
+fn layout_reports_blocks_and_lines() {
+    let path = temp_obr("layout-sample.obr");
+    let p = path.to_str().expect("utf-8 path");
+    assert!(cli(&["write-sample", p]).0);
+    let (ok, out, err) = cli(&[
+        "layout", p, "--unit", "JHN", "--width", "200", "--runs", "1",
+    ]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("run 1: 1 blocks,") && out.contains("lines"),
+        "{out}"
+    );
+    let (ok, _, err) = cli(&["layout", p, "--unit", "NOPE"]);
+    assert!(!ok);
+    assert!(err.contains("no unit"), "{err}");
+    let _ = std::fs::remove_file(&path);
+}
