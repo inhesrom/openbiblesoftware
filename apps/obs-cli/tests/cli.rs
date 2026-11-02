@@ -72,3 +72,38 @@ fn run_dispatches_engine_commands() {
     assert!(!ok);
     assert!(err.contains("does not exist"), "{err}");
 }
+
+#[test]
+fn import_usfm_then_inspect() {
+    let fixtures = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../crates/formats/tests/assets/usfm/kjv2006"
+    );
+    let out = temp_obr("kjv-excerpt.obr");
+    let o = out.to_str().expect("utf-8 path");
+    let (ok, stdout, err) = cli(&[
+        "import",
+        fixtures,
+        "-o",
+        o,
+        "--id",
+        "kjv-excerpt",
+        "--abbrev",
+        "KJV",
+        "--lang",
+        "en",
+    ]);
+    assert!(ok, "{err}");
+    assert!(stdout.contains("3 Bible book(s)"), "{stdout}");
+    assert!(stdout.contains("licence: none found"), "{stdout}");
+    let (ok, stdout, _) = cli(&["inspect", o, "--verse", "Gen 1:1"]);
+    assert!(ok);
+    assert!(
+        stdout.contains("In the beginning God created the heaven and the earth."),
+        "{stdout}"
+    );
+    let (ok, _, err) = cli(&["import", fixtures]);
+    assert!(!ok);
+    assert!(err.contains("usage"), "{err}");
+    let _ = std::fs::remove_file(&out);
+}

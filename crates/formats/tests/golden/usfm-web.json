@@ -1,0 +1,2553 @@
+{
+  "content_hash": "sha256:6084e893319d57d6f64b7eb124b1fb40943e9bbfc2694f80acb091704766deb6",
+  "report": {
+    "books": [
+      [
+        "GEN",
+        1,
+        3
+      ],
+      [
+        "2KI",
+        1,
+        2
+      ],
+      [
+        "PSA",
+        1,
+        3
+      ],
+      [
+        "MAT",
+        1,
+        3
+      ],
+      [
+        "3JN",
+        1,
+        2
+      ]
+    ],
+    "dropped_markup": {
+      "\\cl": 1
+    },
+    "license_missing": true,
+    "notes": 3,
+    "tagged_words": 207,
+    "verses": 13,
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "GEN",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..251",
+          "chapter": 1,
+          "kind": "chapter",
+          "text": "In the beginning, God created the heavens and the earth. The earth was formless and empty. Darkness was on the surface of the deep and God’s Spirit was hovering over the surface of the waters.\nGod said, “Let there be light,” and there was light."
+        },
+        {
+          "at": "0..194",
+          "kind": "para",
+          "style": "prose",
+          "text": "In the beginning, God created the heavens and the earth. The earth was formless and empty. Darkness was on the surface of the deep and God’s Spirit was hovering over the surface of the waters."
+        },
+        {
+          "at": "0..56",
+          "kind": "verse",
+          "last": 1,
+          "text": "In the beginning, God created the heavens and the earth.",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 1
+          }
+        },
+        {
+          "at": "0..2",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ],
+          "text": "In"
+        },
+        {
+          "at": "3..6",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "7..16",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H7225"
+            }
+          ],
+          "text": "beginning"
+        },
+        {
+          "at": "18..21",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ],
+          "text": "God"
+        },
+        {
+          "at": "21..21",
+          "kind": "note_ref",
+          "note": "note.1",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "22..29",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254"
+            }
+          ],
+          "text": "created"
+        },
+        {
+          "at": "30..33",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "34..41",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ],
+          "text": "heavens"
+        },
+        {
+          "at": "42..45",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ],
+          "text": "and"
+        },
+        {
+          "at": "46..49",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "50..55",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ],
+          "text": "earth"
+        },
+        {
+          "at": "57..194",
+          "kind": "verse",
+          "last": 2,
+          "text": "The earth was formless and empty. Darkness was on the surface of the deep and God’s Spirit was hovering over the surface of the waters.",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 2
+          }
+        },
+        {
+          "at": "57..60",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "The"
+        },
+        {
+          "at": "67..70",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1961"
+            }
+          ],
+          "text": "was"
+        },
+        {
+          "at": "71..79",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8414"
+            }
+          ],
+          "text": "formless"
+        },
+        {
+          "at": "80..83",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "and"
+        },
+        {
+          "at": "84..89",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8414"
+            }
+          ],
+          "text": "empty"
+        },
+        {
+          "at": "91..99",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H2822"
+            }
+          ],
+          "text": "Darkness"
+        },
+        {
+          "at": "100..103",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1961"
+            }
+          ],
+          "text": "was"
+        },
+        {
+          "at": "104..106",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5921"
+            }
+          ],
+          "text": "on"
+        },
+        {
+          "at": "107..110",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "111..118",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "surface"
+        },
+        {
+          "at": "119..121",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "of"
+        },
+        {
+          "at": "122..125",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "126..130",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8415"
+            }
+          ],
+          "text": "deep"
+        },
+        {
+          "at": "131..134",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "and"
+        },
+        {
+          "at": "143..149",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H7307"
+            }
+          ],
+          "text": "Spirit"
+        },
+        {
+          "at": "150..153",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1961"
+            }
+          ],
+          "text": "was"
+        },
+        {
+          "at": "154..162",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H7363"
+            }
+          ],
+          "text": "hovering"
+        },
+        {
+          "at": "163..167",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5921"
+            }
+          ],
+          "text": "over"
+        },
+        {
+          "at": "168..171",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "172..179",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "surface"
+        },
+        {
+          "at": "180..182",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "of"
+        },
+        {
+          "at": "183..186",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "187..193",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H4325"
+            }
+          ],
+          "text": "waters"
+        },
+        {
+          "at": "195..251",
+          "kind": "para",
+          "style": "prose",
+          "text": "God said, “Let there be light,” and there was light."
+        },
+        {
+          "at": "195..251",
+          "kind": "verse",
+          "last": 3,
+          "text": "God said, “Let there be light,” and there was light.",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 3
+          }
+        },
+        {
+          "at": "208..211",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1961"
+            }
+          ],
+          "text": "Let"
+        },
+        {
+          "at": "212..217",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1961"
+            }
+          ],
+          "text": "there"
+        },
+        {
+          "at": "218..220",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1961"
+            }
+          ],
+          "text": "be"
+        },
+        {
+          "at": "231..234",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1961"
+            }
+          ],
+          "text": "and"
+        },
+        {
+          "at": "235..240",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1961"
+            }
+          ],
+          "text": "there"
+        },
+        {
+          "at": "241..244",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1961"
+            }
+          ],
+          "text": "was"
+        }
+      ],
+      "text": "In the beginning, God created the heavens and the earth. The earth was formless and empty. Darkness was on the surface of the deep and God’s Spirit was hovering over the surface of the waters.\nGod said, “Let there be light,” and there was light.",
+      "title": "Genesis"
+    },
+    {
+      "id": "2KI",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..402",
+          "chapter": 12,
+          "kind": "chapter",
+          "text": "Jehoash said to the priests, “All the money of the holy things that is brought into Yahweh’s house, in current money, the money of the people for whom each man is evaluated, and all the money that it comes into any man’s heart to bring into Yahweh’s house, let the priests take it to them, each man from his donor; and they shall repair the damage to the house, wherever any damage is found.”"
+        },
+        {
+          "at": "0..402",
+          "kind": "para",
+          "style": "prose",
+          "text": "Jehoash said to the priests, “All the money of the holy things that is brought into Yahweh’s house, in current money, the money of the people for whom each man is evaluated, and all the money that it comes into any man’s heart to bring into Yahweh’s house, let the priests take it to them, each man from his donor; and they shall repair the damage to the house, wherever any damage is found.”"
+        },
+        {
+          "at": "0..264",
+          "kind": "verse",
+          "last": 4,
+          "text": "Jehoash said to the priests, “All the money of the holy things that is brought into Yahweh’s house, in current money, the money of the people for whom each man is evaluated, and all the money that it comes into any man’s heart to bring into Yahweh’s house,",
+          "verse": {
+            "book": "2KI",
+            "chapter": 12,
+            "verse": 4
+          }
+        },
+        {
+          "at": "13..15",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5971"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "16..19",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5493"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "20..27",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3808"
+            }
+          ],
+          "text": "priests"
+        },
+        {
+          "at": "32..35",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5750"
+            }
+          ],
+          "text": "All"
+        },
+        {
+          "at": "36..39",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5493"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "46..48",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5971"
+            }
+          ],
+          "text": "of"
+        },
+        {
+          "at": "49..52",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5493"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "58..64",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3808"
+            }
+          ],
+          "text": "things"
+        },
+        {
+          "at": "65..69",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5971"
+            }
+          ],
+          "text": "that"
+        },
+        {
+          "at": "70..72",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5971"
+            }
+          ],
+          "text": "is"
+        },
+        {
+          "at": "73..80",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5493"
+            }
+          ],
+          "text": "brought"
+        },
+        {
+          "at": "81..85",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5493"
+            }
+          ],
+          "text": "into"
+        },
+        {
+          "at": "86..92",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3068"
+            }
+          ],
+          "text": "Yahweh"
+        },
+        {
+          "at": "104..106",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5493"
+            }
+          ],
+          "text": "in"
+        },
+        {
+          "at": "122..125",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5493"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "132..134",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5971"
+            }
+          ],
+          "text": "of"
+        },
+        {
+          "at": "135..138",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5493"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "139..145",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5971"
+            }
+          ],
+          "text": "people"
+        },
+        {
+          "at": "146..149",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5971"
+            }
+          ],
+          "text": "for"
+        },
+        {
+          "at": "150..154",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5971"
+            }
+          ],
+          "text": "whom"
+        },
+        {
+          "at": "155..159",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5971"
+            }
+          ],
+          "text": "each"
+        },
+        {
+          "at": "164..166",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5971"
+            }
+          ],
+          "text": "is"
+        },
+        {
+          "at": "177..177",
+          "kind": "xref",
+          "targets": [
+            {
+              "end": {
+                "book": "EXO",
+                "chapter": 30,
+                "verse": 12
+              },
+              "start": {
+                "book": "EXO",
+                "chapter": 30,
+                "verse": 12
+              }
+            }
+          ],
+          "text": ""
+        },
+        {
+          "at": "177..177",
+          "kind": "note_ref",
+          "note": "note.2",
+          "note_kind": "cross_reference",
+          "text": ""
+        },
+        {
+          "at": "178..181",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5971"
+            }
+          ],
+          "text": "and"
+        },
+        {
+          "at": "182..185",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5750"
+            }
+          ],
+          "text": "all"
+        },
+        {
+          "at": "186..189",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5493"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "196..200",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5971"
+            }
+          ],
+          "text": "that"
+        },
+        {
+          "at": "201..203",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3808"
+            }
+          ],
+          "text": "it"
+        },
+        {
+          "at": "210..214",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5493"
+            }
+          ],
+          "text": "into"
+        },
+        {
+          "at": "215..218",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5750"
+            }
+          ],
+          "text": "any"
+        },
+        {
+          "at": "233..235",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5971"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "242..246",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5493"
+            }
+          ],
+          "text": "into"
+        },
+        {
+          "at": "247..253",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3068"
+            }
+          ],
+          "text": "Yahweh"
+        },
+        {
+          "at": "265..402",
+          "kind": "verse",
+          "last": 5,
+          "text": "let the priests take it to them, each man from his donor; and they shall repair the damage to the house, wherever any damage is found.”",
+          "verse": {
+            "book": "2KI",
+            "chapter": 12,
+            "verse": 5
+          }
+        },
+        {
+          "at": "265..268",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5315"
+            }
+          ],
+          "text": "let"
+        },
+        {
+          "at": "269..272",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3605"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "273..280",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3548"
+            }
+          ],
+          "text": "priests"
+        },
+        {
+          "at": "281..285",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5674"
+            }
+          ],
+          "text": "take"
+        },
+        {
+          "at": "286..288",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5921"
+            }
+          ],
+          "text": "it"
+        },
+        {
+          "at": "289..291",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3068"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "292..296",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5921"
+            }
+          ],
+          "text": "them"
+        },
+        {
+          "at": "298..302",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3605"
+            }
+          ],
+          "text": "each"
+        },
+        {
+          "at": "303..306",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5315"
+            }
+          ],
+          "text": "man"
+        },
+        {
+          "at": "307..311",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5921"
+            }
+          ],
+          "text": "from"
+        },
+        {
+          "at": "312..315",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3605"
+            }
+          ],
+          "text": "his"
+        },
+        {
+          "at": "323..326",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3068"
+            }
+          ],
+          "text": "and"
+        },
+        {
+          "at": "327..331",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3068"
+            }
+          ],
+          "text": "they"
+        },
+        {
+          "at": "332..337",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3548"
+            }
+          ],
+          "text": "shall"
+        },
+        {
+          "at": "345..348",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3605"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "356..358",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3068"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "359..362",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3605"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "363..368",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1004"
+            }
+          ],
+          "text": "house"
+        },
+        {
+          "at": "370..378",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3605"
+            }
+          ],
+          "text": "wherever"
+        },
+        {
+          "at": "379..382",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3605"
+            }
+          ],
+          "text": "any"
+        },
+        {
+          "at": "390..392",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3068"
+            }
+          ],
+          "text": "is"
+        },
+        {
+          "at": "393..398",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3068"
+            }
+          ],
+          "text": "found"
+        }
+      ],
+      "text": "Jehoash said to the priests, “All the money of the holy things that is brought into Yahweh’s house, in current money, the money of the people for whom each man is evaluated, and all the money that it comes into any man’s heart to bring into Yahweh’s house, let the priests take it to them, each man from his donor; and they shall repair the damage to the house, wherever any damage is found.”",
+      "title": "2 Kings"
+    },
+    {
+      "id": "PSA",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..169",
+          "chapter": 3,
+          "kind": "chapter",
+          "text": "A Psalm by David, when he fled from Absalom his son.\nYahweh, how my adversaries have increased!\nMany are those who rise up against me.\nMany there are who say of my soul,"
+        },
+        {
+          "at": "0..52",
+          "kind": "psalm_title",
+          "text": "A Psalm by David, when he fled from Absalom his son."
+        },
+        {
+          "at": "0..52",
+          "kind": "verse",
+          "last": 0,
+          "text": "A Psalm by David, when he fled from Absalom his son.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 0
+          }
+        },
+        {
+          "at": "53..134",
+          "kind": "verse",
+          "last": 1,
+          "text": "Yahweh, how my adversaries have increased!\nMany are those who rise up against me.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 1
+          }
+        },
+        {
+          "at": "53..95",
+          "kind": "para",
+          "style": "poetry1",
+          "text": "Yahweh, how my adversaries have increased!"
+        },
+        {
+          "at": "53..59",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3068"
+            }
+          ],
+          "text": "Yahweh"
+        },
+        {
+          "at": "65..67",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1732"
+            }
+          ],
+          "text": "my"
+        },
+        {
+          "at": "80..84",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1121"
+            }
+          ],
+          "text": "have"
+        },
+        {
+          "at": "96..134",
+          "kind": "para",
+          "style": "poetry2",
+          "text": "Many are those who rise up against me."
+        },
+        {
+          "at": "101..104",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1121"
+            }
+          ],
+          "text": "are"
+        },
+        {
+          "at": "105..110",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1121"
+            }
+          ],
+          "text": "those"
+        },
+        {
+          "at": "111..114",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1121"
+            }
+          ],
+          "text": "who"
+        },
+        {
+          "at": "120..122",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1121"
+            }
+          ],
+          "text": "up"
+        },
+        {
+          "at": "123..130",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "against"
+        },
+        {
+          "at": "131..133",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "me"
+        },
+        {
+          "at": "135..169",
+          "kind": "para",
+          "style": "poetry1",
+          "text": "Many there are who say of my soul,"
+        },
+        {
+          "at": "135..169",
+          "kind": "verse",
+          "last": 2,
+          "text": "Many there are who say of my soul,",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 2
+          }
+        },
+        {
+          "at": "135..139",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H7227"
+            }
+          ],
+          "text": "Many"
+        },
+        {
+          "at": "140..145",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6965"
+            }
+          ],
+          "text": "there"
+        },
+        {
+          "at": "146..149",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H4100"
+            }
+          ],
+          "text": "are"
+        },
+        {
+          "at": "150..153",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3068"
+            }
+          ],
+          "text": "who"
+        },
+        {
+          "at": "158..160",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3068"
+            }
+          ],
+          "text": "of"
+        },
+        {
+          "at": "161..163",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3068"
+            }
+          ],
+          "text": "my"
+        }
+      ],
+      "text": "A Psalm by David, when he fled from Absalom his son.\nYahweh, how my adversaries have increased!\nMany are those who rise up against me.\nMany there are who say of my soul,",
+      "title": "Psalms"
+    },
+    {
+      "id": "MAT",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..429",
+          "chapter": 17,
+          "kind": "chapter",
+          "text": "He said to them, “Because of your unbelief. For most certainly I tell you, if you have faith as a grain of mustard seed, you will tell this mountain, ‘Move from here to there,’ and it will move; and nothing will be impossible for you. But this kind doesn’t go out except by prayer and fasting.”\nWhile they were staying in Galilee, Jesus said to them, “The Son of Man is about to be delivered up into the hands of men,"
+        },
+        {
+          "at": "0..304",
+          "kind": "para",
+          "style": "prose",
+          "text": "He said to them, “Because of your unbelief. For most certainly I tell you, if you have faith as a grain of mustard seed, you will tell this mountain, ‘Move from here to there,’ and it will move; and nothing will be impossible for you. But this kind doesn’t go out except by prayer and fasting.”"
+        },
+        {
+          "at": "0..240",
+          "kind": "verse",
+          "last": 20,
+          "text": "He said to them, “Because of your unbelief. For most certainly I tell you, if you have faith as a grain of mustard seed, you will tell this mountain, ‘Move from here to there,’ and it will move; and nothing will be impossible for you.",
+          "verse": {
+            "book": "MAT",
+            "chapter": 17,
+            "verse": 20
+          }
+        },
+        {
+          "at": "0..2",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "He"
+        },
+        {
+          "at": "3..7",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3004"
+            }
+          ],
+          "text": "said"
+        },
+        {
+          "at": "8..10",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "11..15",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3588"
+            }
+          ],
+          "text": "them"
+        },
+        {
+          "at": "17..240",
+          "kind": "woj",
+          "text": "“Because of your unbelief. For most certainly I tell you, if you have faith as a grain of mustard seed, you will tell this mountain, ‘Move from here to there,’ and it will move; and nothing will be impossible for you."
+        },
+        {
+          "at": "20..27",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1223"
+            }
+          ],
+          "text": "Because"
+        },
+        {
+          "at": "28..30",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1223"
+            }
+          ],
+          "text": "of"
+        },
+        {
+          "at": "31..35",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1223"
+            }
+          ],
+          "text": "your"
+        },
+        {
+          "at": "46..49",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1063"
+            }
+          ],
+          "text": "For"
+        },
+        {
+          "at": "55..64",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2192"
+            }
+          ],
+          "text": "certainly"
+        },
+        {
+          "at": "65..66",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "I"
+        },
+        {
+          "at": "67..71",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3004"
+            }
+          ],
+          "text": "tell"
+        },
+        {
+          "at": "72..75",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5210"
+            }
+          ],
+          "text": "you"
+        },
+        {
+          "at": "77..79",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1437"
+            }
+          ],
+          "text": "if"
+        },
+        {
+          "at": "80..83",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5210"
+            }
+          ],
+          "text": "you"
+        },
+        {
+          "at": "84..88",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2192"
+            }
+          ],
+          "text": "have"
+        },
+        {
+          "at": "89..94",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4102"
+            }
+          ],
+          "text": "faith"
+        },
+        {
+          "at": "95..97",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5613"
+            }
+          ],
+          "text": "as"
+        },
+        {
+          "at": "98..99",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2192"
+            }
+          ],
+          "text": "a"
+        },
+        {
+          "at": "100..105",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2848"
+            }
+          ],
+          "text": "grain"
+        },
+        {
+          "at": "106..108",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1223"
+            }
+          ],
+          "text": "of"
+        },
+        {
+          "at": "109..116",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4615"
+            }
+          ],
+          "text": "mustard"
+        },
+        {
+          "at": "117..121",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2848"
+            }
+          ],
+          "text": "seed"
+        },
+        {
+          "at": "123..126",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5210"
+            }
+          ],
+          "text": "you"
+        },
+        {
+          "at": "127..131",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "will"
+        },
+        {
+          "at": "132..136",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3004"
+            }
+          ],
+          "text": "tell"
+        },
+        {
+          "at": "137..141",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3778"
+            }
+          ],
+          "text": "this"
+        },
+        {
+          "at": "142..150",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3735"
+            }
+          ],
+          "text": "mountain"
+        },
+        {
+          "at": "155..159",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3327"
+            }
+          ],
+          "text": "Move"
+        },
+        {
+          "at": "160..164",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "from"
+        },
+        {
+          "at": "165..169",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1759"
+            }
+          ],
+          "text": "here"
+        },
+        {
+          "at": "170..172",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "173..178",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1563"
+            }
+          ],
+          "text": "there"
+        },
+        {
+          "at": "183..186",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "and"
+        },
+        {
+          "at": "187..189",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "it"
+        },
+        {
+          "at": "190..194",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "will"
+        },
+        {
+          "at": "195..199",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3327"
+            }
+          ],
+          "text": "move"
+        },
+        {
+          "at": "201..204",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "and"
+        },
+        {
+          "at": "205..212",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3762"
+            }
+          ],
+          "text": "nothing"
+        },
+        {
+          "at": "213..217",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "will"
+        },
+        {
+          "at": "218..220",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "be"
+        },
+        {
+          "at": "232..235",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1063"
+            }
+          ],
+          "text": "for"
+        },
+        {
+          "at": "236..239",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5210"
+            }
+          ],
+          "text": "you"
+        },
+        {
+          "at": "241..304",
+          "kind": "verse",
+          "last": 21,
+          "text": "But this kind doesn’t go out except by prayer and fasting.”",
+          "verse": {
+            "book": "MAT",
+            "chapter": 17,
+            "verse": 21
+          }
+        },
+        {
+          "at": "241..304",
+          "kind": "woj",
+          "text": "But this kind doesn’t go out except by prayer and fasting.”"
+        },
+        {
+          "at": "304..304",
+          "kind": "note_ref",
+          "note": "note.3",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "305..429",
+          "kind": "para",
+          "style": "prose",
+          "text": "While they were staying in Galilee, Jesus said to them, “The Son of Man is about to be delivered up into the hands of men,"
+        },
+        {
+          "at": "305..429",
+          "kind": "verse",
+          "last": 22,
+          "text": "While they were staying in Galilee, Jesus said to them, “The Son of Man is about to be delivered up into the hands of men,",
+          "verse": {
+            "book": "MAT",
+            "chapter": 17,
+            "verse": 22
+          }
+        },
+        {
+          "at": "305..310",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1722"
+            }
+          ],
+          "text": "While"
+        },
+        {
+          "at": "311..315",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1161"
+            }
+          ],
+          "text": "they"
+        },
+        {
+          "at": "316..320",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3588"
+            }
+          ],
+          "text": "were"
+        },
+        {
+          "at": "329..331",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1722"
+            }
+          ],
+          "text": "in"
+        },
+        {
+          "at": "332..339",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1056"
+            }
+          ],
+          "text": "Galilee"
+        },
+        {
+          "at": "341..346",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2424"
+            }
+          ],
+          "text": "Jesus"
+        },
+        {
+          "at": "347..351",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3004"
+            }
+          ],
+          "text": "said"
+        },
+        {
+          "at": "352..354",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1519"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "355..359",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3588"
+            }
+          ],
+          "text": "them"
+        },
+        {
+          "at": "361..429",
+          "kind": "woj",
+          "text": "“The Son of Man is about to be delivered up into the hands of men,"
+        },
+        {
+          "at": "364..367",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1722"
+            }
+          ],
+          "text": "The"
+        },
+        {
+          "at": "368..371",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5207"
+            }
+          ],
+          "text": "Son"
+        },
+        {
+          "at": "372..374",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5207"
+            }
+          ],
+          "text": "of"
+        },
+        {
+          "at": "375..378",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1519"
+            }
+          ],
+          "text": "Man"
+        },
+        {
+          "at": "379..381",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3588"
+            }
+          ],
+          "text": "is"
+        },
+        {
+          "at": "382..387",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3195"
+            }
+          ],
+          "text": "about"
+        },
+        {
+          "at": "388..390",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1519"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "391..393",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3195"
+            }
+          ],
+          "text": "be"
+        },
+        {
+          "at": "394..403",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3860"
+            }
+          ],
+          "text": "delivered"
+        },
+        {
+          "at": "404..406",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3860"
+            }
+          ],
+          "text": "up"
+        },
+        {
+          "at": "407..411",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1519"
+            }
+          ],
+          "text": "into"
+        },
+        {
+          "at": "412..415",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1722"
+            }
+          ],
+          "text": "the"
+        },
+        {
+          "at": "416..421",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5495"
+            }
+          ],
+          "text": "hands"
+        },
+        {
+          "at": "422..424",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5207"
+            }
+          ],
+          "text": "of"
+        },
+        {
+          "at": "425..428",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3588"
+            }
+          ],
+          "text": "men"
+        }
+      ],
+      "text": "He said to them, “Because of your unbelief. For most certainly I tell you, if you have faith as a grain of mustard seed, you will tell this mountain, ‘Move from here to there,’ and it will move; and nothing will be impossible for you. But this kind doesn’t go out except by prayer and fasting.”\nWhile they were staying in Galilee, Jesus said to them, “The Son of Man is about to be delivered up into the hands of men,",
+      "title": "Matthew"
+    },
+    {
+      "id": "3JN",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..148",
+          "chapter": 1,
+          "kind": "chapter",
+          "text": "I had many things to write to you, but I am unwilling to write to you with ink and pen; but I hope to see you soon. Then we will speak face to face."
+        },
+        {
+          "at": "0..148",
+          "kind": "para",
+          "style": "prose",
+          "text": "I had many things to write to you, but I am unwilling to write to you with ink and pen; but I hope to see you soon. Then we will speak face to face."
+        },
+        {
+          "at": "0..87",
+          "kind": "verse",
+          "last": 13,
+          "text": "I had many things to write to you, but I am unwilling to write to you with ink and pen;",
+          "verse": {
+            "book": "3JN",
+            "chapter": 1,
+            "verse": 13
+          }
+        },
+        {
+          "at": "0..1",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "I"
+        },
+        {
+          "at": "2..5",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2192"
+            }
+          ],
+          "text": "had"
+        },
+        {
+          "at": "6..10",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4183"
+            }
+          ],
+          "text": "many"
+        },
+        {
+          "at": "11..17",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4183"
+            }
+          ],
+          "text": "things"
+        },
+        {
+          "at": "18..20",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "21..26",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1125"
+            }
+          ],
+          "text": "write"
+        },
+        {
+          "at": "27..29",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "30..33",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4771"
+            }
+          ],
+          "text": "you"
+        },
+        {
+          "at": "35..38",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "but"
+        },
+        {
+          "at": "39..40",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "I"
+        },
+        {
+          "at": "41..43",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "am"
+        },
+        {
+          "at": "44..53",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3756"
+            }
+          ],
+          "text": "unwilling"
+        },
+        {
+          "at": "54..56",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "57..62",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1125"
+            }
+          ],
+          "text": "write"
+        },
+        {
+          "at": "63..65",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "66..69",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4771"
+            }
+          ],
+          "text": "you"
+        },
+        {
+          "at": "70..74",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1223"
+            }
+          ],
+          "text": "with"
+        },
+        {
+          "at": "75..78",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3188"
+            }
+          ],
+          "text": "ink"
+        },
+        {
+          "at": "79..82",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "and"
+        },
+        {
+          "at": "83..86",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2563"
+            }
+          ],
+          "text": "pen"
+        },
+        {
+          "at": "88..148",
+          "kind": "verse",
+          "last": 14,
+          "text": "but I hope to see you soon. Then we will speak face to face.",
+          "verse": {
+            "book": "3JN",
+            "chapter": 1,
+            "verse": 14
+          }
+        },
+        {
+          "at": "88..91",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1161"
+            }
+          ],
+          "text": "but"
+        },
+        {
+          "at": "92..93",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "I"
+        },
+        {
+          "at": "94..98",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1679"
+            }
+          ],
+          "text": "hope"
+        },
+        {
+          "at": "99..101",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4314"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "102..105",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3708"
+            }
+          ],
+          "text": "see"
+        },
+        {
+          "at": "106..109",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4771"
+            }
+          ],
+          "text": "you"
+        },
+        {
+          "at": "116..120",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "Then"
+        },
+        {
+          "at": "121..123",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "we"
+        },
+        {
+          "at": "124..128",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "will"
+        },
+        {
+          "at": "129..134",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2980"
+            }
+          ],
+          "text": "speak"
+        },
+        {
+          "at": "135..139",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4750"
+            }
+          ],
+          "text": "face"
+        },
+        {
+          "at": "140..142",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4314"
+            }
+          ],
+          "text": "to"
+        },
+        {
+          "at": "143..147",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4750"
+            }
+          ],
+          "text": "face"
+        }
+      ],
+      "text": "I had many things to write to you, but I am unwilling to write to you with ink and pen; but I hope to see you soon. Then we will speak face to face.",
+      "title": "3 John"
+    },
+    {
+      "id": "note.1",
+      "kind": "note",
+      "spans": [
+        {
+          "at": "41..59",
+          "kind": "foreign",
+          "text": "אֱלֹהִ֑ים"
+        }
+      ],
+      "text": "The Hebrew word rendered “God” is “אֱלֹהִ֑ים” (Elohim).",
+      "title": null
+    },
+    {
+      "id": "note.2",
+      "kind": "note",
+      "spans": [
+        {
+          "at": "0..12",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "EXO",
+                "chapter": 30,
+                "verse": 12
+              },
+              "start": {
+                "book": "EXO",
+                "chapter": 30,
+                "verse": 12
+              }
+            }
+          ],
+          "text": "Exodus 30:12"
+        }
+      ],
+      "text": "Exodus 30:12",
+      "title": null
+    },
+    {
+      "id": "note.3",
+      "kind": "note",
+      "spans": [],
+      "text": "NU omits verse 21.",
+      "title": null
+    }
+  ],
+  "verses": [
+    {
+      "last": 1,
+      "text": "In the beginning, God created the heavens and the earth.",
+      "verse": "Gen 1:1"
+    },
+    {
+      "last": 2,
+      "text": "The earth was formless and empty. Darkness was on the surface of the deep and God’s Spirit was hovering over the surface of the waters.",
+      "verse": "Gen 1:2"
+    },
+    {
+      "last": 3,
+      "text": "God said, “Let there be light,” and there was light.",
+      "verse": "Gen 1:3"
+    },
+    {
+      "last": 4,
+      "text": "Jehoash said to the priests, “All the money of the holy things that is brought into Yahweh’s house, in current money, the money of the people for whom each man is evaluated, and all the money that it comes into any man’s heart to bring into Yahweh’s house,",
+      "verse": "2 Kgs 12:4"
+    },
+    {
+      "last": 5,
+      "text": "let the priests take it to them, each man from his donor; and they shall repair the damage to the house, wherever any damage is found.”",
+      "verse": "2 Kgs 12:5"
+    },
+    {
+      "last": 0,
+      "text": "A Psalm by David, when he fled from Absalom his son.",
+      "verse": "Ps 3:title"
+    },
+    {
+      "last": 1,
+      "text": "Yahweh, how my adversaries have increased!\nMany are those who rise up against me.",
+      "verse": "Ps 3:1"
+    },
+    {
+      "last": 2,
+      "text": "Many there are who say of my soul,",
+      "verse": "Ps 3:2"
+    },
+    {
+      "last": 20,
+      "text": "He said to them, “Because of your unbelief. For most certainly I tell you, if you have faith as a grain of mustard seed, you will tell this mountain, ‘Move from here to there,’ and it will move; and nothing will be impossible for you.",
+      "verse": "Matt 17:20"
+    },
+    {
+      "last": 21,
+      "text": "But this kind doesn’t go out except by prayer and fasting.”",
+      "verse": "Matt 17:21"
+    },
+    {
+      "last": 22,
+      "text": "While they were staying in Galilee, Jesus said to them, “The Son of Man is about to be delivered up into the hands of men,",
+      "verse": "Matt 17:22"
+    },
+    {
+      "last": 13,
+      "text": "I had many things to write to you, but I am unwilling to write to you with ink and pen;",
+      "verse": "3 Jn 1:13"
+    },
+    {
+      "last": 14,
+      "text": "but I hope to see you soon. Then we will speak face to face.",
+      "verse": "3 Jn 1:14"
+    }
+  ]
+}

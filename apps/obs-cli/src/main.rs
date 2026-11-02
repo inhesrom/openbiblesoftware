@@ -1,5 +1,6 @@
 //! Command-line tool for Open Bible Software.
 
+mod import;
 mod inspect;
 
 use std::process::ExitCode;
@@ -11,6 +12,8 @@ const USAGE: &str = "usage: obs-cli <command> [args]
 
 commands:
   run <command-id> [name=value ...|'{json}']   run an engine command, print JSON
+  import <file.usfm|dir>... -o <out.obr> [--id ID] [--title T] [--abbrev A] [--lang L] [--rtl]
+                                                import USFM to a resource file, print the Import report
   inspect <file.obr> [--unit ID] [--verse REF]  show a resource file's contents
   write-sample <file.obr>                       write a tiny sample Bible (for trying inspect)
   commands                                     list engine commands
@@ -48,6 +51,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("run") => run(&mut session, &args[1..]),
+        Some("import") => import::import(&args[1..]),
         Some("inspect") => inspect::inspect(&args[1..]),
         Some("write-sample") => inspect::write_sample(&args[1..]),
         Some(other) => {
