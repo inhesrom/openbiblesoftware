@@ -34,7 +34,7 @@ impl Face {
         let peniko = peniko::FontData::new(peniko::Blob::new(bytes.clone()), 0);
         Face { shaper, upem: m.units_per_em as f32, ascent: m.ascent, descent: -m.descent, peniko, bytes }
     }
-    fn font_ref(&self) -> skrifa::FontRef<'_> {
+    pub fn font_ref(&self) -> skrifa::FontRef<'_> {
         skrifa::FontRef::new(&self.bytes).unwrap()
     }
 }
@@ -154,6 +154,96 @@ fn is_ws(c: char) -> bool {
     c.is_whitespace()
 }
 
+/// Shaped segment, cluster offsets relative to the segment start.
+pub struct Shaped {
+    glyphs: Vec<PGlyph>,
+    clusters: Vec<Cl>,
+    w: f32,
+    trail_ws: f32,
+}
+
+#[derive(PartialEq, Eq, Hash)]
+struct ShapeKey {
+    font: u8,
+    size: u32,
+    smcp: bool,
+    rtl: bool,
+    text: String,
+}
+
+static SHAPE_CACHE: std::sync::OnceLock<std::sync::RwLock<std::collections::HashMap<ShapeKey, Arc<Shaped>>>> = std::sync::OnceLock::new();
+pub static SHAPE_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static SHAPE_MISSES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static SHAPE_CACHE_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+fn shape_cached(fonts: &Fonts, seg: &str, style: Style, rtl: bool) -> Arc<Shaped> {
+    use std::sync::atomic::Ordering::Relaxed;
+    let on = SHAPE_CACHE_ON.load(Relaxed);
+    let key = ShapeKey { font: style.font as u8, size: style.size.to_bits(), smcp: style.smcp, rtl, text: seg.to_string() };
+    let cache = SHAPE_CACHE.get_or_init(Default::default);
+    if on {
+        if let Some(v) = cache.read().unwrap().get(&key) {
+            SHAPE_HITS.fetch_add(1, Relaxed);
+            return v.clone();
+        }
+    }
+    SHAPE_MISSES.fetch_add(1, Relaxed);
+    let v = Arc::new(shape_seg(fonts, seg, style, rtl));
+    if on {
+        let mut c = cache.write().unwrap();
+        if c.len() > 400_000 {
+            c.clear();
+        }
+        c.insert(key, v.clone());
+    }
+    v
+}
+
+fn shape_seg(fonts: &Fonts, seg: &str, style: Style, rtl: bool) -> Shaped {
+    let face = fonts.face(style.font);
+    let scale = style.size / face.upem;
+    let fr = face.font_ref();
+    let shaper = face.shaper.shaper(&fr).build();
+    let mut buf = UnicodeBuffer::new();
+    buf.push_str(seg);
+    buf.guess_segment_properties();
+    buf.set_direction(if rtl { Direction::RightToLeft } else { Direction::LeftToRight });
+    let feats = [Feature::new(Tag::new(b"smcp"), 1, ..)];
+    let opts = harfrust::ShapeOptions::new().features(if style.smcp { &feats[..] } else { &[] });
+    let gb = shaper.shape(buf, opts);
+    let mut glyphs = Vec::with_capacity(gb.len());
+    let mut clusters: Vec<Cl> = Vec::new();
+    let mut pen = 0.0f32;
+    for (info, pos) in gb.glyph_infos().iter().zip(gb.glyph_positions()) {
+        let c = info.cluster as usize;
+        glyphs.push(PGlyph { id: info.glyph_id, x: pen + pos.x_offset as f32 * scale, y: -(pos.y_offset as f32) * scale });
+        let adv = pos.x_advance as f32 * scale;
+        match clusters.last_mut() {
+            Some(cl) if cl.start == c => cl.x1 = pen + adv,
+            _ => clusters.push(Cl { x0: pen, x1: pen + adv, start: c, end: c }),
+        }
+        pen += adv;
+    }
+    let mut starts: Vec<usize> = clusters.iter().map(|c| c.start).collect();
+    starts.sort();
+    starts.dedup();
+    for cl in clusters.iter_mut() {
+        let i = starts.partition_point(|s| *s <= cl.start);
+        cl.end = starts.get(i).copied().unwrap_or(seg.len());
+    }
+    let mut trail_ws = 0.0;
+    let mut logical: Vec<&Cl> = clusters.iter().collect();
+    logical.sort_by_key(|c| std::cmp::Reverse(c.start));
+    for cl in logical {
+        if seg[cl.start..cl.end].chars().all(is_ws) {
+            trail_ws += cl.x1 - cl.x0;
+        } else {
+            break;
+        }
+    }
+    Shaped { glyphs, clusters, w: pen, trail_ws }
+}
+
 pub fn layout(fonts: &Fonts, para: &Para, width: f32) -> Laid {
     let mut text = String::new();
     let mut run_starts = Vec::new();
@@ -187,7 +277,6 @@ pub fn layout(fonts: &Fonts, para: &Para, width: f32) -> Laid {
     let run_of = |p: usize| run_starts.partition_point(|s| *s <= p).saturating_sub(1);
 
     let mut items: Vec<Item> = Vec::new();
-    let mut buf = UnicodeBuffer::new();
     for w in bounds.windows(2) {
         let (a, b) = (w[0], w[1]);
         if a >= b {
@@ -196,49 +285,10 @@ pub fn layout(fonts: &Fonts, para: &Para, width: f32) -> Laid {
         let run = run_of(a);
         let style = para.runs[run].style;
         let rtl = levels[a].is_rtl();
-        let face = fonts.face(style.font);
-        let scale = style.size / face.upem;
-        let fr = face.font_ref();
-        let shaper = face.shaper.shaper(&fr).build();
-        buf.push_str(&text[a..b]);
-        buf.guess_segment_properties();
-        buf.set_direction(if rtl { Direction::RightToLeft } else { Direction::LeftToRight });
-        let feats = [Feature::new(Tag::new(b"smcp"), 1, ..), Feature::new(Tag::new(b"c2sc"), 0, ..)];
-        let opts = harfrust::ShapeOptions::new().features(if style.smcp { &feats[..1] } else { &[] });
-        let gb = shaper.shape(std::mem::take(&mut buf), opts);
-        let mut glyphs = Vec::with_capacity(gb.len());
-        let mut clusters: Vec<Cl> = Vec::new();
-        let mut pen = 0.0f32;
-        for (info, pos) in gb.glyph_infos().iter().zip(gb.glyph_positions()) {
-            let c = a + info.cluster as usize;
-            glyphs.push(PGlyph { id: info.glyph_id, x: pen + pos.x_offset as f32 * scale, y: -(pos.y_offset as f32) * scale });
-            let adv = pos.x_advance as f32 * scale;
-            match clusters.last_mut() {
-                Some(cl) if cl.start == c => cl.x1 = pen + adv,
-                _ => clusters.push(Cl { x0: pen, x1: pen + adv, start: c, end: c }),
-            }
-            pen += adv;
-        }
-        buf = gb.clear();
-        // cluster ends (logical)
-        let mut starts: Vec<usize> = clusters.iter().map(|c| c.start).collect();
-        starts.sort();
-        starts.dedup();
-        for cl in clusters.iter_mut() {
-            let i = starts.partition_point(|s| *s <= cl.start);
-            cl.end = starts.get(i).copied().unwrap_or(b);
-        }
-        // trailing whitespace width (logical end)
-        let mut trail_ws = 0.0;
-        let mut logical: Vec<&Cl> = clusters.iter().collect();
-        logical.sort_by_key(|c| std::cmp::Reverse(c.start));
-        for cl in logical {
-            if text[cl.start..cl.end].chars().all(is_ws) {
-                trail_ws += cl.x1 - cl.x0;
-            } else {
-                break;
-            }
-        }
+        let sh = shape_cached(fonts, &text[a..b], style, rtl);
+        let glyphs = sh.glyphs.clone();
+        let clusters: Vec<Cl> = sh.clusters.iter().map(|c| Cl { x0: c.x0, x1: c.x1, start: c.start + a, end: c.end + a }).collect();
+        let (pen, trail_ws) = (sh.w, sh.trail_ws);
         items.push(Item {
             x: 0.0,
             w: pen,
@@ -484,11 +534,19 @@ impl Laid {
 
 /// Raster a laid block with vello_cpu. Returns premultiplied RGBA8 and pixel size.
 pub fn raster(fonts: &Fonts, laid: &Laid, ppp: f32) -> (Vec<u8>, [usize; 2]) {
+    raster_range(fonts, laid, ppp, 0.0, laid.height)
+}
+
+/// Raster the horizontal band y0..y1 (points) of a laid block.
+pub fn raster_range(fonts: &Fonts, laid: &Laid, ppp: f32, y0: f32, y1: f32) -> (Vec<u8>, [usize; 2]) {
     let w = ((laid.width * ppp).ceil() as usize).clamp(1, 8192);
-    let h = ((laid.height * ppp).ceil() as usize).clamp(1, 16384);
+    let h = (((y1 - y0) * ppp).ceil() as usize).clamp(1, 8192);
     let mut ctx = vello_cpu::RenderContext::new(w as u16, h as u16);
     let mut res = vello_cpu::Resources::new();
     for line in &laid.lines {
+        if line.bottom < y0 - 4.0 || line.top > y1 + 4.0 {
+            continue;
+        }
         for it in &line.items {
             if it.glyphs.is_empty() {
                 continue;
@@ -503,11 +561,18 @@ pub fn raster(fonts: &Fonts, laid: &Laid, ppp: f32) -> (Vec<u8>, [usize; 2]) {
                 .fill_glyphs(it.glyphs.iter().map(|g| vello_cpu::Glyph {
                     id: g.id,
                     x: (it.x + g.x) * ppp,
-                    y: (by + g.y) * ppp,
+                    y: (by + g.y - y0) * ppp,
                 }));
         }
     }
     let mut pix = vello_cpu::Pixmap::new(w as u16, h as u16);
     ctx.render(&mut pix, &mut res);
     (pix.data_as_u8_slice().to_vec(), [w, h])
+}
+
+#[allow(dead_code)]
+fn _assert_send_sync() {
+    fn f<T: Send + Sync>() {}
+    f::<Fonts>();
+    f::<Laid>();
 }

@@ -5,7 +5,9 @@
 use crate::data::{slice_units, ResKind, Resource, SpanKind, UnitKind};
 use crate::present::{unit_para, Obj, TextSettings};
 use crate::refs::VRef;
-use crate::text::{layout, raster, Fonts, Laid};
+use crate::gfx::{tile_ranges, Atlas, LayoutPool, Mode, Pool};
+use crate::text::{layout, Fonts, Laid};
+use std::sync::Arc;
 use egui::{pos2, vec2, Color32, Rect, Sense, TextureHandle, Ui};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -28,10 +30,39 @@ pub enum Hit {
     Verse(VRef),
 }
 
+enum TileState {
+    Empty,
+    Requested,
+    Ready(TextureHandle, [usize; 2]),
+}
+
+struct Tile {
+    y0: f32,
+    y1: f32,
+    state: TileState,
+}
+
 struct Block {
-    laid: Laid,
+    laid: Arc<Laid>,
     objs: Vec<Obj>,
-    tex: Option<(TextureHandle, [usize; 2], f32)>,
+    tiles: Vec<Tile>,
+    tile_ppp: f32,
+    mesh: Option<(Arc<egui::Mesh>, u64, f32)>,
+}
+
+/// Renderer state shared by all document views (#19 measurement).
+pub struct Gfx {
+    pub mode: Mode,
+    pub atlas: Atlas,
+    pub pool: Pool,
+    /// tiles uploaded per frame (Tiles mode)
+    pub upload_budget: u32,
+    /// retention window, in viewport heights either side
+    pub retain: f32,
+    pub layout_pool: LayoutPool,
+    /// synchronous layout allowed on the UI thread this frame (ms); the jump target is exempt
+    pub layout_budget_ms: f32,
+    pub async_layout: bool,
 }
 
 #[derive(Default)]
@@ -42,7 +73,19 @@ pub struct Stats {
     pub raster_ms: f32,
     pub textures: usize,
     pub texture_bytes: usize,
+    /// UI-thread time spent on text: layout + raster/mesh + upload
+    pub text_ms: f32,
+    /// visible tiles/blocks drawn as placeholders this frame
+    pub placeholders: u32,
+    pub glyphs_rastered: u32,
+    pub doc_ms: f32,
+    pub snip_placeholders: u32,
+    pub snip_ms: f32,
+    pub nav_ms: f32,
+    pub tile_ms: f32,
 }
+
+static NEXT_UID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 pub struct DocView {
     anchor: usize,
@@ -59,6 +102,11 @@ pub struct DocView {
     pub hover_word: Option<(usize, usize, usize)>,
     /// test hook: synthetic wheel input
     pub inject_scroll: f32,
+    uid: u64,
+    generation: u64,
+    requested: HashMap<usize, Vec<Obj>>,
+    /// true when the pending navigation came from this Tab (lay out synchronously)
+    pending_sync: bool,
 }
 
 pub struct DocOut {
@@ -85,13 +133,18 @@ impl DocView {
             flash: None,
             hover_word: None,
             inject_scroll: 0.0,
+            uid: NEXT_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            generation: 0,
+            requested: HashMap::new(),
+            pending_sync: true,
         }
     }
 
     /// Navigate to a Standard-versification location (link set follow / reference box).
-    pub fn goto(&mut self, res: &Resource, r: VRef, now: f64, flash: bool) {
+    pub fn goto(&mut self, res: &Resource, r: VRef, now: f64, flash: bool, sync: bool) {
         if let Some((u, b)) = res.locate(r) {
             self.pending = Some(DocPos { unit: u, byte: b });
+            self.pending_sync = sync;
             self.location = Some(r);
             if !flash {
                 return;
@@ -136,10 +189,54 @@ impl DocView {
         let para = unit_para(res, i, s, &mut objs);
         let laid = layout(fonts, &para, w);
         stats.layouts += 1;
-        stats.layout_ms += t.elapsed().as_secs_f32() * 1000.0;
+        let ms = t.elapsed().as_secs_f32() * 1000.0;
+        stats.layout_ms += ms;
+        stats.text_ms += ms;
         self.heights[i] = laid.height;
         self.measured[i] = true;
-        self.blocks.insert(i, Block { laid, objs, tex: None });
+        self.blocks.insert(i, Block { laid: Arc::new(laid), objs, tiles: vec![], tile_ppp: 0.0, mesh: None });
+    }
+
+    /// Pull finished worker layouts into the block map.
+    fn collect(&mut self, gfx: &Gfx) {
+        let ids: Vec<usize> = self.requested.keys().copied().collect();
+        for i in ids {
+            if let Some(laid) = gfx.layout_pool.take(&(self.uid, self.generation, i)) {
+                let objs = self.requested.remove(&i).unwrap_or_default();
+                if i < self.heights.len() && !self.blocks.contains_key(&i) {
+                    self.heights[i] = laid.height;
+                    self.measured[i] = true;
+                    self.blocks.insert(i, Block { laid: Arc::new(laid), objs, tiles: vec![], tile_ppp: 0.0, mesh: None });
+                }
+            }
+        }
+    }
+
+    fn request(&mut self, res: &Resource, s: &TextSettings, i: usize, w: f32, gfx: &Gfx) {
+        if self.blocks.contains_key(&i) || self.requested.contains_key(&i) {
+            return;
+        }
+        let mut objs = Vec::new();
+        let para = unit_para(res, i, s, &mut objs);
+        gfx.layout_pool.submit((self.uid, self.generation, i), para, w);
+        self.requested.insert(i, objs);
+    }
+
+    /// Lay out block i if possible: forced, or within this frame's sync budget; otherwise ask a worker.
+    #[allow(clippy::too_many_arguments)]
+    fn laid(&mut self, res: &Resource, fonts: &Fonts, s: &TextSettings, i: usize, w: f32, stats: &mut Stats, gfx: &mut Gfx, force: bool) -> bool {
+        if self.blocks.contains_key(&i) {
+            return true;
+        }
+        if force || !gfx.async_layout || gfx.layout_budget_ms > 0.0 {
+            let t = Instant::now();
+            self.ensure_laid(res, fonts, s, i, w, stats);
+            self.requested.remove(&i);
+            gfx.layout_budget_ms -= t.elapsed().as_secs_f32() * 1000.0;
+            return true;
+        }
+        self.request(res, s, i, w, gfx);
+        false
     }
 
     fn h(&self, i: usize) -> f32 {
@@ -172,7 +269,7 @@ impl DocView {
         s: &TextSettings,
         focused: bool,
         stats: &mut Stats,
-        raster_budget: &mut u32,
+        gfx: &mut Gfx,
     ) -> DocOut {
         let mut out = DocOut { user_moved: false, hover: None, clicked: None, interacted: false, copy: None };
         let n = res.units.len();
@@ -194,7 +291,9 @@ impl DocView {
         if key != self.key || self.heights.len() != n {
             let keep = if self.heights.len() == n { self.top_doc_pos() } else { None };
             self.key = key;
+            self.generation += 1;
             self.blocks.clear();
+            self.requested.clear();
             self.heights = (0..n).map(|i| Self::estimate(res, i, w, s)).collect();
             self.measured = vec![false; n];
             if let (Some(p), None) = (keep, self.pending) {
@@ -202,9 +301,20 @@ impl DocView {
             }
         }
 
-        // pending navigation: put the target line at the top
-        if let Some(p) = self.pending.take() {
-            self.ensure_laid(res, fonts, s, p.unit, w, stats);
+        self.collect(gfx);
+        // pending navigation: put the target line at the top. A follower whose target isn't
+        // laid out yet waits for the worker and settles a frame or two later.
+        let mut ready_pending = None;
+        if let Some(p) = self.pending {
+            let force = self.pending_sync || !gfx.async_layout;
+            if self.laid(res, fonts, s, p.unit, w, stats, gfx, force) {
+                self.pending = None;
+                ready_pending = Some(p);
+            } else {
+                ui.ctx().request_repaint();
+            }
+        }
+        if let Some(p) = ready_pending {
             let b = &self.blocks[&p.unit];
             let pb = b.laid.from_unit(p.byte);
             let line = b.laid.lines.iter().find(|l| pb >= l.start && pb < l.end.max(l.start + 1)).or(b.laid.lines.first());
@@ -273,24 +383,24 @@ impl DocView {
         // normalize anchor
         while self.anchor_off < 0.0 && self.anchor > 0 {
             self.anchor -= 1;
-            self.ensure_laid(res, fonts, s, self.anchor, w, stats);
+            self.laid(res, fonts, s, self.anchor, w, stats, gfx, true);
             self.anchor_off += self.h(self.anchor);
         }
         if self.anchor_off < 0.0 {
             self.anchor_off = 0.0;
         }
-        self.ensure_laid(res, fonts, s, self.anchor, w, stats);
+        self.laid(res, fonts, s, self.anchor, w, stats, gfx, true);
         while self.anchor + 1 < n && self.anchor_off >= self.h(self.anchor) {
             self.anchor_off -= self.h(self.anchor);
             self.anchor += 1;
-            self.ensure_laid(res, fonts, s, self.anchor, w, stats);
+            self.laid(res, fonts, s, self.anchor, w, stats, gfx, true);
         }
         // don't scroll past the end
         {
             let mut acc = -self.anchor_off;
             let mut i = self.anchor;
             while i < n && acc < view_h {
-                self.ensure_laid(res, fonts, s, i, w, stats);
+                self.laid(res, fonts, s, i, w, stats, gfx, false);
                 acc += self.h(i);
                 i += 1;
             }
@@ -310,7 +420,7 @@ impl DocView {
         let mut y = inner.top() - self.anchor_off;
         let mut i = self.anchor;
         while i < n && y < inner.bottom() {
-            self.ensure_laid(res, fonts, s, i, w, stats);
+            self.laid(res, fonts, s, i, w, stats, gfx, false);
             visible.push((i, y));
             y += self.h(i);
             i += 1;
@@ -468,7 +578,18 @@ impl DocView {
         for &(bi, top) in &visible {
             let top = snap(top);
             let left = snap(inner.left());
-            let block = self.blocks.get_mut(&bi).unwrap();
+            let Some(block) = self.blocks.get_mut(&bi) else {
+                // not laid out yet: placeholder at the estimated height
+                stats.placeholders += 1;
+                let h = self.heights[bi];
+                let mut yy = top + 6.0;
+                while yy + 10.0 < top + h {
+                    painter.rect_filled(Rect::from_min_size(pos2(left, yy), vec2(w * 0.92, 10.0)), 2.0, Color32::from_gray(235));
+                    yy += s.size * 1.6;
+                }
+                ui.ctx().request_repaint();
+                continue;
+            };
             // flash (navigation target), hover, selection: egui shapes under the texture
             if let Some((a, b, _)) = self.flash.filter(|_| flash_alpha > 0.0) {
                 if let Some((p0, p1)) = ranges_for(bi, &block.laid, a, b) {
@@ -504,55 +625,32 @@ impl DocView {
                     }
                 }
             }
-            // texture
-            let need = match &block.tex {
-                Some((_, _, tp)) => *tp != ppp,
-                None => true,
-            };
-            if need && *raster_budget > 0 {
-                *raster_budget -= 1;
-                let t = Instant::now();
-                let (px, size) = raster(fonts, &block.laid, ppp);
-                stats.rasters += 1;
-                stats.raster_ms += t.elapsed().as_secs_f32() * 1000.0;
-                let img = egui::ColorImage::from_rgba_premultiplied(size, &px);
-                let tex = ui.ctx().load_texture(format!("{}-{bi}", res.id), img, egui::TextureOptions::LINEAR);
-                block.tex = Some((tex, size, ppp));
-            } else if need {
-                ui.ctx().request_repaint();
-            }
-            if let Some((tex, size, tp)) = &block.tex {
-                let r = Rect::from_min_size(pos2(left, top), vec2(size[0] as f32 / tp, size[1] as f32 / tp));
-                painter.image(tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
-            } else {
-                // placeholder lines until rastered
-                for l in &block.laid.lines {
-                    let lw: f32 = l.items.iter().map(|i| i.w).sum();
-                    let x0 = l.items.first().map(|i| i.x).unwrap_or(0.0);
-                    painter.rect_filled(
-                        Rect::from_min_size(pos2(left + x0, top + l.top + 6.0), vec2(lw, (l.bottom - l.top - 12.0).max(2.0))),
-                        2.0,
-                        Color32::from_gray(235),
-                    );
-                }
-            }
+            Self::paint_block(ui, &painter, fonts, gfx, stats, block, (self.uid, self.generation, bi), left, top, ppp);
         }
-        if let Some(i) = lookahead {
-            if *raster_budget > 0 {
-                if let Some(block) = self.blocks.get_mut(&i) {
-                    if block.tex.is_none() {
-                        *raster_budget -= 1;
-                        let t = Instant::now();
-                        let (px, size) = raster(fonts, &block.laid, ppp);
-                        stats.rasters += 1;
-                        stats.raster_ms += t.elapsed().as_secs_f32() * 1000.0;
-                        let img = egui::ColorImage::from_rgba_premultiplied(size, &px);
-                        block.tex = Some((ui.ctx().load_texture(format!("{}-{i}", res.id), img, egui::TextureOptions::LINEAR), size, ppp));
-                    }
-                }
+        // prefetch: lay out and request tiles for blocks just past the viewport
+        let mut acc = 0.0;
+        let mut j = lookahead.unwrap_or(n);
+        while j < n && acc < view_h * 1.5 {
+            if gfx.async_layout {
+                self.request(res, s, j, w, gfx);
             } else {
-                self.ensure_laid(res, fonts, s, i, w, stats);
+                self.ensure_laid(res, fonts, s, j, w, stats);
             }
+            if gfx.mode == Mode::Tiles {
+                if let Some(block) = self.blocks.get_mut(&j) {
+                    Self::request_tiles(gfx, block, (self.uid, self.generation, j), ppp);
+                }
+            }
+            acc += self.h(j);
+            j += 1;
+        }
+        // and above, for scrolling back up
+        let mut acc = 0.0;
+        let mut j = visible.first().map(|v| v.0).unwrap_or(0);
+        while j > 0 && acc < view_h * 1.5 && gfx.async_layout {
+            j -= 1;
+            self.request(res, s, j, w, gfx);
+            acc += self.h(j);
         }
 
         // evict blocks far from the viewport (~3 viewport heights either side)
@@ -560,20 +658,24 @@ impl DocView {
         let last = visible.last().map(|v| v.0).unwrap_or(0);
         let (mut lo, mut hi) = (first, last);
         let mut acc = 0.0;
-        while lo > 0 && acc < view_h * 3.0 {
+        let keep = view_h * gfx.retain;
+        while lo > 0 && acc < keep {
             lo -= 1;
             acc += self.heights[lo];
         }
         acc = 0.0;
-        while hi + 1 < n && acc < view_h * 3.0 {
+        while hi + 1 < n && acc < keep {
             hi += 1;
             acc += self.heights[hi];
         }
+        let (lo, hi) = (lo.saturating_sub(2), (hi + 2).min(n.saturating_sub(1)));
         self.blocks.retain(|k, _| *k >= lo && *k <= hi);
         for b in self.blocks.values() {
-            if let Some((_, size, _)) = &b.tex {
-                stats.textures += 1;
-                stats.texture_bytes += size[0] * size[1] * 4;
+            for t in &b.tiles {
+                if let TileState::Ready(_, size) = &t.state {
+                    stats.textures += 1;
+                    stats.texture_bytes += size[0] * size[1] * 4;
+                }
             }
         }
 
@@ -592,6 +694,100 @@ impl DocView {
         out
     }
 
+    fn request_tiles(gfx: &mut Gfx, block: &mut Block, key: (u64, u64, usize), ppp: f32) {
+        if block.tile_ppp != ppp {
+            block.tiles = tile_ranges(&block.laid, ppp).into_iter().map(|(y0, y1)| Tile { y0, y1, state: TileState::Empty }).collect();
+            block.tile_ppp = ppp;
+        }
+        for (ti, t) in block.tiles.iter_mut().enumerate() {
+            if matches!(t.state, TileState::Empty) {
+                gfx.pool.submit((key.0, key.1, key.2, ti), block.laid.clone(), t.y0, t.y1, ppp);
+                t.state = TileState::Requested;
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn paint_block(
+        ui: &Ui,
+        painter: &egui::Painter,
+        fonts: &Fonts,
+        gfx: &mut Gfx,
+        stats: &mut Stats,
+        block: &mut Block,
+        key: (u64, u64, usize),
+        left: f32,
+        top: f32,
+        ppp: f32,
+    ) {
+        match gfx.mode {
+            Mode::Atlas => {
+                let t = Instant::now();
+                let stale = match &block.mesh {
+                    Some((_, g, p)) => *g != gfx.atlas.generation || *p != ppp,
+                    None => true,
+                };
+                if stale {
+                    let before = gfx.atlas.glyphs;
+                    let m = gfx.atlas.mesh(ui.ctx(), fonts, &block.laid, ppp);
+                    stats.glyphs_rastered += (gfx.atlas.glyphs - before) as u32;
+                    block.mesh = Some((Arc::new(m), gfx.atlas.generation, ppp));
+                    stats.rasters += 1;
+                }
+                let tex = gfx.atlas.texture_id(ui.ctx());
+                let (m, _, _) = block.mesh.as_ref().unwrap();
+                let mut mm = (**m).clone();
+                mm.texture_id = tex;
+                mm.translate(vec2(left, top));
+                painter.add(egui::Shape::mesh(mm));
+                let ms = t.elapsed().as_secs_f32() * 1000.0;
+                stats.raster_ms += ms;
+                stats.text_ms += ms;
+            }
+            Mode::Tiles => {
+                Self::request_tiles(gfx, block, key, ppp);
+                let mut any_missing = false;
+                for (ti, tile) in block.tiles.iter_mut().enumerate() {
+                    if matches!(tile.state, TileState::Requested) && gfx.upload_budget > 0 {
+                        if let Some((px, size)) = gfx.pool.take(&(key.0, key.1, key.2, ti)) {
+                            let t = Instant::now();
+                            gfx.upload_budget -= 1;
+                            let img = egui::ColorImage::from_rgba_premultiplied(size, &px);
+                            let tex = ui.ctx().load_texture("tile", img, egui::TextureOptions::LINEAR);
+                            tile.state = TileState::Ready(tex, size);
+                            stats.rasters += 1;
+                            let ms = t.elapsed().as_secs_f32() * 1000.0;
+                            stats.raster_ms += ms;
+                            stats.text_ms += ms;
+                        }
+                    }
+                    match &tile.state {
+                        TileState::Ready(tex, size) => {
+                            let r = Rect::from_min_size(pos2(left, top + tile.y0), vec2(size[0] as f32 / ppp, size[1] as f32 / ppp));
+                            painter.image(tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+                        }
+                        _ => {
+                            any_missing = true;
+                            for l in block.laid.lines.iter().filter(|l| l.top >= tile.y0 - 0.5 && l.bottom <= tile.y1 + 0.5) {
+                                let lw: f32 = l.items.iter().map(|i| i.w).sum();
+                                let x0 = l.items.first().map(|i| i.x).unwrap_or(0.0);
+                                painter.rect_filled(
+                                    Rect::from_min_size(pos2(left + x0, top + l.top + 6.0), vec2(lw, (l.bottom - l.top - 12.0).max(2.0))),
+                                    2.0,
+                                    Color32::from_gray(235),
+                                );
+                            }
+                        }
+                    }
+                }
+                if any_missing {
+                    stats.placeholders += 1;
+                    ui.ctx().request_repaint();
+                }
+            }
+        }
+    }
+
     pub fn measured_fraction(&self) -> f32 {
         if self.measured.is_empty() {
             return 0.0;
@@ -602,14 +798,26 @@ impl DocView {
 
 /// Inline-snippet mode: lay out + raster one paragraph, cached by key.
 pub struct Snippets {
-    cache: HashMap<(String, i32, u64), (TextureHandle, [usize; 2], f32, f32)>,
+    pub ms: f32,
+    cache: HashMap<(String, i32, u64), (usize, Block)>,
     used: HashMap<(String, i32, u64), u64>,
     frame: u64,
+    uid: u64,
+    next: usize,
+    waiting: HashMap<(String, i32, u64), usize>,
 }
 
 impl Snippets {
     pub fn new() -> Self {
-        Snippets { cache: HashMap::new(), used: HashMap::new(), frame: 0 }
+        Snippets {
+            ms: 0.0,
+            cache: HashMap::new(),
+            used: HashMap::new(),
+            frame: 0,
+            uid: NEXT_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            next: 0,
+            waiting: HashMap::new(),
+        }
     }
 
     pub fn next_frame(&mut self) {
@@ -619,11 +827,14 @@ impl Snippets {
         self.cache.retain(|k, _| used.get(k).map(|u| f - *u < 120).unwrap_or(false));
     }
 
+    /// Inline-snippet mode: same renderer path as the reading panes (atlas mesh or worker tiles).
     #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         ui: &mut Ui,
         fonts: &Fonts,
+        gfx: &mut Gfx,
+        stats: &mut Stats,
         s: &TextSettings,
         text: &str,
         size: f32,
@@ -631,22 +842,49 @@ impl Snippets {
         rtl: bool,
         width: f32,
     ) -> egui::Response {
+        let t0 = Instant::now();
         let ppp = ui.ctx().pixels_per_point();
         let key = (format!("{text}\u{0}{size}{color:?}{rtl}"), width.round() as i32, s.key() ^ (ppp * 100.0) as u64);
         self.used.insert(key.clone(), self.frame);
-        if !self.cache.contains_key(&key) {
+        if !self.cache.contains_key(&key) && !self.waiting.contains_key(&key) {
             let para = crate::present::snippet_para(text, size, color, rtl, s);
-            let laid = layout(fonts, &para, width);
-            let (px, sz) = raster(fonts, &laid, ppp);
-            let img = egui::ColorImage::from_rgba_premultiplied(sz, &px);
-            let tex = ui.ctx().load_texture("snippet", img, egui::TextureOptions::LINEAR);
-            let used_w = laid.lines.iter().map(|l| l.items.iter().map(|i| i.w).sum::<f32>()).fold(0.0, f32::max);
-            self.cache.insert(key.clone(), (tex, sz, ppp, used_w));
+            self.next += 1;
+            if gfx.async_layout {
+                gfx.layout_pool.submit((self.uid, 1, self.next), para, width);
+                self.waiting.insert(key.clone(), self.next);
+            } else {
+                let laid = layout(fonts, &para, width);
+                let block = Block { laid: Arc::new(laid), objs: vec![], tiles: vec![], tile_ppp: 0.0, mesh: None };
+                self.cache.insert(key.clone(), (self.next, block));
+            }
         }
-        let (tex, sz, tp, _) = &self.cache[&key];
-        let size = vec2(sz[0] as f32 / tp, sz[1] as f32 / tp);
-        let (rect, resp) = ui.allocate_exact_size(vec2(width, size.y), Sense::click());
-        ui.painter().image(tex.id(), Rect::from_min_size(rect.min, size), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+        if let Some(&id) = self.waiting.get(&key) {
+            if let Some(laid) = gfx.layout_pool.take(&(self.uid, 1, id)) {
+                self.waiting.remove(&key);
+                let block = Block { laid: Arc::new(laid), objs: vec![], tiles: vec![], tile_ppp: 0.0, mesh: None };
+                self.cache.insert(key.clone(), (id, block));
+            } else {
+                // placeholder: estimated two lines
+                let h = size * 2.6;
+                let (rect, resp) = ui.allocate_exact_size(vec2(width, h), Sense::click());
+                ui.painter().rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 4.0), vec2(width * 0.9, size * 0.7)), 2.0, Color32::from_gray(235));
+                stats.snip_placeholders += 1;
+                ui.ctx().request_repaint();
+                self.ms += t0.elapsed().as_secs_f32() * 1000.0;
+                return resp;
+            }
+        }
+        let (id, block) = self.cache.get_mut(&key).unwrap();
+        let h = block.laid.height;
+        let (rect, resp) = ui.allocate_exact_size(vec2(width, h), Sense::click());
+        let painter = ui.painter().clone();
+        let left = (rect.left() * ppp).round() / ppp;
+        let top = (rect.top() * ppp).round() / ppp;
+        let mut dummy = Stats::default();
+        DocView::paint_block(ui, &painter, fonts, gfx, &mut dummy, block, (self.uid, 0, *id), left, top, ppp);
+        stats.placeholders += dummy.placeholders;
+        stats.glyphs_rastered += dummy.glyphs_rastered;
+        self.ms += t0.elapsed().as_secs_f32() * 1000.0;
         resp
     }
 }

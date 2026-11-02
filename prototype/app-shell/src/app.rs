@@ -7,7 +7,11 @@
 //!   C — Focus + palette: reading Panels only; study Tools in a right drawer; Ctrl+L palette.
 
 use crate::data::{HebWordInfo, Library, ResId};
-use crate::doc::{DocView, Hit, Snippets, Stats};
+use crate::doc::{DocView, Gfx, Hit, Snippets, Stats};
+use crate::gfx::{Atlas, Mode, Pool};
+#[allow(unused_imports)]
+use crate::text::{SHAPE_CACHE_ON, SHAPE_HITS, SHAPE_MISSES};
+use std::sync::Arc;
 use crate::present::{TextSettings, INK, LINK};
 use crate::refs::{self, Parsed, VRef};
 use crate::text::Fonts;
@@ -65,7 +69,7 @@ struct SavedLayout {
 
 pub struct State {
     lib: Library,
-    fonts: Fonts,
+    fonts: Arc<Fonts>,
     settings: TextSettings,
     tabs: BTreeMap<TabId, Tab>,
     next_id: TabId,
@@ -75,7 +79,7 @@ pub struct State {
     toast: Option<(String, f64)>,
     stats: Stats,
     last_stats: Stats,
-    raster_budget: u32,
+    gfx: Gfx,
     variant: usize,
     add_requests: Vec<(TileId, TabKind)>,
     nav: Vec<Nav>,
@@ -95,7 +99,35 @@ enum Nav {
     Jump(TabId, VRef),
 }
 
+struct Sample {
+    scenario: usize,
+    interval_ms: f32,
+    ui_ms: f32,
+    text_ms: f32,
+    placeholders: u32,
+    tex_bytes: usize,
+    glyphs: u32,
+    doc_ms: f32,
+    snip_ms: f32,
+    nav_ms: f32,
+    /// previous frame's whole CPU time (ui + tessellation + paint submit), from eframe
+    cpu_prev_ms: f32,
+    snip_ph: u32,
+}
+
+/// OBS_BENCH=out.txt — scripted scroll/jump benchmark for #19, then exit.
+struct Bench {
+    out: String,
+    frame: u32,
+    last: Option<std::time::Instant>,
+    samples: Vec<Sample>,
+}
+
+const SCENARIOS: [(&str, u32); 5] = [("warmup", 90), ("wheel KJV 25pt/f", 600), ("fling KJV 120pt/f", 240), ("jumps every 30f", 600), ("wheel TAHOT 25pt/f", 600)];
+
 pub struct App {
+    last_cpu_ms: f32,
+    bench: Option<Bench>,
     shot: Option<(usize, String, String, u32)>,
     st: State,
     trees: Vec<Tree<Pane>>,
@@ -158,11 +190,15 @@ impl State {
     }
 
     fn goto_tab(&mut self, id: TabId, r: VRef, flash: bool, now: f64) {
+        self.goto_tab_ext(id, r, flash, now, true)
+    }
+
+    fn goto_tab_ext(&mut self, id: TabId, r: VRef, flash: bool, now: f64, sync: bool) {
         let lib = &self.lib;
         let t = self.tabs.get_mut(&id).unwrap();
         match t.kind {
             TabKind::Doc(res) => {
-                t.doc.goto(lib.get(res), r, now, flash);
+                t.doc.goto(lib.get(res), r, now, flash, sync);
                 t.loc = t.doc.location;
             }
             TabKind::CrossRefs => t.loc = Some(r),
@@ -190,7 +226,7 @@ impl State {
             }
             let members: Vec<TabId> = self.tabs.iter().filter(|(k, t)| **k != from && link.is_some() && t.link == link).map(|(k, _)| *k).collect();
             for m in members {
-                self.goto_tab(m, r, jump, now);
+                self.goto_tab_ext(m, r, jump, now, false);
             }
         }
     }
@@ -296,7 +332,9 @@ impl State {
         let res = self.lib.get(r);
         let t = self.tabs.get_mut(&id).unwrap();
         let before = t.doc.location;
-        let out = t.doc.show(ui, res, &self.fonts, &self.settings, focused, &mut self.stats, &mut self.raster_budget);
+        let td = std::time::Instant::now();
+        let out = t.doc.show(ui, res, &self.fonts, &self.settings, focused, &mut self.stats, &mut self.gfx);
+        self.stats.doc_ms += td.elapsed().as_secs_f32() * 1000.0;
         t.loc = t.doc.location;
         if out.interacted {
             self.focused = Some(id);
@@ -363,7 +401,7 @@ impl State {
                         ui.label(RichText::new(format!("{votes} votes")).weak().small());
                     });
                     if let Some(t) = self.lib.kjv_plain(&target) {
-                        self.snippets.show(ui, &self.fonts, &self.settings, &t, self.settings.size * 0.82, INK, false, w);
+                        self.snippets.show(ui, &self.fonts, &mut self.gfx, &mut self.stats, &self.settings, &t, self.settings.size * 0.82, INK, false, w);
                     }
                 }
                 ui.add_space(8.0);
@@ -382,12 +420,12 @@ impl State {
                 }
                 Some(WordSel::Heb(i)) => {
                     let wd: HebWordInfo = self.lib.tahot.words[i].clone();
-                    self.snippets.show(ui, &self.fonts, &s, &wd.heb, s.size * 1.9, INK, true, w);
+                    self.snippets.show(ui, &self.fonts, &mut self.gfx, &mut self.stats, &s, &wd.heb, s.size * 1.9, INK, true, w);
                     ui.label(RichText::new(wd.translit.replace(['.', '/'], "")).italics());
                     ui.label(RichText::new(&wd.gloss).strong());
                     ui.separator();
                     field(ui, "Lemma");
-                    self.snippets.show(ui, &self.fonts, &s, &wd.lemma, s.size * 1.4, INK, true, w);
+                    self.snippets.show(ui, &self.fonts, &mut self.gfx, &mut self.stats, &s, &wd.lemma, s.size * 1.4, INK, true, w);
                     ui.label(format!("{} — {}", wd.lemma_strong, wd.lemma_gloss));
                     field(ui, "Morphology");
                     ui.label(&wd.morph_en);
@@ -404,7 +442,7 @@ impl State {
                     match self.lib.lexicon.get(&strong).cloned() {
                         Some(lx) => {
                             field(ui, "Lemma");
-                            self.snippets.show(ui, &self.fonts, &s, &lx.lemma, s.size * 1.6, INK, true, w);
+                            self.snippets.show(ui, &self.fonts, &mut self.gfx, &mut self.stats, &s, &lx.lemma, s.size * 1.6, INK, true, w);
                             ui.label(format!("{} — {}", lx.strong, lx.gloss));
                             field(ui, "Occurrences");
                             ui.label(format!("{} in Genesis (TAHOT)", lx.count));
@@ -430,13 +468,13 @@ impl State {
                     Hit::Ref(osis) => {
                         ui.label(RichText::new(refs::osis_range_short(&osis)).strong());
                         if let Some(t) = self.lib.kjv_plain(&osis) {
-                            self.snippets.show(ui, &self.fonts, &s, &t, s.size * 0.85, INK, false, 360.0);
+                            self.snippets.show(ui, &self.fonts, &mut self.gfx, &mut self.stats, &s, &t, s.size * 0.85, INK, false, 360.0);
                         }
                         ui.label(RichText::new("KJV · click to go there (Genesis only)").weak().small());
                     }
                     Hit::Note(t) => {
                         ui.label(RichText::new("Translator's note").weak().small());
-                        self.snippets.show(ui, &self.fonts, &s, &t, s.size * 0.85, INK, false, 360.0);
+                        self.snippets.show(ui, &self.fonts, &mut self.gfx, &mut self.stats, &s, &t, s.size * 0.85, INK, false, 360.0);
                     }
                     _ => {}
                 }
@@ -450,6 +488,10 @@ impl State {
             ui.add(egui::Slider::new(&mut self.settings.hebrew_scale, 1.0..=2.0).text("Hebrew scale"));
             ui.add(egui::Slider::new(&mut self.settings.line_spacing, 1.0..=2.0).text("Line spacing"));
             ui.checkbox(&mut self.settings.verse_numbers, "Verse numbers");
+            ui.separator();
+            ui.label("Renderer (#19)");
+            ui.radio_value(&mut self.gfx.mode, Mode::Atlas, "Glyph atlas");
+            ui.radio_value(&mut self.gfx.mode, Mode::Tiles, "Block tiles + workers");
         });
     }
 
@@ -476,14 +518,19 @@ impl State {
                 let st = &self.last_stats;
                 ui.label(
                     RichText::new(format!(
-                        "frame {:.1} ms · layout {}× {:.1} ms · raster {}× {:.1} ms · {} block textures {:.1} MB",
+                        "{} · frame {:.1} ms · text {:.1} ms · placeholders {} · layout {}× {:.1} ms · raster {}× {:.1} ms · {} tiles {:.1} MB · atlas {} glyphs {:.1} MB",
+                        if self.gfx.mode == Mode::Atlas { "ATLAS" } else { "TILES" },
                         self.frame_ms,
+                        st.text_ms,
+                        st.placeholders,
                         st.layouts,
                         st.layout_ms,
                         st.rasters,
                         st.raster_ms,
                         st.textures,
-                        st.texture_bytes as f32 / 1e6
+                        st.texture_bytes as f32 / 1e6,
+                        self.gfx.atlas.glyphs,
+                        if self.gfx.atlas.glyphs > 0 { self.gfx.atlas.bytes() as f32 / 1e6 } else { 0.0 }
                     ))
                     .weak()
                     .small()
@@ -630,10 +677,10 @@ impl App {
         cc.egui_ctx.set_theme(egui::Theme::Light);
         let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let lib = Library::load(&base.join("data"));
-        let fonts = Fonts::load(&base.join("assets/fonts"));
+        let fonts = Arc::new(Fonts::load(&base.join("assets/fonts")));
         let mut st = State {
             lib,
-            fonts,
+            fonts: fonts.clone(),
             settings: TextSettings::default(),
             tabs: BTreeMap::new(),
             next_id: 1,
@@ -643,7 +690,16 @@ impl App {
             toast: None,
             stats: Stats::default(),
             last_stats: Stats::default(),
-            raster_budget: 0,
+            gfx: Gfx {
+                mode: if std::env::var("OBS_RENDER").as_deref() == Ok("tiles") { Mode::Tiles } else { Mode::Atlas },
+                atlas: Atlas::new(),
+                pool: Pool::new(fonts.clone()),
+                upload_budget: 0,
+                retain: 1.5,
+                layout_pool: crate::gfx::LayoutPool::new(fonts.clone(), 3),
+                layout_budget_ms: 0.0,
+                async_layout: std::env::var("OBS_ASYNC").as_deref() != Ok("0"),
+            },
             variant: 0,
             add_requests: vec![],
             nav: vec![],
@@ -686,7 +742,14 @@ impl App {
             }
             st.word = Some(WordSel::Heb(3));
         }
-        App { shot, st, trees, layouts: vec![] }
+        if std::env::var("OBS_SHAPECACHE").as_deref() == Ok("0") {
+            SHAPE_CACHE_ON.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+        let bench = std::env::var("OBS_BENCH").ok().map(|out| Bench { out, frame: 0, last: None, samples: vec![] });
+        if bench.is_some() {
+            st.variant = 1;
+        }
+        App { last_cpu_ms: 0.0, bench, shot, st, trees, layouts: vec![] }
     }
 
     fn layouts_menu(&mut self, ui: &mut Ui) {
@@ -906,13 +969,149 @@ impl App {
     }
 }
 
+impl App {
+    fn bench_step(&mut self, ctx: &egui::Context, t0: std::time::Instant) {
+        let Some(b) = &mut self.bench else { return };
+        ctx.request_repaint();
+        let now = std::time::Instant::now();
+        let interval = b.last.map(|l| (t0 - l).as_secs_f32() * 1000.0).unwrap_or(0.0);
+        b.last = Some(t0);
+        let _ = now;
+        // which scenario is this frame in
+        let mut f = b.frame;
+        let mut sc = SCENARIOS.len();
+        for (i, (_, len)) in SCENARIOS.iter().enumerate() {
+            if f < *len {
+                sc = i;
+                break;
+            }
+            f -= len;
+        }
+        if b.frame > 0 && sc <= SCENARIOS.len() {
+            let st = &self.st.stats;
+            b.samples.push(Sample {
+                scenario: sc.min(SCENARIOS.len() - 1),
+                interval_ms: interval,
+                ui_ms: self.st.frame_ms,
+                text_ms: st.text_ms,
+                placeholders: st.placeholders,
+                tex_bytes: st.texture_bytes + if self.st.gfx.atlas.glyphs > 0 { self.st.gfx.atlas.bytes() } else { 0 },
+                glyphs: st.glyphs_rastered,
+                doc_ms: st.doc_ms,
+                snip_ms: st.snip_ms,
+                nav_ms: st.nav_ms,
+                cpu_prev_ms: self.last_cpu_ms,
+                snip_ph: st.snip_placeholders,
+            });
+        }
+        let kjv = 1usize;
+        let tahot = 2usize;
+        match sc {
+            1 => {
+                self.st.focused = Some(kjv);
+                self.st.tabs.get_mut(&kjv).unwrap().doc.inject_scroll = 25.0;
+            }
+            2 => {
+                self.st.focused = Some(kjv);
+                self.st.tabs.get_mut(&kjv).unwrap().doc.inject_scroll = 120.0;
+            }
+            3 => {
+                if f % 30 == 0 {
+                    let ch = [37, 3, 48, 12, 25, 1, 44, 19, 31, 7, 50, 22, 15, 40, 9, 28, 2, 46, 33, 18][(f / 30) as usize % 20];
+                    self.st.focused = Some(kjv);
+                    self.st.submit_ref(kjv, &format!("Gen {ch}:1"), 0.0);
+                }
+            }
+            4 => {
+                if f == 0 {
+                    self.st.submit_ref(kjv, "Gen 1:1", 0.0);
+                }
+                self.st.focused = Some(tahot);
+                self.st.tabs.get_mut(&tahot).unwrap().doc.inject_scroll = 25.0;
+            }
+            _ => {}
+        }
+        b.frame += 1;
+        if b.frame % 100 == 0 {
+            eprintln!("bench frame {} scenario {sc} interval {interval:.1}", b.frame);
+        }
+        if sc == SCENARIOS.len() {
+            let mut rep = String::new();
+            let mode = if self.st.gfx.mode == Mode::Atlas { "atlas" } else { "tiles" };
+            let warm: Vec<f32> = b.samples.iter().filter(|s| s.scenario == 0).map(|s| s.interval_ms).collect();
+            let refresh = pct(&warm, 0.5);
+            use std::sync::atomic::Ordering::Relaxed;
+            let (h, m) = (SHAPE_HITS.load(Relaxed), SHAPE_MISSES.load(Relaxed));
+            rep += &format!(
+                "shape cache {} hit rate {:.1}% ({} hits / {} misses) · async layout {}\n",
+                if SHAPE_CACHE_ON.load(Relaxed) { "on" } else { "off" },
+                100.0 * h as f64 / (h + m).max(1) as f64,
+                h,
+                m,
+                self.st.gfx.async_layout
+            );
+            rep += &format!("mode={mode} workers={} refresh≈{refresh:.2} ms ({:.0} Hz) ppp={}\n", self.st.gfx.pool.workers, 1000.0 / refresh, ctx.pixels_per_point());
+            for (i, (name, _)) in SCENARIOS.iter().enumerate().skip(1) {
+                let ss: Vec<&Sample> = b.samples.iter().filter(|s| s.scenario == i).collect();
+                let iv: Vec<f32> = ss.iter().map(|s| s.interval_ms).collect();
+                let ui: Vec<f32> = ss.iter().map(|s| s.ui_ms).collect();
+                let tx: Vec<f32> = ss.iter().map(|s| s.text_ms).collect();
+                let missed = iv.iter().filter(|v| **v > refresh * 1.5).count();
+                let ph = ss.iter().filter(|s| s.placeholders > 0).count();
+                let mem = ss.iter().map(|s| s.tex_bytes).max().unwrap_or(0);
+                let gl: u32 = ss.iter().map(|s| s.glyphs).sum();
+                let dm: Vec<f32> = ss.iter().map(|s| s.doc_ms).collect();
+                let sm: Vec<f32> = ss.iter().map(|s| s.snip_ms).collect();
+                let nm: Vec<f32> = ss.iter().map(|s| s.nav_ms).collect();
+                // worst 1% of frames: where did the time go?
+                let mut worst: Vec<&&Sample> = ss.iter().collect();
+                worst.sort_by(|a, b| b.ui_ms.partial_cmp(&a.ui_ms).unwrap());
+                let k = (worst.len() / 100).max(3).min(worst.len());
+                let avg = |f: &dyn Fn(&Sample) -> f32| worst[..k].iter().map(|s| f(s)).sum::<f32>() / k.max(1) as f32;
+                let breakdown = format!(
+                    "    worst {k} frames avg: ui {:.1} = docs {:.1} (text {:.1}) + xref/wordinfo snippets {:.1} + nav {:.1} + other {:.1}   | p99 docs {:.1} snippets {:.1}\n",
+                    avg(&|s| s.ui_ms), avg(&|s| s.doc_ms), avg(&|s| s.text_ms), avg(&|s| s.snip_ms), avg(&|s| s.nav_ms),
+                    avg(&|s| s.ui_ms - s.doc_ms - s.snip_ms - s.nav_ms), pct(&dm, 0.99), pct(&sm, 0.99)
+                );
+                let _ = &nm;
+                let cpu: Vec<f32> = ss.iter().map(|s| s.cpu_prev_ms).collect();
+                let post: Vec<f32> = ss.windows(2).map(|w| (w[1].cpu_prev_ms - w[0].ui_ms).max(0.0)).collect();
+                let breakdown = format!("{breakdown}    whole-frame CPU p50 {:.2} p99 {:.2} max {:.2} | after-ui (tessellate+paint) p50 {:.2} p99 {:.2}\n", pct(&cpu, 0.5), pct(&cpu, 0.99), pct(&cpu, 1.0), pct(&post, 0.5), pct(&post, 0.99));
+                let sph = ss.iter().filter(|s| s.snip_ph > 0).count();
+                let breakdown = format!("{breakdown}    preview placeholder frames {sph} ({:.1}%)\n", 100.0 * sph as f32 / ss.len().max(1) as f32);
+                rep += &format!(
+                    "{name:<22} frames {:>4} | interval p50 {:>5.2} p99 {:>6.2} max {:>6.2} | missed {:>4} ({:>4.1}%) | ui p50 {:>5.2} p99 {:>6.2} | text p99 {:>6.2} max {:>6.2} | placeholder frames {:>4} ({:>4.1}%) | peak tex {:>6.1} MB | new glyphs {}\n",
+                    iv.len(), pct(&iv, 0.5), pct(&iv, 0.99), pct(&iv, 1.0), missed, 100.0 * missed as f32 / iv.len().max(1) as f32,
+                    pct(&ui, 0.5), pct(&ui, 0.99), pct(&tx, 0.99), pct(&tx, 1.0), ph, 100.0 * ph as f32 / ss.len().max(1) as f32, mem as f32 / 1e6, gl
+                );
+                rep += &breakdown;
+            }
+            std::fs::write(&b.out, &rep).unwrap();
+            print!("{rep}");
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+}
+
+fn pct(v: &[f32], p: f32) -> f32 {
+    if v.is_empty() {
+        return 0.0;
+    }
+    let mut s = v.to_vec();
+    s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    s[((s.len() - 1) as f32 * p).round() as usize]
+}
+
 impl eframe::App for App {
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
+        self.last_cpu_ms = frame.info().cpu_usage.unwrap_or(0.0) * 1000.0;
         let t0 = std::time::Instant::now();
         let ctx = ui.ctx().clone();
         let now = ctx.input(|i| i.time);
         self.st.last_stats = std::mem::take(&mut self.st.stats);
-        self.st.raster_budget = 10;
+        self.st.gfx.upload_budget = 6;
+        self.st.gfx.layout_budget_ms = 2.0;
+        self.st.gfx.pool.gc();
         self.st.snippets.next_frame();
         let v = self.st.variant;
 
@@ -955,7 +1154,10 @@ impl eframe::App for App {
             self.trees[v] = tree;
         });
 
+        let tn = std::time::Instant::now();
         self.st.process_nav(now);
+        self.st.stats.nav_ms += tn.elapsed().as_secs_f32() * 1000.0;
+        self.st.stats.snip_ms = std::mem::take(&mut self.st.snippets.ms);
         self.st.hover_popup_ui(&ctx);
         self.palette_ui(&ctx, now);
         if let Some((msg, t)) = &self.st.toast {
@@ -973,6 +1175,7 @@ impl eframe::App for App {
         }
         self.switcher(&ctx);
         self.st.frame_ms = t0.elapsed().as_secs_f32() * 1000.0;
+        self.bench_step(&ctx, t0);
         if let Some((_, _, path, n)) = &mut self.shot {
             *n += 1;
             if let Ok(px) = std::env::var("OBS_SCROLL").map(|v| v.parse::<f32>().unwrap_or(0.0)) {

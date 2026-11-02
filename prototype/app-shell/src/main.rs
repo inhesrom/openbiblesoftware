@@ -7,6 +7,7 @@
 mod app;
 mod data;
 mod doc;
+mod gfx;
 mod present;
 mod refs;
 mod text;
