@@ -2105,6 +2105,7 @@ name = "obs-cli"
 version = "0.0.0"
 dependencies = [
  "obs-engine",
+ "serde_json",
 ]
 
 [[package]]
@@ -2119,6 +2120,7 @@ dependencies = [
  "obs-scripture",
  "obs-search",
  "obs-store",
+ "serde_json",
 ]
 
 [[package]]
