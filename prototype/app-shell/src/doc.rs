@@ -12,8 +12,8 @@ use egui::{pos2, vec2, Color32, Rect, Sense, TextureHandle, Ui};
 use std::collections::HashMap;
 use std::time::Instant;
 
-pub const MARGIN: f32 = 22.0;
-const BAR: f32 = 10.0;
+pub const MARGIN: f32 = 30.0;
+const BAR: f32 = 8.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DocPos {
@@ -278,7 +278,7 @@ impl DocView {
         let resp = ui.interact(rect, id, Sense::click_and_drag());
         ui.allocate_rect(rect, Sense::hover());
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, Color32::from_rgb(253, 252, 248));
+        painter.rect_filled(rect, 0.0, crate::theme::PAGE);
         let bar_rect = Rect::from_min_max(pos2(rect.right() - BAR, rect.top()), rect.right_bottom());
         let inner = Rect::from_min_max(pos2(rect.left() + MARGIN, rect.top()), pos2(bar_rect.left() - MARGIN * 0.6, rect.bottom()));
         let w = inner.width().max(60.0);
@@ -584,7 +584,7 @@ impl DocView {
                 let h = self.heights[bi];
                 let mut yy = top + 6.0;
                 while yy + 10.0 < top + h {
-                    painter.rect_filled(Rect::from_min_size(pos2(left, yy), vec2(w * 0.92, 10.0)), 2.0, Color32::from_gray(235));
+                    painter.rect_filled(Rect::from_min_size(pos2(left, yy), vec2(w * 0.92, 10.0)), 4.0, Color32::from_rgb(232, 236, 234));
                     yy += s.size * 1.6;
                 }
                 ui.ctx().request_repaint();
@@ -597,7 +597,7 @@ impl DocView {
                         painter.rect_filled(
                             Rect::from_min_max(pos2(left + r[0], top + r[2]), pos2(left + r[1], top + r[3])),
                             2.0,
-                            Color32::from_rgba_unmultiplied(255, 200, 60, (110.0 * flash_alpha) as u8),
+                            Color32::from_rgba_unmultiplied(214, 174, 82, (92.0 * flash_alpha) as u8),
                         );
                     }
                 }
@@ -608,8 +608,8 @@ impl DocView {
                     for r in block.laid.range_rects(p0, p1) {
                         painter.rect_filled(
                             Rect::from_min_max(pos2(left + r[0], top + r[2] + 2.0), pos2(left + r[1], top + r[3] - 2.0)),
-                            3.0,
-                            Color32::from_rgb(232, 238, 252),
+                            4.0,
+                            crate::theme::HOVER,
                         );
                     }
                 }
@@ -619,8 +619,8 @@ impl DocView {
                     for r in block.laid.range_rects(p0, p1) {
                         painter.rect_filled(
                             Rect::from_min_max(pos2(left + r[0], top + r[2]), pos2(left + r[1], top + r[3])),
-                            0.0,
-                            Color32::from_rgb(180, 210, 250),
+                            2.0,
+                            crate::theme::SELECTION,
                         );
                     }
                 }
@@ -682,12 +682,11 @@ impl DocView {
         // scrollbar
         let total: f32 = self.heights.iter().sum();
         let pos: f32 = self.heights[..self.anchor].iter().sum::<f32>() + self.anchor_off;
-        painter.rect_filled(bar_rect, 0.0, Color32::from_gray(240));
         if total > view_h {
-            let th = (view_h / total * bar_rect.height()).max(24.0);
+            let th = (view_h / total * bar_rect.height()).max(28.0);
             let ty = bar_rect.top() + (pos / (total - view_h)).clamp(0.0, 1.0) * (bar_rect.height() - th);
-            let col = if bar_resp.hovered() || bar_resp.dragged() { Color32::from_gray(150) } else { Color32::from_gray(190) };
-            painter.rect_filled(Rect::from_min_size(pos2(bar_rect.left() + 2.0, ty), vec2(BAR - 4.0, th)), 3.0, col);
+            let col = if bar_resp.hovered() || bar_resp.dragged() { Color32::from_rgb(130, 147, 154) } else { Color32::from_rgb(184, 194, 194) };
+            painter.rect_filled(Rect::from_min_size(pos2(bar_rect.left() + 2.0, ty + 4.0), vec2(BAR - 4.0, (th - 8.0).max(16.0))), 3.0, col);
         }
         let measured = self.measured.iter().filter(|m| **m).count();
         let _ = measured;
@@ -773,8 +772,8 @@ impl DocView {
                                 let x0 = l.items.first().map(|i| i.x).unwrap_or(0.0);
                                 painter.rect_filled(
                                     Rect::from_min_size(pos2(left + x0, top + l.top + 6.0), vec2(lw, (l.bottom - l.top - 12.0).max(2.0))),
-                                    2.0,
-                                    Color32::from_gray(235),
+                                    4.0,
+                                    Color32::from_rgb(232, 236, 234),
                                 );
                             }
                         }
@@ -867,7 +866,7 @@ impl Snippets {
                 // placeholder: estimated two lines
                 let h = size * 2.6;
                 let (rect, resp) = ui.allocate_exact_size(vec2(width, h), Sense::click());
-                ui.painter().rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 4.0), vec2(width * 0.9, size * 0.7)), 2.0, Color32::from_gray(235));
+                ui.painter().rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 4.0), vec2(width * 0.9, size * 0.7)), 4.0, Color32::from_rgb(232, 236, 234));
                 stats.snip_placeholders += 1;
                 ui.ctx().request_repaint();
                 self.ms += t0.elapsed().as_secs_f32() * 1000.0;

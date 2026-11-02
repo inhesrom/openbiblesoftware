@@ -1,5 +1,17 @@
 # App shell prototype (issue #13): THROWAWAY
 
+## Polished-direction follow-up
+
+**Question:** can the chosen panel-header shell look finished in egui, before considering a framework change?
+
+Three polished directions were tried: **Study desk** (docked Bibles, commentary and Tools), **Reader's table** (two roomy Bibles plus a study drawer), and **Research ledger** (library navigator, docked panes and inspector). All kept per-Tab link chips, history and reference boxes.
+
+**Verdict:** the user preferred **Study desk**. This prototype now opens only that direction; the switcher and the other two layouts were removed. Their screenshots remain in `screenshots/` as evidence.
+
+The visual system uses cool page surfaces, lapis navigation, verdigris study accents, Gentium Plus display headings, and a vertical link thread on each Tab header. Performance details are hidden by default; enable them from **View** or with `OBS_DIAGNOSTICS=1`.
+
+Screenshot smoke check: `OBS_SHOT='0;Gen 1:1;/tmp/shot.ppm'`. The first field is ignored. `OBS_SHOT_FRAME` delays capture when the compositor needs time to resize the window.
+
 > **Question:** what should the main window feel like? This is a rough egui shell to react to before the UI gets specced. It isn't production code: there are no tests beyond a reference-parser smoke test, no persistence, and the error handling is minimal. It lives only on the `prototype/app-shell` branch.
 
 ## Verdict

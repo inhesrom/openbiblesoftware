@@ -1,21 +1,18 @@
-//! PROTOTYPE app shell for issue #13: "What should the main window feel like?"
+//! PROTOTYPE: polished Study desk after issue #13's panel-header verdict.
 //!
-//! Three structurally different chrome variants over the same Workspace model, switchable
-//! from the floating bar at the bottom (or ← / → when no text field has focus):
-//!   A — Toolbar: one global reference box + history + link chip for the focused Tab.
-//!   B — Panel headers: every Tab carries its own reference box / history / link chip (Logos-like).
-//!   C — Focus + palette: reading Panels only; study Tools in a right drawer; Ctrl+L palette.
-
+//! Docked Bibles, commentary and Tools. Every reading Tab keeps its own link chip, history and
+//! reference box. Reader's table and Research ledger were tried earlier and rejected.
 use crate::data::{HebWordInfo, Library, ResId};
 use crate::doc::{DocView, Gfx, Hit, Snippets, Stats};
 use crate::gfx::{Atlas, Mode, Pool};
 #[allow(unused_imports)]
 use crate::text::{SHAPE_CACHE_ON, SHAPE_HITS, SHAPE_MISSES};
 use std::sync::Arc;
-use crate::present::{TextSettings, INK, LINK};
+use crate::present::{TextSettings, INK};
 use crate::refs::{self, Parsed, VRef};
 use crate::text::Fonts;
-use egui::{pos2, vec2, Color32, RichText, Ui};
+use crate::theme::{self, link_color};
+use egui::{pos2, vec2, Color32, Rect, RichText, Stroke, Ui};
 use egui_tiles::{Container, Tile, TileId, Tiles, Tree, UiResponse};
 use std::collections::BTreeMap;
 
@@ -48,21 +45,10 @@ pub enum WordSel {
     Heb(usize),
 }
 
-const VARIANTS: [&str; 3] = ["A — Toolbar", "B — Panel headers", "C — Focus + palette"];
 const LINKS: [char; 3] = ['A', 'B', 'C'];
-
-fn link_color(c: Option<char>) -> Color32 {
-    match c {
-        Some('A') => Color32::from_rgb(214, 120, 40),
-        Some('B') => Color32::from_rgb(30, 140, 140),
-        Some('C') => Color32::from_rgb(130, 80, 180),
-        _ => Color32::from_gray(160),
-    }
-}
 
 struct SavedLayout {
     name: String,
-    variant: usize,
     tree: Tree<Pane>,
     links: BTreeMap<TabId, Option<char>>,
 }
@@ -80,16 +66,11 @@ pub struct State {
     stats: Stats,
     last_stats: Stats,
     gfx: Gfx,
-    variant: usize,
     add_requests: Vec<(TileId, TabKind)>,
     nav: Vec<Nav>,
     hover_popup: Option<(Hit, egui::Pos2)>,
-    palette: Option<String>,
-    global_ref: String,
-    global_ref_editing: bool,
-    drawer: [TabId; 2],
-    drawer_comm: ResId,
     frame_ms: f32,
+    show_diagnostics: bool,
 }
 
 enum Nav {
@@ -130,7 +111,7 @@ pub struct App {
     bench: Option<Bench>,
     shot: Option<(usize, String, String, u32)>,
     st: State,
-    trees: Vec<Tree<Pane>>,
+    tree: Tree<Pane>,
     layouts: Vec<SavedLayout>,
 }
 
@@ -247,8 +228,10 @@ impl State {
 
     fn link_chip(&mut self, ui: &mut Ui, id: TabId) {
         let link = self.tabs[&id].link;
-        let txt = RichText::new(format!(" {} ", link.map(|c| c.to_string()).unwrap_or("–".into()))).strong().color(Color32::WHITE);
-        let resp = ui.add(egui::Button::new(txt).fill(link_color(link)).corner_radius(9.0)).on_hover_text("Link set — Tabs with the same letter share a location. Click to change.");
+        let txt = RichText::new(link.map(|c| c.to_string()).unwrap_or("–".into())).strong().size(11.5).color(Color32::WHITE);
+        let resp = ui
+            .add(egui::Button::new(txt).fill(link_color(link)).stroke(Stroke::NONE).corner_radius(11.0).min_size(vec2(24.0, 22.0)))
+            .on_hover_text("Link set: panels with the same letter follow one location. Click to change.");
         egui::Popup::menu(&resp).show(|ui| {
             for l in [None, Some('A'), Some('B'), Some('C')] {
                 let label = l.map(|c| format!("Link set {c}")).unwrap_or("Not linked".into());
@@ -262,10 +245,11 @@ impl State {
 
     fn nav_buttons(&mut self, ui: &mut Ui, id: TabId, now: f64) {
         let (b, f) = (self.tabs[&id].back.len(), self.tabs[&id].fwd.len());
-        if ui.add_enabled(b > 0, egui::Button::new("‹").small()).on_hover_text("Back").clicked() {
+        let arrow = |s: &str| egui::Button::new(RichText::new(s).size(18.0)).frame(false).min_size(vec2(24.0, 24.0));
+        if ui.add_enabled(b > 0, arrow("‹")).on_hover_text("Back").clicked() {
             self.history(id, true, now);
         }
-        if ui.add_enabled(f > 0, egui::Button::new("›").small()).on_hover_text("Forward").clicked() {
+        if ui.add_enabled(f > 0, arrow("›")).on_hover_text("Forward").clicked() {
             self.history(id, false, now);
         }
     }
@@ -276,7 +260,7 @@ impl State {
         if !t.refbox_editing {
             t.refbox = shown;
         }
-        let r = ui.add(egui::TextEdit::singleline(&mut t.refbox).desired_width(width).hint_text("Go to reference"));
+        let r = ui.add(egui::TextEdit::singleline(&mut t.refbox).desired_width(width).hint_text("Go to passage").margin(egui::Margin::symmetric(8, 4)));
         if r.gained_focus() {
             t.refbox_editing = true;
             self.focused = Some(id);
@@ -295,24 +279,7 @@ impl State {
     fn tab_body(&mut self, ui: &mut Ui, id: TabId, now: f64) {
         let kind = self.tabs[&id].kind;
         let pane_rect = ui.max_rect();
-        if self.variant == 1 {
-            // B: per-Tab header
-            egui::Frame::new().fill(Color32::from_gray(244)).inner_margin(egui::Margin::symmetric(6, 3)).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    self.link_chip(ui, id);
-                    if let TabKind::Doc(r) = kind {
-                        self.nav_buttons(ui, id, now);
-                        self.tab_refbox(ui, id, 130.0, now);
-                        ui.add(egui::Label::new(RichText::new(&self.lib.get(r).title).weak().small()).truncate());
-                    } else {
-                        ui.label(RichText::new(self.title(id)).weak());
-                        if kind == TabKind::CrossRefs {
-                            ui.label(RichText::new(self.display_loc(id)).strong());
-                        }
-                    }
-                });
-            });
-        }
+        self.panel_header(ui, id, kind, now);
         // body gets exactly the rest of the pane, whatever the header did to max_rect
         let rect = egui::Rect::from_min_max(pos2(pane_rect.left(), ui.cursor().top()), pane_rect.right_bottom());
         let mut body = ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt(("body", id)));
@@ -325,6 +292,42 @@ impl State {
                 egui::ScrollArea::vertical().id_salt(("wi", id)).auto_shrink([false, false]).show(ui, |ui| self.word_body(ui));
             }
         }
+    }
+
+    fn panel_header(&mut self, ui: &mut Ui, id: TabId, kind: TabKind, now: f64) {
+        let link = self.tabs[&id].link;
+        let focused = self.focused == Some(id);
+        let fill = if focused { theme::FIELD } else { theme::SURFACE };
+        let frame = egui::Frame::new().fill(fill).inner_margin(egui::Margin::symmetric(9, 4)).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                let narrow = ui.available_width() < 430.0;
+                ui.spacing_mut().item_spacing.x = 5.0;
+                ui.add_space(4.0);
+                self.link_chip(ui, id);
+                match kind {
+                    TabKind::Doc(r) => {
+                        self.nav_buttons(ui, id, now);
+                        self.tab_refbox(ui, id, if narrow { 104.0 } else { 124.0 }, now);
+                        if !narrow {
+                            let title = self.lib.get(r).title.clone();
+                            ui.add(egui::Label::new(RichText::new(title).small().color(theme::MUTED)).truncate());
+                        }
+                    }
+                    TabKind::CrossRefs => {
+                        ui.label(RichText::new("Cross-references").strong());
+                        ui.label(RichText::new(self.display_loc(id)).color(theme::MUTED));
+                    }
+                    TabKind::WordInfo => {
+                        ui.label(RichText::new("Word Info").strong());
+                        ui.label(RichText::new("Follows your pointer").small().color(theme::MUTED));
+                    }
+                }
+            });
+        });
+        let r = frame.response.rect;
+        ui.painter().rect_filled(Rect::from_min_size(r.min, vec2(if focused { 4.0 } else { 2.0 }, r.height())), 0.0, link_color(link));
+        ui.painter().hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, theme::RULE));
     }
 
     fn doc_body(&mut self, ui: &mut Ui, id: TabId, r: ResId) {
@@ -372,24 +375,26 @@ impl State {
 
     fn xref_body(&mut self, ui: &mut Ui, id: TabId, now: f64) {
         let loc = self.tabs[&id].loc;
-        egui::Frame::new().inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
+        egui::Frame::new().fill(theme::PAGE).inner_margin(egui::Margin::symmetric(16, 12)).show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
             let Some(loc) = loc else {
-                ui.label("Not linked to a location.");
+                ui.label(RichText::new("Choose a passage to see related verses.").color(theme::MUTED));
                 return;
             };
-            if self.variant != 1 {
-                ui.label(RichText::new(format!("Cross-references · {}", loc.display())).strong());
-            }
             let list = self.lib.xrefs.refs.get(&loc).cloned().unwrap_or_default();
             if list.is_empty() {
-                ui.label(RichText::new("None for this verse.").weak());
+                ui.label(RichText::new("No cross-references for this verse.").color(theme::MUTED));
             }
             egui::ScrollArea::vertical().id_salt(("xr", id)).auto_shrink([false, false]).show(ui, |ui| {
                 let w = ui.available_width() - 8.0;
-                for (target, votes) in list {
-                    ui.add_space(4.0);
+                for (i, (target, votes)) in list.into_iter().enumerate() {
+                    if i > 0 {
+                        ui.add_space(5.0);
+                        ui.separator();
+                    }
+                    ui.add_space(5.0);
                     ui.horizontal(|ui| {
-                        let r = ui.add(egui::Label::new(RichText::new(refs::osis_range_short(&target)).color(Color32::from_rgb(30, 80, 170)).strong()).sense(egui::Sense::click()));
+                        let r = ui.add(egui::Label::new(RichText::new(refs::osis_range_short(&target)).color(theme::LAPIS).strong()).sense(egui::Sense::click()));
                         if r.clicked() {
                             match VRef::from_osis(target.split('-').next().unwrap_or("")) {
                                 Some(v) if v.book == 0 => self.nav.push(Nav::Jump(id, v)),
@@ -398,25 +403,28 @@ impl State {
                             }
                         }
                         r.on_hover_cursor(egui::CursorIcon::PointingHand);
-                        ui.label(RichText::new(format!("{votes} votes")).weak().small());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(RichText::new(format!("{votes} votes")).small().color(theme::MUTED));
+                        });
                     });
                     if let Some(t) = self.lib.kjv_plain(&target) {
                         self.snippets.show(ui, &self.fonts, &mut self.gfx, &mut self.stats, &self.settings, &t, self.settings.size * 0.82, INK, false, w);
                     }
                 }
-                ui.add_space(8.0);
-                ui.label(RichText::new(&self.lib.xrefs.attribution).weak().small());
+                ui.add_space(14.0);
+                ui.label(RichText::new(&self.lib.xrefs.attribution).small().color(theme::MUTED));
             });
         });
     }
 
     fn word_body(&mut self, ui: &mut Ui) {
-        egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
+        egui::Frame::new().fill(theme::PAGE).inner_margin(egui::Margin::symmetric(16, 12)).show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
             let w = ui.available_width();
             let s = self.settings;
             match self.word.clone() {
                 None => {
-                    ui.label(RichText::new("Hover a word in the KJV or the Hebrew text.").weak());
+                    ui.label(RichText::new("Point to a tagged word in the KJV or Hebrew text.").color(theme::MUTED));
                 }
                 Some(WordSel::Heb(i)) => {
                     let wd: HebWordInfo = self.lib.tahot.words[i].clone();
@@ -453,8 +461,6 @@ impl State {
                     }
                 }
             }
-            ui.add_space(10.0);
-            ui.add_enabled(false, egui::Button::new("Word Study ▸"));
         });
     }
 
@@ -497,6 +503,7 @@ impl State {
 
     fn status_bar(&mut self, ui: &mut Ui, visible: &[TabId]) {
         ui.horizontal(|ui| {
+            ui.label(RichText::new("Linked locations").small().strong().color(theme::MUTED));
             for l in LINKS {
                 let members: Vec<String> = self
                     .tabs
@@ -508,13 +515,16 @@ impl State {
                     continue;
                 }
                 let loc = self.tabs.iter().find(|(_, t)| t.link == Some(l) && t.loc.is_some()).and_then(|(_, t)| t.loc);
-                ui.label(RichText::new(format!(" {l} ")).color(Color32::WHITE).background_color(link_color(Some(l))));
-                ui.label(format!("{} — {}", loc.map(|r| r.short()).unwrap_or_default(), members.join(", ")));
-                ui.separator();
+                ui.label(RichText::new(format!(" {l} ")).small().strong().color(Color32::WHITE).background_color(link_color(Some(l))));
+                ui.label(RichText::new(loc.map(|r| r.short()).unwrap_or_default()).strong());
+                ui.add(egui::Label::new(RichText::new(members.join(", ")).small().color(theme::MUTED)).truncate());
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(RichText::new("Prototype library: Genesis").small().color(theme::MUTED));
+            });
         });
-        ui.horizontal(|ui| {
-            {
+        if self.show_diagnostics {
+            ui.horizontal(|ui| {
                 let st = &self.last_stats;
                 ui.label(
                     RichText::new(format!(
@@ -532,19 +542,20 @@ impl State {
                         self.gfx.atlas.glyphs,
                         if self.gfx.atlas.glyphs > 0 { self.gfx.atlas.bytes() as f32 / 1e6 } else { 0.0 }
                     ))
-                    .weak()
                     .small()
-                    .monospace(),
+                    .monospace()
+                    .color(theme::MUTED),
                 );
-            }
-        });
+            });
+        }
     }
 }
 
 fn field(ui: &mut Ui, name: &str) {
-    ui.add_space(6.0);
-    ui.label(RichText::new(name).small().weak());
+    ui.add_space(9.0);
+    ui.label(RichText::new(name.to_uppercase()).size(10.5).strong().color(theme::MUTED));
 }
+
 
 // ---------------------------------------------------------------------- egui_tiles behavior
 
@@ -562,19 +573,14 @@ impl egui_tiles::Behavior<Pane> for Shell<'_> {
     fn tab_title_for_pane(&mut self, pane: &Pane) -> egui::WidgetText {
         let t = &self.st.tabs[&pane.0];
         let mut job = egui::text::LayoutJob::default();
-        if let Some(l) = t.link {
-            job.append(
-                &format!(" {l} "),
-                0.0,
-                egui::TextFormat { color: Color32::WHITE, background: link_color(Some(l)), font_id: egui::FontId::proportional(11.0), ..Default::default() },
-            );
-        }
+        let link = t.link.map(|c| c.to_string()).unwrap_or_else(|| "-".into());
+        job.append(&link, 0.0, egui::TextFormat { color: link_color(t.link), font_id: egui::FontId::proportional(12.0), ..Default::default() });
         let focused = self.st.focused == Some(pane.0);
         job.append(
             &self.st.title(pane.0),
-            6.0,
+            7.0,
             egui::TextFormat {
-                color: if focused { Color32::BLACK } else { Color32::from_gray(80) },
+                color: if focused { theme::INK } else { theme::MUTED },
                 font_id: egui::FontId::proportional(13.5),
                 ..Default::default()
             },
@@ -625,11 +631,39 @@ impl egui_tiles::Behavior<Pane> for Shell<'_> {
     }
 
     fn tab_bar_height(&self, _style: &egui::Style) -> f32 {
-        28.0
+        31.0
     }
 
     fn gap_width(&self, _style: &egui::Style) -> f32 {
-        3.0
+        6.0
+    }
+
+    fn tab_title_spacing(&self, _visuals: &egui::Visuals) -> f32 {
+        12.0
+    }
+
+    fn tab_bar_color(&self, _visuals: &egui::Visuals) -> Color32 {
+        theme::SHELL
+    }
+
+    fn tab_bg_color(&self, _visuals: &egui::Visuals, _tiles: &Tiles<Pane>, _tile_id: TileId, state: &egui_tiles::TabState) -> Color32 {
+        if state.active { theme::SURFACE } else { Color32::TRANSPARENT }
+    }
+
+    fn tab_outline_stroke(&self, _visuals: &egui::Visuals, _tiles: &Tiles<Pane>, _tile_id: TileId, state: &egui_tiles::TabState) -> Stroke {
+        let _ = state;
+        Stroke::NONE
+    }
+
+    fn tab_bar_hline_stroke(&self, _visuals: &egui::Visuals) -> Stroke {
+        Stroke::new(1.0, theme::RULE)
+    }
+
+    fn resize_stroke(&self, _style: &egui::Style, state: egui_tiles::ResizeState) -> Stroke {
+        match state {
+            egui_tiles::ResizeState::Idle => Stroke::new(1.0, theme::SHELL),
+            _ => Stroke::new(2.0, theme::LAPIS),
+        }
     }
 
     fn simplification_options(&self) -> egui_tiles::SimplificationOptions {
@@ -662,20 +696,11 @@ fn tree_main(ids: &BTreeMap<&str, TabId>, name: &str) -> Tree<Pane> {
     Tree::new(egui::Id::new(name), root, tiles)
 }
 
-fn tree_focus(ids: &BTreeMap<&str, TabId>) -> Tree<Pane> {
-    let mut tiles = Tiles::default();
-    let kjv = tiles.insert_pane(Pane(ids["kjv"]));
-    let heb = tiles.insert_pane(Pane(ids["tahot"]));
-    let t_kjv = tiles.insert_tab_tile(vec![kjv]);
-    let t_heb = tiles.insert_tab_tile(vec![heb]);
-    let root = tiles.insert_horizontal_tile(vec![t_kjv, t_heb]);
-    Tree::new(egui::Id::new("focus"), root, tiles)
-}
-
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> App {
         cc.egui_ctx.set_theme(egui::Theme::Light);
         let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        theme::install(&cc.egui_ctx, &base.join("assets/fonts"));
         let lib = Library::load(&base.join("data"));
         let fonts = Arc::new(Fonts::load(&base.join("assets/fonts")));
         let mut st = State {
@@ -700,16 +725,11 @@ impl App {
                 layout_budget_ms: 0.0,
                 async_layout: std::env::var("OBS_ASYNC").as_deref() != Ok("0"),
             },
-            variant: 0,
             add_requests: vec![],
             nav: vec![],
             hover_popup: None,
-            palette: None,
-            global_ref: String::new(),
-            global_ref_editing: false,
-            drawer: [0, 0],
-            drawer_comm: ResId::Jfb,
             frame_ms: 0.0,
+            show_diagnostics: std::env::var("OBS_DIAGNOSTICS").as_deref() == Ok("1"),
         };
         let mut ids = BTreeMap::new();
         ids.insert("kjv", st.new_tab(TabKind::Doc(ResId::Kjv), Some('A')));
@@ -718,24 +738,19 @@ impl App {
         ids.insert("mhcc", st.new_tab(TabKind::Doc(ResId::Mhcc), Some('A')));
         ids.insert("xref", st.new_tab(TabKind::CrossRefs, Some('A')));
         ids.insert("word", st.new_tab(TabKind::WordInfo, None));
-        // variant C drawer: its own commentary + cross-ref Tabs, in link set A
-        let dc = st.new_tab(TabKind::Doc(ResId::Jfb), Some('A'));
-        let dx = st.new_tab(TabKind::CrossRefs, Some('A'));
-        st.drawer = [dc, dx];
         st.focused = Some(ids["kjv"]);
         let start = VRef::new(0, 1, 1);
         let all: Vec<TabId> = st.tabs.keys().copied().collect();
         for id in all {
             st.goto_tab(id, start, false, 0.0);
         }
-        let trees = vec![tree_main(&ids, "main-a"), tree_main(&ids, "main-b"), tree_focus(&ids)];
-        // OBS_SHOT="variant;reference;out.ppm" — self-screenshot for smoke checks, then exit
+        let tree = tree_main(&ids, "desk");
+        // OBS_SHOT="ignored;reference;out.ppm" — self-screenshot for smoke checks, then exit
         let shot = std::env::var("OBS_SHOT").ok().map(|v| {
             let mut it = v.split(';');
             (it.next().unwrap_or("0").parse().unwrap_or(0), it.next().unwrap_or("").to_string(), it.next().unwrap_or("/tmp/obs-shot.ppm").to_string(), 0)
         });
-        if let Some((v, r, _, _)) = &shot {
-            st.variant = *v;
+        if let Some((_, r, _, _)) = &shot {
             if !r.is_empty() {
                 let f = st.focused.unwrap();
                 st.submit_ref(f, r, 0.0);
@@ -746,10 +761,7 @@ impl App {
             SHAPE_CACHE_ON.store(false, std::sync::atomic::Ordering::Relaxed);
         }
         let bench = std::env::var("OBS_BENCH").ok().map(|out| Bench { out, frame: 0, last: None, samples: vec![] });
-        if bench.is_some() {
-            st.variant = 1;
-        }
-        App { last_cpu_ms: 0.0, bench, shot, st, trees, layouts: vec![] }
+        App { last_cpu_ms: 0.0, bench, shot, st, tree, layouts: vec![] }
     }
 
     fn layouts_menu(&mut self, ui: &mut Ui) {
@@ -757,9 +769,8 @@ impl App {
             if ui.button("Save current layout").clicked() {
                 let n = self.layouts.len() + 1;
                 self.layouts.push(SavedLayout {
-                    name: format!("Layout {n} ({})", &VARIANTS[self.st.variant][..1]),
-                    variant: self.st.variant,
-                    tree: self.trees[self.st.variant].clone(),
+                    name: format!("Layout {n}"),
+                    tree: self.tree.clone(),
                     links: self.st.tabs.iter().map(|(k, t)| (*k, t.link)).collect(),
                 });
                 ui.close();
@@ -773,200 +784,51 @@ impl App {
             }
             if let Some(i) = restore {
                 let l = &self.layouts[i];
-                self.trees[l.variant] = l.tree.clone();
+                self.tree = l.tree.clone();
                 for (k, link) in &l.links {
                     if let Some(t) = self.st.tabs.get_mut(k) {
                         t.link = *link;
                     }
                 }
-                self.st.variant = l.variant;
             }
             ui.separator();
-            if ui.button("Reset this variant's layout").clicked() {
+            if ui.button("Reset layout").clicked() {
                 let ids: BTreeMap<&str, TabId> = [("kjv", 1), ("tahot", 2), ("jfb", 3), ("mhcc", 4), ("xref", 5), ("word", 6)].into_iter().collect();
-                self.trees[self.st.variant] = if self.st.variant == 2 { tree_focus(&ids) } else { tree_main(&ids, if self.st.variant == 0 { "main-a" } else { "main-b" }) };
+                self.tree = tree_main(&ids, "desk");
                 ui.close();
             }
-            ui.label(RichText::new("In memory only (prototype)").weak().small());
+            ui.label(RichText::new("Saved for this session only").small().color(theme::MUTED));
         });
     }
 
-    fn toolbar_a(&mut self, ui: &mut Ui, now: f64) {
-        let Some(fid) = self.st.focused.filter(|f| self.st.tabs.contains_key(f)) else { return };
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Open Bible").strong());
-            ui.separator();
-            self.st.nav_buttons(ui, fid, now);
-            let shown = self.st.display_loc(fid);
-            if !self.st.global_ref_editing {
-                self.st.global_ref = shown;
-            }
-            let r = ui.add(egui::TextEdit::singleline(&mut self.st.global_ref).desired_width(200.0).hint_text("Go to reference (Ctrl+L)").id(egui::Id::new("global-ref")));
-            if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::L)) {
-                r.request_focus();
-            }
-            if r.gained_focus() {
-                self.st.global_ref_editing = true;
-            }
-            if r.lost_focus() {
-                self.st.global_ref_editing = false;
-                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    let s = self.st.global_ref.clone();
-                    self.st.submit_ref(fid, &s, now);
-                }
-            }
-            ui.label(RichText::new(format!("in {}", self.st.title(fid))).weak());
-            self.st.link_chip(ui, fid);
-            ui.separator();
-            self.layouts_menu(ui);
-            self.st.settings_menu(ui);
+    fn view_menu(&mut self, ui: &mut Ui) {
+        ui.menu_button("View", |ui| {
+            ui.checkbox(&mut self.st.show_diagnostics, "Show performance details");
         });
     }
 
-    fn menubar_b(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Open Bible").strong());
-            ui.separator();
-            self.layouts_menu(ui);
-            self.st.settings_menu(ui);
-            ui.label(RichText::new("Each Tab has its own reference box, history and link chip.").weak().small());
-        });
-    }
-
-    fn crumb_c(&mut self, ui: &mut Ui) {
+    fn app_bar(&mut self, ui: &mut Ui) {
         let fid = self.st.focused.filter(|f| self.st.tabs.contains_key(f)).unwrap_or(1);
         ui.horizontal(|ui| {
-            self.layouts_menu(ui);
-            self.st.settings_menu(ui);
-            let label = format!("{}  ·  {}", self.st.display_loc(fid), self.st.title(fid));
-            let avail = ui.available_width();
-            ui.add_space((avail / 2.0 - 140.0).max(0.0));
-            let r = ui.add(egui::Button::new(RichText::new(label).size(15.0)).frame(true).min_size(vec2(280.0, 24.0))).on_hover_text("Go to… (Ctrl+L)");
-            if r.clicked() {
-                self.st.palette = Some(String::new());
-            }
-            self.st.link_chip(ui, fid);
-        });
-        if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::L)) {
-            self.st.palette = Some(String::new());
-        }
-    }
-
-    fn drawer_c(&mut self, ui: &mut Ui, now: f64) {
-        let [dc, dx] = self.st.drawer;
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Study").strong());
-            self.st.link_chip(ui, dc);
-            ui.label(RichText::new("follows the link set").weak().small());
-        });
-        // keep drawer Tabs in the same link set
-        let l = self.st.tabs[&dc].link;
-        self.st.tabs.get_mut(&dx).unwrap().link = l;
-        let h = ui.available_height();
-        egui::CollapsingHeader::new("Commentary").default_open(true).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                for (r, name) in [(ResId::Jfb, "JFB"), (ResId::Mhcc, "Matthew Henry")] {
-                    if ui.selectable_label(self.st.drawer_comm == r, name).clicked() && self.st.drawer_comm != r {
-                        self.st.drawer_comm = r;
-                        let t = self.st.tabs.get_mut(&dc).unwrap();
-                        t.kind = TabKind::Doc(r);
-                        t.doc = DocView::new();
-                        if let Some(loc) = self.st.tabs.iter().find(|(k, t)| **k != dc && t.link == l && t.loc.is_some()).and_then(|(_, t)| t.loc) {
-                            self.st.goto_tab(dc, loc, false, now);
-                        }
-                    }
-                }
+            ui.label(RichText::new("Open Bible").font(theme::display(20.0)).color(theme::INK));
+            ui.label(RichText::new("Study desk").small().color(theme::MUTED));
+            ui.separator();
+            ui.scope(|ui| {
+                let w = &mut ui.visuals_mut().widgets;
+                w.inactive.bg_stroke = Stroke::NONE;
+                w.inactive.weak_bg_fill = Color32::TRANSPARENT;
+                w.hovered.bg_stroke = Stroke::NONE;
+                self.layouts_menu(ui);
+                self.st.settings_menu(ui);
+                self.view_menu(ui);
             });
-            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), (h * 0.45).max(160.0)), egui::Sense::hover());
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt("drawer-comm"));
-            let r = self.st.drawer_comm;
-            self.st.doc_body(&mut child, dc, r);
-        });
-        egui::CollapsingHeader::new("Cross-references").default_open(true).show(ui, |ui| {
-            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), (h * 0.3).max(120.0)), egui::Sense::hover());
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt("drawer-xr"));
-            self.st.xref_body(&mut child, dx, now);
-        });
-        egui::CollapsingHeader::new("Word Info").default_open(true).show(ui, |ui| {
-            egui::ScrollArea::vertical().id_salt("drawer-wi").auto_shrink([false, false]).show(ui, |ui| self.st.word_body(ui));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let loc = self.st.display_loc(fid);
+                ui.label(RichText::new(format!("{loc} / {}", self.st.title(fid))).color(theme::MUTED));
+            });
         });
     }
 
-    fn palette_ui(&mut self, ctx: &egui::Context, now: f64) {
-        let Some(mut text) = self.st.palette.take() else { return };
-        let fid = self.st.focused.filter(|f| self.st.tabs.contains_key(f)).unwrap_or(1);
-        let mut keep = true;
-        let screen = ctx.content_rect();
-        egui::Area::new(egui::Id::new("palette")).order(egui::Order::Foreground).fixed_pos(pos2(screen.center().x - 240.0, screen.top() + 60.0)).show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).inner_margin(10.0).show(ui, |ui| {
-                ui.set_width(480.0);
-                let r = ui.add(egui::TextEdit::singleline(&mut text).hint_text("Reference (Gen 3:15, 2:4, gn 22) or command…").desired_width(460.0).id(egui::Id::new("palette-edit")));
-                r.request_focus();
-                let parsed = refs::parse(&text, self.st.tabs[&fid].loc);
-                let mut first: Option<Box<dyn FnOnce(&mut State)>> = None;
-                if let Some(Parsed::Verse(v) | Parsed::Chapter(v)) = parsed {
-                    let label = format!("Go to {} in {} (and its link set)", v.display(), self.st.title(fid));
-                    let txt = text.clone();
-                    if ui.button(label).clicked() {
-                        self.st.submit_ref(fid, &txt, now);
-                        keep = false;
-                    }
-                    first = Some(Box::new(move |st: &mut State| st.submit_ref(fid, &txt, now)));
-                }
-                for (label, kind) in [("Open KJV with Strong's", ResId::Kjv), ("Open Hebrew OT", ResId::Tahot)] {
-                    if text.is_empty() || label.to_lowercase().contains(&text.to_lowercase()) {
-                        if ui.button(label).clicked() {
-                            let tile = self.trees[2].root();
-                            if let Some(t) = tile {
-                                self.st.add_requests.push((t, TabKind::Doc(kind)));
-                            }
-                            keep = false;
-                        }
-                    }
-                }
-                ui.label(RichText::new("Enter = first item · Esc = close").weak().small());
-                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    if let Some(f) = first {
-                        f(&mut self.st);
-                    }
-                    keep = false;
-                }
-                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    keep = false;
-                }
-            });
-        });
-        if keep {
-            self.st.palette = Some(text);
-        }
-    }
-
-    fn switcher(&mut self, ctx: &egui::Context) {
-        let screen = ctx.content_rect();
-        egui::Area::new(egui::Id::new("variant-switcher")).order(egui::Order::Foreground).fixed_pos(pos2(screen.center().x - 150.0, screen.bottom() - 70.0)).show(ctx, |ui| {
-            egui::Frame::new().fill(Color32::from_rgb(25, 25, 30)).corner_radius(18.0).inner_margin(egui::Margin::symmetric(12, 6)).shadow(egui::Shadow { offset: [0, 3], blur: 12, spread: 0, color: Color32::from_black_alpha(80) }).show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let wt = |s: &str| RichText::new(s).color(Color32::WHITE).strong().size(16.0);
-                    if ui.add(egui::Button::new(wt("‹")).frame(false)).clicked() {
-                        self.st.variant = (self.st.variant + 2) % 3;
-                    }
-                    ui.add_sized(vec2(210.0, 20.0), egui::Label::new(RichText::new(format!("PROTOTYPE  {}", VARIANTS[self.st.variant])).color(Color32::WHITE).strong()));
-                    if ui.add(egui::Button::new(wt("›")).frame(false)).clicked() {
-                        self.st.variant = (self.st.variant + 1) % 3;
-                    }
-                });
-            });
-        });
-        if !ctx.egui_wants_keyboard_input() && self.st.palette.is_none() {
-            let (l, r) = ctx.input(|i| (i.key_pressed(egui::Key::ArrowLeft), i.key_pressed(egui::Key::ArrowRight)));
-            if l {
-                self.st.variant = (self.st.variant + 2) % 3;
-            }
-            if r {
-                self.st.variant = (self.st.variant + 1) % 3;
-            }
-        }
-    }
 }
 
 impl App {
@@ -1113,27 +975,15 @@ impl eframe::App for App {
         self.st.gfx.layout_budget_ms = 2.0;
         self.st.gfx.pool.gc();
         self.st.snippets.next_frame();
-        let v = self.st.variant;
-
-        egui::Panel::top("chrome").show_inside(ui, |ui| {
-            ui.add_space(3.0);
-            match v {
-                0 => self.toolbar_a(ui, now),
-                1 => self.menubar_b(ui),
-                _ => self.crumb_c(ui),
-            }
-            ui.add_space(3.0);
-        });
-        let mut visible: Vec<TabId> = self.trees[v].tiles.tiles().filter_map(|t| if let Tile::Pane(p) = t { Some(p.0) } else { None }).collect();
-        if v == 2 {
-            visible.extend(self.st.drawer);
-        }
-        egui::Panel::bottom("status").show_inside(ui, |ui| self.st.status_bar(ui, &visible));
-        if v == 2 {
-            egui::Panel::right("drawer").resizable(true).default_size(420.0).show_inside(ui, |ui| self.drawer_c(ui, now));
-        }
-        egui::CentralPanel::default().frame(egui::Frame::new().fill(Color32::from_gray(225))).show_inside(ui, |ui| {
-            let mut tree = std::mem::replace(&mut self.trees[v], Tree::empty(egui::Id::new("tmp")));
+        egui::Panel::top("chrome")
+            .frame(egui::Frame::new().fill(theme::SURFACE).inner_margin(egui::Margin::symmetric(14, 8)))
+            .show_inside(ui, |ui| self.app_bar(ui));
+        let visible: Vec<TabId> = self.tree.tiles.tiles().filter_map(|t| if let Tile::Pane(p) = t { Some(p.0) } else { None }).collect();
+        egui::Panel::bottom("status")
+            .frame(egui::Frame::new().fill(theme::SURFACE).inner_margin(egui::Margin::symmetric(14, 6)))
+            .show_inside(ui, |ui| self.st.status_bar(ui, &visible));
+        egui::CentralPanel::default().frame(egui::Frame::new().fill(theme::SHELL).inner_margin(egui::Margin::same(10))).show_inside(ui, |ui| {
+            let mut tree = std::mem::replace(&mut self.tree, Tree::empty(egui::Id::new("tmp")));
             tree.ui(&mut Shell { st: &mut self.st, now }, ui);
             for (container, kind) in std::mem::take(&mut self.st.add_requests) {
                 let link = if matches!(kind, TabKind::WordInfo) { None } else { Some('A') };
@@ -1151,7 +1001,7 @@ impl eframe::App for App {
                 }
                 self.st.focused = Some(id);
             }
-            self.trees[v] = tree;
+            self.tree = tree;
         });
 
         let tn = std::time::Instant::now();
@@ -1159,13 +1009,12 @@ impl eframe::App for App {
         self.st.stats.nav_ms += tn.elapsed().as_secs_f32() * 1000.0;
         self.st.stats.snip_ms = std::mem::take(&mut self.st.snippets.ms);
         self.st.hover_popup_ui(&ctx);
-        self.palette_ui(&ctx, now);
         if let Some((msg, t)) = &self.st.toast {
             if now - t < 3.0 {
                 let screen = ctx.content_rect();
                 egui::Area::new(egui::Id::new("toast")).order(egui::Order::Foreground).fixed_pos(pos2(screen.center().x - 200.0, screen.bottom() - 120.0)).show(&ctx, |ui| {
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
-                        ui.label(RichText::new(msg).color(Color32::from_rgb(LINK[0], LINK[1], LINK[2])));
+                        ui.label(RichText::new(msg).color(theme::LAPIS));
                     });
                 });
                 ctx.request_repaint();
@@ -1173,7 +1022,6 @@ impl eframe::App for App {
                 self.st.toast = None;
             }
         }
-        self.switcher(&ctx);
         self.st.frame_ms = t0.elapsed().as_secs_f32() * 1000.0;
         self.bench_step(&ctx, t0);
         if let Some((_, _, path, n)) = &mut self.shot {
@@ -1185,7 +1033,8 @@ impl eframe::App for App {
                 }
             }
             ctx.request_repaint();
-            if *n == 40 {
+            let shot_frame = std::env::var("OBS_SHOT_FRAME").ok().and_then(|v| v.parse().ok()).unwrap_or(40);
+            if *n == shot_frame {
                 let path = path.clone();
                 let c2 = ctx.clone();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |img| {
@@ -1198,7 +1047,7 @@ impl eframe::App for App {
                     c2.send_viewport_cmd(egui::ViewportCommand::Close);
                 })));
             }
-            if *n > 400 {
+            if *n > shot_frame + 360 {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }

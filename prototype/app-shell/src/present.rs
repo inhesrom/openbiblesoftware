@@ -27,11 +27,11 @@ impl TextSettings {
     }
 }
 
-pub const INK: [u8; 4] = [28, 28, 30, 255];
-pub const ACCENT: [u8; 4] = [150, 60, 30, 255];
-pub const VERSE: [u8; 4] = [110, 110, 120, 255];
-pub const LINK: [u8; 4] = [30, 80, 170, 255];
-pub const NOTE: [u8; 4] = [40, 120, 70, 255];
+pub const INK: [u8; 4] = [32, 38, 41, 255];
+pub const ACCENT: [u8; 4] = [45, 78, 134, 255];
+pub const VERSE: [u8; 4] = [128, 94, 32, 255];
+pub const LINK: [u8; 4] = [38, 91, 145, 255];
+pub const NOTE: [u8; 4] = [45, 116, 105, 255];
 
 /// Synthetic object in a laid block.
 #[derive(Clone, Debug)]

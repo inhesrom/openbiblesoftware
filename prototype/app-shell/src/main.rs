@@ -1,4 +1,4 @@
-//! PROTOTYPE — throwaway app shell for issue #13 ("What should the main window feel like?").
+//! PROTOTYPE — throwaway polished app-shell directions after issue #13.
 //! Not production code: no tests beyond smoke checks, no persistence, minimal error handling.
 //! Run: `./run.sh` (prepares data on first run) or `cargo run --release`.
 
@@ -11,6 +11,7 @@ mod gfx;
 mod present;
 mod refs;
 mod text;
+mod theme;
 
 fn main() -> eframe::Result {
     if std::env::args().any(|a| a == "--dump") {
@@ -20,7 +21,7 @@ fn main() -> eframe::Result {
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1560.0, 960.0])
-            .with_title("Open Bible — app shell PROTOTYPE (#13)"),
+            .with_title("Open Bible — polished app-shell PROTOTYPE"),
         ..Default::default()
     };
     eframe::run_native("obs-app-shell-prototype", opts, Box::new(|cc| Ok(Box::new(app::App::new(cc)))))
