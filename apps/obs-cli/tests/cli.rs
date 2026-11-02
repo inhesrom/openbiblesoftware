@@ -110,3 +110,22 @@ fn import_usfm_then_inspect() {
     assert!(err.contains("usage"), "{err}");
     let _ = std::fs::remove_file(&out);
 }
+
+#[test]
+fn shape_reports_glyphs_and_writes_svg() {
+    let svg = temp_obr("shape.svg");
+    let s = svg.to_str().expect("utf-8 path");
+    let (ok, out, err) = cli(&["shape", "--svg", s, "In the beginning", "בְּרֵאשִׁ֖ית"]);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("face Regular") && out.contains("face Hebrew"),
+        "{out}"
+    );
+    assert!(out.contains("0 missing"), "{out}");
+    assert!(
+        std::fs::read_to_string(&svg)
+            .expect("svg")
+            .starts_with("<svg")
+    );
+    let _ = std::fs::remove_file(&svg);
+}
