@@ -161,17 +161,18 @@ impl fmt::Debug for JobQueue {
 
 enum Outcome {
     Pending,
-    Done,
+    /// The job is over; the caller forgets it, then sends this terminal event, so anyone who
+    /// sees the event also sees the job gone (e.g. `cancel` returns false).
+    Done(JobEventKind),
 }
 
-/// Run one step of `q`, sending events; returns whether the job is finished.
+/// Run one step of `q`, sending non-terminal events.
 fn step_once(q: &mut Queued, events: &Sender<JobEvent>) -> Outcome {
     let send = |kind| {
         let _ = events.send(JobEvent { id: q.id, kind });
     };
     if q.cancel.load(Ordering::Relaxed) {
-        send(JobEventKind::Cancelled);
-        return Outcome::Done;
+        return Outcome::Done(JobEventKind::Cancelled);
     }
     if !q.started {
         q.started = true;
@@ -185,25 +186,18 @@ fn step_once(q: &mut Queued, events: &Sender<JobEvent>) -> Outcome {
     let result = catch_unwind(AssertUnwindSafe(|| q.job.step(&ctx)));
     match result {
         Ok(Ok(Step::Continue)) => Outcome::Pending,
-        Ok(Ok(Step::Done(out))) => {
-            send(JobEventKind::Finished(out));
-            Outcome::Done
-        }
-        Ok(Err(message)) => {
-            send(JobEventKind::Failed(message));
-            Outcome::Done
-        }
+        Ok(Ok(Step::Done(out))) => Outcome::Done(JobEventKind::Finished(out)),
+        Ok(Err(message)) => Outcome::Done(JobEventKind::Failed(message)),
         Err(panic) => {
             let message = panic
                 .downcast_ref::<&str>()
                 .map(|s| s.to_string())
                 .or_else(|| panic.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "job panicked".into());
-            send(JobEventKind::Failed(format!(
+            Outcome::Done(JobEventKind::Failed(format!(
                 "{} panicked: {message}",
                 q.job.label()
-            )));
-            Outcome::Done
+            )))
         }
     }
 }
@@ -298,7 +292,7 @@ impl JobQueue {
             ran += 1;
             match step_once(&mut q, &self.events_tx) {
                 Outcome::Pending => lock(&self.shared.queue).push_back(q),
-                Outcome::Done => forget_cancel(&self.shared, q.id),
+                Outcome::Done(kind) => finish(&self.shared, &self.events_tx, q.id, kind),
             }
         }
         ran
@@ -320,8 +314,9 @@ impl JobQueue {
     }
 }
 
-fn forget_cancel(shared: &Shared, id: JobId) {
+fn finish(shared: &Shared, events: &Sender<JobEvent>, id: JobId, kind: JobEventKind) {
     lock(&shared.cancels).retain(|(j, _)| *j != id);
+    let _ = events.send(JobEvent { id, kind });
 }
 
 fn worker(shared: &Shared, events: &Sender<JobEvent>) {
@@ -346,8 +341,8 @@ fn worker(shared: &Shared, events: &Sender<JobEvent>) {
             if shared.shutdown.load(Ordering::Relaxed) {
                 return;
             }
-            if let Outcome::Done = step_once(&mut q, events) {
-                forget_cancel(shared, q.id);
+            if let Outcome::Done(kind) = step_once(&mut q, events) {
+                finish(shared, events, q.id, kind);
                 break;
             }
         }
