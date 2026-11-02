@@ -24,6 +24,9 @@ pub struct Resource {
     /// Source markup that had no place in the span vocabulary, by marker, with counts.
     /// Reported in the Import report; not part of the content hash.
     pub dropped_markup: BTreeMap<String, u64>,
+    /// Retired unit id → its replacement, followed by re-anchoring before searching by quote
+    /// (#20 rule 2). Not part of the content hash.
+    pub unit_aliases: BTreeMap<UnitId, UnitId>,
 }
 
 /// One problem found while validating a Resource.
@@ -82,6 +85,8 @@ pub enum ValidationError {
         unit: UnitId,
     },
     KeySchemeNotDeclared(Key),
+    /// A unit alias whose old id is still a live unit.
+    AliasShadowsUnit(UnitId),
 }
 
 impl fmt::Display for ValidationError {
@@ -149,6 +154,9 @@ impl fmt::Display for ValidationError {
                 f,
                 "verse {verse} in `{unit}` has a verse-list entry and a `verse` span that disagree"
             ),
+            AliasShadowsUnit(id) => {
+                write!(f, "unit alias `{id}` is also a live unit id")
+            }
             KeySchemeNotDeclared(key) => write!(
                 f,
                 "key `{key}` uses scheme {:?}, which the manifest does not declare",
@@ -188,6 +196,7 @@ pub struct ResourceBuilder {
     verses: Vec<BibleVerse>,
     keys: Vec<KeyEntry>,
     dropped: BTreeMap<String, u64>,
+    aliases: BTreeMap<UnitId, UnitId>,
 }
 
 fn offset(n: usize) -> u32 {
@@ -203,6 +212,7 @@ impl ResourceBuilder {
             verses: Vec::new(),
             keys: Vec::new(),
             dropped: BTreeMap::new(),
+            aliases: BTreeMap::new(),
         }
     }
 
@@ -261,6 +271,11 @@ impl ResourceBuilder {
     }
 
     /// Count one piece of source markup that was dropped (e.g. `\fig`).
+    /// Record that unit id `old` (from an earlier revision) now lives at `new`.
+    pub fn add_unit_alias(&mut self, old: UnitId, new: UnitId) {
+        self.aliases.insert(old, new);
+    }
+
     pub fn count_dropped(&mut self, marker: &str) {
         *self.dropped.entry(marker.to_string()).or_insert(0) += 1;
     }
@@ -303,6 +318,7 @@ impl ResourceBuilder {
             verses: self.verses,
             keys,
             dropped_markup: self.dropped,
+            unit_aliases: self.aliases,
         };
         if let Err(more) = resource.validate() {
             errors.extend(more.0);
@@ -371,6 +387,17 @@ impl Resource {
         let units = self.validate_units(&mut errors);
         self.validate_verses(&units, &mut errors);
         self.validate_keys(&units, &mut errors);
+        for (old, new) in &self.unit_aliases {
+            if units.contains_key(old) {
+                errors.push(ValidationError::AliasShadowsUnit(old.clone()));
+            }
+            if !units.contains_key(new) {
+                errors.push(ValidationError::UnknownUnit {
+                    what: "unit_alias",
+                    unit: new.clone(),
+                });
+            }
+        }
         if errors.is_empty() {
             Ok(())
         } else {

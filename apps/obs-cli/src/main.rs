@@ -1,5 +1,7 @@
 //! Command-line tool for Open Bible Software.
 
+mod inspect;
+
 use std::process::ExitCode;
 
 use obs_engine::{JobMode, Session};
@@ -9,6 +11,8 @@ const USAGE: &str = "usage: obs-cli <command> [args]
 
 commands:
   run <command-id> [name=value ...|'{json}']   run an engine command, print JSON
+  inspect <file.obr> [--unit ID] [--verse REF]  show a resource file's contents
+  write-sample <file.obr>                       write a tiny sample Bible (for trying inspect)
   commands                                     list engine commands
   version                                      print the version
   help                                         show this message
@@ -44,6 +48,8 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("run") => run(&mut session, &args[1..]),
+        Some("inspect") => inspect::inspect(&args[1..]),
+        Some("write-sample") => inspect::write_sample(&args[1..]),
         Some(other) => {
             eprintln!("obs-cli: unknown command `{other}`\n\n{USAGE}");
             ExitCode::from(2)

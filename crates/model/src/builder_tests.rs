@@ -341,3 +341,26 @@ fn span_kinds_serialize_with_stable_names() {
         assert_eq!(json, format!(r#"{{"kind":"{}"}}"#, k.name()));
     }
 }
+
+#[test]
+fn unit_aliases_must_point_at_live_units() {
+    let mut b = sample(false);
+    b.add_unit_alias(UnitId::new("JOHN").unwrap(), jhn());
+    let r = b.build().unwrap();
+    assert_eq!(
+        r.unit_aliases.get(&UnitId::new("JOHN").unwrap()),
+        Some(&jhn())
+    );
+
+    let mut b = sample(false);
+    b.add_unit_alias(jhn(), UnitId::new("gone").unwrap());
+    let errs = errors(b);
+    assert!(errs.contains(&ValidationError::AliasShadowsUnit(jhn())));
+    assert!(errs.iter().any(|e| matches!(
+        e,
+        ValidationError::UnknownUnit {
+            what: "unit_alias",
+            ..
+        }
+    )));
+}
