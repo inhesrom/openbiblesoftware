@@ -1,0 +1,16 @@
+[package]
+name = "obs-layout"
+description = "Bidi, line breaking, blocks, colour roles, hit-testing and selection for Resource text."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+obs-model.workspace = true
+obs-fonts.workspace = true
+
+[lints]
+workspace = true

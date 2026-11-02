@@ -1,3 +1,7 @@
+/target
+/.pi/
+/dist/
+
 # Copyrighted modules for local testing only (NASB95 etc.).
 # See docs/dev/local-copyrighted-modules.md. Never commit these or their
 # converted .obr / Search index output.

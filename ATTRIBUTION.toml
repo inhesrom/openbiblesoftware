@@ -1,0 +1,12 @@
+# Attribution for every bundled asset (fonts, data files).
+#
+# `cargo xtask assets` fails if a file under any `crates/**/assets/` or `apps/**/assets/`
+# directory is not matched by an entry's `path` glob, or if an entry matches nothing.
+#
+# [[asset]]
+# path = "crates/fonts/assets/gentium/*"   # glob relative to the workspace root
+# name = "Gentium Plus"
+# license = "OFL-1.1"                      # SPDX expression
+# source = "https://software.sil.org/gentium/"
+# copyright = "Copyright (c) SIL International"
+# changes = "None"                         # optional; required for CC BY data

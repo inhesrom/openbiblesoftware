@@ -1,0 +1,16 @@
+[package]
+name = "obs-render"
+description = "Glyph rasterization into the shared glyph atlas (no egui)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+obs-fonts.workspace = true
+obs-layout.workspace = true
+
+[lints]
+workspace = true

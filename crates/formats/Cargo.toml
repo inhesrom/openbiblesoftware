@@ -1,0 +1,16 @@
+[package]
+name = "obs-formats"
+description = "Importers and dataset converters (USFM, SWORD, STEPBible, OpenBible.info, lexicons) and the TVTMS Verse-map builder, all writing into ResourceBuilder."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+obs-scripture.workspace = true
+obs-model.workspace = true
+
+[lints]
+workspace = true
