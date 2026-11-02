@@ -102,7 +102,10 @@ fn check_golden(name: &str, actual: &Value) {
         std::fs::write(&path, &text).unwrap();
         return;
     }
-    let expected = std::fs::read_to_string(&path).unwrap();
+    // Tolerate CRLF checkouts even if .gitattributes is bypassed.
+    let expected = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("\r\n", "\n");
     assert!(
         expected == text,
         "golden snapshot {} differs; rerun with UPDATE_GOLDEN=1 and review the diff",
