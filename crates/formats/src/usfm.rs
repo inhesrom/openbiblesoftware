@@ -30,8 +30,9 @@ use obs_model::{
 use obs_scripture::{Book, PassageList, Standard, StrongsNumber, Verse, parse_reference};
 use serde_json::Value;
 
-use crate::report::{BookReport, ImportReport};
+use crate::report::{BookReport, ImportReport, VerseMapCounts};
 use crate::text_buf::TextBuf;
+use crate::verse_map::{VerseFacts, build_verse_map};
 
 /// Identity and metadata for the Resource an Import creates. Empty fields get defaults.
 #[derive(Debug, Clone, Default)]
@@ -212,6 +213,8 @@ impl UsfmImport {
             license_missing: true,
             ..ImportReport::default()
         };
+        let mut facts: Vec<VerseFacts> = Vec::new();
+        let mut other_verses = 0usize;
         for (code, name, source) in &self.books {
             let usj = crate::usfm_tree::parse(source)
                 .map_err(|e| ImportError::Usj(format!("{name}: {e}")))?;
@@ -228,9 +231,21 @@ impl UsfmImport {
                 code: code.clone(),
                 book,
                 chapters: out.chapters,
-                verses: out.verses.len(),
+                verses: out.verses.len().max(out.other_verses),
             });
             report.verses += out.verses.len();
+            other_verses += out.other_verses;
+            for (range, verse, last) in &out.verses {
+                let words = out
+                    .text
+                    .get(range.clone())
+                    .map_or(0, |t| obs_model::tokenize(t).len());
+                facts.push(VerseFacts {
+                    verse: *verse,
+                    last: *last,
+                    words: u32::try_from(words).unwrap_or(u32::MAX),
+                });
+            }
             let unit = out.unit.clone();
             builder.add_unit(out.unit, kind, out.title, out.text);
             for (range, kind) in out.spans {
@@ -254,6 +269,16 @@ impl UsfmImport {
             for _ in 0..*count {
                 builder.count_dropped(marker);
             }
+        }
+        if !facts.is_empty() {
+            let outcome = build_verse_map(&facts);
+            report.verse_map = Some(VerseMapCounts {
+                // Verses of books outside the canon are Unmapped too.
+                unmapped: outcome.map.unmapped().count() + other_verses,
+                absent: outcome.map.absent().len(),
+            });
+            report.traditions = outcome.traditions;
+            builder.set_verse_map(outcome.map);
         }
         let resource = builder.build().map_err(ImportError::Invalid)?;
         report.dropped_markup = resource.dropped_markup.clone();
@@ -398,6 +423,7 @@ struct BookOutput {
     spans: Vec<(std::ops::Range<usize>, SpanKind)>,
     verses: Vec<(std::ops::Range<usize>, Verse, u16)>,
     chapters: u16,
+    other_verses: usize,
 }
 
 struct BookEmitter {
@@ -411,6 +437,7 @@ struct BookEmitter {
     verse: Option<OpenVerse>,
     verses: Vec<(std::ops::Range<usize>, Verse, u16)>,
     seen: HashSet<Verse>,
+    other_verses: usize,
 }
 
 impl BookEmitter {
@@ -426,6 +453,7 @@ impl BookEmitter {
             verse: None,
             verses: Vec::new(),
             seen: HashSet::new(),
+            other_verses: 0,
         }
     }
 
@@ -538,7 +566,10 @@ impl BookEmitter {
             return; // `\v 5b` continues verse 5
         }
         let (Some(book), Some(chapter)) = (self.book, self.chapter) else {
-            // Books outside the canon are listed in the report as text without verses.
+            // Books outside the canon are kept as text; their verses count as Unmapped.
+            if self.book.is_none() {
+                self.other_verses += usize::from(last - first + 1);
+            }
             return;
         };
         if first == 0 {
@@ -718,6 +749,7 @@ impl BookEmitter {
             spans: self.buf.spans,
             verses: self.verses,
             chapters: self.chapters,
+            other_verses: self.other_verses,
         }
     }
 }

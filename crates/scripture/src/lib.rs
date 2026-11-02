@@ -17,6 +17,7 @@ mod reference;
 mod standard_data;
 mod strongs;
 mod verse;
+mod verse_map;
 mod versification;
 
 pub use book::{Book, Testament};
@@ -26,4 +27,5 @@ pub use reference::{
 };
 pub use strongs::{StrongsLanguage, StrongsNumber, StrongsParseError};
 pub use verse::{Passage, PassageError, PassageList, Verse};
+pub use verse_map::{ListedVersification, VerseMap, VerseMapEntry};
 pub use versification::{Standard, Versification};

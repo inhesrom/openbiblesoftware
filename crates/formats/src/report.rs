@@ -43,6 +43,9 @@ pub struct ImportReport {
     pub license_missing: bool,
     /// `None` until a Verse map has been built for this Bible.
     pub verse_map: Option<VerseMapCounts>,
+    /// Places where the Verse map followed a numbering tradition other than the Standard's,
+    /// by TVTMS tradition name.
+    pub traditions: BTreeMap<String, usize>,
 }
 
 impl fmt::Display for ImportReport {
@@ -60,17 +63,17 @@ impl fmt::Display for ImportReport {
             "  {canonical} Bible book(s), {} verse(s), {} note(s), {} tagged word(s)",
             self.verses, self.notes, self.tagged_words
         )?;
-        let other: Vec<&str> = self
+        let outside: Vec<&str> = self
             .books
             .iter()
             .filter(|b| b.book.is_none())
             .map(|b| b.code.as_str())
             .collect();
-        if !other.is_empty() {
+        if !outside.is_empty() {
             writeln!(
                 f,
-                "  imported as text without verse structure: {}",
-                other.join(", ")
+                "  outside the 66-book canon, imported as text (Unmapped verses): {}",
+                outside.join(", ")
             )?;
         }
         match self.verse_map {
@@ -80,6 +83,17 @@ impl fmt::Display for ImportReport {
                 "  verse map: {} unmapped verse(s), {} absent verse(s)",
                 c.unmapped, c.absent
             )?,
+        }
+        let other: Vec<String> = self
+            .traditions
+            .iter()
+            .filter(|(t, _)| {
+                !t.starts_with("Eng-KJV") && *t != "AllBibles" && *t != "EngTitleSeparate"
+            })
+            .map(|(t, n)| format!("{t} ×{n}"))
+            .collect();
+        if !other.is_empty() {
+            writeln!(f, "  numbering differs from the KJV: {}", other.join(", "))?;
         }
         if self.license_missing {
             writeln!(

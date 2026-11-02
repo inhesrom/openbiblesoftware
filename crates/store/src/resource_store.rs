@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use obs_model::{BibleVerse, Key, KeyEntry, KeyScheme, Manifest, Resource, Span, TextUnit, UnitId};
-use obs_scripture::Verse;
+use obs_scripture::{Verse, VerseMap};
 
 use crate::error::StoreError;
 
@@ -47,6 +47,9 @@ pub trait ResourceStore {
 
     /// Where a retired unit id now lives, if it was aliased.
     fn unit_alias(&self, old: &UnitId) -> Result<Option<UnitId>, StoreError>;
+
+    /// A Bible's Verse map, if it has one.
+    fn verse_map(&self) -> Result<Option<VerseMap>, StoreError>;
 
     /// The whole Resource, validated, with its content hash checked against the manifest.
     fn load(&self) -> Result<Resource, StoreError>;

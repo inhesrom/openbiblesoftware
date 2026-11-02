@@ -34,6 +34,10 @@
     "license_missing": true,
     "notes": 3,
     "tagged_words": 207,
+    "verse_map": {
+      "absent": 5902,
+      "unmapped": 0
+    },
     "verses": 13,
     "warnings": []
   },
