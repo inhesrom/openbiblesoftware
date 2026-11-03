@@ -16,6 +16,7 @@ path = "src/main.rs"
 obs-engine.workspace = true
 obs-fonts.workspace = true
 obs-formats.workspace = true
+obs-layout.workspace = true
 obs-model.workspace = true
 obs-scripture.workspace = true
 obs-store.workspace = true

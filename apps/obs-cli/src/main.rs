@@ -2,6 +2,7 @@
 
 mod import;
 mod inspect;
+mod layout;
 mod shape;
 
 use std::process::ExitCode;
@@ -16,6 +17,7 @@ commands:
   import <file.usfm|dir>... -o <out.obr> [--id ID] [--title T] [--abbrev A] [--lang L] [--rtl]
                                                 import USFM to a resource file, print the Import report
   inspect <file.obr> [--unit ID] [--verse REF]  show a resource file's contents
+  layout <file.obr> --unit ID [--width PX]       lay a unit out, report lines and timing
   shape [--size PX] [--svg OUT] [--smcp] <text>... shape text with the bundled fonts
   write-sample <file.obr>                       write a tiny sample Bible (for trying inspect)
   commands                                     list engine commands
@@ -55,6 +57,7 @@ fn main() -> ExitCode {
         Some("run") => run(&mut session, &args[1..]),
         Some("import") => import::import(&args[1..]),
         Some("inspect") => inspect::inspect(&args[1..]),
+        Some("layout") => layout::layout_cmd(&args[1..]),
         Some("shape") => shape::shape(&args[1..]),
         Some("write-sample") => inspect::write_sample(&args[1..]),
         Some(other) => {
