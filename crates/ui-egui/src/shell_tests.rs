@@ -18,6 +18,10 @@ struct Harness {
     events: Vec<Event>,
     time: f64,
     shapes: Vec<(Rect, String)>,
+    /// Vertex colours of textured meshes (glyph quads) drawn last frame.
+    meshes: Vec<egui::Color32>,
+    /// The operating system's appearance, as the window would report it.
+    os_theme: egui::Theme,
 }
 
 fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
@@ -58,6 +62,8 @@ impl Harness {
             events: Vec::new(),
             time: 0.0,
             shapes: Vec::new(),
+            meshes: Vec::new(),
+            os_theme: egui::Theme::Light,
         };
         h.frames(3);
         h
@@ -68,6 +74,7 @@ impl Harness {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1400.0, 900.0))),
             time: Some(self.time),
             events: std::mem::take(&mut self.events),
+            system_theme: Some(self.os_theme),
             ..Default::default()
         };
         self.time += 1.0 / 60.0;
@@ -76,8 +83,10 @@ impl Harness {
         // No GPU here: the texture uploads are dropped on purpose.
         out.textures_delta.clear();
         self.shapes.clear();
+        self.meshes.clear();
         for c in out.shapes {
             collect(&c.shape, &mut self.shapes);
+            collect_meshes(&c.shape, &mut self.meshes);
         }
     }
 
@@ -205,6 +214,16 @@ impl Harness {
             .find(|t| t.title == title)
             .map(|t| t.id)
             .unwrap_or_else(|| panic!("no Tab {title}"))
+    }
+}
+
+fn collect_meshes(shape: &Shape, out: &mut Vec<egui::Color32>) {
+    match shape {
+        Shape::Vec(v) => v.iter().for_each(|s| collect_meshes(s, out)),
+        Shape::Mesh(m) if m.texture_id != egui::TextureId::default() => {
+            out.extend(m.vertices.iter().map(|v| v.color));
+        }
+        _ => {}
     }
 }
 
@@ -416,8 +435,8 @@ fn menu_items_are_dispatched_through_the_command_registry() {
             .is_some_and(|(_, b)| b.contains("TVTMS"))
     );
     h.open_menu("View");
-    h.click_text("Dark page");
-    assert!(h.shell.st.session.dark_page);
+    h.click_text("✓ Red letter");
+    assert!(!h.shell.st.session.text.red_letter);
     h.open_menu("Guides");
     h.click_text("Passage Guide");
     assert!(h.find("Passage Guide arrives with #53").is_some());
@@ -436,7 +455,7 @@ fn menu_items_are_dispatched_through_the_command_registry() {
         log,
         [
             "help.credits",
-            "view.dark_page",
+            "view.red_letter",
             "guide.passage_guide",
             "tool.cross_references"
         ]
@@ -859,14 +878,169 @@ fn a_layout_round_trips_and_can_be_renamed_and_deleted_from_the_menu() {
 }
 
 #[test]
-fn view_preferences_survive_a_relaunch() {
+fn settings_persist_across_restarts() {
+    use obs_engine::{PageTone, Theme};
+    use obs_layout::VerseNumbers;
     let db = temp_db("prefs");
     let mut h = Harness::launch(Some(&db));
     let size = h.shell.st.session.text.size;
     h.shell.run("view.text_larger", &json!({}));
-    h.shell.run("view.dark_page", &json!({}));
+    h.shell.run("view.theme", &json!({ "value": "dark" }));
+    h.shell.run("view.page_tone", &json!({ "value": "sepia" }));
+    h.shell
+        .run("view.line_spacing", &json!({ "value": "relaxed" }));
+    h.shell
+        .run("view.verse_numbers", &json!({ "value": "inline" }));
+    h.shell.run("view.red_letter", &json!({}));
     drop(h);
-    let h = Harness::launch(Some(&db));
-    assert_eq!(h.shell.st.session.text.size, size + 1.0);
-    assert!(h.shell.st.session.dark_page);
+    let mut h = Harness::launch(Some(&db));
+    let s = &h.shell.st.session;
+    assert_eq!(s.text.size, size + 1.0);
+    assert_eq!(s.appearance.theme, Theme::Dark);
+    assert_eq!(s.appearance.page_tone, PageTone::Sepia);
+    assert_eq!(s.text.line_spacing, 1.45);
+    assert_eq!(s.text.verse_numbers, VerseNumbers::Inline);
+    assert!(!s.text.red_letter);
+    // And they are in effect: dark chrome, sepia pages.
+    h.frame();
+    assert_eq!(h.ctx.theme(), egui::Theme::Dark);
+    assert_eq!(h.shell.st.palette, crate::Palette::SEPIA);
+}
+
+/// Layout and rasterization work done so far, across every open view and the atlas.
+fn text_work(h: &Harness) -> (u64, u64) {
+    let layouts = h
+        .shell
+        .st
+        .tabs
+        .values()
+        .filter_map(|t| t.view.as_ref())
+        .map(|v| v.layouts)
+        .sum();
+    (layouts, h.shell.st.atlas.atlas.stats().rasters)
+}
+
+/// Run paced frames until no view has layout work in flight for three frames running, so
+/// nothing a worker finishes later can be mistaken for work caused by the test.
+fn settle_all(h: &mut Harness) {
+    let mut idle = 0;
+    for _ in 0..400 {
+        h.paced_frame();
+        let busy = h
+            .shell
+            .st
+            .tabs
+            .values()
+            .filter_map(|t| t.view.as_ref())
+            .any(|v| v.has_pending() || v.is_following());
+        idle = if busy { 0 } else { idle + 1 };
+        if idle >= 3 {
+            return;
+        }
+    }
+}
+
+/// The colours of the glyph quads drawn last frame (vertex colours of textured meshes).
+fn glyph_colors(h: &Harness) -> Vec<egui::Color32> {
+    h.meshes.clone()
+}
+
+#[test]
+fn switching_theme_or_tone_is_instant_and_never_relays_out_or_rerasters() {
+    let mut h = Harness::new();
+    h.shell
+        .run("resource.open", &json!({ "id": "heb-test", "split": true }));
+    settle_all(&mut h);
+    let work = text_work(&h);
+    let before = glyph_colors(&h);
+    assert!(!before.is_empty());
+    assert_eq!(h.shell.st.palette, crate::Palette::PAPER);
+    // View → Theme → Dark, through the menus.
+    h.open_menu("View");
+    h.click_text("Theme");
+    h.click_text("Dark");
+    // On the very next frame: dark chrome, the Auto tone resolves to Dark, new glyph colours.
+    assert_eq!(h.shell.st.session.appearance.theme, obs_engine::Theme::Dark);
+    assert_eq!(h.ctx.theme(), egui::Theme::Dark);
+    assert_eq!(h.shell.st.palette, crate::Palette::DARK);
+    let dark = glyph_colors(&h);
+    assert_eq!(dark.len(), before.len());
+    assert_ne!(dark, before);
+    // Page tone Sepia inside dark chrome (#21 decision 2).
+    h.shell.run("view.page_tone", &json!({ "value": "sepia" }));
+    h.frame();
+    assert_eq!(h.shell.st.palette, crate::Palette::SEPIA);
+    assert_eq!(h.ctx.theme(), egui::Theme::Dark);
+    let sepia = glyph_colors(&h);
+    assert_ne!(sepia, dark);
+    // Back to Follow system and Auto: the OS is light, so are the chrome and pages …
+    h.shell.run("view.theme", &json!({ "value": "system" }));
+    h.shell.run("view.page_tone", &json!({ "value": "auto" }));
+    h.frame();
+    assert_eq!(h.ctx.theme(), egui::Theme::Light);
+    assert_eq!(h.shell.st.palette, crate::Palette::PAPER);
+    // … and when the OS turns dark, the app follows on the next frame.
+    h.os_theme = egui::Theme::Dark;
+    h.frame();
+    assert_eq!(h.ctx.theme(), egui::Theme::Dark);
+    assert_eq!(h.shell.st.palette, crate::Palette::DARK);
+    h.frames(2);
+    assert_eq!(
+        text_work(&h),
+        work,
+        "a theme or tone change re-laid out or re-rastered text"
+    );
+}
+
+#[test]
+fn text_settings_relayout_and_take_effect() {
+    let mut h = Harness::new();
+    settle_all(&mut h);
+    let lines = |h: &Harness| -> usize {
+        let v = h
+            .shell
+            .st
+            .tabs
+            .values()
+            .find_map(|t| t.view.as_ref())
+            .unwrap();
+        v.laid_in_view(800.0)
+            .iter()
+            .map(|(_, _, l)| l.lines.len())
+            .sum()
+    };
+    let height = |h: &Harness| -> f32 {
+        let v = h
+            .shell
+            .st
+            .tabs
+            .values()
+            .find_map(|t| t.view.as_ref())
+            .unwrap();
+        v.laid_in_view(800.0)
+            .first()
+            .map(|(_, _, l)| l.height)
+            .unwrap()
+    };
+    let h0 = height(&h);
+    h.shell
+        .run("view.line_spacing", &json!({ "value": "loose" }));
+    settle_all(&mut h);
+    assert!(height(&h) > h0 * 1.2, "{} vs {h0}", height(&h));
+    let n = lines(&h);
+    h.shell.run("view.text_larger", &json!({}));
+    h.shell.run("view.text_larger", &json!({}));
+    settle_all(&mut h);
+    assert!(lines(&h) <= n);
+    // Hiding verse numbers lays the text out again without them.
+    let before = text_work(&h).0;
+    h.shell
+        .run("view.verse_numbers", &json!({ "value": "hidden" }));
+    settle_all(&mut h);
+    assert!(text_work(&h).0 > before);
+    assert!(
+        h.shell
+            .run("view.verse_numbers", &json!({ "value": "nope" }))
+            .is_none()
+    );
 }

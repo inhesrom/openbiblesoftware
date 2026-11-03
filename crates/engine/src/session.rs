@@ -9,7 +9,6 @@ use crate::jobs::JobQueue;
 use crate::library::Library;
 use crate::workspace::Workspace;
 use obs_layout::TextSettings;
-use serde_json::json;
 
 use crate::persist::{UserData, WorkspaceSnapshot};
 
@@ -42,8 +41,8 @@ pub struct Session {
     pub workspace: Workspace,
     /// Text settings for Resource text (the View menu).
     pub text: TextSettings,
-    /// Dark page for Resource text.
-    pub dark_page: bool,
+    /// Theme and Page tone (the View menu).
+    pub appearance: crate::appearance::Appearance,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
     log: Vec<&'static str>,
     /// The User database, when there is one.
@@ -65,7 +64,7 @@ impl Session {
             library: Library::new(),
             workspace: Workspace::new(),
             text: TextSettings::default(),
-            dark_page: false,
+            appearance: crate::appearance::Appearance::default(),
             log: Vec::new(),
             user: None,
             saved_session: None,
@@ -90,15 +89,7 @@ impl Session {
         if let Ok(Some(v)) = user.preference(VIEW_PREF)
             && let Ok(v) = serde_json::from_str::<serde_json::Value>(&v)
         {
-            if let Some(size) = v["text_size"].as_f64() {
-                self.text.size = (size as f32).clamp(10.0, 40.0);
-            }
-            if let Some(b) = v["verse_numbers"].as_bool() {
-                self.text.verse_numbers = b;
-            }
-            if let Some(b) = v["dark_page"].as_bool() {
-                self.dark_page = b;
-            }
+            crate::appearance::apply_json(&v, &mut self.appearance, &mut self.text);
         }
         self.user = Some(user);
     }
@@ -108,11 +99,7 @@ impl Session {
         let Some(user) = &self.user else {
             return Ok(());
         };
-        let v = json!({
-            "text_size": self.text.size,
-            "verse_numbers": self.text.verse_numbers,
-            "dark_page": self.dark_page,
-        });
+        let v = crate::appearance::to_json(&self.appearance, &self.text);
         user.set_preference(VIEW_PREF, &v.to_string())
     }
 
@@ -150,6 +137,11 @@ impl Session {
         self.workspace.restore(snap);
         self.saved_session = Some(json);
         true
+    }
+
+    /// The id of the command running now (or run last).
+    pub fn last_command(&self) -> Option<&'static str> {
+        self.log.last().copied()
     }
 
     /// The most recent command ids run, oldest first.

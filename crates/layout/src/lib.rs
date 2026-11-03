@@ -27,7 +27,7 @@ pub use layout::{Hit, LaidBlock, LaidItem, LaidLine, UnitPos, layout};
 pub use paragraph::{Align, InlineObject, Paragraph, Run, RunSource};
 pub use present::{BlockKind, BlockSource, block_paragraph, snippet_paragraph, unit_blocks};
 pub use spans::SpanIndex;
-pub use style::{ColorRole, RunStyle, TextSettings};
+pub use style::{ColorRole, RunStyle, TextSettings, VerseNumbers};
 
 #[cfg(test)]
 mod tests;

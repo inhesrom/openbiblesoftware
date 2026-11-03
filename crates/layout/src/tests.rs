@@ -233,7 +233,7 @@ fn spans_become_styled_runs() {
 
     let plain = TextSettings {
         red_letter: false,
-        verse_numbers: false,
+        verse_numbers: VerseNumbers::Hidden,
         ..TextSettings::default()
     };
     let p2 = block_paragraph(&unit, &blocks[2].0, Direction::Ltr, &plain);

@@ -23,7 +23,7 @@ use obs_model::{Direction, ParaStyle, Span, SpanKind, TextUnit};
 use unicode_script::UnicodeScript;
 
 use crate::paragraph::{Align, InlineObject, Paragraph, Run, RunSource};
-use crate::style::{ColorRole, RunStyle, TextSettings};
+use crate::style::{ColorRole, RunStyle, TextSettings, VerseNumbers};
 
 /// What kind of block a range of a unit is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -308,7 +308,9 @@ fn push_objects(
                 });
             }
             SpanKind::Verse { verse, .. }
-                if settings.verse_numbers && verse.verse > 0 && block.contains(&a) =>
+                if verse.verse > 0
+                    && block.contains(&a)
+                    && (settings.verse_numbers != VerseNumbers::Hidden || verse.verse == 1) =>
             {
                 let (text, style) = if verse.verse == 1 {
                     (
@@ -319,6 +321,17 @@ fn push_objects(
                             small_caps: false,
                             raise: 0.0,
                             role: ColorRole::Accent,
+                        },
+                    )
+                } else if settings.verse_numbers == VerseNumbers::Inline {
+                    (
+                        format!("{}\u{00A0}", verse.verse),
+                        RunStyle {
+                            face: FaceId::Bold,
+                            size: body * 0.8,
+                            small_caps: false,
+                            raise: 0.0,
+                            role: ColorRole::VerseNumber,
                         },
                     )
                 } else {
