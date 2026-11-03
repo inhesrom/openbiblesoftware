@@ -67,8 +67,33 @@ impl App {
                 p.display()
             ));
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(db) = obs_engine::default_user_db() {
+            match obs_store::UserStore::open(&db) {
+                Ok((store, _)) => session.attach_user(Box::new(store)),
+                Err(e) => problems.push(format!("User database {}: {e}", db.display())),
+            }
+        }
         let mut shell = Shell::new(session);
-        shell.reset_layout();
+        shell.restore_or_default();
+        // A file given on the command line opens on top of the restored Workspace.
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(p) = &path
+            && let Some(id) = shell
+                .session()
+                .library
+                .entries()
+                .iter()
+                .find(|e| e.path == *p)
+                .map(|e| e.manifest.resource_id.clone())
+            && !shell
+                .session()
+                .workspace
+                .tabs()
+                .any(|t| t.kind == obs_engine::TabKind::Resource(id.clone()))
+        {
+            shell.run("resource.open", &serde_json::json!({ "id": id }));
+        }
         if let Some(p) = problems.first() {
             shell
                 .session_mut()

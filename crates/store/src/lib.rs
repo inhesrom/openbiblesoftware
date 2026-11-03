@@ -15,6 +15,8 @@ mod obr;
 mod resource_store;
 #[cfg(not(target_arch = "wasm32"))]
 mod sample;
+#[cfg(not(target_arch = "wasm32"))]
+mod user;
 
 pub use error::StoreError;
 #[cfg(not(target_arch = "wasm32"))]
@@ -22,3 +24,5 @@ pub use obr::{APPLICATION_ID, ObrReader, write_obr};
 pub use resource_store::{ResourceStore, Summary};
 #[cfg(not(target_arch = "wasm32"))]
 pub use sample::sample_resource;
+#[cfg(not(target_arch = "wasm32"))]
+pub use user::{OpenReport, ROLLING_BACKUPS, USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore};

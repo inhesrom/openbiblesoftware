@@ -102,11 +102,24 @@ impl Library {
     }
 }
 
-/// The default library directory: `$OBS_LIBRARY`, else the platform's per-user data folder.
+/// The default library directory: `$OBS_LIBRARY`, else `library` in the app's data folder.
 pub fn default_library_dir() -> Option<PathBuf> {
     if let Some(d) = std::env::var_os("OBS_LIBRARY") {
         return Some(PathBuf::from(d));
     }
+    Some(data_dir()?.join("library"))
+}
+
+/// The User database: `$OBS_USER_DB`, else `user.db` in the app's data folder.
+pub fn default_user_db() -> Option<PathBuf> {
+    if let Some(d) = std::env::var_os("OBS_USER_DB") {
+        return Some(PathBuf::from(d));
+    }
+    Some(data_dir()?.join("user.db"))
+}
+
+/// The app's per-user data folder on this platform.
+fn data_dir() -> Option<PathBuf> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let base = if cfg!(target_os = "windows") {
         std::env::var_os("APPDATA").map(PathBuf::from)
@@ -117,5 +130,5 @@ pub fn default_library_dir() -> Option<PathBuf> {
             .map(PathBuf::from)
             .or_else(|| home.map(|h| h.join(".local/share")))
     }?;
-    Some(base.join("OpenBible").join("library"))
+    Some(base.join("OpenBible"))
 }

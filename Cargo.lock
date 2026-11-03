@@ -2171,6 +2171,7 @@ dependencies = [
  "obs-scripture",
  "obs-search",
  "obs-store",
+ "serde",
  "serde_json",
 ]
 

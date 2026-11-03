@@ -195,6 +195,7 @@ fn only_members_with_the_key_scheme_follow() {
     );
     assert_eq!(s.workspace.tab(xr).unwrap().link, Some('A'));
     assert_eq!(s.workspace.set_location(xr), Some(ge(3, 15)));
+    assert_eq!(at(&s, xr), Some(ge(3, 15)));
     s.workspace.take_effects();
     s.workspace.user_scrolled(kjv, ge(3, 20));
     assert_eq!(

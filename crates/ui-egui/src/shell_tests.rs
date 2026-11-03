@@ -31,10 +31,25 @@ fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
 
 impl Harness {
     fn new() -> Self {
-        let mut shell = Shell::new(Session::new(JobMode::Inline));
+        Self::launch(None)
+    }
+
+    /// Start the app as a launch would: with a User database at `db`, restoring the Last
+    /// session from it (or the default layout).
+    fn launch(db: Option<&std::path::Path>) -> Self {
+        let mut session = Session::new(JobMode::Inline);
+        if let Some(db) = db {
+            let (store, _) = obs_store::UserStore::open(db).unwrap();
+            session.attach_user(Box::new(store));
+        }
+        let mut shell = Shell::new(session);
         add_doc(&mut shell, bible());
         add_doc(&mut shell, hebrew_doc());
-        shell.reset_layout();
+        add_doc(
+            &mut shell,
+            crate::tests::numbered_bible("heb-num", "Hebrew-numbered Bible", "HNUM", true),
+        );
+        shell.restore_or_default();
         let ctx = egui::Context::default();
         crate::theme::install(&ctx);
         let mut h = Self {
@@ -511,6 +526,11 @@ fn location(h: &mut Harness, t: obs_engine::TabId) -> Option<obs_scripture::Vers
         .current_location()
 }
 
+fn loc_of(h: &mut Harness, title: &str) -> Option<obs_scripture::Verse> {
+    let t = h.tab_id(title);
+    location(h, t)
+}
+
 /// The follower has its target block laid out and is showing it. (Prefetch around it may
 /// still be in flight; that never shows as placeholders while the view stays put.)
 fn settled(h: &Harness, t: obs_engine::TabId) -> bool {
@@ -683,4 +703,170 @@ fn verse_numbers_show_the_standard_equivalent_where_it_differs() {
         .find_map(|t| t.view.as_ref().filter(|v| v.doc.verse_map.is_none()))
         .unwrap();
     assert!(view.doc.verse_map.is_none());
+}
+
+fn temp_db(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("obs-shell-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir.join("user.db")
+}
+
+/// What a user would call "the Workspace": Panels (Tab titles in order, left to right),
+/// each Tab's location and Link set, and the focused Tab.
+type TabState = (String, Option<obs_scripture::Verse>, Option<char>);
+type WorkspaceState = (Vec<Vec<String>>, Vec<TabState>, Option<String>);
+
+fn workspace_state(h: &mut Harness) -> WorkspaceState {
+    let panels: Vec<Vec<String>> = h.panels().into_iter().map(|(_, t)| t).collect();
+    let ws = &h.shell.st.session.workspace;
+    let mut tabs: Vec<TabState> = ws
+        .tabs()
+        .map(|t| (t.title.clone(), t.history.current(), t.link))
+        .collect();
+    tabs.sort_by(|a, b| a.0.cmp(&b.0));
+    let focused = ws
+        .focused()
+        .and_then(|f| ws.tab(f))
+        .map(|t| t.title.clone());
+    (panels, tabs, focused)
+}
+
+#[test]
+fn quit_and_relaunch_restores_panels_tabs_locations_and_link_sets() {
+    let db = temp_db("relaunch");
+    let mut h = Harness::launch(Some(&db));
+    // Arrange: TB at Gen 32:10 in A; HNUM split off in A (follows to 32:11); HEB in Link set
+    // B at Gen 1:2; Cross-references docked with TB; the gap dragged.
+    let tb = h.tab_id("TB");
+    h.shell.st.session.workspace.user_focused(tb);
+    h.shell
+        .run("resource.open", &json!({ "id": "heb-num", "split": true }));
+    h.shell
+        .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 32:10" }));
+    h.shell.st.session.workspace.user_focused(tb);
+    h.shell.run(
+        "tool.cross_references",
+        &json!({ "panel": h.shell.st.session.workspace.panel_of(tb).unwrap().0 }),
+    );
+    h.shell
+        .run("resource.open", &json!({ "id": "heb-test", "split": true }));
+    let heb = h.tab_id("HEB");
+    h.shell
+        .run("tab.link", &json!({ "tab": heb.0, "set": "B" }));
+    h.shell
+        .run("tab.go", &json!({ "tab": heb.0, "text": "Gen 1:2" }));
+    h.frames(4);
+    let (left, _) = h.panels()[0].clone();
+    let gap = pos2(left.right() + 3.0, left.center().y);
+    h.drag(gap, gap + vec2(120.0, 0.0));
+    let width = h.panels()[0].0.width();
+    let before = workspace_state(&mut h);
+    assert_eq!(before.0.len(), 4, "{:?}", before.0);
+    // Quit: the window's close request saves the Last session.
+    h.shell.save_session(true);
+    drop(h);
+
+    let mut h = Harness::launch(Some(&db));
+    h.frames(4);
+    let after = workspace_state(&mut h);
+    assert_eq!(after, before);
+    // The views are where the locations say, and the Panel kept its size.
+    assert_eq!(loc_of(&mut h, "TB"), Some(ge(32, 10)));
+    assert_eq!(loc_of(&mut h, "HNUM"), Some(ge(32, 11)));
+    assert!(
+        (h.panels()[0].0.width() - width).abs() < 2.0,
+        "{width} vs {}",
+        h.panels()[0].0.width()
+    );
+    // Link sets still work after the restore: TB jumps, HNUM follows, HEB (set B) does not.
+    let heb_at = loc_of(&mut h, "HEB");
+    h.shell.run(
+        "tab.go",
+        &json!({ "tab": h.tab_id("TB").0, "text": "Gen 33:2" }),
+    );
+    h.frames(4);
+    assert_eq!(loc_of(&mut h, "HNUM"), Some(ge(33, 2)));
+    assert_eq!(loc_of(&mut h, "HEB"), heb_at);
+}
+
+#[test]
+fn a_layout_round_trips_and_can_be_renamed_and_deleted_from_the_menu() {
+    let db = temp_db("layouts");
+    let mut h = Harness::launch(Some(&db));
+    let tb = h.tab_id("TB");
+    h.shell
+        .run("resource.open", &json!({ "id": "heb-num", "split": true }));
+    h.shell
+        .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:20" }));
+    h.frames(3);
+    let saved = workspace_state(&mut h);
+    // Layouts → Save layout as… asks for a name.
+    h.open_menu("Layouts");
+    h.click_text("Save layout as…");
+    assert!(h.find("Save layout as").is_some(), "{:?}", h.texts());
+    h.events.push(Event::Text("Two Bibles".into()));
+    h.frame();
+    h.click_text("Save");
+    let user = h.shell.st.session.user.as_ref().unwrap();
+    assert_eq!(user.layouts().unwrap(), ["Two Bibles"]);
+    // Change everything, then restore it from the menu.
+    h.shell.run("layout.reset", &json!({}));
+    h.shell.run(
+        "tab.go",
+        &json!({ "tab": h.tab_id("TB").0, "text": "Gen 30:5" }),
+    );
+    h.frames(3);
+    assert_ne!(workspace_state(&mut h), saved);
+    h.open_menu("Layouts");
+    h.click_text("Two Bibles");
+    h.click_text("Restore");
+    h.frames(3);
+    assert_eq!(workspace_state(&mut h), saved);
+    assert_eq!(loc_of(&mut h, "TB"), Some(ge(31, 20)));
+    // Rename through the prompt.
+    h.open_menu("Layouts");
+    h.click_text("Two Bibles");
+    h.click_text("Rename…");
+    for _ in 0.."Two Bibles".len() {
+        h.events.push(Event::Key {
+            key: egui::Key::Backspace,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        });
+    }
+    h.events.push(Event::Text("Genesis study".into()));
+    h.frame();
+    h.click_text("Save");
+    let user = h.shell.st.session.user.as_ref().unwrap();
+    assert_eq!(user.layouts().unwrap(), ["Genesis study"]);
+    // Delete.
+    h.open_menu("Layouts");
+    h.click_text("Genesis study");
+    h.click_text("Delete");
+    let user = h.shell.st.session.user.as_ref().unwrap();
+    assert!(user.layouts().unwrap().is_empty());
+    let log = h.shell.st.session.command_log();
+    for id in [
+        "layout.save",
+        "layout.restore",
+        "layout.rename",
+        "layout.delete",
+    ] {
+        assert!(log.contains(&id), "{id} not run: {log:?}");
+    }
+}
+
+#[test]
+fn view_preferences_survive_a_relaunch() {
+    let db = temp_db("prefs");
+    let mut h = Harness::launch(Some(&db));
+    let size = h.shell.st.session.text.size;
+    h.shell.run("view.text_larger", &json!({}));
+    h.shell.run("view.dark_page", &json!({}));
+    drop(h);
+    let h = Harness::launch(Some(&db));
+    assert_eq!(h.shell.st.session.text.size, size + 1.0);
+    assert!(h.shell.st.session.dark_page);
 }

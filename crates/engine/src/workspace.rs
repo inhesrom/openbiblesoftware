@@ -8,8 +8,10 @@ use std::sync::Arc;
 
 use obs_model::KeyScheme;
 use obs_scripture::{ListedVersification, Verse, VerseMap};
+use serde::{Deserialize, Serialize};
 
 use crate::link::{ToStandard, to_native, to_standard};
+use crate::persist::{LayoutNode, WorkspaceSnapshot};
 
 /// A Tab, stable for the life of the Workspace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -20,7 +22,7 @@ pub struct TabId(pub u64);
 pub struct PanelId(pub u64);
 
 /// The Tools of v0.1 plus Cross-references.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Tool {
     Search,
     TextComparison,
@@ -30,7 +32,7 @@ pub enum Tool {
 }
 
 /// The Guides.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Guide {
     PassageGuide,
     WordStudy,
@@ -58,7 +60,7 @@ impl Guide {
 }
 
 /// What a Tab shows.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TabKind {
     Library,
     /// A Resource from the library, by its resource id.
@@ -81,7 +83,7 @@ pub enum HeaderBox {
 }
 
 /// Which remembered-Panel slot a Tab kind uses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 enum Slot {
     Library,
     Resource,
@@ -258,6 +260,13 @@ pub enum Effect {
     },
     /// Rebuild the default arrangement.
     ResetLayout,
+    /// The Tabs and arrangement were replaced (a Layout or the Last session was restored):
+    /// rebuild the dock from [`Workspace::arrangement`].
+    Rebuild,
+    /// Ask the user for a Layout name: to save the current Workspace, or to rename `rename`.
+    PromptLayoutName {
+        rename: Option<String>,
+    },
     /// A short message for the user (a toast).
     Message(String),
     /// A titled text window (About, Credits).
@@ -289,6 +298,8 @@ pub struct Workspace {
     last_other_panel: Option<PanelId>,
     remembered: BTreeMap<Slot, PanelId>,
     effects: Vec<Effect>,
+    /// How the UI currently arranges the Panels (kept up to date by the UI, for saving).
+    pub arrangement: Option<LayoutNode>,
 }
 
 impl Workspace {
@@ -411,6 +422,14 @@ impl Workspace {
                 link,
             },
         );
+        // A linked Tool or Guide starts at its Link set's location. (Bibles wait until their
+        // Verse map is known: the UI places them when it loads them.)
+        if !self.tabs.get(&id).is_some_and(|t| t.kind.is_reading())
+            && let Some(v) = self.set_location(id)
+            && let Some(t) = self.tabs.get_mut(&id)
+        {
+            t.history.scrolled_to(v);
+        }
         self.effects.push(Effect::Opened { tab: id, placement });
         self.focus(id);
         id
@@ -629,6 +648,112 @@ impl Workspace {
             .filter(|t| t.link == Some(link))
             .map(|t| t.id)
             .collect()
+    }
+
+    pub(crate) fn remembered_slots(&self) -> Vec<(String, u64)> {
+        self.remembered
+            .iter()
+            .filter_map(|(s, p)| Some((serde_json::to_string(s).ok()?, p.0)))
+            .collect()
+    }
+
+    pub(crate) fn last_panels(&self) -> (Option<u64>, Option<u64>) {
+        (
+            self.last_reading_panel.map(|p| p.0),
+            self.last_other_panel.map(|p| p.0),
+        )
+    }
+
+    /// Replace everything with a saved snapshot. Locations are set without history; the UI
+    /// rebuilds the dock on [`Effect::Rebuild`].
+    pub fn restore(&mut self, snap: WorkspaceSnapshot) {
+        self.tabs.clear();
+        self.panels.clear();
+        self.remembered.clear();
+        self.focused = None;
+        for t in snap.tabs {
+            let mut history = History::default();
+            if let Some(v) = t.location {
+                history.scrolled_to(v);
+            }
+            let key_schemes = t.kind.default_key_schemes();
+            let id = TabId(t.id);
+            self.next_tab = self.next_tab.max(t.id);
+            self.tabs.insert(
+                id,
+                Tab {
+                    id,
+                    kind: t.kind,
+                    title: t.title,
+                    history,
+                    versification: None,
+                    verse_map: None,
+                    key_schemes,
+                    link: t.link,
+                },
+            );
+        }
+        let placed: Vec<(u64, Vec<u64>, Option<u64>)> = snap
+            .layout
+            .as_ref()
+            .map(LayoutNode::panels)
+            .unwrap_or_default();
+        let mut layout = snap.layout;
+        // Tabs the layout does not place get a Panel of their own on the right.
+        let unplaced: Vec<u64> = self
+            .tabs
+            .keys()
+            .map(|t| t.0)
+            .filter(|t| !placed.iter().any(|(_, tabs, _)| tabs.contains(t)))
+            .collect();
+        for (panel, tabs, active) in &placed {
+            self.next_panel = self.next_panel.max(*panel);
+            self.panels.insert(
+                PanelId(*panel),
+                (tabs.iter().map(|t| TabId(*t)).collect(), active.map(TabId)),
+            );
+        }
+        if !unplaced.is_empty() {
+            let panel = self.new_panel_id();
+            self.panels.insert(
+                panel,
+                (
+                    unplaced.iter().map(|t| TabId(*t)).collect(),
+                    unplaced.first().map(|t| TabId(*t)),
+                ),
+            );
+            let leaf = LayoutNode::Panel {
+                panel: panel.0,
+                tabs: unplaced.clone(),
+                active: unplaced.first().copied(),
+            };
+            layout = Some(match layout {
+                None => leaf,
+                Some(LayoutNode::Row { mut children }) => {
+                    children.push((leaf, 1.0));
+                    LayoutNode::Row { children }
+                }
+                Some(other) => LayoutNode::Row {
+                    children: vec![(other, 2.0), (leaf, 1.0)],
+                },
+            });
+        }
+        self.arrangement = layout;
+        for (slot, panel) in snap.remembered {
+            if let Ok(slot) = serde_json::from_str::<Slot>(&slot)
+                && self.panels.contains_key(&PanelId(panel))
+            {
+                self.remembered.insert(slot, PanelId(panel));
+            }
+        }
+        let live = |p: Option<u64>| p.map(PanelId).filter(|p| self.panels.contains_key(p));
+        self.last_reading_panel = live(snap.last_reading_panel);
+        self.last_other_panel = live(snap.last_other_panel);
+        self.focused = snap
+            .focused
+            .map(TabId)
+            .filter(|t| self.tabs.contains_key(t));
+        self.effects.push(Effect::Rebuild);
     }
 
     /// Close everything (before a layout reset).

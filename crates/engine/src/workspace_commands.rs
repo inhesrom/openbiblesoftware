@@ -21,10 +21,12 @@ pub enum MenuItem {
     Command(&'static str),
     /// One `resource.open` item per library Resource, grouped by type.
     Resources,
+    /// The saved Layouts, each with Restore, Rename… and Delete.
+    Layouts,
     Separator,
 }
 
-use MenuItem::{Command as C, Resources, Separator};
+use MenuItem::{Command as C, Layouts, Resources, Separator};
 
 /// The top menu bar (#18 rule 3). A Search field sits to the right of it.
 pub const MENUS: &[Menu] = &[
@@ -48,7 +50,13 @@ pub const MENUS: &[Menu] = &[
     },
     Menu {
         title: "Layouts",
-        items: &[C("layout.save"), Separator, C("layout.reset")],
+        items: &[
+            C("layout.save"),
+            Separator,
+            Layouts,
+            Separator,
+            C("layout.reset"),
+        ],
     },
     Menu {
         title: "View",
@@ -85,6 +93,16 @@ const TAB: ParamSpec = ParamSpec {
     help: "The Tab",
 };
 const OPEN: &[ParamSpec] = &[PANEL, SPLIT];
+const NAME: ParamSpec = ParamSpec {
+    name: "name",
+    kind: ParamKind::String,
+    required: true,
+    help: "Layout name",
+};
+
+fn has_user(s: &Session) -> bool {
+    s.user.is_some()
+}
 
 fn never(_: &Session) -> bool {
     false
@@ -171,9 +189,51 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     open_cmd("tool.cross_references", "Cross-references", None, |s, p| {
         open(s, p, TabKind::Tool(Tool::CrossReferences))
     }),
-    simple("layout.save", "Save layout…", None, never, |_, _| {
-        Ok(Value::Null)
-    }),
+    CommandSpec {
+        id: "layout.save",
+        label: "Save layout as…",
+        shortcut: None,
+        params: &[ParamSpec {
+            name: "name",
+            kind: ParamKind::String,
+            required: false,
+            help: "Layout name (asks when missing); an existing Layout of that name is replaced",
+        }],
+        enabled: has_user,
+        run: layout_save,
+    },
+    CommandSpec {
+        id: "layout.restore",
+        label: "Restore layout",
+        shortcut: None,
+        params: &[NAME],
+        enabled: has_user,
+        run: layout_restore,
+    },
+    CommandSpec {
+        id: "layout.rename",
+        label: "Rename layout…",
+        shortcut: None,
+        params: &[
+            NAME,
+            ParamSpec {
+                name: "to",
+                kind: ParamKind::String,
+                required: false,
+                help: "New name (asks when missing)",
+            },
+        ],
+        enabled: has_user,
+        run: layout_rename,
+    },
+    CommandSpec {
+        id: "layout.delete",
+        label: "Delete layout",
+        shortcut: None,
+        params: &[NAME],
+        enabled: has_user,
+        run: layout_delete,
+    },
     simple("layout.reset", "Reset layout", None, always, |s, _| {
         s.workspace.push_effect(Effect::ResetLayout);
         Ok(Value::Null)
@@ -185,7 +245,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         always,
         |s, _| {
             s.text.size = (s.text.size + 1.0).min(40.0);
-            Ok(json!({ "size": s.text.size }))
+            view_saved(s, json!({ "size": s.text.size }))
         },
     ),
     simple(
@@ -195,7 +255,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         always,
         |s, _| {
             s.text.size = (s.text.size - 1.0).max(10.0);
-            Ok(json!({ "size": s.text.size }))
+            view_saved(s, json!({ "size": s.text.size }))
         },
     ),
     simple(
@@ -205,12 +265,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         always,
         |s, _| {
             s.text.verse_numbers = !s.text.verse_numbers;
-            Ok(json!({ "on": s.text.verse_numbers }))
+            view_saved(s, json!({ "on": s.text.verse_numbers }))
         },
     ),
     simple("view.dark_page", "Dark page", None, always, |s, _| {
         s.dark_page = !s.dark_page;
-        Ok(json!({ "on": s.dark_page }))
+        view_saved(s, json!({ "on": s.dark_page }))
     }),
     simple("help.about", "About Open Bible", None, always, about),
     simple("help.credits", "Credits", None, always, credits),
@@ -413,6 +473,84 @@ fn link(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     }
     s.workspace.set_link(tab, link);
     Ok(json!({ "tab": tab.0, "set": link.map(String::from) }))
+}
+
+fn view_saved(s: &mut Session, out: Value) -> Result<Value, CommandError> {
+    s.save_view_preferences()
+        .map_err(|e| failed("view", format!("saving preferences: {e}")))?;
+    Ok(out)
+}
+
+fn user<'a>(
+    s: &'a Session,
+    id: &'static str,
+) -> Result<&'a dyn crate::persist::UserData, CommandError> {
+    s.user
+        .as_deref()
+        .ok_or_else(|| failed(id, "there is no User database"))
+}
+
+fn layout_save(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "layout.save";
+    let Some(name) = p.str("name").map(str::trim).filter(|n| !n.is_empty()) else {
+        s.workspace
+            .push_effect(Effect::PromptLayoutName { rename: None });
+        return Ok(Value::Null);
+    };
+    let json = s.workspace.snapshot().to_json();
+    user(s, ID)?
+        .save_layout(name, &json)
+        .map_err(|e| failed(ID, e))?;
+    s.workspace
+        .push_effect(Effect::Message(format!("Saved layout “{name}”")));
+    Ok(json!({ "name": name }))
+}
+
+fn layout_restore(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "layout.restore";
+    let name = p.str("name").unwrap_or_default();
+    let json = user(s, ID)?
+        .layout(name)
+        .map_err(|e| failed(ID, e))?
+        .ok_or_else(|| failed(ID, format!("no layout “{name}”")))?;
+    let snap = crate::persist::WorkspaceSnapshot::from_json(&json).ok_or_else(|| {
+        failed(
+            ID,
+            format!("layout “{name}” cannot be read by this version"),
+        )
+    })?;
+    let snap = snap.without_missing(|id| s.library.get(id).is_some());
+    s.workspace.restore(snap);
+    Ok(json!({ "name": name }))
+}
+
+fn layout_rename(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "layout.rename";
+    let name = p.str("name").unwrap_or_default().to_string();
+    let Some(to) = p.str("to").map(str::trim).filter(|n| !n.is_empty()) else {
+        s.workspace
+            .push_effect(Effect::PromptLayoutName { rename: Some(name) });
+        return Ok(Value::Null);
+    };
+    let renamed = user(s, ID)?
+        .rename_layout(&name, to)
+        .map_err(|_| failed(ID, format!("there is already a layout “{to}”")))?;
+    if !renamed {
+        return Err(failed(ID, format!("no layout “{name}”")));
+    }
+    Ok(json!({ "name": to }))
+}
+
+fn layout_delete(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "layout.delete";
+    let name = p.str("name").unwrap_or_default();
+    if !user(s, ID)?
+        .delete_layout(name)
+        .map_err(|e| failed(ID, e))?
+    {
+        return Err(failed(ID, format!("no layout “{name}”")));
+    }
+    Ok(json!({ "deleted": name }))
 }
 
 fn search(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
