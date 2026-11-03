@@ -23,6 +23,10 @@ obs-render = { path = "crates/render" }
 obs-engine = { path = "crates/engine" }
 obs-ui-egui = { path = "crates/ui-egui" }
 
+# Shared third-party crates.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
 # UI (L6 only; enforced by `cargo xtask layers`).
 egui = "0.37"
 eframe = { version = "0.37", default-features = false }
