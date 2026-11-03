@@ -1,4 +1,10 @@
-//! Glyph rasterization into the shared glyph atlas (no egui).
+//! Glyph rasterization into the shared glyph atlas, and quads for laid blocks (ADR 0004
+//! amendment). No egui: the UI layer uploads the atlas and paints the quads.
 //!
-//! Layer L3. This crate must stay free of UI dependencies and compile for
-//! `wasm32-unknown-unknown` (checked by `cargo xtask layers` and `cargo xtask wasm`).
+//! Layer L3. Compiles for `wasm32-unknown-unknown`.
+
+mod atlas;
+mod raster;
+
+pub use atlas::{AtlasStats, GlyphAtlas, GlyphQuad, MAX_SIZE, SUBPIXEL_BINS};
+pub use raster::Rasterizer;

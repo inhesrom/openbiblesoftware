@@ -10,10 +10,14 @@ publish.workspace = true
 
 [dependencies]
 obs-engine.workspace = true
+obs-fonts.workspace = true
+obs-model.workspace = true
+obs-scripture.workspace = true
+obs-store.workspace = true
 obs-layout.workspace = true
 obs-render.workspace = true
 egui.workspace = true
-eframe = { workspace = true, features = ["default_fonts", "glow"] }
+eframe = { workspace = true, features = ["default_fonts", "glow", "wayland", "x11"] }
 egui_tiles.workspace = true
 
 [lints]
