@@ -89,6 +89,8 @@ pub struct ReadingView {
     pub selection: Option<Selection>,
     /// Whether the pointer drag in progress is on the scrollbar rather than the text.
     pub(crate) dragging_scrollbar: bool,
+    /// Where the pane last drew the text's top-left corner, in screen points.
+    pub(crate) text_origin: [f32; 2],
 }
 
 impl ReadingView {
@@ -107,6 +109,7 @@ impl ReadingView {
             pending_follow: None,
             selection: None,
             dragging_scrollbar: false,
+            text_origin: [0.0, 0.0],
         };
         view.set_width(600.0);
         view
@@ -307,6 +310,22 @@ impl ReadingView {
             top += h;
             i += 1;
         }
+    }
+
+    /// What is under a point (`x` from the text's left edge, `y` from the viewport top), if
+    /// its block is laid out.
+    pub fn hit_at(&self, x: f32, y: f32) -> Option<UnitPos> {
+        for (_, top, laid) in self.laid_in_view(y + 1.0) {
+            if y >= top && y < top + laid.height {
+                return laid.hit(x, y - top).map(|h| h.source);
+            }
+        }
+        None
+    }
+
+    /// Whether a `follow` is still waiting for its block's layout.
+    pub fn is_following(&self) -> bool {
+        self.pending_follow.is_some()
     }
 
     /// Whether workers still have layouts for this view in flight.

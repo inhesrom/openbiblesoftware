@@ -19,7 +19,7 @@ use std::path::PathBuf;
 pub use doc::{DocBlock, ReadingDoc};
 pub use heights::HeightIndex;
 pub use palette::Palette;
-pub use pane::{AtlasTexture, MEASURE_EMS, reading_pane};
+pub use pane::{AtlasTexture, MEASURE_EMS, PaneOutput, reading_pane};
 pub use selection::{
     DocPos, Granularity, Selection, copy_text, selected_text, selection_rects, word_at,
 };

@@ -20,6 +20,20 @@ pub const HOVER: Color32 = Color32::from_rgb(226, 235, 247);
 pub const WARN: Color32 = Color32::from_rgb(150, 60, 30);
 /// The link chip of a Tab with no Link set.
 pub const UNLINKED: Color32 = Color32::from_rgb(154, 162, 164);
+pub const GILT: Color32 = Color32::from_rgb(180, 138, 53);
+/// The mark on a jump's target verse (a translucent gilt).
+pub const FLASH: Color32 = Color32::from_rgba_premultiplied(108, 83, 32, 96);
+
+/// Each Link set's colour.
+pub fn link_color(link: Option<char>) -> Color32 {
+    match link {
+        Some('A') => LAPIS,
+        Some('B') => VERDIGRIS,
+        Some('C') => Color32::from_rgb(112, 79, 145),
+        Some(_) => GILT,
+        None => UNLINKED,
+    }
+}
 
 const DISPLAY: &str = "display";
 

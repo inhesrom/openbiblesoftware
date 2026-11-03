@@ -5,7 +5,7 @@ use std::path::Path;
 
 use obs_layout::{BlockSource, unit_blocks};
 use obs_model::{BibleVerse, Direction, Manifest, Resource, TextUnit, UnitKind};
-use obs_scripture::{ListedVersification, Verse};
+use obs_scripture::{ListedVersification, Verse, VerseMap};
 #[cfg(not(target_arch = "wasm32"))]
 use obs_store::{ObrReader, ResourceStore, StoreError};
 
@@ -29,6 +29,8 @@ pub struct ReadingDoc {
     verse_units: Vec<usize>,
     /// The Bible's own numbering (references typed for it are read in it, ADR 0002 rule 10).
     pub versification: ListedVersification,
+    /// How its numbering corresponds to the Standard versification (none: identical).
+    pub verse_map: Option<std::sync::Arc<VerseMap>>,
 }
 
 impl ReadingDoc {
@@ -44,11 +46,9 @@ impl ReadingDoc {
                 units.push(u);
             }
         }
-        Ok(Self::build(
-            reader.manifest().clone(),
-            units,
-            reader.verses()?,
-        ))
+        let mut doc = Self::build(reader.manifest().clone(), units, reader.verses()?);
+        doc.verse_map = reader.verse_map()?.map(std::sync::Arc::new);
+        Ok(doc)
     }
 
     /// From a Resource in memory (tests, imports in progress).
@@ -58,7 +58,9 @@ impl ReadingDoc {
             .into_iter()
             .filter(|u| u.kind != UnitKind::Note)
             .collect();
-        Self::build(resource.manifest, units, resource.verses)
+        let mut doc = Self::build(resource.manifest, units, resource.verses);
+        doc.verse_map = resource.verse_map.map(std::sync::Arc::new);
+        doc
     }
 
     fn build(manifest: Manifest, units: Vec<TextUnit>, verses: Vec<BibleVerse>) -> Self {
@@ -80,6 +82,7 @@ impl ReadingDoc {
             verses,
             verse_units,
             versification,
+            verse_map: None,
         }
     }
 

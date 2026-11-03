@@ -258,6 +258,22 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         },
     },
     CommandSpec {
+        id: "tab.link",
+        label: "Link set",
+        shortcut: None,
+        params: &[
+            TAB,
+            ParamSpec {
+                name: "set",
+                kind: ParamKind::String,
+                required: true,
+                help: "Link set letter (A, B, C, D), or empty for none",
+            },
+        ],
+        enabled: always,
+        run: link,
+    },
+    CommandSpec {
         id: "search.run",
         label: "Search",
         shortcut: None,
@@ -380,6 +396,23 @@ fn history(s: &mut Session, p: Params<'_>, back: bool) -> Result<Value, CommandE
         s.workspace.forward(tab)
     };
     Ok(json!({ "verse": to.map(|v| v.osis()) }))
+}
+
+fn link(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "tab.link";
+    let tab = tab_param(ID, s, &p)?;
+    let set = p.str("set").unwrap_or_default().trim().to_uppercase();
+    let link = match set.chars().next() {
+        None => None,
+        Some(c) if set.len() == 1 && crate::link::LINK_SETS.contains(&c) => Some(c),
+        Some(_) => return Err(failed(ID, format!("no Link set {set}"))),
+    };
+    let has_chip = s.workspace.tab(tab).is_some_and(|t| t.kind.has_link_chip());
+    if !has_chip && link.is_some() {
+        return Err(failed(ID, "this Tab cannot be linked"));
+    }
+    s.workspace.set_link(tab, link);
+    Ok(json!({ "tab": tab.0, "set": link.map(String::from) }))
 }
 
 fn search(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {

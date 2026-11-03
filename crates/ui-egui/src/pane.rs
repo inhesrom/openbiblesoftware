@@ -8,8 +8,10 @@ use egui::{
 use obs_render::GlyphAtlas;
 
 use crate::palette::Palette;
-use crate::selection::{Granularity, Selection, copy_text, selection_rects};
+use crate::selection::{DocPos, Granularity, Selection, copy_text, selection_rects};
 use crate::view::{MARGIN, ReadingView, SYNC_BUDGET};
+use obs_layout::{InlineObject, UnitPos};
+use obs_scripture::Verse;
 
 const SCROLLBAR: f32 = 10.0;
 /// Widest text column, in ems of the text size.
@@ -66,13 +68,25 @@ impl AtlasTexture {
     }
 }
 
-/// Draw the reading pane into all the space `ui` has, and handle its input.
+/// What happened in the reading pane this frame.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct PaneOutput {
+    /// The user moved the view (wheel, keys, scrollbar, selection auto-scroll).
+    pub user_moved: bool,
+    /// The verse number under the pointer, in the Bible's own numbering.
+    pub hovered_verse_number: Option<Verse>,
+}
+
+/// Draw the reading pane into all the space `ui` has, and handle its input. `flash` marks a
+/// verse (after a jump) with a colour whose alpha fades it out.
 pub fn reading_pane(
     ui: &mut Ui,
     view: &mut ReadingView,
     atlas: &mut AtlasTexture,
     palette: &Palette,
-) {
+    flash: Option<(Verse, Color32)>,
+) -> PaneOutput {
+    let mut out = PaneOutput::default();
     let rect = ui.available_rect_before_wrap();
     let response = ui.allocate_rect(rect, Sense::click_and_drag());
     // The body is pinned to the pane rect, whatever the header widgets do (#13).
@@ -85,6 +99,8 @@ pub fn reading_pane(
     let left = rect.left() + MARGIN + ((room - measure) / 2.0).floor();
     let text_rect = Rect::from_min_max(pos2(left, rect.top()), pos2(left + measure, rect.bottom()));
     view.set_width(text_rect.width());
+    view.text_origin = [text_rect.left(), rect.top()];
+    let before = view.position().0;
 
     // Input: wheel and trackpad, keys, scrollbar drag.
     if response.hovered() {
@@ -123,6 +139,7 @@ pub fn reading_pane(
         view.scroll_to_position(frac * total);
     }
     handle_selection(ui, &response, view, rect, text_rect);
+    out.user_moved = (view.position().0 - before).abs() > 0.01;
 
     let ppp = ui.ctx().pixels_per_point();
     let frame = view.frame(rect.height(), Some(SYNC_BUDGET));
@@ -157,6 +174,32 @@ pub fn reading_pane(
     }
     if view.has_pending() {
         ui.ctx().request_repaint();
+    }
+    if let Some((verse, color)) = flash
+        && let Some((unit, byte)) = view.doc.verse_position(verse)
+        && let Some(range) = view.doc.verse_range_at(unit, byte)
+    {
+        let sel = Selection {
+            anchor: DocPos {
+                unit,
+                byte: range.start,
+            },
+            head: DocPos {
+                unit,
+                byte: range.end,
+            },
+            granularity: Granularity::Grapheme,
+        };
+        for [x0, y0, x1, y1] in selection_rects(view, &sel, rect.height()) {
+            painter.rect_filled(
+                Rect::from_min_max(
+                    pos2(text_rect.left() + x0, rect.top() + y0),
+                    pos2(text_rect.left() + x1, rect.top() + y1),
+                ),
+                2.0,
+                color,
+            );
+        }
     }
     if let Some(sel) = view.selection {
         for [x0, y0, x1, y1] in selection_rects(view, &sel, rect.height()) {
@@ -198,6 +241,15 @@ pub fn reading_pane(
             palette.verse_number.gamma_multiply(0.5),
         );
     }
+    if let Some(p) = response.hover_pos()
+        && let Some(UnitPos::Object {
+            object: InlineObject::VerseNumber(v),
+            ..
+        }) = view.hit_at(p.x - text_rect.left(), p.y - rect.top())
+    {
+        out.hovered_verse_number = Some(v);
+    }
+    out
 }
 
 /// Drag to select (auto-scrolling past the pane's edges), double-click a word, triple-click a
