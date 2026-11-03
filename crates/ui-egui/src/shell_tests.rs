@@ -1244,3 +1244,211 @@ mod a11y {
         assert!(h.tree.is_none());
     }
 }
+
+mod text_comparison {
+    use super::*;
+    use crate::compare_view::{ABSENT, NOT_COMPARED};
+    use obs_engine::{Cell, Marks, TabId};
+
+    /// TB (Link set A) and a Text Comparison beside it in Link set A, comparing TB, HEB and
+    /// HNUM (the default: the first Bibles in Preferred order).
+    fn harness() -> (Harness, TabId, TabId) {
+        let mut h = Harness::new();
+        let tb = h.tab_id("TB");
+        h.shell.st.session.workspace.user_focused(tb);
+        h.shell
+            .run("tool.text_comparison", &json!({ "split": true }));
+        h.frames(2);
+        let cmp = h.tab_id("Text Comparison");
+        h.shell
+            .run("tab.link", &json!({ "tab": cmp.0, "set": "A" }));
+        h.frames(2);
+        (h, tb, cmp)
+    }
+
+    fn settle(h: &mut Harness, cmp: TabId) {
+        for _ in 0..400 {
+            h.paced_frame();
+            let pending = h.shell.st.tabs[&cmp]
+                .comparison
+                .as_ref()
+                .is_some_and(|v| v.has_pending());
+            if !pending {
+                h.frames(2);
+                return;
+            }
+        }
+        panic!("comparison never settled");
+    }
+
+    fn view(h: &Harness, cmp: TabId) -> &crate::compare_view::ComparisonView {
+        h.shell.st.tabs[&cmp].comparison.as_ref().unwrap()
+    }
+
+    fn pane_rect(h: &Harness, tab: TabId) -> Rect {
+        let tiles = &h.shell.tree.tiles;
+        tiles.rect(tiles.find_pane(&tab).unwrap()).unwrap()
+    }
+
+    /// Texts painted inside the comparison pane.
+    fn texts_in(h: &Harness, tab: TabId) -> Vec<String> {
+        let r = pane_rect(h, tab);
+        h.shapes
+            .iter()
+            .filter(|(s, _)| r.contains(s.center()))
+            .map(|(_, t)| t.clone())
+            .collect()
+    }
+
+    #[test]
+    fn gen_31_32_compares_kjv_and_a_hebrew_numbered_bible_on_the_same_rows() {
+        let (mut h, tb, cmp) = harness();
+        h.shell
+            .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:55" }));
+        settle(&mut h, cmp);
+        let v = view(&h, cmp);
+        assert_eq!(v.current_location(), Some(ge(31, 55)));
+        // The whole chapter, one block per Standard Verse.
+        assert_eq!(v.blocks.len(), 55);
+        assert_eq!(v.blocks[0].verse, ge(31, 1));
+        let row = |b: &obs_engine::VerseBlock, i: usize| b.cells[i].cell.clone();
+        let b = v.blocks.iter().find(|b| b.verse == ge(31, 55)).unwrap();
+        // TB 31:55 and HNUM 32:1 share the row; HEB (Gen 1 only) is absent.
+        assert!(matches!(row(b, 0), Cell::Text { natives, .. } if natives == [(ge(31, 55), 55)]));
+        assert_eq!(row(b, 1), Cell::Absent);
+        assert!(matches!(row(b, 2), Cell::Text { natives, .. } if natives == [(ge(32, 1), 1)]));
+        let texts = texts_in(&h, cmp);
+        for want in ["Genesis 31:55", "TB", "HEB", "HNUM", "32:1", ABSENT] {
+            assert!(texts.iter().any(|t| t == want), "{want:?} not in {texts:?}");
+        }
+
+        // Chapter 32 the same way: KJV 32:1 is HNUM 32:2.
+        h.shell
+            .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 32:1" }));
+        settle(&mut h, cmp);
+        let v = view(&h, cmp);
+        assert_eq!(v.blocks.len(), 32);
+        let b = &v.blocks[0];
+        assert_eq!(b.verse, ge(32, 1));
+        assert!(matches!(row(b, 2), Cell::Text { natives, .. } if natives == [(ge(32, 2), 2)]));
+        assert!(texts_in(&h, cmp).iter().any(|t| t == "32:2"));
+    }
+
+    #[test]
+    fn scrolling_the_comparison_drives_linked_bibles() {
+        let (mut h, tb, cmp) = harness();
+        h.shell.st.session.workspace.user_focused(tb);
+        h.shell
+            .run("resource.open", &json!({ "id": "heb-num", "split": true }));
+        h.frames(3);
+        let hn = h.tab_id("HNUM");
+        h.shell
+            .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:50" }));
+        settle(&mut h, cmp);
+        assert_eq!(view(&h, cmp).current_location(), Some(ge(31, 50)));
+        // Wheel over the comparison until its top row is Standard Gen 31:55.
+        let over = pane_rect(&h, cmp).center();
+        h.events.push(Event::PointerMoved(over));
+        let mut steps = 0;
+        while view(&h, cmp).current_location() != Some(ge(31, 55)) {
+            h.events.push(Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(0.0, -8.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers: Modifiers::NONE,
+            });
+            h.paced_frame();
+            steps += 1;
+            assert!(steps < 600, "stuck at {:?}", view(&h, cmp).current_location());
+        }
+        let ws = &h.shell.st.session.workspace;
+        assert_eq!(ws.tab(cmp).unwrap().history.current(), Some(ge(31, 55)));
+        // The linked Bibles follow: TB to 31:55, HNUM to its own 32:1.
+        h.frames(3);
+        assert_eq!(location(&mut h, tb), Some(ge(31, 55)));
+        assert_eq!(location(&mut h, hn), Some(ge(32, 1)));
+        assert_eq!(view(&h, cmp).current_location(), Some(ge(31, 55)));
+    }
+
+    #[test]
+    fn chips_choose_the_base_and_differences_are_marked_against_it() {
+        let (mut h, tb, cmp) = harness();
+        h.shell
+            .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:10" }));
+        settle(&mut h, cmp);
+        let marks = |h: &Harness| -> Vec<Marks> {
+            let v = view(h, cmp);
+            let b = v.blocks.iter().find(|b| b.verse == ge(31, 10)).unwrap();
+            b.cells.iter().map(|c| c.marks.clone()).collect()
+        };
+        // HNUM's text at Standard 31:10 is its own 31:10 here (same words), so nothing differs.
+        let m = marks(&h);
+        assert_eq!(m[0], Marks::Base);
+        assert_eq!(m[1], Marks::None, "HEB is absent here");
+        assert_eq!(m[2], Marks::Diff(Default::default()));
+
+        // ☆ on the HNUM chip makes it the ★ base.
+        let r = pane_rect(&h, cmp);
+        let chip = h
+            .shapes
+            .iter()
+            .filter(|(s, t)| t == "HNUM" && r.contains(s.center()))
+            .map(|(s, _)| *s)
+            .min_by(|a, b| a.top().total_cmp(&b.top()))
+            .unwrap();
+        h.click(pos2(chip.left() - 9.0, chip.center().y));
+        let c = &h.shell.st.session.workspace.tab(cmp).unwrap().comparison;
+        assert_eq!(c.base.as_deref(), Some("heb-num"));
+        assert_eq!(marks(&h)[2], Marks::Base);
+        assert_eq!(marks(&h)[0], Marks::Diff(Default::default()));
+
+        // In chapter 32 the numbering differs, so the texts do: words are tinted.
+        h.shell
+            .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 32:3" }));
+        settle(&mut h, cmp);
+        let v = view(&h, cmp);
+        let b = v.blocks.iter().find(|b| b.verse == ge(32, 3)).unwrap();
+        assert!(matches!(&b.cells[0].marks, Marks::Diff(d) if !d.changed.is_empty()));
+
+        // The Hebrew Bible's rows are not compared with an English base.
+        h.shell
+            .run("tab.go", &json!({ "tab": cmp.0, "text": "Gen 1:1" }));
+        settle(&mut h, cmp);
+        let v = view(&h, cmp);
+        assert_eq!(v.blocks[0].cells[1].marks, Marks::NotCompared);
+        assert!(texts_in(&h, cmp).iter().any(|t| t == NOT_COMPARED));
+    }
+
+    #[test]
+    fn a_typed_range_shows_as_a_removable_chip() {
+        let (mut h, _, cmp) = harness();
+        h.shell.st.session.workspace.user_focused(cmp);
+        h.shell
+            .run("tab.go", &json!({ "tab": cmp.0, "text": "Gen 31:50-32:2" }));
+        settle(&mut h, cmp);
+        assert_eq!(view(&h, cmp).blocks.len(), 8);
+        let chip = texts_in(&h, cmp)
+            .into_iter()
+            .find(|t| t.ends_with('×') && t.len() > 2)
+            .unwrap_or_else(|| panic!("no range chip in {:?}", texts_in(&h, cmp)));
+        h.click_text(&chip);
+        assert_eq!(
+            h.shell.st.session.workspace.tab(cmp).unwrap().comparison.range,
+            None
+        );
+        h.frames(2);
+        assert_eq!(view(&h, cmp).blocks.len(), 55);
+    }
+
+    /// ★ and ☆ are painted shapes: the chrome fonts lack them.
+    #[test]
+    fn chip_symbols_are_in_the_chrome_fonts() {
+        let h = Harness::new();
+        h.ctx.fonts_mut(|f| {
+            for s in ["×", "—", "+ Bible"] {
+                assert!(f.has_glyphs(&egui::FontId::proportional(12.0), s), "{s}");
+            }
+        });
+    }
+}
