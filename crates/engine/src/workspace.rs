@@ -10,6 +10,7 @@ use obs_model::KeyScheme;
 use obs_scripture::{ListedVersification, Verse, VerseMap};
 use serde::{Deserialize, Serialize};
 
+use crate::compare::{Comparison, in_range_chapters};
 use crate::link::{ToStandard, to_native, to_standard};
 use crate::persist::{LayoutNode, WorkspaceSnapshot};
 
@@ -218,11 +219,23 @@ pub struct Tab {
     pub key_schemes: Vec<KeyScheme>,
     /// The Link set this Tab belongs to, if any.
     pub link: Option<char>,
+    /// What a Text Comparison Tab compares (unused by other kinds).
+    pub comparison: Comparison,
 }
 
 impl Tab {
     fn follows_passages(&self) -> bool {
         self.key_schemes.contains(&KeyScheme::Passage)
+    }
+
+    /// A jump, Back/Forward or follow moved the Tab: a Text Comparison range is cleared once
+    /// the Tab leaves the range's chapters (#18 rule 13).
+    fn moved_to(&mut self, verse: Verse) {
+        if let Some(r) = self.comparison.range
+            && !in_range_chapters(r, verse)
+        {
+            self.comparison.range = None;
+        }
     }
 }
 
@@ -420,6 +433,7 @@ impl Workspace {
                 verse_map: None,
                 key_schemes,
                 link,
+                comparison: Comparison::default(),
             },
         );
         // A linked Tool or Guide starts at its Link set's location. (Bibles wait until their
@@ -527,6 +541,7 @@ impl Workspace {
     pub fn navigate(&mut self, tab: TabId, verse: Verse) {
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.history.visit(verse);
+            t.moved_to(verse);
             self.effects.push(Effect::Navigate { tab, verse });
             self.broadcast(tab, verse, true);
         }
@@ -553,14 +568,18 @@ impl Workspace {
     }
 
     pub fn back(&mut self, tab: TabId) -> Option<Verse> {
-        let v = self.tabs.get_mut(&tab)?.history.back()?;
+        let t = self.tabs.get_mut(&tab)?;
+        let v = t.history.back()?;
+        t.moved_to(v);
         self.effects.push(Effect::Navigate { tab, verse: v });
         self.broadcast(tab, v, false);
         Some(v)
     }
 
     pub fn forward(&mut self, tab: TabId) -> Option<Verse> {
-        let v = self.tabs.get_mut(&tab)?.history.forward()?;
+        let t = self.tabs.get_mut(&tab)?;
+        let v = t.history.forward()?;
+        t.moved_to(v);
         self.effects.push(Effect::Navigate { tab, verse: v });
         self.broadcast(tab, v, false);
         Some(v)
@@ -608,6 +627,7 @@ impl Workspace {
     fn follow(&mut self, tab: TabId, verse: Verse, flash: bool) {
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.history.scrolled_to(verse);
+            t.moved_to(verse);
             self.effects.push(Effect::Follow { tab, verse, flash });
         }
     }
@@ -690,6 +710,7 @@ impl Workspace {
                     verse_map: None,
                     key_schemes,
                     link: t.link,
+                    comparison: Comparison::default(),
                 },
             );
         }

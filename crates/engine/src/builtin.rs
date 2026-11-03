@@ -94,7 +94,11 @@ const COMMANDS: &[CommandSpec] = &[
 /// A registry holding every built-in command.
 pub fn registry() -> CommandRegistry {
     let mut r = CommandRegistry::new();
-    for spec in COMMANDS.iter().chain(crate::workspace_commands::COMMANDS) {
+    for spec in COMMANDS
+        .iter()
+        .chain(crate::workspace_commands::COMMANDS)
+        .chain(crate::compare::COMMANDS)
+    {
         // Ids in COMMANDS are unique (checked by a test), so registration cannot fail.
         let _ = r.register(*spec);
     }
