@@ -9,7 +9,8 @@ use std::sync::Arc;
 use egui::{Color32, RichText, Stroke, Ui, pos2, vec2};
 use egui_tiles::{Container, Linear, LinearDir, Tile, TileId, Tiles, Tree, UiResponse};
 use obs_engine::{
-    Effect, HeaderBox, JobMode, MENUS, MenuItem, PanelId, Placement, Session, TabId, TabKind, Tool,
+    Effect, HeaderBox, JobMode, LayoutNode, MENUS, MenuItem, PanelId, Placement, Session, TabId,
+    TabKind, Tool,
 };
 use obs_model::ResourceType;
 use obs_scripture::{Passage, RefStyle, Standard, Verse, format_passage};
@@ -44,6 +45,10 @@ pub(crate) struct State {
     atlas: AtlasTexture,
     toast: Option<(String, f64)>,
     window: Option<(String, String)>,
+    /// The Layout-name prompt: the Layout being renamed (none: saving a new one) and the text.
+    prompt: Option<(Option<String>, String)>,
+    /// When the Last session was last checked for saving.
+    last_save: f64,
     search: String,
     now: f64,
     /// Ctrl/Cmd is held: opening something splits off a new Panel.
@@ -75,6 +80,8 @@ impl Shell {
                 atlas: AtlasTexture::default(),
                 toast: None,
                 window: None,
+                prompt: None,
+                last_save: 0.0,
                 search: String::new(),
                 now: 0.0,
                 split_held: false,
@@ -190,6 +197,11 @@ impl Shell {
                     }
                 }
                 Effect::ResetLayout => self.reset_layout(),
+                Effect::Rebuild => self.rebuild(),
+                Effect::PromptLayoutName { rename } => {
+                    let text = rename.clone().unwrap_or_default();
+                    self.st.prompt = Some((rename, text));
+                }
                 Effect::Message(m) => self.st.toast(m),
                 Effect::Show { title, body } => self.st.window = Some((title, body)),
             }
@@ -296,6 +308,163 @@ impl Shell {
             let live: Vec<TabId> = self.st.session.workspace.tabs().map(|t| t.id).collect();
             self.st.tabs.retain(|t, _| live.contains(t));
         }
+        let arrangement = self.tree.root().and_then(|r| self.node(r));
+        self.st.session.workspace.arrangement = arrangement;
+    }
+
+    /// The dock below `tile` as a saved arrangement.
+    fn node(&self, tile: TileId) -> Option<LayoutNode> {
+        match self.tree.tiles.get(tile)? {
+            Tile::Pane(t) => Some(LayoutNode::Panel {
+                panel: 0,
+                tabs: vec![t.0],
+                active: Some(t.0),
+            }),
+            Tile::Container(Container::Tabs(t)) => {
+                let tabs: Vec<u64> = t
+                    .children
+                    .iter()
+                    .filter_map(|c| match self.tree.tiles.get(*c) {
+                        Some(Tile::Pane(p)) => Some(p.0),
+                        _ => None,
+                    })
+                    .collect();
+                let active = t.active.and_then(|a| match self.tree.tiles.get(a) {
+                    Some(Tile::Pane(p)) => Some(p.0),
+                    _ => None,
+                });
+                let panel = self.st.panels.get(&tile).map_or(0, |p| p.0);
+                (!tabs.is_empty()).then_some(LayoutNode::Panel {
+                    panel,
+                    tabs,
+                    active,
+                })
+            }
+            Tile::Container(Container::Linear(l)) => {
+                let children: Vec<(LayoutNode, f32)> = l
+                    .children
+                    .iter()
+                    .filter_map(|c| Some((self.node(*c)?, l.shares[*c])))
+                    .collect();
+                if children.is_empty() {
+                    return None;
+                }
+                Some(match l.dir {
+                    LinearDir::Horizontal => LayoutNode::Row { children },
+                    LinearDir::Vertical => LayoutNode::Column { children },
+                })
+            }
+            Tile::Container(Container::Grid(g)) => {
+                let children: Vec<(LayoutNode, f32)> = g
+                    .children()
+                    .filter_map(|c| Some((self.node(*c)?, 1.0)))
+                    .collect();
+                (!children.is_empty()).then_some(LayoutNode::Row { children })
+            }
+        }
+    }
+
+    /// Insert a saved arrangement into the dock; returns its root tile.
+    fn build(&mut self, node: &LayoutNode) -> Option<TileId> {
+        match node {
+            LayoutNode::Panel {
+                panel,
+                tabs,
+                active,
+            } => {
+                let live: Vec<TabId> = tabs
+                    .iter()
+                    .map(|t| TabId(*t))
+                    .filter(|t| self.st.session.workspace.tab(*t).is_some())
+                    .collect();
+                if live.is_empty() {
+                    return None;
+                }
+                let panes: Vec<TileId> = live
+                    .iter()
+                    .map(|t| self.tree.tiles.insert_pane(*t))
+                    .collect();
+                let container = self.tree.tiles.insert_tab_tile(panes.clone());
+                if let Some(Tile::Container(Container::Tabs(t))) =
+                    self.tree.tiles.get_mut(container)
+                    && let Some(i) = active.and_then(|a| live.iter().position(|t| t.0 == a))
+                {
+                    t.set_active(panes[i]);
+                }
+                let panel = if *panel == 0 {
+                    self.st.session.workspace.new_panel_id()
+                } else {
+                    PanelId(*panel)
+                };
+                self.st.panels.insert(container, panel);
+                Some(container)
+            }
+            LayoutNode::Row { children } | LayoutNode::Column { children } => {
+                let built: Vec<(TileId, f32)> = children
+                    .iter()
+                    .filter_map(|(c, share)| Some((self.build(c)?, *share)))
+                    .collect();
+                if built.len() == 1 {
+                    return built.first().map(|(t, _)| *t);
+                }
+                if built.is_empty() {
+                    return None;
+                }
+                let dir = if matches!(node, LayoutNode::Row { .. }) {
+                    LinearDir::Horizontal
+                } else {
+                    LinearDir::Vertical
+                };
+                let mut linear = Linear::new(dir, built.iter().map(|(t, _)| *t).collect());
+                for (t, share) in &built {
+                    linear.shares.set_share(*t, *share);
+                }
+                Some(
+                    self.tree
+                        .tiles
+                        .insert_new(Tile::Container(Container::Linear(linear))),
+                )
+            }
+        }
+    }
+
+    /// Rebuild the dock and every Tab's view from the engine's restored Workspace.
+    fn rebuild(&mut self) {
+        self.tree = Tree::empty(egui::Id::unique("workspace"));
+        self.st.panels.clear();
+        self.st.tabs.clear();
+        self.shown.clear();
+        let ids: Vec<TabId> = self.st.session.workspace.tabs().map(|t| t.id).collect();
+        for t in ids {
+            self.st.opened(t);
+        }
+        if let Some(node) = self.st.session.workspace.arrangement.clone() {
+            self.tree.root = self.build(&node);
+        }
+        if let Some(f) = self.st.session.workspace.focused() {
+            self.tree
+                .make_active(|_, t| matches!(t, Tile::Pane(p) if *p == f));
+        }
+    }
+
+    /// Save the Last session now (on quit), or at most once a second while running.
+    pub fn save_session(&mut self, now: bool) {
+        if !now && self.st.now - self.st.last_save < 1.0 {
+            return;
+        }
+        self.st.last_save = self.st.now;
+        if let Err(e) = self.st.session.save_last_session() {
+            self.st.toast(format!("Could not save the session: {e}"));
+        }
+    }
+
+    /// Restore the Last session if there is one, else open the default layout.
+    pub fn restore_or_default(&mut self) {
+        if self.st.session.restore_last_session() {
+            self.apply_effects();
+        } else {
+            self.reset_layout();
+        }
     }
 
     /// Draw the whole window.
@@ -332,6 +501,9 @@ impl Shell {
             });
         self.apply_effects();
         self.st.overlays(ui);
+        self.apply_effects();
+        let closing = ui.input(|i| i.viewport().close_requested());
+        self.save_session(closing);
     }
 
     fn shortcuts(&mut self, ui: &mut Ui) {
@@ -428,6 +600,35 @@ impl Shell {
                 if r.clicked() {
                     self.run(id, &json!({}));
                     ui.close();
+                }
+            }
+            MenuItem::Layouts => {
+                let names = self
+                    .st
+                    .session
+                    .user
+                    .as_ref()
+                    .and_then(|u| u.layouts().ok())
+                    .unwrap_or_default();
+                if names.is_empty() {
+                    ui.label(RichText::new("No saved layouts").color(theme::MUTED));
+                }
+                for name in names {
+                    let mut run: Option<&'static str> = None;
+                    ui.menu_button(&name, |ui| {
+                        for id in ["layout.restore", "layout.rename", "layout.delete"] {
+                            let label = self.st.session.commands().get(id).map_or(id, |c| c.label);
+                            let label = label.replace(" layout", "");
+                            if ui.button(label).clicked() {
+                                run = Some(id);
+                                ui.close();
+                            }
+                        }
+                    });
+                    if let Some(id) = run {
+                        self.run(id, &json!({ "name": name }));
+                        ui.close();
+                    }
                 }
             }
             MenuItem::Resources => {
@@ -530,7 +731,8 @@ impl State {
                     }
                     // Start where the Link set is; unlinked, where another Bible is.
                     let ws = &self.session.workspace;
-                    let at = ws.set_location(tab).or_else(|| {
+                    let own = ws.tab(tab).and_then(|t| t.history.current());
+                    let at = own.or_else(|| ws.set_location(tab)).or_else(|| {
                         ws.tabs()
                             .filter(|t| t.id != tab && t.kind.is_reading() && t.verse_map.is_none())
                             .find_map(|t| t.history.current())
@@ -876,9 +1078,62 @@ impl State {
         });
     }
 
+    /// Ask for a Layout name (Save layout as…, Rename…).
+    fn layout_prompt(&mut self, ctx: &egui::Context) {
+        let Some((rename, mut text)) = self.prompt.take() else {
+            return;
+        };
+        let title = if rename.is_some() {
+            "Rename layout"
+        } else {
+            "Save layout as"
+        };
+        let mut done: Option<bool> = None;
+        egui::Window::new(title)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                let r = ui.add(
+                    egui::TextEdit::singleline(&mut text)
+                        .id_salt("layout-name")
+                        .hint_text("Layout name")
+                        .desired_width(260.0),
+                );
+                r.request_focus();
+                if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    done = Some(true);
+                }
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        done = Some(true);
+                    }
+                    if ui.button("Cancel").clicked()
+                        || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                    {
+                        done = Some(false);
+                    }
+                });
+            });
+        match done {
+            None => self.prompt = Some((rename, text)),
+            Some(false) => {}
+            Some(true) if text.trim().is_empty() => self.prompt = Some((rename, text)),
+            Some(true) => match rename {
+                None => {
+                    self.run("layout.save", &json!({ "name": text.trim() }));
+                }
+                Some(from) => {
+                    self.run("layout.rename", &json!({ "name": from, "to": text.trim() }));
+                }
+            },
+        }
+    }
+
     /// Toasts and the About/Credits window.
     fn overlays(&mut self, ui: &Ui) {
         let ctx = ui.ctx().clone();
+        self.layout_prompt(&ctx);
         if let Some((msg, t)) = &self.toast {
             if self.now - t < 4.0 {
                 let screen = ctx.content_rect();

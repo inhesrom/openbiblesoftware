@@ -17,14 +17,16 @@ pub mod command;
 pub mod jobs;
 mod library;
 pub mod link;
+pub mod persist;
 mod session;
 pub mod workspace;
 mod workspace_commands;
 
 pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSpec, Params};
 pub use jobs::{Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step};
-pub use library::{Library, LibraryEntry, default_library_dir};
+pub use library::{Library, LibraryEntry, default_library_dir, default_user_db};
 pub use link::LINK_SETS;
+pub use persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, UserData, WorkspaceSnapshot};
 pub use session::{JobMode, Session};
 pub use workspace::{
     Effect, Guide, HeaderBox, History, OpenRequest, PanelId, Placement, Tab, TabId, TabKind, Tool,
