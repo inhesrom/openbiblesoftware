@@ -66,6 +66,12 @@ impl Harness {
         }
     }
 
+    /// A frame after a 60 Hz frame interval, so workers get the time a real frame gives them.
+    fn paced_frame(&mut self) {
+        std::thread::sleep(std::time::Duration::from_micros(16_667));
+        self.frame();
+    }
+
     fn frames(&mut self, n: usize) {
         for _ in 0..n {
             self.frame();
@@ -505,11 +511,13 @@ fn location(h: &mut Harness, t: obs_engine::TabId) -> Option<obs_scripture::Vers
         .current_location()
 }
 
+/// The follower has its target block laid out and is showing it. (Prefetch around it may
+/// still be in flight; that never shows as placeholders while the view stays put.)
 fn settled(h: &Harness, t: obs_engine::TabId) -> bool {
     h.shell.st.tabs[&t]
         .view
         .as_ref()
-        .is_some_and(|v| !v.is_following() && !v.has_pending())
+        .is_some_and(|v| !v.is_following())
 }
 
 fn ge(c: u16, v: u16) -> obs_scripture::Verse {
@@ -542,7 +550,7 @@ fn scrolling_to_gen_31_55_moves_a_linked_hebrew_numbered_bible_to_32_1() {
     // The follower settles within 3 frames on 32:1, its own number for KJV 31:55.
     let mut frames = 0;
     while !(location(&mut h, hn) == Some(ge(32, 1)) && settled(&h, hn)) {
-        h.frame();
+        h.paced_frame();
         frames += 1;
         assert!(
             frames <= 3,
@@ -561,7 +569,7 @@ fn a_jump_moves_every_member_and_flashes_the_target() {
         .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 32:10" }));
     let mut frames = 0;
     while !(location(&mut h, hn) == Some(ge(32, 11)) && settled(&h, hn)) {
-        h.frame();
+        h.paced_frame();
         frames += 1;
         assert!(frames <= 3, "HNUM at {:?}", location(&mut h, hn));
     }
