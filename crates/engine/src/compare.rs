@@ -5,7 +5,7 @@
 use std::ops::Range;
 
 use obs_model::ResourceType;
-use obs_scripture::{Passage, Standard, Verse, VerseMap, Versification};
+use obs_scripture::{Passage, Standard, Verse, VerseMap};
 use serde_json::{Value, json};
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};

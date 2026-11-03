@@ -312,7 +312,7 @@ fn session(bibles: &[&str]) -> Session {
     });
     for id in bibles {
         s.library.add(LibraryEntry {
-            manifest: Manifest::new(id, id, &id.to_uppercase(), ResourceType::Bible, "en"),
+            manifest: Manifest::new(*id, *id, id.to_uppercase(), ResourceType::Bible, "en"),
             path: format!("/library/{id}.obr").into(),
         });
     }
