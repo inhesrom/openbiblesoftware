@@ -63,16 +63,56 @@ pub struct IdDiff {
     /// Ids that left the unit list and are now reached through an alias.
     pub aliased: Vec<String>,
     pub content_changed: bool,
-    /// Revision for this build: kept when the content is unchanged, else bumped.
+    /// Revision for this build: kept when the content hash is unchanged, else bumped. The
+    /// revision tracks content (what Annotations anchor to); a metadata-only change, such as a
+    /// corrected Attribution, keeps it, and shows up as a new `file_sha256` in the manifest.
     pub revision: u32,
 }
 
-/// The unit aliases a Resource ships: every `id-changes.toml` entry for it.
-pub fn aliases_for(id: &str, changes: &IdChanges) -> BTreeMap<String, String> {
-    changes
+/// The unit aliases a Resource ships, resolved against its live unit ids.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Aliases {
+    /// Retired id → a live id, with chains (A → B, B → C) followed to the end (A → C, B → C).
+    pub map: BTreeMap<String, String>,
+    /// Entries not shipped because their old id is a live unit again (e.g. a note number that
+    /// came back); for the build report.
+    pub shadowed: Vec<String>,
+}
+
+/// Resolve every `id-changes.toml` entry for Resource `id` against its live `units`.
+///
+/// The file is cumulative, so an old entry's target may itself have been renamed later: each
+/// chain is followed to a live unit. An entry whose old id is live again is skipped. A chain
+/// that cycles or ends at an id that is neither live nor mapped fails the build.
+pub fn aliases_for(id: &str, changes: &IdChanges, units: &[String]) -> Result<Aliases> {
+    let live: BTreeSet<&str> = units.iter().map(String::as_str).collect();
+    let step: BTreeMap<&str, &str> = changes
         .for_resource(id)
-        .map(|c| (c.old.clone(), c.new.clone()))
-        .collect()
+        .map(|c| (c.old.as_str(), c.new.as_str()))
+        .collect();
+    let mut out = Aliases::default();
+    for (&old, &first) in &step {
+        if live.contains(old) {
+            out.shadowed.push(old.to_string());
+            continue;
+        }
+        let mut seen = BTreeSet::from([old]);
+        let mut at = first;
+        while !live.contains(at) {
+            if !seen.insert(at) {
+                bail!("{id}: id-changes.toml aliases form a cycle through `{at}`");
+            }
+            match step.get(at) {
+                Some(&next) => at = next,
+                None => bail!(
+                    "{id}: id-changes.toml maps `{old}` to `{at}`, which is not a unit of this \
+                     build; add an alias for `{at}`"
+                ),
+            }
+        }
+        out.map.insert(old.to_string(), at.to_string());
+    }
+    Ok(out)
 }
 
 /// Diff one built Resource against its previous release. Fails when a previously reachable
@@ -225,6 +265,45 @@ mod tests {
         let p = prev(&["GEN"], &[("OLD", "GEN")]);
         let err = diff(Some(&p), "bsb", &ids(&["GEN"]), &BTreeMap::new(), "h").unwrap_err();
         assert!(err.to_string().contains("OLD"), "{err}");
+    }
+
+    fn changes(entries: &[(&str, &str)]) -> IdChanges {
+        IdChanges {
+            aliases: entries
+                .iter()
+                .map(|(o, n)| super::super::lock::IdChange {
+                    resource_id: "bsb".into(),
+                    old: o.to_string(),
+                    new: n.to_string(),
+                })
+                .collect(),
+            ..IdChanges::default()
+        }
+    }
+
+    #[test]
+    fn alias_chains_resolve_to_a_live_unit() {
+        // Release 2 renamed A → B, release 3 renamed B → C; both entries stay in the file.
+        let a = aliases_for("bsb", &changes(&[("A", "B"), ("B", "C")]), &ids(&["C"])).unwrap();
+        assert_eq!(a.map.get("A").map(String::as_str), Some("C"));
+        assert_eq!(a.map.get("B").map(String::as_str), Some("C"));
+        assert!(a.shadowed.is_empty());
+    }
+
+    #[test]
+    fn an_alias_whose_old_id_is_live_again_is_skipped() {
+        let a = aliases_for("bsb", &changes(&[("N9", "N8")]), &ids(&["N8", "N9"])).unwrap();
+        assert!(a.map.is_empty());
+        assert_eq!(a.shadowed, ids(&["N9"]));
+    }
+
+    #[test]
+    fn dangling_and_cyclic_aliases_fail() {
+        let err = aliases_for("bsb", &changes(&[("A", "B")]), &ids(&["C"])).unwrap_err();
+        assert!(err.to_string().contains("`B`"), "{err}");
+        let err =
+            aliases_for("bsb", &changes(&[("A", "B"), ("B", "A")]), &ids(&["C"])).unwrap_err();
+        assert!(err.to_string().contains("cycle"), "{err}");
     }
 
     #[test]

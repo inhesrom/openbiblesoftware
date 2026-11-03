@@ -104,6 +104,8 @@ struct Built {
     resource: Resource,
     report: ImportReport,
     diff: IdDiff,
+    /// id-changes entries skipped because their old id is live again.
+    shadowed_aliases: Vec<String>,
 }
 
 /// Build the whole Starter library described by `config`. Returns a short summary.
@@ -245,22 +247,23 @@ fn build_one(
     }
     .with_context(|| format!("{id}: import failed"))?;
 
-    let aliases = ids::aliases_for(id, changes);
-    for (old, new) in &aliases {
-        let old = UnitId::new(old.clone()).map_err(|e| anyhow!("{id}: alias `{old}`: {e}"))?;
-        let new = UnitId::new(new.clone()).map_err(|e| anyhow!("{id}: alias `{new}`: {e}"))?;
-        resource.unit_aliases.insert(old, new);
-    }
     let units: Vec<String> = resource
         .units
         .iter()
         .map(|u| u.id.as_str().to_string())
         .collect();
+    let resolved = ids::aliases_for(id, changes, &units)?;
+    let aliases = &resolved.map;
+    for (old, new) in aliases {
+        let old = UnitId::new(old.clone()).map_err(|e| anyhow!("{id}: alias `{old}`: {e}"))?;
+        let new = UnitId::new(new.clone()).map_err(|e| anyhow!("{id}: alias `{new}`: {e}"))?;
+        resource.unit_aliases.insert(old, new);
+    }
     let diff = ids::diff(
         previous.and_then(|p| p.get(id)),
         id,
         &units,
-        &aliases,
+        aliases,
         &resource.manifest.content_hash,
     )?;
 
@@ -287,6 +290,7 @@ fn build_one(
         resource,
         report,
         diff,
+        shadowed_aliases: resolved.shadowed,
     })
 }
 
@@ -434,7 +438,8 @@ fn build_report(
     let mut s = String::from("# Starter library build report\n\n");
     let _ = writeln!(
         s,
-        "Total: {} Resource(s), {} MB of Resource files; size budget {} MB.\n",
+        "Total: {} Resource(s), {} MB of Resource files; size budget {} MB for the Starter \
+         set plus Search index caches (caches are added by a later build step).\n",
         manifest.resources.len(),
         mb(obr_bytes),
         budget / 1_000_000
@@ -490,6 +495,14 @@ fn build_report(
                 parts.push(format!("size {} → {} MB", mb(p.bytes), mb(r.bytes)));
             }
             parts.join("; ")
+        };
+        let line = if b.shadowed_aliases.is_empty() {
+            line
+        } else {
+            format!(
+                "{line}; id-changes entries not shipped because the old id is live again: {}",
+                b.shadowed_aliases.join(", ")
+            )
         };
         let _ = writeln!(s, "- `{}`: {line}", r.resource_id);
     }

@@ -44,16 +44,18 @@ jobs:
           path: target/starter-cache
           key: starter-sources-${{ hashFiles('starter/sources.toml') }}
           restore-keys: starter-sources-
+      # Pull requests diff against the latest release too, so a removed unit id fails the PR,
+      # not the release.
       - name: Previous release manifest
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           prev=$(gh release list --exclude-drafts --limit 50 --json tagName -q '.[].tagName' \
-            | grep -vx "$GITHUB_REF_NAME" | head -n 1 || true)
+            | grep -Fvx "$GITHUB_REF_NAME" | head -n 1 || true)
           if [ -n "$prev" ]; then
             echo "diffing against release $prev"
-            gh release download "$prev" --pattern starter-manifest.json --dir target/previous
+            gh release download "$prev" --pattern starter-manifest.json --dir target/previous \
+              || { echo "::error::release $prev has no starter-manifest.json to diff against"; exit 1; }
           else
             echo "no earlier release: every Resource is new"
           fi

@@ -679,16 +679,8 @@ impl BookEmitter {
         self.buf.flush_space();
         let start = self.buf.pos();
         for c in content(node) {
-            if let Some(s) = c.as_str() {
-                self.buf.push_text(s);
-                continue;
-            }
-            match c.get("type").and_then(Value::as_str) {
-                Some("char") => self.body_char(c, ctx),
-                Some("verse") => self.start_verse(c, ctx),
-                Some("note") => self.note(c, ctx),
-                _ => ctx.drop_marker(marker(c)),
-            }
+            // Verses, notes, nested markup and `\ref` text are handled as in a paragraph.
+            self.inline(c, ctx);
         }
         let end = self.buf.pos();
         if let Some(kind) = kind

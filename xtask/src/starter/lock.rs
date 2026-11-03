@@ -105,7 +105,13 @@ impl IdChanges {
 
 /// Whether `url` points at a host we refuse, directly or through an archive wrapper.
 pub fn refused_host(url: &str) -> Option<&'static str> {
-    let lower = url.to_ascii_lowercase();
+    // Archive and redirect wrappers may percent-encode the wrapped URL.
+    let lower = url
+        .to_ascii_lowercase()
+        .replace("%2f", "/")
+        .replace("%2e", ".")
+        .replace("%40", "@")
+        .replace("%3a", ":");
     REFUSED_HOSTS.iter().copied().find(|host| {
         lower
             .match_indices(host)
@@ -180,6 +186,22 @@ pub fn check(lock: &Lock, lock_dir: &Path, changes: &IdChanges) -> Result<()> {
             bad(why);
         }
     }
+    let mut olds = BTreeSet::new();
+    for c in &changes.aliases {
+        let at = format!("id-changes.toml alias {} `{}`", c.resource_id, c.old);
+        if !seen.contains(c.resource_id.as_str()) && !retired.contains(c.resource_id.as_str()) {
+            problems.push(format!(
+                "{at}: no lock entry has resource_id `{}`",
+                c.resource_id
+            ));
+        }
+        if c.old == c.new {
+            problems.push(format!("{at}: maps an id to itself"));
+        }
+        if !olds.insert((c.resource_id.as_str(), c.old.as_str())) {
+            problems.push(format!("{at}: the old id is mapped twice"));
+        }
+    }
     if problems.is_empty() {
         return Ok(());
     }
@@ -225,8 +247,39 @@ mod tests {
             refused_host("https://web.archive.org/web/2020id_/https://ccel.org/h/henry.zip"),
             Some("ccel.org")
         );
+        assert_eq!(
+            refused_host("https://example.org/fetch?u=https%3A%2F%2Fwww.ccel.org%2Fx"),
+            Some("ccel.org")
+        );
         assert_eq!(refused_host("https://ebible.org/Scriptures/x.zip"), None);
         assert_eq!(refused_host("https://notccel.org/x"), None);
+    }
+
+    #[test]
+    fn id_changes_entries_are_checked() {
+        let lock = Lock {
+            size_budget_mb: 1,
+            sources: Vec::new(),
+        };
+        let change = |r: &str, o: &str, n: &str| IdChange {
+            resource_id: r.into(),
+            old: o.into(),
+            new: n.into(),
+        };
+        let changes = IdChanges {
+            retired: Vec::new(),
+            aliases: vec![
+                change("nope", "A", "B"),
+                change("nope", "A", "C"),
+                change("nope", "D", "D"),
+            ],
+        };
+        let err = check(&lock, Path::new("."), &changes)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no lock entry"), "{err}");
+        assert!(err.contains("mapped twice"), "{err}");
+        assert!(err.contains("maps an id to itself"), "{err}");
     }
 
     #[test]
