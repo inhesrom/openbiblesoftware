@@ -17,6 +17,7 @@ obs-layout.workspace = true
 obs-search.workspace = true
 obs-store.workspace = true
 obs-render.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

@@ -1,18 +1,26 @@
 //! Command-line tool for Open Bible Software.
-//!
-//! Subcommands (import, inspect, index, run, starter) arrive with their tickets.
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: obs-cli <command>
+use obs_engine::{JobMode, Session};
+use serde_json::Value;
+
+const USAGE: &str = "usage: obs-cli <command> [args]
 
 commands:
-  help       show this message
-  version    print the version";
+  run <command-id> [name=value ...|'{json}']   run an engine command, print JSON
+  commands                                     list engine commands
+  version                                      print the version
+  help                                         show this message
+
+examples:
+  obs-cli run reference.parse text='jn 3:16-18; rom 5:8'
+  obs-cli run text.transliterate text=ἀγάπη";
 
 fn main() -> ExitCode {
-    let arg = std::env::args().nth(1);
-    match arg.as_deref() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut session = Session::new(JobMode::default_for_host());
+    match args.first().map(String::as_str) {
         None | Some("help" | "-h" | "--help") => {
             println!("{USAGE}");
             ExitCode::SUCCESS
@@ -21,9 +29,76 @@ fn main() -> ExitCode {
             println!("obs-cli {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
+        Some("commands") => {
+            for c in session.commands().iter() {
+                let params: Vec<String> = c
+                    .params
+                    .iter()
+                    .map(|p| {
+                        let opt = if p.required { "" } else { "?" };
+                        format!("{}{opt}:{}", p.name, p.kind.name())
+                    })
+                    .collect();
+                println!("{:<22} {:<32} {}", c.id, c.label, params.join(" "));
+            }
+            ExitCode::SUCCESS
+        }
+        Some("run") => run(&mut session, &args[1..]),
         Some(other) => {
             eprintln!("obs-cli: unknown command `{other}`\n\n{USAGE}");
             ExitCode::from(2)
+        }
+    }
+}
+
+fn run(session: &mut Session, args: &[String]) -> ExitCode {
+    let Some(id) = args.first() else {
+        eprintln!("obs-cli run: missing command id (see `obs-cli commands`)");
+        return ExitCode::from(2);
+    };
+    let Some(spec) = session.commands().get(id).copied() else {
+        eprintln!("obs-cli: unknown command `{id}` (see `obs-cli commands`)");
+        return ExitCode::from(2);
+    };
+    let rest = &args[1..];
+    let params = if let [json] = rest
+        && json.trim_start().starts_with('{')
+    {
+        match serde_json::from_str::<Value>(json) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("obs-cli: parameters are not valid JSON: {e}");
+                return ExitCode::from(2);
+            }
+        }
+    } else {
+        let mut pairs = Vec::new();
+        for a in rest {
+            let Some((name, value)) = a.split_once('=') else {
+                eprintln!("obs-cli: expected name=value, got `{a}`");
+                return ExitCode::from(2);
+            };
+            pairs.push((name, value));
+        }
+        match spec.params_from_pairs(&pairs) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("obs-cli: {e}");
+                return ExitCode::from(2);
+            }
+        }
+    };
+    match session.run(id, &params) {
+        Ok(out) => {
+            match serde_json::to_string_pretty(&out) {
+                Ok(text) => println!("{text}"),
+                Err(e) => println!("{out} ({e})"),
+            }
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("obs-cli: {e}");
+            ExitCode::FAILURE
         }
     }
 }
