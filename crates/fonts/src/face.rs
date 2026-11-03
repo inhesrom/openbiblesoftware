@@ -42,7 +42,8 @@ impl FaceId {
         }
     }
 
-    const fn bytes(self) -> &'static [u8] {
+    /// The font file, compiled into the binary.
+    pub const fn bytes(self) -> &'static [u8] {
         match self {
             FaceId::Regular => include_bytes!("../assets/gentium/GentiumPlus-Regular.ttf"),
             FaceId::Italic => include_bytes!("../assets/gentium/GentiumPlus-Italic.ttf"),

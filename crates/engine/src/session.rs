@@ -6,6 +6,9 @@ use serde_json::Value;
 use crate::builtin;
 use crate::command::{CommandError, CommandRegistry, CommandSpec};
 use crate::jobs::JobQueue;
+use crate::library::Library;
+use crate::workspace::Workspace;
+use obs_layout::TextSettings;
 
 /// How the Session runs background jobs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +32,14 @@ impl JobMode {
 pub struct Session {
     commands: CommandRegistry,
     jobs: JobQueue,
+    pub library: Library,
+    pub workspace: Workspace,
+    /// Text settings for Resource text (the View menu).
+    pub text: TextSettings,
+    /// Dark page for Resource text.
+    pub dark_page: bool,
+    /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
+    log: Vec<&'static str>,
 }
 
 impl Session {
@@ -41,6 +52,11 @@ impl Session {
         Self {
             commands: builtin::registry(),
             jobs,
+            library: Library::new(),
+            workspace: Workspace::new(),
+            text: TextSettings::default(),
+            dark_page: false,
+            log: Vec::new(),
         }
     }
 
@@ -50,6 +66,16 @@ impl Session {
 
     pub fn jobs(&self) -> &JobQueue {
         &self.jobs
+    }
+
+    /// Whether a command exists and is enabled now (menus grey out the rest).
+    pub fn is_enabled(&self, id: &str) -> bool {
+        self.commands.get(id).is_some_and(|c| (c.enabled)(self))
+    }
+
+    /// The most recent command ids run, oldest first.
+    pub fn command_log(&self) -> &[&'static str] {
+        &self.log
     }
 
     /// Run a command by id: look it up, check it is enabled, validate `params`, run it.
@@ -63,6 +89,10 @@ impl Session {
             return Err(CommandError::Disabled(spec.id));
         }
         let params = spec.validate(params)?;
+        if self.log.len() >= 256 {
+            self.log.remove(0);
+        }
+        self.log.push(spec.id);
         (spec.run)(self, params)
     }
 }

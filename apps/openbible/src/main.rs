@@ -71,7 +71,11 @@ fn main() -> ExitCode {
     match eframe::run_native(
         obs_ui_egui::APP_TITLE,
         options,
-        Box::new(|_cc| Ok(Box::new(obs_ui_egui::App::with_file(file)))),
+        Box::new(|_cc| {
+            Ok(Box::new(
+                obs_ui_egui::App::with_file(file).with_automation_from_env(),
+            ))
+        }),
     ) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

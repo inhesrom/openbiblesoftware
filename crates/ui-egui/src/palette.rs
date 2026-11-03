@@ -17,15 +17,16 @@ pub struct Palette {
 }
 
 impl Palette {
+    /// The Study desk page: cool linen, iron ink, lapis and verdigris accents.
     pub const PAPER: Palette = Palette {
-        page: Color32::from_rgb(0xFB, 0xF8, 0xF1),
-        ink: Color32::from_rgb(0x1C, 0x1C, 0x1E),
-        verse_number: Color32::from_rgb(0x6E, 0x6E, 0x78),
-        link: Color32::from_rgb(0x1E, 0x50, 0xAA),
-        note_marker: Color32::from_rgb(0x28, 0x78, 0x46),
-        accent: Color32::from_rgb(0x96, 0x3C, 0x1E),
-        words_of_jesus: Color32::from_rgb(0xA8, 0x1E, 0x1E),
-        selection: Color32::from_rgb(0xC8, 0xDC, 0xF5),
+        page: Color32::from_rgb(250, 251, 248),
+        ink: Color32::from_rgb(32, 38, 41),
+        verse_number: Color32::from_rgb(146, 112, 46),
+        link: Color32::from_rgb(45, 78, 134),
+        note_marker: Color32::from_rgb(45, 116, 105),
+        accent: Color32::from_rgb(45, 78, 134),
+        words_of_jesus: Color32::from_rgb(160, 40, 36),
+        selection: Color32::from_rgb(211, 224, 244),
     };
 
     pub const DARK: Palette = Palette {

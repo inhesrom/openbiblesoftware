@@ -9,6 +9,8 @@ mod heights;
 mod palette;
 mod pane;
 mod selection;
+mod shell;
+pub mod theme;
 mod view;
 mod workers;
 
@@ -16,142 +18,200 @@ use std::path::PathBuf;
 
 pub use doc::{DocBlock, ReadingDoc};
 pub use heights::HeightIndex;
-use obs_scripture::parse_reference;
 pub use palette::Palette;
-pub use pane::{AtlasTexture, reading_pane};
+pub use pane::{AtlasTexture, MEASURE_EMS, reading_pane};
 pub use selection::{
     DocPos, Granularity, Selection, copy_text, selected_text, selection_rects, word_at,
 };
+pub use shell::{Shell, parse_shortcut};
 pub use view::{Frame, FrameBlock, FrameStats, ReadingView, SYNC_BUDGET, VisibleBlock};
 pub use workers::{LayoutClient, SnippetCache, lay_out, set_layout_slowdown};
 
 /// Window title used until the product is named.
 pub const APP_TITLE: &str = "Open Bible Software";
 
-struct Open {
-    view: ReadingView,
-    path: PathBuf,
-}
-
-/// The desktop application state.
-#[derive(Default)]
+/// The desktop application.
 pub struct App {
-    open: Option<Open>,
-    atlas: AtlasTexture,
-    reference: String,
-    message: Option<String>,
-    dark: bool,
+    shell: Shell,
+    styled: bool,
+    frame: u32,
+    /// `OBS_SCRIPT`: commands to run at given frames; `OBS_SHOT`: a screenshot to take.
+    script: Vec<(u32, String, serde_json::Value)>,
+    shot: Option<(u32, PathBuf)>,
 }
 
 impl App {
-    /// Start with a Resource file open, if one is given.
+    /// Start with the library (the default library folder) and, if given, a Resource file,
+    /// which becomes the first Bible of the default layout.
     pub fn with_file(path: Option<PathBuf>) -> Self {
-        let mut app = Self::default();
-        if let Some(p) = path {
-            app.open_file(p);
+        #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
+        let mut session = obs_engine::Session::new(obs_engine::JobMode::default_for_host());
+        let mut problems = Vec::new();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Some(p) = &path
+                && let Err(e) = session.library.add_file(p)
+            {
+                problems.push(format!("{}: {e}", p.display()));
+            }
+            if let Some(dir) = obs_engine::default_library_dir() {
+                for (f, e) in session.library.scan(&dir) {
+                    problems.push(format!("{}: {e}", f.display()));
+                }
+            }
         }
-        app
+        #[cfg(target_arch = "wasm32")]
+        if let Some(p) = &path {
+            problems.push(format!(
+                "{}: opening files is not supported here",
+                p.display()
+            ));
+        }
+        let mut shell = Shell::new(session);
+        shell.reset_layout();
+        if let Some(p) = problems.first() {
+            shell
+                .session_mut()
+                .workspace
+                .push_effect(obs_engine::Effect::Message(p.clone()));
+            shell.apply_effects();
+        }
+        Self {
+            shell,
+            styled: false,
+            frame: 0,
+            script: Vec::new(),
+            shot: None,
+        }
     }
 
-    #[cfg(target_arch = "wasm32")]
-    fn open_file(&mut self, path: PathBuf) {
-        self.message = Some(format!(
-            "{}: opening files is not supported here",
-            path.display()
-        ));
+    /// Smoke-check automation. `OBS_SCRIPT="frame command {json}; …"` runs commands through
+    /// the registry at the given frames (a `"tab": "focused"` parameter means the focused
+    /// Tab). `OBS_SHOT=out.ppm` saves a screenshot at `OBS_SHOT_FRAME` (default 60) and closes.
+    pub fn with_automation_from_env(mut self) -> Self {
+        if let Ok(script) = std::env::var("OBS_SCRIPT") {
+            for step in script.split(';') {
+                let mut it = step.trim().splitn(3, ' ');
+                let (Some(f), Some(cmd)) = (it.next(), it.next()) else {
+                    continue;
+                };
+                let params = it
+                    .next()
+                    .and_then(|j| serde_json::from_str(j).ok())
+                    .unwrap_or(serde_json::json!({}));
+                if let Ok(f) = f.parse() {
+                    self.script.push((f, cmd.to_string(), params));
+                }
+            }
+        }
+        if let Ok(path) = std::env::var("OBS_SHOT") {
+            let at = std::env::var("OBS_SHOT_FRAME")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(60);
+            self.shot = Some((at, PathBuf::from(path)));
+        }
+        self
+    }
+
+    fn automate(&mut self, ctx: &egui::Context) {
+        self.frame += 1;
+        if self.script.is_empty() && self.shot.is_none() {
+            return;
+        }
+        ctx.request_repaint();
+        let now = self.frame;
+        let due: Vec<(String, serde_json::Value)> = self
+            .script
+            .iter()
+            .filter(|(f, _, _)| *f == now)
+            .map(|(_, c, p)| (c.clone(), p.clone()))
+            .collect();
+        for (cmd, mut params) in due {
+            if params.get("tab").is_some_and(serde_json::Value::is_string)
+                && let Some(t) = self.shell.session().workspace.focused()
+            {
+                params["tab"] = serde_json::json!(t.0);
+            }
+            self.shell.run(&cmd, &params);
+        }
+        if let Some((at, path)) = &self.shot {
+            if now == *at {
+                let path = path.clone();
+                let c2 = ctx.clone();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(
+                    egui::ScreenshotCallback::new(move |img| {
+                        let [w, h] = img.size;
+                        let mut out = format!("P6 {w} {h} 255\n").into_bytes();
+                        for p in &img.pixels {
+                            out.extend([p.r(), p.g(), p.b()]);
+                        }
+                        if let Err(e) = std::fs::write(&path, out) {
+                            eprintln!("openbible: {}: {e}", path.display());
+                        }
+                        c2.send_viewport_cmd(egui::ViewportCommand::Close);
+                        c2.request_repaint();
+                    }),
+                ));
+            }
+            if now > *at + 240 {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        }
+    }
+
+    pub fn shell(&mut self) -> &mut Shell {
+        &mut self.shell
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn open_file(&mut self, path: PathBuf) {
-        match ReadingDoc::open(&path) {
-            Ok(doc) => {
-                self.open = Some(Open {
-                    view: ReadingView::new(
-                        std::sync::Arc::new(doc),
-                        obs_layout::TextSettings::default(),
-                    ),
-                    path,
-                });
-                self.message = None;
+    fn dropped(&mut self, path: PathBuf) {
+        let added = self
+            .shell
+            .session_mut()
+            .library
+            .add_file(&path)
+            .map(|e| e.manifest.resource_id.clone());
+        match added {
+            Ok(id) => {
+                self.shell
+                    .run("resource.open", &serde_json::json!({ "id": id }));
             }
-            Err(e) => self.message = Some(format!("{}: {e}", path.display())),
-        }
-    }
-
-    fn go(&mut self) {
-        let Some(open) = self.open.as_mut() else {
-            return;
-        };
-        let context = open.view.current_location();
-        match parse_reference(&self.reference, &open.view.doc.versification, context) {
-            Ok(list) => {
-                if let Some(p) = list.passages().first()
-                    && !open.view.jump_to(p.start())
-                {
-                    self.message = Some(format!("{} is not in this Bible", p.start()));
-                } else {
-                    self.message = None;
-                }
+            Err(e) => {
+                let msg = format!("{}: {e}", path.display());
+                self.shell
+                    .session_mut()
+                    .workspace
+                    .push_effect(obs_engine::Effect::Message(msg));
+                self.shell.apply_effects();
             }
-            Err(e) => self.message = Some(e.kind.to_string()),
         }
     }
 }
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let dropped = ui.ctx().input(|i| {
-            i.raw
-                .dropped_files
-                .first()
-                .map(|f| f.path().to_path_buf())
-                .filter(|p| !p.as_os_str().is_empty())
-        });
-        if let Some(p) = dropped {
-            self.open_file(p);
+        if !self.styled {
+            theme::install(ui.ctx());
+            self.styled = true;
         }
-        let palette = if self.dark {
-            Palette::DARK
-        } else {
-            Palette::PAPER
-        };
-        egui::Panel::top("header").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let edit = ui.add(
-                    egui::TextEdit::singleline(&mut self.reference)
-                        .hint_text("Go to… (Jn 3:16, Ps 51, 2:4)")
-                        .desired_width(220.0),
-                );
-                if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    self.go();
-                }
-                if ui.button("Go").clicked() {
-                    self.go();
-                }
-                if let Some(open) = self.open.as_mut() {
-                    if let Some(v) = open.view.current_location() {
-                        ui.label(egui::RichText::new(v.to_string()).strong());
-                    }
-                    ui.separator();
-                    ui.label(&open.view.doc.manifest.title);
-                    ui.weak(open.path.display().to_string());
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.toggle_value(&mut self.dark, "Dark page");
-                });
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let dropped = ui.ctx().input(|i| {
+                i.raw
+                    .dropped_files
+                    .iter()
+                    .map(|f| f.path().to_path_buf())
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .collect::<Vec<_>>()
             });
-            if let Some(m) = &self.message {
-                ui.colored_label(ui.visuals().warn_fg_color, m);
+            for p in dropped {
+                self.dropped(p);
             }
-        });
-        egui::CentralPanel::default().show(ui, |ui| match self.open.as_mut() {
-            Some(open) => reading_pane(ui, &mut open.view, &mut self.atlas, &palette),
-            None => {
-                ui.centered_and_justified(|ui| {
-                    ui.label("Open a Bible: run `openbible path/to/bible.obr`, or drop a .obr file here.\nMake one with `obs-cli import <usfm dir> -o bible.obr`.");
-                });
-            }
-        });
+        }
+        self.shell.ui(ui);
+        let ctx = ui.ctx().clone();
+        self.automate(&ctx);
     }
 }
 
