@@ -10,6 +10,10 @@ fn main() -> eframe::Result {
     eframe::run_native(
         obs_ui_egui::APP_TITLE,
         options,
-        Box::new(|_cc| Ok(Box::new(obs_ui_egui::App))),
+        Box::new(|_cc| {
+            Ok(Box::new(obs_ui_egui::App::with_file(
+                std::env::args_os().nth(1).map(Into::into),
+            )))
+        }),
     )
 }

@@ -2225,6 +2225,7 @@ version = "0.0.0"
 dependencies = [
  "obs-fonts",
  "obs-layout",
+ "skrifa 0.49.0",
 ]
 
 [[package]]
@@ -2263,8 +2264,12 @@ dependencies = [
  "egui",
  "egui_tiles",
  "obs-engine",
+ "obs-fonts",
  "obs-layout",
+ "obs-model",
  "obs-render",
+ "obs-scripture",
+ "obs-store",
 ]
 
 [[package]]
