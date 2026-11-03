@@ -85,6 +85,7 @@ fn snapshot(resource: &Resource, report: &ImportReport) -> Value {
             "dropped_markup": report.dropped_markup,
             "warnings": report.warnings,
             "license_missing": report.license_missing,
+            "verse_map": report.verse_map.map(|c| json!({ "unmapped": c.unmapped, "absent": c.absent })),
         },
         "content_hash": resource.manifest.content_hash,
         "verses": verses,
@@ -220,6 +221,9 @@ fn synthetic_marker_coverage() {
     let tob = r.unit(&UnitId::new("TOB").unwrap()).unwrap();
     assert!(tob.text.contains("Text outside the 66-book canon."));
     assert_eq!(report.books.last().unwrap().book, None);
+    // Its verse counts as Unmapped in the Verse map summary.
+    assert_eq!(report.verse_map.map(|c| c.unmapped), Some(1));
+    assert!(r.verse_map.is_some());
     check_golden("synthetic", &snapshot(&r, &report));
 }
 
@@ -263,6 +267,10 @@ fn full_ebible_sources_when_available() {
         let dir = PathBuf::from(dir);
         let (r, report) = import_dir(&dir, "full");
         assert_eq!(r.verses.len(), expected_verses(&dir), "{var}");
+        let map = r.verse_map.as_ref().unwrap();
+        // Both are KJV-numbered English Bibles: only WEB's Rom 14:24-26 doxology moves.
+        assert_eq!(map.unmapped().count(), 0, "{var}");
+        assert!(map.absent().len() <= 1, "{var}: {:?}", map.absent());
         assert!(
             report.warnings.is_empty(),
             "{var}: {:?}",

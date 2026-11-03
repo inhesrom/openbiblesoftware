@@ -22,6 +22,10 @@
     "license_missing": true,
     "notes": 4,
     "tagged_words": 179,
+    "verse_map": {
+      "absent": 4971,
+      "unmapped": 0
+    },
     "verses": 19,
     "warnings": []
   },

@@ -10,7 +10,7 @@
       [
         "TOB",
         1,
-        0
+        1
       ]
     ],
     "dropped_markup": {
@@ -20,6 +20,10 @@
     "license_missing": true,
     "notes": 2,
     "tagged_words": 5,
+    "verse_map": {
+      "absent": 2570,
+      "unmapped": 1
+    },
     "verses": 7,
     "warnings": [
       "PSA 3:5: verse appears twice; its second text is kept with the verse before",

@@ -7,6 +7,8 @@ mod report;
 mod text_buf;
 mod usfm;
 mod usfm_tree;
+mod verse_map;
 
 pub use report::{BookReport, ImportReport, VerseMapCounts};
 pub use usfm::{ImportError, UsfmImport, UsfmOptions, slugify, usfm_book_code};
+pub use verse_map::{VerseFacts, VerseMapOutcome, build_verse_map, tvtms_rule_count};

@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::ops::Range;
 
-use obs_scripture::Verse;
+use obs_scripture::{Verse, VerseMap};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -27,6 +27,9 @@ pub struct Resource {
     /// Retired unit id → its replacement, followed by re-anchoring before searching by quote
     /// (#20 rule 2). Not part of the content hash.
     pub unit_aliases: BTreeMap<UnitId, UnitId>,
+    /// A Bible's Verse map to the Standard versification (ADR 0002), built at Import. Derived
+    /// from the verse list, so not part of the content hash.
+    pub verse_map: Option<VerseMap>,
 }
 
 /// One problem found while validating a Resource.
@@ -87,6 +90,7 @@ pub enum ValidationError {
     KeySchemeNotDeclared(Key),
     /// A unit alias whose old id is still a live unit.
     AliasShadowsUnit(UnitId),
+    VerseMapMismatch(String),
 }
 
 impl fmt::Display for ValidationError {
@@ -154,6 +158,7 @@ impl fmt::Display for ValidationError {
                 f,
                 "verse {verse} in `{unit}` has a verse-list entry and a `verse` span that disagree"
             ),
+            VerseMapMismatch(why) => write!(f, "verse map: {why}"),
             AliasShadowsUnit(id) => {
                 write!(f, "unit alias `{id}` is also a live unit id")
             }
@@ -197,6 +202,7 @@ pub struct ResourceBuilder {
     keys: Vec<KeyEntry>,
     dropped: BTreeMap<String, u64>,
     aliases: BTreeMap<UnitId, UnitId>,
+    verse_map: Option<VerseMap>,
 }
 
 fn offset(n: usize) -> u32 {
@@ -213,6 +219,7 @@ impl ResourceBuilder {
             keys: Vec::new(),
             dropped: BTreeMap::new(),
             aliases: BTreeMap::new(),
+            verse_map: None,
         }
     }
 
@@ -271,6 +278,16 @@ impl ResourceBuilder {
     }
 
     /// Count one piece of source markup that was dropped (e.g. `\fig`).
+    /// Set the Bible's Verse map; it must have one entry per verse, in verse-list order.
+    pub fn set_verse_map(&mut self, map: VerseMap) {
+        self.verse_map = Some(map);
+    }
+
+    /// The verse list added so far, in document order.
+    pub fn verses(&self) -> &[BibleVerse] {
+        &self.verses
+    }
+
     /// Record that unit id `old` (from an earlier revision) now lives at `new`.
     pub fn add_unit_alias(&mut self, old: UnitId, new: UnitId) {
         self.aliases.insert(old, new);
@@ -319,6 +336,7 @@ impl ResourceBuilder {
             keys,
             dropped_markup: self.dropped,
             unit_aliases: self.aliases,
+            verse_map: self.verse_map,
         };
         if let Err(more) = resource.validate() {
             errors.extend(more.0);
@@ -387,6 +405,23 @@ impl Resource {
         let units = self.validate_units(&mut errors);
         self.validate_verses(&units, &mut errors);
         self.validate_keys(&units, &mut errors);
+        if let Some(map) = &self.verse_map {
+            if self.manifest.resource_type != ResourceType::Bible {
+                errors.push(ValidationError::VerseMapMismatch(
+                    "only a Bible may have a verse map".into(),
+                ));
+            } else if map.entries().len() != self.verses.len()
+                || map
+                    .entries()
+                    .iter()
+                    .zip(&self.verses)
+                    .any(|(e, v)| e.verse != v.verse || e.last != v.last)
+            {
+                errors.push(ValidationError::VerseMapMismatch(
+                    "verse map entries do not match the verse list".into(),
+                ));
+            }
+        }
         for (old, new) in &self.unit_aliases {
             if units.contains_key(old) {
                 errors.push(ValidationError::AliasShadowsUnit(old.clone()));

@@ -10,6 +10,8 @@
 //! | `verses` | `ordinal` (document order), `book`, `chapter`, `verse`, `last`, `unit`, `start`, `end` |
 //! | `keys` | `scheme`, `key`, `key_norm`, `unit`, `start`, `end`, `alias` |
 //! | `unit_alias` | `old` → `new` unit id |
+//! | `verse_map` | per Bible Verse (`ordinal` → `verses`): Standard `std_start`, `std_end` (both null for an Unmapped verse) |
+//! | `verse_absent` | Absent verses: Standard `verse` ids (`MAT.17.21`) |
 //! | `dropped_markup` | `marker`, `count` (for the Import report) |
 //!
 //! Files are written once, deterministically (same Resource ⇒ byte-identical file), and opened
@@ -24,11 +26,12 @@ use obs_model::{
     BibleVerse, Direction, FORMAT_VERSION, Key, KeyEntry, KeyScheme, Manifest, Origin, Resource,
     ResourceType, Span, TextUnit, UnitId, UnitKind,
 };
-use obs_scripture::{Book, Verse};
+use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, VerseMapEntry};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
 
 use crate::codec::{
     enum_from, enum_name, json, json_from, key_columns, key_from, span_columns, span_from,
+    verse_from, verse_text,
 };
 use crate::error::StoreError;
 use crate::resource_store::{ResourceStore, Summary};
@@ -100,6 +103,15 @@ CREATE INDEX keys_lookup ON keys (scheme, key_norm);
 CREATE TABLE unit_alias (
     old TEXT PRIMARY KEY,
     new TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE verse_map (
+    ordinal INTEGER PRIMARY KEY,
+    std_start TEXT,
+    std_end TEXT
+);
+CREATE INDEX verse_map_std ON verse_map (std_start);
+CREATE TABLE verse_absent (
+    verse TEXT PRIMARY KEY
 ) WITHOUT ROWID;
 CREATE TABLE dropped_markup (
     marker TEXT PRIMARY KEY,
@@ -248,6 +260,26 @@ fn write_to(r: &Resource, path: &Path) -> Result<(), StoreError> {
             alias_stmt
                 .execute(params![old.as_str(), new.as_str()])
                 .map_err(sql)?;
+        }
+        if let Some(map) = &r.verse_map {
+            let mut map_stmt = tx
+                .prepare("INSERT INTO verse_map (ordinal, std_start, std_end) VALUES (?1, ?2, ?3)")
+                .map_err(sql)?;
+            for (i, e) in map.entries().iter().enumerate() {
+                map_stmt
+                    .execute(params![
+                        i as i64,
+                        e.standard.map(|p| verse_text(p.start())),
+                        e.standard.map(|p| verse_text(p.end()))
+                    ])
+                    .map_err(sql)?;
+            }
+            let mut absent_stmt = tx
+                .prepare("INSERT INTO verse_absent (verse) VALUES (?1)")
+                .map_err(sql)?;
+            for v in map.absent() {
+                absent_stmt.execute(params![verse_text(*v)]).map_err(sql)?;
+            }
         }
         let mut dropped_stmt = tx
             .prepare("INSERT INTO dropped_markup (marker, count) VALUES (?1, ?2)")
@@ -638,6 +670,60 @@ impl ResourceStore for ObrReader {
         new.map(unit_id).transpose()
     }
 
+    fn verse_map(&self) -> Result<Option<VerseMap>, StoreError> {
+        let rows: Vec<(i64, Option<String>, Option<String>)> = {
+            let mut stmt = self
+                .conn
+                .prepare_cached(
+                    "SELECT ordinal, std_start, std_end FROM verse_map ORDER BY ordinal",
+                )
+                .map_err(sql)?;
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .map_err(sql)?
+                .collect::<Result<_, _>>()
+                .map_err(sql)?
+        };
+        if rows.is_empty() {
+            return Ok(None);
+        }
+        let verses = self.verses()?;
+        if rows.len() != verses.len() {
+            return Err(corrupt("verse map and verse list differ in length"));
+        }
+        let mut entries = Vec::with_capacity(rows.len());
+        for ((ordinal, start, end), v) in rows.into_iter().zip(&verses) {
+            let standard = match (start, end) {
+                (Some(a), Some(b)) => Some(
+                    Passage::new(verse_from(&a)?, verse_from(&b)?)
+                        .map_err(|e| corrupt(format!("verse map row {ordinal}: {e}")))?,
+                ),
+                (None, None) => None,
+                _ => return Err(corrupt(format!("verse map row {ordinal} is half empty"))),
+            };
+            entries.push(VerseMapEntry {
+                verse: v.verse,
+                last: v.last,
+                standard,
+            });
+        }
+        let absent: Vec<Verse> = {
+            let mut stmt = self
+                .conn
+                .prepare_cached("SELECT verse FROM verse_absent")
+                .map_err(sql)?;
+            let texts: Vec<String> = stmt
+                .query_map([], |r| r.get(0))
+                .map_err(sql)?
+                .collect::<Result<_, _>>()
+                .map_err(sql)?;
+            texts
+                .iter()
+                .map(|t| verse_from(t))
+                .collect::<Result<_, _>>()?
+        };
+        Ok(Some(VerseMap::new(entries, absent, &Standard)))
+    }
+
     fn load(&self) -> Result<Resource, StoreError> {
         let mut units = Vec::new();
         for id in self.unit_ids()? {
@@ -691,6 +777,7 @@ impl ResourceStore for ObrReader {
             keys,
             dropped_markup,
             unit_aliases,
+            verse_map: self.verse_map()?,
         };
         resource.validate().map_err(StoreError::Invalid)?;
         let hash = resource.content_hash();

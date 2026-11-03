@@ -4,7 +4,7 @@ use obs_model::{
     Direction, Key, KeyScheme, Manifest, MorphemePart, NoteKind, Origin, ParaStyle, Resource,
     ResourceBuilder, ResourceType, SpanKind, TextAccumulator, UnitId, UnitKind,
 };
-use obs_scripture::{Book, Passage, PassageList, Verse};
+use obs_scripture::{Book, Passage, PassageList, Standard, Verse, VerseMap, VerseMapEntry};
 
 /// John 3:16-17 and Psalm 3:title-1, with every span shape the format must carry.
 #[doc(hidden)]
@@ -123,6 +123,20 @@ pub fn sample_resource() -> Resource {
         false,
     );
     b.add_unit_alias(UnitId::new("JOH").unwrap_or_else(|_| unreachable!()), jhn);
+    let entries = b
+        .verses()
+        .iter()
+        .map(|v| VerseMapEntry {
+            verse: v.verse,
+            last: v.last,
+            standard: Some(Passage::verse(v.verse)),
+        })
+        .collect();
+    b.set_verse_map(VerseMap::new(
+        entries,
+        vec![Verse::new(Book::John, 3, 18)],
+        &Standard,
+    ));
     b.count_dropped("\\fig");
     b.count_dropped("\\fig");
     b.count_dropped("\\rq");

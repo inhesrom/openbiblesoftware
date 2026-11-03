@@ -206,3 +206,19 @@ fn invalid_resources_are_not_written() {
     ));
     assert!(!path.exists());
 }
+
+#[test]
+fn verse_map_round_trips() {
+    let dir = TempDir::new("versemap");
+    let path = dir.path("kjv.obr");
+    write_obr(&sample_resource(), &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    let map = r.verse_map().unwrap().unwrap();
+    assert_eq!(map.entries().len(), 4);
+    assert!(map.is_absent(Verse::new(Book::John, 3, 18)));
+    assert_eq!(
+        map.first_native(Verse::new(Book::Psalms, 3, 0)),
+        Some(Verse::new(Book::Psalms, 3, 0))
+    );
+    assert_eq!(Some(map), sample_resource().verse_map);
+}

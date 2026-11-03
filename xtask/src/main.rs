@@ -2,6 +2,7 @@
 
 mod assets;
 mod layers;
+mod tvtms;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -17,7 +18,10 @@ tasks:
   test     cargo nextest (falls back to cargo test locally) plus doctests
   layers   enforce the crate layering rules (ADR 0005, #12)
   wasm     cargo check every non-app crate for wasm32-unknown-unknown
-  assets   every file under an assets/ directory has an ATTRIBUTION.toml entry";
+  assets   every file under an assets/ directory has an ATTRIBUTION.toml entry
+
+maintenance:
+  tvtms <TVTMS.txt>   regenerate the embedded STEPBible TVTMS rules";
 
 fn main() {
     if let Err(err) = run() {
@@ -37,6 +41,10 @@ fn run() -> Result<()> {
             }
             eprintln!("\nxtask ci: all gates passed");
             Ok(())
+        }
+        "tvtms" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            tvtms::run(&root, &rest)
         }
         "help" | "-h" | "--help" => {
             println!("{USAGE}");

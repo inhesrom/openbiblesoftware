@@ -37,6 +37,10 @@ fn inspect_shows_manifest_units_spans_and_verses() {
         "{out}"
     );
     assert!(out.contains("dropped markup  \\fig ×2, \\rq ×1"), "{out}");
+    assert!(
+        out.contains("verse map       0 unmapped, 1 absent"),
+        "{out}"
+    );
     assert!(out.contains("JHN"), "{out}");
 
     let (ok, out, _) = cli(&["inspect", p, "--unit", "JHN"]);
@@ -44,14 +48,13 @@ fn inspect_shows_manifest_units_spans_and_verses() {
     assert!(out.contains("tagged_word"), "{out}");
     assert!(out.contains("\"God\""), "{out}");
 
-    let (ok, out, _) = cli(&["inspect", p, "--verse", "Ps 3:0-1; Jn 3:16-18"]);
+    let (ok, out, _) = cli(&["inspect", p, "--verse", "Ps 3:0-1; Jn 3:16-17"]);
     assert!(ok);
     assert!(
         out.contains("Ps 3:title [PSA 0..52]: A Psalm of David"),
         "{out}"
     );
     assert!(out.contains("John 3:16 [JHN"), "{out}");
-    assert!(out.contains("John 3:18: not in this Bible"), "{out}");
 
     let (ok, _, err) = cli(&["inspect", p, "--unit", "JOH"]);
     assert!(!ok);

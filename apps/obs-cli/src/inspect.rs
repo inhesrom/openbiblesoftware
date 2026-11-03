@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use obs_model::{Resource, ResourceType, UnitId};
-use obs_scripture::{Standard, parse_reference};
+use obs_scripture::{ListedVersification, Passage, Verse, parse_reference};
 use obs_store::{ObrReader, ResourceStore, StoreError, sample_resource, write_obr};
 
 const INSPECT_USAGE: &str = "usage: obs-cli inspect <file.obr> [--unit ID] [--verse REF]";
@@ -100,6 +100,15 @@ fn show_summary(r: &ObrReader) -> Result<String, String> {
         "\ncounts          {} units, {} spans, {} verses, {} keys, {} unit aliases",
         s.units, s.spans, s.verses, s.keys, s.unit_aliases
     );
+    if let Some(map) = &resource.verse_map {
+        let _ = writeln!(
+            out,
+            "verse map       {} unmapped, {} absent{}",
+            map.unmapped().count(),
+            map.absent().len(),
+            if map.is_identity() { " (identity)" } else { "" }
+        );
+    }
     if !resource.dropped_markup.is_empty() {
         let dropped: Vec<String> = resource
             .dropped_markup
@@ -173,11 +182,14 @@ fn show_verse(r: &ObrReader, reference: &str) -> Result<String, String> {
     if r.manifest().resource_type != ResourceType::Bible {
         return Err("--verse needs a Bible".into());
     }
-    // Read in Standard numbering for now; per-Bible Versifications arrive with Verse maps (#28).
-    let list = parse_reference(reference, &Standard, None).map_err(|e| e.to_string())?;
+    // A reference typed for a Bible is read in that Bible's own numbering (ADR 0002 rule 10).
+    let verses = r.verses().map_err(|e| e.to_string())?;
+    let own = ListedVersification::new(verses.iter().map(|v| (v.verse, v.last)));
+    let map = r.verse_map().map_err(|e| e.to_string())?;
+    let list = parse_reference(reference, &own, None).map_err(|e| e.to_string())?;
     let mut out = String::new();
     for passage in list.iter() {
-        for v in passage.verses(&Standard) {
+        for v in passage.verses(&own) {
             match r.verse(v).map_err(|e| e.to_string())? {
                 None => {
                     let _ = writeln!(out, "{v}: not in this Bible");
@@ -188,10 +200,25 @@ fn show_verse(r: &ObrReader, reference: &str) -> Result<String, String> {
                         .map_err(|e| e.to_string())?
                         .ok_or_else(|| format!("missing unit {}", bv.unit))?;
                     let text = unit.text.get(bv.range()).unwrap_or("<bad range>");
-                    let _ = writeln!(out, "{v} [{} {}..{}]: {text}", bv.unit, bv.start, bv.end);
+                    // Like the verse-number tooltip: the Standard equivalent where it differs.
+                    let standard = match map.as_ref().map(|m| m.to_standard(v)) {
+                        None => String::new(),
+                        Some(None) => " (Unmapped)".into(),
+                        Some(Some(p)) if p == own_passage(v, bv.last) => String::new(),
+                        Some(Some(p)) => format!(" (Standard {p})"),
+                    };
+                    let _ = writeln!(
+                        out,
+                        "{v}{standard} [{} {}..{}]: {text}",
+                        bv.unit, bv.start, bv.end
+                    );
                 }
             }
         }
     }
     Ok(out)
+}
+
+fn own_passage(v: Verse, last: u16) -> Passage {
+    Passage::new(v, Verse::new(v.book, v.chapter, last.max(v.verse))).unwrap_or(Passage::verse(v))
 }
