@@ -68,6 +68,8 @@
 | Adam Clarke | PD ([CrossWire](https://www.crosswire.org/sword/modules/ModInfo.jsp?modName=Clarke)) | 8.46 MB | Whole Bible |
 | John Gill | Author died 1771, so the text is PD by age. **CrossWire module page failed to load this session**, and an old CrossWire thread mentions a typist claiming copyright ([sword-devel 2000](http://crosswire.org/pipermail/sword-devel/2000-July/010213.html)) | ? | **Unverified** digital provenance |
 
+**Starter sources for MHC and JFB:** chosen in [commentary-sources.md](commentary-sources.md) (#39): the Wikisource MHC transcription and the Woodside / OnLine Bible JFB edition from thirdmill.org, both pinned through Internet Archive captures.
+
 **CCEL caveat:** CCEL says most editions are based on US-PD books, but "These books may be used for personal, educational, or non-profit purposes. Contact us for permission to republish CCEL works or to use them commercially" ([CCEL copyright](https://www.ccel.org/about/copyright.html)). CrossWire developers have described this as a claim on the ThML/XML markup, not the text ([sword-devel 2010](http://crosswire.org/pipermail/sword-devel/2010-November/035428.html)). Two options: get files from CrossWire modules or our own scans and keep no CCEL markup, or ask CCEL for permission.
 
 **CrossWire software note:** the SWORD *software* is GPL, but "texts distributed with the software need not be released under any particular license". Each module's About section sets its terms ([CrossWire license](https://www.crosswire.org/sword/about/license.jsp)). Reading SWORD module files with our own pure-Rust importer does not link libsword.

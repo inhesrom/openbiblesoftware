@@ -246,3 +246,45 @@ fn the_real_lock_passes_the_provenance_gate() {
         .collect();
     assert_eq!(ids, ["kjv-strongs", "bsb", "web", "asv"]);
 }
+
+/// The MHC and JFB lock entries proposed by the #39 commentary-source spike, read from its
+/// findings note. #44 moves them into `starter/sources.toml` with the converters and deletes
+/// this test.
+#[test]
+fn the_proposed_commentary_lock_entries_pass_the_provenance_gate() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let note = std::fs::read_to_string(root.join("docs/research/commentary-sources.md")).unwrap();
+    let entries = note
+        .split_once("<!-- proposed-lock")
+        .and_then(|(_, rest)| rest.split_once("```toml\n"))
+        .and_then(|(_, rest)| rest.split_once("```"))
+        .map(|(entries, _)| entries)
+        .expect("the findings note has a proposed-lock toml block");
+    let proposed: Lock = toml::from_str(&format!("size_budget_mb = 400\n{entries}")).unwrap();
+    let ids: Vec<&str> = proposed
+        .sources
+        .iter()
+        .map(|s| s.resource_id.as_str())
+        .collect();
+    assert_eq!(ids, ["mhc", "jfb"]);
+
+    // Check them next to the real entries, so ids must not collide either.
+    let config = Config::defaults(root);
+    let mut lock_file = Lock::load(&config.lock).unwrap();
+    lock_file.sources.extend(proposed.sources);
+    let changes = IdChanges::load(&config.id_changes).unwrap();
+    let err = lock::check(&lock_file, config.lock.parent().unwrap(), &changes)
+        .unwrap_err()
+        .to_string();
+    // The converters are #44's work; everything else must already pass the gate.
+    let problems: Vec<&str> = err.lines().skip(1).map(str::trim).collect();
+    assert_eq!(problems.len(), 2, "{err}");
+    assert!(
+        problems[0].starts_with("mhc: unknown importer `wikisource-mhc`"),
+        "{err}"
+    );
+    assert!(
+        problems[1].starts_with("jfb: unknown importer `jfb-html`"),
+        "{err}"
+    );
+}
