@@ -8,6 +8,7 @@ use egui::{
 use obs_render::GlyphAtlas;
 
 use crate::palette::Palette;
+use crate::selection::{Granularity, Selection, copy_text, selection_rects};
 use crate::view::{MARGIN, ReadingView, SYNC_BUDGET};
 
 const SCROLLBAR: f32 = 10.0;
@@ -105,14 +106,20 @@ pub fn reading_pane(
         });
     }
     let track = Rect::from_min_max(pos2(rect.right() - SCROLLBAR, rect.top()), rect.max);
-    if response.dragged()
+    if response.drag_started()
         && let Some(p) = response.interact_pointer_pos()
-        && track.expand(4.0).contains(p)
+    {
+        view.dragging_scrollbar = track.expand(4.0).contains(p);
+    }
+    if response.dragged()
+        && view.dragging_scrollbar
+        && let Some(p) = response.interact_pointer_pos()
     {
         let (_, total) = view.position();
         let frac = f64::from(((p.y - track.top()) / track.height()).clamp(0.0, 1.0));
         view.scroll_to_position(frac * total);
     }
+    handle_selection(ui, &response, view, rect, text_rect);
 
     let ppp = ui.ctx().pixels_per_point();
     let frame = view.frame(rect.height(), Some(SYNC_BUDGET));
@@ -148,6 +155,18 @@ pub fn reading_pane(
     if view.has_pending() {
         ui.ctx().request_repaint();
     }
+    if let Some(sel) = view.selection {
+        for [x0, y0, x1, y1] in selection_rects(view, &sel, rect.height()) {
+            painter.rect_filled(
+                Rect::from_min_max(
+                    pos2(text_rect.left() + x0, rect.top() + y0),
+                    pos2(text_rect.left() + x1, rect.top() + y1),
+                ),
+                0.0,
+                palette.selection,
+            );
+        }
+    }
     let texture = atlas.sync(ui.ctx());
     let mut mesh = Mesh::with_texture(texture);
     mesh.reserve_vertices(quads.len() * 4);
@@ -175,5 +194,69 @@ pub fn reading_pane(
             3.0,
             palette.verse_number.gamma_multiply(0.5),
         );
+    }
+}
+
+/// Drag to select (auto-scrolling past the pane's edges), double-click a word, triple-click a
+/// verse, click to clear; Copy puts the text with its reference on the clipboard.
+fn handle_selection(
+    ui: &Ui,
+    response: &egui::Response,
+    view: &mut ReadingView,
+    rect: Rect,
+    text_rect: Rect,
+) {
+    let pos_at = |view: &mut ReadingView, p: Pos2| {
+        let y = p.y.clamp(rect.top(), rect.bottom() - 1.0) - rect.top();
+        view.pos_at(p.x - text_rect.left(), y)
+    };
+    let pointer = response.interact_pointer_pos();
+    if !view.dragging_scrollbar {
+        if response.triple_clicked() || response.double_clicked() {
+            if let Some(at) = pointer.and_then(|p| pos_at(view, p)) {
+                view.selection = Some(Selection {
+                    anchor: at,
+                    head: at,
+                    granularity: if response.triple_clicked() {
+                        Granularity::Verse
+                    } else {
+                        Granularity::Word
+                    },
+                });
+            }
+        } else if response.drag_started() {
+            view.selection = pointer.and_then(|p| pos_at(view, p)).map(Selection::caret);
+        } else if response.dragged()
+            && let Some(p) = pointer
+        {
+            // Past the top or bottom edge, scroll in proportion to the distance.
+            let past = if p.y < rect.top() {
+                p.y - rect.top()
+            } else if p.y > rect.bottom() {
+                p.y - rect.bottom()
+            } else {
+                0.0
+            };
+            if past != 0.0 {
+                view.scroll_by(past * 0.3);
+                ui.ctx().request_repaint();
+            }
+            if let (Some(head), Some(sel)) = (pos_at(view, p), view.selection.as_mut()) {
+                sel.head = head;
+            }
+        } else if response.clicked() {
+            view.selection = None;
+        }
+    }
+    if response.drag_stopped() {
+        view.dragging_scrollbar = false;
+    }
+    let copy = ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Copy)));
+    if copy
+        && let Some(sel) = view
+            .selection
+            .filter(|s| !s.is_empty() || s.granularity != Granularity::Grapheme)
+    {
+        ui.ctx().copy_text(copy_text(&view.doc, &sel));
     }
 }

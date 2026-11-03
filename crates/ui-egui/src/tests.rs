@@ -259,6 +259,32 @@ fn previews() {
         let page = palette.page;
         let mut px: Vec<[f32; 3]> =
             vec![[page.r() as f32, page.g() as f32, page.b() as f32]; w * h];
+        // A selection from the middle of the first line to the middle of the fourth.
+        let a = view.pos_at(120.0, 10.0);
+        let b = view.pos_at(140.0, 140.0);
+        if let (Some(a), Some(b)) = (a, b) {
+            let sel = Selection {
+                anchor: a,
+                head: b,
+                granularity: Granularity::Grapheme,
+            };
+            let c = palette.selection;
+            for [x0, y0, x1, y1] in selection_rects(&view, &sel, h as f32 / scale) {
+                let (x0, x1) = (
+                    ((view::MARGIN + x0) * scale) as usize,
+                    ((view::MARGIN + x1) * scale) as usize,
+                );
+                let (y0, y1) = ((y0.max(0.0) * scale) as usize, (y1 * scale) as usize);
+                for y in y0..y1.min(h) {
+                    for x in x0..x1.min(w) {
+                        px[y * w + x] = [f32::from(c.r()), f32::from(c.g()), f32::from(c.b())];
+                    }
+                }
+            }
+            if name.starts_with("light") {
+                eprintln!("copied:\n{}", copy_text(&doc, &sel));
+            }
+        }
         let side = atlas.side() as f32;
         for q in quads {
             let c = palette.color(q.role);
@@ -367,4 +393,126 @@ fn bench_runs_and_reports_every_scenario() {
     assert_eq!(report.scenarios[0].frames, 20);
     assert!(report.blocks > 1000);
     assert!(report.text_gpu_mib > 0.0);
+}
+
+#[test]
+fn a_selection_made_across_a_scroll_copies_the_exact_source() {
+    let mut view = view();
+    view.jump_to(Verse::new(Book::Genesis, 30, 3));
+    let start = view.pos_at(40.0, 5.0).unwrap();
+    let mut sel = Selection::caret(start);
+    // Drag down through two chapters: the start scrolls out of view and its blocks may be
+    // dropped from the layout cache; the selection keeps document coordinates.
+    while view.current_location().unwrap() < Verse::new(Book::Genesis, 32, 4) {
+        view.scroll_by(120.0);
+        view.frame(600.0, None);
+        sel.head = view.pos_at(200.0, 590.0).unwrap();
+    }
+    assert!(sel.head > sel.anchor);
+    let text = selected_text(&view.doc, &sel);
+    assert_eq!(text, &view.doc.units[0].text[start.byte..sel.head.byte]);
+    let copied = copy_text(&view.doc, &sel);
+    assert!(copied.starts_with(text.trim()));
+    let label = copied.lines().last().unwrap();
+    assert!(label.starts_with("Genesis 30:"), "{label}");
+    assert!(label.contains("-32:") && label.ends_with("(TB)"), "{label}");
+}
+
+#[test]
+fn word_and_verse_granularity() {
+    let mut view = view();
+    let v = Verse::new(Book::Genesis, 31, 10);
+    view.jump_to(v);
+    let at = view.pos_at(60.0, 5.0).unwrap();
+    let word = Selection {
+        anchor: at,
+        head: at,
+        granularity: Granularity::Word,
+    };
+    let w = selected_text(&view.doc, &word);
+    assert!(
+        !w.is_empty() && w.chars().all(|c| c.is_alphanumeric()) || w.trim().is_empty(),
+        "{w:?}"
+    );
+    let verse = Selection {
+        granularity: Granularity::Verse,
+        ..word
+    };
+    let text = selected_text(&view.doc, &verse);
+    let verse_at = view.doc.verse_containing(at.unit, at.byte).unwrap();
+    let r = view.doc.verse_range_at(at.unit, at.byte).unwrap();
+    assert_eq!(text, &view.doc.units[0].text[r]);
+    assert!(copy_text(&view.doc, &verse).ends_with(&format!(
+        "Genesis {}:{} (TB)",
+        verse_at.chapter, verse_at.verse
+    )));
+}
+
+/// Hebrew Gen 1:1-2 in one right-to-left paragraph, with an English gloss in it.
+fn hebrew_doc() -> Arc<ReadingDoc> {
+    let mut m = Manifest::new("heb-test", "Hebrew test", "HEB", ResourceType::Bible, "hbo");
+    m.key_schemes = vec![KeyScheme::Passage];
+    m.license = "LicenseRef-PD".into();
+    m.direction = obs_model::Direction::Rtl;
+    let mut b = ResourceBuilder::new(m);
+    let genesis = UnitId::book(Book::Genesis);
+    let mut t = TextAccumulator::new();
+    let v1 = t.push("בְּרֵאשִׁ֖ית בָּרָ֣א (created) אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם");
+    t.push(" ");
+    let v2 = t.push("וְהָאָ֗רֶץ הָיְתָ֥ה תֹ֙הוּ֙ וָבֹ֔הוּ");
+    let end = t.pos();
+    b.add_unit(genesis.clone(), UnitKind::BibleBook, None, t.into_string());
+    b.add_span(
+        &genesis,
+        0..end,
+        SpanKind::Para {
+            style: ParaStyle::Prose,
+        },
+    );
+    b.add_verse(&genesis, v1, Verse::new(Book::Genesis, 1, 1), 1);
+    b.add_verse(&genesis, v2, Verse::new(Book::Genesis, 1, 2), 2);
+    Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
+}
+
+#[test]
+fn selecting_mixed_hebrew_and_ltr_text_highlights_the_right_glyphs() {
+    let doc = hebrew_doc();
+    let mut view = ReadingView::new(Arc::clone(&doc), TextSettings::default());
+    view.set_width(700.0);
+    view.jump_to(Verse::new(Book::Genesis, 1, 1));
+    let text = &doc.units[0].text;
+    // From inside the second Hebrew word, across the English "(created)", into the third.
+    let a = text.find("בָּרָ֣א").unwrap() + "בָּ".len();
+    let b = text.find("אֱלֹהִ֑ים").unwrap() + "אֱ".len();
+    let sel = Selection {
+        anchor: DocPos { unit: 0, byte: a },
+        head: DocPos { unit: 0, byte: b },
+        granularity: Granularity::Grapheme,
+    };
+    let rects = selection_rects(&view, &sel, 600.0);
+    // Right-to-left with a left-to-right island: the highlight breaks into several pieces.
+    assert!(rects.len() >= 3, "{rects:?}");
+    // Every cluster is highlighted exactly when its source byte is selected.
+    let mut checked = 0;
+    for (index, top, laid) in view.laid_in_view(600.0) {
+        assert_eq!(doc.blocks[index].unit, 0);
+        for line in &laid.lines {
+            for item in &line.items {
+                for (bytes, x0, x1) in item.clusters() {
+                    let Some(obs_layout::UnitPos::Text(u)) = laid.to_unit(bytes.start) else {
+                        continue;
+                    };
+                    let (cx, cy) = ((x0 + x1) / 2.0, top + (line.top + line.bottom) / 2.0);
+                    let lit = rects
+                        .iter()
+                        .any(|r| cx >= r[0] && cx <= r[2] && cy >= r[1] && cy <= r[3]);
+                    assert_eq!(lit, (a..b).contains(&u), "byte {u} {:?}", &text[u..]);
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert!(checked > 20);
+    assert_eq!(selected_text(&doc, &sel), &text[a..b]);
+    assert!(copy_text(&doc, &sel).ends_with("Genesis 1:1 (HEB)"));
 }
