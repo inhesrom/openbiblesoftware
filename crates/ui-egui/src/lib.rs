@@ -3,11 +3,13 @@
 //!
 //! Layer L6: the only layer allowed to depend on egui, eframe, winit or rfd.
 
+pub mod bench;
 mod doc;
 mod heights;
 mod palette;
 mod pane;
 mod view;
+mod workers;
 
 use std::path::PathBuf;
 
@@ -16,7 +18,8 @@ pub use heights::HeightIndex;
 use obs_scripture::parse_reference;
 pub use palette::Palette;
 pub use pane::{AtlasTexture, reading_pane};
-pub use view::{ReadingView, VisibleBlock};
+pub use view::{Frame, FrameBlock, FrameStats, ReadingView, SYNC_BUDGET, VisibleBlock};
+pub use workers::{LayoutClient, SnippetCache, lay_out, set_layout_slowdown};
 
 /// Window title used until the product is named.
 pub const APP_TITLE: &str = "Open Bible Software";

@@ -14,6 +14,7 @@ obs-fonts.workspace = true
 obs-model.workspace = true
 obs-scripture.workspace = true
 obs-store.workspace = true
+serde.workspace = true
 obs-layout.workspace = true
 obs-render.workspace = true
 egui.workspace = true

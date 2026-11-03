@@ -70,6 +70,21 @@ fn bible() -> Arc<ReadingDoc> {
     Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
 }
 
+/// Run frames until the workers have nothing in flight.
+fn settle(view: &mut ReadingView, height: f32) {
+    for _ in 0..2000 {
+        view.frame(height, Some(SYNC_BUDGET));
+        if !view.has_pending() {
+            view.frame(height, Some(SYNC_BUDGET));
+            if !view.has_pending() {
+                return;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    panic!("layout workers never finished");
+}
+
 fn view() -> ReadingView {
     let mut v = ReadingView::new(bible(), TextSettings::default());
     v.set_width(450.0);
@@ -176,6 +191,8 @@ fn palette_changes_do_not_relayout_or_reraster() {
         }
         colours
     };
+    // Let prefetch work finish first, so only the palette differs between the two draws.
+    settle(&mut view, 700.0);
     let light = draw(&mut view, &mut atlas, Palette::PAPER);
     let (layouts, rasters) = (view.layouts, atlas.atlas.stats().rasters);
     let dark = draw(&mut view, &mut atlas, Palette::DARK);
@@ -276,4 +293,78 @@ fn previews() {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(format!("reading-pane-{name}.ppm")), out).unwrap();
     }
+}
+
+#[test]
+fn budgeted_frames_use_workers_and_settle() {
+    let mut view = view();
+    view.jump_to(Verse::new(Book::Genesis, 30, 1));
+    // A zero budget forces everything not yet laid out onto the workers.
+    let first = view.frame(800.0, Some(std::time::Duration::ZERO));
+    assert!(first.stats.sync_blocks <= 1, "{:?}", first.stats);
+    assert!(first.stats.submitted > 0);
+    settle(&mut view, 800.0);
+    let later = view.frame(800.0, Some(std::time::Duration::ZERO));
+    assert_eq!(later.stats.placeholders, 0, "prefetched blocks are ready");
+    assert_eq!(later.stats.sync_blocks, 0);
+    // Scrolling within the prefetch window needs no layout on the UI thread.
+    view.scroll_by(800.0);
+    let scrolled = view.frame(800.0, Some(std::time::Duration::ZERO));
+    assert_eq!(scrolled.stats.placeholders, 0, "{:?}", scrolled.stats);
+}
+
+#[test]
+fn snippets_settle_within_two_frames() {
+    let mut cache = SnippetCache::default();
+    let settings = TextSettings::default();
+    let frame = std::time::Duration::from_micros(8_333);
+    let mut settled_at = None;
+    for f in 0..10 {
+        if cache
+            .get(
+                "For God so loved the world",
+                obs_layout::ColorRole::Ink,
+                false,
+                300.0,
+                &settings,
+            )
+            .is_some()
+        {
+            settled_at = Some(f);
+            break;
+        }
+        std::thread::sleep(frame);
+    }
+    let f = settled_at.expect("snippet never laid out");
+    assert!(f <= 2, "snippet took {f} frames");
+    // Asking again is immediate.
+    assert!(
+        cache
+            .get(
+                "For God so loved the world",
+                obs_layout::ColorRole::Ink,
+                false,
+                300.0,
+                &settings
+            )
+            .is_some()
+    );
+}
+
+#[test]
+fn bench_runs_and_reports_every_scenario() {
+    let cfg = bench::BenchConfig {
+        steady_frames: 20,
+        flings: 1,
+        jumps: 2,
+        panes: 2,
+        pace: false,
+        ..bench::BenchConfig::default()
+    };
+    let report = bench::run(bench::synthetic_bible(), cfg);
+    let names: Vec<&str> = report.scenarios.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["steady", "fling", "jumps"]);
+    assert_eq!(report.scenarios[0].frames, 20);
+    assert!(report.blocks > 1000);
+    assert!(report.text_gpu_mib > 0.0);
 }
