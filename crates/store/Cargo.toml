@@ -1,0 +1,17 @@
+[package]
+name = "obs-store"
+description = "The only crate that uses SQLite: .obr reader/writer, User database and Search index caches."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+obs-scripture.workspace = true
+obs-model.workspace = true
+obs-search.workspace = true
+
+[lints]
+workspace = true

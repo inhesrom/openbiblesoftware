@@ -1,0 +1,16 @@
+[package]
+name = "openbible"
+description = "Open Bible Software desktop app."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+obs-ui-egui.workspace = true
+eframe = { workspace = true, features = ["wayland", "x11", "accesskit"] }
+
+[lints]
+workspace = true

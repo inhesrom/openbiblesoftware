@@ -1,0 +1,19 @@
+[package]
+name = "obs-cli"
+description = "Command-line tool: import, inspect, build the Starter library and run engine commands."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "obs-cli"
+path = "src/main.rs"
+
+[dependencies]
+obs-engine.workspace = true
+
+[lints]
+workspace = true

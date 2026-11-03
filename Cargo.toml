@@ -1,0 +1,44 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "xtask"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/inhesrom/openbiblesoftware"
+publish = false
+
+[workspace.dependencies]
+# Internal crates (working prefix `obs-` until the product is named).
+obs-scripture = { path = "crates/scripture" }
+obs-model = { path = "crates/model" }
+obs-fonts = { path = "crates/fonts" }
+obs-formats = { path = "crates/formats" }
+obs-layout = { path = "crates/layout" }
+obs-search = { path = "crates/search" }
+obs-store = { path = "crates/store" }
+obs-render = { path = "crates/render" }
+obs-engine = { path = "crates/engine" }
+obs-ui-egui = { path = "crates/ui-egui" }
+
+# UI (L6 only; enforced by `cargo xtask layers`).
+egui = "0.37"
+eframe = { version = "0.37", default-features = false }
+egui_tiles = "0.18"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# Production code must not unwrap, expect or panic. Tests may (see clippy.toml).
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
