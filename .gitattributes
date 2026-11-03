@@ -1,0 +1,5 @@
+# Keep LF everywhere: golden snapshots, USFM fixtures and embedded data are compared or
+# parsed byte for byte, and Windows checkouts would otherwise turn them into CRLF.
+* text=auto eol=lf
+*.ttf binary
+*.obr binary

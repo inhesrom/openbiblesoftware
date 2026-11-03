@@ -10,3 +10,26 @@
 # source = "https://software.sil.org/gentium/"
 # copyright = "Copyright (c) SIL International"
 # changes = "None"                         # optional; required for CC BY data
+
+[[asset]]
+path = "crates/formats/tests/assets/usfm/kjv2006/*"
+name = "King James Version with Strong's numbers (eBible.org eng-kjv2006), test excerpts"
+license = "LicenseRef-PD"
+source = "https://eBible.org/Scriptures/eng-kjv2006_usfm.zip"
+copyright = "Public domain"
+changes = "Only a few verses of Gen, Ps and Jn kept, as import test fixtures."
+
+[[asset]]
+path = "crates/formats/tests/assets/usfm/web/*"
+name = "World English Bible (eBible.org eng-web), test excerpts"
+license = "LicenseRef-PD"
+source = "https://eBible.org/Scriptures/eng-web_usfm.zip"
+copyright = "Public domain; \"World English Bible\" is a trademark of eBible.org"
+changes = "Only a few verses of Gen, 2 Kgs, Ps, Mt and 3 Jn kept, as import test fixtures."
+
+[[asset]]
+path = "crates/formats/tests/assets/usfm/synthetic/*"
+name = "Synthetic USFM marker-coverage fixtures"
+license = "MIT OR Apache-2.0"
+source = "Written for this project"
+copyright = "Open Bible Software contributors"

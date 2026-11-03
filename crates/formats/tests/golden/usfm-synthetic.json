@@ -1,0 +1,419 @@
+{
+  "content_hash": "sha256:a63521aff0e10c24cad58fbdd82008ab13cfc9831ca6f988e2e3039db6c68739",
+  "report": {
+    "books": [
+      [
+        "PSA",
+        2,
+        7
+      ],
+      [
+        "TOB",
+        1,
+        0
+      ]
+    ],
+    "dropped_markup": {
+      "\\ip": 1,
+      "\\zz": 1
+    },
+    "license_missing": true,
+    "notes": 2,
+    "tagged_words": 5,
+    "verses": 7,
+    "warnings": [
+      "PSA 3:5: verse appears twice; its second text is kept with the verse before",
+      "PSA 3:6: bad Strong's number `X99`"
+    ]
+  },
+  "units": [
+    {
+      "id": "PSA",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..259",
+          "chapter": 3,
+          "kind": "chapter",
+          "text": "A Psalm of David.\nLORD, how are they increased!\nSelah. What? slanted heavy stressed Selah\n\nALEPH.\nA joined verse with a cross-reference. A lettered verse, continued. A duplicate verse number. unknown marker and a word with a bad Strong's number and two parts."
+        },
+        {
+          "at": "0..17",
+          "kind": "psalm_title",
+          "text": "A Psalm of David."
+        },
+        {
+          "at": "0..17",
+          "kind": "verse",
+          "last": 0,
+          "text": "A Psalm of David.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 0
+          }
+        },
+        {
+          "at": "2..7",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H4210"
+            }
+          ],
+          "text": "Psalm"
+        },
+        {
+          "at": "18..47",
+          "kind": "para",
+          "style": "poetry1",
+          "text": "LORD, how are they increased!"
+        },
+        {
+          "at": "18..47",
+          "kind": "verse",
+          "last": 1,
+          "text": "LORD, how are they increased!",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 1
+          }
+        },
+        {
+          "at": "18..22",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3068"
+            }
+          ],
+          "text": "LORD"
+        },
+        {
+          "at": "18..22",
+          "kind": "divine_name",
+          "text": "LORD"
+        },
+        {
+          "at": "28..31",
+          "kind": "added",
+          "text": "are"
+        },
+        {
+          "at": "36..36",
+          "kind": "note_ref",
+          "note": "note.1",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "48..89",
+          "kind": "para",
+          "style": "poetry2",
+          "text": "Selah. What? slanted heavy stressed Selah"
+        },
+        {
+          "at": "48..89",
+          "kind": "verse",
+          "last": 2,
+          "text": "Selah. What? slanted heavy stressed Selah",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 2
+          }
+        },
+        {
+          "at": "55..60",
+          "kind": "woj",
+          "text": "What?"
+        },
+        {
+          "at": "55..59",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5101"
+            }
+          ],
+          "text": "What"
+        },
+        {
+          "at": "61..68",
+          "kind": "italic",
+          "text": "slanted"
+        },
+        {
+          "at": "69..74",
+          "kind": "bold",
+          "text": "heavy"
+        },
+        {
+          "at": "75..83",
+          "kind": "emphasis",
+          "text": "stressed"
+        },
+        {
+          "at": "84..89",
+          "kind": "selah",
+          "text": "Selah"
+        },
+        {
+          "at": "90..90",
+          "kind": "para",
+          "style": "blank",
+          "text": ""
+        },
+        {
+          "at": "91..97",
+          "kind": "heading",
+          "level": 1,
+          "text": "ALEPH."
+        },
+        {
+          "at": "91..97",
+          "kind": "foreign",
+          "text": "ALEPH."
+        },
+        {
+          "at": "98..259",
+          "kind": "para",
+          "style": "prose",
+          "text": "A joined verse with a cross-reference. A lettered verse, continued. A duplicate verse number. unknown marker and a word with a bad Strong's number and two parts."
+        },
+        {
+          "at": "98..136",
+          "kind": "verse",
+          "last": 4,
+          "text": "A joined verse with a cross-reference.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 3
+          }
+        },
+        {
+          "at": "112..112",
+          "kind": "xref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 3,
+                "verse": 16
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 3,
+                "verse": 16
+              }
+            },
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 8
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 8
+              }
+            }
+          ],
+          "text": ""
+        },
+        {
+          "at": "112..112",
+          "kind": "note_ref",
+          "note": "note.2",
+          "note_kind": "cross_reference",
+          "text": ""
+        },
+        {
+          "at": "137..191",
+          "kind": "verse",
+          "last": 5,
+          "text": "A lettered verse, continued. A duplicate verse number.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 5
+          }
+        },
+        {
+          "at": "192..259",
+          "kind": "verse",
+          "last": 6,
+          "text": "unknown marker and a word with a bad Strong's number and two parts.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 6
+          }
+        },
+        {
+          "at": "249..252",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HNcmpa",
+              "strongs": "H1"
+            },
+            {
+              "morph": "HNcmpa",
+              "strongs": "H2"
+            }
+          ],
+          "text": "two"
+        },
+        {
+          "at": "260..276",
+          "chapter": 4,
+          "kind": "chapter",
+          "text": "Grace and peace."
+        },
+        {
+          "at": "260..276",
+          "kind": "para",
+          "style": "prose",
+          "text": "Grace and peace."
+        },
+        {
+          "at": "260..276",
+          "kind": "verse",
+          "last": 1,
+          "text": "Grace and peace.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 4,
+            "verse": 1
+          }
+        },
+        {
+          "at": "260..265",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "lemma": "χάρις",
+              "strongs": "G5485"
+            }
+          ],
+          "text": "Grace"
+        }
+      ],
+      "text": "A Psalm of David.\nLORD, how are they increased!\nSelah. What? slanted heavy stressed Selah\n\nALEPH.\nA joined verse with a cross-reference. A lettered verse, continued. A duplicate verse number. unknown marker and a word with a bad Strong's number and two parts.\nGrace and peace.",
+      "title": "Psalms"
+    },
+    {
+      "id": "TOB",
+      "kind": "division",
+      "spans": [
+        {
+          "at": "0..31",
+          "chapter": 1,
+          "kind": "chapter",
+          "text": "Text outside the 66-book canon."
+        },
+        {
+          "at": "0..31",
+          "kind": "para",
+          "style": "prose",
+          "text": "Text outside the 66-book canon."
+        }
+      ],
+      "text": "Text outside the 66-book canon.",
+      "title": "Tobit"
+    },
+    {
+      "id": "note.1",
+      "kind": "note",
+      "spans": [
+        {
+          "at": "0..9",
+          "kind": "italic",
+          "text": "increased"
+        }
+      ],
+      "text": "increased Or, many",
+      "title": null
+    },
+    {
+      "id": "note.2",
+      "kind": "note",
+      "spans": [
+        {
+          "at": "0..16",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 3,
+                "verse": 16
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 3,
+                "verse": 16
+              }
+            },
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 8
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 8
+              }
+            }
+          ],
+          "text": "Jn 3:16; Rom 5:8"
+        }
+      ],
+      "text": "Jn 3:16; Rom 5:8",
+      "title": null
+    }
+  ],
+  "verses": [
+    {
+      "last": 0,
+      "text": "A Psalm of David.",
+      "verse": "Ps 3:title"
+    },
+    {
+      "last": 1,
+      "text": "LORD, how are they increased!",
+      "verse": "Ps 3:1"
+    },
+    {
+      "last": 2,
+      "text": "Selah. What? slanted heavy stressed Selah",
+      "verse": "Ps 3:2"
+    },
+    {
+      "last": 4,
+      "text": "A joined verse with a cross-reference.",
+      "verse": "Ps 3:3"
+    },
+    {
+      "last": 5,
+      "text": "A lettered verse, continued. A duplicate verse number.",
+      "verse": "Ps 3:5"
+    },
+    {
+      "last": 6,
+      "text": "unknown marker and a word with a bad Strong's number and two parts.",
+      "verse": "Ps 3:6"
+    },
+    {
+      "last": 1,
+      "text": "Grace and peace.",
+      "verse": "Ps 4:1"
+    }
+  ]
+}
