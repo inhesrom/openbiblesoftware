@@ -1,0 +1,404 @@
+{
+  "content_hash": "sha256:47011756205fe18646d07a90b3efcd2b5cea8dc0661eb35ecf44ff1c634a5f4a",
+  "keys": [
+    [
+      "H1",
+      "a.ae.ab",
+      false
+    ],
+    [
+      "H1254",
+      "b.cw.aa",
+      true
+    ],
+    [
+      "H1254",
+      "b.cx.aa",
+      true
+    ],
+    [
+      "H1254A",
+      "b.cw.aa",
+      false
+    ],
+    [
+      "H1254B",
+      "b.cx.aa",
+      false
+    ],
+    [
+      "אָב",
+      "a.ae.ab",
+      false
+    ],
+    [
+      "בָּרָא",
+      "b.cw.aa",
+      false
+    ],
+    [
+      "בָּרָא",
+      "b.cx.aa",
+      false
+    ]
+  ],
+  "report": {
+    "dropped_markup": {},
+    "entries": 3,
+    "scripture_refs": 1,
+    "strongs_links": 0,
+    "warnings": []
+  },
+  "transliterations": [
+    [
+      "av",
+      "אָב"
+    ],
+    [
+      "bara",
+      "בָּרָא"
+    ]
+  ],
+  "units": [
+    {
+      "id": "a.ae.ab",
+      "spans": [
+        {
+          "at": "0..23",
+          "kind": "para",
+          "style": "prose",
+          "text": "אָב 1101 n.m. father"
+        },
+        {
+          "at": "0..6",
+          "kind": "bold",
+          "text": "אָב"
+        },
+        {
+          "at": "12..15",
+          "kind": "italic",
+          "text": "n.m"
+        },
+        {
+          "at": "17..23",
+          "kind": "bold",
+          "text": "father"
+        },
+        {
+          "at": "24..47",
+          "kind": "para",
+          "style": "prose",
+          "text": "1. father of individual"
+        },
+        {
+          "at": "27..47",
+          "kind": "bold",
+          "text": "father of individual"
+        },
+        {
+          "at": "48..81",
+          "kind": "para",
+          "style": "prose",
+          "text": "2. of God as father of his people"
+        },
+        {
+          "at": "61..81",
+          "kind": "bold",
+          "text": "father of his people"
+        },
+        {
+          "at": "82..118",
+          "kind": "para",
+          "style": "prose",
+          "text": "3. head of household, family or clan"
+        },
+        {
+          "at": "85..102",
+          "kind": "bold",
+          "text": "head of household"
+        },
+        {
+          "at": "119..130",
+          "kind": "para",
+          "style": "prose",
+          "text": "4. ancestor"
+        },
+        {
+          "at": "122..130",
+          "kind": "bold",
+          "text": "ancestor"
+        },
+        {
+          "at": "131..185",
+          "kind": "para",
+          "style": "prose",
+          "text": "5. originator or patron of a class, profession, or art"
+        },
+        {
+          "at": "134..144",
+          "kind": "bold",
+          "text": "originator"
+        },
+        {
+          "at": "148..154",
+          "kind": "bold",
+          "text": "patron"
+        },
+        {
+          "at": "186..216",
+          "kind": "para",
+          "style": "prose",
+          "text": "6. fig. of producer, generator"
+        },
+        {
+          "at": "197..205",
+          "kind": "bold",
+          "text": "producer"
+        },
+        {
+          "at": "207..216",
+          "kind": "bold",
+          "text": "generator"
+        },
+        {
+          "at": "217..252",
+          "kind": "para",
+          "style": "prose",
+          "text": "7. fig. of benevolence & protection"
+        },
+        {
+          "at": "228..239",
+          "kind": "bold",
+          "text": "benevolence"
+        },
+        {
+          "at": "253..279",
+          "kind": "para",
+          "style": "prose",
+          "text": "8. term of respect & honor"
+        },
+        {
+          "at": "264..271",
+          "kind": "bold",
+          "text": "respect"
+        },
+        {
+          "at": "274..279",
+          "kind": "bold",
+          "text": "honor"
+        },
+        {
+          "at": "280..311",
+          "kind": "para",
+          "style": "prose",
+          "text": "9. specif., ruler, chief (late)"
+        },
+        {
+          "at": "292..297",
+          "kind": "bold",
+          "text": "ruler"
+        },
+        {
+          "at": "299..304",
+          "kind": "bold",
+          "text": "chief"
+        }
+      ],
+      "text": "אָב 1101 n.m. father\n1. father of individual\n2. of God as father of his people\n3. head of household, family or clan\n4. ancestor\n5. originator or patron of a class, profession, or art\n6. fig. of producer, generator\n7. fig. of benevolence & protection\n8. term of respect & honor\n9. specif., ruler, chief (late)",
+      "title": "אָב"
+    },
+    {
+      "id": "b.cw.aa",
+      "spans": [
+        {
+          "at": "0..33",
+          "kind": "para",
+          "style": "prose",
+          "text": "בָּרָא 53 vb. shape, create"
+        },
+        {
+          "at": "0..12",
+          "kind": "bold",
+          "text": "בָּרָא"
+        },
+        {
+          "at": "16..18",
+          "kind": "italic",
+          "text": "vb"
+        },
+        {
+          "at": "20..25",
+          "kind": "bold",
+          "text": "shape"
+        },
+        {
+          "at": "27..33",
+          "kind": "bold",
+          "text": "create"
+        },
+        {
+          "at": "34..66",
+          "kind": "para",
+          "style": "prose",
+          "text": "Qal Pf.—shape, fashion, create"
+        },
+        {
+          "at": "34..37",
+          "kind": "italic",
+          "text": "Qal"
+        },
+        {
+          "at": "38..40",
+          "kind": "italic",
+          "text": "Pf"
+        },
+        {
+          "at": "44..49",
+          "kind": "bold",
+          "text": "shape"
+        },
+        {
+          "at": "51..58",
+          "kind": "bold",
+          "text": "fashion"
+        },
+        {
+          "at": "60..66",
+          "kind": "bold",
+          "text": "create"
+        },
+        {
+          "at": "67..80",
+          "kind": "para",
+          "style": "prose",
+          "text": "Niph.—Pass."
+        },
+        {
+          "at": "67..71",
+          "kind": "italic",
+          "text": "Niph"
+        },
+        {
+          "at": "75..79",
+          "kind": "italic",
+          "text": "Pass"
+        },
+        {
+          "at": "81..94",
+          "kind": "para",
+          "style": "prose",
+          "text": "1. be created"
+        },
+        {
+          "at": "84..94",
+          "kind": "bold",
+          "text": "be created"
+        },
+        {
+          "at": "95..121",
+          "kind": "para",
+          "style": "prose",
+          "text": "2. with reference to birth"
+        },
+        {
+          "at": "122..154",
+          "kind": "para",
+          "style": "prose",
+          "text": "3. of something new, astonishing"
+        },
+        {
+          "at": "155..158",
+          "kind": "para",
+          "style": "prose",
+          "text": "Pi."
+        },
+        {
+          "at": "155..157",
+          "kind": "italic",
+          "text": "Pi"
+        },
+        {
+          "at": "159..170",
+          "kind": "para",
+          "style": "prose",
+          "text": "1. cut down"
+        },
+        {
+          "at": "162..170",
+          "kind": "bold",
+          "text": "cut down"
+        },
+        {
+          "at": "171..181",
+          "kind": "para",
+          "style": "prose",
+          "text": "2. cut out"
+        },
+        {
+          "at": "174..181",
+          "kind": "bold",
+          "text": "cut out"
+        }
+      ],
+      "text": "בָּרָא 53 vb. shape, create\nQal Pf.—shape, fashion, create\nNiph.—Pass.\n1. be created\n2. with reference to birth\n3. of something new, astonishing\nPi.\n1. cut down\n2. cut out",
+      "title": "בָּרָא"
+    },
+    {
+      "id": "b.cx.aa",
+      "spans": [
+        {
+          "at": "0..64",
+          "kind": "para",
+          "style": "prose",
+          "text": "[בָּרָא] vb. be fat—Hiph. 1 S 2:29 to make yourself fat."
+        },
+        {
+          "at": "1..13",
+          "kind": "bold",
+          "text": "בָּרָא"
+        },
+        {
+          "at": "15..17",
+          "kind": "italic",
+          "text": "vb"
+        },
+        {
+          "at": "19..25",
+          "kind": "bold",
+          "text": "be fat"
+        },
+        {
+          "at": "28..32",
+          "kind": "italic",
+          "text": "Hiph"
+        },
+        {
+          "at": "34..42",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1SA",
+                "chapter": 2,
+                "verse": 29
+              },
+              "start": {
+                "book": "1SA",
+                "chapter": 2,
+                "verse": 29
+              }
+            }
+          ],
+          "text": "1 S 2:29"
+        },
+        {
+          "at": "43..63",
+          "kind": "bold",
+          "text": "to make yourself fat"
+        }
+      ],
+      "text": "[בָּרָא] vb. be fat—Hiph. 1 S 2:29 to make yourself fat.",
+      "title": "בָּרָא"
+    }
+  ]
+}

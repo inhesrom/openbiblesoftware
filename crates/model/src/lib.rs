@@ -39,7 +39,10 @@ pub use manifest::{
 };
 pub use morph::{Morph, MorphError, MorphLanguage, MorphPart, PartOfSpeech};
 pub use normalize::{NORMALIZER_VERSION, Token, normalize, tokenize};
-pub use translit::{TRANSLITERATION_VERSION, transliterate};
+pub use translit::{
+    LemmaTransliteration, TRANSLITERATION_VERSION, transliterate, transliteration_index,
+    transliteration_key,
+};
 pub use unit::{
     BibleVerse, MorphemePart, NoteKind, ParaStyle, Span, SpanKind, TextAccumulator, TextUnit,
     UnitId, UnitIdError, UnitKind,

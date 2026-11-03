@@ -515,3 +515,37 @@ fn entities_and_mentions_must_resolve() {
         passage: v(Book::Genesis, 1, 32)
     }));
 }
+
+#[test]
+fn build_indexes_lemma_transliterations_outside_the_content_hash() {
+    let lexicon = |lemma: Option<&str>| {
+        let mut m = manifest();
+        m.resource_type = ResourceType::Lexicon;
+        m.key_schemes = vec![KeyScheme::StrongsNumber, KeyScheme::Lemma];
+        let mut b = ResourceBuilder::new(m);
+        let id = UnitId::new("G5485").unwrap();
+        b.add_unit(id.clone(), UnitKind::Entry, None, "χάρις grace".into());
+        b.add_key(
+            Key::StrongsNumber("G5485".parse().unwrap()),
+            &id,
+            None,
+            false,
+        );
+        if let Some(l) = lemma {
+            b.add_key(Key::Lemma(l.into()), &id, None, false);
+        }
+        b.build().unwrap()
+    };
+    let r = lexicon(Some("χάρις"));
+    assert_eq!(
+        r.transliterations,
+        [crate::LemmaTransliteration {
+            transliteration: "charis".into(),
+            lemma: "χάρις".into(),
+        }]
+    );
+    let mut without_index = r.clone();
+    without_index.transliterations.clear();
+    assert_eq!(without_index.content_hash(), r.manifest.content_hash);
+    assert!(lexicon(None).transliterations.is_empty());
+}

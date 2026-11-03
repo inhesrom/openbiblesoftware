@@ -47,7 +47,8 @@ pub struct KeyEntry {
     pub unit: UnitId,
     /// Byte range inside the unit; `None` means the whole unit.
     pub range: Option<(u32, u32)>,
-    /// True for a Headword alias (e.g. "Abram" for "Abraham").
+    /// True for a secondary Key: a Headword alias ("Abram" for "Abraham"), or the base Strong's
+    /// number of an entry for an extended number (H1254 on the H1254A entry).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub alias: bool,
 }

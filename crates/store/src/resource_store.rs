@@ -4,7 +4,7 @@ use obs_model::{
     BibleVerse, CrossReference, Entity, Key, KeyEntry, KeyScheme, Manifest, Mention, Resource,
     Span, TextUnit, UnitId,
 };
-use obs_scripture::{Passage, Verse, VerseMap};
+use obs_scripture::{Passage, StrongsNumber, Verse, VerseMap};
 
 use crate::error::StoreError;
 
@@ -47,6 +47,23 @@ pub trait ResourceStore {
 
     /// Entries for one Key. Headwords and Lemmas match after normalization.
     fn lookup_key(&self, key: &Key) -> Result<Vec<KeyEntry>, StoreError>;
+
+    /// Entries for a Strong's number. An extended number with no entry of its own falls back to
+    /// its base number (H1254A → H1254), so a Lexicon keyed by plain Strong's still answers.
+    /// Entries for the number itself come before those that only list it as a secondary Key.
+    fn lookup_strongs(&self, number: StrongsNumber) -> Result<Vec<KeyEntry>, StoreError> {
+        let mut entries = self.lookup_key(&Key::StrongsNumber(number))?;
+        if entries.is_empty() && number.is_extended() {
+            entries = self.lookup_key(&Key::StrongsNumber(number.base()))?;
+        }
+        entries.sort_by_key(|e| e.alias);
+        Ok(entries)
+    }
+
+    /// Lemmas (original script) whose transliteration is `transliteration`, from the
+    /// transliteration index. The text is reduced to index form first (words, lowercased,
+    /// single spaces), so `"Agape"` finds ἀγάπη.
+    fn lemmas_for_transliteration(&self, transliteration: &str) -> Result<Vec<String>, StoreError>;
 
     /// Every Key of one scheme, in key order.
     fn keys(&self, scheme: KeyScheme) -> Result<Vec<KeyEntry>, StoreError>;

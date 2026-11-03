@@ -1,0 +1,61 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<osis xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns="http://www.bibletechnologies.net/2003/OSIS/namespace" xsi:schemaLocation="http://www.bibletechnologies.net/2003/OSIS/namespace http://www.bibletechnologies.net/osisCore.2.1.1.xsd">
+  <osisText osisIDWork="Strong" xml:lang="en">
+    <header>
+      <revisionDesc resp="dt">
+        <date>2010.05.24</date>
+        <p>Regularized whitespace.</p>
+      </revisionDesc>
+      <revisionDesc resp="dt">
+        <date>2010.04.04</date>
+        <p>Filled out notes for typographical errors.</p>
+      </revisionDesc>
+      <revisionDesc resp="dt">
+        <date>2010.04.02</date>
+        <p>Converted transliterations to Unicode, added corrections with notes for typographical errors,
+        and updated to qamets qatan and holam haser for vav.</p>
+      </revisionDesc>
+      <revisionDesc resp="dt">
+        <date>2009.06.22</date>
+        <p>Added declaration and markup for Strong's Greek dictionary references.</p>
+      </revisionDesc>
+      <revisionDesc resp="dt">
+        <date>2008.03.18</date>
+        <p>Convert Strong's Hebrew dictionary to XML.</p>
+      </revisionDesc>
+      <work osisWork="Strong" xml:lang="en">
+        <title>A Concise Dictionary of the Words in the Hebrew Bible</title>
+        <title type="sub">with their Renderings in the King James Version</title>
+        <contributor role="edt">David Troidl</contributor>
+        <contributor role="edt">David Instone-Brewer</contributor>
+        <creator role="aut">James Strong, LL.D., S.T.D.</creator>
+        <date event="eversion">2009.06.22</date>
+        <date event="original" type="Gregorian">1894</date>
+        <description>The data came from several PD sources which were full of errors. I cleaned them by comparing them to each other and (where necessary) looking at the original.</description>
+        <publisher>Hunt &amp; Eaton</publisher>
+        <identifier type="URL">www.2LetterLookup.com</identifier>
+        <source>The exhaustive concordance of the Bible:</source>
+        <rights>Public Domain</rights>
+      </work>
+      <work osisWork="G" xml:lang="en">
+        <title>A Concise Dictionary of the Words in the Greek/New Testament</title>
+        <title type="sub">with their Renderings in the King James Version</title>
+        <creator role="aut">James Strong, LL.D., S.T.D.</creator>
+        <date event="original" type="Gregorian">1894</date>
+        <publisher>Hunt &amp; Eaton</publisher>
+        <source>The exhaustive concordance of the Bible:</source>
+        <rights>Public Domain</rights>
+      </work>
+      <work osisWork="TWOT" xml:lang="en">
+        <title>Theological Wordbook of the Old Testament</title>
+        <creator role="aut">Gleason L. Archer and R. Laird Harris</creator>
+        <date event="original" type="Gregorian">1980</date>
+        <description>Extensive, scholarly discussion of every Hebrew word of theological significance in the Old Testament. Keyed to Strong's Concordance.</description>
+        <publisher>Moody Publishers</publisher>
+        <identifier type="ISBN">0802486495</identifier>
+        <rights type="x-copyright">Copyright © 1980 by the Moody Bible Iinstitute.</rights>
+      </work>
+      <workPrefix path="//w/@ID" osisWork="Strong"/>
+      <workPrefix path="//w/@src" osisWork="Strong"/>
+      <workPrefix path="//w/@gloss" osisWork="TWOT"/>
+    </header>

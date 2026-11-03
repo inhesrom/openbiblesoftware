@@ -1,0 +1,136 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<osis xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns="http://www.bibletechnologies.net/2003/OSIS/namespace" xsi:schemaLocation="http://www.bibletechnologies.net/2003/OSIS/namespace http://www.bibletechnologies.net/osisCore.2.1.1.xsd">
+  <osisText osisIDWork="Strong" xml:lang="en">
+    <header>
+      <revisionDesc resp="dt">
+        <date>2010.05.24</date>
+        <p>Regularized whitespace.</p>
+      </revisionDesc>
+      <revisionDesc resp="dt">
+        <date>2010.04.04</date>
+        <p>Filled out notes for typographical errors.</p>
+      </revisionDesc>
+      <revisionDesc resp="dt">
+        <date>2010.04.02</date>
+        <p>Converted transliterations to Unicode, added corrections with notes for typographical errors,
+        and updated to qamets qatan and holam haser for vav.</p>
+      </revisionDesc>
+      <revisionDesc resp="dt">
+        <date>2009.06.22</date>
+        <p>Added declaration and markup for Strong's Greek dictionary references.</p>
+      </revisionDesc>
+      <revisionDesc resp="dt">
+        <date>2008.03.18</date>
+        <p>Convert Strong's Hebrew dictionary to XML.</p>
+      </revisionDesc>
+      <work osisWork="Strong" xml:lang="en">
+        <title>A Concise Dictionary of the Words in the Hebrew Bible</title>
+        <title type="sub">with their Renderings in the King James Version</title>
+        <contributor role="edt">David Troidl</contributor>
+        <contributor role="edt">David Instone-Brewer</contributor>
+        <creator role="aut">James Strong, LL.D., S.T.D.</creator>
+        <date event="eversion">2009.06.22</date>
+        <date event="original" type="Gregorian">1894</date>
+        <description>The data came from several PD sources which were full of errors. I cleaned them by comparing them to each other and (where necessary) looking at the original.</description>
+        <publisher>Hunt &amp; Eaton</publisher>
+        <identifier type="URL">www.2LetterLookup.com</identifier>
+        <source>The exhaustive concordance of the Bible:</source>
+        <rights>Public Domain</rights>
+      </work>
+      <work osisWork="G" xml:lang="en">
+        <title>A Concise Dictionary of the Words in the Greek/New Testament</title>
+        <title type="sub">with their Renderings in the King James Version</title>
+        <creator role="aut">James Strong, LL.D., S.T.D.</creator>
+        <date event="original" type="Gregorian">1894</date>
+        <publisher>Hunt &amp; Eaton</publisher>
+        <source>The exhaustive concordance of the Bible:</source>
+        <rights>Public Domain</rights>
+      </work>
+      <work osisWork="TWOT" xml:lang="en">
+        <title>Theological Wordbook of the Old Testament</title>
+        <creator role="aut">Gleason L. Archer and R. Laird Harris</creator>
+        <date event="original" type="Gregorian">1980</date>
+        <description>Extensive, scholarly discussion of every Hebrew word of theological significance in the Old Testament. Keyed to Strong's Concordance.</description>
+        <publisher>Moody Publishers</publisher>
+        <identifier type="ISBN">0802486495</identifier>
+        <rights type="x-copyright">Copyright © 1980 by the Moody Bible Iinstitute.</rights>
+      </work>
+      <workPrefix path="//w/@ID" osisWork="Strong"/>
+      <workPrefix path="//w/@src" osisWork="Strong"/>
+      <workPrefix path="//w/@gloss" osisWork="TWOT"/>
+    </header>
+    <div type="glossary">
+      <div type="entry" n="1">
+        <w gloss="4a" lemma="אָב" morph="n-m" POS="awb" xlit="ʼâb" ID="H1" xml:lang="heb">אב</w>
+        <foreign xml:lang="grc">
+          <w gloss="G:1118" />
+          <w gloss="G:2730" />
+          <w gloss="G:3390" />
+          <w gloss="G:3507" />
+          <w gloss="G:3509" />
+          <w gloss="G:3962" />
+          <w gloss="G:3965" />
+          <w gloss="G:3966" />
+          <w gloss="G:3967" />
+          <w gloss="G:3971" />
+        </foreign>
+        <list>
+          <item>(omitted from this fixture)</item>
+        </list>
+        <note type="exegesis">a primitive word;</note>
+        <note type="explanation"><hi>father</hi>, in a literal and immediate, or figurative and remote application</note>
+        <note type="translation">chief, (fore-) father(-less), [idiom] patrimony, principal. Compare names in 'Abi-'.</note>
+      </div>
+      <div type="entry" n="2">
+        <w gloss="2553" lemma="אַב" morph="n-m" POS="ab" xlit="ʼab" ID="H2" xml:lang="arc">אב</w>
+        <foreign xml:lang="grc">
+          <w gloss="G:5" />
+          <w gloss="G:912" />
+        </foreign>
+        <list>
+          <item>(omitted from this fixture)</item>
+        </list>
+        <note type="exegesis">(Aramaic) corresponding to <w lemma="אָב" POS="awb" src="1" xlit="ʼâb"/></note>
+        <note type="explanation">{<hi>father</hi>}</note>
+        <note type="translation">father.</note>
+      </div>
+      <div type="entry" n="1254">
+        <w gloss="278" lemma="בָּרָא" morph="v" POS="baw-raw'" xlit="bârâʼ" ID="H1254" xml:lang="heb">ברא</w>
+        <foreign xml:lang="grc">
+          <w gloss="G:757" />
+          <w gloss="G:1081" />
+          <w gloss="G:1096" />
+          <w gloss="G:1166" />
+          <w gloss="G:1299" />
+          <w gloss="G:1571" />
+          <w gloss="G:1757" />
+          <w gloss="G:2090" />
+          <w gloss="G:2680" />
+          <w gloss="G:2936" />
+          <w gloss="G:4160" />
+        </foreign>
+        <list>
+          <item>(omitted from this fixture)</item>
+        </list>
+        <note type="exegesis">a primitive root;</note>
+        <note type="explanation">(absolutely) <hi>to create</hi>; (qualified) <hi>to cut down</hi> (a wood), <hi>select</hi>, <hi>feed</hi> (as formative processes)</note>
+        <note type="translation">choose, create (creator), cut down, dispatch, do, make (fat).</note>
+      </div>
+      <div type="entry" n="2580">
+        <w gloss="694a" lemma="חֵן" morph="n-m" POS="khane" xlit="chên" ID="H2580" xml:lang="heb">חן</w>
+        <foreign xml:lang="grc">
+          <w gloss="G:699" />
+          <w gloss="G:1656" />
+          <w gloss="G:2170" />
+          <w gloss="G:5485" />
+        </foreign>
+        <list>
+          <item>(omitted from this fixture)</item>
+        </list>
+        <note type="exegesis">from <w lemma="חָנַן" POS="khaw-nan'" src="2603" xlit="chânan"/>;</note>
+        <note type="explanation"><hi>graciousness</hi>, i.e. <hi>subjective</hi> (kindness, favor) or <hi>objective</hi> (beauty)</note>
+        <note type="translation">favour, grace(-ious), pleasant, precious, (well-) favoured.</note>
+      </div>
+    </div>
+  </osisText>
+</osis>

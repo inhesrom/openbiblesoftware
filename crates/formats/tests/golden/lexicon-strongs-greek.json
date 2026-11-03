@@ -1,0 +1,230 @@
+{
+  "content_hash": "sha256:a1944f3034b6b9296aca72bec926ad745a38fa1ebe9bafd103867a915b6d18fe",
+  "keys": [
+    [
+      "G26",
+      "G26",
+      false
+    ],
+    [
+      "G5463",
+      "G5463",
+      false
+    ],
+    [
+      "G5485",
+      "G5485",
+      false
+    ],
+    [
+      "χάρις",
+      "G5485",
+      false
+    ],
+    [
+      "χαίρω",
+      "G5463",
+      false
+    ],
+    [
+      "ἀγάπη",
+      "G26",
+      false
+    ]
+  ],
+  "report": {
+    "dropped_markup": {},
+    "entries": 3,
+    "scripture_refs": 0,
+    "strongs_links": 4,
+    "warnings": []
+  },
+  "transliterations": [
+    [
+      "agape",
+      "ἀγάπη"
+    ],
+    [
+      "chairo",
+      "χαίρω"
+    ],
+    [
+      "charis",
+      "χάρις"
+    ]
+  ],
+  "units": [
+    {
+      "id": "G26",
+      "spans": [
+        {
+          "at": "0..32",
+          "kind": "para",
+          "style": "prose",
+          "text": "ἀγάπη agápē (ag-ah'-pay)"
+        },
+        {
+          "at": "0..11",
+          "kind": "bold",
+          "text": "ἀγάπη"
+        },
+        {
+          "at": "12..19",
+          "kind": "italic",
+          "text": "agápē"
+        },
+        {
+          "at": "33..111",
+          "kind": "para",
+          "style": "prose",
+          "text": "from G25; love, i.e. affection or benevolence; specially (plural) a love-feast"
+        },
+        {
+          "at": "38..41",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G25"
+            }
+          ],
+          "text": "G25"
+        },
+        {
+          "at": "112..155",
+          "kind": "para",
+          "style": "prose",
+          "text": "KJV: (feast of) charity(-ably), dear, love."
+        },
+        {
+          "at": "112..116",
+          "kind": "bold",
+          "text": "KJV:"
+        },
+        {
+          "at": "156..169",
+          "kind": "para",
+          "style": "prose",
+          "text": "See also G25."
+        },
+        {
+          "at": "165..168",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G25"
+            }
+          ],
+          "text": "G25"
+        }
+      ],
+      "text": "ἀγάπη agápē (ag-ah'-pay)\nfrom G25; love, i.e. affection or benevolence; specially (plural) a love-feast\nKJV: (feast of) charity(-ably), dear, love.\nSee also G25.",
+      "title": "ἀγάπη"
+    },
+    {
+      "id": "G5463",
+      "spans": [
+        {
+          "at": "0..33",
+          "kind": "para",
+          "style": "prose",
+          "text": "χαίρω chaírō (khah'-ee-ro)"
+        },
+        {
+          "at": "0..10",
+          "kind": "bold",
+          "text": "χαίρω"
+        },
+        {
+          "at": "11..19",
+          "kind": "italic",
+          "text": "chaírō"
+        },
+        {
+          "at": "34..170",
+          "kind": "para",
+          "style": "prose",
+          "text": "a primary verb; to be \"cheer\"ful, i.e. calmly happy or well-off; impersonally, especially as salutation (on meeting or parting), be well"
+        },
+        {
+          "at": "171..244",
+          "kind": "para",
+          "style": "prose",
+          "text": "KJV: farewell, be glad, God speed, greeting, hall, joy(- fully), rejoice."
+        },
+        {
+          "at": "171..175",
+          "kind": "bold",
+          "text": "KJV:"
+        }
+      ],
+      "text": "χαίρω chaírō (khah'-ee-ro)\na primary verb; to be \"cheer\"ful, i.e. calmly happy or well-off; impersonally, especially as salutation (on meeting or parting), be well\nKJV: farewell, be glad, God speed, greeting, hall, joy(- fully), rejoice.",
+      "title": "χαίρω"
+    },
+    {
+      "id": "G5485",
+      "spans": [
+        {
+          "at": "0..30",
+          "kind": "para",
+          "style": "prose",
+          "text": "χάρις cháris (khar'-ece)"
+        },
+        {
+          "at": "0..10",
+          "kind": "bold",
+          "text": "χάρις"
+        },
+        {
+          "at": "11..18",
+          "kind": "italic",
+          "text": "cháris"
+        },
+        {
+          "at": "31..247",
+          "kind": "para",
+          "style": "prose",
+          "text": "from G5463; graciousness (as gratifying), of manner or act (abstract or concrete; literal, figurative or spiritual; especially the divine influence upon the heart, and its reflection in the life; including gratitude)"
+        },
+        {
+          "at": "36..41",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5463"
+            }
+          ],
+          "text": "G5463"
+        },
+        {
+          "at": "248..349",
+          "kind": "para",
+          "style": "prose",
+          "text": "KJV: acceptable, benefit, favour, gift, grace(- ious), joy, liberality, pleasure, thank(-s, -worthy)."
+        },
+        {
+          "at": "248..252",
+          "kind": "bold",
+          "text": "KJV:"
+        },
+        {
+          "at": "350..365",
+          "kind": "para",
+          "style": "prose",
+          "text": "See also G5463."
+        },
+        {
+          "at": "359..364",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5463"
+            }
+          ],
+          "text": "G5463"
+        }
+      ],
+      "text": "χάρις cháris (khar'-ece)\nfrom G5463; graciousness (as gratifying), of manner or act (abstract or concrete; literal, figurative or spiritual; especially the divine influence upon the heart, and its reflection in the life; including gratitude)\nKJV: acceptable, benefit, favour, gift, grace(- ious), joy, liberality, pleasure, thank(-s, -worthy).\nSee also G5463.",
+      "title": "χάρις"
+    }
+  ]
+}

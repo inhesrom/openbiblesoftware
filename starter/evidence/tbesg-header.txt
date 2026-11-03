@@ -1,0 +1,88 @@
+TBESG - Translators Brief lexicon of Extended Strongs for Greek - STEPBible.org CC BY
+See also:
+TFLSJ - Translators Formatted full LSJ Bible lexicon 0-5624 - STEPBible.org CC BY	
+TFLSJ - Translators Formatted full LSJ Bible lexicon extra - STEPBible.org CC BY
+=======================================================
+Lexicons for the tagged texts used by STEPBible, based on BHS for OT and LSJ for NT, backwardly compatible for any tagging based on Strong numbers. 
+Extended Strongs for Greek is backwardly compatible with original Strong and NASB, and extended to include all NT variants and LXX + variants.
+The Brief lexicon is based on the Abbott-Smith definitions, and is edited to conform with the extended Strongs. For a few words where Abbott-Smith lacks a definition, one is supplied  from MiddleLiddel (MD) or STEPBible scholars
+The Full lexicon is edited from the Full LSJ by Tyndale House scholars, formatted to make it easy to read, with expansion of abbreviations and revealing examples from Greek literature on hover over dates of the earliest source (added by Tyndale House)
+
+	==============================================================												
+	Data created by www.STEPBible.org based on work at  Tyndale House Cambridge (CC BY 4.0)												
+	==============================================================												
+	This licence allows you to:												
+	* Include any part of this data in software or publications and send it to AI servers  without requesting permission 												
+	* Download the data and reformat it for your application												
+	* Send any proposed corrections to STEPBible@Gmail.com to be verified 												
+	  (You MAY make changes yourself, but you should include a note of changes that can be viewed by those who use your new data)												
+	* Attribute the data to Tyndale House and STEPBible.org, and include a link to STEPBible.github.io/STEPBible-Data as the source of this data. 												
+	 Please do not post copies of this data file elsewhere, so that this remains the single up-to-date source"												
+	* We'd love to hear about your project and add it to our Partners Page when you make it available. Email us at STEPBible@Gmail.com.												
+	==============================================================												
+
+
+
+Fields: 
+=====
+
+* EStrong# = Extended Strong's Numbers: 
+ - G0001 - G5624 Strongs numbers from original set made by Strong for Greek behind the KJV  
+   (G3203-G3302 which aren't used for some reason)
+ - G5627 - G5799 = Greek morphology codes  (these numbers aren't used in this lexicon) 
+ - G5800 - G5893 = Greek Synonyms - see http://studybible.info/strongs/G5800  (these numbers aren't used in this lexicon) 
+ - G6000 - G6090 = Extra Strongs Numbers in NASB mainly for variants not known to Strong. (they remain the same so it is backward-compatible with NASB) 
+ - G6100 - G9979 = Extra Greek from Apostolic Bible Project mainly for LXX words not found in NT (including Greek names that don't occur in the Hebrew) 
+ - G6091 - G6099, G9980 - G9999 = Extra Greek for variants which are not included in NASB or Apostolic Bible  
+ - G10000 - 19999 = Greek equivalent of Strongs Hebrew numbers for names and transliterated words eg  Abagtha (H0005) = G10005. When there is a NT equivalent, this is the STEP_LexicalTag
+ - G20000 - G20199 = Words where  the Full LSJ entry refers to the LXX, but they are not referred to in the AB tagging because they only occur in non-Protestant canons or in MSS other than Vaticanus (used by AB)
+
+Strong numbers	Three sets of numbers are included: eStrong, dStrong & uStrong. A lexicon or tagging system will normally use only one set, depending on its purpose, though it may be useful to keep both dStrong & uStrong. 
+	Any record can be deleted if it does not have  a number for the system that is to be used. Each system has different advantages: 
+eStrong#	This is the standard Extended Strongs which conforms with the subdivisions of words in BDB (Brown Driver Brigg's lexicon, largely followed by later lexicons). This was done by OS (OpenScriptures.org)
+dStrong	This is STEPBible's Disambiguated Strongs which has separate numbers when a  name is used for different people or places, and when a word has significantly different sub-meanings. See TinyURL.com/DisambiguatedStrongs. 
+uStrong	This is STEPBible's Unified Strongs  which has a single number for an individual's various  names, and a single number for a word that has different forms or spellings or that has a Hebrew and Aramaic versions. 
+
+For example: 	Strong used G2264 for all three people in the NT named Herod (the Great, Anitipas and Agrippa I), and a different number for "Herodian" which describes Herod Anitipas. 
+	eStrong doesn't divide up any names in the NT (like it does in the OT) because eStrong was created to map Strongs to the Hebrew lexicon BDB. 
+	dStrong has a unique number for each person: G2264G, G2264H, G2264I. As in the OT, letters start at G when there is no "a" or "b" etc in eStrongs (which never happens in Greek) 
+	uStrong has only one unique number for each individual, so a search for that number finds all the places where that person is mentioned however their name is spelled. 
+... see more at:	TinyURL.com/STEP-Disambiguated
+
+
+
+$========== PERSON(s)																																					
+Herod@Mat.2.1=G2264G	King Herod the Great living at the time of the New Testament	=+			Archelaus@Mat.2.22, Herod@Mat.14.1, Philip@Mat.14.3, Philip@Luk.3.1	>	#A man living at the time of the New Testament, first mentioned at Mat.2.1; <br> father of: Ethnarch Herod Archelaus (G0745), Herod Antipas I (G2264H), Herod Philip I (G5376H), Herod Philip II (G5376I)																														
+- Named	Herod@Mat.2.1	G2264G«G2264=Ἡρώδης	Herod	https://www.stepbible.org/?q=version=ESV|version=KJV|text=Herod*|reference=Mat.2.1;Mat.2.3;Mat.2.7;Mat.2.12;Mat.2.13;Mat.2.15;Mat.2.16;Mat.2.19;Mat.2.22;Luk.1.5;Act.23.35	Mat.2.1; Mat.2.3; Mat.2.7; Mat.2.12; Mat.2.13; Mat.2.15; Mat.2.16; Mat.2.19; Mat.2.22; Luk.1.5; Act.23.35;																																
+$========== PERSON(s)																																					
+Herod@Mat.14.1=G2264H	Tetrarch Herod Antipas living at the time of the New Testament	Herod@Mat.2.1 +	Archelaus@Mat.2.22, Philip@Mat.14.3, Philip@Luk.3.1	Herodias@Mat.14.3		>	#Tetrarch Herod Antipas I living at the time of the New Testament, first mentioned at Mat.14.1; <br> son of: Herod 'the Great' (G2264G); <br> brother of: Ethnarch Herod Archelaus (G0745), Herod Philip I (G5376H) and Herod Philip II (G5376I); married to Herodias (G2266G)																														
+- Named	Herod@Mat.14.1	G2264H«G2264=Ἡρώδης	Herod	https://www.stepbible.org/?q=version=ESV|version=KJV|text=Herod*|reference=Mat.14.1;Mat.14.3;Mat.14.6;Mat.14.6;Mar.6.14;Mar.6.16;Mar.6.17;Mar.6.18;Mar.6.20;Mar.6.21;Mar.6.22;Mar.8.15;Luk.3.1;Luk.3.19;Luk.3.19;Luk.8.3;Luk.9.7;Luk.9.9;Luk.13.31;Luk.23.7;Luk.23.7;Luk.23.8;Luk.23.11;Luk.23.12;Luk.23.15;Act.4.27;Act.13.1	Mat.14.1; Mat.14.3; Mat.14.6a; Mat.14.6b; Mrk.6.14; Mrk.6.16; Mrk.6.17; Mrk.6.18; Mrk.6.20; Mrk.6.21; Mrk.6.22; Mrk.8.15; Luk.3.1; Luk.3.19a; Luk.3.19b; Luk.8.3; Luk.9.7; Luk.9.9; Luk.13.31; Luk.23.7a; Luk.23.7b; Luk.23.8; Luk.23.11; Luk.23.12; Luk.23.15; Act.4.27; Act.13.1;																																
+- Group	Herod@Mat.14.1	G2265«G2265=Ἡρωδιανοί	Herodian	https://www.stepbible.org/?q=version=ESV|version=KJV|text=Herodian*|reference=Mat.22.16;Mar.3.6;Mar.12.13	Mat.22.16; Mrk.3.6; Mrk.12.13;																																
+$========== PERSON(s)																																					
+Herod@Act.12.1=G2264I	Tetrarch & King Herod Agrippa I living at the time of the New Testament	=+	Herodias@Mat.14.3		Agrippa@Act.25.13	>	#Tetrarch & King Herod Agrippa I living at the time of the New Testament, first mentioned at Act.12.1; <BR> brother of: Herodias (G2266G); father of: Tetrarch Agrippa II (G0067)																														
+- Named	Herod@Act.12.1	G2264I«G2264=Ἡρώδης	Herod	https://www.stepbible.org/?q=version=ESV|version=KJV|text=Herod*|reference=Act.12.1;Act.12.6;Act.12.11;Act.12.19;Act.12.20;Act.12.21	Act.12.1; Act.12.6; Act.12.11; Act.12.19; Act.12.20; Act.12.21;																																
+
+
+
+* Gloss = a meaning in one word or as few as possible (by Tyndale scholars)
+
+* Greek = unicode lexical form. Based on LSJ but conforming to BADG when the difference may be confusing. 
+
+* Morph = simple gramatical value of the main word represented as Language:Type-Gender-Extra. 
+Language:Type-Gender-Extra. 
+Language is A=Aramaic, H=Hebrew, G=Greek and N=Name (which is not language specific). 
+Type is A=Adjective, Adv=Adverb, Art=Article, Cond=Conditional, Conj=Conjunction, Cor=Correlative, DemP=Demonstrative Pn, ImpP=Impersonal Pn, Intg=Interogative, Intj=Interjection, N=Noun, Neg=Negative, Part=Particle, Prep=Preposition, PerP=Personal Pn, PosP=Possessive Pn, RefP=Reflexive Pn, RelP=Relative Pn, V=Verb. 
+Gender is F=Female, M=Male, N=Neuter, C=Common and P or S is optionally added for Plural Singular
+Extra for Names is L=Location, P=Person, LG/PG=Gentilic, T=Title (i.e. any other capitalised nouns such as titles, months, gods, planets etc)
+
+* Meaning = lexical entry. The Brief lexicon uses Abbot-Smith or MiddleLiddel. The LJS lexicon uses the Full LSJ formatted by Tyndale House, Cambridge. Those without attribution have been added by STEPBible. 
+(AS) = Abbott Smith - from https://github.com/translatable-exegetical-tools/Abbott-Smith, with corrections and adapted by Tyndale Scholars. 
+(ML) = Middle Liddell - from Perseus - used for Meaning in the Brief lexicon when there is no entry by (AS)
+
+Full LSJ - Liddell-Scott-Jones -  from Perseus, with additional features and corrections by Tyndale House, Cambridge:
+ - most abbreviations have been expanded, usually in accordance with the introductions to the lexicons but occasionally made clearer. 
+ - dates have been added to authors by Tyndale House, using standard reference works. 
+ - coding is added to hide bibliographic data under a link stating the earliest date included in that data. (Note, not all devices work well with tooltips, so consider implementing a clickable option such as http://jsfiddle.net/xaAN3/) 
+
+
+eStrong	dStrong	uStrong	Greek	Transliteration	Morph	Gloss	Abbott-Smith lexicon (AS), with gaps occationally filled from edited versions of  Middle LSJ 

@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use crate::dataset::{CrossReference, Entity, Mention};
 use crate::key::{Key, KeyEntry};
 use crate::manifest::{FORMAT_VERSION, Manifest, ResourceType, is_valid_resource_id};
+use crate::translit::{LemmaTransliteration, transliteration_index};
 use crate::unit::{BibleVerse, Span, SpanKind, TextUnit, UnitId, UnitKind};
 
 /// A validated Resource: manifest (with content hash), text units with canonically ordered
@@ -38,6 +39,9 @@ pub struct Resource {
     pub entities: Vec<Entity>,
     /// A People & places index's mentions, ordered by entity, then Passage.
     pub mentions: Vec<Mention>,
+    /// Transliteration index of the Lemma Keys (#20 rule 5), sorted. Derived from the Keys with
+    /// the shared scheme, so not part of the content hash.
+    pub transliterations: Vec<LemmaTransliteration>,
 }
 
 /// One problem found while validating a Resource.
@@ -371,7 +375,8 @@ impl ResourceBuilder {
         self.verses.len()
     }
 
-    /// Validate, put spans and keys in canonical order, and fill in the content hash.
+    /// Validate, put spans and keys in canonical order, build the transliteration index, and
+    /// fill in the content hash.
     pub fn build(self) -> Result<Resource, ValidationErrors> {
         let mut errors = Vec::new();
         let mut units = self.units;
@@ -403,6 +408,7 @@ impl ResourceBuilder {
         let mut mentions = self.mentions;
         mentions.sort();
         mentions.dedup();
+        let transliterations = transliteration_index(&keys);
         let mut resource = Resource {
             manifest: self.manifest,
             units,
@@ -414,6 +420,7 @@ impl ResourceBuilder {
             cross_references,
             entities,
             mentions,
+            transliterations,
         };
         if let Err(more) = resource.validate() {
             errors.extend(more.0);

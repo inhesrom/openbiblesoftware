@@ -1,0 +1,2774 @@
+{
+  "content_hash": "sha256:2a0482a52b99c406f706faf44caa039ded77b6be17bd8ed20628164a7a0d561a",
+  "keys": [
+    [
+      "G26",
+      "ἀγάπη",
+      false
+    ],
+    [
+      "G1061",
+      "γαμίσκω",
+      false
+    ],
+    [
+      "G5463",
+      "χαίρω",
+      false
+    ],
+    [
+      "G5485",
+      "χάρις",
+      false
+    ],
+    [
+      "γαμίζω",
+      "γαμίζω",
+      false
+    ],
+    [
+      "γαμίσκω",
+      "γαμίσκω",
+      false
+    ],
+    [
+      "χάρις",
+      "χάρις",
+      false
+    ],
+    [
+      "χαίρω",
+      "χαίρω",
+      false
+    ],
+    [
+      "ἀγάπη",
+      "ἀγάπη",
+      false
+    ]
+  ],
+  "report": {
+    "dropped_markup": {
+      "<note type=occurrencesNT>": 5,
+      "ref outside the Standard versification": 3
+    },
+    "entries": 5,
+    "scripture_refs": 116,
+    "strongs_links": 5,
+    "warnings": []
+  },
+  "transliterations": [
+    [
+      "agape",
+      "ἀγάπη"
+    ],
+    [
+      "chairo",
+      "χαίρω"
+    ],
+    [
+      "charis",
+      "χάρις"
+    ],
+    [
+      "gamisko",
+      "γαμίσκω"
+    ],
+    [
+      "gamizo",
+      "γαμίζω"
+    ]
+  ],
+  "units": [
+    {
+      "id": "ἀγάπη",
+      "spans": [
+        {
+          "at": "0..27",
+          "kind": "para",
+          "style": "prose",
+          "text": "† ἀγάπη, -ης, ἡ"
+        },
+        {
+          "at": "4..15",
+          "kind": "bold",
+          "text": "ἀγάπη"
+        },
+        {
+          "at": "28..116",
+          "kind": "para",
+          "style": "prose",
+          "text": "[in LXX for אַהֲבָה, which is also rendered by ἀγάπησις and φιλία;]"
+        },
+        {
+          "at": "40..54",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H160"
+            }
+          ],
+          "text": "אַהֲבָה"
+        },
+        {
+          "at": "117..380",
+          "kind": "para",
+          "style": "prose",
+          "text": "love, goodwill, esteem. Outside of bibl. and eccl. books, there is no clear instance (with Deiss., LAE, 18:4, 70:2, cf. the same writer in Constr. Quar., ii, 4; and with MM, VGT, s.v., cf. Dr. Moulton in Exp. Times, xxvi, 3, 139). In NT, like ἀγαπάω, -ῶ,"
+        },
+        {
+          "at": "117..121",
+          "kind": "bold",
+          "text": "love"
+        },
+        {
+          "at": "123..131",
+          "kind": "bold",
+          "text": "goodwill"
+        },
+        {
+          "at": "133..139",
+          "kind": "bold",
+          "text": "esteem"
+        },
+        {
+          "at": "216..219",
+          "kind": "italic",
+          "text": "LAE"
+        },
+        {
+          "at": "256..269",
+          "kind": "italic",
+          "text": "Constr. Quar."
+        },
+        {
+          "at": "291..294",
+          "kind": "italic",
+          "text": "VGT"
+        },
+        {
+          "at": "321..331",
+          "kind": "italic",
+          "text": "Exp. Times"
+        },
+        {
+          "at": "381..398",
+          "kind": "para",
+          "style": "prose",
+          "text": "1. Of men's love:"
+        },
+        {
+          "at": "399..428",
+          "kind": "para",
+          "style": "prose",
+          "text": "(a) to one another, Jo 13:35;"
+        },
+        {
+          "at": "419..427",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 13,
+                "verse": 35
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 13,
+                "verse": 35
+              }
+            }
+          ],
+          "text": "Jo 13:35"
+        },
+        {
+          "at": "429..450",
+          "kind": "para",
+          "style": "prose",
+          "text": "(b) to God, I Jo 2:5."
+        },
+        {
+          "at": "441..449",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1JN",
+                "chapter": 2,
+                "verse": 5
+              },
+              "start": {
+                "book": "1JN",
+                "chapter": 2,
+                "verse": 5
+              }
+            }
+          ],
+          "text": "I Jo 2:5"
+        },
+        {
+          "at": "451..469",
+          "kind": "para",
+          "style": "prose",
+          "text": "2. Of divine love;"
+        },
+        {
+          "at": "470..522",
+          "kind": "para",
+          "style": "prose",
+          "text": "(a) God's love: to men, Ro 5:8; to Christ, Jo 17:26;"
+        },
+        {
+          "at": "494..500",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 8
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 8
+              }
+            }
+          ],
+          "text": "Ro 5:8"
+        },
+        {
+          "at": "513..521",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 17,
+                "verse": 26
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 17,
+                "verse": 26
+              }
+            }
+          ],
+          "text": "Jo 17:26"
+        },
+        {
+          "at": "523..557",
+          "kind": "para",
+          "style": "prose",
+          "text": "(b) Christ's love to men: Ro 8:35."
+        },
+        {
+          "at": "549..556",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 8,
+                "verse": 35
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 8,
+                "verse": 35
+              }
+            }
+          ],
+          "text": "Ro 8:35"
+        },
+        {
+          "at": "558..603",
+          "kind": "para",
+          "style": "prose",
+          "text": "3. In pl., love feasts: Ju 12 (DB, iii, 157)."
+        },
+        {
+          "at": "569..580",
+          "kind": "bold",
+          "text": "love feasts"
+        },
+        {
+          "at": "582..587",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JUD",
+                "chapter": 1,
+                "verse": 12
+              },
+              "start": {
+                "book": "JUD",
+                "chapter": 1,
+                "verse": 12
+              }
+            }
+          ],
+          "text": "Ju 12"
+        },
+        {
+          "at": "589..591",
+          "kind": "italic",
+          "text": "DB"
+        },
+        {
+          "at": "604..1276",
+          "kind": "para",
+          "style": "prose",
+          "text": "SYN.: φιλία. ἀ., signifying properly (v.s. ἀγαπάω) love which chooses its object, is taken over from LXX, where its connotation is more general, into NT, and there used exclusively to express that spiritual bond of love between God and man and between man and man, in Christ, which is characteristic of Christianity. It is thus distinct from φιλία, friendship (Ja 4:4 only), στοργή, natural affection (in NT only in compounds, v.s. ἄστοργος) and ἔρως, sexual love, which is not used in NT, its place being taken by ἐπιθυμία. (Cf. ἀγαπάω; and v. Abbott, Essays, 70f.; DB, vol. i., 555; Cremer, 13, 593; MM, VGT, s.v.)."
+        },
+        {
+          "at": "604..608",
+          "kind": "italic",
+          "text": "SYN."
+        },
+        {
+          "at": "972..982",
+          "kind": "italic",
+          "text": "friendship"
+        },
+        {
+          "at": "984..990",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JAS",
+                "chapter": 4,
+                "verse": 4
+              },
+              "start": {
+                "book": "JAS",
+                "chapter": 4,
+                "verse": 4
+              }
+            }
+          ],
+          "text": "Ja 4:4"
+        },
+        {
+          "at": "1012..1029",
+          "kind": "italic",
+          "text": "natural affection"
+        },
+        {
+          "at": "1095..1106",
+          "kind": "italic",
+          "text": "sexual love"
+        },
+        {
+          "at": "1212..1218",
+          "kind": "italic",
+          "text": "Essays"
+        },
+        {
+          "at": "1226..1228",
+          "kind": "italic",
+          "text": "DB"
+        },
+        {
+          "at": "1265..1268",
+          "kind": "italic",
+          "text": "VGT"
+        }
+      ],
+      "text": "† ἀγάπη, -ης, ἡ\n[in LXX for אַהֲבָה, which is also rendered by ἀγάπησις and φιλία;]\nlove, goodwill, esteem. Outside of bibl. and eccl. books, there is no clear instance (with Deiss., LAE, 18:4, 70:2, cf. the same writer in Constr. Quar., ii, 4; and with MM, VGT, s.v., cf. Dr. Moulton in Exp. Times, xxvi, 3, 139). In NT, like ἀγαπάω, -ῶ,\n1. Of men's love:\n(a) to one another, Jo 13:35;\n(b) to God, I Jo 2:5.\n2. Of divine love;\n(a) God's love: to men, Ro 5:8; to Christ, Jo 17:26;\n(b) Christ's love to men: Ro 8:35.\n3. In pl., love feasts: Ju 12 (DB, iii, 157).\nSYN.: φιλία. ἀ., signifying properly (v.s. ἀγαπάω) love which chooses its object, is taken over from LXX, where its connotation is more general, into NT, and there used exclusively to express that spiritual bond of love between God and man and between man and man, in Christ, which is characteristic of Christianity. It is thus distinct from φιλία, friendship (Ja 4:4 only), στοργή, natural affection (in NT only in compounds, v.s. ἄστοργος) and ἔρως, sexual love, which is not used in NT, its place being taken by ἐπιθυμία. (Cf. ἀγαπάω; and v. Abbott, Essays, 70f.; DB, vol. i., 555; Cremer, 13, 593; MM, VGT, s.v.).",
+      "title": "ἀγάπη"
+    },
+    {
+      "id": "χαίρω",
+      "spans": [
+        {
+          "at": "0..10",
+          "kind": "para",
+          "style": "prose",
+          "text": "χαίρω"
+        },
+        {
+          "at": "0..10",
+          "kind": "bold",
+          "text": "χαίρω"
+        },
+        {
+          "at": "11..199",
+          "kind": "para",
+          "style": "prose",
+          "text": "[in LXX for שָׂמַח (Ge 45:16, al.), גִּיל (Pr 2:14, al.), etc.; inf., as greeting (v. infr.), Is 48:22 57:21 שָׁלוֹם), I Mac 10:18, II Mac 1:1 and freq. in these books ;]"
+        },
+        {
+          "at": "23..35",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8055"
+            }
+          ],
+          "text": "שָׂמַח"
+        },
+        {
+          "at": "37..45",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "GEN",
+                "chapter": 45,
+                "verse": 16
+              },
+              "start": {
+                "book": "GEN",
+                "chapter": 45,
+                "verse": 16
+              }
+            }
+          ],
+          "text": "Ge 45:16"
+        },
+        {
+          "at": "53..63",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1523"
+            }
+          ],
+          "text": "גִּיל"
+        },
+        {
+          "at": "65..72",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PRO",
+                "chapter": 2,
+                "verse": 14
+              },
+              "start": {
+                "book": "PRO",
+                "chapter": 2,
+                "verse": 14
+              }
+            }
+          ],
+          "text": "Pr 2:14"
+        },
+        {
+          "at": "116..124",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ISA",
+                "chapter": 48,
+                "verse": 22
+              },
+              "start": {
+                "book": "ISA",
+                "chapter": 48,
+                "verse": 22
+              }
+            }
+          ],
+          "text": "Is 48:22"
+        },
+        {
+          "at": "125..130",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ISA",
+                "chapter": 57,
+                "verse": 21
+              },
+              "start": {
+                "book": "ISA",
+                "chapter": 57,
+                "verse": 21
+              }
+            }
+          ],
+          "text": "57:21"
+        },
+        {
+          "at": "131..145",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H7965"
+            }
+          ],
+          "text": "שָׁלוֹם"
+        },
+        {
+          "at": "200..1131",
+          "kind": "para",
+          "style": "prose",
+          "text": "1. to rejoice, be glad: Mk 14:11, Lk 15:5, 32 19:6, 37 22:5 23:8, Jo 4:36 8:56 20:20, Ac 5:41 8:39 11:23 13:48, II Co 6:10 7:7 13:9, Phl 2:17, 28, Col 2:5, I Th 5:16, I Pe 4:13, III Jo 3; χ. καὶ ἀγαλλιᾶσθαι, Mt 5:12; κ. σκιρτᾶν, Lk 6:23; opp. to κλαίειν, Ro 12:15, I Co 7:30; to κλαίειν κ. θρηνεῖν Jo 16:20; to λύπην ἔχειν, ib. 22; c. cogn. acc, χ. χαρὰν μεγάλην, Mt 2:10; χαρᾷ χ. (B1., § 38, 3; Dalman, Words, 34 f.), Jo 3:29; ἡ χαρὰ ᾗ χαίρομεν, I Th 3:9; c. prep. (Bl., § 38, 2), ἐπί, c. dat. (simple dat. in cl.), Mt 18:13, Lk 1:14 13:17, Ac 15:31, Ro 16:19, I Co 13:6 16:17, II Co 7:13, Re 11:10; διά, Jo 3:29 11:15, I Th 3:9; ἐν, Phl 1:18; ἀπό, II Co 2:3; c. acc. (Dem.), Phl 2:18; seq. ὅτι, Jo 14:28, II Co 7:9, 16, II Jo 4; ἐν τούτῳ ὅτι, Lk 10:20; c. dat., Ro 12:1; ἐν κυρίῳ, Phl 4:10"
+        },
+        {
+          "at": "203..222",
+          "kind": "bold",
+          "text": "to rejoice, be glad"
+        },
+        {
+          "at": "224..232",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MRK",
+                "chapter": 14,
+                "verse": 11
+              },
+              "start": {
+                "book": "MRK",
+                "chapter": 14,
+                "verse": 11
+              }
+            }
+          ],
+          "text": "Mk 14:11"
+        },
+        {
+          "at": "234..241",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 15,
+                "verse": 5
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 15,
+                "verse": 5
+              }
+            }
+          ],
+          "text": "Lk 15:5"
+        },
+        {
+          "at": "243..245",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 15,
+                "verse": 32
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 15,
+                "verse": 32
+              }
+            }
+          ],
+          "text": "32"
+        },
+        {
+          "at": "246..250",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 19,
+                "verse": 6
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 19,
+                "verse": 6
+              }
+            }
+          ],
+          "text": "19:6"
+        },
+        {
+          "at": "252..254",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 19,
+                "verse": 37
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 19,
+                "verse": 37
+              }
+            }
+          ],
+          "text": "37"
+        },
+        {
+          "at": "255..259",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 22,
+                "verse": 5
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 22,
+                "verse": 5
+              }
+            }
+          ],
+          "text": "22:5"
+        },
+        {
+          "at": "260..264",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 23,
+                "verse": 8
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 23,
+                "verse": 8
+              }
+            }
+          ],
+          "text": "23:8"
+        },
+        {
+          "at": "266..273",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 4,
+                "verse": 36
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 4,
+                "verse": 36
+              }
+            }
+          ],
+          "text": "Jo 4:36"
+        },
+        {
+          "at": "274..278",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 8,
+                "verse": 56
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 8,
+                "verse": 56
+              }
+            }
+          ],
+          "text": "8:56"
+        },
+        {
+          "at": "279..284",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 20,
+                "verse": 20
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 20,
+                "verse": 20
+              }
+            }
+          ],
+          "text": "20:20"
+        },
+        {
+          "at": "286..293",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 5,
+                "verse": 41
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 5,
+                "verse": 41
+              }
+            }
+          ],
+          "text": "Ac 5:41"
+        },
+        {
+          "at": "294..298",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 8,
+                "verse": 39
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 8,
+                "verse": 39
+              }
+            }
+          ],
+          "text": "8:39"
+        },
+        {
+          "at": "299..304",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 11,
+                "verse": 23
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 11,
+                "verse": 23
+              }
+            }
+          ],
+          "text": "11:23"
+        },
+        {
+          "at": "305..310",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 13,
+                "verse": 48
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 13,
+                "verse": 48
+              }
+            }
+          ],
+          "text": "13:48"
+        },
+        {
+          "at": "312..322",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "2CO",
+                "chapter": 6,
+                "verse": 10
+              },
+              "start": {
+                "book": "2CO",
+                "chapter": 6,
+                "verse": 10
+              }
+            }
+          ],
+          "text": "II Co 6:10"
+        },
+        {
+          "at": "323..326",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "2CO",
+                "chapter": 7,
+                "verse": 7
+              },
+              "start": {
+                "book": "2CO",
+                "chapter": 7,
+                "verse": 7
+              }
+            }
+          ],
+          "text": "7:7"
+        },
+        {
+          "at": "327..331",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "2CO",
+                "chapter": 13,
+                "verse": 9
+              },
+              "start": {
+                "book": "2CO",
+                "chapter": 13,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "13:9"
+        },
+        {
+          "at": "333..341",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PHP",
+                "chapter": 2,
+                "verse": 17
+              },
+              "start": {
+                "book": "PHP",
+                "chapter": 2,
+                "verse": 17
+              }
+            }
+          ],
+          "text": "Phl 2:17"
+        },
+        {
+          "at": "343..345",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PHP",
+                "chapter": 2,
+                "verse": 28
+              },
+              "start": {
+                "book": "PHP",
+                "chapter": 2,
+                "verse": 28
+              }
+            }
+          ],
+          "text": "28"
+        },
+        {
+          "at": "347..354",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "COL",
+                "chapter": 2,
+                "verse": 5
+              },
+              "start": {
+                "book": "COL",
+                "chapter": 2,
+                "verse": 5
+              }
+            }
+          ],
+          "text": "Col 2:5"
+        },
+        {
+          "at": "356..365",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1TH",
+                "chapter": 5,
+                "verse": 16
+              },
+              "start": {
+                "book": "1TH",
+                "chapter": 5,
+                "verse": 16
+              }
+            }
+          ],
+          "text": "I Th 5:16"
+        },
+        {
+          "at": "367..376",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1PE",
+                "chapter": 4,
+                "verse": 13
+              },
+              "start": {
+                "book": "1PE",
+                "chapter": 4,
+                "verse": 13
+              }
+            }
+          ],
+          "text": "I Pe 4:13"
+        },
+        {
+          "at": "378..386",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "3JN",
+                "chapter": 1,
+                "verse": 3
+              },
+              "start": {
+                "book": "3JN",
+                "chapter": 1,
+                "verse": 3
+              }
+            }
+          ],
+          "text": "III Jo 3"
+        },
+        {
+          "at": "426..433",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 5,
+                "verse": 12
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 5,
+                "verse": 12
+              }
+            }
+          ],
+          "text": "Mt 5:12"
+        },
+        {
+          "at": "456..463",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 6,
+                "verse": 23
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 6,
+                "verse": 23
+              }
+            }
+          ],
+          "text": "Lk 6:23"
+        },
+        {
+          "at": "489..497",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 12,
+                "verse": 15
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 12,
+                "verse": 15
+              }
+            }
+          ],
+          "text": "Ro 12:15"
+        },
+        {
+          "at": "499..508",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1CO",
+                "chapter": 7,
+                "verse": 30
+              },
+              "start": {
+                "book": "1CO",
+                "chapter": 7,
+                "verse": 30
+              }
+            }
+          ],
+          "text": "I Co 7:30"
+        },
+        {
+          "at": "548..556",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 16,
+                "verse": 20
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 16,
+                "verse": 20
+              }
+            }
+          ],
+          "text": "Jo 16:20"
+        },
+        {
+          "at": "585..591",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 16,
+                "verse": 22
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 16,
+                "verse": 22
+              }
+            }
+          ],
+          "text": "ib. 22"
+        },
+        {
+          "at": "639..646",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 2,
+                "verse": 10
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 2,
+                "verse": 10
+              }
+            }
+          ],
+          "text": "Mt 2:10"
+        },
+        {
+          "at": "686..691",
+          "kind": "italic",
+          "text": "Words"
+        },
+        {
+          "at": "701..708",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 3,
+                "verse": 29
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 3,
+                "verse": 29
+              }
+            }
+          ],
+          "text": "Jo 3:29"
+        },
+        {
+          "at": "746..754",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1TH",
+                "chapter": 3,
+                "verse": 9
+              },
+              "start": {
+                "book": "1TH",
+                "chapter": 3,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "I Th 3:9"
+        },
+        {
+          "at": "821..829",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 18,
+                "verse": 13
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 18,
+                "verse": 13
+              }
+            }
+          ],
+          "text": "Mt 18:13"
+        },
+        {
+          "at": "831..838",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 1,
+                "verse": 14
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 1,
+                "verse": 14
+              }
+            }
+          ],
+          "text": "Lk 1:14"
+        },
+        {
+          "at": "839..844",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 13,
+                "verse": 17
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 13,
+                "verse": 17
+              }
+            }
+          ],
+          "text": "13:17"
+        },
+        {
+          "at": "846..854",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 15,
+                "verse": 31
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 15,
+                "verse": 31
+              }
+            }
+          ],
+          "text": "Ac 15:31"
+        },
+        {
+          "at": "856..864",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 16,
+                "verse": 19
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 16,
+                "verse": 19
+              }
+            }
+          ],
+          "text": "Ro 16:19"
+        },
+        {
+          "at": "866..875",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1CO",
+                "chapter": 13,
+                "verse": 6
+              },
+              "start": {
+                "book": "1CO",
+                "chapter": 13,
+                "verse": 6
+              }
+            }
+          ],
+          "text": "I Co 13:6"
+        },
+        {
+          "at": "876..881",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1CO",
+                "chapter": 16,
+                "verse": 17
+              },
+              "start": {
+                "book": "1CO",
+                "chapter": 16,
+                "verse": 17
+              }
+            }
+          ],
+          "text": "16:17"
+        },
+        {
+          "at": "883..893",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "2CO",
+                "chapter": 7,
+                "verse": 13
+              },
+              "start": {
+                "book": "2CO",
+                "chapter": 7,
+                "verse": 13
+              }
+            }
+          ],
+          "text": "II Co 7:13"
+        },
+        {
+          "at": "895..903",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "REV",
+                "chapter": 11,
+                "verse": 10
+              },
+              "start": {
+                "book": "REV",
+                "chapter": 11,
+                "verse": 10
+              }
+            }
+          ],
+          "text": "Re 11:10"
+        },
+        {
+          "at": "913..920",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 3,
+                "verse": 29
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 3,
+                "verse": 29
+              }
+            }
+          ],
+          "text": "Jo 3:29"
+        },
+        {
+          "at": "921..926",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 11,
+                "verse": 15
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 11,
+                "verse": 15
+              }
+            }
+          ],
+          "text": "11:15"
+        },
+        {
+          "at": "928..936",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1TH",
+                "chapter": 3,
+                "verse": 9
+              },
+              "start": {
+                "book": "1TH",
+                "chapter": 3,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "I Th 3:9"
+        },
+        {
+          "at": "945..953",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PHP",
+                "chapter": 1,
+                "verse": 18
+              },
+              "start": {
+                "book": "PHP",
+                "chapter": 1,
+                "verse": 18
+              }
+            }
+          ],
+          "text": "Phl 1:18"
+        },
+        {
+          "at": "964..973",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "2CO",
+                "chapter": 2,
+                "verse": 3
+              },
+              "start": {
+                "book": "2CO",
+                "chapter": 2,
+                "verse": 3
+              }
+            }
+          ],
+          "text": "II Co 2:3"
+        },
+        {
+          "at": "991..999",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PHP",
+                "chapter": 2,
+                "verse": 18
+              },
+              "start": {
+                "book": "PHP",
+                "chapter": 2,
+                "verse": 18
+              }
+            }
+          ],
+          "text": "Phl 2:18"
+        },
+        {
+          "at": "1015..1023",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 14,
+                "verse": 28
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 14,
+                "verse": 28
+              }
+            }
+          ],
+          "text": "Jo 14:28"
+        },
+        {
+          "at": "1025..1034",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "2CO",
+                "chapter": 7,
+                "verse": 9
+              },
+              "start": {
+                "book": "2CO",
+                "chapter": 7,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "II Co 7:9"
+        },
+        {
+          "at": "1036..1038",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "2CO",
+                "chapter": 7,
+                "verse": 16
+              },
+              "start": {
+                "book": "2CO",
+                "chapter": 7,
+                "verse": 16
+              }
+            }
+          ],
+          "text": "16"
+        },
+        {
+          "at": "1040..1047",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "2JN",
+                "chapter": 1,
+                "verse": 4
+              },
+              "start": {
+                "book": "2JN",
+                "chapter": 1,
+                "verse": 4
+              }
+            }
+          ],
+          "text": "II Jo 4"
+        },
+        {
+          "at": "1076..1084",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 10,
+                "verse": 20
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 10,
+                "verse": 20
+              }
+            }
+          ],
+          "text": "Lk 10:20"
+        },
+        {
+          "at": "1095..1102",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 12,
+                "verse": 1
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 12,
+                "verse": 1
+              }
+            }
+          ],
+          "text": "Ro 12:1"
+        },
+        {
+          "at": "1123..1131",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PHP",
+                "chapter": 4,
+                "verse": 10
+              },
+              "start": {
+                "book": "PHP",
+                "chapter": 4,
+                "verse": 10
+              }
+            }
+          ],
+          "text": "Phl 4:10"
+        },
+        {
+          "at": "1132..1189",
+          "kind": "para",
+          "style": "prose",
+          "text": "2. In salutations, imperat., χαῖρε, χαίρετε,"
+        },
+        {
+          "at": "1190..1418",
+          "kind": "para",
+          "style": "prose",
+          "text": "(a) at meeting, hail: Mt 26:49 27:29, Mk 15:18, Lk 1:28, Jo 19:3; pl., Mt 28:9; so χαίρειν λέγω, to give greeting, II Jo 11; in letters, χαίρειν (sc. λέγει; Bl., § 81, 1), greeting: Ac 15:23 23:26 Ja 1:1;"
+        },
+        {
+          "at": "1206..1210",
+          "kind": "bold",
+          "text": "hail"
+        },
+        {
+          "at": "1212..1220",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 26,
+                "verse": 49
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 26,
+                "verse": 49
+              }
+            }
+          ],
+          "text": "Mt 26:49"
+        },
+        {
+          "at": "1221..1226",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 27,
+                "verse": 29
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 27,
+                "verse": 29
+              }
+            }
+          ],
+          "text": "27:29"
+        },
+        {
+          "at": "1228..1236",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MRK",
+                "chapter": 15,
+                "verse": 18
+              },
+              "start": {
+                "book": "MRK",
+                "chapter": 15,
+                "verse": 18
+              }
+            }
+          ],
+          "text": "Mk 15:18"
+        },
+        {
+          "at": "1238..1245",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 1,
+                "verse": 28
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 1,
+                "verse": 28
+              }
+            }
+          ],
+          "text": "Lk 1:28"
+        },
+        {
+          "at": "1247..1254",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 19,
+                "verse": 3
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 19,
+                "verse": 3
+              }
+            }
+          ],
+          "text": "Jo 19:3"
+        },
+        {
+          "at": "1261..1268",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 28,
+                "verse": 9
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 28,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "Mt 28:9"
+        },
+        {
+          "at": "1298..1314",
+          "kind": "bold",
+          "text": "to give greeting"
+        },
+        {
+          "at": "1316..1324",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "2JN",
+                "chapter": 1,
+                "verse": 11
+              },
+              "start": {
+                "book": "2JN",
+                "chapter": 1,
+                "verse": 11
+              }
+            }
+          ],
+          "text": "II Jo 11"
+        },
+        {
+          "at": "1386..1394",
+          "kind": "bold",
+          "text": "greeting"
+        },
+        {
+          "at": "1396..1404",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 15,
+                "verse": 23
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 15,
+                "verse": 23
+              }
+            }
+          ],
+          "text": "Ac 15:23"
+        },
+        {
+          "at": "1405..1410",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 23,
+                "verse": 26
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 23,
+                "verse": 26
+              }
+            }
+          ],
+          "text": "23:26"
+        },
+        {
+          "at": "1411..1417",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JAS",
+                "chapter": 1,
+                "verse": 1
+              },
+              "start": {
+                "book": "JAS",
+                "chapter": 1,
+                "verse": 1
+              }
+            }
+          ],
+          "text": "Ja 1:1"
+        },
+        {
+          "at": "1419..1457",
+          "kind": "para",
+          "style": "prose",
+          "text": "(b) at parting, farewell: II Co 13:11;"
+        },
+        {
+          "at": "1435..1443",
+          "kind": "bold",
+          "text": "farewell"
+        },
+        {
+          "at": "1445..1456",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "2CO",
+                "chapter": 13,
+                "verse": 11
+              },
+              "start": {
+                "book": "2CO",
+                "chapter": 13,
+                "verse": 11
+              }
+            }
+          ],
+          "text": "II Co 13:11"
+        },
+        {
+          "at": "1458..1558",
+          "kind": "para",
+          "style": "prose",
+          "text": "(c) on other occasions, be of good cheer: ἐν κυρίῳ, Phl 3:1 4:4 (cf. συν-χαίρω).†"
+        },
+        {
+          "at": "1482..1498",
+          "kind": "bold",
+          "text": "be of good cheer"
+        },
+        {
+          "at": "1519..1526",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PHP",
+                "chapter": 3,
+                "verse": 1
+              },
+              "start": {
+                "book": "PHP",
+                "chapter": 3,
+                "verse": 1
+              }
+            }
+          ],
+          "text": "Phl 3:1"
+        },
+        {
+          "at": "1527..1530",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PHP",
+                "chapter": 4,
+                "verse": 4
+              },
+              "start": {
+                "book": "PHP",
+                "chapter": 4,
+                "verse": 4
+              }
+            }
+          ],
+          "text": "4:4"
+        }
+      ],
+      "text": "χαίρω\n[in LXX for שָׂמַח (Ge 45:16, al.), גִּיל (Pr 2:14, al.), etc.; inf., as greeting (v. infr.), Is 48:22 57:21 שָׁלוֹם), I Mac 10:18, II Mac 1:1 and freq. in these books ;]\n1. to rejoice, be glad: Mk 14:11, Lk 15:5, 32 19:6, 37 22:5 23:8, Jo 4:36 8:56 20:20, Ac 5:41 8:39 11:23 13:48, II Co 6:10 7:7 13:9, Phl 2:17, 28, Col 2:5, I Th 5:16, I Pe 4:13, III Jo 3; χ. καὶ ἀγαλλιᾶσθαι, Mt 5:12; κ. σκιρτᾶν, Lk 6:23; opp. to κλαίειν, Ro 12:15, I Co 7:30; to κλαίειν κ. θρηνεῖν Jo 16:20; to λύπην ἔχειν, ib. 22; c. cogn. acc, χ. χαρὰν μεγάλην, Mt 2:10; χαρᾷ χ. (B1., § 38, 3; Dalman, Words, 34 f.), Jo 3:29; ἡ χαρὰ ᾗ χαίρομεν, I Th 3:9; c. prep. (Bl., § 38, 2), ἐπί, c. dat. (simple dat. in cl.), Mt 18:13, Lk 1:14 13:17, Ac 15:31, Ro 16:19, I Co 13:6 16:17, II Co 7:13, Re 11:10; διά, Jo 3:29 11:15, I Th 3:9; ἐν, Phl 1:18; ἀπό, II Co 2:3; c. acc. (Dem.), Phl 2:18; seq. ὅτι, Jo 14:28, II Co 7:9, 16, II Jo 4; ἐν τούτῳ ὅτι, Lk 10:20; c. dat., Ro 12:1; ἐν κυρίῳ, Phl 4:10\n2. In salutations, imperat., χαῖρε, χαίρετε,\n(a) at meeting, hail: Mt 26:49 27:29, Mk 15:18, Lk 1:28, Jo 19:3; pl., Mt 28:9; so χαίρειν λέγω, to give greeting, II Jo 11; in letters, χαίρειν (sc. λέγει; Bl., § 81, 1), greeting: Ac 15:23 23:26 Ja 1:1;\n(b) at parting, farewell: II Co 13:11;\n(c) on other occasions, be of good cheer: ἐν κυρίῳ, Phl 3:1 4:4 (cf. συν-χαίρω).†",
+      "title": "χαίρω"
+    },
+    {
+      "id": "χάρις",
+      "spans": [
+        {
+          "at": "0..144",
+          "kind": "para",
+          "style": "prose",
+          "text": "χάρις, -ιτος, ἡ Abbott-Smith does not include the article here., acc., χάριν (χάριτα in Ac 24:27, Ju 4; v. WH, App., 157),"
+        },
+        {
+          "at": "0..74",
+          "kind": "bold",
+          "text": "χάρις, -ιτος, ἡ Abbott-Smith does not include the article here."
+        },
+        {
+          "at": "27..74",
+          "kind": "italic",
+          "text": "Abbott-Smith does not include the article here."
+        },
+        {
+          "at": "110..118",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 24,
+                "verse": 27
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 24,
+                "verse": 27
+              }
+            }
+          ],
+          "text": "Ac 24:27"
+        },
+        {
+          "at": "120..124",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JUD",
+                "chapter": 1,
+                "verse": 4
+              },
+              "start": {
+                "book": "JUD",
+                "chapter": 1,
+                "verse": 4
+              }
+            }
+          ],
+          "text": "Ju 4"
+        },
+        {
+          "at": "133..137",
+          "kind": "italic",
+          "text": "App."
+        },
+        {
+          "at": "145..174",
+          "kind": "para",
+          "style": "prose",
+          "text": "[in LXX chiefly for חֵן ;]"
+        },
+        {
+          "at": "165..171",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H2580"
+            }
+          ],
+          "text": "חֵן"
+        },
+        {
+          "at": "175..385",
+          "kind": "para",
+          "style": "prose",
+          "text": "1. objectively, that which causes favourable regard, gracefulness, grace, loveliness of form, graciousness of speech (cl.; Ec 10:12, Si 21:16, al.): Col 4:6; λόγοι τ. χάριτος (gen. qual.), Lk 4:22."
+        },
+        {
+          "at": "228..259",
+          "kind": "bold",
+          "text": "gracefulness, grace, loveliness"
+        },
+        {
+          "at": "269..281",
+          "kind": "bold",
+          "text": "graciousness"
+        },
+        {
+          "at": "298..306",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ECC",
+                "chapter": 10,
+                "verse": 12
+              },
+              "start": {
+                "book": "ECC",
+                "chapter": 10,
+                "verse": 12
+              }
+            }
+          ],
+          "text": "Ec 10:12"
+        },
+        {
+          "at": "324..331",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "COL",
+                "chapter": 4,
+                "verse": 6
+              },
+              "start": {
+                "book": "COL",
+                "chapter": 4,
+                "verse": 6
+              }
+            }
+          ],
+          "text": "Col 4:6"
+        },
+        {
+          "at": "377..384",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 4,
+                "verse": 22
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 4,
+                "verse": 22
+              }
+            }
+          ],
+          "text": "Lk 4:22"
+        },
+        {
+          "at": "386..402",
+          "kind": "para",
+          "style": "prose",
+          "text": "2. Subjectively,"
+        },
+        {
+          "at": "403..696",
+          "kind": "para",
+          "style": "prose",
+          "text": "(a) on the part of the giver, grace, graciousness, kindness, goodwill, favour: Lk 2:52, Ac 7:10, al.; esp. in NT of the divine favour, grace, with emphasis on its freeness and universality: Lk 1:30, Ac 14:26, Ro 1:7, I Co 1:3, al.; opp. to ὀφείλημα, Ro 4:4, 16; to ἔργα, Ro 11:6;"
+        },
+        {
+          "at": "433..480",
+          "kind": "bold",
+          "text": "grace, graciousness, kindness, goodwill, favour"
+        },
+        {
+          "at": "482..489",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 2,
+                "verse": 52
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 2,
+                "verse": 52
+              }
+            }
+          ],
+          "text": "Lk 2:52"
+        },
+        {
+          "at": "491..498",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 7,
+                "verse": 10
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 7,
+                "verse": 10
+              }
+            }
+          ],
+          "text": "Ac 7:10"
+        },
+        {
+          "at": "530..543",
+          "kind": "bold",
+          "text": "favour, grace"
+        },
+        {
+          "at": "593..600",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 1,
+                "verse": 30
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 1,
+                "verse": 30
+              }
+            }
+          ],
+          "text": "Lk 1:30"
+        },
+        {
+          "at": "602..610",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 14,
+                "verse": 26
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 14,
+                "verse": 26
+              }
+            }
+          ],
+          "text": "Ac 14:26"
+        },
+        {
+          "at": "612..618",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 1,
+                "verse": 7
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 1,
+                "verse": 7
+              }
+            }
+          ],
+          "text": "Ro 1:7"
+        },
+        {
+          "at": "620..628",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1CO",
+                "chapter": 1,
+                "verse": 3
+              },
+              "start": {
+                "book": "1CO",
+                "chapter": 1,
+                "verse": 3
+              }
+            }
+          ],
+          "text": "I Co 1:3"
+        },
+        {
+          "at": "662..668",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 4,
+                "verse": 4
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 4,
+                "verse": 4
+              }
+            }
+          ],
+          "text": "Ro 4:4"
+        },
+        {
+          "at": "688..695",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 11,
+                "verse": 6
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 11,
+                "verse": 6
+              }
+            }
+          ],
+          "text": "Ro 11:6"
+        },
+        {
+          "at": "697..852",
+          "kind": "para",
+          "style": "prose",
+          "text": "(b) on the part of the receiver, a sense of favour received, thanks, gratitude: Ro 6:17 7:25, al.; χ. ἔχειν, to be thankful, Lk 17:9, I Ti 1:12, al."
+        },
+        {
+          "at": "758..775",
+          "kind": "bold",
+          "text": "thanks, gratitude"
+        },
+        {
+          "at": "777..784",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 6,
+                "verse": 17
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 6,
+                "verse": 17
+              }
+            }
+          ],
+          "text": "Ro 6:17"
+        },
+        {
+          "at": "785..789",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 7,
+                "verse": 25
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 7,
+                "verse": 25
+              }
+            }
+          ],
+          "text": "7:25"
+        },
+        {
+          "at": "813..827",
+          "kind": "bold",
+          "text": "to be thankful"
+        },
+        {
+          "at": "829..836",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 17,
+                "verse": 9
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 17,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "Lk 17:9"
+        },
+        {
+          "at": "838..847",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1TI",
+                "chapter": 1,
+                "verse": 12
+              },
+              "start": {
+                "book": "1TI",
+                "chapter": 1,
+                "verse": 12
+              }
+            }
+          ],
+          "text": "I Ti 1:12"
+        },
+        {
+          "at": "853..892",
+          "kind": "para",
+          "style": "prose",
+          "text": "3. Objectively, of the effect of grace,"
+        },
+        {
+          "at": "893..956",
+          "kind": "para",
+          "style": "prose",
+          "text": "(a) a state of grace: Ro 5:2, II Ti 2:1, I Pe 5:12, II Pe 3:18;"
+        },
+        {
+          "at": "908..913",
+          "kind": "bold",
+          "text": "grace"
+        },
+        {
+          "at": "915..921",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 2
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 2
+              }
+            }
+          ],
+          "text": "Ro 5:2"
+        },
+        {
+          "at": "923..932",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "2TI",
+                "chapter": 2,
+                "verse": 1
+              },
+              "start": {
+                "book": "2TI",
+                "chapter": 2,
+                "verse": 1
+              }
+            }
+          ],
+          "text": "II Ti 2:1"
+        },
+        {
+          "at": "934..943",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1PE",
+                "chapter": 5,
+                "verse": 12
+              },
+              "start": {
+                "book": "1PE",
+                "chapter": 5,
+                "verse": 12
+              }
+            }
+          ],
+          "text": "I Pe 5:12"
+        },
+        {
+          "at": "945..955",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "2PE",
+                "chapter": 3,
+                "verse": 18
+              },
+              "start": {
+                "book": "2PE",
+                "chapter": 3,
+                "verse": 18
+              }
+            }
+          ],
+          "text": "II Pe 3:18"
+        },
+        {
+          "at": "957..1193",
+          "kind": "para",
+          "style": "prose",
+          "text": "(b) a proof or gift of grace (cl., a favour): Jo 1:16, Ac 6:8, Ro 1:5, I Co 3:10, II Co 9:8, Ga 2:9, Eph 3:2, I Pe 5:5, 10 al. (For fuller treatment of the NT usage, v. AR, Eph., 221 ff.; DB, ii, 254 ff.; DCG, i, 686 ff.; Cremer, s.v.)."
+        },
+        {
+          "at": "980..985",
+          "kind": "bold",
+          "text": "grace"
+        },
+        {
+          "at": "992..1000",
+          "kind": "bold",
+          "text": "a favour"
+        },
+        {
+          "at": "1003..1010",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 1,
+                "verse": 16
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 1,
+                "verse": 16
+              }
+            }
+          ],
+          "text": "Jo 1:16"
+        },
+        {
+          "at": "1012..1018",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 6,
+                "verse": 8
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 6,
+                "verse": 8
+              }
+            }
+          ],
+          "text": "Ac 6:8"
+        },
+        {
+          "at": "1020..1026",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 1,
+                "verse": 5
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 1,
+                "verse": 5
+              }
+            }
+          ],
+          "text": "Ro 1:5"
+        },
+        {
+          "at": "1028..1037",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1CO",
+                "chapter": 3,
+                "verse": 10
+              },
+              "start": {
+                "book": "1CO",
+                "chapter": 3,
+                "verse": 10
+              }
+            }
+          ],
+          "text": "I Co 3:10"
+        },
+        {
+          "at": "1039..1048",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "2CO",
+                "chapter": 9,
+                "verse": 8
+              },
+              "start": {
+                "book": "2CO",
+                "chapter": 9,
+                "verse": 8
+              }
+            }
+          ],
+          "text": "II Co 9:8"
+        },
+        {
+          "at": "1050..1056",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "GAL",
+                "chapter": 2,
+                "verse": 9
+              },
+              "start": {
+                "book": "GAL",
+                "chapter": 2,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "Ga 2:9"
+        },
+        {
+          "at": "1058..1065",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "EPH",
+                "chapter": 3,
+                "verse": 2
+              },
+              "start": {
+                "book": "EPH",
+                "chapter": 3,
+                "verse": 2
+              }
+            }
+          ],
+          "text": "Eph 3:2"
+        },
+        {
+          "at": "1067..1075",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1PE",
+                "chapter": 5,
+                "verse": 5
+              },
+              "start": {
+                "book": "1PE",
+                "chapter": 5,
+                "verse": 5
+              }
+            }
+          ],
+          "text": "I Pe 5:5"
+        },
+        {
+          "at": "1077..1079",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1PE",
+                "chapter": 5,
+                "verse": 10
+              },
+              "start": {
+                "book": "1PE",
+                "chapter": 5,
+                "verse": 10
+              }
+            }
+          ],
+          "text": "10"
+        },
+        {
+          "at": "1130..1134",
+          "kind": "italic",
+          "text": "Eph."
+        },
+        {
+          "at": "1145..1147",
+          "kind": "italic",
+          "text": "DB"
+        },
+        {
+          "at": "1162..1165",
+          "kind": "italic",
+          "text": "DCG"
+        }
+      ],
+      "text": "χάρις, -ιτος, ἡ Abbott-Smith does not include the article here., acc., χάριν (χάριτα in Ac 24:27, Ju 4; v. WH, App., 157),\n[in LXX chiefly for חֵן ;]\n1. objectively, that which causes favourable regard, gracefulness, grace, loveliness of form, graciousness of speech (cl.; Ec 10:12, Si 21:16, al.): Col 4:6; λόγοι τ. χάριτος (gen. qual.), Lk 4:22.\n2. Subjectively,\n(a) on the part of the giver, grace, graciousness, kindness, goodwill, favour: Lk 2:52, Ac 7:10, al.; esp. in NT of the divine favour, grace, with emphasis on its freeness and universality: Lk 1:30, Ac 14:26, Ro 1:7, I Co 1:3, al.; opp. to ὀφείλημα, Ro 4:4, 16; to ἔργα, Ro 11:6;\n(b) on the part of the receiver, a sense of favour received, thanks, gratitude: Ro 6:17 7:25, al.; χ. ἔχειν, to be thankful, Lk 17:9, I Ti 1:12, al.\n3. Objectively, of the effect of grace,\n(a) a state of grace: Ro 5:2, II Ti 2:1, I Pe 5:12, II Pe 3:18;\n(b) a proof or gift of grace (cl., a favour): Jo 1:16, Ac 6:8, Ro 1:5, I Co 3:10, II Co 9:8, Ga 2:9, Eph 3:2, I Pe 5:5, 10 al. (For fuller treatment of the NT usage, v. AR, Eph., 221 ff.; DB, ii, 254 ff.; DCG, i, 686 ff.; Cremer, s.v.).",
+      "title": "χάρις"
+    },
+    {
+      "id": "γαμίζω",
+      "spans": [
+        {
+          "at": "0..17",
+          "kind": "para",
+          "style": "prose",
+          "text": "*† γαμίζω"
+        },
+        {
+          "at": "5..17",
+          "kind": "bold",
+          "text": "γαμίζω"
+        },
+        {
+          "at": "18..33",
+          "kind": "para",
+          "style": "prose",
+          "text": "(< γάμος),"
+        },
+        {
+          "at": "34..182",
+          "kind": "para",
+          "style": "prose",
+          "text": "to give in marriage, a daughter: I Co 7:38. Pass., Mt 22:30, 24:38, Mk 12:25, Lk 17:27 20:35 (WH, mg., γαμίσκονται; cf. γαμίζω).†"
+        },
+        {
+          "at": "34..53",
+          "kind": "bold",
+          "text": "to give in marriage"
+        },
+        {
+          "at": "67..76",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1CO",
+                "chapter": 7,
+                "verse": 38
+              },
+              "start": {
+                "book": "1CO",
+                "chapter": 7,
+                "verse": 38
+              }
+            }
+          ],
+          "text": "I Co 7:38"
+        },
+        {
+          "at": "85..93",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 22,
+                "verse": 30
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 22,
+                "verse": 30
+              }
+            }
+          ],
+          "text": "Mt 22:30"
+        },
+        {
+          "at": "95..100",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 24,
+                "verse": 38
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 24,
+                "verse": 38
+              }
+            }
+          ],
+          "text": "24:38"
+        },
+        {
+          "at": "102..110",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MRK",
+                "chapter": 12,
+                "verse": 25
+              },
+              "start": {
+                "book": "MRK",
+                "chapter": 12,
+                "verse": 25
+              }
+            }
+          ],
+          "text": "Mk 12:25"
+        },
+        {
+          "at": "112..120",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 17,
+                "verse": 27
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 17,
+                "verse": 27
+              }
+            }
+          ],
+          "text": "Lk 17:27"
+        },
+        {
+          "at": "121..126",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 20,
+                "verse": 35
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 20,
+                "verse": 35
+              }
+            }
+          ],
+          "text": "20:35"
+        }
+      ],
+      "text": "*† γαμίζω\n(< γάμος),\nto give in marriage, a daughter: I Co 7:38. Pass., Mt 22:30, 24:38, Mk 12:25, Lk 17:27 20:35 (WH, mg., γαμίσκονται; cf. γαμίζω).†",
+      "title": "γαμίζω"
+    },
+    {
+      "id": "γαμίσκω",
+      "spans": [
+        {
+          "at": "0..73",
+          "kind": "para",
+          "style": "prose",
+          "text": "* γαμίσκω, = γαμίζω, q.v.: Lk 20:34, 35 WH, mg. (Arist.).†"
+        },
+        {
+          "at": "2..16",
+          "kind": "bold",
+          "text": "γαμίσκω"
+        },
+        {
+          "at": "40..48",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 20,
+                "verse": 34
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 20,
+                "verse": 34
+              }
+            }
+          ],
+          "text": "Lk 20:34"
+        },
+        {
+          "at": "50..52",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 20,
+                "verse": 35
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 20,
+                "verse": 35
+              }
+            }
+          ],
+          "text": "35"
+        }
+      ],
+      "text": "* γαμίσκω, = γαμίζω, q.v.: Lk 20:34, 35 WH, mg. (Arist.).†",
+      "title": "γαμίσκω"
+    }
+  ]
+}

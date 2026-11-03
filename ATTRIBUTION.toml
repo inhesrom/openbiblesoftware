@@ -35,6 +35,38 @@ source = "Written for this project"
 copyright = "Open Bible Software contributors"
 
 [[asset]]
+path = "crates/formats/tests/assets/lexicon/tbes*-excerpt.txt"
+name = "STEPBible TBESH and TBESG (Translators Brief lexicons of Extended Strongs), test excerpts"
+license = "CC-BY-4.0"
+source = "https://github.com/STEPBible/STEPBible-Data/tree/master/Lexicons"
+copyright = "STEP Bible, https://www.STEPBible.org, based on work at Tyndale House Cambridge"
+changes = "File header kept; only a few rows kept (TBESH H1, H2, H1254a-b; TBESG G26, G1410, G5463, G5485), as converter test fixtures. The TBESH Meaning column is replaced by \"(omitted from this fixture)\"."
+
+[[asset]]
+path = "crates/formats/tests/assets/lexicon/strongs-*-excerpt.xml"
+name = "Strong's Hebrew and Greek dictionaries (openscriptures/strongs), test excerpts"
+license = "LicenseRef-PD"
+source = "https://github.com/openscriptures/strongs"
+copyright = "Public domain (James Strong, 1890)"
+changes = "Headers kept; only a few entries kept (Hebrew 1, 2, 1254, 2580; Greek 26, 5463, 5485), as converter test fixtures. The Hebrew sense outlines are replaced by \"(omitted from this fixture)\"."
+
+[[asset]]
+path = "crates/formats/tests/assets/lexicon/bdb-*.xml"
+name = "Brown-Driver-Briggs and lexical index (Open Scriptures Hebrew Bible Project), test excerpts"
+license = "CC-BY-4.0"
+source = "https://github.com/openscriptures/HebrewLexicon"
+copyright = "Open Scriptures Hebrew Bible Project; the BDB text is public domain"
+changes = "Only the entries for BDB a.ae.ab, b.cw.aa and b.cx.aa (and their index entries) kept, as converter test fixtures."
+
+[[asset]]
+path = "crates/formats/tests/assets/lexicon/abbott-smith-excerpt.xml"
+name = "Abbott-Smith, A Manual Greek Lexicon of the New Testament (TEI), test excerpt"
+license = "LicenseRef-PD"
+source = "https://github.com/translatable-exegetical-tools/Abbott-Smith"
+copyright = "Public domain (G. Abbott-Smith, 1922)"
+changes = "TEI header kept; only the entries for ἀγάπη, χαίρω, χάρις and the γαμίζω/γαμίσκω super-entry kept, as converter test fixtures."
+
+[[asset]]
 path = "crates/formats/assets/tvtms/*"
 name = "TVTMS: Translators Versification Traditions with Methodology for Standardisation (reformatted)"
 license = "CC-BY-4.0"

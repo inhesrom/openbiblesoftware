@@ -2,8 +2,9 @@
 //!
 //! 1. Load the lock and `starter/id-changes.toml` and run the provenance gate.
 //! 2. Fetch every source into the download cache and verify its sha256.
-//! 3. Run the same Import parsers and `ResourceBuilder` as Import, then fill in the manifest
-//!    from the lock (licence, Attribution, changes, `origin = starter`).
+//! 3. Run the same Import parsers and `ResourceBuilder` as Import (USFM for Bibles, the
+//!    lexicon converters for Lexicons), then fill in the manifest from the lock (licence,
+//!    Attribution, changes, `origin = starter`).
 //! 4. Diff unit ids against the previous release manifest; a removed id fails the build unless
 //!    `id-changes.toml` maps it (shipped as `unit_alias`).
 //! 5. Write `dist/starter/<id>.obr`, `CHANGES-<id>.md` for CC BY sources,
@@ -23,8 +24,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use obs_formats::{
-    DatasetOptions, ImportReport, UsfmImport, UsfmOptions, import_openbible_cross_references,
-    import_tipnr, usfm_book_code,
+    DatasetOptions, ImportReport, LexiconOptions, UsfmImport, UsfmOptions, import_abbott_smith,
+    import_bdb, import_openbible_cross_references, import_strongs_greek, import_strongs_hebrew,
+    import_tbes, import_tipnr, usfm_book_code,
 };
 use obs_model::{Origin, Resource, UnitId};
 use obs_store::write_obr;
@@ -140,10 +142,10 @@ pub fn build(config: &Config) -> Result<String> {
     let results: Vec<Result<Built>> = std::thread::scope(|scope| {
         let handles: Vec<_> = inputs
             .iter()
-            .map(|(source, bytes)| {
+            .map(|(source, files)| {
                 let previous = previous.as_ref();
                 let changes = &changes;
-                scope.spawn(move || build_one(source, bytes, previous, changes))
+                scope.spawn(move || build_one(source, files, previous, changes))
             })
             .collect();
         handles
@@ -266,18 +268,13 @@ pub fn build(config: &Config) -> Result<String> {
 
 fn build_one(
     source: &Source,
-    bytes: &[u8],
+    files: &[Vec<u8>],
     previous: Option<&ReleaseManifest>,
     changes: &IdChanges,
 ) -> Result<Built> {
     let id = &source.resource_id;
-    let (mut resource, mut report) = match source.importer.as_str() {
-        "usfm" => import_usfm_zip(source, bytes),
-        "openbible-cross-references" => import_openbible_zip(source, bytes),
-        "tipnr" => import_tipnr_text(source, bytes),
-        other => bail!("{id}: unknown importer `{other}`"),
-    }
-    .with_context(|| format!("{id}: import failed"))?;
+    let (mut resource, mut report) =
+        import(source, files).with_context(|| format!("{id}: import failed"))?;
 
     let units: Vec<String> = resource
         .units
@@ -326,6 +323,59 @@ fn build_one(
     })
 }
 
+/// Run `source`'s importer on its fetched files (the main file, then any extra files).
+fn import(source: &Source, files: &[Vec<u8>]) -> Result<(Resource, ImportReport)> {
+    let extras = match source.importer.as_str() {
+        "oshb-bdb" => 1,
+        _ => 0,
+    };
+    if files.len() != 1 + extras {
+        bail!(
+            "importer `{}` reads {} extra file(s); the lock lists {}",
+            source.importer,
+            extras,
+            files.len().saturating_sub(1)
+        );
+    }
+    if !source.skip_columns.is_empty() && source.importer != "stepbible-tbes" {
+        bail!("skip_columns applies only to the `stepbible-tbes` importer");
+    }
+    match source.importer.as_str() {
+        "usfm" => return import_usfm_zip(source, &files[0]),
+        "openbible-cross-references" => return import_openbible_zip(source, &files[0]),
+        "tipnr" => return import_tipnr_text(source, &files[0]),
+        _ => {}
+    }
+    let text = |i: usize| -> Result<&str> {
+        let bytes: &[u8] = &files[i];
+        let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+        std::str::from_utf8(bytes).with_context(|| format!("file {} is not UTF-8 text", i + 1))
+    };
+    let o = LexiconOptions {
+        resource_id: source.resource_id.clone(),
+        title: source.title.clone(),
+        abbreviation: source.abbreviation.clone(),
+        source_file: source_file_name(source),
+        tool_version: format!("xtask starter {}", env!("CARGO_PKG_VERSION")),
+    };
+    let converted = match source.importer.as_str() {
+        "stepbible-tbes" => import_tbes(&o, text(0)?, &source.skip_columns),
+        "strongs-hebrew" => import_strongs_hebrew(&o, text(0)?),
+        "strongs-greek" => import_strongs_greek(&o, text(0)?),
+        "oshb-bdb" => import_bdb(&o, text(0)?, text(1)?),
+        "abbott-smith" => import_abbott_smith(&o, text(0)?),
+        other => bail!("unknown importer `{other}`"),
+    };
+    converted.map_err(|e| anyhow!("{e}"))
+}
+
+/// The publisher's file name, for the manifest and the report.
+fn source_file_name(source: &Source) -> String {
+    let origin = source.origin_url.as_deref().unwrap_or(&source.url);
+    let name = origin.rsplit('/').next().unwrap_or(origin);
+    name.replace("%20", " ")
+}
+
 /// A zip of USFM books (eBible, berean.bible) → a Bible.
 fn import_usfm_zip(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportReport)> {
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).context("not a zip archive")?;
@@ -342,8 +392,7 @@ fn import_usfm_zip(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportRep
         }
     }
     names.sort();
-    let origin = source.origin_url.as_deref().unwrap_or(&source.url);
-    let source_file = origin.rsplit('/').next().unwrap_or(origin).to_string();
+    let source_file = source_file_name(source);
     let mut import = UsfmImport::new(UsfmOptions {
         resource_id: source.resource_id.clone(),
         title: source.title.clone(),
