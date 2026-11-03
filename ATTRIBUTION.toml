@@ -49,3 +49,19 @@ license = "LicenseRef-PD"
 source = "https://eBible.org/Scriptures/eng-kjv2006_usfm.zip"
 copyright = "Public domain"
 changes = "Only the number of words in each verse is kept."
+
+[[asset]]
+path = "crates/fonts/assets/gentium/*"
+name = "Gentium Plus 6.200 (Regular, Italic, Bold, BoldItalic)"
+license = "OFL-1.1"
+source = "https://software.sil.org/gentium/"
+copyright = "Copyright (c) 2003-2023 SIL International, with Reserved Font Names \"Gentium\" and \"SIL\""
+changes = "None; font files copied unmodified with OFL.txt and FONTLOG.txt."
+
+[[asset]]
+path = "crates/fonts/assets/ezra/*"
+name = "Ezra SIL 2.51 (SILEOT.ttf)"
+license = "OFL-1.1 AND MIT"
+source = "https://software.sil.org/ezra/"
+copyright = "Copyright (c) 1997-2007 SIL International, Reserved Font Names \"SIL\" and \"Ezra\"; Hebrew layout intelligence (c) 2003 & 2007 Ralph Hancock and John Hudson (MIT)"
+changes = "None; font file copied unmodified with Licenses.txt and FONTLOG.txt."
