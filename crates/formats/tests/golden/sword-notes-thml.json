@@ -1,0 +1,227 @@
+{
+  "content_hash": "sha256:9707eb188715509b48dedd36c2e88c1ffba1111b91333ffad1993edbcbb257a6",
+  "keys": [
+    [
+      "Gen 1:1",
+      "GEN.1.1",
+      false
+    ],
+    [
+      "John 1:1",
+      "JHN.1.1",
+      false
+    ],
+    [
+      "John 1:1-51",
+      "JHN.1",
+      false
+    ],
+    [
+      "John 1:1-21:25",
+      "JHN",
+      false
+    ],
+    [
+      "John 1:4-5",
+      "JHN.1.4-5",
+      false
+    ],
+    [
+      "John 3:16",
+      "JHN.3.16",
+      false
+    ]
+  ],
+  "manifest": {
+    "abbreviation": "ObsNotes",
+    "attribution": "Licence: Creative Commons: CC0\nText source: https://github.com/inhesrom/openbiblesoftware\nCopyright holder: Open Bible Software contributors\nCopyright date: 2026\nImported from the SWORD module ObsNotes.",
+    "key_schemes": [
+      "passage"
+    ],
+    "language": "en",
+    "license": "CC0-1.0",
+    "resource_id": "obsnotes",
+    "resource_type": "commentary",
+    "source_file": "ObsNotes",
+    "source_format": "sword",
+    "source_url": "https://github.com/inhesrom/openbiblesoftware",
+    "title": "Open Bible test notes (ThML commentary)"
+  },
+  "report": {
+    "books": [],
+    "dropped_markup": {
+      "<font>": 1,
+      "<img>": 1,
+      "<sup>": 1
+    },
+    "entries": 6,
+    "license_missing": false,
+    "notes": 1,
+    "source_format": "sword (ThML)",
+    "tagged_words": 0,
+    "verse_map": null,
+    "verses": 0,
+    "versification_hint": "KJV",
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "GEN.1.1",
+      "kind": "section",
+      "spans": [
+        {
+          "at": "0..52",
+          "kind": "para",
+          "style": "prose",
+          "text": "God is the subject of the Bible’s first sentence.1"
+        }
+      ],
+      "text": "God is the subject of the Bible’s first sentence.1",
+      "title": "Gen 1:1"
+    },
+    {
+      "id": "JHN",
+      "kind": "section",
+      "spans": [
+        {
+          "at": "0..18",
+          "kind": "heading",
+          "level": 2,
+          "text": "The Gospel of John"
+        },
+        {
+          "at": "19..62",
+          "kind": "para",
+          "style": "prose",
+          "text": "Test notes written for Open Bible Software."
+        }
+      ],
+      "text": "The Gospel of John\nTest notes written for Open Bible Software.",
+      "title": "John 1:1-21:25"
+    },
+    {
+      "id": "JHN.1",
+      "kind": "section",
+      "spans": [
+        {
+          "at": "0..48",
+          "kind": "para",
+          "style": "prose",
+          "text": "The chapter opens with the Word before creation."
+        }
+      ],
+      "text": "The chapter opens with the Word before creation.",
+      "title": "John 1:1-51"
+    },
+    {
+      "id": "JHN.1.1",
+      "kind": "section",
+      "spans": [
+        {
+          "at": "0..37",
+          "kind": "para",
+          "style": "prose",
+          "text": "In the beginning — compare Gen 1:1."
+        },
+        {
+          "at": "0..16",
+          "kind": "bold",
+          "text": "In the beginning"
+        },
+        {
+          "at": "29..36",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "GEN",
+                "chapter": 1,
+                "verse": 1
+              },
+              "start": {
+                "book": "GEN",
+                "chapter": 1,
+                "verse": 1
+              }
+            }
+          ],
+          "text": "Gen 1:1"
+        },
+        {
+          "at": "37..37",
+          "kind": "note_ref",
+          "note": "note.1",
+          "note_kind": "footnote",
+          "text": ""
+        }
+      ],
+      "text": "In the beginning — compare Gen 1:1.",
+      "title": "John 1:1"
+    },
+    {
+      "id": "JHN.1.4-5",
+      "kind": "section",
+      "spans": [
+        {
+          "at": "0..41",
+          "kind": "para",
+          "style": "prose",
+          "text": "Life and light belong together; see 8:12."
+        },
+        {
+          "at": "0..4",
+          "kind": "italic",
+          "text": "Life"
+        },
+        {
+          "at": "9..14",
+          "kind": "italic",
+          "text": "light"
+        },
+        {
+          "at": "36..40",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 8,
+                "verse": 12
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 8,
+                "verse": 12
+              }
+            }
+          ],
+          "text": "8:12"
+        }
+      ],
+      "text": "Life and light belong together; see 8:12.",
+      "title": "John 1:4-5"
+    },
+    {
+      "id": "JHN.3.16",
+      "kind": "section",
+      "spans": [
+        {
+          "at": "0..39",
+          "kind": "para",
+          "style": "prose",
+          "text": "Often called the gospel in a nutshell.*"
+        }
+      ],
+      "text": "Often called the gospel in a nutshell.*",
+      "title": "John 3:16"
+    },
+    {
+      "id": "note.1",
+      "kind": "note",
+      "spans": [],
+      "text": "The same opening words as Genesis.",
+      "title": null
+    }
+  ],
+  "verses": []
+}

@@ -84,7 +84,13 @@ fn show_summary(r: &ObrReader) -> Result<String, String> {
     let _ = writeln!(out, "revision        {}", m.revision);
     let _ = writeln!(out, "content hash    {}", m.content_hash);
     let _ = writeln!(out, "license         {}", m.license);
-    let _ = writeln!(out, "attribution     {}", m.attribution);
+    let _ = writeln!(
+        out,
+        "attribution     {}",
+        m.attribution.replace('\n', "\n                ")
+    );
+    let _ = writeln!(out, "publisher       {}", opt(&m.publisher));
+    let _ = writeln!(out, "source url      {}", opt(&m.source_url));
     let _ = writeln!(out, "changes         {}", opt(&m.changes));
     let _ = writeln!(out, "origin          {:?}", m.origin);
     let _ = writeln!(

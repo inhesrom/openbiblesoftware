@@ -20,16 +20,16 @@
 //! are imported as text units without verses and listed in the report.
 
 use std::collections::{BTreeMap, HashSet};
-use std::fmt;
 
 use obs_model::{
     Direction, FORMAT_VERSION, KeyScheme, LICENSE_UNKNOWN, Manifest, MorphemePart, NoteKind,
     Origin, ParaStyle, Resource, ResourceBuilder, ResourceType, SpanKind, UnitId, UnitKind,
-    ValidationErrors, is_valid_resource_id,
+    is_valid_resource_id,
 };
 use obs_scripture::{Book, PassageList, Standard, StrongsNumber, Verse, parse_reference};
 use serde_json::Value;
 
+use crate::error::ImportError;
 use crate::report::{BookReport, ImportReport, VerseMapCounts};
 use crate::text_buf::TextBuf;
 use crate::verse_map::{VerseFacts, build_verse_map};
@@ -48,44 +48,6 @@ pub struct UsfmOptions {
     /// Version of the tool doing the Import, recorded in the manifest.
     pub tool_version: String,
 }
-
-/// Why an Import failed outright.
-#[derive(Debug)]
-pub enum ImportError {
-    NoBooks,
-    /// A file without a `\id` line.
-    MissingId(String),
-    DuplicateBook {
-        code: String,
-        first: String,
-        second: String,
-    },
-    InvalidResourceId(String),
-    Usj(String),
-    Invalid(ValidationErrors),
-}
-
-impl fmt::Display for ImportError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ImportError::NoBooks => f.write_str("no Bible books found"),
-            ImportError::MissingId(name) => write!(f, "{name}: no \\id line"),
-            ImportError::DuplicateBook {
-                code,
-                first,
-                second,
-            } => write!(f, "book {code} appears in both {first} and {second}"),
-            ImportError::InvalidResourceId(id) => write!(
-                f,
-                "resource id `{id}` must be 1-64 chars of a-z, 0-9 and `-`"
-            ),
-            ImportError::Usj(e) => write!(f, "could not read parser output: {e}"),
-            ImportError::Invalid(e) => write!(f, "imported resource is invalid: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for ImportError {}
 
 /// Collects USFM books, then imports them all at once in canonical order.
 #[derive(Debug, Default)]

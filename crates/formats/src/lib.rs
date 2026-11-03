@@ -6,10 +6,12 @@
 
 mod commentary;
 mod dataset;
+mod error;
 mod lexicon;
 mod openbible;
 mod report;
 mod stepbible;
+mod sword;
 mod text_buf;
 mod tipnr;
 mod usfm;
@@ -26,5 +28,7 @@ pub use openbible::{DROPPED_NOT_STANDARD, OPENBIBLE_FORMAT, import_openbible_cro
 pub use report::{BookReport, ImportReport, VerseMapCounts};
 pub use stepbible::{StepbibleImport, StepbibleOptions, StepbibleText};
 pub use tipnr::{TIPNR_FORMAT, import_tipnr, tipnr_description_texts};
-pub use usfm::{ImportError, UsfmImport, UsfmOptions, slugify, usfm_book_code};
+pub use error::ImportError;
+pub use sword::{SwordModuleInfo, SwordOptions, SwordSource, import_sword};
+pub use usfm::{ UsfmImport, UsfmOptions, slugify, usfm_book_code};
 pub use verse_map::{VerseFacts, VerseMapOutcome, build_verse_map, tvtms_rule_count};

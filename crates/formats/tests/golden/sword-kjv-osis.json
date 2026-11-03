@@ -1,0 +1,793 @@
+{
+  "content_hash": "sha256:8878fc430c5b33ff1d0a6d187cad52c4e39b424df2ca1133d6a91ba2a146e1c5",
+  "keys": [],
+  "manifest": {
+    "abbreviation": "KJV-O",
+    "attribution": "Licence: Public Domain\nText source: King James Version (1769), markup written for the Open Bible Software tests\nImported from the SWORD module ObsKjvOsis.",
+    "key_schemes": [
+      "passage"
+    ],
+    "language": "en",
+    "license": "LicenseRef-PD",
+    "resource_id": "obskjvosis",
+    "resource_type": "bible",
+    "source_file": "ObsKjvOsis",
+    "source_format": "sword",
+    "source_url": null,
+    "title": "King James Version (OSIS excerpt)"
+  },
+  "report": {
+    "books": [
+      [
+        "GEN",
+        1,
+        3
+      ],
+      [
+        "PSA",
+        2,
+        5
+      ],
+      [
+        "JHN",
+        1,
+        2
+      ]
+    ],
+    "dropped_markup": {
+      "<figure>": 1,
+      "<q>": 1,
+      "<seg>": 1
+    },
+    "entries": 0,
+    "license_missing": false,
+    "notes": 2,
+    "source_format": "sword (OSIS)",
+    "tagged_words": 31,
+    "verse_map": {
+      "absent": 4980,
+      "unmapped": 0
+    },
+    "verses": 10,
+    "versification_hint": "KJV",
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "GEN",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..38",
+          "kind": "heading",
+          "level": 1,
+          "text": "THE FIRST BOOK OF MOSES CALLED GENESIS"
+        },
+        {
+          "at": "39..291",
+          "chapter": 1,
+          "kind": "chapter",
+          "text": "In the beginning God created the heaven and the earth. And the earth was without form, and void; and darkness was upon the face of the deep. And the Spirit of God moved upon the face of the waters.\nAnd God said, Let there be light: and there was light."
+        },
+        {
+          "at": "39..236",
+          "kind": "para",
+          "style": "prose",
+          "text": "In the beginning God created the heaven and the earth. And the earth was without form, and void; and darkness was upon the face of the deep. And the Spirit of God moved upon the face of the waters."
+        },
+        {
+          "at": "39..93",
+          "kind": "verse",
+          "last": 1,
+          "text": "In the beginning God created the heaven and the earth.",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 1
+          }
+        },
+        {
+          "at": "39..55",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H7225"
+            }
+          ],
+          "text": "In the beginning"
+        },
+        {
+          "at": "56..59",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H430"
+            }
+          ],
+          "text": "God"
+        },
+        {
+          "at": "60..67",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "TH8804",
+              "strongs": "H853"
+            },
+            {
+              "strongs": "H1254"
+            }
+          ],
+          "text": "created"
+        },
+        {
+          "at": "68..78",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ],
+          "text": "the heaven"
+        },
+        {
+          "at": "79..82",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H853"
+            }
+          ],
+          "text": "and"
+        },
+        {
+          "at": "83..92",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H776"
+            }
+          ],
+          "text": "the earth"
+        },
+        {
+          "at": "94..236",
+          "kind": "verse",
+          "last": 2,
+          "text": "And the earth was without form, and void; and darkness was upon the face of the deep. And the Spirit of God moved upon the face of the waters.",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 2
+          }
+        },
+        {
+          "at": "94..107",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H776"
+            }
+          ],
+          "text": "And the earth"
+        },
+        {
+          "at": "108..111",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "TH8804",
+              "strongs": "H1961"
+            }
+          ],
+          "text": "was"
+        },
+        {
+          "at": "112..124",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8414"
+            }
+          ],
+          "text": "without form"
+        },
+        {
+          "at": "126..134",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H922"
+            }
+          ],
+          "text": "and void"
+        },
+        {
+          "at": "136..148",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H2822"
+            }
+          ],
+          "text": "and darkness"
+        },
+        {
+          "at": "149..152",
+          "kind": "added",
+          "text": "was"
+        },
+        {
+          "at": "153..157",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5921"
+            }
+          ],
+          "text": "upon"
+        },
+        {
+          "at": "158..166",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "the face"
+        },
+        {
+          "at": "167..178",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8415"
+            }
+          ],
+          "text": "of the deep"
+        },
+        {
+          "at": "180..194",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H7307"
+            }
+          ],
+          "text": "And the Spirit"
+        },
+        {
+          "at": "195..201",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H430"
+            }
+          ],
+          "text": "of God"
+        },
+        {
+          "at": "202..207",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "TH8764",
+              "strongs": "H7363"
+            }
+          ],
+          "text": "moved"
+        },
+        {
+          "at": "208..212",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5921"
+            }
+          ],
+          "text": "upon"
+        },
+        {
+          "at": "213..221",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ],
+          "text": "the face"
+        },
+        {
+          "at": "222..235",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H4325"
+            }
+          ],
+          "text": "of the waters"
+        },
+        {
+          "at": "237..291",
+          "kind": "para",
+          "style": "prose",
+          "text": "And God said, Let there be light: and there was light."
+        },
+        {
+          "at": "237..291",
+          "kind": "verse",
+          "last": 3,
+          "text": "And God said, Let there be light: and there was light.",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 3
+          }
+        },
+        {
+          "at": "237..244",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H430"
+            }
+          ],
+          "text": "And God"
+        },
+        {
+          "at": "245..249",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "TH8799",
+              "strongs": "H559"
+            }
+          ],
+          "text": "said"
+        },
+        {
+          "at": "251..263",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "TH8799",
+              "strongs": "H1961"
+            }
+          ],
+          "text": "Let there be"
+        },
+        {
+          "at": "264..269",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H216"
+            }
+          ],
+          "text": "light"
+        },
+        {
+          "at": "271..284",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "TH8799",
+              "strongs": "H1961"
+            }
+          ],
+          "text": "and there was"
+        },
+        {
+          "at": "285..290",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H216"
+            }
+          ],
+          "text": "light"
+        }
+      ],
+      "text": "THE FIRST BOOK OF MOSES CALLED GENESIS\nIn the beginning God created the heaven and the earth. And the earth was without form, and void; and darkness was upon the face of the deep. And the Spirit of God moved upon the face of the waters.\nAnd God said, Let there be light: and there was light.",
+      "title": "Genesis"
+    },
+    {
+      "id": "PSA",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..213",
+          "chapter": 3,
+          "kind": "chapter",
+          "text": "A Psalm of David, when he fled from Absalom his son.\nLORD, how are they increased that trouble me! many are they that rise up against me. Many there be which say of my soul, There is no help for him in God. Selah."
+        },
+        {
+          "at": "0..52",
+          "kind": "psalm_title",
+          "text": "A Psalm of David, when he fled from Absalom his son."
+        },
+        {
+          "at": "0..52",
+          "kind": "verse",
+          "last": 0,
+          "text": "A Psalm of David, when he fled from Absalom his son.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 0
+          }
+        },
+        {
+          "at": "53..213",
+          "kind": "para",
+          "style": "prose",
+          "text": "LORD, how are they increased that trouble me! many are they that rise up against me. Many there be which say of my soul, There is no help for him in God. Selah."
+        },
+        {
+          "at": "53..137",
+          "kind": "verse",
+          "last": 1,
+          "text": "LORD, how are they increased that trouble me! many are they that rise up against me.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 1
+          }
+        },
+        {
+          "at": "53..57",
+          "kind": "divine_name",
+          "text": "LORD"
+        },
+        {
+          "at": "104..107",
+          "kind": "added",
+          "text": "are"
+        },
+        {
+          "at": "138..213",
+          "kind": "verse",
+          "last": 2,
+          "text": "Many there be which say of my soul, There is no help for him in God. Selah.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 2
+          }
+        },
+        {
+          "at": "143..151",
+          "kind": "added",
+          "text": "there be"
+        },
+        {
+          "at": "214..400",
+          "chapter": 4,
+          "kind": "chapter",
+          "text": "To the chief Musician on Neginoth, A Psalm of David.\nHear me when I call, O God of my righteousness:\nthou hast enlarged me when I was in distress;\nhave mercy upon me, and hear my prayer."
+        },
+        {
+          "at": "214..266",
+          "kind": "psalm_title",
+          "text": "To the chief Musician on Neginoth, A Psalm of David."
+        },
+        {
+          "at": "214..266",
+          "kind": "verse",
+          "last": 0,
+          "text": "To the chief Musician on Neginoth, A Psalm of David.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 4,
+            "verse": 0
+          }
+        },
+        {
+          "at": "267..400",
+          "kind": "verse",
+          "last": 1,
+          "text": "Hear me when I call, O God of my righteousness:\nthou hast enlarged me when I was in distress;\nhave mercy upon me, and hear my prayer.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 4,
+            "verse": 1
+          }
+        },
+        {
+          "at": "267..314",
+          "kind": "para",
+          "style": "poetry1",
+          "text": "Hear me when I call, O God of my righteousness:"
+        },
+        {
+          "at": "315..360",
+          "kind": "para",
+          "style": "poetry2",
+          "text": "thou hast enlarged me when I was in distress;"
+        },
+        {
+          "at": "337..347",
+          "kind": "added",
+          "text": "when I was"
+        },
+        {
+          "at": "361..400",
+          "kind": "para",
+          "style": "poetry2",
+          "text": "have mercy upon me, and hear my prayer."
+        }
+      ],
+      "text": "A Psalm of David, when he fled from Absalom his son.\nLORD, how are they increased that trouble me! many are they that rise up against me. Many there be which say of my soul, There is no help for him in God. Selah.\nTo the chief Musician on Neginoth, A Psalm of David.\nHear me when I call, O God of my righteousness:\nthou hast enlarged me when I was in distress;\nhave mercy upon me, and hear my prayer.",
+      "title": "Psalms"
+    },
+    {
+      "id": "JHN",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..26",
+          "kind": "heading",
+          "level": 1,
+          "text": "God’s love for the world"
+        },
+        {
+          "at": "27..277",
+          "chapter": 3,
+          "kind": "chapter",
+          "text": "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life. For God sent not his Son into the world to condemn the world; but that the world through him might be saved."
+        },
+        {
+          "at": "27..277",
+          "kind": "para",
+          "style": "prose",
+          "text": "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life. For God sent not his Son into the world to condemn the world; but that the world through him might be saved."
+        },
+        {
+          "at": "27..277",
+          "kind": "woj",
+          "text": "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life. For God sent not his Son into the world to condemn the world; but that the world through him might be saved."
+        },
+        {
+          "at": "27..168",
+          "kind": "verse",
+          "last": 16,
+          "text": "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.",
+          "verse": {
+            "book": "JHN",
+            "chapter": 3,
+            "verse": 16
+          }
+        },
+        {
+          "at": "27..30",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "CONJ",
+              "strongs": "G1063"
+            }
+          ],
+          "text": "For"
+        },
+        {
+          "at": "31..34",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "N-NSM",
+              "strongs": "G2316"
+            }
+          ],
+          "text": "God"
+        },
+        {
+          "at": "35..37",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "ADV",
+              "strongs": "G3779"
+            }
+          ],
+          "text": "so"
+        },
+        {
+          "at": "38..43",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "V-AAI-3S",
+              "strongs": "G25"
+            }
+          ],
+          "text": "loved"
+        },
+        {
+          "at": "44..53",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "T-ASM",
+              "strongs": "G3588"
+            },
+            {
+              "morph": "N-ASM",
+              "strongs": "G2889"
+            }
+          ],
+          "text": "the world"
+        },
+        {
+          "at": "168..168",
+          "kind": "xref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 8
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 8
+              }
+            },
+            {
+              "end": {
+                "book": "1JN",
+                "chapter": 4,
+                "verse": 9
+              },
+              "start": {
+                "book": "1JN",
+                "chapter": 4,
+                "verse": 9
+              }
+            }
+          ],
+          "text": ""
+        },
+        {
+          "at": "168..168",
+          "kind": "note_ref",
+          "note": "note.1",
+          "note_kind": "cross_reference",
+          "text": ""
+        },
+        {
+          "at": "169..277",
+          "kind": "verse",
+          "last": 17,
+          "text": "For God sent not his Son into the world to condemn the world; but that the world through him might be saved.",
+          "verse": {
+            "book": "JHN",
+            "chapter": 3,
+            "verse": 17
+          }
+        },
+        {
+          "at": "277..277",
+          "kind": "note_ref",
+          "note": "note.2",
+          "note_kind": "footnote",
+          "text": ""
+        }
+      ],
+      "text": "God’s love for the world\nFor God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life. For God sent not his Son into the world to condemn the world; but that the world through him might be saved.",
+      "title": "John"
+    },
+    {
+      "id": "note.1",
+      "kind": "note",
+      "spans": [
+        {
+          "at": "0..8",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 8
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 8
+              }
+            }
+          ],
+          "text": "Rom. 5:8"
+        },
+        {
+          "at": "10..20",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1JN",
+                "chapter": 4,
+                "verse": 9
+              },
+              "start": {
+                "book": "1JN",
+                "chapter": 4,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "1 John 4:9"
+        }
+      ],
+      "text": "Rom. 5:8; 1 John 4:9",
+      "title": null
+    },
+    {
+      "id": "note.2",
+      "kind": "note",
+      "spans": [
+        {
+          "at": "4..11",
+          "kind": "italic",
+          "text": "condemn"
+        }
+      ],
+      "text": "Or, condemn: judge.",
+      "title": null
+    }
+  ],
+  "verses": [
+    {
+      "last": 1,
+      "text": "In the beginning God created the heaven and the earth.",
+      "verse": "Gen 1:1"
+    },
+    {
+      "last": 2,
+      "text": "And the earth was without form, and void; and darkness was upon the face of the deep. And the Spirit of God moved upon the face of the waters.",
+      "verse": "Gen 1:2"
+    },
+    {
+      "last": 3,
+      "text": "And God said, Let there be light: and there was light.",
+      "verse": "Gen 1:3"
+    },
+    {
+      "last": 0,
+      "text": "A Psalm of David, when he fled from Absalom his son.",
+      "verse": "Ps 3:title"
+    },
+    {
+      "last": 1,
+      "text": "LORD, how are they increased that trouble me! many are they that rise up against me.",
+      "verse": "Ps 3:1"
+    },
+    {
+      "last": 2,
+      "text": "Many there be which say of my soul, There is no help for him in God. Selah.",
+      "verse": "Ps 3:2"
+    },
+    {
+      "last": 0,
+      "text": "To the chief Musician on Neginoth, A Psalm of David.",
+      "verse": "Ps 4:title"
+    },
+    {
+      "last": 1,
+      "text": "Hear me when I call, O God of my righteousness:\nthou hast enlarged me when I was in distress;\nhave mercy upon me, and hear my prayer.",
+      "verse": "Ps 4:1"
+    },
+    {
+      "last": 16,
+      "text": "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.",
+      "verse": "John 3:16"
+    },
+    {
+      "last": 17,
+      "text": "For God sent not his Son into the world to condemn the world; but that the world through him might be saved.",
+      "verse": "John 3:17"
+    }
+  ]
+}

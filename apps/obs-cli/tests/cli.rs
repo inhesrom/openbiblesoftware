@@ -111,6 +111,67 @@ fn import_usfm_then_inspect() {
     let _ = std::fs::remove_file(&out);
 }
 
+/// SWORD Import end to end: a public-domain Bible and a commentary, with the conf's licence
+/// fields shown by `inspect` (the manifest fields the About Tab renders).
+#[test]
+fn import_sword_modules_then_inspect_licence_fields() {
+    let library = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../crates/formats/tests/assets/sword"
+    );
+    let bible = temp_obr("sword-bible.obr");
+    let b = bible.to_str().expect("utf-8 path");
+    let (ok, stdout, err) = cli(&["import", library, "--module", "ObsKjvOsis", "-o", b]);
+    assert!(ok, "{err}");
+    assert!(stdout.contains("format sword (OSIS)"), "{stdout}");
+    assert!(stdout.contains("3 Bible book(s), 10 verse(s)"), "{stdout}");
+    assert!(stdout.contains("conf versification: KJV"), "{stdout}");
+    assert!(stdout.contains("dropped markup (3):"), "{stdout}");
+    assert!(!stdout.contains("licence: none found"), "{stdout}");
+    let (ok, stdout, _) = cli(&["inspect", b]);
+    assert!(ok);
+    assert!(stdout.contains("license         LicenseRef-PD"), "{stdout}");
+    assert!(
+        stdout.contains("attribution     Licence: Public Domain\n                Text source: King James Version (1769)"),
+        "{stdout}"
+    );
+    let (ok, stdout, _) = cli(&["inspect", b, "--verse", "Ps 3:0"]);
+    assert!(ok);
+    assert!(
+        stdout.contains("A Psalm of David, when he fled"),
+        "{stdout}"
+    );
+
+    let notes = temp_obr("sword-notes.obr");
+    let n = notes.to_str().expect("utf-8 path");
+    let conf = format!("{library}/mods.d/obsnotes.conf");
+    let (ok, stdout, err) = cli(&["import", &conf, "-o", n]);
+    assert!(ok, "{err}");
+    assert!(stdout.contains("6 entries, 1 note(s)"), "{stdout}");
+    let (ok, stdout, _) = cli(&["inspect", n]);
+    assert!(ok);
+    assert!(stdout.contains("type            Commentary"), "{stdout}");
+    assert!(stdout.contains("license         CC0-1.0"), "{stdout}");
+    assert!(
+        stdout.contains("source url      https://github.com/inhesrom/openbiblesoftware"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Copyright holder: Open Bible Software contributors"),
+        "{stdout}"
+    );
+
+    // Several modules and none chosen: the error lists them.
+    let (ok, _, err) = cli(&["import", library, "-o", n]);
+    assert!(!ok);
+    assert!(
+        err.contains("--module") && err.contains("ObsNotes (Commentary)"),
+        "{err}"
+    );
+    let _ = std::fs::remove_file(&bible);
+    let _ = std::fs::remove_file(&notes);
+}
+
 #[test]
 fn shape_reports_glyphs_and_writes_svg() {
     let svg = temp_obr("shape.svg");

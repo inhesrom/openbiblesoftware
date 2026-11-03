@@ -57,6 +57,8 @@ pub struct ImportReport {
     /// Places where the Verse map followed a numbering tradition other than the Standard's,
     /// by TVTMS tradition name.
     pub traditions: BTreeMap<String, usize>,
+    /// SWORD conf numbering hint; Bible Verse maps still come from TVTMS.
+    pub versification_hint: Option<String>,
 }
 
 impl fmt::Display for ImportReport {

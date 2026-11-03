@@ -8,3 +8,5 @@ crates/formats/tests/fixtures/study/*.dat binary
 crates/formats/tests/fixtures/study/*.idx binary
 crates/formats/tests/fixtures/study/*.zdt binary
 crates/formats/tests/fixtures/study/*.zdx binary
+# SWORD test module data files are compared by their reader, byte for byte.
+crates/formats/tests/assets/sword/modules/** binary
