@@ -241,6 +241,13 @@ pub fn reading_pane(
             palette.verse_number.gamma_multiply(0.5),
         );
     }
+    crate::a11y::publish(
+        ui,
+        response.id,
+        view,
+        [text_rect.left(), rect.top()],
+        rect.height(),
+    );
     if let Some(p) = response.hover_pos()
         && let Some(UnitPos::Object {
             object: InlineObject::VerseNumber(v),

@@ -576,3 +576,77 @@ fn every_ink_on_every_highlight_meets_wcag_aa_in_every_tone() {
     assert!((contrast(egui::Color32::BLACK, egui::Color32::WHITE) - 21.0).abs() < 0.01);
     assert!((contrast(Palette::DARK.ink, Palette::DARK.ink) - 1.0).abs() < 1e-6);
 }
+
+/// Genesis 30–31 with every word a Tagged word (Strong's H1000 + word number) and a Scripture
+/// reference at the end of each chapter.
+pub(crate) fn tagged_bible() -> Arc<ReadingDoc> {
+    use obs_model::MorphemePart;
+    use obs_scripture::{PassageList, Standard, parse_reference};
+    let mut m = Manifest::new("tagged", "Tagged Bible", "TAG", ResourceType::Bible, "en");
+    m.key_schemes = vec![KeyScheme::Passage];
+    m.license = "LicenseRef-PD".into();
+    let mut b = ResourceBuilder::new(m);
+    let genesis = UnitId::book(Book::Genesis);
+    let mut t = TextAccumulator::new();
+    let mut verses = Vec::new();
+    let mut words = Vec::new();
+    let mut refs = Vec::new();
+    let mut paras = Vec::new();
+    for (chapter, count) in [(30u16, 24u16), (31, 24)] {
+        let start = t.pos();
+        for v in 1..=count {
+            if t.pos() > start {
+                t.push(" ");
+            }
+            let vs = t.pos();
+            for (i, w) in verse_text(v).trim_end_matches('.').split(' ').enumerate() {
+                if i > 0 {
+                    t.push(" ");
+                }
+                let r = t.push(w);
+                words.push((r, 1000 + i as u32));
+            }
+            t.push(".");
+            verses.push((vs..t.pos(), Verse::new(Book::Genesis, chapter, v)));
+        }
+        t.push(" See ");
+        let r = t.push("Romans 8:28");
+        t.push(".");
+        refs.push(r);
+        paras.push(start..t.pos());
+        t.push("\n");
+    }
+    b.add_unit(
+        genesis.clone(),
+        UnitKind::BibleBook,
+        Some("Genesis".into()),
+        t.into_string(),
+    );
+    for p in paras {
+        b.add_span(
+            &genesis,
+            p,
+            SpanKind::Para {
+                style: ParaStyle::Prose,
+            },
+        );
+    }
+    for (r, n) in words {
+        let strongs = format!("H{n}").parse().unwrap();
+        b.add_span(
+            &genesis,
+            r,
+            SpanKind::TaggedWord {
+                parts: vec![MorphemePart::new(strongs)],
+            },
+        );
+    }
+    for r in refs {
+        let targets: PassageList = parse_reference("Rom 8:28", &Standard, None).unwrap();
+        b.add_span(&genesis, r, SpanKind::ScriptureRef { targets });
+    }
+    for (r, v) in verses {
+        b.add_verse(&genesis, r, v, v.verse);
+    }
+    Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
+}
