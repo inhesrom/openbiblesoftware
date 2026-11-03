@@ -543,3 +543,36 @@ fn selecting_mixed_hebrew_and_ltr_text_highlights_the_right_glyphs() {
     assert_eq!(selected_text(&doc, &sel), &text[a..b]);
     assert!(copy_text(&doc, &sel).ends_with("Genesis 1:1 (HEB)"));
 }
+
+#[test]
+fn every_ink_on_every_highlight_meets_wcag_aa_in_every_tone() {
+    let mut worst = (f32::MAX, String::new());
+    let mut pairs = 0;
+    for (name, p) in [
+        ("Paper", Palette::PAPER),
+        ("Sepia", Palette::SEPIA),
+        ("Dark", Palette::DARK),
+    ] {
+        for (bg_name, bg) in p.backgrounds() {
+            for (role, ink) in p.inks() {
+                let c = contrast(ink, bg);
+                assert!(
+                    c >= 4.5,
+                    "{name}: {role:?} on {bg_name} is {c:.2}:1 (AA needs 4.5:1)"
+                );
+                if c < worst.0 {
+                    worst = (c, format!("{name} {role:?} on {bg_name}"));
+                }
+                pairs += 1;
+            }
+        }
+        // The red underline is a mark, not text: WCAG's 3:1 for graphics, against the page.
+        let u = contrast(p.underline, p.page);
+        assert!(u >= 3.0, "{name}: underline {u:.2}:1");
+    }
+    assert_eq!(pairs, 3 * 9 * 6);
+    eprintln!("lowest contrast {:.2}:1 ({})", worst.0, worst.1);
+    // The formula itself: black on white is 21:1, a colour on itself 1:1.
+    assert!((contrast(egui::Color32::BLACK, egui::Color32::WHITE) - 21.0).abs() < 0.01);
+    assert!((contrast(Palette::DARK.ink, Palette::DARK.ink) - 1.0).abs() < 1e-6);
+}

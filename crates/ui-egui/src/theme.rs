@@ -7,31 +7,96 @@ use std::sync::Arc;
 use egui::{Color32, CornerRadius, FontFamily, FontId, Margin, Shadow, Stroke, TextStyle};
 use obs_fonts::FaceId;
 
-pub const SHELL: Color32 = Color32::from_rgb(232, 236, 235);
-pub const SURFACE: Color32 = Color32::from_rgb(244, 246, 244);
-pub const FIELD: Color32 = Color32::from_rgb(255, 255, 253);
-pub const RULE: Color32 = Color32::from_rgb(205, 213, 211);
-pub const INK: Color32 = Color32::from_rgb(32, 38, 41);
-pub const MUTED: Color32 = Color32::from_rgb(91, 103, 108);
-pub const LAPIS: Color32 = Color32::from_rgb(45, 78, 134);
-pub const VERDIGRIS: Color32 = Color32::from_rgb(45, 116, 105);
-pub const SELECTION: Color32 = Color32::from_rgb(211, 224, 244);
-pub const HOVER: Color32 = Color32::from_rgb(226, 235, 247);
-pub const WARN: Color32 = Color32::from_rgb(150, 60, 30);
-/// The link chip of a Tab with no Link set.
-pub const UNLINKED: Color32 = Color32::from_rgb(154, 162, 164);
-pub const GILT: Color32 = Color32::from_rgb(180, 138, 53);
-/// The mark on a jump's target verse (a translucent gilt).
-pub const FLASH: Color32 = Color32::from_rgba_premultiplied(108, 83, 32, 96);
+/// The chrome's colours in one theme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Chrome {
+    pub dark: bool,
+    pub shell: Color32,
+    pub surface: Color32,
+    pub field: Color32,
+    pub rule: Color32,
+    pub ink: Color32,
+    pub muted: Color32,
+    pub lapis: Color32,
+    pub verdigris: Color32,
+    pub violet: Color32,
+    pub gilt: Color32,
+    pub selection: Color32,
+    pub hover: Color32,
+    pub hover_rule: Color32,
+    pub warn: Color32,
+    /// The link chip of a Tab with no Link set.
+    pub unlinked: Color32,
+}
+
+/// Cool linen surfaces, iron ink, lapis and verdigris (the Study desk, #13).
+pub const LIGHT: Chrome = Chrome {
+    dark: false,
+    shell: Color32::from_rgb(232, 236, 235),
+    surface: Color32::from_rgb(244, 246, 244),
+    field: Color32::from_rgb(255, 255, 253),
+    rule: Color32::from_rgb(205, 213, 211),
+    ink: Color32::from_rgb(32, 38, 41),
+    muted: Color32::from_rgb(91, 103, 108),
+    lapis: Color32::from_rgb(45, 78, 134),
+    verdigris: Color32::from_rgb(45, 116, 105),
+    violet: Color32::from_rgb(112, 79, 145),
+    gilt: Color32::from_rgb(180, 138, 53),
+    selection: Color32::from_rgb(211, 224, 244),
+    hover: Color32::from_rgb(226, 235, 247),
+    hover_rule: Color32::from_rgb(166, 184, 211),
+    warn: Color32::from_rgb(150, 60, 30),
+    unlinked: Color32::from_rgb(154, 162, 164),
+};
+
+/// The same desk at night: slate surfaces, light ink, brighter accents.
+pub const DARK: Chrome = Chrome {
+    dark: true,
+    shell: Color32::from_rgb(24, 27, 30),
+    surface: Color32::from_rgb(33, 37, 41),
+    field: Color32::from_rgb(40, 45, 50),
+    rule: Color32::from_rgb(58, 64, 70),
+    ink: Color32::from_rgb(222, 226, 228),
+    muted: Color32::from_rgb(150, 160, 166),
+    lapis: Color32::from_rgb(110, 150, 214),
+    verdigris: Color32::from_rgb(82, 168, 152),
+    violet: Color32::from_rgb(160, 128, 200),
+    gilt: Color32::from_rgb(206, 168, 88),
+    selection: Color32::from_rgb(44, 66, 104),
+    hover: Color32::from_rgb(48, 56, 66),
+    hover_rule: Color32::from_rgb(84, 104, 136),
+    warn: Color32::from_rgb(232, 140, 100),
+    unlinked: Color32::from_rgb(104, 112, 118),
+};
+
+thread_local! {
+    static CURRENT: std::cell::Cell<Chrome> = const { std::cell::Cell::new(LIGHT) };
+}
+
+/// The chrome palette of the frame being drawn.
+pub fn c() -> Chrome {
+    CURRENT.with(std::cell::Cell::get)
+}
+
+/// Set the chrome palette for this frame (from the context's current theme).
+pub fn set_for(ctx: &egui::Context) {
+    let chrome = if ctx.theme() == egui::Theme::Dark {
+        DARK
+    } else {
+        LIGHT
+    };
+    CURRENT.with(|cur| cur.set(chrome));
+}
 
 /// Each Link set's colour.
 pub fn link_color(link: Option<char>) -> Color32 {
+    let ch = c();
     match link {
-        Some('A') => LAPIS,
-        Some('B') => VERDIGRIS,
-        Some('C') => Color32::from_rgb(112, 79, 145),
-        Some(_) => GILT,
-        None => UNLINKED,
+        Some('A') => ch.lapis,
+        Some('B') => ch.verdigris,
+        Some('C') => ch.violet,
+        Some(_) => ch.gilt,
+        None => ch.unlinked,
     }
 }
 
@@ -57,11 +122,11 @@ pub fn install(ctx: &egui::Context) {
         .families
         .insert(FontFamily::Name(DISPLAY.into()), family);
     ctx.set_fonts(fonts);
-    ctx.set_theme(egui::Theme::Light);
-    ctx.all_styles_mut(style);
+    ctx.style_mut_of(egui::Theme::Light, |s| style(s, &LIGHT));
+    ctx.style_mut_of(egui::Theme::Dark, |s| style(s, &DARK));
 }
 
-fn style(style: &mut egui::Style) {
+fn style(style: &mut egui::Style, ch: &Chrome) {
     style
         .text_styles
         .insert(TextStyle::Body, FontId::proportional(14.0));
@@ -81,51 +146,55 @@ fn style(style: &mut egui::Style) {
     style.spacing.menu_margin = Margin::same(8);
     style.spacing.window_margin = Margin::same(12);
 
-    let mut v = egui::Visuals::light();
-    v.panel_fill = SHELL;
-    v.window_fill = FIELD;
-    v.extreme_bg_color = FIELD;
-    v.faint_bg_color = SURFACE;
-    v.code_bg_color = SURFACE;
-    v.hyperlink_color = LAPIS;
-    v.selection.bg_fill = SELECTION;
-    v.selection.stroke = Stroke::new(1.0, LAPIS);
-    v.window_stroke = Stroke::new(1.0, RULE);
+    let mut v = if ch.dark {
+        egui::Visuals::dark()
+    } else {
+        egui::Visuals::light()
+    };
+    v.panel_fill = ch.shell;
+    v.window_fill = ch.field;
+    v.extreme_bg_color = ch.field;
+    v.faint_bg_color = ch.surface;
+    v.code_bg_color = ch.surface;
+    v.hyperlink_color = ch.lapis;
+    v.selection.bg_fill = ch.selection;
+    v.selection.stroke = Stroke::new(1.0, ch.lapis);
+    v.window_stroke = Stroke::new(1.0, ch.rule);
     v.window_corner_radius = CornerRadius::same(10);
     v.menu_corner_radius = CornerRadius::same(8);
     v.window_shadow = Shadow {
         offset: [0, 8],
         blur: 24,
         spread: 0,
-        color: Color32::from_black_alpha(34),
+        color: Color32::from_black_alpha(if ch.dark { 90 } else { 34 }),
     };
     v.popup_shadow = Shadow {
         offset: [0, 6],
         blur: 18,
         spread: 0,
-        color: Color32::from_black_alpha(30),
+        color: Color32::from_black_alpha(if ch.dark { 80 } else { 30 }),
     };
     let w = &mut v.widgets;
-    w.noninteractive.bg_fill = SURFACE;
-    w.noninteractive.weak_bg_fill = SURFACE;
-    w.noninteractive.bg_stroke = Stroke::new(1.0, RULE);
-    w.noninteractive.fg_stroke = Stroke::new(1.0, INK);
+    w.noninteractive.bg_fill = ch.surface;
+    w.noninteractive.weak_bg_fill = ch.surface;
+    w.noninteractive.bg_stroke = Stroke::new(1.0, ch.rule);
+    w.noninteractive.fg_stroke = Stroke::new(1.0, ch.ink);
     w.noninteractive.corner_radius = CornerRadius::same(6);
-    w.inactive.bg_fill = FIELD;
+    w.inactive.bg_fill = ch.field;
     w.inactive.weak_bg_fill = Color32::TRANSPARENT;
-    w.inactive.bg_stroke = Stroke::new(1.0, RULE);
-    w.inactive.fg_stroke = Stroke::new(1.0, INK);
+    w.inactive.bg_stroke = Stroke::new(1.0, ch.rule);
+    w.inactive.fg_stroke = Stroke::new(1.0, ch.ink);
     w.inactive.corner_radius = CornerRadius::same(6);
-    w.hovered.bg_fill = HOVER;
-    w.hovered.weak_bg_fill = HOVER;
-    w.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(166, 184, 211));
-    w.hovered.fg_stroke = Stroke::new(1.2, INK);
+    w.hovered.bg_fill = ch.hover;
+    w.hovered.weak_bg_fill = ch.hover;
+    w.hovered.bg_stroke = Stroke::new(1.0, ch.hover_rule);
+    w.hovered.fg_stroke = Stroke::new(1.2, ch.ink);
     w.hovered.corner_radius = CornerRadius::same(6);
     w.hovered.expansion = 0.0;
-    w.active.bg_fill = SELECTION;
-    w.active.weak_bg_fill = SELECTION;
-    w.active.bg_stroke = Stroke::new(1.0, LAPIS);
-    w.active.fg_stroke = Stroke::new(1.4, LAPIS);
+    w.active.bg_fill = ch.selection;
+    w.active.weak_bg_fill = ch.selection;
+    w.active.bg_stroke = Stroke::new(1.0, ch.lapis);
+    w.active.fg_stroke = Stroke::new(1.4, ch.lapis);
     w.active.corner_radius = CornerRadius::same(6);
     w.active.expansion = 0.0;
     w.open = w.active;

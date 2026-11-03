@@ -20,6 +20,18 @@ pub enum ColorRole {
     WordsOfJesus,
 }
 
+/// How verse numbers are shown (Text settings, #66).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum VerseNumbers {
+    /// Small and raised (the default).
+    #[default]
+    Superscript,
+    /// Bold, slightly smaller than the text, on the baseline.
+    Inline,
+    /// Not shown (chapter numbers still are).
+    Hidden,
+}
+
 /// The user's text settings in v0.1 (#14 rule 12), plus per-script tuning.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextSettings {
@@ -33,7 +45,7 @@ pub struct TextSettings {
     /// once scaled up, so full metrics leave Hebrew lines visibly further apart (#13).
     pub hebrew_line_height: f32,
     pub red_letter: bool,
-    pub verse_numbers: bool,
+    pub verse_numbers: VerseNumbers,
 }
 
 impl Default for TextSettings {
@@ -44,7 +56,7 @@ impl Default for TextSettings {
             line_spacing: 1.25,
             hebrew_line_height: 0.82,
             red_letter: true,
-            verse_numbers: true,
+            verse_numbers: VerseNumbers::Superscript,
         }
     }
 }
@@ -59,7 +71,7 @@ impl TextSettings {
             self.line_spacing.to_bits(),
             self.hebrew_line_height.to_bits(),
             u32::from(self.red_letter),
-            u32::from(self.verse_numbers),
+            self.verse_numbers as u32,
         ] {
             h ^= u64::from(bits);
             h = h.wrapping_mul(0x0100_0000_01b3);

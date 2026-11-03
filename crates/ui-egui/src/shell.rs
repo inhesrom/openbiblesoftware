@@ -49,6 +49,8 @@ pub(crate) struct State {
     prompt: Option<(Option<String>, String)>,
     /// When the Last session was last checked for saving.
     last_save: f64,
+    /// This frame's Page-tone palette.
+    pub(crate) palette: Palette,
     search: String,
     now: f64,
     /// Ctrl/Cmd is held: opening something splits off a new Panel.
@@ -82,6 +84,7 @@ impl Shell {
                 window: None,
                 prompt: None,
                 last_save: 0.0,
+                palette: Palette::PAPER,
                 search: String::new(),
                 now: 0.0,
                 split_held: false,
@@ -447,6 +450,28 @@ impl Shell {
         }
     }
 
+    /// Follow the Theme choice (Follow system tracks the OS live) and pick this frame's
+    /// chrome and page palettes. Nothing is laid out or rasterized again: colour roles are
+    /// resolved when quads are drawn.
+    fn apply_appearance(&mut self, ctx: &egui::Context) {
+        let want = match self.st.session.appearance.theme {
+            obs_engine::Theme::Light => egui::ThemePreference::Light,
+            obs_engine::Theme::Dark => egui::ThemePreference::Dark,
+            obs_engine::Theme::System => egui::ThemePreference::System,
+        };
+        if ctx.options(|o| o.theme_preference) != want {
+            ctx.set_theme(want);
+        }
+        theme::set_for(ctx);
+        let tone = self
+            .st
+            .session
+            .appearance
+            .page_tone
+            .resolve(theme::c().dark);
+        self.st.palette = Palette::for_tone(tone);
+    }
+
     /// Save the Last session now (on quit), or at most once a second while running.
     pub fn save_session(&mut self, now: bool) {
         if !now && self.st.now - self.st.last_save < 1.0 {
@@ -469,20 +494,21 @@ impl Shell {
 
     /// Draw the whole window.
     pub fn ui(&mut self, ui: &mut Ui) {
+        self.apply_appearance(ui.ctx());
         self.st.now = ui.input(|i| i.time);
         self.st.split_held = ui.input(|i| i.modifiers.command);
         self.shortcuts(ui);
         egui::Panel::top("menus")
             .frame(
                 egui::Frame::new()
-                    .fill(theme::SURFACE)
+                    .fill(theme::c().surface)
                     .inner_margin(egui::Margin::symmetric(14, 6)),
             )
             .show(ui, |ui| self.menu_bar(ui));
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(theme::SHELL)
+                    .fill(theme::c().shell)
                     .inner_margin(egui::Margin::same(8)),
             )
             .show(ui, |ui| {
@@ -492,7 +518,7 @@ impl Shell {
                             RichText::new(
                                 "Nothing is open. Use the Library menu, or drop a .obr file here.",
                             )
-                            .color(theme::MUTED),
+                            .color(theme::c().muted),
                         );
                     });
                 } else {
@@ -536,7 +562,7 @@ impl Shell {
             ui.label(
                 RichText::new("Open Bible")
                     .font(theme::display(19.0))
-                    .color(theme::INK),
+                    .color(theme::c().ink),
             );
             ui.add_space(6.0);
             ui.scope(|ui| {
@@ -580,10 +606,7 @@ impl Shell {
                     return;
                 };
                 let label = match id {
-                    "view.dark_page" if self.st.session.dark_page => "✓ Dark page".into(),
-                    "view.verse_numbers" if self.st.session.text.verse_numbers => {
-                        "✓ Verse numbers".into()
-                    }
+                    "view.red_letter" if self.st.session.text.red_letter => "✓ Red letter".into(),
                     _ => spec.label.to_string(),
                 };
                 let mut b = egui::Button::new(label);
@@ -602,6 +625,22 @@ impl Shell {
                     ui.close();
                 }
             }
+            MenuItem::Choice { title, command } => {
+                let (options, current) = obs_engine::choices(&self.st.session, command);
+                let mut picked = None;
+                ui.menu_button(title, |ui| {
+                    for (id, label) in options {
+                        if ui.selectable_label(id == current, label).clicked() {
+                            picked = Some(id);
+                            ui.close();
+                        }
+                    }
+                });
+                if let Some(id) = picked {
+                    self.run(command, &json!({ "value": id }));
+                    ui.close();
+                }
+            }
             MenuItem::Layouts => {
                 let names = self
                     .st
@@ -611,7 +650,7 @@ impl Shell {
                     .and_then(|u| u.layouts().ok())
                     .unwrap_or_default();
                 if names.is_empty() {
-                    ui.label(RichText::new("No saved layouts").color(theme::MUTED));
+                    ui.label(RichText::new("No saved layouts").color(theme::c().muted));
                 }
                 for name in names {
                     let mut run: Option<&'static str> = None;
@@ -647,7 +686,7 @@ impl Shell {
                     })
                     .collect();
                 if entries.is_empty() {
-                    ui.label(RichText::new("No Resources yet").color(theme::MUTED));
+                    ui.label(RichText::new("No Resources yet").color(theme::c().muted));
                 }
                 for (id, label, _) in entries {
                     if ui.button(label).clicked() {
@@ -801,18 +840,14 @@ impl State {
     }
 
     fn reading_body(&mut self, ui: &mut Ui, tab: TabId) {
-        let palette = if self.session.dark_page {
-            Palette::DARK
-        } else {
-            Palette::PAPER
-        };
+        let palette = self.palette;
         let text = self.session.text;
         let Some(t) = self.tabs.get_mut(&tab) else {
             return;
         };
         let Some(view) = t.view.as_mut() else {
             let msg = t.error.clone().unwrap_or_default();
-            ui.centered_and_justified(|ui| ui.colored_label(theme::WARN, msg));
+            ui.centered_and_justified(|ui| ui.colored_label(theme::c().warn, msg));
             return;
         };
         view.set_settings(text);
@@ -820,7 +855,7 @@ impl State {
             let age = self.now - start;
             (age < FLASH_SECS).then(|| {
                 let a = (1.0 - age / FLASH_SECS).clamp(0.0, 1.0) as f32;
-                (v, theme::FLASH.gamma_multiply(a))
+                (v, palette.flash.gamma_multiply(a))
             })
         });
         if flash.is_some() {
@@ -852,7 +887,7 @@ impl State {
             .unwrap_or_default();
         let mut open: Option<String> = None;
         egui::Frame::new()
-            .fill(theme::FIELD)
+            .fill(theme::c().field)
             .inner_margin(egui::Margin::symmetric(14, 10))
             .show(ui, |ui| {
                 ui.set_min_size(ui.available_size());
@@ -866,7 +901,7 @@ impl State {
                                     "Your library is empty. Drop a .obr file on the window, or \
                                      make one with `obs-cli import`.",
                                 )
-                                .color(theme::MUTED),
+                                .color(theme::c().muted),
                             );
                         }
                         for ty in RESOURCE_TYPES {
@@ -886,14 +921,14 @@ impl State {
                                 RichText::new(type_name(ty).to_uppercase())
                                     .size(10.5)
                                     .strong()
-                                    .color(theme::MUTED),
+                                    .color(theme::c().muted),
                             );
                             for e in rows {
                                 let m = &e.manifest;
                                 let r = ui.add(
                                     egui::Button::new(
                                         RichText::new(format!("{}  {}", m.abbreviation, m.title))
-                                            .color(theme::INK),
+                                            .color(theme::c().ink),
                                     )
                                     .frame(false),
                                 );
@@ -917,9 +952,9 @@ impl State {
     fn header(&mut self, ui: &mut Ui, tab: TabId, kind: &TabKind) {
         let focused = self.session.workspace.focused() == Some(tab);
         let fill = if focused {
-            theme::FIELD
+            theme::c().field
         } else {
-            theme::SURFACE
+            theme::c().surface
         };
         let frame = egui::Frame::new()
             .fill(fill)
@@ -948,14 +983,16 @@ impl State {
                         self.tab_menu(ui, tab);
                         if !narrow {
                             ui.add(
-                                egui::Label::new(RichText::new(title).small().color(theme::MUTED))
-                                    .truncate(),
+                                egui::Label::new(
+                                    RichText::new(title).small().color(theme::c().muted),
+                                )
+                                .truncate(),
                             );
                         }
                     });
                 });
                 if let Some(e) = self.tabs.get(&tab).and_then(|t| t.error.clone()) {
-                    ui.label(RichText::new(e).small().color(theme::WARN));
+                    ui.label(RichText::new(e).small().color(theme::c().warn));
                 }
             });
         let r = frame.response.rect;
@@ -964,8 +1001,11 @@ impl State {
             0.0,
             theme::link_color(self.session.workspace.tab(tab).and_then(|t| t.link)),
         );
-        ui.painter()
-            .hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, theme::RULE));
+        ui.painter().hline(
+            r.x_range(),
+            r.bottom() - 0.5,
+            Stroke::new(1.0, theme::c().rule),
+        );
     }
 
     fn title(&self, tab: TabId, kind: &TabKind) -> String {
@@ -1013,7 +1053,11 @@ impl State {
     fn header_box(&mut self, ui: &mut Ui, tab: TabId, kind: HeaderBox, width: f32) {
         match kind {
             HeaderBox::FollowsHover => {
-                ui.label(RichText::new("Follows hover").small().color(theme::MUTED));
+                ui.label(
+                    RichText::new("Follows hover")
+                        .small()
+                        .color(theme::c().muted),
+                );
             }
             HeaderBox::Filter => {
                 if let Some(t) = self.tabs.get_mut(&tab) {
@@ -1067,7 +1111,7 @@ impl State {
     }
 
     fn tab_menu(&mut self, ui: &mut Ui, tab: TabId) {
-        ui.menu_button(RichText::new("…").color(theme::MUTED), |ui| {
+        ui.menu_button(RichText::new("…").color(theme::c().muted), |ui| {
             if ui
                 .add(egui::Button::new("Close Tab").shortcut_text("Ctrl+W"))
                 .clicked()
@@ -1143,7 +1187,7 @@ impl State {
                     .show(&ctx, |ui| {
                         ui.set_max_width(screen.width() * 0.6);
                         egui::Frame::popup(ui.style()).show(ui, |ui| {
-                            ui.label(RichText::new(msg).color(theme::LAPIS));
+                            ui.label(RichText::new(msg).color(theme::c().lapis));
                         });
                     });
                 ctx.request_repaint_after(std::time::Duration::from_millis(250));
@@ -1207,10 +1251,12 @@ fn guide_ticket(g: obs_engine::Guide) -> &'static str {
 }
 
 fn placeholder(ui: &mut Ui, title: &str, ticket: &str) {
-    egui::Frame::new().fill(theme::FIELD).show(ui, |ui| {
+    egui::Frame::new().fill(theme::c().field).show(ui, |ui| {
         ui.set_min_size(ui.available_size());
         ui.centered_and_justified(|ui| {
-            ui.label(RichText::new(format!("{title} arrives with {ticket}")).color(theme::MUTED));
+            ui.label(
+                RichText::new(format!("{title} arrives with {ticket}")).color(theme::c().muted),
+            );
         });
     });
 }
@@ -1308,7 +1354,11 @@ impl egui_tiles::Behavior<TabId> for State {
             .unwrap_or_default();
         RichText::new(title)
             .size(13.5)
-            .color(if focused { theme::INK } else { theme::MUTED })
+            .color(if focused {
+                theme::c().ink
+            } else {
+                theme::c().muted
+            })
             .into()
     }
 
@@ -1387,7 +1437,7 @@ impl egui_tiles::Behavior<TabId> for State {
             ui.label(
                 RichText::new("Ctrl/Cmd-click opens a new split")
                     .small()
-                    .color(theme::MUTED),
+                    .color(theme::c().muted),
             );
             if let Some((id, mut params)) = picked {
                 if let Some(obj) = params.as_object_mut() {
@@ -1415,7 +1465,7 @@ impl egui_tiles::Behavior<TabId> for State {
     }
 
     fn tab_bar_color(&self, _visuals: &egui::Visuals) -> Color32 {
-        theme::SHELL
+        theme::c().shell
     }
 
     fn tab_bg_color(
@@ -1426,7 +1476,7 @@ impl egui_tiles::Behavior<TabId> for State {
         state: &egui_tiles::TabState,
     ) -> Color32 {
         if state.active {
-            theme::SURFACE
+            theme::c().surface
         } else {
             Color32::TRANSPARENT
         }
@@ -1443,13 +1493,13 @@ impl egui_tiles::Behavior<TabId> for State {
     }
 
     fn tab_bar_hline_stroke(&self, _visuals: &egui::Visuals) -> Stroke {
-        Stroke::new(1.0, theme::RULE)
+        Stroke::new(1.0, theme::c().rule)
     }
 
     fn resize_stroke(&self, _style: &egui::Style, state: egui_tiles::ResizeState) -> Stroke {
         match state {
-            egui_tiles::ResizeState::Idle => Stroke::new(1.0, theme::SHELL),
-            _ => Stroke::new(2.0, theme::LAPIS),
+            egui_tiles::ResizeState::Idle => Stroke::new(1.0, theme::c().shell),
+            _ => Stroke::new(2.0, theme::c().lapis),
         }
     }
 

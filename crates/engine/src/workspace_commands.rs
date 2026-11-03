@@ -23,6 +23,12 @@ pub enum MenuItem {
     Resources,
     /// The saved Layouts, each with Restore, Rename… and Delete.
     Layouts,
+    /// A submenu of exclusive choices: one `command` run with `{ "value": id }` per choice,
+    /// the current one checked.
+    Choice {
+        title: &'static str,
+        command: &'static str,
+    },
     Separator,
 }
 
@@ -61,11 +67,26 @@ pub const MENUS: &[Menu] = &[
     Menu {
         title: "View",
         items: &[
+            MenuItem::Choice {
+                title: "Theme",
+                command: "view.theme",
+            },
+            MenuItem::Choice {
+                title: "Page tone",
+                command: "view.page_tone",
+            },
+            Separator,
             C("view.text_larger"),
             C("view.text_smaller"),
-            C("view.verse_numbers"),
-            Separator,
-            C("view.dark_page"),
+            MenuItem::Choice {
+                title: "Line spacing",
+                command: "view.line_spacing",
+            },
+            MenuItem::Choice {
+                title: "Verse numbers",
+                command: "view.verse_numbers",
+            },
+            C("view.red_letter"),
         ],
     },
     Menu {
@@ -122,6 +143,73 @@ const fn open_cmd(
         enabled: always,
         run,
     }
+}
+
+const VALUE: &[ParamSpec] = &[ParamSpec {
+    name: "value",
+    kind: ParamKind::String,
+    required: true,
+    help: "The choice's id (see `choices`)",
+}];
+
+/// A command that sets one View choice by id (see [`choices`]).
+const fn choice(id: &'static str, label: &'static str) -> CommandSpec {
+    CommandSpec {
+        id,
+        label,
+        shortcut: None,
+        params: VALUE,
+        enabled: always,
+        run: run_choice,
+    }
+}
+
+/// The choices of a `Choice` menu command: (id, label), and the current id.
+pub fn choices(s: &Session, command: &str) -> (Vec<(&'static str, &'static str)>, &'static str) {
+    use crate::appearance::*;
+    match command {
+        "view.theme" => (
+            Theme::ALL.iter().map(|t| (t.1, t.2)).collect(),
+            s.appearance.theme.id(),
+        ),
+        "view.page_tone" => (
+            PageTone::ALL.iter().map(|t| (t.1, t.2)).collect(),
+            s.appearance.page_tone.id(),
+        ),
+        "view.line_spacing" => (
+            LINE_SPACINGS.iter().map(|c| (c.0, c.1)).collect(),
+            line_spacing_id(s.text.line_spacing),
+        ),
+        "view.verse_numbers" => (
+            VERSE_NUMBER_STYLES.iter().map(|c| (c.1, c.2)).collect(),
+            verse_numbers_id(s.text.verse_numbers),
+        ),
+        _ => (Vec::new(), ""),
+    }
+}
+
+fn run_choice(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    use crate::appearance::*;
+    let v = p.str("value").unwrap_or_default();
+    // Command functions are not told their own id; the Session logs it just before running.
+    let id = s.last_command().unwrap_or("");
+    let ok = match id {
+        "view.theme" => Theme::from_id(v).map(|t| s.appearance.theme = t),
+        "view.page_tone" => PageTone::from_id(v).map(|t| s.appearance.page_tone = t),
+        "view.line_spacing" => LINE_SPACINGS
+            .iter()
+            .find(|c| c.0 == v)
+            .map(|c| s.text.line_spacing = c.2),
+        "view.verse_numbers" => VERSE_NUMBER_STYLES
+            .iter()
+            .find(|c| c.1 == v)
+            .map(|c| s.text.verse_numbers = c.0),
+        _ => None,
+    };
+    let Some(()) = ok else {
+        return Err(failed("view", format!("“{v}” is not a choice for {id}")));
+    };
+    view_saved(s, json!({ "value": v }))
 }
 
 const fn simple(
@@ -258,19 +346,13 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
             view_saved(s, json!({ "size": s.text.size }))
         },
     ),
-    simple(
-        "view.verse_numbers",
-        "Verse numbers",
-        None,
-        always,
-        |s, _| {
-            s.text.verse_numbers = !s.text.verse_numbers;
-            view_saved(s, json!({ "on": s.text.verse_numbers }))
-        },
-    ),
-    simple("view.dark_page", "Dark page", None, always, |s, _| {
-        s.dark_page = !s.dark_page;
-        view_saved(s, json!({ "on": s.dark_page }))
+    choice("view.theme", "Theme"),
+    choice("view.page_tone", "Page tone"),
+    choice("view.line_spacing", "Line spacing"),
+    choice("view.verse_numbers", "Verse numbers"),
+    simple("view.red_letter", "Red letter", None, always, |s, _| {
+        s.text.red_letter = !s.text.red_letter;
+        view_saved(s, json!({ "on": s.text.red_letter }))
     }),
     simple("help.about", "About Open Bible", None, always, about),
     simple("help.credits", "Credits", None, always, credits),

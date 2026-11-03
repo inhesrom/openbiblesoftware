@@ -205,14 +205,24 @@ fn view_and_help_commands_change_session_state() {
     let size = s.text.size;
     s.run("view.text_larger", &json!({})).unwrap();
     assert_eq!(s.text.size, size + 1.0);
-    s.run("view.dark_page", &json!({})).unwrap();
-    assert!(s.dark_page);
+    s.run("view.page_tone", &json!({ "value": "sepia" }))
+        .unwrap();
+    assert_eq!(s.appearance.page_tone, PageTone::Sepia);
+    s.run("view.theme", &json!({ "value": "dark" })).unwrap();
+    assert_eq!(s.appearance.theme, Theme::Dark);
+    assert!(s.run("view.theme", &json!({ "value": "sepia" })).is_err());
     s.run("help.credits", &json!({})).unwrap();
     let e = s.workspace.take_effects();
     assert!(matches!(&e[..], [Effect::Show { body, .. }] if body.contains("TVTMS")));
     assert_eq!(
         s.command_log(),
-        ["view.text_larger", "view.dark_page", "help.credits"]
+        [
+            "view.text_larger",
+            "view.page_tone",
+            "view.theme",
+            "view.theme",
+            "help.credits"
+        ]
     );
     s.run("layout.reset", &json!({})).unwrap();
     assert_eq!(s.workspace.take_effects(), vec![Effect::ResetLayout]);
