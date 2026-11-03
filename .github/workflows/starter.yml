@@ -1,0 +1,88 @@
+name: Starter library
+
+# Builds the Starter library with `cargo xtask starter`, twice, and fails unless both builds
+# are byte-identical. On release tags the outputs are published to the GitHub release; on pull
+# requests that touch the lock or the pipeline they are uploaded as workflow artifacts so the
+# build report can be reviewed with the change.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "starter/**"
+      - "xtask/**"
+      - "crates/formats/**"
+      - "crates/model/**"
+      - "crates/scripture/**"
+      - "crates/store/**"
+      - "Cargo.lock"
+      - ".github/workflows/starter.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: starter-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  starter:
+    name: xtask starter
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache Starter downloads
+        uses: actions/cache@v4
+        with:
+          path: target/starter-cache
+          key: starter-sources-${{ hashFiles('starter/sources.toml') }}
+          restore-keys: starter-sources-
+      # Pull requests diff against the latest release too, so a removed unit id fails the PR,
+      # not the release.
+      - name: Previous release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A failing `gh` must stop the step, not silently skip the id diff.
+          tags=$(gh release list --exclude-drafts --limit 50 --json tagName -q '.[].tagName')
+          # Newest release by creation date, other than the one being built.
+          prev=$(printf '%s\n' "$tags" | grep -Fvx "$GITHUB_REF_NAME" | head -n 1 || true)
+          if [ -n "$prev" ]; then
+            echo "diffing against release $prev"
+            gh release download "$prev" --pattern starter-manifest.json --dir target/previous \
+              || { echo "::error::release $prev has no starter-manifest.json to diff against"; exit 1; }
+          else
+            echo "no earlier release: every Resource is new"
+          fi
+      - name: cargo xtask starter --check-determinism
+        run: |
+          args=()
+          if [ -f target/previous/starter-manifest.json ]; then
+            args=(--previous target/previous/starter-manifest.json)
+          fi
+          cargo xtask starter --check-determinism "${args[@]}"
+      - name: Build report
+        run: cat dist/starter/starter-build-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: starter-library
+          path: dist/starter/
+          if-no-files-found: error
+      - name: Publish to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/starter/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+              --notes-file dist/starter/starter-build-report.md dist/starter/*
+          fi

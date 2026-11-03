@@ -1,0 +1,16 @@
+# Stable ids across Starter releases (#20 decision 2). `cargo xtask starter` diffs every build
+# against the previous release's starter-manifest.json. A text-unit id that was shipped and is
+# now gone fails the build unless it is mapped here; mappings ship in the `.obr` as the
+# `unit_alias` table, which re-anchoring follows (ADR 0006).
+#
+# This file is cumulative: never delete an entry, or Annotations made against an older
+# release lose their way. Chains (A → B, then B → C) are followed to a live unit. Each old id is
+# mapped once; to send it somewhere new, edit its entry's `new`.
+#
+# [[alias]]
+# resource_id = "bsb"
+# old = "N1203"
+# new = "N1204"
+#
+# A Resource dropped from the Starter library for good is listed here; its id is never reused.
+retired = []

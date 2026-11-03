@@ -3,6 +3,7 @@
 mod assets;
 mod bench;
 mod layers;
+mod starter;
 mod tvtms;
 
 use std::path::{Path, PathBuf};
@@ -23,6 +24,9 @@ tasks:
 
 performance:
   bench    headless reading-pane benchmark; fails past the thresholds in xtask/bench.toml
+
+starter library:
+  starter  build dist/starter/*.obr from starter/sources.toml (`cargo xtask starter --help`)
 
 maintenance:
   tvtms <TVTMS.txt>   regenerate the embedded STEPBible TVTMS rules";
@@ -47,6 +51,10 @@ fn run() -> Result<()> {
             Ok(())
         }
         "bench" => bench::run(&root),
+        "starter" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            starter::run(&root, &rest)
+        }
         "tvtms" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             tvtms::run(&root, &rest)

@@ -227,6 +227,39 @@ fn synthetic_marker_coverage() {
     check_golden("synthetic", &snapshot(&r, &report));
 }
 
+#[test]
+fn verses_and_notes_inside_character_markup_are_kept() {
+    // BSB opens verses inside words of Jesus: `\wj \v 39 "Come and see,"\wj*`.
+    let src = "\\id JHN\n\\c 1\n\\p \\wj \\v 1 \u{201c}Come and see,\u{201d}\\wj* He replied. \\wj \\v 2 Follow\\f + \\fr 1:2 \\ft Or \\fqa walk\\f* Me. \\v 3 Truly.\\wj*\n";
+    let mut import = UsfmImport::new(UsfmOptions {
+        resource_id: "wj".into(),
+        ..UsfmOptions::default()
+    });
+    import.add_book("JHN.usfm", src.into()).unwrap();
+    let (r, report) = import.finish().unwrap();
+    let jn = |v| Verse::new(Book::John, 1, v);
+    assert_eq!(
+        verse_text(&r, jn(1)),
+        "\u{201c}Come and see,\u{201d} He replied."
+    );
+    assert_eq!(verse_text(&r, jn(2)), "Follow Me.");
+    assert_eq!(verse_text(&r, jn(3)), "Truly.");
+    assert_eq!(report.notes, 1);
+    assert!(
+        report.dropped_markup.is_empty(),
+        "{:?}",
+        report.dropped_markup
+    );
+    let book = r.unit(&UnitId::new("JHN").unwrap()).unwrap();
+    let woj: Vec<&str> = book
+        .spans
+        .iter()
+        .filter(|s| s.kind == SpanKind::Woj)
+        .map(|s| &book.text[s.range()])
+        .collect();
+    assert_eq!(woj, ["\u{201c}Come and see,\u{201d}", "Follow Me. Truly."]);
+}
+
 /// Number of Bible Verses a USFM source should give: `\v` markers in canonical books plus one
 /// title slot per Psalm whose `\d` comes before its first verse.
 fn expected_verses(dir: &Path) -> usize {
