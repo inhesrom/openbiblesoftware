@@ -118,7 +118,7 @@ impl Passage {
     }
 
     /// A whole chapter (title slot included), if the Versification has it.
-    pub fn chapter(v11n: &impl Versification, book: Book, chapter: u16) -> Option<Self> {
+    pub fn chapter<V: Versification + ?Sized>(v11n: &V, book: Book, chapter: u16) -> Option<Self> {
         Some(Self {
             start: v11n.first_verse(book, chapter)?,
             end: v11n.last_verse_of(book, chapter)?,
@@ -126,7 +126,7 @@ impl Passage {
     }
 
     /// A whole book, if the Versification has it.
-    pub fn book(v11n: &impl Versification, book: Book) -> Option<Self> {
+    pub fn book<V: Versification + ?Sized>(v11n: &V, book: Book) -> Option<Self> {
         Some(Self {
             start: v11n.first_verse_of_book(book)?,
             end: v11n.last_verse_of_book(book)?,
@@ -177,7 +177,10 @@ impl Passage {
     }
 
     /// Every Verse of this Passage that exists in the Versification, in order.
-    pub fn verses<'a, V: Versification>(self, v11n: &'a V) -> impl Iterator<Item = Verse> + 'a {
+    pub fn verses<'a, V: Versification + ?Sized>(
+        self,
+        v11n: &'a V,
+    ) -> impl Iterator<Item = Verse> + 'a {
         let first = if v11n.contains(self.start) {
             Some(self.start)
         } else {
@@ -189,7 +192,7 @@ impl Passage {
 }
 
 /// The first Verse of the Versification at or after `verse` (which need not exist).
-fn first_at_or_after(v11n: &impl Versification, verse: Verse) -> Option<Verse> {
+fn first_at_or_after<V: Versification + ?Sized>(v11n: &V, verse: Verse) -> Option<Verse> {
     let mut book = Some(verse.book);
     while let Some(b) = book {
         let chapters = v11n.chapter_count(b);
@@ -280,7 +283,7 @@ impl PassageList {
     }
 
     /// Sorted, with overlapping Passages and Passages adjacent in `v11n` merged.
-    pub fn merged(&self, v11n: &impl Versification) -> PassageList {
+    pub fn merged<V: Versification + ?Sized>(&self, v11n: &V) -> PassageList {
         let mut sorted = self.0.clone();
         sorted.sort();
         let mut out: Vec<Passage> = Vec::with_capacity(sorted.len());

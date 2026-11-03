@@ -13,12 +13,17 @@
 //! ```
 
 mod book;
+mod reference;
 mod standard_data;
 mod strongs;
 mod verse;
 mod versification;
 
 pub use book::{Book, Testament};
+pub use reference::{
+    RefStyle, ReferenceError, ReferenceErrorKind, format_passage, format_passage_list,
+    parse_reference,
+};
 pub use strongs::{StrongsLanguage, StrongsNumber, StrongsParseError};
 pub use verse::{Passage, PassageError, PassageList, Verse};
 pub use versification::{Standard, Versification};
