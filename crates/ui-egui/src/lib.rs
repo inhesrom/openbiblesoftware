@@ -8,6 +8,7 @@ mod doc;
 mod heights;
 mod palette;
 mod pane;
+mod selection;
 mod view;
 mod workers;
 
@@ -18,6 +19,9 @@ pub use heights::HeightIndex;
 use obs_scripture::parse_reference;
 pub use palette::Palette;
 pub use pane::{AtlasTexture, reading_pane};
+pub use selection::{
+    DocPos, Granularity, Selection, copy_text, selected_text, selection_rects, word_at,
+};
 pub use view::{Frame, FrameBlock, FrameStats, ReadingView, SYNC_BUDGET, VisibleBlock};
 pub use workers::{LayoutClient, SnippetCache, lay_out, set_layout_slowdown};
 

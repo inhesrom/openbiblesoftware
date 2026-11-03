@@ -11,6 +11,7 @@ use obs_scripture::Verse;
 
 use crate::doc::ReadingDoc;
 use crate::heights::HeightIndex;
+use crate::selection::{DocPos, Selection};
 use crate::workers::{LayoutClient, lay_out};
 
 /// UI-thread layout per frame. #19 allows 2 ms; one block may overrun the check, so stop
@@ -84,6 +85,10 @@ pub struct ReadingView {
     generation: u64,
     /// A follow waiting for its target block's layout (`follow`).
     pending_follow: Option<Verse>,
+    /// The current selection, in document coordinates.
+    pub selection: Option<Selection>,
+    /// Whether the pointer drag in progress is on the scrollbar rather than the text.
+    pub(crate) dragging_scrollbar: bool,
 }
 
 impl ReadingView {
@@ -100,6 +105,8 @@ impl ReadingView {
             client: LayoutClient::default(),
             generation: 0,
             pending_follow: None,
+            selection: None,
+            dragging_scrollbar: false,
         };
         view.set_width(600.0);
         view
@@ -259,6 +266,47 @@ impl ReadingView {
             lay_out(&p, width)
         });
         true
+    }
+
+    /// Laid-out blocks in a viewport `height` tall, with their tops (no layout happens).
+    pub fn laid_in_view(&self, height: f32) -> Vec<(usize, f32, Arc<LaidBlock>)> {
+        let mut out = Vec::new();
+        let mut i = self.anchor.0;
+        let mut top = -self.anchor.1;
+        while top < height && i < self.doc.blocks.len() {
+            if let Some(l) = self.laid.get(&i) {
+                out.push((i, top, Arc::clone(l)));
+            }
+            top += self.height_of(i);
+            i += 1;
+        }
+        out
+    }
+
+    /// The document position under a point (`x` from the text's left edge, `y` from the
+    /// viewport top), on a grapheme boundary. Points above or below the document clamp to it.
+    pub fn pos_at(&mut self, x: f32, y: f32) -> Option<DocPos> {
+        let n = self.doc.blocks.len();
+        let mut i = self.anchor.0;
+        let mut top = -self.anchor.1;
+        loop {
+            if i >= n {
+                return None;
+            }
+            let h = self.height_of(i);
+            if y < top + h || i + 1 == n {
+                let laid = self.laid(i)?;
+                let p = laid.caret_at(x, (y - top).max(0.0));
+                let unit = self.doc.blocks[i].unit;
+                let byte = match laid.to_unit(p)? {
+                    UnitPos::Text(b) => b,
+                    UnitPos::Object { anchor, .. } => anchor,
+                };
+                return Some(DocPos { unit, byte });
+            }
+            top += h;
+            i += 1;
+        }
     }
 
     /// Whether workers still have layouts for this view in flight.

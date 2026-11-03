@@ -13,6 +13,7 @@ pub struct Palette {
     pub note_marker: Color32,
     pub accent: Color32,
     pub words_of_jesus: Color32,
+    pub selection: Color32,
 }
 
 impl Palette {
@@ -24,6 +25,7 @@ impl Palette {
         note_marker: Color32::from_rgb(0x28, 0x78, 0x46),
         accent: Color32::from_rgb(0x96, 0x3C, 0x1E),
         words_of_jesus: Color32::from_rgb(0xA8, 0x1E, 0x1E),
+        selection: Color32::from_rgb(0xC8, 0xDC, 0xF5),
     };
 
     pub const DARK: Palette = Palette {
@@ -34,6 +36,7 @@ impl Palette {
         note_marker: Color32::from_rgb(0x7C, 0xC4, 0x94),
         accent: Color32::from_rgb(0xE0, 0x9A, 0x6E),
         words_of_jesus: Color32::from_rgb(0xF0, 0x82, 0x78),
+        selection: Color32::from_rgb(0x2C, 0x48, 0x70),
     };
 
     pub fn color(&self, role: ColorRole) -> Color32 {

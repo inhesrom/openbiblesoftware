@@ -120,6 +120,16 @@ impl ReadingDoc {
             .collect()
     }
 
+    /// Unit bytes of the Bible Verse at `byte` of `unit`.
+    pub fn verse_range_at(&self, unit: usize, byte: usize) -> Option<std::ops::Range<usize>> {
+        self.verses
+            .iter()
+            .zip(&self.verse_units)
+            .filter(|(v, u)| **u == unit && v.start as usize <= byte)
+            .map(|(v, _)| v.start as usize..v.end as usize)
+            .next_back()
+    }
+
     /// The verse of `unit` containing unit byte `byte`: the last one starting at or before it.
     pub fn verse_containing(&self, unit: usize, byte: usize) -> Option<Verse> {
         self.verses
