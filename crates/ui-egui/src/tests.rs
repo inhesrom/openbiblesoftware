@@ -24,7 +24,7 @@ fn verse_text(n: u16) -> String {
 }
 
 /// Genesis 30–33 with every chapter one paragraph per 6 verses, so verses start mid-line.
-fn bible() -> Arc<ReadingDoc> {
+pub(crate) fn bible() -> Arc<ReadingDoc> {
     let mut m = Manifest::new("test-bible", "Test Bible", "TB", ResourceType::Bible, "en");
     m.key_schemes = vec![KeyScheme::Passage];
     m.license = "LicenseRef-PD".into();
@@ -449,7 +449,7 @@ fn word_and_verse_granularity() {
 }
 
 /// Hebrew Gen 1:1-2 in one right-to-left paragraph, with an English gloss in it.
-fn hebrew_doc() -> Arc<ReadingDoc> {
+pub(crate) fn hebrew_doc() -> Arc<ReadingDoc> {
     let mut m = Manifest::new("heb-test", "Hebrew test", "HEB", ResourceType::Bible, "hbo");
     m.key_schemes = vec![KeyScheme::Passage];
     m.license = "LicenseRef-PD".into();
