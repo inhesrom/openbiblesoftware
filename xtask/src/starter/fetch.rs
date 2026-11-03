@@ -17,33 +17,78 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     out
 }
 
-/// The bytes of `source`, from the cache or freshly downloaded, after checking the sha256.
-pub fn fetch(source: &Source, cache: &Path) -> Result<Vec<u8>> {
+/// One downloaded, verified file of a source.
+pub struct Fetched {
+    /// The file name, from the publisher's URL.
+    pub name: String,
+    pub bytes: Vec<u8>,
+}
+
+/// Every pinned file of `source`, from the cache or freshly downloaded, after checking each
+/// sha256.
+pub fn fetch(source: &Source, cache: &Path) -> Result<Vec<Fetched>> {
+    let mut out = Vec::new();
+    for (i, (url, sha256)) in source.files().enumerate() {
+        let bytes = fetch_file(&source.resource_id, url, sha256, cache)?;
+        // The first file may be an archived copy; name it after the publisher's URL.
+        let named = match (i, &source.origin_url) {
+            (0, Some(origin)) => origin.as_str(),
+            _ => url,
+        };
+        out.push(Fetched {
+            name: file_name(named),
+            bytes,
+        });
+    }
+    Ok(out)
+}
+
+/// The last path segment of a URL, percent-decoded where it is plain ASCII.
+fn file_name(url: &str) -> String {
+    let last = url.rsplit('/').next().unwrap_or(url);
+    let mut out = Vec::with_capacity(last.len());
+    let b = last.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        let hex = |c: u8| (c as char).to_digit(16);
+        if b[i] == b'%'
+            && let (Some(Some(h)), Some(Some(l))) = (b.get(i + 1).map(|&c| hex(c)), b.get(i + 2).map(|&c| hex(c)))
+        {
+            out.push((h * 16 + l) as u8);
+            i += 3;
+            continue;
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| last.to_string())
+}
+
+/// The bytes of one pinned file, from the cache or freshly downloaded, after checking the
+/// sha256.
+fn fetch_file(resource_id: &str, url: &str, sha256: &str, cache: &Path) -> Result<Vec<u8>> {
     std::fs::create_dir_all(cache)
         .with_context(|| format!("cannot create the cache {}", cache.display()))?;
-    let cached = cache.join(&source.sha256);
+    let cached = cache.join(sha256);
     if let Ok(bytes) = std::fs::read(&cached) {
-        if sha256_hex(&bytes) == source.sha256 {
+        if sha256_hex(&bytes) == sha256 {
             return Ok(bytes);
         }
         // A corrupt or tampered cache entry: discard it and download again.
         std::fs::remove_file(&cached)
             .with_context(|| format!("cannot remove {}", cached.display()))?;
     }
-    let partial = cache.join(format!("{}.partial", source.sha256));
-    download(&source.url, &partial)
-        .with_context(|| format!("{}: download of {} failed", source.resource_id, source.url))?;
+    let partial = cache.join(format!("{sha256}.partial"));
+    download(url, &partial)
+        .with_context(|| format!("{resource_id}: download of {url} failed"))?;
     let bytes =
         std::fs::read(&partial).with_context(|| format!("cannot read {}", partial.display()))?;
     let actual = sha256_hex(&bytes);
-    if actual != source.sha256 {
+    if actual != sha256 {
         let _ = std::fs::remove_file(&partial);
         bail!(
-            "{}: sha256 mismatch for {}\n  expected {}\n  got      {actual}\n\
-             The file changed upstream or was tampered with. Check it, then update the lock.",
-            source.resource_id,
-            source.url,
-            source.sha256
+            "{resource_id}: sha256 mismatch for {url}\n  expected {sha256}\n  got      {actual}\n\
+             The file changed upstream or was tampered with. Check it, then update the lock."
         );
     }
     std::fs::rename(&partial, &cached)

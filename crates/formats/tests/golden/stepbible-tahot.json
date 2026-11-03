@@ -1,0 +1,6330 @@
+{
+  "content_hash": "sha256:6411fcb4598885f23075f98c484301a54b168bc851068e16dc2946bfb3fd6383",
+  "report": {
+    "books": [
+      [
+        "GEN",
+        6,
+        12
+      ],
+      [
+        "EXO",
+        1,
+        1
+      ],
+      [
+        "PSA",
+        2,
+        8
+      ],
+      [
+        "ISA",
+        1,
+        1
+      ],
+      [
+        "DAN",
+        1,
+        1
+      ],
+      [
+        "MAL",
+        1,
+        7
+      ]
+    ],
+    "notes": 8,
+    "tagged_words": 344,
+    "traditions": {
+      "Hebrew": 13,
+      "Hebrew+Latin+Greek": 4
+    },
+    "verse_map": {
+      "absent": 6999,
+      "unmapped": 0
+    },
+    "verses": 30,
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "GEN",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..858",
+          "chapter": 1,
+          "kind": "chapter",
+          "text": "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃ וְהָאָ֗רֶץ הָיְתָ֥ה תֹ֙הוּ֙ וָבֹ֔הוּ וְחֹ֖שֶׁךְ עַל־פְּנֵ֣י תְה֑וֹם וְר֣וּחַ אֱלֹהִ֔ים מְרַחֶ֖פֶת עַל־פְּנֵ֥י הַמָּֽיִם׃ וַיֹּ֥אמֶר אֱלֹהִ֖ים יְהִ֣י א֑וֹר וַֽיְהִי־אֽוֹר׃ וַיַּ֧רְא אֱלֹהִ֛ים אֶת־הָא֖וֹר כִּי־ט֑וֹב וַיַּבְדֵּ֣ל אֱלֹהִ֔ים בֵּ֥ין הָא֖וֹר וּבֵ֥ין הַחֹֽשֶׁךְ׃ וַיִּקְרָ֨א אֱלֹהִ֤ים ׀ לָאוֹר֙ י֔וֹם וְלַחֹ֖שֶׁךְ קָ֣רָא לָ֑יְלָה וַֽיְהִי־עֶ֥רֶב וַֽיְהִי־בֹ֖קֶר י֥וֹם אֶחָֽד׃ פ"
+        },
+        {
+          "at": "0..858",
+          "kind": "para",
+          "style": "prose",
+          "text": "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃ וְהָאָ֗רֶץ הָיְתָ֥ה תֹ֙הוּ֙ וָבֹ֔הוּ וְחֹ֖שֶׁךְ עַל־פְּנֵ֣י תְה֑וֹם וְר֣וּחַ אֱלֹהִ֔ים מְרַחֶ֖פֶת עַל־פְּנֵ֥י הַמָּֽיִם׃ וַיֹּ֥אמֶר אֱלֹהִ֖ים יְהִ֣י א֑וֹר וַֽיְהִי־אֽוֹר׃ וַיַּ֧רְא אֱלֹהִ֛ים אֶת־הָא֖וֹר כִּי־ט֑וֹב וַיַּבְדֵּ֣ל אֱלֹהִ֔ים בֵּ֥ין הָא֖וֹר וּבֵ֥ין הַחֹֽשֶׁךְ׃ וַיִּקְרָ֨א אֱלֹהִ֤ים ׀ לָאוֹר֙ י֔וֹם וְלַחֹ֖שֶׁךְ קָ֣רָא לָ֑יְלָה וַֽיְהִי־עֶ֥רֶב וַֽיְהִי־בֹ֖קֶר י֥וֹם אֶחָֽד׃ פ"
+        },
+        {
+          "at": "0..124",
+          "kind": "verse",
+          "last": 1,
+          "text": "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 1
+          }
+        },
+        {
+          "at": "0..24",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "in",
+              "lemma": "ב",
+              "morph": "HR",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "beginning",
+              "lemma": "רֵאשִׁית",
+              "morph": "HNcfsa",
+              "strongs": "H7225G"
+            }
+          ],
+          "text": "בְּרֵאשִׁ֖ית"
+        },
+        {
+          "at": "25..39",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "he created",
+              "lemma": "בָּרָא",
+              "morph": "HVqp3ms",
+              "strongs": "H1254A"
+            }
+          ],
+          "text": "בָּרָ֣א"
+        },
+        {
+          "at": "40..58",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "God",
+              "lemma": "אֱלֹהִים",
+              "morph": "HNcmpa",
+              "strongs": "H430G"
+            }
+          ],
+          "text": "אֱלֹהִ֑ים"
+        },
+        {
+          "at": "59..67",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<obj.>",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "strongs": "H853"
+            }
+          ],
+          "text": "אֵ֥ת"
+        },
+        {
+          "at": "68..92",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "heavens",
+              "lemma": "שָׁמַיִם",
+              "morph": "HNcmpa",
+              "strongs": "H8064"
+            }
+          ],
+          "text": "הַשָּׁמַ֖יִם"
+        },
+        {
+          "at": "93..105",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "<obj.>",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "strongs": "H853"
+            }
+          ],
+          "text": "וְאֵ֥ת"
+        },
+        {
+          "at": "106..122",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "earth",
+              "lemma": "אֶ֫רֶץ",
+              "morph": "HNcfsa",
+              "strongs": "H776G"
+            }
+          ],
+          "text": "הָאָֽרֶץ"
+        },
+        {
+          "at": "125..354",
+          "kind": "verse",
+          "last": 2,
+          "text": "וְהָאָ֗רֶץ הָיְתָ֥ה תֹ֙הוּ֙ וָבֹ֔הוּ וְחֹ֖שֶׁךְ עַל־פְּנֵ֣י תְה֑וֹם וְר֣וּחַ אֱלֹהִ֔ים מְרַחֶ֖פֶת עַל־פְּנֵ֥י הַמָּֽיִם׃",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 2
+          }
+        },
+        {
+          "at": "125..145",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "earth",
+              "lemma": "אֶ֫רֶץ",
+              "morph": "HNcfsa",
+              "strongs": "H776G"
+            }
+          ],
+          "text": "וְהָאָ֗רֶץ"
+        },
+        {
+          "at": "146..162",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<it> was",
+              "lemma": "הָיָה",
+              "morph": "HVqp3fs",
+              "strongs": "H1961"
+            }
+          ],
+          "text": "הָיְתָ֥ה"
+        },
+        {
+          "at": "163..177",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "formlessness",
+              "lemma": "תֹּ֫הוּ",
+              "morph": "HNcmsa",
+              "strongs": "H8414"
+            }
+          ],
+          "text": "תֹ֙הוּ֙"
+        },
+        {
+          "at": "178..194",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "emptiness",
+              "lemma": "בֹּהוּ",
+              "morph": "HNcmsa",
+              "strongs": "H922"
+            }
+          ],
+          "text": "וָבֹ֔הוּ"
+        },
+        {
+          "at": "195..215",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "darkness",
+              "lemma": "חֹ֫שֶׁךְ",
+              "morph": "HNcmsa",
+              "strongs": "H2822"
+            }
+          ],
+          "text": "וְחֹ֖שֶׁךְ"
+        },
+        {
+          "at": "216..222",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[was] over",
+              "lemma": "עַל",
+              "morph": "HR",
+              "strongs": "H5921A"
+            }
+          ],
+          "text": "עַל"
+        },
+        {
+          "at": "224..238",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] surface of",
+              "lemma": "פָּנֶה",
+              "morph": "HNcmpc",
+              "strongs": "H6440J"
+            }
+          ],
+          "text": "פְּנֵ֣י"
+        },
+        {
+          "at": "239..253",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] deep",
+              "lemma": "תְּהוֹם",
+              "morph": "HNcfsa",
+              "strongs": "H8415"
+            }
+          ],
+          "text": "תְה֑וֹם"
+        },
+        {
+          "at": "254..270",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "[the] spirit of",
+              "lemma": "רוּחַ",
+              "morph": "HNcfsc",
+              "strongs": "H7307G"
+            }
+          ],
+          "text": "וְר֣וּחַ"
+        },
+        {
+          "at": "271..289",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "God",
+              "lemma": "אֱלֹהִים",
+              "morph": "HNcmpa",
+              "strongs": "H430G"
+            }
+          ],
+          "text": "אֱלֹהִ֔ים"
+        },
+        {
+          "at": "290..310",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[was] hovering",
+              "lemma": "רָחַף",
+              "morph": "HVprfsa",
+              "strongs": "H7363B"
+            }
+          ],
+          "text": "מְרַחֶ֖פֶת"
+        },
+        {
+          "at": "311..317",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "over",
+              "lemma": "עַל",
+              "morph": "HR",
+              "strongs": "H5921A"
+            }
+          ],
+          "text": "עַל"
+        },
+        {
+          "at": "319..333",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] surface of",
+              "lemma": "פָּנֶה",
+              "morph": "HNcmpc",
+              "strongs": "H6440J"
+            }
+          ],
+          "text": "פְּנֵ֥י"
+        },
+        {
+          "at": "334..352",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "waters",
+              "lemma": "מַי",
+              "morph": "HNcmpa",
+              "strongs": "H4325G"
+            }
+          ],
+          "text": "הַמָּֽיִם"
+        },
+        {
+          "at": "355..449",
+          "kind": "verse",
+          "last": 3,
+          "text": "וַיֹּ֥אמֶר אֱלֹהִ֖ים יְהִ֣י א֑וֹר וַֽיְהִי־אֽוֹר׃",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 3
+          }
+        },
+        {
+          "at": "355..375",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he said",
+              "lemma": "אָמַר",
+              "morph": "HVqw3ms",
+              "strongs": "H559"
+            }
+          ],
+          "text": "וַיֹּ֥אמֶר"
+        },
+        {
+          "at": "376..394",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "God",
+              "lemma": "אֱלֹהִים",
+              "morph": "HNcmpa",
+              "strongs": "H430G"
+            }
+          ],
+          "text": "אֱלֹהִ֖ים"
+        },
+        {
+          "at": "395..407",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "let it be",
+              "lemma": "הָיָה",
+              "morph": "HVqj3ms",
+              "strongs": "H1961"
+            }
+          ],
+          "text": "יְהִ֣י"
+        },
+        {
+          "at": "408..418",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "light",
+              "lemma": "אוֹר",
+              "morph": "HNcfsa",
+              "strongs": "H216"
+            }
+          ],
+          "text": "א֑וֹר"
+        },
+        {
+          "at": "419..435",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "there was",
+              "lemma": "הָיָה",
+              "morph": "HVqw3ms",
+              "strongs": "H1961"
+            }
+          ],
+          "text": "וַֽיְהִי"
+        },
+        {
+          "at": "437..447",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "light",
+              "lemma": "אוֹר",
+              "morph": "HNcfsa",
+              "strongs": "H216"
+            }
+          ],
+          "text": "אֽוֹר"
+        },
+        {
+          "at": "450..641",
+          "kind": "verse",
+          "last": 4,
+          "text": "וַיַּ֧רְא אֱלֹהִ֛ים אֶת־הָא֖וֹר כִּי־ט֑וֹב וַיַּבְדֵּ֣ל אֱלֹהִ֔ים בֵּ֥ין הָא֖וֹר וּבֵ֥ין הַחֹֽשֶׁךְ׃",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 4
+          }
+        },
+        {
+          "at": "450..468",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he saw",
+              "lemma": "רָאָה",
+              "morph": "HVqw3ms",
+              "strongs": "H7200G"
+            }
+          ],
+          "text": "וַיַּ֧רְא"
+        },
+        {
+          "at": "469..487",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "God",
+              "lemma": "אֱלֹהִים",
+              "morph": "HNcmpa",
+              "strongs": "H430G"
+            }
+          ],
+          "text": "אֱלֹהִ֛ים"
+        },
+        {
+          "at": "488..494",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<obj.>",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "strongs": "H853"
+            }
+          ],
+          "text": "אֶת"
+        },
+        {
+          "at": "496..510",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "light",
+              "lemma": "אוֹר",
+              "morph": "HNcfsa",
+              "strongs": "H216"
+            }
+          ],
+          "text": "הָא֖וֹר"
+        },
+        {
+          "at": "511..519",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "that",
+              "lemma": "כִּי",
+              "morph": "HTc",
+              "strongs": "H3588A"
+            }
+          ],
+          "text": "כִּי"
+        },
+        {
+          "at": "521..531",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[it was] good",
+              "lemma": "טוֹב",
+              "morph": "HVqp3ms",
+              "strongs": "H2895"
+            }
+          ],
+          "text": "ט֑וֹב"
+        },
+        {
+          "at": "532..556",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he separated",
+              "lemma": "בָּדַל",
+              "morph": "HVhw3ms",
+              "strongs": "H914"
+            }
+          ],
+          "text": "וַיַּבְדֵּ֣ל"
+        },
+        {
+          "at": "557..575",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "God",
+              "lemma": "אֱלֹהִים",
+              "morph": "HNcmpa",
+              "strongs": "H430G"
+            }
+          ],
+          "text": "אֱלֹהִ֔ים"
+        },
+        {
+          "at": "576..588",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "between",
+              "lemma": "בַּ֫יִן",
+              "morph": "HAcmsc",
+              "strongs": "H996G"
+            }
+          ],
+          "text": "בֵּ֥ין"
+        },
+        {
+          "at": "589..603",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "light",
+              "lemma": "אוֹר",
+              "morph": "HNcfsa",
+              "strongs": "H216"
+            }
+          ],
+          "text": "הָא֖וֹר"
+        },
+        {
+          "at": "604..618",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "between",
+              "lemma": "בַּ֫יִן",
+              "morph": "HAcmsc",
+              "strongs": "H996G"
+            }
+          ],
+          "text": "וּבֵ֥ין"
+        },
+        {
+          "at": "619..639",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "darkness",
+              "lemma": "חֹ֫שֶׁךְ",
+              "morph": "HNcmsa",
+              "strongs": "H2822"
+            }
+          ],
+          "text": "הַחֹֽשֶׁךְ"
+        },
+        {
+          "at": "642..858",
+          "kind": "verse",
+          "last": 5,
+          "text": "וַיִּקְרָ֨א אֱלֹהִ֤ים ׀ לָאוֹר֙ י֔וֹם וְלַחֹ֖שֶׁךְ קָ֣רָא לָ֑יְלָה וַֽיְהִי־עֶ֥רֶב וַֽיְהִי־בֹ֖קֶר י֥וֹם אֶחָֽד׃ פ",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 5
+          }
+        },
+        {
+          "at": "642..664",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he called",
+              "lemma": "קָרָא",
+              "morph": "HVqw3ms",
+              "strongs": "H7121H"
+            }
+          ],
+          "text": "וַיִּקְרָ֨א"
+        },
+        {
+          "at": "665..683",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "God",
+              "lemma": "אֱלֹהִים",
+              "morph": "HNcmpa",
+              "strongs": "H430G"
+            }
+          ],
+          "text": "אֱלֹהִ֤ים"
+        },
+        {
+          "at": "687..701",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<to> the",
+              "lemma": "ל",
+              "morph": "HRd",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "light",
+              "lemma": "אוֹר",
+              "morph": "HNcfsa",
+              "strongs": "H216"
+            }
+          ],
+          "text": "לָאוֹר֙"
+        },
+        {
+          "at": "702..712",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "day",
+              "lemma": "יוֹם",
+              "morph": "HNcmsa",
+              "strongs": "H3117G"
+            }
+          ],
+          "text": "י֔וֹם"
+        },
+        {
+          "at": "713..737",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "<to> the",
+              "lemma": "ל",
+              "morph": "HRd",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "darkness",
+              "lemma": "חֹ֫שֶׁךְ",
+              "morph": "HNcmsa",
+              "strongs": "H2822"
+            }
+          ],
+          "text": "וְלַחֹ֖שֶׁךְ"
+        },
+        {
+          "at": "738..750",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "he called",
+              "lemma": "קָרָא",
+              "morph": "HVqp3ms",
+              "strongs": "H7121H"
+            }
+          ],
+          "text": "קָ֣רָא"
+        },
+        {
+          "at": "751..767",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "night",
+              "lemma": "לַ֫יְלָה",
+              "morph": "HNcmsa",
+              "strongs": "H3915"
+            }
+          ],
+          "text": "לָ֑יְלָה"
+        },
+        {
+          "at": "768..784",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "there was",
+              "lemma": "הָיָה",
+              "morph": "HVqw3ms",
+              "strongs": "H1961"
+            }
+          ],
+          "text": "וַֽיְהִי"
+        },
+        {
+          "at": "786..798",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "evening",
+              "lemma": "עֶ֫רֶב",
+              "morph": "HNcmsa",
+              "strongs": "H6153"
+            }
+          ],
+          "text": "עֶ֥רֶב"
+        },
+        {
+          "at": "799..815",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "there was",
+              "lemma": "הָיָה",
+              "morph": "HVqw3ms",
+              "strongs": "H1961"
+            }
+          ],
+          "text": "וַֽיְהִי"
+        },
+        {
+          "at": "817..829",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "morning",
+              "lemma": "בֹּ֫קֶר",
+              "morph": "HNcmsa",
+              "strongs": "H1242"
+            }
+          ],
+          "text": "בֹ֖קֶר"
+        },
+        {
+          "at": "830..840",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "day",
+              "lemma": "יוֹם",
+              "morph": "HNcmsa",
+              "strongs": "H3117G"
+            }
+          ],
+          "text": "י֥וֹם"
+        },
+        {
+          "at": "841..853",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "one",
+              "lemma": "אֶחָד",
+              "morph": "HAcfsa",
+              "strongs": "H259"
+            }
+          ],
+          "text": "אֶחָֽד"
+        },
+        {
+          "at": "859..1130",
+          "chapter": 4,
+          "kind": "chapter",
+          "text": "וַיֹּ֥אמֶר קַ֖יִן אֶל־הֶ֣בֶל אָחִ֑יו נֵלְכָה הַשָּׂדֶה וַֽיְהִי֙ בִּהְיוֹתָ֣ם בַּשָּׂדֶ֔ה וַיָּ֥קָם קַ֛יִן אֶל־הֶ֥בֶל אָחִ֖יו וַיַּהַרְגֵֽהוּ׃"
+        },
+        {
+          "at": "859..1130",
+          "kind": "para",
+          "style": "prose",
+          "text": "וַיֹּ֥אמֶר קַ֖יִן אֶל־הֶ֣בֶל אָחִ֑יו נֵלְכָה הַשָּׂדֶה וַֽיְהִי֙ בִּהְיוֹתָ֣ם בַּשָּׂדֶ֔ה וַיָּ֥קָם קַ֛יִן אֶל־הֶ֥בֶל אָחִ֖יו וַיַּהַרְגֵֽהוּ׃"
+        },
+        {
+          "at": "859..1130",
+          "kind": "verse",
+          "last": 8,
+          "text": "וַיֹּ֥אמֶר קַ֖יִן אֶל־הֶ֣בֶל אָחִ֑יו נֵלְכָה הַשָּׂדֶה וַֽיְהִי֙ בִּהְיוֹתָ֣ם בַּשָּׂדֶ֔ה וַיָּ֥קָם קַ֛יִן אֶל־הֶ֥בֶל אָחִ֖יו וַיַּהַרְגֵֽהוּ׃",
+          "verse": {
+            "book": "GEN",
+            "chapter": 4,
+            "verse": 8
+          }
+        },
+        {
+          "at": "859..879",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he said",
+              "lemma": "אָמַר",
+              "morph": "HVqw3ms",
+              "strongs": "H559"
+            }
+          ],
+          "text": "וַיֹּ֥אמֶר"
+        },
+        {
+          "at": "880..892",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Cain",
+              "lemma": "קַ֫יִן",
+              "morph": "HNpm",
+              "strongs": "H7014B"
+            }
+          ],
+          "text": "קַ֖יִן"
+        },
+        {
+          "at": "893..899",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to",
+              "lemma": "אֶל",
+              "morph": "HR",
+              "strongs": "H413"
+            }
+          ],
+          "text": "אֶל"
+        },
+        {
+          "at": "901..913",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Abel",
+              "lemma": "הֶ֫בֶל",
+              "morph": "HNpm",
+              "strongs": "H1893"
+            }
+          ],
+          "text": "הֶ֣בֶל"
+        },
+        {
+          "at": "914..928",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "brother",
+              "lemma": "אָח",
+              "morph": "HNcmsc",
+              "strongs": "H251G"
+            },
+            {
+              "gloss": "his",
+              "morph": "HSp3ms",
+              "strongs": "H9023"
+            }
+          ],
+          "text": "אָחִ֑יו"
+        },
+        {
+          "at": "929..943",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "let us go",
+              "lemma": "הָלַךְ",
+              "morph": "HVqi1cp",
+              "strongs": "H1980G"
+            }
+          ],
+          "text": "נֵלְכָה"
+        },
+        {
+          "at": "943..943",
+          "kind": "note_ref",
+          "note": "note.1",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "944..962",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[into] the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "field",
+              "lemma": "שָׂדֶה",
+              "morph": "HNcbsa",
+              "strongs": "H7704G"
+            }
+          ],
+          "text": "הַשָּׂדֶה"
+        },
+        {
+          "at": "963..981",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "it was",
+              "lemma": "הָיָה",
+              "morph": "HVqw3ms",
+              "strongs": "H1961"
+            }
+          ],
+          "text": "וַֽיְהִי֙"
+        },
+        {
+          "at": "982..1006",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "when",
+              "lemma": "ב",
+              "morph": "HR",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "were",
+              "lemma": "הָיָה",
+              "morph": "HVqcc",
+              "strongs": "H1961"
+            },
+            {
+              "gloss": "they",
+              "morph": "HSp3mp",
+              "strongs": "H9048"
+            }
+          ],
+          "text": "בִּהְיוֹתָ֣ם"
+        },
+        {
+          "at": "1007..1029",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "in the",
+              "lemma": "ב",
+              "morph": "HRd",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "field",
+              "lemma": "שָׂדֶה",
+              "morph": "HNcmsa",
+              "strongs": "H7704G"
+            }
+          ],
+          "text": "בַּשָּׂדֶ֔ה"
+        },
+        {
+          "at": "1030..1048",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he rose up",
+              "lemma": "קוּם",
+              "morph": "HVqw3ms",
+              "strongs": "H6965B"
+            }
+          ],
+          "text": "וַיָּ֥קָם"
+        },
+        {
+          "at": "1049..1061",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Cain",
+              "lemma": "קַ֫יִן",
+              "morph": "HNpm",
+              "strongs": "H7014B"
+            }
+          ],
+          "text": "קַ֛יִן"
+        },
+        {
+          "at": "1062..1068",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "against",
+              "lemma": "אֶל",
+              "morph": "HR",
+              "strongs": "H413"
+            }
+          ],
+          "text": "אֶל"
+        },
+        {
+          "at": "1070..1082",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Abel",
+              "lemma": "הֶ֫בֶל",
+              "morph": "HNpm",
+              "strongs": "H1893"
+            }
+          ],
+          "text": "הֶ֥בֶל"
+        },
+        {
+          "at": "1083..1097",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "brother",
+              "lemma": "אָח",
+              "morph": "HNcmsc",
+              "strongs": "H251G"
+            },
+            {
+              "gloss": "his",
+              "morph": "HSp3ms",
+              "strongs": "H9023"
+            }
+          ],
+          "text": "אָחִ֖יו"
+        },
+        {
+          "at": "1098..1128",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he killed",
+              "lemma": "הָרַג",
+              "morph": "HVqw3ms",
+              "strongs": "H2026"
+            },
+            {
+              "gloss": "him",
+              "morph": "HSp3ms",
+              "strongs": "H9033"
+            }
+          ],
+          "text": "וַיַּהַרְגֵֽהוּ"
+        },
+        {
+          "at": "1131..1483",
+          "chapter": 8,
+          "kind": "chapter",
+          "text": "כָּל־הַחַיָּ֨ה אֲשֶֽׁר־אִתְּךָ֜ מִכָּל־בָּשָׂ֗ר בָּע֧וֹף וּבַבְּהֵמָ֛ה וּבְכָל־הָרֶ֛מֶשׂ הָרֹמֵ֥שׂ עַל־הָאָ֖רֶץ הַיְצֵ֣א אִתָּ֑ךְ וְשָֽׁרְצ֣וּ בָאָ֔רֶץ וּפָר֥וּ וְרָב֖וּ עַל־הָאָֽרֶץ׃"
+        },
+        {
+          "at": "1131..1483",
+          "kind": "para",
+          "style": "prose",
+          "text": "כָּל־הַחַיָּ֨ה אֲשֶֽׁר־אִתְּךָ֜ מִכָּל־בָּשָׂ֗ר בָּע֧וֹף וּבַבְּהֵמָ֛ה וּבְכָל־הָרֶ֛מֶשׂ הָרֹמֵ֥שׂ עַל־הָאָ֖רֶץ הַיְצֵ֣א אִתָּ֑ךְ וְשָֽׁרְצ֣וּ בָאָ֔רֶץ וּפָר֥וּ וְרָב֖וּ עַל־הָאָֽרֶץ׃"
+        },
+        {
+          "at": "1131..1483",
+          "kind": "verse",
+          "last": 17,
+          "text": "כָּל־הַחַיָּ֨ה אֲשֶֽׁר־אִתְּךָ֜ מִכָּל־בָּשָׂ֗ר בָּע֧וֹף וּבַבְּהֵמָ֛ה וּבְכָל־הָרֶ֛מֶשׂ הָרֹמֵ֥שׂ עַל־הָאָ֖רֶץ הַיְצֵ֣א אִתָּ֑ךְ וְשָֽׁרְצ֣וּ בָאָ֔רֶץ וּפָר֥וּ וְרָב֖וּ עַל־הָאָֽרֶץ׃",
+          "verse": {
+            "book": "GEN",
+            "chapter": 8,
+            "verse": 17
+          }
+        },
+        {
+          "at": "1131..1139",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "every",
+              "lemma": "כֹּל",
+              "morph": "HNcmsc",
+              "strongs": "H3605"
+            }
+          ],
+          "text": "כָּל"
+        },
+        {
+          "at": "1141..1159",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "animal",
+              "lemma": "חַיָּה",
+              "morph": "HNcfsa",
+              "strongs": "H2416C"
+            }
+          ],
+          "text": "הַחַיָּ֨ה"
+        },
+        {
+          "at": "1160..1174",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "which",
+              "lemma": "אֲשֶׁר",
+              "morph": "HTr",
+              "strongs": "H834A"
+            }
+          ],
+          "text": "אֲשֶֽׁר"
+        },
+        {
+          "at": "1176..1192",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[is] with",
+              "lemma": "אֵת",
+              "morph": "HRd",
+              "strongs": "H854"
+            },
+            {
+              "gloss": "you",
+              "morph": "HSp2ms",
+              "strongs": "H9031"
+            }
+          ],
+          "text": "אִתְּךָ֜"
+        },
+        {
+          "at": "1193..1205",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "some of",
+              "lemma": "מ",
+              "morph": "HR",
+              "strongs": "H9006"
+            },
+            {
+              "gloss": "all",
+              "lemma": "כֹּל",
+              "morph": "HNcmsc",
+              "strongs": "H3605"
+            }
+          ],
+          "text": "מִכָּל"
+        },
+        {
+          "at": "1207..1223",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "flesh",
+              "lemma": "בָּשָׂר",
+              "morph": "HNcmsa",
+              "strongs": "H1320"
+            }
+          ],
+          "text": "בָּשָׂ֗ר"
+        },
+        {
+          "at": "1224..1240",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "among the",
+              "lemma": "ב",
+              "morph": "HRd",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "bird[s]",
+              "lemma": "עוֹף",
+              "morph": "HNcmsa",
+              "strongs": "H5775"
+            }
+          ],
+          "text": "בָּע֧וֹף"
+        },
+        {
+          "at": "1241..1267",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "among the",
+              "lemma": "ב",
+              "morph": "HRd",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "livestock",
+              "lemma": "בְּהֵמָה",
+              "morph": "HNcfsa",
+              "strongs": "H929"
+            }
+          ],
+          "text": "וּבַבְּהֵמָ֛ה"
+        },
+        {
+          "at": "1268..1282",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "among",
+              "lemma": "ב",
+              "morph": "HR",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "every",
+              "lemma": "כֹּל",
+              "morph": "HNcmsc",
+              "strongs": "H3605"
+            }
+          ],
+          "text": "וּבְכָל"
+        },
+        {
+          "at": "1284..1302",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "creeping thing",
+              "lemma": "רֶ֫מֶשׂ",
+              "morph": "HNcmsa",
+              "strongs": "H7431"
+            }
+          ],
+          "text": "הָרֶ֛מֶשׂ"
+        },
+        {
+          "at": "1303..1321",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "which",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "creeps",
+              "lemma": "רָמַשׂ",
+              "morph": "HVqrmsa",
+              "strongs": "H7430"
+            }
+          ],
+          "text": "הָרֹמֵ֥שׂ"
+        },
+        {
+          "at": "1322..1328",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "on",
+              "lemma": "עַל",
+              "morph": "HR",
+              "strongs": "H5921A"
+            }
+          ],
+          "text": "עַל"
+        },
+        {
+          "at": "1330..1346",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "earth",
+              "lemma": "אֶ֫רֶץ",
+              "morph": "HNcfsa",
+              "strongs": "H776G"
+            }
+          ],
+          "text": "הָאָ֖רֶץ"
+        },
+        {
+          "at": "1347..1363",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "bring out",
+              "lemma": "יָצָא",
+              "morph": "HVhv2ms",
+              "strongs": "H3318H"
+            }
+          ],
+          "text": "הַיְצֵ֣א"
+        },
+        {
+          "at": "1363..1363",
+          "kind": "note_ref",
+          "note": "note.2",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "1364..1380",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "with",
+              "lemma": "אֵת",
+              "morph": "HRd",
+              "strongs": "H854"
+            },
+            {
+              "gloss": "you",
+              "morph": "HSp2ms",
+              "strongs": "H9031"
+            }
+          ],
+          "text": "אִתָּ֑ךְ"
+        },
+        {
+          "at": "1381..1405",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "they will swarm",
+              "lemma": "שָׁרַץ",
+              "morph": "HVqq3cp",
+              "strongs": "H8317"
+            }
+          ],
+          "text": "וְשָֽׁרְצ֣וּ"
+        },
+        {
+          "at": "1406..1422",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "on the",
+              "lemma": "ב",
+              "morph": "HRd",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "earth",
+              "lemma": "אֶ֫רֶץ",
+              "morph": "HNcfsa",
+              "strongs": "H776G"
+            }
+          ],
+          "text": "בָאָ֔רֶץ"
+        },
+        {
+          "at": "1423..1439",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "they will be fruitful",
+              "lemma": "פָּרָה",
+              "morph": "HVqq3cp",
+              "strongs": "H6509"
+            }
+          ],
+          "text": "וּפָר֥וּ"
+        },
+        {
+          "at": "1440..1456",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "they will multiply",
+              "lemma": "רָבָה",
+              "morph": "HVqq3cp",
+              "strongs": "H7235A"
+            }
+          ],
+          "text": "וְרָב֖וּ"
+        },
+        {
+          "at": "1457..1463",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "on",
+              "lemma": "עַל",
+              "morph": "HR",
+              "strongs": "H5921A"
+            }
+          ],
+          "text": "עַל"
+        },
+        {
+          "at": "1465..1481",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "earth",
+              "lemma": "אֶ֫רֶץ",
+              "morph": "HNcfsa",
+              "strongs": "H776G"
+            }
+          ],
+          "text": "הָאָֽרֶץ"
+        },
+        {
+          "at": "1484..1625",
+          "chapter": 9,
+          "kind": "chapter",
+          "text": "וַיֵּ֥שְׁתְּ מִן־הַיַּ֖יִן וַיִּשְׁכָּ֑ר וַיִּתְגַּ֖ל בְּת֥וֹךְ אָהֳלֽוֹ׃"
+        },
+        {
+          "at": "1484..1625",
+          "kind": "para",
+          "style": "prose",
+          "text": "וַיֵּ֥שְׁתְּ מִן־הַיַּ֖יִן וַיִּשְׁכָּ֑ר וַיִּתְגַּ֖ל בְּת֥וֹךְ אָהֳלֽוֹ׃"
+        },
+        {
+          "at": "1484..1625",
+          "kind": "verse",
+          "last": 21,
+          "text": "וַיֵּ֥שְׁתְּ מִן־הַיַּ֖יִן וַיִּשְׁכָּ֑ר וַיִּתְגַּ֖ל בְּת֥וֹךְ אָהֳלֽוֹ׃",
+          "verse": {
+            "book": "GEN",
+            "chapter": 9,
+            "verse": 21
+          }
+        },
+        {
+          "at": "1484..1508",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he drank",
+              "lemma": "שָׁתָה",
+              "morph": "HVqw3ms",
+              "strongs": "H8354"
+            }
+          ],
+          "text": "וַיֵּ֥שְׁתְּ"
+        },
+        {
+          "at": "1509..1515",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "some of",
+              "lemma": "מִן־",
+              "morph": "HR",
+              "strongs": "H4480A"
+            }
+          ],
+          "text": "מִן"
+        },
+        {
+          "at": "1517..1535",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "wine",
+              "lemma": "יַ֫יִן",
+              "morph": "HNcmsa",
+              "strongs": "H3196"
+            }
+          ],
+          "text": "הַיַּ֖יִן"
+        },
+        {
+          "at": "1536..1562",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he became drunk",
+              "lemma": "שָׁכַר",
+              "morph": "HVqw3ms",
+              "strongs": "H7937"
+            }
+          ],
+          "text": "וַיִּשְׁכָּ֑ר"
+        },
+        {
+          "at": "1563..1587",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he uncovered himself",
+              "lemma": "גָּלָה",
+              "morph": "HVtw3ms",
+              "strongs": "H1540I"
+            }
+          ],
+          "text": "וַיִּתְגַּ֖ל"
+        },
+        {
+          "at": "1588..1606",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "in",
+              "lemma": "ב",
+              "morph": "HR",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "[the] middle of",
+              "lemma": "תָּ֫וֶךְ",
+              "morph": "HNcmsc",
+              "strongs": "H8432"
+            }
+          ],
+          "text": "בְּת֥וֹךְ"
+        },
+        {
+          "at": "1607..1623",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "tent",
+              "lemma": "אֹ֫הֶל",
+              "morph": "HNcmsc",
+              "strongs": "H168G"
+            },
+            {
+              "gloss": "his",
+              "morph": "HSp3ms",
+              "strongs": "H9023"
+            }
+          ],
+          "text": "אָהֳלֽוֹ"
+        },
+        {
+          "at": "1625..1625",
+          "kind": "note_ref",
+          "note": "note.3",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "1626..1738",
+          "chapter": 30,
+          "kind": "chapter",
+          "text": "וַתֹּ֥אמֶר לֵאָ֖ה בָּ֣א גָ֑ד וַתִּקְרָ֥א אֶת־שְׁמ֖וֹ גָּֽד׃"
+        },
+        {
+          "at": "1626..1738",
+          "kind": "para",
+          "style": "prose",
+          "text": "וַתֹּ֥אמֶר לֵאָ֖ה בָּ֣א גָ֑ד וַתִּקְרָ֥א אֶת־שְׁמ֖וֹ גָּֽד׃"
+        },
+        {
+          "at": "1626..1738",
+          "kind": "verse",
+          "last": 11,
+          "text": "וַתֹּ֥אמֶר לֵאָ֖ה בָּ֣א גָ֑ד וַתִּקְרָ֥א אֶת־שְׁמ֖וֹ גָּֽד׃",
+          "verse": {
+            "book": "GEN",
+            "chapter": 30,
+            "verse": 11
+          }
+        },
+        {
+          "at": "1626..1646",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "she said",
+              "lemma": "אָמַר",
+              "morph": "HVqw3fs",
+              "strongs": "H559"
+            }
+          ],
+          "text": "וַתֹּ֥אמֶר"
+        },
+        {
+          "at": "1647..1659",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Leah",
+              "lemma": "לֵאָה",
+              "morph": "HNpf",
+              "strongs": "H3812"
+            }
+          ],
+          "text": "לֵאָ֖ה"
+        },
+        {
+          "at": "1660..1670",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "it has come",
+              "lemma": "בּוֹא",
+              "morph": "HVqp3ms",
+              "strongs": "H935G"
+            }
+          ],
+          "text": "בָּ֣א"
+        },
+        {
+          "at": "1671..1679",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "good fortune",
+              "lemma": "גָּד",
+              "morph": "HNcmsa",
+              "strongs": "H1409"
+            }
+          ],
+          "text": "גָ֑ד"
+        },
+        {
+          "at": "1679..1679",
+          "kind": "note_ref",
+          "note": "note.4",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "1680..1702",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "she called",
+              "lemma": "קָרָא",
+              "morph": "HVqw3fs",
+              "strongs": "H7121H"
+            }
+          ],
+          "text": "וַתִּקְרָ֥א"
+        },
+        {
+          "at": "1703..1709",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<obj.>",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "strongs": "H853"
+            }
+          ],
+          "text": "אֶת"
+        },
+        {
+          "at": "1711..1725",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "name",
+              "lemma": "שֵׁם",
+              "morph": "HNcmsc",
+              "strongs": "H8034"
+            },
+            {
+              "gloss": "his",
+              "morph": "HSp3ms",
+              "strongs": "H9023"
+            }
+          ],
+          "text": "שְׁמ֖וֹ"
+        },
+        {
+          "at": "1726..1736",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Gad",
+              "lemma": "גָּד",
+              "morph": "HNpm",
+              "strongs": "H1410G"
+            }
+          ],
+          "text": "גָּֽד"
+        },
+        {
+          "at": "1739..2461",
+          "chapter": 32,
+          "kind": "chapter",
+          "text": "וַיַּשְׁכֵּ֨ם לָבָ֜ן בַּבֹּ֗קֶר וַיְנַשֵּׁ֧ק לְבָנָ֛יו וְלִבְנוֹתָ֖יו וַיְבָ֣רֶךְ אֶתְהֶ֑ם וַיֵּ֛לֶךְ וַיָּ֥שָׁב לָבָ֖ן לִמְקֹמֽוֹ׃ וְיַעֲקֹ֖ב הָלַ֣ךְ לְדַרְכּ֑וֹ וַיִּפְגְּעוּ־ב֖וֹ מַלְאֲכֵ֥י אֱלֹהִֽים׃ עַל־כֵּ֡ן לֹֽא־יֹאכְל֨וּ בְנֵֽי־יִשְׂרָאֵ֜ל אֶת־גִּ֣יד הַנָּשֶׁ֗ה אֲשֶׁר֙ עַל־כַּ֣ף הַיָּרֵ֔ךְ עַ֖ד הַיּ֣וֹם הַזֶּ֑ה כִּ֤י נָגַע֙ בְּכַף־יֶ֣רֶךְ יַעֲקֹ֔ב בְּגִ֖יד הַנָּשֶֽׁה׃"
+        },
+        {
+          "at": "1739..2461",
+          "kind": "para",
+          "style": "prose",
+          "text": "וַיַּשְׁכֵּ֨ם לָבָ֜ן בַּבֹּ֗קֶר וַיְנַשֵּׁ֧ק לְבָנָ֛יו וְלִבְנוֹתָ֖יו וַיְבָ֣רֶךְ אֶתְהֶ֑ם וַיֵּ֛לֶךְ וַיָּ֥שָׁב לָבָ֖ן לִמְקֹמֽוֹ׃ וְיַעֲקֹ֖ב הָלַ֣ךְ לְדַרְכּ֑וֹ וַיִּפְגְּעוּ־ב֖וֹ מַלְאֲכֵ֥י אֱלֹהִֽים׃ עַל־כֵּ֡ן לֹֽא־יֹאכְל֨וּ בְנֵֽי־יִשְׂרָאֵ֜ל אֶת־גִּ֣יד הַנָּשֶׁ֗ה אֲשֶׁר֙ עַל־כַּ֣ף הַיָּרֵ֔ךְ עַ֖ד הַיּ֣וֹם הַזֶּ֑ה כִּ֤י נָגַע֙ בְּכַף־יֶ֣רֶךְ יַעֲקֹ֔ב בְּגִ֖יד הַנָּשֶֽׁה׃"
+        },
+        {
+          "at": "1739..1990",
+          "kind": "verse",
+          "last": 1,
+          "text": "וַיַּשְׁכֵּ֨ם לָבָ֜ן בַּבֹּ֗קֶר וַיְנַשֵּׁ֧ק לְבָנָ֛יו וְלִבְנוֹתָ֖יו וַיְבָ֣רֶךְ אֶתְהֶ֑ם וַיֵּ֛לֶךְ וַיָּ֥שָׁב לָבָ֖ן לִמְקֹמֽוֹ׃",
+          "verse": {
+            "book": "GEN",
+            "chapter": 32,
+            "verse": 1
+          }
+        },
+        {
+          "at": "1739..1765",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he rose early",
+              "lemma": "שָׁכַם",
+              "morph": "HVhw3ms",
+              "strongs": "H7925"
+            }
+          ],
+          "text": "וַיַּשְׁכֵּ֨ם"
+        },
+        {
+          "at": "1766..1778",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Laban",
+              "lemma": "לָבָן",
+              "morph": "HNpm",
+              "strongs": "H3837A"
+            }
+          ],
+          "text": "לָבָ֜ן"
+        },
+        {
+          "at": "1779..1799",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "in the",
+              "lemma": "ב",
+              "morph": "HRd",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "morning",
+              "lemma": "בֹּ֫קֶר",
+              "morph": "HNcmsa",
+              "strongs": "H1242"
+            }
+          ],
+          "text": "בַּבֹּ֗קֶר"
+        },
+        {
+          "at": "1800..1824",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he kissed",
+              "lemma": "נָשַׁק",
+              "morph": "HVpw3ms",
+              "strongs": "H5401A"
+            }
+          ],
+          "text": "וַיְנַשֵּׁ֧ק"
+        },
+        {
+          "at": "1825..1843",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<to>",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "sons",
+              "lemma": "בֵּן",
+              "morph": "HNcmpc",
+              "strongs": "H1121G"
+            },
+            {
+              "gloss": "his",
+              "morph": "HSp3ms",
+              "strongs": "H9023"
+            }
+          ],
+          "text": "לְבָנָ֛יו"
+        },
+        {
+          "at": "1844..1872",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "<to>",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "daughters",
+              "lemma": "בַּת",
+              "morph": "HNcfpc",
+              "strongs": "H1323G"
+            },
+            {
+              "gloss": "his",
+              "morph": "HSp3ms",
+              "strongs": "H9023"
+            }
+          ],
+          "text": "וְלִבְנוֹתָ֖יו"
+        },
+        {
+          "at": "1873..1895",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he blessed",
+              "lemma": "בָּרַךְ",
+              "morph": "HVpw3ms",
+              "strongs": "H1288"
+            }
+          ],
+          "text": "וַיְבָ֣רֶךְ"
+        },
+        {
+          "at": "1896..1912",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<obj.>",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "strongs": "H853"
+            },
+            {
+              "gloss": "them",
+              "morph": "HSp3mp",
+              "strongs": "H9038"
+            }
+          ],
+          "text": "אֶתְהֶ֑ם"
+        },
+        {
+          "at": "1913..1933",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he went",
+              "lemma": "הָלַךְ",
+              "morph": "HVqw3ms",
+              "strongs": "H1980G"
+            }
+          ],
+          "text": "וַיֵּ֛לֶךְ"
+        },
+        {
+          "at": "1934..1954",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he returned",
+              "lemma": "שׁוּב",
+              "morph": "HVqw3ms",
+              "strongs": "H7725G"
+            }
+          ],
+          "text": "וַיָּ֥שָׁב"
+        },
+        {
+          "at": "1955..1967",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Laban",
+              "lemma": "לָבָן",
+              "morph": "HNpm",
+              "strongs": "H3837A"
+            }
+          ],
+          "text": "לָבָ֖ן"
+        },
+        {
+          "at": "1968..1988",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "own place",
+              "lemma": "מָקוֹם",
+              "morph": "HNcmsc",
+              "strongs": "H4725"
+            },
+            {
+              "gloss": "his",
+              "morph": "HSp3ms",
+              "strongs": "H9023"
+            }
+          ],
+          "text": "לִמְקֹמֽוֹ"
+        },
+        {
+          "at": "1991..2128",
+          "kind": "verse",
+          "last": 2,
+          "text": "וְיַעֲקֹ֖ב הָלַ֣ךְ לְדַרְכּ֑וֹ וַיִּפְגְּעוּ־ב֖וֹ מַלְאֲכֵ֥י אֱלֹהִֽים׃",
+          "verse": {
+            "book": "GEN",
+            "chapter": 32,
+            "verse": 2
+          }
+        },
+        {
+          "at": "1991..2011",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "Jacob",
+              "lemma": "יַעֲקֹב",
+              "morph": "HNpm",
+              "strongs": "H3290"
+            }
+          ],
+          "text": "וְיַעֲקֹ֖ב"
+        },
+        {
+          "at": "2012..2026",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "he went",
+              "lemma": "הָלַךְ",
+              "morph": "HVqp3ms",
+              "strongs": "H1980G"
+            }
+          ],
+          "text": "הָלַ֣ךְ"
+        },
+        {
+          "at": "2027..2049",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "way",
+              "lemma": "דֶּ֫רֶךְ",
+              "morph": "HNcbsc",
+              "strongs": "H1870L"
+            },
+            {
+              "gloss": "his",
+              "morph": "HSp3ms",
+              "strongs": "H9023"
+            }
+          ],
+          "text": "לְדַרְכּ֑וֹ"
+        },
+        {
+          "at": "2050..2076",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "they met",
+              "lemma": "פָּגַע",
+              "morph": "HVqw3mp",
+              "strongs": "H6293"
+            }
+          ],
+          "text": "וַיִּפְגְּעוּ"
+        },
+        {
+          "at": "2078..2086",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<in> <the>",
+              "lemma": "ב",
+              "morph": "HRd",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "him",
+              "morph": "HSp3ms",
+              "strongs": "H9033"
+            }
+          ],
+          "text": "ב֖וֹ"
+        },
+        {
+          "at": "2087..2107",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] angels of",
+              "lemma": "מַלְאָךְ",
+              "morph": "HNcmpc",
+              "strongs": "H4397H"
+            }
+          ],
+          "text": "מַלְאֲכֵ֥י"
+        },
+        {
+          "at": "2108..2126",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "God",
+              "lemma": "אֱלֹהִים",
+              "morph": "HNcmpa",
+              "strongs": "H430G"
+            }
+          ],
+          "text": "אֱלֹהִֽים"
+        },
+        {
+          "at": "2129..2461",
+          "kind": "verse",
+          "last": 33,
+          "text": "עַל־כֵּ֡ן לֹֽא־יֹאכְל֨וּ בְנֵֽי־יִשְׂרָאֵ֜ל אֶת־גִּ֣יד הַנָּשֶׁ֗ה אֲשֶׁר֙ עַל־כַּ֣ף הַיָּרֵ֔ךְ עַ֖ד הַיּ֣וֹם הַזֶּ֑ה כִּ֤י נָגַע֙ בְּכַף־יֶ֣רֶךְ יַעֲקֹ֔ב בְּגִ֖יד הַנָּשֶֽׁה׃",
+          "verse": {
+            "book": "GEN",
+            "chapter": 32,
+            "verse": 33
+          }
+        },
+        {
+          "at": "2129..2135",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "there-",
+              "lemma": "עַל",
+              "morph": "HR",
+              "strongs": "H5921A"
+            }
+          ],
+          "text": "עַל"
+        },
+        {
+          "at": "2137..2147",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "-fore",
+              "lemma": "כֵּן",
+              "morph": "HD",
+              "strongs": "H3651C"
+            }
+          ],
+          "text": "כֵּ֡ן"
+        },
+        {
+          "at": "2148..2156",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "not",
+              "lemma": "לֹא",
+              "morph": "HTn",
+              "strongs": "H3808"
+            }
+          ],
+          "text": "לֹֽא"
+        },
+        {
+          "at": "2158..2176",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "they eat",
+              "lemma": "אָכַל",
+              "morph": "HVqi3mp",
+              "strongs": "H398"
+            }
+          ],
+          "text": "יֹאכְל֨וּ"
+        },
+        {
+          "at": "2177..2189",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] people of",
+              "lemma": "בֵּן",
+              "morph": "HNcmpc",
+              "strongs": "H1121G"
+            }
+          ],
+          "text": "בְנֵֽי"
+        },
+        {
+          "at": "2191..2213",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Israel",
+              "lemma": "יִשְׂרָאֵל",
+              "morph": "HNpl",
+              "strongs": "H3478"
+            }
+          ],
+          "text": "יִשְׂרָאֵ֜ל"
+        },
+        {
+          "at": "2214..2220",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<obj.>",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "strongs": "H853"
+            }
+          ],
+          "text": "אֶת"
+        },
+        {
+          "at": "2222..2234",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] sinew of",
+              "lemma": "גִּיד",
+              "morph": "HNcmsc",
+              "strongs": "H1517"
+            }
+          ],
+          "text": "גִּ֣יד"
+        },
+        {
+          "at": "2235..2255",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "tendon",
+              "lemma": "נָשֶׁה",
+              "morph": "HNcmsa",
+              "strongs": "H5384"
+            }
+          ],
+          "text": "הַנָּשֶׁ֗ה"
+        },
+        {
+          "at": "2256..2270",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "which",
+              "lemma": "אֲשֶׁר",
+              "morph": "HTr",
+              "strongs": "H834A"
+            }
+          ],
+          "text": "אֲשֶׁר֙"
+        },
+        {
+          "at": "2271..2277",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[is] on",
+              "lemma": "עַל",
+              "morph": "HR",
+              "strongs": "H5921A"
+            }
+          ],
+          "text": "עַל"
+        },
+        {
+          "at": "2279..2289",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] socket of",
+              "lemma": "כַּף",
+              "morph": "HNcfsc",
+              "strongs": "H3709I"
+            }
+          ],
+          "text": "כַּ֣ף"
+        },
+        {
+          "at": "2290..2310",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "thigh",
+              "lemma": "יָרֵךְ",
+              "morph": "HNcfsa",
+              "strongs": "H3409"
+            }
+          ],
+          "text": "הַיָּרֵ֔ךְ"
+        },
+        {
+          "at": "2311..2319",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "until",
+              "lemma": "עַד",
+              "morph": "HR",
+              "strongs": "H5704"
+            }
+          ],
+          "text": "עַ֖ד"
+        },
+        {
+          "at": "2320..2336",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "day",
+              "lemma": "יוֹם",
+              "morph": "HNcmsa",
+              "strongs": "H3117L"
+            }
+          ],
+          "text": "הַיּ֣וֹם"
+        },
+        {
+          "at": "2337..2351",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "this",
+              "lemma": "זֶה",
+              "morph": "HTm",
+              "strongs": "H2088"
+            }
+          ],
+          "text": "הַזֶּ֑ה"
+        },
+        {
+          "at": "2352..2362",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "for",
+              "lemma": "כִּי",
+              "morph": "HTc",
+              "strongs": "H3588A"
+            }
+          ],
+          "text": "כִּ֤י"
+        },
+        {
+          "at": "2363..2375",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "he touched",
+              "lemma": "נָגַע",
+              "morph": "HVqp3ms",
+              "strongs": "H5060"
+            }
+          ],
+          "text": "נָגַע֙"
+        },
+        {
+          "at": "2376..2388",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<in>",
+              "lemma": "ב",
+              "morph": "HR",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "[the] socket of",
+              "lemma": "כַּף",
+              "morph": "HNcfsc",
+              "strongs": "H3709I"
+            }
+          ],
+          "text": "בְּכַף"
+        },
+        {
+          "at": "2390..2404",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] thigh of",
+              "lemma": "יָרֵךְ",
+              "morph": "HNcfsc",
+              "strongs": "H3409"
+            }
+          ],
+          "text": "יֶ֣רֶךְ"
+        },
+        {
+          "at": "2405..2421",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Jacob",
+              "lemma": "יַעֲקֹב",
+              "morph": "HNpm",
+              "strongs": "H3290"
+            }
+          ],
+          "text": "יַעֲקֹ֔ב"
+        },
+        {
+          "at": "2422..2438",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<in>",
+              "lemma": "ב",
+              "morph": "HR",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "[the] sinew of",
+              "lemma": "גִּיד",
+              "morph": "HNcmsc",
+              "strongs": "H1517"
+            }
+          ],
+          "text": "בְּגִ֖יד"
+        },
+        {
+          "at": "2439..2459",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "tendon",
+              "lemma": "נָשֶׁה",
+              "morph": "HNcmsa",
+              "strongs": "H5384"
+            }
+          ],
+          "text": "הַנָּשֶֽׁה"
+        }
+      ],
+      "text": "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃ וְהָאָ֗רֶץ הָיְתָ֥ה תֹ֙הוּ֙ וָבֹ֔הוּ וְחֹ֖שֶׁךְ עַל־פְּנֵ֣י תְה֑וֹם וְר֣וּחַ אֱלֹהִ֔ים מְרַחֶ֖פֶת עַל־פְּנֵ֥י הַמָּֽיִם׃ וַיֹּ֥אמֶר אֱלֹהִ֖ים יְהִ֣י א֑וֹר וַֽיְהִי־אֽוֹר׃ וַיַּ֧רְא אֱלֹהִ֛ים אֶת־הָא֖וֹר כִּי־ט֑וֹב וַיַּבְדֵּ֣ל אֱלֹהִ֔ים בֵּ֥ין הָא֖וֹר וּבֵ֥ין הַחֹֽשֶׁךְ׃ וַיִּקְרָ֨א אֱלֹהִ֤ים ׀ לָאוֹר֙ י֔וֹם וְלַחֹ֖שֶׁךְ קָ֣רָא לָ֑יְלָה וַֽיְהִי־עֶ֥רֶב וַֽיְהִי־בֹ֖קֶר י֥וֹם אֶחָֽד׃ פ\nוַיֹּ֥אמֶר קַ֖יִן אֶל־הֶ֣בֶל אָחִ֑יו נֵלְכָה הַשָּׂדֶה וַֽיְהִי֙ בִּהְיוֹתָ֣ם בַּשָּׂדֶ֔ה וַיָּ֥קָם קַ֛יִן אֶל־הֶ֥בֶל אָחִ֖יו וַיַּהַרְגֵֽהוּ׃\nכָּל־הַחַיָּ֨ה אֲשֶֽׁר־אִתְּךָ֜ מִכָּל־בָּשָׂ֗ר בָּע֧וֹף וּבַבְּהֵמָ֛ה וּבְכָל־הָרֶ֛מֶשׂ הָרֹמֵ֥שׂ עַל־הָאָ֖רֶץ הַיְצֵ֣א אִתָּ֑ךְ וְשָֽׁרְצ֣וּ בָאָ֔רֶץ וּפָר֥וּ וְרָב֖וּ עַל־הָאָֽרֶץ׃\nוַיֵּ֥שְׁתְּ מִן־הַיַּ֖יִן וַיִּשְׁכָּ֑ר וַיִּתְגַּ֖ל בְּת֥וֹךְ אָהֳלֽוֹ׃\nוַתֹּ֥אמֶר לֵאָ֖ה בָּ֣א גָ֑ד וַתִּקְרָ֥א אֶת־שְׁמ֖וֹ גָּֽד׃\nוַיַּשְׁכֵּ֨ם לָבָ֜ן בַּבֹּ֗קֶר וַיְנַשֵּׁ֧ק לְבָנָ֛יו וְלִבְנוֹתָ֖יו וַיְבָ֣רֶךְ אֶתְהֶ֑ם וַיֵּ֛לֶךְ וַיָּ֥שָׁב לָבָ֖ן לִמְקֹמֽוֹ׃ וְיַעֲקֹ֖ב הָלַ֣ךְ לְדַרְכּ֑וֹ וַיִּפְגְּעוּ־ב֖וֹ מַלְאֲכֵ֥י אֱלֹהִֽים׃ עַל־כֵּ֡ן לֹֽא־יֹאכְל֨וּ בְנֵֽי־יִשְׂרָאֵ֜ל אֶת־גִּ֣יד הַנָּשֶׁ֗ה אֲשֶׁר֙ עַל־כַּ֣ף הַיָּרֵ֔ךְ עַ֖ד הַיּ֣וֹם הַזֶּ֑ה כִּ֤י נָגַע֙ בְּכַף־יֶ֣רֶךְ יַעֲקֹ֔ב בְּגִ֖יד הַנָּשֶֽׁה׃"
+    },
+    {
+      "id": "EXO",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..126",
+          "chapter": 4,
+          "kind": "chapter",
+          "text": "וַיֹּ֧אמֶר אֵלָ֛יו יְהוָ֖ה מַה־זֶּ֣ה בְיָדֶ֑ךָ וַיֹּ֖אמֶר מַטֶּֽה׃"
+        },
+        {
+          "at": "0..126",
+          "kind": "para",
+          "style": "prose",
+          "text": "וַיֹּ֧אמֶר אֵלָ֛יו יְהוָ֖ה מַה־זֶּ֣ה בְיָדֶ֑ךָ וַיֹּ֖אמֶר מַטֶּֽה׃"
+        },
+        {
+          "at": "0..126",
+          "kind": "verse",
+          "last": 2,
+          "text": "וַיֹּ֧אמֶר אֵלָ֛יו יְהוָ֖ה מַה־זֶּ֣ה בְיָדֶ֑ךָ וַיֹּ֖אמֶר מַטֶּֽה׃",
+          "verse": {
+            "book": "EXO",
+            "chapter": 4,
+            "verse": 2
+          }
+        },
+        {
+          "at": "0..20",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he said",
+              "lemma": "אָמַר",
+              "morph": "HVqw3ms",
+              "strongs": "H559"
+            }
+          ],
+          "text": "וַיֹּ֧אמֶר"
+        },
+        {
+          "at": "21..35",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to",
+              "lemma": "אֶל",
+              "morph": "HRd",
+              "strongs": "H413"
+            },
+            {
+              "gloss": "him",
+              "morph": "HSp3ms",
+              "strongs": "H9033"
+            }
+          ],
+          "text": "אֵלָ֛יו"
+        },
+        {
+          "at": "36..50",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Yahweh",
+              "lemma": "יהוה",
+              "morph": "HNpt",
+              "strongs": "H3068G"
+            }
+          ],
+          "text": "יְהוָ֖ה"
+        },
+        {
+          "at": "51..57",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "what",
+              "lemma": "מָה",
+              "morph": "HPi",
+              "strongs": "H4100"
+            }
+          ],
+          "text": "מַה"
+        },
+        {
+          "at": "59..69",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[is] this?",
+              "lemma": "זֶה",
+              "morph": "HTm",
+              "strongs": "H2088"
+            }
+          ],
+          "text": "זֶּ֣ה"
+        },
+        {
+          "at": "69..69",
+          "kind": "note_ref",
+          "note": "note.5",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "70..88",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[is] in",
+              "lemma": "ב",
+              "morph": "HR",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "hand",
+              "lemma": "יָד",
+              "morph": "HNcbsc",
+              "strongs": "H3027G"
+            },
+            {
+              "gloss": "your",
+              "morph": "HSp2ms",
+              "strongs": "H9021"
+            }
+          ],
+          "text": "בְיָדֶ֑ךָ"
+        },
+        {
+          "at": "89..109",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he said",
+              "lemma": "אָמַר",
+              "morph": "HVqw3ms",
+              "strongs": "H559"
+            }
+          ],
+          "text": "וַיֹּ֖אמֶר"
+        },
+        {
+          "at": "110..124",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "a staff",
+              "lemma": "מַטֶּה",
+              "morph": "HNcmsa",
+              "strongs": "H4294G"
+            }
+          ],
+          "text": "מַטֶּֽה"
+        }
+      ],
+      "text": "וַיֹּ֧אמֶר אֵלָ֛יו יְהוָ֖ה מַה־זֶּ֣ה בְיָדֶ֑ךָ וַיֹּ֖אמֶר מַטֶּֽה׃"
+    },
+    {
+      "id": "PSA",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..483",
+          "chapter": 3,
+          "kind": "chapter",
+          "text": "מִזְמ֥וֹר לְדָוִ֑ד בְּ֝בָרְח֗וֹ מִפְּנֵ֤י ׀ אַבְשָׁל֬וֹם בְּנֽוֹ׃ יְ֭הוָה מָֽה־רַבּ֣וּ צָרָ֑י רַ֝בִּ֗ים קָמִ֥ים עָלָֽי׃ רַבִּים֮ אֹמְרִ֪ים לְנַ֫פְשִׁ֥י אֵ֤ין יְֽשׁוּעָ֓תָה לּ֬וֹ בֵֽאלֹהִ֬ים סֶֽלָה׃ לַיהוָ֥ה הַיְשׁוּעָ֑ה עַֽל־עַמְּךָ֖ בִרְכָתֶ֣ךָ סֶּֽלָה׃"
+        },
+        {
+          "at": "0..483",
+          "kind": "para",
+          "style": "prose",
+          "text": "מִזְמ֥וֹר לְדָוִ֑ד בְּ֝בָרְח֗וֹ מִפְּנֵ֤י ׀ אַבְשָׁל֬וֹם בְּנֽוֹ׃ יְ֭הוָה מָֽה־רַבּ֣וּ צָרָ֑י רַ֝בִּ֗ים קָמִ֥ים עָלָֽי׃ רַבִּים֮ אֹמְרִ֪ים לְנַ֫פְשִׁ֥י אֵ֤ין יְֽשׁוּעָ֓תָה לּ֬וֹ בֵֽאלֹהִ֬ים סֶֽלָה׃ לַיהוָ֥ה הַיְשׁוּעָ֑ה עַֽל־עַמְּךָ֖ בִרְכָתֶ֣ךָ סֶּֽלָה׃"
+        },
+        {
+          "at": "0..124",
+          "kind": "psalm_title",
+          "text": "מִזְמ֥וֹר לְדָוִ֑ד בְּ֝בָרְח֗וֹ מִפְּנֵ֤י ׀ אַבְשָׁל֬וֹם בְּנֽוֹ׃"
+        },
+        {
+          "at": "0..124",
+          "kind": "verse",
+          "last": 1,
+          "text": "מִזְמ֥וֹר לְדָוִ֑ד בְּ֝בָרְח֗וֹ מִפְּנֵ֤י ׀ אַבְשָׁל֬וֹם בְּנֽוֹ׃",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 1
+          }
+        },
+        {
+          "at": "0..18",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "a psalm",
+              "lemma": "מִזְמוֹר",
+              "morph": "HNcmsa",
+              "strongs": "H4210"
+            }
+          ],
+          "text": "מִזְמ֥וֹר"
+        },
+        {
+          "at": "19..35",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "David",
+              "lemma": "דָּוִד",
+              "morph": "HNpm",
+              "strongs": "H1732"
+            }
+          ],
+          "text": "לְדָוִ֑ד"
+        },
+        {
+          "at": "36..60",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "when",
+              "lemma": "ב",
+              "morph": "HR",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "fled",
+              "lemma": "בָּרַח",
+              "morph": "HVqcc",
+              "strongs": "H1272"
+            },
+            {
+              "gloss": "he",
+              "morph": "HSp3ms",
+              "strongs": "H9043"
+            }
+          ],
+          "text": "בְּ֝בָרְח֗וֹ"
+        },
+        {
+          "at": "61..79",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "from",
+              "lemma": "מ",
+              "morph": "HR",
+              "strongs": "H9006"
+            },
+            {
+              "gloss": "before",
+              "lemma": "פָּנֶה",
+              "morph": "HNcmpc",
+              "strongs": "H6440G"
+            }
+          ],
+          "text": "מִפְּנֵ֤י"
+        },
+        {
+          "at": "83..107",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Absalom",
+              "lemma": "אֲבִישָׁלוֹם",
+              "morph": "HNpm",
+              "strongs": "H53"
+            }
+          ],
+          "text": "אַבְשָׁל֬וֹם"
+        },
+        {
+          "at": "108..122",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "son",
+              "lemma": "בֵּן",
+              "morph": "HNcmsc",
+              "strongs": "H1121A"
+            },
+            {
+              "gloss": "his",
+              "morph": "HSp3ms",
+              "strongs": "H9023"
+            }
+          ],
+          "text": "בְּנֽוֹ"
+        },
+        {
+          "at": "125..226",
+          "kind": "verse",
+          "last": 2,
+          "text": "יְ֭הוָה מָֽה־רַבּ֣וּ צָרָ֑י רַ֝בִּ֗ים קָמִ֥ים עָלָֽי׃",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 2
+          }
+        },
+        {
+          "at": "125..139",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "O Yahweh",
+              "lemma": "יהוה",
+              "morph": "HNpt",
+              "strongs": "H3068G"
+            }
+          ],
+          "text": "יְ֭הוָה"
+        },
+        {
+          "at": "140..148",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "how!",
+              "lemma": "מָה",
+              "morph": "HPi",
+              "strongs": "H4100"
+            }
+          ],
+          "text": "מָֽה"
+        },
+        {
+          "at": "150..164",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "they are many",
+              "lemma": "רָבַב",
+              "morph": "HVqp3cp",
+              "strongs": "H7231"
+            }
+          ],
+          "text": "רַבּ֣וּ"
+        },
+        {
+          "at": "165..177",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "opponents",
+              "lemma": "צַר",
+              "morph": "HNcmpc",
+              "strongs": "H6862C"
+            },
+            {
+              "gloss": "my",
+              "morph": "HSp1bs",
+              "strongs": "H9020"
+            }
+          ],
+          "text": "צָרָ֑י"
+        },
+        {
+          "at": "178..196",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "many [people]",
+              "lemma": "רַב",
+              "morph": "HAampa",
+              "strongs": "H7227A"
+            }
+          ],
+          "text": "רַ֝בִּ֗ים"
+        },
+        {
+          "at": "197..211",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[are] rising up",
+              "lemma": "קוּם",
+              "morph": "HVqrmpa",
+              "strongs": "H6965J"
+            }
+          ],
+          "text": "קָמִ֥ים"
+        },
+        {
+          "at": "212..224",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "on",
+              "lemma": "עַל",
+              "morph": "HR",
+              "strongs": "H5921A"
+            },
+            {
+              "gloss": "me",
+              "morph": "HSp1bs",
+              "strongs": "H9030"
+            }
+          ],
+          "text": "עָלָֽי"
+        },
+        {
+          "at": "227..374",
+          "kind": "verse",
+          "last": 3,
+          "text": "רַבִּים֮ אֹמְרִ֪ים לְנַ֫פְשִׁ֥י אֵ֤ין יְֽשׁוּעָ֓תָה לּ֬וֹ בֵֽאלֹהִ֬ים סֶֽלָה׃",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 3
+          }
+        },
+        {
+          "at": "227..243",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "many [people]",
+              "lemma": "רַב",
+              "morph": "HAampa",
+              "strongs": "H7227A"
+            }
+          ],
+          "text": "רַבִּים֮"
+        },
+        {
+          "at": "244..262",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[are] saying",
+              "lemma": "אָמַר",
+              "morph": "HVqrmpa",
+              "strongs": "H559"
+            }
+          ],
+          "text": "אֹמְרִ֪ים"
+        },
+        {
+          "at": "263..287",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "self",
+              "lemma": "נֶ֫פֶשׁ",
+              "morph": "HNcfsc",
+              "strongs": "H5315G"
+            },
+            {
+              "gloss": "my",
+              "morph": "HSp1bs",
+              "strongs": "H9020"
+            }
+          ],
+          "text": "לְנַ֫פְשִׁ֥י"
+        },
+        {
+          "at": "288..298",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "there not",
+              "lemma": "אַ֫יִן",
+              "morph": "HNcmsc",
+              "strongs": "H369"
+            }
+          ],
+          "text": "אֵ֤ין"
+        },
+        {
+          "at": "299..325",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[is] deliverance",
+              "lemma": "יְשׁוּעָה",
+              "morph": "HNcfsa",
+              "strongs": "H3444"
+            }
+          ],
+          "text": "יְֽשׁוּעָ֓תָה"
+        },
+        {
+          "at": "326..336",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "for",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "him",
+              "morph": "HSp3ms",
+              "strongs": "H9033"
+            }
+          ],
+          "text": "לּ֬וֹ"
+        },
+        {
+          "at": "337..359",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "in",
+              "lemma": "ב",
+              "morph": "HR",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "God",
+              "lemma": "אֱלֹהִים",
+              "morph": "HNcmpa",
+              "strongs": "H430G"
+            }
+          ],
+          "text": "בֵֽאלֹהִ֬ים"
+        },
+        {
+          "at": "360..372",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Selah",
+              "lemma": "סֶ֫לָה",
+              "morph": "HTj",
+              "strongs": "H5542"
+            }
+          ],
+          "text": "סֶֽלָה"
+        },
+        {
+          "at": "375..483",
+          "kind": "verse",
+          "last": 9,
+          "text": "לַיהוָ֥ה הַיְשׁוּעָ֑ה עַֽל־עַמְּךָ֖ בִרְכָתֶ֣ךָ סֶּֽלָה׃",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 9
+          }
+        },
+        {
+          "at": "375..391",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[belongs] to",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "Yahweh",
+              "lemma": "יהוה",
+              "morph": "HNpt",
+              "strongs": "H3068G"
+            }
+          ],
+          "text": "לַיהוָ֥ה"
+        },
+        {
+          "at": "392..416",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "deliverance",
+              "lemma": "יְשׁוּעָה",
+              "morph": "HNcfsa",
+              "strongs": "H3444"
+            }
+          ],
+          "text": "הַיְשׁוּעָ֑ה"
+        },
+        {
+          "at": "417..425",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[is] towards",
+              "lemma": "עַל",
+              "morph": "HR",
+              "strongs": "H5921A"
+            }
+          ],
+          "text": "עַֽל"
+        },
+        {
+          "at": "427..443",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "people",
+              "lemma": "עַם",
+              "morph": "HNcmsc",
+              "strongs": "H5971A"
+            },
+            {
+              "gloss": "your",
+              "morph": "HSp2ms",
+              "strongs": "H9021"
+            }
+          ],
+          "text": "עַמְּךָ֖"
+        },
+        {
+          "at": "444..466",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "blessing",
+              "lemma": "בְּרָכָה",
+              "morph": "HNcfsc",
+              "strongs": "H1293"
+            },
+            {
+              "gloss": "your",
+              "morph": "HSp2ms",
+              "strongs": "H9021"
+            }
+          ],
+          "text": "בִרְכָתֶ֣ךָ"
+        },
+        {
+          "at": "467..481",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Selah",
+              "lemma": "סֶ֫לָה",
+              "morph": "HTj",
+              "strongs": "H5542"
+            }
+          ],
+          "text": "סֶּֽלָה"
+        },
+        {
+          "at": "484..989",
+          "chapter": 51,
+          "kind": "chapter",
+          "text": "לַמְנַצֵּ֗חַ מִזְמ֥וֹר לְדָוִֽד׃ בְּֽבוֹא־אֵ֭לָיו נָתָ֣ן הַנָּבִ֑יא כַּֽאֲשֶׁר־בָּ֝֗א אֶל־בַּת־שָֽׁבַע׃ חָנֵּ֣נִי אֱלֹהִ֣ים כְּחַסְדֶּ֑ךָ כְּרֹ֥ב רַ֝חֲמֶ֗יךָ מְחֵ֣ה פְשָׁעָֽי׃ אָ֤ז תַּחְפֹּ֣ץ זִבְחֵי־צֶ֭דֶק עוֹלָ֣ה וְכָלִ֑יל אָ֤ז יַעֲל֖וּ עַל־מִזְבַּחֲךָ֣ פָרִֽים׃"
+        },
+        {
+          "at": "484..989",
+          "kind": "para",
+          "style": "prose",
+          "text": "לַמְנַצֵּ֗חַ מִזְמ֥וֹר לְדָוִֽד׃ בְּֽבוֹא־אֵ֭לָיו נָתָ֣ן הַנָּבִ֑יא כַּֽאֲשֶׁר־בָּ֝֗א אֶל־בַּת־שָֽׁבַע׃ חָנֵּ֣נִי אֱלֹהִ֣ים כְּחַסְדֶּ֑ךָ כְּרֹ֥ב רַ֝חֲמֶ֗יךָ מְחֵ֣ה פְשָׁעָֽי׃ אָ֤ז תַּחְפֹּ֣ץ זִבְחֵי־צֶ֭דֶק עוֹלָ֣ה וְכָלִ֑יל אָ֤ז יַעֲל֖וּ עַל־מִזְבַּחֲךָ֣ פָרִֽים׃"
+        },
+        {
+          "at": "484..683",
+          "kind": "psalm_title",
+          "text": "לַמְנַצֵּ֗חַ מִזְמ֥וֹר לְדָוִֽד׃ בְּֽבוֹא־אֵ֭לָיו נָתָ֣ן הַנָּבִ֑יא כַּֽאֲשֶׁר־בָּ֝֗א אֶל־בַּת־שָֽׁבַע׃"
+        },
+        {
+          "at": "484..546",
+          "kind": "verse",
+          "last": 1,
+          "text": "לַמְנַצֵּ֗חַ מִזְמ֥וֹר לְדָוִֽד׃",
+          "verse": {
+            "book": "PSA",
+            "chapter": 51,
+            "verse": 1
+          }
+        },
+        {
+          "at": "484..508",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to the",
+              "lemma": "ל",
+              "morph": "HRd",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "choirmaster",
+              "lemma": "נָצַח",
+              "morph": "HVprmsa",
+              "strongs": "H5329"
+            }
+          ],
+          "text": "לַמְנַצֵּ֗חַ"
+        },
+        {
+          "at": "509..527",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "a psalm",
+              "lemma": "מִזְמוֹר",
+              "morph": "HNcmsa",
+              "strongs": "H4210"
+            }
+          ],
+          "text": "מִזְמ֥וֹר"
+        },
+        {
+          "at": "528..544",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "David",
+              "lemma": "דָּוִד",
+              "morph": "HNpm",
+              "strongs": "H1732"
+            }
+          ],
+          "text": "לְדָוִֽד"
+        },
+        {
+          "at": "547..683",
+          "kind": "verse",
+          "last": 2,
+          "text": "בְּֽבוֹא־אֵ֭לָיו נָתָ֣ן הַנָּבִ֑יא כַּֽאֲשֶׁר־בָּ֝֗א אֶל־בַּת־שָֽׁבַע׃",
+          "verse": {
+            "book": "PSA",
+            "chapter": 51,
+            "verse": 2
+          }
+        },
+        {
+          "at": "547..563",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "when",
+              "lemma": "ב",
+              "morph": "HR",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "came",
+              "lemma": "בּוֹא",
+              "morph": "HVqcc",
+              "strongs": "H935G"
+            }
+          ],
+          "text": "בְּֽבוֹא"
+        },
+        {
+          "at": "565..579",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to",
+              "lemma": "אֶל",
+              "morph": "HR",
+              "strongs": "H413"
+            },
+            {
+              "gloss": "him",
+              "morph": "HSp3ms",
+              "strongs": "H9033"
+            }
+          ],
+          "text": "אֵ֭לָיו"
+        },
+        {
+          "at": "580..592",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Nathan",
+              "lemma": "נָתָן",
+              "morph": "HNpm",
+              "strongs": "H5416H"
+            }
+          ],
+          "text": "נָתָ֣ן"
+        },
+        {
+          "at": "593..613",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "prophet",
+              "lemma": "נָבִיא",
+              "morph": "HNcmsa",
+              "strongs": "H5030"
+            }
+          ],
+          "text": "הַנָּבִ֑יא"
+        },
+        {
+          "at": "614..634",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "just",
+              "lemma": "כ",
+              "morph": "HR",
+              "strongs": "H9004"
+            },
+            {
+              "gloss": "when",
+              "lemma": "כַּאֲשֶׁר",
+              "morph": "HTr",
+              "strongs": "H834D"
+            }
+          ],
+          "text": "כַּֽאֲשֶׁר"
+        },
+        {
+          "at": "636..648",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "he had gone",
+              "lemma": "בּוֹא",
+              "morph": "HVqp3ms",
+              "strongs": "H935G"
+            }
+          ],
+          "text": "בָּ֝֗א"
+        },
+        {
+          "at": "649..655",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "into",
+              "lemma": "אֶל",
+              "morph": "HR",
+              "strongs": "H413"
+            }
+          ],
+          "text": "אֶל"
+        },
+        {
+          "at": "657..665",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Bath-",
+              "lemma": "בַּת־שֶׁ֫בַע",
+              "morph": "HNpf",
+              "strongs": "H1339"
+            }
+          ],
+          "text": "בַּת"
+        },
+        {
+          "at": "667..681",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "-sheba",
+              "lemma": "בַּת־שֶׁ֫בַע",
+              "morph": "HNpf",
+              "strongs": "H1339"
+            }
+          ],
+          "text": "שָֽׁבַע"
+        },
+        {
+          "at": "684..820",
+          "kind": "verse",
+          "last": 3,
+          "text": "חָנֵּ֣נִי אֱלֹהִ֣ים כְּחַסְדֶּ֑ךָ כְּרֹ֥ב רַ֝חֲמֶ֗יךָ מְחֵ֣ה פְשָׁעָֽי׃",
+          "verse": {
+            "book": "PSA",
+            "chapter": 51,
+            "verse": 3
+          }
+        },
+        {
+          "at": "684..702",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "show favor to",
+              "lemma": "חָנַן",
+              "morph": "HVqv2ms",
+              "strongs": "H2603A"
+            },
+            {
+              "gloss": "me",
+              "morph": "HSp1bs",
+              "strongs": "H9030"
+            }
+          ],
+          "text": "חָנֵּ֣נִי"
+        },
+        {
+          "at": "703..721",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "O God",
+              "lemma": "אֱלֹהִים",
+              "morph": "HNcmpa",
+              "strongs": "H430G"
+            }
+          ],
+          "text": "אֱלֹהִ֣ים"
+        },
+        {
+          "at": "722..748",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "according to",
+              "lemma": "כ",
+              "morph": "HR",
+              "strongs": "H9004"
+            },
+            {
+              "gloss": "covenant loyalty",
+              "lemma": "חֶ֫סֶד",
+              "morph": "HNcmsc",
+              "strongs": "H2617A"
+            },
+            {
+              "gloss": "your",
+              "morph": "HSp2ms",
+              "strongs": "H9021"
+            }
+          ],
+          "text": "כְּחַסְדֶּ֑ךָ"
+        },
+        {
+          "at": "749..763",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "according to",
+              "lemma": "כ",
+              "morph": "HR",
+              "strongs": "H9004"
+            },
+            {
+              "gloss": "[the] greatness of",
+              "lemma": "רֹב",
+              "morph": "HNcmsc",
+              "strongs": "H7230"
+            }
+          ],
+          "text": "כְּרֹ֥ב"
+        },
+        {
+          "at": "764..786",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "compassion<s>",
+              "lemma": "רַחֲמִים",
+              "morph": "HNcmpc",
+              "strongs": "H7356B"
+            },
+            {
+              "gloss": "your",
+              "morph": "HSp2ms",
+              "strongs": "H9021"
+            }
+          ],
+          "text": "רַ֝חֲמֶ֗יךָ"
+        },
+        {
+          "at": "787..799",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "wipe out",
+              "lemma": "מָחָה",
+              "morph": "HVqv2ms",
+              "strongs": "H4229A"
+            }
+          ],
+          "text": "מְחֵ֣ה"
+        },
+        {
+          "at": "800..818",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "transgressions",
+              "lemma": "פֶּ֫שַׁע",
+              "morph": "HNcmpc",
+              "strongs": "H6588"
+            },
+            {
+              "gloss": "my",
+              "morph": "HSp1bs",
+              "strongs": "H9020"
+            }
+          ],
+          "text": "פְשָׁעָֽי"
+        },
+        {
+          "at": "821..989",
+          "kind": "verse",
+          "last": 21,
+          "text": "אָ֤ז תַּחְפֹּ֣ץ זִבְחֵי־צֶ֭דֶק עוֹלָ֣ה וְכָלִ֑יל אָ֤ז יַעֲל֖וּ עַל־מִזְבַּחֲךָ֣ פָרִֽים׃",
+          "verse": {
+            "book": "PSA",
+            "chapter": 51,
+            "verse": 21
+          }
+        },
+        {
+          "at": "821..829",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "then",
+              "lemma": "אָז",
+              "morph": "HD",
+              "strongs": "H227A"
+            }
+          ],
+          "text": "אָ֤ז"
+        },
+        {
+          "at": "830..850",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "you will delight in",
+              "lemma": "חָפֵץ",
+              "morph": "HVqi2ms",
+              "strongs": "H2654A"
+            }
+          ],
+          "text": "תַּחְפֹּ֣ץ"
+        },
+        {
+          "at": "851..865",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "sacrifices of",
+              "lemma": "זֶ֫בַח",
+              "morph": "HNcmpc",
+              "strongs": "H2077"
+            }
+          ],
+          "text": "זִבְחֵי"
+        },
+        {
+          "at": "867..879",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "righteousness",
+              "lemma": "צֶ֫דֶק",
+              "morph": "HNcmsa",
+              "strongs": "H6664G"
+            }
+          ],
+          "text": "צֶ֭דֶק"
+        },
+        {
+          "at": "880..894",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "burnt offering",
+              "lemma": "עֹלָה",
+              "morph": "HNcfsa",
+              "strongs": "H5930A"
+            }
+          ],
+          "text": "עוֹלָ֣ה"
+        },
+        {
+          "at": "895..913",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "whole offering",
+              "lemma": "כָּלִיל",
+              "morph": "HAamsa",
+              "strongs": "H3632"
+            }
+          ],
+          "text": "וְכָלִ֑יל"
+        },
+        {
+          "at": "914..922",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "then",
+              "lemma": "אָז",
+              "morph": "HD",
+              "strongs": "H227A"
+            }
+          ],
+          "text": "אָ֤ז"
+        },
+        {
+          "at": "923..939",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "people will offer up",
+              "lemma": "עָלָה",
+              "morph": "HVhi3mp",
+              "strongs": "H5927I"
+            }
+          ],
+          "text": "יַעֲל֖וּ"
+        },
+        {
+          "at": "940..946",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "on",
+              "lemma": "עַל",
+              "morph": "HR",
+              "strongs": "H5921A"
+            }
+          ],
+          "text": "עַל"
+        },
+        {
+          "at": "948..972",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "altar",
+              "lemma": "מִזְבֵּחַ",
+              "morph": "HNcmsc",
+              "strongs": "H4196"
+            },
+            {
+              "gloss": "your",
+              "morph": "HSp2ms",
+              "strongs": "H9021"
+            }
+          ],
+          "text": "מִזְבַּחֲךָ֣"
+        },
+        {
+          "at": "973..987",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "young bulls",
+              "lemma": "פַּר",
+              "morph": "HNcmpa",
+              "strongs": "H6499"
+            }
+          ],
+          "text": "פָרִֽים"
+        }
+      ],
+      "text": "מִזְמ֥וֹר לְדָוִ֑ד בְּ֝בָרְח֗וֹ מִפְּנֵ֤י ׀ אַבְשָׁל֬וֹם בְּנֽוֹ׃ יְ֭הוָה מָֽה־רַבּ֣וּ צָרָ֑י רַ֝בִּ֗ים קָמִ֥ים עָלָֽי׃ רַבִּים֮ אֹמְרִ֪ים לְנַ֫פְשִׁ֥י אֵ֤ין יְֽשׁוּעָ֓תָה לּ֬וֹ בֵֽאלֹהִ֬ים סֶֽלָה׃ לַיהוָ֥ה הַיְשׁוּעָ֑ה עַֽל־עַמְּךָ֖ בִרְכָתֶ֣ךָ סֶּֽלָה׃\nלַמְנַצֵּ֗חַ מִזְמ֥וֹר לְדָוִֽד׃ בְּֽבוֹא־אֵ֭לָיו נָתָ֣ן הַנָּבִ֑יא כַּֽאֲשֶׁר־בָּ֝֗א אֶל־בַּת־שָֽׁבַע׃ חָנֵּ֣נִי אֱלֹהִ֣ים כְּחַסְדֶּ֑ךָ כְּרֹ֥ב רַ֝חֲמֶ֗יךָ מְחֵ֣ה פְשָׁעָֽי׃ אָ֤ז תַּחְפֹּ֣ץ זִבְחֵי־צֶ֭דֶק עוֹלָ֣ה וְכָלִ֑יל אָ֤ז יַעֲל֖וּ עַל־מִזְבַּחֲךָ֣ פָרִֽים׃"
+    },
+    {
+      "id": "ISA",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..264",
+          "chapter": 44,
+          "kind": "chapter",
+          "text": "כֹּֽה־אָמַ֤ר יְהוָה֙ גֹּאֲלֶ֔ךָ וְיֹצֶרְךָ֖ מִבָּ֑טֶן אָנֹכִ֤י יְהוָה֙ עֹ֣שֶׂה כֹּ֔ל נֹטֶ֤ה שָׁמַ֙יִם֙ לְבַדִּ֔י רֹקַ֥ע הָאָ֖רֶץ מֵאִתִּֽי׃"
+        },
+        {
+          "at": "0..264",
+          "kind": "para",
+          "style": "prose",
+          "text": "כֹּֽה־אָמַ֤ר יְהוָה֙ גֹּאֲלֶ֔ךָ וְיֹצֶרְךָ֖ מִבָּ֑טֶן אָנֹכִ֤י יְהוָה֙ עֹ֣שֶׂה כֹּ֔ל נֹטֶ֤ה שָׁמַ֙יִם֙ לְבַדִּ֔י רֹקַ֥ע הָאָ֖רֶץ מֵאִתִּֽי׃"
+        },
+        {
+          "at": "0..264",
+          "kind": "verse",
+          "last": 24,
+          "text": "כֹּֽה־אָמַ֤ר יְהוָה֙ גֹּאֲלֶ֔ךָ וְיֹצֶרְךָ֖ מִבָּ֑טֶן אָנֹכִ֤י יְהוָה֙ עֹ֣שֶׂה כֹּ֔ל נֹטֶ֤ה שָׁמַ֙יִם֙ לְבַדִּ֔י רֹקַ֥ע הָאָ֖רֶץ מֵאִתִּֽי׃",
+          "verse": {
+            "book": "ISA",
+            "chapter": 44,
+            "verse": 24
+          }
+        },
+        {
+          "at": "0..10",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "thus",
+              "lemma": "כֹּה",
+              "morph": "HD",
+              "strongs": "H3541"
+            }
+          ],
+          "text": "כֹּֽה"
+        },
+        {
+          "at": "12..24",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "he says",
+              "lemma": "אָמַר",
+              "morph": "HVqp3ms",
+              "strongs": "H559"
+            }
+          ],
+          "text": "אָמַ֤ר"
+        },
+        {
+          "at": "25..39",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Yahweh",
+              "lemma": "יהוה",
+              "morph": "HNpt",
+              "strongs": "H3068G"
+            }
+          ],
+          "text": "יְהוָה֙"
+        },
+        {
+          "at": "40..60",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "redeemer",
+              "lemma": "גָּאַל",
+              "morph": "HVqrmsc",
+              "strongs": "H1350A"
+            },
+            {
+              "gloss": "your",
+              "morph": "HSp2ms",
+              "strongs": "H9021"
+            }
+          ],
+          "text": "גֹּאֲלֶ֔ךָ"
+        },
+        {
+          "at": "61..83",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "[the one who] formed",
+              "lemma": "יָצַר",
+              "morph": "HVqrmsc",
+              "strongs": "H3335G"
+            },
+            {
+              "gloss": "you",
+              "morph": "HSp2ms",
+              "strongs": "H9031"
+            }
+          ],
+          "text": "וְיֹצֶרְךָ֖"
+        },
+        {
+          "at": "84..102",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "from",
+              "lemma": "מ",
+              "morph": "HR",
+              "strongs": "H9006"
+            },
+            {
+              "gloss": "[the] womb",
+              "lemma": "בֶּ֫טֶן",
+              "morph": "HNcfsa",
+              "strongs": "H990H"
+            }
+          ],
+          "text": "מִבָּ֑טֶן"
+        },
+        {
+          "at": "103..119",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "I",
+              "lemma": "אָֽנֹכִ֫י",
+              "morph": "HPp1bs",
+              "strongs": "H595"
+            }
+          ],
+          "text": "אָנֹכִ֤י"
+        },
+        {
+          "at": "120..134",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[am] Yahweh",
+              "lemma": "יהוה",
+              "morph": "HNpt",
+              "strongs": "H3068G"
+            }
+          ],
+          "text": "יְהוָה֙"
+        },
+        {
+          "at": "135..149",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[who] made",
+              "lemma": "עָשָׂה",
+              "morph": "HVqrmsa",
+              "strongs": "H6213H"
+            }
+          ],
+          "text": "עֹ֣שֶׂה"
+        },
+        {
+          "at": "150..160",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "everything",
+              "lemma": "כֹּל",
+              "morph": "HNcmsa",
+              "strongs": "H3605"
+            }
+          ],
+          "text": "כֹּ֔ל"
+        },
+        {
+          "at": "161..173",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[who] stretched out",
+              "lemma": "נָטָה",
+              "morph": "HVqrmsa",
+              "strongs": "H5186"
+            }
+          ],
+          "text": "נֹטֶ֤ה"
+        },
+        {
+          "at": "174..194",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] heavens",
+              "lemma": "שָׁמַיִם",
+              "morph": "HNcmpa",
+              "strongs": "H8064"
+            }
+          ],
+          "text": "שָׁמַ֙יִם֙"
+        },
+        {
+          "at": "195..213",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "alone",
+              "lemma": "בַּד",
+              "morph": "HNcmsc",
+              "strongs": "H905H"
+            },
+            {
+              "gloss": "me",
+              "morph": "HSp1bs",
+              "strongs": "H9030"
+            }
+          ],
+          "text": "לְבַדִּ֔י"
+        },
+        {
+          "at": "214..226",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[who] spread out",
+              "lemma": "רָקַע",
+              "morph": "HVqrmsa",
+              "strongs": "H7554"
+            }
+          ],
+          "text": "רֹקַ֥ע"
+        },
+        {
+          "at": "227..243",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "earth",
+              "lemma": "אֶ֫רֶץ",
+              "morph": "HNcfsa",
+              "strongs": "H776G"
+            }
+          ],
+          "text": "הָאָ֖רֶץ"
+        },
+        {
+          "at": "243..243",
+          "kind": "note_ref",
+          "note": "note.6",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "244..262",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "from <the>",
+              "lemma": "מ",
+              "morph": "HRd",
+              "strongs": "H9006"
+            },
+            {
+              "gloss": "with",
+              "lemma": "אֵת",
+              "morph": "HR",
+              "strongs": "H854"
+            },
+            {
+              "gloss": "myself",
+              "morph": "HSp1bs",
+              "strongs": "H9030"
+            }
+          ],
+          "text": "מֵאִתִּֽי"
+        },
+        {
+          "at": "264..264",
+          "kind": "note_ref",
+          "note": "note.7",
+          "note_kind": "footnote",
+          "text": ""
+        }
+      ],
+      "text": "כֹּֽה־אָמַ֤ר יְהוָה֙ גֹּאֲלֶ֔ךָ וְיֹצֶרְךָ֖ מִבָּ֑טֶן אָנֹכִ֤י יְהוָה֙ עֹ֣שֶׂה כֹּ֔ל נֹטֶ֤ה שָׁמַ֙יִם֙ לְבַדִּ֔י רֹקַ֥ע הָאָ֖רֶץ מֵאִתִּֽי׃"
+    },
+    {
+      "id": "DAN",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..249",
+          "chapter": 2,
+          "kind": "chapter",
+          "text": "וַֽיְדַבְּר֧וּ הַכַּשְׂדִּ֛ים לַמֶּ֖לֶךְ אֲרָמִ֑ית מַלְכָּא֙ לְעָלְמִ֣ין חֱיִ֔י אֱמַ֥ר חֶלְמָ֛א לְעַבְדָ֖ךְ וּפִשְׁרָ֥א נְחַוֵּֽא׃"
+        },
+        {
+          "at": "0..249",
+          "kind": "para",
+          "style": "prose",
+          "text": "וַֽיְדַבְּר֧וּ הַכַּשְׂדִּ֛ים לַמֶּ֖לֶךְ אֲרָמִ֑ית מַלְכָּא֙ לְעָלְמִ֣ין חֱיִ֔י אֱמַ֥ר חֶלְמָ֛א לְעַבְדָ֖ךְ וּפִשְׁרָ֥א נְחַוֵּֽא׃"
+        },
+        {
+          "at": "0..249",
+          "kind": "verse",
+          "last": 4,
+          "text": "וַֽיְדַבְּר֧וּ הַכַּשְׂדִּ֛ים לַמֶּ֖לֶךְ אֲרָמִ֑ית מַלְכָּא֙ לְעָלְמִ֣ין חֱיִ֔י אֱמַ֥ר חֶלְמָ֛א לְעַבְדָ֖ךְ וּפִשְׁרָ֥א נְחַוֵּֽא׃",
+          "verse": {
+            "book": "DAN",
+            "chapter": 2,
+            "verse": 4
+          }
+        },
+        {
+          "at": "0..28",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "they spoke",
+              "lemma": "דָבַר",
+              "morph": "HVpw3mp",
+              "strongs": "H1696G"
+            }
+          ],
+          "text": "וַֽיְדַבְּר֧וּ"
+        },
+        {
+          "at": "29..57",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "Chaldeans",
+              "lemma": "כַּשְׂדִּים",
+              "morph": "HNgmpa",
+              "strongs": "H3778"
+            }
+          ],
+          "text": "הַכַּשְׂדִּ֛ים"
+        },
+        {
+          "at": "58..78",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to the",
+              "lemma": "ל",
+              "morph": "HRd",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "king",
+              "lemma": "מֶ֫לֶךְ",
+              "morph": "HNcmsa",
+              "strongs": "H4428G"
+            }
+          ],
+          "text": "לַמֶּ֖לֶךְ"
+        },
+        {
+          "at": "79..97",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Aramaic",
+              "lemma": "אֲרָמִית",
+              "morph": "HAafsc",
+              "strongs": "H762"
+            }
+          ],
+          "text": "אֲרָמִ֑ית"
+        },
+        {
+          "at": "98..116",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "king",
+              "lemma": "מֶ֫לֶךְ",
+              "morph": "ANcbsd",
+              "strongs": "H4430"
+            },
+            {
+              "gloss": "O",
+              "morph": "ATa",
+              "strongs": "H9010"
+            }
+          ],
+          "text": "מַלְכָּא֙"
+        },
+        {
+          "at": "117..139",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "for",
+              "lemma": "ל",
+              "morph": "AR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "ever",
+              "lemma": "עָלַם",
+              "morph": "ANcmpa",
+              "strongs": "H5957"
+            }
+          ],
+          "text": "לְעָלְמִ֣ין"
+        },
+        {
+          "at": "140..152",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "live!",
+              "lemma": "חֲיָא",
+              "morph": "AVqv2ms",
+              "strongs": "H2418"
+            }
+          ],
+          "text": "חֱיִ֔י"
+        },
+        {
+          "at": "153..165",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "tell!",
+              "lemma": "אֲמַר",
+              "morph": "AVqv2ms",
+              "strongs": "H560"
+            }
+          ],
+          "text": "אֱמַ֥ר"
+        },
+        {
+          "at": "166..182",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "dream",
+              "lemma": "חֵ֫לֶם",
+              "morph": "ANcbsd",
+              "strongs": "H2493"
+            },
+            {
+              "gloss": "the",
+              "morph": "ATa",
+              "strongs": "H9010"
+            }
+          ],
+          "text": "חֶלְמָ֛א"
+        },
+        {
+          "at": "183..205",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to",
+              "lemma": "ל",
+              "morph": "AR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "servant",
+              "lemma": "עֲבַד",
+              "morph": "ANcbsc",
+              "strongs": "H5649"
+            },
+            {
+              "gloss": "your",
+              "morph": "ASp2ms",
+              "strongs": "H9021"
+            }
+          ],
+          "text": "לְעַבְדָ֖ךְ"
+        },
+        {
+          "at": "205..205",
+          "kind": "note_ref",
+          "note": "note.8",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "206..228",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "AC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "interpretation",
+              "lemma": "פְּשַׁר",
+              "morph": "ANcbsd",
+              "strongs": "H6591"
+            },
+            {
+              "gloss": "the",
+              "morph": "ATa",
+              "strongs": "H9010"
+            }
+          ],
+          "text": "וּפִשְׁרָ֥א"
+        },
+        {
+          "at": "229..247",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "we will declare",
+              "lemma": "חֲוָה",
+              "morph": "AVpi1cp",
+              "strongs": "H2324"
+            }
+          ],
+          "text": "נְחַוֵּֽא"
+        }
+      ],
+      "text": "וַֽיְדַבְּר֧וּ הַכַּשְׂדִּ֛ים לַמֶּ֖לֶךְ אֲרָמִ֑ית מַלְכָּא֙ לְעָלְמִ֣ין חֱיִ֔י אֱמַ֥ר חֶלְמָ֛א לְעַבְדָ֖ךְ וּפִשְׁרָ֥א נְחַוֵּֽא׃"
+    },
+    {
+      "id": "MAL",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..1742",
+          "chapter": 3,
+          "kind": "chapter",
+          "text": "וְשַׁבְתֶּם֙ וּרְאִיתֶ֔ם בֵּ֥ין צַדִּ֖יק לְרָשָׁ֑ע בֵּ֚ין עֹבֵ֣ד אֱלֹהִ֔ים לַאֲשֶׁ֖ר לֹ֥א עֲבָדֽוֹ׃ ס\nכִּֽי־הִנֵּ֤ה הַיּוֹם֙ בָּ֔א בֹּעֵ֖ר כַּתַּנּ֑וּר וְהָי֨וּ כָל־זֵדִ֜ים וְכָל־עֹשֵׂ֤ה רִשְׁעָה֙ קַ֔שׁ וְלִהַ֨ט אֹתָ֜ם הַיּ֣וֹם הַבָּ֗א אָמַר֙ יְהוָ֣ה צְבָא֔וֹת אֲשֶׁ֛ר לֹא־יַעֲזֹ֥ב לָהֶ֖ם שֹׁ֥רֶשׁ וְעָנָֽף׃ וְזָרְחָ֨ה לָכֶ֜ם יִרְאֵ֤י שְׁמִי֙ שֶׁ֣מֶשׁ צְדָקָ֔ה וּמַרְפֵּ֖א בִּכְנָפֶ֑יהָ וִֽיצָאתֶ֥ם וּפִשְׁתֶּ֖ם כְּעֶגְלֵ֥י מַרְבֵּֽק׃ וְעַסּוֹתֶ֣ם רְשָׁעִ֔ים כִּֽי־יִהְי֣וּ אֵ֔פֶר תַּ֖חַת כַּפּ֣וֹת רַגְלֵיכֶ֑ם בַּיּוֹם֙ אֲשֶׁ֣ר אֲנִ֣י עֹשֶׂ֔ה אָמַ֖ר יְהוָ֥ה צְבָאֽוֹת׃ פ\nזִכְר֕וּ תּוֹרַ֖ת מֹשֶׁ֣ה עַבְדִּ֑י אֲשֶׁר֩ צִוִּ֨יתִי אוֹת֤וֹ בְחֹרֵב֙ עַל־כָּל־יִשְׂרָאֵ֔ל חֻקִּ֖ים וּמִשְׁפָּטִֽים׃ הִנֵּ֤ה אָֽנֹכִי֙ שֹׁלֵ֣חַ לָכֶ֔ם אֵ֖ת אֵלִיָּ֣ה הַנָּבִ֑יא לִפְנֵ֗י בּ֚וֹא י֣וֹם יְהוָ֔ה הַגָּד֖וֹל וְהַנּוֹרָֽא׃ וְהֵשִׁ֤יב לֵב־אָבוֹת֙ עַל־בָּנִ֔ים וְלֵ֥ב בָּנִ֖ים עַל־אֲבוֹתָ֑ם פֶּן־אָב֕וֹא וְהִכֵּיתִ֥י אֶת־הָאָ֖רֶץ חֵֽרֶם׃"
+        },
+        {
+          "at": "0..191",
+          "kind": "para",
+          "style": "prose",
+          "text": "וְשַׁבְתֶּם֙ וּרְאִיתֶ֔ם בֵּ֥ין צַדִּ֖יק לְרָשָׁ֑ע בֵּ֚ין עֹבֵ֣ד אֱלֹהִ֔ים לַאֲשֶׁ֖ר לֹ֥א עֲבָדֽוֹ׃ ס"
+        },
+        {
+          "at": "0..191",
+          "kind": "verse",
+          "last": 18,
+          "text": "וְשַׁבְתֶּם֙ וּרְאִיתֶ֔ם בֵּ֥ין צַדִּ֖יק לְרָשָׁ֑ע בֵּ֚ין עֹבֵ֣ד אֱלֹהִ֔ים לַאֲשֶׁ֖ר לֹ֥א עֲבָדֽוֹ׃ ס",
+          "verse": {
+            "book": "MAL",
+            "chapter": 3,
+            "verse": 18
+          }
+        },
+        {
+          "at": "0..24",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "you will return",
+              "lemma": "שׁוּב",
+              "morph": "HVqq2mp",
+              "strongs": "H7725J"
+            }
+          ],
+          "text": "וְשַׁבְתֶּם֙"
+        },
+        {
+          "at": "25..47",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "you will see",
+              "lemma": "רָאָה",
+              "morph": "HVqq2mp",
+              "strongs": "H7200G"
+            }
+          ],
+          "text": "וּרְאִיתֶ֔ם"
+        },
+        {
+          "at": "48..60",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "between",
+              "lemma": "בַּ֫יִן",
+              "morph": "HAcmsc",
+              "strongs": "H996G"
+            }
+          ],
+          "text": "בֵּ֥ין"
+        },
+        {
+          "at": "61..77",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "a righteous [person]",
+              "lemma": "צַדִּיק",
+              "morph": "HAamsa",
+              "strongs": "H6662"
+            }
+          ],
+          "text": "צַדִּ֖יק"
+        },
+        {
+          "at": "78..96",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "a wicked [person]",
+              "lemma": "רָשָׁע",
+              "morph": "HNcmsa",
+              "strongs": "H7563"
+            }
+          ],
+          "text": "לְרָשָׁ֑ע"
+        },
+        {
+          "at": "97..109",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "between",
+              "lemma": "בַּ֫יִן",
+              "morph": "HAcmsc",
+              "strongs": "H996G"
+            }
+          ],
+          "text": "בֵּ֚ין"
+        },
+        {
+          "at": "110..122",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[one who] serves",
+              "lemma": "עָבַד",
+              "morph": "HVqrmsc",
+              "strongs": "H5647H"
+            }
+          ],
+          "text": "עֹבֵ֣ד"
+        },
+        {
+          "at": "123..141",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<of> God",
+              "lemma": "אֱלֹהִים",
+              "morph": "HNcmpa",
+              "strongs": "H430G"
+            }
+          ],
+          "text": "אֱלֹהִ֔ים"
+        },
+        {
+          "at": "142..160",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "[one] who",
+              "lemma": "אֲשֶׁר",
+              "morph": "HTr",
+              "strongs": "H834A"
+            }
+          ],
+          "text": "לַאֲשֶׁ֖ר"
+        },
+        {
+          "at": "161..169",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "not",
+              "lemma": "לֹא",
+              "morph": "HTn",
+              "strongs": "H3808"
+            }
+          ],
+          "text": "לֹ֥א"
+        },
+        {
+          "at": "170..186",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "he serves",
+              "lemma": "עָבַד",
+              "morph": "HVqp3ms",
+              "strongs": "H5647H"
+            },
+            {
+              "gloss": "him",
+              "morph": "HSp3ms",
+              "strongs": "H9033"
+            }
+          ],
+          "text": "עֲבָדֽוֹ"
+        },
+        {
+          "at": "192..1082",
+          "kind": "para",
+          "style": "prose",
+          "text": "כִּֽי־הִנֵּ֤ה הַיּוֹם֙ בָּ֔א בֹּעֵ֖ר כַּתַּנּ֑וּר וְהָי֨וּ כָל־זֵדִ֜ים וְכָל־עֹשֵׂ֤ה רִשְׁעָה֙ קַ֔שׁ וְלִהַ֨ט אֹתָ֜ם הַיּ֣וֹם הַבָּ֗א אָמַר֙ יְהוָ֣ה צְבָא֔וֹת אֲשֶׁ֛ר לֹא־יַעֲזֹ֥ב לָהֶ֖ם שֹׁ֥רֶשׁ וְעָנָֽף׃ וְזָרְחָ֨ה לָכֶ֜ם יִרְאֵ֤י שְׁמִי֙ שֶׁ֣מֶשׁ צְדָקָ֔ה וּמַרְפֵּ֖א בִּכְנָפֶ֑יהָ וִֽיצָאתֶ֥ם וּפִשְׁתֶּ֖ם כְּעֶגְלֵ֥י מַרְבֵּֽק׃ וְעַסּוֹתֶ֣ם רְשָׁעִ֔ים כִּֽי־יִהְי֣וּ אֵ֔פֶר תַּ֖חַת כַּפּ֣וֹת רַגְלֵיכֶ֑ם בַּיּוֹם֙ אֲשֶׁ֣ר אֲנִ֣י עֹשֶׂ֔ה אָמַ֖ר יְהוָ֥ה צְבָאֽוֹת׃ פ"
+        },
+        {
+          "at": "192..581",
+          "kind": "verse",
+          "last": 19,
+          "text": "כִּֽי־הִנֵּ֤ה הַיּוֹם֙ בָּ֔א בֹּעֵ֖ר כַּתַּנּ֑וּר וְהָי֨וּ כָל־זֵדִ֜ים וְכָל־עֹשֵׂ֤ה רִשְׁעָה֙ קַ֔שׁ וְלִהַ֨ט אֹתָ֜ם הַיּ֣וֹם הַבָּ֗א אָמַר֙ יְהוָ֣ה צְבָא֔וֹת אֲשֶׁ֛ר לֹא־יַעֲזֹ֥ב לָהֶ֖ם שֹׁ֥רֶשׁ וְעָנָֽף׃",
+          "verse": {
+            "book": "MAL",
+            "chapter": 3,
+            "verse": 19
+          }
+        },
+        {
+          "at": "192..202",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "for",
+              "lemma": "כִּי",
+              "morph": "HTc",
+              "strongs": "H3588A"
+            }
+          ],
+          "text": "כִּֽי"
+        },
+        {
+          "at": "204..218",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "here!",
+              "lemma": "הִנֵּה",
+              "morph": "HTj",
+              "strongs": "H2009"
+            }
+          ],
+          "text": "הִנֵּ֤ה"
+        },
+        {
+          "at": "219..235",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "day",
+              "lemma": "יוֹם",
+              "morph": "HNcmsa",
+              "strongs": "H3117G"
+            }
+          ],
+          "text": "הַיּוֹם֙"
+        },
+        {
+          "at": "236..246",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[is] coming",
+              "lemma": "בּוֹא",
+              "morph": "HVqrmsa",
+              "strongs": "H935G"
+            }
+          ],
+          "text": "בָּ֔א"
+        },
+        {
+          "at": "247..261",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "burning",
+              "lemma": "בָּעַר",
+              "morph": "HVqrmsa",
+              "strongs": "H1197A"
+            }
+          ],
+          "text": "בֹּעֵ֖ר"
+        },
+        {
+          "at": "262..286",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "like <the>",
+              "lemma": "כ",
+              "morph": "HRd",
+              "strongs": "H9004"
+            },
+            {
+              "gloss": "furnace",
+              "lemma": "תַּנּוּר",
+              "morph": "HNcmsa",
+              "strongs": "H8574H"
+            }
+          ],
+          "text": "כַּתַּנּ֑וּר"
+        },
+        {
+          "at": "287..303",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "they will be",
+              "lemma": "הָיָה",
+              "morph": "HVqq3cp",
+              "strongs": "H1961"
+            }
+          ],
+          "text": "וְהָי֨וּ"
+        },
+        {
+          "at": "304..310",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "all",
+              "lemma": "כֹּל",
+              "morph": "HNcmsc",
+              "strongs": "H3605"
+            }
+          ],
+          "text": "כָל"
+        },
+        {
+          "at": "312..326",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "arrogant [people]",
+              "lemma": "זֵד",
+              "morph": "HAampa",
+              "strongs": "H2086"
+            }
+          ],
+          "text": "זֵדִ֜ים"
+        },
+        {
+          "at": "327..337",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "every",
+              "lemma": "כֹּל",
+              "morph": "HNcmsc",
+              "strongs": "H3605"
+            }
+          ],
+          "text": "וְכָל"
+        },
+        {
+          "at": "339..353",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[one who] does",
+              "lemma": "עָשָׂה",
+              "morph": "HVqrmsc",
+              "strongs": "H6213J"
+            }
+          ],
+          "text": "עֹשֵׂ֤ה"
+        },
+        {
+          "at": "354..372",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<of> wickedness",
+              "lemma": "רִשְׁעָה",
+              "morph": "HNcfsa",
+              "strongs": "H7564"
+            }
+          ],
+          "text": "רִשְׁעָה֙"
+        },
+        {
+          "at": "373..383",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "stubble",
+              "lemma": "קַשׁ",
+              "morph": "HNcmsa",
+              "strongs": "H7179"
+            }
+          ],
+          "text": "קַ֔שׁ"
+        },
+        {
+          "at": "384..400",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "it will set ablaze",
+              "lemma": "לָהַט",
+              "morph": "HVpq3ms",
+              "strongs": "H3857"
+            }
+          ],
+          "text": "וְלִהַ֨ט"
+        },
+        {
+          "at": "401..413",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<obj.>",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "strongs": "H853"
+            },
+            {
+              "gloss": "them",
+              "morph": "HSp3mp",
+              "strongs": "H9038"
+            }
+          ],
+          "text": "אֹתָ֜ם"
+        },
+        {
+          "at": "414..430",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "day",
+              "lemma": "יוֹם",
+              "morph": "HNcmsa",
+              "strongs": "H3117G"
+            }
+          ],
+          "text": "הַיּ֣וֹם"
+        },
+        {
+          "at": "431..445",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "coming",
+              "lemma": "בּוֹא",
+              "morph": "HVqrmsa",
+              "strongs": "H935G"
+            }
+          ],
+          "text": "הַבָּ֗א"
+        },
+        {
+          "at": "446..458",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "he says",
+              "lemma": "אָמַר",
+              "morph": "HVqp3ms",
+              "strongs": "H559"
+            }
+          ],
+          "text": "אָמַר֙"
+        },
+        {
+          "at": "459..473",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Yahweh",
+              "lemma": "יהוה",
+              "morph": "HNpt",
+              "strongs": "H3068G"
+            }
+          ],
+          "text": "יְהוָ֣ה"
+        },
+        {
+          "at": "474..492",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of hosts",
+              "lemma": "צָבָא",
+              "morph": "HNcfpa",
+              "strongs": "H6635B"
+            }
+          ],
+          "text": "צְבָא֔וֹת"
+        },
+        {
+          "at": "493..507",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "that",
+              "lemma": "אֲשֶׁר",
+              "morph": "HTr",
+              "strongs": "H834A"
+            }
+          ],
+          "text": "אֲשֶׁ֛ר"
+        },
+        {
+          "at": "508..514",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "not",
+              "lemma": "לֹא",
+              "morph": "HTn",
+              "strongs": "H3808"
+            }
+          ],
+          "text": "לֹא"
+        },
+        {
+          "at": "516..532",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "it will leave",
+              "lemma": "עָזַב",
+              "morph": "HVqi3ms",
+              "strongs": "H5800A"
+            }
+          ],
+          "text": "יַעֲזֹ֥ב"
+        },
+        {
+          "at": "533..545",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "for",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "them",
+              "morph": "HSp3mp",
+              "strongs": "H9038"
+            }
+          ],
+          "text": "לָהֶ֖ם"
+        },
+        {
+          "at": "546..562",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "root",
+              "lemma": "שֹׁ֫רֶשׁ",
+              "morph": "HNcmsa",
+              "strongs": "H8328"
+            }
+          ],
+          "text": "שֹׁ֥רֶשׁ"
+        },
+        {
+          "at": "563..579",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "branch",
+              "lemma": "עָנָף",
+              "morph": "HNcmsa",
+              "strongs": "H6057"
+            }
+          ],
+          "text": "וְעָנָֽף"
+        },
+        {
+          "at": "582..823",
+          "kind": "verse",
+          "last": 20,
+          "text": "וְזָרְחָ֨ה לָכֶ֜ם יִרְאֵ֤י שְׁמִי֙ שֶׁ֣מֶשׁ צְדָקָ֔ה וּמַרְפֵּ֖א בִּכְנָפֶ֑יהָ וִֽיצָאתֶ֥ם וּפִשְׁתֶּ֖ם כְּעֶגְלֵ֥י מַרְבֵּֽק׃",
+          "verse": {
+            "book": "MAL",
+            "chapter": 3,
+            "verse": 20
+          }
+        },
+        {
+          "at": "582..602",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "it will rise",
+              "lemma": "זָרַח",
+              "morph": "HVqq3fs",
+              "strongs": "H2224"
+            }
+          ],
+          "text": "וְזָרְחָ֨ה"
+        },
+        {
+          "at": "603..615",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "for",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "you",
+              "morph": "HSp2mp",
+              "strongs": "H9036"
+            }
+          ],
+          "text": "לָכֶ֜ם"
+        },
+        {
+          "at": "616..632",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[those] fearing",
+              "lemma": "יָרֵא",
+              "morph": "HAampc",
+              "strongs": "H3373"
+            }
+          ],
+          "text": "יִרְאֵ֤י"
+        },
+        {
+          "at": "633..647",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<of> name",
+              "lemma": "שֵׁם",
+              "morph": "HNcmsc",
+              "strongs": "H8034"
+            },
+            {
+              "gloss": "my",
+              "morph": "HSp1bs",
+              "strongs": "H9020"
+            }
+          ],
+          "text": "שְׁמִי֙"
+        },
+        {
+          "at": "648..664",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "a sun of",
+              "lemma": "שֶׁ֫מֶשׁ",
+              "morph": "HNcbsc",
+              "strongs": "H8121"
+            }
+          ],
+          "text": "שֶׁ֣מֶשׁ"
+        },
+        {
+          "at": "665..681",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "righteousness",
+              "lemma": "צְדָקָה",
+              "morph": "HNcfsa",
+              "strongs": "H6666"
+            }
+          ],
+          "text": "צְדָקָ֔ה"
+        },
+        {
+          "at": "682..704",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "healing",
+              "lemma": "מַרְפֵּא",
+              "morph": "HNcmsa",
+              "strongs": "H4832"
+            }
+          ],
+          "text": "וּמַרְפֵּ֖א"
+        },
+        {
+          "at": "705..731",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[will be] in",
+              "lemma": "ב",
+              "morph": "HR",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "wings",
+              "lemma": "כָּנָף",
+              "morph": "HNcfdc",
+              "strongs": "H3671"
+            },
+            {
+              "gloss": "its",
+              "morph": "HSp3fs",
+              "strongs": "H9024"
+            }
+          ],
+          "text": "בִּכְנָפֶ֑יהָ"
+        },
+        {
+          "at": "732..754",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "you will go out",
+              "lemma": "יָצָא",
+              "morph": "HVqq2mp",
+              "strongs": "H3318G"
+            }
+          ],
+          "text": "וִֽיצָאתֶ֥ם"
+        },
+        {
+          "at": "755..779",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "you will skip",
+              "lemma": "פּוּשׁ",
+              "morph": "HVqq2mp",
+              "strongs": "H6335A"
+            }
+          ],
+          "text": "וּפִשְׁתֶּ֖ם"
+        },
+        {
+          "at": "780..802",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "like",
+              "lemma": "כ",
+              "morph": "HR",
+              "strongs": "H9004"
+            },
+            {
+              "gloss": "calves of",
+              "lemma": "עֵ֫גֶל",
+              "morph": "HNcmpc",
+              "strongs": "H5695"
+            }
+          ],
+          "text": "כְּעֶגְלֵ֥י"
+        },
+        {
+          "at": "803..821",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] stall",
+              "lemma": "מַרְבֵּק",
+              "morph": "HNcmsa",
+              "strongs": "H4770"
+            }
+          ],
+          "text": "מַרְבֵּֽק"
+        },
+        {
+          "at": "824..1082",
+          "kind": "verse",
+          "last": 21,
+          "text": "וְעַסּוֹתֶ֣ם רְשָׁעִ֔ים כִּֽי־יִהְי֣וּ אֵ֔פֶר תַּ֖חַת כַּפּ֣וֹת רַגְלֵיכֶ֑ם בַּיּוֹם֙ אֲשֶׁ֣ר אֲנִ֣י עֹשֶׂ֔ה אָמַ֖ר יְהוָ֥ה צְבָאֽוֹת׃ פ",
+          "verse": {
+            "book": "MAL",
+            "chapter": 3,
+            "verse": 21
+          }
+        },
+        {
+          "at": "824..848",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "you will tread down",
+              "lemma": "עָסַס",
+              "morph": "HVqq2mp",
+              "strongs": "H6072"
+            }
+          ],
+          "text": "וְעַסּוֹתֶ֣ם"
+        },
+        {
+          "at": "849..869",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "wicked [people]",
+              "lemma": "רָשָׁע",
+              "morph": "HNcmpa",
+              "strongs": "H7563"
+            }
+          ],
+          "text": "רְשָׁעִ֔ים"
+        },
+        {
+          "at": "870..880",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "for",
+              "lemma": "כִּי",
+              "morph": "HTc",
+              "strongs": "H3588A"
+            }
+          ],
+          "text": "כִּֽי"
+        },
+        {
+          "at": "882..898",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "they will be",
+              "lemma": "הָיָה",
+              "morph": "HVqi3mp",
+              "strongs": "H1961"
+            }
+          ],
+          "text": "יִהְי֣וּ"
+        },
+        {
+          "at": "899..911",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "ash[es]",
+              "lemma": "אֵ֫פֶר",
+              "morph": "HNcmsa",
+              "strongs": "H665"
+            }
+          ],
+          "text": "אֵ֔פֶר"
+        },
+        {
+          "at": "912..926",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "under",
+              "lemma": "תַּחַת",
+              "morph": "HNcmsc",
+              "strongs": "H8478G"
+            }
+          ],
+          "text": "תַּ֖חַת"
+        },
+        {
+          "at": "927..945",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] soles of",
+              "lemma": "כַּף",
+              "morph": "HNcfpc",
+              "strongs": "H3709H"
+            }
+          ],
+          "text": "כַּפּ֣וֹת"
+        },
+        {
+          "at": "946..968",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "feet",
+              "lemma": "רֶ֫גֶל",
+              "morph": "HNcfdc",
+              "strongs": "H7272"
+            },
+            {
+              "gloss": "your",
+              "morph": "HSp2mp",
+              "strongs": "H9026"
+            }
+          ],
+          "text": "רַגְלֵיכֶ֑ם"
+        },
+        {
+          "at": "969..987",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "on the",
+              "lemma": "ב",
+              "morph": "HRd",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "day",
+              "lemma": "יוֹם",
+              "morph": "HNcmsa",
+              "strongs": "H3117G"
+            }
+          ],
+          "text": "בַּיּוֹם֙"
+        },
+        {
+          "at": "988..1002",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "when",
+              "lemma": "אֲשֶׁר",
+              "morph": "HTr",
+              "strongs": "H834A"
+            }
+          ],
+          "text": "אֲשֶׁ֣ר"
+        },
+        {
+          "at": "1003..1015",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "I",
+              "lemma": "אֲנִי, אָֽנֹכִ֫י",
+              "morph": "HPp1bs",
+              "strongs": "H589"
+            }
+          ],
+          "text": "אֲנִ֣י"
+        },
+        {
+          "at": "1016..1030",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[will be] acting",
+              "lemma": "עָשָׂה",
+              "morph": "HVqrmsa",
+              "strongs": "H6213A"
+            }
+          ],
+          "text": "עֹשֶׂ֔ה"
+        },
+        {
+          "at": "1031..1043",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "he says",
+              "lemma": "אָמַר",
+              "morph": "HVqp3ms",
+              "strongs": "H559"
+            }
+          ],
+          "text": "אָמַ֖ר"
+        },
+        {
+          "at": "1044..1058",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Yahweh",
+              "lemma": "יהוה",
+              "morph": "HNpt",
+              "strongs": "H3068G"
+            }
+          ],
+          "text": "יְהוָ֥ה"
+        },
+        {
+          "at": "1059..1077",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of hosts",
+              "lemma": "צָבָא",
+              "morph": "HNcfpa",
+              "strongs": "H6635B"
+            }
+          ],
+          "text": "צְבָאֽוֹת"
+        },
+        {
+          "at": "1083..1742",
+          "kind": "para",
+          "style": "prose",
+          "text": "זִכְר֕וּ תּוֹרַ֖ת מֹשֶׁ֣ה עַבְדִּ֑י אֲשֶׁר֩ צִוִּ֨יתִי אוֹת֤וֹ בְחֹרֵב֙ עַל־כָּל־יִשְׂרָאֵ֔ל חֻקִּ֖ים וּמִשְׁפָּטִֽים׃ הִנֵּ֤ה אָֽנֹכִי֙ שֹׁלֵ֣חַ לָכֶ֔ם אֵ֖ת אֵלִיָּ֣ה הַנָּבִ֑יא לִפְנֵ֗י בּ֚וֹא י֣וֹם יְהוָ֔ה הַגָּד֖וֹל וְהַנּוֹרָֽא׃ וְהֵשִׁ֤יב לֵב־אָבוֹת֙ עַל־בָּנִ֔ים וְלֵ֥ב בָּנִ֖ים עַל־אֲבוֹתָ֑ם פֶּן־אָב֕וֹא וְהִכֵּיתִ֥י אֶת־הָאָ֖רֶץ חֵֽרֶם׃"
+        },
+        {
+          "at": "1083..1309",
+          "kind": "verse",
+          "last": 22,
+          "text": "זִכְר֕וּ תּוֹרַ֖ת מֹשֶׁ֣ה עַבְדִּ֑י אֲשֶׁר֩ צִוִּ֨יתִי אוֹת֤וֹ בְחֹרֵב֙ עַל־כָּל־יִשְׂרָאֵ֔ל חֻקִּ֖ים וּמִשְׁפָּטִֽים׃",
+          "verse": {
+            "book": "MAL",
+            "chapter": 3,
+            "verse": 22
+          }
+        },
+        {
+          "at": "1083..1099",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "remember",
+              "lemma": "זָכַר",
+              "morph": "HVqv2mp",
+              "strongs": "H2142"
+            }
+          ],
+          "text": "זִכְר֕וּ"
+        },
+        {
+          "at": "1100..1116",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] instruction of",
+              "lemma": "תּוֹרָה",
+              "morph": "HNcfsc",
+              "strongs": "H8451"
+            }
+          ],
+          "text": "תּוֹרַ֖ת"
+        },
+        {
+          "at": "1117..1131",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Moses",
+              "lemma": "מֹשֶׁה",
+              "morph": "HNpm",
+              "strongs": "H4872"
+            }
+          ],
+          "text": "מֹשֶׁ֣ה"
+        },
+        {
+          "at": "1132..1150",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "servant",
+              "lemma": "עֶ֫בֶד",
+              "morph": "HNcmsc",
+              "strongs": "H5650"
+            },
+            {
+              "gloss": "my",
+              "morph": "HSp1bs",
+              "strongs": "H9020"
+            }
+          ],
+          "text": "עַבְדִּ֑י"
+        },
+        {
+          "at": "1151..1165",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "which",
+              "lemma": "אֲשֶׁר",
+              "morph": "HTr",
+              "strongs": "H834A"
+            }
+          ],
+          "text": "אֲשֶׁר֩"
+        },
+        {
+          "at": "1166..1186",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "I commanded",
+              "lemma": "צָוָה",
+              "morph": "HVpp1cs",
+              "strongs": "H6680"
+            }
+          ],
+          "text": "צִוִּ֨יתִי"
+        },
+        {
+          "at": "1187..1201",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<obj.>",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "strongs": "H853"
+            },
+            {
+              "gloss": "him",
+              "morph": "HSp3ms",
+              "strongs": "H9033"
+            }
+          ],
+          "text": "אוֹת֤וֹ"
+        },
+        {
+          "at": "1202..1218",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "at",
+              "lemma": "ב",
+              "morph": "HR",
+              "strongs": "H9003"
+            },
+            {
+              "gloss": "Horeb",
+              "lemma": "חֹרֵב",
+              "morph": "HNpl",
+              "strongs": "H2722"
+            }
+          ],
+          "text": "בְחֹרֵב֙"
+        },
+        {
+          "at": "1219..1225",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "on",
+              "lemma": "עַל",
+              "morph": "HR",
+              "strongs": "H5921A"
+            }
+          ],
+          "text": "עַל"
+        },
+        {
+          "at": "1227..1235",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "all",
+              "lemma": "כֹּל",
+              "morph": "HNcmsc",
+              "strongs": "H3605"
+            }
+          ],
+          "text": "כָּל"
+        },
+        {
+          "at": "1237..1259",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Israel",
+              "lemma": "יִשְׂרָאֵל",
+              "morph": "HNpl",
+              "strongs": "H3478"
+            }
+          ],
+          "text": "יִשְׂרָאֵ֔ל"
+        },
+        {
+          "at": "1260..1276",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "statutes",
+              "lemma": "חֹק",
+              "morph": "HNcmpa",
+              "strongs": "H2706G"
+            }
+          ],
+          "text": "חֻקִּ֖ים"
+        },
+        {
+          "at": "1277..1307",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "judgments",
+              "lemma": "מִשְׁפָּט",
+              "morph": "HNcmpa",
+              "strongs": "H4941G"
+            }
+          ],
+          "text": "וּמִשְׁפָּטִֽים"
+        },
+        {
+          "at": "1310..1526",
+          "kind": "verse",
+          "last": 23,
+          "text": "הִנֵּ֤ה אָֽנֹכִי֙ שֹׁלֵ֣חַ לָכֶ֔ם אֵ֖ת אֵלִיָּ֣ה הַנָּבִ֑יא לִפְנֵ֗י בּ֚וֹא י֣וֹם יְהוָ֔ה הַגָּד֖וֹל וְהַנּוֹרָֽא׃",
+          "verse": {
+            "book": "MAL",
+            "chapter": 3,
+            "verse": 23
+          }
+        },
+        {
+          "at": "1310..1324",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "here!",
+              "lemma": "הִנֵּה",
+              "morph": "HTj",
+              "strongs": "H2009"
+            }
+          ],
+          "text": "הִנֵּ֤ה"
+        },
+        {
+          "at": "1325..1343",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "I",
+              "lemma": "אָֽנֹכִ֫י",
+              "morph": "HPp1bs",
+              "strongs": "H595"
+            }
+          ],
+          "text": "אָֽנֹכִי֙"
+        },
+        {
+          "at": "1344..1360",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[am] about to send",
+              "lemma": "שָׁלַח",
+              "morph": "HVqrmsa",
+              "strongs": "H7971G"
+            }
+          ],
+          "text": "שֹׁלֵ֣חַ"
+        },
+        {
+          "at": "1361..1373",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "you",
+              "morph": "HSp2mp",
+              "strongs": "H9036"
+            }
+          ],
+          "text": "לָכֶ֔ם"
+        },
+        {
+          "at": "1374..1382",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<obj.>",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "strongs": "H853"
+            }
+          ],
+          "text": "אֵ֖ת"
+        },
+        {
+          "at": "1383..1401",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Elijah",
+              "lemma": "אֵלִיָּה",
+              "morph": "HNpm",
+              "strongs": "H452G"
+            }
+          ],
+          "text": "אֵלִיָּ֣ה"
+        },
+        {
+          "at": "1402..1422",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "prophet",
+              "lemma": "נָבִיא",
+              "morph": "HNcmsa",
+              "strongs": "H5030"
+            }
+          ],
+          "text": "הַנָּבִ֑יא"
+        },
+        {
+          "at": "1423..1439",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<to>",
+              "lemma": "ל",
+              "morph": "HR",
+              "strongs": "H9005"
+            },
+            {
+              "gloss": "before",
+              "lemma": "פָּנֶה",
+              "morph": "HNcmpc",
+              "strongs": "H6440G"
+            }
+          ],
+          "text": "לִפְנֵ֗י"
+        },
+        {
+          "at": "1440..1452",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "comes",
+              "lemma": "בּוֹא",
+              "morph": "HVqcc",
+              "strongs": "H935G"
+            }
+          ],
+          "text": "בּ֚וֹא"
+        },
+        {
+          "at": "1453..1463",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] day of",
+              "lemma": "יוֹם",
+              "morph": "HNcmsc",
+              "strongs": "H3117G"
+            }
+          ],
+          "text": "י֣וֹם"
+        },
+        {
+          "at": "1464..1478",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Yahweh",
+              "lemma": "יהוה",
+              "morph": "HNpt",
+              "strongs": "H3068G"
+            }
+          ],
+          "text": "יְהוָ֔ה"
+        },
+        {
+          "at": "1479..1499",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "great",
+              "lemma": "גַּל",
+              "morph": "HAamsa",
+              "strongs": "H1419A"
+            }
+          ],
+          "text": "הַגָּד֖וֹל"
+        },
+        {
+          "at": "1500..1524",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "<the>",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "awesome",
+              "lemma": "יָרֵא",
+              "morph": "HVNrmsa",
+              "strongs": "H3372G"
+            }
+          ],
+          "text": "וְהַנּוֹרָֽא"
+        },
+        {
+          "at": "1527..1742",
+          "kind": "verse",
+          "last": 24,
+          "text": "וְהֵשִׁ֤יב לֵב־אָבוֹת֙ עַל־בָּנִ֔ים וְלֵ֥ב בָּנִ֖ים עַל־אֲבוֹתָ֑ם פֶּן־אָב֕וֹא וְהִכֵּיתִ֥י אֶת־הָאָ֖רֶץ חֵֽרֶם׃",
+          "verse": {
+            "book": "MAL",
+            "chapter": 3,
+            "verse": 24
+          }
+        },
+        {
+          "at": "1527..1547",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "he will turn back",
+              "lemma": "שׁוּב",
+              "morph": "HVhq3ms",
+              "strongs": "H7725I"
+            }
+          ],
+          "text": "וְהֵשִׁ֤יב"
+        },
+        {
+          "at": "1548..1554",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] heart of",
+              "lemma": "לֵב",
+              "morph": "HNcmsc",
+              "strongs": "H3820A"
+            }
+          ],
+          "text": "לֵב"
+        },
+        {
+          "at": "1556..1570",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "fathers",
+              "lemma": "אָב",
+              "morph": "HNcfpa",
+              "strongs": "H1G"
+            }
+          ],
+          "text": "אָבוֹת֙"
+        },
+        {
+          "at": "1571..1577",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to",
+              "lemma": "עַל",
+              "morph": "HR",
+              "strongs": "H5921A"
+            }
+          ],
+          "text": "עַל"
+        },
+        {
+          "at": "1579..1595",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "sons",
+              "lemma": "בֵּן",
+              "morph": "HNcmpa",
+              "strongs": "H1121A"
+            }
+          ],
+          "text": "בָּנִ֔ים"
+        },
+        {
+          "at": "1596..1608",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "HC",
+              "strongs": "H9002"
+            },
+            {
+              "gloss": "[the] heart of",
+              "lemma": "לֵב",
+              "morph": "HNcmsc",
+              "strongs": "H3820A"
+            }
+          ],
+          "text": "וְלֵ֥ב"
+        },
+        {
+          "at": "1609..1625",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "sons",
+              "lemma": "בֵּן",
+              "morph": "HNcmpa",
+              "strongs": "H1121A"
+            }
+          ],
+          "text": "בָּנִ֖ים"
+        },
+        {
+          "at": "1626..1632",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to",
+              "lemma": "עַל",
+              "morph": "HR",
+              "strongs": "H5921A"
+            }
+          ],
+          "text": "עַל"
+        },
+        {
+          "at": "1634..1652",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "fathers",
+              "lemma": "אָב",
+              "morph": "HNcfpc",
+              "strongs": "H1G"
+            },
+            {
+              "gloss": "their",
+              "morph": "HSp3mp",
+              "strongs": "H9028"
+            }
+          ],
+          "text": "אֲבוֹתָ֑ם"
+        },
+        {
+          "at": "1653..1661",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "lest",
+              "lemma": "פֶּן־",
+              "morph": "HTc",
+              "strongs": "H6435"
+            }
+          ],
+          "text": "פֶּן"
+        },
+        {
+          "at": "1663..1677",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "I should come",
+              "lemma": "בּוֹא",
+              "morph": "HVqi1cs",
+              "strongs": "H935G"
+            }
+          ],
+          "text": "אָב֕וֹא"
+        },
+        {
+          "at": "1678..1702",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "ו",
+              "morph": "Hc",
+              "strongs": "H9001"
+            },
+            {
+              "gloss": "I will strike",
+              "lemma": "נָכָה",
+              "morph": "HVhq1cs",
+              "strongs": "H5221"
+            }
+          ],
+          "text": "וְהִכֵּיתִ֥י"
+        },
+        {
+          "at": "1703..1709",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<obj.>",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "strongs": "H853"
+            }
+          ],
+          "text": "אֶת"
+        },
+        {
+          "at": "1711..1727",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ה",
+              "morph": "HTd",
+              "strongs": "H9009"
+            },
+            {
+              "gloss": "land",
+              "lemma": "אֶ֫רֶץ",
+              "morph": "HNcfsa",
+              "strongs": "H776G"
+            }
+          ],
+          "text": "הָאָ֖רֶץ"
+        },
+        {
+          "at": "1728..1740",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "total destruction",
+              "lemma": "חֵ֫רֶם",
+              "morph": "HNcmsa",
+              "strongs": "H2764A"
+            }
+          ],
+          "text": "חֵֽרֶם"
+        }
+      ],
+      "text": "וְשַׁבְתֶּם֙ וּרְאִיתֶ֔ם בֵּ֥ין צַדִּ֖יק לְרָשָׁ֑ע בֵּ֚ין עֹבֵ֣ד אֱלֹהִ֔ים לַאֲשֶׁ֖ר לֹ֥א עֲבָדֽוֹ׃ ס\nכִּֽי־הִנֵּ֤ה הַיּוֹם֙ בָּ֔א בֹּעֵ֖ר כַּתַּנּ֑וּר וְהָי֨וּ כָל־זֵדִ֜ים וְכָל־עֹשֵׂ֤ה רִשְׁעָה֙ קַ֔שׁ וְלִהַ֨ט אֹתָ֜ם הַיּ֣וֹם הַבָּ֗א אָמַר֙ יְהוָ֣ה צְבָא֔וֹת אֲשֶׁ֛ר לֹא־יַעֲזֹ֥ב לָהֶ֖ם שֹׁ֥רֶשׁ וְעָנָֽף׃ וְזָרְחָ֨ה לָכֶ֜ם יִרְאֵ֤י שְׁמִי֙ שֶׁ֣מֶשׁ צְדָקָ֔ה וּמַרְפֵּ֖א בִּכְנָפֶ֑יהָ וִֽיצָאתֶ֥ם וּפִשְׁתֶּ֖ם כְּעֶגְלֵ֥י מַרְבֵּֽק׃ וְעַסּוֹתֶ֣ם רְשָׁעִ֔ים כִּֽי־יִהְי֣וּ אֵ֔פֶר תַּ֖חַת כַּפּ֣וֹת רַגְלֵיכֶ֑ם בַּיּוֹם֙ אֲשֶׁ֣ר אֲנִ֣י עֹשֶׂ֔ה אָמַ֖ר יְהוָ֥ה צְבָאֽוֹת׃ פ\nזִכְר֕וּ תּוֹרַ֖ת מֹשֶׁ֣ה עַבְדִּ֑י אֲשֶׁר֩ צִוִּ֨יתִי אוֹת֤וֹ בְחֹרֵב֙ עַל־כָּל־יִשְׂרָאֵ֔ל חֻקִּ֖ים וּמִשְׁפָּטִֽים׃ הִנֵּ֤ה אָֽנֹכִי֙ שֹׁלֵ֣חַ לָכֶ֔ם אֵ֖ת אֵלִיָּ֣ה הַנָּבִ֑יא לִפְנֵ֗י בּ֚וֹא י֣וֹם יְהוָ֔ה הַגָּד֖וֹל וְהַנּוֹרָֽא׃ וְהֵשִׁ֤יב לֵב־אָבוֹת֙ עַל־בָּנִ֔ים וְלֵ֥ב בָּנִ֖ים עַל־אֲבוֹתָ֑ם פֶּן־אָב֕וֹא וְהִכֵּיתִ֥י אֶת־הָאָ֖רֶץ חֵֽרֶם׃"
+    },
+    {
+      "id": "note.1",
+      "kind": "note",
+      "spans": [],
+      "text": "Not in the Leningrad Codex: supplied from the Septuagint (Greek), as reconstructed in Hebrew by BHS or BHK."
+    },
+    {
+      "id": "note.2",
+      "kind": "note",
+      "spans": [],
+      "text": "Ketiv (written text): הוֹצֵא"
+    },
+    {
+      "id": "note.3",
+      "kind": "note",
+      "spans": [],
+      "text": "Ketiv (written text): אָהֳלֹה׃ “tent his”"
+    },
+    {
+      "id": "note.4",
+      "kind": "note",
+      "spans": [],
+      "text": "Ketiv (written text): בְּגָד “with good fortune”"
+    },
+    {
+      "id": "note.5",
+      "kind": "note",
+      "spans": [],
+      "text": "Ketiv (written text): מַזֶּה “what [is] this?”"
+    },
+    {
+      "id": "note.6",
+      "kind": "note",
+      "spans": [],
+      "text": "Ketiv (written text): מִי “who [was]?”"
+    },
+    {
+      "id": "note.7",
+      "kind": "note",
+      "spans": [],
+      "text": "Ketiv (written text): אִתִּי׃ “with me”"
+    },
+    {
+      "id": "note.8",
+      "kind": "note",
+      "spans": [],
+      "text": "Ketiv (written text): לְעַבְדַּיִךְ “to servants your”"
+    }
+  ],
+  "verses": [
+    {
+      "standard": "Gen 1:1",
+      "verse": "Gen 1:1"
+    },
+    {
+      "standard": "Gen 1:2",
+      "verse": "Gen 1:2"
+    },
+    {
+      "standard": "Gen 1:3",
+      "verse": "Gen 1:3"
+    },
+    {
+      "standard": "Gen 1:4",
+      "verse": "Gen 1:4"
+    },
+    {
+      "standard": "Gen 1:5",
+      "verse": "Gen 1:5"
+    },
+    {
+      "standard": "Gen 4:8",
+      "verse": "Gen 4:8"
+    },
+    {
+      "standard": "Gen 8:17",
+      "verse": "Gen 8:17"
+    },
+    {
+      "standard": "Gen 9:21",
+      "verse": "Gen 9:21"
+    },
+    {
+      "standard": "Gen 30:11",
+      "verse": "Gen 30:11"
+    },
+    {
+      "standard": "Gen 31:55",
+      "verse": "Gen 32:1"
+    },
+    {
+      "standard": "Gen 32:1",
+      "verse": "Gen 32:2"
+    },
+    {
+      "standard": "Gen 32:32",
+      "verse": "Gen 32:33"
+    },
+    {
+      "standard": "Exod 4:2",
+      "verse": "Exod 4:2"
+    },
+    {
+      "standard": "Ps 3:title",
+      "verse": "Ps 3:1"
+    },
+    {
+      "standard": "Ps 3:1",
+      "verse": "Ps 3:2"
+    },
+    {
+      "standard": "Ps 3:2",
+      "verse": "Ps 3:3"
+    },
+    {
+      "standard": "Ps 3:8",
+      "verse": "Ps 3:9"
+    },
+    {
+      "standard": "Ps 51:title",
+      "verse": "Ps 51:1"
+    },
+    {
+      "standard": "Ps 51:title",
+      "verse": "Ps 51:2"
+    },
+    {
+      "standard": "Ps 51:1",
+      "verse": "Ps 51:3"
+    },
+    {
+      "standard": "Ps 51:19",
+      "verse": "Ps 51:21"
+    },
+    {
+      "standard": "Isa 44:24",
+      "verse": "Isa 44:24"
+    },
+    {
+      "standard": "Dan 2:4",
+      "verse": "Dan 2:4"
+    },
+    {
+      "standard": "Mal 3:18",
+      "verse": "Mal 3:18"
+    },
+    {
+      "standard": "Mal 4:1",
+      "verse": "Mal 3:19"
+    },
+    {
+      "standard": "Mal 4:2",
+      "verse": "Mal 3:20"
+    },
+    {
+      "standard": "Mal 4:3",
+      "verse": "Mal 3:21"
+    },
+    {
+      "standard": "Mal 4:4",
+      "verse": "Mal 3:22"
+    },
+    {
+      "standard": "Mal 4:5",
+      "verse": "Mal 3:23"
+    },
+    {
+      "standard": "Mal 4:6",
+      "verse": "Mal 3:24"
+    }
+  ]
+}

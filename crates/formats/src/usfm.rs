@@ -68,7 +68,7 @@ pub enum ImportError {
 impl fmt::Display for ImportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ImportError::NoBooks => f.write_str("no USFM books found"),
+            ImportError::NoBooks => f.write_str("no Bible books found"),
             ImportError::MissingId(name) => write!(f, "{name}: no \\id line"),
             ImportError::DuplicateBook {
                 code,

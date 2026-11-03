@@ -22,16 +22,24 @@ use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use obs_formats::{ImportReport, UsfmImport, UsfmOptions, usfm_book_code};
+use obs_formats::{
+    ImportReport, StepbibleImport, StepbibleOptions, StepbibleText, UsfmImport, UsfmOptions,
+    usfm_book_code,
+};
 use obs_model::{Origin, Resource, UnitId};
 use obs_store::write_obr;
 
-use fetch::{fetch, sha256_hex};
+use fetch::{Fetched, fetch, sha256_hex};
 use ids::{IdDiff, MANIFEST_FORMAT, ReleaseManifest, ReleaseResource};
 use lock::{IdChanges, Lock, Source};
 
 pub const MANIFEST_FILE: &str = "starter-manifest.json";
 pub const REPORT_FILE: &str = "starter-build-report.md";
+
+/// Each CC BY Resource gets `CHANGES-<id>.md`, published with the release (#20 decision 4).
+fn changes_file(resource_id: &str) -> String {
+    format!("CHANGES-{resource_id}.md")
+}
 
 const USAGE: &str = "usage: cargo xtask starter [--out DIR] [--cache DIR] [--previous MANIFEST] [--check-determinism]
 
@@ -137,10 +145,10 @@ pub fn build(config: &Config) -> Result<String> {
     let results: Vec<Result<Built>> = std::thread::scope(|scope| {
         let handles: Vec<_> = inputs
             .iter()
-            .map(|(source, bytes)| {
+            .map(|(source, files)| {
                 let previous = previous.as_ref();
                 let changes = &changes;
-                scope.spawn(move || build_one(source, bytes, previous, changes))
+                scope.spawn(move || build_one(source, files, previous, changes))
             })
             .collect();
         handles
@@ -170,6 +178,9 @@ pub fn build(config: &Config) -> Result<String> {
         let path = config.out.join(format!("{id}.obr"));
         write_obr(&b.resource, &path)
             .with_context(|| format!("cannot write {}", path.display()))?;
+        if let Some(text) = changes_note(&b.resource) {
+            std::fs::write(config.out.join(changes_file(id)), text)?;
+        }
         let bytes = std::fs::read(&path)?;
         released.push(ReleaseResource {
             resource_id: id.clone(),
@@ -236,14 +247,17 @@ pub fn build(config: &Config) -> Result<String> {
 
 fn build_one(
     source: &Source,
-    bytes: &[u8],
+    files: &[Fetched],
     previous: Option<&ReleaseManifest>,
     changes: &IdChanges,
 ) -> Result<Built> {
     let id = &source.resource_id;
-    let (mut resource, mut report) = match source.importer.as_str() {
-        "usfm" => import_usfm_zip(source, bytes),
-        other => bail!("{id}: unknown importer `{other}`"),
+    let (mut resource, mut report) = match (source.importer.as_str(), files) {
+        ("usfm", [zip]) => import_usfm_zip(source, &zip.bytes),
+        ("usfm", _) => bail!("{id}: the `usfm` importer reads exactly one zip"),
+        ("tahot", _) => import_stepbible(source, files, StepbibleText::Tahot),
+        ("tagnt", _) => import_stepbible(source, files, StepbibleText::Tagnt),
+        (other, _) => bail!("{id}: unknown importer `{other}`"),
     }
     .with_context(|| format!("{id}: import failed"))?;
 
@@ -351,6 +365,61 @@ fn import_usfm_zip(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportRep
     import.finish().map_err(|e| anyhow!("{e}"))
 }
 
+/// STEPBible's TAHOT or TAGNT tab-separated files → a Hebrew or Greek Bible.
+fn import_stepbible(
+    source: &Source,
+    files: &[Fetched],
+    text: StepbibleText,
+) -> Result<(Resource, ImportReport)> {
+    let mut import = StepbibleImport::new(StepbibleOptions {
+        text,
+        resource_id: source.resource_id.clone(),
+        title: source.title.clone(),
+        abbreviation: source.abbreviation.clone(),
+        language: source.language.clone(),
+        source_file: files
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect::<Vec<_>>()
+            .join("; "),
+        tool_version: format!("xtask starter {}", env!("CARGO_PKG_VERSION")),
+    });
+    for f in files {
+        let text = String::from_utf8(f.bytes.clone())
+            .with_context(|| format!("{} is not UTF-8 text", f.name))?;
+        import.add_file(&f.name, text);
+    }
+    import.finish().map_err(|e| anyhow!("{e}"))
+}
+
+/// The published record of changes for a CC BY Resource (STEPBible asks that changes be
+/// recorded and made available); `None` for other licences.
+fn changes_note(resource: &Resource) -> Option<String> {
+    let m = &resource.manifest;
+    if !m.license.split([' ', '(', ')']).any(|l| l.starts_with("CC-BY")) {
+        return None;
+    }
+    let mut s = format!("# Changes made to {} (`{}`)\n\n", m.title, m.resource_id);
+    let _ = writeln!(s, "{}\n", m.attribution);
+    let _ = writeln!(s, "- Licence: {}", m.license);
+    if let Some(url) = &m.source_url {
+        let _ = writeln!(s, "- Source: <{url}>");
+    }
+    if let Some(edition) = &m.edition {
+        let _ = writeln!(s, "- Edition: {edition}");
+    }
+    if let Some(file) = &m.source_file {
+        let _ = writeln!(s, "- Source files: {file}");
+    }
+    let _ = writeln!(s, "- Resource revision {}, {}", m.revision, m.content_hash);
+    let _ = write!(
+        s,
+        "\n## Changes we made\n\n{}\n",
+        m.changes.as_deref().unwrap_or("None.")
+    );
+    Some(s)
+}
+
 /// Remove the outputs of an earlier build (only files this task writes).
 fn clean_outputs(out: &Path) -> Result<()> {
     std::fs::create_dir_all(out).with_context(|| format!("cannot create {}", out.display()))?;
@@ -363,6 +432,7 @@ fn clean_outputs(out: &Path) -> Result<()> {
         if path.is_file()
             && (name.ends_with(".obr")
                 || name.ends_with(".obr.partial")
+                || (name.starts_with("CHANGES-") && name.ends_with(".md"))
                 || name == MANIFEST_FILE
                 || name == REPORT_FILE)
         {

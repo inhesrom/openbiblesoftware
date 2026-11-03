@@ -23,7 +23,8 @@ pub struct Lock {
 pub struct Source {
     /// Stable slug of the Resource this source becomes. Never reused.
     pub resource_id: String,
-    /// Which Import parser reads it: `usfm` (a zip of USFM books).
+    /// Which Import parser reads it: `usfm` (a zip of USFM books), `tahot` or `tagnt`
+    /// (STEPBible's tab-separated Hebrew OT or Greek NT files).
     pub importer: String,
     /// The pinned download. `file://` paths are allowed (tests, local mirrors).
     pub url: String,
@@ -52,6 +53,30 @@ pub struct Source {
     /// Source book codes (`\id`) to leave out, e.g. eBible front matter.
     #[serde(default)]
     pub skip_books: Vec<String>,
+    /// Further files of the same source, read after `url` in this order (STEPBible splits
+    /// TAHOT into four files). Written `[[source.extra_file]]`.
+    #[serde(rename = "extra_file", default)]
+    pub extra_files: Vec<ExtraFile>,
+}
+
+/// One more pinned file of a multi-file source.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExtraFile {
+    pub url: String,
+    /// Lowercase hex sha256 of the file at `url`; the evidence must name it too.
+    pub sha256: String,
+}
+
+impl Source {
+    /// Every pinned file, `url` first: (url, sha256).
+    pub fn files(&self) -> impl Iterator<Item = (&str, &str)> {
+        std::iter::once((self.url.as_str(), self.sha256.as_str())).chain(
+            self.extra_files
+                .iter()
+                .map(|f| (f.url.as_str(), f.sha256.as_str())),
+        )
+    }
 }
 
 /// The parsed `starter/id-changes.toml`: cumulative, never pruned.
@@ -74,7 +99,7 @@ pub struct IdChange {
     pub new: String,
 }
 
-pub const IMPORTERS: &[&str] = &["usfm"];
+pub const IMPORTERS: &[&str] = &["usfm", "tahot", "tagnt"];
 
 /// Hosts whose site terms restrict republishing (#20 decision 3).
 const REFUSED_HOSTS: &[&str] = &["ccel.org"];
@@ -149,18 +174,25 @@ pub fn check(lock: &Lock, lock_dir: &Path, changes: &IdChanges) -> Result<()> {
                 IMPORTERS.join(", ")
             ));
         }
-        if !is_sha256(&s.sha256) {
-            bad("sha256 must be 64 lowercase hex digits".into());
+        for (url, sha256) in s.files() {
+            if !is_sha256(sha256) {
+                bad(format!("sha256 of `{url}` must be 64 lowercase hex digits"));
+            }
+            if !(url.starts_with("https://")
+                || url.starts_with("http://")
+                || url.starts_with("file://"))
+            {
+                bad(format!("url `{url}` must be http(s):// or file://"));
+            }
         }
-        if !(s.url.starts_with("https://")
-            || s.url.starts_with("http://")
-            || s.url.starts_with("file://"))
-        {
-            bad(format!("url `{}` must be http(s):// or file://", s.url));
+        if s.importer == "usfm" && !s.extra_files.is_empty() {
+            bad("the `usfm` importer reads one zip; it takes no extra files".into());
         }
-        for url in std::iter::once(&s.url)
-            .chain(&s.origin_url)
-            .chain(&s.homepage)
+        for url in s
+            .files()
+            .map(|(url, _)| url)
+            .chain(s.origin_url.as_deref())
+            .chain(s.homepage.as_deref())
         {
             if let Some(host) = refused_host(url) {
                 bad(format!(
@@ -226,12 +258,16 @@ fn evidence_problem(lock_dir: &Path, s: &Source) -> Option<String> {
     let path: PathBuf = lock_dir.join(rel);
     match std::fs::read_to_string(&path) {
         Err(_) => Some(format!("evidence file `{}` is missing", s.evidence)),
-        // Tie the evidence to the exact edition shipped.
-        Ok(text) if !text.contains(&s.sha256) => Some(format!(
-            "evidence `{}` does not name the pinned sha256 {}",
-            s.evidence, s.sha256
-        )),
-        Ok(_) => None,
+        // Tie the evidence to the exact edition shipped: every pinned file.
+        Ok(text) => s
+            .files()
+            .find(|(_, sha256)| !text.contains(sha256))
+            .map(|(_, sha256)| {
+                format!(
+                    "evidence `{}` does not name the pinned sha256 {sha256}",
+                    s.evidence
+                )
+            }),
     }
 }
 

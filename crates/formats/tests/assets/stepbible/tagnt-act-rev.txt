@@ -1,0 +1,107 @@
+﻿TAGNT Mat-Jhn - Translators Amalgamated Greek NT -  STEPBible.org CC BY 4.0																
+TAGNT Act-Rev - Translators Amalgamated Greek NT -  STEPBible.org CC BY 4.0																
+(This is saved as 2  files because a single file too large for Hithub)																
+=================================================																
+All the words from standard Greek editions (NA27/28, TR, SBL, TH, Byz, WH, Treg) with translations, grammar, sources & variants that affect translation																
+=================================================================================================																
+Introduction & Abbreviations at: 	TinyURL.com/TAGNT-Intro															
+Spreadsheet version at: 	https://docs.google.com/spreadsheets/d/1Uri4ehqXnzUa97uvH-1-C022708HhLQ1a541Hsnlt70/edit															
+																
+	==============================================================															
+	Data created by www.STEPBible.org based on work at Tyndale House Cambridge (CC BY 4.0)															
+	==============================================================												
+	This licence allows you to:												
+	* Include any part of this data in software or publications and send it to AI servers  without requesting permission 												
+	* Download the data and reformat it for your application												
+	* Send any proposed corrections to STEPBible@Gmail.com to be verified 												
+	  (You MAY make changes yourself, but you should include a note of changes that can be viewed by those who use your new data)												
+	* Attribute the data to Tyndale House and STEPBible.org, and include a link to STEPBible.github.io/STEPBible-Data as the source of this data. 												
+	 Please do not post copies of this data file elsewhere, so that this remains the single up-to-date source"												
+	* We'd love to hear about your project and add it to our Partners Page when you make it available. Email us at STEPBible@Gmail.com.												
+	==============================================================												
+
+Act.1.6#01=NKO	Οἱ (Hoi)	Those	G3588=T-NPM	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			Los	[those] which	#01»04:G4905	G3588_A					
+Act.1.6#02=NKO	μὲν (men)	indeed	G3303=PRT	μέν=on one hand	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			de hecho	on one hand	#02	G3303					
+Act.1.6#03=NKO	οὖν (oun)	therefore	G3767=CONJ	οὖν=therefore/then	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			por lo tanto	therefore	#03	G3767					
+Act.1.6#04=NKO	συνελθόντες (sunelthontes)	having come together	G4905=V-2AAP-NPM	συνέρχομαι=to assemble	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			habiendo venido juntamente	to assemble	#04	G4905					
+Act.1.6#05=N(k)O	ἠρώτων (ērōtōn)	were asking	G2065=V-IAI-3P	ἐρωτάω=to ask	NA28+NA27+Tyn+SBL+WH+Treg	ἐπηρώτων (t=epērōtōn) were asking - G1905=V-IAI-3P in: TR+Byz		estaban preguntando	to ask	#05	G2065	G1905				
+Act.1.6#06=NKO	αὐτὸν (auton)	Him	G0846=P-ASM	αὐτός=he/she/it/self	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			a él	him	#06«05:G2065	G0846	G3778				
+Act.1.6#07=NKO	λέγοντες· (legontes)	saying;	G3004G=V-PAP-NPM	λέγω=to speak	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			estando diciendo	: speak»to speak|1_speak/ask	#07	G3004					
+Act.1.6#08=NKO	κύριε, (kurie)	Lord,	G2962G=N-VSM-T	κύριος=lord	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			Señor	: God»lord|1_God	#08	G2962					
+Act.1.6#09=NKO	εἰ (ei)	if	G1487G=COND	εἰ=if	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			¿Si	: if»if|1_if/whether	#09	G1487					
+Act.1.6#10=NKO	ἐν (en)	at	G1722=PREP	ἐν=in/on/among	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			en	in	#10	G1722					
+Act.1.6#11=NKO	τῷ (tō)	<the>	G3588=T-DSM	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			el	the	#11»12:G5550	G3588_B					
+Act.1.6#12=NKO	χρόνῳ (chronō)	time	G5550=N-DSM	χρόνος=time	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			tiempo	time	#12	G5550					
+Act.1.6#13=NKO	τούτῳ (toutō)	this	G3778=D-DSM	οὗτος=this/he/she/it	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			este	to this	#13«12:G5550	G3778	G5129				
+Act.1.6#14=NKO	ἀποκαθιστάνεις (apokathistaneis)	are you restoring	G0600=V-PAI-2S	ἀποκαθίστημι=to restore	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			estás restaurando	to restore	#14	G0600					
+Act.1.6#15=NKO	τὴν (tēn)	the	G3588=T-ASF	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			el	the	#15»16:G0932	G3588_C					
+Act.1.6#16=NKO	βασιλείαν (basileian)	kingdom	G0932=N-ASF	βασιλεία=kingdom	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			reino	kingdom	#16	G0932					
+Act.1.6#17=NKO	τῷ (tō)	<the>	G3588=T-DSM	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			a el	the	#17»18:G2474	G3588_D					
+Act.1.6#18=NKO	Ἰσραήλ; (Israēl)	to Israel?	G2474=N-DSM-L	Ἰσραήλ=Israel	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			Israel?	Israel»Israel|Israel@Gen.25.26	#18	G2474					
+Act.13.38#01=NKO	Γνωστὸν (Gnōston)	Known	G1110=A-NSN	γνωστός, γνώριμος=acquainted with	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			Conocido	acquainted with	#01	G1110					
+Act.13.38#02=NKO	οὖν (oun)	therefore	G3767=CONJ	οὖν=therefore/then	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			por lo tanto	therefore	#02	G3767					
+Act.13.38#03=NKO	ἔστω (estō)	it should be	G1510=V-PAM-3S	εἰμί=to be	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			esté siendo	to be	#03	G1510	G2077				
+Act.13.38#04=NKO	ὑμῖν, (humin)	to you,	G4771=P-2DP	σύ=you	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			a ustedes	to you	#04«03:G1510	G4771_A	G5213				
+Act.13.38#05=NKO	ἄνδρες (andres)	men	G0435G=N-VPM	ἀνήρ=man	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			varones	: man»man|1_man	#05	G0435					
+Act.13.38#06=NKO	ἀδελφοί, (adelphoi)	brothers,	G0080=N-VPM	ἀδελφός=brother	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			hermanos	brother	#06	G0080					
+Act.13.38#07=NKO	ὅτι (hoti)	that	G3754G=CONJ	ὅτι=that/since	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			que	: that»that/since|1_that	#07«01:G1110	G3754					
+Act.13.38#08=NKO	διὰ (dia)	through	G1223=PREP	διά=through/because of	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			a través de	through	#08	G1223					
+Act.13.38#09=NKO	τούτου (toutou)	this One	G3778=D-GSM	οὗτος=this/he/she/it	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			este	of this	#09«08:G1223	G3778	G5127				
+Act.13.38#10=NKO	ὑμῖν (humin)	to you	G4771=P-2DP	σύ=you	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			a ustedes	to you	#10»13:G2605	G4771_B	G5213				
+Act.13.38#11=NKO	ἄφεσις (aphesis)	forgiveness	G0859=N-NSF	ἄφεσις=forgiveness	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			dejar ir	forgiveness	#11	G0859					
+Act.13.38#12=NKO	ἁμαρτιῶν (hamartiōn)	of sins	G0266=N-GPF	ἁμαρτία=sin	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			pecados	sin	#12	G0266					
+Act.13.38#13=NKO	καταγγέλλεται· (katangelletai)	is proclaimed;	G2605=V-PPI-3S	καταγγέλλω=to proclaim	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			está siendo anunciado plenamente	is proclaimed	#13	G2605					
+Act.13.39(13.38)#01=NKO	καὶ (kai)	And	G2532=CONJ	καί=and	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			Y	and	#01	G2532					
+Act.13.39(13.38)#02=NKO	ἀπὸ (apo)	from	G0575=PREP	ἀπό=away from	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			desde	from	#02	G0575					
+Act.13.39(13.38)#03=NKO	πάντων (pantōn)	all things	G3956=A-GPN	πᾶς=all	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			de todas (cosas)	all	#03	G3956_A					
+Act.13.39(13.38)#04=NKO	ὧν (hōn)	from which	G3739=R-GPN	ὅς, ἥ=which	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			cuales	which	#04«16:G3956	G3739					
+Act.13.39(13.38)#05=NKO	οὐκ (ouk)	not	G3756=PRT-N	οὐ=no	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			no	no	#05»19:G1410	G3756					
+Act.13.39(13.38)#06=NKO	ἠδυνήθητε (ēdunēthēte)	you were able	G1410=V-AOI-2P-ATT	δύναμαι=be able	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			fueron capaces	be able	#06	G1410					
+Act.13.39(13.38)#07=NKO	ἐν (en)	in	G1722=PREP	ἐν=in/on/among	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			en	in	#07	G1722					
+Act.13.39(13.38)#08=k	τῷ (tō)	the	G3588=T-DSM	ὁ=the/this/who	TR+Byz			a el	the	#08»22:G3551	G3588					
+Act.13.39(13.38)#09=NKO	νόμῳ (nomō)	law	G3551=N-DSM	νόμος=law	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			ley	law	#09	G3551					
+Act.13.39(13.38)#10=NKO	Μωϋσέως (Mōuseōs)	of Moses	G3475=N-GSM-P	Μωϋσῆς, Μωσῆς=Moses	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz		TR: Μωσέως ; 	de Moisés	Moses»Moses|Moses@Exo.2.10	#10	G3475					
+Act.13.39(13.38)#11=NKO	δικαιωθῆναι, (dikaiōthēnai)	to be justified,	G1344=V-APN	δικαιόω=to justify	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			ser justificado	to justify	#11	G1344					
+Act.13.39#12=NKO	ἐν (en)	(39) in	G1722=PREP	ἐν=in/on/among	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			en	by	#13	G1722					
+Act.13.39#13=NKO	τούτῳ (toutō)	Him	G3778=D-DSM	οὗτος=this/he/she/it	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			este	to this	#14«01:G1722	G3778	G5129				
+Act.13.39#14=NKO	πᾶς (pas)	everyone	G3956=A-NSM	πᾶς=all	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			todo	all	#15	G3956_B					
+Act.13.39#15=NKO	ὁ (ho)	who	G3588=T-NSM	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			el	[that] which	#16»05:G4100	G3588					
+Act.13.39#16=NKO	πιστεύων (pisteuōn)	is believing	G4100=V-PAP-NSM	πιστεύω=to trust (in)	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			estando confiando	to trust (in)	#17	G4100					
+Act.13.39#17=NKO	δικαιοῦται. (dikaioutai)	is justified.	G1344=V-PPI-3S	δικαιόω=to justify	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			está siendo justificado	to justify	#18	G1344					
+Rev.12.17#01=NKO	καὶ (kai)	And	G2532=CONJ	καί=and	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			Y	and	#01	G2532_A					
+Rev.12.17#02=NKO	ὠργίσθη (ōrgisthē)	was angry	G3710=V-API-3S	ὀργίζω=to anger	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			fue hecho enfurecerse	to anger	#02	G3710					
+Rev.12.17#03=NKO	ὁ (ho)	the	G3588=T-NSM	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			el	the	#03»04:G1404	G3588_A					
+Rev.12.17#04=NKO	δράκων (drakōn)	dragon	G1404=N-NSM	δράκων=dragon	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			dragón	dragon	#04	G1404					
+Rev.12.17#05=NKO	ἐπὶ (epi)	with	G1909=PREP	ἐπί=upon/to/against	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			sobre	upon	#05	G1909					
+Rev.12.17#06=NKO	τῇ (tē)	the	G3588=T-DSF	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			la	the	#06»07:G1135	G3588_B					
+Rev.12.17#07=NKO	γυναικὶ (gunaiki)	woman	G1135G=N-DSF	γυνή=woman	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			mujer	: woman»woman|1_woman	#07	G1135					
+Rev.12.17#08=NKO	καὶ (kai)	and	G2532=CONJ	καί=and	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			y	and	#08	G2532_B					
+Rev.12.17#09=NKO	ἀπῆλθεν (apēlthen)	went	G0565=V-2AAI-3S	ἀπέρχομαι=to go away	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			vino desde	to go away	#09	G0565					
+Rev.12.17#10=NKO	ποιῆσαι (poiēsai)	to make	G4160G=V-AAN	ποιέω=to do/make	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			hacer	to make»2_make/create(OBJECT)	#10	G4160					
+Rev.12.17#11=NKO	πόλεμον (polemon)	war	G4171=N-ASM	πόλεμος=war	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			guerra	war	#11	G4171					
+Rev.12.17#12=NKO	μετὰ (meta)	with	G3326=PREP	μετά=with/after	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			con	with	#12	G3326					
+Rev.12.17#13=NKO	τῶν (tōn)	the	G3588=T-GPM	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			los	the	#13»14:G3062	G3588_C					
+Rev.12.17#14=NKO	λοιπῶν (loipōn)	rest	G3062=A-GPM	λοιπός=remaining	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			sobrantes	remaining	#14	G3062					
+Rev.12.17#15=NKO	τοῦ (tou)	of the	G3588=T-GSN	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			de la	the	#15»16:G4690	G3588_D					
+Rev.12.17#16=NKO	σπέρματος (spermatos)	children	G4690G=N-GSN	σπέρμα=seed	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			semilla	: offspring»seed|1_offspring	#16	G4690					
+Rev.12.17#17=NKO	αὐτῆς (autēs)	of her	G0846=P-GSF	αὐτός=he/she/it/self	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			de ella	of her	#17«16:G4690	G0846	G3778				
+Rev.12.17#18=NKO	τῶν (tōn)	who	G3588=T-GPM	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			los	[those] which	#18»19:G5083	G3588_E					
+Rev.12.17#19=NKO	τηρούντων (tērountōn)	are keeping	G5083G=V-PAP-GPM	τηρέω=to keep	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			estando guardando	: observe»to keep|1_observe	#19	G5083					
+Rev.12.17#20=NKO	τὰς (tas)	the	G3588=T-APF	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			los	the	#20»21:G1785	G3588_F					
+Rev.12.17#21=NKO	ἐντολὰς (entolas)	commandments	G1785=N-APF	ἐντολή=commandment	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			mandatos	commandments	#21	G1785					
+Rev.12.17#22=NKO	τοῦ (tou)	<the>	G3588=T-GSM	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			de el	the	#22»23:G2316	G3588_G					
+Rev.12.17#23=NKO	θεοῦ (theou)	of God	G2316=N-GSM-T	θεός=God	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			Dios	God	#23	G2316					
+Rev.12.17#24=NKO	καὶ (kai)	and	G2532=CONJ	καί=and	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			y	and	#24	G2532_C					
+Rev.12.17#25=NKO	ἐχόντων (echontōn)	holding	G2192=V-PAP-GPM	ἔχω=to have/be	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			estando teniendo	to have	#25	G2192					
+Rev.12.17#26=NKO	τὴν (tēn)	the	G3588=T-ASF	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			el	the	#26»27:G3141	G3588_H					
+Rev.12.17#27=NKO	μαρτυρίαν (marturian)	testimony	G3141=N-ASF	μαρτυρία=testimony	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			testimonio	testimony	#27	G3141					
+Rev.12.17#28=k	τοῦ (tou)	<the>	G3588=T-GSM	ὁ=the/this/who	TR			de el	the	#28»29:G2424	G3588_i					
+Rev.12.17#29=NKO	Ἰησοῦ (Iēsou)	of Jesus	G2424G=N-GSM-P	Ἰησοῦς=Jesus/Joshua	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			de Jesús	Jesus»Jesus|Jesus@Mat.1.1	#29	G2424					
+Rev.12.17#30=K	Χριστοῦ. (Christou)	Christ.	G5547=N-GSM-T	Χριστός=Christ	TR			Ungido	Christ»Christ|Jesus@Mat.1.1	#30	G5547		^ Χριστοῦ.  (<i>Christou</i>) 'Christ.' is only in traditional manuscripts (TR)			
+Rev.12.18[13.1]#01=NKO	καὶ (kai)	[13.1] And	G2532=CONJ	καί=and	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			Y	and	#01	G2532					
+Rev.12.18[13.1]#02=N(K)O	ἐστάθη (estathē)	he stood	G2476=V-API-3S	ἵστημι=to stand	NA28+NA27+Tyn+SBL+WH+Treg	ἐστάθην (T=estathēn) I stood - G2476=V-API-1S in: TR+Byz		fue puesto de pie	to stand	#02	G2476		v ἐστάθην  (<i>estathēn</i>) 'I stood' occurs in traditional manuscripts (TR+Byz) instead of ἐστάθη  (<i>estathē</i>) 'he stood' in older manuscripts (NA28+NA27+Tyn+SBL+WH+Treg)			
+Rev.12.18[13.1]#03=NKO	ἐπὶ (epi)	upon	G1909=PREP	ἐπί=upon/to/against	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			sobre	upon	#03	G1909					
+Rev.12.18[13.1]#04=NKO	τὴν (tēn)	the	G3588=T-ASF	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			la	the	#04»05:G0285	G3588_A					
+Rev.12.18[13.1]#05=NKO	ἄμμον (ammon)	sand	G0285=N-ASF	ἄμμος=sand	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			arena	sand	#05	G0285					
+Rev.12.18[13.1]#06=NKO	τῆς (tēs)	of the	G3588=T-GSF	ὁ=the/this/who	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			de el	the	#06»07:G2281	G3588_B					
+Rev.12.18[13.1]#07=NKO	θαλάσσης.¶ (thalassēs)	sea.	G2281=N-GSF	θάλασσα=sea	NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz			mar	sea	#07	G2281					

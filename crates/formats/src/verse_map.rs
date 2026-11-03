@@ -9,7 +9,10 @@
 //!   the smallest Standard Passage covering everything it collected;
 //! - a rule whose StandardRef lies outside the Standard versification (e.g. Greek additions in
 //!   Daniel or Esther) makes the verse an **Unmapped verse**, unless other rules also map it;
-//! - a verse no rule covers maps by identity if the Standard has it, else it is Unmapped.
+//! - a verse no rule covers maps by identity if the Standard has it. If it does not, the rules
+//!   run again for that verse with word counts compared without the 25% margin (below), so a
+//!   near-equal count still picks a tradition (Hebrew Mal 3:19-24 are Mal 4:1-6, but their
+//!   word counts differ by under 25%); a verse still left over is Unmapped.
 //!
 //! Standard Verses that no Bible Verse reaches, within the books the Bible has, are **Absent**.
 //!
@@ -278,7 +281,8 @@ impl Facts<'_> {
         })
     }
 
-    fn holds(&self, t: &Test) -> bool {
+    /// Whether a test passes; `strict` word counts need a 25% difference.
+    fn holds(&self, t: &Test, strict: bool) -> bool {
         match *t {
             Test::Exist(p, want) => self.exists(p) == want,
             Test::Last(p) => match (p.book, p.chapter) {
@@ -296,8 +300,10 @@ impl Facts<'_> {
                 // languages; in English the two clauses of e.g. Phil 1:16-17 are near-equal in
                 // either order (KJV 15:16, WEB 16:18, ESV 17:17), while Greek is 9:14. Without
                 // a clear signal no rule applies and the verse maps by identity.
-                (Some(x), Some(y)) if less => x * 4 < y * 3,
-                (Some(x), Some(y)) => x * 3 > y * 4,
+                (Some(x), Some(y)) if strict && less => x * 4 < y * 3,
+                (Some(x), Some(y)) if strict => x * 3 > y * 4,
+                (Some(x), Some(y)) if less => x < y,
+                (Some(x), Some(y)) => x > y,
                 _ => false,
             },
             Test::Unknown => false,
@@ -363,52 +369,29 @@ pub fn build_verse_map(verses: &[VerseFacts]) -> VerseMapOutcome {
     let books: HashSet<Book> = verses.iter().map(|f| f.verse.book).collect();
 
     // Per Bible Verse: Standard Verses collected, and whether a rule sent it outside.
-    let mut targets: Vec<BTreeSet<Verse>> = vec![BTreeSet::new(); verses.len()];
-    let mut outside = vec![false; verses.len()];
-    let mut touched = vec![false; verses.len()];
-    let mut traditions: BTreeMap<String, usize> = BTreeMap::new();
-    for rule in rules() {
-        let Some(first) = rule.source.first() else {
-            continue;
-        };
-        if !first.start.book.is_some_and(|b| books.contains(&b)) {
-            continue;
-        }
-        if !rule.tests.iter().all(|t| facts.holds(t)) {
-            continue;
-        }
-        let mut idx: BTreeSet<usize> = BTreeSet::new();
-        for r in &rule.source {
-            for key in facts.source_points(r) {
-                if let Some(&i) = facts.covers.get(&key) {
-                    idx.insert(i);
-                }
-            }
-        }
-        if idx.is_empty() {
-            continue;
-        }
-        let mut std: Vec<Verse> = Vec::new();
-        let mut out_of_standard = false;
-        for r in &rule.standard {
-            match standard_verses(r) {
-                Some(v) => std.extend(v),
-                None => out_of_standard = true,
-            }
-        }
-        let moves = !rule.identity
-            && idx.iter().any(|&i| {
-                (std.is_empty() && out_of_standard) || std.iter().any(|s| *s != verses[i].verse)
-            });
-        if moves {
-            *traditions.entry(rule.source_type.to_string()).or_insert(0) += 1;
-        }
-        for i in idx {
-            touched[i] = true;
-            targets[i].extend(std.iter().copied());
-            outside[i] |= out_of_standard && std.is_empty();
-        }
+    let mut state = RuleState {
+        targets: vec![BTreeSet::new(); verses.len()],
+        outside: vec![false; verses.len()],
+        touched: vec![false; verses.len()],
+        traditions: BTreeMap::new(),
+    };
+    apply_rules(&facts, &books, true, None, &mut state);
+    // Verses no rule reached and the Standard lacks: try again without the word-count margin.
+    let stranded: HashSet<usize> = verses
+        .iter()
+        .enumerate()
+        .filter(|&(i, f)| !state.touched[i] && identity(f).is_none())
+        .map(|(i, _)| i)
+        .collect();
+    if !stranded.is_empty() {
+        apply_rules(&facts, &books, false, Some(&stranded), &mut state);
     }
+    let RuleState {
+        targets,
+        outside,
+        touched,
+        traditions,
+    } = state;
 
     let mut entries = Vec::with_capacity(verses.len());
     let mut reached: HashSet<Verse> = HashSet::new();
@@ -437,6 +420,73 @@ pub fn build_verse_map(verses: &[VerseFacts]) -> VerseMapOutcome {
     VerseMapOutcome {
         map: VerseMap::new(entries, absent, &Standard),
         traditions,
+    }
+}
+
+/// What the rules collected for each Bible Verse.
+struct RuleState {
+    targets: Vec<BTreeSet<Verse>>,
+    outside: Vec<bool>,
+    touched: Vec<bool>,
+    traditions: BTreeMap<String, usize>,
+}
+
+/// Run every applying rule; `only` limits which Bible Verses (by index) it may change.
+fn apply_rules(
+    facts: &Facts<'_>,
+    books: &HashSet<Book>,
+    strict: bool,
+    only: Option<&HashSet<usize>>,
+    state: &mut RuleState,
+) {
+    let verses = facts.verses;
+    for rule in rules() {
+        let Some(first) = rule.source.first() else {
+            continue;
+        };
+        if !first.start.book.is_some_and(|b| books.contains(&b)) {
+            continue;
+        }
+        if !rule.tests.iter().all(|t| facts.holds(t, strict)) {
+            continue;
+        }
+        let mut idx: BTreeSet<usize> = BTreeSet::new();
+        for r in &rule.source {
+            for key in facts.source_points(r) {
+                if let Some(&i) = facts.covers.get(&key) {
+                    idx.insert(i);
+                }
+            }
+        }
+        if let Some(only) = only {
+            idx.retain(|i| only.contains(i));
+        }
+        if idx.is_empty() {
+            continue;
+        }
+        let mut std: Vec<Verse> = Vec::new();
+        let mut out_of_standard = false;
+        for r in &rule.standard {
+            match standard_verses(r) {
+                Some(v) => std.extend(v),
+                None => out_of_standard = true,
+            }
+        }
+        let moves = !rule.identity
+            && idx.iter().any(|&i| {
+                (std.is_empty() && out_of_standard) || std.iter().any(|s| *s != verses[i].verse)
+            });
+        if moves {
+            *state
+                .traditions
+                .entry(rule.source_type.to_string())
+                .or_insert(0) += 1;
+        }
+        for i in idx {
+            state.touched[i] = true;
+            state.targets[i].extend(std.iter().copied());
+            state.outside[i] |= out_of_standard && std.is_empty();
+        }
     }
 }
 

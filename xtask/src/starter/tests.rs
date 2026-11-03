@@ -244,7 +244,136 @@ fn the_real_lock_passes_the_provenance_gate() {
         .iter()
         .map(|s| s.resource_id.as_str())
         .collect();
-    assert_eq!(ids, ["kjv-strongs", "bsb", "web", "asv"]);
+    assert_eq!(ids, ["kjv-strongs", "bsb", "web", "asv", "tahot", "tagnt"]);
+    // STEPBible splits TAHOT over four files and TAGNT over two.
+    let files = |id: &str| {
+        lock_file
+            .sources
+            .iter()
+            .find(|s| s.resource_id == id)
+            .map(|s| s.files().count())
+    };
+    assert_eq!(files("tahot"), Some(4));
+    assert_eq!(files("tagnt"), Some(2));
+}
+
+/// Write a lock with one TAHOT entry split over two excerpt files; returns the Config.
+/// `evidence_names_all` false leaves the second file's sha256 out of the evidence.
+fn setup_tahot(dir: &Path, evidence_names_all: bool) -> Config {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("crates/formats/tests/assets/stepbible");
+    let mut files = Vec::new();
+    for name in ["tahot-gen-deu.txt", "tahot-isa-mal.txt"] {
+        let to = dir.join(name);
+        std::fs::copy(src.join(name), &to).unwrap();
+        let sha = sha256_hex(&std::fs::read(&to).unwrap());
+        files.push((to.display().to_string().replace('\\', "/"), sha));
+    }
+    let starter = dir.join("starter");
+    std::fs::create_dir_all(starter.join("evidence")).unwrap();
+    let named = if evidence_names_all { 2 } else { 1 };
+    let evidence: String = files[..named]
+        .iter()
+        .map(|(_, sha)| format!("sha256 {sha}\n"))
+        .collect();
+    std::fs::write(
+        starter.join("evidence/tahot.md"),
+        format!("Licence: CC BY 4.0.\n{evidence}"),
+    )
+    .unwrap();
+    let lock = format!(
+        r#"size_budget_mb = 400
+
+[[source]]
+resource_id = "tahot"
+importer = "tahot"
+url = "file://{}"
+sha256 = "{}"
+title = "Hebrew Old Testament (STEPBible TAHOT)"
+abbreviation = "TAHOT"
+language = "hbo"
+spdx = "CC-BY-4.0"
+homepage = "https://STEPBible.github.io/STEPBible-Data/"
+attribution = "TAHOT, data created by www.STEPBible.org based on work at Tyndale House Cambridge (CC BY 4.0)."
+changes = "Morpheme separators removed; Ketiv readings as notes."
+provenance = "The licence notice in each file."
+evidence = "evidence/tahot.md"
+
+[[source.extra_file]]
+url = "file://{}"
+sha256 = "{}"
+"#,
+        files[0].0, files[0].1, files[1].0, files[1].1
+    );
+    std::fs::write(starter.join("sources.toml"), lock).unwrap();
+    Config {
+        lock: starter.join("sources.toml"),
+        id_changes: starter.join("id-changes.toml"),
+        previous: None,
+        out: dir.join("out"),
+        cache: dir.join("cache"),
+    }
+}
+
+#[test]
+fn a_tahot_source_in_several_files_builds_a_hebrew_bible_with_its_changes_note() {
+    let dir = scratch("tahot");
+    let config = setup_tahot(&dir, true);
+    build(&config).unwrap();
+    let reader = ObrReader::open(&config.out.join("tahot.obr")).unwrap();
+    let m = reader.manifest();
+    assert_eq!(m.direction, obs_model::Direction::Rtl);
+    assert_eq!(m.language, "hbo");
+    assert_eq!(m.license, "CC-BY-4.0");
+    assert_eq!(m.source_format, "stepbible-tahot");
+    assert_eq!(
+        m.source_file.as_deref(),
+        Some("tahot-gen-deu.txt; tahot-isa-mal.txt")
+    );
+    assert_eq!(
+        m.source_url.as_deref(),
+        Some("https://STEPBible.github.io/STEPBible-Data/")
+    );
+    // Both files were read: Genesis from the first, Malachi from the second.
+    let report = std::fs::read_to_string(config.out.join(REPORT_FILE)).unwrap();
+    assert!(report.contains("| `tahot` | 1 |"), "{report}");
+    assert!(report.contains("0 unmapped verse(s)"), "{report}");
+    let manifest = ReleaseManifest::load(&config.out.join(MANIFEST_FILE)).unwrap();
+    let units = &manifest.resources[0].units;
+    assert!(units.iter().any(|u| u == "GEN") && units.iter().any(|u| u == "MAL"));
+    // CC BY: the changes are published beside the Resource.
+    let changes = std::fs::read_to_string(config.out.join("CHANGES-tahot.md")).unwrap();
+    assert!(changes.contains("## Changes we made"), "{changes}");
+    assert!(changes.contains("Ketiv readings as notes."), "{changes}");
+    assert!(changes.contains("Tyndale House Cambridge"), "{changes}");
+}
+
+#[test]
+fn the_evidence_must_name_every_file_of_a_source() {
+    let dir = scratch("tahot-evidence");
+    let config = setup_tahot(&dir, false);
+    let second = Lock::load(&config.lock).unwrap().sources[0].extra_files[0]
+        .sha256
+        .clone();
+    let err = format!("{:#}", build(&config).unwrap_err());
+    assert!(
+        err.contains("does not name the pinned sha256") && err.contains(&second),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_usfm_source_takes_no_extra_files() {
+    let dir = scratch("usfm-extra");
+    let (zip, sha) = fixture_zip(&dir, &[]);
+    let config = setup(&dir, &zip, &sha, true);
+    let lock = std::fs::read_to_string(&config.lock).unwrap()
+        + &format!("\n[[source.extra_file]]\nurl = \"file://{}\"\nsha256 = \"{sha}\"\n", zip.display());
+    std::fs::write(&config.lock, lock).unwrap();
+    let err = format!("{:#}", build(&config).unwrap_err());
+    assert!(err.contains("takes no extra files"), "{err}");
 }
 
 /// The MHC and JFB lock entries proposed by the #39 commentary-source spike, read from its

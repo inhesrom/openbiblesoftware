@@ -1,0 +1,154 @@
+TAHOT Gen-Deu - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+TAHOT Jos-Est - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+TAHOT Job-Sng - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+TAHOT Isa-Mal - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+(This is saved as 4  files because a single file too large for Github)																
+=================================================																
+																
+	==============================================================															
+	Data created by www.STEPBible.org based on work at Tyndale House Cambridge (CC BY 4.0)															
+	==============================================================												
+	This licence allows you to:												
+	* Include any part of this data in software or publications and send it to AI servers  without requesting permission 												
+	* Download the data and reformat it for your application												
+	* Send any proposed corrections to STEPBible@Gmail.com to be verified 												
+	  (You MAY make changes yourself, but you should include a note of changes that can be viewed by those who use your new data)												
+	* Attribute the data to Tyndale House and STEPBible.org, and include a link to STEPBible.github.io/STEPBible-Data as the source of this data. 												
+	 Please do not post copies of this data file elsewhere, so that this remains the single up-to-date source"												
+	* We'd love to hear about your project and add it to our Partners Page when you make it available. Email us at STEPBible@Gmail.com.												
+	==============================================================												
+
+Isa.44.24#01=L	כֹּֽה\־	koh-	thus	{H3541}\H9014	HD			H3541			{H3541=כֹּה=thus}\H9014=־=link					
+Isa.44.24#02=L	אָמַ֤ר	'a.Mar	he says	{H0559}	HVqp3ms			H0559			{H0559=אָמַר=to say}					
+Isa.44.24#03=L	יְהוָה֙	Yah.weh	Yahweh	{H3068G}	HNpt			H3068G_A			{H3068G=יהוה=LORD»LORD@Gen.1.1-Heb}					
+Isa.44.24#04=L	גֹּאֲלֶ֔/ךָ	go.'a.Le./kha	redeemer/ your	{H1350A}/H9021	HVqrmsc/Sp2ms			H1350A			{H1350A=גָּאַל=: redeem»to redeem:1_redeem}/H9021=Ps2m=your					
+Isa.44.24#05=L	וְ/יֹצֶרְ/ךָ֖	ve./yo.tzer./Kha	and/ [the one who] formed/ you	H9002/{H3335G}/H9031	HC/Vqrmsc/Sp2ms			H3335G			H9002=ו=and/{H3335G=יָצַר=: formed»to form:1_formed}/H9031=Os2m=you					
+Isa.44.24#06=L	מִ/בָּ֑טֶן	mi./Ba.ten	from/ [the] womb	H9006/{H0990H}	HR/Ncfsa			H0990H			H9006=מ=from/{H0990H=בֶּ֫טֶן=: womb»belly:2_womb;_pregnancy}					
+Isa.44.24#07=L	אָנֹכִ֤י	'a.no.Khi	I	{H0595}	HPp1bs			H0595			{H0595=אָֽנֹכִ֫י=I}					
+Isa.44.24#08=L	יְהוָה֙	Yah.weh	[am] Yahweh	{H3068G}	HNpt			H3068G_B			{H3068G=יהוה=LORD»LORD@Gen.1.1-Heb}					
+Isa.44.24#09=L	עֹ֣שֶׂה	'O.seh	[who] made	{H6213H}	HVqrmsa			H6213H			{H6213H=עָשָׂה=: make(OBJECT)»to make:1_make(OBJECT)}					
+Isa.44.24#10=L	כֹּ֔ל	Kol	everything	{H3605}	HNcmsa			H3605			{H3605=כֹּל=all}					
+Isa.44.24#11=L	נֹטֶ֤ה	no.Teh	[who] stretched out	{H5186}	HVqrmsa			H5186			{H5186=נָטָה=to stretch}					
+Isa.44.24#12=L	שָׁמַ֙יִם֙	sha.Ma.yim	[the] heavens	{H8064}	HNcmpa			H8064			{H8064=שָׁמַיִם=heaven}					
+Isa.44.24#13=L	לְ/בַדִּ֔/י	le./va.D/i	to/ alone/ me	H9005/{H0905H}/H9030	HR/Ncmsc/Sp1bs			H0905H			H9005=ל=to/{H0905H=בַּד=: alone»alone:2_alone}/H9030=Ss1c=I					
+Isa.44.24#14=L	רֹקַ֥ע	ro.Ka'	[who] spread out	{H7554}	HVqrmsa			H7554			{H7554=רָקַע=to beat}					
+Isa.44.24#15=L	הָ/אָ֖רֶץ	ha./'A.retz	the/ earth	H9009/{H0776G}	HTd/Ncfsa			H0776G			H9009=ה=the/{H0776G=אֶ֫רֶץ=: country;_planet»land:2_country;_planet}					
+Isa.44.24#16=Q(K)		[ ]	[ ]			K= mi (מִי) "who [was]?" (H4310=HPi)	L= מֵי ¦ ;		H4310, H4325G							
+Isa.44.24#17=Q(K)	מֵ/אִתִּֽ/י\׃	ma./'i.t/i	from <the>/ with/ myself	H9006/{H0854}/H9030\H9016	HRd/R/Sp1bs	K= 'i.t/i (אִתִּ/י\׃) "with/ me" (H0854/H9030\H9016=HR/Sp1bs)	L= אִתִּֽ/י\׃ ¦ ;	H0854			H9006=מ=from/{H0854=אֵת=with}/H9030=Os1c=me\H9016=׃=verseEnd					
+Dan.2.4#01=L	וַֽ/יְדַבְּר֧וּ	va/y.da.be.Ru	and/ they spoke	H9001/{H1696G}	Hc/Vpw3mp			H1696G			H9001=ו=&/{H1696G=דָבַר=: speak»to speak:1_speak;_tell;_command}					
+Dan.2.4#02=L	הַ/כַּשְׂדִּ֛ים	ha./kas.Dim	the/ Chaldeans	H9009/{H3778}	HTd/Ngmpa			H3778			H9009=ה=the/{H3778=כַּשְׂדִּים=Chaldea»Chaldea@Gen.11.28-Act}					
+Dan.2.4#03=L	לַ/מֶּ֖לֶךְ	la./Me.lekh	to the/ king	H9005/{H4428G}	HRd/Ncmsa			H4428G			H9005=ל=to/{H4428G=מֶ֫לֶךְ=king}					
+Dan.2.4#04=L	אֲרָמִ֑ית	'a.ra.Mit	Aramaic	{H0762}	HAafsc			H0762			{H0762=אֲרָמִית=Aramaic»Aramaic@2Ki.18.26-Rev}					
+Dan.2.4#05=L	מַלְכָּ/א֙	mal.Ka/'	king/ O	{H4430}/H9010	ANcbsd/Ta			H4430			{H4430=מֶ֫לֶךְ=king}/H9010=a=the					
+Dan.2.4#06=L	לְ/עָלְמִ֣ין	le./'al.Min	for/ ever	H9005/{H5957}	AR/Ncmpa			H5957			H9005=ל=to/{H5957=עָלַם=perpetuity}					
+Dan.2.4#07=L	חֱיִ֔י	che.Yi	live!	{H2418}	AVqv2ms			H2418			{H2418=חֲיָא=to live}					
+Dan.2.4#08=L	אֱמַ֥ר	'e.Mar	tell!	{H0560}	AVqv2ms			H0560			{H0560=אֲמַר=to say}					
+Dan.2.4#09=L	חֶלְמָ֛/א	chel.Ma/'	dream/ the	{H2493}/H9010	ANcbsd/Ta			H2493			{H2493=חֵ֫לֶם=dream}/H9010=a=the					
+Dan.2.4#10=Q(K)	לְ/עַבְדָ֖/ךְ	le./'av.da.yi/kh	to/ servant/ your	H9005/{H5649}/H9021	AR/Ncbsc/Sp2ms	K= le./'av.da.yi/kh (לְ/עַבְדַּיִ/ךְ) "to/ servants/ your" (H9005/H5649/H9021=AR/Ncmpc/Sp2ms)	L= לְ/עַבְדָ֖י/ךְ ¦ ;	H5649			H9005=ל=to/{H5649=עֲבַד=servant;_slave}/H9021=Ps2m=your					
+Dan.2.4#11=L	וּ/פִשְׁרָ֥/א	u./fish.Ra/'	and/ interpretation/ the	H9002/{H6591}/H9010	AC/Ncbsd/Ta			H6591			H9002=ו=and/{H6591=פְּשַׁר=interpretation}/H9010=a=the					
+Dan.2.4#12=L	נְחַוֵּֽא\׃	ne.cha.Ve'	we will declare	{H2324}\H9016	AVpi1cp			H2324			{H2324=חֲוָה=to show}\H9016=׃=verseEnd					
+Mal.3.18#01=L	וְ/שַׁבְתֶּם֙	ve./shav.Tem	and/ you will return	H9001/{H7725J}	Hc/Vqq2mp			H7725J			H9001=ו=&/{H7725J=שׁוּב=: again»to return:4_again;_constantly}					
+Mal.3.18#02=L	וּ/רְאִיתֶ֔ם	u./re.'i.Tem	and/ you will see	H9001/{H7200G}	Hc/Vqq2mp			H7200G			H9001=ו=&/{H7200G=רָאָה=: see»to see:1_see;_show}					
+Mal.3.18#03=L	בֵּ֥ין	bein	between	{H0996G}	HAcmsc			H0996G_A			{H0996G=בַּ֫יִן=: between»between:1_between}					
+Mal.3.18#04=L	צַדִּ֖יק	tza.Dik	a righteous [person]	{H6662}	HAamsa			H6662			{H6662=צַדִּיק=righteous}					
+Mal.3.18#05=L	לְ/רָשָׁ֑ע	le./ra.Sha'	and/ a wicked [person]	H9005/{H7563}	HR/Ncmsa			H7563			H9005=ל=to/{H7563=רָשָׁע=wicked}					
+Mal.3.18#06=L	בֵּ֚ין	bein	between	{H0996G}	HAcmsc			H0996G_B			{H0996G=בַּ֫יִן=: between»between:1_between}					
+Mal.3.18#07=L	עֹבֵ֣ד	'o.Ved	[one who] serves	{H5647H}	HVqrmsc			H5647H_A			{H5647H=עָבַד=: minister»to serve:2_minister;_serve[God;_tabernacle;_temple];_worship}					
+Mal.3.18#08=L	אֱלֹהִ֔ים	'E.lo.Him	<of> God	{H0430G}	HNcmpa			H0430G			{H0430G=אֱלֹהִים=God»LORD@Gen.1.1-Heb}					
+Mal.3.18#09=L	לַ/אֲשֶׁ֖ר	la./'a.Sher	and/ [one] who	H9005/{H0834A}	HR/Tr			H0834A			H9005=ל=to/{H0834A=אֲשֶׁר=which}					
+Mal.3.18#10=L	לֹ֥א	lo'	not	{H3808}	HTn			H3808			{H3808=לֹא=not}					
+Mal.3.18#11=L	עֲבָדֽ/וֹ\׃\ \ס	a.va.D/o	he serves/ him	{H5647H}/H9033\H9016\ \H9018	HVqp3ms/Sp3ms			H5647H_B			{H5647H=עָבַד=: minister»to serve:2_minister;_serve[God;_tabernacle;_temple];_worship}/H9033=Os3m=him\H9016=׃=verseEnd\ \H9018=ס=section					
+Mal.4.1(3.19)#01=L	כִּֽי\־	ki-	for	{H3588A}\H9014	HTc			H3588A			{H3588A=כִּי=for}\H9014=־=link					
+Mal.4.1(3.19)#02=L	הִנֵּ֤ה	hi.Neh	here!	{H2009}	HTj			H2009			{H2009=הִנֵּה=behold}					
+Mal.4.1(3.19)#03=L	הַ/יּוֹם֙	hai./yOm	the/ day	H9009/{H3117G}	HTd/Ncmsa			H3117G_A			H9009=ה=the/{H3117G=יוֹם=: day»day;_when:1_day;_when;_period}					
+Mal.4.1(3.19)#04=L	בָּ֔א	Ba'	[is] coming	{H0935G}	HVqrmsa			H0935G_A			{H0935G=בּוֹא=: come»to come (in):1_come;_go_in}					
+Mal.4.1(3.19)#05=L	בֹּעֵ֖ר	bo.'Er	burning	{H1197A}	HVqrmsa			H1197A			{H1197A=בָּעַר=: burn»to burn:1_burn;_ignite}					
+Mal.4.1(3.19)#06=L	כַּ/תַּנּ֑וּר	ka./ta.Nur	like <the>/ furnace	H9004/{H8574H}	HRd/Ncmsa			H8574H			H9004=כ=like/{H8574H=תַּנּוּר=oven}					
+Mal.4.1(3.19)#07=L	וְ/הָי֨וּ	ve./ha.Yu	and/ they will be	H9001/{H1961}	Hc/Vqq3cp			H1961			H9001=ו=&/{H1961=הָיָה=to be}					
+Mal.4.1(3.19)#08=L	כָל\־	khol-	all	{H3605}\H9014	HNcmsc			H3605_A			{H3605=כֹּל=all}\H9014=־=link					
+Mal.4.1(3.19)#09=L	זֵדִ֜ים	ze.Dim	arrogant [people]	{H2086}	HAampa			H2086			{H2086=זֵד=arrogant}					
+Mal.4.1(3.19)#10=L	וְ/כָל\־	ve./khol	and/ every	H9002/{H3605}\H9014	HC/Ncmsc			H3605_B			H9002=ו=and/{H3605=כֹּל=all}\H9014=־=link					
+Mal.4.1(3.19)#11=L	עֹשֵׂ֤ה	'o.Seh	[one who] does	{H6213J}	HVqrmsc			H6213J			{H6213J=עָשָׂה=: [do](ACTION)»to make:4_[do](ACTION)}					
+Mal.4.1(3.19)#12=L	רִשְׁעָה֙	rish.'Ah	<of> wickedness	{H7564}	HNcfsa			H7564			{H7564=רִשְׁעָה=wickedness}					
+Mal.4.1(3.19)#13=L	קַ֔שׁ	Kash	stubble	{H7179}	HNcmsa			H7179			{H7179=קַשׁ=stubble}					
+Mal.4.1(3.19)#14=L	וְ/לִהַ֨ט	ve./li.Hat	and/ it will set ablaze	H9001/{H3857}	Hc/Vpq3ms			H3857			H9001=ו=&/{H3857=לָהַט=to kindle}					
+Mal.4.1(3.19)#15=L	אֹתָ֜/ם	'o.Ta/m	<obj.>/ them	{H0853}/H9038	HTo/Sp3mp			H0853			{H0853=אֵת=[Obj.]}/H9038=Op3m=them					
+Mal.4.1(3.19)#16=L	הַ/יּ֣וֹם	hai./Yom	the/ day	H9009/{H3117G}	HTd/Ncmsa			H3117G_B			H9009=ה=the/{H3117G=יוֹם=: day»day;_when:1_day;_when;_period}					
+Mal.4.1(3.19)#17=L	הַ/בָּ֗א	ha./Ba'	<the>/ coming	H9009/{H0935G}	HTd/Vqrmsa			H0935G_B			H9009=ה=the/{H0935G=בּוֹא=: come»to come (in):1_come;_go_in}					
+Mal.4.1(3.19)#18=L	אָמַר֙	'a.Mar	he says	{H0559}	HVqp3ms			H0559			{H0559=אָמַר=to say}					
+Mal.4.1(3.19)#19=L	יְהוָ֣ה	Yah.weh	Yahweh	{H3068G}	HNpt			H3068G			{H3068G=יהוה=LORD»LORD@Gen.1.1-Heb}					
+Mal.4.1(3.19)#20=L	צְבָא֔וֹת	tze.va.'ot	of hosts	{H6635B}	HNcfpa			H6635B			{H6635B=צָבָא=Hosts»LORD@Gen.1.1-Heb}					
+Mal.4.1(3.19)#21=L	אֲשֶׁ֛ר	'a.Sher	that	{H0834A}	HTr			H0834A			{H0834A=אֲשֶׁר=which}					
+Mal.4.1(3.19)#22=L	לֹא\־	lo'-	not	{H3808}\H9014	HTn			H3808			{H3808=לֹא=not}\H9014=־=link					
+Mal.4.1(3.19)#23=L	יַעֲזֹ֥ב	ya.'a.Zo	it will leave	{H5800A}	HVqi3ms			H5800A			{H5800A=עָזַב=: forsake»to leave:1_forsake}					
+Mal.4.1(3.19)#24=L	לָ/הֶ֖ם	la./Hem	for/ them	H9005/{H9038}	HR/Sp3mp			H9038			H9005=ל=to/{H9038=Op3m=them}					
+Mal.4.1(3.19)#25=L	שֹׁ֥רֶשׁ	Sho.resh	root	{H8328}	HNcmsa			H8328			{H8328=שֹׁ֫רֶשׁ=root}					
+Mal.4.1(3.19)#26=L	וְ/עָנָֽף\׃	ve./'a.Naf	and/ branch	H9002/{H6057}\H9016	HC/Ncmsa			H6057			H9002=ו=and/{H6057=עָנָף=branch}\H9016=׃=verseEnd					
+Mal.4.2(3.20)#01=L	וְ/זָרְחָ֨ה	ve./za.re.Chah	and/ it will rise	H9001/{H2224}	Hc/Vqq3fs			H2224			H9001=ו=&/{H2224=זָרַח=to rise}					
+Mal.4.2(3.20)#02=L	לָ/כֶ֜ם	la./Khem	for/ you	H9005/{H9036}	HR/Sp2mp			H9036			H9005=ל=to/{H9036=Op2m=you}					
+Mal.4.2(3.20)#03=L	יִרְאֵ֤י	yir.'Ei	[those] fearing	{H3373}	HAampc			H3373			{H3373=יָרֵא=afraid}					
+Mal.4.2(3.20)#04=L	שְׁמִ/י֙	she.M/i	<of> name/ my	{H8034}/H9020	HNcmsc/Sp1bs			H8034			{H8034=שֵׁם=name}/H9020=Ps1c=my					
+Mal.4.2(3.20)#05=L	שֶׁ֣מֶשׁ	She.mesh	a sun of	{H8121}	HNcbsc			H8121			{H8121=שֶׁ֫מֶשׁ=sun}					
+Mal.4.2(3.20)#06=L	צְדָקָ֔ה	tze.da.Kah	righteousness	{H6666}	HNcfsa			H6666			{H6666=צְדָקָה=righteousness}					
+Mal.4.2(3.20)#07=L	וּ/מַרְפֵּ֖א	u./mar.Pe'	and/ healing	H9002/{H4832}	HC/Ncmsa			H4832			H9002=ו=and/{H4832=מַרְפֵּא=healing}					
+Mal.4.2(3.20)#08=L	בִּ/כְנָפֶ֑י/הָ	bi/kh.na.Fei./ha	[will be] in/ wings/ its	H9003/{H3671}/H9024	HR/Ncfdc/Sp3fs			H3671			H9003=ב=in/{H3671=כָּנָף=wing}/H9024=Ps3f=her					
+Mal.4.2(3.20)#09=L	וִֽ/יצָאתֶ֥ם	vi./tza.Tem	and/ you will go out	H9001/{H3318G}	Hc/Vqq2mp			H3318G			H9001=ו=&/{H3318G=יָצָא=: come»to come out:1_come;_go_out;_escape}					
+Mal.4.2(3.20)#10=L	וּ/פִשְׁתֶּ֖ם	u./fish.Tem	and/ you will skip	H9001/{H6335A}	Hc/Vqq2mp			H6335A			H9001=ו=&/{H6335A=פּוּשׁ=to leap}					
+Mal.4.2(3.20)#11=L	כְּ/עֶגְלֵ֥י	ke./'eg.Lei	like/ calves of	H9004/{H5695}	HR/Ncmpc			H5695			H9004=כ=like/{H5695=עֵ֫גֶל=calf}					
+Mal.4.2(3.20)#12=L	מַרְבֵּֽק\׃	mar.Bek	[the] stall	{H4770}\H9016	HNcmsa			H4770			{H4770=מַרְבֵּק=stall}\H9016=׃=verseEnd					
+Mal.4.3(3.21)#01=L	וְ/עַסּוֹתֶ֣ם	ve./'a.so.Tem	and/ you will tread down	H9001/{H6072}	Hc/Vqq2mp			H6072			H9001=ו=&/{H6072=עָסַס=to press}					
+Mal.4.3(3.21)#02=L	רְשָׁעִ֔ים	re.sha.'Im	wicked [people]	{H7563}	HNcmpa			H7563			{H7563=רָשָׁע=wicked}					
+Mal.4.3(3.21)#03=L	כִּֽי\־	ki-	for	{H3588A}\H9014	HTc			H3588A			{H3588A=כִּי=for}\H9014=־=link					
+Mal.4.3(3.21)#04=L	יִהְי֣וּ	yih.Yu	they will be	{H1961}	HVqi3mp			H1961			{H1961=הָיָה=to be}					
+Mal.4.3(3.21)#05=L	אֵ֔פֶר	'E.fer	ash[es]	{H0665}	HNcmsa			H0665			{H0665=אֵ֫פֶר=ashes}					
+Mal.4.3(3.21)#06=L	תַּ֖חַת	Ta.chat	under	{H8478G}	HNcmsc			H8478G			{H8478G=תַּחַת=: under»underneath:1_under;_below}					
+Mal.4.3(3.21)#07=L	כַּפּ֣וֹת	ka.Pot	[the] soles of	{H3709H}	HNcfpc			H3709H			{H3709H=כַּף=: sole»palm:2_sole;_paw}					
+Mal.4.3(3.21)#08=L	רַגְלֵי/כֶ֑ם	rag.lei./Khem	feet/ your	{H7272}/H9026	HNcfdc/Sp2mp			H7272			{H7272=רֶ֫גֶל=foot}/H9026=Pp2m=your					
+Mal.4.3(3.21)#09=L	בַּ/יּוֹם֙	ba/i.yOm	on the/ day	H9003/{H3117G}	HRd/Ncmsa			H3117G			H9003=ב=in/{H3117G=יוֹם=: day»day;_when:1_day;_when;_period}					
+Mal.4.3(3.21)#10=L	אֲשֶׁ֣ר	'a.Sher	when	{H0834A}	HTr			H0834A			{H0834A=אֲשֶׁר=which}					
+Mal.4.3(3.21)#11=L	אֲנִ֣י	'a.Ni	I	{H0589}	HPp1bs			H0589			{H0589=אֲנִי, אָֽנֹכִ֫י=I}					
+Mal.4.3(3.21)#12=L	עֹשֶׂ֔ה	'o.Seh	[will be] acting	{H6213A}	HVqrmsa			H6213A			{H6213A=עָשָׂה=: do»to make:2_do;_perform}					
+Mal.4.3(3.21)#13=L	אָמַ֖ר	'a.Mar	he says	{H0559}	HVqp3ms			H0559			{H0559=אָמַר=to say}					
+Mal.4.3(3.21)#14=L	יְהוָ֥ה	Yah.weh	Yahweh	{H3068G}	HNpt			H3068G			{H3068G=יהוה=LORD»LORD@Gen.1.1-Heb}					
+Mal.4.3(3.21)#15=L	צְבָאֽוֹת\׃\ \פ	tze.va.'ot	of hosts	{H6635B}\H9016\ \H9017	HNcfpa			H6635B			{H6635B=צָבָא=Hosts»LORD@Gen.1.1-Heb}\H9016=׃=verseEnd\ \H9017=פ=para					
+Mal.4.4(3.22)#01=L	זִכְר֕וּ	zikh.Ru	remember	{H2142}	HVqv2mp			H2142			{H2142=זָכַר=to remember}					
+Mal.4.4(3.22)#02=L	תּוֹרַ֖ת	to.Rat	[the] instruction of	{H8451}	HNcfsc			H8451			{H8451=תּוֹרָה=instruction}					
+Mal.4.4(3.22)#03=L	מֹשֶׁ֣ה	mo.Sheh	Moses	{H4872}	HNpm			H4872			{H4872=מֹשֶׁה=Moses»Moses@Exo.2.10-Rev}					
+Mal.4.4(3.22)#04=L	עַבְדִּ֑/י	'av.D/i	servant/ my	{H5650}/H9020	HNcmsc/Sp1bs			H5650			{H5650=עֶ֫בֶד=servant;_slave}/H9020=Ps1c=my					
+Mal.4.4(3.22)#05=L	אֲשֶׁר֩	'a.Sher	which	{H0834A}	HTr			H0834A			{H0834A=אֲשֶׁר=which}					
+Mal.4.4(3.22)#06=L	צִוִּ֨יתִי	tzi.Vi.ti	I commanded	{H6680}	HVpp1cs			H6680			{H6680=צָוָה=to command}					
+Mal.4.4(3.22)#07=L	אוֹת֤/וֹ	'o.T/o	<obj.>/ him	{H0853}/H9033	HTo/Sp3ms			H0853			{H0853=אֵת=[Obj.]}/H9033=Os3m=him					
+Mal.4.4(3.22)#08=L	בְ/חֹרֵב֙	ve./cho.Rev	at/ Horeb	H9003/{H2722}	HR/Npl			H2722			H9003=ב=in/{H2722=חֹרֵב=Horeb»Sinai@Exo.16.1-Gal}					
+Mal.4.4(3.22)#09=L	עַל\־	'al-	on	{H5921A}\H9014	HR			H5921A			{H5921A=עַל=upon}\H9014=־=link					
+Mal.4.4(3.22)#10=L	כָּל\־	kol-	all	{H3605}\H9014	HNcmsc			H3605			{H3605=כֹּל=all}\H9014=־=link					
+Mal.4.4(3.22)#11=L	יִשְׂרָאֵ֔ל	Yis.ra.'El	Israel	{H3478}	HNpl			H3478			{H3478=יִשְׂרָאֵל=Israel»Israel@Gen.25.26-Rev}					
+Mal.4.4(3.22)#12=L	חֻקִּ֖ים	chu.Kim	statutes	{H2706G}	HNcmpa			H2706G			{H2706G=חֹק=: decree»statute:1_decree}					
+Mal.4.4(3.22)#13=L	וּ/מִשְׁפָּטִֽים\׃	u./mish.pa.Tim	and/ judgments	H9002/{H4941G}\H9016	HC/Ncmpa			H4941G			H9002=ו=and/{H4941G=מִשְׁפָּט=: judgement»justice:1_judgement;_punishment}\H9016=׃=verseEnd					
+Mal.4.5(3.23)#01=L	הִנֵּ֤ה	hi.Neh	here!	{H2009}	HTj			H2009			{H2009=הִנֵּה=behold}					
+Mal.4.5(3.23)#02=L	אָֽנֹכִי֙	'a.no.Khi	I	{H0595}	HPp1bs			H0595			{H0595=אָֽנֹכִ֫י=I}					
+Mal.4.5(3.23)#03=L	שֹׁלֵ֣חַ	sho.Le.ach	[am] about to send	{H7971G}	HVqrmsa			H7971G			{H7971G=שָׁלַח=: depart»to send:1_depart;_send}					
+Mal.4.5(3.23)#04=L	לָ/כֶ֔ם	la./Khem	to/ you	H9005/{H9036}	HR/Sp2mp			H9036			H9005=ל=to/{H9036=Op2m=you}					
+Mal.4.5(3.23)#05=L	אֵ֖ת	'et	<obj.>	{H0853}	HTo			H0853			{H0853=אֵת=[Obj.]}					
+Mal.4.5(3.23)#06=L	אֵלִיָּ֣ה	'e.li.Yah	Elijah	{H0452G}	HNpm			H0452G			{H0452G=אֵלִיָּה=Elijah»Elijah@1Ki.17.1-Jas}					
+Mal.4.5(3.23)#07=L	הַ/נָּבִ֑יא	ha./na.Vi'	the/ prophet	H9009/{H5030}	HTd/Ncmsa			H5030			H9009=ה=the/{H5030=נָבִיא=prophet}					
+Mal.4.5(3.23)#08=L	לִ/פְנֵ֗י	li/f.Nei	<to>/ before	H9005/{H6440G}	HR/Ncmpc			H6440G			H9005=ל=to/{H6440G=פָּנֶה=: before»face:2_before;_to;_front}					
+Mal.4.5(3.23)#09=L	בּ֚וֹא	Bo'	comes	{H0935G}	HVqcc			H0935G			{H0935G=בּוֹא=: come»to come (in):1_come;_go_in}					
+Mal.4.5(3.23)#10=L	י֣וֹם	Yom	[the] day of	{H3117G}	HNcmsc			H3117G			{H3117G=יוֹם=: day»day;_when:1_day;_when;_period}					
+Mal.4.5(3.23)#11=L	יְהוָ֔ה	Yah.weh	Yahweh	{H3068G}	HNpt			H3068G			{H3068G=יהוה=LORD»LORD@Gen.1.1-Heb}					
+Mal.4.5(3.23)#12=L	הַ/גָּד֖וֹל	ha./ga.Dol	<the>/ great	H9009/{H1419A}	HTd/Aamsa			H1419A			H9009=ה=the/{H1419A=גַּל=: large»great:1_large}					
+Mal.4.5(3.23)#13=L	וְ/הַ/נּוֹרָֽא\׃	ve./ha./no.Ra'	and/ <the>/ awesome	H9002/H9009/{H3372G}\H9016	HC/Td/VNrmsa			H3372G			H9002=ו=and/H9009=ה=the/{H3372G=יָרֵא=: frightening(DANGER)»to fear:1_fear}\H9016=׃=verseEnd					
+Mal.4.6(3.24)#01=L	וְ/הֵשִׁ֤יב	ve./he.Shiv	and/ he will turn back	H9001/{H7725I}	Hc/Vhq3ms			H7725I			H9001=ו=&/{H7725I=שׁוּב=: turn_back»to return:3_turn_back;_backslide}					
+Mal.4.6(3.24)#02=L	לֵב\־	lev-	[the] heart of	{H3820A}\H9014	HNcmsc			H3820A_A			{H3820A=לֵב=heart}\H9014=־=link					
+Mal.4.6(3.24)#03=L	אָבוֹת֙	'a.Vot	fathers	{H0001G}	HNcfpa			H0001G_A			{H0001G=אָב=father}					
+Mal.4.6(3.24)#04=L	עַל\־	'al-	to	{H5921A}\H9014	HR			H5921A_A			{H5921A=עַל=upon}\H9014=־=link					
+Mal.4.6(3.24)#05=L	בָּנִ֔ים	ba.Nim	sons	{H1121A}	HNcmpa			H1121A_A			{H1121A=בֵּן=: child»son:1_child;_son}					
+Mal.4.6(3.24)#06=L	וְ/לֵ֥ב	ve./Lev	and/ [the] heart of	H9002/{H3820A}	HC/Ncmsc			H3820A_B			H9002=ו=and/{H3820A=לֵב=heart}					
+Mal.4.6(3.24)#07=L	בָּנִ֖ים	ba.Nim	sons	{H1121A}	HNcmpa			H1121A_B			{H1121A=בֵּן=: child»son:1_child;_son}					
+Mal.4.6(3.24)#08=L	עַל\־	'al-	to	{H5921A}\H9014	HR			H5921A_B			{H5921A=עַל=upon}\H9014=־=link					
+Mal.4.6(3.24)#09=L	אֲבוֹתָ֑/ם	'a.vo.Ta/m	fathers/ their	{H0001G}/H9028	HNcfpc/Sp3mp			H0001G_B			{H0001G=אָב=father}/H9028=Pp3m=their					
+Mal.4.6(3.24)#10=L	פֶּן\־	pen-	lest	{H6435}\H9014	HTc			H6435			{H6435=פֶּן־=lest}\H9014=־=link					
+Mal.4.6(3.24)#11=L	אָב֕וֹא	'a.Vo'	I should come	{H0935G}	HVqi1cs			H0935G			{H0935G=בּוֹא=: come»to come (in):1_come;_go_in}					
+Mal.4.6(3.24)#12=L	וְ/הִכֵּיתִ֥י	ve./hi.kei.Ti	and/ I will strike	H9001/{H5221}	Hc/Vhq1cs			H5221			H9001=ו=&/{H5221=נָכָה=to smite}					
+Mal.4.6(3.24)#13=L	אֶת\־	'et-	<obj.>	{H0853}\H9014	HTo			H0853			{H0853=אֵת=[Obj.]}\H9014=־=link					
+Mal.4.6(3.24)#14=L	הָ/אָ֖רֶץ	ha./'A.retz	the/ land	H9009/{H0776G}	HTd/Ncfsa			H0776G			H9009=ה=the/{H0776G=אֶ֫רֶץ=: country;_planet»land:2_country;_planet}					
+Mal.4.6(3.24)#15=L	חֵֽרֶם\׃	Che.rem	total destruction	{H2764A}\H9016	HNcmsa			H2764A			{H2764A=חֵ֫רֶם=devoted thing}\H9016=׃=verseEnd					
