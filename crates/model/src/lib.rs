@@ -24,6 +24,7 @@
 mod builder;
 mod key;
 mod manifest;
+pub mod morph;
 mod normalize;
 mod translit;
 mod unit;
@@ -34,6 +35,7 @@ pub use manifest::{
     Direction, FORMAT_VERSION, KeyScheme, LICENSE_UNKNOWN, Manifest, Origin, ResourceType,
     is_valid_resource_id,
 };
+pub use morph::{Morph, MorphError, MorphLanguage, MorphPart, PartOfSpeech};
 pub use normalize::{NORMALIZER_VERSION, Token, normalize, tokenize};
 pub use translit::{TRANSLITERATION_VERSION, transliterate};
 pub use unit::{

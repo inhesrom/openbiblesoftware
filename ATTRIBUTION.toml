@@ -65,3 +65,11 @@ license = "OFL-1.1 AND MIT"
 source = "https://software.sil.org/ezra/"
 copyright = "Copyright (c) 1997-2007 SIL International, Reserved Font Names \"SIL\" and \"Ezra\"; Hebrew layout intelligence (c) 2003 & 2007 Ralph Hancock and John Hudson (MIT)"
 changes = "None; font file copied unmodified with Licenses.txt and FONTLOG.txt."
+
+[[asset]]
+path = "crates/model/tests/assets/morph/*"
+name = "STEPBible morphology codes (from TAHOT and TAGNT) and their expansions (TEHMC, TEGMC), test data"
+license = "CC-BY-4.0"
+source = "https://github.com/STEPBible/STEPBible-Data"
+copyright = "STEP Bible, https://www.STEPBible.org; data created by STEPBible.org based on work at Tyndale House Cambridge"
+changes = "codes.tsv: only the distinct grammar codes of TAHOT (all four files) and TAGNT (both files). expansions.tsv: only each code and its first expansion line from TEHMC (all) and TEGMC (codes used in TAGNT), with the '(hence …)' notes removed."

@@ -69,6 +69,19 @@ const COMMANDS: &[CommandSpec] = &[
         run: normalize,
     },
     CommandSpec {
+        id: "morph.expand",
+        label: "Explain a morphology code",
+        shortcut: None,
+        params: &[ParamSpec {
+            name: "code",
+            kind: ParamKind::String,
+            required: true,
+            help: "STEPBible Hebrew or Greek code, e.g. `HVqp3ms` or `V-AAI-3S`",
+        }],
+        enabled: always,
+        run: morph,
+    },
+    CommandSpec {
         id: "text.transliterate",
         label: "Transliterate Greek or Hebrew",
         shortcut: None,
@@ -163,6 +176,18 @@ fn normalize(_: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         .map(|t| json!({ "text": t.text, "start": t.range.start, "end": t.range.end }))
         .collect();
     Ok(json!({ "normalized": obs_model::normalize(text), "tokens": tokens }))
+}
+
+fn morph(_: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    let code = p.str("code").unwrap_or_default();
+    let m = obs_model::morph::parse(code).map_err(|e| failed("morph.expand", e))?;
+    Ok(json!({
+        "code": m.code(),
+        "short": m.short(),
+        "long": m.long(),
+        "part_of_speech": m.pos().map(obs_model::PartOfSpeech::name),
+        "function_word": m.is_function_word(),
+    }))
 }
 
 fn transliterate(_: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
