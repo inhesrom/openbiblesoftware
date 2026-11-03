@@ -1,0 +1,80 @@
+//! The download cache: files are stored under their sha256 and re-verified on every use.
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use anyhow::{Context, Result, bail};
+use sha2::{Digest, Sha256};
+
+use super::lock::Source;
+
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut out = String::with_capacity(64);
+    for b in digest {
+        out.push_str(&format!("{b:02x}"));
+    }
+    out
+}
+
+/// The bytes of `source`, from the cache or freshly downloaded, after checking the sha256.
+pub fn fetch(source: &Source, cache: &Path) -> Result<Vec<u8>> {
+    std::fs::create_dir_all(cache)
+        .with_context(|| format!("cannot create the cache {}", cache.display()))?;
+    let cached = cache.join(&source.sha256);
+    if let Ok(bytes) = std::fs::read(&cached) {
+        if sha256_hex(&bytes) == source.sha256 {
+            return Ok(bytes);
+        }
+        // A corrupt or tampered cache entry: discard it and download again.
+        std::fs::remove_file(&cached)
+            .with_context(|| format!("cannot remove {}", cached.display()))?;
+    }
+    let partial = cache.join(format!("{}.partial", source.sha256));
+    download(&source.url, &partial)
+        .with_context(|| format!("{}: download of {} failed", source.resource_id, source.url))?;
+    let bytes =
+        std::fs::read(&partial).with_context(|| format!("cannot read {}", partial.display()))?;
+    let actual = sha256_hex(&bytes);
+    if actual != source.sha256 {
+        let _ = std::fs::remove_file(&partial);
+        bail!(
+            "{}: sha256 mismatch for {}\n  expected {}\n  got      {actual}\n\
+             The file changed upstream or was tampered with. Check it, then update the lock.",
+            source.resource_id,
+            source.url,
+            source.sha256
+        );
+    }
+    std::fs::rename(&partial, &cached)
+        .with_context(|| format!("cannot move the download to {}", cached.display()))?;
+    Ok(bytes)
+}
+
+fn download(url: &str, to: &Path) -> Result<()> {
+    if let Some(path) = url.strip_prefix("file://") {
+        let from = PathBuf::from(path);
+        std::fs::copy(&from, to).with_context(|| format!("cannot copy {}", from.display()))?;
+        return Ok(());
+    }
+    let status = Command::new("curl")
+        .args(["--fail", "--location", "--silent", "--show-error"])
+        .args([
+            "--retry",
+            "3",
+            "--retry-delay",
+            "5",
+            "--connect-timeout",
+            "30",
+        ])
+        .arg("--output")
+        .arg(to)
+        .arg(url)
+        .status()
+        .context("could not run `curl`; it is needed to download Starter sources")?;
+    if !status.success() {
+        let _ = std::fs::remove_file(to);
+        bail!("curl exited with {status}");
+    }
+    Ok(())
+}

@@ -1,0 +1,91 @@
+# The Starter library lock (#20 decision 1). `cargo xtask starter` downloads each `url` into
+# target/starter-cache, checks its sha256, runs the Import parser named by `importer`, and
+# writes dist/starter/<resource_id>.obr plus starter-manifest.json and
+# starter-build-report.md.
+#
+# Rules (enforced by the build):
+# - `resource_id` is fixed once shipped and never reused.
+# - Every entry cites archived licence evidence under starter/evidence/, and that evidence names
+#   the pinned sha256, so it covers the exact edition shipped.
+# - No CCEL-hosted files (CCEL's site terms restrict republishing).
+# - A source update is a lock-file PR, reviewed together with the build report's diff.
+#
+# `url` is the pinned download. eBible regenerates its zips, so pins point at Internet Archive
+# captures (`id_` URLs serve the original bytes); `origin_url` is where the publisher serves it.
+
+# Starter set plus Search index caches, in MB (10^6 bytes).
+size_budget_mb = 400
+
+[[source]]
+resource_id = "kjv-strongs"
+importer = "usfm"
+url = "https://web.archive.org/web/20261101035106id_/https://ebible.org/Scriptures/eng-kjv2006_usfm.zip"
+origin_url = "https://eBible.org/Scriptures/eng-kjv2006_usfm.zip"
+sha256 = "ce1f526c64c2376f407308c2c23cb2d2fb58efaf5296327d2d8e408c3700650d"
+title = "King James Version with Strong's Numbers"
+abbreviation = "KJV"
+language = "en"
+edition = "1769 standardized text, protocanon, with Strong's numbers (eBible eng-kjv2006, source dated 2026-09-26)"
+publisher = "eBible.org"
+homepage = "https://ebible.org/find/show.php?id=eng-kjv2006"
+spdx = "LicenseRef-PublicDomain"
+attribution = "King James Version of the Holy Bible (1769), with Strong's numbers added, courtesy of the CrossWire Bible Society and eBible.org. Public domain outside the United Kingdom; in the UK the Crown's letters patent govern printing."
+changes = "Converted from USFM to the Open Bible resource format. Text and Strong's numbers are unchanged; markup with no place in the format is dropped and listed in the build report."
+provenance = "eBible.org copyright notice shipped inside the pinned zip (copr.htm): Public Domain outside the UK."
+evidence = "evidence/kjv-strongs.md"
+
+[[source]]
+resource_id = "bsb"
+importer = "usfm"
+url = "https://web.archive.org/web/20261014232912id_/https://bereanbible.com/bsb_usfm.zip"
+origin_url = "https://bereanbible.com/bsb_usfm.zip"
+sha256 = "f0c56438eb89c98e8f62c5c00461e25cc35b098ad5b179bc350cede759ee5f87"
+title = "Berean Standard Bible"
+abbreviation = "BSB"
+language = "en"
+edition = "Official BSB USFM download (bsb_usfm.zip, files dated 2026-03-08)"
+publisher = "Berean Bible Translation Committee"
+homepage = "https://berean.bible/"
+spdx = "LicenseRef-PublicDomain"
+attribution = "The Holy Bible, Berean Standard Bible, BSB is produced in cooperation with Bible Hub, Discovery Bible, OpenBible.com, and the Berean Bible Translation Committee. This text of God's Word has been dedicated to the public domain."
+changes = "Converted from USFM to the Open Bible resource format. Verse text and footnotes are unchanged; section cross-reference lines (\\r) are omitted."
+provenance = "berean.bible Terms and Conditions (archived 2026-10-24): texts dedicated to the public domain as of 2023-04-30; all uses freely permitted."
+evidence = "evidence/bsb.md"
+
+[[source]]
+resource_id = "web"
+importer = "usfm"
+url = "https://web.archive.org/web/20261011232837id_/https://ebible.org/Scriptures/engwebp_usfm.zip"
+origin_url = "https://eBible.org/Scriptures/engwebp_usfm.zip"
+sha256 = "674fb7eeffa9d64b90c4565a3678ffed61a1ddba47dff9b6a618528e2aaa8c67"
+title = "World English Bible"
+abbreviation = "WEB"
+language = "en"
+edition = "2020 stable text, 66-book protocanon (eBible engwebp, source dated 2026-10-08)"
+publisher = "eBible.org"
+homepage = "https://ebible.org/find/show.php?id=engwebp"
+spdx = "LicenseRef-PublicDomain"
+attribution = "The World English Bible is in the Public Domain. \"World English Bible\" is a trademark of eBible.org. Master copy at https://eBible.org/web/ and https://WorldEnglish.Bible."
+changes = "Converted from USFM to the Open Bible resource format. Verse text is unchanged; eBible's front matter and glossary book and the book introductions are omitted."
+provenance = "eBible.org copyright notice shipped inside the pinned zip (copr.htm): Public Domain; name trademark applies only to changed text."
+evidence = "evidence/web.md"
+skip_books = ["FRT", "GLO"]
+
+[[source]]
+resource_id = "asv"
+importer = "usfm"
+url = "https://web.archive.org/web/20261025015730id_/https://ebible.org/Scriptures/eng-asv_usfm.zip"
+origin_url = "https://eBible.org/Scriptures/eng-asv_usfm.zip"
+sha256 = "5e385a1a89887849cb07c88ddf4df37708e0fa901b1f1b7f0b8204c153f0a901"
+title = "American Standard Version"
+abbreviation = "ASV"
+language = "en"
+edition = "1901 (eBible eng-asv, source dated 2026-10-20)"
+publisher = "eBible.org"
+homepage = "https://ebible.org/find/show.php?id=eng-asv"
+spdx = "LicenseRef-PublicDomain"
+attribution = "American Standard Version of the Holy Bible (1901), public domain, courtesy of eBible.org."
+changes = "Converted from USFM to the Open Bible resource format. Verse text is unchanged; eBible's front matter and the 1901 preface are omitted."
+provenance = "eBible.org copyright notice shipped inside the pinned zip (copr.htm): Public Domain, copy freely."
+evidence = "evidence/asv.md"
+skip_books = ["FRT", "INT"]

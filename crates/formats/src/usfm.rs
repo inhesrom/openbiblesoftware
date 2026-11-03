@@ -654,10 +654,7 @@ impl BookEmitter {
         match node.get("type").and_then(Value::as_str) {
             Some("verse") => self.start_verse(node, ctx),
             Some("note") => self.note(node, ctx),
-            Some("char") => {
-                let at = self.at();
-                emit_char(&mut self.buf, node, ctx, &at, false);
-            }
+            Some("char") => self.body_char(node, ctx),
             Some("chapter") => self.start_chapter(node, ctx),
             Some("figure") | Some("optbreak") | Some("ref") | Some("milestone") | Some("ms") => {
                 ctx.drop_marker(marker(node).trim_end_matches(['-', 's', 'e']).trim());
@@ -671,6 +668,33 @@ impl BookEmitter {
                 }
             }
             _ => ctx.drop_marker(marker(node)),
+        }
+    }
+
+    /// A character-level node in the body text. Unlike [`emit_char`], verses and notes inside
+    /// it are kept: some sources (BSB) open verses inside `\wj … \wj*`.
+    fn body_char(&mut self, node: &Value, ctx: &mut Ctx) {
+        let at = self.at();
+        let kind = char_kind(node, ctx, &at, false);
+        self.buf.flush_space();
+        let start = self.buf.pos();
+        for c in content(node) {
+            if let Some(s) = c.as_str() {
+                self.buf.push_text(s);
+                continue;
+            }
+            match c.get("type").and_then(Value::as_str) {
+                Some("char") => self.body_char(c, ctx),
+                Some("verse") => self.start_verse(c, ctx),
+                Some("note") => self.note(c, ctx),
+                _ => ctx.drop_marker(marker(c)),
+            }
+        }
+        let end = self.buf.pos();
+        if let Some(kind) = kind
+            && end > start
+        {
+            self.buf.add_span(start..end, kind);
         }
     }
 
@@ -757,8 +781,30 @@ impl BookEmitter {
 /// Emit a character-level node (and its children) into `buf`. In notes (`in_note`), note
 /// parts like `\ft` are plain text and `\fq`/`\fqa` italic.
 fn emit_char(buf: &mut TextBuf, node: &Value, ctx: &mut Ctx, at: &str, in_note: bool) {
+    let kind = char_kind(node, ctx, at, in_note);
+    buf.flush_space();
+    let start = buf.pos();
+    for c in content(node) {
+        if let Some(s) = c.as_str() {
+            buf.push_text(s);
+        } else if c.get("type").and_then(Value::as_str) == Some("char") {
+            emit_char(buf, c, ctx, at, in_note);
+        } else {
+            ctx.drop_marker(marker(c));
+        }
+    }
+    let end = buf.pos();
+    if let Some(kind) = kind
+        && end > start
+    {
+        buf.add_span(start..end, kind);
+    }
+}
+
+/// The span a character marker maps to; unknown markers are counted as dropped.
+fn char_kind(node: &Value, ctx: &mut Ctx, at: &str, in_note: bool) -> Option<SpanKind> {
     let m = marker(node);
-    let kind: Option<SpanKind> = match m {
+    match m {
         "w" => {
             let parts: Vec<MorphemePart> = attr(node, "strong")
                 .map(|s| parse_strongs(s, ctx, at))
@@ -783,23 +829,6 @@ fn emit_char(buf: &mut TextBuf, node: &Value, ctx: &mut Ctx, at: &str, in_note: 
                 None
             }
         },
-    };
-    buf.flush_space();
-    let start = buf.pos();
-    for c in content(node) {
-        if let Some(s) = c.as_str() {
-            buf.push_text(s);
-        } else if c.get("type").and_then(Value::as_str) == Some("char") {
-            emit_char(buf, c, ctx, at, in_note);
-        } else {
-            ctx.drop_marker(marker(c));
-        }
-    }
-    let end = buf.pos();
-    if let Some(kind) = kind
-        && end > start
-    {
-        buf.add_span(start..end, kind);
     }
 }
 
