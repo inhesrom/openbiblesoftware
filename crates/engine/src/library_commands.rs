@@ -5,6 +5,7 @@
 use serde_json::{Value, json};
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
+use crate::library::LibraryEntry;
 use crate::session::Session;
 use crate::workspace::{Effect, OpenRequest, PanelId, TabKind};
 
@@ -102,10 +103,19 @@ fn resource<'a>(
     p: &Params<'a>,
 ) -> Result<&'a str, CommandError> {
     let id = p.str("id").unwrap_or_default();
-    if s.library.get(id).is_none() {
-        return Err(failed(command, format!("{id} is not in the library")));
-    }
+    entry(command, s, id)?;
     Ok(id)
+}
+
+/// The library entry of Resource `id`.
+fn entry<'s>(
+    command: &'static str,
+    s: &'s Session,
+    id: &str,
+) -> Result<&'s LibraryEntry, CommandError> {
+    s.library
+        .get(id)
+        .ok_or_else(|| failed(command, format!("{id} is not in the library")))
 }
 
 fn moved(s: &mut Session, id: &str, to: usize) -> Value {
@@ -166,10 +176,8 @@ pub fn annotations_phrase(n: u64) -> String {
 
 fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const CMD: &str = "library.remove";
-    let id = resource(CMD, s, &p)?.to_string();
-    let Some(entry) = s.library.get(&id).cloned() else {
-        return Err(failed(CMD, format!("{id} is not in the library")));
-    };
+    let id = p.str("id").unwrap_or_default().to_string();
+    let entry = entry(CMD, s, &id)?.clone();
     let annotations = s.annotations_referring(&id);
     let in_dir = s.library.holds_file(&entry.path);
     if !p.bool("confirm").unwrap_or(false) {
@@ -185,9 +193,13 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
                 "It is taken off the list; {file} itself is not in the library folder and stays where it is."
             )
         };
+        let kept = if annotations == 0 {
+            String::new()
+        } else {
+            "; they are kept, and come back if you import it again".to_string()
+        };
         let message = format!(
-            "Remove {} ({}) from your library? {what} {} to it; they are kept, and come back if \
-             you import it again.",
+            "Remove {} ({}) from your library? {what} {} to it{kept}.",
             entry.manifest.title,
             entry.manifest.abbreviation,
             annotations_phrase(annotations),

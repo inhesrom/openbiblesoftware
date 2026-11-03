@@ -73,11 +73,13 @@ impl State {
                 ui.horizontal_wrapped(|ui| {
                     for lang in lib.languages() {
                         let on = filter.languages.iter().any(|l| l == lang);
-                        let chip =
-                            egui::Button::selectable(on, language_name(lang)).corner_radius(11.0);
+                        let chip = egui::Button::selectable(on, lang).corner_radius(11.0);
                         if ui
                             .add(chip)
-                            .on_hover_text(format!("Show only {lang} Resources"))
+                            .on_hover_text(format!(
+                                "Show {lang} Resources (chips add to each other; with none on, \
+                                 every language shows)"
+                            ))
                             .clicked()
                         {
                             toggle = Some(lang.to_string());
@@ -151,27 +153,27 @@ impl State {
                     });
             });
 
-        // Dragging a handle: mark where the row would land; dropping moves it there. A drag
+        // Dragging a handle: a line marks the gap the row would drop into, and dropping moves
+        // it there. Escape, or dropping well away from the rows of its type, cancels. A drag
         // whose row stopped being drawn (filtered out mid-drag) ends with the button.
         if !drag_end && drag_start.is_none() && !ui.input(|i| i.pointer.any_down()) {
             drag_end = dragging.is_some();
             dragging = None;
         }
+        if dragging.is_some() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            drag_end = true;
+            dragging = None;
+        }
         let pointer = ui.ctx().pointer_interact_pos();
         let dragged = drag_start.clone().or(dragging);
         if let (Some(id), Some(p)) = (dragged, pointer)
-            && let Some(target) = drop_target(&rows, &id, p.y)
+            && let Some(slot) = drop_slot(&rows, &id, p.y)
         {
             if drag_end {
-                action = Some(Action::Move(id, target.position));
+                action = Some(Action::Move(id, slot.to));
             } else {
-                let y = if p.y > target.rect.center().y && target.id != id {
-                    target.rect.bottom()
-                } else {
-                    target.rect.top()
-                };
                 ui.painter()
-                    .hline(target.rect.x_range(), y, Stroke::new(2.0, theme::c().lapis));
+                    .hline(slot.x, slot.y, Stroke::new(2.0, theme::c().lapis));
             }
         }
         // Enter opens the selected row while the Library is the focused Tab.
@@ -281,7 +283,11 @@ impl State {
                         let width = ui.available_width();
                         let palette = self.palette;
                         if let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) {
-                            ui.allocate_ui(vec2(width, 120.0), |ui| {
+                            // As tall as the text (once laid out), so the page scrolls rather
+                            // than a box inside it; only a very long Attribution scrolls itself.
+                            #[allow(clippy::cast_possible_truncation)]
+                            let height = (view.position().1 as f32 + 16.0).clamp(48.0, 600.0);
+                            ui.allocate_ui(vec2(width, height), |ui| {
                                 reading_pane(ui, view, &mut self.atlas, &palette, None);
                             });
                         }
@@ -480,20 +486,51 @@ fn row_menu(ui: &mut Ui, id: &str) -> Option<Action> {
     action
 }
 
-/// The row a dragged row would land on: the row of its type under `y`, else the nearest end.
-fn drop_target<'a>(rows: &'a [Row], dragged: &str, y: f32) -> Option<&'a Row> {
-    let ty = rows.iter().find(|r| r.id == dragged)?.ty;
-    let same: Vec<&Row> = rows.iter().filter(|r| r.ty == ty).collect();
-    same.iter()
-        .find(|r| r.rect.y_range().contains(y))
-        .or_else(|| {
-            if y < same.first()?.rect.top() {
-                same.first()
-            } else {
-                same.last()
-            }
-        })
-        .copied()
+/// Where a dragged row would drop.
+#[derive(Debug, PartialEq)]
+struct DropSlot {
+    /// The row's position within its type once moved (the `to` of `library.move`).
+    to: usize,
+    /// Where the drop line is drawn: across the row, in the gap it would drop into.
+    x: egui::Rangef,
+    y: f32,
+}
+
+/// The gap a dragged row drops into: after every other row of its type whose centre is above
+/// `y`. `None` when that leaves the row where it is, or when `y` is more than a row away from
+/// the rows of its type (dropping there cancels).
+fn drop_slot(rows: &[Row], dragged: &str, y: f32) -> Option<DropSlot> {
+    let me = rows.iter().find(|r| r.id == dragged)?;
+    let others: Vec<&Row> = rows
+        .iter()
+        .filter(|r| r.ty == me.ty && r.id != dragged)
+        .collect();
+    let (first, last) = (others.first()?, others.last()?);
+    let top = first.rect.top().min(me.rect.top());
+    let bottom = last.rect.bottom().max(me.rect.bottom());
+    if y < top - ROW_H || y > bottom + ROW_H {
+        return None;
+    }
+    let slot = others.iter().filter(|r| r.rect.center().y < y).count();
+    let (before, after) = (slot.checked_sub(1).map(|i| others[i]), others.get(slot));
+    // A position in the full Preferred order of the type; rows hidden by the filter between
+    // `before` and `after` stay above the dropped row.
+    let at = after.map_or(last.position + 1, |r| r.position);
+    let to = if me.position < at { at - 1 } else { at };
+    if to == me.position {
+        return None;
+    }
+    let line = match (before, after) {
+        (Some(a), Some(b)) => (a.rect.bottom() + b.rect.top()) / 2.0,
+        (None, Some(b)) => b.rect.top(),
+        (Some(a), None) => a.rect.bottom(),
+        (None, None) => return None,
+    };
+    Some(DropSlot {
+        to,
+        x: me.rect.x_range(),
+        y: line,
+    })
 }
 
 fn section(ui: &mut Ui, title: &str) {
@@ -546,5 +583,67 @@ fn source_file(m: &Manifest) -> String {
         (Some(f), true) => f.clone(),
         (None, false) => m.source_format.clone(),
         (None, true) => "Not recorded.".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Bible rows A, B, C, `ROW_H` tall with 6-point gaps, from y = 0.
+    fn rows() -> Vec<Row> {
+        ["A", "B", "C"]
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                #[allow(clippy::cast_precision_loss)]
+                let top = i as f32 * (ROW_H + 6.0);
+                Row {
+                    id: (*id).to_string(),
+                    ty: ResourceType::Bible,
+                    position: i,
+                    rect: Rect::from_min_size(pos2(0.0, top), vec2(200.0, ROW_H)),
+                }
+            })
+            .collect()
+    }
+
+    fn drop_at(dragged: &str, y: f32) -> Option<(usize, f32)> {
+        drop_slot(&rows(), dragged, y).map(|s| (s.to, s.y))
+    }
+
+    #[test]
+    fn the_drop_line_marks_where_the_row_lands() {
+        // A 0..28, B 34..62, C 68..96: gaps centred on 31 and 65.
+        // C on the lower half of A: between A and B, not above A.
+        assert_eq!(drop_at("C", 20.0), Some((1, 31.0)));
+        // C in the gap between A and B: the same.
+        assert_eq!(drop_at("C", 31.0), Some((1, 31.0)));
+        // C on the upper half of A: above A, so C becomes ★.
+        assert_eq!(drop_at("C", 8.0), Some((0, 0.0)));
+        // A on the upper half of B, or in the gap above it: A stays put.
+        assert_eq!(drop_at("A", 40.0), None);
+        assert_eq!(drop_at("A", 31.0), None);
+        // A on the lower half of B: below B.
+        assert_eq!(drop_at("A", 55.0), Some((1, 65.0)));
+        // A below C: last.
+        assert_eq!(drop_at("A", 100.0), Some((2, 96.0)));
+        // More than a row away from the rows: cancelled.
+        assert_eq!(drop_at("A", 96.0 + ROW_H + 1.0), None);
+        assert_eq!(drop_at("C", -ROW_H - 1.0), None);
+    }
+
+    #[test]
+    fn filtered_rows_keep_their_place_above_a_dropped_row() {
+        // B is hidden by the filter: the shown rows are A (position 0) and C (position 2).
+        let mut rows = rows();
+        rows.remove(1);
+        rows[1].rect = rows[1].rect.translate(vec2(0.0, -(ROW_H + 6.0)));
+        // C onto the upper half of A: first.
+        assert_eq!(drop_slot(&rows, "C", 5.0).map(|s| s.to), Some(0));
+        // A onto the lower half of C: after C, so last of all three.
+        assert_eq!(drop_slot(&rows, "A", 60.0).map(|s| s.to), Some(2));
+        // A onto the upper half of C: before C, after the hidden B.
+        assert_eq!(drop_slot(&rows, "A", 36.0).map(|s| s.to), Some(1));
     }
 }

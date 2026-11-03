@@ -1863,6 +1863,8 @@ mod library {
     use super::*;
 
     const ABBREVS: [&str; 4] = ["TB", "HEB", "HNUM", "KJV"];
+    /// Height of one Library row (`library_tab::ROW_H`).
+    const ROW_H: f32 = 28.0;
 
     /// The Panel holding the Library Tab.
     fn library_panel(h: &Harness) -> Rect {
@@ -1988,9 +1990,9 @@ mod library {
     fn reordering_persists_across_restarts_and_changes_which_bible_is_starred() {
         let db = temp_db("preferred-order");
         let mut h = Harness::launch(Some(&db));
-        // Drag HNUM's handle onto TB: HNUM becomes first, and ★.
+        // Drag HNUM's handle onto the upper half of TB: HNUM becomes first, and ★.
         let from = handle(&h, "HNUM");
-        let to = row_pos(&h, "TB");
+        let to = row_pos(&h, "TB") - vec2(0.0, 8.0);
         h.drag(from, to);
         assert_eq!(row_names(&h), ["HNUM", "TB", "HEB"]);
         assert_eq!(starred(&h), "HNUM");
@@ -2019,6 +2021,57 @@ mod library {
         h.shell.run("layout.reset", &json!({}));
         h.frames(3);
         assert_eq!(h.panels()[0].1, ["HNUM"]);
+    }
+
+    #[test]
+    fn a_dragged_row_lands_in_the_gap_the_drop_line_marks() {
+        let mut h = Harness::new();
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        // Dropped in the gap between TB and HEB: between them, so TB keeps ★.
+        let (tb, heb) = (row_pos(&h, "TB"), row_pos(&h, "HEB"));
+        h.drag(handle(&h, "HNUM"), pos2(tb.x, (tb.y + heb.y) / 2.0));
+        assert_eq!(row_names(&h), ["TB", "HNUM", "HEB"]);
+        assert_eq!(starred(&h), "TB");
+        // Dropped on the lower half of TB: below TB, not above it.
+        h.drag(handle(&h, "HEB"), row_pos(&h, "TB") + vec2(0.0, 8.0));
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        assert_eq!(starred(&h), "TB");
+        // TB on the upper half of HEB stays put; on its lower half it goes below HEB.
+        h.drag(handle(&h, "TB"), row_pos(&h, "HEB") - vec2(0.0, 8.0));
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        h.drag(handle(&h, "TB"), row_pos(&h, "HEB") + vec2(0.0, 8.0));
+        assert_eq!(row_names(&h), ["HEB", "TB", "HNUM"]);
+        assert_eq!(starred(&h), "HEB");
+        // Dropped well away from the rows: cancelled.
+        let far = library_panel(&h).bottom() - 10.0;
+        assert!(far > row_pos(&h, "HNUM").y + 3.0 * ROW_H, "panel too short");
+        h.drag(handle(&h, "HNUM"), pos2(tb.x, far));
+        assert_eq!(row_names(&h), ["HEB", "TB", "HNUM"]);
+        // Escape cancels a drag in progress.
+        let from = handle(&h, "HNUM");
+        let to = row_pos(&h, "HEB") - vec2(0.0, 8.0);
+        h.events.push(Event::PointerMoved(from));
+        h.frame();
+        h.button(from, true);
+        h.frame();
+        for i in 1..=10 {
+            h.events
+                .push(Event::PointerMoved(from + (to - from) * (i as f32 / 10.0)));
+            h.frame();
+        }
+        key(&mut h, egui::Key::Escape);
+        h.button(to, false);
+        h.frames(3);
+        assert_eq!(row_names(&h), ["HEB", "TB", "HNUM"]);
+        let moves = h
+            .shell
+            .st
+            .session
+            .command_log()
+            .iter()
+            .filter(|c| **c == "library.move")
+            .count();
+        assert_eq!(moves, 3, "one library.move per drop that moved a row");
     }
 
     #[test]

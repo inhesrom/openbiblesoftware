@@ -45,7 +45,8 @@ pub struct App {
 
 impl App {
     /// Start with the library (the default library folder) and, if given, a Resource file,
-    /// which becomes the first Bible of the default layout.
+    /// added to it and opened. Like any Resource, that file takes its place in the Preferred
+    /// order: at the bottom of its type unless the order already ranks it.
     pub fn with_file(path: Option<PathBuf>) -> Self {
         #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
         let mut session = obs_engine::Session::new(obs_engine::JobMode::default_for_host());

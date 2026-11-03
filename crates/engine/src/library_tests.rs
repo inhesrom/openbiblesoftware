@@ -87,16 +87,6 @@ fn reordering_persists_across_restarts_and_changes_which_bible_is_starred() {
     let s = launch(&lib, &db);
     assert_eq!(bibles(&s), ["kjv", "web", "asv"]);
     assert_eq!(starred(&s), "kjv");
-    // The default layout opens the ★ Bible first.
-    assert_eq!(
-        s.library
-            .of_type(ResourceType::Bible)
-            .next()
-            .unwrap()
-            .manifest
-            .abbreviation,
-        "KJV"
-    );
 }
 
 #[test]
@@ -251,20 +241,47 @@ fn filtering_by_text_and_by_language_works_together() {
     assert_eq!(shown(&f), ["kjv", "tahot", "tagnt"]);
     f.text = "translators".into();
     assert_eq!(shown(&f), ["tahot", "tagnt"]);
-    f.toggle_language("grc");
+    f.toggle_language("Greek");
     assert_eq!(shown(&f), ["tagnt"]);
-    f.toggle_language("en");
+    f.toggle_language("English");
     assert_eq!(shown(&f), ["tagnt"], "text and language both apply");
     f.text = "KJV".into();
     assert_eq!(shown(&f), ["kjv"], "abbreviation matches, any case");
     f.text.clear();
     assert_eq!(shown(&f), ["kjv", "tagnt"], "chips combine with or");
-    f.toggle_language("grc");
-    f.toggle_language("en");
+    f.toggle_language("Greek");
+    f.toggle_language("English");
     assert_eq!(f, LibraryFilter::default());
     assert_eq!(language_name("hbo"), "Hebrew");
     assert_eq!(language_name("en-GB"), "English");
     assert_eq!(language_name("xyz"), "xyz");
+
+    // Chips are language names, alphabetical whatever the Preferred order; `he` and `hbo`
+    // share the Hebrew chip, which shows both.
+    let mut lib = Library::new();
+    for (id, lang) in [
+        ("wlc", "hbo"),
+        ("kjv", "en"),
+        ("modern", "he"),
+        ("sblgnt", "grc"),
+    ] {
+        lib.add(LibraryEntry {
+            manifest: m(id, id, lang),
+            path: format!("/library/{id}.obr").into(),
+        });
+    }
+    assert_eq!(lib.languages(), ["English", "Greek", "Hebrew"]);
+    lib.move_to("modern", 0);
+    assert_eq!(lib.languages(), ["English", "Greek", "Hebrew"]);
+    let mut f = LibraryFilter::default();
+    f.toggle_language("Hebrew");
+    let hebrew: Vec<&str> = lib
+        .entries()
+        .iter()
+        .filter(|e| f.matches(&e.manifest))
+        .map(|e| e.manifest.resource_id.as_str())
+        .collect();
+    assert_eq!(hebrew, ["modern", "wlc"]);
 }
 
 #[test]

@@ -163,11 +163,6 @@ impl Library {
         Some(self.entries.remove(i))
     }
 
-    /// The library directory, if the library was scanned from one.
-    pub fn dir(&self) -> Option<&std::path::Path> {
-        self.dir.as_deref()
-    }
-
     /// Whether `path` is a file directly inside the library directory (Remove deletes those;
     /// a file opened from elsewhere is only taken off the list).
     pub fn holds_file(&self, path: &std::path::Path) -> bool {
@@ -176,14 +171,16 @@ impl Library {
             .is_some_and(|d| path.parent() == Some(d))
     }
 
-    /// The languages of the library's Resources (BCP 47 tags), in order of first appearance.
+    /// The language chips: the [`language_name`]s of the library's Resources, alphabetically.
+    /// Tags with the same name (`he`, `hbo`) share a chip.
     pub fn languages(&self) -> Vec<&str> {
-        let mut out: Vec<&str> = Vec::new();
-        for e in &self.entries {
-            if !out.contains(&e.manifest.language.as_str()) {
-                out.push(&e.manifest.language);
-            }
-        }
+        let mut out: Vec<&str> = self
+            .entries
+            .iter()
+            .map(|e| language_name(&e.manifest.language))
+            .collect();
+        out.sort_unstable();
+        out.dedup();
         out
     }
 
@@ -236,13 +233,17 @@ impl Library {
 pub struct LibraryFilter {
     /// Matched case-insensitively against abbreviation, title and resource id.
     pub text: String,
-    /// Selected language chips (BCP 47 tags); none selected shows every language.
+    /// Selected language chips ([`language_name`]s); none selected shows every language.
     pub languages: Vec<String>,
 }
 
 impl LibraryFilter {
     pub fn matches(&self, m: &Manifest) -> bool {
-        let lang = self.languages.is_empty() || self.languages.contains(&m.language);
+        let lang = self.languages.is_empty()
+            || self
+                .languages
+                .iter()
+                .any(|l| l == language_name(&m.language));
         let needle = self.text.trim().to_lowercase();
         let text = needle.is_empty()
             || [&m.abbreviation, &m.title, &m.resource_id]
@@ -252,11 +253,11 @@ impl LibraryFilter {
     }
 
     /// Turn a language chip on or off.
-    pub fn toggle_language(&mut self, tag: &str) {
-        if let Some(i) = self.languages.iter().position(|l| l == tag) {
+    pub fn toggle_language(&mut self, name: &str) {
+        if let Some(i) = self.languages.iter().position(|l| l == name) {
             self.languages.remove(i);
         } else {
-            self.languages.push(tag.to_string());
+            self.languages.push(name.to_string());
         }
     }
 }
