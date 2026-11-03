@@ -10,6 +10,10 @@ publish.workspace = true
 
 [dependencies]
 obs-scripture.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+unicode-normalization.workspace = true
 
 [lints]
 workspace = true
