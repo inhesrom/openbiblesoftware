@@ -50,8 +50,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          prev=$(gh release list --exclude-drafts --limit 50 --json tagName -q '.[].tagName' \
-            | grep -Fvx "$GITHUB_REF_NAME" | head -n 1 || true)
+          # A failing `gh` must stop the step, not silently skip the id diff.
+          tags=$(gh release list --exclude-drafts --limit 50 --json tagName -q '.[].tagName')
+          # Newest release by creation date, other than the one being built.
+          prev=$(printf '%s\n' "$tags" | grep -Fvx "$GITHUB_REF_NAME" | head -n 1 || true)
           if [ -n "$prev" ]; then
             echo "diffing against release $prev"
             gh release download "$prev" --pattern starter-manifest.json --dir target/previous \

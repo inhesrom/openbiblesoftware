@@ -4,7 +4,8 @@
 # `unit_alias` table, which re-anchoring follows (ADR 0006).
 #
 # This file is cumulative: never delete an entry, or Annotations made against an older
-# release lose their way.
+# release lose their way. Chains (A → B, then B → C) are followed to a live unit. Each old id is
+# mapped once; to send it somewhere new, edit its entry's `new`.
 #
 # [[alias]]
 # resource_id = "bsb"
