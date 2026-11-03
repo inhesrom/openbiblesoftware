@@ -22,6 +22,8 @@ struct Harness {
     meshes: Vec<egui::Color32>,
     /// The operating system's appearance, as the window would report it.
     os_theme: egui::Theme,
+    /// The last AccessKit tree update (when AccessKit is on).
+    tree: Option<egui::accesskit::TreeUpdate>,
 }
 
 fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
@@ -64,6 +66,7 @@ impl Harness {
             shapes: Vec::new(),
             meshes: Vec::new(),
             os_theme: egui::Theme::Light,
+            tree: None,
         };
         h.frames(3);
         h
@@ -82,6 +85,9 @@ impl Harness {
         let mut out = self.ctx.run_ui(input, |ui| shell.ui(ui));
         // No GPU here: the texture uploads are dropped on purpose.
         out.textures_delta.clear();
+        if let Some(t) = out.platform_output.accesskit_update.take() {
+            self.tree = Some(t);
+        }
         self.shapes.clear();
         self.meshes.clear();
         for c in out.shapes {
@@ -1043,4 +1049,198 @@ fn text_settings_relayout_and_take_effect() {
             .run("view.verse_numbers", &json!({ "value": "nope" }))
             .is_none()
     );
+}
+
+mod a11y {
+    use egui::accesskit::{Node, NodeId, Role};
+
+    use super::*;
+
+    fn nodes(h: &Harness) -> std::collections::HashMap<NodeId, Node> {
+        h.tree.as_ref().unwrap().nodes.iter().cloned().collect()
+    }
+
+    fn children_with(
+        nodes: &std::collections::HashMap<NodeId, Node>,
+        id: NodeId,
+        role: Role,
+    ) -> Vec<NodeId> {
+        nodes[&id]
+            .children()
+            .iter()
+            .copied()
+            .filter(|c| nodes.get(c).is_some_and(|n| n.role() == role))
+            .collect()
+    }
+
+    fn harness() -> Harness {
+        let mut h = Harness::new();
+        add_doc(&mut h.shell, crate::tests::tagged_bible());
+        let tb = h.tab_id("TB");
+        h.shell.run("tab.close", &json!({ "tab": tb.0 }));
+        h.shell.run("resource.open", &json!({ "id": "tagged" }));
+        h.ctx.enable_accesskit();
+        settle_all(&mut h);
+        h
+    }
+
+    fn document(h: &Harness) -> NodeId {
+        let n = nodes(h);
+        let docs: Vec<NodeId> = n
+            .iter()
+            .filter(|(_, n)| n.role() == Role::Document)
+            .map(|(id, _)| *id)
+            .collect();
+        assert_eq!(docs.len(), 1, "one reading pane, one Document");
+        docs[0]
+    }
+
+    #[test]
+    fn the_tree_has_paragraphs_and_links_for_visible_blocks_only() {
+        let mut h = harness();
+        let n = nodes(&h);
+        let doc = document(&h);
+        assert_eq!(n[&doc].label(), Some("Tagged Bible"));
+        let paras = children_with(&n, doc, Role::Paragraph);
+        let view = h
+            .shell
+            .st
+            .tabs
+            .values()
+            .find_map(|t| t.view.as_ref())
+            .unwrap();
+        let visible = view.laid_in_view(900.0);
+        assert!(!paras.is_empty());
+        assert!(
+            paras.len() <= visible.len(),
+            "{} paragraphs for {} visible blocks",
+            paras.len(),
+            visible.len()
+        );
+        assert!(
+            paras.len() < view.doc.blocks.len(),
+            "the whole document was published"
+        );
+        // Each paragraph's runs are its lines, and together they are the block's text.
+        let mut words = 0;
+        for (p, (_, _, laid)) in paras.iter().zip(&visible) {
+            let runs = children_with(&n, *p, Role::TextRun);
+            assert_eq!(runs.len(), laid.lines.len());
+            let text: String = runs.iter().map(|r| n[r].value().unwrap()).collect();
+            assert_eq!(text, laid.text);
+            for r in &runs {
+                let v = n[r].value().unwrap();
+                assert_eq!(n[r].character_lengths().len(), v.chars().count());
+                assert!(n[r].bounds().is_some());
+            }
+            let links = children_with(&n, *p, Role::Link);
+            for l in &links {
+                let node = &n[l];
+                assert!(node.bounds().is_some());
+                let d = node.description().unwrap();
+                assert!(
+                    d.starts_with("Strong's H1") || d == "Go to Romans 8:28",
+                    "{d}"
+                );
+            }
+            words += links.len();
+        }
+        assert!(words > 50, "{words} links");
+        // Scroll far away: the published text follows the view.
+        let old: String = paras
+            .iter()
+            .flat_map(|p| children_with(&n, *p, Role::TextRun))
+            .filter_map(|r| n[&r].value())
+            .collect();
+        h.shell.run(
+            "tab.go",
+            &json!({ "tab": h.tab_id("TAG").0, "text": "Gen 31:20" }),
+        );
+        settle_all(&mut h);
+        let n2 = nodes(&h);
+        let all_text: String = n2
+            .values()
+            .filter(|x| x.role() == Role::TextRun)
+            .filter_map(|x| x.value())
+            .collect();
+        assert_ne!(all_text, old);
+        assert!(all_text.contains("Romans 8:28"));
+    }
+
+    #[test]
+    fn moving_the_selection_updates_the_exposed_text_selection() {
+        let mut h = harness();
+        assert!(nodes(&h)[&document(&h)].text_selection().is_none());
+        let selected = |h: &Harness| -> String {
+            let n = nodes(h);
+            let doc = document(h);
+            let sel = n[&doc].text_selection().expect("a text selection");
+            // Walk the runs in order from anchor to focus and collect the characters.
+            let runs: Vec<NodeId> = children_with(&n, doc, Role::Paragraph)
+                .into_iter()
+                .flat_map(|p| children_with(&n, p, Role::TextRun))
+                .collect();
+            let pos = |p: &egui::accesskit::TextPosition| {
+                (
+                    runs.iter().position(|r| *r == p.node).unwrap(),
+                    p.character_index,
+                )
+            };
+            let (a, f) = (pos(&sel.anchor), pos(&sel.focus));
+            let (s, e) = if a <= f { (a, f) } else { (f, a) };
+            let mut out = String::new();
+            for (i, r) in runs.iter().enumerate().take(e.0 + 1).skip(s.0) {
+                let chars: Vec<char> = n[r].value().unwrap().chars().collect();
+                let from = if i == s.0 { s.1 } else { 0 };
+                let to = if i == e.0 { e.1 } else { chars.len() };
+                out.extend(&chars[from..to]);
+            }
+            out
+        };
+        // Drag across text in the pane.
+        let view = h
+            .shell
+            .st
+            .tabs
+            .values()
+            .find_map(|t| t.view.as_ref())
+            .unwrap();
+        let [ox, oy] = view.text_origin;
+        h.drag(pos2(ox + 40.0, oy + 12.0), pos2(ox + 260.0, oy + 80.0));
+        let first = selected(&h);
+        let view = h
+            .shell
+            .st
+            .tabs
+            .values()
+            .find_map(|t| t.view.as_ref())
+            .unwrap();
+        let sel = view.selection.unwrap();
+        let want = crate::selected_text(&view.doc, &sel);
+        assert!(first.len() > 20, "{first:?}");
+        // The exposed text has the verse numbers the reader sees; the source has none.
+        let strip = |s: &str| s.chars().filter(|c| c.is_alphabetic()).collect::<String>();
+        let shown = strip(&first);
+        assert!(
+            shown.ends_with(&strip(&want)[strip(&want).len().saturating_sub(10)..]),
+            "{first:?} vs {want:?}"
+        );
+        // Move it: a backward drag lower down.
+        h.drag(pos2(ox + 300.0, oy + 160.0), pos2(ox + 30.0, oy + 110.0));
+        let second = selected(&h);
+        assert_ne!(first, second);
+        let n = nodes(&h);
+        let sel = n[&document(&h)].text_selection().unwrap();
+        assert_ne!(sel.anchor, sel.focus);
+        // Clearing the selection (a click) clears it in the tree.
+        h.click(pos2(ox + 100.0, oy + 200.0));
+        assert!(nodes(&h)[&document(&h)].text_selection().is_none());
+    }
+
+    #[test]
+    fn without_a_screen_reader_nothing_is_built() {
+        let mut h = Harness::new();
+        h.frames(2);
+        assert!(h.tree.is_none());
+    }
 }

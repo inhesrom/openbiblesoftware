@@ -3,6 +3,7 @@
 //!
 //! Layer L6: the only layer allowed to depend on egui, eframe, winit or rfd.
 
+mod a11y;
 pub mod bench;
 mod doc;
 mod heights;
