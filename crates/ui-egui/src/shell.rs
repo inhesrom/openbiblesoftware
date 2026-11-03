@@ -12,7 +12,7 @@ use obs_engine::{
     Effect, HeaderBox, JobMode, MENUS, MenuItem, PanelId, Placement, Session, TabId, TabKind, Tool,
 };
 use obs_model::ResourceType;
-use obs_scripture::{Passage, RefStyle, Standard, format_passage};
+use obs_scripture::{Passage, RefStyle, Standard, Verse, format_passage};
 use serde_json::{Value, json};
 
 use crate::doc::ReadingDoc;
@@ -29,7 +29,12 @@ struct TabUi {
     edit: Option<String>,
     filter: String,
     error: Option<String>,
+    /// A verse marked after a jump, and when the mark started.
+    flash: Option<(Verse, f64)>,
 }
+
+/// How long a jump's flash lasts, in seconds.
+const FLASH_SECS: f64 = 1.2;
 
 /// Everything the dock's behaviour needs, apart from the tree itself.
 pub(crate) struct State {
@@ -110,7 +115,11 @@ impl Shell {
             .next()
             .map(|e| e.manifest.resource_id.clone());
         if let Some(id) = first {
-            self.run("resource.open", &json!({ "id": id }));
+            // The first Bible starts in Link set A, so Bibles opened from it follow along.
+            let bible = self.run("resource.open", &json!({ "id": id }));
+            if let Some(t) = bible.and_then(|v| v["tab"].as_u64()) {
+                self.run("tab.link", &json!({ "tab": t, "set": "A" }));
+            }
         }
         let library = self.run("library.open", &json!({}));
         self.run("tool.word_info", &json!({}));
@@ -159,10 +168,25 @@ impl Shell {
                     self.st.tabs.remove(&tab);
                 }
                 Effect::Navigate { tab, verse } => {
-                    if let Some(view) = self.st.tabs.get_mut(&tab).and_then(|t| t.view.as_mut())
-                        && !view.jump_to(verse)
+                    let now = self.st.now;
+                    if let Some(t) = self.st.tabs.get_mut(&tab)
+                        && let Some(view) = t.view.as_mut()
                     {
-                        self.st.toast(format!("{verse} is not in this Bible"));
+                        if view.jump_to(verse) {
+                            t.flash = Some((verse, now));
+                        } else {
+                            self.st.toast(format!("{verse} is not in this Bible"));
+                        }
+                    }
+                }
+                Effect::Follow { tab, verse, flash } => {
+                    let now = self.st.now;
+                    if let Some(t) = self.st.tabs.get_mut(&tab)
+                        && let Some(view) = t.view.as_mut()
+                        && view.follow(verse)
+                        && flash
+                    {
+                        t.flash = Some((verse, now));
                     }
                 }
                 Effect::ResetLayout => self.reset_layout(),
@@ -497,20 +521,24 @@ impl State {
             match self.doc(&id) {
                 Ok(doc) => {
                     let mut view = ReadingView::new(Arc::clone(&doc), self.session.text);
-                    // Start where the focused reading Tab is, else at the beginning.
-                    let at = self
-                        .session
-                        .workspace
-                        .tabs()
-                        .filter(|t| t.id != tab && t.kind.is_reading())
-                        .find_map(|t| t.history.current());
+                    if let Some(t) = self.session.workspace.tab_mut(tab) {
+                        t.versification = Some(Arc::new(doc.versification.clone()));
+                        t.verse_map = doc.verse_map.clone();
+                        if !doc.manifest.key_schemes.is_empty() {
+                            t.key_schemes = doc.manifest.key_schemes.clone();
+                        }
+                    }
+                    // Start where the Link set is; unlinked, where another Bible is.
+                    let ws = &self.session.workspace;
+                    let at = ws.set_location(tab).or_else(|| {
+                        ws.tabs()
+                            .filter(|t| t.id != tab && t.kind.is_reading() && t.verse_map.is_none())
+                            .find_map(|t| t.history.current())
+                    });
                     if let Some(v) = at
                         && view.jump_to(v)
                     {
                         self.session.workspace.scrolled(tab, v);
-                    }
-                    if let Some(t) = self.session.workspace.tab_mut(tab) {
-                        t.versification = Some(Arc::new(doc.versification.clone()));
                     }
                     ui_state.view = Some(view);
                 }
@@ -586,15 +614,31 @@ impl State {
             return;
         };
         view.set_settings(text);
-        reading_pane(ui, view, &mut self.atlas, &palette);
-        if let Some(at) = view.current_location()
-            && self
-                .session
-                .workspace
-                .tab(tab)
-                .is_some_and(|t| t.history.current() != Some(at))
-        {
-            self.session.workspace.scrolled(tab, at);
+        let flash = t.flash.and_then(|(v, start)| {
+            let age = self.now - start;
+            (age < FLASH_SECS).then(|| {
+                let a = (1.0 - age / FLASH_SECS).clamp(0.0, 1.0) as f32;
+                (v, theme::FLASH.gamma_multiply(a))
+            })
+        });
+        if flash.is_some() {
+            ui.ctx().request_repaint();
+        } else {
+            t.flash = None;
+        }
+        let out = reading_pane(ui, view, &mut self.atlas, &palette, flash);
+        let following = view.is_following();
+        let at = view.current_location();
+        if let Some(n) = out.hovered_verse_number {
+            verse_number_tooltip(ui, &view.doc, n);
+        }
+        if let Some(at) = at {
+            let ws = &mut self.session.workspace;
+            if out.user_moved {
+                ws.user_scrolled(tab, at);
+            } else if !following && ws.tab(tab).is_some_and(|t| t.history.current() != Some(at)) {
+                ws.scrolled(tab, at);
+            }
         }
     }
 
@@ -685,7 +729,7 @@ impl State {
                     let narrow = ui.available_width() < 430.0;
                     ui.add_space(4.0);
                     if kind.has_link_chip() {
-                        link_chip(ui);
+                        self.link_chip(ui, tab);
                     }
                     let passage = kind.header_box() == HeaderBox::Reference;
                     if passage {
@@ -716,7 +760,7 @@ impl State {
         ui.painter().rect_filled(
             egui::Rect::from_min_size(r.min, vec2(if focused { 4.0 } else { 2.0 }, r.height())),
             0.0,
-            theme::UNLINKED,
+            theme::link_color(self.session.workspace.tab(tab).and_then(|t| t.link)),
         );
         ui.painter()
             .hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, theme::RULE));
@@ -916,17 +960,66 @@ fn placeholder(ui: &mut Ui, title: &str, ticket: &str) {
     });
 }
 
-/// The link-chip slot. Link sets arrive with #36; until then every Tab is unlinked.
-fn link_chip(ui: &mut Ui) {
-    let txt = RichText::new("–").strong().size(11.5).color(Color32::WHITE);
-    ui.add(
-        egui::Button::new(txt)
-            .fill(theme::UNLINKED)
-            .stroke(Stroke::NONE)
-            .corner_radius(11.0)
-            .min_size(vec2(24.0, 22.0)),
+/// "Standard: Genesis 31:55" beside a verse number whose Standard equivalent differs.
+fn verse_number_tooltip(ui: &Ui, doc: &ReadingDoc, native: Verse) {
+    let Some(map) = doc.verse_map.as_deref() else {
+        return;
+    };
+    let text = match obs_engine::link::to_standard(Some(map), native) {
+        obs_engine::link::ToStandard::Verse(std) if std == native => return,
+        obs_engine::link::ToStandard::Verse(std) => {
+            format!(
+                "Standard numbering: {}",
+                format_passage(Passage::verse(std), &Standard, RefStyle::Long)
+            )
+        }
+        obs_engine::link::ToStandard::Unmapped => {
+            "No Standard equivalent: Link sets do not follow this verse".to_string()
+        }
+    };
+    egui::Tooltip::always_open(
+        ui.ctx().clone(),
+        ui.layer_id(),
+        ui.scope_id().with("verse-number"),
+        egui::PopupAnchor::Pointer,
     )
-    .on_hover_text("Link set: not linked. Link sets arrive with #36.");
+    .show(|ui| ui.label(text));
+}
+
+impl State {
+    /// The link chip: the Tab's Link set letter in its colour; click to change it.
+    fn link_chip(&mut self, ui: &mut Ui, tab: TabId) {
+        let link = self.session.workspace.tab(tab).and_then(|t| t.link);
+        let txt = RichText::new(link.map_or_else(|| "–".to_string(), String::from))
+            .strong()
+            .size(11.5)
+            .color(Color32::WHITE);
+        let resp = ui
+            .add(
+                egui::Button::new(txt)
+                    .fill(theme::link_color(link))
+                    .stroke(Stroke::NONE)
+                    .corner_radius(11.0)
+                    .min_size(vec2(24.0, 22.0)),
+            )
+            .on_hover_text(
+                "Link set: Tabs with the same letter follow one location. Click to change.",
+            );
+        egui::Popup::menu(&resp).show(|ui| self.link_menu(ui, tab));
+    }
+
+    fn link_menu(&mut self, ui: &mut Ui, tab: TabId) {
+        let current = self.session.workspace.tab(tab).and_then(|t| t.link);
+        let choices = std::iter::once(None).chain(obs_engine::LINK_SETS.iter().copied().map(Some));
+        for l in choices {
+            let label = l.map_or_else(|| "Not linked".to_string(), |c| format!("Link set {c}"));
+            if ui.selectable_label(current == l, label).clicked() {
+                let set = l.map(String::from).unwrap_or_default();
+                self.run("tab.link", &json!({ "tab": tab.0, "set": set }));
+                ui.close();
+            }
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -974,10 +1067,19 @@ impl egui_tiles::Behavior<TabId> for State {
         tile_id: TileId,
         resp: egui::Response,
     ) -> egui::Response {
-        if resp.clicked()
-            && let Some(Tile::Pane(t)) = tiles.get(tile_id)
-        {
-            self.session.workspace.user_focused(*t);
+        if let Some(Tile::Pane(t)) = tiles.get(tile_id) {
+            let t = *t;
+            if resp.clicked() {
+                self.session.workspace.user_focused(t);
+            }
+            let linkable = self
+                .session
+                .workspace
+                .tab(t)
+                .is_some_and(|tab| tab.kind.has_link_chip());
+            if linkable {
+                resp.context_menu(|ui| self.link_menu(ui, t));
+            }
         }
         resp
     }

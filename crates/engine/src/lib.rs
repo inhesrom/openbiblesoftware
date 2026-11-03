@@ -16,6 +16,7 @@ mod builtin;
 pub mod command;
 pub mod jobs;
 mod library;
+pub mod link;
 mod session;
 pub mod workspace;
 mod workspace_commands;
@@ -23,6 +24,7 @@ mod workspace_commands;
 pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSpec, Params};
 pub use jobs::{Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step};
 pub use library::{Library, LibraryEntry, default_library_dir};
+pub use link::LINK_SETS;
 pub use session::{JobMode, Session};
 pub use workspace::{
     Effect, Guide, HeaderBox, History, OpenRequest, PanelId, Placement, Tab, TabId, TabKind, Tool,
@@ -35,3 +37,6 @@ mod tests;
 
 #[cfg(test)]
 mod workspace_tests;
+
+#[cfg(test)]
+mod link_tests;

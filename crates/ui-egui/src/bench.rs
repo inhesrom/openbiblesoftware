@@ -228,6 +228,27 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         }
     }
 
+    // The panes are Tabs in one Link set; a jump goes through the engine's Link-set routing
+    // (#36), and its Follow effects move the other panes.
+    let mut ws = obs_engine::Workspace::new();
+    let tabs: Vec<obs_engine::TabId> = (0..panes)
+        .map(|k| {
+            let kind = obs_engine::TabKind::Resource(doc.manifest.resource_id.clone());
+            let req = obs_engine::OpenRequest {
+                panel: None,
+                split: k > 0,
+            };
+            let t = ws.open(kind, format!("pane {k}"), req);
+            if let Some(tab) = ws.tab_mut(t) {
+                tab.versification = Some(Arc::new(doc.versification.clone()));
+                tab.verse_map = doc.verse_map.clone();
+            }
+            ws.set_link(t, Some('A'));
+            t
+        })
+        .collect();
+    let _ = ws.take_effects();
+
     let mut jumps = Samples::default();
     let (mut origin_max, mut all_max) = (0usize, 0usize);
     for j in 0..cfg.jumps {
@@ -240,11 +261,21 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         };
         let mut placeholders = bench.frame(&mut jumps, |views| {
             // The origin jumps at once (its target block is laid out now, exempt from the
-            // budget); the others follow off-thread, as Link-set followers will (#36).
-            if let Some((origin, followers)) = views.split_first_mut() {
-                origin.jump_to(target);
-                for v in followers {
-                    v.follow(target);
+            // budget); the Link set's followers follow off-thread.
+            ws.navigate(tabs[0], target);
+            for e in ws.take_effects() {
+                match e {
+                    obs_engine::Effect::Navigate { tab, verse } => {
+                        if let Some(i) = tabs.iter().position(|t| *t == tab) {
+                            views[i].jump_to(verse);
+                        }
+                    }
+                    obs_engine::Effect::Follow { tab, verse, .. } => {
+                        if let Some(i) = tabs.iter().position(|t| *t == tab) {
+                            views[i].follow(verse);
+                        }
+                    }
+                    _ => {}
                 }
             }
         });

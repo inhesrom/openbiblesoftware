@@ -25,7 +25,14 @@ fn verse_text(n: u16) -> String {
 
 /// Genesis 30–33 with every chapter one paragraph per 6 verses, so verses start mid-line.
 pub(crate) fn bible() -> Arc<ReadingDoc> {
-    let mut m = Manifest::new("test-bible", "Test Bible", "TB", ResourceType::Bible, "en");
+    numbered_bible("test-bible", "Test Bible", "TB", false)
+}
+
+/// The same text as [`bible`]; `hebrew` numbers it the Hebrew way (KJV Gen 31:55 is 32:1 and
+/// KJV 32:n is 32:n+1), with the Verse map that says so.
+pub(crate) fn numbered_bible(id: &str, title: &str, abbrev: &str, hebrew: bool) -> Arc<ReadingDoc> {
+    use obs_scripture::{Passage, Standard, VerseMap, VerseMapEntry};
+    let mut m = Manifest::new(id, title, abbrev, ResourceType::Bible, "en");
     m.key_schemes = vec![KeyScheme::Passage];
     m.license = "LicenseRef-PD".into();
     let mut b = ResourceBuilder::new(m);
@@ -33,9 +40,26 @@ pub(crate) fn bible() -> Arc<ReadingDoc> {
     let mut t = TextAccumulator::new();
     let mut verses = Vec::new();
     let mut paras = Vec::new();
-    for (chapter, count) in [(30u16, 43u16), (31, 55), (32, 32), (33, 20)] {
+    let chapters: [(u16, u16); 4] = if hebrew {
+        [(30, 43), (31, 54), (32, 33), (33, 20)]
+    } else {
+        [(30, 43), (31, 55), (32, 32), (33, 20)]
+    };
+    let mut map = Vec::new();
+    for (chapter, count) in chapters {
         let mut para_start = t.pos();
         for v in 1..=count {
+            let native = Verse::new(Book::Genesis, chapter, v);
+            let std = match (hebrew, chapter, v) {
+                (true, 32, 1) => Verse::new(Book::Genesis, 31, 55),
+                (true, 32, n) => Verse::new(Book::Genesis, 32, n - 1),
+                _ => native,
+            };
+            map.push(VerseMapEntry {
+                verse: native,
+                last: v,
+                standard: Some(Passage::verse(std)),
+            });
             if t.pos() > 0 && t.as_str().ends_with('.') {
                 t.push(" ");
             }
@@ -66,6 +90,9 @@ pub(crate) fn bible() -> Arc<ReadingDoc> {
     }
     for (r, v) in verses {
         b.add_verse(&genesis, r, v, v.verse);
+    }
+    if hebrew {
+        b.set_verse_map(VerseMap::new(map, vec![], &Standard));
     }
     Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
 }

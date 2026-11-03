@@ -6,7 +6,10 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use obs_scripture::{ListedVersification, Verse};
+use obs_model::KeyScheme;
+use obs_scripture::{ListedVersification, Verse, VerseMap};
+
+use crate::link::{ToStandard, to_native, to_standard};
 
 /// A Tab, stable for the life of the Workspace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -110,9 +113,20 @@ impl TabKind {
         }
     }
 
-    /// Whether the header has a link chip (#36 fills it in).
+    /// Whether the header has a link chip.
     pub fn has_link_chip(&self) -> bool {
         !matches!(self, TabKind::Library | TabKind::Tool(Tool::Notes))
+    }
+
+    /// Key schemes a Tab of this kind follows. A Resource's come from its manifest instead.
+    pub fn default_key_schemes(&self) -> Vec<KeyScheme> {
+        match self {
+            TabKind::Guide(Guide::PassageGuide)
+            | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences)
+            | TabKind::Resource(_) => vec![KeyScheme::Passage],
+            TabKind::Guide(Guide::WordStudy) => vec![KeyScheme::StrongsNumber],
+            _ => Vec::new(),
+        }
     }
 
     fn slot(&self) -> Slot {
@@ -196,6 +210,18 @@ pub struct Tab {
     pub history: History,
     /// The Resource's own numbering, for reading typed references (ADR 0002 rule 10).
     pub versification: Option<Arc<ListedVersification>>,
+    /// A Bible's Verse map to the Standard versification (none: it numbers like the Standard).
+    pub verse_map: Option<Arc<VerseMap>>,
+    /// The Key schemes this Tab follows in a Link set.
+    pub key_schemes: Vec<KeyScheme>,
+    /// The Link set this Tab belongs to, if any.
+    pub link: Option<char>,
+}
+
+impl Tab {
+    fn follows_passages(&self) -> bool {
+        self.key_schemes.contains(&KeyScheme::Passage)
+    }
 }
 
 /// Where a new Tab goes.
@@ -223,6 +249,12 @@ pub enum Effect {
     Navigate {
         tab: TabId,
         verse: Verse,
+    },
+    /// A Link-set member follows another; `flash` marks the target after an explicit jump.
+    Follow {
+        tab: TabId,
+        verse: Verse,
+        flash: bool,
     },
     /// Rebuild the default arrangement.
     ResetLayout,
@@ -348,6 +380,16 @@ impl Workspace {
             return id;
         }
         let placement = self.placement_for(&kind, req);
+        // New linked Tabs join the opener's Link set.
+        let key_schemes = kind.default_key_schemes();
+        let link = if key_schemes.is_empty() || !kind.has_link_chip() {
+            None
+        } else {
+            self.focused
+                .and_then(|t| self.tabs.get(&t))
+                .filter(|t| !t.key_schemes.is_empty())
+                .and_then(|t| t.link)
+        };
         self.next_tab += 1;
         let id = TabId(self.next_tab);
         let panel = match placement {
@@ -364,6 +406,9 @@ impl Workspace {
                 title,
                 history: History::default(),
                 versification: None,
+                verse_map: None,
+                key_schemes,
+                link,
             },
         );
         self.effects.push(Effect::Opened { tab: id, placement });
@@ -458,31 +503,132 @@ impl Workspace {
         self.panels = next;
     }
 
-    /// Record a jump in a Tab's history and move its view.
+    /// Record a jump in a Tab's history, move its view, and move its Link set (flashing the
+    /// target in every member).
     pub fn navigate(&mut self, tab: TabId, verse: Verse) {
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.history.visit(verse);
             self.effects.push(Effect::Navigate { tab, verse });
+            self.broadcast(tab, verse, true);
         }
     }
 
-    /// The view scrolled: update the location without a history entry.
+    /// The view moved without the user scrolling it (a follow settling, a resize): update
+    /// the location without a history entry or moving the Link set.
     pub fn scrolled(&mut self, tab: TabId, verse: Verse) {
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.history.scrolled_to(verse);
         }
     }
 
+    /// The user scrolled a Tab to a new location: its Link set follows continuously.
+    pub fn user_scrolled(&mut self, tab: TabId, verse: Verse) {
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        if t.history.current() == Some(verse) {
+            return;
+        }
+        t.history.scrolled_to(verse);
+        self.broadcast(tab, verse, false);
+    }
+
     pub fn back(&mut self, tab: TabId) -> Option<Verse> {
         let v = self.tabs.get_mut(&tab)?.history.back()?;
         self.effects.push(Effect::Navigate { tab, verse: v });
+        self.broadcast(tab, v, false);
         Some(v)
     }
 
     pub fn forward(&mut self, tab: TabId) -> Option<Verse> {
         let v = self.tabs.get_mut(&tab)?.history.forward()?;
         self.effects.push(Effect::Navigate { tab, verse: v });
+        self.broadcast(tab, v, false);
         Some(v)
+    }
+
+    /// Put a Tab in a Link set (or none). A Tab joining a set moves to the set's location.
+    pub fn set_link(&mut self, tab: TabId, link: Option<char>) {
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        t.link = link;
+        if let Some(v) = self.set_location(tab) {
+            self.follow(tab, v, false);
+        }
+    }
+
+    /// The Standard Verse a Link set is at, read from its members other than `except`
+    /// (the focused member first).
+    fn standard_location_of(&self, link: char, except: TabId) -> Option<Verse> {
+        let mut members: Vec<&Tab> = self
+            .tabs
+            .values()
+            .filter(|t| t.id != except && t.link == Some(link) && t.follows_passages())
+            .collect();
+        members.sort_by_key(|t| Some(t.id) != self.focused);
+        members.into_iter().find_map(|t| {
+            let at = t.history.current()?;
+            match to_standard(t.verse_map.as_deref(), at) {
+                ToStandard::Verse(v) => Some(v),
+                ToStandard::Unmapped => None,
+            }
+        })
+    }
+
+    /// Where a member should be to match the rest of its Link set, in its own numbering.
+    pub fn set_location(&self, tab: TabId) -> Option<Verse> {
+        let t = self.tabs.get(&tab)?;
+        if !t.follows_passages() {
+            return None;
+        }
+        let std = self.standard_location_of(t.link?, tab)?;
+        to_native(t.verse_map.as_deref(), t.versification.as_deref(), std)
+    }
+
+    fn follow(&mut self, tab: TabId, verse: Verse, flash: bool) {
+        if let Some(t) = self.tabs.get_mut(&tab) {
+            t.history.scrolled_to(verse);
+            self.effects.push(Effect::Follow { tab, verse, flash });
+        }
+    }
+
+    /// Move every other member of `from`'s Link set to `native` (in `from`'s numbering),
+    /// translated through the Standard versification. An Unmapped verse moves nobody.
+    fn broadcast(&mut self, from: TabId, native: Verse, flash: bool) {
+        let Some(origin) = self.tabs.get(&from) else {
+            return;
+        };
+        let Some(link) = origin.link else {
+            return;
+        };
+        if !origin.follows_passages() {
+            return;
+        }
+        let ToStandard::Verse(std) = to_standard(origin.verse_map.as_deref(), native) else {
+            return;
+        };
+        let moves: Vec<(TabId, Verse)> = self
+            .tabs
+            .values()
+            .filter(|t| t.id != from && t.link == Some(link) && t.follows_passages())
+            .filter_map(|t| {
+                let to = to_native(t.verse_map.as_deref(), t.versification.as_deref(), std)?;
+                (t.history.current() != Some(to) || flash).then_some((t.id, to))
+            })
+            .collect();
+        for (tab, verse) in moves {
+            self.follow(tab, verse, flash);
+        }
+    }
+
+    /// Tabs in a Link set, by id.
+    pub fn members(&self, link: char) -> Vec<TabId> {
+        self.tabs
+            .values()
+            .filter(|t| t.link == Some(link))
+            .map(|t| t.id)
+            .collect()
     }
 
     /// Close everything (before a layout reset).

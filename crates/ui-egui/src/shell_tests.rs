@@ -66,6 +66,12 @@ impl Harness {
         }
     }
 
+    /// A frame after a 60 Hz frame interval, so workers get the time a real frame gives them.
+    fn paced_frame(&mut self) {
+        std::thread::sleep(std::time::Duration::from_micros(16_667));
+        self.frame();
+    }
+
     fn frames(&mut self, n: usize) {
         for _ in 0..n {
             self.frame();
@@ -206,7 +212,7 @@ fn default_layout_has_a_bible_and_a_tools_panel() {
     assert_eq!(panels[0].1, ["TB"]);
     assert_eq!(panels[1].1, ["Library", "Word Info"]);
     // The Bible's header: link chip slot, ‹ ›, reference box with the location, title.
-    for t in ["–", "‹", "›", "Genesis 30:1", "Test Bible", "…"] {
+    for t in ["A", "‹", "›", "Genesis 30:1", "Test Bible", "…"] {
         assert!(h.find(t).is_some(), "{t:?} missing: {:?}", h.texts());
     }
     // The launcher menus and the Search field.
@@ -266,6 +272,19 @@ fn each_tab_navigates_and_keeps_its_own_history() {
     h.frames(2);
     let tb = h.tab_id("TB");
     let heb = h.tab_id("HEB");
+    // HEB joined TB's Link set when it opened from it; unlink it so each Tab moves alone.
+    h.shell.run("tab.link", &json!({ "tab": heb.0, "set": "" }));
+    h.frames(2);
+    let heb_start = h
+        .shell
+        .st
+        .tabs
+        .get_mut(&heb)
+        .unwrap()
+        .view
+        .as_mut()
+        .unwrap()
+        .current_location();
     // Type into TB's reference box: click it, select all, type, Enter.
     h.click_text("Genesis 30:1");
     h.events.push(Event::Key {
@@ -333,14 +352,7 @@ fn each_tab_navigates_and_keeps_its_own_history() {
         ))
     );
     // The other Bible did not move and has no history.
-    assert_eq!(
-        loc(&mut h, heb),
-        Some(obs_scripture::Verse::new(
-            obs_scripture::Book::Genesis,
-            1,
-            1
-        ))
-    );
+    assert_eq!(loc(&mut h, heb), heb_start);
     let ws = &h.shell.st.session.workspace;
     assert!(!ws.tab(heb).unwrap().history.can_go_back());
     assert!(ws.tab(tb).unwrap().history.can_go_forward());
@@ -469,4 +481,206 @@ fn every_command_shortcut_parses() {
             assert!(super::parse_shortcut(sc).is_some(), "{} {sc}", c.id);
         }
     }
+}
+
+fn linked_harness() -> (Harness, obs_engine::TabId, obs_engine::TabId) {
+    let mut h = Harness::new();
+    add_doc(
+        &mut h.shell,
+        crate::tests::numbered_bible("heb-num", "Hebrew-numbered Bible", "HNUM", true),
+    );
+    // Opened from the focused TB (Link set A) with Ctrl held: a new Panel, same Link set.
+    let tb = h.tab_id("TB");
+    h.shell.st.session.workspace.user_focused(tb);
+    h.shell
+        .run("resource.open", &json!({ "id": "heb-num", "split": true }));
+    h.frames(3);
+    let hn = h.tab_id("HNUM");
+    let ws = &h.shell.st.session.workspace;
+    assert_eq!(ws.tab(hn).unwrap().link, Some('A'));
+    (h, tb, hn)
+}
+
+fn location(h: &mut Harness, t: obs_engine::TabId) -> Option<obs_scripture::Verse> {
+    h.shell
+        .st
+        .tabs
+        .get_mut(&t)?
+        .view
+        .as_mut()?
+        .current_location()
+}
+
+/// The follower has its target block laid out and is showing it. (Prefetch around it may
+/// still be in flight; that never shows as placeholders while the view stays put.)
+fn settled(h: &Harness, t: obs_engine::TabId) -> bool {
+    h.shell.st.tabs[&t]
+        .view
+        .as_ref()
+        .is_some_and(|v| !v.is_following())
+}
+
+fn ge(c: u16, v: u16) -> obs_scripture::Verse {
+    obs_scripture::Verse::new(obs_scripture::Book::Genesis, c, v)
+}
+
+#[test]
+fn scrolling_to_gen_31_55_moves_a_linked_hebrew_numbered_bible_to_32_1() {
+    let (mut h, tb, hn) = linked_harness();
+    h.shell
+        .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:53" }));
+    h.frames(4);
+    assert_eq!(location(&mut h, hn), Some(ge(31, 53)));
+    // Wheel-scroll TB a little at a time until it reports 31:55.
+    let over = h.panels()[0].0.center();
+    h.events.push(Event::PointerMoved(over));
+    let mut steps = 0;
+    while location(&mut h, tb) != Some(ge(31, 55)) {
+        h.events.push(Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: vec2(0.0, -6.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: Modifiers::NONE,
+        });
+        h.frame();
+        steps += 1;
+        assert!(steps < 400, "TB stuck at {:?}", location(&mut h, tb));
+    }
+    // The follower settles within 3 frames on 32:1, its own number for KJV 31:55.
+    let mut frames = 0;
+    while !(location(&mut h, hn) == Some(ge(32, 1)) && settled(&h, hn)) {
+        h.paced_frame();
+        frames += 1;
+        assert!(
+            frames <= 3,
+            "HNUM at {:?} after {frames} frames",
+            location(&mut h, hn)
+        );
+    }
+    // The header shows the follower's own numbering.
+    assert!(h.find("Genesis 32:1").is_some(), "{:?}", h.texts());
+}
+
+#[test]
+fn a_jump_moves_every_member_and_flashes_the_target() {
+    let (mut h, tb, hn) = linked_harness();
+    h.shell
+        .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 32:10" }));
+    let mut frames = 0;
+    while !(location(&mut h, hn) == Some(ge(32, 11)) && settled(&h, hn)) {
+        h.paced_frame();
+        frames += 1;
+        assert!(frames <= 3, "HNUM at {:?}", location(&mut h, hn));
+    }
+    for t in [tb, hn] {
+        assert!(h.shell.st.tabs[&t].flash.is_some(), "no flash in {t:?}");
+    }
+    // Scrolling the follower drives the origin back the other way, with no flash.
+    h.shell
+        .run("tab.go", &json!({ "tab": hn.0, "text": "33:3" }));
+    h.frames(3);
+    assert_eq!(location(&mut h, tb), Some(ge(33, 3)));
+    // Back in HNUM (where that jump happened) moves the set back too. Following adds no
+    // history: TB's own Back still leads to where TB itself last jumped from.
+    h.shell.run("tab.back", &json!({ "tab": hn.0 }));
+    h.frames(3);
+    assert_eq!(location(&mut h, hn), Some(ge(32, 11)));
+    assert_eq!(location(&mut h, tb), Some(ge(32, 10)));
+    let ws = &h.shell.st.session.workspace;
+    assert!(!ws.tab(tb).unwrap().history.can_go_forward());
+}
+
+#[test]
+fn the_link_chip_and_the_tab_title_change_the_link_set() {
+    let (mut h, tb, hn) = linked_harness();
+    // HNUM's chip is the right-most "A" on screen; its menu offers the sets.
+    let chip = h
+        .shapes
+        .iter()
+        .filter(|(_, t)| t == "A")
+        .map(|(r, _)| *r)
+        .max_by(|a, b| a.left().total_cmp(&b.left()))
+        .unwrap();
+    h.click(chip.center());
+    h.click_text("Link set B");
+    assert_eq!(
+        h.shell.st.session.workspace.tab(hn).unwrap().link,
+        Some('B')
+    );
+    // Now TB jumps alone.
+    let before = location(&mut h, hn);
+    h.shell
+        .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 33:1" }));
+    h.frames(3);
+    assert_eq!(location(&mut h, hn), before);
+    // Right-click the HNUM tab title: back into A, and it moves to A's location.
+    let title = h.at("HNUM");
+    h.events.push(Event::PointerMoved(title));
+    h.frame();
+    for pressed in [true, false] {
+        h.events.push(Event::PointerButton {
+            pos: title,
+            button: PointerButton::Secondary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+        h.frame();
+    }
+    h.frames(2);
+    h.click_text("Link set A");
+    h.frames(3);
+    assert_eq!(
+        h.shell.st.session.workspace.tab(hn).unwrap().link,
+        Some('A')
+    );
+    assert_eq!(location(&mut h, hn), Some(ge(33, 1)));
+}
+
+#[test]
+fn verse_numbers_show_the_standard_equivalent_where_it_differs() {
+    let (mut h, _tb, hn) = linked_harness();
+    h.shell
+        .run("tab.go", &json!({ "tab": hn.0, "text": "Gen 32:1" }));
+    h.frames(4);
+    // Find HNUM's "2" verse number (32:2, Standard 32:1) on screen and hover it.
+    let view = h.shell.st.tabs[&hn].view.as_ref().unwrap();
+    let [ox, oy] = view.text_origin;
+    let mut spot = None;
+    for (_, top, laid) in view.laid_in_view(800.0) {
+        for line in &laid.lines {
+            for item in &line.items {
+                for (bytes, x0, x1) in item.clusters() {
+                    if let Some(obs_layout::UnitPos::Object {
+                        object: obs_layout::InlineObject::VerseNumber(v),
+                        ..
+                    }) = laid.to_unit(bytes.start)
+                        && v == ge(32, 2)
+                    {
+                        spot = Some(pos2(
+                            ox + (x0 + x1) / 2.0,
+                            oy + top + (line.top + line.bottom) / 2.0,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    let spot = spot.expect("verse number 32:2 on screen");
+    h.events.push(Event::PointerMoved(spot));
+    h.frames(3);
+    assert!(
+        h.find("Standard numbering: Genesis 32:1").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    // TB numbers like the Standard: no tooltip over its verse numbers.
+    let view = h
+        .shell
+        .st
+        .tabs
+        .values()
+        .find_map(|t| t.view.as_ref().filter(|v| v.doc.verse_map.is_none()))
+        .unwrap();
+    assert!(view.doc.verse_map.is_none());
 }
