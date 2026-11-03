@@ -136,7 +136,7 @@ impl WorkspaceSnapshot {
     /// Drop Tabs whose Resource is no longer in the library.
     pub fn without_missing(mut self, has: impl Fn(&str) -> bool) -> Self {
         self.tabs.retain(|t| match &t.kind {
-            TabKind::Resource(id) => has(id),
+            TabKind::Resource(id) | TabKind::About(id) => has(id),
             _ => true,
         });
         let keep: BTreeSet<u64> = self.tabs.iter().map(|t| t.id).collect();
@@ -159,6 +159,9 @@ pub trait UserData: std::fmt::Debug {
     fn save_layout(&self, name: &str, snapshot: &str) -> Result<(), String>;
     fn rename_layout(&self, from: &str, to: &str) -> Result<bool, String>;
     fn delete_layout(&self, name: &str) -> Result<bool, String>;
+    /// The saved Preferred order: resource ids, best first.
+    fn preferred_order(&self) -> Result<Vec<String>, String>;
+    fn save_preferred_order(&self, ids: &[String]) -> Result<(), String>;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -189,6 +192,12 @@ impl UserData for obs_store::UserStore {
     }
     fn delete_layout(&self, name: &str) -> Result<bool, String> {
         obs_store::UserStore::delete_layout(self, name).map_err(|e| e.to_string())
+    }
+    fn preferred_order(&self) -> Result<Vec<String>, String> {
+        obs_store::UserStore::preferred_order(self).map_err(|e| e.to_string())
+    }
+    fn save_preferred_order(&self, ids: &[String]) -> Result<(), String> {
+        obs_store::UserStore::save_preferred_order(self, ids).map_err(|e| e.to_string())
     }
 }
 

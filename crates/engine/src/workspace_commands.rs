@@ -447,13 +447,19 @@ fn request(p: &Params<'_>) -> OpenRequest {
     }
 }
 
-fn title_of(s: &Session, kind: &TabKind) -> String {
+pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
     match kind {
         TabKind::Library => "Library".into(),
         TabKind::Resource(id) => s
             .library
             .get(id)
             .map_or_else(|| id.clone(), |e| e.manifest.abbreviation.clone()),
+        TabKind::About(id) => format!(
+            "About · {}",
+            s.library
+                .get(id)
+                .map_or(id.as_str(), |e| e.manifest.abbreviation.as_str())
+        ),
         TabKind::Guide(g) => g.title().into(),
         TabKind::Tool(t) => t.title().into(),
     }

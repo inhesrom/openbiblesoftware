@@ -121,3 +121,27 @@ fn a_database_from_a_newer_build_is_refused() {
     let err = UserStore::open(&path).unwrap_err();
     assert!(err.to_string().contains("version"), "{err}");
 }
+
+#[test]
+fn preferred_order_round_trips_and_survives_the_v2_migration() {
+    let dir = tmp("preferred");
+    let path = dir.join("user.db");
+    {
+        let (v2, _) = UserStore::open_to(&path, 2).unwrap();
+        v2.save_layout("Study", "{}").unwrap();
+    }
+    let (db, report) = UserStore::open(&path).unwrap();
+    assert_eq!(report.found_version, 2);
+    assert!(report.migration_backup.unwrap().is_file());
+    assert!(db.preferred_order().unwrap().is_empty());
+    let order = |ids: &[&str]| ids.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    db.save_preferred_order(&order(&["web", "kjv", "asv"]))
+        .unwrap();
+    assert_eq!(db.preferred_order().unwrap(), ["web", "kjv", "asv"]);
+    // Saving replaces the whole order.
+    db.save_preferred_order(&order(&["kjv", "web"])).unwrap();
+    drop(db);
+    let (db, _) = UserStore::open(&path).unwrap();
+    assert_eq!(db.preferred_order().unwrap(), ["kjv", "web"]);
+    assert_eq!(db.layouts().unwrap(), ["Study"]);
+}
