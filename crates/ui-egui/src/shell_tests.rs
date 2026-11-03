@@ -920,21 +920,24 @@ fn text_work(h: &Harness) -> (u64, u64) {
     (layouts, h.shell.st.atlas.atlas.stats().rasters)
 }
 
+/// Run paced frames until no view has layout work in flight for three frames running, so
+/// nothing a worker finishes later can be mistaken for work caused by the test.
 fn settle_all(h: &mut Harness) {
-    for _ in 0..200 {
+    let mut idle = 0;
+    for _ in 0..400 {
+        h.paced_frame();
         let busy = h
             .shell
             .st
             .tabs
             .values()
             .filter_map(|t| t.view.as_ref())
-            .any(|v| v.has_pending());
-        if !busy {
-            break;
+            .any(|v| v.has_pending() || v.is_following());
+        idle = if busy { 0 } else { idle + 1 };
+        if idle >= 3 {
+            return;
         }
-        h.paced_frame();
     }
-    h.frames(3);
 }
 
 /// The colours of the glyph quads drawn last frame (vertex colours of textured meshes).
