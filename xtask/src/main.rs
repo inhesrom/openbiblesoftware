@@ -1,6 +1,7 @@
 //! Repository automation. Run `cargo xtask help`.
 
 mod assets;
+mod bench;
 mod layers;
 mod tvtms;
 
@@ -19,6 +20,9 @@ tasks:
   layers   enforce the crate layering rules (ADR 0005, #12)
   wasm     cargo check every non-app crate for wasm32-unknown-unknown
   assets   every file under an assets/ directory has an ATTRIBUTION.toml entry
+
+performance:
+  bench    headless reading-pane benchmark; fails past the thresholds in xtask/bench.toml
 
 maintenance:
   tvtms <TVTMS.txt>   regenerate the embedded STEPBible TVTMS rules";
@@ -42,6 +46,7 @@ fn run() -> Result<()> {
             eprintln!("\nxtask ci: all gates passed");
             Ok(())
         }
+        "bench" => bench::run(&root),
         "tvtms" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             tvtms::run(&root, &rest)

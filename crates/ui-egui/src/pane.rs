@@ -8,7 +8,7 @@ use egui::{
 use obs_render::GlyphAtlas;
 
 use crate::palette::Palette;
-use crate::view::{MARGIN, ReadingView};
+use crate::view::{MARGIN, ReadingView, SYNC_BUDGET};
 
 const SCROLLBAR: f32 = 10.0;
 
@@ -115,14 +115,38 @@ pub fn reading_pane(
     }
 
     let ppp = ui.ctx().pixels_per_point();
-    let visible = view.visible(rect.height());
+    let frame = view.frame(rect.height(), Some(SYNC_BUDGET));
     let mut quads = Vec::new();
-    for vb in &visible {
-        quads.extend(
-            atlas
-                .atlas
-                .quads(&vb.laid, [text_rect.left(), rect.top() + vb.top], ppp),
-        );
+    for b in &frame.blocks {
+        match &b.laid {
+            Some(laid) => {
+                quads.extend(
+                    atlas
+                        .atlas
+                        .quads(laid, [text_rect.left(), rect.top() + b.top], ppp),
+                );
+            }
+            None => {
+                // Placeholder while a worker lays the block out: faint bars where lines go.
+                let line = view.settings().size * 1.8;
+                let bottom = rect.top() + b.top + b.height - line * 0.4;
+                let mut y = rect.top() + b.top + line * 0.4;
+                while y < bottom {
+                    painter.rect_filled(
+                        Rect::from_min_size(
+                            pos2(text_rect.left(), y),
+                            vec2(text_rect.width(), line * 0.35),
+                        ),
+                        2.0,
+                        palette.verse_number.gamma_multiply(0.12),
+                    );
+                    y += line;
+                }
+            }
+        }
+    }
+    if view.has_pending() {
+        ui.ctx().request_repaint();
     }
     let texture = atlas.sync(ui.ctx());
     let mut mesh = Mesh::with_texture(texture);

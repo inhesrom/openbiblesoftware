@@ -29,3 +29,20 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - name: cargo xtask ci
         run: cargo xtask ci
+
+  bench:
+    name: xtask bench
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo xtask bench
+        run: cargo xtask bench
+      - name: Seeded slowdown must fail the gate
+        run: |
+          if OBS_BENCH_SLOWDOWN_MS=3 cargo xtask bench; then
+            echo "the bench gate did not catch a 3 ms per-layout slowdown" >&2
+            exit 1
+          fi

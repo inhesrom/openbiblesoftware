@@ -1,0 +1,28 @@
+# Thresholds for `cargo xtask bench` (#19 performance targets). The bench drives 4 reading
+# panes headlessly at `refresh_hz`; each frame does the UI thread's work (apply worker
+# layouts, lay out within the 2 ms budget, build glyph-atlas quads) and is timed.
+#
+# CI runs at 60 Hz, the floor machine's refresh. The developer machine meets the same
+# numbers at 120 Hz (see PR #33's description). Raise a threshold only with a reason.
+
+refresh_hz = 60
+
+[steady]                    # steady wheel scrolling
+max_missed_pct = 1.0
+max_placeholder_frames = 0
+
+[fling]
+max_missed_pct = 5.0
+max_placeholder_frames = 0
+
+[jumps]
+max_missed_pct = 5.0
+# Frames until the jumping pane, and every following pane, has no placeholders.
+max_origin_settle_frames = 1
+max_all_settle_frames = 3
+
+[budget]
+# UI-thread layout per frame, p99 over all frames.
+max_sync_layout_p99_ms = 2.0
+# Glyph atlas as uploaded (RGBA).
+max_text_gpu_mib = 32.0

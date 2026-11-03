@@ -4,13 +4,26 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use obs_fonts::ShapeCache;
-use obs_layout::{LaidBlock, TextSettings, UnitPos, block_paragraph, estimate_height, layout};
+use obs_layout::{LaidBlock, TextSettings, UnitPos, block_paragraph, estimate_height};
 use obs_scripture::Verse;
 
 use crate::doc::ReadingDoc;
 use crate::heights::HeightIndex;
+use crate::workers::{LayoutClient, lay_out};
+
+/// UI-thread layout per frame. #19 allows 2 ms; one block may overrun the check, so stop
+/// starting new ones at 1.5 ms.
+pub const SYNC_BUDGET: Duration = Duration::from_micros(1500);
+
+/// Predicted UI-thread layout cost per byte of block text (measured cold on the KJV: Genesis,
+/// 194 KB, lays out in about 60 ms with an empty shape cache). Blocks predicted not to fit
+/// the remaining budget go to the workers instead, so one long paragraph cannot overrun it.
+const LAYOUT_COST_PER_BYTE: Duration = Duration::from_nanos(320);
+
+/// How far beyond the viewport to lay out ahead of time, in viewport heights (#19 rule 3).
+const PREFETCH: f32 = 1.5;
 
 /// Horizontal margin inside the pane, in points.
 pub const MARGIN: f32 = 24.0;
@@ -21,6 +34,36 @@ pub struct VisibleBlock {
     pub index: usize,
     pub top: f32,
     pub laid: Arc<LaidBlock>,
+}
+
+/// One block in a frame: laid out, or a placeholder of its estimated height while a worker
+/// lays it out.
+#[derive(Debug, Clone)]
+pub struct FrameBlock {
+    pub index: usize,
+    pub top: f32,
+    pub height: f32,
+    pub laid: Option<Arc<LaidBlock>>,
+}
+
+/// What one frame cost the UI thread.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct FrameStats {
+    /// Time spent laying out on the UI thread.
+    pub sync_layout: Duration,
+    pub sync_blocks: usize,
+    /// Visible blocks drawn as placeholders.
+    pub placeholders: usize,
+    /// Layouts sent to workers this frame.
+    pub submitted: usize,
+    /// Worker layouts applied this frame.
+    pub applied: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct Frame {
+    pub blocks: Vec<FrameBlock>,
+    pub stats: FrameStats,
 }
 
 #[derive(Debug)]
@@ -34,8 +77,13 @@ pub struct ReadingView {
     anchor: (usize, f32),
     /// After a jump, the Current location stays on the target until the user scrolls (#13).
     sticky: Option<Verse>,
-    /// Blocks laid out so far (for tests and the performance overlay).
+    /// Blocks laid out so far, on any thread (for tests and the performance overlay).
     pub layouts: u64,
+    client: LayoutClient,
+    /// Bumped when width or settings change; worker results from older generations are dropped.
+    generation: u64,
+    /// A follow waiting for its target block's layout (`follow`).
+    pending_follow: Option<Verse>,
 }
 
 impl ReadingView {
@@ -49,6 +97,9 @@ impl ReadingView {
             anchor: (0, 0.0),
             sticky: None,
             layouts: 0,
+            client: LayoutClient::default(),
+            generation: 0,
+            pending_follow: None,
         };
         view.set_width(600.0);
         view
@@ -95,6 +146,8 @@ impl ReadingView {
             .collect();
         self.heights = HeightIndex::new(estimates);
         self.laid.clear();
+        self.generation += 1;
+        self.client.forget_pending();
         if let Some(v) = keep {
             self.jump_to(v);
         }
@@ -117,7 +170,7 @@ impl ReadingView {
             doc.direction(),
             &self.settings,
         );
-        let l = Arc::new(layout(&p, self.width, ShapeCache::shared()));
+        let l = Arc::new(lay_out(&p, self.width));
         self.layouts += 1;
         self.heights.set(i, l.height);
         self.laid.insert(i, Arc::clone(&l));
@@ -130,6 +183,7 @@ impl ReadingView {
             return;
         }
         self.sticky = None;
+        self.pending_follow = None;
         self.anchor.1 += dy;
         self.normalize();
     }
@@ -144,16 +198,14 @@ impl ReadingView {
                 break;
             }
             self.anchor.0 -= 1;
-            let h = self.laid(self.anchor.0).map_or(0.0, |l| l.height);
-            self.anchor.1 += h;
+            self.anchor.1 += self.height_of(self.anchor.0);
         }
         loop {
-            let laid = self.laid(self.anchor.0);
-            let h = laid.as_ref().map_or(0.0, |l| l.height);
+            let h = self.height_of(self.anchor.0);
             if self.anchor.0 >= last {
                 // At the end, keep the last line in view.
-                let last_line = laid
-                    .as_ref()
+                let last_line = self
+                    .laid(self.anchor.0)
                     .and_then(|l| l.lines.last().map(|line| line.top))
                     .unwrap_or(0.0);
                 self.anchor.1 = self.anchor.1.min(last_line).max(0.0);
@@ -180,29 +232,165 @@ impl ReadingView {
         self.normalize();
     }
 
-    /// Blocks that fill a viewport `height` tall, from the anchor down.
-    pub fn visible(&mut self, height: f32) -> Vec<VisibleBlock> {
-        let mut out = Vec::new();
+    /// A block's height: real if laid out, else estimated. Never lays out.
+    fn height_of(&self, i: usize) -> f32 {
+        self.laid
+            .get(&i)
+            .map_or_else(|| self.heights.height(i), |l| l.height)
+    }
+
+    fn key(&self, i: usize) -> u64 {
+        (self.generation << 32) | i as u64
+    }
+
+    /// Queue a block for a worker unless it is laid out or already queued.
+    fn prefetch(&mut self, i: usize) -> bool {
+        if self.laid.contains_key(&i) || self.client.is_pending(self.key(i)) {
+            return false;
+        }
+        if i >= self.doc.blocks.len() {
+            return false;
+        }
+        let key = self.key(i);
+        let (doc, settings, width) = (Arc::clone(&self.doc), self.settings, self.width);
+        self.client.submit_with(key, move || {
+            let b = &doc.blocks[i];
+            let p = block_paragraph(&doc.units[b.unit], &b.source, doc.direction(), &settings);
+            lay_out(&p, width)
+        });
+        true
+    }
+
+    /// Whether workers still have layouts for this view in flight.
+    pub fn has_pending(&self) -> bool {
+        self.client.pending() > 0
+    }
+
+    /// One frame: apply finished worker layouts, then fill a viewport `height` tall from the
+    /// anchor down, laying out on this thread only within `budget` (`None`: no limit) and
+    /// drawing placeholders otherwise; finally queue ±1.5 viewports around it for the workers.
+    pub fn frame(&mut self, height: f32, budget: Option<Duration>) -> Frame {
+        let mut stats = FrameStats::default();
+        for (key, laid) in self.client.drain() {
+            if key >> 32 == self.generation {
+                let i = (key & 0xFFFF_FFFF) as usize;
+                self.heights.set(i, laid.height);
+                self.laid.insert(i, laid);
+                self.layouts += 1;
+                stats.applied += 1;
+            }
+        }
+        // Finish a follow once its block has arrived.
+        if let Some(v) = self.pending_follow
+            && let Some((unit, byte)) = self.doc.verse_position(v)
+            && let Some(block) = self.doc.block_at(unit, byte)
+            && self.laid.contains_key(&block)
+        {
+            self.pending_follow = None;
+            if self.anchor == (block, 0.0) {
+                self.jump_to(v);
+            }
+        }
+        let n = self.doc.blocks.len();
+        let mut blocks = Vec::new();
         let mut i = self.anchor.0;
         let mut top = -self.anchor.1;
-        while top < height && i < self.doc.blocks.len() {
-            let Some(laid) = self.laid(i) else { break };
-            let h = laid.height;
-            out.push(VisibleBlock {
+        while top < height && i < n {
+            let laid = match self.laid.get(&i) {
+                Some(l) => Some(Arc::clone(l)),
+                None if budget.is_none_or(|b| {
+                    let bytes = self.doc.blocks[i].source.range.len() as u32;
+                    stats.sync_layout + LAYOUT_COST_PER_BYTE * bytes <= b
+                }) =>
+                {
+                    let start = Instant::now();
+                    let l = self.laid(i);
+                    stats.sync_layout += start.elapsed();
+                    stats.sync_blocks += 1;
+                    l
+                }
+                None => {
+                    if self.prefetch(i) {
+                        stats.submitted += 1;
+                    }
+                    None
+                }
+            };
+            let h = laid
+                .as_ref()
+                .map_or_else(|| self.heights.height(i), |l| l.height);
+            if laid.is_none() {
+                stats.placeholders += 1;
+            }
+            blocks.push(FrameBlock {
                 index: i,
                 top,
+                height: h,
                 laid,
             });
             top += h;
             i += 1;
         }
-        // Drop layouts far from view (keep about ±1.5 viewports' worth of blocks).
-        if self.laid.len() > 400 {
-            let keep_from = self.anchor.0.saturating_sub(60);
-            let keep_to = i + 60;
-            self.laid.retain(|k, _| (keep_from..keep_to).contains(k));
+        // Prefetch below and above the view.
+        let mut below = i;
+        while top < height * (1.0 + PREFETCH) && below < n {
+            if self.prefetch(below) {
+                stats.submitted += 1;
+            }
+            top += self.height_of(below);
+            below += 1;
         }
-        out
+        let mut above_index = self.anchor.0;
+        let mut above = self.anchor.1;
+        while above < height * PREFETCH && above_index > 0 {
+            above_index -= 1;
+            if self.prefetch(above_index) {
+                stats.submitted += 1;
+            }
+            above += self.height_of(above_index);
+        }
+        // Keep layouts around the prefetch window, drop the rest.
+        if self.laid.len() > 2 * (below - above_index) + 200 {
+            let from = above_index.saturating_sub(100);
+            let to = below + 100;
+            self.laid.retain(|k, _| (from..to).contains(k));
+        }
+        Frame { blocks, stats }
+    }
+
+    /// Blocks that fill a viewport `height` tall, from the anchor down, all laid out now.
+    pub fn visible(&mut self, height: f32) -> Vec<VisibleBlock> {
+        self.frame(height, None)
+            .blocks
+            .into_iter()
+            .filter_map(|b| {
+                Some(VisibleBlock {
+                    index: b.index,
+                    top: b.top,
+                    laid: b.laid?,
+                })
+            })
+            .collect()
+    }
+
+    /// Follow a verse without laying out on this thread: if its block is not laid out yet,
+    /// show that block (as a placeholder) and finish the jump when a worker delivers it. This
+    /// is how linked followers move, settling a few frames after the origin (#19 rule 3).
+    pub fn follow(&mut self, verse: Verse) -> bool {
+        let Some((unit, byte)) = self.doc.verse_position(verse) else {
+            return false;
+        };
+        let Some(block) = self.doc.block_at(unit, byte) else {
+            return false;
+        };
+        if self.laid.contains_key(&block) {
+            return self.jump_to(verse);
+        }
+        self.prefetch(block);
+        self.anchor = (block, 0.0);
+        self.sticky = Some(verse);
+        self.pending_follow = Some(verse);
+        true
     }
 
     /// Jump to a verse (own numbering): its line goes to the top of the view and stays the

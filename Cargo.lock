@@ -2270,6 +2270,7 @@ dependencies = [
  "obs-render",
  "obs-scripture",
  "obs-store",
+ "serde",
 ]
 
 [[package]]
@@ -2284,6 +2285,7 @@ version = "0.0.0"
 dependencies = [
  "eframe",
  "obs-ui-egui",
+ "serde_json",
 ]
 
 [[package]]
@@ -4110,6 +4112,7 @@ dependencies = [
  "cargo_metadata",
  "globset",
  "serde",
+ "serde_json",
  "toml 1.1.8+spec-1.1.0",
  "walkdir",
 ]
