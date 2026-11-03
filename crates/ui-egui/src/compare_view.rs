@@ -100,7 +100,10 @@ impl ComparisonView {
         extent: Vec<Verse>,
     ) {
         let key = Key {
-            bibles: docs.iter().map(|d| d.manifest.resource_id.clone()).collect(),
+            bibles: docs
+                .iter()
+                .map(|d| d.manifest.resource_id.clone())
+                .collect(),
             base,
             differences,
             extent,
@@ -109,8 +112,10 @@ impl ComparisonView {
             return;
         }
         let at = self.current_location();
-        let bibles: Vec<&dyn ComparedBible> =
-            docs.iter().map(|d| d.as_ref() as &dyn ComparedBible).collect();
+        let bibles: Vec<&dyn ComparedBible> = docs
+            .iter()
+            .map(|d| d.as_ref() as &dyn ComparedBible)
+            .collect();
         self.blocks = verse_blocks(&key.extent, &bibles, base, differences);
         self.docs = docs;
         self.key = Some(key);
@@ -136,9 +141,7 @@ impl ComparisonView {
     }
 
     fn reset_heights(&mut self) {
-        let estimates = (0..self.blocks.len())
-            .map(|i| self.estimate(i))
-            .collect();
+        let estimates = (0..self.blocks.len()).map(|i| self.estimate(i)).collect();
         self.heights = HeightIndex::new(estimates);
         self.anchor.1 = 0.0;
     }
@@ -220,7 +223,13 @@ impl ComparisonView {
 
 /// A five-pointed star (the chrome fonts have no ★): filled for the base Bible, outlined
 /// elsewhere.
-pub fn paint_star(painter: &egui::Painter, center: Pos2, radius: f32, filled: bool, color: Color32) {
+pub fn paint_star(
+    painter: &egui::Painter,
+    center: Pos2,
+    radius: f32,
+    filled: bool,
+    color: Color32,
+) {
     let points: Vec<Pos2> = (0..10)
         .map(|i| {
             let r = if i % 2 == 0 { radius } else { radius * 0.45 };
@@ -416,13 +425,9 @@ pub fn comparison_pane(
             }
             match &c.cell {
                 Cell::Text { text, .. } if !text.is_empty() => {
-                    let laid = view.snippets.get(
-                        text,
-                        ColorRole::Ink,
-                        rtl,
-                        text_width,
-                        &settings,
-                    );
+                    let laid = view
+                        .snippets
+                        .get(text, ColorRole::Ink, rtl, text_width, &settings);
                     match laid {
                         Some(laid) => {
                             if let Marks::Diff(d) = &c.marks {

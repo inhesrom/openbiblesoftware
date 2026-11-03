@@ -77,7 +77,11 @@ impl ReadingDoc {
             .map(|v| units.iter().position(|u| u.id == v.unit).unwrap_or(0))
             .collect();
         let versification = ListedVersification::new(verses.iter().map(|v| (v.verse, v.last)));
-        let verse_index = verses.iter().enumerate().map(|(i, v)| (v.verse, i)).collect();
+        let verse_index = verses
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (v.verse, i))
+            .collect();
         Self {
             manifest,
             units,

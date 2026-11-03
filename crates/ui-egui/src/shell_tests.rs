@@ -24,6 +24,9 @@ struct Harness {
     os_theme: egui::Theme,
     /// The last AccessKit tree update (when AccessKit is on).
     tree: Option<egui::accesskit::TreeUpdate>,
+    /// Textures as the GPU would hold them, and last frame's shapes (for [`Harness::screenshot`]).
+    textures: std::collections::HashMap<egui::TextureId, egui::ColorImage>,
+    last_shapes: Vec<egui::epaint::ClippedShape>,
 }
 
 fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
@@ -67,6 +70,8 @@ impl Harness {
             meshes: Vec::new(),
             os_theme: egui::Theme::Light,
             tree: None,
+            textures: std::collections::HashMap::new(),
+            last_shapes: Vec::new(),
         };
         h.frames(3);
         h
@@ -83,8 +88,27 @@ impl Harness {
         self.time += 1.0 / 60.0;
         let shell = &mut self.shell;
         let mut out = self.ctx.run_ui(input, |ui| shell.ui(ui));
-        // No GPU here: the texture uploads are dropped on purpose.
+        // No GPU here: texture uploads are kept as images, for screenshots only.
+        for (id, deltas) in std::mem::take(&mut out.textures_delta.set) {
+            for delta in deltas {
+                let egui::ImageData::Color(img) = delta.image;
+                match (delta.pos, self.textures.get_mut(&id)) {
+                    (Some([x0, y0]), Some(tex)) => {
+                        for y in 0..img.size[1] {
+                            for x in 0..img.size[0] {
+                                tex.pixels[(y0 + y) * tex.size[0] + x0 + x] =
+                                    img.pixels[y * img.size[0] + x];
+                            }
+                        }
+                    }
+                    _ => {
+                        self.textures.insert(id, (*img).clone());
+                    }
+                }
+            }
+        }
         out.textures_delta.clear();
+        self.last_shapes = out.shapes.clone();
         if let Some(t) = out.platform_output.accesskit_update.take() {
             self.tree = Some(t);
         }
@@ -209,6 +233,76 @@ impl Harness {
                 .then(a.0.top().total_cmp(&b.0.top()))
         });
         out
+    }
+
+    /// Rasterize last frame as the GPU would (premultiplied alpha, nearest texels) into a PPM.
+    fn screenshot(&self, path: &std::path::Path) {
+        let ppp = 1.0;
+        let (w, h) = (1400usize, 900usize);
+        let prims = self.ctx.tessellate(self.last_shapes.clone(), ppp);
+        let mut px = vec![[0.0f32; 3]; w * h];
+        for p in &prims {
+            let egui::epaint::Primitive::Mesh(m) = &p.primitive else {
+                continue;
+            };
+            let tex = self.textures.get(&m.texture_id);
+            let clip = p
+                .clip_rect
+                .intersect(Rect::from_min_size(Pos2::ZERO, vec2(w as f32, h as f32)));
+            for tri in m.indices.chunks(3) {
+                let [a, b, c] = [0, 1, 2].map(|i| m.vertices[tri[i] as usize]);
+                let lo = a.pos.min(b.pos).min(c.pos).max(clip.min);
+                let hi = a.pos.max(b.pos).max(c.pos).min(clip.max);
+                let area =
+                    (b.pos - a.pos).x * (c.pos - a.pos).y - (b.pos - a.pos).y * (c.pos - a.pos).x;
+                if area.abs() < 1e-6 || lo.x >= hi.x || lo.y >= hi.y {
+                    continue;
+                }
+                for y in lo.y.floor() as usize..hi.y.ceil() as usize {
+                    for x in lo.x.floor() as usize..hi.x.ceil() as usize {
+                        let q = pos2(x as f32 + 0.5, y as f32 + 0.5);
+                        let edge = |p0: Pos2, p1: Pos2| {
+                            (p1 - p0).x * (q - p0).y - (p1 - p0).y * (q - p0).x
+                        };
+                        let (wa, wb, wc) = (
+                            edge(b.pos, c.pos) / area,
+                            edge(c.pos, a.pos) / area,
+                            edge(a.pos, b.pos) / area,
+                        );
+                        if wa < -1e-4 || wb < -1e-4 || wc < -1e-4 || x >= w || y >= h {
+                            continue;
+                        }
+                        let mut src = [0.0f32; 4];
+                        for (v, wt) in [(a, wa), (b, wb), (c, wc)] {
+                            for (k, ch) in v.color.to_array().iter().enumerate() {
+                                src[k] += f32::from(*ch) / 255.0 * wt;
+                            }
+                        }
+                        if let Some(t) = tex {
+                            let uv =
+                                a.uv.to_vec2() * wa + b.uv.to_vec2() * wb + c.uv.to_vec2() * wc;
+                            let tx = ((uv.x * t.size[0] as f32) as usize).min(t.size[0] - 1);
+                            let ty = ((uv.y * t.size[1] as f32) as usize).min(t.size[1] - 1);
+                            let texel = t.pixels[ty * t.size[0] + tx].to_array();
+                            for k in 0..4 {
+                                src[k] *= f32::from(texel[k]) / 255.0;
+                            }
+                        }
+                        let d = &mut px[y * w + x];
+                        for k in 0..3 {
+                            d[k] = src[k] + d[k] * (1.0 - src[3]);
+                        }
+                    }
+                }
+            }
+        }
+        let mut out = format!("P6\n{w} {h}\n255\n").into_bytes();
+        out.extend(
+            px.iter()
+                .flat_map(|p| p.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)),
+        );
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, out).unwrap();
     }
 
     fn tab_id(&self, title: &str) -> obs_engine::TabId {
@@ -1360,7 +1454,11 @@ mod text_comparison {
             });
             h.paced_frame();
             steps += 1;
-            assert!(steps < 600, "stuck at {:?}", view(&h, cmp).current_location());
+            assert!(
+                steps < 600,
+                "stuck at {:?}",
+                view(&h, cmp).current_location()
+            );
         }
         let ws = &h.shell.st.session.workspace;
         assert_eq!(ws.tab(cmp).unwrap().history.current(), Some(ge(31, 55)));
@@ -1434,11 +1532,104 @@ mod text_comparison {
             .unwrap_or_else(|| panic!("no range chip in {:?}", texts_in(&h, cmp)));
         h.click_text(&chip);
         assert_eq!(
-            h.shell.st.session.workspace.tab(cmp).unwrap().comparison.range,
+            h.shell
+                .st
+                .session
+                .workspace
+                .tab(cmp)
+                .unwrap()
+                .comparison
+                .range,
             None
         );
         h.frames(2);
         assert_eq!(view(&h, cmp).blocks.len(), 55);
+    }
+
+    const KJV_JN_3_16: &str = "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.";
+    const WEB_JN_3_16: &str = "For God so loved the world, that he gave his one and only Son, that whoever believes in him should not perish, but have eternal life.";
+
+    /// A Bible holding only John 3:16.
+    fn john(id: &str, abbrev: &str, text: &str) -> Arc<ReadingDoc> {
+        use obs_model::{
+            KeyScheme, Manifest, ParaStyle, ResourceBuilder, ResourceType, SpanKind,
+            TextAccumulator, UnitId, UnitKind,
+        };
+        let mut m = Manifest::new(id, abbrev, abbrev, ResourceType::Bible, "en");
+        m.key_schemes = vec![KeyScheme::Passage];
+        m.license = "LicenseRef-PD".into();
+        let mut b = ResourceBuilder::new(m);
+        let unit = UnitId::book(obs_scripture::Book::John);
+        let mut t = TextAccumulator::new();
+        let r = t.push(text);
+        b.add_unit(unit.clone(), UnitKind::BibleBook, None, t.into_string());
+        b.add_span(
+            &unit,
+            r.clone(),
+            SpanKind::Para {
+                style: ParaStyle::Prose,
+            },
+        );
+        b.add_verse(
+            &unit,
+            r,
+            obs_scripture::Verse::new(obs_scripture::Book::John, 3, 16),
+            16,
+        );
+        Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
+    }
+
+    /// The comparison narrowed to KJV and WEB at John 3:16.
+    fn kjv_web_harness() -> (Harness, TabId) {
+        let (mut h, _, cmp) = harness();
+        add_doc(&mut h.shell, john("kjv", "KJV", KJV_JN_3_16));
+        add_doc(&mut h.shell, john("web", "WEB", WEB_JN_3_16));
+        for id in ["test-bible", "heb-test", "heb-num"] {
+            h.shell
+                .run("compare.bible", &json!({ "tab": cmp.0, "id": id }));
+        }
+        h.shell
+            .run("tab.go", &json!({ "tab": cmp.0, "text": "Jn 3:16" }));
+        settle(&mut h, cmp);
+        (h, cmp)
+    }
+
+    #[test]
+    fn diff_marks_known_kjv_web_wording_differences_in_jn_3_16() {
+        let (h, cmp) = kjv_web_harness();
+        let v = view(&h, cmp);
+        let b = v
+            .blocks
+            .iter()
+            .find(|b| b.verse == obs_scripture::Verse::new(obs_scripture::Book::John, 3, 16))
+            .unwrap();
+        assert_eq!(b.cells.len(), 2);
+        assert_eq!(b.cells[0].marks, Marks::Base);
+        let Marks::Diff(d) = &b.cells[1].marks else {
+            panic!("{:?}", b.cells[1].marks)
+        };
+        let words: Vec<&str> = d.changed.iter().map(|r| &WEB_JN_3_16[r.clone()]).collect();
+        assert_eq!(words, ["one", "and", "whoever", "believes", "eternal"]);
+        assert_eq!(d.missing, [WEB_JN_3_16.find("Son").unwrap()]);
+        let texts = texts_in(&h, cmp);
+        assert!(texts.iter().any(|t| t == "KJV") && texts.iter().any(|t| t == "WEB"));
+    }
+
+    /// Writes `target/previews/text-comparison-*.ppm` (the whole window, rasterized from the
+    /// real frame) when `UPDATE_PREVIEWS` is set.
+    #[test]
+    fn previews() {
+        if std::env::var_os("UPDATE_PREVIEWS").is_none() {
+            return;
+        }
+        let (mut h, tb, cmp) = harness();
+        h.shell
+            .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:55" }));
+        settle(&mut h, cmp);
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+        h.screenshot(&dir.join("text-comparison-gen-31-55.ppm"));
+        let (h, _) = kjv_web_harness();
+        h.screenshot(&dir.join("text-comparison-jn-3-16.ppm"));
     }
 
     /// ★ and ☆ are painted shapes: the chrome fonts lack them.

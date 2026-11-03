@@ -22,7 +22,12 @@ fn words<'a>(text: &'a str, d: &WordDiff) -> Vec<&'a str> {
 fn before<'a>(text: &'a str, d: &WordDiff) -> Vec<&'a str> {
     d.missing
         .iter()
-        .map(|&at| text[at..].split(|c: char| !c.is_alphanumeric()).next().unwrap())
+        .map(|&at| {
+            text[at..]
+                .split(|c: char| !c.is_alphanumeric())
+                .next()
+                .unwrap()
+        })
         .collect()
 }
 
@@ -52,7 +57,10 @@ fn diff_ignores_case_punctuation_and_diacritics() {
         word_diff("For God so loved the world,", "for god so loved the world"),
         WordDiff::default()
     );
-    assert_eq!(word_diff("Ἐν ἀρχῇ ἦν ὁ λόγος", "εν αρχη ην ο λογος"), WordDiff::default());
+    assert_eq!(
+        word_diff("Ἐν ἀρχῇ ἦν ὁ λόγος", "εν αρχη ην ο λογος"),
+        WordDiff::default()
+    );
     // Words missing at the end are marked after the last word.
     let d = word_diff("and the earth was without form", "and the earth");
     assert_eq!(d.changed, []);
@@ -158,7 +166,10 @@ fn gen_31_32_compares_kjv_and_a_hebrew_numbered_bible_on_the_same_rows() {
     let bibles: [&dyn ComparedBible; 2] = [&kjv, &heb];
     for c in [31, 32] {
         let blocks = verse_blocks(&chapter(Book::Genesis, c), &bibles, Some(0), true);
-        assert_eq!(blocks.len(), Standard.last_verse(Book::Genesis, c).unwrap() as usize);
+        assert_eq!(
+            blocks.len(),
+            Standard.last_verse(Book::Genesis, c).unwrap() as usize
+        );
         for b in &blocks {
             // Both rows hold the same Standard Verse, whatever each Bible calls it…
             let texts: Vec<&str> = b
@@ -210,7 +221,10 @@ fn absent_merged_and_shared_rows() {
     let ranged = TestBible {
         language: "en",
         map: None,
-        verses: vec![(mt(17, 1), 2, "one and two".into()), (mt(17, 3), 3, "three".into())],
+        verses: vec![
+            (mt(17, 1), 2, "one and two".into()),
+            (mt(17, 3), 3, "three".into()),
+        ],
     };
     let first = cell_for(&ranged, mt(17, 1), mt(17, 1));
     assert_eq!(
@@ -229,7 +243,10 @@ fn absent_merged_and_shared_rows() {
         }
     );
     // A range starting at verse 2 still shows the merged text, in its top row.
-    assert!(matches!(cell_for(&ranged, mt(17, 2), mt(17, 2)), Cell::Text { .. }));
+    assert!(matches!(
+        cell_for(&ranged, mt(17, 2), mt(17, 2)),
+        Cell::Text { .. }
+    ));
 
     // Hebrew Ps 51:1-2 are the Standard title: both share the title row.
     let ps = |v| Verse::new(Book::Psalms, 51, v);
@@ -293,13 +310,20 @@ fn rows_in_another_language_than_the_base_are_not_compared() {
     };
     assert_eq!(
         marks(Some(0), true),
-        [Marks::Base, Marks::NotCompared, Marks::Diff(WordDiff::default())]
+        [
+            Marks::Base,
+            Marks::NotCompared,
+            Marks::Diff(WordDiff::default())
+        ]
     );
     assert_eq!(
         marks(Some(1), true),
         [Marks::NotCompared, Marks::Base, Marks::NotCompared]
     );
-    assert_eq!(marks(Some(0), false), [Marks::None, Marks::None, Marks::None]);
+    assert_eq!(
+        marks(Some(0), false),
+        [Marks::None, Marks::None, Marks::None]
+    );
 }
 
 // ------------------------------------------------------------------ Tool state and commands
@@ -338,7 +362,11 @@ fn bibles_default_to_the_first_five_in_preferred_order_and_the_base_is_selectabl
     let c = comparison(&s, t).clone();
     let bibles = c.bibles(&s.library);
     assert_eq!(bibles, ["kjv", "web", "asv", "ylt", "tahot"]);
-    assert_eq!(c.base_index(&bibles), Some(0), "★ is the first row by default");
+    assert_eq!(
+        c.base_index(&bibles),
+        Some(0),
+        "★ is the first row by default"
+    );
 
     let out = s
         .run("compare.base", &json!({ "tab": t.0, "id": "web" }))
@@ -361,7 +389,8 @@ fn bibles_default_to_the_first_five_in_preferred_order_and_the_base_is_selectabl
     assert_eq!(out["base"], "kjv");
 
     assert_eq!(
-        s.run("compare.differences", &json!({ "tab": t.0 })).unwrap()["differences"],
+        s.run("compare.differences", &json!({ "tab": t.0 }))
+            .unwrap()["differences"],
         false
     );
     // Only Bibles being compared can be the base; only Bibles can be compared.
@@ -392,7 +421,8 @@ fn a_typed_range_narrows_the_chapter_until_cleared_or_a_jump_leaves_it() {
     let rom = |c, v| Verse::new(Book::Romans, c, v);
 
     // A whole chapter or one Verse is the whole chapter: no chip.
-    s.run("tab.go", &json!({ "tab": t.0, "text": "Ro 8" })).unwrap();
+    s.run("tab.go", &json!({ "tab": t.0, "text": "Ro 8" }))
+        .unwrap();
     assert_eq!(comparison(&s, t).range, None);
     assert_eq!(comparison(&s, t).extent(rom(8, 1)).len(), 39);
     s.run("tab.go", &json!({ "tab": t.0, "text": "Ro 8:28" }))
@@ -454,7 +484,10 @@ fn a_linked_bible_moving_to_another_chapter_clears_the_range() {
         .unwrap();
     assert!(comparison(&s, t).range.is_some());
     s.workspace.user_scrolled(bible, ge(32, 1));
-    assert!(comparison(&s, t).range.is_some(), "still inside the range's chapters");
+    assert!(
+        comparison(&s, t).range.is_some(),
+        "still inside the range's chapters"
+    );
     s.workspace.user_scrolled(bible, ge(33, 1));
     assert_eq!(comparison(&s, t).range, None);
 }
@@ -499,5 +532,8 @@ fn scrolling_the_comparison_drives_linked_bibles() {
     assert_eq!(follows, [(kjv, ge(31, 55)), (heb, ge(32, 1))]);
     // And a Hebrew-numbered Bible scrolled to 32:5 moves the comparison to row 32:4.
     s.workspace.user_scrolled(heb, ge(32, 5));
-    assert_eq!(s.workspace.tab(t).unwrap().history.current(), Some(ge(32, 4)));
+    assert_eq!(
+        s.workspace.tab(t).unwrap().history.current(),
+        Some(ge(32, 4))
+    );
 }

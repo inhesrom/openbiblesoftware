@@ -980,15 +980,25 @@ impl State {
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
                                     ui.spacing_mut().item_spacing.x = 2.0;
-                                    let (rect, r) =
-                                        ui.allocate_exact_size(vec2(16.0, 20.0), egui::Sense::click());
+                                    let (rect, r) = ui.allocate_exact_size(
+                                        vec2(16.0, 20.0),
+                                        egui::Sense::click(),
+                                    );
                                     let color = if r.hovered() || Some(i) == base {
                                         theme::c().lapis
                                     } else {
                                         theme::c().muted
                                     };
-                                    paint_star(ui.painter(), rect.center(), 6.0, Some(i) == base, color);
-                                    if r.on_hover_text("Compare the others with this Bible").clicked() {
+                                    paint_star(
+                                        ui.painter(),
+                                        rect.center(),
+                                        6.0,
+                                        Some(i) == base,
+                                        color,
+                                    );
+                                    if r.on_hover_text("Compare the others with this Bible")
+                                        .clicked()
+                                    {
                                         run = Some((
                                             "compare.base",
                                             json!({ "tab": tab.0, "id": id }),

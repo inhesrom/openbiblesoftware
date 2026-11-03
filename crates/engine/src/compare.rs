@@ -345,7 +345,10 @@ pub fn verse_blocks(
                         _ if Some(i) == base => Marks::Base,
                         (Cell::Text { text, .. }, true) => {
                             let same_language = base_language.as_deref()
-                                == bibles.get(i).map(|b| primary_language(b.language())).as_deref();
+                                == bibles
+                                    .get(i)
+                                    .map(|b| primary_language(b.language()))
+                                    .as_deref();
                             match &base_text {
                                 _ if !same_language => Marks::NotCompared,
                                 Some(base) => Marks::Diff(word_diff(base, text)),
@@ -420,7 +423,11 @@ fn failed(command: &'static str, message: impl ToString) -> CommandError {
 }
 
 /// The Text Comparison Tab named by the `tab` parameter.
-fn comparison_tab(command: &'static str, s: &Session, p: &Params<'_>) -> Result<TabId, CommandError> {
+fn comparison_tab(
+    command: &'static str,
+    s: &Session,
+    p: &Params<'_>,
+) -> Result<TabId, CommandError> {
     let tab = p
         .i64("tab")
         .and_then(|n| u64::try_from(n).ok())
