@@ -22,6 +22,7 @@
 //! ```
 
 mod builder;
+mod dataset;
 mod key;
 mod manifest;
 pub mod morph;
@@ -30,6 +31,7 @@ mod translit;
 mod unit;
 
 pub use builder::{Resource, ResourceBuilder, ValidationError, ValidationErrors};
+pub use dataset::{CrossReference, Entity, EntityKind, EntityRelation, Mention, Relation};
 pub use key::{Key, KeyEntry};
 pub use manifest::{
     Direction, FORMAT_VERSION, KeyScheme, LICENSE_UNKNOWN, Manifest, Origin, ResourceType,

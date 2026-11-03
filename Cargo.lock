@@ -4136,6 +4136,7 @@ dependencies = [
  "globset",
  "obs-formats",
  "obs-model",
+ "obs-scripture",
  "obs-store",
  "serde",
  "serde_json",

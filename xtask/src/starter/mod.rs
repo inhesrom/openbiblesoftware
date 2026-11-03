@@ -22,7 +22,10 @@ use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use obs_formats::{ImportReport, UsfmImport, UsfmOptions, usfm_book_code};
+use obs_formats::{
+    DatasetOptions, ImportReport, UsfmImport, UsfmOptions, import_openbible_cross_references,
+    import_tipnr, usfm_book_code,
+};
 use obs_model::{Origin, Resource, UnitId};
 use obs_store::write_obr;
 
@@ -243,6 +246,8 @@ fn build_one(
     let id = &source.resource_id;
     let (mut resource, mut report) = match source.importer.as_str() {
         "usfm" => import_usfm_zip(source, bytes),
+        "openbible-cross-references" => import_openbible_zip(source, bytes),
+        "tipnr" => import_tipnr_text(source, bytes),
         other => bail!("{id}: unknown importer `{other}`"),
     }
     .with_context(|| format!("{id}: import failed"))?;
@@ -349,6 +354,37 @@ fn import_usfm_zip(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportRep
         bail!("skip_books lists books the source does not have: {missing:?}");
     }
     import.finish().map_err(|e| anyhow!("{e}"))
+}
+
+fn dataset_options(source: &Source) -> DatasetOptions {
+    let origin = source.origin_url.as_deref().unwrap_or(&source.url);
+    let source_file = origin.rsplit('/').next().unwrap_or(origin);
+    DatasetOptions {
+        resource_id: source.resource_id.clone(),
+        title: source.title.clone(),
+        abbreviation: source.abbreviation.clone(),
+        language: source.language.clone(),
+        // GitHub raw URLs encode the spaces of STEPBible's file names.
+        source_file: source_file.replace("%20", " "),
+        tool_version: format!("xtask starter {}", env!("CARGO_PKG_VERSION")),
+    }
+}
+
+/// OpenBible.info's zip holding `cross_references.txt` → a Cross-reference set.
+fn import_openbible_zip(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportReport)> {
+    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).context("not a zip archive")?;
+    let mut text = String::new();
+    zip.by_name("cross_references.txt")
+        .context("the zip has no cross_references.txt")?
+        .read_to_string(&mut text)
+        .context("cross_references.txt is not UTF-8 text")?;
+    import_openbible_cross_references(&text, &dataset_options(source)).map_err(|e| anyhow!("{e}"))
+}
+
+/// STEPBible's TIPNR text file → a People & places index.
+fn import_tipnr_text(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportReport)> {
+    let text = std::str::from_utf8(bytes).context("the TIPNR file is not UTF-8 text")?;
+    import_tipnr(text, &dataset_options(source)).map_err(|e| anyhow!("{e}"))
 }
 
 /// Remove the outputs of an earlier build (only files this task writes).

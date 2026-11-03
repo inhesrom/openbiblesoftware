@@ -35,6 +35,12 @@ pub struct ImportReport {
     pub verses: usize,
     pub notes: usize,
     pub tagged_words: usize,
+    /// Cross-references kept (Cross-reference set).
+    pub cross_references: usize,
+    /// People, groups and places kept (People & places index).
+    pub entities: usize,
+    /// Mentions kept (People & places index), one per entity and Verse.
+    pub mentions: usize,
     /// Source markup with no place in the span vocabulary, by marker, with counts.
     pub dropped_markup: BTreeMap<String, u64>,
     /// Problems that did not stop the Import (duplicate verses, bad Strong's numbers…).
@@ -57,12 +63,25 @@ impl fmt::Display for ImportReport {
             self.source_files.len(),
             self.source_format
         )?;
-        let canonical = self.books.iter().filter(|b| b.book.is_some()).count();
-        writeln!(
-            f,
-            "  {canonical} Bible book(s), {} verse(s), {} note(s), {} tagged word(s)",
-            self.verses, self.notes, self.tagged_words
-        )?;
+        let dataset = self.cross_references + self.entities + self.mentions > 0;
+        if self.cross_references > 0 {
+            writeln!(f, "  {} cross-reference(s)", self.cross_references)?;
+        }
+        if self.entities + self.mentions > 0 {
+            writeln!(
+                f,
+                "  {} person(s) or place(s), {} mention(s)",
+                self.entities, self.mentions
+            )?;
+        }
+        if !dataset {
+            let canonical = self.books.iter().filter(|b| b.book.is_some()).count();
+            writeln!(
+                f,
+                "  {canonical} Bible book(s), {} verse(s), {} note(s), {} tagged word(s)",
+                self.verses, self.notes, self.tagged_words
+            )?;
+        }
         let outside: Vec<&str> = self
             .books
             .iter()
@@ -77,6 +96,7 @@ impl fmt::Display for ImportReport {
             )?;
         }
         match self.verse_map {
+            None if dataset => {}
             None => writeln!(f, "  verse map: not built yet")?,
             Some(c) => writeln!(
                 f,
@@ -103,7 +123,8 @@ impl fmt::Display for ImportReport {
         }
         if !self.dropped_markup.is_empty() {
             let total: u64 = self.dropped_markup.values().sum();
-            writeln!(f, "  dropped markup ({total}):")?;
+            let what = if dataset { "dropped" } else { "dropped markup" };
+            writeln!(f, "  {what} ({total}):")?;
             for (marker, count) in &self.dropped_markup {
                 writeln!(f, "    {marker} ×{count}")?;
             }

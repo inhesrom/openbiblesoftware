@@ -244,7 +244,149 @@ fn the_real_lock_passes_the_provenance_gate() {
         .iter()
         .map(|s| s.resource_id.as_str())
         .collect();
-    assert_eq!(ids, ["kjv-strongs", "bsb", "web", "asv"]);
+    assert_eq!(
+        ids,
+        [
+            "kjv-strongs",
+            "bsb",
+            "web",
+            "asv",
+            "openbible-xrefs",
+            "tipnr"
+        ]
+    );
+}
+
+/// Zip the OpenBible.info excerpt as the publisher does; write the TIPNR excerpt as-is.
+/// Returns a lock with both and their evidence.
+fn dataset_setup(dir: &Path) -> Config {
+    let assets = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("crates/formats/tests/assets");
+    let xrefs = dir.join("cross-references.zip");
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&xrefs).unwrap());
+    zip.start_file(
+        "cross_references.txt",
+        zip::write::SimpleFileOptions::default(),
+    )
+    .unwrap();
+    zip.write_all(&std::fs::read(assets.join("openbible/cross-references-excerpt.txt")).unwrap())
+        .unwrap();
+    zip.finish().unwrap();
+    let tipnr = dir.join("TIPNR excerpt.txt");
+    std::fs::copy(assets.join("tipnr/tipnr-excerpt.txt"), &tipnr).unwrap();
+
+    let starter = dir.join("starter");
+    std::fs::create_dir_all(starter.join("evidence")).unwrap();
+    let mut lock = String::from("size_budget_mb = 400\n");
+    for (id, importer, path) in [
+        ("openbible-xrefs", "openbible-cross-references", &xrefs),
+        ("tipnr", "tipnr", &tipnr),
+    ] {
+        let sha = sha256_hex(&std::fs::read(path).unwrap());
+        std::fs::write(
+            starter.join(format!("evidence/{id}.md")),
+            format!("CC BY 4.0.\nsha256 {sha}\n"),
+        )
+        .unwrap();
+        lock.push_str(&format!(
+            r#"
+[[source]]
+resource_id = "{id}"
+importer = "{importer}"
+url = "file://{}"
+sha256 = "{sha}"
+title = "{id}"
+abbreviation = "{id}"
+language = "en"
+spdx = "CC-BY-4.0"
+attribution = "Credit {id}."
+changes = "Converted."
+provenance = "Licence page."
+evidence = "evidence/{id}.md"
+"#,
+            path.display().to_string().replace('\\', "/")
+        ));
+    }
+    std::fs::write(starter.join("sources.toml"), lock).unwrap();
+    Config {
+        lock: starter.join("sources.toml"),
+        id_changes: starter.join("id-changes.toml"),
+        previous: None,
+        out: dir.join("out"),
+        cache: dir.join("cache"),
+    }
+}
+
+#[test]
+fn every_cross_reference_target_in_the_built_obr_is_a_standard_reference() {
+    use obs_scripture::{Standard, Versification};
+    let dir = scratch("xrefs");
+    let config = dataset_setup(&dir);
+    build(&config).unwrap();
+    let reader = ObrReader::open(&config.out.join("openbible-xrefs.obr")).unwrap();
+    let m = reader.manifest();
+    assert_eq!(m.resource_type, obs_model::ResourceType::CrossReferenceSet);
+    assert_eq!(m.license, "CC-BY-4.0");
+    assert_eq!(m.source_file.as_deref(), Some("cross-references.zip"));
+    let resource = reader.load().unwrap();
+    assert_eq!(resource.cross_references.len(), 23);
+    for x in &resource.cross_references {
+        for p in [x.from, x.to] {
+            assert!(
+                Standard.contains(p.start()) && Standard.contains(p.end()),
+                "{} → {}",
+                x.from,
+                x.to
+            );
+        }
+    }
+    let report = std::fs::read_to_string(config.out.join(REPORT_FILE)).unwrap();
+    assert!(report.contains("23 cross-reference(s)"), "{report}");
+    assert!(report.contains("12 person(s) or place(s)"), "{report}");
+}
+
+#[test]
+fn no_tipnr_description_text_appears_in_the_built_obr() {
+    let dir = scratch("tipnr");
+    let config = dataset_setup(&dir);
+    build(&config).unwrap();
+    let path = config.out.join("tipnr.obr");
+    let reader = ObrReader::open(&path).unwrap();
+    assert_eq!(
+        reader.manifest().resource_type,
+        obs_model::ResourceType::PeopleAndPlaces
+    );
+    assert_eq!(
+        reader.manifest().source_file.as_deref(),
+        Some("TIPNR excerpt.txt")
+    );
+    let abraham = reader.entity("Abraham@Gen.11.26-1Pe").unwrap().unwrap();
+    assert_eq!(abraham.other_names, ["Abram"]);
+
+    let source = std::fs::read_to_string(dir.join("TIPNR excerpt.txt")).unwrap();
+    let obr = std::fs::read(&path).unwrap();
+    let descriptions = obs_formats::tipnr_description_texts(&source).unwrap();
+    assert!(
+        obr.windows(7).any(|w| w == b"Abraham"),
+        "the scan sees kept text"
+    );
+    let mut checked = 0;
+    for (column, texts) in &descriptions {
+        for t in texts {
+            // Whole texts, and their first words in case a writer cut one short.
+            let head: String = t.chars().take(24).collect();
+            for needle in [t.as_str(), head.as_str()] {
+                assert!(
+                    !obr.windows(needle.len()).any(|w| w == needle.as_bytes()),
+                    "{column} text in tipnr.obr: {needle}"
+                );
+            }
+            checked += 1;
+        }
+    }
+    assert!(checked > 50, "only {checked} description texts checked");
 }
 
 /// The MHC and JFB lock entries proposed by the #39 commentary-source spike, read from its
