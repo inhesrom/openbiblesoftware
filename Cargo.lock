@@ -2466,7 +2466,9 @@ name = "openbible"
 version = "0.0.0"
 dependencies = [
  "eframe",
+ "obs-engine",
  "obs-formats",
+ "obs-model",
  "obs-ui-egui",
  "serde_json",
  "ureq",

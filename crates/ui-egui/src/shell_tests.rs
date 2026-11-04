@@ -3074,6 +3074,132 @@ mod get_bibles {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// The live repositories over FTP only: the SWORD crate's built-in transport (plain
+    /// `std::net`), so this test needs no networking crate. HTTPS sources fail at once and
+    /// the installer falls back to each repository's FTP source.
+    #[derive(Debug)]
+    struct FtpOnly;
+    impl obs_engine::sword_repo::Fetch for FtpOnly {
+        fn get(
+            &self,
+            url: &str,
+            progress: obs_engine::sword_repo::Progress<'_>,
+        ) -> Result<Vec<u8>, obs_engine::sword_repo::FetchError> {
+            if !url.starts_with("ftp://") {
+                return Err(obs_engine::sword_repo::FetchError::Network(format!(
+                    "{url}: FTP only in this test"
+                )));
+            }
+            let bytes = obs_engine::sword_repo::builtin_get(url)?;
+            let n = bytes.len() as u64;
+            if progress(n, Some(n)) {
+                Ok(bytes)
+            } else {
+                Err(obs_engine::sword_repo::FetchError::Cancelled)
+            }
+        }
+    }
+
+    /// No network at all.
+    #[derive(Debug)]
+    struct Offline;
+    impl obs_engine::sword_repo::Fetch for Offline {
+        fn get(
+            &self,
+            url: &str,
+            _: obs_engine::sword_repo::Progress<'_>,
+        ) -> Result<Vec<u8>, obs_engine::sword_repo::FetchError> {
+            Err(obs_engine::sword_repo::FetchError::Network(format!(
+                "{url}: failed to lookup address information"
+            )))
+        }
+    }
+
+    /// Click-to-reading against the real Lockman repository. Ignored: it needs the network
+    /// and downloads a copyrighted module into a temp folder that is deleted afterwards.
+    /// Screenshots go to `target/previews/` (never committed). Run by hand:
+    /// `cargo test -p obs-ui-egui --release -- --ignored --nocapture live_get_bibles`
+    #[test]
+    #[ignore = "network; downloads a copyrighted module to a temp folder"]
+    fn live_get_bibles_click_download_on_nasb_1995_then_open_and_read_it() {
+        let root = std::env::temp_dir().join(format!("obs-live-ui-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut h = Harness::new();
+        let s = &mut h.shell.st.session;
+        s.set_fetch(Arc::new(FtpOnly));
+        s.get_bibles.set_cache_path(root.join("sword-catalog.json"));
+        s.get_bibles.set_sword_dir(root.join("sword"));
+        std::fs::create_dir_all(root.join("library")).unwrap();
+        s.library.set_directory(root.join("library"));
+        h.frames(2);
+        let shots = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+
+        let t = std::time::Instant::now();
+        open_get_bibles(&mut h);
+        println!("catalog loaded in {:.1}s", t.elapsed().as_secs_f64());
+        let featured = first(&h, "FEATURED · 13");
+        let nasb = first(&h, NASB);
+        assert!(featured.top() < nasb.top(), "{:?}", h.texts());
+        assert!(
+            h.find("Copyrighted; Permission to distribute granted to CrossWire")
+                .is_some()
+        );
+        h.screenshot(&shots.join("live-get-bibles.ppm"));
+
+        let t = std::time::Instant::now();
+        let at = row_button(&h, NASB, "Download");
+        h.click(at);
+        assert!(!h.shell.st.pick_import && h.shell.st.confirm.is_none());
+        settle(&mut h);
+        let id = "nasb1995-1";
+        let record = h.shell.st.session.imports.report(id).unwrap().clone();
+        assert_eq!(record.phase, ImportPhase::Complete, "{:?}", record.error);
+        println!(
+            "downloaded and imported in {:.1}s: {} verses",
+            t.elapsed().as_secs_f64(),
+            record.report.as_ref().unwrap().verses
+        );
+        h.screenshot(&shots.join("live-import-report.ppm"));
+
+        let tab = h.tab_at("Get Bibles");
+        h.click(tab);
+        assert!(h.find("Installed").is_some(), "{:?}", h.texts());
+        let open = row_button(&h, NASB, "Open");
+        h.click(open);
+        settle_all(&mut h);
+        assert!(
+            h.panels()
+                .iter()
+                .any(|(_, t)| t.iter().any(|t| t == "NASB1995")),
+            "{:?}",
+            h.panels()
+        );
+        h.screenshot(&shots.join("live-nasb-reading.ppm"));
+
+        // Now offline: every fetch fails. The Tab keeps the real catalog it cached, says so,
+        // and the Bible just downloaded still reads.
+        h.shell.st.session.set_fetch(Arc::new(Offline));
+        let tab = h.tab_at("Get Bibles");
+        h.click(tab);
+        h.shell.run("getbibles.refresh", &json!({}));
+        settle(&mut h);
+        assert!(
+            h.texts()
+                .iter()
+                .any(|t| t.starts_with("Offline: showing the catalog from")),
+            "{:?}",
+            h.texts()
+        );
+        assert!(h.find(NASB).is_some() && h.find("Try again").is_some());
+        h.screenshot(&shots.join("live-offline.ppm"));
+        let tab = h.tab_at("NASB1995");
+        h.click(tab);
+        settle_all(&mut h);
+        println!("screenshots in {}", shots.display());
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn a_failed_download_offers_retry_on_its_row() {
         let (mut h, repos, root) = setup("retry");
