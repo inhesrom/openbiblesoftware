@@ -34,7 +34,11 @@ When a module is in several repositories, Get Bibles shows it once. It takes the
 - **Live, by hand only:** these tests need the network and download copyrighted modules, all into a temp folder that is deleted afterwards. CI never runs them.
 
   ```sh
+  # HTTPS through the app's transport: catalog, NASB 1995 size and download, every Featured Bible.
   cargo test -p openbible --release -- --ignored --nocapture --test-threads=1 live_
+  # The Tab itself, clicked from Download to reading NASB 1995, then offline from the cache.
+  # Uses the repositories' FTP sources; screenshots go to target/previews/ (never commit them).
+  cargo test -p obs-ui-egui --release -- --ignored --nocapture live_get_bibles
   ```
 
 ## Copyright
