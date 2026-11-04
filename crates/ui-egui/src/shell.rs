@@ -16,7 +16,7 @@ use obs_model::ResourceType;
 use obs_scripture::{Passage, RefStyle, Standard, Verse, format_passage};
 use serde_json::{Value, json};
 
-use crate::compare_view::{ComparisonView, comparison_pane, paint_star};
+use crate::compare_view::{ComparisonBible, ComparisonView, comparison_pane, paint_star};
 use crate::doc::ReadingDoc;
 use crate::palette::Palette;
 use crate::pane::{AtlasTexture, reading_pane};
@@ -35,6 +35,8 @@ struct TabUi {
     flash: Option<(Verse, f64)>,
     /// A Text Comparison Tab's view.
     comparison: Option<ComparisonView>,
+    /// Failed selected Bibles are retried only on request (or after removal/reselection).
+    comparison_errors: BTreeMap<String, String>,
 }
 
 /// How long a jump's flash lasts, in seconds.
@@ -896,24 +898,44 @@ impl State {
         let location = t.history.current();
         let bibles = comparison.bibles(&self.session.library);
         let base = comparison.base_index(&bibles);
+        let Some(tab_ui) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        let mut errors = std::mem::take(&mut tab_ui.comparison_errors);
+        errors.retain(|id, _| bibles.contains(id));
         let mut docs = Vec::new();
-        let mut base_row = None;
-        for (i, id) in bibles.iter().enumerate() {
-            if let Ok(d) = self.doc(id) {
-                if Some(i) == base {
-                    base_row = Some(docs.len());
-                }
-                docs.push(d);
+        for id in &bibles {
+            let result = match errors.get(id) {
+                Some(error) => Err(error.clone()),
+                None => self.doc(id),
+            };
+            if let Err(error) = &result {
+                errors.insert(id.clone(), error.clone());
+            }
+            if let Some(entry) = self.session.library.get(id) {
+                docs.push(ComparisonBible {
+                    id: id.clone(),
+                    abbreviation: entry.manifest.abbreviation.clone(),
+                    language: entry.manifest.language.clone(),
+                    doc: result,
+                });
             }
         }
         let extent = location.map(|v| comparison.extent(v)).unwrap_or_default();
         self.comparison_chips(ui, tab, &comparison, &bibles, base);
+        if !errors.is_empty() && ui.button("Retry unavailable Bibles").clicked() {
+            errors.clear();
+        }
         let palette = self.palette;
-        let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.comparison.as_mut()) else {
+        let Some(tab_ui) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        tab_ui.comparison_errors = errors;
+        let Some(view) = tab_ui.comparison.as_mut() else {
             return;
         };
         view.set_settings(self.session.text);
-        view.set(docs, base_row, comparison.differences, extent);
+        view.set(docs, base, comparison.differences, extent);
         if location != view.synced {
             if let Some(v) = location {
                 view.jump_to(v);

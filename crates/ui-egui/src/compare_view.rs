@@ -15,7 +15,6 @@ use crate::doc::ReadingDoc;
 use crate::heights::HeightIndex;
 use crate::palette::Palette;
 use crate::pane::AtlasTexture;
-use crate::theme;
 use crate::workers::SnippetCache;
 
 /// The abbreviation column's width.
@@ -51,10 +50,50 @@ impl ComparedBible for ReadingDoc {
     }
 }
 
+/// A selected Bible keeps its row even when its Resource cannot be loaded.
+pub struct ComparisonBible {
+    pub id: String,
+    pub abbreviation: String,
+    pub language: String,
+    pub doc: Result<Arc<ReadingDoc>, String>,
+}
+
+impl ComparedBible for ComparisonBible {
+    fn language(&self) -> &str {
+        &self.language
+    }
+
+    fn verse_map(&self) -> Option<&VerseMap> {
+        self.doc.as_ref().ok().and_then(|d| d.verse_map())
+    }
+
+    fn verse_at(&self, native: Verse) -> Option<(Verse, u16)> {
+        self.doc.as_ref().ok().and_then(|d| d.verse_at(native))
+    }
+
+    fn verse_text(&self, native: Verse) -> Option<String> {
+        self.doc
+            .as_ref()
+            .ok()
+            .and_then(|d| ComparedBible::verse_text(d.as_ref(), native))
+    }
+}
+
+impl From<Arc<ReadingDoc>> for ComparisonBible {
+    fn from(doc: Arc<ReadingDoc>) -> Self {
+        Self {
+            id: doc.manifest.resource_id.clone(),
+            abbreviation: doc.manifest.abbreviation.clone(),
+            language: doc.manifest.language.clone(),
+            doc: Ok(doc),
+        }
+    }
+}
+
 /// What the view compares; a change rebuilds the Verse blocks.
 #[derive(Debug, Clone, PartialEq)]
 struct Key {
-    bibles: Vec<String>,
+    bibles: Vec<(String, Option<String>)>,
     base: Option<usize>,
     differences: bool,
     extent: Vec<Verse>,
@@ -62,11 +101,12 @@ struct Key {
 
 /// One Text Comparison Tab's view: its Verse blocks, their heights and where it is scrolled.
 pub struct ComparisonView {
-    docs: Vec<Arc<ReadingDoc>>,
+    docs: Vec<ComparisonBible>,
     key: Option<Key>,
     pub blocks: Vec<VerseBlock>,
     heights: HeightIndex,
     width: f32,
+    viewport_height: f32,
     settings: TextSettings,
     /// The top of the view: a block, and how far into it.
     anchor: (usize, f32),
@@ -83,6 +123,7 @@ impl ComparisonView {
             blocks: Vec::new(),
             heights: HeightIndex::new(Vec::new()),
             width: 400.0,
+            viewport_height: 400.0,
             settings,
             anchor: (0, 0.0),
             synced: None,
@@ -94,7 +135,7 @@ impl ComparisonView {
     /// when something changed; the view stays on the same Standard Verse.
     pub fn set(
         &mut self,
-        docs: Vec<Arc<ReadingDoc>>,
+        docs: Vec<ComparisonBible>,
         base: Option<usize>,
         differences: bool,
         extent: Vec<Verse>,
@@ -102,7 +143,7 @@ impl ComparisonView {
         let key = Key {
             bibles: docs
                 .iter()
-                .map(|d| d.manifest.resource_id.clone())
+                .map(|d| (d.id.clone(), d.doc.as_ref().err().cloned()))
                 .collect(),
             base,
             differences,
@@ -112,11 +153,12 @@ impl ComparisonView {
             return;
         }
         let at = self.current_location();
-        let bibles: Vec<&dyn ComparedBible> = docs
-            .iter()
-            .map(|d| d.as_ref() as &dyn ComparedBible)
-            .collect();
-        self.blocks = verse_blocks(&key.extent, &bibles, base, differences);
+        let bibles: Vec<&dyn ComparedBible> =
+            docs.iter().map(|d| d as &dyn ComparedBible).collect();
+        let base_available = base
+            .and_then(|i| docs.get(i))
+            .is_some_and(|d| d.doc.is_ok());
+        self.blocks = verse_blocks(&key.extent, &bibles, base, differences && base_available);
         self.docs = docs;
         self.key = Some(key);
         self.reset_heights();
@@ -184,16 +226,21 @@ impl ComparisonView {
         self.blocks.get(self.anchor.0).map(|b| b.verse)
     }
 
-    /// Scroll by `dy` px; the last block can reach the top.
+    /// Scroll by `dy` px; the last block can reach the top, then expose its overflow.
     pub fn scroll_by(&mut self, dy: f32) {
         if self.blocks.is_empty() {
             return;
         }
-        let last = self.blocks.len() - 1;
-        let max = self.heights.offset(last);
+        let max = self.max_scroll();
         let y = (self.heights.offset(self.anchor.0) + f64::from(self.anchor.1) + f64::from(dy))
             .clamp(0.0, max);
         self.anchor = self.heights.at(y);
+    }
+
+    fn max_scroll(&mut self) -> f64 {
+        self.heights
+            .offset(self.blocks.len().saturating_sub(1))
+            .max(self.heights.total() - f64::from(self.viewport_height))
     }
 
     /// The scroll position and total height, for the scrollbar.
@@ -207,13 +254,12 @@ impl ComparisonView {
     fn rtl(&self, row: usize) -> bool {
         self.docs
             .get(row)
+            .and_then(|d| d.doc.as_ref().ok())
             .is_some_and(|d| d.direction() == Direction::Rtl)
     }
 
     fn abbreviation(&self, row: usize) -> &str {
-        self.docs
-            .get(row)
-            .map_or("", |d| d.manifest.abbreviation.as_str())
+        self.docs.get(row).map_or("", |d| d.abbreviation.as_str())
     }
 
     pub fn has_pending(&self) -> bool {
@@ -318,8 +364,19 @@ pub fn comparison_pane(
 ) -> ComparisonOutput {
     let mut out = ComparisonOutput::default();
     let rect = ui.available_rect_before_wrap();
+    if !rect.is_positive() {
+        return out;
+    }
+    view.viewport_height = rect.height();
     let response = ui.allocate_rect(rect, Sense::click_and_drag());
     let painter = ui.painter_at(rect);
+    let accessible = ui
+        .ctx()
+        .accesskit_node_builder(response.id, |n| {
+            n.set_role(egui::accesskit::Role::Document);
+            n.set_label("Text Comparison");
+        })
+        .is_some();
     painter.rect_filled(rect, 0.0, palette.page);
     let left = rect.left() + MARGIN;
     view.set_width(rect.width() - 2.0 * MARGIN - SCROLLBAR);
@@ -342,9 +399,10 @@ pub fn comparison_pane(
         && let Some(p) = response.interact_pointer_pos()
         && track.expand(4.0).contains(p)
     {
-        let (y, total) = view.position();
+        let (y, _) = view.position();
+        let max = view.max_scroll();
         let frac = f64::from(((p.y - track.top()) / track.height()).clamp(0.0, 1.0));
-        view.scroll_by((frac * total - y) as f32);
+        view.scroll_by((frac * max - y) as f32);
     }
     out.user_moved = (view.position().0 - before).abs() > 0.01;
 
@@ -354,7 +412,7 @@ pub fn comparison_pane(
             Align2::CENTER_CENTER,
             "Go to a passage, or link this Tab to a Bible",
             FontId::proportional(14.0),
-            theme::c().muted,
+            palette.verse_number,
         );
         return out;
     }
@@ -375,14 +433,15 @@ pub fn comparison_pane(
     while i < view.blocks.len() && y < rect.bottom() {
         let block = view.blocks[i].clone();
         let mut row_y = y + BLOCK_HEAD;
+        let reference = obs_scripture::format_passage(
+            obs_scripture::Passage::verse(block.verse),
+            &obs_scripture::Standard,
+            obs_scripture::RefStyle::Long,
+        );
         painter.text(
             pos2(left, y + 4.0),
             Align2::LEFT_TOP,
-            obs_scripture::format_passage(
-                obs_scripture::Passage::verse(block.verse),
-                &obs_scripture::Standard,
-                obs_scripture::RefStyle::Long,
-            ),
+            &reference,
             FontId::proportional(12.5),
             palette.verse_number,
         );
@@ -390,6 +449,9 @@ pub fn comparison_pane(
         for (row, c) in block.cells.iter().enumerate() {
             let rtl = view.rtl(row);
             let mut height = view.line_height();
+            let mut accessible_laid = None;
+            let mut accessible_text = String::new();
+            let mut accessible_label = format!("{} — {reference}", view.abbreviation(row));
             // The label column: abbreviation (★ for the base), the Bible's own number where it
             // differs, and "not compared".
             let label = painter.text(
@@ -397,9 +459,11 @@ pub fn comparison_pane(
                 Align2::LEFT_TOP,
                 view.abbreviation(row),
                 label_font.clone(),
-                theme::c().ink,
+                palette.ink,
             );
-            if c.marks == Marks::Base {
+            let is_base = view.key.as_ref().is_some_and(|k| k.base == Some(row));
+            if is_base {
+                accessible_label.push_str(" — base Bible");
                 paint_star(
                     &painter,
                     pos2(label.right() + 9.0, label.center().y),
@@ -414,78 +478,107 @@ pub fn comparison_pane(
                 (c.marks == Marks::NotCompared).then(|| NOT_COMPARED.to_string()),
             ];
             for note in notes.into_iter().flatten() {
+                accessible_label.push_str(&format!(" — {note}"));
                 painter.text(
                     pos2(left, row_y + label_h + 1.0),
                     Align2::LEFT_TOP,
                     note,
                     small.clone(),
-                    theme::c().muted,
+                    palette.verse_number,
                 );
                 label_h += 15.0;
             }
-            match &c.cell {
-                Cell::Text { text, .. } if !text.is_empty() => {
-                    let laid = view
-                        .snippets
-                        .get(text, ColorRole::Ink, rtl, text_width, &settings);
-                    match laid {
-                        Some(laid) => {
-                            if let Marks::Diff(d) = &c.marks {
-                                for r in &d.changed {
-                                    for [x0, y0, x1, y1] in range_rects(&laid, r) {
-                                        tints.push(Rect::from_min_max(
-                                            pos2(text_left + x0, row_y + y0),
-                                            pos2(text_left + x1, row_y + y1),
-                                        ));
+            if let Some(error) = view.docs[row].doc.as_ref().err() {
+                let message = if is_base {
+                    format!("Base Bible unavailable — differences not shown: {error}")
+                } else {
+                    format!("Bible unavailable: {error}")
+                };
+                let galley =
+                    painter.layout(message.clone(), label_font.clone(), palette.ink, text_width);
+                height = galley.size().y;
+                painter.galley(pos2(text_left, row_y + 3.0), galley, palette.ink);
+                accessible_text = message;
+            } else {
+                match &c.cell {
+                    Cell::Text { text, .. } if !text.is_empty() => {
+                        let laid =
+                            view.snippets
+                                .get(text, ColorRole::Ink, rtl, text_width, &settings);
+                        match laid {
+                            Some(laid) => {
+                                if let Marks::Diff(d) = &c.marks {
+                                    for r in &d.changed {
+                                        for [x0, y0, x1, y1] in range_rects(&laid, r) {
+                                            tints.push(Rect::from_min_max(
+                                                pos2(text_left + x0, row_y + y0),
+                                                pos2(text_left + x1, row_y + y1),
+                                            ));
+                                        }
+                                    }
+                                    for &m in &d.missing {
+                                        if let Some([x, t, b]) = caret_at(&laid, m) {
+                                            carets.push([text_left + x, row_y + t, row_y + b]);
+                                        }
                                     }
                                 }
-                                for &m in &d.missing {
-                                    if let Some([x, t, b]) = caret_at(&laid, m) {
-                                        carets.push([text_left + x, row_y + t, row_y + b]);
-                                    }
-                                }
+                                quads.extend(atlas.atlas.quads(&laid, [text_left, row_y], ppp));
+                                height = laid.height;
+                                accessible_laid = Some(laid);
                             }
-                            quads.extend(atlas.atlas.quads(&laid, [text_left, row_y], ppp));
-                            height = laid.height;
-                        }
-                        None => {
-                            measured = false;
-                            painter.rect_filled(
-                                Rect::from_min_size(
-                                    pos2(text_left, row_y + height * 0.3),
-                                    vec2(text_width, height * 0.35),
-                                ),
-                                2.0,
-                                palette.verse_number.gamma_multiply(0.12),
-                            );
+                            None => {
+                                measured = false;
+                                painter.rect_filled(
+                                    Rect::from_min_size(
+                                        pos2(text_left, row_y + height * 0.3),
+                                        vec2(text_width, height * 0.35),
+                                    ),
+                                    2.0,
+                                    palette.verse_number.gamma_multiply(0.12),
+                                );
+                            }
                         }
                     }
-                }
-                Cell::Text { .. } => {}
-                Cell::Merged { into, native } => {
-                    let label = format!(
-                        "{}:{} is shown at {}:{}",
-                        native.chapter, native.verse, into.chapter, into.verse
-                    );
-                    painter.text(
-                        pos2(text_left, row_y + 3.0),
-                        Align2::LEFT_TOP,
-                        label,
-                        label_font.clone(),
-                        theme::c().muted,
-                    );
-                }
-                Cell::Absent => {
-                    painter.text(
-                        pos2(text_left, row_y + 3.0),
-                        Align2::LEFT_TOP,
-                        ABSENT,
-                        label_font.clone(),
-                        theme::c().muted,
-                    );
+                    Cell::Text { .. } => {}
+                    Cell::Merged { into, native } => {
+                        let label = format!(
+                            "{}:{} is shown at {}:{}",
+                            native.chapter, native.verse, into.chapter, into.verse
+                        );
+                        painter.text(
+                            pos2(text_left, row_y + 3.0),
+                            Align2::LEFT_TOP,
+                            &label,
+                            label_font.clone(),
+                            palette.verse_number,
+                        );
+                        accessible_text = label;
+                    }
+                    Cell::Absent => {
+                        painter.text(
+                            pos2(text_left, row_y + 3.0),
+                            Align2::LEFT_TOP,
+                            ABSENT,
+                            label_font.clone(),
+                            palette.verse_number,
+                        );
+                        accessible_text = ABSENT.to_string();
+                    }
                 }
             }
-            row_y += height.max(label_h) + ROW_GAP;
+            height = height.max(label_h);
+            if accessible && (accessible_laid.is_some() || !accessible_text.is_empty()) {
+                crate::a11y::publish_comparison_row(
+                    ui,
+                    response.id,
+                    response.id.with(("comparison-row", block.verse, row)),
+                    accessible_label,
+                    Rect::from_min_size(pos2(text_left, row_y), vec2(text_width, height)),
+                    &accessible_text,
+                    accessible_laid.as_deref(),
+                );
+            }
+            row_y += height + ROW_GAP;
         }
         let height = row_y - y + BLOCK_GAP;
         if measured {
@@ -494,7 +587,7 @@ pub fn comparison_pane(
         painter.hline(
             left..=rect.right() - MARGIN - SCROLLBAR,
             y + height - BLOCK_GAP / 2.0,
-            Stroke::new(1.0, theme::c().rule),
+            Stroke::new(1.0, palette.verse_number.gamma_multiply(0.2)),
         );
         y += height;
         i += 1;
@@ -525,8 +618,9 @@ pub fn comparison_pane(
 
     let (pos, total) = view.position();
     if total > f64::from(rect.height()) {
-        let frac = (pos / total) as f32;
-        let thumb_h = (rect.height() * rect.height() / total as f32).clamp(24.0, rect.height());
+        let frac = (pos / view.max_scroll()) as f32;
+        let thumb_h = (rect.height() * rect.height() / total as f32)
+            .clamp(24.0_f32.min(rect.height()), rect.height());
         let thumb_top = track.top() + frac * (track.height() - thumb_h);
         painter.rect_filled(
             Rect::from_min_size(
@@ -614,7 +708,7 @@ mod tests {
                 .verses(&obs_scripture::Standard)
                 .collect();
         let mut view = ComparisonView::new(TextSettings::default());
-        view.set(vec![doc], Some(0), true, extent);
+        view.set(vec![doc.into()], Some(0), true, extent);
         let ctx = egui::Context::default();
         let mut atlas = AtlasTexture::default();
         let palette = Palette::for_tone(obs_engine::PageTone::Paper);
@@ -651,6 +745,122 @@ mod tests {
             ..TextSettings::default()
         });
         assert_eq!(view.current_location(), Some(verse));
+    }
+
+    fn render(
+        ctx: &egui::Context,
+        view: &mut ComparisonView,
+        atlas: &mut AtlasTexture,
+        height: f32,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(600.0, 400.0))),
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                let rect = Rect::from_min_size(pos2(10.0, 10.0), vec2(550.0, height));
+                let mut body = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                body.set_clip_rect(rect);
+                comparison_pane(&mut body, view, atlas, &Palette::PAPER);
+            },
+        );
+        output.textures_delta.clear();
+        output
+    }
+
+    #[test]
+    fn wheel_exposes_the_bottom_of_a_final_block_taller_than_the_viewport() {
+        let verse = Verse::new(Book::Genesis, 31, 55);
+        let mut view = ComparisonView::new(TextSettings {
+            size: 28.0,
+            ..Default::default()
+        });
+        view.set(
+            (0..6)
+                .map(|i| {
+                    crate::tests::numbered_bible(
+                        &format!("bible-{i}"),
+                        "Numbered Bible",
+                        &format!("B{i}"),
+                        false,
+                    )
+                    .into()
+                })
+                .collect(),
+            Some(0),
+            true,
+            vec![verse],
+        );
+        let ctx = egui::Context::default();
+        ctx.enable_accesskit();
+        let mut atlas = AtlasTexture::default();
+        for _ in 0..100 {
+            render(&ctx, &mut view, &mut atlas, 120.0, vec![]);
+            if !view.has_pending() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(!view.has_pending());
+        assert!(view.heights.height(0) > 120.0);
+        let mut output = render(
+            &ctx,
+            &mut view,
+            &mut atlas,
+            120.0,
+            vec![
+                egui::Event::PointerMoved(pos2(250.0, 60.0)),
+                egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: vec2(0.0, -10000.0),
+                    phase: egui::TouchPhase::Move,
+                    source: egui::MouseWheelSource::Wheel,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+        for _ in 0..60 {
+            output = render(&ctx, &mut view, &mut atlas, 120.0, vec![]);
+        }
+        assert_eq!(view.current_location(), Some(verse));
+        assert!((view.anchor.1 - (view.heights.height(0) - 120.0)).abs() < 0.1);
+        let tree = output.platform_output.accesskit_update.unwrap();
+        let paragraph = tree
+            .nodes
+            .iter()
+            .find(|(_, n)| {
+                n.role() == egui::accesskit::Role::Paragraph
+                    && n.label()
+                        .is_some_and(|s| s.starts_with("B5 — Genesis 31:55"))
+            })
+            .expect("last Bible row accessible after wheel scrolling");
+        let last = paragraph.1.children().last().unwrap();
+        let run = &tree.nodes.iter().find(|(id, _)| id == last).unwrap().1;
+        assert!(
+            run.value().unwrap().ends_with('.'),
+            "final text line exposed"
+        );
+        let bounds = run.bounds().unwrap();
+        assert!(bounds.y0 >= 10.0 && bounds.y1 <= 130.0, "{bounds:?}");
+    }
+
+    #[test]
+    fn tiny_and_nonpositive_viewports_render_without_panicking() {
+        let mut view = ComparisonView::new(TextSettings::default());
+        view.set(
+            vec![crate::tests::bible().into()],
+            Some(0),
+            true,
+            vec![Verse::new(Book::Genesis, 31, 55)],
+        );
+        let ctx = egui::Context::default();
+        let mut atlas = AtlasTexture::default();
+        for height in [23.0, 1.0, 0.0, -5.0] {
+            render(&ctx, &mut view, &mut atlas, height, vec![]);
+        }
     }
 
     #[test]

@@ -1615,6 +1615,204 @@ mod text_comparison {
         assert!(texts.iter().any(|t| t == "KJV") && texts.iter().any(|t| t == "WEB"));
     }
 
+    #[test]
+    fn unavailable_selected_bibles_keep_rows_and_retry_only_on_request() {
+        for (id, is_base) in [("heb-num", false), ("test-bible", true)] {
+            let (mut h, tb, cmp) = harness();
+            h.shell
+                .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:55" }));
+            let doc = h.shell.st.docs.remove(id).unwrap();
+            settle(&mut h, cmp);
+            assert_eq!(view(&h, cmp).blocks.last().unwrap().cells.len(), 3);
+            let errors = &h.shell.st.tabs[&cmp].comparison_errors;
+            assert_eq!(errors.len(), 1);
+            let error = errors[id].clone();
+            let message = if is_base {
+                "Base Bible unavailable — differences not shown:"
+            } else {
+                "Bible unavailable:"
+            };
+            assert!(
+                texts_in(&h, cmp)
+                    .iter()
+                    .any(|s| s.starts_with(message) && s.contains(&error))
+            );
+            assert!(h.find("Retry unavailable Bibles").is_some());
+            assert!(
+                texts_in(&h, cmp)
+                    .iter()
+                    .any(|s| s == &doc.manifest.abbreviation)
+            );
+            if is_base {
+                assert!(
+                    view(&h, cmp)
+                        .blocks
+                        .iter()
+                        .flat_map(|b| &b.cells)
+                        .all(|c| c.marks == Marks::None),
+                    "no diff against an unavailable base"
+                );
+            }
+            // Even if loading could now succeed, frames must retain the cached failure.
+            h.shell.st.docs.insert(id.to_string(), doc);
+            h.frames(4);
+            assert_eq!(h.shell.st.tabs[&cmp].comparison_errors[id], error);
+            assert!(texts_in(&h, cmp).iter().any(|s| s.starts_with(message)));
+            h.click_text("Retry unavailable Bibles");
+            settle(&mut h, cmp);
+            assert!(h.shell.st.tabs[&cmp].comparison_errors.is_empty());
+            assert!(!texts_in(&h, cmp).iter().any(|s| s.starts_with(message)));
+            let block = view(&h, cmp).blocks.last().unwrap();
+            assert_eq!(block.cells[0].marks, Marks::Base);
+            assert!(matches!(block.cells[2].marks, Marks::Diff(_)));
+        }
+    }
+
+    #[test]
+    fn comparison_publishes_visible_bible_text_and_reference_labels_to_accesskit() {
+        use egui::accesskit::Role;
+        let (mut h, cmp) = kjv_web_harness();
+        h.ctx.enable_accesskit();
+        settle(&mut h, cmp);
+        let tree = h.tree.as_ref().unwrap();
+        let nodes: std::collections::HashMap<_, _> =
+            tree.nodes.iter().map(|(id, n)| (*id, n)).collect();
+        let document = nodes
+            .values()
+            .find(|n| n.role() == Role::Document && n.label() == Some("Text Comparison"))
+            .unwrap();
+        let paragraphs: Vec<_> = document
+            .children()
+            .iter()
+            .filter_map(|id| nodes.get(id))
+            .filter(|n| n.role() == Role::Paragraph)
+            .collect();
+        assert!(
+            !paragraphs.is_empty() && paragraphs.len() < 36 * 2,
+            "only visible Verse rows published"
+        );
+        for (bible, text) in [("KJV", KJV_JN_3_16), ("WEB", WEB_JN_3_16)] {
+            let paragraph = paragraphs
+                .iter()
+                .find(|n| {
+                    n.label()
+                        .is_some_and(|s| s.starts_with(&format!("{bible} — John 3:16")))
+                })
+                .unwrap();
+            assert!(paragraph.bounds().is_some());
+            let runs: Vec<_> = paragraph
+                .children()
+                .iter()
+                .map(|id| nodes[id])
+                .filter(|n| n.role() == Role::TextRun)
+                .collect();
+            let shown: String = runs.iter().map(|n| n.value().unwrap()).collect();
+            assert_eq!(shown, text);
+            for run in runs {
+                assert_eq!(
+                    run.character_lengths().len(),
+                    run.value().unwrap().chars().count()
+                );
+                assert!(run.bounds().is_some());
+            }
+        }
+        h.shell
+            .run("tab.go", &json!({ "tab": cmp.0, "text": "Jn 3:1" }));
+        settle(&mut h, cmp);
+        assert!(
+            !h.tree
+                .as_ref()
+                .unwrap()
+                .nodes
+                .iter()
+                .any(|(_, n)| n.role() == Role::Paragraph
+                    && n.label().is_some_and(|s| s.contains("John 3:16")))
+        );
+    }
+
+    #[test]
+    fn comparison_body_labels_use_page_colours_for_every_theme_and_tone() {
+        fn check(
+            shape: &Shape,
+            body_top: f32,
+            pane: Rect,
+            palette: crate::Palette,
+            found: &mut Vec<String>,
+        ) {
+            match shape {
+                Shape::Vec(shapes) => {
+                    for s in shapes {
+                        check(s, body_top, pane, palette, found);
+                    }
+                }
+                Shape::Text(t) if pane.contains(t.pos) && t.pos.y > body_top => {
+                    let text = t.galley.text();
+                    let expected = if ["TB", "HEB", "HNUM"].contains(&text) {
+                        palette.ink
+                    } else {
+                        palette.verse_number
+                    };
+                    for section in &t.galley.job.sections {
+                        assert_eq!(
+                            t.override_text_color.unwrap_or(section.format.color),
+                            expected,
+                            "{text}"
+                        );
+                    }
+                    assert!(
+                        crate::palette::contrast(expected, palette.page) >= 4.5,
+                        "{text}"
+                    );
+                    found.push(text.to_string());
+                }
+                _ => {}
+            }
+        }
+        let (mut h, _, cmp) = harness();
+        for (_, theme, _) in obs_engine::Theme::ALL {
+            for os in [egui::Theme::Light, egui::Theme::Dark] {
+                h.os_theme = os;
+                h.shell.run("view.theme", &json!({ "value": theme }));
+                for (_, tone, _) in obs_engine::PageTone::ALL {
+                    h.shell.run("view.page_tone", &json!({ "value": tone }));
+                    let mut found = Vec::new();
+                    for passage in ["Gen 31:55", "Gen 1:1"] {
+                        h.shell
+                            .run("tab.go", &json!({ "tab": cmp.0, "text": passage }));
+                        settle(&mut h, cmp);
+                        let pane = pane_rect(&h, cmp);
+                        let top = h
+                            .shapes
+                            .iter()
+                            .filter(|(r, s)| {
+                                pane.contains(r.center())
+                                    && (s == "Genesis 31:55" || s == "Genesis 1:1")
+                            })
+                            .max_by(|a, b| a.0.top().total_cmp(&b.0.top()))
+                            .unwrap()
+                            .0
+                            .top();
+                        for clipped in &h.last_shapes {
+                            check(
+                                &clipped.shape,
+                                top - 1.0,
+                                pane,
+                                h.shell.st.palette,
+                                &mut found,
+                            );
+                        }
+                    }
+                    for want in ["TB", "HEB", "HNUM", "32:1", ABSENT, NOT_COMPARED] {
+                        assert!(
+                            found.iter().any(|s| s == want),
+                            "{theme}/{tone}/{os:?}: {want} missing"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /// Writes `target/previews/text-comparison-*.ppm` (the whole window, rasterized from the
     /// real frame) when `UPDATE_PREVIEWS` is set.
     #[test]
