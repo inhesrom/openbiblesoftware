@@ -323,6 +323,35 @@ impl ReadingView {
         None
     }
 
+    /// A Scripture-reference or Cross-reference span under the pointer. Uses retained layout
+    /// only: hover never lays out a block, and whitespace outside glyphs is not a reference.
+    pub fn reference_at(&self, x: f32, y: f32) -> Option<(usize, usize)> {
+        for (block, top, laid) in self.laid_in_view(y + 1.0) {
+            if y < top || y >= top + laid.height {
+                continue;
+            }
+            let hit = laid.hit(x, y - top)?;
+            let byte = match hit.source {
+                UnitPos::Text(byte) => byte,
+                UnitPos::Object {
+                    anchor,
+                    object: obs_layout::InlineObject::ScriptureReference,
+                } => anchor,
+                _ => return None,
+            };
+            let unit = self.doc.blocks[block].unit;
+            let span = self.doc.units[unit].spans.iter().position(|s| {
+                matches!(
+                    s.kind,
+                    obs_model::SpanKind::ScriptureRef { .. } | obs_model::SpanKind::Xref { .. }
+                ) && ((s.start as usize <= byte && byte < s.end as usize)
+                    || (s.start == s.end && s.start as usize == byte))
+            })?;
+            return Some((unit, span));
+        }
+        None
+    }
+
     /// Whether a `follow` is still waiting for its block's layout.
     pub fn is_following(&self) -> bool {
         self.pending_follow.is_some()

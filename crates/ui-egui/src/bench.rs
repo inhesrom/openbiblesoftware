@@ -127,6 +127,7 @@ struct Bench {
     cfg: BenchConfig,
     views: Vec<ReadingView>,
     atlas: GlyphAtlas,
+    snippets: crate::SnippetCache,
     interval: Duration,
     budget: Duration,
 }
@@ -154,6 +155,23 @@ impl Bench {
                 if let Some(l) = &b.laid {
                     std::hint::black_box(self.atlas.quads(l, [x, b.top], self.cfg.scale));
                 }
+            }
+        }
+        // Eight Cross-reference row previews plus a changing Scripture-reference popup.
+        // Exercise the same worker cache and atlas as the Tool while all panes scroll.
+        let location = self.views.first_mut().and_then(|v| v.current_location());
+        for row in 0..9 {
+            let text = format!(
+                "{location:?} {row}: For God so loved the world, that he gave his only begotten Son."
+            );
+            if let Some(laid) = self.snippets.get(
+                &text,
+                obs_layout::ColorRole::Ink,
+                false,
+                360.0,
+                &TextSettings::default(),
+            ) {
+                std::hint::black_box(self.atlas.quads(&laid, [0.0, 0.0], self.cfg.scale));
             }
         }
         let elapsed = start.elapsed();
@@ -202,6 +220,7 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         cfg: cfg.clone(),
         views,
         atlas: GlyphAtlas::new(),
+        snippets: crate::SnippetCache::default(),
         interval,
         budget: SYNC_BUDGET,
     };

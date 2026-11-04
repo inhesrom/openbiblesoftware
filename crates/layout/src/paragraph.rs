@@ -11,6 +11,8 @@ use crate::style::RunStyle;
 pub enum InlineObject {
     /// A verse number (or, for verse 1, the chapter number) before a Bible Verse.
     VerseNumber(Verse),
+    /// A zero-width Scripture-reference span rendered as a hoverable marker.
+    ScriptureReference,
     /// A footnote or cross-reference marker for a note unit.
     NoteMarker { note: UnitId, kind: NoteKind },
 }

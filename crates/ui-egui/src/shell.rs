@@ -25,6 +25,8 @@ use crate::view::ReadingView;
 
 mod import_tab;
 mod library_tab;
+#[path = "references.rs"]
+mod references;
 
 /// Per-Tab UI state the engine does not need.
 #[derive(Default)]
@@ -45,6 +47,9 @@ struct TabUi {
     comparison: Option<ComparisonView>,
     /// Failed selected Bibles are retried only on request (or after removal/reselection).
     comparison_errors: BTreeMap<String, String>,
+    reference_passage: Option<Passage>,
+    reference_at: Option<Passage>,
+    expanded_references: std::collections::BTreeSet<Verse>,
 }
 
 /// How long a jump's flash lasts, in seconds.
@@ -56,6 +61,7 @@ pub(crate) struct State {
     tabs: BTreeMap<TabId, TabUi>,
     docs: BTreeMap<String, Arc<ReadingDoc>>,
     atlas: AtlasTexture,
+    references: references::References,
     toast: Option<(String, f64)>,
     window: Option<(String, String)>,
     /// The Layout-name prompt: the Layout being renamed (none: saving a new one) and the text.
@@ -97,6 +103,7 @@ impl Shell {
                 tabs: BTreeMap::new(),
                 docs: BTreeMap::new(),
                 atlas: AtlasTexture::default(),
+                references: references::References::default(),
                 toast: None,
                 window: None,
                 prompt: None,
@@ -529,6 +536,7 @@ impl Shell {
     /// Draw the whole window.
     pub fn ui(&mut self, ui: &mut Ui) {
         self.apply_appearance(ui.ctx());
+        self.st.references.refresh(&self.st.session.library);
         self.st.now = ui.input(|i| i.time);
         self.st.split_held = ui.input(|i| i.modifiers.command);
         // Poll, never wait: parsing, Resource writes and Search-index hooks live on workers.
@@ -869,6 +877,16 @@ impl State {
             ui_state.view = Some(ReadingView::new(Arc::new(doc), self.session.text));
         }
         self.tabs.insert(tab, ui_state);
+        if let Some(standard) = self.references.pending_navigation.remove(&tab)
+            && let Some(t) = self.session.workspace.tab(tab)
+            && let Some(native) = obs_engine::link::to_native(
+                t.verse_map.as_deref(),
+                t.versification.as_deref(),
+                standard,
+            )
+        {
+            self.session.workspace.navigate(tab, native);
+        }
     }
 
     fn doc(&mut self, id: &str) -> Result<Arc<ReadingDoc>, String> {
@@ -935,6 +953,7 @@ impl State {
             TabKind::ImportReport(id) => self.import_body(&mut body, &id),
             TabKind::Guide(g) => placeholder(&mut body, g.title(), guide_ticket(g)),
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
+            TabKind::Tool(Tool::CrossReferences) => self.cross_references_body(&mut body, tab),
             TabKind::Tool(t) => placeholder(&mut body, t.title(), tool_ticket(t)),
         }
     }
@@ -966,6 +985,9 @@ impl State {
         let out = reading_pane(ui, view, &mut self.atlas, &palette, flash);
         let following = view.is_following();
         let at = view.current_location();
+        let reference = out
+            .hovered_reference
+            .map(|(unit, span)| references::targets(&view.doc, unit, span));
         if let Some(n) = out.hovered_verse_number {
             verse_number_tooltip(ui, &view.doc, n);
         }
@@ -980,6 +1002,18 @@ impl State {
                 ws.user_scrolled(tab, at);
             } else if !following && ws.tab(tab).is_some_and(|t| t.history.current() != Some(at)) {
                 ws.scrolled(tab, at);
+            }
+        }
+        if let Some(targets) = reference {
+            self.reference_popup(ui, &targets);
+            if out.reference_clicked
+                && let Some(passage) = targets.first()
+            {
+                self.reference_navigate(
+                    tab,
+                    *passage,
+                    ui.input(|i| i.modifiers.command || i.modifiers.ctrl),
+                );
             }
         }
     }
@@ -1363,6 +1397,12 @@ impl State {
                             .session
                             .run("tab.go", &json!({ "tab": tab.0, "text": text }));
                         if let Some(t) = self.tabs.get_mut(&tab) {
+                            if out.is_ok() {
+                                t.reference_passage =
+                                    obs_scripture::parse_reference(&text, &Standard, None)
+                                        .ok()
+                                        .and_then(|p| p.passages().first().copied());
+                            }
                             t.error = out.err().map(|e| match e {
                                 obs_engine::CommandError::Failed { message, .. } => message,
                                 e => e.to_string(),

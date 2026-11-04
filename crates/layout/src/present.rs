@@ -288,6 +288,24 @@ fn push_objects(
             continue;
         }
         match &s.kind {
+            SpanKind::ScriptureRef { .. } | SpanKind::Xref { .. }
+                if s.start == s.end && owns_marker(unit, block, a) =>
+            {
+                runs.push(Run {
+                    text: "↗".into(),
+                    style: RunStyle {
+                        face: FaceId::Regular,
+                        size: body * 0.7,
+                        small_caps: false,
+                        raise: body * 0.35,
+                        role: ColorRole::Link,
+                    },
+                    source: RunSource::Object {
+                        anchor: a,
+                        object: InlineObject::ScriptureReference,
+                    },
+                });
+            }
             SpanKind::NoteRef { note, note_kind } if owns_marker(unit, block, a) => {
                 runs.push(Run {
                     text: "†".into(),
