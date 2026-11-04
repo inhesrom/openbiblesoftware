@@ -23,6 +23,7 @@ use crate::pane::{AtlasTexture, reading_pane};
 use crate::theme;
 use crate::view::ReadingView;
 
+mod import_tab;
 mod library_tab;
 
 /// Per-Tab UI state the engine does not need.
@@ -61,6 +62,8 @@ pub(crate) struct State {
     prompt: Option<(Option<String>, String)>,
     /// The Remove… confirmation: resource id, window title and message.
     confirm: Option<(String, String, String)>,
+    pick_import: bool,
+    picker: Option<std::sync::mpsc::Receiver<Option<std::path::PathBuf>>>,
     /// When the Last session was last checked for saving.
     last_save: f64,
     /// This frame's Page-tone palette.
@@ -98,6 +101,8 @@ impl Shell {
                 window: None,
                 prompt: None,
                 confirm: None,
+                pick_import: false,
+                picker: None,
                 last_save: 0.0,
                 palette: Palette::PAPER,
                 search: String::new(),
@@ -232,6 +237,7 @@ impl Shell {
                     title,
                     message,
                 } => self.st.confirm = Some((resource_id, title, message)),
+                Effect::PickImport => self.st.pick_import = true,
                 Effect::Removed(id) => {
                     self.st.docs.remove(&id);
                 }
@@ -525,6 +531,14 @@ impl Shell {
         self.apply_appearance(ui.ctx());
         self.st.now = ui.input(|i| i.time);
         self.st.split_held = ui.input(|i| i.modifiers.command);
+        // Poll, never wait: parsing, Resource writes and Search-index hooks live on workers.
+        let _other_jobs = self.st.session.poll_imports();
+        self.st.poll_picker();
+        self.apply_effects();
+        if self.st.session.imports.is_running() || self.st.picker.is_some() {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(16));
+        }
         self.shortcuts(ui);
         egui::Panel::top("menus")
             .frame(
@@ -731,7 +745,7 @@ impl Shell {
 /// Which ticket a not-yet-built menu item arrives with.
 fn not_yet(id: &str) -> &'static str {
     match id {
-        "library.import" => "Import arrives with #47",
+        "library.import" => "Import a local USFM file or folder",
         "layout.save" => "Saved Layouts arrive with #37",
         _ => "Not available yet",
     }
@@ -918,6 +932,7 @@ impl State {
             TabKind::Resource(_) => self.reading_body(&mut body, tab),
             TabKind::Library => self.library_body(&mut body, tab),
             TabKind::About(id) => self.about_body(&mut body, tab, &id),
+            TabKind::ImportReport(id) => self.import_body(&mut body, &id),
             TabKind::Guide(g) => placeholder(&mut body, g.title(), guide_ticket(g)),
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
             TabKind::Tool(t) => placeholder(&mut body, t.title(), tool_ticket(t)),
@@ -1364,7 +1379,16 @@ impl State {
             Some(TabKind::Resource(id)) => Some(id.clone()),
             _ => None,
         };
+        let library = self
+            .session
+            .workspace
+            .tab(tab)
+            .is_some_and(|t| t.kind == TabKind::Library);
         ui.menu_button(RichText::new("…").color(theme::c().muted), |ui| {
+            if library && ui.button("Import…").clicked() {
+                self.run("library.import", &json!({}));
+                ui.close();
+            }
             if let Some(id) = &resource
                 && ui.button("About").clicked()
             {
@@ -1438,6 +1462,7 @@ impl State {
         let ctx = ui.ctx().clone();
         self.layout_prompt(&ctx);
         self.remove_prompt(&ctx);
+        self.import_chooser(&ctx);
         if let Some((msg, t)) = &self.toast {
             if self.now - t < 4.0 {
                 let screen = ctx.content_rect();

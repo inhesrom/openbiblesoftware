@@ -138,7 +138,7 @@ impl WorkspaceSnapshot {
     /// Drop Tabs whose Resource is no longer in the library.
     pub fn without_missing(mut self, has: impl Fn(&str) -> bool) -> Self {
         self.tabs.retain(|t| match &t.kind {
-            TabKind::Resource(id) | TabKind::About(id) => has(id),
+            TabKind::Resource(id) | TabKind::About(id) | TabKind::ImportReport(id) => has(id),
             _ => true,
         });
         let keep: BTreeSet<u64> = self.tabs.iter().map(|t| t.id).collect();

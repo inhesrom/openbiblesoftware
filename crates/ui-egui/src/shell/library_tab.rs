@@ -69,8 +69,8 @@ impl State {
                 if lib.entries().is_empty() {
                     ui.label(
                         RichText::new(
-                            "Your library is empty. Drop a .obr file on the window, or make one \
-                             with `obs-cli import`.",
+                            "Your library is empty. Use Library → Import… to add a USFM Resource, \
+                             or drop a .obr file on the window.",
                         )
                         .color(theme::c().muted),
                     );
@@ -323,6 +323,11 @@ impl State {
                             if ui.button("Open").clicked() {
                                 action = Some(Action::Open(id.to_string()));
                             }
+                            if self.session.imports.report(id).is_some()
+                                && ui.button("Latest Import report").clicked()
+                            {
+                                self.run("import.report", &json!({ "id": id }));
+                            }
                             if ui.button("Remove…").clicked() {
                                 action = Some(Action::Remove(id.to_string()));
                             }
@@ -552,7 +557,7 @@ fn drop_slot(rows: &[Row], dragged: &str, pointer: egui::Pos2, region: Rect) -> 
     })
 }
 
-fn section(ui: &mut Ui, title: &str) {
+pub(super) fn section(ui: &mut Ui, title: &str) {
     ui.label(
         RichText::new(title.to_uppercase())
             .size(10.5)

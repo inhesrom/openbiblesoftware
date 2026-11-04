@@ -55,6 +55,14 @@ impl JobContext {
     }
 
     /// Report `done` of `total` units of work.
+    /// Begin a named phase; progress belongs to this phase until the next one.
+    pub fn phase(&self, name: impl Into<String>) {
+        let _ = self.events.send(JobEvent {
+            id: self.id,
+            kind: JobEventKind::Phase(name.into()),
+        });
+    }
+
     pub fn progress(&self, done: u64, total: u64) {
         let _ = self.events.send(JobEvent {
             id: self.id,
@@ -72,6 +80,7 @@ pub struct JobEvent {
 
 pub enum JobEventKind {
     Started,
+    Phase(String),
     Progress { done: u64, total: u64 },
     Finished(JobOutput),
     Failed(String),
@@ -81,6 +90,7 @@ pub enum JobEventKind {
 impl fmt::Debug for JobEventKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            JobEventKind::Phase(name) => f.debug_tuple("Phase").field(name).finish(),
             JobEventKind::Started => f.write_str("Started"),
             JobEventKind::Progress { done, total } => write!(f, "Progress({done}/{total})"),
             JobEventKind::Finished(_) => f.write_str("Finished(..)"),

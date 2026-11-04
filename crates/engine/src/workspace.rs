@@ -69,6 +69,8 @@ pub enum TabKind {
     Resource(String),
     /// A Resource's About Tab (keyless): manifest, licence and Attribution, by resource id.
     About(String),
+    /// Live or latest Import report, keyed by the imported Resource id.
+    ImportReport(String),
     Guide(Guide),
     Tool(Tool),
 }
@@ -98,6 +100,7 @@ enum Slot {
     Library,
     Resource,
     About,
+    ImportReport,
     Guide(Guide),
     Tool(Tool),
 }
@@ -108,7 +111,10 @@ impl TabKind {
     pub fn single_instance(&self) -> bool {
         matches!(
             self,
-            TabKind::Library | TabKind::About(_) | TabKind::Tool(Tool::Notes | Tool::WordInfo)
+            TabKind::Library
+                | TabKind::About(_)
+                | TabKind::ImportReport(_)
+                | TabKind::Tool(Tool::Notes | Tool::WordInfo)
         )
     }
 
@@ -123,7 +129,7 @@ impl TabKind {
             TabKind::Tool(Tool::WordInfo) => HeaderBox::FollowsHover,
             TabKind::Guide(Guide::WordStudy) => HeaderBox::Word,
             TabKind::Tool(Tool::Search) => HeaderBox::Filter,
-            TabKind::About(_) => HeaderBox::Keyless,
+            TabKind::About(_) | TabKind::ImportReport(_) => HeaderBox::Keyless,
             _ => HeaderBox::Reference,
         }
     }
@@ -132,7 +138,10 @@ impl TabKind {
     pub fn has_link_chip(&self) -> bool {
         !matches!(
             self,
-            TabKind::Library | TabKind::About(_) | TabKind::Tool(Tool::Notes)
+            TabKind::Library
+                | TabKind::About(_)
+                | TabKind::ImportReport(_)
+                | TabKind::Tool(Tool::Notes)
         )
     }
 
@@ -152,6 +161,7 @@ impl TabKind {
             TabKind::Library => Slot::Library,
             TabKind::Resource(_) => Slot::Resource,
             TabKind::About(_) => Slot::About,
+            TabKind::ImportReport(_) => Slot::ImportReport,
             TabKind::Guide(g) => Slot::Guide(*g),
             TabKind::Tool(t) => Slot::Tool(*t),
         }
@@ -355,6 +365,8 @@ pub enum Effect {
     },
     /// A Resource left the library: drop anything loaded from it.
     Removed(String),
+    /// Host opens a native picker off the UI thread, then runs `import.start`.
+    PickImport,
 }
 
 /// How the caller asked for a Tab to be opened.

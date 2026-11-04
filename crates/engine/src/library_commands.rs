@@ -220,13 +220,17 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let open: Vec<_> = s
         .workspace
         .tabs()
-        .filter(|t| matches!(&t.kind, TabKind::Resource(r) | TabKind::About(r) if *r == id))
+        .filter(|t| matches!(&t.kind, TabKind::Resource(r) | TabKind::About(r) | TabKind::ImportReport(r) if *r == id))
         .map(|t| t.id)
         .collect();
     for t in open {
         s.workspace.close(t);
     }
     s.library.remove(&id);
+    s.imports.reports.remove(&id);
+    if let Some(user) = &s.user {
+        let _ = user.set_preference(&format!("import-report/{id}"), "null");
+    }
     if let Err(e) = s.save_preferred_order() {
         s.workspace.push_effect(Effect::Message(format!(
             "Could not save the Preferred order: {e}"

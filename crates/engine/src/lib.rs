@@ -16,6 +16,7 @@ pub mod appearance;
 mod builtin;
 pub mod command;
 pub mod compare;
+pub mod import;
 pub mod jobs;
 mod library;
 mod library_commands;
@@ -31,6 +32,10 @@ pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSp
 pub use compare::{
     Cell, ComparedBible, ComparedCell, Comparison, DEFAULT_BIBLES, Marks, VerseBlock, WordDiff,
     verse_blocks, word_diff,
+};
+pub use import::{
+    DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,
+    Imports,
 };
 pub use jobs::{Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step};
 pub use library::{
@@ -63,3 +68,6 @@ mod compare_tests;
 
 #[cfg(test)]
 mod resource_navigation_tests;
+
+#[cfg(test)]
+mod import_tests;

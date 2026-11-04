@@ -4,9 +4,10 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use obs_scripture::Book;
+use serde::{Deserialize, Serialize};
 
 /// One Bible book (or other book-level unit) in the report.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BookReport {
     /// The source's book code, e.g. `GEN`, `TOB`, `FRT`.
     pub code: String,
@@ -17,14 +18,14 @@ pub struct BookReport {
 }
 
 /// Verse-map figures; filled in once the Verse-map builder runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerseMapCounts {
     pub unmapped: usize,
     pub absent: usize,
 }
 
 /// The summary shown after an Import.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ImportReport {
     pub resource_id: String,
     pub title: String,

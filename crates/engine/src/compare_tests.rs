@@ -63,7 +63,7 @@ fn diff_ignores_case_punctuation_and_diacritics() {
     );
     // Words missing at the end are marked after the last word.
     let d = word_diff("and the earth was without form", "and the earth");
-    assert_eq!(d.changed, []);
+    assert!(d.changed.is_empty());
     assert_eq!(d.missing, ["and the earth".len()]);
     // Everything differs from an empty base; nothing is missing from an empty row.
     assert_eq!(word_diff("", "In the beginning").changed.len(), 3);

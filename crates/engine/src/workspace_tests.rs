@@ -194,8 +194,11 @@ fn every_menu_item_is_a_registered_command() {
         titles,
         ["Library", "Guides", "Tools", "Layouts", "View", "Help"]
     );
-    // Not-yet-built items show but are disabled.
-    assert!(!s.is_enabled("library.import"));
+    // Import needs a local filesystem; not-yet-built items show but are disabled.
+    assert_eq!(
+        s.is_enabled("library.import"),
+        cfg!(not(target_arch = "wasm32"))
+    );
     assert!(s.is_enabled("tool.word_info"));
 }
 
