@@ -1,0 +1,155 @@
+{
+  "resource_id": "tahot",
+  "resource_type": "bible",
+  "key": "Gen 1:1",
+  "verses": [
+    {
+      "verse": "Gen 1:1",
+      "last": 1,
+      "standard": "Gen 1:1",
+      "unit": "GEN",
+      "text": "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃",
+      "spans": [
+        {
+          "start": 0,
+          "end": 124,
+          "kind": "chapter",
+          "chapter": 1
+        },
+        {
+          "start": 0,
+          "end": 124,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 124,
+          "kind": "verse",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 1
+          },
+          "last": 1
+        },
+        {
+          "start": 0,
+          "end": 24,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9003",
+              "lemma": "ב",
+              "morph": "HR",
+              "gloss": "in"
+            },
+            {
+              "strongs": "H7225G",
+              "lemma": "רֵאשִׁית",
+              "morph": "HNcfsa",
+              "gloss": "beginning"
+            }
+          ]
+        },
+        {
+          "start": 25,
+          "end": 39,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254A",
+              "lemma": "בָּרָא",
+              "morph": "HVqp3ms",
+              "gloss": "he created"
+            }
+          ]
+        },
+        {
+          "start": 40,
+          "end": 58,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H430G",
+              "lemma": "אֱלֹהִים",
+              "morph": "HNcmpa",
+              "gloss": "God"
+            }
+          ]
+        },
+        {
+          "start": 59,
+          "end": 67,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H853",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "gloss": "<obj.>"
+            }
+          ]
+        },
+        {
+          "start": 68,
+          "end": 92,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9009",
+              "lemma": "ה",
+              "morph": "HTd",
+              "gloss": "the"
+            },
+            {
+              "strongs": "H8064",
+              "lemma": "שָׁמַיִם",
+              "morph": "HNcmpa",
+              "gloss": "heavens"
+            }
+          ]
+        },
+        {
+          "start": 93,
+          "end": 105,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9002",
+              "lemma": "ו",
+              "morph": "HC",
+              "gloss": "and"
+            },
+            {
+              "strongs": "H853",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "gloss": "<obj.>"
+            }
+          ]
+        },
+        {
+          "start": 106,
+          "end": 122,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9009",
+              "lemma": "ה",
+              "morph": "HTd",
+              "gloss": "the"
+            },
+            {
+              "strongs": "H776G",
+              "lemma": "אֶ֫רֶץ",
+              "morph": "HNcfsa",
+              "gloss": "earth"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

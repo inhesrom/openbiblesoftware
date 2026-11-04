@@ -1,0 +1,99 @@
+{
+  "resource_id": "kjv-strongs",
+  "resource_type": "bible",
+  "key": "Ps 3:title",
+  "verses": [
+    {
+      "verse": "Ps 3:title",
+      "last": 0,
+      "standard": "Ps 3:title",
+      "unit": "PSA",
+      "text": "A Psalm of David, when he fled from Absalom his son.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 52,
+          "kind": "chapter",
+          "chapter": 3
+        },
+        {
+          "start": 0,
+          "end": 52,
+          "kind": "psalm_title"
+        },
+        {
+          "start": 0,
+          "end": 52,
+          "kind": "verse",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 0
+          },
+          "last": 0
+        },
+        {
+          "start": 2,
+          "end": 7,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H4210"
+            }
+          ]
+        },
+        {
+          "start": 11,
+          "end": 16,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1732"
+            }
+          ]
+        },
+        {
+          "start": 26,
+          "end": 30,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1272"
+            }
+          ]
+        },
+        {
+          "start": 31,
+          "end": 35,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6440"
+            }
+          ]
+        },
+        {
+          "start": 36,
+          "end": 43,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H53"
+            }
+          ]
+        },
+        {
+          "start": 48,
+          "end": 51,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1121"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

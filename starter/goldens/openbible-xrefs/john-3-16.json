@@ -1,0 +1,628 @@
+{
+  "resource_id": "openbible-xrefs",
+  "resource_type": "cross_reference_set",
+  "key": "John 3:16",
+  "cross_references": [
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "GEN",
+          "chapter": 22,
+          "verse": 12
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 22,
+          "verse": 12
+        }
+      },
+      "votes": 166
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "MAT",
+          "chapter": 9,
+          "verse": 13
+        },
+        "end": {
+          "book": "MAT",
+          "chapter": 9,
+          "verse": 13
+        }
+      },
+      "votes": 190
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "MRK",
+          "chapter": 12,
+          "verse": 6
+        },
+        "end": {
+          "book": "MRK",
+          "chapter": 12,
+          "verse": 6
+        }
+      },
+      "votes": 138
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "LUK",
+          "chapter": 2,
+          "verse": 14
+        },
+        "end": {
+          "book": "LUK",
+          "chapter": 2,
+          "verse": 14
+        }
+      },
+      "votes": 130
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JHN",
+          "chapter": 1,
+          "verse": 14
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 1,
+          "verse": 14
+        }
+      },
+      "votes": 166
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JHN",
+          "chapter": 1,
+          "verse": 18
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 1,
+          "verse": 18
+        }
+      },
+      "votes": 152
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JHN",
+          "chapter": 1,
+          "verse": 29
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 1,
+          "verse": 29
+        }
+      },
+      "votes": 240
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 15
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 15
+        }
+      },
+      "votes": 506
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 36
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 36
+        }
+      },
+      "votes": 381
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JHN",
+          "chapter": 6,
+          "verse": 40
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 6,
+          "verse": 40
+        }
+      },
+      "votes": 404
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JHN",
+          "chapter": 10,
+          "verse": 28
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 10,
+          "verse": 28
+        }
+      },
+      "votes": 323
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JHN",
+          "chapter": 11,
+          "verse": 25
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 11,
+          "verse": 26
+        }
+      },
+      "votes": 465
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ROM",
+          "chapter": 5,
+          "verse": 8
+        },
+        "end": {
+          "book": "ROM",
+          "chapter": 5,
+          "verse": 8
+        }
+      },
+      "votes": 991
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ROM",
+          "chapter": 5,
+          "verse": 10
+        },
+        "end": {
+          "book": "ROM",
+          "chapter": 5,
+          "verse": 10
+        }
+      },
+      "votes": 267
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ROM",
+          "chapter": 8,
+          "verse": 32
+        },
+        "end": {
+          "book": "ROM",
+          "chapter": 8,
+          "verse": 32
+        }
+      },
+      "votes": 514
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "2CO",
+          "chapter": 5,
+          "verse": 19
+        },
+        "end": {
+          "book": "2CO",
+          "chapter": 5,
+          "verse": 21
+        }
+      },
+      "votes": 216
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "EPH",
+          "chapter": 2,
+          "verse": 4
+        },
+        "end": {
+          "book": "EPH",
+          "chapter": 2,
+          "verse": 4
+        }
+      },
+      "votes": 206
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "2TH",
+          "chapter": 2,
+          "verse": 16
+        },
+        "end": {
+          "book": "2TH",
+          "chapter": 2,
+          "verse": 16
+        }
+      },
+      "votes": 228
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "1TI",
+          "chapter": 1,
+          "verse": 15
+        },
+        "end": {
+          "book": "1TI",
+          "chapter": 1,
+          "verse": 16
+        }
+      },
+      "votes": 291
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "TIT",
+          "chapter": 3,
+          "verse": 4
+        },
+        "end": {
+          "book": "TIT",
+          "chapter": 3,
+          "verse": 4
+        }
+      },
+      "votes": 164
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "1JN",
+          "chapter": 4,
+          "verse": 9
+        },
+        "end": {
+          "book": "1JN",
+          "chapter": 4,
+          "verse": 10
+        }
+      },
+      "votes": 704
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "1JN",
+          "chapter": 4,
+          "verse": 19
+        },
+        "end": {
+          "book": "1JN",
+          "chapter": 4,
+          "verse": 19
+        }
+      },
+      "votes": 354
+    },
+    {
+      "from": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 16
+        }
+      },
+      "to": {
+        "start": {
+          "book": "REV",
+          "chapter": 1,
+          "verse": 5
+        },
+        "end": {
+          "book": "REV",
+          "chapter": 1,
+          "verse": 5
+        }
+      },
+      "votes": 171
+    }
+  ]
+}

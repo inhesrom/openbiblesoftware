@@ -1,0 +1,160 @@
+{
+  "resource_id": "web",
+  "resource_type": "bible",
+  "key": "Gen 1:1",
+  "verses": [
+    {
+      "verse": "Gen 1:1",
+      "last": 1,
+      "standard": "Gen 1:1",
+      "unit": "GEN",
+      "text": "In the beginning, God created the heavens and the earth.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 56,
+          "kind": "chapter",
+          "chapter": 1
+        },
+        {
+          "start": 0,
+          "end": 56,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 56,
+          "kind": "verse",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 1
+          },
+          "last": 1
+        },
+        {
+          "start": 0,
+          "end": 2,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ]
+        },
+        {
+          "start": 3,
+          "end": 6,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254"
+            }
+          ]
+        },
+        {
+          "start": 7,
+          "end": 16,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H7225"
+            }
+          ]
+        },
+        {
+          "start": 18,
+          "end": 21,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ]
+        },
+        {
+          "start": 21,
+          "end": 21,
+          "kind": "note_ref",
+          "note": "note.1",
+          "note_kind": "footnote"
+        },
+        {
+          "start": 22,
+          "end": 29,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254"
+            }
+          ]
+        },
+        {
+          "start": 30,
+          "end": 33,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254"
+            }
+          ]
+        },
+        {
+          "start": 34,
+          "end": 41,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ]
+        },
+        {
+          "start": 42,
+          "end": 45,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ]
+        },
+        {
+          "start": 46,
+          "end": 49,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254"
+            }
+          ]
+        },
+        {
+          "start": 50,
+          "end": 55,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note.1",
+      "kind": "note",
+      "text": "The Hebrew word rendered “God” is “אֱלֹהִ֑ים” (Elohim).",
+      "spans": [
+        {
+          "start": 41,
+          "end": 59,
+          "kind": "foreign"
+        }
+      ]
+    }
+  ]
+}

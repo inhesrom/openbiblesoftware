@@ -1,0 +1,96 @@
+{
+  "resource_id": "tipnr",
+  "resource_type": "people_and_places",
+  "key": "Gen 12:1",
+  "entities": [
+    {
+      "id": "Abraham@Gen.11.26-1Pe",
+      "name": "Abraham",
+      "kind": "male",
+      "strongs": "H85",
+      "other_names": [
+        "Abram"
+      ],
+      "region": "Early Patriarch",
+      "relations": [
+        {
+          "relation": "father",
+          "entity": "Terah@Gen.11.24-Luk"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Nahor@Gen.11.26-"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Haran@Gen.11.26-"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Sarah@Gen.11.29-1Pe"
+        },
+        {
+          "relation": "partner",
+          "entity": "Sarah@Gen.11.29-1Pe"
+        },
+        {
+          "relation": "partner",
+          "entity": "Hagar@Gen.16.1-Gal"
+        },
+        {
+          "relation": "partner",
+          "entity": "Keturah@Gen.25.1-1Ch"
+        },
+        {
+          "relation": "offspring",
+          "entity": "Ishmael@Gen.16.11-Psa"
+        },
+        {
+          "relation": "offspring",
+          "entity": "Isaac@Gen.17.19-Jas"
+        },
+        {
+          "relation": "offspring",
+          "entity": "Zimran@Gen.25.2-1Ch"
+        },
+        {
+          "relation": "offspring",
+          "entity": "Jokshan@Gen.25.2-1Ch"
+        },
+        {
+          "relation": "offspring",
+          "entity": "Medan@Gen.25.2-1Ch"
+        },
+        {
+          "relation": "offspring",
+          "entity": "Midian@Gen.25.2-1Ch"
+        },
+        {
+          "relation": "offspring",
+          "entity": "Ishbak@Gen.25.2-1Ch"
+        },
+        {
+          "relation": "offspring",
+          "entity": "Shuah@Gen.25.2-1Ch"
+        }
+      ]
+    }
+  ],
+  "mentions": [
+    {
+      "entity": "Abraham@Gen.11.26-1Pe",
+      "passage": {
+        "start": {
+          "book": "GEN",
+          "chapter": 12,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 12,
+          "verse": 1
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,144 @@
+{
+  "resource_id": "bdb",
+  "resource_type": "lexicon",
+  "key": "H1254A",
+  "units": [
+    {
+      "id": "b.cw.aa",
+      "kind": "entry",
+      "title": "בָּרָא",
+      "text": "בָּרָא 53 vb. shape, create\nQal Pf.—shape, fashion, create\nNiph.—Pass.\n1. be created\n2. with reference to birth\n3. of something new, astonishing\nPi.\n1. cut down\n2. cut out",
+      "spans": [
+        {
+          "start": 0,
+          "end": 33,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 12,
+          "kind": "bold"
+        },
+        {
+          "start": 16,
+          "end": 18,
+          "kind": "italic"
+        },
+        {
+          "start": 20,
+          "end": 25,
+          "kind": "bold"
+        },
+        {
+          "start": 27,
+          "end": 33,
+          "kind": "bold"
+        },
+        {
+          "start": 34,
+          "end": 66,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 34,
+          "end": 37,
+          "kind": "italic"
+        },
+        {
+          "start": 38,
+          "end": 40,
+          "kind": "italic"
+        },
+        {
+          "start": 44,
+          "end": 49,
+          "kind": "bold"
+        },
+        {
+          "start": 51,
+          "end": 58,
+          "kind": "bold"
+        },
+        {
+          "start": 60,
+          "end": 66,
+          "kind": "bold"
+        },
+        {
+          "start": 67,
+          "end": 80,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 67,
+          "end": 71,
+          "kind": "italic"
+        },
+        {
+          "start": 75,
+          "end": 79,
+          "kind": "italic"
+        },
+        {
+          "start": 81,
+          "end": 94,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 84,
+          "end": 94,
+          "kind": "bold"
+        },
+        {
+          "start": 95,
+          "end": 121,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 122,
+          "end": 154,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 155,
+          "end": 158,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 155,
+          "end": 157,
+          "kind": "italic"
+        },
+        {
+          "start": 159,
+          "end": 170,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 162,
+          "end": 170,
+          "kind": "bold"
+        },
+        {
+          "start": 171,
+          "end": 181,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 174,
+          "end": 181,
+          "kind": "bold"
+        }
+      ]
+    }
+  ]
+}

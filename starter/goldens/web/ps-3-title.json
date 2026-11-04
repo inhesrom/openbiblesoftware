@@ -1,0 +1,39 @@
+{
+  "resource_id": "web",
+  "resource_type": "bible",
+  "key": "Ps 3:title",
+  "verses": [
+    {
+      "verse": "Ps 3:title",
+      "last": 0,
+      "standard": "Ps 3:title",
+      "unit": "PSA",
+      "text": "A Psalm by David, when he fled from Absalom his son.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 52,
+          "kind": "chapter",
+          "chapter": 3
+        },
+        {
+          "start": 0,
+          "end": 52,
+          "kind": "psalm_title"
+        },
+        {
+          "start": 0,
+          "end": 52,
+          "kind": "verse",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 0
+          },
+          "last": 0
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

@@ -1,0 +1,74 @@
+{
+  "resource_id": "strongs-greek",
+  "resource_type": "lexicon",
+  "key": "G5485",
+  "units": [
+    {
+      "id": "G5485",
+      "kind": "entry",
+      "title": "χάρις",
+      "text": "χάρις cháris (khar'-ece)\nfrom G5463; graciousness (as gratifying), of manner or act (abstract or concrete; literal, figurative or spiritual; especially the divine influence upon the heart, and its reflection in the life; including gratitude)\nKJV: acceptable, benefit, favour, gift, grace(- ious), joy, liberality, pleasure, thank(-s, -worthy).\nSee also G5463.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 30,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 10,
+          "kind": "bold"
+        },
+        {
+          "start": 11,
+          "end": 18,
+          "kind": "italic"
+        },
+        {
+          "start": 31,
+          "end": 247,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 36,
+          "end": 41,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5463"
+            }
+          ]
+        },
+        {
+          "start": 248,
+          "end": 349,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 248,
+          "end": 252,
+          "kind": "bold"
+        },
+        {
+          "start": 350,
+          "end": 365,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 359,
+          "end": 364,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5463"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

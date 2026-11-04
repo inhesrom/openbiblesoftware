@@ -1,0 +1,264 @@
+{
+  "resource_id": "tahot",
+  "resource_type": "bible",
+  "key": "Mal 4:6",
+  "verses": [
+    {
+      "verse": "Mal 3:24",
+      "last": 24,
+      "standard": "Mal 4:6",
+      "unit": "MAL",
+      "text": "וְהֵשִׁ֤יב לֵב־אָבוֹת֙ עַל־בָּנִ֔ים וְלֵ֥ב בָּנִ֖ים עַל־אֲבוֹתָ֑ם פֶּן־אָב֕וֹא וְהִכֵּיתִ֥י אֶת־הָאָ֖רֶץ חֵֽרֶם׃",
+      "spans": [
+        {
+          "start": 0,
+          "end": 215,
+          "kind": "chapter",
+          "chapter": 3
+        },
+        {
+          "start": 0,
+          "end": 215,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 215,
+          "kind": "verse",
+          "verse": {
+            "book": "MAL",
+            "chapter": 3,
+            "verse": 24
+          },
+          "last": 24
+        },
+        {
+          "start": 0,
+          "end": 20,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9001",
+              "lemma": "ו",
+              "morph": "Hc",
+              "gloss": "and"
+            },
+            {
+              "strongs": "H7725I",
+              "lemma": "שׁוּב",
+              "morph": "HVhq3ms",
+              "gloss": "he will turn back"
+            }
+          ]
+        },
+        {
+          "start": 21,
+          "end": 27,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3820A",
+              "lemma": "לֵב",
+              "morph": "HNcmsc",
+              "gloss": "[the] heart of"
+            }
+          ]
+        },
+        {
+          "start": 29,
+          "end": 43,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1G",
+              "lemma": "אָב",
+              "morph": "HNcfpa",
+              "gloss": "fathers"
+            }
+          ]
+        },
+        {
+          "start": 44,
+          "end": 50,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5921A",
+              "lemma": "עַל",
+              "morph": "HR",
+              "gloss": "to"
+            }
+          ]
+        },
+        {
+          "start": 52,
+          "end": 68,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1121A",
+              "lemma": "בֵּן",
+              "morph": "HNcmpa",
+              "gloss": "sons"
+            }
+          ]
+        },
+        {
+          "start": 69,
+          "end": 81,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9002",
+              "lemma": "ו",
+              "morph": "HC",
+              "gloss": "and"
+            },
+            {
+              "strongs": "H3820A",
+              "lemma": "לֵב",
+              "morph": "HNcmsc",
+              "gloss": "[the] heart of"
+            }
+          ]
+        },
+        {
+          "start": 82,
+          "end": 98,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1121A",
+              "lemma": "בֵּן",
+              "morph": "HNcmpa",
+              "gloss": "sons"
+            }
+          ]
+        },
+        {
+          "start": 99,
+          "end": 105,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5921A",
+              "lemma": "עַל",
+              "morph": "HR",
+              "gloss": "to"
+            }
+          ]
+        },
+        {
+          "start": 107,
+          "end": 125,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1G",
+              "lemma": "אָב",
+              "morph": "HNcfpc",
+              "gloss": "fathers"
+            },
+            {
+              "strongs": "H9028",
+              "morph": "HSp3mp",
+              "gloss": "their"
+            }
+          ]
+        },
+        {
+          "start": 126,
+          "end": 134,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H6435",
+              "lemma": "פֶּן־",
+              "morph": "HTc",
+              "gloss": "lest"
+            }
+          ]
+        },
+        {
+          "start": 136,
+          "end": 150,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H935G",
+              "lemma": "בּוֹא",
+              "morph": "HVqi1cs",
+              "gloss": "I should come"
+            }
+          ]
+        },
+        {
+          "start": 151,
+          "end": 175,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9001",
+              "lemma": "ו",
+              "morph": "Hc",
+              "gloss": "and"
+            },
+            {
+              "strongs": "H5221",
+              "lemma": "נָכָה",
+              "morph": "HVhq1cs",
+              "gloss": "I will strike"
+            }
+          ]
+        },
+        {
+          "start": 176,
+          "end": 182,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H853",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "gloss": "<obj.>"
+            }
+          ]
+        },
+        {
+          "start": 184,
+          "end": 200,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9009",
+              "lemma": "ה",
+              "morph": "HTd",
+              "gloss": "the"
+            },
+            {
+              "strongs": "H776G",
+              "lemma": "אֶ֫רֶץ",
+              "morph": "HNcfsa",
+              "gloss": "land"
+            }
+          ]
+        },
+        {
+          "start": 201,
+          "end": 213,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H2764A",
+              "lemma": "חֵ֫רֶם",
+              "morph": "HNcmsa",
+              "gloss": "total destruction"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

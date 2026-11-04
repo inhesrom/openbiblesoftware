@@ -7,13 +7,19 @@
 //!    Attribution, changes, `origin = starter`).
 //! 4. Diff unit ids against the previous release manifest; a removed id fails the build unless
 //!    `id-changes.toml` maps it (shipped as `unit_alias`).
-//! 5. Write `dist/starter/<id>.obr`, `CHANGES-<id>.md` for CC BY sources,
+//! 5. Run the structural checks over the whole library (`checks`): every failure names its
+//!    item, and nothing is written until they pass.
+//! 6. Write `dist/starter/<id>.obr`, `CHANGES-<id>.md` for CC BY sources,
 //!    `starter-manifest.json` and `starter-build-report.md`, and check the size budget.
+//! 7. Compare the golden-passage snapshots in `starter/goldens/` (`goldens`); a difference
+//!    fails the build with a unified diff, in the report and on stderr.
 //!
 //! Builds are deterministic: the same lock and code give byte-identical outputs.
 //! `--check-determinism` builds a second time and compares every file.
 
+mod checks;
 mod fetch;
+mod goldens;
 mod ids;
 mod lock;
 mod study;
@@ -33,18 +39,21 @@ use obs_model::{Origin, Resource, UnitId};
 use obs_store::write_obr;
 
 use fetch::{fetch, sha256_hex};
+use goldens::{GoldenList, Status};
 use ids::{IdDiff, MANIFEST_FORMAT, ReleaseManifest, ReleaseResource};
 use lock::{IdChanges, Lock, Source};
 
 pub const MANIFEST_FILE: &str = "starter-manifest.json";
 pub const REPORT_FILE: &str = "starter-build-report.md";
 
-const USAGE: &str = "usage: cargo xtask starter [--out DIR] [--cache DIR] [--previous MANIFEST] [--check-determinism]
+const USAGE: &str = "usage: cargo xtask starter [--out DIR] [--cache DIR] [--previous MANIFEST] [--check-determinism] [--update-goldens]
 
   --out DIR            where the outputs go (default dist/starter)
   --cache DIR          download cache (default target/starter-cache)
   --previous MANIFEST  the previous release's starter-manifest.json, for the stable-id diff
-  --check-determinism  build twice and fail unless every output is byte-identical";
+  --check-determinism  build twice and fail unless every output is byte-identical
+  --update-goldens     rewrite the golden-passage snapshots in starter/goldens/ from this build
+                       instead of failing on a difference (commit the result for review)";
 
 /// Inputs and outputs of one build.
 #[derive(Debug, Clone)]
@@ -54,6 +63,10 @@ pub struct Config {
     pub previous: Option<PathBuf>,
     pub out: PathBuf,
     pub cache: PathBuf,
+    /// Golden-passage snapshots: `passages.toml` and one `<resource_id>/<key>.json` each.
+    pub goldens: PathBuf,
+    /// Rewrite differing or missing snapshots instead of failing.
+    pub update_goldens: bool,
 }
 
 impl Config {
@@ -64,6 +77,8 @@ impl Config {
             previous: None,
             out: root.join("dist/starter"),
             cache: root.join("target/starter-cache"),
+            goldens: root.join("starter/goldens"),
+            update_goldens: false,
         }
     }
 }
@@ -83,6 +98,7 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
             "--cache" => config.cache = value()?,
             "--previous" => config.previous = Some(value()?),
             "--check-determinism" => check_determinism = true,
+            "--update-goldens" => config.update_goldens = true,
             "-h" | "--help" => {
                 println!("{USAGE}");
                 return Ok(());
@@ -95,6 +111,7 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
     if check_determinism {
         let again = Config {
             out: root.join("target/starter-recheck"),
+            update_goldens: false,
             ..config.clone()
         };
         eprintln!("\nstarter: second build into {} …", again.out.display());
@@ -120,6 +137,7 @@ pub fn build(config: &Config) -> Result<String> {
     let lock_dir = config.lock.parent().unwrap_or(Path::new("."));
     let changes = IdChanges::load(&config.id_changes)?;
     lock::check(&lock_file, lock_dir, &changes)?;
+    let golden_list = GoldenList::load(&config.goldens)?;
     let previous = match &config.previous {
         Some(p) => Some(ReleaseManifest::load(p)?),
         None => None,
@@ -167,6 +185,16 @@ pub fn build(config: &Config) -> Result<String> {
     }
     if !errors.is_empty() {
         bail!("the Starter build failed:\n{}", errors.join("\n"));
+    }
+
+    let resources: Vec<&Resource> = built.iter().map(|b| &b.resource).collect();
+    let structural = checks::check(&resources);
+    if !structural.failures.is_empty() {
+        bail!(
+            "the Starter library failed {} structural check(s):\n{}",
+            structural.failures.len(),
+            list_failures(&structural.failures)
+        );
     }
 
     clean_outputs(&config.out)?;
@@ -232,10 +260,40 @@ pub fn build(config: &Config) -> Result<String> {
     json.push('\n');
     std::fs::write(config.out.join(MANIFEST_FILE), json)?;
 
+    let snapshots = goldens::check(
+        &golden_list,
+        &resources,
+        &config.goldens,
+        config.update_goldens,
+    )?;
     let obr_bytes: u64 = manifest.resources.iter().map(|r| r.bytes).sum();
     let budget = lock_file.size_budget_mb.saturating_mul(1_000_000);
-    let report = build_report(&built, &manifest, previous.as_ref(), obr_bytes, budget);
+    let report = build_report(
+        &built,
+        &manifest,
+        previous.as_ref(),
+        obr_bytes,
+        budget,
+        &structural.coverage,
+        &snapshots,
+    );
     std::fs::write(config.out.join(REPORT_FILE), &report)?;
+    let failed: Vec<&goldens::Checked> = snapshots.iter().filter(|s| !s.passed()).collect();
+    if !failed.is_empty() {
+        let mut message = format!(
+            "{} golden snapshot(s) differ from the committed files in {} (review the diff, then \
+             run `cargo xtask starter --update-goldens` and commit the result):",
+            failed.len(),
+            config.goldens.display()
+        );
+        for s in failed {
+            let _ = write!(message, "\n- {}: {}", s.name, describe(&s.status, &s.file));
+            if let Status::Changed(diff) = &s.status {
+                let _ = write!(message, "\n{diff}");
+            }
+        }
+        bail!(message);
+    }
     let total = dir_bytes(&config.out)?;
     if total > budget {
         bail!(
@@ -543,6 +601,30 @@ fn mb(bytes: u64) -> String {
     format!("{:.1}", bytes as f64 / 1_000_000.0)
 }
 
+/// Structural failures as a bulleted list, capped so a broken Resource does not flood the log.
+fn list_failures(failures: &[String]) -> String {
+    const SHOWN: usize = 50;
+    let mut s: String = failures
+        .iter()
+        .take(SHOWN)
+        .map(|f| format!("- {f}\n"))
+        .collect();
+    if failures.len() > SHOWN {
+        let _ = writeln!(s, "- …and {} more", failures.len() - SHOWN);
+    }
+    s
+}
+
+/// One snapshot's status, for the report and the failure message.
+fn describe(status: &Status, file: &Path) -> String {
+    match status {
+        Status::Unchanged => "unchanged".to_string(),
+        Status::Changed(_) => format!("changed (see the diff against {})", file.display()),
+        Status::New => format!("new: {} is not committed yet", file.display()),
+        Status::Written => format!("written to {}", file.display()),
+    }
+}
+
 /// Fail unless `a` and `b` hold the same files with the same bytes.
 fn compare_dirs(a: &Path, b: &Path) -> Result<()> {
     let list = |d: &Path| -> Result<BTreeMap<String, PathBuf>> {
@@ -589,6 +671,8 @@ fn build_report(
     previous: Option<&ReleaseManifest>,
     obr_bytes: u64,
     budget: u64,
+    coverage: &checks::Coverage,
+    snapshots: &[goldens::Checked],
 ) -> String {
     let mut s = String::from("# Starter library build report\n\n");
     let _ = writeln!(
@@ -660,6 +744,48 @@ fn build_report(
             )
         };
         let _ = writeln!(s, "- `{}`: {line}", r.resource_id);
+    }
+    s.push_str("\n## Structural checks\n\n");
+    let _ = writeln!(
+        s,
+        "All passed. {} Bible(s): {} Bible Verses each mapped or Unmapped; {} Standard Verses \
+         of their Bible books each present or Absent. {} Cross-reference(s) and {} Scripture \
+         reference span(s) target Standard Passages. {} span(s) stay inside their units.",
+        coverage.bibles,
+        coverage.bible_verses,
+        coverage.standard_verses,
+        coverage.cross_references,
+        coverage.scripture_references,
+        coverage.spans
+    );
+    if coverage.lexicons > 0 {
+        let _ = writeln!(
+            s,
+            "{} Tagged word(s) use {} distinct Strong's number(s); every one resolves in at \
+             least one of the {} Lexicon(s).",
+            coverage.tagged_words, coverage.strongs_numbers, coverage.lexicons
+        );
+    } else {
+        let _ = writeln!(
+            s,
+            "{} Tagged word(s) use {} distinct Strong's number(s); the lock has no Lexicon to \
+             resolve them in, so that rule was not checked.",
+            coverage.tagged_words, coverage.strongs_numbers
+        );
+    }
+    s.push_str("\n## Golden snapshots\n\n");
+    if snapshots.is_empty() {
+        s.push_str("None listed.\n");
+    } else {
+        s.push_str("| Snapshot | Status |\n|---|---|\n");
+        for c in snapshots {
+            let _ = writeln!(s, "| {} | {} |", c.name, describe(&c.status, &c.file));
+        }
+        for c in snapshots {
+            if let Status::Changed(diff) = &c.status {
+                let _ = write!(s, "\n### {} changed\n\n```diff\n{diff}```\n", c.name);
+            }
+        }
     }
     s.push_str("\n## Import reports\n");
     for b in built {

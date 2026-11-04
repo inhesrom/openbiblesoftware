@@ -1,0 +1,740 @@
+{
+  "resource_id": "tbesg",
+  "resource_type": "lexicon",
+  "key": "G5485",
+  "units": [
+    {
+      "id": "G5485",
+      "kind": "entry",
+      "title": "χάρις",
+      "text": "χάρις charis\ngrace\nχάρις, -ιτος, ἡ Abbott-Smith does not include the article here., accusative, χάριν (χάριτα in Act.24:27, Ju 4; see WH, App., 157),\n[in LXX chiefly for חֵן ;]\n1. objectively, that which causes favourable regard, gracefulness, grace, loveliness of form, graciousness of speech (cl.; Ecc.10:12, Sir.21:16, al.): Col.4:6; λόγοι τ. χάριτος (genitive qual.), Luk.4:22.\n2. Subjectively,\n(a) on the part of the giver, grace, graciousness, kindness, goodwill, favour: Luk.2:52, Act.7:10, al.; esp. in NT of the divine favour, grace, with emphasis on its freeness and universality: Luk.1:30, Act.14:26, Rom.1:7, 1Co.1:3, al.; opposite to ὀφείλημα, Rom.4:4, 16; to ἔργα, Rom.11:6;\n(b) on the part of the receiver, a sense of favour received, thanks, gratitude: Rom.6:17 7:25, al.; χ. ἔχειν, to be thankful, Luk.17:9, 1Ti.1:12, al.\n3. Objectively, of the effect of grace,\n(a) a state of grace: Rom.5:2, 2Ti.2:1, 1Pe.5:12, 2Pe.3:18;\n(b) a proof or gift of grace (cl., a favour): Jhn.1:16, Act.6:8, Rom.1:5, 1Co.3:10, 2Co.9:8, Gal.2:9, Eph.3:2, 1Pe.5:5, 10 al. (For fuller treatment of the NT usage, see AR, Eph., 221ff.; DB, ii, 254ff.; DCG, i, 686ff.; Cremer, see word).\n(AS)",
+      "spans": [
+        {
+          "start": 0,
+          "end": 17,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 10,
+          "kind": "bold"
+        },
+        {
+          "start": 11,
+          "end": 17,
+          "kind": "italic"
+        },
+        {
+          "start": 18,
+          "end": 23,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 24,
+          "end": 176,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 24,
+          "end": 98,
+          "kind": "bold"
+        },
+        {
+          "start": 51,
+          "end": 98,
+          "kind": "italic"
+        },
+        {
+          "start": 140,
+          "end": 149,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "ACT",
+                "chapter": 24,
+                "verse": 27
+              },
+              "end": {
+                "book": "ACT",
+                "chapter": 24,
+                "verse": 27
+              }
+            }
+          ]
+        },
+        {
+          "start": 151,
+          "end": 155,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "JUD",
+                "chapter": 1,
+                "verse": 4
+              },
+              "end": {
+                "book": "JUD",
+                "chapter": 1,
+                "verse": 4
+              }
+            }
+          ]
+        },
+        {
+          "start": 165,
+          "end": 169,
+          "kind": "italic"
+        },
+        {
+          "start": 177,
+          "end": 206,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 207,
+          "end": 424,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 260,
+          "end": 291,
+          "kind": "bold"
+        },
+        {
+          "start": 301,
+          "end": 313,
+          "kind": "bold"
+        },
+        {
+          "start": 330,
+          "end": 339,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "ECC",
+                "chapter": 10,
+                "verse": 12
+              },
+              "end": {
+                "book": "ECC",
+                "chapter": 10,
+                "verse": 12
+              }
+            }
+          ]
+        },
+        {
+          "start": 358,
+          "end": 365,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "COL",
+                "chapter": 4,
+                "verse": 6
+              },
+              "end": {
+                "book": "COL",
+                "chapter": 4,
+                "verse": 6
+              }
+            }
+          ]
+        },
+        {
+          "start": 415,
+          "end": 424,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "LUK",
+                "chapter": 4,
+                "verse": 22
+              },
+              "end": {
+                "book": "LUK",
+                "chapter": 4,
+                "verse": 22
+              }
+            }
+          ]
+        },
+        {
+          "start": 425,
+          "end": 441,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 442,
+          "end": 745,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 472,
+          "end": 519,
+          "kind": "bold"
+        },
+        {
+          "start": 521,
+          "end": 529,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "LUK",
+                "chapter": 2,
+                "verse": 52
+              },
+              "end": {
+                "book": "LUK",
+                "chapter": 2,
+                "verse": 52
+              }
+            }
+          ]
+        },
+        {
+          "start": 531,
+          "end": 539,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "ACT",
+                "chapter": 7,
+                "verse": 10
+              },
+              "end": {
+                "book": "ACT",
+                "chapter": 7,
+                "verse": 10
+              }
+            }
+          ]
+        },
+        {
+          "start": 571,
+          "end": 584,
+          "kind": "bold"
+        },
+        {
+          "start": 634,
+          "end": 642,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "LUK",
+                "chapter": 1,
+                "verse": 30
+              },
+              "end": {
+                "book": "LUK",
+                "chapter": 1,
+                "verse": 30
+              }
+            }
+          ]
+        },
+        {
+          "start": 644,
+          "end": 653,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "ACT",
+                "chapter": 14,
+                "verse": 26
+              },
+              "end": {
+                "book": "ACT",
+                "chapter": 14,
+                "verse": 26
+              }
+            }
+          ]
+        },
+        {
+          "start": 655,
+          "end": 662,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "ROM",
+                "chapter": 1,
+                "verse": 7
+              },
+              "end": {
+                "book": "ROM",
+                "chapter": 1,
+                "verse": 7
+              }
+            }
+          ]
+        },
+        {
+          "start": 664,
+          "end": 671,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "1CO",
+                "chapter": 1,
+                "verse": 3
+              },
+              "end": {
+                "book": "1CO",
+                "chapter": 1,
+                "verse": 3
+              }
+            }
+          ]
+        },
+        {
+          "start": 709,
+          "end": 720,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "ROM",
+                "chapter": 4,
+                "verse": 4
+              },
+              "end": {
+                "book": "ROM",
+                "chapter": 4,
+                "verse": 4
+              }
+            },
+            {
+              "start": {
+                "book": "ROM",
+                "chapter": 4,
+                "verse": 16
+              },
+              "end": {
+                "book": "ROM",
+                "chapter": 4,
+                "verse": 16
+              }
+            }
+          ]
+        },
+        {
+          "start": 736,
+          "end": 745,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "ROM",
+                "chapter": 11,
+                "verse": 6
+              },
+              "end": {
+                "book": "ROM",
+                "chapter": 11,
+                "verse": 6
+              }
+            }
+          ]
+        },
+        {
+          "start": 746,
+          "end": 902,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 807,
+          "end": 824,
+          "kind": "bold"
+        },
+        {
+          "start": 826,
+          "end": 839,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "ROM",
+                "chapter": 6,
+                "verse": 17
+              },
+              "end": {
+                "book": "ROM",
+                "chapter": 6,
+                "verse": 17
+              }
+            },
+            {
+              "start": {
+                "book": "ROM",
+                "chapter": 7,
+                "verse": 25
+              },
+              "end": {
+                "book": "ROM",
+                "chapter": 7,
+                "verse": 25
+              }
+            }
+          ]
+        },
+        {
+          "start": 863,
+          "end": 877,
+          "kind": "bold"
+        },
+        {
+          "start": 879,
+          "end": 887,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "LUK",
+                "chapter": 17,
+                "verse": 9
+              },
+              "end": {
+                "book": "LUK",
+                "chapter": 17,
+                "verse": 9
+              }
+            }
+          ]
+        },
+        {
+          "start": 889,
+          "end": 897,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "1TI",
+                "chapter": 1,
+                "verse": 12
+              },
+              "end": {
+                "book": "1TI",
+                "chapter": 1,
+                "verse": 12
+              }
+            }
+          ]
+        },
+        {
+          "start": 903,
+          "end": 942,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 943,
+          "end": 1002,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 958,
+          "end": 963,
+          "kind": "bold"
+        },
+        {
+          "start": 965,
+          "end": 972,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 2
+              },
+              "end": {
+                "book": "ROM",
+                "chapter": 5,
+                "verse": 2
+              }
+            }
+          ]
+        },
+        {
+          "start": 974,
+          "end": 981,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "2TI",
+                "chapter": 2,
+                "verse": 1
+              },
+              "end": {
+                "book": "2TI",
+                "chapter": 2,
+                "verse": 1
+              }
+            }
+          ]
+        },
+        {
+          "start": 983,
+          "end": 991,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "1PE",
+                "chapter": 5,
+                "verse": 12
+              },
+              "end": {
+                "book": "1PE",
+                "chapter": 5,
+                "verse": 12
+              }
+            }
+          ]
+        },
+        {
+          "start": 993,
+          "end": 1001,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "2PE",
+                "chapter": 3,
+                "verse": 18
+              },
+              "end": {
+                "book": "2PE",
+                "chapter": 3,
+                "verse": 18
+              }
+            }
+          ]
+        },
+        {
+          "start": 1003,
+          "end": 1241,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 1026,
+          "end": 1031,
+          "kind": "bold"
+        },
+        {
+          "start": 1038,
+          "end": 1046,
+          "kind": "bold"
+        },
+        {
+          "start": 1049,
+          "end": 1057,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "JHN",
+                "chapter": 1,
+                "verse": 16
+              },
+              "end": {
+                "book": "JHN",
+                "chapter": 1,
+                "verse": 16
+              }
+            }
+          ]
+        },
+        {
+          "start": 1059,
+          "end": 1066,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "ACT",
+                "chapter": 6,
+                "verse": 8
+              },
+              "end": {
+                "book": "ACT",
+                "chapter": 6,
+                "verse": 8
+              }
+            }
+          ]
+        },
+        {
+          "start": 1068,
+          "end": 1075,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "ROM",
+                "chapter": 1,
+                "verse": 5
+              },
+              "end": {
+                "book": "ROM",
+                "chapter": 1,
+                "verse": 5
+              }
+            }
+          ]
+        },
+        {
+          "start": 1077,
+          "end": 1085,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "1CO",
+                "chapter": 3,
+                "verse": 10
+              },
+              "end": {
+                "book": "1CO",
+                "chapter": 3,
+                "verse": 10
+              }
+            }
+          ]
+        },
+        {
+          "start": 1087,
+          "end": 1094,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "2CO",
+                "chapter": 9,
+                "verse": 8
+              },
+              "end": {
+                "book": "2CO",
+                "chapter": 9,
+                "verse": 8
+              }
+            }
+          ]
+        },
+        {
+          "start": 1096,
+          "end": 1103,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "GAL",
+                "chapter": 2,
+                "verse": 9
+              },
+              "end": {
+                "book": "GAL",
+                "chapter": 2,
+                "verse": 9
+              }
+            }
+          ]
+        },
+        {
+          "start": 1105,
+          "end": 1112,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "EPH",
+                "chapter": 3,
+                "verse": 2
+              },
+              "end": {
+                "book": "EPH",
+                "chapter": 3,
+                "verse": 2
+              }
+            }
+          ]
+        },
+        {
+          "start": 1114,
+          "end": 1125,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "1PE",
+                "chapter": 5,
+                "verse": 5
+              },
+              "end": {
+                "book": "1PE",
+                "chapter": 5,
+                "verse": 5
+              }
+            },
+            {
+              "start": {
+                "book": "1PE",
+                "chapter": 5,
+                "verse": 10
+              },
+              "end": {
+                "book": "1PE",
+                "chapter": 5,
+                "verse": 10
+              }
+            }
+          ]
+        },
+        {
+          "start": 1177,
+          "end": 1181,
+          "kind": "italic"
+        },
+        {
+          "start": 1191,
+          "end": 1193,
+          "kind": "italic"
+        },
+        {
+          "start": 1207,
+          "end": 1210,
+          "kind": "italic"
+        },
+        {
+          "start": 1242,
+          "end": 1246,
+          "kind": "para",
+          "style": "prose"
+        }
+      ]
+    }
+  ]
+}

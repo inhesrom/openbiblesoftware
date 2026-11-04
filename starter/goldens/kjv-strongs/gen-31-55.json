@@ -1,0 +1,160 @@
+{
+  "resource_id": "kjv-strongs",
+  "resource_type": "bible",
+  "key": "Gen 31:55",
+  "verses": [
+    {
+      "verse": "Gen 31:55",
+      "last": 55,
+      "standard": "Gen 31:55",
+      "unit": "GEN",
+      "text": "And early in the morning Laban rose up, and kissed his sons and his daughters, and blessed them: and Laban departed, and returned unto his place.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 145,
+          "kind": "chapter",
+          "chapter": 31
+        },
+        {
+          "start": 0,
+          "end": 145,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 145,
+          "kind": "verse",
+          "verse": {
+            "book": "GEN",
+            "chapter": 31,
+            "verse": 55
+          },
+          "last": 55
+        },
+        {
+          "start": 4,
+          "end": 9,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H7925"
+            }
+          ]
+        },
+        {
+          "start": 17,
+          "end": 24,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1242"
+            }
+          ]
+        },
+        {
+          "start": 25,
+          "end": 30,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3837"
+            }
+          ]
+        },
+        {
+          "start": 36,
+          "end": 38,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H7925"
+            }
+          ]
+        },
+        {
+          "start": 44,
+          "end": 50,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H5401"
+            }
+          ]
+        },
+        {
+          "start": 55,
+          "end": 59,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1121"
+            }
+          ]
+        },
+        {
+          "start": 68,
+          "end": 77,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1323"
+            }
+          ]
+        },
+        {
+          "start": 83,
+          "end": 90,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1288"
+            }
+          ]
+        },
+        {
+          "start": 101,
+          "end": 106,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3837"
+            }
+          ]
+        },
+        {
+          "start": 107,
+          "end": 115,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3212"
+            }
+          ]
+        },
+        {
+          "start": 121,
+          "end": 129,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H7725"
+            }
+          ]
+        },
+        {
+          "start": 139,
+          "end": 144,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H4725"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

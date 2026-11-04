@@ -1,0 +1,100 @@
+{
+  "resource_id": "kjv-strongs",
+  "resource_type": "bible",
+  "key": "Gen 1:1",
+  "verses": [
+    {
+      "verse": "Gen 1:1",
+      "last": 1,
+      "standard": "Gen 1:1",
+      "unit": "GEN",
+      "text": "In the beginning God created the heaven and the earth.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 54,
+          "kind": "chapter",
+          "chapter": 1
+        },
+        {
+          "start": 0,
+          "end": 54,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 54,
+          "kind": "verse",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 1
+          },
+          "last": 1
+        },
+        {
+          "start": 7,
+          "end": 16,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H7225"
+            }
+          ]
+        },
+        {
+          "start": 17,
+          "end": 20,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H430"
+            }
+          ]
+        },
+        {
+          "start": 21,
+          "end": 28,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254"
+            }
+          ]
+        },
+        {
+          "start": 33,
+          "end": 39,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ]
+        },
+        {
+          "start": 40,
+          "end": 43,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H853"
+            }
+          ]
+        },
+        {
+          "start": 48,
+          "end": 53,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H776"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": []
+}
