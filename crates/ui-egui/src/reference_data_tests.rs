@@ -51,6 +51,38 @@ fn scripture_ref_native_targets_translate_but_xrefs_are_already_standard() {
 }
 
 #[test]
+fn scripture_ref_identity_map_preserves_descending_target_order() {
+    let mut doc = ReadingDoc::from_resource(obs_store::sample_resource());
+    let unit = doc
+        .units
+        .iter()
+        .position(|u| u.id == obs_model::UnitId::book(Book::John))
+        .unwrap();
+    let passages: Vec<_> = [17, 16, 17]
+        .map(|n| Passage::verse(Verse::new(Book::John, 3, n)))
+        .into();
+    doc.verse_map = Some(Arc::new(VerseMap::new(
+        [16, 17]
+            .map(|n| VerseMapEntry {
+                verse: Verse::new(Book::John, 3, n),
+                last: n,
+                standard: Some(Passage::verse(Verse::new(Book::John, 3, n))),
+            })
+            .into(),
+        vec![],
+        &Standard,
+    )));
+    doc.units[unit].spans = vec![obs_model::Span {
+        start: 0,
+        end: 3,
+        kind: SpanKind::ScriptureRef {
+            targets: passages.clone().into(),
+        },
+    }];
+    assert_eq!(targets(&doc, unit, 0), passages);
+}
+
+#[test]
 fn query_submission_never_waits_for_io_and_stale_results_are_discarded() {
     let mut queries = Queries::<usize>::default();
     let library = Library::new();

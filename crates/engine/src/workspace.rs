@@ -712,15 +712,14 @@ impl Workspace {
         let Some(t) = self.tabs.get_mut(&tab) else {
             return;
         };
-        if !t.follows_passages() {
-            return;
-        }
-        if let Some(native) =
-            to_native(t.verse_map.as_deref(), t.versification.as_deref(), standard)
+        if t.follows_passages()
+            && let Some(native) =
+                to_native(t.verse_map.as_deref(), t.versification.as_deref(), standard)
         {
             t.history.visit(native);
             self.effects.push(Effect::Navigate { tab, verse: native });
         }
+        // A Lexicon can open a Scripture reference without following Passages itself.
         // Even if the opener has no preceding Verse, other members may contain the target.
         self.broadcast_standard(tab, standard, true);
     }

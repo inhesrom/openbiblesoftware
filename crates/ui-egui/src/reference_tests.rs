@@ -392,3 +392,122 @@ fn reference_clicks_preserve_standard_target_with_non_reversible_maps() {
         }
     }
 }
+
+fn reference_spot(h: &Harness, tab: obs_engine::TabId, span: usize) -> Pos2 {
+    let view = h.shell.st.tabs[&tab].view.as_ref().unwrap();
+    let [ox, oy] = view.text_origin;
+    for (_, top, laid) in view.laid_in_view(800.0) {
+        for line in &laid.lines {
+            for item in &line.items {
+                for (_, x0, x1) in item.clusters() {
+                    let x = (x0 + x1) / 2.0;
+                    let y = top + (line.top + line.bottom) / 2.0;
+                    if view.reference_at(x, y).is_some_and(|(_, s)| s == span) {
+                        return pos2(ox + x, oy + y);
+                    }
+                }
+            }
+        }
+    }
+    panic!("reference glyph not laid out");
+}
+
+#[test]
+fn linked_lexicon_reference_click_moves_bible_without_moving_lexicon() {
+    let (mut h, files, bible, tool) = setup("references-lexicon", false);
+    let (resource, _) = obs_formats::import_abbott_smith(
+        &obs_formats::LexiconOptions {
+            resource_id: "reference-lexicon".into(),
+            ..Default::default()
+        },
+        r#"<TEI><body><entry n="test|G1"><ref osisRef="John.3.17">John 3:17</ref></entry></body></TEI>"#,
+    )
+    .unwrap();
+    let span = resource.units[0]
+        .spans
+        .iter()
+        .position(|s| matches!(s.kind, obs_model::SpanKind::ScriptureRef { .. }))
+        .unwrap();
+    add_file(&mut h, &files, &resource);
+    h.shell.session_mut().workspace.focus(bible);
+    h.shell
+        .run("resource.open", &json!({"id": "reference-lexicon"}));
+    let lexicon = h.shell.session().workspace.focused().unwrap();
+    h.frames(3);
+    let tab = h.shell.session().workspace.tab(lexicon).unwrap();
+    assert_eq!(tab.link, Some('A'));
+    assert_eq!(
+        tab.key_schemes,
+        [
+            obs_model::KeyScheme::StrongsNumber,
+            obs_model::KeyScheme::Lemma
+        ]
+    );
+    let location = tab.history.current();
+    let count = h.shell.session().workspace.tabs().count();
+    let spot = reference_spot(&h, lexicon, span);
+    h.click(spot);
+    let ws = &h.shell.session().workspace;
+    assert_eq!(
+        ws.tab(bible).unwrap().history.current(),
+        Some(john(17).start())
+    );
+    assert_eq!(
+        ws.tab(tool).unwrap().history.current(),
+        Some(john(17).start())
+    );
+    assert_eq!(ws.tab(lexicon).unwrap().history.current(), location);
+    assert_eq!(ws.tabs().count(), count);
+}
+
+#[test]
+fn descending_scripture_reference_click_keeps_first_written_target() {
+    let (mut h, _files, bible, tool) = setup("references-descending", false);
+    let mut resource = obs_store::sample_resource();
+    resource.verse_map = Some(obs_scripture::VerseMap::new(
+        [16, 17]
+            .map(|n| obs_scripture::VerseMapEntry {
+                verse: john(n).start(),
+                last: n,
+                standard: Some(john(n)),
+            })
+            .into(),
+        vec![],
+        &obs_scripture::Standard,
+    ));
+    let unit = resource
+        .units
+        .iter_mut()
+        .find(|u| u.id == obs_model::UnitId::book(Book::John))
+        .unwrap();
+    unit.spans.push(obs_model::Span {
+        start: 0,
+        end: 3,
+        kind: obs_model::SpanKind::ScriptureRef {
+            targets: vec![john(17), john(16)].into(),
+        },
+    });
+    let span = unit.spans.len() - 1;
+    h.shell.st.docs.insert(
+        "kjv-sample".into(),
+        Arc::new(ReadingDoc::from_resource(resource)),
+    );
+    h.shell.st.opened(bible);
+    h.shell.st.session.workspace.focus(bible);
+    h.shell.apply_effects();
+    h.frames(3);
+    let spot = reference_spot(&h, bible, span);
+    h.click(spot);
+    for tab in [bible, tool] {
+        assert_eq!(
+            h.shell
+                .session()
+                .workspace
+                .tab(tab)
+                .unwrap()
+                .history
+                .current(),
+            Some(john(17).start())
+        );
+    }
+}

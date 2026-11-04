@@ -118,7 +118,8 @@ impl References {
 }
 
 /// Scripture-reference spans in Bibles use native numbering; Cross-references always use
-/// Standard. Keep every mapped Passage, including split/merged Verses, and omit Unmapped ones.
+/// Standard. Keep every mapped Passage in written order, including split/merged Verses,
+/// and omit Unmapped ones. Sorting or merging would change the first click destination.
 pub(super) fn targets(doc: &ReadingDoc, unit: usize, span: usize) -> Vec<Passage> {
     let Some(span) = doc.units.get(unit).and_then(|u| u.spans.get(span)) else {
         return vec![];
@@ -131,10 +132,7 @@ pub(super) fn targets(doc: &ReadingDoc, unit: usize, span: usize) -> Vec<Passage
                 .iter()
                 .flat_map(|p| p.verses(&doc.versification))
                 .filter_map(|v| map.to_standard(v))
-                .collect::<obs_scripture::PassageList>()
-                .merged(&Standard)
-                .passages()
-                .to_vec(),
+                .collect(),
             None => targets.passages().to_vec(),
         },
         _ => vec![],
