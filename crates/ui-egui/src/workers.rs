@@ -177,6 +177,13 @@ pub struct SnippetCache {
 }
 
 impl SnippetCache {
+    /// Collect completed layouts even when no visible text requests a snippet this frame.
+    pub fn drain(&mut self) {
+        for (k, laid) in self.client.drain() {
+            self.ready.insert(k, laid);
+        }
+    }
+
     /// The laid snippet if ready; otherwise queue it and return `None` (draw nothing yet).
     pub fn get(
         &mut self,
@@ -187,9 +194,7 @@ impl SnippetCache {
         settings: &obs_layout::TextSettings,
     ) -> Option<Arc<LaidBlock>> {
         use std::hash::{Hash, Hasher};
-        for (k, laid) in self.client.drain() {
-            self.ready.insert(k, laid);
-        }
+        self.drain();
         let mut h = std::collections::hash_map::DefaultHasher::new();
         (text, role, rtl, width.to_bits(), settings.key()).hash(&mut h);
         let key = h.finish();

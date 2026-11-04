@@ -362,6 +362,8 @@ pub fn comparison_pane(
     atlas: &mut AtlasTexture,
     palette: &Palette,
 ) -> ComparisonOutput {
+    // Navigation can leave only Absent rows (or no Bibles), so `get` may never run.
+    view.snippets.drain();
     let mut out = ComparisonOutput::default();
     let rect = ui.available_rect_before_wrap();
     if !rect.is_positive() {
@@ -769,6 +771,87 @@ mod tests {
         );
         output.textures_delta.clear();
         output
+    }
+
+    fn pending_layouts_settle_after_text_disappears(remove_bibles: bool) {
+        let doc = crate::tests::bible();
+        let mut view = ComparisonView::new(TextSettings::default());
+        view.set(
+            vec![Arc::clone(&doc).into()],
+            Some(0),
+            true,
+            vec![Verse::new(Book::Genesis, 31, 55)],
+        );
+        let Cell::Text { text, .. } = &view.blocks[0].cells[0].cell else {
+            panic!("expected text to queue");
+        };
+        // Queue real work, then navigate before any frame can collect its result.
+        assert!(
+            view.snippets
+                .get(
+                    text,
+                    ColorRole::Ink,
+                    false,
+                    view.text_width(),
+                    &view.settings
+                )
+                .is_none()
+        );
+        assert!(view.has_pending());
+        let absent_chapter: Vec<_> =
+            obs_scripture::Passage::chapter(&obs_scripture::Standard, Book::Genesis, 34)
+                .unwrap()
+                .verses(&obs_scripture::Standard)
+                .collect();
+        view.set(
+            if remove_bibles {
+                vec![]
+            } else {
+                vec![doc.into()]
+            },
+            (!remove_bibles).then_some(0),
+            true,
+            absent_chapter,
+        );
+        assert!(!view.blocks.is_empty());
+        assert!(view.blocks.iter().all(|b| {
+            if remove_bibles {
+                b.cells.is_empty()
+            } else {
+                b.cells.len() == 1 && matches!(b.cells[0].cell, Cell::Absent)
+            }
+        }));
+
+        let ctx = egui::Context::default();
+        let mut atlas = AtlasTexture::default();
+        for _ in 0..2000 {
+            render(&ctx, &mut view, &mut atlas, 400.0, vec![]);
+            if !view.has_pending() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert!(!view.has_pending(), "completed text layouts must drain");
+        // Consume egui's startup/previous-frame repaint requests before checking idle.
+        for _ in 0..3 {
+            render(&ctx, &mut view, &mut atlas, 400.0, vec![]);
+        }
+        let output = render(&ctx, &mut view, &mut atlas, 400.0, vec![]);
+        assert!(
+            output.viewport_output[&egui::ViewportId::ROOT].repaint_delay
+                > std::time::Duration::ZERO,
+            "textless comparison must stop requesting immediate repaints"
+        );
+    }
+
+    #[test]
+    fn pending_layouts_drain_after_navigating_to_an_all_absent_chapter() {
+        pending_layouts_settle_after_text_disappears(false);
+    }
+
+    #[test]
+    fn pending_layouts_drain_after_removing_all_selected_bibles() {
+        pending_layouts_settle_after_text_disappears(true);
     }
 
     #[test]
