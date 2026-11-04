@@ -3,7 +3,8 @@
 //!
 //! One unit per `<entry n="lemma|G1234|…">` in the `<body>`; the unit id is the lemma. The
 //! `G` numbers in `n` become Strong's number Keys and the lemma a Lemma Key. A
-//! `<superEntry>`'s own heading is written at the start of its first entry. Markup: `<orth>`
+//! `<superEntry>`'s own heading is written at the start of its first entry. Unnumbered
+//! children named in `superEntry@n` inherit its Strong's number associations. Markup: `<orth>`
 //! and `<gloss>` bold, `<emph>` and editorial `<note>`s italic, `<ref osisRef>` →
 //! `scripture_ref`, `<foreign n="H2580">` → linked to that Strong's number, `<sense n>` and
 //! `<etym>` → a new block (senses numbered as printed). The NT occurrence count
@@ -41,7 +42,7 @@ pub fn import_abbott_smith(
 fn visit(w: &mut LexiconWriter, node: Node) {
     for child in node.children().filter(Node::is_element) {
         match child.tag_name().name() {
-            "entry" => convert(w, child, None),
+            "entry" => convert(w, child, None, None),
             "superEntry" => {
                 let heading: Vec<Node> = child
                     .children()
@@ -52,7 +53,12 @@ fn visit(w: &mut LexiconWriter, node: Node) {
                     .filter(|c| c.has_tag_name("entry"))
                     .enumerate()
                 {
-                    convert(w, entry, (i == 0).then_some(heading.as_slice()));
+                    convert(
+                        w,
+                        entry,
+                        (i == 0).then_some(heading.as_slice()),
+                        child.attribute("n"),
+                    );
                 }
             }
             _ => visit(w, child),
@@ -60,14 +66,20 @@ fn visit(w: &mut LexiconWriter, node: Node) {
     }
 }
 
-fn convert(w: &mut LexiconWriter, entry: Node, heading: Option<&[Node]>) {
+fn convert(w: &mut LexiconWriter, entry: Node, heading: Option<&[Node]>, group: Option<&str>) {
     let Some(n) = entry.attribute("n") else {
         w.drop_markup("<entry> without n");
         return;
     };
     let mut parts = n.split('|').map(str::trim).filter(|p| !p.is_empty());
     let lemma = parts.next().unwrap_or_default();
-    let strongs: Vec<StrongsNumber> = parts.filter_map(strongs_word).collect();
+    let mut strongs: Vec<StrongsNumber> = parts.filter_map(strongs_word).collect();
+    if strongs.is_empty()
+        && let Some(group) = group
+        && group.split('|').any(|part| part.trim() == lemma)
+    {
+        strongs.extend(group.split('|').map(str::trim).filter_map(strongs_word));
+    }
     let mut e = Entry::new(lemma, lemma);
     for s in strongs {
         e.key_strongs(s);
@@ -143,6 +155,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn group_numbers_apply_only_to_named_unnumbered_children() {
+        let xml = r#"<TEI><body><superEntry n="first|second|G1">
+            <entry n="first">full definition</entry>
+            <entry n="second|G2">distinct number</entry>
+            <entry n="other">not part of the association</entry>
+        </superEntry></body></TEI>"#;
+        let (r, _) = import_abbott_smith(
+            &LexiconOptions {
+                resource_id: "abbott-smith".into(),
+                ..LexiconOptions::default()
+            },
+            xml,
+        )
+        .unwrap();
+        let strongs: Vec<_> = r
+            .keys
+            .iter()
+            .filter_map(|k| match &k.key {
+                obs_model::Key::StrongsNumber(n) => Some((n.to_string(), k.unit.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(strongs, [("G1".into(), "first"), ("G2".into(), "second")]);
+    }
+
+    #[test]
     fn entries_with_strongs_lemmas_refs_and_links() {
         let xml = r#"<TEI xmlns="http://www.crosswire.org/2013/TEIOSIS/namespace"><text><front><entry n="front|G1"/></front><body><div type="letter" n="Χ">
 <entry n="χάρις|G5485">
@@ -191,7 +229,7 @@ mod tests {
             .filter(|k| k.key.to_string() == "G1061")
             .map(|k| k.unit.as_str())
             .collect();
-        assert_eq!(g1061, ["γαμίσκω"]);
+        assert_eq!(g1061, ["γαμίζω", "γαμίσκω"]);
         assert_eq!(report.scripture_refs, 2);
         assert_eq!(r.dropped_markup.get("<note type=occurrencesNT>"), Some(&1));
     }

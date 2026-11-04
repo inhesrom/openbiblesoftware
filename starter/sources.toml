@@ -211,7 +211,7 @@ publisher = "Open Scriptures Hebrew Bible Project"
 homepage = "https://github.com/openscriptures/HebrewLexicon"
 spdx = "CC-BY-4.0"
 attribution = "Brown-Driver-Briggs Hebrew lexicon from the Open Scriptures Hebrew Bible Project, licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). The text of Brown, Driver and Briggs (1906) is in the public domain."
-changes = "Converted from XML to the Open Bible resource format: one entry per BDB entry, keyed by the Strong's numbers and Hebrew headword of the OSHB lexical index (augmented numbers such as H1254A, with the base number as a secondary key). Editorial status markers and page breaks are left out. Bible references become links, read in KJV numbering; references to books outside the 66-book canon stay plain text."
+changes = "Converted from XML to the Open Bible resource format: one entry per BDB entry, keyed by the Strong's numbers and Hebrew headwords of the OSHB lexical index (augmented numbers such as H1254A, with the base number as a secondary key). Editorial status markers and page breaks are left out. Hebrew-numbered Bible references are normalized through STEPBible TVTMS to Standard (KJV) numbering before becoming links; references to books outside the 66-book canon stay plain text."
 provenance = "OSHB HebrewLexicon readme at the pinned commit: files CC BY 4.0, BDB text public domain."
 evidence = "evidence/bdb.md"
 

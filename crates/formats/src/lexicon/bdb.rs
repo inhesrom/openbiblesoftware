@@ -3,11 +3,12 @@
 //!
 //! One unit per BDB `<entry id>` (the id, `b.cw.aa`, is the unit id). The lexical index maps a
 //! BDB id to a Strong's number with OSHB's augment letter (`strong="1254" aug="a"` → `H1254A`)
-//! and to the pointed headword, which becomes the Lemma Key (the entry's first `<w>` when the
+//! and to all distinct indexed headwords, which become Lemma Keys (the entry's first `<w>` when the
 //! index has none). Markup: the headword `<w>` bold, `<def>` bold, `<pos>`/`<stem>`/`<asp>`/
 //! `<em>` italic, `<ref r>` → `scripture_ref`, `<w src>` → linked to the Strong's number of
 //! the entry it points at, `<sense n>` → a new block numbered `n.`. `<status>` and `<page>`
-//! are editorial and left out.
+//! are editorial and left out. Hebrew-numbered references normalize through TVTMS before
+//! becoming Standard-versification links.
 
 use std::collections::HashMap;
 
@@ -15,14 +16,15 @@ use obs_model::{Resource, SpanKind};
 use obs_scripture::StrongsNumber;
 use roxmltree::Node;
 
-use super::{Entry, LexiconError, LexiconOptions, LexiconWriter, parse_xml};
+use super::{Entry, LexiconError, LexiconOptions, LexiconWriter, parse_osis_ref_in, parse_xml};
 use crate::report::ImportReport;
+use crate::verse_map::HebrewReferences;
 
 /// What the lexical index says about one BDB entry.
 #[derive(Debug, Default, Clone)]
 struct Indexed {
     strongs: Vec<StrongsNumber>,
-    lemma: Option<String>,
+    lemmas: Vec<String>,
 }
 
 fn read_index(xml: &str) -> Result<HashMap<String, Indexed>, LexiconError> {
@@ -40,8 +42,10 @@ fn read_index(xml: &str) -> Result<HashMap<String, Indexed>, LexiconError> {
                 continue;
             };
             let slot = map.entry(bdb.to_string()).or_default();
-            if slot.lemma.is_none() {
-                slot.lemma = lemma.map(str::to_string);
+            if let Some(lemma) = lemma
+                && !slot.lemmas.iter().any(|l| l == lemma)
+            {
+                slot.lemmas.push(lemma.to_string());
             }
             let number = xref.attribute("strong").and_then(|s| {
                 format!("H{}{}", s.trim(), xref.attribute("aug").unwrap_or_default())
@@ -82,12 +86,18 @@ pub fn import_bdb(
             .find(|c| c.has_tag_name("w"))
             .map(|c| text_of(c).trim().to_string())
             .filter(|t| !t.is_empty());
-        let lemma = indexed.lemma.clone().or(first_w).unwrap_or_default();
-        let mut e = Entry::new(id, lemma.as_str());
+        let lemmas = if indexed.lemmas.is_empty() {
+            first_w.into_iter().collect()
+        } else {
+            indexed.lemmas
+        };
+        let mut e = Entry::new(id, lemmas.first().map(String::as_str).unwrap_or_default());
         for n in &indexed.strongs {
             e.key_strongs(*n);
         }
-        e.key_lemma(&lemma);
+        for lemma in &lemmas {
+            e.key_lemma(lemma);
+        }
         let mut headword_done = false;
         inline(&mut e, entry, &index, &mut headword_done);
         w.add(e);
@@ -147,7 +157,11 @@ fn inline(e: &mut Entry, node: Node, index: &HashMap<String, Indexed>, headword_
             }
             "ref" => {
                 inline(e, child, index, headword_done);
-                e.scripture_ref(start, child.attribute("r").unwrap_or_default());
+                let hebrew = HebrewReferences::get();
+                let targets =
+                    parse_osis_ref_in(child.attribute("r").unwrap_or_default(), &hebrew.numbering)
+                        .and_then(|native| hebrew.to_standard(&native));
+                e.scripture_targets(start, targets);
             }
             "foreign" => inline(e, child, index, headword_done),
             other => {
@@ -174,6 +188,90 @@ mod tests {
             <status p="135">base</status></entry>
         <entry id="b.cw.ab"><w>בְּרִיאָה</w> <ref r="Num.16.30">Nu 16:30</ref> <ref r="Sir.1.1">Si 1:1</ref><page p="135"/></entry>
     </section></part></lexicon>"#;
+
+    #[test]
+    fn hebrew_references_link_to_exact_standard_targets() {
+        use obs_scripture::{Book, Passage, Verse};
+        let cases = [
+            ("Ps.41.6", Book::Psalms, 41, 5),
+            ("Num.17.27", Book::Numbers, 17, 12),
+            ("Ps.51.1-2", Book::Psalms, 51, 0),
+            ("Gen.32.1", Book::Genesis, 31, 55),
+            ("Gen.32.33", Book::Genesis, 32, 32),
+            ("Mal.3.24", Book::Malachi, 4, 6),
+            ("Gen.1.1", Book::Genesis, 1, 1),
+        ];
+        for (reference, book, chapter, verse) in cases {
+            let xml = format!(
+                "<lexicon><entry id='a.ac.aa'><w>אָבַד</w><ref r='{reference}'>citation</ref></entry></lexicon>"
+            );
+            let (r, report) = import_bdb(
+                &LexiconOptions {
+                    resource_id: "bdb".into(),
+                    ..LexiconOptions::default()
+                },
+                &xml,
+                "<index/>",
+            )
+            .unwrap();
+            let targets = r.units[0]
+                .spans
+                .iter()
+                .find_map(|s| match &s.kind {
+                    SpanKind::ScriptureRef { targets } => Some(targets),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("no link for {reference}"));
+            assert_eq!(
+                targets.passages(),
+                [Passage::verse(Verse::new(book, chapter, verse))],
+                "{reference}"
+            );
+            assert_eq!(report.scripture_refs, 1);
+        }
+    }
+
+    #[test]
+    fn shared_entry_keeps_each_lemma_and_its_transliteration() {
+        let index = r#"<index>
+            <entry><w>אבדה</w><xref bdb="a.ac.af" strong="10"/></entry>
+            <entry><w>אֲבַדּוֹן</w><xref bdb="a.ac.af" strong="11"/></entry>
+            <entry><w>אֲבַדּוֹן</w><xref bdb="a.ac.af" strong="11"/></entry>
+        </index>"#;
+        let xml =
+            r#"<lexicon><entry id="a.ac.af"><w>אֲבַדּוֹן</w><def>Destruction</def></entry></lexicon>"#;
+        let (r, _) = import_bdb(
+            &LexiconOptions {
+                resource_id: "bdb".into(),
+                ..LexiconOptions::default()
+            },
+            xml,
+            index,
+        )
+        .unwrap();
+        for lemma in ["אבדה", "אֲבַדּוֹן"] {
+            let keys: Vec<_> = r
+                .keys
+                .iter()
+                .filter(|k| k.key == obs_model::Key::Lemma(lemma.into()))
+                .collect();
+            assert_eq!(keys.len(), 1);
+            assert_eq!(keys[0].unit.as_str(), "a.ac.af");
+            assert!(
+                r.transliterations
+                    .iter()
+                    .any(|t| t.lemma == lemma
+                        && t.transliteration == obs_model::transliterate(lemma))
+            );
+        }
+        for number in ["H10", "H11"] {
+            assert!(
+                r.keys
+                    .iter()
+                    .any(|k| k.key.to_string() == number && k.unit.as_str() == "a.ac.af")
+            );
+        }
+    }
 
     #[test]
     fn entries_are_keyed_through_the_lexical_index() {

@@ -1,9 +1,14 @@
 {
-  "content_hash": "sha256:2a0482a52b99c406f706faf44caa039ded77b6be17bd8ed20628164a7a0d561a",
+  "content_hash": "sha256:f6a621fc757fbd325953036e4014a718d08ff8aabafdca7bf4a8f5d679da3d43",
   "keys": [
     [
       "G26",
       "ἀγάπη",
+      false
+    ],
+    [
+      "G1061",
+      "γαμίζω",
       false
     ],
     [

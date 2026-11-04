@@ -15,7 +15,7 @@
 //!
 //! Entry markup maps onto the span vocabulary the same way in every converter: one `para`
 //! (prose) per block, `bold` / `italic` for emphasis, `scripture_ref` for a Bible reference the
-//! source marks up (read in the Standard versification, ADR 0002), and a one-part
+//! source marks up (normalized to the Standard versification, ADR 0002), and a one-part
 //! `tagged_word` for a Strong's cross-link, so a link to `G5463` behaves like any other word
 //! carrying a Strong's number. References outside the 66-book canon stay plain text and are
 //! counted in the report.
@@ -33,7 +33,7 @@ use obs_model::{
     Resource, ResourceBuilder, ResourceType, SpanKind, UnitId, UnitKind, ValidationErrors,
     is_valid_resource_id,
 };
-use obs_scripture::{PassageList, Standard, StrongsNumber, parse_reference};
+use obs_scripture::{PassageList, Standard, StrongsNumber, Versification, parse_reference};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::report::ImportReport;
@@ -106,6 +106,10 @@ fn parse_xml<'a>(file: &str, xml: &'a str) -> Result<roxmltree::Document<'a>, Le
 /// outside the 66-book canon (`Sir.21.16`), LXX numbering (`LXX:Ps.3.1`) and anything that
 /// does not parse.
 pub(crate) fn parse_osis_ref(osis: &str) -> Option<PassageList> {
+    parse_osis_ref_in(osis, &Standard)
+}
+
+fn parse_osis_ref_in(osis: &str, v11n: &impl Versification) -> Option<PassageList> {
     let t = osis
         .trim()
         .trim_end_matches(|c: char| matches!(c, '.' | ',' | ';') || c.is_whitespace());
@@ -127,7 +131,7 @@ pub(crate) fn parse_osis_ref(osis: &str) -> Option<PassageList> {
             }
         })
         .collect();
-    parse_reference(&text, &Standard, None)
+    parse_reference(&text, v11n, None)
         .ok()
         .filter(|list| !list.is_empty())
 }
@@ -263,10 +267,15 @@ impl Entry {
 
     /// Make the text since `start` a Scripture reference to `osis`, if it reads as one.
     pub(crate) fn scripture_ref(&mut self, start: usize, osis: &str) {
+        self.scripture_targets(start, parse_osis_ref(osis));
+    }
+
+    /// Link text to targets already normalized from the source Versification.
+    fn scripture_targets(&mut self, start: usize, targets: Option<PassageList>) {
         if self.buf.pos() <= start {
             return;
         }
-        match parse_osis_ref(osis) {
+        match targets {
             Some(targets) => {
                 self.span(start, SpanKind::ScriptureRef { targets });
                 self.refs += 1;

@@ -532,6 +532,11 @@ fn setup_lexicons(dir: &Path) -> Config {
     ] {
         let (url, sha) = pin(file);
         evidence.push_str(&format!("{id}: sha256 {sha}\n"));
+        let spdx = if ["tbesh", "tbesg", "bdb"].contains(&id) {
+            "CC-BY-4.0"
+        } else {
+            "LicenseRef-PublicDomain"
+        };
         lock.push_str(&format!(
             r#"
 [[source]]
@@ -542,9 +547,9 @@ sha256 = "{sha}"
 title = "{id}"
 abbreviation = "{id}"
 language = "en"
-spdx = "CC-BY-4.0"
-attribution = "Test fixture."
-changes = "Test fixture."
+spdx = "{spdx}"
+attribution = "{id} fixture Attribution."
+changes = "Converted {id} fixture."
 provenance = "Test fixture."
 evidence = "evidence/lexicons.md"
 "#
@@ -591,6 +596,20 @@ fn g5485_and_h1254a_resolve_in_the_built_lexicons() {
     assert_eq!(resolve(&config, "tbesg", "G5485"), ["G5485"]);
     assert_eq!(resolve(&config, "strongs-greek", "G5485"), ["G5485"]);
     assert_eq!(resolve(&config, "abbott-smith", "G5485"), ["χάρις"]);
+    let reader = ObrReader::open(&config.out.join("abbott-smith.obr")).unwrap();
+    let g1061 = reader.lookup_strongs("G1061".parse().unwrap()).unwrap();
+    let full = g1061
+        .iter()
+        .find(|k| k.unit.as_str() == "γαμίζω")
+        .expect("G1061 resolves the full definition, not only the abbreviated variant");
+    assert!(
+        reader
+            .unit(&full.unit)
+            .unwrap()
+            .unwrap()
+            .text
+            .contains("to give in marriage")
+    );
     assert_eq!(resolve(&config, "tbesh", "H1254A"), ["H1254A"]);
     assert_eq!(resolve(&config, "bdb", "H1254A"), ["b.cw.aa"]);
     // Strong's Hebrew has no H1254A entry: lookup falls back to the base number.
@@ -691,4 +710,47 @@ fn extra_files_are_pinned_and_covered_by_the_evidence() {
         err.contains("reads 1 extra file(s); the lock lists 0"),
         "{err}"
     );
+}
+
+#[test]
+fn cc_by_changes_artifacts_record_lock_metadata_and_are_deterministic() {
+    let dir = scratch("changes");
+    let config = setup_lexicons(&dir);
+    let lock = Lock::load(&config.lock).unwrap();
+    build(&config).unwrap();
+    for source in &lock.sources {
+        let path = config
+            .out
+            .join(format!("CHANGES-{}.md", source.resource_id));
+        if ["tbesh", "tbesg", "bdb"].contains(&source.resource_id.as_str()) {
+            assert_eq!(
+                std::fs::read_to_string(path).unwrap(),
+                format!(
+                    "# Changes we made: {}\n\nResource: `{}`\n\nLicence: CC-BY-4.0\n\n## Attribution\n\n{} fixture Attribution.\n\n## Source\n\n{}\n\nPinned download: {}\n\nSHA-256: `{}`\n\n## Changes we made\n\nConverted {} fixture.\n",
+                    source.title,
+                    source.resource_id,
+                    source.resource_id,
+                    source.url,
+                    source.url,
+                    source.sha256,
+                    source.resource_id,
+                )
+            );
+        } else {
+            assert!(
+                !path.exists(),
+                "public-domain source needs no changes artifact"
+            );
+        }
+    }
+    let second = Config {
+        out: dir.join("out2"),
+        ..config.clone()
+    };
+    build(&second).unwrap();
+    compare_dirs(&config.out, &second.out).unwrap();
+    // Reusing an output directory must remove stale generated changes files.
+    std::fs::write(config.out.join("CHANGES-removed.md"), "stale").unwrap();
+    build(&config).unwrap();
+    compare_dirs(&config.out, &second.out).unwrap();
 }
