@@ -365,6 +365,19 @@ fn the_evidence_must_name_every_file_of_a_source() {
 }
 
 #[test]
+fn a_tampered_extra_file_fails_the_hash_check() {
+    let dir = scratch("tahot-tampered-extra");
+    let config = setup_tahot(&dir, true);
+    std::fs::write(dir.join("tahot-isa-mal.txt"), "tampered").unwrap();
+    let err = format!("{:#}", build(&config).unwrap_err());
+    assert!(
+        err.contains("sha256 mismatch") && err.contains("tahot-isa-mal.txt"),
+        "{err}"
+    );
+    assert!(!config.out.exists(), "no unverified Resource is published");
+}
+
+#[test]
 fn a_usfm_source_takes_no_extra_files() {
     let dir = scratch("usfm-extra");
     let (zip, sha) = fixture_zip(&dir, &[]);

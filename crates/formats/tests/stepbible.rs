@@ -498,16 +498,22 @@ fn full_tahot_and_tagnt() {
         f.sort();
         f
     };
-    for (text, prefix, books) in [
-        (StepbibleText::Tagnt, "TAGNT", 27),
-        (StepbibleText::Tahot, "TAHOT", 39),
+    for (text, prefix, books, verses, words, absent_count) in [
+        (StepbibleText::Tagnt, "TAGNT", 27, 7_941, 138_019, 16),
+        (StepbibleText::Tahot, "TAHOT", 39, 23_213, 305_661, 1),
     ] {
         let (r, report) = import(text, &files(prefix));
         eprintln!("{report}");
         assert_eq!(report.books.len(), books);
+        assert_eq!(report.verses, verses, "{prefix}: complete pinned edition");
+        assert_eq!(report.tagged_words, words, "{prefix}: all Tagged words");
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
         let map = r.verse_map.as_ref().unwrap();
         assert_eq!(map.entries().len(), r.verses.len());
+        for (entry, verse) in map.entries().iter().zip(&r.verses) {
+            assert_eq!(entry.verse, verse.verse, "{prefix}");
+        }
+        assert_eq!(map.absent().len(), absent_count, "{prefix}");
         let absent: Vec<String> = map.absent().iter().map(Verse::to_string).collect();
         eprintln!("absent {absent:?}");
         // Every Hebrew Psalm title reaches its Standard title slot; Ps 119 has none in Hebrew.
