@@ -1,0 +1,336 @@
+{
+  "content_hash": "sha256:529cdca083d83d62dc29cf17bc941c5ff49e466f3d027e37c1e762cb2a9aa10a",
+  "keys": [
+    [
+      "G1",
+      "G1",
+      false
+    ],
+    [
+      "G26",
+      "G26",
+      false
+    ],
+    [
+      "G5463",
+      "G5463",
+      false
+    ],
+    [
+      "G5485",
+      "G5485",
+      false
+    ],
+    [
+      "Α",
+      "G1",
+      false
+    ],
+    [
+      "χάρις",
+      "G5485",
+      false
+    ],
+    [
+      "χαίρω",
+      "G5463",
+      false
+    ],
+    [
+      "ἀγάπη",
+      "G26",
+      false
+    ]
+  ],
+  "report": {
+    "dropped_markup": {},
+    "entries": 4,
+    "scripture_refs": 0,
+    "strongs_links": 8,
+    "warnings": []
+  },
+  "transliterations": [
+    [
+      "a",
+      "Α"
+    ],
+    [
+      "agape",
+      "ἀγάπη"
+    ],
+    [
+      "chairo",
+      "χαίρω"
+    ],
+    [
+      "charis",
+      "χάρις"
+    ]
+  ],
+  "units": [
+    {
+      "id": "G1",
+      "spans": [
+        {
+          "at": "0..14",
+          "kind": "para",
+          "style": "prose",
+          "text": "Α A (al'-fah)"
+        },
+        {
+          "at": "0..2",
+          "kind": "bold",
+          "text": "Α"
+        },
+        {
+          "at": "3..4",
+          "kind": "italic",
+          "text": "A"
+        },
+        {
+          "at": "15..124",
+          "kind": "para",
+          "style": "prose",
+          "text": "of Hebrew origin; the first letter of the alphabet; figuratively, only (from its use as a numeral) the first:"
+        },
+        {
+          "at": "125..138",
+          "kind": "para",
+          "style": "prose",
+          "text": "KJV: --Alpha."
+        },
+        {
+          "at": "125..129",
+          "kind": "bold",
+          "text": "KJV:"
+        },
+        {
+          "at": "139..367",
+          "kind": "para",
+          "style": "prose",
+          "text": "Often used (usually ἄν, before a vowel) also in composition (as a contraction from G427) in the sense of privation; so, in many words, beginning with this letter; occasionally in the sense of union (as a contraction of G260)."
+        },
+        {
+          "at": "225..229",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G427"
+            }
+          ],
+          "text": "G427"
+        },
+        {
+          "at": "361..365",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G260"
+            }
+          ],
+          "text": "G260"
+        },
+        {
+          "at": "368..388",
+          "kind": "para",
+          "style": "prose",
+          "text": "See also G427, G260."
+        },
+        {
+          "at": "377..381",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G427"
+            }
+          ],
+          "text": "G427"
+        },
+        {
+          "at": "383..387",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G260"
+            }
+          ],
+          "text": "G260"
+        }
+      ],
+      "text": "Α A (al'-fah)\nof Hebrew origin; the first letter of the alphabet; figuratively, only (from its use as a numeral) the first:\nKJV: --Alpha.\nOften used (usually ἄν, before a vowel) also in composition (as a contraction from G427) in the sense of privation; so, in many words, beginning with this letter; occasionally in the sense of union (as a contraction of G260).\nSee also G427, G260.",
+      "title": "Α"
+    },
+    {
+      "id": "G26",
+      "spans": [
+        {
+          "at": "0..32",
+          "kind": "para",
+          "style": "prose",
+          "text": "ἀγάπη agápē (ag-ah'-pay)"
+        },
+        {
+          "at": "0..11",
+          "kind": "bold",
+          "text": "ἀγάπη"
+        },
+        {
+          "at": "12..19",
+          "kind": "italic",
+          "text": "agápē"
+        },
+        {
+          "at": "33..111",
+          "kind": "para",
+          "style": "prose",
+          "text": "from G25; love, i.e. affection or benevolence; specially (plural) a love-feast"
+        },
+        {
+          "at": "38..41",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G25"
+            }
+          ],
+          "text": "G25"
+        },
+        {
+          "at": "112..155",
+          "kind": "para",
+          "style": "prose",
+          "text": "KJV: (feast of) charity(-ably), dear, love."
+        },
+        {
+          "at": "112..116",
+          "kind": "bold",
+          "text": "KJV:"
+        },
+        {
+          "at": "156..169",
+          "kind": "para",
+          "style": "prose",
+          "text": "See also G25."
+        },
+        {
+          "at": "165..168",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G25"
+            }
+          ],
+          "text": "G25"
+        }
+      ],
+      "text": "ἀγάπη agápē (ag-ah'-pay)\nfrom G25; love, i.e. affection or benevolence; specially (plural) a love-feast\nKJV: (feast of) charity(-ably), dear, love.\nSee also G25.",
+      "title": "ἀγάπη"
+    },
+    {
+      "id": "G5463",
+      "spans": [
+        {
+          "at": "0..33",
+          "kind": "para",
+          "style": "prose",
+          "text": "χαίρω chaírō (khah'-ee-ro)"
+        },
+        {
+          "at": "0..10",
+          "kind": "bold",
+          "text": "χαίρω"
+        },
+        {
+          "at": "11..19",
+          "kind": "italic",
+          "text": "chaírō"
+        },
+        {
+          "at": "34..170",
+          "kind": "para",
+          "style": "prose",
+          "text": "a primary verb; to be \"cheer\"ful, i.e. calmly happy or well-off; impersonally, especially as salutation (on meeting or parting), be well"
+        },
+        {
+          "at": "171..244",
+          "kind": "para",
+          "style": "prose",
+          "text": "KJV: farewell, be glad, God speed, greeting, hall, joy(- fully), rejoice."
+        },
+        {
+          "at": "171..175",
+          "kind": "bold",
+          "text": "KJV:"
+        }
+      ],
+      "text": "χαίρω chaírō (khah'-ee-ro)\na primary verb; to be \"cheer\"ful, i.e. calmly happy or well-off; impersonally, especially as salutation (on meeting or parting), be well\nKJV: farewell, be glad, God speed, greeting, hall, joy(- fully), rejoice.",
+      "title": "χαίρω"
+    },
+    {
+      "id": "G5485",
+      "spans": [
+        {
+          "at": "0..30",
+          "kind": "para",
+          "style": "prose",
+          "text": "χάρις cháris (khar'-ece)"
+        },
+        {
+          "at": "0..10",
+          "kind": "bold",
+          "text": "χάρις"
+        },
+        {
+          "at": "11..18",
+          "kind": "italic",
+          "text": "cháris"
+        },
+        {
+          "at": "31..247",
+          "kind": "para",
+          "style": "prose",
+          "text": "from G5463; graciousness (as gratifying), of manner or act (abstract or concrete; literal, figurative or spiritual; especially the divine influence upon the heart, and its reflection in the life; including gratitude)"
+        },
+        {
+          "at": "36..41",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5463"
+            }
+          ],
+          "text": "G5463"
+        },
+        {
+          "at": "248..349",
+          "kind": "para",
+          "style": "prose",
+          "text": "KJV: acceptable, benefit, favour, gift, grace(- ious), joy, liberality, pleasure, thank(-s, -worthy)."
+        },
+        {
+          "at": "248..252",
+          "kind": "bold",
+          "text": "KJV:"
+        },
+        {
+          "at": "350..365",
+          "kind": "para",
+          "style": "prose",
+          "text": "See also G5463."
+        },
+        {
+          "at": "359..364",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5463"
+            }
+          ],
+          "text": "G5463"
+        }
+      ],
+      "text": "χάρις cháris (khar'-ece)\nfrom G5463; graciousness (as gratifying), of manner or act (abstract or concrete; literal, figurative or spiritual; especially the divine influence upon the heart, and its reflection in the life; including gratitude)\nKJV: acceptable, benefit, favour, gift, grace(- ious), joy, liberality, pleasure, thank(-s, -worthy).\nSee also G5463.",
+      "title": "χάρις"
+    }
+  ]
+}

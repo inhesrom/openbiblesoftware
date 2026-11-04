@@ -23,9 +23,7 @@ pub struct Lock {
 pub struct Source {
     /// Stable slug of the Resource this source becomes. Never reused.
     pub resource_id: String,
-    /// Which Import parser reads it: `usfm` (a zip of USFM books),
-    /// `openbible-cross-references` (OpenBible.info's zip of `cross_references.txt`) or `tipnr`
-    /// (STEPBible's TIPNR text file).
+    /// Which Import parser or converter reads it; see [`IMPORTERS`].
     pub importer: String,
     /// The pinned download. `file://` paths are allowed (tests, local mirrors).
     pub url: String,
@@ -54,6 +52,23 @@ pub struct Source {
     /// Source book codes (`\id`) to leave out, e.g. eBible front matter.
     #[serde(default)]
     pub skip_books: Vec<String>,
+    /// Source columns to leave out (`stepbible-tbes`), e.g. one whose rights do not cover
+    /// shipping it.
+    #[serde(default)]
+    pub skip_columns: Vec<String>,
+    /// Further pinned files the importer reads with the main one (`oshb-bdb`: the lexical
+    /// index). Each is fetched and checked like `url`, and the evidence must name its sha256.
+    #[serde(rename = "extra_file", default)]
+    pub extra_files: Vec<PinnedFile>,
+}
+
+/// A pinned download: where it is and the sha256 it must have.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PinnedFile {
+    pub url: String,
+    /// Lowercase hex sha256 of the file at `url`.
+    pub sha256: String,
 }
 
 /// The parsed `starter/id-changes.toml`: cumulative, never pruned.
@@ -76,7 +91,20 @@ pub struct IdChange {
     pub new: String,
 }
 
-pub const IMPORTERS: &[&str] = &["usfm", "openbible-cross-references", "tipnr"];
+/// `usfm`: a zip of USFM books → a Bible. The rest are Lexicon converters (#41):
+/// `stepbible-tbes` (TBESH/TBESG TSV), `strongs-hebrew` / `strongs-greek`
+/// (openscriptures/strongs XML), `oshb-bdb` (BDB XML plus the lexical index as an extra file),
+/// `abbott-smith` (TEI XML).
+pub const IMPORTERS: &[&str] = &[
+    "usfm",
+    "openbible-cross-references",
+    "tipnr",
+    "stepbible-tbes",
+    "strongs-hebrew",
+    "strongs-greek",
+    "oshb-bdb",
+    "abbott-smith",
+];
 
 /// Hosts whose site terms restrict republishing (#20 decision 3).
 const REFUSED_HOSTS: &[&str] = &["ccel.org"];
@@ -151,18 +179,23 @@ pub fn check(lock: &Lock, lock_dir: &Path, changes: &IdChanges) -> Result<()> {
                 IMPORTERS.join(", ")
             ));
         }
-        if !is_sha256(&s.sha256) {
-            bad("sha256 must be 64 lowercase hex digits".into());
-        }
-        if !(s.url.starts_with("https://")
-            || s.url.starts_with("http://")
-            || s.url.starts_with("file://"))
+        for (url, sha) in std::iter::once((&s.url, &s.sha256))
+            .chain(s.extra_files.iter().map(|f| (&f.url, &f.sha256)))
         {
-            bad(format!("url `{}` must be http(s):// or file://", s.url));
+            if !is_sha256(sha) {
+                bad(format!("sha256 of `{url}` must be 64 lowercase hex digits"));
+            }
+            if !(url.starts_with("https://")
+                || url.starts_with("http://")
+                || url.starts_with("file://"))
+            {
+                bad(format!("url `{url}` must be http(s):// or file://"));
+            }
         }
         for url in std::iter::once(&s.url)
             .chain(&s.origin_url)
             .chain(&s.homepage)
+            .chain(s.extra_files.iter().map(|f| &f.url))
         {
             if let Some(host) = refused_host(url) {
                 bad(format!(
@@ -226,15 +259,20 @@ fn evidence_problem(lock_dir: &Path, s: &Source) -> Option<String> {
         ));
     }
     let path: PathBuf = lock_dir.join(rel);
-    match std::fs::read_to_string(&path) {
-        Err(_) => Some(format!("evidence file `{}` is missing", s.evidence)),
-        // Tie the evidence to the exact edition shipped.
-        Ok(text) if !text.contains(&s.sha256) => Some(format!(
-            "evidence `{}` does not name the pinned sha256 {}",
-            s.evidence, s.sha256
-        )),
-        Ok(_) => None,
-    }
+    let text = match std::fs::read_to_string(&path) {
+        Err(_) => return Some(format!("evidence file `{}` is missing", s.evidence)),
+        Ok(text) => text,
+    };
+    // Tie the evidence to the exact edition shipped: every pinned file.
+    std::iter::once(&s.sha256)
+        .chain(s.extra_files.iter().map(|f| &f.sha256))
+        .find(|sha| !text.contains(sha.as_str()))
+        .map(|sha| {
+            format!(
+                "evidence `{}` does not name the pinned sha256 {sha}",
+                s.evidence
+            )
+        })
 }
 
 #[cfg(test)]

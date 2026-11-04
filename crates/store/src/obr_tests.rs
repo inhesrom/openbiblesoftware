@@ -373,3 +373,67 @@ fn people_and_places_round_trip_and_answer_by_passage() {
         .collect();
     assert_eq!(at_11_26, [abraham.id.as_str(), "Terah@Gen.11.24-Luk"]);
 }
+
+/// A two-entry Lexicon: H1254A (extended, with its base number as a secondary Key) and G5485.
+fn lexicon() -> Resource {
+    use obs_model::{Manifest, ResourceBuilder, ResourceType};
+    let mut m = Manifest::new("lex", "Test Lexicon", "LEX", ResourceType::Lexicon, "en");
+    m.key_schemes = vec![KeyScheme::StrongsNumber, KeyScheme::Lemma];
+    m.license = "LicenseRef-PD".into();
+    let mut b = ResourceBuilder::new(m);
+    for (id, lemma, base) in [("H1254A", "בָּרָא", Some("H1254")), ("G5485", "χάρις", None)]
+    {
+        let unit = UnitId::new(id).unwrap();
+        b.add_unit(
+            unit.clone(),
+            UnitKind::Entry,
+            None,
+            format!("{lemma} entry"),
+        );
+        b.add_key(Key::StrongsNumber(id.parse().unwrap()), &unit, None, false);
+        if let Some(base) = base {
+            b.add_key(Key::StrongsNumber(base.parse().unwrap()), &unit, None, true);
+        }
+        b.add_key(Key::Lemma(lemma.into()), &unit, None, false);
+    }
+    b.build().unwrap()
+}
+
+#[test]
+fn transliteration_index_round_trips_and_answers_lookups() {
+    let dir = TempDir::new("translit");
+    let path = dir.path("lex.obr");
+    let resource = lexicon();
+    write_obr(&resource, &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    assert_eq!(r.load().unwrap(), resource);
+    assert_eq!(r.load().unwrap().transliterations.len(), 2);
+    assert_eq!(r.lemmas_for_transliteration("bara").unwrap(), ["בָּרָא"]);
+    assert_eq!(r.lemmas_for_transliteration(" Charis ").unwrap(), ["χάρις"]);
+    assert!(r.lemmas_for_transliteration("agape").unwrap().is_empty());
+}
+
+#[test]
+fn strongs_lookup_falls_back_from_an_extended_to_a_base_number() {
+    let dir = TempDir::new("strongs");
+    let path = dir.path("lex.obr");
+    write_obr(&lexicon(), &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    let units = |n: &str| -> Vec<String> {
+        r.lookup_strongs(n.parse().unwrap())
+            .unwrap()
+            .into_iter()
+            .map(|e| e.unit.to_string())
+            .collect()
+    };
+    // Exact extended number.
+    assert_eq!(units("H1254A"), ["H1254A"]);
+    // The base number finds the extended entry through its secondary Key.
+    assert_eq!(units("H1254"), ["H1254A"]);
+    // An extended number with no entry falls back to its base number.
+    assert_eq!(units("G5485B"), ["G5485"]);
+    // H1254B has no entry: its base number H1254 finds the entries that share it.
+    assert_eq!(units("H1254B"), ["H1254A"]);
+    // A base number with no entry finds nothing.
+    assert!(units("G26").is_empty());
+}

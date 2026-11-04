@@ -1,0 +1,335 @@
+{
+  "content_hash": "sha256:f8b7258e7ac28592b480caf7859abbf413f149f2dd4ca2fb4ae4b13a663fbae1",
+  "keys": [
+    [
+      "H1",
+      "H1G",
+      false
+    ],
+    [
+      "H1",
+      "H1H",
+      false
+    ],
+    [
+      "H1",
+      "H1I",
+      false
+    ],
+    [
+      "H1G",
+      "H1G",
+      false
+    ],
+    [
+      "H1H",
+      "H1H",
+      false
+    ],
+    [
+      "H1I",
+      "H1I",
+      false
+    ],
+    [
+      "H2",
+      "H2",
+      false
+    ],
+    [
+      "H1254",
+      "H1254A",
+      true
+    ],
+    [
+      "H1254",
+      "H1254B",
+      true
+    ],
+    [
+      "H1254A",
+      "H1254A",
+      false
+    ],
+    [
+      "H1254B",
+      "H1254B",
+      false
+    ],
+    [
+      "אַב",
+      "H2",
+      false
+    ],
+    [
+      "אָב",
+      "H1G",
+      false
+    ],
+    [
+      "אָב",
+      "H1H",
+      false
+    ],
+    [
+      "אָב",
+      "H1I",
+      false
+    ],
+    [
+      "בָּרָא",
+      "H1254A",
+      false
+    ],
+    [
+      "בָּרָא",
+      "H1254B",
+      false
+    ]
+  ],
+  "report": {
+    "dropped_markup": {},
+    "entries": 6,
+    "scripture_refs": 0,
+    "strongs_links": 3,
+    "warnings": []
+  },
+  "transliterations": [
+    [
+      "av",
+      "אַב"
+    ],
+    [
+      "av",
+      "אָב"
+    ],
+    [
+      "bara",
+      "בָּרָא"
+    ]
+  ],
+  "units": [
+    {
+      "id": "H1G",
+      "spans": [
+        {
+          "at": "0..9",
+          "kind": "para",
+          "style": "prose",
+          "text": "אָב av"
+        },
+        {
+          "at": "0..6",
+          "kind": "bold",
+          "text": "אָב"
+        },
+        {
+          "at": "7..9",
+          "kind": "italic",
+          "text": "av"
+        },
+        {
+          "at": "10..16",
+          "kind": "para",
+          "style": "prose",
+          "text": "father"
+        }
+      ],
+      "text": "אָב av\nfather",
+      "title": "אָב"
+    },
+    {
+      "id": "H1H",
+      "spans": [
+        {
+          "at": "0..9",
+          "kind": "para",
+          "style": "prose",
+          "text": "אָב av"
+        },
+        {
+          "at": "0..6",
+          "kind": "bold",
+          "text": "אָב"
+        },
+        {
+          "at": "7..9",
+          "kind": "italic",
+          "text": "av"
+        },
+        {
+          "at": "10..21",
+          "kind": "para",
+          "style": "prose",
+          "text": "(Huram)-abi"
+        },
+        {
+          "at": "22..39",
+          "kind": "para",
+          "style": "prose",
+          "text": "A Part of H2438H."
+        },
+        {
+          "at": "32..38",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H2438H"
+            }
+          ],
+          "text": "H2438H"
+        }
+      ],
+      "text": "אָב av\n(Huram)-abi\nA Part of H2438H.",
+      "title": "אָב"
+    },
+    {
+      "id": "H1I",
+      "spans": [
+        {
+          "at": "0..9",
+          "kind": "para",
+          "style": "prose",
+          "text": "אָב av"
+        },
+        {
+          "at": "0..6",
+          "kind": "bold",
+          "text": "אָב"
+        },
+        {
+          "at": "7..9",
+          "kind": "italic",
+          "text": "av"
+        },
+        {
+          "at": "10..19",
+          "kind": "para",
+          "style": "prose",
+          "text": "father of"
+        },
+        {
+          "at": "20..35",
+          "kind": "para",
+          "style": "prose",
+          "text": "A Part of H22G."
+        },
+        {
+          "at": "30..34",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H22G"
+            }
+          ],
+          "text": "H22G"
+        }
+      ],
+      "text": "אָב av\nfather of\nA Part of H22G.",
+      "title": "אָב"
+    },
+    {
+      "id": "H2",
+      "spans": [
+        {
+          "at": "0..9",
+          "kind": "para",
+          "style": "prose",
+          "text": "אַב av"
+        },
+        {
+          "at": "0..6",
+          "kind": "bold",
+          "text": "אַב"
+        },
+        {
+          "at": "7..9",
+          "kind": "italic",
+          "text": "av"
+        },
+        {
+          "at": "10..16",
+          "kind": "para",
+          "style": "prose",
+          "text": "father"
+        },
+        {
+          "at": "17..35",
+          "kind": "para",
+          "style": "prose",
+          "text": "In Aramaic of H1G."
+        },
+        {
+          "at": "31..34",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1G"
+            }
+          ],
+          "text": "H1G"
+        }
+      ],
+      "text": "אַב av\nfather\nIn Aramaic of H1G.",
+      "title": "אַב"
+    },
+    {
+      "id": "H1254A",
+      "spans": [
+        {
+          "at": "0..18",
+          "kind": "para",
+          "style": "prose",
+          "text": "בָּרָא ba.ra"
+        },
+        {
+          "at": "0..12",
+          "kind": "bold",
+          "text": "בָּרָא"
+        },
+        {
+          "at": "13..18",
+          "kind": "italic",
+          "text": "ba.ra"
+        },
+        {
+          "at": "19..28",
+          "kind": "para",
+          "style": "prose",
+          "text": "to create"
+        }
+      ],
+      "text": "בָּרָא ba.ra\nto create",
+      "title": "בָּרָא"
+    },
+    {
+      "id": "H1254B",
+      "spans": [
+        {
+          "at": "0..18",
+          "kind": "para",
+          "style": "prose",
+          "text": "בָּרָא ba.ra"
+        },
+        {
+          "at": "0..12",
+          "kind": "bold",
+          "text": "בָּרָא"
+        },
+        {
+          "at": "13..18",
+          "kind": "italic",
+          "text": "ba.ra"
+        },
+        {
+          "at": "19..28",
+          "kind": "para",
+          "style": "prose",
+          "text": "to fatten"
+        }
+      ],
+      "text": "בָּרָא ba.ra\nto fatten",
+      "title": "בָּרָא"
+    }
+  ]
+}

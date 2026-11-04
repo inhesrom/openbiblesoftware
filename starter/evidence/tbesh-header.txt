@@ -1,0 +1,52 @@
+TBESH - Translators Brief lexicon of Extended Strongs for Hebrew - STEPBible.org CC BY
+See also
+TFBDB - Translators Formatted full BDB lexicon - STEPBible.org CC BY (not yet available)
+========================================================
+Extended Strongs for Hebrew is backward compatible with original Strong and extended to include all entries in BDB (compatible with OpenScriptures) and all prefixes, suffixes, personal pronoun endings and punctuation (as tagged in Tyndale House texts) 
+The Brief lexicon is based on Abridged BDB by Online Bible, and edited to conform with the extended Strongs. This is provided  for guidence only. Permission should be gained from Online Bible before these definitions are applied in any project. 
+The Full lexicon is edited from the Full BDB by Tyndale House, formatted to make it easy to read, with expansion of abbreviations and revealing bibliographic details on hover. 
+
+	==============================================================												
+	Data created by www.STEPBible.org based on work at Tyndale House Cambridge (CC BY 4.0)												
+	==============================================================												
+	This licence allows you to:												
+	* Include any part of this data in software or publications and send it to AI servers  without requesting permission 												
+	* Download the data and reformat it for your application												
+	* Send any proposed corrections to STEPBible@Gmail.com to be verified 												
+	  (You MAY make changes yourself, but you should include a note of changes that can be viewed by those who use your new data)												
+	* Attribute the data to Tyndale House and STEPBible.org, and include a link to STEPBible.github.io/STEPBible-Data as the source of this data. 												
+	 Please do not post copies of this data file elsewhere, so that this remains the single up-to-date source"												
+	* We'd love to hear about your project and add it to our Partners Page when you make it available. Email us at STEPBible@Gmail.com.												
+	==============================================================												
+
+FIELD DESCRIPTIONS:
+==============
+
+eStrong#	These Extended Strong Numbers are mapped to BDB (and thereby to other modern lexicons) by OpenScriptures.org. This adds about 800 words which are found in modern lexicons but were not differentiated by Strong. 
+	Numbers beyond 9000 include non-lexical prefixes and suffixed. They were created by Tyndale House, Cambridge. 
+dStrong#	These Disambiguated Strong numbers differentiates distinct sub-meaning of words, and distinct indivuduals with the same name - see TinyURL.com/DisambiguatedStrongs. They are designed to be backward compatible with software that uses Strongs numbers. 
+uStrong#	These Unified Strong numbers link together dStrong numbers that can be regarded as a single word, such as Aramaic & Hebrew versions or different spellings of the same word, and alternate names of the same individual or place. 
+
+Gloss	These were created by Tyndale scholars
+
+Hebrew form	These are based on BDB, then normalised. 
+
+Transliteration	
+
+Morph	These were created by Tyndale scholars as a simple grammatical value of the main word represented as Language:Type-Gender-Extra. 
+	Language:Type-Gender-Extra.   Language is A=Aramaic, H=Hebrew, G=Greek and n+Name (which is not language specific). 
+	Type is A=Adjective, Adv=Adverb, Art=Article, Cond=Conditional, Conj=Conjunction, Cor=Correlative, DemP=Demonstrative Pn, ImpP=Impersonal Pn, Intg=Interogative, Intj=Interjection, N=Noun, Neg=Negative, Part=Particle, Prep=Preposition, PerP=Personal Pn, PosP=Possessive Pn, RefP=Reflexive Pn, RelP=Relative Pn, V=Verb. 
+	Gender is F=Female, M=Male, N=Neuter, C=Common and P or S is optionally added for Plural Singular
+	Extra for Names is L=Location, P=Person, LG/PG=Gentilic, T=Title (i.e. any other capitalised nouns such as titles, months, gods, planets etc)
+(notes re Morph) 	Location is only used for places not named after people - eg: Israel = N:N-M-P (for the Person, and nation); Jerusalem = N:N--L; Canaanite is N:N-M-LG; Israelitess is N:N-F-PG
+	Location is a geographical entity such as river, mountain or city eg "Dan", but Gentilic is used for Amon, Syria, Judah, or the tribal area of Dan. The idea is that someone from Dan is probably related to Dan unless he is called a Hittite, but someone from Jerusalem or the city of Dan could be from anywhere even though he is named after the city. So a "Shulemite" (who is prob from Salem ie Shalem aka Jerusalem) is dark-skinned and perhaps not a native from the area.
+	Title is a misc category that incl names of gods, musical term & months and offices such as Pharaoh unless referring to an individual eg Pharaoh Necho who is N:N-M-P
+	When F or M occ with L or T it refers to the gender of that person, not the location, so Jerusalem = N:N--L, Jerusalemites = N:N-G-L, Jerusalemitess = N:N-F-L 
+	When Gentilics related to a person the STEP_LexicalTag points to the Person eg Danites => Dan.  When Gentilics point to a place, the STEP_LexicalTag points to that place, eg Gileadites => Gilead. When there is no numbered tag for the person or place, we probably aren't sure what it is, so the STEP_LexicalTag doesn't have anywhere different to point, eg. Girgashites. Some very common Gentilics (eg Levite) have gained a meaning of their own which may be related to a person but much less so - so the STEP_LexicalTag does not redirect to the entry for that person. 
+	Odd ones: Jew=N:N-G-P, Jewish=N:A, Jewess+Ammonitess=N:N-G-P-F, Canaanite-trader=N:N-G-P / N:N-G-T, Chaldean-magi=N:N-G-L / N:N-G-T, Nephusim=N:N-G-T, Rephaim=N:N-G-P / N:N-G-T, Shulamite+Shunammite+Carmelitess+Jezreelitess=N:N-F-L
+
+Meaning	These are based on the Abridged BDB by Online Bible,  © Larry Pierce of OnlineBible.net <olbsupport@onlinebible.net>. They are for guidance only. Permission should be gained from Online Bible before these are applied in any project. 
+	These definitions refer to J. Green's A Concise Lexicon of the Biblical Languages (CLBL) and Harris, Archer, & Waltke's Theological Wordbook of the Old Testament (TWOT),). 
+	These have been edited to conform with OpenScripture's extended Strongs by Tyndale House Cambridge. Alignment with dStrongs is not yet completed. 
+
+

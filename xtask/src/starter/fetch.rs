@@ -6,7 +6,7 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 
-use super::lock::Source;
+use super::lock::{PinnedFile, Source};
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
@@ -17,33 +17,44 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     out
 }
 
-/// The bytes of `source`, from the cache or freshly downloaded, after checking the sha256.
-pub fn fetch(source: &Source, cache: &Path) -> Result<Vec<u8>> {
+/// The bytes of `source`'s main file, then of each extra file, from the cache or freshly
+/// downloaded, after checking each sha256.
+pub fn fetch(source: &Source, cache: &Path) -> Result<Vec<Vec<u8>>> {
+    let main = PinnedFile {
+        url: source.url.clone(),
+        sha256: source.sha256.clone(),
+    };
+    std::iter::once(&main)
+        .chain(&source.extra_files)
+        .map(|file| fetch_file(&source.resource_id, file, cache))
+        .collect()
+}
+
+fn fetch_file(resource_id: &str, file: &PinnedFile, cache: &Path) -> Result<Vec<u8>> {
     std::fs::create_dir_all(cache)
         .with_context(|| format!("cannot create the cache {}", cache.display()))?;
-    let cached = cache.join(&source.sha256);
+    let cached = cache.join(&file.sha256);
     if let Ok(bytes) = std::fs::read(&cached) {
-        if sha256_hex(&bytes) == source.sha256 {
+        if sha256_hex(&bytes) == file.sha256 {
             return Ok(bytes);
         }
         // A corrupt or tampered cache entry: discard it and download again.
         std::fs::remove_file(&cached)
             .with_context(|| format!("cannot remove {}", cached.display()))?;
     }
-    let partial = cache.join(format!("{}.partial", source.sha256));
-    download(&source.url, &partial)
-        .with_context(|| format!("{}: download of {} failed", source.resource_id, source.url))?;
+    let partial = cache.join(format!("{}.partial", file.sha256));
+    download(&file.url, &partial)
+        .with_context(|| format!("{resource_id}: download of {} failed", file.url))?;
     let bytes =
         std::fs::read(&partial).with_context(|| format!("cannot read {}", partial.display()))?;
     let actual = sha256_hex(&bytes);
-    if actual != source.sha256 {
+    if actual != file.sha256 {
         let _ = std::fs::remove_file(&partial);
         bail!(
-            "{}: sha256 mismatch for {}\n  expected {}\n  got      {actual}\n\
+            "{resource_id}: sha256 mismatch for {}\n  expected {}\n  got      {actual}\n\
              The file changed upstream or was tampered with. Check it, then update the lock.",
-            source.resource_id,
-            source.url,
-            source.sha256
+            file.url,
+            file.sha256
         );
     }
     std::fs::rename(&partial, &cached)

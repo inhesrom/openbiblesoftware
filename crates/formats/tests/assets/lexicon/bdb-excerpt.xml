@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<lexicon xsi:schemaLocation="http://openscriptures.github.com/morphhb/namespace BdbSchema.xsd" 
+		 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+		 xmlns="http://openscriptures.github.com/morphhb/namespace">
+		<part id="x" xml:lang="heb">
+		<section id="x.a">
+			<entry id="a.ae.ab"><w>אָב</w> 1101 <pos>n.m</pos>. <def>father</def>
+				<sense n="1"><def>father of individual</def></sense>
+				<sense n="2">of God as <def>father of his people</def></sense>
+				<sense n="3"><def>head of household</def>, family or clan</sense>
+				<sense n="4"><def>ancestor</def></sense>
+				<sense n="5"><def>originator</def> or <def>patron</def> of a class, profession, or art</sense>
+				<sense n="6">fig. of <def>producer</def>, <def>generator</def></sense>
+				<sense n="7">fig. of <def>benevolence</def> &amp; protection</sense>
+				<sense n="8">term of <def>respect</def> &amp; <def>honor</def></sense>
+				<sense n="9">specif., <def>ruler</def>, <def>chief</def> (late)</sense>
+				<status p="3">base</status>
+			</entry>
+			<entry id="b.cw.aa" type="root" cite="full" mod="I"><w>בָּרָא</w> 53 <pos>vb</pos>. <def>shape</def>, <def>create</def>
+				<sense><stem>Qal</stem> <asp>Pf</asp>.—<def>shape</def>, <def>fashion</def>, <def>create</def></sense>
+				<sense><stem>Niph</stem>.—<em>Pass</em>.
+					<sense n="1"><def>be created</def></sense>
+					<sense n="2">with reference to birth</sense>
+					<sense n="3">of something new, astonishing</sense>
+				</sense>
+				<sense><stem>Pi</stem>.
+					<sense n="1"><def>cut down</def></sense>
+					<sense n="2"><def>cut out</def></sense>
+				</sense>
+				<status p="135">base</status>
+			</entry>
+			<entry id="b.cx.aa" type="root" cite="full" form="false" mod="II">[<w>בָּרָא</w>] <pos>vb</pos>. <def>be fat</def>—<stem>Hiph</stem>. <ref r="1Sam.2.29">1 S 2:29</ref> <def>to make yourself fat</def>.
+				<status p="135">ref</status>
+			</entry>
+		</section>
+	</part>
+</lexicon>

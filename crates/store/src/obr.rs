@@ -19,6 +19,7 @@
 //!
 //! Dataset Verses are stored as verse numbers `BBCCCVVV` (book 1-66, chapter, verse), so a
 //! Passage overlap is an integer range query.
+//! | `transliterations` | `transliteration` → `lemma`: the transliteration index of the Lemma Keys |
 //!
 //! Files are written once, deterministically (same Resource ⇒ byte-identical file), and opened
 //! read-only. `PRAGMA application_id` marks the file type and `PRAGMA user_version` holds the
@@ -31,8 +32,8 @@ use std::path::{Path, PathBuf};
 
 use obs_model::{
     BibleVerse, CrossReference, Direction, Entity, EntityKind, EntityRelation, FORMAT_VERSION, Key,
-    KeyEntry, KeyScheme, Manifest, Mention, Origin, Resource, ResourceType, Span, TextUnit, UnitId,
-    UnitKind,
+    KeyEntry, KeyScheme, LemmaTransliteration, Manifest, Mention, Origin, Resource, ResourceType,
+    Span, TextUnit, UnitId, UnitKind,
 };
 use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, VerseMapEntry};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
@@ -149,6 +150,11 @@ CREATE TABLE mentions (
     end INTEGER NOT NULL
 );
 CREATE INDEX mentions_start ON mentions (start);
+CREATE TABLE transliterations (
+    transliteration TEXT NOT NULL,
+    lemma TEXT NOT NULL,
+    PRIMARY KEY (transliteration, lemma)
+) WITHOUT ROWID;
 ";
 
 fn sql(e: rusqlite::Error) -> StoreError {
@@ -321,6 +327,14 @@ fn write_to(r: &Resource, path: &Path) -> Result<(), StoreError> {
             dropped_stmt.execute(params![marker, count]).map_err(sql)?;
         }
         insert_datasets(&tx, r)?;
+        let mut translit_stmt = tx
+            .prepare("INSERT INTO transliterations (transliteration, lemma) VALUES (?1, ?2)")
+            .map_err(sql)?;
+        for row in &r.transliterations {
+            translit_stmt
+                .execute(params![row.transliteration, row.lemma])
+                .map_err(sql)?;
+        }
     }
     tx.commit().map_err(sql)?;
     conn.execute_batch("VACUUM;").map_err(sql)?;
@@ -880,6 +894,23 @@ impl ResourceStore for ObrReader {
         new.map(unit_id).transpose()
     }
 
+    fn lemmas_for_transliteration(&self, transliteration: &str) -> Result<Vec<String>, StoreError> {
+        let words: Vec<String> = obs_model::tokenize(transliteration)
+            .into_iter()
+            .map(|t| t.text)
+            .collect();
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT lemma FROM transliterations WHERE transliteration = ?1 ORDER BY lemma",
+            )
+            .map_err(sql)?;
+        stmt.query_map([words.join(" ")], |r| r.get(0))
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)
+    }
+
     fn verse_map(&self) -> Result<Option<VerseMap>, StoreError> {
         let rows: Vec<(i64, Option<String>, Option<String>)> = {
             let mut stmt = self
@@ -1011,6 +1042,24 @@ impl ResourceStore for ObrReader {
                 dropped_markup.insert(marker, count.max(0) as u64);
             }
         }
+        let transliterations: Vec<LemmaTransliteration> = {
+            let mut stmt = self
+                .conn
+                .prepare_cached(
+                    "SELECT transliteration, lemma FROM transliterations
+                     ORDER BY transliteration, lemma",
+                )
+                .map_err(sql)?;
+            stmt.query_map([], |r| {
+                Ok(LemmaTransliteration {
+                    transliteration: r.get(0)?,
+                    lemma: r.get(1)?,
+                })
+            })
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)?
+        };
         let resource = Resource {
             manifest: self.manifest.clone(),
             units,
@@ -1026,6 +1075,7 @@ impl ResourceStore for ObrReader {
             )?,
             entities: self.entity_rows("", &[])?,
             mentions: self.mention_rows("", &[])?,
+            transliterations,
         };
         resource.validate().map_err(StoreError::Invalid)?;
         let hash = resource.content_hash();

@@ -253,7 +253,13 @@ fn the_real_lock_passes_the_provenance_gate() {
             "web",
             "asv",
             "openbible-xrefs",
-            "tipnr"
+            "tipnr",
+            "tbesh",
+            "tbesg",
+            "strongs-hebrew",
+            "strongs-greek",
+            "bdb",
+            "abbott-smith",
         ]
     );
 }
@@ -478,4 +484,273 @@ fn the_proposed_commentary_lock_entries_pass_the_provenance_gate() {
         problems[1].starts_with("jfb: unknown importer `jfb-html`"),
         "{err}"
     );
+}
+
+/// Write a lock with the six Lexicon fixtures (excerpts of the real sources) and their evidence.
+fn setup_lexicons(dir: &Path) -> Config {
+    let assets = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("crates/formats/tests/assets/lexicon");
+    let starter = dir.join("starter");
+    std::fs::create_dir_all(starter.join("evidence")).unwrap();
+    let pin = |file: &str| {
+        let path = assets.join(file);
+        let sha = sha256_hex(&std::fs::read(&path).unwrap());
+        let url = format!("file://{}", path.display().to_string().replace('\\', "/"));
+        (url, sha)
+    };
+    let mut lock = String::from("size_budget_mb = 400\n");
+    let mut evidence = String::from("Licences checked for the test fixtures.\n");
+    for (id, importer, file, extra) in [
+        ("tbesh", "stepbible-tbes", "tbesh-excerpt.txt", None),
+        ("tbesg", "stepbible-tbes", "tbesg-excerpt.txt", None),
+        (
+            "strongs-hebrew",
+            "strongs-hebrew",
+            "strongs-hebrew-excerpt.xml",
+            None,
+        ),
+        (
+            "strongs-greek",
+            "strongs-greek",
+            "strongs-greek-excerpt.xml",
+            None,
+        ),
+        (
+            "bdb",
+            "oshb-bdb",
+            "bdb-excerpt.xml",
+            Some("bdb-lexical-index-excerpt.xml"),
+        ),
+        (
+            "abbott-smith",
+            "abbott-smith",
+            "abbott-smith-excerpt.xml",
+            None,
+        ),
+    ] {
+        let (url, sha) = pin(file);
+        evidence.push_str(&format!("{id}: sha256 {sha}\n"));
+        let spdx = if ["tbesh", "tbesg", "bdb"].contains(&id) {
+            "CC-BY-4.0"
+        } else {
+            "LicenseRef-PublicDomain"
+        };
+        lock.push_str(&format!(
+            r#"
+[[source]]
+resource_id = "{id}"
+importer = "{importer}"
+url = "{url}"
+sha256 = "{sha}"
+title = "{id}"
+abbreviation = "{id}"
+language = "en"
+spdx = "{spdx}"
+attribution = "{id} fixture Attribution."
+changes = "Converted {id} fixture."
+provenance = "Test fixture."
+evidence = "evidence/lexicons.md"
+"#
+        ));
+        if id == "tbesh" {
+            lock.push_str("skip_columns = [\"Meaning\"]\n");
+        }
+        if let Some(extra) = extra {
+            let (url, sha) = pin(extra);
+            evidence.push_str(&format!("{id} extra file: sha256 {sha}\n"));
+            lock.push_str(&format!(
+                "\n[[source.extra_file]]\nurl = \"{url}\"\nsha256 = \"{sha}\"\n"
+            ));
+        }
+    }
+    std::fs::write(starter.join("evidence/lexicons.md"), evidence).unwrap();
+    std::fs::write(starter.join("sources.toml"), lock).unwrap();
+    Config {
+        lock: starter.join("sources.toml"),
+        id_changes: starter.join("id-changes.toml"),
+        previous: None,
+        out: dir.join("out"),
+        cache: dir.join("cache"),
+    }
+}
+
+/// Unit ids a Strong's number resolves to in one built Lexicon, with the extended → base
+/// fallback.
+fn resolve(config: &Config, id: &str, number: &str) -> Vec<String> {
+    let reader = ObrReader::open(&config.out.join(format!("{id}.obr"))).unwrap();
+    reader
+        .lookup_strongs(number.parse().unwrap())
+        .unwrap()
+        .into_iter()
+        .map(|e| e.unit.to_string())
+        .collect()
+}
+
+#[test]
+fn g5485_and_h1254a_resolve_in_the_built_lexicons() {
+    let dir = scratch("lexicons");
+    let config = setup_lexicons(&dir);
+    build(&config).unwrap();
+    assert_eq!(resolve(&config, "tbesg", "G5485"), ["G5485"]);
+    assert_eq!(resolve(&config, "strongs-greek", "G5485"), ["G5485"]);
+    assert_eq!(resolve(&config, "abbott-smith", "G5485"), ["χάρις"]);
+    let reader = ObrReader::open(&config.out.join("abbott-smith.obr")).unwrap();
+    let g1061 = reader.lookup_strongs("G1061".parse().unwrap()).unwrap();
+    let full = g1061
+        .iter()
+        .find(|k| k.unit.as_str() == "γαμίζω")
+        .expect("G1061 resolves the full definition, not only the abbreviated variant");
+    assert!(
+        reader
+            .unit(&full.unit)
+            .unwrap()
+            .unwrap()
+            .text
+            .contains("to give in marriage")
+    );
+    assert_eq!(resolve(&config, "tbesh", "H1254A"), ["H1254A"]);
+    assert_eq!(resolve(&config, "bdb", "H1254A"), ["b.cw.aa"]);
+    // Strong's Hebrew has no H1254A entry: lookup falls back to the base number.
+    assert_eq!(resolve(&config, "strongs-hebrew", "H1254A"), ["H1254"]);
+    // TBESH has no H1254 entry, but its extended entries answer to their base number.
+    assert_eq!(resolve(&config, "tbesh", "H1254"), ["H1254A", "H1254B"]);
+
+    let reader = ObrReader::open(&config.out.join("tbesg.obr")).unwrap();
+    assert_eq!(
+        reader.lemmas_for_transliteration("charis").unwrap(),
+        ["χάρις"]
+    );
+    let m = reader.manifest();
+    assert_eq!(m.resource_type, obs_model::ResourceType::Lexicon);
+    assert_eq!(m.origin, obs_model::Origin::Starter);
+    let report = std::fs::read_to_string(config.out.join(REPORT_FILE)).unwrap();
+    assert!(report.contains("| `abbott-smith` | 1 |"), "{report}");
+    assert!(report.contains("Scripture reference(s)"), "{report}");
+}
+
+#[test]
+fn lexicon_entry_text_renders_with_working_scripture_references() {
+    use obs_layout::{ColorRole, SpanIndex, TextSettings, block_paragraph, unit_blocks};
+    use obs_model::SpanKind;
+    use obs_scripture::{Book, Passage, Standard, Verse};
+
+    let dir = scratch("lexicon-render");
+    let config = setup_lexicons(&dir);
+    build(&config).unwrap();
+    let reader = ObrReader::open(&config.out.join("abbott-smith.obr")).unwrap();
+    let entry = &reader.lookup_strongs("G5485".parse().unwrap()).unwrap()[0];
+    let unit = reader.unit(&entry.unit).unwrap().unwrap();
+
+    // The reference is drawn as a link…
+    let settings = TextSettings::default();
+    let links: Vec<String> = unit_blocks(&unit)
+        .iter()
+        .flat_map(|b| block_paragraph(&unit, b, reader.manifest().direction, &settings).runs)
+        .filter(|r| r.style.role == ColorRole::Link)
+        .map(|r| r.text)
+        .collect();
+    assert!(links.iter().any(|t| t == "Col 4:6"), "{links:?}");
+
+    // …and hit-testing it gives a Passage that exists in the Standard versification.
+    let at = unit.text.find("Col 4:6").unwrap();
+    let hit = SpanIndex::new(&unit);
+    let spans = hit.at(&unit, at + 1);
+    let Some(SpanKind::ScriptureRef { targets }) = spans.first().map(|s| &s.kind) else {
+        panic!("no scripture_ref under Col 4:6: {spans:?}");
+    };
+    assert_eq!(
+        targets.passages(),
+        [Passage::verse(Verse::new(Book::Colossians, 4, 6))]
+    );
+    // Every reference in every built Lexicon entry points at real Standard Verses.
+    for id in ["tbesg", "bdb", "abbott-smith"] {
+        let reader = ObrReader::open(&config.out.join(format!("{id}.obr"))).unwrap();
+        let mut refs = 0;
+        for unit_id in reader.unit_ids().unwrap() {
+            for span in reader.unit(&unit_id).unwrap().unwrap().spans {
+                if let SpanKind::ScriptureRef { targets } = span.kind {
+                    refs += 1;
+                    for p in targets.iter() {
+                        assert!(p.verses(&Standard).next().is_some(), "{id} {unit_id}: {p}");
+                    }
+                }
+            }
+        }
+        assert!(refs > 0, "{id} has no Scripture references");
+    }
+}
+
+#[test]
+fn extra_files_are_pinned_and_covered_by_the_evidence() {
+    let dir = scratch("extra-file");
+    let config = setup_lexicons(&dir);
+    let evidence = config.lock.parent().unwrap().join("evidence/lexicons.md");
+    let text = std::fs::read_to_string(&evidence).unwrap();
+    let kept: String = text
+        .lines()
+        .filter(|l| !l.contains("extra file"))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    std::fs::write(&evidence, kept).unwrap();
+    let err = format!("{:#}", build(&config).unwrap_err());
+    assert!(err.contains("bdb: evidence"), "{err}");
+
+    // The BDB converter needs its lexical index.
+    let dir = scratch("extra-file-missing");
+    let config = setup_lexicons(&dir);
+    let lock = std::fs::read_to_string(&config.lock).unwrap();
+    let cut = lock.find("\n[[source.extra_file]]").unwrap();
+    let rest = &lock[cut + 1..];
+    let next = rest.find("\n[[source]]").unwrap();
+    std::fs::write(&config.lock, format!("{}{}", &lock[..cut], &rest[next..])).unwrap();
+    let err = format!("{:#}", build(&config).unwrap_err());
+    assert!(
+        err.contains("reads 1 extra file(s); the lock lists 0"),
+        "{err}"
+    );
+}
+
+#[test]
+fn cc_by_changes_artifacts_record_lock_metadata_and_are_deterministic() {
+    let dir = scratch("changes");
+    let config = setup_lexicons(&dir);
+    let lock = Lock::load(&config.lock).unwrap();
+    build(&config).unwrap();
+    for source in &lock.sources {
+        let path = config
+            .out
+            .join(format!("CHANGES-{}.md", source.resource_id));
+        if ["tbesh", "tbesg", "bdb"].contains(&source.resource_id.as_str()) {
+            assert_eq!(
+                std::fs::read_to_string(path).unwrap(),
+                format!(
+                    "# Changes we made: {}\n\nResource: `{}`\n\nLicence: CC-BY-4.0\n\n## Attribution\n\n{} fixture Attribution.\n\n## Source\n\n{}\n\nPinned download: {}\n\nSHA-256: `{}`\n\n## Changes we made\n\nConverted {} fixture.\n",
+                    source.title,
+                    source.resource_id,
+                    source.resource_id,
+                    source.url,
+                    source.url,
+                    source.sha256,
+                    source.resource_id,
+                )
+            );
+        } else {
+            assert!(
+                !path.exists(),
+                "public-domain source needs no changes artifact"
+            );
+        }
+    }
+    let second = Config {
+        out: dir.join("out2"),
+        ..config.clone()
+    };
+    build(&second).unwrap();
+    compare_dirs(&config.out, &second.out).unwrap();
+    // Reusing an output directory must remove stale generated changes files.
+    std::fs::write(config.out.join("CHANGES-removed.md"), "stale").unwrap();
+    build(&config).unwrap();
+    compare_dirs(&config.out, &second.out).unwrap();
 }

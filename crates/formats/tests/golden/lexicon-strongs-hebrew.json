@@ -1,0 +1,300 @@
+{
+  "content_hash": "sha256:df9ac09e1af8f0e2391b8eaaf6ddb082d5506a1981e85707bb00ea11a1af69a1",
+  "keys": [
+    [
+      "H1",
+      "H1",
+      false
+    ],
+    [
+      "H2",
+      "H2",
+      false
+    ],
+    [
+      "H1254",
+      "H1254",
+      false
+    ],
+    [
+      "H2580",
+      "H2580",
+      false
+    ],
+    [
+      "אַב",
+      "H2",
+      false
+    ],
+    [
+      "אָב",
+      "H1",
+      false
+    ],
+    [
+      "בָּרָא",
+      "H1254",
+      false
+    ],
+    [
+      "חֵן",
+      "H2580",
+      false
+    ]
+  ],
+  "report": {
+    "dropped_markup": {
+      "<foreign>": 4,
+      "<list>": 4
+    },
+    "entries": 4,
+    "scripture_refs": 0,
+    "strongs_links": 2,
+    "warnings": []
+  },
+  "transliterations": [
+    [
+      "av",
+      "אַב"
+    ],
+    [
+      "av",
+      "אָב"
+    ],
+    [
+      "bara",
+      "בָּרָא"
+    ],
+    [
+      "chen",
+      "חֵן"
+    ]
+  ],
+  "units": [
+    {
+      "id": "H1",
+      "spans": [
+        {
+          "at": "0..18",
+          "kind": "para",
+          "style": "prose",
+          "text": "אָב ʼâb (awb)"
+        },
+        {
+          "at": "0..6",
+          "kind": "bold",
+          "text": "אָב"
+        },
+        {
+          "at": "7..12",
+          "kind": "italic",
+          "text": "ʼâb"
+        },
+        {
+          "at": "19..109",
+          "kind": "para",
+          "style": "prose",
+          "text": "a primitive word; father, in a literal and immediate, or figurative and remote application"
+        },
+        {
+          "at": "37..43",
+          "kind": "italic",
+          "text": "father"
+        },
+        {
+          "at": "110..199",
+          "kind": "para",
+          "style": "prose",
+          "text": "KJV: chief, (fore-) father(-less), [idiom] patrimony, principal. Compare names in 'Abi-'."
+        },
+        {
+          "at": "110..114",
+          "kind": "bold",
+          "text": "KJV:"
+        }
+      ],
+      "text": "אָב ʼâb (awb)\na primitive word; father, in a literal and immediate, or figurative and remote application\nKJV: chief, (fore-) father(-less), [idiom] patrimony, principal. Compare names in 'Abi-'.",
+      "title": "אָב"
+    },
+    {
+      "id": "H2",
+      "spans": [
+        {
+          "at": "0..16",
+          "kind": "para",
+          "style": "prose",
+          "text": "אַב ʼab (ab)"
+        },
+        {
+          "at": "0..6",
+          "kind": "bold",
+          "text": "אַב"
+        },
+        {
+          "at": "7..11",
+          "kind": "italic",
+          "text": "ʼab"
+        },
+        {
+          "at": "17..59",
+          "kind": "para",
+          "style": "prose",
+          "text": "(Aramaic) corresponding to אָב {father}"
+        },
+        {
+          "at": "44..50",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1"
+            }
+          ],
+          "text": "אָב"
+        },
+        {
+          "at": "52..58",
+          "kind": "italic",
+          "text": "father"
+        },
+        {
+          "at": "60..72",
+          "kind": "para",
+          "style": "prose",
+          "text": "KJV: father."
+        },
+        {
+          "at": "60..64",
+          "kind": "bold",
+          "text": "KJV:"
+        }
+      ],
+      "text": "אַב ʼab (ab)\n(Aramaic) corresponding to אָב {father}\nKJV: father.",
+      "title": "אַב"
+    },
+    {
+      "id": "H1254",
+      "spans": [
+        {
+          "at": "0..32",
+          "kind": "para",
+          "style": "prose",
+          "text": "בָּרָא bârâʼ (baw-raw')"
+        },
+        {
+          "at": "0..12",
+          "kind": "bold",
+          "text": "בָּרָא"
+        },
+        {
+          "at": "13..21",
+          "kind": "italic",
+          "text": "bârâʼ"
+        },
+        {
+          "at": "33..146",
+          "kind": "para",
+          "style": "prose",
+          "text": "a primitive root; (absolutely) to create; (qualified) to cut down (a wood), select, feed (as formative processes)"
+        },
+        {
+          "at": "64..73",
+          "kind": "italic",
+          "text": "to create"
+        },
+        {
+          "at": "87..98",
+          "kind": "italic",
+          "text": "to cut down"
+        },
+        {
+          "at": "109..115",
+          "kind": "italic",
+          "text": "select"
+        },
+        {
+          "at": "117..121",
+          "kind": "italic",
+          "text": "feed"
+        },
+        {
+          "at": "147..213",
+          "kind": "para",
+          "style": "prose",
+          "text": "KJV: choose, create (creator), cut down, dispatch, do, make (fat)."
+        },
+        {
+          "at": "147..151",
+          "kind": "bold",
+          "text": "KJV:"
+        }
+      ],
+      "text": "בָּרָא bârâʼ (baw-raw')\na primitive root; (absolutely) to create; (qualified) to cut down (a wood), select, feed (as formative processes)\nKJV: choose, create (creator), cut down, dispatch, do, make (fat).",
+      "title": "בָּרָא"
+    },
+    {
+      "id": "H2580",
+      "spans": [
+        {
+          "at": "0..20",
+          "kind": "para",
+          "style": "prose",
+          "text": "חֵן chên (khane)"
+        },
+        {
+          "at": "0..6",
+          "kind": "bold",
+          "text": "חֵן"
+        },
+        {
+          "at": "7..12",
+          "kind": "italic",
+          "text": "chên"
+        },
+        {
+          "at": "21..107",
+          "kind": "para",
+          "style": "prose",
+          "text": "from חָנַן; graciousness, i.e. subjective (kindness, favor) or objective (beauty)"
+        },
+        {
+          "at": "26..36",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H2603"
+            }
+          ],
+          "text": "חָנַן"
+        },
+        {
+          "at": "38..50",
+          "kind": "italic",
+          "text": "graciousness"
+        },
+        {
+          "at": "57..67",
+          "kind": "italic",
+          "text": "subjective"
+        },
+        {
+          "at": "89..98",
+          "kind": "italic",
+          "text": "objective"
+        },
+        {
+          "at": "108..172",
+          "kind": "para",
+          "style": "prose",
+          "text": "KJV: favour, grace(-ious), pleasant, precious, (well-) favoured."
+        },
+        {
+          "at": "108..112",
+          "kind": "bold",
+          "text": "KJV:"
+        }
+      ],
+      "text": "חֵן chên (khane)\nfrom חָנַן; graciousness, i.e. subjective (kindness, favor) or objective (beauty)\nKJV: favour, grace(-ious), pleasant, precious, (well-) favoured.",
+      "title": "חֵן"
+    }
+  ]
+}
