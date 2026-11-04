@@ -385,7 +385,7 @@ fn a_usfm_source_takes_no_extra_files() {
     let lock = std::fs::read_to_string(&config.lock).unwrap()
         + &format!(
             "\n[[source.extra_file]]\nurl = \"file://{}\"\nsha256 = \"{sha}\"\n",
-            zip.display()
+            zip.display().to_string().replace('\\', "/")
         );
     std::fs::write(&config.lock, lock).unwrap();
     let err = format!("{:#}", build(&config).unwrap_err());
