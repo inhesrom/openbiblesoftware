@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use obs_scripture::Verse;
+use obs_store::{Annotation, Change, Notebook};
 
 use crate::workspace::{TabKind, Workspace};
 
@@ -164,6 +165,25 @@ pub trait UserData: std::fmt::Debug {
     /// The saved Preferred order: resource ids, best first.
     fn preferred_order(&self) -> Result<Vec<String>, String>;
     fn save_preferred_order(&self, ids: &[String]) -> Result<(), String>;
+
+    // Annotations (#61). Every edit is [`UserData::apply_changes`]; see `annotations.rs`.
+
+    /// Every Notebook, the default first.
+    fn notebooks(&self) -> Result<Vec<Notebook>, String>;
+    /// How many Annotations each Notebook holds (empty Notebooks left out).
+    fn notebook_counts(&self) -> Result<Vec<(String, u64)>, String>;
+    fn annotation(&self, id: &str) -> Result<Option<Annotation>, String>;
+    /// Annotations in one Notebook (or all), oldest first.
+    fn annotations(&self, notebook: Option<&str>) -> Result<Vec<Annotation>, String>;
+    /// How many Annotations have a Text range in Resource `resource_id`.
+    fn annotations_referring(&self, resource_id: &str) -> Result<u64, String>;
+    /// Ids of Notes matching an FTS5 query over normalized words, newest first.
+    fn search_notes(&self, fts_query: &str) -> Result<Vec<String>, String>;
+    /// Apply row Changes in one transaction, checking each row is still its `before`.
+    fn apply_changes(&self, changes: &[Change]) -> Result<(), String>;
+    /// The annotation tables as text, for tests comparing database states.
+    #[doc(hidden)]
+    fn annotation_dump(&self) -> Result<String, String>;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -200,6 +220,30 @@ impl UserData for obs_store::UserStore {
     }
     fn save_preferred_order(&self, ids: &[String]) -> Result<(), String> {
         obs_store::UserStore::save_preferred_order(self, ids).map_err(|e| e.to_string())
+    }
+    fn notebooks(&self) -> Result<Vec<Notebook>, String> {
+        obs_store::UserStore::notebooks(self).map_err(|e| e.to_string())
+    }
+    fn notebook_counts(&self) -> Result<Vec<(String, u64)>, String> {
+        obs_store::UserStore::notebook_counts(self).map_err(|e| e.to_string())
+    }
+    fn annotation(&self, id: &str) -> Result<Option<Annotation>, String> {
+        obs_store::UserStore::annotation(self, id).map_err(|e| e.to_string())
+    }
+    fn annotations(&self, notebook: Option<&str>) -> Result<Vec<Annotation>, String> {
+        obs_store::UserStore::annotations(self, notebook).map_err(|e| e.to_string())
+    }
+    fn annotations_referring(&self, resource_id: &str) -> Result<u64, String> {
+        obs_store::UserStore::annotations_referring(self, resource_id).map_err(|e| e.to_string())
+    }
+    fn search_notes(&self, fts_query: &str) -> Result<Vec<String>, String> {
+        obs_store::UserStore::search_notes(self, fts_query).map_err(|e| e.to_string())
+    }
+    fn apply_changes(&self, changes: &[Change]) -> Result<(), String> {
+        obs_store::UserStore::apply_changes(self, changes).map_err(|e| e.to_string())
+    }
+    fn annotation_dump(&self) -> Result<String, String> {
+        obs_store::UserStore::annotation_dump(self).map_err(|e| e.to_string())
     }
 }
 

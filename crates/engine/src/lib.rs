@@ -12,6 +12,7 @@
 //! assert_eq!(out["text"], "John 3:16-18");
 //! ```
 
+pub mod annotations;
 pub mod appearance;
 mod builtin;
 pub mod command;
@@ -38,6 +39,10 @@ pub mod workspace;
 pub use obs_formats::sword_repo;
 mod workspace_commands;
 
+pub use annotations::{
+    Anchor, Annotation, Change, Content, HighlightStyle, NoteTarget, Notebook, NotebookDeletion,
+    Row, Selection, TextPos, TextRange, UndoHistory, UndoStep,
+};
 pub use appearance::{Appearance, PageTone, Theme};
 pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSpec, Params};
 pub use compare::{
@@ -85,3 +90,6 @@ mod resource_navigation_tests;
 
 #[cfg(test)]
 mod import_tests;
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod annotations_tests;
