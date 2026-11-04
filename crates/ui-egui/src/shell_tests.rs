@@ -2872,3 +2872,227 @@ mod import {
 
 #[path = "word_info_tests.rs"]
 mod word_info;
+
+/// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
+mod get_bibles {
+    use std::path::PathBuf;
+
+    use obs_engine::ImportPhase;
+    use obs_engine::testing::MockRepos;
+
+    use super::*;
+
+    const NASB: &str = "New American Standard Bible - NASB 1995";
+
+    fn setup(name: &str) -> (Harness, Arc<MockRepos>, PathBuf) {
+        let root =
+            std::env::temp_dir().join(format!("obs-shell-getbibles-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let repos = Arc::new(MockRepos::new(&root.join("repos")));
+        let mut h = Harness::new();
+        let s = &mut h.shell.st.session;
+        s.set_fetch(repos.clone());
+        s.get_bibles.set_cache_path(root.join("sword-catalog.json"));
+        s.get_bibles.set_sword_dir(root.join("sword"));
+        std::fs::create_dir_all(root.join("library")).unwrap();
+        s.library.set_directory(root.join("library"));
+        h.frames(2);
+        (h, repos, root)
+    }
+
+    /// Run queued jobs (inline mode) and draw.
+    fn settle(h: &mut Harness) {
+        h.shell.st.session.jobs().pump(4);
+        h.frames(3);
+    }
+
+    /// The topmost place `text` is painted (Featured rows repeat under All Bibles).
+    fn first(h: &Harness, text: &str) -> Rect {
+        h.shapes
+            .iter()
+            .filter(|(_, t)| t == text)
+            .map(|(r, _)| *r)
+            .min_by(|a, b| a.top().total_cmp(&b.top()))
+            .unwrap_or_else(|| panic!("{text:?} not on screen: {:?}", h.texts()))
+    }
+
+    /// The control labelled `label` on the topmost row whose title is `title`.
+    fn row_button(h: &Harness, title: &str, label: &str) -> Pos2 {
+        let row = first(h, title);
+        h.shapes
+            .iter()
+            .filter(|(r, t)| {
+                t == label && r.center().y > row.top() - 4.0 && r.center().y < row.top() + 58.0
+            })
+            .map(|(r, _)| r.center())
+            .next()
+            .unwrap_or_else(|| panic!("no {label:?} on row {title:?}: {:?}", h.texts()))
+    }
+
+    fn open_get_bibles(h: &mut Harness) {
+        h.open_menu("Library");
+        h.click_text("Get Bibles…");
+        settle(h);
+        assert!(
+            h.panels()
+                .iter()
+                .any(|(_, t)| t.iter().any(|t| t == "Get Bibles")),
+            "{:?}",
+            h.panels()
+        );
+    }
+
+    #[test]
+    fn library_get_bibles_shows_nasb_1995_first_with_licence_and_size_then_one_click_installs_it() {
+        let (mut h, repos, root) = setup("flow");
+        open_get_bibles(&mut h);
+        assert!(h.find("FEATURED · 1").is_some(), "{:?}", h.texts());
+        assert!(h.find("ALL BIBLES · 5").is_some(), "{:?}", h.texts());
+        // NASB 1995 heads Featured, with the conf's licence and InstallSize.
+        let nasb = first(&h, NASB);
+        let featured = h.find("FEATURED · 1").unwrap();
+        let all = h.find("ALL BIBLES · 5").unwrap();
+        assert!(featured.top() < nasb.top() && nasb.top() < all.top());
+        assert!(h.find("Copyrighted").is_some());
+        assert!(
+            h.find("NASB95 · English · 4.5 MB · from Lockman Foundation")
+                .is_some(),
+            "{:?}",
+            h.texts()
+        );
+        assert!(
+            h.find("Copyrighted; Permission to distribute granted to CrossWire")
+                .is_some()
+        );
+        assert!(
+            h.find("Public domain").is_some(),
+            "open-text rows badge too"
+        );
+        if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+            let dir =
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+            h.screenshot(&dir.join("get-bibles.ppm"));
+        }
+
+        // One click: download, import, report Tab; no picker, no prompt.
+        let at = row_button(&h, NASB, "Download");
+        h.click(at);
+        assert!(!h.shell.st.pick_import);
+        assert!(h.shell.st.confirm.is_none());
+        let id = "nasb1995-1";
+        assert_eq!(
+            h.shell.st.session.imports.report(id).unwrap().phase,
+            ImportPhase::Download
+        );
+        settle(&mut h);
+        let record = h.shell.st.session.imports.report(id).unwrap().clone();
+        assert_eq!(record.phase, ImportPhase::Complete, "{:?}", record.error);
+        assert!(h.shell.st.session.library.get(id).is_some());
+        assert!(root.join("library/nasb1995-1.obr").is_file());
+        let fetched = repos.fetched.lock().unwrap().clone();
+        assert!(fetched.iter().all(|u| u.starts_with("file://")
+            || u.starts_with("HEAD file://")
+            || u == obs_engine::sword_repo::MASTER_REPO_LIST_URL));
+
+        // Back on Get Bibles the row says Installed and opens the Bible.
+        let tab = h.tab_at("Get Bibles");
+        h.click(tab);
+        assert!(h.find("Installed").is_some(), "{:?}", h.texts());
+        let open = row_button(&h, NASB, "Open");
+        h.click(open);
+        assert!(
+            h.panels()
+                .iter()
+                .any(|(_, t)| t.iter().any(|t| t == "NASB95")),
+            "{:?}",
+            h.panels()
+        );
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn all_bibles_filters_by_search_and_language() {
+        let (mut h, _repos, root) = setup("filter");
+        open_get_bibles(&mut h);
+        h.shell.st.get_bibles_ui.language = Some("grc".into());
+        h.frames(2);
+        assert!(h.find("ALL BIBLES · 1").is_some(), "{:?}", h.texts());
+        assert!(h.find("Greek test Bible").is_some());
+        assert!(h.find(NASB).is_some(), "Featured is not filtered");
+        h.shell.st.get_bibles_ui.language = None;
+        h.shell.st.get_bibles_ui.query = "gbf".into();
+        h.frames(2);
+        assert!(h.find("ALL BIBLES · 1").is_some(), "{:?}", h.texts());
+        h.shell.st.get_bibles_ui.query = "nothing like this".into();
+        h.frames(2);
+        assert!(
+            h.find("No Bible matches the search and language.")
+                .is_some()
+        );
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn offline_the_tab_shows_the_cached_catalog_and_says_so() {
+        let (mut h, repos, root) = setup("offline");
+        open_get_bibles(&mut h);
+        assert!(h.find(NASB).is_some());
+        repos.set_offline(true);
+        h.shell.run("getbibles.refresh", &json!({}));
+        settle(&mut h);
+        assert!(
+            h.texts()
+                .iter()
+                .any(|t| t.starts_with("Offline: showing the catalog from")),
+            "{:?}",
+            h.texts()
+        );
+        assert!(h.find(NASB).is_some(), "cached catalog still listed");
+        assert!(h.find("Try again").is_some());
+        // The rest of the app is unaffected: the Library still opens.
+        h.open_menu("Library");
+        h.click_text("Library");
+        assert!(
+            h.panels()
+                .iter()
+                .any(|(_, t)| t.iter().any(|t| t == "Library"))
+        );
+        // Back online, Try again clears the banner.
+        repos.set_offline(false);
+        let tab = h.tab_at("Get Bibles");
+        h.click(tab);
+        h.click_text("Try again");
+        settle(&mut h);
+        assert!(
+            !h.texts().iter().any(|t| t.starts_with("Offline:")),
+            "{:?}",
+            h.texts()
+        );
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_failed_download_offers_retry_on_its_row() {
+        let (mut h, repos, root) = setup("retry");
+        open_get_bibles(&mut h);
+        repos.set_offline(true);
+        let at = row_button(&h, NASB, "Download");
+        h.click(at);
+        settle(&mut h);
+        let tab = h.tab_at("Get Bibles");
+        h.click(tab);
+        assert!(h.find("Failed").is_some(), "{:?}", h.texts());
+        repos.set_offline(false);
+        let retry = row_button(&h, NASB, "Retry");
+        h.click(retry);
+        settle(&mut h);
+        let tab = h.tab_at("Get Bibles");
+        h.click(tab);
+        assert!(h.find("Installed").is_some(), "{:?}", h.texts());
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

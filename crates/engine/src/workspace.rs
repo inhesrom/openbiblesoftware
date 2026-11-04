@@ -71,6 +71,8 @@ pub enum TabKind {
     About(String),
     /// Live or latest Import report, keyed by the imported Resource id.
     ImportReport(String),
+    /// Get Bibles (#91): download Bibles from SWORD repositories. Keyless, single instance.
+    GetBibles,
     Guide(Guide),
     Tool(Tool),
 }
@@ -101,6 +103,7 @@ enum Slot {
     Resource,
     About,
     ImportReport,
+    GetBibles,
     Guide(Guide),
     Tool(Tool),
 }
@@ -114,6 +117,7 @@ impl TabKind {
             TabKind::Library
                 | TabKind::About(_)
                 | TabKind::ImportReport(_)
+                | TabKind::GetBibles
                 | TabKind::Tool(Tool::Notes | Tool::WordInfo)
         )
     }
@@ -129,7 +133,7 @@ impl TabKind {
             TabKind::Tool(Tool::WordInfo) => HeaderBox::FollowsHover,
             TabKind::Guide(Guide::WordStudy) => HeaderBox::Word,
             TabKind::Tool(Tool::Search) => HeaderBox::Filter,
-            TabKind::About(_) | TabKind::ImportReport(_) => HeaderBox::Keyless,
+            TabKind::About(_) | TabKind::ImportReport(_) | TabKind::GetBibles => HeaderBox::Keyless,
             _ => HeaderBox::Reference,
         }
     }
@@ -141,6 +145,7 @@ impl TabKind {
             TabKind::Library
                 | TabKind::About(_)
                 | TabKind::ImportReport(_)
+                | TabKind::GetBibles
                 | TabKind::Tool(Tool::Notes)
         )
     }
@@ -162,6 +167,7 @@ impl TabKind {
             TabKind::Resource(_) => Slot::Resource,
             TabKind::About(_) => Slot::About,
             TabKind::ImportReport(_) => Slot::ImportReport,
+            TabKind::GetBibles => Slot::GetBibles,
             TabKind::Guide(g) => Slot::Guide(*g),
             TabKind::Tool(t) => Slot::Tool(*t),
         }

@@ -38,7 +38,13 @@ use MenuItem::{Command as C, Layouts, Resources, Separator};
 pub const MENUS: &[Menu] = &[
     Menu {
         title: "Library",
-        items: &[C("library.open"), C("library.import"), Separator, Resources],
+        items: &[
+            C("library.open"),
+            C("library.import"),
+            C("library.get_bibles"),
+            Separator,
+            Resources,
+        ],
     },
     Menu {
         title: "Guides",
@@ -233,6 +239,21 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     open_cmd("library.open", "Library", Some("Ctrl+Shift+L"), |s, p| {
         open(s, p, TabKind::Library)
     }),
+    CommandSpec {
+        id: "library.get_bibles",
+        label: "Get Bibles…",
+        shortcut: None,
+        params: OPEN,
+        enabled: always,
+        run: |s, p| {
+            let out = open(s, p, TabKind::GetBibles)?;
+            // Show the cached catalog at once; refresh it in the background when stale.
+            if s.get_bibles.needs_refresh(crate::get_bibles::now_secs()) {
+                s.refresh_bible_catalog();
+            }
+            Ok(out)
+        },
+    },
     CommandSpec {
         id: "resource.open",
         label: "Open Resource",
@@ -505,6 +526,7 @@ pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
     match kind {
         TabKind::Library => "Library".into(),
         TabKind::ImportReport(_) => "Import report".into(),
+        TabKind::GetBibles => "Get Bibles".into(),
         TabKind::Resource(id) => s
             .library
             .get(id)
