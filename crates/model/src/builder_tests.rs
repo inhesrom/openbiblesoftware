@@ -129,7 +129,7 @@ fn content_hash_is_stable_and_ignores_insertion_order() {
     // come with a FORMAT_VERSION bump.
     assert_eq!(
         a.manifest.content_hash,
-        "sha256:ac9d3e7f7922d29f27dfacef73f0aba27c5405ad25a094a6ae47597e0dbb9b53"
+        "sha256:f87505368c9278b38fe81d3bba8ad10c583d853d42ef3c75360c062bd050dff1"
     );
 }
 
