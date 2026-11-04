@@ -9,8 +9,11 @@
 //!    `id-changes.toml` maps it (shipped as `unit_alias`).
 //! 5. Run the structural checks over the whole library (`checks`): every failure names its
 //!    item, and nothing is written until they pass.
-//! 6. Write `dist/starter/<id>.obr`, `CHANGES-<id>.md` for CC BY sources,
-//!    `starter-manifest.json` and `starter-build-report.md`, and check the size budget.
+//! 6. Write `dist/starter/<id>.obr`, the prebuilt Search index caches in
+//!    `dist/starter/search/` (#58; the app uses a cache found in `search/` beside a Resource's
+//!    `.obr` as long as its key matches), `CHANGES-<id>.md` for CC BY sources,
+//!    `starter-manifest.json` and `starter-build-report.md`, and check the size budget
+//!    (Resources plus caches).
 //! 7. Compare the golden-passage snapshots in `starter/goldens/` (`goldens`); a difference
 //!    fails the build with a unified diff, in the report and on stderr.
 //!
@@ -45,6 +48,8 @@ use lock::{IdChanges, Lock, Source};
 
 pub const MANIFEST_FILE: &str = "starter-manifest.json";
 pub const REPORT_FILE: &str = "starter-build-report.md";
+/// Where the prebuilt Search index caches go, inside the output directory.
+pub const SEARCH_DIR: &str = "search";
 
 const USAGE: &str = "usage: cargo xtask starter [--out DIR] [--cache DIR] [--previous MANIFEST] [--check-determinism] [--update-goldens]
 
@@ -225,6 +230,36 @@ pub fn build(config: &Config) -> Result<String> {
                 .collect(),
         });
     }
+    // Prebuilt Search index caches, one per Resource, built in parallel (each is
+    // deterministic on its own).
+    let search_dir = config.out.join(SEARCH_DIR);
+    let caches: Vec<Result<u64>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = built
+            .iter()
+            .map(|b| {
+                let dir = &search_dir;
+                scope.spawn(move || -> Result<u64> {
+                    let id = &b.resource.manifest.resource_id;
+                    let path = obs_store::build_search_index(
+                        &b.resource,
+                        obs_search::INDEX_VERSION,
+                        dir,
+                        &mut |_, _| true,
+                    )
+                    .map_err(|e| anyhow!("{id}: Search index: {e}"))?;
+                    Ok(std::fs::metadata(&path)?.len())
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| {
+                h.join()
+                    .unwrap_or_else(|_| Err(anyhow!("a Search index thread panicked")))
+            })
+            .collect()
+    });
+    let search_bytes: Vec<u64> = caches.into_iter().collect::<Result<_>>()?;
     for source in lock_file
         .sources
         .iter()
@@ -250,13 +285,12 @@ pub fn build(config: &Config) -> Result<String> {
         &config.goldens,
         config.update_goldens,
     )?;
-    let obr_bytes: u64 = manifest.resources.iter().map(|r| r.bytes).sum();
     let budget = lock_file.size_budget_mb.saturating_mul(1_000_000);
     let report = build_report(
         &built,
         &manifest,
         previous.as_ref(),
-        obr_bytes,
+        &search_bytes,
         budget,
         &structural.coverage,
         &snapshots,
@@ -593,6 +627,11 @@ fn clean_outputs(out: &Path) -> Result<()> {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
+        if path.is_dir() && name == SEARCH_DIR {
+            std::fs::remove_dir_all(&path)
+                .with_context(|| format!("cannot remove {}", path.display()))?;
+            continue;
+        }
         if path.is_file()
             && (name.ends_with(".obr")
                 || name.ends_with(".obr.partial")
@@ -607,12 +646,16 @@ fn clean_outputs(out: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Bytes of every file under `dir`, including the `search/` caches.
 fn dir_bytes(dir: &Path) -> Result<u64> {
     let mut total = 0;
     for entry in std::fs::read_dir(dir)? {
-        let meta = entry?.metadata()?;
+        let entry = entry?;
+        let meta = entry.metadata()?;
         if meta.is_file() {
             total += meta.len();
+        } else if meta.is_dir() {
+            total += dir_bytes(&entry.path())?;
         }
     }
     Ok(total)
@@ -648,16 +691,16 @@ fn describe(status: &Status, file: &Path) -> String {
 
 /// Fail unless `a` and `b` hold the same files with the same bytes.
 fn compare_dirs(a: &Path, b: &Path) -> Result<()> {
+    // Every file, by its path relative to the output directory (`search/` included).
     let list = |d: &Path| -> Result<BTreeMap<String, PathBuf>> {
         let mut m = BTreeMap::new();
-        for entry in std::fs::read_dir(d)? {
-            let p = entry?.path();
-            if p.is_file() {
+        for entry in walkdir::WalkDir::new(d) {
+            let entry = entry?;
+            if entry.file_type().is_file() {
+                let rel = entry.path().strip_prefix(d).unwrap_or(entry.path());
                 m.insert(
-                    p.file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
-                    p,
+                    rel.to_string_lossy().replace('\\', "/"),
+                    entry.path().to_path_buf(),
                 );
             }
         }
@@ -690,18 +733,24 @@ fn build_report(
     built: &[Built],
     manifest: &ReleaseManifest,
     previous: Option<&ReleaseManifest>,
-    obr_bytes: u64,
+    search_bytes: &[u64],
     budget: u64,
     coverage: &checks::Coverage,
     snapshots: &[goldens::Checked],
 ) -> String {
     let mut s = String::from("# Starter library build report\n\n");
+    let obr_bytes: u64 = manifest.resources.iter().map(|r| r.bytes).sum();
+    let index_bytes: u64 = search_bytes.iter().sum();
     let _ = writeln!(
         s,
-        "Total: {} Resource(s), {} MB of Resource files; size budget {} MB for the Starter \
-         set plus Search index caches (caches are added by a later build step).\n",
+        "Total: {} Resource(s), {} MB of Resource files plus {} MB of prebuilt Search index \
+         caches (`{SEARCH_DIR}/`, index version {}) = {} MB; size budget {} MB for the Starter \
+         set plus Search index caches.\n",
         manifest.resources.len(),
         mb(obr_bytes),
+        mb(index_bytes),
+        obs_search::INDEX_VERSION,
+        mb(obr_bytes + index_bytes),
         budget / 1_000_000
     );
     match previous {
@@ -709,17 +758,18 @@ fn build_report(
         None => s.push_str("No previous release manifest given: every Resource is new.\n\n"),
     }
     s.push_str(
-        "| Resource | Revision | Size (MB) | Units | Verses | Notes | Tagged words | Unmapped | Absent | Content hash |\n\
-         |---|---|---|---|---|---|---|---|---|---|\n",
+        "| Resource | Revision | Size (MB) | Search index (MB) | Units | Verses | Notes | Tagged words | Unmapped | Absent | Content hash |\n\
+         |---|---|---|---|---|---|---|---|---|---|---|\n",
     );
-    for (b, r) in built.iter().zip(&manifest.resources) {
+    for (i, (b, r)) in built.iter().zip(&manifest.resources).enumerate() {
         let vm = b.report.verse_map;
         let _ = writeln!(
             s,
-            "| `{}` | {} | {} | {} | {} | {} | {} | {} | {} | `{}` |",
+            "| `{}` | {} | {} | {} | {} | {} | {} | {} | {} | {} | `{}` |",
             r.resource_id,
             r.revision,
             mb(r.bytes),
+            mb(search_bytes.get(i).copied().unwrap_or(0)),
             r.units.len(),
             b.report.verses,
             b.report.notes,
