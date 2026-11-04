@@ -16,6 +16,9 @@ use crate::{JobEvent, JobEventKind, JobId, Session};
 /// The Featured section's data file: module + repository, in display order.
 const FEATURED_TOML: &str = include_str!("../data/featured-bibles.toml");
 
+/// Opening Get Bibles refreshes a catalog older than this (6 hours).
+pub const REFRESH_AFTER_SECS: u64 = 6 * 60 * 60;
+
 /// The repository preferred when the same module is offered by several.
 pub const PREFERRED_REPO: &str = "CrossWire";
 
@@ -358,6 +361,17 @@ impl GetBibles {
         self.refreshing.is_some()
     }
 
+    /// No catalog yet, the last refresh failed, or the catalog is older than
+    /// [`REFRESH_AFTER_SECS`].
+    pub fn needs_refresh(&self, now: u64) -> bool {
+        self.refreshing.is_none()
+            && (self.offline.is_some()
+                || self
+                    .catalog
+                    .as_ref()
+                    .is_none_or(|c| now.saturating_sub(c.fetched_at) > REFRESH_AFTER_SECS))
+    }
+
     /// Where the catalog is cached. The app sets [`default_catalog_cache`] at startup;
     /// tests use a temp file. Loads the cache if there is one.
     pub fn set_cache_path(&mut self, path: PathBuf) {
@@ -437,7 +451,7 @@ pub enum BibleStatus {
     },
 }
 
-fn now_secs() -> u64 {
+pub(crate) fn now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())

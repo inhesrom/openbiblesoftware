@@ -24,6 +24,7 @@ use crate::theme;
 use crate::view::ReadingView;
 use crate::workers::SnippetCache;
 
+mod get_bibles_tab;
 mod import_tab;
 mod library_tab;
 #[path = "references.rs"]
@@ -83,6 +84,8 @@ pub(crate) struct State {
     /// The Remove… confirmation: resource id, window title and message.
     confirm: Option<(String, String, String)>,
     pick_import: bool,
+    /// The Get Bibles Tab's search and language filter.
+    get_bibles_ui: get_bibles_tab::GetBiblesUi,
     picker: Option<std::sync::mpsc::Receiver<Option<std::path::PathBuf>>>,
     /// When the Last session was last checked for saving.
     last_save: f64,
@@ -127,6 +130,7 @@ impl Shell {
                 prompt: None,
                 confirm: None,
                 pick_import: false,
+                get_bibles_ui: get_bibles_tab::GetBiblesUi::default(),
                 picker: None,
                 last_save: 0.0,
                 palette: Palette::PAPER,
@@ -970,6 +974,7 @@ impl State {
             TabKind::Library => self.library_body(&mut body, tab),
             TabKind::About(id) => self.about_body(&mut body, tab, &id),
             TabKind::ImportReport(id) => self.import_body(&mut body, &id),
+            TabKind::GetBibles => self.get_bibles_body(&mut body),
             TabKind::Guide(g) => placeholder(&mut body, g.title(), guide_ticket(g)),
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
             TabKind::Tool(Tool::CrossReferences) => self.cross_references_body(&mut body, tab),
