@@ -25,9 +25,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use obs_formats::{
-    DatasetOptions, ImportReport, LexiconOptions, UsfmImport, UsfmOptions, import_abbott_smith,
-    import_bdb, import_openbible_cross_references, import_strongs_greek, import_strongs_hebrew,
-    import_tbes, import_tipnr, usfm_book_code,
+    DatasetOptions, ImportReport, LexiconOptions, StepbibleImport, StepbibleOptions, StepbibleText,
+    UsfmImport, UsfmOptions, import_abbott_smith, import_bdb, import_openbible_cross_references,
+    import_strongs_greek, import_strongs_hebrew, import_tbes, import_tipnr, usfm_book_code,
 };
 use obs_model::{Origin, Resource, UnitId};
 use obs_store::write_obr;
@@ -328,6 +328,7 @@ fn build_one(
 fn import(source: &Source, files: &[Vec<u8>]) -> Result<(Resource, ImportReport)> {
     let extras = match source.importer.as_str() {
         "oshb-bdb" => 1,
+        "tahot" | "tagnt" => source.extra_files.len(),
         _ => 0,
     };
     if files.len() != 1 + extras {
@@ -343,6 +344,8 @@ fn import(source: &Source, files: &[Vec<u8>]) -> Result<(Resource, ImportReport)
     }
     match source.importer.as_str() {
         "usfm" => return import_usfm_zip(source, &files[0]),
+        "tahot" => return import_stepbible(source, files, StepbibleText::Tahot),
+        "tagnt" => return import_stepbible(source, files, StepbibleText::Tagnt),
         "openbible-cross-references" => return import_openbible_zip(source, &files[0]),
         "tipnr" => return import_tipnr_text(source, &files[0]),
         "wikisource-mhc" | "jfb-html" | "easton-zld" | "smith-rawld" => {
@@ -432,6 +435,41 @@ fn import_usfm_zip(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportRep
         .collect();
     if !missing.is_empty() {
         bail!("skip_books lists books the source does not have: {missing:?}");
+    }
+    import.finish().map_err(|e| anyhow!("{e}"))
+}
+
+/// STEPBible's TAHOT or TAGNT tab-separated files → a Hebrew or Greek Bible.
+fn import_stepbible(
+    source: &Source,
+    files: &[Vec<u8>],
+    text: StepbibleText,
+) -> Result<(Resource, ImportReport)> {
+    let names: Vec<String> = source
+        .files()
+        .enumerate()
+        .map(|(i, (url, _))| {
+            let named = if i == 0 {
+                source.origin_url.as_deref().unwrap_or(url)
+            } else {
+                url
+            };
+            fetch::file_name(named)
+        })
+        .collect();
+    let mut import = StepbibleImport::new(StepbibleOptions {
+        text,
+        resource_id: source.resource_id.clone(),
+        title: source.title.clone(),
+        abbreviation: source.abbreviation.clone(),
+        language: source.language.clone(),
+        source_file: names.join("; "),
+        tool_version: format!("xtask starter {}", env!("CARGO_PKG_VERSION")),
+    });
+    for (bytes, name) in files.iter().zip(&names) {
+        let text = String::from_utf8(bytes.clone())
+            .with_context(|| format!("{name} is not UTF-8 text"))?;
+        import.add_file(name, text);
     }
     import.finish().map_err(|e| anyhow!("{e}"))
 }

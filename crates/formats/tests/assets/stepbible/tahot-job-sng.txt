@@ -1,0 +1,83 @@
+TAHOT Gen-Deu - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+TAHOT Jos-Est - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+TAHOT Job-Sng - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+TAHOT Isa-Mal - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+(This is saved as 4  files because a single file too large for Github)																
+=================================================																
+																
+	==============================================================															
+	Data created by www.STEPBible.org based on work at Tyndale House Cambridge (CC BY 4.0)															
+	==============================================================												
+	This licence allows you to:												
+	* Include any part of this data in software or publications and send it to AI servers  without requesting permission 												
+	* Download the data and reformat it for your application												
+	* Send any proposed corrections to STEPBible@Gmail.com to be verified 												
+	  (You MAY make changes yourself, but you should include a note of changes that can be viewed by those who use your new data)												
+	* Attribute the data to Tyndale House and STEPBible.org, and include a link to STEPBible.github.io/STEPBible-Data as the source of this data. 												
+	 Please do not post copies of this data file elsewhere, so that this remains the single up-to-date source"												
+	* We'd love to hear about your project and add it to our Partners Page when you make it available. Email us at STEPBible@Gmail.com.												
+	==============================================================												
+
+Psa.3.0(3.1)#01=L	מִזְמ֥וֹר	miz.Mor	a psalm	{H4210}	HNcmsa			H4210			{H4210=מִזְמוֹר=melody}					
+Psa.3.0(3.1)#02=L	לְ/דָוִ֑ד	le./da.Vid	of/ David	H9005/{H1732}	HR/Npm			H1732			H9005=ל=to/{H1732=דָּוִד=David»David@Rut.4.17-Rev}					
+Psa.3.0(3.1)#03=L	בְּ֝/בָרְח֗/וֹ	be./va.re.Ch/o	when/ fled/ he	H9003/{H1272}/H9043	HR/Vqcc/Sp3ms			H1272			H9003=ב=in/{H1272=בָּרַח=to flee}/H9043=Ss3m=he					
+Psa.3.0(3.1)#04=L	מִ/פְּנֵ֤י\׀	mi./pe.Nei	from/ before	H9006/{H6440G}\H9015	HR/Ncmpc			H6440G			H9006=מ=from/{H6440G=פָּנֶה=: before»face:2_before;_to;_front}\H9015=׀=separate					
+Psa.3.0(3.1)#05=L	אַבְשָׁל֬וֹם	'av.sha.Lom	Absalom	{H0053}	HNpm			H0053			{H0053=אֲבִישָׁלוֹם=Absalom»Absalom@2Sa.3.3-Psa}					
+Psa.3.0(3.1)#06=L	בְּנֽ/וֹ\׃	be.N/o	son/ his	{H1121A}/H9023\H9016	HNcmsc/Sp3ms			H1121A			{H1121A=בֵּן=: child»son:1_child;_son}/H9023=Ps3m=his\H9016=׃=verseEnd					
+Psa.3.1(3.2)#01=L	יְ֭הוָה	Yah.weh	O Yahweh	{H3068G}	HNpt			H3068G			{H3068G=יהוה=LORD»LORD@Gen.1.1-Heb}					
+Psa.3.1(3.2)#02=L	מָֽה\־	mah-	how!	{H4100}\H9014	HPi			H4100			{H4100=מָה=what?}\H9014=־=link					
+Psa.3.1(3.2)#03=L	רַבּ֣וּ	ra.Bu	they are many	{H7231}	HVqp3cp			H7231			{H7231=רָבַב=to multiply}					
+Psa.3.1(3.2)#04=L	צָרָ֑/י	tza.Ra/i	opponents/ my	{H6862C}/H9020	HNcmpc/Sp1bs			H6862C			{H6862C=צַר=enemy}/H9020=Ps1c=my					
+Psa.3.1(3.2)#05=L	רַ֝בִּ֗ים	ra.Bim	many [people]	{H7227A}	HAampa			H7227A			{H7227A=רַב=many}					
+Psa.3.1(3.2)#06=L	קָמִ֥ים	ka.Mim	[are] rising up	{H6965J}	HVqrmpa			H6965J			{H6965J=קוּם=: attack»to arise:4_attack;_oppose}					
+Psa.3.1(3.2)#07=L	עָלָֽ/י\׃	'a.La/i	on/ me	{H5921A}/H9030\H9016	HR/Sp1bs			H5921A			{H5921A=עַל=upon}/H9030=Os1c=me\H9016=׃=verseEnd					
+Psa.3.2(3.3)#01=L	רַבִּים֮	ra.Bim	many [people]	{H7227A}	HAampa			H7227A			{H7227A=רַב=many}					
+Psa.3.2(3.3)#02=L	אֹמְרִ֪ים	'o.me.Rim	[are] saying	{H0559}	HVqrmpa			H0559			{H0559=אָמַר=to say}					
+Psa.3.2(3.3)#03=L	לְ/נַ֫פְשִׁ֥/י	le./Naf.Sh/i	of/ self/ my	H9005/{H5315G}/H9020	HR/Ncfsc/Sp1bs			H5315G			H9005=ל=to/{H5315G=נֶ֫פֶשׁ=: soul»soul:1_soul;_heart}/H9020=Ps1c=my					
+Psa.3.2(3.3)#04=L	אֵ֤ין	'ein	there not	{H0369}	HNcmsc			H0369			{H0369=אַ֫יִן=nothing}					
+Psa.3.2(3.3)#05=L	יְֽשׁוּעָ֓תָה	ye.shu.'A.tah	[is] deliverance	{H3444}	HNcfsa			H3444			{H3444=יְשׁוּעָה=salvation}					
+Psa.3.2(3.3)#06=L	לּ֬/וֹ	l/o	for/ him	H9005/{H9033}	HR/Sp3ms			H9033			H9005=ל=to/{H9033=Os3m=him}					
+Psa.3.2(3.3)#07=L	בֵֽ/אלֹהִ֬ים	ve./lo.Him	in/ God	H9003/{H0430G}	HR/Ncmpa			H0430G			H9003=ב=in/{H0430G=אֱלֹהִים=God»LORD@Gen.1.1-Heb}					
+Psa.3.2(3.3)#08=L	סֶֽלָה\׃	Se.lah	Selah	{H5542}\H9016	HTj			H5542			{H5542=סֶ֫לָה=Selah»Selah@Psa.3.2-Hab}\H9016=׃=verseEnd					
+Psa.3.8(3.9)#01=L	לַ/יהוָ֥ה	la./Yah.weh	[belongs] to/ Yahweh	H9005/{H3068G}	HR/Npt			H3068G			H9005=ל=to/{H3068G=יהוה=LORD»LORD@Gen.1.1-Heb}					
+Psa.3.8(3.9)#02=L	הַ/יְשׁוּעָ֑ה	ha/y.shu.'Ah	<the>/ deliverance	H9009/{H3444}	HTd/Ncfsa			H3444			H9009=ה=the/{H3444=יְשׁוּעָה=salvation}					
+Psa.3.8(3.9)#03=L	עַֽל\־	'al-	[is] towards	{H5921A}\H9014	HR			H5921A			{H5921A=עַל=upon}\H9014=־=link					
+Psa.3.8(3.9)#04=L	עַמְּ/ךָ֖	'a.me./Kha	people/ your	{H5971A}/H9021	HNcmsc/Sp2ms			H5971A			{H5971A=עַם=: people»people:1_people;_nation}/H9021=Ps2m=your					
+Psa.3.8(3.9)#05=L	בִרְכָתֶ֣/ךָ	vir.kha.Te./kha	blessing/ your	{H1293}/H9021	HNcfsc/Sp2ms			H1293			{H1293=בְּרָכָה=blessing}/H9021=Ps2m=your					
+Psa.3.8(3.9)#06=L	סֶּֽלָה\׃	Se.lah	Selah	{H5542}\H9016	HTj			H5542			{H5542=סֶ֫לָה=Selah»Selah@Psa.3.2-Hab}\H9016=׃=verseEnd					
+Psa.23.0(23.1)#01=L	מִזְמ֥וֹר	miz.Mor	a psalm	{H4210}	HNcmsa			H4210			{H4210=מִזְמוֹר=melody}					
+Psa.23.0(23.1)#02=L	לְ/דָוִ֑ד	le./da.Vid	of/ David	H9005/{H1732}	HR/Npm			H1732			H9005=ל=to/{H1732=דָּוִד=David»David@Rut.4.17-Rev}					
+Psa.23.1#03=L	יְהוָ֥ה	Yah.weh	Yahweh	{H3068G}	HNpt			H3068G			{H3068G=יהוה=LORD»LORD@Gen.1.1-Heb}					
+Psa.23.1#04=L	רֹ֝עִ֗/י	ro.'/I	[is] shepherd/ my	{H7462B}/H9020	HVqrmsc/Sp1bs			H7462B			{H7462B=רָעָה=to pasture}/H9020=Ps1c=my					
+Psa.23.1#05=L	לֹ֣א	lo'	not	{H3808}	HTn			H3808			{H3808=לֹא=not}					
+Psa.23.1#06=L	אֶחְסָֽר\׃	'ech.Sar	I lack	{H2637}\H9016	HVqi1cs			H2637			{H2637=חָסֵר=to lack}\H9016=׃=verseEnd					
+Psa.51.0(51.1)#01=L	לַ/מְנַצֵּ֗חַ	la/m.na.Tze.ach	to the/ choirmaster	H9005/{H5329}	HRd/Vprmsa			H5329			H9005=ל=to/{H5329=נָצַח=to conduct}					
+Psa.51.0(51.1)#02=L	מִזְמ֥וֹר	miz.Mor	a psalm	{H4210}	HNcmsa			H4210			{H4210=מִזְמוֹר=melody}					
+Psa.51.0(51.1)#03=L	לְ/דָוִֽד\׃	le./da.Vid	of/ David	H9005/{H1732}\H9016	HR/Npm			H1732			H9005=ל=to/{H1732=דָּוִד=David»David@Rut.4.17-Rev}\H9016=׃=verseEnd					
+Psa.51.0(51.2)#01=L	בְּֽ/בוֹא\־	be./Vo'-	when/ came	H9003/{H0935G}\H9014	HR/Vqcc			H0935G_A			H9003=ב=in/{H0935G=בּוֹא=: come»to come (in):1_come;_go_in}\H9014=־=link					
+Psa.51.0(51.2)#02=L	אֵ֭לָי/ו	'E.la/v	to/ him	{H0413}/H9033	HR/Sp3ms			H0413_A			{H0413=אֶל=to(wards)}/H9033=Os3m=him					
+Psa.51.0(51.2)#03=L	נָתָ֣ן	na.Tan	Nathan	{H5416H}	HNpm			H5416H			{H5416H=נָתָן=Nathan»Nathan@2Sa.7.2-Psa}					
+Psa.51.0(51.2)#04=L	הַ/נָּבִ֑יא	ha./na.Vi'	the/ prophet	H9009/{H5030}	HTd/Ncmsa			H5030			H9009=ה=the/{H5030=נָבִיא=prophet}					
+Psa.51.0(51.2)#05=L	כַּֽ/אֲשֶׁר\־	ka./'a.Sher-	just/ when	H9004/{H0834D}\H9014	HR/Tr			H0834D			H9004=כ=like/{H0834D=כַּאֲשֶׁר=as which}\H9014=־=link					
+Psa.51.0(51.2)#06=L	בָּ֝֗א	Ba'	he had gone	{H0935G}	HVqp3ms			H0935G_B			{H0935G=בּוֹא=: come»to come (in):1_come;_go_in}					
+Psa.51.0(51.2)#07=L	אֶל\־	'el-	into	{H0413}\H9014	HR			H0413_B			{H0413=אֶל=to(wards)}\H9014=־=link					
+Psa.51.0(51.2)#08=L	בַּת\־	bat-	Bath-	{H1339}+\H9014	HNpf			H1339_A			{H1339=בַּת־שֶׁ֫בַע=Bathsheba»Bathsheba@2Sa.11.3-Psa}+\H9014=־=link					
+Psa.51.0(51.2)#09=L	שָֽׁבַע\׃	Sha.va'	-sheba	{H1339}\H9016	HNpf			H1339_b			{H1339=בַּת־שֶׁ֫בַע=Bathsheba»Bathsheba@2Sa.11.3-Psa}\H9016=׃=verseEnd					
+Psa.51.1(51.3)#01=L	חָנֵּ֣/נִי	cho.ne./ni	show favor to/ me	{H2603A}/H9030	HVqv2ms/Sp1bs			H2603A			{H2603A=חָנַן=be gracious}/H9030=Os1c=me					
+Psa.51.1(51.3)#02=L	אֱלֹהִ֣ים	'E.lo.Him	O God	{H0430G}	HNcmpa			H0430G			{H0430G=אֱלֹהִים=God»LORD@Gen.1.1-Heb}					
+Psa.51.1(51.3)#03=L	כְּ/חַסְדֶּ֑/ךָ	ke./chas.De./kha	according to/ covenant loyalty/ your	H9004/{H2617A}/H9021	HR/Ncmsc/Sp2ms			H2617A			H9004=כ=like/{H2617A=חֶ֫סֶד=kindness}/H9021=Ps2m=your					
+Psa.51.1(51.3)#04=L	כְּ/רֹ֥ב	ke./Ro	according to/ [the] greatness of	H9004/{H7230}	HR/Ncmsc			H7230			H9004=כ=like/{H7230=רֹב=abundance}					
+Psa.51.1(51.3)#05=L	רַ֝חֲמֶ֗י/ךָ	ra.cha.Mei./kha	compassion<s>/ your	{H7356B}/H9021	HNcmpc/Sp2ms			H7356B			{H7356B=רַחֲמִים=compassion}/H9021=Ps2m=your					
+Psa.51.1(51.3)#06=L	מְחֵ֣ה	me.Cheh	wipe out	{H4229A}	HVqv2ms			H4229A			{H4229A=מָחָה=to wipe}					
+Psa.51.1(51.3)#07=L	פְשָׁעָֽ/י\׃	fe.sha.'A/i	transgressions/ my	{H6588}/H9020\H9016	HNcmpc/Sp1bs			H6588			{H6588=פֶּ֫שַׁע=transgression}/H9020=Ps1c=my\H9016=׃=verseEnd					
+Psa.51.19(51.21)#01=L	אָ֤ז	'az	then	{H0227A}	HD			H0227A_A			{H0227A=אָז=then}					
+Psa.51.19(51.21)#02=L	תַּחְפֹּ֣ץ	tach.Potz	you will delight in	{H2654A}	HVqi2ms			H2654A			{H2654A=חָפֵץ=to delight in}					
+Psa.51.19(51.21)#03=L	זִבְחֵי\־	ziv.chei-	sacrifices of	{H2077}\H9014	HNcmpc			H2077			{H2077=זֶ֫בַח=sacrifice}\H9014=־=link					
+Psa.51.19(51.21)#04=L	צֶ֭דֶק	Tze.dek	righteousness	{H6664G}	HNcmsa			H6664G			{H6664G=צֶ֫דֶק=righteousness}					
+Psa.51.19(51.21)#05=L	עוֹלָ֣ה	o.Lah	burnt offering	{H5930A}	HNcfsa			H5930A			{H5930A=עֹלָה=burnt offering}					
+Psa.51.19(51.21)#06=L	וְ/כָלִ֑יל	ve./kha.Lil	and/ whole offering	H9002/{H3632}	HC/Aamsa			H3632			H9002=ו=and/{H3632=כָּלִיל=entire}					
+Psa.51.19(51.21)#07=L	אָ֤ז	'az	then	{H0227A}	HD			H0227A_B			{H0227A=אָז=then}					
+Psa.51.19(51.21)#08=L	יַעֲל֖וּ	ya.'a.Lu	people will offer up	{H5927I}	HVhi3mp			H5927I			{H5927I=עָלָה=: offer_up»to ascend:3_offer_up}					
+Psa.51.19(51.21)#09=L	עַל\־	'al-	on	{H5921A}\H9014	HR			H5921A			{H5921A=עַל=upon}\H9014=־=link					
+Psa.51.19(51.21)#10=L	מִזְבַּחֲ/ךָ֣	miz.ba.cha./Kha	altar/ your	{H4196}/H9021	HNcmsc/Sp2ms			H4196			{H4196=מִזְבֵּחַ=altar}/H9021=Ps2m=your					
+Psa.51.19(51.21)#11=L	פָרִֽים\׃	fa.Rim	young bulls	{H6499}\H9016	HNcmpa			H6499			{H6499=פַּר=bullock}\H9016=׃=verseEnd					

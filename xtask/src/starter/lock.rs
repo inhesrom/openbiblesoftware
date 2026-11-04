@@ -56,7 +56,7 @@ pub struct Source {
     /// shipping it.
     #[serde(default)]
     pub skip_columns: Vec<String>,
-    /// Further pinned files the importer reads with the main one (`oshb-bdb`: the lexical
+    /// Further pinned files read after the main one (TAHOT/TAGNT parts or the BDB lexical
     /// index). Each is fetched and checked like `url`, and the evidence must name its sha256.
     #[serde(rename = "extra_file", default)]
     pub extra_files: Vec<PinnedFile>,
@@ -69,6 +69,17 @@ pub struct PinnedFile {
     pub url: String,
     /// Lowercase hex sha256 of the file at `url`.
     pub sha256: String,
+}
+
+impl Source {
+    /// Every pinned file, `url` first: (url, sha256).
+    pub fn files(&self) -> impl Iterator<Item = (&str, &str)> {
+        std::iter::once((self.url.as_str(), self.sha256.as_str())).chain(
+            self.extra_files
+                .iter()
+                .map(|f| (f.url.as_str(), f.sha256.as_str())),
+        )
+    }
 }
 
 /// The parsed `starter/id-changes.toml`: cumulative, never pruned.
@@ -91,12 +102,14 @@ pub struct IdChange {
     pub new: String,
 }
 
-/// Starter Bible, dataset, study (#44), and Lexicon (#41) importers:
+/// Starter Bible (`usfm`, `tahot`, `tagnt`; #40), dataset (#43), study (#44), and Lexicon (#41) importers:
 /// `stepbible-tbes` (TBESH/TBESG TSV), `strongs-hebrew` / `strongs-greek`
 /// (openscriptures/strongs XML), `oshb-bdb` (BDB XML plus the lexical index as an extra file),
 /// `abbott-smith` (TEI XML).
 pub const IMPORTERS: &[&str] = &[
     "usfm",
+    "tahot",
+    "tagnt",
     "openbible-cross-references",
     "tipnr",
     "stepbible-tbes",
@@ -182,6 +195,9 @@ pub fn check(lock: &Lock, lock_dir: &Path, changes: &IdChanges) -> Result<()> {
                 s.importer,
                 IMPORTERS.join(", ")
             ));
+        }
+        if s.importer == "usfm" && !s.extra_files.is_empty() {
+            bad("the `usfm` importer reads one zip; it takes no extra files".into());
         }
         for (url, sha) in std::iter::once((&s.url, &s.sha256))
             .chain(s.extra_files.iter().map(|f| (&f.url, &f.sha256)))

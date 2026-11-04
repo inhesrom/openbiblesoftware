@@ -237,6 +237,56 @@ provenance = "Abbott-Smith project README at the pinned commit: \"The lexicon (a
 evidence = "evidence/abbott-smith.md"
 
 [[source]]
+resource_id = "tahot"
+importer = "tahot"
+url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Translators%20Amalgamated%20OT%2BNT/TAHOT%20Gen-Deu%20-%20Translators%20Amalgamated%20Hebrew%20OT%20-%20STEPBible.org%20CC%20BY.txt"
+sha256 = "7763ef367bb0e6e1c1a95fb9b652e1d611b2481827611433e82abbf229216d70"
+title = "Hebrew Old Testament (STEPBible TAHOT)"
+abbreviation = "TAHOT"
+language = "hbo"
+edition = "Translators Amalgamated Hebrew OT: Leningrad Codex as read by translators, with Hebrew verse numbers (STEPBible-Data commit 5de0a47, 2026-11-02)"
+publisher = "STEPBible.org, based on work at Tyndale House Cambridge"
+homepage = "https://STEPBible.github.io/STEPBible-Data/"
+spdx = "CC-BY-4.0"
+attribution = "Translators Amalgamated Hebrew OT (TAHOT), data created by www.STEPBible.org based on work at Tyndale House Cambridge, licensed CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Credit: STEP Bible, www.STEPBible.org. Source of this data: https://STEPBible.github.io/STEPBible-Data"
+changes = "Converted from STEPBible's tab-separated TAHOT files to the Open Bible resource format. Kept: the Hebrew text with its morpheme separators (/ and \\) removed; every word's morpheme parts (prefixes, root and suffixes) with dStrong numbers (leading zeros removed), lexical forms, morphology codes (each part's code prefixed with its language letter) and English glosses; Hebrew verse numbers, mapped to KJV numbering with STEPBible TVTMS; petuha and setumah as paragraph breaks. Ketiv readings and meaning variants, and words restored from a parallel passage or the Septuagint, are footnotes. Dropped: transliterations, spelling variants, the sStrong, alternative-Strong's and conjoin columns, and the interlinear lines."
+provenance = "STEPBible-Data README and the licence notice inside each pinned file (commit 5de0a47, 2026-11-02): CC BY 4.0; attribute to Tyndale House and STEPBible.org with a link to STEPBible.github.io/STEPBible-Data, and note any changes."
+evidence = "evidence/tahot.md"
+
+[[source.extra_file]]
+url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Translators%20Amalgamated%20OT%2BNT/TAHOT%20Jos-Est%20-%20Translators%20Amalgamated%20Hebrew%20OT%20-%20STEPBible.org%20CC%20BY.txt"
+sha256 = "b79add01a8c95673e31ec3ab8ad86183d2312cd96421ddf21f3d1f74377526a7"
+
+[[source.extra_file]]
+url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Translators%20Amalgamated%20OT%2BNT/TAHOT%20Job-Sng%20-%20Translators%20Amalgamated%20Hebrew%20OT%20-%20STEPBible.org%20CC%20BY.txt"
+sha256 = "e0416880bb78f46715bb17ce526b623c3051da0ef83f7bf83beaad350e6272e8"
+
+[[source.extra_file]]
+url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Translators%20Amalgamated%20OT%2BNT/TAHOT%20Isa-Mal%20-%20Translators%20Amalgamated%20Hebrew%20OT%20-%20STEPBible.org%20CC%20BY.txt"
+sha256 = "d5a609f5a4b9f7757a2615e55877b07f9f6931a8afccef012c0b4bf662caf540"
+
+[[source]]
+resource_id = "tagnt"
+importer = "tagnt"
+url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Translators%20Amalgamated%20OT%2BNT/TAGNT%20Mat-Jhn%20-%20Translators%20Amalgamated%20Greek%20NT%20-%20STEPBible.org%20CC-BY.txt"
+sha256 = "d4c0c820fdf9f2b450c9f96ce6103d6875028affd2e44094d753f1329ca1fd85"
+title = "Greek New Testament (STEPBible TAGNT)"
+abbreviation = "TAGNT"
+language = "grc"
+edition = "Translators Amalgamated Greek NT: the words of NA27 in NA28 spelling, with NA verse numbers (STEPBible-Data commit 5de0a47, 2026-11-02)"
+publisher = "STEPBible.org, based on work at Tyndale House Cambridge"
+homepage = "https://STEPBible.github.io/STEPBible-Data/"
+spdx = "CC-BY-4.0"
+attribution = "Translators Amalgamated Greek NT (TAGNT), data created by www.STEPBible.org based on work at Tyndale House Cambridge, licensed CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Credit: STEP Bible, www.STEPBible.org. Source of this data: https://STEPBible.github.io/STEPBible-Data"
+changes = "Converted from STEPBible's tab-separated TAGNT files to the Open Bible resource format. The text is the words TAGNT marks as in NA27, including its double-bracketed passages; where TAGNT gives the NA27 word only as a variant of another edition's, the NA27 word is used. Each word keeps its dStrong numbers (leading zeros removed) and morphology codes; lexical forms and English glosses are kept where they align with the parts. Shared compound dictionary entries are not assigned to individual parts, whose lexical forms and glosses remain unset. NA verse numbers are mapped to KJV numbering with STEPBible TVTMS; the paragraph mark becomes a paragraph break. Words that other editions add and that change the translation, and TAGNT's meaning variants, are footnotes naming the editions (TR Textus Receptus, Byz Byzantine, Treg Tregelles, WH Westcott-Hort, SBL SBLGNT, Tyn Tyndale House GNT). Dropped: transliterations, minor-difference words, spelling variants, Spanish glosses, sub-meanings, the sStrong, alternative-Strong's and conjoin columns, and the interlinear lines."
+provenance = "STEPBible-Data README and the licence notice inside each pinned file (commit 5de0a47, 2026-11-02): CC BY 4.0; attribute to Tyndale House and STEPBible.org with a link to STEPBible.github.io/STEPBible-Data, and note any changes."
+evidence = "evidence/tagnt.md"
+
+[[source.extra_file]]
+url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Translators%20Amalgamated%20OT%2BNT/TAGNT%20Act-Rev%20-%20Translators%20Amalgamated%20Greek%20NT%20-%20STEPBible.org%20CC-BY.txt"
+sha256 = "122040eeeaeba50d6abbf67b39cacaff687211bda69b080e5d53927c830d9968"
+
+[[source]]
 resource_id = "mhc"
 importer = "wikisource-mhc"
 url = "https://web.archive.org/web/20261103225156id_/https://en.wikisource.org/w/api.php?action=query&generator=allpages&gapprefix=Matthew+Henry%27s+Commentary+on+the+Whole+Bible&gaplimit=max&export=1&exportnowrap=1"

@@ -61,6 +61,49 @@ fn rules_load() {
     assert!(tvtms_rule_count() > 15_000);
 }
 
+/// Hebrew Mal 3:19-24 are the Standard Mal 4:1-6. TVTMS tells the Hebrew order from the
+/// Greek by word counts (`Mal.3:23*2<Mal.3:22+Mal.3:24`), which in TAHOT's Hebrew are 13, 13
+/// and 15: under the 25% margin. The verses are not in the Standard, so the rules run again
+/// for them without the margin rather than leave them Unmapped.
+#[test]
+fn near_equal_word_counts_still_map_verses_the_standard_lacks() {
+    let mut bible = kjv();
+    set(
+        &mut bible,
+        Book::Malachi,
+        3,
+        (1..=24)
+            .map(|n| {
+                (
+                    n,
+                    if (22..=24).contains(&n) {
+                        [13, 13, 15][usize::from(n - 22)]
+                    } else {
+                        20
+                    },
+                )
+            })
+            .collect(),
+    );
+    bible.remove(&(Book::Malachi, 4));
+    let out = build_verse_map(&facts(&bible));
+    let map = &out.map;
+    assert_eq!(map.unmapped().count(), 0);
+    assert_eq!(
+        map.to_standard(v(Book::Malachi, 3, 19)),
+        std1(Book::Malachi, 4, 1)
+    );
+    assert_eq!(
+        map.to_standard(v(Book::Malachi, 3, 24)),
+        std1(Book::Malachi, 4, 6)
+    );
+    assert_eq!(
+        map.to_standard(v(Book::Malachi, 3, 18)),
+        std1(Book::Malachi, 3, 18)
+    );
+    assert!(!map.is_absent(v(Book::Malachi, 4, 4)));
+}
+
 #[test]
 fn kjv_maps_by_identity() {
     let bible = kjv();

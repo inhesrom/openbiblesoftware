@@ -1,0 +1,178 @@
+TAHOT Gen-Deu - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+TAHOT Jos-Est - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+TAHOT Job-Sng - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+TAHOT Isa-Mal - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+(This is saved as 4  files because a single file too large for Github)																
+=================================================																
+																
+	==============================================================															
+	Data created by www.STEPBible.org based on work at Tyndale House Cambridge (CC BY 4.0)															
+	==============================================================												
+	This licence allows you to:												
+	* Include any part of this data in software or publications and send it to AI servers  without requesting permission 												
+	* Download the data and reformat it for your application												
+	* Send any proposed corrections to STEPBible@Gmail.com to be verified 												
+	  (You MAY make changes yourself, but you should include a note of changes that can be viewed by those who use your new data)												
+	* Attribute the data to Tyndale House and STEPBible.org, and include a link to STEPBible.github.io/STEPBible-Data as the source of this data. 												
+	 Please do not post copies of this data file elsewhere, so that this remains the single up-to-date source"												
+	* We'd love to hear about your project and add it to our Partners Page when you make it available. Email us at STEPBible@Gmail.com.												
+	==============================================================												
+
+# Gen.1.1	be.re.Shit (בְּרֵאשִׁ֖ית)	ba.Ra' (בָּרָ֣א)	'E.lo.Him (אֱלֹהִ֑ים)	'et (אֵ֥ת)	ha.sha.Ma.yim (הַשָּׁמַ֖יִם)	ve.'Et (וְאֵ֥ת)	ha.'A.retz (הָאָֽרֶץ׃)									
+#_Translation	in/ beginning	he created	God	<obj.>	the/ heavens	and/ <obj.>	the/ earth									
+#_Word+Grammar	H9003/H7225G=HR/Ncfsa	H1254A=HVqp3ms	H0430G=HNcmpa	H0853=HTo	H9009/H8064=HTd/Ncmpa	H9002/H0853=HC/To	H9009/H0776G=HTd/Ncfsa									
+#_Significant variant																
+																
+Eng (Heb) Ref & Type	Hebrew	Transliteration	Translation	dStrongs	Grammar	Meaning Variants	Spelling Variants	Root dStrong+Instance	Alternative Strongs+Instance	Conjoin word	Expanded Strong tags					
+Gen.1.1#01=L	בְּ/רֵאשִׁ֖ית	be./re.Shit	in/ beginning	H9003/{H7225G}	HR/Ncfsa			H7225G			H9003=ב=in/{H7225G=רֵאשִׁית=: beginning»first:1_beginning}					
+Gen.1.1#02=L	בָּרָ֣א	ba.Ra'	he created	{H1254A}	HVqp3ms			H1254A			{H1254A=בָּרָא=to create}					
+Gen.1.1#03=L	אֱלֹהִ֑ים	'E.lo.Him	God	{H0430G}	HNcmpa			H0430G			{H0430G=אֱלֹהִים=God»LORD@Gen.1.1-Heb}					
+Gen.1.1#04=L	אֵ֥ת	'et	<obj.>	{H0853}	HTo			H0853_A			{H0853=אֵת=[Obj.]}					
+Gen.1.1#05=L	הַ/שָּׁמַ֖יִם	ha./sha.Ma.yim	the/ heavens	H9009/{H8064}	HTd/Ncmpa			H8064			H9009=ה=the/{H8064=שָׁמַיִם=heaven}					
+Gen.1.1#06=L	וְ/אֵ֥ת	ve./'Et	and/ <obj.>	H9002/{H0853}	HC/To			H0853_B			H9002=ו=and/{H0853=אֵת=[Obj.]}					
+Gen.1.1#07=L	הָ/אָֽרֶץ\׃	ha./'A.retz	the/ earth	H9009/{H0776G}\H9016	HTd/Ncfsa			H0776G			H9009=ה=the/{H0776G=אֶ֫רֶץ=: country;_planet»land:2_country;_planet}\H9016=׃=verseEnd					
+Gen.1.2#01=L	וְ/הָ/אָ֗רֶץ	ve./ha./'A.retz	and/ the/ earth	H9002/H9009/{H0776G}	HC/Td/Ncfsa			H0776G			H9002=ו=and/H9009=ה=the/{H0776G=אֶ֫רֶץ=: country;_planet»land:2_country;_planet}					
+Gen.1.2#02=L	הָיְתָ֥ה	ha.ye.Tah	<it> was	{H1961}	HVqp3fs			H1961			{H1961=הָיָה=to be}					
+Gen.1.2#03=L	תֹ֙הוּ֙	to.hu	formlessness	{H8414}	HNcmsa			H8414			{H8414=תֹּ֫הוּ=formlessness}					
+Gen.1.2#04=L	וָ/בֹ֔הוּ	va./Vo.hu	and/ emptiness	H9002/{H0922}	HC/Ncmsa			H0922			H9002=ו=and/{H0922=בֹּהוּ=void}					
+Gen.1.2#05=L	וְ/חֹ֖שֶׁךְ	ve./Cho.shekh	and/ darkness	H9002/{H2822}	HC/Ncmsa			H2822			H9002=ו=and/{H2822=חֹ֫שֶׁךְ=darkness}					
+Gen.1.2#06=L	עַל\־	'al-	[was] over	{H5921A}\H9014	HR			H5921A_A			{H5921A=עַל=upon}\H9014=־=link					
+Gen.1.2#07=L	פְּנֵ֣י	pe.Nei	[the] surface of	{H6440J}	HNcmpc			H6440J_A			{H6440J=פָּנֶה=: surface»face:4_surface;_land}					
+Gen.1.2#08=L	תְה֑וֹם	te.Hom	[the] deep	{H8415}	HNcfsa			H8415			{H8415=תְּהוֹם=abyss}					
+Gen.1.2#09=L	וְ/ר֣וּחַ	ve./Ru.ach	and/ [the] spirit of	H9002/{H7307G}	HC/Ncfsc			H7307G			H9002=ו=and/{H7307G=רוּחַ=: spirit»spirit:1_spirit}					
+Gen.1.2#10=L	אֱלֹהִ֔ים	'E.lo.Him	God	{H0430G}	HNcmpa			H0430G			{H0430G=אֱלֹהִים=God»LORD@Gen.1.1-Heb}					
+Gen.1.2#11=L	מְרַחֶ֖פֶת	me.ra.Che.fet	[was] hovering	{H7363B}	HVprfsa			H7363B			{H7363B=רָחַף=to hover}					
+Gen.1.2#12=L	עַל\־	'al-	over	{H5921A}\H9014	HR			H5921A_B			{H5921A=עַל=upon}\H9014=־=link					
+Gen.1.2#13=L	פְּנֵ֥י	pe.Nei	[the] surface of	{H6440J}	HNcmpc			H6440J_B			{H6440J=פָּנֶה=: surface»face:4_surface;_land}					
+Gen.1.2#14=L	הַ/מָּֽיִם\׃	ha./Ma.yim	the/ waters	H9009/{H4325G}\H9016	HTd/Ncmpa			H4325G			H9009=ה=the/{H4325G=מַי=water}\H9016=׃=verseEnd					
+Gen.1.3#01=L	וַ/יֹּ֥אמֶר	va/i.Yo.mer	and/ he said	H9001/{H0559}	Hc/Vqw3ms			H0559			H9001=ו=&/{H0559=אָמַר=to say}					
+Gen.1.3#02=L	אֱלֹהִ֖ים	'E.lo.Him	God	{H0430G}	HNcmpa			H0430G			{H0430G=אֱלֹהִים=God»LORD@Gen.1.1-Heb}					
+Gen.1.3#03=L	יְהִ֣י	ye.Hi	let it be	{H1961}	HVqj3ms			H1961_A			{H1961=הָיָה=to be}					
+Gen.1.3#04=L	א֑וֹר	'or	light	{H0216}	HNcfsa			H0216_A			{H0216=אוֹר=light}					
+Gen.1.3#05=L	וַֽ/יְהִי\־	va/y.hi-	and/ there was	H9001/{H1961}\H9014	Hc/Vqw3ms			H1961_B			H9001=ו=&/{H1961=הָיָה=to be}\H9014=־=link					
+Gen.1.3#06=L	אֽוֹר\׃	'or	light	{H0216}\H9016	HNcfsa			H0216_B			{H0216=אוֹר=light}\H9016=׃=verseEnd					
+Gen.1.4#01=L	וַ/יַּ֧רְא	va/i.Yar'	and/ he saw	H9001/{H7200G}	Hc/Vqw3ms			H7200G			H9001=ו=&/{H7200G=רָאָה=: see»to see:1_see;_show}					
+Gen.1.4#02=L	אֱלֹהִ֛ים	'E.lo.Him	God	{H0430G}	HNcmpa			H0430G_A			{H0430G=אֱלֹהִים=God»LORD@Gen.1.1-Heb}					
+Gen.1.4#03=L	אֶת\־	'et-	<obj.>	{H0853}\H9014	HTo			H0853			{H0853=אֵת=[Obj.]}\H9014=־=link					
+Gen.1.4#04=L	הָ/א֖וֹר	ha./'Or	the/ light	H9009/{H0216}	HTd/Ncfsa			H0216_A			H9009=ה=the/{H0216=אוֹר=light}					
+Gen.1.4#05=L	כִּי\־	ki-	that	{H3588A}\H9014	HTc			H3588A			{H3588A=כִּי=for}\H9014=־=link					
+Gen.1.4#06=L	ט֑וֹב	Tov	[it was] good	{H2895}	HVqp3ms			H2895	H2896A		{H2895=טוֹב=be pleasing}					
+Gen.1.4#07=L	וַ/יַּבְדֵּ֣ל	va/i.yav.Del	and/ he separated	H9001/{H0914}	Hc/Vhw3ms			H0914			H9001=ו=&/{H0914=בָּדַל=to separate}					
+Gen.1.4#08=L	אֱלֹהִ֔ים	'E.lo.Him	God	{H0430G}	HNcmpa			H0430G_B			{H0430G=אֱלֹהִים=God»LORD@Gen.1.1-Heb}					
+Gen.1.4#09=L	בֵּ֥ין	bein	between	{H0996G}	HAcmsc			H0996G_A			{H0996G=בַּ֫יִן=: between»between:1_between}					
+Gen.1.4#10=L	הָ/א֖וֹר	ha./'Or	the/ light	H9009/{H0216}	HTd/Ncfsa			H0216_B			H9009=ה=the/{H0216=אוֹר=light}					
+Gen.1.4#11=L	וּ/בֵ֥ין	u./Vein	and/ between	H9002/{H0996G}	HC/Acmsc			H0996G_B			H9002=ו=and/{H0996G=בַּ֫יִן=: between»between:1_between}					
+Gen.1.4#12=L	הַ/חֹֽשֶׁךְ\׃	ha./Cho.shekh	the/ darkness	H9009/{H2822}\H9016	HTd/Ncmsa			H2822			H9009=ה=the/{H2822=חֹ֫שֶׁךְ=darkness}\H9016=׃=verseEnd					
+Gen.1.5#01=L	וַ/יִּקְרָ֨א	va/i.yik.Ra'	and/ he called	H9001/{H7121H}	Hc/Vqw3ms			H7121H_A			H9001=ו=&/{H7121H=קָרָא=: call_by»to call:2_call_by;_name}					
+Gen.1.5#02=L	אֱלֹהִ֤ים\׀	'E.lo.Him	God	{H0430G}\H9015	HNcmpa			H0430G			{H0430G=אֱלֹהִים=God»LORD@Gen.1.1-Heb}\H9015=׀=separate					
+Gen.1.5#03=L	לָ/אוֹר֙	la./'Or	<to> the/ light	H9005/{H0216}	HRd/Ncfsa			H0216			H9005=ל=to/{H0216=אוֹר=light}					
+Gen.1.5#04=L	י֔וֹם	Yom	day	{H3117G}	HNcmsa			H3117G_A			{H3117G=יוֹם=: day»day;_when:1_day;_when;_period}					
+Gen.1.5#05=L	וְ/לַ/חֹ֖שֶׁךְ	ve./la./Cho.shekh	and/ <to> the/ darkness	H9002/H9005/{H2822}	HC/Rd/Ncmsa			H2822			H9002=ו=and/H9005=ל=to/{H2822=חֹ֫שֶׁךְ=darkness}					
+Gen.1.5#06=L	קָ֣רָא	Ka.ra'	he called	{H7121H}	HVqp3ms			H7121H_B			{H7121H=קָרָא=: call_by»to call:2_call_by;_name}					
+Gen.1.5#07=L	לָ֑יְלָה	Lai.lah	night	{H3915}	HNcmsa			H3915			{H3915=לַ֫יְלָה=night}					
+Gen.1.5#08=L	וַֽ/יְהִי\־	va/y.hi-	and/ there was	H9001/{H1961}\H9014	Hc/Vqw3ms			H1961_A			H9001=ו=&/{H1961=הָיָה=to be}\H9014=־=link					
+Gen.1.5#09=L	עֶ֥רֶב	'E.rev	evening	{H6153}	HNcmsa			H6153			{H6153=עֶ֫רֶב=evening}					
+Gen.1.5#10=L	וַֽ/יְהִי\־	va/y.hi-	and/ there was	H9001/{H1961}\H9014	Hc/Vqw3ms			H1961_B			H9001=ו=&/{H1961=הָיָה=to be}\H9014=־=link					
+Gen.1.5#11=L	בֹ֖קֶר	Vo.ker	morning	{H1242}	HNcmsa			H1242			{H1242=בֹּ֫קֶר=morning}					
+Gen.1.5#12=L	י֥וֹם	Yom	day	{H3117G}	HNcmsa			H3117G_B			{H3117G=יוֹם=: day»day;_when:1_day;_when;_period}					
+Gen.1.5#13=L	אֶחָֽד\׃\ \פ	'e.Chad	one	{H0259}\H9016\ \H9017	HAcfsa			H0259			{H0259=אֶחָד=one}\H9016=׃=verseEnd\ \H9017=פ=para					
+Gen.4.8#01=L	וַ/יֹּ֥אמֶר	va/i.Yo.mer	and/ he said	H9001/{H0559}	Hc/Vqw3ms			H0559			H9001=ו=&/{H0559=אָמַר=to say}					
+Gen.4.8#02=L	קַ֖יִן	Ka.yin	Cain	{H7014B}	HNpm			H7014B_A			{H7014B=קַ֫יִן=Cain»Cain@Gen.4.1-Jud}					
+Gen.4.8#03=L	אֶל\־	'el-	to	{H0413}\H9014	HR			H0413_A			{H0413=אֶל=to(wards)}\H9014=־=link					
+Gen.4.8#04=L	הֶ֣בֶל	He.vel	Abel	{H1893}	HNpm			H1893_A			{H1893=הֶ֫בֶל=Abel»Abel@Gen.4.2-Heb}					
+Gen.4.8#05=L	אָחִ֑י/ו	'a.Chi/v	brother/ his	{H0251G}/H9023	HNcmsc/Sp3ms			H0251G_A			{H0251G=אָח=: male-sibling»brother:1_male-sibling}/H9023=Ps3m=his					
+Gen.4.8#0501=X	נֵלְכָה	ne.le.Khah	let us go	{H1980G}	HVqi1cp			H1980G	H3212		{H1980G=הָלַךְ=: went»to go:3_went;_go[away]}					
+Gen.4.8#0502=X	הַ/שָּׂדֶה	ha./sa.Deh	[into] the/ field	H9009/{H7704G}	HTd/Ncbsa			H7704G_a			H9009=ה=the/{H7704G=שָׂדֶה=: country;_planet»land:2_country;_planet}					
+Gen.4.8#06=L	וַֽ/יְהִי֙	va/y.Hi	and/ it was	H9001/{H1961}	Hc/Vqw3ms			H1961_A			H9001=ו=&/{H1961=הָיָה=to be}					
+Gen.4.8#07=L	בִּ/הְיוֹתָ֣/ם	bi/h.yo.Ta/m	when/ were/ they	H9003/{H1961}/H9048	HR/Vqcc/Sp3mp			H1961_B			H9003=ב=in/{H1961=הָיָה=to be}/H9048=Sp3m=they					
+Gen.4.8#08=L	בַּ/שָּׂדֶ֔ה	ba./sa.Deh	in the/ field	H9003/{H7704G}	HRd/Ncmsa			H7704G_B			H9003=ב=in/{H7704G=שָׂדֶה=: country;_planet»land:2_country;_planet}					
+Gen.4.8#09=L	וַ/יָּ֥קָם	va/i.Ya.kom	and/ he rose up	H9001/{H6965B}	Hc/Vqw3ms			H6965B			H9001=ו=&/{H6965B=קוּם=: rise»to arise:1_rise;_get_going}					
+Gen.4.8#10=L	קַ֛יִן	Ka.yin	Cain	{H7014B}	HNpm			H7014B_B			{H7014B=קַ֫יִן=Cain»Cain@Gen.4.1-Jud}					
+Gen.4.8#11=L	אֶל\־	'el-	against	{H0413}\H9014	HR			H0413_B			{H0413=אֶל=to(wards)}\H9014=־=link					
+Gen.4.8#12=L	הֶ֥בֶל	He.vel	Abel	{H1893}	HNpm			H1893_B			{H1893=הֶ֫בֶל=Abel»Abel@Gen.4.2-Heb}					
+Gen.4.8#13=L	אָחִ֖י/ו	'a.Chi/v	brother/ his	{H0251G}/H9023	HNcmsc/Sp3ms			H0251G_B			{H0251G=אָח=: male-sibling»brother:1_male-sibling}/H9023=Ps3m=his					
+Gen.4.8#14=L	וַ/יַּהַרְגֵֽ/הוּ\׃	va/i.ya.har.Ge./hu	and/ he killed/ him	H9001/{H2026}/H9033\H9016	Hc/Vqw3ms/Sp3ms			H2026			H9001=ו=&/{H2026=הָרַג=to kill}/H9033=Os3m=him\H9016=׃=verseEnd					
+Gen.8.17#01=L	כָּל\־	kol-	every	{H3605}\H9014	HNcmsc			H3605_A			{H3605=כֹּל=all}\H9014=־=link					
+Gen.8.17#02=L	הַ/חַיָּ֨ה	ha./chai.Yah	<the>/ animal	H9009/{H2416C}	HTd/Ncfsa			H2416C			H9009=ה=the/{H2416C=חַיָּה=living thing}					
+Gen.8.17#03=L	אֲשֶֽׁר\־	'a.Sher-	which	{H0834A}\H9014	HTr			H0834A			{H0834A=אֲשֶׁר=which}\H9014=־=link					
+Gen.8.17#04=L	אִתְּ/ךָ֜	'i.te./Kha	[is] with/ you	{H0854}/H9031	HRd/Sp2ms			H0854_A			{H0854=אֵת=with}/H9031=Os2m=you					
+Gen.8.17#05=L	מִ/כָּל\־	mi./kol	some of/ all	H9006/{H3605}\H9014	HR/Ncmsc			H3605_B			H9006=מ=from/{H3605=כֹּל=all}\H9014=־=link					
+Gen.8.17#06=L	בָּשָׂ֗ר	ba.Sar	flesh	{H1320}	HNcmsa			H1320			{H1320=בָּשָׂר=flesh}					
+Gen.8.17#07=L	בָּ/ע֧וֹף	ba./'of	among the/ bird[s]	H9003/{H5775}	HRd/Ncmsa			H5775			H9003=ב=in/{H5775=עוֹף=bird}					
+Gen.8.17#08=L	וּ/בַ/בְּהֵמָ֛ה	u./va./be.he.Mah	and/ among the/ livestock	H9002/H9003/{H0929}	HC/Rd/Ncfsa			H0929			H9002=ו=and/H9003=ב=in/{H0929=בְּהֵמָה=animal}					
+Gen.8.17#09=L	וּ/בְ/כָל\־	u./ve./Khol-	and/ among/ every	H9002/H9003/{H3605}\H9014	HC/R/Ncmsc			H3605_C			H9002=ו=and/H9003=ב=in/{H3605=כֹּל=all}\H9014=־=link					
+Gen.8.17#10=L	הָ/רֶ֛מֶשׂ	ha./Re.mes	<the>/ creeping thing	H9009/{H7431}	HTd/Ncmsa			H7431			H9009=ה=the/{H7431=רֶ֫מֶשׂ=creeping}					
+Gen.8.17#11=L	הָ/רֹמֵ֥שׂ	ha./ro.Mes	which/ creeps	H9009/{H7430}	HTd/Vqrmsa			H7430			H9009=ה=the/{H7430=רָמַשׂ=to creep}					
+Gen.8.17#12=L	עַל\־	'al-	on	{H5921A}\H9014	HR			H5921A_A			{H5921A=עַל=upon}\H9014=־=link					
+Gen.8.17#13=L	הָ/אָ֖רֶץ	ha./'A.retz	the/ earth	H9009/{H0776G}	HTd/Ncfsa			H0776G_A			H9009=ה=the/{H0776G=אֶ֫רֶץ=: country;_planet»land:2_country;_planet}					
+Gen.8.17#14=Q(k)	הַיְצֵ֣א	hay.tze'	bring out	{H3318H}	HVhv2ms		L= הַוְצֵ֣א ¦ ;K= הוֹצֵא	H3318H			{H3318H=יָצָא=: send»to come out:2_send;_take_out;_release}					
+Gen.8.17#15=L	אִתָּ֑/ךְ	'i.Ta/kh	with/ you	{H0854}/H9031	HRd/Sp2ms			H0854_B			{H0854=אֵת=with}/H9031=Os2m=you					
+Gen.8.17#16=L	וְ/שָֽׁרְצ֣וּ	ve./sha.re.Tzu	and/ they will swarm	H9001/{H8317}	Hc/Vqq3cp			H8317			H9001=ו=&/{H8317=שָׁרַץ=to swarm}					
+Gen.8.17#17=L	בָ/אָ֔רֶץ	va./'A.retz	on the/ earth	H9003/{H0776G}	HRd/Ncfsa			H0776G_B			H9003=ב=in/{H0776G=אֶ֫רֶץ=: country;_planet»land:2_country;_planet}					
+Gen.8.17#18=L	וּ/פָר֥וּ	u./fa.Ru	and/ they will be fruitful	H9001/{H6509}	Hc/Vqq3cp			H6509			H9001=ו=&/{H6509=פָּרָה=be fruitful}					
+Gen.8.17#19=L	וְ/רָב֖וּ	ve./ra.Vu	and/ they will multiply	H9001/{H7235A}	Hc/Vqq3cp			H7235A			H9001=ו=&/{H7235A=רָבָה=to multiply}					
+Gen.8.17#20=L	עַל\־	'al-	on	{H5921A}\H9014	HR			H5921A_B			{H5921A=עַל=upon}\H9014=־=link					
+Gen.8.17#21=L	הָ/אָֽרֶץ\׃	ha./'A.retz	the/ earth	H9009/{H0776G}\H9016	HTd/Ncfsa			H0776G_C			H9009=ה=the/{H0776G=אֶ֫רֶץ=: country;_planet»land:2_country;_planet}\H9016=׃=verseEnd					
+Gen.9.21#01=L	וַ/יֵּ֥שְׁתְּ	va/i.Ye.shet	and/ he drank	H9001/{H8354}	Hc/Vqw3ms			H8354			H9001=ו=&/{H8354=שָׁתָה=to drink}					
+Gen.9.21#02=L	מִן\־	min-	some of	{H4480A}\H9014	HR			H4480A			{H4480A=מִן־=from}\H9014=־=link					
+Gen.9.21#03=L	הַ/יַּ֖יִן	hai./Ya.yin	the/ wine	H9009/{H3196}	HTd/Ncmsa			H3196			H9009=ה=the/{H3196=יַ֫יִן=wine}					
+Gen.9.21#04=L	וַ/יִּשְׁכָּ֑ר	va/i.yish.Kar	and/ he became drunk	H9001/{H7937}	Hc/Vqw3ms			H7937			H9001=ו=&/{H7937=שָׁכַר=be drunk}					
+Gen.9.21#05=L	וַ/יִּתְגַּ֖ל	va/i.yit.Gal	and/ he uncovered himself	H9001/{H1540I}	Hc/Vtw3ms			H1540I			H9001=ו=&/{H1540I=גָּלָה=: uncover[things]»to reveal:3_uncover[things]}					
+Gen.9.21#06=L	בְּ/ת֥וֹךְ	be./Tokh	in/ [the] middle of	H9003/{H8432}	HR/Ncmsc			H8432			H9003=ב=in/{H8432=תָּ֫וֶךְ=midst}					
+Gen.9.21#07=Q(K)	אָהֳלֽ/וֹ\׃	'o.ho.L/o	tent/ his	{H0168G}/H9023\H9016	HNcmsc/Sp3ms	K= 'o.ho.Lo/h (אָהֳלֹ/ה\׃) "tent/ his" (H0168G/H9023\H9016=HNcbsc/Sp3ms)	L= אָהֳלֹֽ/ה\׃ ¦ ;	H0168G			{H0168G=אֹ֫הֶל=: tent»tent:1_tent}/H9023=Ps3m=his\H9016=׃=verseEnd					
+Gen.30.11#01=L	וַ/תֹּ֥אמֶר	va./To.mer	and/ she said	H9001/{H0559}	Hc/Vqw3fs			H0559			H9001=ו=&/{H0559=אָמַר=to say}					
+Gen.30.11#02=L	לֵאָ֖ה	le.'Ah	Leah	{H3812}	HNpf			H3812			{H3812=לֵאָה=Leah»Leah@Gen.29.16-Rut}					
+Gen.30.11#03=Q(K)	בָּ֣א//גָ֑ד	be.//gad	it has come//good fortune	{H0935G}//{H1409}	HVqp3ms//Ncmsa	K= be./gad (בְּ/גָד) "with/ good fortune" (H9003/H1409=HR/Ncfsa)	L= בָּ֣/גָ֑ד ¦ ;	H0935G, H1409			{H0935G=בּוֹא=: come»to come (in):1_come;_go_in}//{H1409=גָּד=fortune}					
+Gen.30.11#04=L	וַ/תִּקְרָ֥א	va./tik.Ra'	and/ she called	H9001/{H7121H}	Hc/Vqw3fs			H7121H			H9001=ו=&/{H7121H=קָרָא=: call_by»to call:2_call_by;_name}					
+Gen.30.11#05=L	אֶת\־	'et-	<obj.>	{H0853}\H9014	HTo			H0853			{H0853=אֵת=[Obj.]}\H9014=־=link					
+Gen.30.11#06=L	שְׁמ֖/וֹ	she.M/o	name/ his	{H8034}/H9023	HNcmsc/Sp3ms			H8034			{H8034=שֵׁם=name}/H9023=Ps3m=his					
+Gen.30.11#07=L	גָּֽד\׃	Gad	Gad	{H1410G}\H9016	HNpm			H1410G			{H1410G=גָּד=Gad»Gad@Gen.30.11-Rev}\H9016=׃=verseEnd					
+Gen.31.55(32.1)#01=L	וַ/יַּשְׁכֵּ֨ם	va/i.yash.Kem	and/ he rose early	H9001/{H7925}	Hc/Vhw3ms			H7925			H9001=ו=&/{H7925=שָׁכַם=to rise}					
+Gen.31.55(32.1)#02=L	לָבָ֜ן	la.Van	Laban	{H3837A}	HNpm			H3837A_A			{H3837A=לָבָן=Laban»Laban@Gen.24.29-}					
+Gen.31.55(32.1)#03=L	בַּ/בֹּ֗קֶר	ba./Bo.ker	in the/ morning	H9003/{H1242}	HRd/Ncmsa			H1242			H9003=ב=in/{H1242=בֹּ֫קֶר=morning}					
+Gen.31.55(32.1)#04=L	וַ/יְנַשֵּׁ֧ק	va/y.na.Shek	and/ he kissed	H9001/{H5401A}	Hc/Vpw3ms			H5401A			H9001=ו=&/{H5401A=נָשַׁק=to kiss}					
+Gen.31.55(32.1)#05=L	לְ/בָנָ֛י/ו	le./va.Na/v	<to>/ sons/ his	H9005/{H1121G}/H9023	HR/Ncmpc/Sp3ms			H1121G			H9005=ל=to/{H1121G=בֵּן=: descendant»son:2_descendant;_people}/H9023=Ps3m=his					
+Gen.31.55(32.1)#06=L	וְ/לִ/בְנוֹתָ֖י/ו	ve./li/v.no.Ta/v	and/ <to>/ daughters/ his	H9002/H9005/{H1323G}/H9023	HC/R/Ncfpc/Sp3ms			H1323G			H9002=ו=and/H9005=ל=to/{H1323G=בַּת=: daughter»daughter:1_daughter}/H9023=Ps3m=his					
+Gen.31.55(32.1)#07=L	וַ/יְבָ֣רֶךְ	va/y.Va.rekh	and/ he blessed	H9001/{H1288}	Hc/Vpw3ms			H1288			H9001=ו=&/{H1288=בָּרַךְ=to bless}					
+Gen.31.55(32.1)#08=L	אֶתְ/הֶ֑ם	'et./Hem	<obj.>/ them	{H0853}/H9038	HTo/Sp3mp			H0853			{H0853=אֵת=[Obj.]}/H9038=Op3m=them					
+Gen.31.55(32.1)#09=L	וַ/יֵּ֛לֶךְ	va/i.Ye.lekh	and/ he went	H9001/{H1980G}	Hc/Vqw3ms			H1980G	H3212		H9001=ו=&/{H1980G=הָלַךְ=: went»to go:3_went;_go[away]}					
+Gen.31.55(32.1)#10=L	וַ/יָּ֥שָׁב	va/i.Ya.shov	and/ he returned	H9001/{H7725G}	Hc/Vqw3ms			H7725G			H9001=ו=&/{H7725G=שׁוּב=: return»to return:1_return}					
+Gen.31.55(32.1)#11=L	לָבָ֖ן	la.Van	Laban	{H3837A}	HNpm			H3837A_B			{H3837A=לָבָן=Laban»Laban@Gen.24.29-}					
+Gen.31.55(32.1)#12=L	לִ/מְקֹמֽ/וֹ\׃	li/m.ko.M/o	to/ own place/ his	H9005/{H4725}/H9023\H9016	HR/Ncmsc/Sp3ms			H4725			H9005=ל=to/{H4725=מָקוֹם=standing place}/H9023=Ps3m=his\H9016=׃=verseEnd					
+Gen.32.1(32.2)#01=L	וְ/יַעֲקֹ֖ב	ve./ya.'a.Ko	and/ Jacob	H9002/{H3290}	HC/Npm			H3290			H9002=ו=and/{H3290=יַעֲקֹב=Jacob»Israel@Gen.25.26-Rev}					
+Gen.32.1(32.2)#02=L	הָלַ֣ךְ	ha.Lakh	he went	{H1980G}	HVqp3ms			H1980G	H3212		{H1980G=הָלַךְ=: went»to go:3_went;_go[away]}					
+Gen.32.1(32.2)#03=L	לְ/דַרְכּ֑/וֹ	le./dar.K/o	to/ way/ his	H9005/{H1870L}/H9023	HR/Ncbsc/Sp3ms			H1870L			H9005=ל=to/{H1870L=דֶּ֫רֶךְ=: journey»way:2_journey}/H9023=Ps3m=his					
+Gen.32.1(32.2)#04=L	וַ/יִּפְגְּעוּ\־	va/i.yif.ge.'u-	and/ they met	H9001/{H6293}\H9014	Hc/Vqw3mp			H6293			H9001=ו=&/{H6293=פָּגַע=to fall on}\H9014=־=link					
+Gen.32.1(32.2)#05=L	ב֖/וֹ	v/o	<in> <the>/ him	H9003/{H9033}	HRd/Sp3ms			H9033			H9003=ב=in/{H9033=Os3m=him}					
+Gen.32.1(32.2)#06=L	מַלְאֲכֵ֥י	mal.'a.Khei	[the] angels of	{H4397H}	HNcmpc			H4397H			{H4397H=מַלְאָךְ=: angel»messenger:2_angel}					
+Gen.32.1(32.2)#07=L	אֱלֹהִֽים\׃	'E.lo.Him	God	{H0430G}\H9016	HNcmpa			H0430G			{H0430G=אֱלֹהִים=God»LORD@Gen.1.1-Heb}\H9016=׃=verseEnd					
+Gen.32.32(32.33)#01=L	עַל\־	'al-	there-	{H5921A}\H9014	HR			H5921A_A			{H5921A=עַל=upon}\H9014=־=link					
+Gen.32.32(32.33)#02=L	כֵּ֡ן	ken	-fore	{H3651C}	HD			H3651C			{H3651C=כֵּן=so}					
+Gen.32.32(32.33)#03=L	לֹֽא\־	lo'-	not	{H3808}\H9014	HTn			H3808			{H3808=לֹא=not}\H9014=־=link					
+Gen.32.32(32.33)#04=L	יֹאכְל֨וּ	yo.khe.Lu	they eat	{H0398}	HVqi3mp			H0398			{H0398=אָכַל=to eat}					
+Gen.32.32(32.33)#05=L	בְנֵֽי\־	ve.nei-	[the] people of	{H1121G}\H9014	HNcmpc			H1121G			{H1121G=בֵּן=: descendant»son:2_descendant;_people}\H9014=־=link					
+Gen.32.32(32.33)#06=L	יִשְׂרָאֵ֜ל	Yis.ra.'El	Israel	{H3478}	HNpl			H3478			{H3478=יִשְׂרָאֵל=Israel»Israel@Gen.25.26-Rev}					
+Gen.32.32(32.33)#07=L	אֶת\־	'et-	<obj.>	{H0853}\H9014	HTo			H0853			{H0853=אֵת=[Obj.]}\H9014=־=link					
+Gen.32.32(32.33)#08=L	גִּ֣יד	gid	[the] sinew of	{H1517}	HNcmsc			H1517_A			{H1517=גִּיד=sinew}					
+Gen.32.32(32.33)#09=L	הַ/נָּשֶׁ֗ה	ha./na.Sheh	the/ tendon	H9009/{H5384}	HTd/Ncmsa			H5384_A			H9009=ה=the/{H5384=נָשֶׁה=hamstring}					
+Gen.32.32(32.33)#10=L	אֲשֶׁר֙	'a.Sher	which	{H0834A}	HTr			H0834A			{H0834A=אֲשֶׁר=which}					
+Gen.32.32(32.33)#11=L	עַל\־	'al-	[is] on	{H5921A}\H9014	HR			H5921A_B			{H5921A=עַל=upon}\H9014=־=link					
+Gen.32.32(32.33)#12=L	כַּ֣ף	kaf	[the] socket of	{H3709I}	HNcfsc			H3709I_A			{H3709I=כַּף=: dish»palm:3_dish;_socket}					
+Gen.32.32(32.33)#13=L	הַ/יָּרֵ֔ךְ	hai./ya.Rekh	the/ thigh	H9009/{H3409}	HTd/Ncfsa			H3409_A			H9009=ה=the/{H3409=יָרֵךְ=thigh}					
+Gen.32.32(32.33)#14=L	עַ֖ד	'ad	until	{H5704}	HR			H5704			{H5704=עַד=till}					
+Gen.32.32(32.33)#15=L	הַ/יּ֣וֹם	hai./Yom	the/ day	H9009/{H3117L}	HTd/Ncmsa			H3117L			H9009=ה=the/{H3117L=יוֹם=: today»day:6_today;_now}					
+Gen.32.32(32.33)#16=L	הַ/זֶּ֑ה	ha./Zeh	<the>/ this	H9009/{H2088}	HTd/Tm			H2088			H9009=ה=the/{H2088=זֶה=this}					
+Gen.32.32(32.33)#17=L	כִּ֤י	ki	for	{H3588A}	HTc			H3588A			{H3588A=כִּי=for}					
+Gen.32.32(32.33)#18=L	נָגַע֙	na.Ga'	he touched	{H5060}	HVqp3ms			H5060			{H5060=נָגַע=to touch}					
+Gen.32.32(32.33)#19=L	בְּ/כַף\־	be./khaf-	<in>/ [the] socket of	H9003/{H3709I}\H9014	HR/Ncfsc			H3709I_B			H9003=ב=in/{H3709I=כַּף=: dish»palm:3_dish;_socket}\H9014=־=link					
+Gen.32.32(32.33)#20=L	יֶ֣רֶךְ	Ye.rekh	[the] thigh of	{H3409}	HNcfsc			H3409_B			{H3409=יָרֵךְ=thigh}					
+Gen.32.32(32.33)#21=L	יַעֲקֹ֔ב	ya.'a.Ko	Jacob	{H3290}	HNpm			H3290			{H3290=יַעֲקֹב=Jacob»Israel@Gen.25.26-Rev}					
+Gen.32.32(32.33)#22=L	בְּ/גִ֖יד	be./Gid	<in>/ [the] sinew of	H9003/{H1517}	HR/Ncmsc			H1517_B			H9003=ב=in/{H1517=גִּיד=sinew}					
+Gen.32.32(32.33)#23=L	הַ/נָּשֶֽׁה\׃	ha./na.Sheh	the/ tendon	H9009/{H5384}\H9016	HTd/Ncmsa			H5384_B			H9009=ה=the/{H5384=נָשֶׁה=hamstring}\H9016=׃=verseEnd					
+Exo.4.2#01=L	וַ/יֹּ֧אמֶר	va/i.Yo.mer	and/ he said	H9001/{H0559}	Hc/Vqw3ms			H0559_A			H9001=ו=&/{H0559=אָמַר=to say}					
+Exo.4.2#02=L	אֵלָ֛י/ו	'e.La/v	to/ him	{H0413}/H9033	HRd/Sp3ms			H0413			{H0413=אֶל=to(wards)}/H9033=Os3m=him					
+Exo.4.2#03=L	יְהוָ֖ה	Yah.weh	Yahweh	{H3068G}	HNpt			H3068G			{H3068G=יהוה=LORD»LORD@Gen.1.1-Heb}					
+Exo.4.2#04=Q(K)	מַה/־/זֶּ֣ה	mah/-/zeh-	what/ /[is] this?	{H4100}/H9014/{H2088}	HPi//Tm	K= ma.//zeh (מַ//זֶּה) "what// [is] this?" ({H4100}//H2088=HPi//Tm)	L= מַ//זֶּ֣ה ¦ ;	H4100, H2088			{H4100=מָה=what?}/H9014=־=link/{H2088=זֶה=this}					
+Exo.4.2#05=L	בְ/יָדֶ֑/ךָ	ve./ya.De./kha	[is] in/ hand/ your	H9003/{H3027G}/H9021	HR/Ncbsc/Sp2ms			H3027G			H9003=ב=in/{H3027G=יָד=: hand»hand:1_hand;_arm[anatomy]}/H9021=Ps2m=your					
+Exo.4.2#06=L	וַ/יֹּ֖אמֶר	va/i.Yo.mer	and/ he said	H9001/{H0559}	Hc/Vqw3ms			H0559_B			H9001=ו=&/{H0559=אָמַר=to say}					
+Exo.4.2#07=L	מַטֶּֽה\׃	ma.Teh	a staff	{H4294G}\H9016	HNcmsa			H4294G			{H4294G=מַטֶּה=: rod»tribe:2_rod;_staff}\H9016=׃=verseEnd					

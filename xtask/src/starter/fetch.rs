@@ -89,3 +89,25 @@ fn download(url: &str, to: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+/// The last path segment of a URL, percent-decoded where it is plain ASCII.
+pub fn file_name(url: &str) -> String {
+    let last = url.rsplit('/').next().unwrap_or(url);
+    let mut out = Vec::with_capacity(last.len());
+    let b = last.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        let hex = |c: u8| (c as char).to_digit(16);
+        if b[i] == b'%'
+            && let (Some(Some(h)), Some(Some(l))) =
+                (b.get(i + 1).map(|&c| hex(c)), b.get(i + 2).map(|&c| hex(c)))
+        {
+            out.push((h * 16 + l) as u8);
+            i += 3;
+            continue;
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| last.to_string())
+}

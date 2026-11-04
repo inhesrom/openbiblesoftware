@@ -1,0 +1,4090 @@
+{
+  "content_hash": "sha256:037a1425a2f30dd3fa64e4940aeb81d0574ea4ab4ba1688b4e5363fa1b127a4a",
+  "report": {
+    "books": [
+      [
+        "MAT",
+        3,
+        4
+      ],
+      [
+        "MRK",
+        2,
+        3
+      ],
+      [
+        "JHN",
+        1,
+        2
+      ],
+      [
+        "ACT",
+        2,
+        3
+      ],
+      [
+        "REV",
+        1,
+        2
+      ]
+    ],
+    "notes": 14,
+    "tagged_words": 268,
+    "traditions": {
+      "English2+Latin+Greek": 2
+    },
+    "verse_map": {
+      "absent": 4025,
+      "unmapped": 0
+    },
+    "verses": 14,
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "MAT",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..107",
+          "chapter": 1,
+          "kind": "chapter",
+          "text": "Βίβλος γενέσεως Ἰησοῦ Χριστοῦ υἱοῦ Δαυὶδ υἱοῦ Ἀβραάμ."
+        },
+        {
+          "at": "0..107",
+          "kind": "para",
+          "style": "prose",
+          "text": "Βίβλος γενέσεως Ἰησοῦ Χριστοῦ υἱοῦ Δαυὶδ υἱοῦ Ἀβραάμ."
+        },
+        {
+          "at": "0..107",
+          "kind": "verse",
+          "last": 1,
+          "text": "Βίβλος γενέσεως Ἰησοῦ Χριστοῦ υἱοῦ Δαυὶδ υἱοῦ Ἀβραάμ.",
+          "verse": {
+            "book": "MAT",
+            "chapter": 1,
+            "verse": 1
+          }
+        },
+        {
+          "at": "0..12",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[The] book",
+              "lemma": "βίβλος",
+              "morph": "N-NSF",
+              "strongs": "G976"
+            }
+          ],
+          "text": "Βίβλος"
+        },
+        {
+          "at": "13..29",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of [the] genealogy",
+              "lemma": "γένεσις",
+              "morph": "N-GSF",
+              "strongs": "G1078"
+            }
+          ],
+          "text": "γενέσεως"
+        },
+        {
+          "at": "30..42",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of Jesus",
+              "lemma": "Ἰησοῦς",
+              "morph": "N-GSM-P",
+              "strongs": "G2424G"
+            }
+          ],
+          "text": "Ἰησοῦ"
+        },
+        {
+          "at": "43..58",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Christ",
+              "lemma": "Χριστός",
+              "morph": "N-GSM-T",
+              "strongs": "G5547"
+            }
+          ],
+          "text": "Χριστοῦ"
+        },
+        {
+          "at": "59..69",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "son",
+              "lemma": "υἱός",
+              "morph": "N-GSM",
+              "strongs": "G5207"
+            }
+          ],
+          "text": "υἱοῦ"
+        },
+        {
+          "at": "70..81",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of David",
+              "lemma": "Δαυείδ",
+              "morph": "N-GSM-P",
+              "strongs": "G1138"
+            }
+          ],
+          "text": "Δαυὶδ"
+        },
+        {
+          "at": "82..92",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "son",
+              "lemma": "υἱός",
+              "morph": "N-GSM",
+              "strongs": "G5207"
+            }
+          ],
+          "text": "υἱοῦ"
+        },
+        {
+          "at": "93..106",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of Abraham.",
+              "lemma": "Ἀβραάμ",
+              "morph": "N-GSM-P",
+              "strongs": "G11"
+            }
+          ],
+          "text": "Ἀβραάμ"
+        },
+        {
+          "at": "108..251",
+          "chapter": 6,
+          "kind": "chapter",
+          "text": "καὶ μὴ εἰσενέγκῃς ἡμᾶς εἰς πειρασμόν, ἀλλὰ ῥῦσαι ἡμᾶς ἀπὸ τοῦ πονηροῦ"
+        },
+        {
+          "at": "108..251",
+          "kind": "para",
+          "style": "prose",
+          "text": "καὶ μὴ εἰσενέγκῃς ἡμᾶς εἰς πειρασμόν, ἀλλὰ ῥῦσαι ἡμᾶς ἀπὸ τοῦ πονηροῦ"
+        },
+        {
+          "at": "108..251",
+          "kind": "verse",
+          "last": 13,
+          "text": "καὶ μὴ εἰσενέγκῃς ἡμᾶς εἰς πειρασμόν, ἀλλὰ ῥῦσαι ἡμᾶς ἀπὸ τοῦ πονηροῦ",
+          "verse": {
+            "book": "MAT",
+            "chapter": 6,
+            "verse": 13
+          }
+        },
+        {
+          "at": "108..115",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "And",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "116..121",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "not",
+              "lemma": "μή",
+              "morph": "PRT-N",
+              "strongs": "G3361"
+            }
+          ],
+          "text": "μὴ"
+        },
+        {
+          "at": "122..144",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "may you lead",
+              "lemma": "εἰσφέρω",
+              "morph": "V-2AAS-2S",
+              "strongs": "G1533"
+            }
+          ],
+          "text": "εἰσενέγκῃς"
+        },
+        {
+          "at": "145..155",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "us",
+              "lemma": "ἐγώ",
+              "morph": "P-1AP",
+              "strongs": "G3165"
+            }
+          ],
+          "text": "ἡμᾶς"
+        },
+        {
+          "at": "156..163",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "into",
+              "lemma": "εἰς",
+              "morph": "PREP",
+              "strongs": "G1519"
+            }
+          ],
+          "text": "εἰς"
+        },
+        {
+          "at": "164..182",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "temptation,",
+              "lemma": "πειρασμός",
+              "morph": "N-ASM",
+              "strongs": "G3986G"
+            }
+          ],
+          "text": "πειρασμόν"
+        },
+        {
+          "at": "184..194",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "but",
+              "lemma": "ἀλλά",
+              "morph": "CONJ",
+              "strongs": "G235"
+            }
+          ],
+          "text": "ἀλλὰ"
+        },
+        {
+          "at": "195..207",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "do deliver",
+              "lemma": "ῥύομαι",
+              "morph": "V-ADM-2S",
+              "strongs": "G4506"
+            }
+          ],
+          "text": "ῥῦσαι"
+        },
+        {
+          "at": "208..218",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "us",
+              "lemma": "ἐγώ",
+              "morph": "P-1AP",
+              "strongs": "G3165"
+            }
+          ],
+          "text": "ἡμᾶς"
+        },
+        {
+          "at": "219..227",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "from",
+              "lemma": "ἀπό",
+              "morph": "PREP",
+              "strongs": "G575"
+            }
+          ],
+          "text": "ἀπὸ"
+        },
+        {
+          "at": "228..235",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-GSN",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τοῦ"
+        },
+        {
+          "at": "236..251",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "evil’",
+              "lemma": "πονηρός",
+              "morph": "A-GSN",
+              "strongs": "G4190"
+            }
+          ],
+          "text": "πονηροῦ"
+        },
+        {
+          "at": "251..251",
+          "kind": "note_ref",
+          "note": "note.1",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "252..869",
+          "chapter": 17,
+          "kind": "chapter",
+          "text": "Ὁ δὲ λέγει αὐτοῖς· διὰ τὴν ὀλιγοπιστίαν ὑμῶν. ἀμὴν γὰρ λέγω ὑμῖν· ἐὰν ἔχητε πίστιν ὡς κόκκον σινάπεως, ἐρεῖτε τῷ ὄρει τούτῳ· μετάβα ἔνθεν ἐκεῖ, καὶ μεταβήσεται· καὶ οὐδὲν ἀδυνατήσει ὑμῖν.\nΣυστρεφομένων δὲ αὐτῶν ἐν τῇ Γαλιλαίᾳ εἶπεν αὐτοῖς ὁ Ἰησοῦς· μέλλει ὁ υἱὸς τοῦ ἀνθρώπου παραδίδοσθαι εἰς χεῖρας ἀνθρώπων,"
+        },
+        {
+          "at": "252..625",
+          "kind": "para",
+          "style": "prose",
+          "text": "Ὁ δὲ λέγει αὐτοῖς· διὰ τὴν ὀλιγοπιστίαν ὑμῶν. ἀμὴν γὰρ λέγω ὑμῖν· ἐὰν ἔχητε πίστιν ὡς κόκκον σινάπεως, ἐρεῖτε τῷ ὄρει τούτῳ· μετάβα ἔνθεν ἐκεῖ, καὶ μεταβήσεται· καὶ οὐδὲν ἀδυνατήσει ὑμῖν."
+        },
+        {
+          "at": "252..625",
+          "kind": "verse",
+          "last": 20,
+          "text": "Ὁ δὲ λέγει αὐτοῖς· διὰ τὴν ὀλιγοπιστίαν ὑμῶν. ἀμὴν γὰρ λέγω ὑμῖν· ἐὰν ἔχητε πίστιν ὡς κόκκον σινάπεως, ἐρεῖτε τῷ ὄρει τούτῳ· μετάβα ἔνθεν ἐκεῖ, καὶ μεταβήσεται· καὶ οὐδὲν ἀδυνατήσει ὑμῖν.",
+          "verse": {
+            "book": "MAT",
+            "chapter": 17,
+            "verse": 20
+          }
+        },
+        {
+          "at": "252..255",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-NSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "Ὁ"
+        },
+        {
+          "at": "256..261",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "And",
+              "lemma": "δέ",
+              "morph": "CONJ",
+              "strongs": "G1161"
+            }
+          ],
+          "text": "δὲ"
+        },
+        {
+          "at": "262..272",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "spoke",
+              "lemma": "λέγω",
+              "morph": "V-PAI-3S",
+              "strongs": "G3004G"
+            }
+          ],
+          "text": "λέγει"
+        },
+        {
+          "at": "272..272",
+          "kind": "note_ref",
+          "note": "note.2",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "273..287",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to them;",
+              "lemma": "αὐτός",
+              "morph": "P-DPM",
+              "strongs": "G846"
+            }
+          ],
+          "text": "αὐτοῖς"
+        },
+        {
+          "at": "290..297",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Because of",
+              "lemma": "διά",
+              "morph": "PREP",
+              "strongs": "G1223"
+            }
+          ],
+          "text": "διὰ"
+        },
+        {
+          "at": "298..305",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-ASF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τὴν"
+        },
+        {
+          "at": "306..331",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "little faith",
+              "lemma": "ὀλιγοπιστία",
+              "morph": "N-ASF",
+              "strongs": "G6066"
+            }
+          ],
+          "text": "ὀλιγοπιστίαν"
+        },
+        {
+          "at": "331..331",
+          "kind": "note_ref",
+          "note": "note.3",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "332..342",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of you.",
+              "lemma": "σύ",
+              "morph": "P-2GP",
+              "strongs": "G4771"
+            }
+          ],
+          "text": "ὑμῶν"
+        },
+        {
+          "at": "344..354",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Amen",
+              "lemma": "ἀμήν",
+              "morph": "INJ-HEB",
+              "strongs": "G281"
+            }
+          ],
+          "text": "ἀμὴν"
+        },
+        {
+          "at": "355..362",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "for",
+              "lemma": "γάρ",
+              "morph": "CONJ",
+              "strongs": "G1063"
+            }
+          ],
+          "text": "γὰρ"
+        },
+        {
+          "at": "363..371",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "I say",
+              "lemma": "λέγω",
+              "morph": "V-PAI-1S",
+              "strongs": "G3004G"
+            }
+          ],
+          "text": "λέγω"
+        },
+        {
+          "at": "372..382",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to you;",
+              "lemma": "σύ",
+              "morph": "P-2DP",
+              "strongs": "G4771"
+            }
+          ],
+          "text": "ὑμῖν"
+        },
+        {
+          "at": "385..393",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "If",
+              "lemma": "ἐάν",
+              "morph": "COND",
+              "strongs": "G1437"
+            }
+          ],
+          "text": "ἐὰν"
+        },
+        {
+          "at": "394..405",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "you shall have",
+              "lemma": "ἔχω",
+              "morph": "V-PAS-2P",
+              "strongs": "G2192"
+            }
+          ],
+          "text": "ἔχητε"
+        },
+        {
+          "at": "406..418",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "faith",
+              "lemma": "πίστις",
+              "morph": "N-ASF",
+              "strongs": "G4102G"
+            }
+          ],
+          "text": "πίστιν"
+        },
+        {
+          "at": "419..424",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "as",
+              "lemma": "ὡς",
+              "morph": "PRT",
+              "strongs": "G5613"
+            }
+          ],
+          "text": "ὡς"
+        },
+        {
+          "at": "425..437",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "a seed",
+              "lemma": "κόκκος",
+              "morph": "N-ASM",
+              "strongs": "G2848"
+            }
+          ],
+          "text": "κόκκον"
+        },
+        {
+          "at": "438..454",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of mustard,",
+              "lemma": "σίναπι",
+              "morph": "N-GSN",
+              "strongs": "G4615"
+            }
+          ],
+          "text": "σινάπεως"
+        },
+        {
+          "at": "456..470",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "you will say",
+              "lemma": "ἔπω",
+              "morph": "V-FAI-2P",
+              "strongs": "G4483"
+            }
+          ],
+          "text": "ἐρεῖτε"
+        },
+        {
+          "at": "471..476",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to the",
+              "lemma": "ὁ",
+              "morph": "T-DSN",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῷ"
+        },
+        {
+          "at": "477..486",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "mountain",
+              "lemma": "ὄρος",
+              "morph": "N-DSN",
+              "strongs": "G3735"
+            }
+          ],
+          "text": "ὄρει"
+        },
+        {
+          "at": "487..498",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to this;",
+              "lemma": "οὗτος",
+              "morph": "D-DSN",
+              "strongs": "G3778"
+            }
+          ],
+          "text": "τούτῳ"
+        },
+        {
+          "at": "501..513",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "do move",
+              "lemma": "μεταβαίνω",
+              "morph": "V-2AAM-2S",
+              "strongs": "G3327"
+            }
+          ],
+          "text": "μετάβα"
+        },
+        {
+          "at": "514..525",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "from here",
+              "lemma": "ἔνθεν",
+              "morph": "ADV",
+              "strongs": "G6033"
+            }
+          ],
+          "text": "ἔνθεν"
+        },
+        {
+          "at": "525..525",
+          "kind": "note_ref",
+          "note": "note.4",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "526..536",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to there,",
+              "lemma": "ἐκεῖ",
+              "morph": "ADV",
+              "strongs": "G1563"
+            }
+          ],
+          "text": "ἐκεῖ"
+        },
+        {
+          "at": "538..545",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "546..568",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "it will move;",
+              "lemma": "μεταβαίνω",
+              "morph": "V-FDI-3S",
+              "strongs": "G3327"
+            }
+          ],
+          "text": "μεταβήσεται"
+        },
+        {
+          "at": "571..578",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "And",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "579..591",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "no [thing]",
+              "lemma": "οὐδείς",
+              "morph": "A-NSN",
+              "strongs": "G3762"
+            }
+          ],
+          "text": "οὐδὲν"
+        },
+        {
+          "at": "592..613",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "will be impossible",
+              "lemma": "ἀδυνατέω",
+              "morph": "V-FAI-3S",
+              "strongs": "G101"
+            }
+          ],
+          "text": "ἀδυνατήσει"
+        },
+        {
+          "at": "614..624",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "for you.",
+              "lemma": "σύ",
+              "morph": "P-2DP",
+              "strongs": "G4771"
+            }
+          ],
+          "text": "ὑμῖν"
+        },
+        {
+          "at": "625..625",
+          "kind": "note_ref",
+          "note": "note.5",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "626..869",
+          "kind": "para",
+          "style": "prose",
+          "text": "Συστρεφομένων δὲ αὐτῶν ἐν τῇ Γαλιλαίᾳ εἶπεν αὐτοῖς ὁ Ἰησοῦς· μέλλει ὁ υἱὸς τοῦ ἀνθρώπου παραδίδοσθαι εἰς χεῖρας ἀνθρώπων,"
+        },
+        {
+          "at": "626..869",
+          "kind": "verse",
+          "last": 22,
+          "text": "Συστρεφομένων δὲ αὐτῶν ἐν τῇ Γαλιλαίᾳ εἶπεν αὐτοῖς ὁ Ἰησοῦς· μέλλει ὁ υἱὸς τοῦ ἀνθρώπου παραδίδοσθαι εἰς χεῖρας ἀνθρώπων,",
+          "verse": {
+            "book": "MAT",
+            "chapter": 17,
+            "verse": 22
+          }
+        },
+        {
+          "at": "626..652",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "When are abiding",
+              "lemma": "συστρέφω",
+              "morph": "V-PPP-GPM",
+              "strongs": "G4962"
+            }
+          ],
+          "text": "Συστρεφομένων"
+        },
+        {
+          "at": "652..652",
+          "kind": "note_ref",
+          "note": "note.6",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "653..658",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "now",
+              "lemma": "δέ",
+              "morph": "CONJ",
+              "strongs": "G1161"
+            }
+          ],
+          "text": "δὲ"
+        },
+        {
+          "at": "659..671",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "they",
+              "lemma": "αὐτός",
+              "morph": "P-GPM",
+              "strongs": "G846"
+            }
+          ],
+          "text": "αὐτῶν"
+        },
+        {
+          "at": "672..677",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "in",
+              "lemma": "ἐν",
+              "morph": "PREP",
+              "strongs": "G1722"
+            }
+          ],
+          "text": "ἐν"
+        },
+        {
+          "at": "678..683",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-DSF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῇ"
+        },
+        {
+          "at": "684..701",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Galilee",
+              "lemma": "Γαλιλαία",
+              "morph": "N-DSF-L",
+              "strongs": "G1056G"
+            }
+          ],
+          "text": "Γαλιλαίᾳ"
+        },
+        {
+          "at": "702..713",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "said",
+              "lemma": "ἔπω",
+              "morph": "V-2AAI-3S",
+              "strongs": "G2036"
+            }
+          ],
+          "text": "εἶπεν"
+        },
+        {
+          "at": "714..728",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to them",
+              "lemma": "αὐτός",
+              "morph": "P-DPM",
+              "strongs": "G846"
+            }
+          ],
+          "text": "αὐτοῖς"
+        },
+        {
+          "at": "729..732",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-NSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "ὁ"
+        },
+        {
+          "at": "733..747",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Jesus;",
+              "lemma": "Ἰησοῦς",
+              "morph": "N-NSM-P",
+              "strongs": "G2424G"
+            }
+          ],
+          "text": "Ἰησοῦς"
+        },
+        {
+          "at": "750..762",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Is about",
+              "lemma": "μέλλω",
+              "morph": "V-PAI-3S",
+              "strongs": "G3195"
+            }
+          ],
+          "text": "μέλλει"
+        },
+        {
+          "at": "763..766",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-NSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "ὁ"
+        },
+        {
+          "at": "767..777",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Son",
+              "lemma": "υἱός",
+              "morph": "N-NSM-T",
+              "strongs": "G5207"
+            }
+          ],
+          "text": "υἱὸς"
+        },
+        {
+          "at": "778..785",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-GSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τοῦ"
+        },
+        {
+          "at": "786..803",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of Man",
+              "lemma": "ἄνθρωπος",
+              "morph": "N-GSM-T",
+              "strongs": "G444"
+            }
+          ],
+          "text": "ἀνθρώπου"
+        },
+        {
+          "at": "804..828",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to be betrayed",
+              "lemma": "παραδίδωμι",
+              "morph": "V-PPN",
+              "strongs": "G3860"
+            }
+          ],
+          "text": "παραδίδοσθαι"
+        },
+        {
+          "at": "829..836",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "into",
+              "lemma": "εἰς",
+              "morph": "PREP",
+              "strongs": "G1519"
+            }
+          ],
+          "text": "εἰς"
+        },
+        {
+          "at": "837..850",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] hands",
+              "lemma": "χείρ",
+              "morph": "N-APF",
+              "strongs": "G5495"
+            }
+          ],
+          "text": "χεῖρας"
+        },
+        {
+          "at": "851..868",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of men,",
+              "lemma": "ἄνθρωπος",
+              "morph": "N-GPM",
+              "strongs": "G444"
+            }
+          ],
+          "text": "ἀνθρώπων"
+        }
+      ],
+      "text": "Βίβλος γενέσεως Ἰησοῦ Χριστοῦ υἱοῦ Δαυὶδ υἱοῦ Ἀβραάμ.\nκαὶ μὴ εἰσενέγκῃς ἡμᾶς εἰς πειρασμόν, ἀλλὰ ῥῦσαι ἡμᾶς ἀπὸ τοῦ πονηροῦ\nὉ δὲ λέγει αὐτοῖς· διὰ τὴν ὀλιγοπιστίαν ὑμῶν. ἀμὴν γὰρ λέγω ὑμῖν· ἐὰν ἔχητε πίστιν ὡς κόκκον σινάπεως, ἐρεῖτε τῷ ὄρει τούτῳ· μετάβα ἔνθεν ἐκεῖ, καὶ μεταβήσεται· καὶ οὐδὲν ἀδυνατήσει ὑμῖν.\nΣυστρεφομένων δὲ αὐτῶν ἐν τῇ Γαλιλαίᾳ εἶπεν αὐτοῖς ὁ Ἰησοῦς· μέλλει ὁ υἱὸς τοῦ ἀνθρώπου παραδίδοσθαι εἰς χεῖρας ἀνθρώπων,"
+    },
+    {
+      "id": "MRK",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..241",
+          "chapter": 1,
+          "kind": "chapter",
+          "text": "καὶ ἦν ἐν τῇ ἐρήμῳ τεσσεράκοντα ἡμέρας πειραζόμενος ὑπὸ τοῦ σατανᾶ καὶ ἦν μετὰ τῶν θηρίων· καὶ οἱ ἄγγελοι διηκόνουν αὐτῷ."
+        },
+        {
+          "at": "0..241",
+          "kind": "para",
+          "style": "prose",
+          "text": "καὶ ἦν ἐν τῇ ἐρήμῳ τεσσεράκοντα ἡμέρας πειραζόμενος ὑπὸ τοῦ σατανᾶ καὶ ἦν μετὰ τῶν θηρίων· καὶ οἱ ἄγγελοι διηκόνουν αὐτῷ."
+        },
+        {
+          "at": "0..241",
+          "kind": "verse",
+          "last": 13,
+          "text": "καὶ ἦν ἐν τῇ ἐρήμῳ τεσσεράκοντα ἡμέρας πειραζόμενος ὑπὸ τοῦ σατανᾶ καὶ ἦν μετὰ τῶν θηρίων· καὶ οἱ ἄγγελοι διηκόνουν αὐτῷ.",
+          "verse": {
+            "book": "MRK",
+            "chapter": 1,
+            "verse": 13
+          }
+        },
+        {
+          "at": "0..7",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "And",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "8..13",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "He was",
+              "lemma": "εἰμί",
+              "morph": "V-IAI-3S",
+              "strongs": "G1510"
+            }
+          ],
+          "text": "ἦν"
+        },
+        {
+          "at": "14..19",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "in",
+              "lemma": "ἐν",
+              "morph": "PREP",
+              "strongs": "G1722"
+            }
+          ],
+          "text": "ἐν"
+        },
+        {
+          "at": "20..25",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-DSF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῇ"
+        },
+        {
+          "at": "26..38",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "wilderness",
+              "lemma": "ἔρημος",
+              "morph": "A-DSF",
+              "strongs": "G2048"
+            }
+          ],
+          "text": "ἐρήμῳ"
+        },
+        {
+          "at": "39..63",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "forty",
+              "lemma": "τεσσαράκοντα",
+              "morph": "A-NUI",
+              "strongs": "G5062"
+            }
+          ],
+          "text": "τεσσεράκοντα"
+        },
+        {
+          "at": "64..77",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "days",
+              "lemma": "ἡμέρα",
+              "morph": "N-APF",
+              "strongs": "G2250"
+            }
+          ],
+          "text": "ἡμέρας"
+        },
+        {
+          "at": "78..102",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "being tempted",
+              "lemma": "πειράζω",
+              "morph": "V-PPP-NSM",
+              "strongs": "G3985G"
+            }
+          ],
+          "text": "πειραζόμενος"
+        },
+        {
+          "at": "103..111",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "by",
+              "lemma": "ὑπό",
+              "morph": "PREP",
+              "strongs": "G5259G"
+            }
+          ],
+          "text": "ὑπὸ"
+        },
+        {
+          "at": "112..119",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-GSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τοῦ"
+        },
+        {
+          "at": "120..133",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Satan",
+              "lemma": "Σατανᾶς",
+              "morph": "N-GSM-T",
+              "strongs": "G4567"
+            }
+          ],
+          "text": "σατανᾶ"
+        },
+        {
+          "at": "134..141",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "And",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "142..147",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "He was",
+              "lemma": "εἰμί",
+              "morph": "V-IAI-3S",
+              "strongs": "G1510"
+            }
+          ],
+          "text": "ἦν"
+        },
+        {
+          "at": "148..157",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "with",
+              "lemma": "μετά",
+              "morph": "PREP",
+              "strongs": "G3326"
+            }
+          ],
+          "text": "μετὰ"
+        },
+        {
+          "at": "158..165",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-GPN",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῶν"
+        },
+        {
+          "at": "166..178",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "wild animals;",
+              "lemma": "θηρίον",
+              "morph": "N-GPN",
+              "strongs": "G2342"
+            }
+          ],
+          "text": "θηρίων"
+        },
+        {
+          "at": "181..188",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "189..194",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-NPM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "οἱ"
+        },
+        {
+          "at": "195..210",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "angels",
+              "lemma": "ἄγγελος",
+              "morph": "N-NPM",
+              "strongs": "G32G"
+            }
+          ],
+          "text": "ἄγγελοι"
+        },
+        {
+          "at": "211..229",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "were ministering",
+              "lemma": "διακονέω",
+              "morph": "V-IAI-3P",
+              "strongs": "G1247"
+            }
+          ],
+          "text": "διηκόνουν"
+        },
+        {
+          "at": "230..240",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to Him.",
+              "lemma": "αὐτός",
+              "morph": "P-DSM",
+              "strongs": "G846"
+            }
+          ],
+          "text": "αὐτῷ"
+        },
+        {
+          "at": "242..1090",
+          "chapter": 16,
+          "kind": "chapter",
+          "text": "καὶ ἐξελθοῦσαι ἔφυγον ἀπὸ τοῦ μνημείου· εἶχεν γὰρ αὐτὰς τρόμος καὶ ἔκστασις. καὶ οὐδενὶ οὐδὲν εἶπαν· ἐφοβοῦντο γάρ.\n[[Πάντα δὲ τὰ παρηγγελμένα τοῖς περὶ τὸν Πέτρον συντόμως ἐξήγγειλαν. Μετὰ δὲ ταῦτα καὶ αὐτὸς ὁ Ἰησοῦς ἀπὸ ἀνατολῆς καὶ ἄχρι δύσεως ἐξαπέστειλεν δι᾽ αὐτῶν τὸ ἱερὸν καὶ ἄφθαρτον κήρυγμα τῆς αἰωνίου σωτηρίας. ἀμήν.]]\n[[Ἀναστὰς δὲ πρωῒ πρώτῃ σαββάτου ἐφάνη πρῶτον Μαρίᾳ τῇ Μαγδαληνῇ, παρ᾽ ἧς ἐκβεβλήκει ἑπτὰ δαιμόνια."
+        },
+        {
+          "at": "242..894",
+          "kind": "verse",
+          "last": 8,
+          "text": "καὶ ἐξελθοῦσαι ἔφυγον ἀπὸ τοῦ μνημείου· εἶχεν γὰρ αὐτὰς τρόμος καὶ ἔκστασις. καὶ οὐδενὶ οὐδὲν εἶπαν· ἐφοβοῦντο γάρ.\n[[Πάντα δὲ τὰ παρηγγελμένα τοῖς περὶ τὸν Πέτρον συντόμως ἐξήγγειλαν. Μετὰ δὲ ταῦτα καὶ αὐτὸς ὁ Ἰησοῦς ἀπὸ ἀνατολῆς καὶ ἄχρι δύσεως ἐξαπέστειλεν δι᾽ αὐτῶν τὸ ἱερὸν καὶ ἄφθαρτον κήρυγμα τῆς αἰωνίου σωτηρίας. ἀμήν.]]",
+          "verse": {
+            "book": "MRK",
+            "chapter": 16,
+            "verse": 8
+          }
+        },
+        {
+          "at": "242..474",
+          "kind": "para",
+          "style": "prose",
+          "text": "καὶ ἐξελθοῦσαι ἔφυγον ἀπὸ τοῦ μνημείου· εἶχεν γὰρ αὐτὰς τρόμος καὶ ἔκστασις. καὶ οὐδενὶ οὐδὲν εἶπαν· ἐφοβοῦντο γάρ."
+        },
+        {
+          "at": "242..249",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "And",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "250..272",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "having gone out",
+              "lemma": "ἐξέρχομαι",
+              "morph": "V-2AAP-NPF",
+              "strongs": "G1831"
+            }
+          ],
+          "text": "ἐξελθοῦσαι"
+        },
+        {
+          "at": "272..272",
+          "kind": "note_ref",
+          "note": "note.7",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "273..286",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "they fled",
+              "lemma": "φεύγω",
+              "morph": "V-2AAI-3P",
+              "strongs": "G5343"
+            }
+          ],
+          "text": "ἔφυγον"
+        },
+        {
+          "at": "287..295",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "from",
+              "lemma": "ἀπό",
+              "morph": "PREP",
+              "strongs": "G575"
+            }
+          ],
+          "text": "ἀπὸ"
+        },
+        {
+          "at": "296..303",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-GSN",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τοῦ"
+        },
+        {
+          "at": "304..320",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "tomb;",
+              "lemma": "μνημεῖον",
+              "morph": "N-GSN",
+              "strongs": "G3419"
+            }
+          ],
+          "text": "μνημείου"
+        },
+        {
+          "at": "323..334",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "had",
+              "lemma": "ἔχω",
+              "morph": "V-IAI-3S",
+              "strongs": "G2192"
+            }
+          ],
+          "text": "εἶχεν"
+        },
+        {
+          "at": "335..342",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "for",
+              "lemma": "γάρ",
+              "morph": "CONJ",
+              "strongs": "G1063"
+            }
+          ],
+          "text": "γὰρ"
+        },
+        {
+          "at": "342..342",
+          "kind": "note_ref",
+          "note": "note.8",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "343..355",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "them",
+              "lemma": "αὐτός",
+              "morph": "P-APF",
+              "strongs": "G846"
+            }
+          ],
+          "text": "αὐτὰς"
+        },
+        {
+          "at": "356..368",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "trembling",
+              "lemma": "τρόμος",
+              "morph": "N-NSM",
+              "strongs": "G5156"
+            }
+          ],
+          "text": "τρόμος"
+        },
+        {
+          "at": "369..376",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "377..394",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "amazement.",
+              "lemma": "ἔκστασις",
+              "morph": "N-NSF",
+              "strongs": "G1611"
+            }
+          ],
+          "text": "ἔκστασις"
+        },
+        {
+          "at": "396..403",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "404..418",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to no [one]",
+              "lemma": "οὐδείς",
+              "morph": "A-DSM",
+              "strongs": "G3762"
+            }
+          ],
+          "text": "οὐδενὶ"
+        },
+        {
+          "at": "419..431",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "no [thing]",
+              "lemma": "οὐδείς",
+              "morph": "A-ASN",
+              "strongs": "G3762"
+            }
+          ],
+          "text": "οὐδὲν"
+        },
+        {
+          "at": "432..443",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "they spoke;",
+              "lemma": "ἔπω",
+              "morph": "V-2AAI-3P",
+              "strongs": "G2036"
+            }
+          ],
+          "text": "εἶπαν"
+        },
+        {
+          "at": "446..466",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "they were afraid",
+              "lemma": "φοβέω",
+              "morph": "V-INI-3P",
+              "strongs": "G5399"
+            }
+          ],
+          "text": "ἐφοβοῦντο"
+        },
+        {
+          "at": "467..473",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "for.",
+              "lemma": "γάρ",
+              "morph": "CONJ",
+              "strongs": "G1063"
+            }
+          ],
+          "text": "γάρ"
+        },
+        {
+          "at": "475..894",
+          "kind": "para",
+          "style": "prose",
+          "text": "[[Πάντα δὲ τὰ παρηγγελμένα τοῖς περὶ τὸν Πέτρον συντόμως ἐξήγγειλαν. Μετὰ δὲ ταῦτα καὶ αὐτὸς ὁ Ἰησοῦς ἀπὸ ἀνατολῆς καὶ ἄχρι δύσεως ἐξαπέστειλεν δι᾽ αὐτῶν τὸ ἱερὸν καὶ ἄφθαρτον κήρυγμα τῆς αἰωνίου σωτηρίας. ἀμήν.]]"
+        },
+        {
+          "at": "477..487",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "(8b) all",
+              "lemma": "πᾶς",
+              "morph": "A-APN",
+              "strongs": "G3956"
+            }
+          ],
+          "text": "Πάντα"
+        },
+        {
+          "at": "488..493",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "now",
+              "lemma": "δέ",
+              "morph": "CONJ",
+              "strongs": "G1161"
+            }
+          ],
+          "text": "δὲ"
+        },
+        {
+          "at": "494..499",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the [things]",
+              "lemma": "ὁ",
+              "morph": "T-APN",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τὰ"
+        },
+        {
+          "at": "500..524",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "instructed",
+              "lemma": "παραγγέλλω",
+              "morph": "V-RPP-APN",
+              "strongs": "G3853"
+            }
+          ],
+          "text": "παρηγγελμένα"
+        },
+        {
+          "at": "525..534",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to [those]",
+              "lemma": "ὁ",
+              "morph": "T-DPM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τοῖς"
+        },
+        {
+          "at": "535..544",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "around",
+              "lemma": "περί",
+              "morph": "PREP",
+              "strongs": "G4012"
+            }
+          ],
+          "text": "περὶ"
+        },
+        {
+          "at": "545..552",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-ASM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τὸν"
+        },
+        {
+          "at": "553..565",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Peter",
+              "lemma": "Πέτρος",
+              "morph": "N-ASM-P",
+              "strongs": "G4074G"
+            }
+          ],
+          "text": "Πέτρον"
+        },
+        {
+          "at": "566..582",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "promptly",
+              "lemma": "συντόμως",
+              "morph": "ADV",
+              "strongs": "G4935"
+            }
+          ],
+          "text": "συντόμως"
+        },
+        {
+          "at": "583..604",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "they reported.",
+              "lemma": "ἐξαγγέλλω",
+              "morph": "V-AAI-3P",
+              "strongs": "G1804"
+            }
+          ],
+          "text": "ἐξήγγειλαν"
+        },
+        {
+          "at": "606..615",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "After",
+              "lemma": "μετά",
+              "morph": "PREP",
+              "strongs": "G3326"
+            }
+          ],
+          "text": "Μετὰ"
+        },
+        {
+          "at": "616..621",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "now",
+              "lemma": "δέ",
+              "morph": "CONJ",
+              "strongs": "G1161"
+            }
+          ],
+          "text": "δὲ"
+        },
+        {
+          "at": "622..633",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "these [things]",
+              "lemma": "οὗτος",
+              "morph": "D-APN",
+              "strongs": "G3778"
+            }
+          ],
+          "text": "ταῦτα"
+        },
+        {
+          "at": "634..641",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "also",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "642..654",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Himself",
+              "lemma": "αὐτός",
+              "morph": "P-NSM",
+              "strongs": "G846"
+            }
+          ],
+          "text": "αὐτὸς"
+        },
+        {
+          "at": "655..658",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-NSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "ὁ"
+        },
+        {
+          "at": "659..673",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Jesus",
+              "lemma": "Ἰησοῦς",
+              "morph": "N-NSM-P",
+              "strongs": "G2424G"
+            }
+          ],
+          "text": "Ἰησοῦς"
+        },
+        {
+          "at": "674..682",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "from",
+              "lemma": "ἀπό",
+              "morph": "PREP",
+              "strongs": "G575"
+            }
+          ],
+          "text": "ἀπὸ"
+        },
+        {
+          "at": "683..701",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] east",
+              "lemma": "ἀνατολή",
+              "morph": "N-GSF",
+              "strongs": "G395"
+            }
+          ],
+          "text": "ἀνατολῆς"
+        },
+        {
+          "at": "702..709",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "710..719",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to",
+              "lemma": "ἄχρι",
+              "morph": "PREP",
+              "strongs": "G891"
+            }
+          ],
+          "text": "ἄχρι"
+        },
+        {
+          "at": "720..732",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[the] west",
+              "lemma": "δύσις",
+              "morph": "N-GSF",
+              "strongs": "G6091"
+            }
+          ],
+          "text": "δύσεως"
+        },
+        {
+          "at": "733..758",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "sent out",
+              "lemma": "ἐξαποστέλλω",
+              "morph": "V-2AAI-3S",
+              "strongs": "G1821"
+            }
+          ],
+          "text": "ἐξαπέστειλεν"
+        },
+        {
+          "at": "759..766",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "through",
+              "lemma": "διά",
+              "morph": "PREP",
+              "strongs": "G1223"
+            }
+          ],
+          "text": "δι᾽"
+        },
+        {
+          "at": "767..779",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "them",
+              "lemma": "αὐτός",
+              "morph": "P-GPM",
+              "strongs": "G846"
+            }
+          ],
+          "text": "αὐτῶν"
+        },
+        {
+          "at": "780..785",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-ASN",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τὸ"
+        },
+        {
+          "at": "786..798",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "sacred",
+              "lemma": "ἱερόν",
+              "morph": "N-ASN",
+              "strongs": "G2411"
+            }
+          ],
+          "text": "ἱερὸν"
+        },
+        {
+          "at": "799..806",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "807..824",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "imperishable",
+              "lemma": "ἄφθαρτος",
+              "morph": "A-ASN",
+              "strongs": "G862"
+            }
+          ],
+          "text": "ἄφθαρτον"
+        },
+        {
+          "at": "825..839",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "preaching",
+              "lemma": "κήρυγμα",
+              "morph": "N-ASN",
+              "strongs": "G2782"
+            }
+          ],
+          "text": "κήρυγμα"
+        },
+        {
+          "at": "840..847",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-GSF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῆς"
+        },
+        {
+          "at": "848..863",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of eternal",
+              "lemma": "αἰώνιος",
+              "morph": "A-GSF",
+              "strongs": "G166"
+            }
+          ],
+          "text": "αἰωνίου"
+        },
+        {
+          "at": "864..880",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "salvation.",
+              "lemma": "σωτηρία",
+              "morph": "N-GSF",
+              "strongs": "G4991"
+            }
+          ],
+          "text": "σωτηρίας"
+        },
+        {
+          "at": "882..891",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Amen.",
+              "lemma": "ἀμήν",
+              "morph": "INJ-HEB",
+              "strongs": "G281"
+            }
+          ],
+          "text": "ἀμήν"
+        },
+        {
+          "at": "895..1090",
+          "kind": "para",
+          "style": "prose",
+          "text": "[[Ἀναστὰς δὲ πρωῒ πρώτῃ σαββάτου ἐφάνη πρῶτον Μαρίᾳ τῇ Μαγδαληνῇ, παρ᾽ ἧς ἐκβεβλήκει ἑπτὰ δαιμόνια."
+        },
+        {
+          "at": "895..1090",
+          "kind": "verse",
+          "last": 9,
+          "text": "[[Ἀναστὰς δὲ πρωῒ πρώτῃ σαββάτου ἐφάνη πρῶτον Μαρίᾳ τῇ Μαγδαληνῇ, παρ᾽ ἧς ἐκβεβλήκει ἑπτὰ δαιμόνια.",
+          "verse": {
+            "book": "MRK",
+            "chapter": 16,
+            "verse": 9
+          }
+        },
+        {
+          "at": "897..913",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Having risen",
+              "lemma": "ἀνίστημι",
+              "morph": "V-2AAP-NSM",
+              "strongs": "G450"
+            }
+          ],
+          "text": "Ἀναστὰς"
+        },
+        {
+          "at": "914..919",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "now",
+              "lemma": "δέ",
+              "morph": "CONJ",
+              "strongs": "G1161"
+            }
+          ],
+          "text": "δὲ"
+        },
+        {
+          "at": "920..929",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "early",
+              "lemma": "πρωΐ",
+              "morph": "ADV",
+              "strongs": "G4404"
+            }
+          ],
+          "text": "πρωῒ"
+        },
+        {
+          "at": "930..941",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "on [the] first [day]",
+              "lemma": "πρῶτος",
+              "morph": "A-DSF",
+              "strongs": "G4413G"
+            }
+          ],
+          "text": "πρώτῃ"
+        },
+        {
+          "at": "942..958",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of the week",
+              "lemma": "σάββατον",
+              "morph": "N-GSN",
+              "strongs": "G4521"
+            }
+          ],
+          "text": "σαββάτου"
+        },
+        {
+          "at": "959..970",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "He appeared",
+              "lemma": "φαίνω",
+              "morph": "V-2API-3S",
+              "strongs": "G5316"
+            }
+          ],
+          "text": "ἐφάνη"
+        },
+        {
+          "at": "971..984",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "first",
+              "lemma": "πρῶτος",
+              "morph": "A-ASN",
+              "strongs": "G4413G"
+            }
+          ],
+          "text": "πρῶτον"
+        },
+        {
+          "at": "985..996",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to Mary",
+              "lemma": "Μαρία",
+              "morph": "N-DSF-P",
+              "strongs": "G3137I"
+            }
+          ],
+          "text": "Μαρίᾳ"
+        },
+        {
+          "at": "997..1002",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-DSF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῇ"
+        },
+        {
+          "at": "1003..1022",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Magdalene,",
+              "lemma": "Μαγδαληνή",
+              "morph": "N-DSF-LG",
+              "strongs": "G3094"
+            }
+          ],
+          "text": "Μαγδαληνῇ"
+        },
+        {
+          "at": "1024..1033",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "from with",
+              "lemma": "παρά",
+              "morph": "PREP",
+              "strongs": "G3844"
+            }
+          ],
+          "text": "παρ᾽"
+        },
+        {
+          "at": "1033..1033",
+          "kind": "note_ref",
+          "note": "note.9",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "1034..1039",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "whom",
+              "lemma": "ὅς",
+              "morph": "R-GSF",
+              "strongs": "G3739"
+            }
+          ],
+          "text": "ἧς"
+        },
+        {
+          "at": "1040..1061",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "He had cast out",
+              "lemma": "ἐκβάλλω",
+              "morph": "V-LAI-3S",
+              "strongs": "G1544"
+            }
+          ],
+          "text": "ἐκβεβλήκει"
+        },
+        {
+          "at": "1062..1072",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "seven",
+              "lemma": "ἑπτά",
+              "morph": "A-NUI",
+              "strongs": "G2033"
+            }
+          ],
+          "text": "ἑπτὰ"
+        },
+        {
+          "at": "1073..1089",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "demons.",
+              "lemma": "δαιμόνιον",
+              "morph": "N-APN",
+              "strongs": "G1140"
+            }
+          ],
+          "text": "δαιμόνια"
+        }
+      ],
+      "text": "καὶ ἦν ἐν τῇ ἐρήμῳ τεσσεράκοντα ἡμέρας πειραζόμενος ὑπὸ τοῦ σατανᾶ καὶ ἦν μετὰ τῶν θηρίων· καὶ οἱ ἄγγελοι διηκόνουν αὐτῷ.\nκαὶ ἐξελθοῦσαι ἔφυγον ἀπὸ τοῦ μνημείου· εἶχεν γὰρ αὐτὰς τρόμος καὶ ἔκστασις. καὶ οὐδενὶ οὐδὲν εἶπαν· ἐφοβοῦντο γάρ.\n[[Πάντα δὲ τὰ παρηγγελμένα τοῖς περὶ τὸν Πέτρον συντόμως ἐξήγγειλαν. Μετὰ δὲ ταῦτα καὶ αὐτὸς ὁ Ἰησοῦς ἀπὸ ἀνατολῆς καὶ ἄχρι δύσεως ἐξαπέστειλεν δι᾽ αὐτῶν τὸ ἱερὸν καὶ ἄφθαρτον κήρυγμα τῆς αἰωνίου σωτηρίας. ἀμήν.]]\n[[Ἀναστὰς δὲ πρωῒ πρώτῃ σαββάτου ἐφάνη πρῶτον Μαρίᾳ τῇ Μαγδαληνῇ, παρ᾽ ἧς ἐκβεβλήκει ἑπτὰ δαιμόνια."
+    },
+    {
+      "id": "JHN",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..331",
+          "chapter": 7,
+          "kind": "chapter",
+          "text": "ἀπεκρίθησαν καὶ εἶπαν αὐτῷ· μὴ καὶ σὺ ἐκ τῆς Γαλιλαίας εἶ; ἐραύνησον καὶ ἴδε ὅτι ἐκ τῆς Γαλιλαίας προφήτης οὐκ ἐγείρεται.\n[[Καὶ ἐπορεύθησαν ἕκαστος εἰς τὸν οἶκον αὐτοῦ,"
+        },
+        {
+          "at": "0..239",
+          "kind": "para",
+          "style": "prose",
+          "text": "ἀπεκρίθησαν καὶ εἶπαν αὐτῷ· μὴ καὶ σὺ ἐκ τῆς Γαλιλαίας εἶ; ἐραύνησον καὶ ἴδε ὅτι ἐκ τῆς Γαλιλαίας προφήτης οὐκ ἐγείρεται."
+        },
+        {
+          "at": "0..239",
+          "kind": "verse",
+          "last": 52,
+          "text": "ἀπεκρίθησαν καὶ εἶπαν αὐτῷ· μὴ καὶ σὺ ἐκ τῆς Γαλιλαίας εἶ; ἐραύνησον καὶ ἴδε ὅτι ἐκ τῆς Γαλιλαίας προφήτης οὐκ ἐγείρεται.",
+          "verse": {
+            "book": "JHN",
+            "chapter": 7,
+            "verse": 52
+          }
+        },
+        {
+          "at": "0..23",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "They answered",
+              "lemma": "ἀποκρίνω",
+              "morph": "V-ADI-3P",
+              "strongs": "G611"
+            }
+          ],
+          "text": "ἀπεκρίθησαν"
+        },
+        {
+          "at": "24..31",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "32..43",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "they said",
+              "lemma": "ἔπω",
+              "morph": "V-2AAI-3P",
+              "strongs": "G2036"
+            }
+          ],
+          "text": "εἶπαν"
+        },
+        {
+          "at": "44..54",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to him;",
+              "lemma": "αὐτός",
+              "morph": "P-DSM",
+              "strongs": "G846"
+            }
+          ],
+          "text": "αὐτῷ"
+        },
+        {
+          "at": "57..62",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Surely not",
+              "lemma": "μή",
+              "morph": "PRT-N",
+              "strongs": "G3361"
+            }
+          ],
+          "text": "μὴ"
+        },
+        {
+          "at": "63..70",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "also",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "71..76",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "you yourself",
+              "lemma": "σύ",
+              "morph": "P-2NS",
+              "strongs": "G4771"
+            }
+          ],
+          "text": "σὺ"
+        },
+        {
+          "at": "77..82",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "from",
+              "lemma": "ἐκ",
+              "morph": "PREP",
+              "strongs": "G1537"
+            }
+          ],
+          "text": "ἐκ"
+        },
+        {
+          "at": "83..90",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-GSF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῆς"
+        },
+        {
+          "at": "91..109",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Galilee",
+              "lemma": "Γαλιλαία",
+              "morph": "N-GSF-L",
+              "strongs": "G1056G"
+            }
+          ],
+          "text": "Γαλιλαίας"
+        },
+        {
+          "at": "110..115",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "are?",
+              "lemma": "εἰμί",
+              "morph": "V-PAI-2S",
+              "strongs": "G1510"
+            }
+          ],
+          "text": "εἶ"
+        },
+        {
+          "at": "117..136",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "do search",
+              "lemma": "ἐρευνάω",
+              "morph": "V-AAM-2S",
+              "strongs": "G2045"
+            }
+          ],
+          "text": "ἐραύνησον"
+        },
+        {
+          "at": "137..144",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "145..152",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "do see",
+              "lemma": "εἴδω",
+              "morph": "V-2AAM-2S",
+              "strongs": "G1492H"
+            }
+          ],
+          "text": "ἴδε"
+        },
+        {
+          "at": "153..160",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "that",
+              "lemma": "ὅτι",
+              "morph": "CONJ",
+              "strongs": "G3754G"
+            }
+          ],
+          "text": "ὅτι"
+        },
+        {
+          "at": "161..166",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "out of",
+              "lemma": "ἐκ",
+              "morph": "PREP",
+              "strongs": "G1537"
+            }
+          ],
+          "text": "ἐκ"
+        },
+        {
+          "at": "167..174",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-GSF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῆς"
+        },
+        {
+          "at": "175..193",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Galilee",
+              "lemma": "Γαλιλαία",
+              "morph": "N-GSF-L",
+              "strongs": "G1056G"
+            }
+          ],
+          "text": "Γαλιλαίας"
+        },
+        {
+          "at": "194..210",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "a prophet",
+              "lemma": "προφήτης",
+              "morph": "N-NSM",
+              "strongs": "G4396"
+            }
+          ],
+          "text": "προφήτης"
+        },
+        {
+          "at": "211..218",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "not",
+              "lemma": "οὐ",
+              "morph": "PRT-N",
+              "strongs": "G3756"
+            }
+          ],
+          "text": "οὐκ"
+        },
+        {
+          "at": "219..238",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "is raised.",
+              "lemma": "ἐγείρω",
+              "morph": "V-PPI-3S",
+              "strongs": "G1453"
+            }
+          ],
+          "text": "ἐγείρεται"
+        },
+        {
+          "at": "239..239",
+          "kind": "note_ref",
+          "note": "note.10",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "240..331",
+          "kind": "para",
+          "style": "prose",
+          "text": "[[Καὶ ἐπορεύθησαν ἕκαστος εἰς τὸν οἶκον αὐτοῦ,"
+        },
+        {
+          "at": "240..331",
+          "kind": "verse",
+          "last": 53,
+          "text": "[[Καὶ ἐπορεύθησαν ἕκαστος εἰς τὸν οἶκον αὐτοῦ,",
+          "verse": {
+            "book": "JHN",
+            "chapter": 7,
+            "verse": 53
+          }
+        },
+        {
+          "at": "242..249",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "And",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "Καὶ"
+        },
+        {
+          "at": "250..273",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "they went",
+              "lemma": "πορεύω",
+              "morph": "V-AOI-3P",
+              "strongs": "G4198"
+            }
+          ],
+          "text": "ἐπορεύθησαν"
+        },
+        {
+          "at": "273..273",
+          "kind": "note_ref",
+          "note": "note.11",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "274..289",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "each",
+              "lemma": "ἕκαστος",
+              "morph": "A-NSM",
+              "strongs": "G1538"
+            }
+          ],
+          "text": "ἕκαστος"
+        },
+        {
+          "at": "290..297",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to",
+              "lemma": "εἰς",
+              "morph": "PREP",
+              "strongs": "G1519"
+            }
+          ],
+          "text": "εἰς"
+        },
+        {
+          "at": "298..305",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-ASM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τὸν"
+        },
+        {
+          "at": "306..317",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "home",
+              "lemma": "οἶκος",
+              "morph": "N-ASM",
+              "strongs": "G3624G"
+            }
+          ],
+          "text": "οἶκον"
+        },
+        {
+          "at": "318..330",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of him,",
+              "lemma": "αὐτός",
+              "morph": "P-GSM",
+              "strongs": "G846"
+            }
+          ],
+          "text": "αὐτοῦ"
+        }
+      ],
+      "text": "ἀπεκρίθησαν καὶ εἶπαν αὐτῷ· μὴ καὶ σὺ ἐκ τῆς Γαλιλαίας εἶ; ἐραύνησον καὶ ἴδε ὅτι ἐκ τῆς Γαλιλαίας προφήτης οὐκ ἐγείρεται.\n[[Καὶ ἐπορεύθησαν ἕκαστος εἰς τὸν οἶκον αὐτοῦ,"
+    },
+    {
+      "id": "ACT",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..222",
+          "chapter": 1,
+          "kind": "chapter",
+          "text": "Οἱ μὲν οὖν συνελθόντες ἠρώτων αὐτὸν λέγοντες· κύριε, εἰ ἐν τῷ χρόνῳ τούτῳ ἀποκαθιστάνεις τὴν βασιλείαν τῷ Ἰσραήλ;"
+        },
+        {
+          "at": "0..222",
+          "kind": "para",
+          "style": "prose",
+          "text": "Οἱ μὲν οὖν συνελθόντες ἠρώτων αὐτὸν λέγοντες· κύριε, εἰ ἐν τῷ χρόνῳ τούτῳ ἀποκαθιστάνεις τὴν βασιλείαν τῷ Ἰσραήλ;"
+        },
+        {
+          "at": "0..222",
+          "kind": "verse",
+          "last": 6,
+          "text": "Οἱ μὲν οὖν συνελθόντες ἠρώτων αὐτὸν λέγοντες· κύριε, εἰ ἐν τῷ χρόνῳ τούτῳ ἀποκαθιστάνεις τὴν βασιλείαν τῷ Ἰσραήλ;",
+          "verse": {
+            "book": "ACT",
+            "chapter": 1,
+            "verse": 6
+          }
+        },
+        {
+          "at": "0..5",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Those",
+              "lemma": "ὁ",
+              "morph": "T-NPM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "Οἱ"
+        },
+        {
+          "at": "6..13",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "indeed",
+              "lemma": "μέν",
+              "morph": "PRT",
+              "strongs": "G3303"
+            }
+          ],
+          "text": "μὲν"
+        },
+        {
+          "at": "14..21",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "therefore",
+              "lemma": "οὖν",
+              "morph": "CONJ",
+              "strongs": "G3767"
+            }
+          ],
+          "text": "οὖν"
+        },
+        {
+          "at": "22..44",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "having come together",
+              "lemma": "συνέρχομαι",
+              "morph": "V-2AAP-NPM",
+              "strongs": "G4905"
+            }
+          ],
+          "text": "συνελθόντες"
+        },
+        {
+          "at": "45..58",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "were asking",
+              "lemma": "ἐρωτάω",
+              "morph": "V-IAI-3P",
+              "strongs": "G2065"
+            }
+          ],
+          "text": "ἠρώτων"
+        },
+        {
+          "at": "58..58",
+          "kind": "note_ref",
+          "note": "note.12",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "59..71",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Him",
+              "lemma": "αὐτός",
+              "morph": "P-ASM",
+              "strongs": "G846"
+            }
+          ],
+          "text": "αὐτὸν"
+        },
+        {
+          "at": "72..88",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "saying;",
+              "lemma": "λέγω",
+              "morph": "V-PAP-NPM",
+              "strongs": "G3004G"
+            }
+          ],
+          "text": "λέγοντες"
+        },
+        {
+          "at": "91..101",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Lord,",
+              "lemma": "κύριος",
+              "morph": "N-VSM-T",
+              "strongs": "G2962G"
+            }
+          ],
+          "text": "κύριε"
+        },
+        {
+          "at": "103..108",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "if",
+              "lemma": "εἰ",
+              "morph": "COND",
+              "strongs": "G1487G"
+            }
+          ],
+          "text": "εἰ"
+        },
+        {
+          "at": "109..114",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "at",
+              "lemma": "ἐν",
+              "morph": "PREP",
+              "strongs": "G1722"
+            }
+          ],
+          "text": "ἐν"
+        },
+        {
+          "at": "115..120",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-DSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῷ"
+        },
+        {
+          "at": "121..132",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "time",
+              "lemma": "χρόνος",
+              "morph": "N-DSM",
+              "strongs": "G5550"
+            }
+          ],
+          "text": "χρόνῳ"
+        },
+        {
+          "at": "133..144",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "this",
+              "lemma": "οὗτος",
+              "morph": "D-DSM",
+              "strongs": "G3778"
+            }
+          ],
+          "text": "τούτῳ"
+        },
+        {
+          "at": "145..174",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "are you restoring",
+              "lemma": "ἀποκαθίστημι",
+              "morph": "V-PAI-2S",
+              "strongs": "G600"
+            }
+          ],
+          "text": "ἀποκαθιστάνεις"
+        },
+        {
+          "at": "175..182",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-ASF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τὴν"
+        },
+        {
+          "at": "183..201",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "kingdom",
+              "lemma": "βασιλεία",
+              "morph": "N-ASF",
+              "strongs": "G932"
+            }
+          ],
+          "text": "βασιλείαν"
+        },
+        {
+          "at": "202..207",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-DSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῷ"
+        },
+        {
+          "at": "208..221",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to Israel?",
+              "lemma": "Ἰσραήλ",
+              "morph": "N-DSM-L",
+              "strongs": "G2474"
+            }
+          ],
+          "text": "Ἰσραήλ"
+        },
+        {
+          "at": "223..591",
+          "chapter": 13,
+          "kind": "chapter",
+          "text": "Γνωστὸν οὖν ἔστω ὑμῖν, ἄνδρες ἀδελφοί, ὅτι διὰ τούτου ὑμῖν ἄφεσις ἁμαρτιῶν καταγγέλλεται· καὶ ἀπὸ πάντων ὧν οὐκ ἠδυνήθητε ἐν νόμῳ Μωϋσέως δικαιωθῆναι, ἐν τούτῳ πᾶς ὁ πιστεύων δικαιοῦται."
+        },
+        {
+          "at": "223..591",
+          "kind": "para",
+          "style": "prose",
+          "text": "Γνωστὸν οὖν ἔστω ὑμῖν, ἄνδρες ἀδελφοί, ὅτι διὰ τούτου ὑμῖν ἄφεσις ἁμαρτιῶν καταγγέλλεται· καὶ ἀπὸ πάντων ὧν οὐκ ἠδυνήθητε ἐν νόμῳ Μωϋσέως δικαιωθῆναι, ἐν τούτῳ πᾶς ὁ πιστεύων δικαιοῦται."
+        },
+        {
+          "at": "223..521",
+          "kind": "verse",
+          "last": 38,
+          "text": "Γνωστὸν οὖν ἔστω ὑμῖν, ἄνδρες ἀδελφοί, ὅτι διὰ τούτου ὑμῖν ἄφεσις ἁμαρτιῶν καταγγέλλεται· καὶ ἀπὸ πάντων ὧν οὐκ ἠδυνήθητε ἐν νόμῳ Μωϋσέως δικαιωθῆναι,",
+          "verse": {
+            "book": "ACT",
+            "chapter": 13,
+            "verse": 38
+          }
+        },
+        {
+          "at": "223..238",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Known",
+              "lemma": "γνωστός",
+              "morph": "A-NSN",
+              "strongs": "G1110"
+            }
+          ],
+          "text": "Γνωστὸν"
+        },
+        {
+          "at": "239..246",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "therefore",
+              "lemma": "οὖν",
+              "morph": "CONJ",
+              "strongs": "G3767"
+            }
+          ],
+          "text": "οὖν"
+        },
+        {
+          "at": "247..256",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "it should be",
+              "lemma": "εἰμί",
+              "morph": "V-PAM-3S",
+              "strongs": "G1510"
+            }
+          ],
+          "text": "ἔστω"
+        },
+        {
+          "at": "257..267",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to you,",
+              "lemma": "σύ",
+              "morph": "P-2DP",
+              "strongs": "G4771"
+            }
+          ],
+          "text": "ὑμῖν"
+        },
+        {
+          "at": "269..282",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "men",
+              "lemma": "ἀνήρ",
+              "morph": "N-VPM",
+              "strongs": "G435G"
+            }
+          ],
+          "text": "ἄνδρες"
+        },
+        {
+          "at": "283..298",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "brothers,",
+              "lemma": "ἀδελφός",
+              "morph": "N-VPM",
+              "strongs": "G80"
+            }
+          ],
+          "text": "ἀδελφοί"
+        },
+        {
+          "at": "300..307",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "that",
+              "lemma": "ὅτι",
+              "morph": "CONJ",
+              "strongs": "G3754G"
+            }
+          ],
+          "text": "ὅτι"
+        },
+        {
+          "at": "308..315",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "through",
+              "lemma": "διά",
+              "morph": "PREP",
+              "strongs": "G1223"
+            }
+          ],
+          "text": "διὰ"
+        },
+        {
+          "at": "316..328",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "this One",
+              "lemma": "οὗτος",
+              "morph": "D-GSM",
+              "strongs": "G3778"
+            }
+          ],
+          "text": "τούτου"
+        },
+        {
+          "at": "329..339",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to you",
+              "lemma": "σύ",
+              "morph": "P-2DP",
+              "strongs": "G4771"
+            }
+          ],
+          "text": "ὑμῖν"
+        },
+        {
+          "at": "340..353",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "forgiveness",
+              "lemma": "ἄφεσις",
+              "morph": "N-NSF",
+              "strongs": "G859"
+            }
+          ],
+          "text": "ἄφεσις"
+        },
+        {
+          "at": "354..372",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of sins",
+              "lemma": "ἁμαρτία",
+              "morph": "N-GPF",
+              "strongs": "G266"
+            }
+          ],
+          "text": "ἁμαρτιῶν"
+        },
+        {
+          "at": "373..399",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "is proclaimed;",
+              "lemma": "καταγγέλλω",
+              "morph": "V-PPI-3S",
+              "strongs": "G2605"
+            }
+          ],
+          "text": "καταγγέλλεται"
+        },
+        {
+          "at": "402..409",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "And",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "410..418",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "from",
+              "lemma": "ἀπό",
+              "morph": "PREP",
+              "strongs": "G575"
+            }
+          ],
+          "text": "ἀπὸ"
+        },
+        {
+          "at": "419..431",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "all things",
+              "lemma": "πᾶς",
+              "morph": "A-GPN",
+              "strongs": "G3956"
+            }
+          ],
+          "text": "πάντων"
+        },
+        {
+          "at": "432..437",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "from which",
+              "lemma": "ὅς",
+              "morph": "R-GPN",
+              "strongs": "G3739"
+            }
+          ],
+          "text": "ὧν"
+        },
+        {
+          "at": "438..445",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "not",
+              "lemma": "οὐ",
+              "morph": "PRT-N",
+              "strongs": "G3756"
+            }
+          ],
+          "text": "οὐκ"
+        },
+        {
+          "at": "446..465",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "you were able",
+              "lemma": "δύναμαι",
+              "morph": "V-AOI-2P-ATT",
+              "strongs": "G1410"
+            }
+          ],
+          "text": "ἠδυνήθητε"
+        },
+        {
+          "at": "466..471",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "in",
+              "lemma": "ἐν",
+              "morph": "PREP",
+              "strongs": "G1722"
+            }
+          ],
+          "text": "ἐν"
+        },
+        {
+          "at": "472..481",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "law",
+              "lemma": "νόμος",
+              "morph": "N-DSM",
+              "strongs": "G3551"
+            }
+          ],
+          "text": "νόμῳ"
+        },
+        {
+          "at": "482..496",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of Moses",
+              "lemma": "Μωϋσῆς",
+              "morph": "N-GSM-P",
+              "strongs": "G3475"
+            }
+          ],
+          "text": "Μωϋσέως"
+        },
+        {
+          "at": "497..520",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to be justified,",
+              "lemma": "δικαιόω",
+              "morph": "V-APN",
+              "strongs": "G1344"
+            }
+          ],
+          "text": "δικαιωθῆναι"
+        },
+        {
+          "at": "522..591",
+          "kind": "verse",
+          "last": 39,
+          "text": "ἐν τούτῳ πᾶς ὁ πιστεύων δικαιοῦται.",
+          "verse": {
+            "book": "ACT",
+            "chapter": 13,
+            "verse": 39
+          }
+        },
+        {
+          "at": "522..527",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "(39) in",
+              "lemma": "ἐν",
+              "morph": "PREP",
+              "strongs": "G1722"
+            }
+          ],
+          "text": "ἐν"
+        },
+        {
+          "at": "528..539",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "Him",
+              "lemma": "οὗτος",
+              "morph": "D-DSM",
+              "strongs": "G3778"
+            }
+          ],
+          "text": "τούτῳ"
+        },
+        {
+          "at": "540..547",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "everyone",
+              "lemma": "πᾶς",
+              "morph": "A-NSM",
+              "strongs": "G3956"
+            }
+          ],
+          "text": "πᾶς"
+        },
+        {
+          "at": "548..551",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "who",
+              "lemma": "ὁ",
+              "morph": "T-NSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "ὁ"
+        },
+        {
+          "at": "552..568",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "is believing",
+              "lemma": "πιστεύω",
+              "morph": "V-PAP-NSM",
+              "strongs": "G4100"
+            }
+          ],
+          "text": "πιστεύων"
+        },
+        {
+          "at": "569..590",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "is justified.",
+              "lemma": "δικαιόω",
+              "morph": "V-PPI-3S",
+              "strongs": "G1344"
+            }
+          ],
+          "text": "δικαιοῦται"
+        }
+      ],
+      "text": "Οἱ μὲν οὖν συνελθόντες ἠρώτων αὐτὸν λέγοντες· κύριε, εἰ ἐν τῷ χρόνῳ τούτῳ ἀποκαθιστάνεις τὴν βασιλείαν τῷ Ἰσραήλ;\nΓνωστὸν οὖν ἔστω ὑμῖν, ἄνδρες ἀδελφοί, ὅτι διὰ τούτου ὑμῖν ἄφεσις ἁμαρτιῶν καταγγέλλεται· καὶ ἀπὸ πάντων ὧν οὐκ ἠδυνήθητε ἐν νόμῳ Μωϋσέως δικαιωθῆναι, ἐν τούτῳ πᾶς ὁ πιστεύων δικαιοῦται."
+    },
+    {
+      "id": "REV",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..410",
+          "chapter": 12,
+          "kind": "chapter",
+          "text": "καὶ ὠργίσθη ὁ δράκων ἐπὶ τῇ γυναικὶ καὶ ἀπῆλθεν ποιῆσαι πόλεμον μετὰ τῶν λοιπῶν τοῦ σπέρματος αὐτῆς τῶν τηρούντων τὰς ἐντολὰς τοῦ θεοῦ καὶ ἐχόντων τὴν μαρτυρίαν Ἰησοῦ καὶ ἐστάθη ἐπὶ τὴν ἄμμον τῆς θαλάσσης."
+        },
+        {
+          "at": "0..410",
+          "kind": "para",
+          "style": "prose",
+          "text": "καὶ ὠργίσθη ὁ δράκων ἐπὶ τῇ γυναικὶ καὶ ἀπῆλθεν ποιῆσαι πόλεμον μετὰ τῶν λοιπῶν τοῦ σπέρματος αὐτῆς τῶν τηρούντων τὰς ἐντολὰς τοῦ θεοῦ καὶ ἐχόντων τὴν μαρτυρίαν Ἰησοῦ καὶ ἐστάθη ἐπὶ τὴν ἄμμον τῆς θαλάσσης."
+        },
+        {
+          "at": "0..333",
+          "kind": "verse",
+          "last": 17,
+          "text": "καὶ ὠργίσθη ὁ δράκων ἐπὶ τῇ γυναικὶ καὶ ἀπῆλθεν ποιῆσαι πόλεμον μετὰ τῶν λοιπῶν τοῦ σπέρματος αὐτῆς τῶν τηρούντων τὰς ἐντολὰς τοῦ θεοῦ καὶ ἐχόντων τὴν μαρτυρίαν Ἰησοῦ",
+          "verse": {
+            "book": "REV",
+            "chapter": 12,
+            "verse": 17
+          }
+        },
+        {
+          "at": "0..7",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "And",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "8..23",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "was angry",
+              "lemma": "ὀργίζω",
+              "morph": "V-API-3S",
+              "strongs": "G3710"
+            }
+          ],
+          "text": "ὠργίσθη"
+        },
+        {
+          "at": "24..27",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-NSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "ὁ"
+        },
+        {
+          "at": "28..40",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "dragon",
+              "lemma": "δράκων",
+              "morph": "N-NSM",
+              "strongs": "G1404"
+            }
+          ],
+          "text": "δράκων"
+        },
+        {
+          "at": "41..49",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "with",
+              "lemma": "ἐπί",
+              "morph": "PREP",
+              "strongs": "G1909"
+            }
+          ],
+          "text": "ἐπὶ"
+        },
+        {
+          "at": "50..55",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-DSF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῇ"
+        },
+        {
+          "at": "56..71",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "woman",
+              "lemma": "γυνή",
+              "morph": "N-DSF",
+              "strongs": "G1135G"
+            }
+          ],
+          "text": "γυναικὶ"
+        },
+        {
+          "at": "72..79",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "80..96",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "went",
+              "lemma": "ἀπέρχομαι",
+              "morph": "V-2AAI-3S",
+              "strongs": "G565"
+            }
+          ],
+          "text": "ἀπῆλθεν"
+        },
+        {
+          "at": "97..112",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "to make",
+              "lemma": "ποιέω",
+              "morph": "V-AAN",
+              "strongs": "G4160G"
+            }
+          ],
+          "text": "ποιῆσαι"
+        },
+        {
+          "at": "113..127",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "war",
+              "lemma": "πόλεμος",
+              "morph": "N-ASM",
+              "strongs": "G4171"
+            }
+          ],
+          "text": "πόλεμον"
+        },
+        {
+          "at": "128..137",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "with",
+              "lemma": "μετά",
+              "morph": "PREP",
+              "strongs": "G3326"
+            }
+          ],
+          "text": "μετὰ"
+        },
+        {
+          "at": "138..145",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-GPM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῶν"
+        },
+        {
+          "at": "146..159",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "rest",
+              "lemma": "λοιπός",
+              "morph": "A-GPM",
+              "strongs": "G3062"
+            }
+          ],
+          "text": "λοιπῶν"
+        },
+        {
+          "at": "160..167",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of the",
+              "lemma": "ὁ",
+              "morph": "T-GSN",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τοῦ"
+        },
+        {
+          "at": "168..186",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "children",
+              "lemma": "σπέρμα",
+              "morph": "N-GSN",
+              "strongs": "G4690G"
+            }
+          ],
+          "text": "σπέρματος"
+        },
+        {
+          "at": "187..199",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of her",
+              "lemma": "αὐτός",
+              "morph": "P-GSF",
+              "strongs": "G846"
+            }
+          ],
+          "text": "αὐτῆς"
+        },
+        {
+          "at": "200..207",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "who",
+              "lemma": "ὁ",
+              "morph": "T-GPM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῶν"
+        },
+        {
+          "at": "208..226",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "are keeping",
+              "lemma": "τηρέω",
+              "morph": "V-PAP-GPM",
+              "strongs": "G5083G"
+            }
+          ],
+          "text": "τηρούντων"
+        },
+        {
+          "at": "227..234",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-APF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τὰς"
+        },
+        {
+          "at": "235..251",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "commandments",
+              "lemma": "ἐντολή",
+              "morph": "N-APF",
+              "strongs": "G1785"
+            }
+          ],
+          "text": "ἐντολὰς"
+        },
+        {
+          "at": "252..259",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "<the>",
+              "lemma": "ὁ",
+              "morph": "T-GSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τοῦ"
+        },
+        {
+          "at": "260..269",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of God",
+              "lemma": "θεός",
+              "morph": "N-GSM-T",
+              "strongs": "G2316"
+            }
+          ],
+          "text": "θεοῦ"
+        },
+        {
+          "at": "270..277",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "and",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "278..293",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "holding",
+              "lemma": "ἔχω",
+              "morph": "V-PAP-GPM",
+              "strongs": "G2192"
+            }
+          ],
+          "text": "ἐχόντων"
+        },
+        {
+          "at": "294..301",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-ASF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τὴν"
+        },
+        {
+          "at": "302..320",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "testimony",
+              "lemma": "μαρτυρία",
+              "morph": "N-ASF",
+              "strongs": "G3141"
+            }
+          ],
+          "text": "μαρτυρίαν"
+        },
+        {
+          "at": "321..333",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of Jesus",
+              "lemma": "Ἰησοῦς",
+              "morph": "N-GSM-P",
+              "strongs": "G2424G"
+            }
+          ],
+          "text": "Ἰησοῦ"
+        },
+        {
+          "at": "333..333",
+          "kind": "note_ref",
+          "note": "note.13",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "334..410",
+          "kind": "verse",
+          "last": 18,
+          "text": "καὶ ἐστάθη ἐπὶ τὴν ἄμμον τῆς θαλάσσης.",
+          "verse": {
+            "book": "REV",
+            "chapter": 12,
+            "verse": 18
+          }
+        },
+        {
+          "at": "334..341",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "[13.1] And",
+              "lemma": "καί",
+              "morph": "CONJ",
+              "strongs": "G2532"
+            }
+          ],
+          "text": "καὶ"
+        },
+        {
+          "at": "342..355",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "he stood",
+              "lemma": "ἵστημι",
+              "morph": "V-API-3S",
+              "strongs": "G2476"
+            }
+          ],
+          "text": "ἐστάθη"
+        },
+        {
+          "at": "355..355",
+          "kind": "note_ref",
+          "note": "note.14",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "356..364",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "upon",
+              "lemma": "ἐπί",
+              "morph": "PREP",
+              "strongs": "G1909"
+            }
+          ],
+          "text": "ἐπὶ"
+        },
+        {
+          "at": "365..372",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "the",
+              "lemma": "ὁ",
+              "morph": "T-ASF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τὴν"
+        },
+        {
+          "at": "373..384",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "sand",
+              "lemma": "ἄμμος",
+              "morph": "N-ASF",
+              "strongs": "G285"
+            }
+          ],
+          "text": "ἄμμον"
+        },
+        {
+          "at": "385..392",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "of the",
+              "lemma": "ὁ",
+              "morph": "T-GSF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τῆς"
+        },
+        {
+          "at": "393..409",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "gloss": "sea.",
+              "lemma": "θάλασσα",
+              "morph": "N-GSF",
+              "strongs": "G2281"
+            }
+          ],
+          "text": "θαλάσσης"
+        }
+      ],
+      "text": "καὶ ὠργίσθη ὁ δράκων ἐπὶ τῇ γυναικὶ καὶ ἀπῆλθεν ποιῆσαι πόλεμον μετὰ τῶν λοιπῶν τοῦ σπέρματος αὐτῆς τῶν τηρούντων τὰς ἐντολὰς τοῦ θεοῦ καὶ ἐχόντων τὴν μαρτυρίαν Ἰησοῦ καὶ ἐστάθη ἐπὶ τὴν ἄμμον τῆς θαλάσσης."
+    },
+    {
+      "id": "note.1",
+      "kind": "note",
+      "spans": [],
+      "text": "Not in NA27. TR, Byz add: ὅτι σοῦ ἐστιν ἡ βασιλεία καὶ ἡ δύναμις καὶ ἡ δόξα εἰς τοῦς αἰῶνας ἀμήν. “Since of you is the kingdom and the power and the glory into the ages Amen.”"
+    },
+    {
+      "id": "note.2",
+      "kind": "note",
+      "spans": [],
+      "text": "Variant: TR, Byz: εἶπεν “said”"
+    },
+    {
+      "id": "note.3",
+      "kind": "note",
+      "spans": [],
+      "text": "Variant: TR, Byz: ἀπιστίαν “unbelief”"
+    },
+    {
+      "id": "note.4",
+      "kind": "note",
+      "spans": [],
+      "text": "Variant: TR, Byz: ἔντεῦθεν “from here”"
+    },
+    {
+      "id": "note.5",
+      "kind": "note",
+      "spans": [],
+      "text": "Verse 17:21 is not in NA27. Treg, TR, Byz have: Τοῦτο δὲ τὸ γένος οὐκ ἐκπορεύεται εἰ μὴ ἐν προσευχῇ καὶ νηστείᾳ. “this now <the> kind not goes out only except with prayer and with fastings.”"
+    },
+    {
+      "id": "note.6",
+      "kind": "note",
+      "spans": [],
+      "text": "Variant: TR, Byz: Ἀναστρεφομένων “Were passing through”"
+    },
+    {
+      "id": "note.7",
+      "kind": "note",
+      "spans": [],
+      "text": "Not in NA27. TR add: ταχὺ “quickly”"
+    },
+    {
+      "id": "note.8",
+      "kind": "note",
+      "spans": [],
+      "text": "Variant: TR, Byz: δὲ “now”"
+    },
+    {
+      "id": "note.9",
+      "kind": "note",
+      "spans": [],
+      "text": "Variant: TR, Byz: ἀφ᾽ “away from”"
+    },
+    {
+      "id": "note.10",
+      "kind": "note",
+      "spans": [],
+      "text": "Variant: TR: ἐγηγέρται “has been raised”"
+    },
+    {
+      "id": "note.11",
+      "kind": "note",
+      "spans": [],
+      "text": "Variant: Tyn, TR, Byz: ἐπορεύθη “he went”"
+    },
+    {
+      "id": "note.12",
+      "kind": "note",
+      "spans": [],
+      "text": "Variant: TR, Byz: ἐπηρώτων “were asking”"
+    },
+    {
+      "id": "note.13",
+      "kind": "note",
+      "spans": [],
+      "text": "Not in NA27. TR add: Χριστοῦ. “Christ.”"
+    },
+    {
+      "id": "note.14",
+      "kind": "note",
+      "spans": [],
+      "text": "Variant: TR, Byz: ἐστάθην “I stood”"
+    }
+  ],
+  "verses": [
+    {
+      "standard": "Matt 1:1",
+      "verse": "Matt 1:1"
+    },
+    {
+      "standard": "Matt 6:13",
+      "verse": "Matt 6:13"
+    },
+    {
+      "standard": "Matt 17:20",
+      "verse": "Matt 17:20"
+    },
+    {
+      "standard": "Matt 17:22",
+      "verse": "Matt 17:22"
+    },
+    {
+      "standard": "Mark 1:13",
+      "verse": "Mark 1:13"
+    },
+    {
+      "standard": "Mark 16:8",
+      "verse": "Mark 16:8"
+    },
+    {
+      "standard": "Mark 16:9",
+      "verse": "Mark 16:9"
+    },
+    {
+      "standard": "John 7:52",
+      "verse": "John 7:52"
+    },
+    {
+      "standard": "John 7:53",
+      "verse": "John 7:53"
+    },
+    {
+      "standard": "Acts 1:6",
+      "verse": "Acts 1:6"
+    },
+    {
+      "standard": "Acts 13:38",
+      "verse": "Acts 13:38"
+    },
+    {
+      "standard": "Acts 13:39",
+      "verse": "Acts 13:39"
+    },
+    {
+      "standard": "Rev 12:17",
+      "verse": "Rev 12:17"
+    },
+    {
+      "standard": "Rev 13:1",
+      "verse": "Rev 12:18"
+    }
+  ]
+}
