@@ -9,6 +9,8 @@ use std::sync::Arc;
 use obs_ui_egui::bench::{BenchConfig, run, synthetic_bible};
 
 mod fetch;
+#[cfg(test)]
+mod live_tests;
 
 fn bench(args: &[String]) -> ExitCode {
     let mut cfg = BenchConfig::default();

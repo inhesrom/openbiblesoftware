@@ -17,5 +17,9 @@ ureq = "3"
 serde_json.workspace = true
 eframe = { workspace = true, features = ["wayland", "x11", "accesskit"] }
 
+[dev-dependencies]
+obs-engine.workspace = true
+obs-model.workspace = true
+
 [lints]
 workspace = true
