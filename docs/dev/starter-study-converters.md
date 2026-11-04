@@ -46,10 +46,10 @@ cargo xtask ci
 cargo xtask bench
 ```
 
-Rebased onto #43 (`38da565`); combined lock includes OpenBible.info and TIPNR.
+Rebased onto #41 (`1bc035f`); combined lock includes OpenBible.info, TIPNR and six Lexicons.
 All passed locally again, including the wasm check (the target was available in this run).
 Two complete builds produced byte-identical output files. `dist/starter/` totals
-**306.4 MB / 400 MB**, including the manifest/report; `.obr` files total 305.2 MB.
+**360.4 MB / 400 MB**, including the manifest/report; `.obr` files total 358.1 MB.
 Search caches remain the separate #58 pipeline step and must also fit the budget.
 Generated artifacts and full downloads are not committed.
 
@@ -74,7 +74,7 @@ reported rather than silently turned into invalid references.
 - `pinned_study_editions_have_complete_coverage_and_stable_bytes`: opt-in full cache
   test; verifies hashes, complete chapter coverage, JFB's 31,102 Verses, MHC's known
   gap/Attribution, every reference target, and independent byte-identical rebuilds.
-- `the_real_lock_passes_the_provenance_gate`: all ten actual source entries,
+- `the_real_lock_passes_the_provenance_gate`: all sixteen actual source entries,
   archived evidence hashes and the no-CCEL-host rule. No doc-coupled temporary test.
 - `commentary::tests`: Roman/contextual reference parsing, UTF-8 span offsets,
   unlinked prose, malformed XML/offsets, notes and poetry, duplicate anchors,
@@ -86,7 +86,7 @@ reported rather than silently turned into invalid references.
   afterward, including assertions against the real MHC excerpt. The refreshed MHC
   golden removes only indentation colons from text, updates byte offsets, and adds
   Psalm 124:8 to the existing reference's targets. Full CI (including wasm), the
-  deterministic ten-Resource build, full pinned-edition test and benchmark passed
+  deterministic sixteen-Resource build, full pinned-edition test and benchmark passed
   again after these fixes.
 
 Small public-domain excerpts, provenance notes and golden JSON live under

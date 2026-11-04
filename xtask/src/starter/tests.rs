@@ -260,7 +260,10 @@ fn the_real_lock_passes_the_provenance_gate() {
             "strongs-greek",
             "bdb",
             "abbott-smith",
-            "mhc", "jfb", "easton", "smith",
+            "mhc",
+            "jfb",
+            "easton",
+            "smith",
         ]
     );
 }
