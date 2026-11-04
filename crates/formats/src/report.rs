@@ -117,6 +117,14 @@ impl fmt::Display for ImportReport {
                 c.unmapped, c.absent
             )?,
         }
+        if let Some(v) = &self.versification_hint {
+            let source = if self.verse_map.is_some() {
+                "; the Verse map comes from TVTMS"
+            } else {
+                ""
+            };
+            writeln!(f, "  conf versification: {v} (a hint only{source})")?;
+        }
         let other: Vec<String> = self
             .traditions
             .iter()

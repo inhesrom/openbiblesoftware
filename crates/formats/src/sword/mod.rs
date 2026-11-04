@@ -216,9 +216,7 @@ pub fn import_sword(
     for (id, buf) in notes {
         builder.add_unit(id.clone(), UnitKind::Note, None, buf.text);
         for (range, kind) in buf.spans {
-            if matches!(kind, SpanKind::TaggedWord { .. }) {
-                report.tagged_words += 1;
-            }
+            count_span(&kind, &mut report);
             builder.add_span(&id, range, kind);
         }
     }
@@ -461,10 +459,16 @@ fn add_unit(
 ) {
     builder.add_unit(id.clone(), kind, Some(title), out.text);
     for (range, kind) in out.spans {
-        if matches!(kind, SpanKind::TaggedWord { .. }) {
-            report.tagged_words += 1;
-        }
+        count_span(&kind, report);
         builder.add_span(id, range, kind);
+    }
+}
+
+fn count_span(kind: &SpanKind, report: &mut ImportReport) {
+    match kind {
+        SpanKind::TaggedWord { .. } => report.tagged_words += 1,
+        SpanKind::ScriptureRef { .. } => report.scripture_refs += 1,
+        _ => {}
     }
 }
 

@@ -124,7 +124,7 @@ fn import_sword_modules_then_inspect_licence_fields() {
     let (ok, stdout, err) = cli(&["import", library, "--module", "ObsKjvOsis", "-o", b]);
     assert!(ok, "{err}");
     assert!(stdout.contains("format sword (OSIS)"), "{stdout}");
-    assert!(stdout.contains("3 Bible book(s), 10 verse(s)"), "{stdout}");
+    assert!(stdout.contains("5 Bible book(s), 12 verse(s)"), "{stdout}");
     assert!(stdout.contains("conf versification: KJV"), "{stdout}");
     assert!(stdout.contains("dropped markup (3):"), "{stdout}");
     assert!(!stdout.contains("licence: none found"), "{stdout}");
@@ -147,7 +147,10 @@ fn import_sword_modules_then_inspect_licence_fields() {
     let conf = format!("{library}/mods.d/obsnotes.conf");
     let (ok, stdout, err) = cli(&["import", &conf, "-o", n]);
     assert!(ok, "{err}");
-    assert!(stdout.contains("6 entries, 1 note(s)"), "{stdout}");
+    assert!(
+        stdout.contains("6 entr(y/ies), 2 Scripture reference(s)"),
+        "{stdout}"
+    );
     let (ok, stdout, _) = cli(&["inspect", n]);
     assert!(ok);
     assert!(stdout.contains("type            Commentary"), "{stdout}");
