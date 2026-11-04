@@ -17,6 +17,9 @@ mod builtin;
 pub mod command;
 pub mod compare;
 pub mod cross_references;
+pub mod get_bibles;
+#[cfg(test)]
+mod get_bibles_tests;
 pub mod import;
 pub mod jobs;
 mod library;
@@ -25,6 +28,9 @@ pub mod link;
 pub mod persist;
 pub mod resource_navigation;
 mod session;
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod testing;
 pub mod word_info;
 pub mod workspace;
 

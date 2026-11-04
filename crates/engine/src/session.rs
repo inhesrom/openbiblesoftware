@@ -39,6 +39,8 @@ pub struct Session {
     jobs: JobQueue,
     pub library: Library,
     pub imports: crate::import::Imports,
+    /// Get Bibles catalog (#91).
+    pub get_bibles: crate::get_bibles::GetBibles,
     pub workspace: Workspace,
     /// Text settings for Resource text (the View menu).
     pub text: TextSettings,
@@ -69,6 +71,7 @@ impl Session {
             jobs,
             library: Library::new(),
             imports: crate::import::Imports::default(),
+            get_bibles: crate::get_bibles::GetBibles::default(),
             workspace: Workspace::new(),
             text: TextSettings::default(),
             appearance: crate::appearance::Appearance::default(),

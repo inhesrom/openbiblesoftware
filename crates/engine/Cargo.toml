@@ -19,6 +19,12 @@ obs-store.workspace = true
 obs-render.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# Parses the Featured Bibles data file (Get Bibles, #91).
+toml = "1"
+
+[features]
+# Mock SWORD repositories for tests in this and dependent crates.
+test-support = []
 
 [lints]
 workspace = true
