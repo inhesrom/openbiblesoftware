@@ -120,7 +120,18 @@ and if so, we would appreciate being informed of the error.
            or the e-text Library
            http://www.bf.org/bfetexts.htm
 
-</prologue><entries><entry strongs="00026">
+</prologue><entries><entry strongs="00001">
+
+ <strongs>1</strongs>   <greek BETA="*A" unicode="Α" translit="A"/>   <pronunciation strongs="al'-fah"/>
+
+ <strongs_derivation>of Hebrew origin;</strongs_derivation><strongs_def> the first letter of the alphabet; figuratively, only
+ (from its use as a numeral) the first: </strongs_def><kjv_def>--Alpha.</kjv_def> Often used (usually
+ <greek BETA="A)/N" unicode="ἄν" translit="án"/>, before a vowel) also in composition (as a contraction from <strongsref language="GREEK" strongs="427"/>) in
+ the sense of privation; so, in many words, beginning with this letter;
+ occasionally in the sense of union (as a contraction of <strongsref language="GREEK" strongs="260"/>).
+<see language="GREEK" strongs="427"/>
+<see language="GREEK" strongs="260"/>
+</entry><entry strongs="00026">
  <strongs>26</strongs>   <greek BETA="A)GA/PH" unicode="ἀγάπη" translit="agápē"/>   <pronunciation strongs="ag-ah'-pay"/>
 
  <strongs_derivation>from <strongsref language="GREEK" strongs="25"/>;</strongs_derivation><strongs_def> love, i.e. affection or benevolence; specially (plural) a

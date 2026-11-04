@@ -227,6 +227,7 @@ pub fn import_strongs_greek(
                     }
                     strongsref(&mut e, child);
                 }
+                "greek" | "strongsref" | "latin" => greek_inline_node(&mut e, child),
                 _ => greek_inline(&mut e, child),
             }
         }
@@ -265,19 +266,24 @@ fn greek_inline(e: &mut Entry, node: Node) {
         if !child.is_element() {
             continue;
         }
-        match child.tag_name().name() {
-            "strongsref" | "see" => strongsref(e, child),
-            "greek" => e.text(child.attribute("unicode").unwrap_or_default()),
-            "latin" => {
-                let start = e.mark();
-                greek_inline(e, child);
-                e.span(start, SpanKind::Italic);
-            }
-            "pronunciation" => {}
-            other => {
-                e.drop_markup(&format!("<{other}>"));
-                greek_inline(e, child);
-            }
+        greek_inline_node(e, child);
+    }
+}
+
+/// Handle inline elements identically inside definition blocks and directly under entries.
+fn greek_inline_node(e: &mut Entry, node: Node) {
+    match node.tag_name().name() {
+        "strongsref" | "see" => strongsref(e, node),
+        "greek" => e.text(node.attribute("unicode").unwrap_or_default()),
+        "latin" => {
+            let start = e.mark();
+            greek_inline(e, node);
+            e.span(start, SpanKind::Italic);
+        }
+        "pronunciation" => {}
+        other => {
+            e.drop_markup(&format!("<{other}>"));
+            greek_inline(e, node);
         }
     }
 }

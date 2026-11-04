@@ -234,6 +234,36 @@ fn entry_text_carries_scripture_references_and_strongs_links() {
 }
 
 #[test]
+fn strongs_greek_g1_keeps_direct_inline_text_and_links() {
+    let (r, _) = strongs_greek();
+    let unit = r.units.iter().find(|u| u.id.as_str() == "G1").unwrap();
+    assert!(
+        unit.text
+            .contains("Often used (usually ἄν, before a vowel)")
+    );
+    let see_also = unit.text.find("See also").unwrap();
+    for (phrase, number) in [
+        ("as a contraction from G427", "G427"),
+        ("as a contraction of G260", "G260"),
+    ] {
+        let start = unit.text.find(phrase).unwrap() + phrase.len() - number.len();
+        let end = start + number.len();
+        assert!(end < see_also, "{number} must link inside the definition");
+        assert!(
+            unit.spans.iter().any(|span| {
+                span.range() == (start..end)
+                    && matches!(
+                        &span.kind,
+                        SpanKind::TaggedWord { parts }
+                            if parts.len() == 1 && parts[0].strongs.to_string() == number
+                    )
+            }),
+            "missing inline {number} link at {start}..{end}"
+        );
+    }
+}
+
+#[test]
 fn the_tbesh_meaning_column_is_left_out_when_skipped() {
     let (r, _) = tbesh();
     assert!(r.units.iter().all(|u| !u.text.contains("omitted")));

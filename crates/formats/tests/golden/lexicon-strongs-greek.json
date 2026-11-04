@@ -1,7 +1,12 @@
 {
-  "content_hash": "sha256:a1944f3034b6b9296aca72bec926ad745a38fa1ebe9bafd103867a915b6d18fe",
+  "content_hash": "sha256:a48dcec14427b97fdd0a17f3c3f43b3f3c9bbf13d7f464020b738768f72d7bb4",
   "keys": [
     [
+      "G1",
+      "G1",
+      false
+    ],
+    [
       "G26",
       "G26",
       false
@@ -14,6 +19,11 @@
     [
       "G5485",
       "G5485",
+      false
+    ],
+    [
+      "Α",
+      "G1",
       false
     ],
     [
@@ -34,12 +44,16 @@
   ],
   "report": {
     "dropped_markup": {},
-    "entries": 3,
+    "entries": 4,
     "scripture_refs": 0,
-    "strongs_links": 4,
+    "strongs_links": 8,
     "warnings": []
   },
   "transliterations": [
+    [
+      "a",
+      "Α"
+    ],
     [
       "agape",
       "ἀγάπη"
@@ -54,6 +68,98 @@
     ]
   ],
   "units": [
+    {
+      "id": "G1",
+      "spans": [
+        {
+          "at": "0..14",
+          "kind": "para",
+          "style": "prose",
+          "text": "Α A (al'-fah)"
+        },
+        {
+          "at": "0..2",
+          "kind": "bold",
+          "text": "Α"
+        },
+        {
+          "at": "3..4",
+          "kind": "italic",
+          "text": "A"
+        },
+        {
+          "at": "15..124",
+          "kind": "para",
+          "style": "prose",
+          "text": "of Hebrew origin; the first letter of the alphabet; figuratively, only (from its use as a numeral) the first:"
+        },
+        {
+          "at": "125..138",
+          "kind": "para",
+          "style": "prose",
+          "text": "KJV: --Alpha."
+        },
+        {
+          "at": "125..129",
+          "kind": "bold",
+          "text": "KJV:"
+        },
+        {
+          "at": "139..367",
+          "kind": "para",
+          "style": "prose",
+          "text": "Often used (usually ἄν, before a vowel) also in composition (as a contraction from G427) in the sense of privation; so, in many words, beginning with this letter; occasionally in the sense of union (as a contraction of G260)."
+        },
+        {
+          "at": "225..229",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G427"
+            }
+          ],
+          "text": "G427"
+        },
+        {
+          "at": "361..365",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G260"
+            }
+          ],
+          "text": "G260"
+        },
+        {
+          "at": "368..388",
+          "kind": "para",
+          "style": "prose",
+          "text": "See also G427, G260."
+        },
+        {
+          "at": "377..381",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G427"
+            }
+          ],
+          "text": "G427"
+        },
+        {
+          "at": "383..387",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G260"
+            }
+          ],
+          "text": "G260"
+        }
+      ],
+      "text": "Α A (al'-fah)\nof Hebrew origin; the first letter of the alphabet; figuratively, only (from its use as a numeral) the first:\nKJV: --Alpha.\nOften used (usually ἄν, before a vowel) also in composition (as a contraction from G427) in the sense of privation; so, in many words, beginning with this letter; occasionally in the sense of union (as a contraction of G260).\nSee also G427, G260.",
+      "title": "Α"
+    },
     {
       "id": "G26",
       "spans": [
