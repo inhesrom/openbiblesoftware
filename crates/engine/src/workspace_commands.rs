@@ -125,6 +125,10 @@ fn has_user(s: &Session) -> bool {
     s.user.is_some()
 }
 
+fn never(_: &Session) -> bool {
+    false
+}
+
 const fn open_cmd(
     id: &'static str,
     label: &'static str,
@@ -270,6 +274,47 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     open_cmd("tool.cross_references", "Cross-references", None, |s, p| {
         open(s, p, TabKind::Tool(Tool::CrossReferences))
     }),
+    // Word Info (#50): the pinned panel follows hover again on Esc or the header's 📌; Copy
+    // hands the UI the card text. Word Study ▸ and Search this word wait for #55 and #59.
+    simple(
+        "word_info.unpin",
+        "Unpin Word Info",
+        Some("Escape"),
+        |s| s.word_info.pinned,
+        |s, _| {
+            s.word_info.unpin();
+            Ok(Value::Null)
+        },
+    ),
+    simple(
+        "word_info.copy",
+        "Copy",
+        None,
+        |s| s.word_info.shown.is_some(),
+        |s, _| {
+            let text = s
+                .word_info
+                .shown
+                .as_ref()
+                .map(crate::word_info::ShownWord::copy_text)
+                .ok_or_else(|| failed("word_info.copy", "nothing is shown"))?;
+            Ok(json!({ "text": text }))
+        },
+    ),
+    simple(
+        "word_info.word_study",
+        "Word Study ›",
+        None,
+        never,
+        |_, _| Ok(Value::Null),
+    ),
+    simple(
+        "word_info.search",
+        "Search this word",
+        None,
+        never,
+        |_, _| Ok(Value::Null),
+    ),
     CommandSpec {
         id: "layout.save",
         label: "Save layout as…",

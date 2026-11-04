@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use obs_layout::TextSettings;
 use obs_model::{
-    KeyScheme, Manifest, ParaStyle, ResourceBuilder, ResourceType, SpanKind, TextAccumulator,
-    UnitId, UnitKind,
+    KeyScheme, Manifest, MorphemePart, ParaStyle, ResourceBuilder, ResourceType, SpanKind,
+    TextAccumulator, UnitId, UnitKind,
 };
 use obs_scripture::{Book, Verse};
 
@@ -517,7 +517,36 @@ pub(crate) fn hebrew_doc() -> Arc<ReadingDoc> {
     t.push(" ");
     let v2 = t.push("וְהָאָ֗רֶץ הָיְתָ֥ה תֹ֙הוּ֙ וָבֹ֔הוּ");
     let end = t.pos();
-    b.add_unit(genesis.clone(), UnitKind::BibleBook, None, t.into_string());
+    let text = t.into_string();
+    // Tagged as TAHOT tags Gen 1:1: a prefix is its own morpheme, codes are OSHB-style.
+    let part = |strongs: &str, lemma: Option<&str>, morph: &str, gloss: &str| MorphemePart {
+        strongs: strongs.parse().unwrap(),
+        lemma: lemma.map(String::from),
+        morph: Some(morph.into()),
+        gloss: Some(gloss.into()),
+    };
+    let tagged: [(&str, Vec<MorphemePart>); 3] = [
+        (
+            "בְּרֵאשִׁ֖ית",
+            vec![
+                part("H9003", None, "HR", "in"),
+                part("H7225", Some("רֵאשִׁית"), "HNcfsa", "beginning"),
+            ],
+        ),
+        (
+            "בָּרָ֣א",
+            vec![part("H1254A", Some("בָּרָא"), "HVqp3ms", "he created")],
+        ),
+        ("אֱלֹהִ֑ים", vec![part("H430", Some("אֱלֹהִים"), "HNcmpa", "God")]),
+    ];
+    let words: Vec<(std::ops::Range<usize>, Vec<MorphemePart>)> = tagged
+        .into_iter()
+        .map(|(w, parts)| {
+            let start = text.find(w).unwrap();
+            (start..start + w.len(), parts)
+        })
+        .collect();
+    b.add_unit(genesis.clone(), UnitKind::BibleBook, None, text);
     b.add_span(
         &genesis,
         0..end,
@@ -525,6 +554,9 @@ pub(crate) fn hebrew_doc() -> Arc<ReadingDoc> {
             style: ParaStyle::Prose,
         },
     );
+    for (range, parts) in words {
+        b.add_span(&genesis, range, SpanKind::TaggedWord { parts });
+    }
     b.add_verse(&genesis, v1, Verse::new(Book::Genesis, 1, 1), 1);
     b.add_verse(&genesis, v2, Verse::new(Book::Genesis, 1, 2), 2);
     Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
@@ -609,7 +641,6 @@ fn every_ink_on_every_highlight_meets_wcag_aa_in_every_tone() {
 /// Genesis 30–31 with every word a Tagged word (Strong's H1000 + word number) and a Scripture
 /// reference at the end of each chapter.
 pub(crate) fn tagged_bible() -> Arc<ReadingDoc> {
-    use obs_model::MorphemePart;
     use obs_scripture::{PassageList, Standard, parse_reference};
     let mut m = Manifest::new("tagged", "Tagged Bible", "TAG", ResourceType::Bible, "en");
     m.key_schemes = vec![KeyScheme::Passage];

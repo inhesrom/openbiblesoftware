@@ -265,3 +265,35 @@ fn library_keeps_preferred_order_within_types() {
     assert_eq!(lib.entries().len(), 3);
     assert_eq!(lib.of_type(ResourceType::Bible).count(), 2);
 }
+
+#[test]
+fn word_info_commands_follow_the_pin_state() {
+    let mut s = session();
+    // Nothing shown yet: nothing to copy or unpin; Word Study and Search wait for #55 / #59.
+    assert!(!s.is_enabled("word_info.copy"));
+    assert!(!s.is_enabled("word_info.unpin"));
+    assert!(!s.is_enabled("word_info.word_study"));
+    assert!(!s.is_enabled("word_info.search"));
+    let part = obs_model::MorphemePart {
+        strongs: "H1254A".parse().unwrap(),
+        lemma: Some("בָּרָא".into()),
+        morph: Some("HVqp3ms".into()),
+        gloss: Some("he created".into()),
+    };
+    let word =
+        ShownWord::new("בָּרָא", true, "Genesis 1:1 (TAHOT)".into(), &[part], |_| None).unwrap();
+    assert!(s.word_info.hover(word.clone()));
+    assert!(s.is_enabled("word_info.copy"));
+    assert!(!s.is_enabled("word_info.unpin"));
+    let out = s.run("word_info.copy", &json!({})).unwrap();
+    assert_eq!(out["text"], word.copy_text());
+    s.word_info.pin(word);
+    assert!(s.is_enabled("word_info.unpin"));
+    assert_eq!(
+        s.commands().get("word_info.unpin").unwrap().shortcut,
+        Some("Escape")
+    );
+    s.run("word_info.unpin", &json!({})).unwrap();
+    assert!(!s.word_info.pinned);
+    assert!(s.word_info.shown.is_some(), "unpinning keeps the content");
+}

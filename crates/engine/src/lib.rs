@@ -25,6 +25,7 @@ pub mod link;
 pub mod persist;
 pub mod resource_navigation;
 mod session;
+pub mod word_info;
 pub mod workspace;
 mod workspace_commands;
 
@@ -46,6 +47,7 @@ pub use library_commands::annotations_phrase;
 pub use link::LINK_SETS;
 pub use persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, UserData, WorkspaceSnapshot};
 pub use session::{JobMode, Session};
+pub use word_info::{LemmaCard, LexiconGloss, PartRole, ShownWord, WordInfo, WordPart};
 pub use workspace::{
     Effect, Guide, HeaderBox, History, OpenRequest, PanelId, Placement, Tab, TabId, TabKind, Tool,
     Workspace,

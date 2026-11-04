@@ -44,6 +44,8 @@ pub struct Session {
     pub text: TextSettings,
     /// Theme and Page tone (the View menu).
     pub appearance: crate::appearance::Appearance,
+    /// What Word Info shows and whether it is pinned (#50).
+    pub word_info: crate::word_info::WordInfo,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
     log: Vec<&'static str>,
     /// The User database, when there is one.
@@ -67,6 +69,7 @@ impl Session {
             workspace: Workspace::new(),
             text: TextSettings::default(),
             appearance: crate::appearance::Appearance::default(),
+            word_info: crate::word_info::WordInfo::default(),
             log: Vec::new(),
             user: None,
             saved_session: None,
