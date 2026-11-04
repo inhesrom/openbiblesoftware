@@ -250,3 +250,249 @@ fn without_an_app_transport_nothing_reaches_the_network() {
     assert!(s.get_bibles.catalog().is_none());
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// A session with the catalog fetched, plus library and SWORD folders under `root`.
+fn ready(name: &str, mode: JobMode) -> (Session, Arc<MockRepos>, PathBuf) {
+    let (mut s, repos, root) = session(name);
+    refresh(&mut s);
+    let mut s2 = Session::new(mode);
+    s2.set_fetch(repos.clone());
+    s2.get_bibles
+        .set_cache_path(root.join("cache/sword-catalog.json"));
+    s2.get_bibles.set_sword_dir(root.join("sword"));
+    std::fs::create_dir_all(root.join("library")).unwrap();
+    s2.library.scan(&root.join("library"));
+    drop(s);
+    (s2, repos, root)
+}
+
+fn nasb(s: &Session) -> BibleListing {
+    s.get_bibles
+        .catalog()
+        .unwrap()
+        .get("NASB1995")
+        .unwrap()
+        .clone()
+}
+
+fn obr_files(dir: &std::path::Path) -> Vec<String> {
+    std::fs::read_dir(dir)
+        .map(|d| {
+            d.flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.ends_with(".obr"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn sword_modules(dir: &std::path::Path) -> Vec<String> {
+    obs_formats::SwordSource::open(dir)
+        .map(|s| s.modules().into_iter().map(|m| m.name).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn one_download_fetches_imports_and_lands_in_the_library_with_no_prompts() {
+    let (mut s, repos, root) = ready("download", JobMode::Inline);
+    let listing = nasb(&s);
+    assert_eq!(s.bible_status(&listing), BibleStatus::Available);
+    let out = s
+        .run("getbibles.download", &json!({"module": "NASB1995"}))
+        .unwrap();
+    let id = out["id"].as_str().unwrap().to_string();
+    assert_eq!(id, "nasb1995-1");
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Download);
+    assert_eq!(record.source, "NASB1995 from Lockman Foundation");
+    assert!(matches!(
+        s.bible_status(&listing),
+        BibleStatus::InProgress { .. }
+    ));
+    // The live Import report Tab opened; nothing asks the user anything.
+    assert!(
+        s.workspace
+            .tabs()
+            .any(|t| t.kind == TabKind::ImportReport(id.clone()))
+    );
+    assert!(
+        !s.workspace
+            .take_effects()
+            .iter()
+            .any(|e| matches!(e, Effect::PickImport | Effect::ConfirmRemove { .. }))
+    );
+
+    s.jobs().pump(1);
+    assert!(s.poll_imports().is_empty());
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Complete, "{:?}", record.error);
+    assert!(!record.report.as_ref().unwrap().license_missing);
+    let entry = s.library.get(&id).unwrap();
+    assert_eq!(entry.manifest.abbreviation, "NASB95");
+    assert_eq!(
+        s.library
+            .of_type(obs_model::ResourceType::Bible)
+            .last()
+            .unwrap()
+            .manifest
+            .resource_id,
+        id,
+        "lands at the bottom of its type"
+    );
+    assert_eq!(
+        s.bible_status(&listing),
+        BibleStatus::Installed {
+            resource_id: id.clone()
+        }
+    );
+    assert_eq!(sword_modules(&root.join("sword")), ["NASB1995"]);
+    // Bytes came from the repository's own URLs.
+    let fetched = repos.fetched.lock().unwrap().clone();
+    let lockman = obs_formats::sword_repo::file_url(&root.join("repos/lockman"));
+    assert!(fetched.iter().any(|u| u.starts_with(&lockman)));
+
+    // Already installed: a second Download is refused, nothing duplicated.
+    let err = s
+        .run("getbibles.download", &json!({"module": "NASB1995"}))
+        .unwrap_err();
+    assert!(err.to_string().contains("already in your Library"), "{err}");
+    assert_eq!(obr_files(&root.join("library")), ["nasb1995-1.obr"]);
+
+    // The origin survives a restart with the report.
+    s.run("resource.open", &json!({"id": id})).unwrap();
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn offline_download_fails_cleanly_then_retry_succeeds_and_replaces_the_failure() {
+    let (mut s, repos, root) = ready("retry", JobMode::Inline);
+    let listing = nasb(&s);
+    repos.set_offline(true);
+    let id = s
+        .run("getbibles.download", &json!({"module": "NASB1995"}))
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    s.jobs().pump(1);
+    s.poll_imports();
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Failed);
+    assert!(
+        record
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("Lockman Foundation"),
+        "{:?}",
+        record.error
+    );
+    assert!(matches!(
+        s.bible_status(&listing),
+        BibleStatus::Failed { .. }
+    ));
+    assert!(s.library.get(&id).is_none());
+    assert!(obr_files(&root.join("library")).is_empty());
+    assert!(sword_modules(&root.join("sword")).is_empty());
+
+    repos.set_offline(false);
+    let retry = s
+        .run("getbibles.download", &json!({"module": "NASB1995"}))
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        s.imports.report(&id).is_none() || retry == id,
+        "failure replaced"
+    );
+    assert!(
+        !s.workspace
+            .tabs()
+            .any(|t| t.kind == TabKind::ImportReport(id.clone()) && id != retry)
+    );
+    s.jobs().pump(1);
+    s.poll_imports();
+    assert_eq!(
+        s.bible_status(&listing),
+        BibleStatus::Installed {
+            resource_id: retry.clone()
+        }
+    );
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// Holds the first module-data fetch until released, so a test can cancel mid-download.
+#[derive(Debug)]
+struct Held {
+    inner: Arc<MockRepos>,
+    entered: std::sync::Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+}
+impl obs_formats::sword_repo::Fetch for Held {
+    fn get(
+        &self,
+        url: &str,
+        progress: obs_formats::sword_repo::Progress<'_>,
+    ) -> Result<Vec<u8>, obs_formats::sword_repo::FetchError> {
+        if url.contains("/modules/")
+            && let Some(tx) = self.entered.lock().unwrap().take()
+        {
+            progress(1, Some(10));
+            tx.send(()).unwrap();
+            self.release
+                .lock()
+                .unwrap()
+                .recv_timeout(std::time::Duration::from_secs(20))
+                .unwrap();
+        }
+        self.inner.get(url, progress)
+    }
+}
+
+#[test]
+fn cancelling_mid_download_leaves_no_resource_no_obr_and_no_sword_copy() {
+    let (mut s, repos, root) = ready("cancel", JobMode::Threads(1));
+    let listing = nasb(&s);
+    let (entered, held) = std::sync::mpsc::channel();
+    let (release, rx) = std::sync::mpsc::channel();
+    s.set_fetch(Arc::new(Held {
+        inner: repos,
+        entered: std::sync::Mutex::new(Some(entered)),
+        release: std::sync::Mutex::new(rx),
+    }));
+    let id = s
+        .run("getbibles.download", &json!({"module": "NASB1995"}))
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    held.recv_timeout(std::time::Duration::from_secs(20))
+        .unwrap();
+    s.poll_imports();
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Download);
+    assert!(record.done > 0, "download progress shown");
+
+    s.run("import.cancel", &json!({"id": id})).unwrap();
+    release.send(()).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while s.imports.is_running() && std::time::Instant::now() < deadline {
+        s.poll_imports();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Failed);
+    assert!(s.library.get(&id).is_none());
+    assert!(obr_files(&root.join("library")).is_empty());
+    assert!(sword_modules(&root.join("sword")).is_empty());
+    assert!(matches!(
+        s.bible_status(&listing),
+        BibleStatus::Failed { .. }
+    ));
+    assert!(s.run("import.cancel", &json!({"id": id})).is_err());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}

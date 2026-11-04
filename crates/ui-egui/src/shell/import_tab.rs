@@ -38,7 +38,10 @@ impl State {
                         let title = match record.phase {
                             ImportPhase::Complete => "Import complete",
                             ImportPhase::Failed => "Import failed",
-                            ImportPhase::Parse | ImportPhase::Index => "Import in progress",
+                            ImportPhase::Download if record.origin.is_some() => "Downloading",
+                            ImportPhase::Download | ImportPhase::Parse | ImportPhase::Index => {
+                                "Import in progress"
+                            }
                         };
                         ui.label(
                             RichText::new(title)
@@ -48,6 +51,13 @@ impl State {
                         ui.label(RichText::new(&record.source).color(theme::c().muted));
                         ui.add_space(10.0);
                         phases(ui, &record);
+                        let running = matches!(
+                            record.phase,
+                            ImportPhase::Download | ImportPhase::Parse | ImportPhase::Index
+                        );
+                        if running && ui.button("Cancel").clicked() {
+                            action = Some("import.cancel");
+                        }
                         if let Some(report) = &record.report {
                             ui.add_space(10.0);
                             summary(ui, id, report);
@@ -165,13 +175,47 @@ impl State {
 }
 
 /// Parse, then the Search index: live progress from the worker, never simulated.
+/// Bytes as "4.5 MB".
+#[allow(clippy::cast_precision_loss)]
+pub(super) fn megabytes(bytes: u64) -> String {
+    format!("{:.1} MB", bytes as f64 / 1_000_000.0)
+}
+
 fn phases(ui: &mut Ui, record: &ImportRecord) {
+    if let Some(origin) = &record.origin {
+        section(ui, "Download");
+        match record.phase {
+            ImportPhase::Download if record.total > 0 => {
+                ui.add(progress(record).text(format!(
+                    "{} of {}",
+                    megabytes(record.done),
+                    megabytes(record.total)
+                )));
+            }
+            ImportPhase::Download => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(format!("Downloading from {}…", origin.repo));
+                });
+            }
+            ImportPhase::Failed if record.report.is_none() => {
+                ui.label("Download stopped");
+            }
+            _ => {
+                ui.label(format!("Downloaded from {}", origin.repo));
+            }
+        }
+        ui.add_space(8.0);
+    }
     section(ui, "Parse");
     match record.phase {
+        ImportPhase::Download => {
+            ui.label("Parse: waiting for the download");
+        }
         ImportPhase::Parse if record.total == 0 => {
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.label("Reading the USFM source…");
+                ui.label("Reading the source…");
             });
         }
         ImportPhase::Parse => {
@@ -192,7 +236,7 @@ fn phases(ui: &mut Ui, record: &ImportRecord) {
     ui.add_space(8.0);
     section(ui, "Search index");
     match (&record.phase, &record.index) {
-        (ImportPhase::Parse, _) => {
+        (ImportPhase::Download | ImportPhase::Parse, _) => {
             ui.label("Search index: waiting for Parse");
         }
         (ImportPhase::Index, _) if record.total > 0 => {

@@ -19,6 +19,8 @@ pub const DEFERRED_INDEX: &str = "Search index: built when Search arrives (#58)"
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ImportPhase {
+    /// Fetching a SWORD module from its repository (Get Bibles, #91).
+    Download,
     Parse,
     Index,
     Complete,
@@ -61,6 +63,16 @@ pub struct ImportRecord {
     pub report: Option<ImportReport>,
     pub index: ImportIndexStatus,
     pub error: Option<String>,
+    /// The repository and module a Get Bibles download came from (#91).
+    #[serde(default)]
+    pub origin: Option<RepoOrigin>,
+}
+
+/// Where a downloaded Resource came from: a module of a SWORD repository.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepoOrigin {
+    pub repo: String,
+    pub module: String,
 }
 
 #[derive(Debug)]
@@ -89,6 +101,16 @@ impl Imports {
     }
     pub fn set_indexer(&mut self, indexer: Arc<dyn ImportIndexer>) {
         self.indexer = indexer;
+    }
+    /// Every Import record, latest state.
+    pub fn records(&self) -> impl Iterator<Item = &ImportRecord> {
+        self.reports.values()
+    }
+    /// The job of a running Import.
+    pub fn job_of(&self, id: &str) -> Option<JobId> {
+        self.active
+            .iter()
+            .find_map(|(job, r)| (r == id).then_some(*job))
     }
 }
 
@@ -129,10 +151,18 @@ impl Session {
             };
             let terminal = event.kind.is_terminal();
             match event.kind {
-                JobEventKind::Phase(name) if name == "Index" => {
-                    record.phase = ImportPhase::Index;
-                    record.done = 0;
-                    record.total = 0;
+                JobEventKind::Phase(name) => {
+                    let phase = match name.as_str() {
+                        "Download" => Some(ImportPhase::Download),
+                        "Parse" => Some(ImportPhase::Parse),
+                        "Index" => Some(ImportPhase::Index),
+                        _ => None,
+                    };
+                    if let Some(phase) = phase {
+                        record.phase = phase;
+                        record.done = 0;
+                        record.total = 0;
+                    }
                 }
                 JobEventKind::Progress { done, total } => {
                     record.done = done;
@@ -229,6 +259,22 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         run: start,
     },
     CommandSpec {
+        id: "import.cancel",
+        label: "Cancel Import",
+        shortcut: None,
+        params: &[ID],
+        enabled: always,
+        run: |s, p| {
+            let id = p.str("id").unwrap_or_default();
+            let job = s
+                .imports
+                .job_of(id)
+                .ok_or_else(|| failed("import.cancel", "This Import is not running"))?;
+            s.jobs().cancel(job);
+            Ok(Value::Null)
+        },
+    },
+    CommandSpec {
         id: "import.report",
         label: "Latest Import report",
         shortcut: None,
@@ -274,8 +320,16 @@ pub enum ImportSource {
         path: std::path::PathBuf,
         module: Option<String>,
     },
+    /// A module downloaded from a SWORD repository into `sword_dir` first (Get Bibles, #91).
+    Repository {
+        repo: crate::get_bibles::RepoRef,
+        module: String,
+        sword_dir: std::path::PathBuf,
+    },
 }
 
+// Desktop Import uses these; the browser build has no local Import.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 impl ImportSource {
     /// Tell the source kind from the path: a `.conf` file, or a folder holding `mods.d/`, is
     /// SWORD; anything else is USFM.
@@ -292,7 +346,9 @@ impl ImportSource {
 
     fn path(&self) -> &Path {
         match self {
-            Self::Usfm(p) | Self::Sword { path: p, .. } => p,
+            Self::Usfm(p) | Self::Sword { path: p, .. } | Self::Repository { sword_dir: p, .. } => {
+                p
+            }
         }
     }
 
@@ -301,7 +357,8 @@ impl ImportSource {
         match self {
             Self::Sword {
                 module: Some(m), ..
-            } => m.clone(),
+            }
+            | Self::Repository { module: m, .. } => m.clone(),
             Self::Sword { path, .. } if path.is_dir() => path
                 .file_name()
                 .unwrap_or_default()
@@ -323,6 +380,7 @@ impl ImportSource {
                 path,
                 module: Some(m),
             } => format!("{} ({m})", path.display()),
+            Self::Repository { repo, module, .. } => format!("{module} from {}", repo.name),
             _ => self.path().display().to_string(),
         }
     }
@@ -376,20 +434,32 @@ impl Session {
             }
             n += 1;
         };
+        let (phase, origin) = match &source {
+            ImportSource::Repository { repo, module, .. } => (
+                ImportPhase::Download,
+                Some(RepoOrigin {
+                    repo: repo.name.clone(),
+                    module: module.clone(),
+                }),
+            ),
+            _ => (ImportPhase::Parse, None),
+        };
         let record = ImportRecord {
             resource_id: id.clone(),
             source: source.describe(),
-            phase: ImportPhase::Parse,
+            phase,
             done: 0,
             total: 0,
             report: None,
             index: ImportIndexStatus::Deferred,
             error: None,
+            origin,
         };
         let indexer = Arc::clone(&self.imports.indexer);
+        let fetch = self.fetch();
         let worker_id = id.clone();
         let job = self.jobs().submit_fn("Import", move |ctx| {
-            import_source(&source, &dir, &worker_id, indexer.as_ref(), ctx)
+            import_source(&source, &dir, &worker_id, indexer.as_ref(), fetch, ctx)
         });
         self.imports.active.insert(job, id.clone());
         self.imports.reports.insert(id.clone(), record);
@@ -496,22 +566,102 @@ fn parse_sword(
     Ok(import_sword(&source, &module, &options)?)
 }
 
+/// Files an Import made, removed again if it fails or is cancelled.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Default)]
+struct Made {
+    obr: Option<std::path::PathBuf>,
+    /// (SWORD folder, module) installed by this Import's download.
+    sword: Option<(std::path::PathBuf, String)>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Made {
+    fn undo(self) {
+        if let Some(obr) = self.obr {
+            let _ = std::fs::remove_file(obr);
+        }
+        if let Some((dir, module)) = self.sword {
+            let _ = obs_formats::sword_repo::uninstall(&dir, &module);
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn cancelled() -> Box<dyn std::error::Error> {
+    "Import cancelled".into()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn download(
+    repo: &crate::get_bibles::RepoRef,
+    module: &str,
+    sword_dir: &Path,
+    fetch: Arc<dyn obs_formats::sword_repo::Fetch>,
+    ctx: &JobContext,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let installer = crate::sword_installer(fetch, ctx);
+    let fail = |e: obs_formats::sword_repo::RepoError| -> Box<dyn std::error::Error> {
+        if obs_formats::sword_repo::is_cancelled(&e) || ctx.is_cancelled() {
+            cancelled()
+        } else {
+            format!("download from {}: {e}", repo.name).into()
+        }
+    };
+    let catalog = installer.catalog(&repo.repository()).map_err(fail)?;
+    installer
+        .install(&catalog, module, sword_dir)
+        .map_err(fail)?;
+    Ok(())
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn import_source(
     source: &ImportSource,
     dir: &Path,
     id: &str,
     indexer: &dyn ImportIndexer,
+    fetch: Arc<dyn obs_formats::sword_repo::Fetch>,
     ctx: &JobContext,
 ) -> Result<Imported, String> {
+    let mut made = Made::default();
     let run = || -> Result<Imported, Box<dyn std::error::Error>> {
-        ctx.phase("Parse");
         let (resource, report) = match source {
-            ImportSource::Usfm(path) => parse_usfm(path, id, ctx)?,
-            ImportSource::Sword { path, module } => parse_sword(path, module.as_deref(), id)?,
+            ImportSource::Usfm(path) => {
+                ctx.phase("Parse");
+                parse_usfm(path, id, ctx)?
+            }
+            ImportSource::Sword { path, module } => {
+                ctx.phase("Parse");
+                parse_sword(path, module.as_deref(), id)?
+            }
+            ImportSource::Repository {
+                repo,
+                module,
+                sword_dir,
+            } => {
+                ctx.phase("Download");
+                // A module already in the SWORD folder (an earlier download) is kept.
+                let had = obs_formats::SwordSource::open(sword_dir)
+                    .map(|s| {
+                        s.modules()
+                            .iter()
+                            .any(|m| m.name.eq_ignore_ascii_case(module))
+                    })
+                    .unwrap_or(false);
+                if !had {
+                    made.sword = Some((sword_dir.clone(), module.clone()));
+                }
+                download(repo, module, sword_dir, fetch, ctx)?;
+                if ctx.is_cancelled() {
+                    return Err(cancelled());
+                }
+                ctx.phase("Parse");
+                parse_sword(sword_dir, Some(module), id)?
+            }
         };
         if ctx.is_cancelled() {
-            return Err("Import cancelled".into());
+            return Err(cancelled());
         }
         std::fs::create_dir_all(dir)?;
         let out = dir.join(format!("{id}.obr"));
@@ -521,14 +671,15 @@ fn import_source(
             .create_new(true)
             .open(&out)?;
         drop(reservation);
-        if let Err(e) = obs_store::write_obr(&resource, &out) {
-            let _ = std::fs::remove_file(&out);
-            return Err(e.into());
-        }
+        made.obr = Some(out.clone());
+        obs_store::write_obr(&resource, &out)?;
         ctx.phase("Index");
         let index = indexer
             .build(&resource, &out, ctx)
             .unwrap_or_else(ImportIndexStatus::Failed);
+        if ctx.is_cancelled() {
+            return Err(cancelled());
+        }
         Ok(Imported {
             entry: LibraryEntry {
                 manifest: resource.manifest,
@@ -538,5 +689,11 @@ fn import_source(
             index,
         })
     };
-    run().map_err(|e| format!("{}: {e}", source.path().display()))
+    match run() {
+        Ok(imported) => Ok(imported),
+        Err(e) => {
+            made.undo();
+            Err(format!("{}: {e}", source.describe()))
+        }
+    }
 }
