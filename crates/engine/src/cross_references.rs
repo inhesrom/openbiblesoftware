@@ -51,7 +51,7 @@ pub fn group_references(
     groups
         .into_iter()
         .map(|(verse, mut rows)| {
-            rows.sort_by(|a, b| b.votes.cmp(&a.votes));
+            rows.sort_by_key(|row| std::cmp::Reverse(row.votes));
             ReferenceGroup { verse, rows }
         })
         .collect()
@@ -71,44 +71,73 @@ pub fn bible_preview(
     store: &dyn ResourceStore,
     passage: Passage,
 ) -> Result<BiblePreview, StoreError> {
-    let map = store.verse_map()?;
-    let mut text = Vec::new();
-    let mut units = BTreeMap::new();
-    let mut seen = std::collections::BTreeSet::new();
-    let mut verses = passage.verses(&Standard);
-    for standard in verses.by_ref().take(PREVIEW_VERSES) {
-        let native = match &map {
-            Some(m) => m.to_native(standard),
-            None => vec![standard],
-        };
-        let mut found = false;
-        for native in native {
-            let Some(v) = store.verse(native)? else {
-                continue;
+    BiblePreviewCache::default().preview(store, passage)
+}
+
+/// Worker-owned cache: load the Verse map once per Resource revision and retain a few Bible
+/// books. Hovering another target must not re-read and re-index an entire Bible's Verse map.
+#[derive(Default)]
+pub struct BiblePreviewCache {
+    identity: Option<(String, u32, String)>,
+    map: Option<obs_scripture::VerseMap>,
+    units: BTreeMap<obs_model::UnitId, Option<obs_model::TextUnit>>,
+}
+
+impl BiblePreviewCache {
+    pub fn preview(
+        &mut self,
+        store: &dyn ResourceStore,
+        passage: Passage,
+    ) -> Result<BiblePreview, StoreError> {
+        let m = store.manifest();
+        let identity = (m.resource_id.clone(), m.revision, m.content_hash.clone());
+        if self.identity.as_ref() != Some(&identity) {
+            self.map = store.verse_map()?;
+            self.units.clear();
+            self.identity = Some(identity);
+        }
+        if self.units.len() > 4 {
+            self.units.clear();
+        }
+        let map = &self.map;
+        let units = &mut self.units;
+        let mut text = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut verses = passage.verses(&Standard);
+        for standard in verses.by_ref().take(PREVIEW_VERSES) {
+            let native = match map {
+                Some(m) => m.to_native(standard),
+                None => vec![standard],
             };
-            found = true;
-            if !seen.insert((v.unit.clone(), v.start, v.end)) {
-                continue;
+            let mut found = false;
+            for native in native {
+                let Some(v) = store.verse(native)? else {
+                    continue;
+                };
+                found = true;
+                if !seen.insert((v.unit.clone(), v.start, v.end)) {
+                    continue;
+                }
+                if !units.contains_key(&v.unit) {
+                    units.insert(v.unit.clone(), store.unit(&v.unit)?);
+                }
+                if let Some(Some(unit)) = units.get(&v.unit)
+                    && let Some(slice) = unit.text.get(v.start as usize..v.end as usize)
+                {
+                    text.push(slice.trim().to_string());
+                }
             }
-            if !units.contains_key(&v.unit) {
-                units.insert(v.unit.clone(), store.unit(&v.unit)?);
-            }
-            if let Some(Some(unit)) = units.get(&v.unit)
-                && let Some(slice) = unit.text.get(v.start as usize..v.end as usize)
-            {
-                text.push(slice.trim().to_string());
+            if !found {
+                text.push(format!("{standard}: — not in this Bible —"));
             }
         }
-        if !found {
-            text.push(format!("{standard}: — not in this Bible —"));
-        }
+        Ok(BiblePreview {
+            abbreviation: store.manifest().abbreviation.clone(),
+            direction: store.manifest().direction,
+            text: text.join(" "),
+            truncated: verses.next().is_some(),
+        })
     }
-    Ok(BiblePreview {
-        abbreviation: store.manifest().abbreviation.clone(),
-        direction: store.manifest().direction,
-        text: text.join(" "),
-        truncated: verses.next().is_some(),
-    })
 }
 
 /// Read every Cross-reference set in Preferred order. Errors remain visible to the caller.
@@ -137,12 +166,21 @@ pub fn preferred_preview(
     library: &crate::Library,
     passage: Passage,
 ) -> Result<BiblePreview, String> {
+    preferred_preview_cached(library, passage, &mut BiblePreviewCache::default())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn preferred_preview_cached(
+    library: &crate::Library,
+    passage: Passage,
+    cache: &mut BiblePreviewCache,
+) -> Result<BiblePreview, String> {
     let entry = library
         .of_type(obs_model::ResourceType::Bible)
         .next()
         .ok_or("Add a Bible to your library to see previews")?;
     let reader = obs_store::ObrReader::open(&entry.path).map_err(|e| e.to_string())?;
-    bible_preview(&reader, passage).map_err(|e| e.to_string())
+    cache.preview(&reader, passage).map_err(|e| e.to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -155,38 +193,70 @@ pub fn preferred_preview(_: &crate::Library, _: Passage) -> Result<BiblePreview,
     Err("Opening Resources is not supported here".into())
 }
 
+#[cfg(target_arch = "wasm32")]
+pub fn preferred_preview_cached(
+    library: &crate::Library,
+    passage: Passage,
+    _: &mut BiblePreviewCache,
+) -> Result<BiblePreview, String> {
+    preferred_preview(library, passage)
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
+    #![allow(clippy::unwrap_used)]
     use super::*;
     use obs_scripture::Book;
 
     struct Files(std::path::PathBuf);
     impl Files {
         fn new(name: &str) -> Self {
-            let path = std::env::temp_dir().join(format!("obs-references-{name}-{}", std::process::id()));
+            let path =
+                std::env::temp_dir().join(format!("obs-references-{name}-{}", std::process::id()));
             std::fs::create_dir_all(&path).unwrap();
             Self(path)
         }
         fn add(&self, library: &mut crate::Library, resource: &obs_model::Resource) {
-            let path = self.0.join(format!("{}.obr", resource.manifest.resource_id));
+            let path = self
+                .0
+                .join(format!("{}.obr", resource.manifest.resource_id));
             obs_store::write_obr(resource, &path).unwrap();
             library.add_file(&path).unwrap();
         }
     }
     impl Drop for Files {
-        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     #[test]
     fn john_3_16_openbible_targets_are_in_vote_order() {
         let files = Files::new("openbible");
         let mut library = crate::Library::new();
-        let options = obs_formats::DatasetOptions { resource_id: "openbible".into(), title: "OpenBible.info".into(), ..Default::default() };
-        let (resource, _) = obs_formats::import_openbible_cross_references(include_str!("../../formats/tests/assets/openbible/cross-references-excerpt.txt"), &options).unwrap();
+        let options = obs_formats::DatasetOptions {
+            resource_id: "openbible".into(),
+            title: "OpenBible.info".into(),
+            ..Default::default()
+        };
+        let (resource, _) = obs_formats::import_openbible_cross_references(
+            include_str!("../../formats/tests/assets/openbible/cross-references-excerpt.txt"),
+            &options,
+        )
+        .unwrap();
         files.add(&mut library, &resource);
-        let groups = library_references(&library, Passage::verse(Verse::new(Book::John, 3, 16))).unwrap();
-        let snapshot = groups[0].rows.iter().map(|r| format!("{}: {}", r.target, r.votes)).collect::<Vec<_>>().join("\n");
-        assert_eq!(snapshot, "John 11:25-26: 465\nJohn 6:40: 404\n1 Tim 1:15-16: 291\nJohn 1:29: 240\nEph 2:4: 206\nJohn 1:18: 152");
+        let groups =
+            library_references(&library, Passage::verse(Verse::new(Book::John, 3, 16))).unwrap();
+        let snapshot = groups[0]
+            .rows
+            .iter()
+            .map(|r| format!("{}: {}", r.target, r.votes))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            snapshot,
+            "John 11:25-26: 465\nJohn 6:40: 404\n1 Tim 1:15-16: 291\nJohn 1:29: 240\nEph 2:4: 206\nJohn 1:18: 152"
+        );
     }
 
     #[test]
@@ -196,14 +266,34 @@ mod tests {
         let resource = obs_store::sample_resource();
         files.add(&mut library, &resource);
         let john = |v| Passage::verse(Verse::new(Book::John, 3, v));
-        assert!(preferred_preview(&library, john(16)).unwrap().text.starts_with("For God so loved"));
-        assert!(preferred_preview(&library, john(18)).unwrap().text.contains("not in this Bible"));
+        assert!(
+            preferred_preview(&library, john(16))
+                .unwrap()
+                .text
+                .starts_with("For God so loved")
+        );
+        assert!(
+            preferred_preview(&library, john(18))
+                .unwrap()
+                .text
+                .contains("not in this Bible")
+        );
         let mut mapped = resource.clone();
         mapped.manifest.resource_id = "mapped".into();
         mapped.manifest.abbreviation = "MAPPED".into();
-        mapped.verse_map = Some(obs_scripture::VerseMap::new(mapped.verses.iter().map(|v| obs_scripture::VerseMapEntry {
-            verse: v.verse, last: v.last, standard: (v.verse == john(16).start()).then_some(john(18)),
-        }).collect(), vec![], &Standard));
+        mapped.verse_map = Some(obs_scripture::VerseMap::new(
+            mapped
+                .verses
+                .iter()
+                .map(|v| obs_scripture::VerseMapEntry {
+                    verse: v.verse,
+                    last: v.last,
+                    standard: (v.verse == john(16).start()).then_some(john(18)),
+                })
+                .collect(),
+            vec![],
+            &Standard,
+        ));
         // Preview the in-memory numbering through a real .obr; refresh the content hash.
         mapped.manifest.content_hash = mapped.content_hash();
         let mut reordered = crate::Library::new();
@@ -212,7 +302,12 @@ mod tests {
         let preview = preferred_preview(&reordered, john(18)).unwrap();
         assert_eq!(preview.abbreviation, "MAPPED");
         assert!(preview.text.starts_with("For God so loved"));
-        assert!(preferred_preview(&reordered, john(17)).unwrap().text.contains("not in this Bible"));
+        assert!(
+            preferred_preview(&reordered, john(17))
+                .unwrap()
+                .text
+                .contains("not in this Bible")
+        );
         let chapter = Passage::chapter(&Standard, Book::John, 3).unwrap();
         assert!(preferred_preview(&library, chapter).unwrap().truncated);
         assert!(preferred_preview(&crate::Library::new(), john(16)).is_err());

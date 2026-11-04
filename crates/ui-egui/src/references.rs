@@ -46,7 +46,7 @@ impl<T: Send + 'static> Queries<T> {
         &mut self,
         library: &Library,
         passage: Passage,
-        query: fn(&Library, Passage) -> Result<T, String>,
+        query: impl FnOnce(&Library, Passage) -> Result<T, String> + Send + 'static,
     ) -> Option<Result<Arc<T>, String>> {
         if !self.jobs.is_threaded() {
             self.jobs.pump(1);
@@ -90,6 +90,7 @@ pub(super) struct References {
     groups: Queries<Vec<ReferenceGroup>>,
     previews: Queries<BiblePreview>,
     snippets: SnippetCache,
+    preview_text: Arc<std::sync::Mutex<cross_references::BiblePreviewCache>>,
     library_key: Vec<(String, u32, String, std::path::PathBuf)>,
     pub pending_navigation: BTreeMap<TabId, Verse>,
 }
@@ -251,10 +252,14 @@ impl State {
             ui.allocate_space(vec2(width, height));
             return;
         }
+        let cache = Arc::clone(&self.references.preview_text);
         let preview = match self.references.previews.get(
             &self.session.library,
             passage,
-            cross_references::preferred_preview,
+            move |library, passage| {
+                let mut cache = cache.lock().unwrap_or_else(|p| p.into_inner());
+                cross_references::preferred_preview_cached(library, passage, &mut cache)
+            },
         ) {
             None => {
                 ui.allocate_space(vec2(width, height));
@@ -283,14 +288,12 @@ impl State {
             return;
         };
         let height = if one_line {
-            height.min(laid.height)
+            laid.lines.first().map_or(height, |line| line.bottom)
         } else {
             laid.height.min(360.0)
         };
         let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::Role::Label, true, &preview.text)
-        });
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &preview.text));
         let quads = self.atlas.atlas.quads(
             &laid,
             [rect.left(), rect.top()],
@@ -304,9 +307,9 @@ impl State {
                 self.palette.color(q.role),
             );
         }
-        ui.painter()
-            .with_clip_rect(rect.intersect(ui.clip_rect()))
-            .add(Shape::mesh(mesh));
+        let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+        painter.rect_filled(rect, 0.0, self.palette.page);
+        painter.add(Shape::mesh(mesh));
         if !one_line && (preview.truncated || laid.height > height) {
             ui.small("Preview shortened — click the reference to read");
         }
@@ -373,3 +376,7 @@ impl State {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "reference_data_tests.rs"]
+mod tests;

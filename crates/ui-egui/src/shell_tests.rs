@@ -1,6 +1,9 @@
 //! Headless Workspace tests: a real egui Context, fed pointer events the way a window would,
 //! with the shell drawn each frame. Widgets are found by the text they paint.
 
+#[path = "reference_tests.rs"]
+mod references;
+
 use std::sync::Arc;
 
 use egui::{Event, Modifiers, PointerButton, Pos2, RawInput, Rect, Shape, pos2, vec2};
@@ -16,6 +19,7 @@ struct Harness {
     ctx: egui::Context,
     shell: Shell,
     events: Vec<Event>,
+    modifiers: Modifiers,
     time: f64,
     shapes: Vec<(Rect, String)>,
     /// Vertex colours of textured meshes (glyph quads) drawn last frame.
@@ -74,6 +78,7 @@ impl Harness {
             ctx,
             shell,
             events: Vec::new(),
+            modifiers: Modifiers::NONE,
             time: 0.0,
             shapes: Vec::new(),
             meshes: Vec::new(),
@@ -87,6 +92,8 @@ impl Harness {
     }
 
     fn frame(&mut self) {
+        self.events
+            .insert(0, Event::ModifiersChanged(self.modifiers));
         let input = RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1400.0, 900.0))),
             time: Some(self.time),
@@ -207,7 +214,7 @@ impl Harness {
             pos,
             button: PointerButton::Primary,
             pressed,
-            modifiers: Modifiers::NONE,
+            modifiers: self.modifiers,
         });
     }
 
