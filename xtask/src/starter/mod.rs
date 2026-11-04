@@ -16,6 +16,7 @@
 mod fetch;
 mod ids;
 mod lock;
+mod study;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -347,6 +348,9 @@ fn import(source: &Source, files: &[Vec<u8>]) -> Result<(Resource, ImportReport)
         "tagnt" => return import_stepbible(source, files, StepbibleText::Tagnt),
         "openbible-cross-references" => return import_openbible_zip(source, &files[0]),
         "tipnr" => return import_tipnr_text(source, &files[0]),
+        "wikisource-mhc" | "jfb-html" | "easton-zld" | "smith-rawld" => {
+            return study::import(source, &files[0]);
+        }
         _ => {}
     }
     let text = |i: usize| -> Result<&str> {

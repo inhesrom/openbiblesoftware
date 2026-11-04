@@ -4,7 +4,10 @@
 use std::path::Path;
 
 use obs_layout::{BlockSource, unit_blocks};
-use obs_model::{BibleVerse, Direction, Manifest, Resource, TextUnit, UnitKind};
+use obs_model::{
+    BibleVerse, Direction, Manifest, ParaStyle, Resource, Span, SpanKind, TextUnit, UnitId,
+    UnitKind,
+};
 use obs_scripture::{ListedVersification, Verse, VerseMap};
 #[cfg(not(target_arch = "wasm32"))]
 use obs_store::{ObrReader, ResourceStore, StoreError};
@@ -63,6 +66,35 @@ impl ReadingDoc {
         let mut doc = Self::build(resource.manifest, units, resource.verses);
         doc.verse_map = resource.verse_map.map(std::sync::Arc::new);
         doc
+    }
+
+    /// Plain text shown through the text pipeline, such as a Resource's Attribution in its
+    /// About Tab: one left-to-right unit, one paragraph per line, the text kept verbatim.
+    pub fn from_text(mut manifest: Manifest, text: &str) -> Self {
+        manifest.direction = Direction::Ltr;
+        let mut spans = Vec::new();
+        let mut start = 0usize;
+        for line in text.split_inclusive('\n') {
+            let end = start + line.trim_end_matches(['\n', '\r']).len();
+            if end > start {
+                spans.push(Span {
+                    start: u32::try_from(start).unwrap_or(u32::MAX),
+                    end: u32::try_from(end).unwrap_or(u32::MAX),
+                    kind: SpanKind::Para {
+                        style: ParaStyle::Prose,
+                    },
+                });
+            }
+            start += line.len();
+        }
+        let unit = TextUnit {
+            id: UnitId::new("text").unwrap_or_else(|_| UnitId::note(0)),
+            kind: UnitKind::Division,
+            title: None,
+            text: text.to_string(),
+            spans,
+        };
+        Self::build(manifest, vec![unit], Vec::new())
     }
 
     fn build(manifest: Manifest, units: Vec<TextUnit>, verses: Vec<BibleVerse>) -> Self {

@@ -1,8 +1,8 @@
 //! Text encodings for values stored in columns. Pure functions, shared by every backend.
 
-use obs_model::{Key, KeyScheme, SpanKind};
+use obs_model::{Key, KeyScheme};
 use obs_scripture::{Book, Passage, Verse};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::error::StoreError;
 
@@ -110,35 +110,9 @@ pub(crate) fn key_from(scheme: &str, text: &str) -> Result<Key, StoreError> {
     })
 }
 
-/// A span kind as `(name, attrs)`, where attrs is the JSON of its fields or `None`.
-pub(crate) fn span_columns(kind: &SpanKind) -> (&'static str, Option<String>) {
-    let attrs = match serde_json::to_value(kind) {
-        Ok(Value::Object(mut map)) => {
-            map.remove("kind");
-            (!map.is_empty()).then(|| Value::Object(map).to_string())
-        }
-        _ => None,
-    };
-    (kind.name(), attrs)
-}
-
-pub(crate) fn span_from(name: &str, attrs: Option<&str>) -> Result<SpanKind, StoreError> {
-    let mut map = match attrs {
-        None => Map::new(),
-        Some(a) => match serde_json::from_str::<Value>(a) {
-            Ok(Value::Object(m)) => m,
-            _ => return Err(corrupt("span attrs", a)),
-        },
-    };
-    map.insert("kind".into(), Value::String(name.to_string()));
-    serde_json::from_value(Value::Object(map)).map_err(|_| corrupt("span", name))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use obs_model::{MorphemePart, NoteKind, ParaStyle, UnitId};
-    use obs_scripture::PassageList;
 
     #[test]
     fn keys_round_trip() {
@@ -177,36 +151,5 @@ mod tests {
         assert!(verse_from_number(0).is_err());
         assert!(verse_from_number(67_001_001).is_err());
         assert!(passage_from_numbers(1_001_002, 1_001_001).is_err());
-    }
-
-    #[test]
-    fn spans_round_trip() {
-        let kinds = [
-            SpanKind::Woj,
-            SpanKind::Para {
-                style: ParaStyle::Poetry2,
-            },
-            SpanKind::Verse {
-                verse: Verse::new(Book::John, 3, 16),
-                last: 16,
-            },
-            SpanKind::NoteRef {
-                note: UnitId::note(3),
-                note_kind: NoteKind::CrossReference,
-            },
-            SpanKind::Xref {
-                targets: PassageList::new(),
-            },
-            SpanKind::TaggedWord {
-                parts: vec![MorphemePart::new("G26".parse().unwrap())],
-            },
-        ];
-        for k in kinds {
-            let (name, attrs) = span_columns(&k);
-            assert_eq!(span_from(name, attrs.as_deref()).unwrap(), k);
-        }
-        assert_eq!(span_columns(&SpanKind::Woj).1, None);
-        assert!(span_from("woj", Some("[1]")).is_err());
-        assert!(span_from("nonsense", None).is_err());
     }
 }

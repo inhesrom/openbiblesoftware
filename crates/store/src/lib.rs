@@ -15,6 +15,8 @@ mod obr;
 mod resource_store;
 #[cfg(not(target_arch = "wasm32"))]
 mod sample;
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+mod span_codec;
 #[cfg(not(target_arch = "wasm32"))]
 mod user;
 

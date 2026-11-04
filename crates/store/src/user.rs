@@ -1,5 +1,6 @@
 //! The User database (#17): one SQLite file in the platform data folder holding everything the
-//! user makes — preferences, the Last session and named Layouts now; Annotations later (#61).
+//! user makes — preferences, the Last session, named Layouts and the Preferred order now;
+//! Annotations later (#61).
 //!
 //! Safety rules: WAL journaling; `PRAGMA user_version` with forward-only migrations; a copy of
 //! the file is taken before any migration runs; and at every launch a rolling backup (the
@@ -16,7 +17,7 @@ use crate::error::StoreError;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 2;
+pub const USER_SCHEMA_VERSION: u32 = 3;
 
 /// How many launch backups are kept.
 pub const ROLLING_BACKUPS: usize = 5;
@@ -30,6 +31,8 @@ const MIGRATIONS: &[&str] = &[
     // 1 → 2: named Layouts.
     "CREATE TABLE layout (name TEXT PRIMARY KEY COLLATE NOCASE, snapshot TEXT NOT NULL,
                           saved_at INTEGER NOT NULL);",
+    // 2 → 3: Preferred order (rank 0 is the best; ranks are only compared within a type).
+    "CREATE TABLE preferred_order (resource_id TEXT PRIMARY KEY, rank INTEGER NOT NULL);",
 ];
 
 fn sql(e: rusqlite::Error) -> StoreError {
@@ -279,6 +282,38 @@ impl UserStore {
             .execute("DELETE FROM layout WHERE name = ?1", [name])
             .map_err(sql)?;
         Ok(n > 0)
+    }
+}
+
+impl UserStore {
+    // ---------------------------------------------------------------- Preferred order
+
+    /// The saved Preferred order: resource ids, best first.
+    pub fn preferred_order(&self) -> Result<Vec<String>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT resource_id FROM preferred_order ORDER BY rank, resource_id")
+            .map_err(sql)?;
+        let rows = stmt.query_map([], |r| r.get(0)).map_err(sql)?;
+        rows.collect::<Result<Vec<String>, _>>().map_err(sql)
+    }
+
+    /// Replace the saved Preferred order with `ids`, best first.
+    pub fn save_preferred_order(&self, ids: &[String]) -> Result<(), StoreError> {
+        let tx = self.conn.unchecked_transaction().map_err(sql)?;
+        tx.execute("DELETE FROM preferred_order", []).map_err(sql)?;
+        {
+            let mut stmt = tx
+                .prepare_cached(
+                    "INSERT OR IGNORE INTO preferred_order (resource_id, rank) VALUES (?1, ?2)",
+                )
+                .map_err(sql)?;
+            for (rank, id) in ids.iter().enumerate() {
+                let rank = i64::try_from(rank).unwrap_or(i64::MAX);
+                stmt.execute(params![id, rank]).map_err(sql)?;
+            }
+        }
+        tx.commit().map_err(sql)
     }
 }
 

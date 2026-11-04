@@ -18,6 +18,7 @@ pub mod command;
 pub mod compare;
 pub mod jobs;
 mod library;
+mod library_commands;
 pub mod link;
 pub mod persist;
 mod session;
@@ -31,7 +32,10 @@ pub use compare::{
     verse_blocks, word_diff,
 };
 pub use jobs::{Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step};
-pub use library::{Library, LibraryEntry, default_library_dir, default_user_db};
+pub use library::{
+    Library, LibraryEntry, LibraryFilter, default_library_dir, default_user_db, language_name,
+};
+pub use library_commands::annotations_phrase;
 pub use link::LINK_SETS;
 pub use persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, UserData, WorkspaceSnapshot};
 pub use session::{JobMode, Session};
@@ -49,6 +53,9 @@ mod workspace_tests;
 
 #[cfg(test)]
 mod link_tests;
+
+#[cfg(test)]
+mod library_tests;
 
 #[cfg(test)]
 mod compare_tests;

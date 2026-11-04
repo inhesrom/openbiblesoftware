@@ -102,7 +102,7 @@ pub struct IdChange {
     pub new: String,
 }
 
-/// Bible (`usfm`, `tahot`, `tagnt`), dataset and Lexicon converters (#40, #41, #43):
+/// Starter Bible (`usfm`, `tahot`, `tagnt`; #40), dataset (#43), study (#44), and Lexicon (#41) importers:
 /// `stepbible-tbes` (TBESH/TBESG TSV), `strongs-hebrew` / `strongs-greek`
 /// (openscriptures/strongs XML), `oshb-bdb` (BDB XML plus the lexical index as an extra file),
 /// `abbott-smith` (TEI XML).
@@ -117,6 +117,10 @@ pub const IMPORTERS: &[&str] = &[
     "strongs-greek",
     "oshb-bdb",
     "abbott-smith",
+    "wikisource-mhc",
+    "jfb-html",
+    "easton-zld",
+    "smith-rawld",
 ];
 
 /// Hosts whose site terms restrict republishing (#20 decision 3).

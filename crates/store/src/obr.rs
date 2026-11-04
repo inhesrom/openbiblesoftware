@@ -6,7 +6,7 @@
 //! |---|---|
 //! | `manifest` | exactly one: every [`Manifest`] field |
 //! | `units` | `ord` (document order), `id`, `kind`, `title`, `text` |
-//! | `spans` | `unit` (→ `units.ord`), `seq` (canonical order), `start`, `end`, `kind`, `attrs` (JSON) |
+//! | `spans` | `unit` (→ `units.ord`), `seq` (canonical order), `start`, `end`, `kind` (integer id), `attrs` (positional BLOB) |
 //! | `verses` | `ordinal` (document order), `book`, `chapter`, `verse`, `last`, `unit`, `start`, `end` |
 //! | `keys` | `scheme`, `key`, `key_norm`, `unit`, `start`, `end`, `alias` |
 //! | `unit_alias` | `old` → `new` unit id |
@@ -39,11 +39,12 @@ use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, VerseMapEntry};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
 
 use crate::codec::{
-    enum_from, enum_name, json, json_from, key_columns, key_from, passage_from_numbers,
-    span_columns, span_from, verse_from, verse_number, verse_text,
+    enum_from, enum_name, json, json_from, key_columns, key_from, passage_from_numbers, verse_from,
+    verse_number, verse_text,
 };
 use crate::error::StoreError;
 use crate::resource_store::{ResourceStore, Summary};
+use crate::span_codec::{span_columns, span_from};
 
 /// `PRAGMA application_id` of every `.obr` file: ASCII `OBR1`.
 pub const APPLICATION_ID: i32 = 0x4F42_5231;
@@ -83,8 +84,8 @@ CREATE TABLE spans (
     seq INTEGER NOT NULL,
     start INTEGER NOT NULL,
     end INTEGER NOT NULL,
-    kind TEXT NOT NULL,
-    attrs TEXT,
+    kind INTEGER NOT NULL,
+    attrs BLOB NOT NULL,
     PRIMARY KEY (unit, seq)
 ) WITHOUT ROWID;
 CREATE INDEX spans_range ON spans (unit, start, end);
@@ -633,8 +634,8 @@ impl ObrReader {
                 Ok((
                     r.get::<_, i64>(0)?,
                     r.get::<_, i64>(1)?,
-                    r.get::<_, String>(2)?,
-                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, Vec<u8>>(3)?,
                 ))
             })
             .map_err(sql)?;
@@ -644,7 +645,7 @@ impl ObrReader {
             out.push(Span {
                 start: to_u32(start, "span start")?,
                 end: to_u32(end, "span end")?,
-                kind: span_from(&kind, attrs.as_deref())?,
+                kind: span_from(kind, &attrs)?,
             });
         }
         Ok(out)

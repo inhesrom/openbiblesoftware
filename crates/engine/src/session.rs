@@ -84,14 +84,42 @@ impl Session {
         self.commands.get(id).is_some_and(|c| (c.enabled)(self))
     }
 
-    /// Attach the User database and apply the preferences saved in it.
+    /// Attach the User database and apply the preferences and Preferred order saved in it.
     pub fn attach_user(&mut self, user: Box<dyn UserData>) {
         if let Ok(Some(v)) = user.preference(VIEW_PREF)
             && let Ok(v) = serde_json::from_str::<serde_json::Value>(&v)
         {
             crate::appearance::apply_json(&v, &mut self.appearance, &mut self.text);
         }
+        if let Ok(order) = user.preferred_order() {
+            self.library.set_preferred_order(order.clone());
+            // Pin the initial order too: a later Import must not sort ahead of Resources
+            // the user already had, even if they have never moved a row.
+            let current = self.library.preferred_order();
+            if current != order
+                && let Err(e) = user.save_preferred_order(&current)
+            {
+                self.workspace
+                    .push_effect(crate::workspace::Effect::Message(format!(
+                        "Could not save the Preferred order: {e}"
+                    )));
+            }
+        }
         self.user = Some(user);
+    }
+
+    /// Save the library's Preferred order.
+    pub(crate) fn save_preferred_order(&self) -> Result<(), String> {
+        let Some(user) = &self.user else {
+            return Ok(());
+        };
+        user.save_preferred_order(&self.library.preferred_order())
+    }
+
+    /// How many Annotations refer to a Resource (shown in its About Tab and its Remove
+    /// confirmation). Annotations are stored from #61 on; until then none exist.
+    pub fn annotations_referring(&self, _resource_id: &str) -> u64 {
+        0
     }
 
     /// Save the View preferences.
