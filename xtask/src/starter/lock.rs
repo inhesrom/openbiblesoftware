@@ -91,7 +91,7 @@ pub struct IdChange {
     pub new: String,
 }
 
-/// `usfm`: a zip of USFM books → a Bible. The rest are Lexicon converters (#41):
+/// Starter Bible, dataset, study (#44), and Lexicon (#41) importers:
 /// `stepbible-tbes` (TBESH/TBESG TSV), `strongs-hebrew` / `strongs-greek`
 /// (openscriptures/strongs XML), `oshb-bdb` (BDB XML plus the lexical index as an extra file),
 /// `abbott-smith` (TEI XML).
@@ -104,6 +104,10 @@ pub const IMPORTERS: &[&str] = &[
     "strongs-greek",
     "oshb-bdb",
     "abbott-smith",
+    "wikisource-mhc",
+    "jfb-html",
+    "easton-zld",
+    "smith-rawld",
 ];
 
 /// Hosts whose site terms restrict republishing (#20 decision 3).

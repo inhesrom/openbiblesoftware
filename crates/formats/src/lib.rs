@@ -1,8 +1,10 @@
 //! Importers and dataset converters writing into `ResourceBuilder`: USFM, Lexicons,
-//! OpenBible.info Cross-references, STEPBible TIPNR and the TVTMS Verse-map builder.
+//! OpenBible.info Cross-references, STEPBible TIPNR, Starter Commentaries and Dictionaries,
+//! and the TVTMS Verse-map builder.
 //!
 //! Layer L2. No SQLite and no UI here; compiles for `wasm32-unknown-unknown`.
 
+mod commentary;
 mod dataset;
 mod lexicon;
 mod openbible;
@@ -13,6 +15,7 @@ mod usfm;
 mod usfm_tree;
 mod verse_map;
 
+pub use commentary::{DictionaryData, StudyImport, import_dictionary, import_jfb_book, import_mhc};
 pub use dataset::{DatasetError, DatasetOptions};
 pub use lexicon::{
     LexiconError, LexiconOptions, import_abbott_smith, import_bdb, import_strongs_greek,

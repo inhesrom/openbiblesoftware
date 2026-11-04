@@ -13,6 +13,8 @@ anyhow = "1"
 cargo_metadata = "0.23"
 globset = "0.4"
 obs-formats.workspace = true
+obs-scripture.workspace = true
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 obs-model.workspace = true
 obs-store.workspace = true
 serde = { version = "1", features = ["derive"] }
@@ -24,7 +26,6 @@ zip = { version = "9", default-features = false, features = ["deflate-flate2-zli
 
 [dev-dependencies]
 obs-layout.workspace = true
-obs-scripture.workspace = true
 
 [lints]
 workspace = true
