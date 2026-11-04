@@ -22,5 +22,9 @@ toml = "1"
 walkdir = "2"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
+[dev-dependencies]
+obs-layout.workspace = true
+obs-scripture.workspace = true
+
 [lints]
 workspace = true

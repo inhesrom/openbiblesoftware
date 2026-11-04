@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<index xsi:schemaLocation="http://openscriptures.github.com/morphhb/namespace LiSchema.xsd" 
+	   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	   xmlns="http://openscriptures.github.com/morphhb/namespace">
+		<part xml:lang="heb">
+		<entry id="aac">
+			<w xlit="ʾāb">אָב</w> <pos>N</pos> <def>father</def>
+			<xref bdb="a.ae.ab" strong="1" twot="4a"/>
+			<etym type="sub">aao</etym>
+		</entry>
+		<entry id="bxx">
+			<w xlit="bārāʾ">בָּרָא</w> <pos>V</pos> <def>be fat</def>
+			<xref bdb="b.cx.aa" strong="1254" aug="b" twot="279"/>
+			<etym root="ברא" type="main">byu, byw</etym>
+		</entry>
+		<entry id="bxy">
+			<w xlit="bārāʾ">בָּרָא</w> <pos>V</pos> <def>shape</def>
+			<xref bdb="b.cw.aa" strong="1254" aug="a" twot="278"/>
+			<etym root="ברא" type="main">byx</etym>
+		</entry>
+	</part>
+</index>

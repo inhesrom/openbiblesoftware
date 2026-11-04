@@ -1,0 +1,24 @@
+From Verse	To Verse	Votes	#www.openbible.info CC-BY 2026-10-19
+Gen.1.1	Rev.14.7	82
+Gen.1.1	Ps.134.3	60
+Gen.1.1	Acts.14.15	79
+Gen.1.1	Isa.65.17	57
+Gen.1.1	Rom.1.19-Rom.1.20	59
+Gen.1.1	Ps.104.24	65
+Gen.1.1	Isa.37.16	63
+Gen.1.1	Isa.42.5	163
+John.3.16	1Tim.1.15-1Tim.1.16	291
+John.3.16	John.1.29	240
+John.3.16	John.11.25-John.11.26	465
+John.3.16	John.1.18	152
+John.3.16	Eph.2.4	206
+John.3.16	John.6.40	404
+Rom.1.20	Rom.2.1	11
+Rom.1.20	Ps.19.1-Ps.19.6	43
+Rom.1.20	Rom.16.26	7
+Acts.11.30	2John.1.1-3John.1.15	2
+1Pet.5.1	2John.1.1-3John.1.15	8
+1John.3.18	2John.1.1-3John.1.15	11
+2John.1.1	2John.1.13-3John.1.15	7
+3John.1.15	John.10.3	2
+Eph.6.17	1Sam.17.58	-86

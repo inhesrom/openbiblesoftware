@@ -40,6 +40,69 @@ fn to_ak(r: Rect) -> accesskit::Rect {
     }
 }
 
+/// Publish one visible Text Comparison row under its Document. Labels carry the Bible,
+/// Standard reference and native-number/comparison notes; runs follow pipeline line bounds.
+pub(crate) fn publish_comparison_row(
+    ui: &mut Ui,
+    pane: Id,
+    id: Id,
+    label: String,
+    rect: Rect,
+    text: &str,
+    laid: Option<&LaidBlock>,
+) {
+    if !rect.intersects(ui.clip_rect()) {
+        return;
+    }
+    let ctx = ui.ctx().clone();
+    let para = ui.new_child(
+        UiBuilder::new()
+            .id_salt(id)
+            .max_rect(rect)
+            .sense(Sense::hover())
+            .accessibility_parent(pane),
+    );
+    let para_id = para.unique_id();
+    ctx.accesskit_node_builder(para_id, |n| {
+        n.set_role(Role::Paragraph);
+        n.set_label(label);
+        n.set_bounds(to_ak(rect));
+    });
+    let run = |li, text: &str, bounds: Rect, rtl| {
+        let id = para_id.with(("run", li));
+        para.interact(bounds, id, Sense::hover());
+        ctx.accesskit_node_builder(id, |n| {
+            n.set_role(Role::TextRun);
+            n.set_value(text.to_string());
+            n.set_character_lengths(text.chars().map(|c| c.len_utf8() as u8).collect::<Vec<_>>());
+            n.set_text_direction(if rtl {
+                accesskit::TextDirection::RightToLeft
+            } else {
+                accesskit::TextDirection::LeftToRight
+            });
+            n.set_bounds(to_ak(bounds));
+        });
+    };
+    if let Some(laid) = laid {
+        for (li, line) in laid.lines.iter().enumerate() {
+            let bounds = Rect::from_min_max(
+                rect.min + egui::vec2(0.0, line.top),
+                rect.min + egui::vec2(laid.width, line.bottom),
+            );
+            if bounds.intersects(ui.clip_rect()) {
+                run(
+                    li,
+                    laid.text.get(line.bytes.clone()).unwrap_or_default(),
+                    bounds,
+                    laid.rtl,
+                );
+            }
+        }
+    } else {
+        run(0, text, rect, false);
+    }
+}
+
 /// The links of block `index`: Tagged words, cross-references and Scripture references.
 fn links(view: &ReadingView, index: usize, laid: &LaidBlock) -> Vec<Link> {
     let doc = &view.doc;

@@ -1,7 +1,10 @@
 use std::ops::Range;
 
-use obs_model::{BibleVerse, Key, KeyEntry, KeyScheme, Manifest, Resource, Span, TextUnit, UnitId};
-use obs_scripture::{Verse, VerseMap};
+use obs_model::{
+    BibleVerse, CrossReference, Entity, Key, KeyEntry, KeyScheme, Manifest, Mention, Resource,
+    Span, TextUnit, UnitId,
+};
+use obs_scripture::{Passage, StrongsNumber, Verse, VerseMap};
 
 use crate::error::StoreError;
 
@@ -13,6 +16,9 @@ pub struct Summary {
     pub verses: u64,
     pub keys: u64,
     pub unit_aliases: u64,
+    pub cross_references: u64,
+    pub entities: u64,
+    pub mentions: u64,
 }
 
 /// Read access to one Resource. The engine talks to Resources only through this trait, so the
@@ -42,6 +48,23 @@ pub trait ResourceStore {
     /// Entries for one Key. Headwords and Lemmas match after normalization.
     fn lookup_key(&self, key: &Key) -> Result<Vec<KeyEntry>, StoreError>;
 
+    /// Entries for a Strong's number. An extended number with no entry of its own falls back to
+    /// its base number (H1254A → H1254), so a Lexicon keyed by plain Strong's still answers.
+    /// Entries for the number itself come before those that only list it as a secondary Key.
+    fn lookup_strongs(&self, number: StrongsNumber) -> Result<Vec<KeyEntry>, StoreError> {
+        let mut entries = self.lookup_key(&Key::StrongsNumber(number))?;
+        if entries.is_empty() && number.is_extended() {
+            entries = self.lookup_key(&Key::StrongsNumber(number.base()))?;
+        }
+        entries.sort_by_key(|e| e.alias);
+        Ok(entries)
+    }
+
+    /// Lemmas (original script) whose transliteration is `transliteration`, from the
+    /// transliteration index. The text is reduced to index form first (words, lowercased,
+    /// single spaces), so `"Agape"` finds ἀγάπη.
+    fn lemmas_for_transliteration(&self, transliteration: &str) -> Result<Vec<String>, StoreError>;
+
     /// Every Key of one scheme, in key order.
     fn keys(&self, scheme: KeyScheme) -> Result<Vec<KeyEntry>, StoreError>;
 
@@ -50,6 +73,16 @@ pub trait ResourceStore {
 
     /// A Bible's Verse map, if it has one.
     fn verse_map(&self) -> Result<Option<VerseMap>, StoreError>;
+
+    /// A Cross-reference set's Cross-references whose source overlaps `passage` (Standard
+    /// versification), by source Verse and then by votes, highest first.
+    fn cross_references_from(&self, passage: Passage) -> Result<Vec<CrossReference>, StoreError>;
+
+    /// One entity of a People & places index, by id.
+    fn entity(&self, id: &str) -> Result<Option<Entity>, StoreError>;
+
+    /// A People & places index's mentions that overlap `passage` (Standard versification).
+    fn mentions_in(&self, passage: Passage) -> Result<Vec<Mention>, StoreError>;
 
     /// The whole Resource, validated, with its content hash checked against the manifest.
     fn load(&self) -> Result<Resource, StoreError>;

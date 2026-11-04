@@ -243,6 +243,88 @@ fn rules() -> &'static [Rule] {
     })
 }
 
+/// Known Hebrew numbering for BDB references, unlike a Bible whose numbering must be
+/// detected from its text. TVTMS's Hebrew rows declare the source tradition explicitly;
+/// their tests distinguish that tradition from other Bibles, not individual BDB citations.
+/// Whole-verse targets are unioned, including merged verses and numbered Psalm titles.
+pub(crate) struct HebrewReferences {
+    pub(crate) numbering: ListedVersification,
+    targets: BTreeMap<Verse, BTreeSet<Verse>>,
+}
+
+impl HebrewReferences {
+    pub(crate) fn get() -> &'static Self {
+        static HEBREW: OnceLock<HebrewReferences> = OnceLock::new();
+        HEBREW.get_or_init(|| {
+            let mut targets: BTreeMap<Verse, BTreeSet<Verse>> = BTreeMap::new();
+            let mut replaced = BTreeSet::new();
+            for rule in rules()
+                .iter()
+                .filter(|r| r.source_type.split('+').any(|t| t == "Hebrew"))
+            {
+                let standard: BTreeSet<Verse> = rule
+                    .standard
+                    .iter()
+                    .filter_map(standard_verses)
+                    .flatten()
+                    .collect();
+                replaced.extend(standard.iter().copied());
+                for range in &rule.source {
+                    let (Some(start), Some(end)) = (range.start.verse(), range.end.verse()) else {
+                        continue;
+                    };
+                    // Hebrew TVTMS ranges stay within one Bible book. The sole
+                    // cross-chapter range (1Sa 20:42–21:1) has an unchanged first chapter.
+                    for chapter in start.chapter..=end.chapter {
+                        let first = if chapter == start.chapter {
+                            start.verse
+                        } else {
+                            1
+                        };
+                        let last = if chapter == end.chapter {
+                            end.verse
+                        } else {
+                            Standard.last_verse(start.book, chapter).unwrap_or(0)
+                        };
+                        for verse in first..=last {
+                            targets
+                                .entry(Verse::new(start.book, chapter, verse))
+                                .or_default()
+                                .extend(standard.iter().copied());
+                        }
+                    }
+                }
+            }
+            // Only verses not covered by Hebrew rules retain Standard numbering.
+            // Removing replaced targets also removes obsolete chapter ends/title slots.
+            for verse in Standard.verses().filter(|v| !replaced.contains(v)) {
+                targets.entry(verse).or_default().insert(verse);
+            }
+            let numbering = ListedVersification::new(targets.keys().map(|v| (*v, v.verse)));
+            Self { numbering, targets }
+        })
+    }
+
+    pub(crate) fn to_standard(
+        &self,
+        native: &obs_scripture::PassageList,
+    ) -> Option<obs_scripture::PassageList> {
+        let mut result = obs_scripture::PassageList::new();
+        for passage in native {
+            for verse in passage.verses(&self.numbering) {
+                let targets = self.targets.get(&verse)?;
+                if targets.is_empty() {
+                    return None;
+                }
+                for target in targets {
+                    result.push(Passage::verse(*target));
+                }
+            }
+        }
+        (!result.is_empty()).then(|| result.merged(&Standard))
+    }
+}
+
 /// Number of TVTMS rules the engine knows (for diagnostics).
 pub fn tvtms_rule_count() -> usize {
     rules().len()

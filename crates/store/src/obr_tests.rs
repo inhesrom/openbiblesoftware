@@ -52,7 +52,10 @@ fn round_trips_every_part_of_a_resource() {
             spans: 15,
             verses: 4,
             keys: 1,
-            unit_aliases: 1
+            unit_aliases: 1,
+            cross_references: 0,
+            entities: 0,
+            mentions: 0,
         }
     );
 }
@@ -195,6 +198,32 @@ fn tampered_content_fails_the_hash_check() {
 }
 
 #[test]
+fn orphan_mentions_in_a_tampered_file_are_rejected() {
+    let dir = TempDir::new("orphan-mention");
+    let path = dir.path("kjv.obr");
+    let resource = sample_resource();
+    write_obr(&resource, &path).unwrap();
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch(
+            "PRAGMA foreign_keys = OFF; INSERT INTO mentions VALUES (999, 1001001, 1001001);",
+        )
+        .unwrap();
+    let reader = ObrReader::open(&path).unwrap();
+    assert_eq!(
+        reader.manifest().content_hash,
+        resource.manifest.content_hash
+    );
+    assert!(
+        matches!(reader.load(), Err(StoreError::Corrupt(m)) if m == "no entity with ordinal 999")
+    );
+    assert!(matches!(
+        reader.mentions_in(Passage::verse(Verse::new(Book::Genesis, 1, 1))),
+        Err(StoreError::Corrupt(m)) if m == "no entity with ordinal 999"
+    ));
+}
+
+#[test]
 fn invalid_resources_are_not_written() {
     let dir = TempDir::new("invalid");
     let mut resource = sample_resource();
@@ -221,4 +250,190 @@ fn verse_map_round_trips() {
         Some(Verse::new(Book::Psalms, 3, 0))
     );
     assert_eq!(Some(map), sample_resource().verse_map);
+}
+
+fn verse(book: Book, chapter: u16, verse: u16) -> Passage {
+    Passage::verse(Verse::new(book, chapter, verse))
+}
+
+fn dataset_manifest(id: &str, resource_type: obs_model::ResourceType) -> obs_model::Manifest {
+    let mut m = obs_model::Manifest::new(id, "Dataset (test)", "DS", resource_type, "en");
+    m.key_schemes = vec![KeyScheme::Passage];
+    m.license = "CC-BY-4.0".into();
+    m
+}
+
+#[test]
+fn cross_reference_sets_round_trip_and_answer_by_source_passage() {
+    use obs_model::{CrossReference, ResourceBuilder, ResourceType};
+    let dir = TempDir::new("xrefs");
+    let path = dir.path("xrefs.obr");
+    let mut b = ResourceBuilder::new(dataset_manifest("xrefs", ResourceType::CrossReferenceSet));
+    let x = |from: Passage, to: Passage, votes| CrossReference { from, to, votes };
+    let gen_1_1 = verse(Book::Genesis, 1, 1);
+    let jn_1_1_3 =
+        Passage::new(Verse::new(Book::John, 1, 1), Verse::new(Book::John, 1, 3)).unwrap();
+    // A source range that starts before the queried verse must still be found.
+    let gen_1_1_2 = Passage::new(gen_1_1.start(), Verse::new(Book::Genesis, 1, 2)).unwrap();
+    let rows = [
+        x(gen_1_1, verse(Book::Psalms, 33, 6), 40),
+        x(gen_1_1, jn_1_1_3, 82),
+        x(gen_1_1, verse(Book::Hebrews, 11, 3), -3),
+        x(gen_1_1_2, verse(Book::Psalms, 3, 0), 5),
+        x(
+            verse(Book::Revelation, 22, 21),
+            verse(Book::Genesis, 1, 1),
+            1,
+        ),
+    ];
+    for r in rows {
+        b.add_cross_reference(r);
+    }
+    let resource = b.build().unwrap();
+    write_obr(&resource, &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    assert_eq!(r.load().unwrap(), resource);
+    assert_eq!(r.summary().unwrap().cross_references, 5);
+
+    let found = r.cross_references_from(verse(Book::Genesis, 1, 2)).unwrap();
+    assert_eq!(found, [x(gen_1_1_2, verse(Book::Psalms, 3, 0), 5)]);
+    let found = r.cross_references_from(gen_1_1).unwrap();
+    let votes: Vec<i32> = found.iter().map(|x| x.votes).collect();
+    assert_eq!(
+        votes,
+        [82, 40, -3, 5],
+        "by source, then votes, highest first"
+    );
+    assert_eq!(found[0].to, jn_1_1_3);
+    assert!(
+        r.cross_references_from(verse(Book::Exodus, 1, 1))
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        r.cross_references_from(Passage::book(&obs_scripture::Standard, Book::Revelation).unwrap())
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn people_and_places_round_trip_and_answer_by_passage() {
+    use obs_model::{Entity, EntityKind, EntityRelation, Relation, ResourceBuilder, ResourceType};
+    let dir = TempDir::new("people");
+    let path = dir.path("people.obr");
+    let mut b = ResourceBuilder::new(dataset_manifest("people", ResourceType::PeopleAndPlaces));
+    let abraham = Entity {
+        id: "Abraham@Gen.11.26-1Pe".into(),
+        name: "Abraham".into(),
+        kind: EntityKind::Male,
+        strongs: Some("H0085".parse().unwrap()),
+        other_names: vec!["Abram".into()],
+        region: None,
+        relations: vec![EntityRelation {
+            relation: Relation::Father,
+            entity: "Terah@Gen.11.24-Luk".into(),
+            uncertain: false,
+        }],
+    };
+    let terah = Entity {
+        id: "Terah@Gen.11.24-Luk".into(),
+        name: "Terah".into(),
+        kind: EntityKind::Male,
+        strongs: Some("H8646G".parse().unwrap()),
+        other_names: Vec::new(),
+        region: Some("Mesopotamia".into()),
+        relations: Vec::new(),
+    };
+    b.add_entity(abraham.clone());
+    b.add_entity(terah);
+    b.add_mention(&abraham.id, verse(Book::Genesis, 12, 1));
+    b.add_mention(&abraham.id, verse(Book::Genesis, 11, 26));
+    b.add_mention("Terah@Gen.11.24-Luk", verse(Book::Genesis, 11, 26));
+    let resource = b.build().unwrap();
+    write_obr(&resource, &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    assert_eq!(r.load().unwrap(), resource);
+    let s = r.summary().unwrap();
+    assert_eq!((s.entities, s.mentions, s.units), (2, 3, 0));
+
+    assert_eq!(r.entity(&abraham.id).unwrap(), Some(abraham.clone()));
+    assert_eq!(r.entity("Nobody@Gen.1.1").unwrap(), None);
+    let in_gen_12 = r
+        .mentions_in(Passage::chapter(&obs_scripture::Standard, Book::Genesis, 12).unwrap())
+        .unwrap();
+    assert_eq!(in_gen_12.len(), 1);
+    assert_eq!(in_gen_12[0].entity, abraham.id);
+    let at_11_26: Vec<String> = r
+        .mentions_in(verse(Book::Genesis, 11, 26))
+        .unwrap()
+        .into_iter()
+        .map(|m| m.entity)
+        .collect();
+    assert_eq!(at_11_26, [abraham.id.as_str(), "Terah@Gen.11.24-Luk"]);
+}
+
+/// A two-entry Lexicon: H1254A (extended, with its base number as a secondary Key) and G5485.
+fn lexicon() -> Resource {
+    use obs_model::{Manifest, ResourceBuilder, ResourceType};
+    let mut m = Manifest::new("lex", "Test Lexicon", "LEX", ResourceType::Lexicon, "en");
+    m.key_schemes = vec![KeyScheme::StrongsNumber, KeyScheme::Lemma];
+    m.license = "LicenseRef-PD".into();
+    let mut b = ResourceBuilder::new(m);
+    for (id, lemma, base) in [("H1254A", "בָּרָא", Some("H1254")), ("G5485", "χάρις", None)]
+    {
+        let unit = UnitId::new(id).unwrap();
+        b.add_unit(
+            unit.clone(),
+            UnitKind::Entry,
+            None,
+            format!("{lemma} entry"),
+        );
+        b.add_key(Key::StrongsNumber(id.parse().unwrap()), &unit, None, false);
+        if let Some(base) = base {
+            b.add_key(Key::StrongsNumber(base.parse().unwrap()), &unit, None, true);
+        }
+        b.add_key(Key::Lemma(lemma.into()), &unit, None, false);
+    }
+    b.build().unwrap()
+}
+
+#[test]
+fn transliteration_index_round_trips_and_answers_lookups() {
+    let dir = TempDir::new("translit");
+    let path = dir.path("lex.obr");
+    let resource = lexicon();
+    write_obr(&resource, &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    assert_eq!(r.load().unwrap(), resource);
+    assert_eq!(r.load().unwrap().transliterations.len(), 2);
+    assert_eq!(r.lemmas_for_transliteration("bara").unwrap(), ["בָּרָא"]);
+    assert_eq!(r.lemmas_for_transliteration(" Charis ").unwrap(), ["χάρις"]);
+    assert!(r.lemmas_for_transliteration("agape").unwrap().is_empty());
+}
+
+#[test]
+fn strongs_lookup_falls_back_from_an_extended_to_a_base_number() {
+    let dir = TempDir::new("strongs");
+    let path = dir.path("lex.obr");
+    write_obr(&lexicon(), &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    let units = |n: &str| -> Vec<String> {
+        r.lookup_strongs(n.parse().unwrap())
+            .unwrap()
+            .into_iter()
+            .map(|e| e.unit.to_string())
+            .collect()
+    };
+    // Exact extended number.
+    assert_eq!(units("H1254A"), ["H1254A"]);
+    // The base number finds the extended entry through its secondary Key.
+    assert_eq!(units("H1254"), ["H1254A"]);
+    // An extended number with no entry falls back to its base number.
+    assert_eq!(units("G5485B"), ["G5485"]);
+    // H1254B has no entry: its base number H1254 finds the entries that share it.
+    assert_eq!(units("H1254B"), ["H1254A"]);
+    // A base number with no entry finds nothing.
+    assert!(units("G26").is_empty());
 }

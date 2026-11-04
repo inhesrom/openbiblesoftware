@@ -3,8 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 /// The `.obr` span vocabulary and model version. Bump it whenever the meaning of stored data
-/// changes (new span kind, changed attrs); the engine opens only versions it knows (ADR 0003).
-pub const FORMAT_VERSION: u32 = 1;
+/// changes (new span kind, changed attrs, new dataset tables); the engine opens only versions
+/// it knows (ADR 0003). Version 2 added the Cross-reference and People & places tables.
+pub const FORMAT_VERSION: u32 = 2;
 
 /// The kind of a Resource. Language is a separate attribute, so a Hebrew original is a Bible.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

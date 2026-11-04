@@ -13,25 +13,34 @@
 //! | `verse_map` | per Bible Verse (`ordinal` → `verses`): Standard `std_start`, `std_end` (both null for an Unmapped verse) |
 //! | `verse_absent` | Absent verses: Standard `verse` ids (`MAT.17.21`) |
 //! | `dropped_markup` | `marker`, `count` (for the Import report) |
+//! | `xrefs` | Cross-references: Standard `from_start`, `from_end`, `to_start`, `to_end` (verse numbers), `votes` |
+//! | `entities` | People & places: `ord`, `id`, `name`, `kind`, `strongs`, `region`, `other_names` (JSON), `relations` (JSON) |
+//! | `mentions` | `entity` (→ `entities.ord`), Standard `start`, `end` (verse numbers) |
+//!
+//! Dataset Verses are stored as verse numbers `BBCCCVVV` (book 1-66, chapter, verse), so a
+//! Passage overlap is an integer range query.
+//! | `transliterations` | `transliteration` → `lemma`: the transliteration index of the Lemma Keys |
 //!
 //! Files are written once, deterministically (same Resource ⇒ byte-identical file), and opened
 //! read-only. `PRAGMA application_id` marks the file type and `PRAGMA user_version` holds the
 //! format version, so a file is checked before any table is read.
 
+use std::cell::OnceCell;
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use obs_model::{
-    BibleVerse, Direction, FORMAT_VERSION, Key, KeyEntry, KeyScheme, Manifest, Origin, Resource,
-    ResourceType, Span, TextUnit, UnitId, UnitKind,
+    BibleVerse, CrossReference, Direction, Entity, EntityKind, EntityRelation, FORMAT_VERSION, Key,
+    KeyEntry, KeyScheme, LemmaTransliteration, Manifest, Mention, Origin, Resource, ResourceType,
+    Span, TextUnit, UnitId, UnitKind,
 };
 use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, VerseMapEntry};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
 
 use crate::codec::{
-    enum_from, enum_name, json, json_from, key_columns, key_from, span_columns, span_from,
-    verse_from, verse_text,
+    enum_from, enum_name, json, json_from, key_columns, key_from, passage_from_numbers,
+    span_columns, span_from, verse_from, verse_number, verse_text,
 };
 use crate::error::StoreError;
 use crate::resource_store::{ResourceStore, Summary};
@@ -116,6 +125,35 @@ CREATE TABLE verse_absent (
 CREATE TABLE dropped_markup (
     marker TEXT PRIMARY KEY,
     count INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE xrefs (
+    from_start INTEGER NOT NULL,
+    from_end INTEGER NOT NULL,
+    to_start INTEGER NOT NULL,
+    to_end INTEGER NOT NULL,
+    votes INTEGER NOT NULL
+);
+CREATE INDEX xrefs_from ON xrefs (from_start);
+CREATE TABLE entities (
+    ord INTEGER PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    strongs TEXT,
+    region TEXT,
+    other_names TEXT NOT NULL,
+    relations TEXT NOT NULL
+);
+CREATE TABLE mentions (
+    entity INTEGER NOT NULL,
+    start INTEGER NOT NULL,
+    end INTEGER NOT NULL
+);
+CREATE INDEX mentions_start ON mentions (start);
+CREATE TABLE transliterations (
+    transliteration TEXT NOT NULL,
+    lemma TEXT NOT NULL,
+    PRIMARY KEY (transliteration, lemma)
 ) WITHOUT ROWID;
 ";
 
@@ -288,10 +326,78 @@ fn write_to(r: &Resource, path: &Path) -> Result<(), StoreError> {
             let count = i64::try_from(*count).unwrap_or(i64::MAX);
             dropped_stmt.execute(params![marker, count]).map_err(sql)?;
         }
+        insert_datasets(&tx, r)?;
+        let mut translit_stmt = tx
+            .prepare("INSERT INTO transliterations (transliteration, lemma) VALUES (?1, ?2)")
+            .map_err(sql)?;
+        for row in &r.transliterations {
+            translit_stmt
+                .execute(params![row.transliteration, row.lemma])
+                .map_err(sql)?;
+        }
     }
     tx.commit().map_err(sql)?;
     conn.execute_batch("VACUUM;").map_err(sql)?;
     conn.close().map_err(|(_, e)| sql(e))?;
+    Ok(())
+}
+
+fn insert_datasets(tx: &rusqlite::Transaction<'_>, r: &Resource) -> Result<(), StoreError> {
+    let mut xref_stmt = tx
+        .prepare(
+            "INSERT INTO xrefs (from_start, from_end, to_start, to_end, votes)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )
+        .map_err(sql)?;
+    for x in &r.cross_references {
+        xref_stmt
+            .execute(params![
+                verse_number(x.from.start()),
+                verse_number(x.from.end()),
+                verse_number(x.to.start()),
+                verse_number(x.to.end()),
+                x.votes
+            ])
+            .map_err(sql)?;
+    }
+    let mut entity_stmt = tx
+        .prepare(
+            "INSERT INTO entities (ord, id, name, kind, strongs, region, other_names, relations)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        )
+        .map_err(sql)?;
+    let mut ords: BTreeMap<&str, i64> = BTreeMap::new();
+    for (ord, e) in r.entities.iter().enumerate() {
+        let ord = ord as i64;
+        ords.insert(&e.id, ord);
+        entity_stmt
+            .execute(params![
+                ord,
+                e.id,
+                e.name,
+                enum_name(&e.kind),
+                e.strongs.map(|s| s.to_string()),
+                e.region,
+                json(&e.other_names),
+                json(&e.relations)
+            ])
+            .map_err(sql)?;
+    }
+    let mut mention_stmt = tx
+        .prepare("INSERT INTO mentions (entity, start, end) VALUES (?1, ?2, ?3)")
+        .map_err(sql)?;
+    for m in &r.mentions {
+        let ord = ords
+            .get(m.entity.as_str())
+            .ok_or_else(|| corrupt(format!("mention of unknown entity `{}`", m.entity)))?;
+        mention_stmt
+            .execute(params![
+                ord,
+                verse_number(m.passage.start()),
+                verse_number(m.passage.end())
+            ])
+            .map_err(sql)?;
+    }
     Ok(())
 }
 
@@ -331,6 +437,10 @@ fn insert_manifest(tx: &rusqlite::Transaction<'_>, m: &Manifest) -> Result<(), S
 pub struct ObrReader {
     conn: Connection,
     manifest: Manifest,
+    /// Longest `xrefs` source Passage, as a verse-number difference (bounds overlap queries).
+    xref_span: OnceCell<i64>,
+    /// Longest `mentions` Passage, likewise.
+    mention_span: OnceCell<i64>,
 }
 
 impl ObrReader {
@@ -378,7 +488,118 @@ impl ObrReader {
                 manifest.format_version
             )));
         }
-        Ok(Self { conn, manifest })
+        Ok(Self {
+            conn,
+            manifest,
+            xref_span: OnceCell::new(),
+            mention_span: OnceCell::new(),
+        })
+    }
+
+    /// The longest `end - start` in a dataset table; cached, since files never change.
+    fn longest_span(&self, cell: &OnceCell<i64>, query: &str) -> Result<i64, StoreError> {
+        if let Some(&n) = cell.get() {
+            return Ok(n);
+        }
+        let n: Option<i64> = self.conn.query_row(query, [], |r| r.get(0)).map_err(sql)?;
+        Ok(*cell.get_or_init(|| n.unwrap_or(0)))
+    }
+
+    fn xref_rows(&self, query: &str, args: &[i64]) -> Result<Vec<CrossReference>, StoreError> {
+        let mut stmt = self.conn.prepare_cached(query).map_err(sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(args), |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, i64>(4)?,
+                ))
+            })
+            .map_err(sql)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (fs, fe, ts, te, votes) = row.map_err(sql)?;
+            out.push(CrossReference {
+                from: passage_from_numbers(fs, fe)?,
+                to: passage_from_numbers(ts, te)?,
+                votes: i32::try_from(votes)
+                    .map_err(|_| corrupt(format!("votes {votes} out of range")))?,
+            });
+        }
+        Ok(out)
+    }
+
+    fn entity_rows(
+        &self,
+        filter: &str,
+        args: &[&dyn rusqlite::ToSql],
+    ) -> Result<Vec<Entity>, StoreError> {
+        let query = format!(
+            "SELECT id, name, kind, strongs, region, other_names, relations FROM entities {filter} ORDER BY ord"
+        );
+        let mut stmt = self.conn.prepare_cached(&query).map_err(sql)?;
+        let rows = stmt
+            .query_map(args, |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                    r.get::<_, String>(5)?,
+                    r.get::<_, String>(6)?,
+                ))
+            })
+            .map_err(sql)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, name, kind, strongs, region, other_names, relations) = row.map_err(sql)?;
+            out.push(Entity {
+                id,
+                name,
+                kind: enum_from::<EntityKind>("entity kind", &kind)?,
+                strongs: strongs
+                    .map(|s| {
+                        s.parse()
+                            .map_err(|_| corrupt(format!("bad Strong's `{s}`")))
+                    })
+                    .transpose()?,
+                region,
+                other_names: json_from::<Vec<String>>("entity names", &other_names)?,
+                relations: json_from::<Vec<EntityRelation>>("entity relations", &relations)?,
+            });
+        }
+        Ok(out)
+    }
+
+    fn mention_rows(&self, filter: &str, args: &[i64]) -> Result<Vec<Mention>, StoreError> {
+        let query = format!(
+            "SELECT e.id, m.start, m.end, m.entity FROM mentions m LEFT JOIN entities e ON e.ord = m.entity
+             {filter} ORDER BY m.entity, m.start, m.end"
+        );
+        let mut stmt = self.conn.prepare_cached(&query).map_err(sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(args), |r| {
+                Ok((
+                    r.get::<_, Option<String>>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
+            })
+            .map_err(sql)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (entity, start, end, ordinal) = row.map_err(sql)?;
+            out.push(Mention {
+                entity: entity
+                    .ok_or_else(|| corrupt(format!("no entity with ordinal {ordinal}")))?,
+                passage: passage_from_numbers(start, end)?,
+            });
+        }
+        Ok(out)
     }
 
     fn unit_ord(&self, id: &UnitId) -> Result<Option<i64>, StoreError> {
@@ -550,6 +771,9 @@ impl ResourceStore for ObrReader {
             verses: count("verses")?,
             keys: count("keys")?,
             unit_aliases: count("unit_alias")?,
+            cross_references: count("xrefs")?,
+            entities: count("entities")?,
+            mentions: count("mentions")?,
         })
     }
 
@@ -670,6 +894,23 @@ impl ResourceStore for ObrReader {
         new.map(unit_id).transpose()
     }
 
+    fn lemmas_for_transliteration(&self, transliteration: &str) -> Result<Vec<String>, StoreError> {
+        let words: Vec<String> = obs_model::tokenize(transliteration)
+            .into_iter()
+            .map(|t| t.text)
+            .collect();
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT lemma FROM transliterations WHERE transliteration = ?1 ORDER BY lemma",
+            )
+            .map_err(sql)?;
+        stmt.query_map([words.join(" ")], |r| r.get(0))
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)
+    }
+
     fn verse_map(&self) -> Result<Option<VerseMap>, StoreError> {
         let rows: Vec<(i64, Option<String>, Option<String>)> = {
             let mut stmt = self
@@ -724,6 +965,37 @@ impl ResourceStore for ObrReader {
         Ok(Some(VerseMap::new(entries, absent, &Standard)))
     }
 
+    fn cross_references_from(&self, passage: Passage) -> Result<Vec<CrossReference>, StoreError> {
+        let longest = self.longest_span(
+            &self.xref_span,
+            "SELECT max(from_end - from_start) FROM xrefs",
+        )?;
+        let (start, end) = (verse_number(passage.start()), verse_number(passage.end()));
+        self.xref_rows(
+            "SELECT from_start, from_end, to_start, to_end, votes FROM xrefs
+             WHERE from_start BETWEEN ?1 AND ?2 AND from_end >= ?3
+             ORDER BY from_start, from_end, votes DESC, to_start, to_end",
+            &[start - longest, end, start],
+        )
+    }
+
+    fn entity(&self, id: &str) -> Result<Option<Entity>, StoreError> {
+        Ok(self
+            .entity_rows("WHERE id = ?1", &[&id])?
+            .into_iter()
+            .next())
+    }
+
+    fn mentions_in(&self, passage: Passage) -> Result<Vec<Mention>, StoreError> {
+        let longest =
+            self.longest_span(&self.mention_span, "SELECT max(end - start) FROM mentions")?;
+        let (start, end) = (verse_number(passage.start()), verse_number(passage.end()));
+        self.mention_rows(
+            "WHERE m.start BETWEEN ?1 AND ?2 AND m.end >= ?3",
+            &[start - longest, end, start],
+        )
+    }
+
     fn load(&self) -> Result<Resource, StoreError> {
         let mut units = Vec::new();
         for id in self.unit_ids()? {
@@ -770,6 +1042,24 @@ impl ResourceStore for ObrReader {
                 dropped_markup.insert(marker, count.max(0) as u64);
             }
         }
+        let transliterations: Vec<LemmaTransliteration> = {
+            let mut stmt = self
+                .conn
+                .prepare_cached(
+                    "SELECT transliteration, lemma FROM transliterations
+                     ORDER BY transliteration, lemma",
+                )
+                .map_err(sql)?;
+            stmt.query_map([], |r| {
+                Ok(LemmaTransliteration {
+                    transliteration: r.get(0)?,
+                    lemma: r.get(1)?,
+                })
+            })
+            .map_err(sql)?
+            .collect::<Result<_, _>>()
+            .map_err(sql)?
+        };
         let resource = Resource {
             manifest: self.manifest.clone(),
             units,
@@ -778,6 +1068,14 @@ impl ResourceStore for ObrReader {
             dropped_markup,
             unit_aliases,
             verse_map: self.verse_map()?,
+            cross_references: self.xref_rows(
+                "SELECT from_start, from_end, to_start, to_end, votes FROM xrefs
+                 ORDER BY from_start, from_end, to_start, to_end, votes",
+                &[],
+            )?,
+            entities: self.entity_rows("", &[])?,
+            mentions: self.mention_rows("", &[])?,
+            transliterations,
         };
         resource.validate().map_err(StoreError::Invalid)?;
         let hash = resource.content_hash();

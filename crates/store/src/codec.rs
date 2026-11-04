@@ -54,6 +54,27 @@ pub(crate) fn verse_from(s: &str) -> Result<Verse, StoreError> {
     Ok(Verse::new(book, chapter, verse))
 }
 
+/// A Verse as the integer `BBCCCVVV` (book number 1-66, chapter, verse), used by the dataset
+/// tables so that a Passage overlap is an integer range query. It orders canonically and is
+/// derived from the Verse alone (unlike a Standard ordinal, it never shifts).
+pub(crate) fn verse_number(v: Verse) -> i64 {
+    (v.book.index() as i64 + 1) * 1_000_000 + i64::from(v.chapter) * 1_000 + i64::from(v.verse)
+}
+
+pub(crate) fn verse_from_number(n: i64) -> Result<Verse, StoreError> {
+    let bad = || corrupt("verse number", &n.to_string());
+    let book = usize::try_from(n / 1_000_000 - 1).map_err(|_| bad())?;
+    let book = Book::from_index(book).ok_or_else(bad)?;
+    let chapter = u16::try_from(n / 1_000 % 1_000).map_err(|_| bad())?;
+    let verse = u16::try_from(n % 1_000).map_err(|_| bad())?;
+    Ok(Verse::new(book, chapter, verse))
+}
+
+pub(crate) fn passage_from_numbers(start: i64, end: i64) -> Result<Passage, StoreError> {
+    Passage::new(verse_from_number(start)?, verse_from_number(end)?)
+        .map_err(|_| corrupt("passage", &format!("{start}-{end}")))
+}
+
 /// A Key as `(scheme, text, normalized text)`. Passages are `JHN.3.16-JHN.3.18`, which sorts
 /// in canonical order only within a book; lookups by Passage use range queries in the engine.
 pub(crate) fn key_columns(key: &Key) -> (String, String, String) {
@@ -140,6 +161,22 @@ mod tests {
         assert_eq!(key_columns(&Key::Headword("Ēden".into())).2, "eden");
         assert!(key_from("passage", "JHN.3.16").is_err());
         assert!(key_from("bogus", "x").is_err());
+    }
+
+    #[test]
+    fn verse_numbers_round_trip_and_order_canonically() {
+        let genesis = Verse::new(Book::Genesis, 1, 1);
+        let ps = Verse::new(Book::Psalms, 119, 176);
+        let rev = Verse::new(Book::Revelation, 22, 21);
+        assert_eq!(verse_number(genesis), 1_001_001);
+        assert_eq!(verse_number(rev), 66_022_021);
+        for v in [genesis, ps, rev, Verse::new(Book::Psalms, 3, 0)] {
+            assert_eq!(verse_from_number(verse_number(v)).unwrap(), v);
+        }
+        assert!(verse_number(genesis) < verse_number(ps) && verse_number(ps) < verse_number(rev));
+        assert!(verse_from_number(0).is_err());
+        assert!(verse_from_number(67_001_001).is_err());
+        assert!(passage_from_numbers(1_001_002, 1_001_001).is_err());
     }
 
     #[test]

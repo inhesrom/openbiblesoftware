@@ -2,12 +2,13 @@
 //!
 //! 1. Load the lock and `starter/id-changes.toml` and run the provenance gate.
 //! 2. Fetch every source into the download cache and verify its sha256.
-//! 3. Run the same Import parsers and `ResourceBuilder` as Import, then fill in the manifest
-//!    from the lock (licence, Attribution, changes, `origin = starter`).
+//! 3. Run the same Import parsers and `ResourceBuilder` as Import (USFM for Bibles, the
+//!    lexicon converters for Lexicons), then fill in the manifest from the lock (licence,
+//!    Attribution, changes, `origin = starter`).
 //! 4. Diff unit ids against the previous release manifest; a removed id fails the build unless
 //!    `id-changes.toml` maps it (shipped as `unit_alias`).
-//! 5. Write `dist/starter/<id>.obr`, `starter-manifest.json` and `starter-build-report.md`,
-//!    and check the size budget.
+//! 5. Write `dist/starter/<id>.obr`, `CHANGES-<id>.md` for CC BY sources,
+//!    `starter-manifest.json` and `starter-build-report.md`, and check the size budget.
 //!
 //! Builds are deterministic: the same lock and code give byte-identical outputs.
 //! `--check-determinism` builds a second time and compares every file.
@@ -23,23 +24,19 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use obs_formats::{
-    ImportReport, StepbibleImport, StepbibleOptions, StepbibleText, UsfmImport, UsfmOptions,
-    usfm_book_code,
+    DatasetOptions, ImportReport, LexiconOptions, StepbibleImport, StepbibleOptions, StepbibleText,
+    UsfmImport, UsfmOptions, import_abbott_smith, import_bdb, import_openbible_cross_references,
+    import_strongs_greek, import_strongs_hebrew, import_tbes, import_tipnr, usfm_book_code,
 };
 use obs_model::{Origin, Resource, UnitId};
 use obs_store::write_obr;
 
-use fetch::{Fetched, fetch, sha256_hex};
+use fetch::{fetch, sha256_hex};
 use ids::{IdDiff, MANIFEST_FORMAT, ReleaseManifest, ReleaseResource};
 use lock::{IdChanges, Lock, Source};
 
 pub const MANIFEST_FILE: &str = "starter-manifest.json";
 pub const REPORT_FILE: &str = "starter-build-report.md";
-
-/// Each CC BY Resource gets `CHANGES-<id>.md`, published with the release (#20 decision 4).
-fn changes_file(resource_id: &str) -> String {
-    format!("CHANGES-{resource_id}.md")
-}
 
 const USAGE: &str = "usage: cargo xtask starter [--out DIR] [--cache DIR] [--previous MANIFEST] [--check-determinism]
 
@@ -178,9 +175,6 @@ pub fn build(config: &Config) -> Result<String> {
         let path = config.out.join(format!("{id}.obr"));
         write_obr(&b.resource, &path)
             .with_context(|| format!("cannot write {}", path.display()))?;
-        if let Some(text) = changes_note(&b.resource) {
-            std::fs::write(config.out.join(changes_file(id)), text)?;
-        }
         let bytes = std::fs::read(&path)?;
         released.push(ReleaseResource {
             resource_id: id.clone(),
@@ -201,6 +195,33 @@ pub fn build(config: &Config) -> Result<String> {
                 .map(|(o, n)| (o.as_str().to_string(), n.as_str().to_string()))
                 .collect(),
         });
+    }
+    for source in &lock_file.sources {
+        if source
+            .spdx
+            .split(|c: char| c.is_whitespace() || c == '(' || c == ')')
+            .any(|license| license.starts_with("CC-BY-"))
+        {
+            let text = format!(
+                "# Changes we made: {}\n\nResource: `{}`\n\nLicence: {}\n\n\
+                 ## Attribution\n\n{}\n\n\
+                 ## Source\n\n{}\n\nPinned download: {}\n\nSHA-256: `{}`\n\n\
+                 ## Changes we made\n\n{}\n",
+                source.title,
+                source.resource_id,
+                source.spdx,
+                source.attribution,
+                source.origin_url.as_ref().unwrap_or(&source.url),
+                source.url,
+                source.sha256,
+                source.changes,
+            );
+            let path = config
+                .out
+                .join(format!("CHANGES-{}.md", source.resource_id));
+            std::fs::write(&path, text)
+                .with_context(|| format!("cannot write {}", path.display()))?;
+        }
     }
     let manifest = ReleaseManifest {
         format: MANIFEST_FORMAT,
@@ -247,19 +268,13 @@ pub fn build(config: &Config) -> Result<String> {
 
 fn build_one(
     source: &Source,
-    files: &[Fetched],
+    files: &[Vec<u8>],
     previous: Option<&ReleaseManifest>,
     changes: &IdChanges,
 ) -> Result<Built> {
     let id = &source.resource_id;
-    let (mut resource, mut report) = match (source.importer.as_str(), files) {
-        ("usfm", [zip]) => import_usfm_zip(source, &zip.bytes),
-        ("usfm", _) => bail!("{id}: the `usfm` importer reads exactly one zip"),
-        ("tahot", _) => import_stepbible(source, files, StepbibleText::Tahot),
-        ("tagnt", _) => import_stepbible(source, files, StepbibleText::Tagnt),
-        (other, _) => bail!("{id}: unknown importer `{other}`"),
-    }
-    .with_context(|| format!("{id}: import failed"))?;
+    let (mut resource, mut report) =
+        import(source, files).with_context(|| format!("{id}: import failed"))?;
 
     let units: Vec<String> = resource
         .units
@@ -308,6 +323,62 @@ fn build_one(
     })
 }
 
+/// Run `source`'s importer on its fetched files (the main file, then any extra files).
+fn import(source: &Source, files: &[Vec<u8>]) -> Result<(Resource, ImportReport)> {
+    let extras = match source.importer.as_str() {
+        "oshb-bdb" => 1,
+        "tahot" | "tagnt" => source.extra_files.len(),
+        _ => 0,
+    };
+    if files.len() != 1 + extras {
+        bail!(
+            "importer `{}` reads {} extra file(s); the lock lists {}",
+            source.importer,
+            extras,
+            files.len().saturating_sub(1)
+        );
+    }
+    if !source.skip_columns.is_empty() && source.importer != "stepbible-tbes" {
+        bail!("skip_columns applies only to the `stepbible-tbes` importer");
+    }
+    match source.importer.as_str() {
+        "usfm" => return import_usfm_zip(source, &files[0]),
+        "tahot" => return import_stepbible(source, files, StepbibleText::Tahot),
+        "tagnt" => return import_stepbible(source, files, StepbibleText::Tagnt),
+        "openbible-cross-references" => return import_openbible_zip(source, &files[0]),
+        "tipnr" => return import_tipnr_text(source, &files[0]),
+        _ => {}
+    }
+    let text = |i: usize| -> Result<&str> {
+        let bytes: &[u8] = &files[i];
+        let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+        std::str::from_utf8(bytes).with_context(|| format!("file {} is not UTF-8 text", i + 1))
+    };
+    let o = LexiconOptions {
+        resource_id: source.resource_id.clone(),
+        title: source.title.clone(),
+        abbreviation: source.abbreviation.clone(),
+        source_file: source_file_name(source),
+        tool_version: format!("xtask starter {}", env!("CARGO_PKG_VERSION")),
+    };
+    let converted = match source.importer.as_str() {
+        "stepbible-tbes" => import_tbes(&o, text(0)?, &source.skip_columns),
+        "strongs-hebrew" => import_strongs_hebrew(&o, text(0)?),
+        "strongs-greek" => import_strongs_greek(&o, text(0)?),
+        "oshb-bdb" => import_bdb(&o, text(0)?, text(1)?),
+        "abbott-smith" => import_abbott_smith(&o, text(0)?),
+        other => bail!("unknown importer `{other}`"),
+    };
+    converted.map_err(|e| anyhow!("{e}"))
+}
+
+/// The publisher's file name, for the manifest and the report.
+fn source_file_name(source: &Source) -> String {
+    let origin = source.origin_url.as_deref().unwrap_or(&source.url);
+    let name = origin.rsplit('/').next().unwrap_or(origin);
+    name.replace("%20", " ")
+}
+
 /// A zip of USFM books (eBible, berean.bible) → a Bible.
 fn import_usfm_zip(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportReport)> {
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).context("not a zip archive")?;
@@ -324,8 +395,7 @@ fn import_usfm_zip(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportRep
         }
     }
     names.sort();
-    let origin = source.origin_url.as_deref().unwrap_or(&source.url);
-    let source_file = origin.rsplit('/').next().unwrap_or(origin).to_string();
+    let source_file = source_file_name(source);
     let mut import = UsfmImport::new(UsfmOptions {
         resource_id: source.resource_id.clone(),
         title: source.title.clone(),
@@ -368,60 +438,67 @@ fn import_usfm_zip(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportRep
 /// STEPBible's TAHOT or TAGNT tab-separated files → a Hebrew or Greek Bible.
 fn import_stepbible(
     source: &Source,
-    files: &[Fetched],
+    files: &[Vec<u8>],
     text: StepbibleText,
 ) -> Result<(Resource, ImportReport)> {
+    let names: Vec<String> = source
+        .files()
+        .enumerate()
+        .map(|(i, (url, _))| {
+            let named = if i == 0 {
+                source.origin_url.as_deref().unwrap_or(url)
+            } else {
+                url
+            };
+            fetch::file_name(named)
+        })
+        .collect();
     let mut import = StepbibleImport::new(StepbibleOptions {
         text,
         resource_id: source.resource_id.clone(),
         title: source.title.clone(),
         abbreviation: source.abbreviation.clone(),
         language: source.language.clone(),
-        source_file: files
-            .iter()
-            .map(|f| f.name.as_str())
-            .collect::<Vec<_>>()
-            .join("; "),
+        source_file: names.join("; "),
         tool_version: format!("xtask starter {}", env!("CARGO_PKG_VERSION")),
     });
-    for f in files {
-        let text = String::from_utf8(f.bytes.clone())
-            .with_context(|| format!("{} is not UTF-8 text", f.name))?;
-        import.add_file(&f.name, text);
+    for (bytes, name) in files.iter().zip(&names) {
+        let text = String::from_utf8(bytes.clone())
+            .with_context(|| format!("{name} is not UTF-8 text"))?;
+        import.add_file(name, text);
     }
     import.finish().map_err(|e| anyhow!("{e}"))
 }
 
-/// The published record of changes for a CC BY Resource (STEPBible asks that changes be
-/// recorded and made available); `None` for other licences.
-fn changes_note(resource: &Resource) -> Option<String> {
-    let m = &resource.manifest;
-    if !m
-        .license
-        .split([' ', '(', ')'])
-        .any(|l| l.starts_with("CC-BY"))
-    {
-        return None;
+fn dataset_options(source: &Source) -> DatasetOptions {
+    let origin = source.origin_url.as_deref().unwrap_or(&source.url);
+    let source_file = origin.rsplit('/').next().unwrap_or(origin);
+    DatasetOptions {
+        resource_id: source.resource_id.clone(),
+        title: source.title.clone(),
+        abbreviation: source.abbreviation.clone(),
+        language: source.language.clone(),
+        // GitHub raw URLs encode the spaces of STEPBible's file names.
+        source_file: source_file.replace("%20", " "),
+        tool_version: format!("xtask starter {}", env!("CARGO_PKG_VERSION")),
     }
-    let mut s = format!("# Changes made to {} (`{}`)\n\n", m.title, m.resource_id);
-    let _ = writeln!(s, "{}\n", m.attribution);
-    let _ = writeln!(s, "- Licence: {}", m.license);
-    if let Some(url) = &m.source_url {
-        let _ = writeln!(s, "- Source: <{url}>");
-    }
-    if let Some(edition) = &m.edition {
-        let _ = writeln!(s, "- Edition: {edition}");
-    }
-    if let Some(file) = &m.source_file {
-        let _ = writeln!(s, "- Source files: {file}");
-    }
-    let _ = writeln!(s, "- Resource revision {}, {}", m.revision, m.content_hash);
-    let _ = write!(
-        s,
-        "\n## Changes we made\n\n{}\n",
-        m.changes.as_deref().unwrap_or("None.")
-    );
-    Some(s)
+}
+
+/// OpenBible.info's zip holding `cross_references.txt` → a Cross-reference set.
+fn import_openbible_zip(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportReport)> {
+    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).context("not a zip archive")?;
+    let mut text = String::new();
+    zip.by_name("cross_references.txt")
+        .context("the zip has no cross_references.txt")?
+        .read_to_string(&mut text)
+        .context("cross_references.txt is not UTF-8 text")?;
+    import_openbible_cross_references(&text, &dataset_options(source)).map_err(|e| anyhow!("{e}"))
+}
+
+/// STEPBible's TIPNR text file → a People & places index.
+fn import_tipnr_text(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportReport)> {
+    let text = std::str::from_utf8(bytes).context("the TIPNR file is not UTF-8 text")?;
+    import_tipnr(text, &dataset_options(source)).map_err(|e| anyhow!("{e}"))
 }
 
 /// Remove the outputs of an earlier build (only files this task writes).

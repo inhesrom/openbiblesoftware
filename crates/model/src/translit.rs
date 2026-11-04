@@ -14,13 +14,56 @@
 //!   is read before its final consonant (ruach).
 //! - Anything else goes through [`crate::normalize`].
 
+use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 
-use crate::normalize::normalize;
+use crate::key::{Key, KeyEntry};
+use crate::normalize::{normalize, tokenize};
 
 /// Bump when output changes; indexes built from it rebuild.
 pub const TRANSLITERATION_VERSION: u32 = 1;
+
+/// One row of a Resource's transliteration index (#20 rule 5): a Lemma Key and its
+/// transliteration in index form (see [`transliteration_key`]).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct LemmaTransliteration {
+    pub transliteration: String,
+    /// The Lemma Key, in original script.
+    pub lemma: String,
+}
+
+/// A Lemma's transliteration as the index stores it: [`transliterate`], split into words by
+/// [`tokenize`] and joined with single spaces. The `lemma:` search operator reduces what the
+/// user types the same way, so `lemma:agape` finds ἀγάπη.
+pub fn transliteration_key(lemma: &str) -> String {
+    let words: Vec<String> = tokenize(&transliterate(lemma))
+        .into_iter()
+        .map(|t| t.text)
+        .collect();
+    words.join(" ")
+}
+
+/// The transliteration index of a Resource: one row per distinct Lemma Key, sorted by
+/// transliteration. Lemmas that transliterate to nothing are left out.
+pub fn transliteration_index<'a>(
+    keys: impl IntoIterator<Item = &'a KeyEntry>,
+) -> Vec<LemmaTransliteration> {
+    let mut rows: Vec<LemmaTransliteration> = keys
+        .into_iter()
+        .filter_map(|entry| match &entry.key {
+            Key::Lemma(lemma) => Some(LemmaTransliteration {
+                transliteration: transliteration_key(lemma),
+                lemma: lemma.clone(),
+            }),
+            _ => None,
+        })
+        .filter(|row| !row.transliteration.is_empty())
+        .collect();
+    rows.sort();
+    rows.dedup();
+    rows
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Script {
@@ -311,6 +354,31 @@ mod tests {
         assert_eq!(transliterate("בָּרָ֣א אֱלֹהִ֑ים"), "bara elohim");
         assert_eq!(transliterate("ὁ λόγος"), "ho logos");
         assert_eq!(transliterate("Grace, χάρις"), "grace, charis");
+    }
+
+    #[test]
+    fn index_rows_come_from_lemma_keys_only() {
+        let entry = |key: Key| KeyEntry {
+            key,
+            unit: crate::UnitId::new("x").unwrap(),
+            range: None,
+            alias: false,
+        };
+        let keys = [
+            entry(Key::Lemma("ἀγάπη".into())),
+            entry(Key::Lemma("ἀγάπη".into())),
+            entry(Key::Lemma("אֲבִי־עַלְבוֹן".into())),
+            entry(Key::Lemma("···".into())),
+            entry(Key::Headword("Love".into())),
+            entry(Key::StrongsNumber("G26".parse().unwrap())),
+        ];
+        let rows = transliteration_index(&keys);
+        let pairs: Vec<(&str, &str)> = rows
+            .iter()
+            .map(|r| (r.transliteration.as_str(), r.lemma.as_str()))
+            .collect();
+        assert_eq!(pairs, [("agape", "ἀγάπη"), ("avi alvon", "אֲבִי־עַלְבוֹן")]);
+        assert_eq!(transliteration_key("Χάρις"), "charis");
     }
 
     #[test]

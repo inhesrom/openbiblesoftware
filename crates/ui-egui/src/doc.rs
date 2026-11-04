@@ -27,6 +27,8 @@ pub struct ReadingDoc {
     pub verses: Vec<BibleVerse>,
     /// Index into `units` of each verse.
     verse_units: Vec<usize>,
+    /// Index into `verses` of each Bible Verse, by its first verse.
+    verse_index: std::collections::BTreeMap<Verse, usize>,
     /// The Bible's own numbering (references typed for it are read in it, ADR 0002 rule 10).
     pub versification: ListedVersification,
     /// How its numbering corresponds to the Standard versification (none: identical).
@@ -75,12 +77,18 @@ impl ReadingDoc {
             .map(|v| units.iter().position(|u| u.id == v.unit).unwrap_or(0))
             .collect();
         let versification = ListedVersification::new(verses.iter().map(|v| (v.verse, v.last)));
+        let verse_index = verses
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (v.verse, i))
+            .collect();
         Self {
             manifest,
             units,
             blocks,
             verses,
             verse_units,
+            verse_index,
             versification,
             verse_map: None,
         }
@@ -99,6 +107,22 @@ impl ReadingDoc {
                 && verse.verse <= v.last
         })?;
         Some((self.verse_units[i], self.verses[i].start as usize))
+    }
+
+    /// The Bible Verse (own numbering) containing `verse`: it, or a verse range (`\v 1-2`)
+    /// starting before it in the same chapter.
+    pub fn bible_verse_at(&self, verse: Verse) -> Option<&BibleVerse> {
+        let (_, &i) = self.verse_index.range(..=verse).next_back()?;
+        let v = self.verses.get(i)?;
+        (v.verse.book == verse.book && v.verse.chapter == verse.chapter && verse.verse <= v.last)
+            .then_some(v)
+    }
+
+    /// The text of the Bible Verse starting at `verse`, as written.
+    pub fn verse_text(&self, verse: Verse) -> Option<&str> {
+        let &i = self.verse_index.get(&verse)?;
+        let v = self.verses.get(i)?;
+        self.units.get(self.verse_units[i])?.text.get(v.range())
     }
 
     /// The block of `unit` that contains unit byte `byte` (or the next block after it).

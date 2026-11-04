@@ -5,16 +5,19 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::ops::Range;
 
-use obs_scripture::{Verse, VerseMap};
+use obs_scripture::{Passage, Standard, Verse, VerseMap, Versification};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+use crate::dataset::{CrossReference, Entity, Mention};
 use crate::key::{Key, KeyEntry};
 use crate::manifest::{FORMAT_VERSION, Manifest, ResourceType, is_valid_resource_id};
+use crate::translit::{LemmaTransliteration, transliteration_index};
 use crate::unit::{BibleVerse, Span, SpanKind, TextUnit, UnitId, UnitKind};
 
 /// A validated Resource: manifest (with content hash), text units with canonically ordered
-/// spans, the Bible verse list in document order, and Keys.
+/// spans, the Bible verse list in document order, Keys, and the dataset records of a
+/// Cross-reference set or People & places index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resource {
     pub manifest: Manifest,
@@ -30,6 +33,15 @@ pub struct Resource {
     /// A Bible's Verse map to the Standard versification (ADR 0002), built at Import. Derived
     /// from the verse list, so not part of the content hash.
     pub verse_map: Option<VerseMap>,
+    /// A Cross-reference set's Cross-references, in canonical order.
+    pub cross_references: Vec<CrossReference>,
+    /// A People & places index's entities, ordered by id.
+    pub entities: Vec<Entity>,
+    /// A People & places index's mentions, ordered by entity, then Passage.
+    pub mentions: Vec<Mention>,
+    /// Transliteration index of the Lemma Keys (#20 rule 5), sorted. Derived from the Keys with
+    /// the shared scheme, so not part of the content hash.
+    pub transliterations: Vec<LemmaTransliteration>,
 }
 
 /// One problem found while validating a Resource.
@@ -91,6 +103,25 @@ pub enum ValidationError {
     /// A unit alias whose old id is still a live unit.
     AliasShadowsUnit(UnitId),
     VerseMapMismatch(String),
+    /// Dataset records (`what`) in a Resource whose type does not hold them.
+    DatasetInWrongType {
+        what: &'static str,
+        resource_type: ResourceType,
+    },
+    /// A dataset Passage that is not a valid reference in the Standard versification.
+    NotStandardPassage {
+        what: &'static str,
+        passage: Passage,
+    },
+    DuplicateEntity(String),
+    EmptyEntityField {
+        entity: String,
+        field: &'static str,
+    },
+    UnknownEntity {
+        what: &'static str,
+        entity: String,
+    },
 }
 
 impl fmt::Display for ValidationError {
@@ -167,6 +198,21 @@ impl fmt::Display for ValidationError {
                 "key `{key}` uses scheme {:?}, which the manifest does not declare",
                 key.scheme()
             ),
+            DatasetInWrongType {
+                what,
+                resource_type,
+            } => write!(f, "a {resource_type:?} may not hold {what} records"),
+            NotStandardPassage { what, passage } => write!(
+                f,
+                "{what} Passage {passage} is not a valid Standard versification reference"
+            ),
+            DuplicateEntity(id) => write!(f, "entity `{id}` is defined twice"),
+            EmptyEntityField { entity, field } => {
+                write!(f, "entity `{entity}` has an empty {field}")
+            }
+            UnknownEntity { what, entity } => {
+                write!(f, "{what} refers to unknown entity `{entity}`")
+            }
         }
     }
 }
@@ -203,6 +249,9 @@ pub struct ResourceBuilder {
     dropped: BTreeMap<String, u64>,
     aliases: BTreeMap<UnitId, UnitId>,
     verse_map: Option<VerseMap>,
+    cross_references: Vec<CrossReference>,
+    entities: Vec<Entity>,
+    mentions: Vec<Mention>,
 }
 
 fn offset(n: usize) -> u32 {
@@ -220,6 +269,9 @@ impl ResourceBuilder {
             dropped: BTreeMap::new(),
             aliases: BTreeMap::new(),
             verse_map: None,
+            cross_references: Vec::new(),
+            entities: Vec::new(),
+            mentions: Vec::new(),
         }
     }
 
@@ -293,6 +345,24 @@ impl ResourceBuilder {
         self.aliases.insert(old, new);
     }
 
+    /// Add one Cross-reference (Cross-reference set). Exact duplicates are merged.
+    pub fn add_cross_reference(&mut self, xref: CrossReference) {
+        self.cross_references.push(xref);
+    }
+
+    /// Add one person, group or place (People & places index).
+    pub fn add_entity(&mut self, entity: Entity) {
+        self.entities.push(entity);
+    }
+
+    /// Record that `passage` mentions entity `entity`. Duplicates are merged.
+    pub fn add_mention(&mut self, entity: &str, passage: Passage) {
+        self.mentions.push(Mention {
+            entity: entity.to_string(),
+            passage,
+        });
+    }
+
     pub fn count_dropped(&mut self, marker: &str) {
         *self.dropped.entry(marker.to_string()).or_insert(0) += 1;
     }
@@ -305,7 +375,8 @@ impl ResourceBuilder {
         self.verses.len()
     }
 
-    /// Validate, put spans and keys in canonical order, and fill in the content hash.
+    /// Validate, put spans and keys in canonical order, build the transliteration index, and
+    /// fill in the content hash.
     pub fn build(self) -> Result<Resource, ValidationErrors> {
         let mut errors = Vec::new();
         let mut units = self.units;
@@ -329,6 +400,15 @@ impl ResourceBuilder {
         let mut keys = self.keys;
         keys.sort();
         keys.dedup();
+        let mut cross_references = self.cross_references;
+        cross_references.sort();
+        cross_references.dedup();
+        let mut entities = self.entities;
+        entities.sort();
+        let mut mentions = self.mentions;
+        mentions.sort();
+        mentions.dedup();
+        let transliterations = transliteration_index(&keys);
         let mut resource = Resource {
             manifest: self.manifest,
             units,
@@ -337,6 +417,10 @@ impl ResourceBuilder {
             dropped_markup: self.dropped,
             unit_aliases: self.aliases,
             verse_map: self.verse_map,
+            cross_references,
+            entities,
+            mentions,
+            transliterations,
         };
         if let Err(more) = resource.validate() {
             errors.extend(more.0);
@@ -368,10 +452,17 @@ struct HashInput<'a> {
     units: &'a [TextUnit],
     verses: &'a [BibleVerse],
     keys: &'a [KeyEntry],
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    cross_references: &'a [CrossReference],
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    entities: &'a [Entity],
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    mentions: &'a [Mention],
 }
 
 impl Resource {
-    /// `sha256:<hex>` over the content: units with their spans, the verse list and Keys.
+    /// `sha256:<hex>` over the content: units with their spans, the verse list, Keys and
+    /// dataset records.
     /// Manifest metadata is excluded, so fixing a title does not orphan anchors.
     pub fn content_hash(&self) -> String {
         let input = HashInput {
@@ -379,6 +470,9 @@ impl Resource {
             units: &self.units,
             verses: &self.verses,
             keys: &self.keys,
+            cross_references: &self.cross_references,
+            entities: &self.entities,
+            mentions: &self.mentions,
         };
         let mut hasher = Sha256::new();
         // Serializing plain data into a Vec cannot fail; an empty hash input would still be
@@ -405,6 +499,7 @@ impl Resource {
         let units = self.validate_units(&mut errors);
         self.validate_verses(&units, &mut errors);
         self.validate_keys(&units, &mut errors);
+        self.validate_datasets(&mut errors);
         if let Some(map) = &self.verse_map {
             if self.manifest.resource_type != ResourceType::Bible {
                 errors.push(ValidationError::VerseMapMismatch(
@@ -604,6 +699,91 @@ impl Resource {
             }
         }
     }
+}
+
+impl Resource {
+    /// Cross-references only in a Cross-reference set, entities and mentions only in a People
+    /// & places index; every Passage valid in the Standard versification; every entity named
+    /// once and every link to an entity resolved.
+    fn validate_datasets(&self, errors: &mut Vec<ValidationError>) {
+        let ty = self.manifest.resource_type;
+        let mut wrong_type = |what: &'static str, present: bool, allowed: ResourceType| {
+            if present && ty != allowed {
+                errors.push(ValidationError::DatasetInWrongType {
+                    what,
+                    resource_type: ty,
+                });
+            }
+        };
+        wrong_type(
+            "cross-reference",
+            !self.cross_references.is_empty(),
+            ResourceType::CrossReferenceSet,
+        );
+        wrong_type(
+            "entity",
+            !self.entities.is_empty(),
+            ResourceType::PeopleAndPlaces,
+        );
+        wrong_type(
+            "mention",
+            !self.mentions.is_empty(),
+            ResourceType::PeopleAndPlaces,
+        );
+        for x in &self.cross_references {
+            for (what, passage) in [
+                ("cross-reference source", x.from),
+                ("cross-reference target", x.to),
+            ] {
+                if !is_standard_passage(passage) {
+                    errors.push(ValidationError::NotStandardPassage { what, passage });
+                }
+            }
+        }
+        let mut ids = HashSet::new();
+        for e in &self.entities {
+            if !ids.insert(e.id.as_str()) {
+                errors.push(ValidationError::DuplicateEntity(e.id.clone()));
+            }
+            for (field, value) in [("id", &e.id), ("name", &e.name)] {
+                if value.trim().is_empty() {
+                    errors.push(ValidationError::EmptyEntityField {
+                        entity: e.id.clone(),
+                        field,
+                    });
+                }
+            }
+        }
+        for e in &self.entities {
+            for r in &e.relations {
+                if !ids.contains(r.entity.as_str()) {
+                    errors.push(ValidationError::UnknownEntity {
+                        what: "relation",
+                        entity: r.entity.clone(),
+                    });
+                }
+            }
+        }
+        for m in &self.mentions {
+            if !ids.contains(m.entity.as_str()) {
+                errors.push(ValidationError::UnknownEntity {
+                    what: "mention",
+                    entity: m.entity.clone(),
+                });
+            }
+            if !is_standard_passage(m.passage) {
+                errors.push(ValidationError::NotStandardPassage {
+                    what: "mention",
+                    passage: m.passage,
+                });
+            }
+        }
+    }
+}
+
+/// Whether both ends of `passage` are Verses of the Standard versification.
+fn is_standard_passage(passage: Passage) -> bool {
+    Standard.contains(passage.start()) && Standard.contains(passage.end())
 }
 
 /// Checks order, bounds and UTF-8 boundaries; returns whether the range is usable.
