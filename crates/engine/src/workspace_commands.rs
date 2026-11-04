@@ -271,9 +271,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         enabled: always,
         run: open_resource,
     },
-    open_cmd("guide.passage_guide", "Passage Guide", None, |s, p| {
-        open(s, p, TabKind::Guide(Guide::PassageGuide))
-    }),
+    open_cmd(
+        "guide.passage_guide",
+        "Passage Guide",
+        None,
+        open_passage_guide,
+    ),
     open_cmd("guide.word_study", "Word Study", None, |s, p| {
         open(s, p, TabKind::Guide(Guide::WordStudy))
     }),
@@ -549,6 +552,32 @@ fn open(s: &mut Session, p: Params<'_>, kind: TabKind) -> Result<Value, CommandE
     let title = title_of(s, &kind);
     let tab = s.workspace.open(kind, title, request(&p));
     Ok(json!({ "tab": tab.0 }))
+}
+
+/// A Passage Guide starts where its Link set is; unlinked, at the Passage the focused Tab
+/// shows (like Logos opening a Guide on the active reference).
+fn open_passage_guide(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    let from = s
+        .workspace
+        .focused()
+        .and_then(|f| s.workspace.tab(f))
+        .filter(|t| t.key_schemes.contains(&obs_model::KeyScheme::Passage))
+        .and_then(|t| {
+            match crate::link::to_standard(t.verse_map.as_deref(), t.history.current()?) {
+                crate::link::ToStandard::Verse(v) => Some(v),
+                crate::link::ToStandard::Unmapped => None,
+            }
+        });
+    let out = open(s, p, TabKind::Guide(Guide::PassageGuide))?;
+    if let Some(v) = from
+        && let Some(t) = out["tab"]
+            .as_u64()
+            .and_then(|id| s.workspace.tab_mut(TabId(id)))
+        && t.history.current().is_none()
+    {
+        t.history.scrolled_to(v);
+    }
+    Ok(out)
 }
 
 fn open_resource(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {

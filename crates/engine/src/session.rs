@@ -50,6 +50,8 @@ pub struct Session {
     pub appearance: crate::appearance::Appearance,
     /// What Word Info shows and whether it is pinned (#50).
     pub word_info: crate::word_info::WordInfo,
+    /// Guide arrangements and Guide sections computed on the job queue (#53).
+    pub guides: crate::guide::Guides,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
     log: Vec<&'static str>,
     /// The User database, when there is one.
@@ -83,6 +85,7 @@ impl Session {
             text: TextSettings::default(),
             appearance: crate::appearance::Appearance::default(),
             word_info: crate::word_info::WordInfo::default(),
+            guides: crate::guide::Guides::default(),
             log: Vec::new(),
             user: None,
             history: crate::annotations::UndoHistory::default(),
@@ -141,6 +144,7 @@ impl Session {
         self.history.clear();
         self.annotations_revision += 1;
         self.restore_import_reports();
+        self.load_guide_arrangements();
     }
 
     /// Save the library's Preferred order.
