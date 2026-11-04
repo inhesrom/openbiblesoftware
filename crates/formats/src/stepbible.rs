@@ -424,8 +424,18 @@ fn hebrew_source_name(letter: char) -> Option<&'static str> {
     })
 }
 
-/// A TAHOT meaning variant, `K= 'o.ho.Lo/h (אָהֳלֹ/ה\׃) "tent/ his" (H0168G/…)`, as note text.
+/// TAHOT meaning variants share one note, preserving every reading in source order.
 fn tahot_variant_note(raw: &str) -> String {
+    raw.split('¦')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(tahot_variant_entry)
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// A TAHOT meaning variant, `K= 'o.ho.Lo/h (אָהֳלֹ/ה\׃) "tent/ his" (H0168G/…)`, as note text.
+fn tahot_variant_entry(raw: &str) -> String {
     let parsed = (|| {
         let (letters, rest) = raw.split_once('=')?;
         let names: Vec<&str> = letters
@@ -504,10 +514,17 @@ impl TahotBook {
                 }
                 continue;
             }
-            let (letters, punct) = match seg.split_once('\\') {
-                Some((l, p)) => (l, p.replace('\\', "")),
-                None => (*seg, String::new()),
-            };
+            let mut chunks = seg.split('\\').peekable();
+            let mut letters = chunks.next().unwrap_or("").to_string();
+            // Gen 14:17's Kedorlaomer has an internal maqaf but one Strong's number.
+            // Keep its remaining letters tagged; trailing punctuation still sits outside.
+            while chunks
+                .peek()
+                .is_some_and(|chunk| chunk.starts_with('־') && chunk.chars().any(is_hebrew_letter))
+            {
+                letters.push_str(chunks.next().unwrap_or(""));
+            }
+            let punct: String = chunks.collect();
             // A segment of punctuation only (a maqaf between two words of a Qere).
             if !letters.chars().any(is_hebrew_letter) {
                 if let Some(start) = word.take() {
@@ -523,7 +540,7 @@ impl TahotBook {
                 first_start.get_or_insert(start);
                 word = Some(start);
             }
-            self.em.buf.push_text(letters);
+            self.em.buf.push_text(&letters);
             let part = (|| {
                 let token = strongs.get(i)?.split('\\').next()?;
                 let mut part = MorphemePart::new(parse_strongs(token, &at, ctx)?);
@@ -682,14 +699,22 @@ fn tagnt_variant_note(raw: &str) -> String {
         .split('¦')
         .map(str::trim)
         .filter(|e| !e.is_empty())
-        .map(|entry| match parse_tagnt_variant(entry) {
-            Some(v) => {
-                let names: Vec<&str> = edition_names(v.editions).collect();
-                format!("{}: {} “{}”", names.join(", "), v.greek, v.english)
-            }
-            None => entry.to_string(),
-        })
+        .map(tagnt_variant_entry)
         .collect();
+    tagnt_note(&entries)
+}
+
+fn tagnt_variant_entry(entry: &str) -> String {
+    match parse_tagnt_variant(entry) {
+        Some(v) => {
+            let names: Vec<&str> = edition_names(v.editions).collect();
+            format!("{}: {} “{}”", names.join(", "), v.greek, v.english)
+        }
+        None => entry.to_string(),
+    }
+}
+
+fn tagnt_note(entries: &[String]) -> String {
     let label = if entries.len() > 1 {
         "Variants"
     } else {
@@ -728,13 +753,19 @@ impl<'a> Reading<'a> {
 
     /// For a word the base edition lacks, its reading there if a meaning variant gives it
     /// (`ἐπορεύθη` in TR, `ἐπορεύθησαν … in: NA28+NA27+WH`). The line's own reading becomes
-    /// the note; the line's punctuation and paragraph mark are kept.
+    /// the note alongside every unselected variant; punctuation and paragraph mark are kept.
     fn base_variant(line: &'a Line<'a>) -> Option<Self> {
-        let v = line
+        let variants: Vec<&str> = line
             .col(G_MEANING_VARIANTS)
             .split('¦')
-            .filter_map(parse_tagnt_variant)
-            .find(|v| in_base_edition(v.editions))?;
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+            .collect();
+        let (selected, v) = variants
+            .iter()
+            .enumerate()
+            .filter_map(|(i, entry)| parse_tagnt_variant(entry).map(|v| (i, v)))
+            .find(|(_, v)| in_base_edition(v.editions))?;
         let own = greek_word(line.col(G_GREEK));
         let trailing: String = {
             let kept = own.trim_end_matches(|c| !is_word_char(c));
@@ -746,6 +777,19 @@ impl<'a> Reading<'a> {
         }
         let same_lemma = line.col(G_DSTRONGS).split('=').next() == v.tags.split('=').next();
         let names: Vec<&str> = edition_names(line.col(G_EDITIONS)).collect();
+        let mut notes = vec![format!(
+            "{}: {} “{}”",
+            names.join(", "),
+            own.replace('¶', "").trim_end_matches(|c| !is_word_char(c)),
+            plain_english(line.col(G_ENGLISH))
+        )];
+        notes.extend(
+            variants
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != selected)
+                .map(|(_, entry)| tagnt_variant_entry(entry)),
+        );
         Some(Reading {
             greek,
             english: v.english,
@@ -755,12 +799,7 @@ impl<'a> Reading<'a> {
             } else {
                 ""
             },
-            note: Some(format!(
-                "Variant: {}: {} “{}”",
-                names.join(", "),
-                own.replace('¶', "").trim_end_matches(|c| !is_word_char(c)),
-                plain_english(line.col(G_ENGLISH))
-            )),
+            note: Some(tagnt_note(&notes)),
         })
     }
 }

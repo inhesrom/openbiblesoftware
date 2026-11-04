@@ -1,0 +1,23 @@
+﻿TAGNT Mat-Jhn - Translators Amalgamated Greek NT -  STEPBible.org CC BY 4.0
+TAGNT Act-Rev - Translators Amalgamated Greek NT -  STEPBible.org CC BY 4.0
+(This is saved as 2  files because a single file too large for Hithub)
+=================================================
+All the words from standard Greek editions (NA27/28, TR, SBL, TH, Byz, WH, Treg) with translations, grammar, sources & variants that affect translation
+=================================================================================================
+Introduction & Abbreviations at: 	TinyURL.com/TAGNT-Intro
+Spreadsheet version at: 	https://docs.google.com/spreadsheets/d/1Uri4ehqXnzUa97uvH-1-C022708HhLQ1a541Hsnlt70/edit
+
+	==============================================================
+	Data created by www.STEPBible.org based on work at Tyndale House Cambridge (CC BY 4.0)
+	==============================================================
+	This licence allows you to:
+	* Include any part of this data in software or publications and send it to AI servers  without requesting permission
+	* Download the data and reformat it for your application
+	* Send any proposed corrections to STEPBible@Gmail.com to be verified
+	  (You MAY make changes yourself, but you should include a note of changes that can be viewed by those who use your new data)
+	* Attribute the data to Tyndale House and STEPBible.org, and include a link to STEPBible.github.io/STEPBible-Data as the source of this data.
+	 Please do not post copies of this data file elsewhere, so that this remains the single up-to-date source"
+	* We'd love to hear about your project and add it to our Partners Page when you make it available. Email us at STEPBible@Gmail.com.
+	==============================================================
+
+Rev.2.3#14=NK(o)	κέκμηκας. (kekmēkas)	have grown weary.	G2577G=V-RAI-2S	κάμνω=be weary/sick	TR	κεκοπίακες (M=kekopiakes) have laboured - G2872=V-RAI-2S in: NA28+NA27+Tyn+SBL+WH+Treg ¦ ἐκοπίασας (o=ekopiasas) laboured - G2872=V-AAI-2S in: Byz		(te) has rendido de obrar afanosamente	: weak»be weary/sick|1_weak/disabled	#14	G2577	G2872

@@ -396,6 +396,52 @@ fn tagnt_follows_na27_and_notes_other_editions() {
     );
 }
 
+#[test]
+fn tahot_preserves_every_meaning_variant_including_ketiv() {
+    let (r, report) = import(StepbibleText::Tahot, &[fixture("tahot-variants.txt")]);
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    assert_eq!(
+        notes_in(&r, v(Book::Nehemiah, 2, 13)),
+        [nfc(
+            "BHS: הֵ֣מפְּרוּצִ֔ים “<the> [had been] broken down”; Ketiv (written text): הַמְפֹרוָצִים “<the> [had been] broken down”"
+        )]
+    );
+    assert_eq!(
+        notes_in(&r, v(Book::Numbers, 7, 59)),
+        [nfc(
+            "Aleppo Codex, Ben Chayyim edition: פְּדָהצֽוּר׃ פ “Pedahzur”; BHS: פְּדָה־צֽוּר׃ פ “Pedah - zur”"
+        )]
+    );
+}
+
+#[test]
+fn tahot_internal_maqaf_stays_inside_the_tagged_word() {
+    let (r, _) = import(StepbibleText::Tahot, &[fixture("tahot-variants.txt")]);
+    let verse = v(Book::Genesis, 14, 17);
+    let words = tagged_words(&r, verse);
+    assert_eq!(verse_text(&r, verse), nfc("כְּדָרְ־לָעֹ֔מֶר"));
+    assert_eq!(
+        words,
+        [(
+            nfc("כְּדָרְ־לָעֹ֔מֶר"),
+            vec![part("H3540", "כְּדׇרְלָעֹמֶר", "HNpm", "Kedor-laomer")]
+        )]
+    );
+}
+
+#[test]
+fn tagnt_base_variant_preserves_both_unselected_readings() {
+    let (r, report) = import(StepbibleText::Tagnt, &[fixture("tagnt-variants.txt")]);
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    let verse = v(Book::Revelation, 2, 3);
+    assert_eq!(verse_text(&r, verse), "κεκοπίακες.");
+    assert_eq!(tagged_words(&r, verse)[0].1[0].strongs.to_string(), "G2872");
+    assert_eq!(
+        notes_in(&r, verse),
+        ["Variants: TR: κέκμηκας “have grown weary.”; Byz: ἐκοπίασας “laboured”"]
+    );
+}
+
 fn paragraphs(unit: &TextUnit) -> Vec<&str> {
     unit.spans
         .iter()

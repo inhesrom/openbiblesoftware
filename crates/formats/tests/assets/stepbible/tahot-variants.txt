@@ -1,0 +1,25 @@
+TAHOT Gen-Deu - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+TAHOT Jos-Est - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+TAHOT Job-Sng - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+TAHOT Isa-Mal - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt
+(This is saved as 4  files because a single file too large for Github)
+=================================================
+
+	==============================================================
+	Data created by www.STEPBible.org based on work at Tyndale House Cambridge (CC BY 4.0)
+	==============================================================
+	This licence allows you to:
+	* Include any part of this data in software or publications and send it to AI servers  without requesting permission
+	* Download the data and reformat it for your application
+	* Send any proposed corrections to STEPBible@Gmail.com to be verified
+	  (You MAY make changes yourself, but you should include a note of changes that can be viewed by those who use your new data)
+	* Attribute the data to Tyndale House and STEPBible.org, and include a link to STEPBible.github.io/STEPBible-Data as the source of this data.
+	 Please do not post copies of this data file elsewhere, so that this remains the single up-to-date source"
+	* We'd love to hear about your project and add it to our Partners Page when you make it available. Email us at STEPBible@Gmail.com.
+	==============================================================
+
+
+Eng (Heb) Ref & Type	Hebrew	Transliteration	Translation	dStrongs	Grammar	Meaning Variants	Spelling Variants	Root dStrong+Instance	Alternative Strongs+Instance	Conjoin word	Expanded Strong tags
+Gen.14.17#09=LBH(A)	כְּדָרְ\־לָעֹ֔מֶר	Kedor-la.'ֹo.mer	Kedor-laomer	{H3540}\H9014	HNpm	A= Kedorla.'ֹo.mer (כְּדָרְלָעֹ֔מֶר) "Kedorlaomer" (H3540=HNpm)		H3540_A			{H3540=כְּדׇרְלָעֹמֶר=Chedorlaomer»Chedorlaomer@Gen.14.1-}\H9014=־=link
+Num.7.59#17=L(AH+B)	פְּדָה/ /צֽוּר\׃\ \פ	pe.dah/ /tzur	Pedah/ /zur	{H6301}+/ /{H6301}\H9016\ \H9017	HNpm//Npm	AH= pe.dah.tzur (פְּדָהצֽוּר\׃\ \פ) "Pedahzur" ({H6301}\H9016\ \H9017=HNpm) ¦ B= pe.dah/-/tzur- (פְּדָה/־/צֽוּר\׃\ \פ) "Pedah/-/zur" ({H6301}+/H9014/H6301\H9016\ \H9017=HNpm//Npm)		H6301			{H6301=פְּדָהצוּר=Pedahzur»Pedahzur@Num.1.10-}+/ /{H6301=פְּדָהצוּר=Pedahzur»Pedahzur@Num.1.10-}\H9016=׃=verseEnd\ \H9017=פ=para
+Neh.2.13#17=Q(K)	הֵ֣ם\׀/ /פְּרוּצִ֔ים	hem/ /fe.ru.tzim	they/ /[were] broken down	{H1992}\H9015/ /{H6555}	HPp3mp//Vqsmpa	B= he/m.fe.ru.tzim (הֵ֣/מפְּרוּצִ֔ים) "<the>/ [had been] broken down" (H9009/{H6555}=HTd/Pp3mp) ¦ K= ha/me.for.va.tzim (הַ/מְפֹרוָצִים) "<the>/ [had been] broken down" (H9009/H6555=HTd/Pp3mp)	L= הֵ֣מ\׀//פְּרוּצִ֔ים	H1992, H6555			{H1992=הֵ֫מָּה=they(masc.)}\H9015=׀=separate/ /{H6555=פָּרַץ=to break through}
