@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use egui::accesskit::{self, Role};
 use egui::{Id, Rect, Sense, Ui, UiBuilder, pos2};
-use obs_layout::LaidBlock;
+use obs_layout::{InlineObject, LaidBlock, UnitPos};
 use obs_model::SpanKind;
 use obs_scripture::{RefStyle, Standard, format_passage_list};
 
@@ -149,6 +149,40 @@ fn links(view: &ReadingView, index: usize, laid: &LaidBlock) -> Vec<Link> {
                 bytes: a..b,
                 label,
                 description,
+            });
+        }
+    }
+    // Synthetic markers have no unit-text range. Keep their own cluster ranges and span
+    // identities: multiple references may share an anchor, even with a nonempty reference.
+    let mut markers = std::collections::BTreeMap::<usize, Range<usize>>::new();
+    for line in &laid.lines {
+        for item in &line.items {
+            for (bytes, _, _) in item.clusters() {
+                if let Some(UnitPos::Object {
+                    object: InlineObject::ScriptureReference { span },
+                    ..
+                }) = laid.to_unit(bytes.start)
+                {
+                    markers
+                        .entry(span)
+                        .and_modify(|range| {
+                            range.start = range.start.min(bytes.start);
+                            range.end = range.end.max(bytes.end);
+                        })
+                        .or_insert(bytes);
+                }
+            }
+        }
+    }
+    for (span, bytes) in markers {
+        if let Some(s) = unit.spans.get(span)
+            && let SpanKind::ScriptureRef { targets } | SpanKind::Xref { targets } = &s.kind
+        {
+            let refs = format_passage_list(targets, &Standard, RefStyle::Long);
+            out.push(Link {
+                bytes,
+                label: refs.clone(),
+                description: format!("Go to {refs}"),
             });
         }
     }

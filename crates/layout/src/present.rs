@@ -174,14 +174,15 @@ pub fn block_paragraph(
     let range = block.range.clone();
     // Only spans touching the block matter; scanning all of a book's spans per piece is what
     // made whole-book layout slow.
-    let local: Vec<&Span> = unit
+    let local: Vec<(usize, &Span)> = unit
         .spans
         .iter()
-        .filter(|s| s.start as usize <= range.end && s.end as usize >= range.start)
+        .enumerate()
+        .filter(|(_, s)| s.start as usize <= range.end && s.end as usize >= range.start)
         .collect();
 
     let mut cuts: Vec<usize> = vec![range.start, range.end];
-    for s in &local {
+    for (_, s) in &local {
         for p in [s.range().start, s.range().end] {
             if range.contains(&p) {
                 cuts.push(p);
@@ -202,7 +203,7 @@ pub fn block_paragraph(
             continue;
         }
         let mut flags = base;
-        for s in &local {
+        for (_, s) in &local {
             if s.start as usize <= a && s.end as usize >= b && s.end > s.start {
                 match &s.kind {
                     SpanKind::Added | SpanKind::Italic | SpanKind::Emphasis | SpanKind::Selah => {
@@ -275,19 +276,37 @@ fn owns_marker(unit: &TextUnit, block: &Range<usize>, a: usize) -> bool {
 /// Verse numbers and note markers anchored at byte `a`.
 fn push_objects(
     unit: &TextUnit,
-    spans: &[&Span],
+    spans: &[(usize, &Span)],
     a: usize,
     block: &Range<usize>,
     settings: &TextSettings,
     body: f32,
     runs: &mut Vec<Run>,
 ) {
-    for s in spans {
+    for &(span, s) in spans {
         let start = s.start as usize;
         if start != a {
             continue;
         }
         match &s.kind {
+            SpanKind::ScriptureRef { .. } | SpanKind::Xref { .. }
+                if s.start == s.end && owns_marker(unit, block, a) =>
+            {
+                runs.push(Run {
+                    text: "↗".into(),
+                    style: RunStyle {
+                        face: FaceId::Regular,
+                        size: body * 0.7,
+                        small_caps: false,
+                        raise: body * 0.35,
+                        role: ColorRole::Link,
+                    },
+                    source: RunSource::Object {
+                        anchor: a,
+                        object: InlineObject::ScriptureReference { span },
+                    },
+                });
+            }
             SpanKind::NoteRef { note, note_kind } if owns_marker(unit, block, a) => {
                 runs.push(Run {
                     text: "†".into(),

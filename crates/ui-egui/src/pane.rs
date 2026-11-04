@@ -75,6 +75,9 @@ pub struct PaneOutput {
     pub user_moved: bool,
     /// The verse number under the pointer, in the Bible's own numbering.
     pub hovered_verse_number: Option<Verse>,
+    /// Unit and span indexes of the Scripture reference under the pointer.
+    pub hovered_reference: Option<(usize, usize)>,
+    pub reference_clicked: bool,
 }
 
 /// Draw the reading pane into all the space `ui` has, and handle its input. `flash` marks a
@@ -255,6 +258,13 @@ pub fn reading_pane(
         }) = view.hit_at(p.x - text_rect.left(), p.y - rect.top())
     {
         out.hovered_verse_number = Some(v);
+    }
+    if let Some(p) = response.hover_pos() {
+        out.hovered_reference = view.reference_at(p.x - text_rect.left(), p.y - rect.top());
+        if out.hovered_reference.is_some() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            out.reference_clicked = response.clicked();
+        }
     }
     out
 }

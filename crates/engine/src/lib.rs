@@ -16,6 +16,7 @@ pub mod appearance;
 mod builtin;
 pub mod command;
 pub mod compare;
+pub mod cross_references;
 pub mod import;
 pub mod jobs;
 mod library;

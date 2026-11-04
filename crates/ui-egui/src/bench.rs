@@ -9,13 +9,14 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::shell::references::{TargetCache, TargetKey};
 use obs_layout::TextSettings;
 use obs_model::{
     KeyScheme, Manifest, ParaStyle, ResourceBuilder, ResourceType, SpanKind, TextAccumulator,
     UnitId, UnitKind,
 };
 use obs_render::GlyphAtlas;
-use obs_scripture::{Book, Standard, Verse, Versification};
+use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, VerseMapEntry, Versification};
 use serde::Serialize;
 
 use crate::doc::ReadingDoc;
@@ -127,6 +128,10 @@ struct Bench {
     cfg: BenchConfig,
     views: Vec<ReadingView>,
     atlas: GlyphAtlas,
+    snippets: crate::SnippetCache,
+    reference_targets: TargetCache,
+    reference_doc: Arc<ReadingDoc>,
+    reference_frame: usize,
     interval: Duration,
     budget: Duration,
 }
@@ -154,6 +159,32 @@ impl Bench {
                 if let Some(l) = &b.laid {
                     std::hint::black_box(self.atlas.quads(l, [x, b.top], self.cfg.scale));
                 }
+            }
+        }
+        // Real native-target translation: a whole-Bible Passage against >31k map entries.
+        // Switch spans periodically to include cold submission as well as cached hover polls.
+        let span = (self.reference_frame / 30) % 16;
+        std::hint::black_box(self.reference_targets.get(TargetKey::new(
+            &self.reference_doc,
+            0,
+            span,
+        )));
+        self.reference_frame += 1;
+        // Eight Cross-reference row previews plus a changing Scripture-reference popup.
+        // Exercise the same worker cache and atlas as the Tool while all panes scroll.
+        let location = self.views.first_mut().and_then(|v| v.current_location());
+        for row in 0..9 {
+            let text = format!(
+                "{location:?} {row}: For God so loved the world, that he gave his only begotten Son."
+            );
+            if let Some(laid) = self.snippets.get(
+                &text,
+                obs_layout::ColorRole::Ink,
+                false,
+                360.0,
+                &TextSettings::default(),
+            ) {
+                std::hint::black_box(self.atlas.quads(&laid, [0.0, 0.0], self.cfg.scale));
             }
         }
         let elapsed = start.elapsed();
@@ -202,11 +233,17 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         cfg: cfg.clone(),
         views,
         atlas: GlyphAtlas::new(),
+        snippets: crate::SnippetCache::default(),
+        reference_targets: TargetCache::default(),
+        reference_doc: large_reference_doc(),
+        reference_frame: 0,
         interval,
         budget: SYNC_BUDGET,
     };
     let interval_ms = interval.as_secs_f64() * 1000.0;
     bench.settle();
+    bench.reference_targets = TargetCache::default();
+    bench.reference_frame = 0;
 
     let mut steady = Samples::default();
     for _ in 0..cfg.steady_frames {
@@ -414,4 +451,59 @@ pub fn synthetic_bible() -> Arc<ReadingDoc> {
         Ok(r) => Arc::new(ReadingDoc::from_resource(r)),
         Err(e) => unreachable!("synthetic bible is invalid: {e}"),
     }
+}
+
+/// Small readable fixture with a full-size native Verse map and whole-Bible references.
+/// Shared by the scroll benchmark and the hover regression so both hit the shell's cache.
+pub(crate) fn large_reference_doc() -> Arc<ReadingDoc> {
+    let Ok(passage) = Passage::new(
+        Verse::new(Book::Genesis, 1, 1),
+        Verse::new(Book::Revelation, 22, 21),
+    ) else {
+        unreachable!("Genesis precedes Revelation")
+    };
+    let manifest = Manifest::new(
+        "large-reference",
+        "Large reference",
+        "LR",
+        ResourceType::Bible,
+        "en",
+    );
+    let mut builder = ResourceBuilder::new(manifest);
+    let unit = UnitId::book(Book::Genesis);
+    builder.add_unit(
+        unit.clone(),
+        UnitKind::BibleBook,
+        None,
+        "Whole Bible".into(),
+    );
+    builder.add_verse(&unit, 0..11, passage.start(), 1);
+    let mut doc = match builder.build() {
+        Ok(r) => ReadingDoc::from_resource(r),
+        Err(e) => unreachable!("large reference fixture is invalid: {e}"),
+    };
+    doc.units[0].spans = (0..16)
+        .map(|_| obs_model::Span {
+            start: 0,
+            end: 11,
+            kind: SpanKind::ScriptureRef {
+                targets: vec![passage].into(),
+            },
+        })
+        .collect();
+    doc.versification =
+        obs_scripture::ListedVersification::new(passage.verses(&Standard).map(|v| (v, v.verse)));
+    doc.verse_map = Some(Arc::new(VerseMap::new(
+        passage
+            .verses(&Standard)
+            .map(|v| VerseMapEntry {
+                verse: v,
+                last: v.verse,
+                standard: Some(Passage::verse(v)),
+            })
+            .collect(),
+        vec![],
+        &Standard,
+    )));
+    Arc::new(doc)
 }

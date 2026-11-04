@@ -706,6 +706,24 @@ impl Workspace {
         })
     }
 
+    /// Navigate to a Standard Verse, translating each Link-set member independently.
+    /// Never round-trip through the opener: Absent and merged Verses lose information.
+    pub fn navigate_standard(&mut self, tab: TabId, standard: Verse) {
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        if t.follows_passages()
+            && let Some(native) =
+                to_native(t.verse_map.as_deref(), t.versification.as_deref(), standard)
+        {
+            t.history.visit(native);
+            self.effects.push(Effect::Navigate { tab, verse: native });
+        }
+        // A Lexicon can open a Scripture reference without following Passages itself.
+        // Even if the opener has no preceding Verse, other members may contain the target.
+        self.broadcast_standard(tab, standard, true);
+    }
+
     /// The view moved without the user scrolling it (a follow settling, a resize): update
     /// the location without a history entry or moving the Link set.
     pub fn scrolled(&mut self, tab: TabId, verse: Verse) {
@@ -807,13 +825,17 @@ impl Workspace {
         let Some(origin) = self.tabs.get(&from) else {
             return;
         };
-        let Some(link) = origin.link else {
-            return;
-        };
         if !origin.follows_passages() {
             return;
         }
         let ToStandard::Verse(std) = to_standard(origin.verse_map.as_deref(), native) else {
+            return;
+        };
+        self.broadcast_standard(from, std, flash);
+    }
+
+    fn broadcast_standard(&mut self, from: TabId, std: Verse, flash: bool) {
+        let Some(link) = self.tabs.get(&from).and_then(|t| t.link) else {
             return;
         };
         let moves: Vec<(TabId, Verse)> = self

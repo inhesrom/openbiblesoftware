@@ -238,3 +238,62 @@ fn absent_verses_follow_to_the_nearest_preceding_verse_through_the_map() {
     // No map and no own numbering: the Standard Verse as it is.
     assert_eq!(to_native(None, None, mt(17, 21)), Some(mt(17, 21)));
 }
+
+#[test]
+fn standard_navigation_does_not_round_trip_absent_or_merged_verses() {
+    let target = mt(17, 21);
+    let merged = VerseMap::new(
+        vec![VerseMapEntry {
+            verse: mt(17, 20),
+            last: 20,
+            standard: Some(Passage::new(mt(17, 20), target).unwrap()),
+        }],
+        vec![],
+        &Standard,
+    );
+    let no_preceding = VerseMap::new(
+        vec![entry(mt(17, 22), Some(mt(17, 22)))],
+        vec![target],
+        &Standard,
+    );
+    for (map, expected) in [
+        (lacking_map(), Some(mt(17, 20))),
+        (merged, Some(mt(17, 20))),
+        (no_preceding, None),
+    ] {
+        let mut s = session();
+        let opener = open(&mut s, "lacks");
+        with_map(&mut s, opener, map);
+        link(&mut s, opener, "A");
+        let kjv = open(&mut s, "kjv");
+        let follower = open(&mut s, "plain");
+        with_map(&mut s, follower, lacking_map());
+        let tool = TabId(
+            s.run("tool.cross_references", &json!({})).unwrap()["tab"]
+                .as_u64()
+                .unwrap(),
+        );
+        s.workspace.take_effects();
+        s.workspace.navigate_standard(opener, target);
+        assert_eq!(at(&s, opener), expected);
+        assert_eq!(at(&s, kjv), Some(target));
+        assert_eq!(at(&s, tool), Some(target));
+        assert_eq!(at(&s, follower), Some(mt(17, 20)));
+        let effects = s.workspace.take_effects();
+        assert_eq!(
+            follows(&effects),
+            [
+                (kjv, target, true),
+                (follower, mt(17, 20), true),
+                (tool, target, true),
+            ]
+        );
+        assert_eq!(
+            effects
+                .iter()
+                .filter(|e| matches!(e, Effect::Navigate { .. }))
+                .count(),
+            usize::from(expected.is_some())
+        );
+    }
+}
