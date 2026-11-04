@@ -1355,6 +1355,601 @@ mod a11y {
     }
 }
 
+/// The Library Tab and the About Tab (#46).
+mod library {
+    use super::*;
+
+    use super::super::library_tab::ROW_H;
+
+    const ABBREVS: [&str; 5] = ["TB", "HEB", "HNUM", "KJV", "DICT"];
+
+    /// The Panel holding the Library Tab.
+    fn library_panel(h: &Harness) -> Rect {
+        h.panels()
+            .into_iter()
+            .find(|(_, t)| t.iter().any(|t| t == "Library"))
+            .map(|(r, _)| r)
+            .unwrap()
+    }
+
+    /// Library rows top to bottom: (abbreviation, row centre y).
+    fn rows(h: &Harness) -> Vec<(String, f32)> {
+        let panel = library_panel(h);
+        let mut out: Vec<(String, f32)> = h
+            .shapes
+            .iter()
+            .filter(|(r, t)| ABBREVS.contains(&t.as_str()) && panel.contains(r.center()))
+            .map(|(r, t)| (t.clone(), r.center().y))
+            .collect();
+        out.sort_by(|a, b| a.1.total_cmp(&b.1));
+        out
+    }
+
+    fn row_names(h: &Harness) -> Vec<String> {
+        rows(h).into_iter().map(|(t, _)| t).collect()
+    }
+
+    /// The row the ★ is on.
+    fn starred(h: &Harness) -> String {
+        let star = h.at("★");
+        rows(h)
+            .into_iter()
+            .find(|(_, y)| (y - star.y).abs() < 6.0)
+            .map(|(t, _)| t)
+            .unwrap_or_else(|| panic!("★ on no row: {:?}", rows(h)))
+    }
+
+    fn row_pos(h: &Harness, abbrev: &str) -> Pos2 {
+        let panel = library_panel(h);
+        let r = h
+            .shapes
+            .iter()
+            .find(|(r, t)| t == abbrev && panel.contains(r.center()))
+            .map(|(r, _)| *r)
+            .unwrap_or_else(|| panic!("no row {abbrev}: {:?}", rows(h)));
+        r.center()
+    }
+
+    /// Where a row's drag handle is.
+    fn handle(h: &Harness, abbrev: &str) -> Pos2 {
+        let y = row_pos(h, abbrev).y;
+        let (r, _) = h
+            .shapes
+            .iter()
+            .rfind(|(r, t)| t == "≡" && (r.center().y - y).abs() < 6.0)
+            .unwrap();
+        r.center()
+    }
+
+    fn right_click(h: &mut Harness, p: Pos2) {
+        h.events.push(Event::PointerMoved(p));
+        h.frame();
+        for pressed in [true, false] {
+            h.events.push(Event::PointerButton {
+                pos: p,
+                button: PointerButton::Secondary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+            h.frame();
+        }
+        h.frames(2);
+    }
+
+    fn double_click(h: &mut Harness, p: Pos2) {
+        h.events.push(Event::PointerMoved(p));
+        h.frame();
+        for _ in 0..2 {
+            h.button(p, true);
+            h.frame();
+            h.button(p, false);
+            h.frame();
+        }
+        h.frames(2);
+    }
+
+    fn key(h: &mut Harness, key: egui::Key) {
+        h.events.push(Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        });
+        h.frames(2);
+    }
+
+    #[test]
+    fn rows_are_grouped_by_type_with_language_and_licence() {
+        let mut h = Harness::new();
+        h.ctx.fonts_mut(|fonts| {
+            assert!(fonts.has_glyph(&egui::FontId::proportional(14.0), '★'));
+            assert!(fonts.has_glyph(&egui::FontId::monospace(14.0), '≡'));
+        });
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        let panel = library_panel(&h);
+        for t in [
+            "BIBLES",
+            "Test Bible",
+            "hbo",
+            "LicenseRef-PD",
+            "English",
+            "Hebrew",
+        ] {
+            assert!(
+                h.shapes
+                    .iter()
+                    .any(|(r, s)| s == t && panel.contains(r.center())),
+                "{t:?} missing: {:?}",
+                h.texts()
+            );
+        }
+        assert_eq!(starred(&h), "TB");
+
+        h.shell.st.session.library.add(LibraryEntry {
+            manifest: obs_model::Manifest::new(
+                "test-dictionary",
+                "Test Dictionary",
+                "DICT",
+                obs_model::ResourceType::Dictionary,
+                "en",
+            ),
+            path: "/nonexistent/test-dictionary.obr".into(),
+        });
+        h.frames(2);
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM", "DICT"]);
+        let bibles = h.find("BIBLES").unwrap();
+        let dictionaries = h.find("DICTIONARIES").unwrap();
+        assert!(bibles.bottom() < row_pos(&h, "TB").y);
+        assert!(row_pos(&h, "HNUM").y < dictionaries.top());
+        assert!(dictionaries.bottom() < row_pos(&h, "DICT").y);
+        assert!(h.find("Test Dictionary").is_some());
+    }
+
+    #[test]
+    fn reordering_persists_across_restarts_and_changes_which_bible_is_starred() {
+        let db = temp_db("preferred-order");
+        let mut h = Harness::launch(Some(&db));
+        // Drag HNUM's handle onto the upper half of TB: HNUM becomes first, and ★.
+        let from = handle(&h, "HNUM");
+        let to = row_pos(&h, "TB") - vec2(0.0, 8.0);
+        h.drag(from, to);
+        assert_eq!(row_names(&h), ["HNUM", "TB", "HEB"]);
+        assert_eq!(starred(&h), "HNUM");
+        // Move down from the right-click menu.
+        let p = row_pos(&h, "HNUM");
+        right_click(&mut h, p);
+        h.click_text("Move down");
+        assert_eq!(row_names(&h), ["TB", "HNUM", "HEB"]);
+        let p = row_pos(&h, "HEB");
+        right_click(&mut h, p);
+        h.click_text("Move up");
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        h.drag(handle(&h, "HNUM"), row_pos(&h, "TB") - vec2(0.0, 8.0));
+        assert_eq!(row_names(&h), ["HNUM", "TB", "HEB"]);
+        let log = h.shell.st.session.command_log();
+        for id in ["library.move", "library.move_up", "library.move_down"] {
+            assert!(log.contains(&id), "{id} not run: {log:?}");
+        }
+        h.shell.save_session(true);
+        drop(h);
+
+        // Relaunch: the same order, the same ★, and the ★ Bible is the one lookups use.
+        let mut h = Harness::launch(Some(&db));
+        assert_eq!(row_names(&h), ["HNUM", "TB", "HEB"]);
+        assert_eq!(starred(&h), "HNUM");
+        h.shell.run("layout.reset", &json!({}));
+        h.frames(3);
+        assert_eq!(h.panels()[0].1, ["HNUM"]);
+    }
+
+    #[test]
+    fn a_dragged_row_lands_in_the_gap_the_drop_line_marks() {
+        let mut h = Harness::new();
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        // Dropped in the gap between TB and HEB: between them, so TB keeps ★.
+        let (tb, heb) = (row_pos(&h, "TB"), row_pos(&h, "HEB"));
+        h.drag(handle(&h, "HNUM"), pos2(tb.x, (tb.y + heb.y) / 2.0));
+        assert_eq!(row_names(&h), ["TB", "HNUM", "HEB"]);
+        assert_eq!(starred(&h), "TB");
+        // Dropped on the lower half of TB: below TB, not above it.
+        h.drag(handle(&h, "HEB"), row_pos(&h, "TB") + vec2(0.0, 8.0));
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        assert_eq!(starred(&h), "TB");
+        // TB on the upper half of HEB stays put; on its lower half it goes below HEB.
+        h.drag(handle(&h, "TB"), row_pos(&h, "HEB") - vec2(0.0, 8.0));
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        h.drag(handle(&h, "TB"), row_pos(&h, "HEB") + vec2(0.0, 8.0));
+        assert_eq!(row_names(&h), ["HEB", "TB", "HNUM"]);
+        assert_eq!(starred(&h), "HEB");
+        // Dropped well away from the rows: cancelled.
+        let far = library_panel(&h).bottom() - 10.0;
+        assert!(far > row_pos(&h, "HNUM").y + 3.0 * ROW_H, "panel too short");
+        h.drag(handle(&h, "HNUM"), pos2(tb.x, far));
+        assert_eq!(row_names(&h), ["HEB", "TB", "HNUM"]);
+        // Escape cancels a drag in progress.
+        let from = handle(&h, "HNUM");
+        let to = row_pos(&h, "HEB") - vec2(0.0, 8.0);
+        h.events.push(Event::PointerMoved(from));
+        h.frame();
+        h.button(from, true);
+        h.frame();
+        for i in 1..=10 {
+            h.events
+                .push(Event::PointerMoved(from + (to - from) * (i as f32 / 10.0)));
+            h.frame();
+        }
+        key(&mut h, egui::Key::Escape);
+        h.button(to, false);
+        h.frames(3);
+        assert_eq!(row_names(&h), ["HEB", "TB", "HNUM"]);
+        let moves = h
+            .shell
+            .st
+            .session
+            .command_log()
+            .iter()
+            .filter(|c| **c == "library.move")
+            .count();
+        assert_eq!(moves, 3, "one library.move per drop that moved a row");
+    }
+
+    #[test]
+    fn dropping_over_another_panel_does_not_change_or_persist_preferred_order() {
+        let db = temp_db("outside-library-drop");
+        let mut h = Harness::launch(Some(&db));
+        let panel = library_panel(&h);
+        let y = row_pos(&h, "TB").y - 8.0;
+        let other = h
+            .panels()
+            .into_iter()
+            .map(|(r, _)| r)
+            .find(|r| !r.intersects(panel) && r.y_range().contains(y))
+            .expect("another Panel alongside Library");
+        h.drag(handle(&h, "HNUM"), pos2(other.center().x, y));
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        assert_eq!(starred(&h), "TB");
+        assert!(!h.shell.st.session.command_log().contains(&"library.move"));
+        h.shell.save_session(true);
+        drop(h);
+        let h = Harness::launch(Some(&db));
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        assert_eq!(starred(&h), "TB");
+    }
+
+    #[test]
+    fn filtering_by_text_and_by_language_works_together() {
+        let mut h = Harness::new();
+        // Text: "hebrew" matches the Hebrew test Bible and the Hebrew-numbered one.
+        h.click_text("Filter");
+        h.events.push(Event::Text("hebrew".into()));
+        h.frames(2);
+        assert_eq!(row_names(&h), ["HEB", "HNUM"]);
+        // With the Hebrew chip on as well, only the Hebrew-language one is left.
+        h.click_text("Hebrew");
+        assert_eq!(row_names(&h), ["HEB"]);
+        // The English chip adds English Resources that also match the text.
+        h.click_text("English");
+        assert_eq!(row_names(&h), ["HEB", "HNUM"]);
+        // Clearing the text leaves the chips filtering.
+        let t = h.tab_id("Library");
+        h.shell.st.tabs.get_mut(&t).unwrap().filter.clear();
+        h.frames(2);
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        h.click_text("English");
+        assert_eq!(row_names(&h), ["HEB"]);
+        h.click_text("Hebrew");
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        // A filter that matches nothing says so.
+        h.shell.st.tabs.get_mut(&t).unwrap().filter = "zzz".into();
+        h.frames(2);
+        assert!(row_names(&h).is_empty());
+        assert!(h.find("Nothing matches the filter.").is_some());
+    }
+
+    #[test]
+    fn removing_the_last_resource_of_a_selected_language_restores_unfiltered_rows() {
+        let mut h = Harness::new();
+        h.click_text("Hebrew");
+        assert_eq!(row_names(&h), ["HEB"]);
+        let p = row_pos(&h, "HEB");
+        right_click(&mut h, p);
+        h.click_text("Remove…");
+        h.click_text("Cancel");
+        assert_eq!(row_names(&h), ["HEB"], "Cancel keeps the language filter");
+
+        let p = row_pos(&h, "HEB");
+        right_click(&mut h, p);
+        h.click_text("Remove…");
+        h.click_text("Remove");
+        assert!(h.shell.st.session.library.get("heb-test").is_none());
+        assert_eq!(h.shell.st.session.library.languages(), ["English"]);
+        assert_eq!(row_names(&h), ["TB", "HNUM"]);
+        let tab = h.tab_id("Library");
+        assert!(h.shell.st.tabs[&tab].languages.is_empty());
+        assert!(h.find("Nothing matches the filter.").is_none());
+
+        // The remaining chip still toggles normally; no hidden selection survives.
+        h.click_text("English");
+        h.click_text("English");
+        assert_eq!(row_names(&h), ["TB", "HNUM"]);
+        assert!(h.shell.st.tabs[&tab].languages.is_empty());
+    }
+
+    #[test]
+    fn enter_double_click_and_right_click_open() {
+        let mut h = Harness::new();
+        let count = |h: &Harness, id: &str| {
+            h.shell
+                .st
+                .session
+                .workspace
+                .tabs()
+                .filter(|t| t.kind == TabKind::Resource(id.into()))
+                .count()
+        };
+        let p = row_pos(&h, "HEB");
+        double_click(&mut h, p);
+        assert_eq!(count(&h, "heb-test"), 1);
+        // Back to the Library: select HNUM with a click, then Enter.
+        h.click_text("Library");
+        let p = row_pos(&h, "HNUM");
+        h.click(p);
+        assert_eq!(count(&h, "heb-num"), 0, "a single click only selects");
+        key(&mut h, egui::Key::Enter);
+        assert_eq!(count(&h, "heb-num"), 1);
+        h.click_text("Library");
+        let p = row_pos(&h, "HEB");
+        right_click(&mut h, p);
+        h.click_text("Open");
+        assert_eq!(count(&h, "heb-test"), 2);
+    }
+
+    #[test]
+    fn tab_focused_row_opens_on_enter_without_activating_the_filter() {
+        let mut h = Harness::new();
+        h.click(row_pos(&h, "HNUM"));
+        let library = h.tab_id("Library");
+        let opens = |h: &Harness| {
+            h.shell
+                .st
+                .session
+                .command_log()
+                .iter()
+                .filter(|c| **c == "resource.open")
+                .count()
+        };
+        let before = opens(&h);
+        h.click_text("Filter");
+        assert!(h.ctx.memory(|m| m.focused().is_some()));
+        key(&mut h, egui::Key::Enter);
+        assert_eq!(opens(&h), before, "Enter in the filter must not open a row");
+
+        // Traverse actual widgets, not a synthetic request_focus: HEB has keyboard focus
+        // while HNUM remains the mouse-selected row.
+        let target = row_pos(&h, "HEB");
+        let mut focused_row = false;
+        for _ in 0..32 {
+            key(&mut h, egui::Key::Tab);
+            if h.ctx
+                .memory(|m| m.focused())
+                .and_then(|id| h.ctx.read_response(id))
+                .is_some_and(|r| r.has_focus() && r.rect.contains(target))
+            {
+                focused_row = true;
+                break;
+            }
+        }
+        assert!(focused_row, "Tab must reach the HEB row");
+        assert_eq!(
+            h.shell.st.tabs[&library].selected.as_deref(),
+            Some("heb-num")
+        );
+        assert_eq!(opens(&h), before, "Tab only moves focus");
+
+        key(&mut h, egui::Key::Enter);
+        assert_eq!(
+            opens(&h),
+            before + 1,
+            "Enter runs resource.open exactly once"
+        );
+        let workspace = &h.shell.st.session.workspace;
+        let opened = workspace.tab(workspace.focused().unwrap()).unwrap();
+        assert_eq!(opened.kind, TabKind::Resource("heb-test".into()));
+        assert_eq!(opened.title, "HEB");
+    }
+
+    #[test]
+    fn enter_with_a_context_menu_open_does_not_open_the_selected_row() {
+        let mut h = Harness::new();
+        let opens = |h: &Harness| {
+            h.shell
+                .st
+                .session
+                .command_log()
+                .iter()
+                .filter(|c| **c == "resource.open")
+                .count()
+        };
+        let before = opens(&h);
+        let p = row_pos(&h, "HEB");
+        right_click(&mut h, p);
+        assert!(egui::Popup::is_any_open(&h.ctx));
+        key(&mut h, egui::Key::Enter);
+        assert_eq!(opens(&h), before, "Enter belongs to the open menu");
+        assert_eq!(
+            h.shell.st.session.workspace.focused(),
+            Some(h.tab_id("Library"))
+        );
+    }
+
+    #[test]
+    fn the_about_tab_shows_manifest_licence_attribution_and_annotation_count() {
+        let mut h = Harness::new();
+        let mut e = h
+            .shell
+            .st
+            .session
+            .library
+            .get("test-bible")
+            .unwrap()
+            .clone();
+        e.manifest.attribution = "Test Bible text: public domain.\nכתב — ἀγάπη".into();
+        e.manifest.changes = Some("Reformatted for the app.".into());
+        e.manifest.source_file = Some("tb.usfm".into());
+        e.manifest.source_format = "usfm".into();
+        h.shell.st.session.library.add(e.clone());
+        let p = row_pos(&h, "TB");
+        right_click(&mut h, p);
+        h.click_text("About");
+        h.frames(2);
+        let about = h.tab_id("About · TB");
+        assert_eq!(h.shell.st.session.workspace.focused(), Some(about));
+        for t in [
+            "Test Bible",
+            "Licence",
+            "LicenseRef-PD",
+            "ATTRIBUTION",
+            "CHANGES WE MADE",
+            "Reformatted for the app.",
+            "tb.usfm (usfm)",
+            "No Annotations refer to this Resource.",
+            "Remove…",
+        ] {
+            assert!(h.find(t).is_some(), "{t:?} missing: {:?}", h.texts());
+        }
+        // The Attribution is drawn by the text pipeline, verbatim.
+        let view = h.shell.st.tabs[&about].view.as_ref().unwrap();
+        assert_eq!(view.doc.units[0].text, e.manifest.attribution);
+        assert_eq!(view.doc.blocks.len(), 2, "one paragraph per line");
+        // Opening About again (from the Bible Tab's ⋯) focuses the same Tab.
+        let tb = h.tab_id("TB");
+        h.shell
+            .run("resource.about", &json!({ "id": "test-bible" }));
+        assert_eq!(h.shell.st.session.workspace.focused(), Some(about));
+        h.shell.st.session.workspace.user_focused(tb);
+        let abouts = h
+            .shell
+            .st
+            .session
+            .workspace
+            .tabs()
+            .filter(|t| matches!(t.kind, TabKind::About(_)))
+            .count();
+        assert_eq!(abouts, 1);
+    }
+
+    #[test]
+    fn the_about_tab_applies_live_text_size_and_line_spacing() {
+        let mut h = Harness::new();
+        let mut entry = h
+            .shell
+            .st
+            .session
+            .library
+            .get("test-bible")
+            .unwrap()
+            .clone();
+        entry.manifest.attribution = "Public domain text.\nAttribution shown verbatim.".into();
+        h.shell.st.session.library.add(entry);
+        h.shell
+            .run("resource.about", &json!({ "id": "test-bible" }));
+        settle_all(&mut h);
+        let about = h.tab_id("About · TB");
+        let height = |h: &Harness| -> f32 {
+            let view = h.shell.st.tabs[&about].view.as_ref().unwrap();
+            let laid = view.laid_in_view(600.0);
+            assert!(!laid.is_empty(), "Attribution must be laid out");
+            laid.iter().map(|(_, _, block)| block.height).sum()
+        };
+        let initial = height(&h);
+        h.shell.run("view.text_larger", &json!({}));
+        settle_all(&mut h);
+        let larger = height(&h);
+        let view = h.shell.st.tabs[&about].view.as_ref().unwrap();
+        assert_eq!(view.settings().size, h.shell.st.session.text.size);
+        assert!(larger > initial, "larger text: {larger} <= {initial}");
+        h.shell
+            .run("view.line_spacing", &json!({ "value": "loose" }));
+        settle_all(&mut h);
+        let view = h.shell.st.tabs[&about].view.as_ref().unwrap();
+        assert_eq!(
+            view.settings().line_spacing,
+            h.shell.st.session.text.line_spacing
+        );
+        assert!(height(&h) > larger * 1.2, "line spacing must change layout");
+        assert_eq!(h.tab_id("About · TB"), about, "About was never reopened");
+    }
+
+    #[test]
+    fn the_about_tab_shows_none_recorded_for_empty_attribution() {
+        let mut h = Harness::new();
+        let mut entry = h
+            .shell
+            .st
+            .session
+            .library
+            .get("test-bible")
+            .unwrap()
+            .clone();
+        entry.manifest.attribution.clear();
+        entry.manifest.changes = Some("No text changes.".into());
+        h.shell.st.session.library.add(entry);
+        h.shell
+            .run("resource.about", &json!({ "id": "test-bible" }));
+        h.frames(2);
+        assert!(h.find("None recorded.").is_some());
+        assert!(h.find("No text changes.").is_some());
+    }
+
+    #[test]
+    fn remove_deletes_the_obr_from_the_library_after_confirmation() {
+        let dir = std::env::temp_dir().join(format!("obs-shell-remove-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("kjv-sample.obr");
+        obs_store::write_obr(&obs_store::sample_resource(), &file).unwrap();
+        let mut h = Harness::new();
+        assert!(h.shell.st.session.library.scan(&dir).is_empty());
+        h.frames(2);
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM", "KJV"]);
+
+        // Remove… asks first, stating the Annotation count; Cancel keeps everything.
+        let p = row_pos(&h, "KJV");
+        right_click(&mut h, p);
+        h.click_text("Remove…");
+        let message = h.shell.st.confirm.as_ref().unwrap().2.clone();
+        assert!(message.contains("No Annotations refer"), "{message}");
+        assert!(h.find(&message).is_some(), "{:?}", h.texts());
+        h.click_text("Cancel");
+        assert!(h.shell.st.confirm.is_none());
+        assert!(file.is_file());
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM", "KJV"]);
+
+        // From the About Tab this time, and confirmed: the file is deleted and the row goes.
+        h.shell
+            .run("resource.about", &json!({ "id": "kjv-sample" }));
+        h.frames(2);
+        h.click_text("Remove…");
+        assert!(h.shell.st.confirm.is_some());
+        h.click_text("Remove");
+        assert!(!file.exists(), "the .obr is deleted");
+        assert!(h.shell.st.session.library.get("kjv-sample").is_none());
+        assert!(
+            h.shell
+                .st
+                .session
+                .workspace
+                .tabs()
+                .all(|t| !t.title.contains("KJV"))
+        );
+        h.click_text("Library");
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        drop(h);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
 mod text_comparison {
     use super::*;
     use crate::compare_view::{ABSENT, NOT_COMPARED};
@@ -1855,522 +2450,5 @@ mod text_comparison {
                 assert!(f.has_glyphs(&egui::FontId::proportional(12.0), s), "{s}");
             }
         });
-    }
-}
-
-/// The Library Tab and the About Tab (#46).
-mod library {
-    use super::*;
-
-    use super::super::library_tab::ROW_H;
-
-    const ABBREVS: [&str; 5] = ["TB", "HEB", "HNUM", "KJV", "DICT"];
-
-    /// The Panel holding the Library Tab.
-    fn library_panel(h: &Harness) -> Rect {
-        h.panels()
-            .into_iter()
-            .find(|(_, t)| t.iter().any(|t| t == "Library"))
-            .map(|(r, _)| r)
-            .unwrap()
-    }
-
-    /// Library rows top to bottom: (abbreviation, row centre y).
-    fn rows(h: &Harness) -> Vec<(String, f32)> {
-        let panel = library_panel(h);
-        let mut out: Vec<(String, f32)> = h
-            .shapes
-            .iter()
-            .filter(|(r, t)| ABBREVS.contains(&t.as_str()) && panel.contains(r.center()))
-            .map(|(r, t)| (t.clone(), r.center().y))
-            .collect();
-        out.sort_by(|a, b| a.1.total_cmp(&b.1));
-        out
-    }
-
-    fn row_names(h: &Harness) -> Vec<String> {
-        rows(h).into_iter().map(|(t, _)| t).collect()
-    }
-
-    /// The row the ★ is on.
-    fn starred(h: &Harness) -> String {
-        let star = h.at("★");
-        rows(h)
-            .into_iter()
-            .find(|(_, y)| (y - star.y).abs() < 6.0)
-            .map(|(t, _)| t)
-            .unwrap_or_else(|| panic!("★ on no row: {:?}", rows(h)))
-    }
-
-    fn row_pos(h: &Harness, abbrev: &str) -> Pos2 {
-        let panel = library_panel(h);
-        let r = h
-            .shapes
-            .iter()
-            .find(|(r, t)| t == abbrev && panel.contains(r.center()))
-            .map(|(r, _)| *r)
-            .unwrap_or_else(|| panic!("no row {abbrev}: {:?}", rows(h)));
-        r.center()
-    }
-
-    /// Where a row's drag handle is.
-    fn handle(h: &Harness, abbrev: &str) -> Pos2 {
-        let y = row_pos(h, abbrev).y;
-        let (r, _) = h
-            .shapes
-            .iter()
-            .rfind(|(r, t)| t == "≡" && (r.center().y - y).abs() < 6.0)
-            .unwrap();
-        r.center()
-    }
-
-    fn right_click(h: &mut Harness, p: Pos2) {
-        h.events.push(Event::PointerMoved(p));
-        h.frame();
-        for pressed in [true, false] {
-            h.events.push(Event::PointerButton {
-                pos: p,
-                button: PointerButton::Secondary,
-                pressed,
-                modifiers: Modifiers::NONE,
-            });
-            h.frame();
-        }
-        h.frames(2);
-    }
-
-    fn double_click(h: &mut Harness, p: Pos2) {
-        h.events.push(Event::PointerMoved(p));
-        h.frame();
-        for _ in 0..2 {
-            h.button(p, true);
-            h.frame();
-            h.button(p, false);
-            h.frame();
-        }
-        h.frames(2);
-    }
-
-    fn key(h: &mut Harness, key: egui::Key) {
-        h.events.push(Event::Key {
-            key,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: Modifiers::NONE,
-        });
-        h.frames(2);
-    }
-
-    #[test]
-    fn rows_are_grouped_by_type_with_language_and_licence() {
-        let mut h = Harness::new();
-        h.ctx.fonts_mut(|fonts| {
-            assert!(fonts.has_glyph(&egui::FontId::proportional(14.0), '★'));
-            assert!(fonts.has_glyph(&egui::FontId::monospace(14.0), '≡'));
-        });
-        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
-        let panel = library_panel(&h);
-        for t in [
-            "BIBLES",
-            "Test Bible",
-            "hbo",
-            "LicenseRef-PD",
-            "English",
-            "Hebrew",
-        ] {
-            assert!(
-                h.shapes
-                    .iter()
-                    .any(|(r, s)| s == t && panel.contains(r.center())),
-                "{t:?} missing: {:?}",
-                h.texts()
-            );
-        }
-        assert_eq!(starred(&h), "TB");
-
-        h.shell.st.session.library.add(LibraryEntry {
-            manifest: obs_model::Manifest::new(
-                "test-dictionary",
-                "Test Dictionary",
-                "DICT",
-                obs_model::ResourceType::Dictionary,
-                "en",
-            ),
-            path: "/nonexistent/test-dictionary.obr".into(),
-        });
-        h.frames(2);
-        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM", "DICT"]);
-        let bibles = h.find("BIBLES").unwrap();
-        let dictionaries = h.find("DICTIONARIES").unwrap();
-        assert!(bibles.bottom() < row_pos(&h, "TB").y);
-        assert!(row_pos(&h, "HNUM").y < dictionaries.top());
-        assert!(dictionaries.bottom() < row_pos(&h, "DICT").y);
-        assert!(h.find("Test Dictionary").is_some());
-    }
-
-    #[test]
-    fn reordering_persists_across_restarts_and_changes_which_bible_is_starred() {
-        let db = temp_db("preferred-order");
-        let mut h = Harness::launch(Some(&db));
-        // Drag HNUM's handle onto the upper half of TB: HNUM becomes first, and ★.
-        let from = handle(&h, "HNUM");
-        let to = row_pos(&h, "TB") - vec2(0.0, 8.0);
-        h.drag(from, to);
-        assert_eq!(row_names(&h), ["HNUM", "TB", "HEB"]);
-        assert_eq!(starred(&h), "HNUM");
-        // Move down from the right-click menu.
-        let p = row_pos(&h, "HNUM");
-        right_click(&mut h, p);
-        h.click_text("Move down");
-        assert_eq!(row_names(&h), ["TB", "HNUM", "HEB"]);
-        let p = row_pos(&h, "HEB");
-        right_click(&mut h, p);
-        h.click_text("Move up");
-        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
-        h.drag(handle(&h, "HNUM"), row_pos(&h, "TB") - vec2(0.0, 8.0));
-        assert_eq!(row_names(&h), ["HNUM", "TB", "HEB"]);
-        let log = h.shell.st.session.command_log();
-        for id in ["library.move", "library.move_up", "library.move_down"] {
-            assert!(log.contains(&id), "{id} not run: {log:?}");
-        }
-        h.shell.save_session(true);
-        drop(h);
-
-        // Relaunch: the same order, the same ★, and the ★ Bible is the one lookups use.
-        let mut h = Harness::launch(Some(&db));
-        assert_eq!(row_names(&h), ["HNUM", "TB", "HEB"]);
-        assert_eq!(starred(&h), "HNUM");
-        h.shell.run("layout.reset", &json!({}));
-        h.frames(3);
-        assert_eq!(h.panels()[0].1, ["HNUM"]);
-    }
-
-    #[test]
-    fn a_dragged_row_lands_in_the_gap_the_drop_line_marks() {
-        let mut h = Harness::new();
-        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
-        // Dropped in the gap between TB and HEB: between them, so TB keeps ★.
-        let (tb, heb) = (row_pos(&h, "TB"), row_pos(&h, "HEB"));
-        h.drag(handle(&h, "HNUM"), pos2(tb.x, (tb.y + heb.y) / 2.0));
-        assert_eq!(row_names(&h), ["TB", "HNUM", "HEB"]);
-        assert_eq!(starred(&h), "TB");
-        // Dropped on the lower half of TB: below TB, not above it.
-        h.drag(handle(&h, "HEB"), row_pos(&h, "TB") + vec2(0.0, 8.0));
-        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
-        assert_eq!(starred(&h), "TB");
-        // TB on the upper half of HEB stays put; on its lower half it goes below HEB.
-        h.drag(handle(&h, "TB"), row_pos(&h, "HEB") - vec2(0.0, 8.0));
-        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
-        h.drag(handle(&h, "TB"), row_pos(&h, "HEB") + vec2(0.0, 8.0));
-        assert_eq!(row_names(&h), ["HEB", "TB", "HNUM"]);
-        assert_eq!(starred(&h), "HEB");
-        // Dropped well away from the rows: cancelled.
-        let far = library_panel(&h).bottom() - 10.0;
-        assert!(far > row_pos(&h, "HNUM").y + 3.0 * ROW_H, "panel too short");
-        h.drag(handle(&h, "HNUM"), pos2(tb.x, far));
-        assert_eq!(row_names(&h), ["HEB", "TB", "HNUM"]);
-        // Escape cancels a drag in progress.
-        let from = handle(&h, "HNUM");
-        let to = row_pos(&h, "HEB") - vec2(0.0, 8.0);
-        h.events.push(Event::PointerMoved(from));
-        h.frame();
-        h.button(from, true);
-        h.frame();
-        for i in 1..=10 {
-            h.events
-                .push(Event::PointerMoved(from + (to - from) * (i as f32 / 10.0)));
-            h.frame();
-        }
-        key(&mut h, egui::Key::Escape);
-        h.button(to, false);
-        h.frames(3);
-        assert_eq!(row_names(&h), ["HEB", "TB", "HNUM"]);
-        let moves = h
-            .shell
-            .st
-            .session
-            .command_log()
-            .iter()
-            .filter(|c| **c == "library.move")
-            .count();
-        assert_eq!(moves, 3, "one library.move per drop that moved a row");
-    }
-
-    #[test]
-    fn dropping_over_another_panel_does_not_change_or_persist_preferred_order() {
-        let db = temp_db("outside-library-drop");
-        let mut h = Harness::launch(Some(&db));
-        let panel = library_panel(&h);
-        let y = row_pos(&h, "TB").y - 8.0;
-        let other = h
-            .panels()
-            .into_iter()
-            .map(|(r, _)| r)
-            .find(|r| !r.intersects(panel) && r.y_range().contains(y))
-            .expect("another Panel alongside Library");
-        h.drag(handle(&h, "HNUM"), pos2(other.center().x, y));
-        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
-        assert_eq!(starred(&h), "TB");
-        assert!(!h.shell.st.session.command_log().contains(&"library.move"));
-        h.shell.save_session(true);
-        drop(h);
-        let h = Harness::launch(Some(&db));
-        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
-        assert_eq!(starred(&h), "TB");
-    }
-
-    #[test]
-    fn filtering_by_text_and_by_language_works_together() {
-        let mut h = Harness::new();
-        // Text: "hebrew" matches the Hebrew test Bible and the Hebrew-numbered one.
-        h.click_text("Filter");
-        h.events.push(Event::Text("hebrew".into()));
-        h.frames(2);
-        assert_eq!(row_names(&h), ["HEB", "HNUM"]);
-        // With the Hebrew chip on as well, only the Hebrew-language one is left.
-        h.click_text("Hebrew");
-        assert_eq!(row_names(&h), ["HEB"]);
-        // The English chip adds English Resources that also match the text.
-        h.click_text("English");
-        assert_eq!(row_names(&h), ["HEB", "HNUM"]);
-        // Clearing the text leaves the chips filtering.
-        let t = h.tab_id("Library");
-        h.shell.st.tabs.get_mut(&t).unwrap().filter.clear();
-        h.frames(2);
-        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
-        h.click_text("English");
-        assert_eq!(row_names(&h), ["HEB"]);
-        h.click_text("Hebrew");
-        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
-        // A filter that matches nothing says so.
-        h.shell.st.tabs.get_mut(&t).unwrap().filter = "zzz".into();
-        h.frames(2);
-        assert!(row_names(&h).is_empty());
-        assert!(h.find("Nothing matches the filter.").is_some());
-    }
-
-    #[test]
-    fn removing_the_last_resource_of_a_selected_language_restores_unfiltered_rows() {
-        let mut h = Harness::new();
-        h.click_text("Hebrew");
-        assert_eq!(row_names(&h), ["HEB"]);
-        let p = row_pos(&h, "HEB");
-        right_click(&mut h, p);
-        h.click_text("Remove…");
-        h.click_text("Cancel");
-        assert_eq!(row_names(&h), ["HEB"], "Cancel keeps the language filter");
-
-        let p = row_pos(&h, "HEB");
-        right_click(&mut h, p);
-        h.click_text("Remove…");
-        h.click_text("Remove");
-        assert!(h.shell.st.session.library.get("heb-test").is_none());
-        assert_eq!(h.shell.st.session.library.languages(), ["English"]);
-        assert_eq!(row_names(&h), ["TB", "HNUM"]);
-        let tab = h.tab_id("Library");
-        assert!(h.shell.st.tabs[&tab].languages.is_empty());
-        assert!(h.find("Nothing matches the filter.").is_none());
-
-        // The remaining chip still toggles normally; no hidden selection survives.
-        h.click_text("English");
-        h.click_text("English");
-        assert_eq!(row_names(&h), ["TB", "HNUM"]);
-        assert!(h.shell.st.tabs[&tab].languages.is_empty());
-    }
-
-    #[test]
-    fn enter_double_click_and_right_click_open() {
-        let mut h = Harness::new();
-        let count = |h: &Harness, id: &str| {
-            h.shell
-                .st
-                .session
-                .workspace
-                .tabs()
-                .filter(|t| t.kind == TabKind::Resource(id.into()))
-                .count()
-        };
-        let p = row_pos(&h, "HEB");
-        double_click(&mut h, p);
-        assert_eq!(count(&h, "heb-test"), 1);
-        // Back to the Library: select HNUM with a click, then Enter.
-        h.click_text("Library");
-        let p = row_pos(&h, "HNUM");
-        h.click(p);
-        assert_eq!(count(&h, "heb-num"), 0, "a single click only selects");
-        key(&mut h, egui::Key::Enter);
-        assert_eq!(count(&h, "heb-num"), 1);
-        h.click_text("Library");
-        let p = row_pos(&h, "HEB");
-        right_click(&mut h, p);
-        h.click_text("Open");
-        assert_eq!(count(&h, "heb-test"), 2);
-    }
-
-    #[test]
-    fn the_about_tab_shows_manifest_licence_attribution_and_annotation_count() {
-        let mut h = Harness::new();
-        let mut e = h
-            .shell
-            .st
-            .session
-            .library
-            .get("test-bible")
-            .unwrap()
-            .clone();
-        e.manifest.attribution = "Test Bible text: public domain.\nכתב — ἀγάπη".into();
-        e.manifest.changes = Some("Reformatted for the app.".into());
-        e.manifest.source_file = Some("tb.usfm".into());
-        e.manifest.source_format = "usfm".into();
-        h.shell.st.session.library.add(e.clone());
-        let p = row_pos(&h, "TB");
-        right_click(&mut h, p);
-        h.click_text("About");
-        h.frames(2);
-        let about = h.tab_id("About · TB");
-        assert_eq!(h.shell.st.session.workspace.focused(), Some(about));
-        for t in [
-            "Test Bible",
-            "Licence",
-            "LicenseRef-PD",
-            "ATTRIBUTION",
-            "CHANGES WE MADE",
-            "Reformatted for the app.",
-            "tb.usfm (usfm)",
-            "No Annotations refer to this Resource.",
-            "Remove…",
-        ] {
-            assert!(h.find(t).is_some(), "{t:?} missing: {:?}", h.texts());
-        }
-        // The Attribution is drawn by the text pipeline, verbatim.
-        let view = h.shell.st.tabs[&about].view.as_ref().unwrap();
-        assert_eq!(view.doc.units[0].text, e.manifest.attribution);
-        assert_eq!(view.doc.blocks.len(), 2, "one paragraph per line");
-        // Opening About again (from the Bible Tab's ⋯) focuses the same Tab.
-        let tb = h.tab_id("TB");
-        h.shell
-            .run("resource.about", &json!({ "id": "test-bible" }));
-        assert_eq!(h.shell.st.session.workspace.focused(), Some(about));
-        h.shell.st.session.workspace.user_focused(tb);
-        let abouts = h
-            .shell
-            .st
-            .session
-            .workspace
-            .tabs()
-            .filter(|t| matches!(t.kind, TabKind::About(_)))
-            .count();
-        assert_eq!(abouts, 1);
-    }
-
-    #[test]
-    fn the_about_tab_applies_live_text_size_and_line_spacing() {
-        let mut h = Harness::new();
-        let mut entry = h
-            .shell
-            .st
-            .session
-            .library
-            .get("test-bible")
-            .unwrap()
-            .clone();
-        entry.manifest.attribution = "Public domain text.\nAttribution shown verbatim.".into();
-        h.shell.st.session.library.add(entry);
-        h.shell
-            .run("resource.about", &json!({ "id": "test-bible" }));
-        settle_all(&mut h);
-        let about = h.tab_id("About · TB");
-        let height = |h: &Harness| -> f32 {
-            let view = h.shell.st.tabs[&about].view.as_ref().unwrap();
-            let laid = view.laid_in_view(600.0);
-            assert!(!laid.is_empty(), "Attribution must be laid out");
-            laid.iter().map(|(_, _, block)| block.height).sum()
-        };
-        let initial = height(&h);
-        h.shell.run("view.text_larger", &json!({}));
-        settle_all(&mut h);
-        let larger = height(&h);
-        let view = h.shell.st.tabs[&about].view.as_ref().unwrap();
-        assert_eq!(view.settings().size, h.shell.st.session.text.size);
-        assert!(larger > initial, "larger text: {larger} <= {initial}");
-        h.shell
-            .run("view.line_spacing", &json!({ "value": "loose" }));
-        settle_all(&mut h);
-        let view = h.shell.st.tabs[&about].view.as_ref().unwrap();
-        assert_eq!(
-            view.settings().line_spacing,
-            h.shell.st.session.text.line_spacing
-        );
-        assert!(height(&h) > larger * 1.2, "line spacing must change layout");
-        assert_eq!(h.tab_id("About · TB"), about, "About was never reopened");
-    }
-
-    #[test]
-    fn the_about_tab_shows_none_recorded_for_empty_attribution() {
-        let mut h = Harness::new();
-        let mut entry = h
-            .shell
-            .st
-            .session
-            .library
-            .get("test-bible")
-            .unwrap()
-            .clone();
-        entry.manifest.attribution.clear();
-        entry.manifest.changes = Some("No text changes.".into());
-        h.shell.st.session.library.add(entry);
-        h.shell
-            .run("resource.about", &json!({ "id": "test-bible" }));
-        h.frames(2);
-        assert!(h.find("None recorded.").is_some());
-        assert!(h.find("No text changes.").is_some());
-    }
-
-    #[test]
-    fn remove_deletes_the_obr_from_the_library_after_confirmation() {
-        let dir = std::env::temp_dir().join(format!("obs-shell-remove-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("kjv-sample.obr");
-        obs_store::write_obr(&obs_store::sample_resource(), &file).unwrap();
-        let mut h = Harness::new();
-        assert!(h.shell.st.session.library.scan(&dir).is_empty());
-        h.frames(2);
-        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM", "KJV"]);
-
-        // Remove… asks first, stating the Annotation count; Cancel keeps everything.
-        let p = row_pos(&h, "KJV");
-        right_click(&mut h, p);
-        h.click_text("Remove…");
-        let message = h.shell.st.confirm.as_ref().unwrap().2.clone();
-        assert!(message.contains("No Annotations refer"), "{message}");
-        assert!(h.find(&message).is_some(), "{:?}", h.texts());
-        h.click_text("Cancel");
-        assert!(h.shell.st.confirm.is_none());
-        assert!(file.is_file());
-        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM", "KJV"]);
-
-        // From the About Tab this time, and confirmed: the file is deleted and the row goes.
-        h.shell
-            .run("resource.about", &json!({ "id": "kjv-sample" }));
-        h.frames(2);
-        h.click_text("Remove…");
-        assert!(h.shell.st.confirm.is_some());
-        h.click_text("Remove");
-        assert!(!file.exists(), "the .obr is deleted");
-        assert!(h.shell.st.session.library.get("kjv-sample").is_none());
-        assert!(
-            h.shell
-                .st
-                .session
-                .workspace
-                .tabs()
-                .all(|t| !t.title.contains("KJV"))
-        );
-        h.click_text("Library");
-        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
-        drop(h);
-        std::fs::remove_dir_all(dir).unwrap();
     }
 }

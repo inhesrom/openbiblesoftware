@@ -55,7 +55,7 @@ mod workspace_tests;
 mod link_tests;
 
 #[cfg(test)]
-mod compare_tests;
+mod library_tests;
 
 #[cfg(test)]
-mod library_tests;
+mod compare_tests;

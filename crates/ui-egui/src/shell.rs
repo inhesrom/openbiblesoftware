@@ -35,15 +35,15 @@ struct TabUi {
     error: Option<String>,
     /// A verse marked after a jump, and when the mark started.
     flash: Option<(Verse, f64)>,
-    /// A Text Comparison Tab's view.
-    comparison: Option<ComparisonView>,
-    /// Failed selected Bibles are retried only on request (or after removal/reselection).
-    comparison_errors: BTreeMap<String, String>,
     /// Library Tab: the language chips that are on, the selected row and the row whose
     /// handle is being dragged (resource ids).
     languages: Vec<String>,
     selected: Option<String>,
     dragging: Option<String>,
+    /// A Text Comparison Tab's view.
+    comparison: Option<ComparisonView>,
+    /// Failed selected Bibles are retried only on request (or after removal/reselection).
+    comparison_errors: BTreeMap<String, String>,
 }
 
 /// How long a jump's flash lasts, in seconds.
@@ -1211,12 +1211,16 @@ impl State {
             }
             HeaderBox::Filter => {
                 if let Some(t) = self.tabs.get_mut(&tab) {
-                    ui.add(
+                    let r = ui.add(
                         egui::TextEdit::singleline(&mut t.filter)
                             .hint_text("Filter")
                             .desired_width(width)
                             .margin(egui::Margin::symmetric(8, 4)),
                     );
+                    if r.lost_focus() {
+                        // TextEdit releases focus on Enter; don't let that same key open a row.
+                        ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+                    }
                 }
             }
             HeaderBox::Word | HeaderBox::Reference => {

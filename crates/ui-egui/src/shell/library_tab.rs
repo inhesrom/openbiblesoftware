@@ -58,6 +58,8 @@ impl State {
         let mut drag_end = false;
         let mut rows: Vec<Row> = Vec::new();
         let mut drop_region = Rect::NOTHING;
+        let enter_pressed =
+            ui.input(|i| i.key_pressed(egui::Key::Enter)) && !egui::Popup::is_any_open(ui.ctx());
         egui::Frame::new()
             .fill(theme::c().field)
             .inner_margin(egui::Margin::symmetric(14, 10))
@@ -133,7 +135,9 @@ impl State {
                                 if row.body.clicked() || row.body.secondary_clicked() {
                                     select = Some(id.clone());
                                 }
-                                if row.body.double_clicked() {
+                                if row.body.double_clicked()
+                                    || (row.body.has_focus() && enter_pressed)
+                                {
                                     action = Some(Action::Open(id.clone()));
                                 }
                                 row.body.context_menu(|ui| {
@@ -187,7 +191,7 @@ impl State {
         if focused
             && action.is_none()
             && ui.memory(|m| m.focused().is_none())
-            && ui.input(|i| i.key_pressed(egui::Key::Enter))
+            && enter_pressed
             && let Some(id) = select.clone().or(selected)
         {
             action = Some(Action::Open(id));
