@@ -1,0 +1,26 @@
+$$$Gen.0.0
+<div type="book" osisID="Gen" canonical="true"><title type="main">THE FIRST BOOK OF MOSES CALLED GENESIS</title>
+$$$Gen.1.0
+<chapter osisID="Gen.1" sID="Gen.1"/>
+$$$Gen.1.1
+<milestone type="x-p" marker="¶"/><w lemma="strong:H07225">In the beginning</w> <w lemma="strong:H0430">God</w> <w lemma="strong:H0853 strong:H01254" morph="strongMorph:TH8804">created</w> <w lemma="strong:H08064">the heaven</w> <w lemma="strong:H0853">and</w> <w lemma="strong:H0776">the earth</w>.
+$$$Gen.1.2
+<w lemma="strong:H0776">And the earth</w> <w lemma="strong:H01961" morph="strongMorph:TH8804">was</w> <w lemma="strong:H08414">without form</w>, <w lemma="strong:H0922">and void</w>; <w lemma="strong:H02822">and darkness</w> <transChange type="added">was</transChange> <w lemma="strong:H05921">upon</w> <w lemma="strong:H06440">the face</w> <w lemma="strong:H08415">of the deep</w>. <w lemma="strong:H07307">And the Spirit</w> <w lemma="strong:H0430">of God</w> <w lemma="strong:H07363" morph="strongMorph:TH8764">moved</w> <w lemma="strong:H05921">upon</w> <w lemma="strong:H06440">the face</w> <w lemma="strong:H04325">of the waters</w>.
+$$$Gen.1.3
+<milestone type="x-p" marker="¶"/><w lemma="strong:H0430">And God</w> <w lemma="strong:H0559" morph="strongMorph:TH8799">said</w>, <w lemma="strong:H01961" morph="strongMorph:TH8799">Let there be</w> <w lemma="strong:H0216">light</w>: <w lemma="strong:H01961" morph="strongMorph:TH8799">and there was</w> <w lemma="strong:H0216">light</w>.<chapter eID="Gen.1"/>
+$$$Ps.3.1
+<title type="psalm" canonical="true">A Psalm of David, when he fled from Absalom his son.</title><divineName>LORD</divineName>, how are they increased that trouble me! many <transChange type="added">are</transChange> they that rise up against me.
+$$$Ps.3.2
+Many <transChange type="added">there be</transChange> which say of my soul, <q marker="">There is no help for him in God.</q> <seg type="x-selah">Selah.</seg>
+$$$Ps.4.0
+<title type="psalm" canonical="true">To the chief Musician on Neginoth, A Psalm of David.</title>
+$$$Ps.4.1
+<l level="1">Hear me when I call, O God of my righteousness:</l><l level="2">thou hast enlarged me <transChange type="added">when I was</transChange> in distress;</l><l level="2">have mercy upon me, and hear my prayer.</l>
+$$$John.3.16
+<title type="section" subType="x-preverse">God’s love for the world</title><q who="Jesus" marker="" sID="q1"/><w lemma="strong:G1063" morph="robinson:CONJ">For</w> <w lemma="strong:G2316" morph="robinson:N-NSM">God</w> <w lemma="strong:G3779" morph="robinson:ADV">so</w> <w lemma="strong:G25" morph="robinson:V-AAI-3S">loved</w> <w lemma="strong:G3588 strong:G2889" morph="robinson:T-ASM robinson:N-ASM">the world</w>, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.<note type="crossReference" osisRef="John.3.16" n="a"><reference osisRef="Rom.5.8">Rom. 5:8</reference>; <reference osisRef="1John.4.9">1 John 4:9</reference></note>
+$$$John.3.17
+For God sent not his Son into the world to condemn the world; but that the world through him might be saved.<note type="study" n="b">Or, <catchWord>condemn</catchWord>: judge.</note><q eID="q1" marker=""/><figure src="map.png"/>
+$$$Rom.5.8
+But God commendeth his love toward us, in that, while we were yet sinners, Christ died for us.
+$$$1John.4.9
+In this was manifested the love of God toward us, because that God sent his only begotten Son into the world, that we might live through him.

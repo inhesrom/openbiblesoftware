@@ -28,6 +28,21 @@ copyright = "Public domain; \"World English Bible\" is a trademark of eBible.org
 changes = "Only a few verses of Gen, 2 Kgs, Ps, Mt and 3 Jn kept, as import test fixtures."
 
 [[asset]]
+path = "crates/formats/tests/assets/sword/**/obskjv*"
+name = "King James Version (1769), test excerpts as SWORD modules (OSIS and GBF)"
+license = "LicenseRef-PD"
+source = "King James Version text; module confs, markup and notes written for this project"
+copyright = "Public domain"
+changes = "A few verses of Gen, Ps and Jn with OSIS and GBF markup written for the import tests; module files built from src/*.imp by crates/formats/tests/sword_fixture."
+
+[[asset]]
+path = "crates/formats/tests/assets/sword/**/obs{notes,greek,topics,hebrew,hebrewthml,hebrewnotes,aliases}*"
+name = "Synthetic SWORD commentary, lexicon and dictionary test modules"
+license = "CC0-1.0"
+source = "Written for this project"
+copyright = "Open Bible Software contributors, dedicated to the public domain"
+
+[[asset]]
 path = "crates/formats/tests/assets/usfm/synthetic/*"
 name = "Synthetic USFM marker-coverage fixtures"
 license = "MIT OR Apache-2.0"

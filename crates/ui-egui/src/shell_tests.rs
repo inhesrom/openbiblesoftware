@@ -1784,6 +1784,60 @@ mod library {
     }
 
     #[test]
+    fn sword_import_licence_attribution_and_source_url_render_in_about_tab() {
+        let source = obs_formats::SwordSource::open(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/sword"),
+        )
+        .unwrap();
+        let (resource, _) =
+            obs_formats::import_sword(&source, "ObsNotes", &obs_formats::SwordOptions::default())
+                .unwrap();
+        let manifest = resource.manifest;
+        let mut h = Harness::new();
+        h.shell.st.session.library.add(LibraryEntry {
+            manifest: manifest.clone(),
+            path: "/nonexistent/obsnotes.obr".into(),
+        });
+        h.shell
+            .run("resource.about", &json!({ "id": manifest.resource_id }));
+        h.frames(5);
+        let about = h.tab_id("About · ObsNotes");
+        assert_eq!(h.shell.st.session.workspace.focused(), Some(about));
+        for text in [
+            "Licence",
+            "CC0-1.0",
+            "Source",
+            "https://github.com/inhesrom/openbiblesoftware",
+            "ATTRIBUTION",
+        ] {
+            assert!(h.find(text).is_some(), "{text:?} missing: {:?}", h.texts());
+        }
+        let view = h.shell.st.tabs[&about].view.as_ref().unwrap();
+        assert_eq!(view.doc.units[0].text, manifest.attribution);
+        assert!(
+            view.doc.units[0]
+                .text
+                .contains("Licence: Creative Commons: CC0")
+        );
+        assert!(
+            view.doc.units[0]
+                .text
+                .contains("Copyright holder: Open Bible Software contributors")
+        );
+        assert!(
+            !h.meshes.is_empty(),
+            "Attribution glyphs painted through reading pipeline"
+        );
+        // Visual evidence for docs/previews/sword-about.png when `UPDATE_PREVIEWS` is set.
+        if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+            let dir =
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+            std::fs::create_dir_all(&dir).unwrap();
+            h.screenshot(&dir.join("sword-about.ppm"));
+        }
+    }
+
+    #[test]
     fn the_about_tab_shows_manifest_licence_attribution_and_annotation_count() {
         let mut h = Harness::new();
         let mut e = h

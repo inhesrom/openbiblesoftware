@@ -57,6 +57,8 @@ pub struct ImportReport {
     /// Places where the Verse map followed a numbering tradition other than the Standard's,
     /// by TVTMS tradition name.
     pub traditions: BTreeMap<String, usize>,
+    /// SWORD conf numbering hint; Bible Verse maps still come from TVTMS.
+    pub versification_hint: Option<String>,
 }
 
 impl fmt::Display for ImportReport {
@@ -114,6 +116,14 @@ impl fmt::Display for ImportReport {
                 "  verse map: {} unmapped verse(s), {} absent verse(s)",
                 c.unmapped, c.absent
             )?,
+        }
+        if let Some(v) = &self.versification_hint {
+            let source = if self.verse_map.is_some() {
+                "; the Verse map comes from TVTMS"
+            } else {
+                ""
+            };
+            writeln!(f, "  conf versification: {v} (a hint only{source})")?;
         }
         let other: Vec<String> = self
             .traditions

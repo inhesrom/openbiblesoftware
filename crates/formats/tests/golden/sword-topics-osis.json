@@ -1,0 +1,124 @@
+{
+  "content_hash": "sha256:146f3e4a870af9adfd882b7c408071ed00c6ee16e73d2fcf5c047b398aba035d",
+  "keys": [
+    [
+      "AARON",
+      "AARON",
+      false
+    ],
+    [
+      "ABRAHAM",
+      "ABRAHAM",
+      false
+    ],
+    [
+      "ABRAM",
+      "ABRAHAM",
+      true
+    ]
+  ],
+  "manifest": {
+    "abbreviation": "ObsTopics",
+    "attribution": "Licence: Public Domain\nLicence notes: Written for the Open Bible Software tests and dedicated to the public domain (CC0 1.0).\nImported from the SWORD module ObsTopics.",
+    "key_schemes": [
+      "headword"
+    ],
+    "language": "en",
+    "license": "LicenseRef-PD",
+    "resource_id": "obstopics",
+    "resource_type": "dictionary",
+    "source_file": "ObsTopics",
+    "source_format": "sword",
+    "source_url": null,
+    "title": "Open Bible test topics (OSIS dictionary)"
+  },
+  "report": {
+    "books": [],
+    "dropped_markup": {
+      "<index>": 1
+    },
+    "entries": 2,
+    "license_missing": false,
+    "notes": 0,
+    "source_format": "sword (OSIS)",
+    "tagged_words": 0,
+    "verse_map": null,
+    "verses": 0,
+    "versification_hint": null,
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "AARON",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..43",
+          "kind": "para",
+          "style": "prose",
+          "text": "Aaron, the brother of Moses; see Exod 4:14."
+        },
+        {
+          "at": "0..5",
+          "kind": "bold",
+          "text": "Aaron"
+        },
+        {
+          "at": "33..42",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "EXO",
+                "chapter": 4,
+                "verse": 14
+              },
+              "start": {
+                "book": "EXO",
+                "chapter": 4,
+                "verse": 14
+              }
+            }
+          ],
+          "text": "Exod 4:14"
+        }
+      ],
+      "text": "Aaron, the brother of Moses; see Exod 4:14.",
+      "title": "AARON"
+    },
+    {
+      "id": "ABRAHAM",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..54",
+          "kind": "para",
+          "style": "prose",
+          "text": "Father of many nations, first called Abram (Gen 17:5)."
+        },
+        {
+          "at": "44..52",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "GEN",
+                "chapter": 17,
+                "verse": 5
+              },
+              "start": {
+                "book": "GEN",
+                "chapter": 17,
+                "verse": 5
+              }
+            }
+          ],
+          "text": "Gen 17:5"
+        }
+      ],
+      "text": "Father of many nations, first called Abram (Gen 17:5).",
+      "title": "ABRAHAM"
+    }
+  ],
+  "verses": []
+}

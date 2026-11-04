@@ -16,6 +16,8 @@ commands:
   run <command-id> [name=value ...|'{json}']   run an engine command, print JSON
   import <file.usfm|dir>... -o <out.obr> [--id ID] [--title T] [--abbrev A] [--lang L] [--rtl]
                                                 import USFM to a resource file, print the Import report
+  import <sword-dir|mods.d/NAME.conf> -o <out.obr> [--module NAME] [--id ID] ...
+                                                import a SWORD module (Bible, Commentary, Lexicon, Dictionary)
   inspect <file.obr> [--unit ID] [--verse REF]  show a resource file's contents
   layout <file.obr> --unit ID [--width PX]       lay a unit out, report lines and timing
   shape [--size PX] [--svg OUT] [--smcp] <text>... shape text with the bundled fonts

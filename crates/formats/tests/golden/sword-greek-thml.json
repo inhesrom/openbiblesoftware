@@ -1,0 +1,124 @@
+{
+  "content_hash": "sha256:1ad18a79263d6b41cd65596baa515115f123de80d27c4addbdf8ea9f3709bcf5",
+  "keys": [
+    [
+      "G25",
+      "G25",
+      false
+    ],
+    [
+      "G26",
+      "G26",
+      false
+    ]
+  ],
+  "manifest": {
+    "abbreviation": "ObsGreek",
+    "attribution": "Imported from the SWORD module ObsGreek.",
+    "key_schemes": [
+      "strongs_number"
+    ],
+    "language": "en",
+    "license": "LicenseRef-unknown",
+    "resource_id": "obsgreek",
+    "resource_type": "lexicon",
+    "source_file": "ObsGreek",
+    "source_format": "sword",
+    "source_url": null,
+    "title": "Open Bible test Greek lexicon (no licence in its conf)"
+  },
+  "report": {
+    "books": [],
+    "dropped_markup": {},
+    "entries": 2,
+    "license_missing": true,
+    "notes": 0,
+    "source_format": "sword (ThML)",
+    "tagged_words": 0,
+    "verse_map": null,
+    "verses": 0,
+    "versification_hint": null,
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "G25",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..46",
+          "kind": "para",
+          "style": "prose",
+          "text": "ἀγαπάω agapaō: to love; see John 3:16."
+        },
+        {
+          "at": "0..13",
+          "kind": "bold",
+          "text": "ἀγαπάω"
+        },
+        {
+          "at": "14..21",
+          "kind": "italic",
+          "text": "agapaō"
+        },
+        {
+          "at": "36..45",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "JHN",
+                "chapter": 3,
+                "verse": 16
+              },
+              "start": {
+                "book": "JHN",
+                "chapter": 3,
+                "verse": 16
+              }
+            }
+          ],
+          "text": "John 3:16"
+        }
+      ],
+      "text": "ἀγαπάω agapaō: to love; see John 3:16.",
+      "title": "G25"
+    },
+    {
+      "id": "G26",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..25",
+          "kind": "para",
+          "style": "prose",
+          "text": "ἀγάπη agapē: love."
+        },
+        {
+          "at": "0..11",
+          "kind": "bold",
+          "text": "ἀγάπη"
+        },
+        {
+          "at": "12..18",
+          "kind": "italic",
+          "text": "agapē"
+        },
+        {
+          "at": "26..45",
+          "kind": "para",
+          "style": "prose",
+          "text": "Compare φιλία."
+        },
+        {
+          "at": "34..44",
+          "kind": "foreign",
+          "text": "φιλία"
+        }
+      ],
+      "text": "ἀγάπη agapē: love.\nCompare φιλία.",
+      "title": "G26"
+    }
+  ],
+  "verses": []
+}

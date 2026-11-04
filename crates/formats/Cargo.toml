@@ -19,11 +19,15 @@ serde_json.workspace = true
 unicode-normalization.workspace = true
 roxmltree = "0.21"
 usfm3 = "0.3"
+# CC0 SWORD module reader; no installer or network (offline-only rule), so it stays wasm-clean.
+sword-modules = { version = "0.1", default-features = false, features = ["zip", "bzip2", "xz"] }
 obs-scripture.workspace = true
 obs-model.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+# Writes the zText test modules' ZIP blocks (tests/sword_fixture).
+flate2 = "1"
 
 [lints]
 workspace = true

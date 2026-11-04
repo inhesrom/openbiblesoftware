@@ -42,7 +42,7 @@ You can also install it with Xiphos or BibleTime (add the "Lockman Foundation" r
 
 ## Pointing the app and tests at it
 
-Code does not exist yet. These are the conventions to follow when it does:
+These are the conventions. `obs-cli import <sword-dir> --module NAME` imports a module, and `crates/formats/tests/sword.rs` follows the test rules below.
 
 - **`OBS_LOCAL_SWORD_DIR`**: a SWORD root (the folder holding `mods.d/` and `modules/`). Integration tests that need a real copyrighted module read this variable and **skip, not fail**, when it is unset or the module is missing. Tests may check structure (verse counts, Verse map, Strong's spans, Import report) but must not snapshot or print whole passages of the text.
 - **Experimental builds** Import from a path the user picks or from `OBS_LOCAL_SWORD_DIR`. They never embed module files with `include_bytes!`, build scripts, or installer payloads.

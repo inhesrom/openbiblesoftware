@@ -1,0 +1,537 @@
+{
+  "content_hash": "sha256:9e0a7220f3963ec87ce16492d6d161138f71fa6866f1ee2c868bae23255f9d45",
+  "keys": [],
+  "manifest": {
+    "abbreviation": "ObsKjvGbf",
+    "attribution": "Licence: Public Domain\nText source: King James Version (1769), markup written for the Open Bible Software tests\nImported from the SWORD module ObsKjvGbf.",
+    "key_schemes": [
+      "passage"
+    ],
+    "language": "en",
+    "license": "LicenseRef-PD",
+    "resource_id": "obskjvgbf",
+    "resource_type": "bible",
+    "source_file": "ObsKjvGbf",
+    "source_format": "sword",
+    "source_url": null,
+    "title": "King James Version (GBF excerpt)"
+  },
+  "report": {
+    "books": [
+      [
+        "JHN",
+        2,
+        5
+      ]
+    ],
+    "dropped_markup": {
+      "<JL>": 1
+    },
+    "entries": 0,
+    "license_missing": false,
+    "notes": 2,
+    "source_format": "sword (GBF)",
+    "tagged_words": 32,
+    "verse_map": {
+      "absent": 873,
+      "unmapped": 0
+    },
+    "verses": 5,
+    "versification_hint": "KJV",
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "JHN",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..19",
+          "kind": "heading",
+          "level": 1,
+          "text": "The Word made flesh"
+        },
+        {
+          "at": "20..347",
+          "chapter": 1,
+          "kind": "chapter",
+          "text": "In the beginning was the Word, and the Word was with God, and the Word was God. The same was in the beginning with God. All things were made by him; and without him was not any thing made that was made.\nIn him was life; and the life was the light of men.\nAnd the light shineth in darkness; and the darkness comprehended it not."
+        },
+        {
+          "at": "20..222",
+          "kind": "para",
+          "style": "prose",
+          "text": "In the beginning was the Word, and the Word was with God, and the Word was God. The same was in the beginning with God. All things were made by him; and without him was not any thing made that was made."
+        },
+        {
+          "at": "20..99",
+          "kind": "verse",
+          "last": 1,
+          "text": "In the beginning was the Word, and the Word was with God, and the Word was God.",
+          "verse": {
+            "book": "JHN",
+            "chapter": 1,
+            "verse": 1
+          }
+        },
+        {
+          "at": "20..22",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1722"
+            }
+          ],
+          "text": "In"
+        },
+        {
+          "at": "27..36",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G746"
+            }
+          ],
+          "text": "beginning"
+        },
+        {
+          "at": "37..40",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "V-IXI-3S",
+              "strongs": "G2258"
+            }
+          ],
+          "text": "was"
+        },
+        {
+          "at": "45..49",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3056"
+            }
+          ],
+          "text": "Word"
+        },
+        {
+          "at": "51..54",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "and"
+        },
+        {
+          "at": "59..63",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3056"
+            }
+          ],
+          "text": "Word"
+        },
+        {
+          "at": "64..67",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2258"
+            }
+          ],
+          "text": "was"
+        },
+        {
+          "at": "68..72",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4314"
+            }
+          ],
+          "text": "with"
+        },
+        {
+          "at": "73..76",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2316"
+            }
+          ],
+          "text": "God"
+        },
+        {
+          "at": "78..81",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "and"
+        },
+        {
+          "at": "86..90",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3056"
+            }
+          ],
+          "text": "Word"
+        },
+        {
+          "at": "91..94",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2258"
+            }
+          ],
+          "text": "was"
+        },
+        {
+          "at": "95..98",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2316"
+            }
+          ],
+          "text": "God"
+        },
+        {
+          "at": "100..139",
+          "kind": "verse",
+          "last": 2,
+          "text": "The same was in the beginning with God.",
+          "verse": {
+            "book": "JHN",
+            "chapter": 1,
+            "verse": 2
+          }
+        },
+        {
+          "at": "104..108",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3778"
+            }
+          ],
+          "text": "same"
+        },
+        {
+          "at": "109..112",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2258"
+            }
+          ],
+          "text": "was"
+        },
+        {
+          "at": "113..115",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1722"
+            }
+          ],
+          "text": "in"
+        },
+        {
+          "at": "120..129",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G746"
+            }
+          ],
+          "text": "beginning"
+        },
+        {
+          "at": "130..134",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4314"
+            }
+          ],
+          "text": "with"
+        },
+        {
+          "at": "135..138",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2316"
+            }
+          ],
+          "text": "God"
+        },
+        {
+          "at": "140..222",
+          "kind": "verse",
+          "last": 3,
+          "text": "All things were made by him; and without him was not any thing made that was made.",
+          "verse": {
+            "book": "JHN",
+            "chapter": 1,
+            "verse": 3
+          }
+        },
+        {
+          "at": "144..150",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3956"
+            }
+          ],
+          "text": "things"
+        },
+        {
+          "at": "156..160",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1096"
+            }
+          ],
+          "text": "made"
+        },
+        {
+          "at": "161..163",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1223"
+            }
+          ],
+          "text": "by"
+        },
+        {
+          "at": "164..167",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G846"
+            }
+          ],
+          "text": "him"
+        },
+        {
+          "at": "169..172",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ],
+          "text": "and"
+        },
+        {
+          "at": "173..180",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5565"
+            }
+          ],
+          "text": "without"
+        },
+        {
+          "at": "181..184",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G846"
+            }
+          ],
+          "text": "him"
+        },
+        {
+          "at": "185..188",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1096"
+            }
+          ],
+          "text": "was"
+        },
+        {
+          "at": "189..192",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3761"
+            }
+          ],
+          "text": "not"
+        },
+        {
+          "at": "197..202",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1520"
+            }
+          ],
+          "text": "thing"
+        },
+        {
+          "at": "203..207",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1096"
+            }
+          ],
+          "text": "made"
+        },
+        {
+          "at": "208..212",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3739"
+            }
+          ],
+          "text": "that"
+        },
+        {
+          "at": "217..221",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1096"
+            }
+          ],
+          "text": "made"
+        },
+        {
+          "at": "223..347",
+          "kind": "verse",
+          "last": 5,
+          "text": "In him was life; and the life was the light of men.\nAnd the light shineth in darkness; and the darkness comprehended it not.",
+          "verse": {
+            "book": "JHN",
+            "chapter": 1,
+            "verse": 4
+          }
+        },
+        {
+          "at": "223..274",
+          "kind": "para",
+          "style": "prose",
+          "text": "In him was life; and the life was the light of men."
+        },
+        {
+          "at": "275..347",
+          "kind": "para",
+          "style": "prose",
+          "text": "And the light shineth in darkness; and the darkness comprehended it not."
+        },
+        {
+          "at": "347..347",
+          "kind": "note_ref",
+          "note": "note.1",
+          "note_kind": "footnote",
+          "text": ""
+        },
+        {
+          "at": "348..476",
+          "chapter": 3,
+          "kind": "chapter",
+          "text": "Jesus answered and said unto him, Verily, verily, I say unto thee, Except a man be born again, he cannot see the kingdom of God."
+        },
+        {
+          "at": "348..476",
+          "kind": "para",
+          "style": "prose",
+          "text": "Jesus answered and said unto him, Verily, verily, I say unto thee, Except a man be born again, he cannot see the kingdom of God."
+        },
+        {
+          "at": "348..476",
+          "kind": "verse",
+          "last": 3,
+          "text": "Jesus answered and said unto him, Verily, verily, I say unto thee, Except a man be born again, he cannot see the kingdom of God.",
+          "verse": {
+            "book": "JHN",
+            "chapter": 3,
+            "verse": 3
+          }
+        },
+        {
+          "at": "382..476",
+          "kind": "woj",
+          "text": "Verily, verily, I say unto thee, Except a man be born again, he cannot see the kingdom of God."
+        },
+        {
+          "at": "476..476",
+          "kind": "note_ref",
+          "note": "note.2",
+          "note_kind": "footnote",
+          "text": ""
+        }
+      ],
+      "text": "The Word made flesh\nIn the beginning was the Word, and the Word was with God, and the Word was God. The same was in the beginning with God. All things were made by him; and without him was not any thing made that was made.\nIn him was life; and the life was the light of men.\nAnd the light shineth in darkness; and the darkness comprehended it not.\nJesus answered and said unto him, Verily, verily, I say unto thee, Except a man be born again, he cannot see the kingdom of God.",
+      "title": "John"
+    },
+    {
+      "id": "note.1",
+      "kind": "note",
+      "spans": [],
+      "text": "Verses 4 and 5 are linked in this test module.",
+      "title": null
+    },
+    {
+      "id": "note.2",
+      "kind": "note",
+      "spans": [
+        {
+          "at": "4..14",
+          "kind": "italic",
+          "text": "from above"
+        }
+      ],
+      "text": "Or, from above.",
+      "title": null
+    }
+  ],
+  "verses": [
+    {
+      "last": 1,
+      "text": "In the beginning was the Word, and the Word was with God, and the Word was God.",
+      "verse": "John 1:1"
+    },
+    {
+      "last": 2,
+      "text": "The same was in the beginning with God.",
+      "verse": "John 1:2"
+    },
+    {
+      "last": 3,
+      "text": "All things were made by him; and without him was not any thing made that was made.",
+      "verse": "John 1:3"
+    },
+    {
+      "last": 5,
+      "text": "In him was life; and the life was the light of men.\nAnd the light shineth in darkness; and the darkness comprehended it not.",
+      "verse": "John 1:4"
+    },
+    {
+      "last": 3,
+      "text": "Jesus answered and said unto him, Verily, verily, I say unto thee, Except a man be born again, he cannot see the kingdom of God.",
+      "verse": "John 3:3"
+    }
+  ]
+}
