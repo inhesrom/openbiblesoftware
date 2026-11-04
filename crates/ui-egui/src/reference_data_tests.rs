@@ -110,7 +110,8 @@ fn query_submission_never_waits_for_io_and_stale_results_are_discarded() {
     queries.clear();
     let _ = release.send(());
     let mut value = None;
-    for _ in 0..100 {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
         value = queries.get(&library, passage, |_, _| Ok(2));
         if value.is_some() {
             break;

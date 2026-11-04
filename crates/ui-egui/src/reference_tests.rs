@@ -63,7 +63,7 @@ fn setup(
     h.shell
         .run("tool.cross_references", &json!({"split": true}));
     let tool = h.shell.st.session.workspace.focused().unwrap();
-    for _ in 0..30 {
+    for _ in 0..600 {
         h.paced_frame();
         if h.find("John 11:25-26").is_some() {
             break;
@@ -82,6 +82,21 @@ fn add_file(h: &mut Harness, files: &ReferenceFiles, resource: &Resource) {
 
 fn john(n: u16) -> Passage {
     Passage::verse(Verse::new(Book::John, 3, n))
+}
+
+/// Clicks a Scripture reference and waits for the click to land. A click on a cold target
+/// cache is held in `pending_clicks` until the worker translates the targets, so a fixed
+/// frame count races the worker on slow runners.
+fn click_reference(h: &mut Harness, spot: Pos2) {
+    h.click(spot);
+    for _ in 0..600 {
+        if h.shell.st.references.pending_clicks.is_empty() {
+            h.frames(2);
+            return;
+        }
+        h.paced_frame();
+    }
+    panic!("reference click never resolved its targets");
 }
 
 #[test]
@@ -146,14 +161,18 @@ fn cross_references_follow_john_3_16_ranked_snapshot_and_show_all() {
             .current(),
         Some(john(17).start())
     );
-    for _ in 0..5 {
-        h.paced_frame();
-    }
-    assert!(
+    let none_in_library = |h: &Harness| {
         h.texts()
             .iter()
             .any(|t| t.starts_with("None in your library"))
-    );
+    };
+    for _ in 0..600 {
+        h.paced_frame();
+        if none_in_library(&h) {
+            break;
+        }
+    }
+    assert!(none_in_library(&h));
     assert!(h.shell.st.tabs[&tool].expanded_references.is_empty());
 }
 
@@ -262,8 +281,25 @@ fn scripture_ref_and_zero_width_xref_hover_draw_worker_previews() {
             reference_start + offset
         );
         h.events.push(Event::PointerMoved(spot));
-        for _ in 0..10 {
+        let expected = if label == "John 3:17" {
+            "For God sent not"
+        } else {
+            "For God so loved"
+        };
+        let preview_shown = |h: &Harness| {
+            h.tree.as_ref().is_some_and(|tree| {
+                tree.nodes.iter().any(|(_, node)| {
+                    node.role() == egui::Role::Label
+                        && node.value().is_some_and(|text| text.starts_with(expected))
+                })
+            })
+        };
+        // The preview comes from the worker: wait for it rather than a fixed frame count.
+        for _ in 0..600 {
             h.paced_frame();
+            if preview_shown(&h) {
+                break;
+            }
         }
         assert!(h.find(label).is_some(), "{:?}", h.texts());
         assert!(
@@ -282,22 +318,8 @@ fn scripture_ref_and_zero_width_xref_hover_draw_worker_previews() {
         );
         assert!(h.find("★ KJV").is_some(), "{:?}", h.texts());
         assert!(h.meshes.contains(&h.shell.st.palette.ink));
-        let expected = if label == "John 3:17" {
-            "For God sent not"
-        } else {
-            "For God so loved"
-        };
-        assert!(
-            h.tree
-                .as_ref()
-                .unwrap()
-                .nodes
-                .iter()
-                .any(|(_, node)| node.role() == egui::Role::Label
-                    && node.value().is_some_and(|text| text.starts_with(expected))),
-            "popup exposes laid-out preview text"
-        );
-        h.click(spot);
+        assert!(preview_shown(&h), "popup exposes laid-out preview text");
+        click_reference(&mut h, spot);
         assert_eq!(
             h.shell
                 .session()
@@ -446,7 +468,7 @@ fn linked_lexicon_reference_click_moves_bible_without_moving_lexicon() {
     let location = tab.history.current();
     let count = h.shell.session().workspace.tabs().count();
     let spot = reference_spot(&h, lexicon, span);
-    h.click(spot);
+    click_reference(&mut h, spot);
     let ws = &h.shell.session().workspace;
     assert_eq!(
         ws.tab(bible).unwrap().history.current(),
@@ -497,7 +519,7 @@ fn descending_scripture_reference_click_keeps_first_written_target() {
     h.shell.apply_effects();
     h.frames(3);
     let spot = reference_spot(&h, bible, span);
-    h.click(spot);
+    click_reference(&mut h, spot);
     for tab in [bible, tool] {
         assert_eq!(
             h.shell
@@ -568,7 +590,7 @@ fn range_and_split_map_reference_popups_keep_one_preview_per_written_target() {
         h.frames(3);
         // The replaced file reloads the Cross-references Tool: settle before counting
         // headings so its reappearing "John 3:16" group never races the popup's.
-        for _ in 0..120 {
+        for _ in 0..600 {
             if h.find("Loading Cross-references…").is_none() && h.find("John 11:25-26").is_some()
             {
                 break;
@@ -590,7 +612,7 @@ fn range_and_split_map_reference_popups_keep_one_preview_per_written_target() {
         let spot = reference_spot(&h, bible, span);
         h.events.push(Event::PointerMoved(spot));
         // Hold the hover until the worker's target translation and preview both land.
-        for _ in 0..120 {
+        for _ in 0..600 {
             h.paced_frame();
             if h.find("Loading Scripture reference…").is_none() && !preview_texts(&h).is_empty() {
                 break;
