@@ -229,6 +229,51 @@ fn tipnr_people_and_places_keep_only_structured_fields() {
 }
 
 #[test]
+fn malformed_tipnr_strongs_numbers_warn_without_panicking() {
+    let text = fixture("tipnr/tipnr-excerpt.txt");
+    for value in ["א", "א000", "X0000", "H", "G", ""] {
+        let changed = text.replace("Abda@1Ki.4.6=H5653G", &format!("Abda@1Ki.4.6={value}"));
+        assert_ne!(changed, text);
+        let (resource, report) = tipnr(&changed);
+        let abda = resource
+            .entities
+            .iter()
+            .find(|e| e.id == "Abda@1Ki.4.6")
+            .unwrap();
+        assert_eq!(abda.strongs, None);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains(&format!(
+                    "`Abda@1Ki.4.6` has an unreadable Strong's number `{value}`"
+                ))),
+            "{report}"
+        );
+    }
+    for value in ["H0000", "G0000"] {
+        let changed = text.replace("Abda@1Ki.4.6=H5653G", &format!("Abda@1Ki.4.6={value}"));
+        let (resource, report) = tipnr(&changed);
+        assert_eq!(
+            resource
+                .entities
+                .iter()
+                .find(|e| e.id == "Abda@1Ki.4.6")
+                .unwrap()
+                .strongs,
+            None
+        );
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("unreadable Strong's")),
+            "{report}"
+        );
+    }
+}
+
+#[test]
 fn no_tipnr_description_text_is_kept() {
     let text = fixture("tipnr/tipnr-excerpt.txt");
     let (r, _) = tipnr(&text);

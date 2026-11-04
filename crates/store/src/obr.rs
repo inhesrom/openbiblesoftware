@@ -562,24 +562,26 @@ impl ObrReader {
 
     fn mention_rows(&self, filter: &str, args: &[i64]) -> Result<Vec<Mention>, StoreError> {
         let query = format!(
-            "SELECT e.id, m.start, m.end FROM mentions m JOIN entities e ON e.ord = m.entity
-             {filter} ORDER BY e.ord, m.start, m.end"
+            "SELECT e.id, m.start, m.end, m.entity FROM mentions m LEFT JOIN entities e ON e.ord = m.entity
+             {filter} ORDER BY m.entity, m.start, m.end"
         );
         let mut stmt = self.conn.prepare_cached(&query).map_err(sql)?;
         let rows = stmt
             .query_map(rusqlite::params_from_iter(args), |r| {
                 Ok((
-                    r.get::<_, String>(0)?,
+                    r.get::<_, Option<String>>(0)?,
                     r.get::<_, i64>(1)?,
                     r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
                 ))
             })
             .map_err(sql)?;
         let mut out = Vec::new();
         for row in rows {
-            let (entity, start, end) = row.map_err(sql)?;
+            let (entity, start, end, ordinal) = row.map_err(sql)?;
             out.push(Mention {
-                entity,
+                entity: entity
+                    .ok_or_else(|| corrupt(format!("no entity with ordinal {ordinal}")))?,
                 passage: passage_from_numbers(start, end)?,
             });
         }

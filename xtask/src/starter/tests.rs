@@ -105,6 +105,7 @@ fn two_clean_builds_are_byte_identical() {
     };
     build(&second).unwrap();
     compare_dirs(&config.out, &second.out).unwrap();
+    assert!(!config.out.join("CHANGES-web.md").exists());
     let obr = std::fs::read(config.out.join("web.obr")).unwrap();
     assert_eq!(obr, std::fs::read(second.out.join("web.obr")).unwrap());
 
@@ -317,6 +318,54 @@ evidence = "evidence/{id}.md"
         out: dir.join("out"),
         cache: dir.join("cache"),
     }
+}
+
+#[test]
+fn cc_by_changes_files_are_complete_deterministic_and_cleaned() {
+    let dir = scratch("changes");
+    let config = dataset_setup(&dir);
+    build(&config).unwrap();
+    let lock = Lock::load(&config.lock).unwrap();
+    for source in &lock.sources {
+        let path = config
+            .out
+            .join(format!("CHANGES-{}.md", source.resource_id));
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            text,
+            format!(
+                "# Changes we made: {id}\n\nResource: `{id}`\n\nLicence: CC-BY-4.0\n\n\
+             ## Attribution\n\nCredit {id}.\n\n\
+             ## Source\n\n{url}\n\nPinned download: {url}\n\nSHA-256: `{sha}`\n\n\
+             ## Changes we made\n\nConverted.\n",
+                id = source.resource_id,
+                url = source.url,
+                sha = source.sha256,
+            )
+        );
+    }
+    let second = Config {
+        out: dir.join("out2"),
+        ..config.clone()
+    };
+    build(&second).unwrap();
+    compare_dirs(&config.out, &second.out).unwrap();
+
+    // Rebuild removes stale notices, and rewrites current notices from the lock.
+    std::fs::write(config.out.join("CHANGES-retired.md"), "stale").unwrap();
+    std::fs::write(config.out.join("CHANGES-tipnr.md"), "stale").unwrap();
+    build(&config).unwrap();
+    compare_dirs(&config.out, &second.out).unwrap();
+
+    // Cleanup owns only build outputs, not arbitrary Markdown files.
+    std::fs::write(config.out.join("README.md"), "keep").unwrap();
+    clean_outputs(&config.out).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(config.out.join("README.md")).unwrap(),
+        "keep"
+    );
+    assert!(!config.out.join("CHANGES-openbible-xrefs.md").exists());
+    assert!(!config.out.join("CHANGES-tipnr.md").exists());
 }
 
 #[test]

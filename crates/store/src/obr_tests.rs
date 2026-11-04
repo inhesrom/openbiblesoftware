@@ -198,6 +198,32 @@ fn tampered_content_fails_the_hash_check() {
 }
 
 #[test]
+fn orphan_mentions_in_a_tampered_file_are_rejected() {
+    let dir = TempDir::new("orphan-mention");
+    let path = dir.path("kjv.obr");
+    let resource = sample_resource();
+    write_obr(&resource, &path).unwrap();
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch(
+            "PRAGMA foreign_keys = OFF; INSERT INTO mentions VALUES (999, 1001001, 1001001);",
+        )
+        .unwrap();
+    let reader = ObrReader::open(&path).unwrap();
+    assert_eq!(
+        reader.manifest().content_hash,
+        resource.manifest.content_hash
+    );
+    assert!(
+        matches!(reader.load(), Err(StoreError::Corrupt(m)) if m == "no entity with ordinal 999")
+    );
+    assert!(matches!(
+        reader.mentions_in(Passage::verse(Verse::new(Book::Genesis, 1, 1))),
+        Err(StoreError::Corrupt(m)) if m == "no entity with ordinal 999"
+    ));
+}
+
+#[test]
 fn invalid_resources_are_not_written() {
     let dir = TempDir::new("invalid");
     let mut resource = sample_resource();

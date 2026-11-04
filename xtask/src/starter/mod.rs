@@ -6,8 +6,8 @@
 //!    from the lock (licence, Attribution, changes, `origin = starter`).
 //! 4. Diff unit ids against the previous release manifest; a removed id fails the build unless
 //!    `id-changes.toml` maps it (shipped as `unit_alias`).
-//! 5. Write `dist/starter/<id>.obr`, `starter-manifest.json` and `starter-build-report.md`,
-//!    and check the size budget.
+//! 5. Write `dist/starter/<id>.obr`, `CHANGES-<id>.md` for CC BY sources,
+//!    `starter-manifest.json` and `starter-build-report.md`, and check the size budget.
 //!
 //! Builds are deterministic: the same lock and code give byte-identical outputs.
 //! `--check-determinism` builds a second time and compares every file.
@@ -193,6 +193,33 @@ pub fn build(config: &Config) -> Result<String> {
                 .map(|(o, n)| (o.as_str().to_string(), n.as_str().to_string()))
                 .collect(),
         });
+    }
+    for source in &lock_file.sources {
+        if source
+            .spdx
+            .split(|c: char| c.is_whitespace() || c == '(' || c == ')')
+            .any(|license| license.starts_with("CC-BY-"))
+        {
+            let text = format!(
+                "# Changes we made: {}\n\nResource: `{}`\n\nLicence: {}\n\n\
+                 ## Attribution\n\n{}\n\n\
+                 ## Source\n\n{}\n\nPinned download: {}\n\nSHA-256: `{}`\n\n\
+                 ## Changes we made\n\n{}\n",
+                source.title,
+                source.resource_id,
+                source.spdx,
+                source.attribution,
+                source.origin_url.as_ref().unwrap_or(&source.url),
+                source.url,
+                source.sha256,
+                source.changes,
+            );
+            let path = config
+                .out
+                .join(format!("CHANGES-{}.md", source.resource_id));
+            std::fs::write(&path, text)
+                .with_context(|| format!("cannot write {}", path.display()))?;
+        }
     }
     let manifest = ReleaseManifest {
         format: MANIFEST_FORMAT,
@@ -399,6 +426,7 @@ fn clean_outputs(out: &Path) -> Result<()> {
         if path.is_file()
             && (name.ends_with(".obr")
                 || name.ends_with(".obr.partial")
+                || (name.starts_with("CHANGES-") && name.ends_with(".md"))
                 || name == MANIFEST_FILE
                 || name == REPORT_FILE)
         {

@@ -231,7 +231,10 @@ fn entity(
         }
     };
     // Unnamed individuals carry the placeholder `H0000` / `G0000`.
-    let placeholder = |s: &str| s.len() > 1 && s[1..].bytes().all(|b| b == b'0');
+    let placeholder = |s: &str| {
+        s.strip_prefix(['H', 'G'])
+            .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b == b'0'))
+    };
     let strongs = strongs.and_then(|s| match s.parse::<StrongsNumber>() {
         _ if placeholder(s) => None,
         Ok(n) => Some(n),
