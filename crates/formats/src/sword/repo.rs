@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use sword_modules::install::{DefaultTransport, DirEntry, Transport};
 
+pub use sword_modules::ModuleKind;
 pub use sword_modules::install::{
     Catalog, Installer, MASTER_REPO_LIST_URL, ModuleStatus, Protocol, RemoteModule, Repository,
     Source, parse_master_repo_list,
@@ -45,6 +46,13 @@ pub type Progress<'a> = &'a mut dyn FnMut(u64, Option<u64>) -> bool;
 /// Downloads whole files by URL. Implemented by the app (it owns the network client).
 pub trait Fetch: fmt::Debug + Send + Sync {
     fn get(&self, url: &str, progress: Progress<'_>) -> Result<Vec<u8>, FetchError>;
+
+    /// The size of the file at `url` without downloading it (an HTTP `HEAD`), when the
+    /// server says. `Ok(None)`: it exists but its size is unknown.
+    fn size(&self, url: &str) -> Result<Option<u64>, FetchError> {
+        let _ = url;
+        Ok(None)
+    }
 }
 
 /// `file://` only. The default when no app transport is installed, and for tests against
@@ -65,6 +73,37 @@ impl Fetch for LocalFetch {
             return Err(FetchError::Cancelled);
         }
         Ok(bytes)
+    }
+
+    fn size(&self, url: &str) -> Result<Option<u64>, FetchError> {
+        if !is_file_url(url) {
+            return Err(FetchError::Network(format!(
+                "{url}: no network transport in this build"
+            )));
+        }
+        local_size(url)
+    }
+}
+
+/// The size of a `file://` URL's file.
+pub fn local_size(url: &str) -> Result<Option<u64>, FetchError> {
+    let path = url
+        .get(7..)
+        .map(|p| p.strip_prefix("localhost").unwrap_or(p))
+        .map(|p| {
+            // `file:///C:/x` → `C:/x`
+            if p.len() > 2 && p.as_bytes()[2] == b':' {
+                &p[1..]
+            } else {
+                p
+            }
+        })
+        .ok_or(FetchError::NotFound)?;
+    match std::fs::metadata(path) {
+        Ok(m) if m.is_file() => Ok(Some(m.len())),
+        Ok(_) => Err(FetchError::NotFound),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(FetchError::NotFound),
+        Err(e) => Err(FetchError::Network(format!("{url}: {e}"))),
     }
 }
 

@@ -309,7 +309,7 @@ pub fn default_user_db() -> Option<PathBuf> {
 }
 
 /// The app's per-user data folder on this platform.
-fn data_dir() -> Option<PathBuf> {
+pub(crate) fn data_dir() -> Option<PathBuf> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let base = if cfg!(target_os = "windows") {
         std::env::var_os("APPDATA").map(PathBuf::from)

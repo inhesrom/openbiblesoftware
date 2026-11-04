@@ -7,7 +7,7 @@
 use std::io::Read;
 use std::time::Duration;
 
-use obs_formats::sword_repo::{Fetch, FetchError, Progress, builtin_get};
+use obs_formats::sword_repo::{Fetch, FetchError, Progress, builtin_get, local_size};
 
 /// Largest single file accepted (the SWORD installer's own cap).
 const LIMIT: u64 = 4 << 30;
@@ -97,6 +97,23 @@ impl Fetch for HttpFetch {
         }
         Ok(out)
     }
+
+    fn size(&self, url: &str) -> Result<Option<u64>, FetchError> {
+        match scheme(url).as_str() {
+            "http" | "https" => {}
+            "file" => return local_size(url),
+            _ => return Ok(None),
+        }
+        match self.agent.head(url).call() {
+            Ok(r) => Ok(r
+                .headers()
+                .get("content-length")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.trim().parse().ok())),
+            Err(ureq::Error::StatusCode(404 | 410)) => Err(FetchError::NotFound),
+            Err(e) => Err(FetchError::Network(format!("{url}: {e}"))),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -126,7 +143,12 @@ mod tests {
                         break;
                     }
                 }
-                if line.starts_with("GET /ok ") {
+                if line.starts_with("HEAD /ok ") {
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n"
+                    );
+                } else if line.starts_with("GET /ok ") {
                     let body = vec![b'x'; len];
                     let _ = write!(
                         stream,
@@ -202,6 +224,23 @@ mod tests {
             HttpFetch::new().get("gopher://x/y", &mut |_, _| true),
             Err(FetchError::Network(m)) if m.contains("unsupported")
         ));
+    }
+
+    #[test]
+    fn size_asks_the_server_with_head_and_reads_files_locally() {
+        let base = serve(4_472_092, 2);
+        let fetch = HttpFetch::new();
+        assert_eq!(fetch.size(&format!("{base}/ok")).unwrap(), Some(4_472_092));
+        assert_eq!(
+            fetch.size(&format!("{base}/missing")).unwrap_err(),
+            FetchError::NotFound
+        );
+        let dir = std::env::temp_dir().join(format!("obs-http-size-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("p.zip"), [0u8; 123]).unwrap();
+        let url = obs_formats::sword_repo::file_url(&dir.join("p.zip"));
+        assert_eq!(fetch.size(&url).unwrap(), Some(123));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

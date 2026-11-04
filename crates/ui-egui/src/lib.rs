@@ -64,6 +64,10 @@ impl App {
                     problems.push(format!("{}: {e}", f.display()));
                 }
             }
+            // Get Bibles opens on the last fetched catalog, even offline (#91).
+            if let Some(cache) = obs_engine::get_bibles::default_catalog_cache() {
+                session.get_bibles.set_cache_path(cache);
+            }
         }
         #[cfg(target_arch = "wasm32")]
         if let Some(p) = &path {

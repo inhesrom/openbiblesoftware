@@ -99,6 +99,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::workspace_commands::COMMANDS)
         .chain(crate::library_commands::COMMANDS)
         .chain(crate::import::COMMANDS)
+        .chain(crate::get_bibles::COMMANDS)
         .chain(crate::compare::COMMANDS)
     {
         // Ids in COMMANDS are unique (checked by a test), so registration cannot fail.

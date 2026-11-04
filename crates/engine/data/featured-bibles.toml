@@ -1,0 +1,57 @@
+# Get Bibles (#91): the Featured section, top to bottom. Change the order or the list here;
+# no code changes needed. `repo` is the repository's caption on CrossWire's master list.
+# When a module is not in its repo, the same module from another repository is shown.
+
+[[bible]]
+module = "NASB1995"
+repo = "Lockman Foundation"
+
+[[bible]]
+module = "NASB"
+repo = "Lockman Foundation"
+
+# Bible.org's full `NET` (60,000+ notes) is enciphered and needs a key from the publisher;
+# `NETfree` is its unlocked edition with limited notes, from the same repository.
+[[bible]]
+module = "NETfree"
+repo = "Bible.org"
+
+[[bible]]
+module = "LEB"
+repo = "CrossWire"
+
+[[bible]]
+module = "BSB"
+repo = "CrossWire"
+
+[[bible]]
+module = "engweb2025peb"
+repo = "eBible.org"
+
+[[bible]]
+module = "KJV"
+repo = "CrossWire"
+
+[[bible]]
+module = "GodsWord"
+repo = "CrossWire"
+
+[[bible]]
+module = "ISV"
+repo = "CrossWire"
+
+[[bible]]
+module = "engerv2006eb"
+repo = "eBible.org"
+
+[[bible]]
+module = "englsv2020eb"
+repo = "eBible.org"
+
+[[bible]]
+module = "ASV"
+repo = "CrossWire"
+
+[[bible]]
+module = "YLT"
+repo = "CrossWire"
