@@ -1,0 +1,11 @@
+A
+@LINK BABC
+Upper-case entry.B
+@LINK CC
+Terminal entry.CYCLE1
+@LINK CYCLE2CYCLE2
+@LINK CYCLE1LOWER
+@LINK abcMISSING
+@LINK NOWHEREUPPER
+@LINK ABCabc
+Lower-case entry.

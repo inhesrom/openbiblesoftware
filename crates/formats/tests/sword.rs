@@ -411,7 +411,7 @@ fn modules_are_listed_and_unknown_ones_named() {
         .into_iter()
         .map(|m| (m.name, m.resource_type))
         .collect();
-    assert_eq!(listed.len(), 5);
+    assert_eq!(listed.len(), 9);
     assert!(listed.contains(&("ObsNotes".into(), Some(ResourceType::Commentary))));
     assert_eq!(source.default_module(), None);
     let one = SwordSource::open(&root().join("mods.d/obsnotes.conf")).unwrap();
@@ -459,4 +459,98 @@ fn local_sword_modules_import_when_available() {
             report.warnings.len()
         );
     }
+}
+
+#[test]
+fn non_kjv_commentary_is_rejected_instead_of_publishing_wrong_standard_keys() {
+    let source = SwordSource::open(&root()).unwrap();
+    let err = import_sword(&source, "ObsHebrewNotes", &SwordOptions::default()).unwrap_err();
+    assert!(matches!(err, ImportError::UnsupportedModule { .. }));
+    assert!(
+        err.to_string()
+            .contains("cannot yet be normalized to Standard")
+    );
+}
+
+#[test]
+fn hebrew_bible_preserves_numbered_superscription_and_native_references() {
+    let (r, report) = import("ObsHebrew");
+    assert_eq!(
+        verse_text(&r, Verse::new(Book::Psalms, 3, 1)),
+        "A numbered superscription."
+    );
+    assert!(
+        !r.verses
+            .iter()
+            .any(|v| v.verse == Verse::new(Book::Psalms, 3, 0))
+    );
+    let targets = |unit: &str| -> Vec<String> {
+        r.unit(&UnitId::new(unit).unwrap())
+            .unwrap()
+            .spans
+            .iter()
+            .filter_map(|s| {
+                if let SpanKind::ScriptureRef { targets } = &s.kind {
+                    Some(targets.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+    // Forward reference into a later Bible book uses its completed native list.
+    assert_eq!(targets("GEN"), ["Ps 3:9"]);
+    assert_eq!(targets("PSA"), ["Ps 3:1-9", "Ps 3:9"]);
+    assert_eq!(targets("note.1"), ["Ps 3:9"]);
+    let psalm = r.unit(&UnitId::book(Book::Psalms)).unwrap();
+    assert!(
+        psalm.spans.iter().any(
+            |s| matches!(&s.kind, SpanKind::Xref { targets } if targets.to_string() == "Ps 3:9")
+        )
+    );
+    // TVTMS receives unchanged native Gen 32:1 and numbered Psalm superscription.
+    let map = r.verse_map.as_ref().unwrap();
+    assert!(map.entries().iter().any(|e| {
+        e.verse == Verse::new(Book::Genesis, 32, 1)
+            && e.standard
+                .as_ref()
+                .is_some_and(|p| p.start() == Verse::new(Book::Genesis, 31, 55))
+    }));
+    check_golden("hebrew-osis", &snapshot(&r, &report));
+}
+
+#[test]
+fn thml_bible_references_use_native_numbering() {
+    let (r, report) = import("ObsHebrewThml");
+    let psalm = r.unit(&UnitId::book(Book::Psalms)).unwrap();
+    let targets: Vec<_> = psalm
+        .spans
+        .iter()
+        .filter_map(|s| match &s.kind {
+            SpanKind::ScriptureRef { targets } => Some(targets.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(targets, ["Ps 3:9", "Ps 3:9"]);
+    check_golden("hebrew-thml", &snapshot(&r, &report));
+}
+
+#[test]
+fn dictionary_aliases_follow_chains_detect_cycles_and_respect_case() {
+    let (r, report) = import("ObsAliases");
+    let target = |key: &str| {
+        r.keys
+            .iter()
+            .find(|k| k.key == Key::Headword(key.into()))
+            .map(|k| k.unit.as_str())
+    };
+    assert_eq!(target("A"), Some("C"));
+    assert_eq!(target("B"), Some("C"));
+    assert_eq!(target("UPPER"), Some("ABC"));
+    assert_eq!(target("LOWER"), Some("abc"));
+    assert_eq!(target("CYCLE1"), None);
+    assert_eq!(target("CYCLE2"), None);
+    assert_eq!(target("MISSING"), None);
+    assert_eq!(report.warnings.len(), 3);
+    check_golden("aliases-osis", &snapshot(&r, &report));
 }

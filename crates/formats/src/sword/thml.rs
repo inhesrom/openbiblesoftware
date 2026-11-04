@@ -15,7 +15,6 @@
 //! keep their text and are counted as dropped (`<img>` and `<pb>` have none).
 
 use obs_model::{NoteKind, ParaStyle, SpanKind};
-use obs_scripture::{Standard, parse_reference};
 
 use super::writer::{Element, Writer};
 use super::xml::{Token, tokenize};
@@ -73,9 +72,7 @@ fn start(name: &str, attrs: &[(&str, String)], empty: bool, w: &mut Writer) {
         "added" => Element::Span(SpanKind::Added),
         "foreign" => Element::Span(SpanKind::Foreign),
         "note" => Element::Note(NoteKind::Footnote),
-        "scripref" => Element::Reference(
-            attr("passage").and_then(|p| parse_reference(&p, &Standard, None).ok()),
-        ),
+        "scripref" => Element::Reference(attr("passage").and_then(|p| w.parse_reference(&p))),
         "div" | "ul" | "ol" | "def" | "span" => Element::Container,
         "img" | "pb" | "hr" => Element::Hidden(format!("<{name}>")),
         other => Element::Dropped(format!("<{other}>")),

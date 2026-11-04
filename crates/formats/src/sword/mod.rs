@@ -30,7 +30,9 @@ use obs_model::{
     Direction, FORMAT_VERSION, Key, KeyScheme, LICENSE_UNKNOWN, Manifest, Origin, ParaStyle,
     Resource, ResourceBuilder, ResourceType, SpanKind, UnitId, UnitKind, is_valid_resource_id,
 };
-use obs_scripture::{Book, Passage, Standard, StrongsNumber, Verse, Versification};
+use obs_scripture::{
+    Book, ListedVersification, Passage, Standard, StrongsNumber, Verse, Versification,
+};
 use sword_modules::conf::rtf_to_text;
 use sword_modules::{Markup, ModDrv, ModuleConf, ModuleKind, SwordLibrary};
 
@@ -183,24 +185,23 @@ pub fn import_sword(
         ResourceType::Bible => {
             let module = opened.into_verse().map_err(sword_err)?;
             report.versification_hint = Some(conf.versification().to_string());
-            import_bible(&module, &mut builder, &mut w, &mut report).map_err(sword_err)?;
+            import_bible(&module, &conf, &mut builder, &mut w, &mut report).map_err(sword_err)?;
         }
         ResourceType::Commentary => {
             let module = opened.into_verse().map_err(sword_err)?;
             let v11n = conf.versification();
             report.versification_hint = Some(v11n.to_string());
             if !matches!(v11n, "KJV" | "KJVA") {
-                w.warn(format!(
-                    "the module numbers verses by {v11n}; its sections are keyed as if that were \
-                     the Standard (KJV) numbering"
-                ));
+                return Err(unsupported(format!(
+                    "Commentary numbering {v11n} cannot yet be normalized to Standard; import refused"
+                )));
             }
             import_commentary(&module, &mut builder, &mut w, &mut report).map_err(sword_err)?;
         }
         ResourceType::Lexicon | ResourceType::Dictionary => {
             let module = opened.into_dictionary().map_err(sword_err)?;
             let lexicon = lexicon_language(&conf);
-            import_dictionary(&module, lexicon, &mut builder, &mut w, &mut report)
+            import_dictionary(&module, &conf, lexicon, &mut builder, &mut w, &mut report)
                 .map_err(sword_err)?;
         }
         ResourceType::CrossReferenceSet | ResourceType::PeopleAndPlaces => {
@@ -433,7 +434,7 @@ fn feed_tei(raw: &str, w: &mut Writer) {
                     "foreign" => Element::Span(SpanKind::Foreign),
                     "title" => Element::Span(SpanKind::Italic),
                     "ref" => Element::Reference(
-                        Token::attr(&attrs, "osisRef").and_then(|r| writer::parse_osis_ref(&r)),
+                        Token::attr(&attrs, "osisRef").and_then(|r| w.parse_osis_ref(&r)),
                     ),
                     "p" => Element::Para(ParaStyle::Prose),
                     "entryFree" | "superentry" | "entry" | "form" | "def" | "sense" => {
@@ -478,19 +479,26 @@ struct BookUnit {
 
 fn import_bible(
     module: &sword_modules::VerseModule,
+    conf: &ModuleConf,
     builder: &mut ResourceBuilder,
     w: &mut Writer,
     report: &mut ImportReport,
 ) -> sword_modules::Result<()> {
+    // Complete the native Verse list before resolving references, including references to
+    // later Bible books and whole chapters. Probe output is discarded before the real pass.
+    let mut probe = Writer::new();
+    probe.unnumbered_psalm_titles = matches!(conf.versification(), "KJV" | "KJVA");
+    let native = ListedVersification::new(
+        read_bible(module, &mut probe)?
+            .iter()
+            .flat_map(|(_, out)| out.verses.iter().map(|(_, verse, last)| (*verse, *last))),
+    );
+    w.unnumbered_psalm_titles = probe.unnumbered_psalm_titles;
+    drop(probe);
+    w.native = Some(native);
     let mut facts: Vec<VerseFacts> = Vec::new();
     let mut other_verses = 0usize;
-    let mut current: Option<BookUnit> = None;
-    let mut chapter: Option<u8> = None;
-    let mut finish = |unit: BookUnit,
-                      w: &mut Writer,
-                      builder: &mut ResourceBuilder,
-                      report: &mut ImportReport| {
-        let out = w.finish_unit();
+    for (unit, out) in read_bible(module, w)? {
         for (range, verse, last) in &out.verses {
             let words = out
                 .text
@@ -519,14 +527,34 @@ fn import_bible(
         for (range, verse, last) in verses {
             builder.add_verse(&unit.id, range, verse, last);
         }
-    };
+    }
+    if !facts.is_empty() {
+        let outcome = build_verse_map(&facts);
+        report.verse_map = Some(VerseMapCounts {
+            // Verses of books outside the canon are Unmapped too.
+            unmapped: outcome.map.unmapped().count() + other_verses,
+            absent: outcome.map.absent().len(),
+        });
+        report.traditions = outcome.traditions;
+        builder.set_verse_map(outcome.map);
+    }
+    Ok(())
+}
+
+fn read_bible(
+    module: &sword_modules::VerseModule,
+    w: &mut Writer,
+) -> sword_modules::Result<Vec<(BookUnit, UnitText)>> {
+    let mut units = Vec::new();
+    let mut current: Option<BookUnit> = None;
+    let mut chapter: Option<u8> = None;
     for span in module.iter_spans() {
         let span = span?;
         let (first, last) = (span.first, span.last);
         let osis = first.osis_book().unwrap_or("Unknown");
         if current.as_ref().is_none_or(|u| u.code != code_of(osis)) {
             if let Some(unit) = current.take() {
-                finish(unit, w, builder, report);
+                units.push((unit, w.finish_unit()));
             }
             let book = Book::from_osis(osis);
             let id = match book {
@@ -582,19 +610,9 @@ fn import_bible(
         feed(span.entry.markup, &span.entry.raw, w);
     }
     if let Some(unit) = current.take() {
-        finish(unit, w, builder, report);
+        units.push((unit, w.finish_unit()));
     }
-    if !facts.is_empty() {
-        let outcome = build_verse_map(&facts);
-        report.verse_map = Some(VerseMapCounts {
-            // Verses of books outside the canon are Unmapped too.
-            unmapped: outcome.map.unmapped().count() + other_verses,
-            absent: outcome.map.absent().len(),
-        });
-        report.traditions = outcome.traditions;
-        builder.set_verse_map(outcome.map);
-    }
-    Ok(())
+    Ok(units)
 }
 
 /// Unit id and report code of a book: its USFM code, or the OSIS id outside the canon.
@@ -688,11 +706,27 @@ fn strongs_key(key: &str, prefix: char) -> Option<StrongsNumber> {
 
 fn import_dictionary(
     module: &sword_modules::DictionaryModule,
+    conf: &ModuleConf,
     lexicon: Option<char>,
     builder: &mut ResourceBuilder,
     w: &mut Writer,
     report: &mut ImportReport,
 ) -> sword_modules::Result<()> {
+    let fold_stored = |key: &str| {
+        if conf.case_sensitive_keys() {
+            key.to_string()
+        } else {
+            key.to_uppercase()
+        }
+    };
+    let fold_lookup = |key: &str| {
+        let key = if conf.strongs_padding() {
+            sword_modules::strongs_pad(key)
+        } else {
+            key.to_string()
+        };
+        fold_stored(&key)
+    };
     let mut links: Vec<(String, String)> = Vec::new();
     let mut by_key: HashMap<String, UnitId> = HashMap::new();
     let mut ids: HashSet<UnitId> = HashSet::new();
@@ -733,12 +767,24 @@ fn import_dictionary(
         let out = w.finish_unit();
         add_unit(builder, &id, UnitKind::Entry, id.to_string(), out, report);
         builder.add_key(entry_key, &id, None, false);
-        by_key.insert(key.trim().to_uppercase(), id);
+        by_key.insert(fold_stored(&key), id);
         report.entries += 1;
     }
+    let targets: HashMap<String, String> = links
+        .iter()
+        .map(|(alias, target)| (fold_stored(alias), fold_lookup(target)))
+        .collect();
     for (alias, target) in links {
-        let Some(id) = by_key.get(&target.trim().to_uppercase()) else {
-            w.warn(format!("@LINK {alias} → {target}: no such entry"));
+        let mut key = fold_lookup(&target);
+        let mut seen = HashSet::new();
+        while !by_key.contains_key(&key) && seen.insert(key.clone()) {
+            let Some(next) = targets.get(&key) else { break };
+            key = next.clone();
+        }
+        let Some(id) = by_key.get(&key) else {
+            w.warn(format!(
+                "@LINK {alias} → {target}: missing or cyclic target"
+            ));
             continue;
         };
         match lexicon {

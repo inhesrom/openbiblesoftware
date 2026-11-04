@@ -185,7 +185,13 @@ fn compressed_verse(conf: &ModuleConf, entries: &[(String, String)]) -> BTreeMap
 fn raw_ld(conf: &ModuleConf, entries: &[(String, String)]) -> BTreeMap<String, Vec<u8>> {
     let prefix = data_dir(conf);
     let mut sorted: Vec<&(String, String)> = entries.iter().collect();
-    sorted.sort_by_key(|a| a.0.to_uppercase());
+    sorted.sort_by_key(|a| {
+        if conf.case_sensitive_keys() {
+            a.0.clone()
+        } else {
+            a.0.to_uppercase()
+        }
+    });
     let mut idx = Vec::new();
     let mut dat = Vec::new();
     for (key, body) in sorted {

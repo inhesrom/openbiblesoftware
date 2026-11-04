@@ -1,0 +1,285 @@
+{
+  "content_hash": "sha256:e8e6fa00720c132bfd0538131bc6ace9c12326b8423d4f2393eedf18a2f0c1f1",
+  "keys": [],
+  "manifest": {
+    "abbreviation": "ObsHebrew",
+    "attribution": "Licence: Creative Commons: CC0\nText source: https://github.com/inhesrom/openbiblesoftware\nImported from the SWORD module ObsHebrew.",
+    "key_schemes": [
+      "passage"
+    ],
+    "language": "en",
+    "license": "CC0-1.0",
+    "resource_id": "obshebrew",
+    "resource_type": "bible",
+    "source_file": "ObsHebrew",
+    "source_format": "sword",
+    "source_url": "https://github.com/inhesrom/openbiblesoftware",
+    "title": "Synthetic ObsHebrew regression fixture"
+  },
+  "report": {
+    "books": [
+      [
+        "GEN",
+        1,
+        2
+      ],
+      [
+        "PSA",
+        1,
+        3
+      ]
+    ],
+    "dropped_markup": {},
+    "entries": 0,
+    "license_missing": false,
+    "notes": 1,
+    "source_format": "sword (OSIS)",
+    "tagged_words": 0,
+    "verse_map": {
+      "absent": 4106,
+      "unmapped": 0
+    },
+    "verses": 5,
+    "versification_hint": "MT",
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "GEN",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..104",
+          "chapter": 32,
+          "kind": "chapter",
+          "text": "A shifted Verse. See Ps 3:9. Last native Verse of the chapter, so TVTMS recognizes the Hebrew numbering."
+        },
+        {
+          "at": "0..104",
+          "kind": "para",
+          "style": "prose",
+          "text": "A shifted Verse. See Ps 3:9. Last native Verse of the chapter, so TVTMS recognizes the Hebrew numbering."
+        },
+        {
+          "at": "0..28",
+          "kind": "verse",
+          "last": 1,
+          "text": "A shifted Verse. See Ps 3:9.",
+          "verse": {
+            "book": "GEN",
+            "chapter": 32,
+            "verse": 1
+          }
+        },
+        {
+          "at": "21..27",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 9
+              },
+              "start": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "Ps 3:9"
+        },
+        {
+          "at": "29..104",
+          "kind": "verse",
+          "last": 33,
+          "text": "Last native Verse of the chapter, so TVTMS recognizes the Hebrew numbering.",
+          "verse": {
+            "book": "GEN",
+            "chapter": 32,
+            "verse": 33
+          }
+        }
+      ],
+      "text": "A shifted Verse. See Ps 3:9. Last native Verse of the chapter, so TVTMS recognizes the Hebrew numbering.",
+      "title": "Genesis"
+    },
+    {
+      "id": "PSA",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..82",
+          "chapter": 3,
+          "kind": "chapter",
+          "text": "A numbered superscription.\nPsalm text. See Psalm 3 and Ps 3:9. Final native Verse."
+        },
+        {
+          "at": "0..26",
+          "kind": "psalm_title",
+          "text": "A numbered superscription."
+        },
+        {
+          "at": "0..26",
+          "kind": "verse",
+          "last": 1,
+          "text": "A numbered superscription.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 1
+          }
+        },
+        {
+          "at": "27..82",
+          "kind": "para",
+          "style": "prose",
+          "text": "Psalm text. See Psalm 3 and Ps 3:9. Final native Verse."
+        },
+        {
+          "at": "27..62",
+          "kind": "verse",
+          "last": 2,
+          "text": "Psalm text. See Psalm 3 and Ps 3:9.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 2
+          }
+        },
+        {
+          "at": "43..50",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 9
+              },
+              "start": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 1
+              }
+            }
+          ],
+          "text": "Psalm 3"
+        },
+        {
+          "at": "55..61",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 9
+              },
+              "start": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "Ps 3:9"
+        },
+        {
+          "at": "63..82",
+          "kind": "verse",
+          "last": 9,
+          "text": "Final native Verse.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 9
+          }
+        },
+        {
+          "at": "82..82",
+          "kind": "xref",
+          "targets": [
+            {
+              "end": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 9
+              },
+              "start": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 9
+              }
+            }
+          ],
+          "text": ""
+        },
+        {
+          "at": "82..82",
+          "kind": "note_ref",
+          "note": "note.1",
+          "note_kind": "cross_reference",
+          "text": ""
+        }
+      ],
+      "text": "A numbered superscription.\nPsalm text. See Psalm 3 and Ps 3:9. Final native Verse.",
+      "title": "Psalms"
+    },
+    {
+      "id": "note.1",
+      "kind": "note",
+      "spans": [
+        {
+          "at": "0..6",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 9
+              },
+              "start": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "Ps 3:9"
+        }
+      ],
+      "text": "Ps 3:9",
+      "title": null
+    }
+  ],
+  "verses": [
+    {
+      "last": 1,
+      "text": "A shifted Verse. See Ps 3:9.",
+      "verse": "Gen 32:1"
+    },
+    {
+      "last": 33,
+      "text": "Last native Verse of the chapter, so TVTMS recognizes the Hebrew numbering.",
+      "verse": "Gen 32:33"
+    },
+    {
+      "last": 1,
+      "text": "A numbered superscription.",
+      "verse": "Ps 3:1"
+    },
+    {
+      "last": 2,
+      "text": "Psalm text. See Psalm 3 and Ps 3:9.",
+      "verse": "Ps 3:2"
+    },
+    {
+      "last": 9,
+      "text": "Final native Verse.",
+      "verse": "Ps 3:9"
+    }
+  ]
+}

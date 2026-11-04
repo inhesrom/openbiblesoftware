@@ -1,0 +1,117 @@
+{
+  "content_hash": "sha256:64438cf0dd55365c1992040df3d57c048ce97bc3df4e092d0746f57fbbe8da17",
+  "keys": [
+    [
+      "A",
+      "C",
+      true
+    ],
+    [
+      "ABC",
+      "ABC",
+      false
+    ],
+    [
+      "B",
+      "C",
+      true
+    ],
+    [
+      "C",
+      "C",
+      false
+    ],
+    [
+      "LOWER",
+      "abc",
+      true
+    ],
+    [
+      "UPPER",
+      "ABC",
+      true
+    ],
+    [
+      "abc",
+      "abc",
+      false
+    ]
+  ],
+  "manifest": {
+    "abbreviation": "ObsAliases",
+    "attribution": "Licence: Creative Commons: CC0\nText source: https://github.com/inhesrom/openbiblesoftware\nImported from the SWORD module ObsAliases.",
+    "key_schemes": [
+      "headword"
+    ],
+    "language": "en",
+    "license": "CC0-1.0",
+    "resource_id": "obsaliases",
+    "resource_type": "dictionary",
+    "source_file": "ObsAliases",
+    "source_format": "sword",
+    "source_url": "https://github.com/inhesrom/openbiblesoftware",
+    "title": "Synthetic ObsAliases regression fixture"
+  },
+  "report": {
+    "books": [],
+    "dropped_markup": {},
+    "entries": 3,
+    "license_missing": false,
+    "notes": 0,
+    "source_format": "sword (OSIS)",
+    "tagged_words": 0,
+    "verse_map": null,
+    "verses": 0,
+    "versification_hint": null,
+    "warnings": [
+      "@LINK CYCLE1 → CYCLE2: missing or cyclic target",
+      "@LINK CYCLE2 → CYCLE1: missing or cyclic target",
+      "@LINK MISSING → NOWHERE: missing or cyclic target"
+    ]
+  },
+  "units": [
+    {
+      "id": "ABC",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..17",
+          "kind": "para",
+          "style": "prose",
+          "text": "Upper-case entry."
+        }
+      ],
+      "text": "Upper-case entry.",
+      "title": "ABC"
+    },
+    {
+      "id": "C",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..15",
+          "kind": "para",
+          "style": "prose",
+          "text": "Terminal entry."
+        }
+      ],
+      "text": "Terminal entry.",
+      "title": "C"
+    },
+    {
+      "id": "abc",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..17",
+          "kind": "para",
+          "style": "prose",
+          "text": "Lower-case entry."
+        }
+      ],
+      "text": "Lower-case entry.",
+      "title": "abc"
+    }
+  ],
+  "verses": []
+}

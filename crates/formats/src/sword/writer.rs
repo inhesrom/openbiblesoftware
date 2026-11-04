@@ -12,7 +12,8 @@ use std::ops::Range;
 
 use obs_model::{MorphemePart, NoteKind, ParaStyle, SpanKind, UnitId};
 use obs_scripture::{
-    Book, Passage, PassageList, Standard, StrongsNumber, Verse, Versification, parse_reference,
+    Book, ListedVersification, Passage, PassageList, Standard, StrongsNumber, Verse, Versification,
+    parse_reference,
 };
 
 use crate::text_buf::TextBuf;
@@ -26,7 +27,9 @@ pub(crate) enum Element {
     Reference(Option<PassageList>),
     Heading(u8),
     /// A Psalm superscription: the title slot (Verse 0) when it leads a Psalm.
-    PsalmTitle,
+    PsalmTitle {
+        preverse: bool,
+    },
     Para(ParaStyle),
     Note(NoteKind),
     /// Structure with nothing to keep (`div`, `lg`, a `w` without Strong's); not counted.
@@ -98,6 +101,11 @@ struct NoteBody {
 pub(crate) struct Writer {
     buf: TextBuf,
     stack: Vec<Open>,
+    milestones: BTreeMap<(String, String), Open>,
+    /// Completed native Bible numbering. Non-Bible Resources use Standard.
+    pub native: Option<ListedVersification>,
+    /// Legacy KJV fragments often put an unnumbered title before Verse 1's text.
+    pub unnumbered_psalm_titles: bool,
     hidden: usize,
     note: Option<NoteBody>,
     notes: Vec<(UnitId, TextBuf)>,
@@ -129,6 +137,9 @@ impl Writer {
         Self {
             buf: TextBuf::new(),
             stack: Vec::new(),
+            milestones: BTreeMap::new(),
+            native: None,
+            unnumbered_psalm_titles: true,
             hidden: 0,
             note: None,
             notes: Vec::new(),
@@ -168,6 +179,36 @@ impl Writer {
     /// The Verse relative references are read against.
     pub fn set_context(&mut self, verse: Option<Verse>) {
         self.current = verse;
+    }
+
+    pub fn parse_osis_ref(&self, text: &str) -> Option<PassageList> {
+        parse_osis_ref_in(text, self.versification())
+    }
+
+    pub fn parse_reference(&self, text: &str) -> Option<PassageList> {
+        parse_reference(text, self.versification(), self.current).ok()
+    }
+
+    fn versification(&self) -> &dyn Versification {
+        self.native
+            .as_ref()
+            .map_or(&Standard as &dyn Versification, |v| v)
+    }
+
+    /// Milestones overlap ordinary XML containers and pair by identity, not nesting.
+    pub fn open_milestone(&mut self, name: &str, id: &str, element: Element) {
+        self.close_milestone(name, id);
+        self.open(name, element);
+        if let Some(open) = self.stack.pop() {
+            self.milestones
+                .insert((name.to_string(), id.to_string()), open);
+        }
+    }
+
+    pub fn close_milestone(&mut self, name: &str, id: &str) {
+        if let Some(open) = self.milestones.remove(&(name.to_string(), id.to_string())) {
+            self.finish(open);
+        }
     }
 
     // ---- Bible structure ------------------------------------------------------------------
@@ -251,8 +292,7 @@ impl Writer {
             )
         });
         let start = self.buf.start_block();
-        let title_slot =
-            kind == BlockKind::PsalmTitle && self.verse.is_some_and(|v| v.verse.verse == 0);
+        let title_slot = kind == BlockKind::PsalmTitle && self.verse.is_some();
         let starts_chapter = matches!(kind, BlockKind::Para(_)) || title_slot;
         if starts_chapter && self.chapter.is_some() && self.chapter_start.is_none() {
             self.chapter_start = Some(start);
@@ -300,7 +340,12 @@ impl Writer {
         let buf = self.cur();
         buf.flush_space();
         let at = buf.pos();
-        for open in self.stack.iter_mut().filter(|o| o.in_note == in_note) {
+        for open in self
+            .stack
+            .iter_mut()
+            .chain(self.milestones.values_mut())
+            .filter(|o| o.in_note == in_note)
+        {
             if open.start.is_none() {
                 open.start = Some(at);
             }
@@ -378,7 +423,10 @@ impl Writer {
                     OpenKind::Hidden
                 }
                 Element::Container => OpenKind::Container,
-                Element::Note(_) | Element::Para(_) | Element::Heading(_) | Element::PsalmTitle
+                Element::Note(_)
+                | Element::Para(_)
+                | Element::Heading(_)
+                | Element::PsalmTitle { .. }
                     if in_note =>
                 {
                     OpenKind::Container
@@ -398,14 +446,14 @@ impl Writer {
                     self.styles.push(style);
                     OpenKind::Para
                 }
-                Element::Heading(_) | Element::PsalmTitle if self.heading.is_some() => {
+                Element::Heading(_) | Element::PsalmTitle { .. } if self.heading.is_some() => {
                     OpenKind::Container
                 }
                 Element::Heading(level) => {
                     self.open_heading(BlockKind::Heading(level));
                     OpenKind::Heading
                 }
-                Element::PsalmTitle => self.open_psalm_title(),
+                Element::PsalmTitle { preverse } => self.open_psalm_title(preverse),
             }
         };
         self.stack.push(Open {
@@ -424,16 +472,25 @@ impl Writer {
 
     /// A Psalm title leading its Psalm (in the chapter introduction, or before verse 1's
     /// text) fills the title slot, Verse 0; elsewhere it is a heading.
-    fn open_psalm_title(&mut self) -> OpenKind {
+    fn open_psalm_title(&mut self, preverse: bool) -> OpenKind {
         let (Some(Book::Psalms), Some(chapter)) = (self.book, self.chapter) else {
             self.open_heading(BlockKind::PsalmTitle);
             return OpenKind::Heading;
         };
+        if !self.intro && !preverse && !self.unnumbered_psalm_titles && self.verse.is_some() {
+            // A numbered superscription is Scripture text in its native Verse, not Verse 0.
+            self.open_heading(BlockKind::PsalmTitle);
+            self.buf.track = true;
+            self.ensure_block();
+            self.ensure_verse_start();
+            return OpenKind::Heading;
+        }
         let title = Verse::new(Book::Psalms, chapter, 0);
         let leads = self.intro
-            || self.verse.is_some_and(|v| {
-                v.start.is_none() && v.verse == Verse::new(Book::Psalms, chapter, 1)
-            });
+            || (preverse || self.unnumbered_psalm_titles)
+                && self.verse.is_some_and(|v| {
+                    v.start.is_none() && v.verse == Verse::new(Book::Psalms, chapter, 1)
+                });
         if !leads || self.seen.contains(&title) {
             self.open_heading(BlockKind::PsalmTitle);
             return OpenKind::Heading;
@@ -512,18 +569,18 @@ impl Writer {
         in_note: bool,
     ) {
         let Some(start) = start else { return };
-        let context = self.current;
+        let text = {
+            let buf = self.buf_for(in_note);
+            let end = buf.pos();
+            if end <= start {
+                return;
+            }
+            buf.text[start..end].to_string()
+        };
+        let targets = targets.or_else(|| self.parse_reference(&text).filter(|l| !l.is_empty()));
+        let Some(targets) = targets else { return };
         let buf = self.buf_for(in_note);
         let end = buf.pos();
-        if end <= start {
-            return;
-        }
-        let targets = targets.or_else(|| {
-            parse_reference(&buf.text[start..end], &Standard, context)
-                .ok()
-                .filter(|l| !l.is_empty())
-        });
-        let Some(targets) = targets else { return };
         buf.add_span(
             start..end,
             SpanKind::ScriptureRef {
@@ -569,6 +626,9 @@ impl Writer {
 
     /// Close everything and hand over the unit; the Writer is ready for the next one.
     pub fn finish_unit(&mut self) -> UnitText {
+        for (_, open) in std::mem::take(&mut self.milestones) {
+            self.finish(open);
+        }
         while let Some(open) = self.stack.pop() {
             self.finish(open);
         }
@@ -627,30 +687,38 @@ fn last_word(text: &str) -> Option<Range<usize>> {
 
 /// Parse an OSIS reference list (`Gen.1.1-Gen.1.3 John.3.16`, `Ps.23`, `KJV:Rom.5.8`) into
 /// Standard Passages. `None` if any part is not in the 66-book canon.
-pub(crate) fn parse_osis_ref(s: &str) -> Option<PassageList> {
+#[cfg(test)]
+fn parse_osis_ref(s: &str) -> Option<PassageList> {
+    parse_osis_ref_in(s, &Standard)
+}
+
+fn parse_osis_ref_in(s: &str, v11n: &dyn Versification) -> Option<PassageList> {
     let mut list = PassageList::new();
     for part in s.split_whitespace() {
         let part = part.rsplit_once(':').map_or(part, |(_, r)| r);
         let (a, b) = part.split_once('-').unwrap_or((part, part));
-        let start = osis_point(a, true)?;
-        let end = osis_point(b, false)?;
+        let start = osis_point(a, true, v11n)?;
+        let end = osis_point(b, false, v11n)?;
         list.push(Passage::new(start, end).ok()?);
     }
     (!list.is_empty()).then_some(list)
 }
 
-fn osis_point(s: &str, first: bool) -> Option<Verse> {
+fn osis_point(s: &str, first: bool, v11n: &dyn Versification) -> Option<Verse> {
     let s = s.split(['!', '@']).next().unwrap_or(s);
     let mut parts = s.split('.');
     let book = Book::from_osis(parts.next()?)?;
     let chapter: Option<u16> = parts.next().map(str::parse).transpose().ok()?;
     let verse: Option<u16> = parts.next().map(str::parse).transpose().ok()?;
     match (chapter, verse) {
-        (Some(c), Some(v)) => Some(Verse::new(book, c, v)),
-        (Some(c), None) if first => Standard.first_verse(book, c),
-        (Some(c), None) => Standard.last_verse_of(book, c),
+        (Some(c), Some(v)) => {
+            let verse = Verse::new(book, c, v);
+            v11n.contains(verse).then_some(verse)
+        }
+        (Some(c), None) if first => v11n.first_verse(book, c),
+        (Some(c), None) => v11n.last_verse_of(book, c),
         (None, _) => {
-            let p = Passage::book(&Standard, book)?;
+            let p = Passage::book(v11n, book)?;
             Some(if first { p.start() } else { p.end() })
         }
     }

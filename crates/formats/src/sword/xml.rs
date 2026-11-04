@@ -47,6 +47,16 @@ pub(crate) fn tokenize(s: &str) -> Vec<Token<'_>> {
             rest = after.find("-->").map_or("", |end| &after[end + 3..]);
             continue;
         }
+        if let Some(after) = tail.strip_prefix("<![CDATA[") {
+            let end = after.find("]]>").unwrap_or(after.len());
+            out.push(Token::Text(Cow::Borrowed(&after[..end])));
+            rest = if end == after.len() {
+                ""
+            } else {
+                &after[end + 3..]
+            };
+            continue;
+        }
         if tail.starts_with("<!") || tail.starts_with("<?") {
             rest = tail.find('>').map_or("", |end| &tail[end + 1..]);
             continue;

@@ -1,5 +1,5 @@
 {
-  "content_hash": "sha256:8878fc430c5b33ff1d0a6d187cad52c4e39b424df2ca1133d6a91ba2a146e1c5",
+  "content_hash": "sha256:139fed89daa852a12d95e08560738661199b3f9310da66314d670dddce6c535c",
   "keys": [],
   "manifest": {
     "abbreviation": "KJV-O",
@@ -32,6 +32,16 @@
         "JHN",
         1,
         2
+      ],
+      [
+        "ROM",
+        1,
+        1
+      ],
+      [
+        "1JN",
+        1,
+        1
       ]
     ],
     "dropped_markup": {
@@ -45,10 +55,10 @@
     "source_format": "sword (OSIS)",
     "tagged_words": 31,
     "verse_map": {
-      "absent": 4980,
+      "absent": 5516,
       "unmapped": 0
     },
-    "verses": 10,
+    "verses": 12,
     "versification_hint": "KJV",
     "warnings": []
   },
@@ -679,6 +689,68 @@
       "title": "John"
     },
     {
+      "id": "ROM",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..94",
+          "chapter": 5,
+          "kind": "chapter",
+          "text": "But God commendeth his love toward us, in that, while we were yet sinners, Christ died for us."
+        },
+        {
+          "at": "0..94",
+          "kind": "para",
+          "style": "prose",
+          "text": "But God commendeth his love toward us, in that, while we were yet sinners, Christ died for us."
+        },
+        {
+          "at": "0..94",
+          "kind": "verse",
+          "last": 8,
+          "text": "But God commendeth his love toward us, in that, while we were yet sinners, Christ died for us.",
+          "verse": {
+            "book": "ROM",
+            "chapter": 5,
+            "verse": 8
+          }
+        }
+      ],
+      "text": "But God commendeth his love toward us, in that, while we were yet sinners, Christ died for us.",
+      "title": "Romans"
+    },
+    {
+      "id": "1JN",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..141",
+          "chapter": 4,
+          "kind": "chapter",
+          "text": "In this was manifested the love of God toward us, because that God sent his only begotten Son into the world, that we might live through him."
+        },
+        {
+          "at": "0..141",
+          "kind": "para",
+          "style": "prose",
+          "text": "In this was manifested the love of God toward us, because that God sent his only begotten Son into the world, that we might live through him."
+        },
+        {
+          "at": "0..141",
+          "kind": "verse",
+          "last": 9,
+          "text": "In this was manifested the love of God toward us, because that God sent his only begotten Son into the world, that we might live through him.",
+          "verse": {
+            "book": "1JN",
+            "chapter": 4,
+            "verse": 9
+          }
+        }
+      ],
+      "text": "In this was manifested the love of God toward us, because that God sent his only begotten Son into the world, that we might live through him.",
+      "title": "1 John"
+    },
+    {
       "id": "note.1",
       "kind": "note",
       "spans": [
@@ -788,6 +860,16 @@
       "last": 17,
       "text": "For God sent not his Son into the world to condemn the world; but that the world through him might be saved.",
       "verse": "John 3:17"
+    },
+    {
+      "last": 8,
+      "text": "But God commendeth his love toward us, in that, while we were yet sinners, Christ died for us.",
+      "verse": "Rom 5:8"
+    },
+    {
+      "last": 9,
+      "text": "In this was manifested the love of God toward us, because that God sent his only begotten Son into the world, that we might live through him.",
+      "verse": "1 Jn 4:9"
     }
   ]
 }

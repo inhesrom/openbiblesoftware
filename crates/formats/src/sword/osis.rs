@@ -20,7 +20,7 @@
 use obs_model::{MorphemePart, NoteKind, ParaStyle, SpanKind};
 use obs_scripture::StrongsNumber;
 
-use super::writer::{Element, Writer, parse_osis_ref};
+use super::writer::{Element, Writer};
 use super::xml::{Token, tokenize};
 
 /// Write one OSIS entry.
@@ -38,11 +38,11 @@ fn start(name: &str, attrs: &[(&str, String)], empty: bool, w: &mut Writer) {
     let attr = |n: &str| Token::attr(attrs, n);
     let ty = attr("type").unwrap_or_default();
     // Milestone pairs: `<q sID="x" who="Jesus"/>` … `<q eID="x"/>`.
-    if empty && attr("eID").is_some() {
+    if empty && let Some(id) = attr("eID") {
         match name {
             "div" if is_paragraph(&ty) => w.para_break(None),
             "l" => w.para_break(None),
-            _ => w.close(name),
+            _ => w.close_milestone(name, &id),
         }
         return;
     }
@@ -93,7 +93,9 @@ fn start(name: &str, attrs: &[(&str, String)], empty: bool, w: &mut Writer) {
             other => Element::Dropped(format!("<hi type=\"{other}\">")),
         },
         "title" => match ty.as_str() {
-            "psalm" => Element::PsalmTitle,
+            "psalm" => Element::PsalmTitle {
+                preverse: attr("subType").as_deref() == Some("x-preverse"),
+            },
             "x-gen" => Element::Hidden("<title type=\"x-gen\">".into()),
             _ => Element::Heading(
                 attr("level")
@@ -110,12 +112,18 @@ fn start(name: &str, attrs: &[(&str, String)], empty: bool, w: &mut Writer) {
         } else {
             NoteKind::Footnote
         }),
-        "reference" => Element::Reference(attr("osisRef").and_then(|r| parse_osis_ref(&r))),
+        "reference" => Element::Reference(attr("osisRef").and_then(|r| w.parse_osis_ref(&r))),
         "div" | "chapter" | "verse" | "lg" | "list" => Element::Container,
         "figure" | "index" => Element::Hidden(format!("<{name}>")),
         other => Element::Dropped(format!("<{other}>")),
     };
-    w.open(name, element);
+    if milestone_start {
+        if let Some(id) = attr("sID") {
+            w.open_milestone(name, &id, element);
+        }
+    } else {
+        w.open(name, element);
+    }
     if empty && !milestone_start {
         w.close(name);
     }
@@ -224,6 +232,36 @@ mod tests {
                 ("Ps 3:1".to_string(), "LORD, how are they increased"),
             ]
         );
+    }
+
+    #[test]
+    fn milestones_overlap_paragraphs_and_pair_by_id() {
+        let mut w = Writer::new();
+        feed(
+            "<p><q who=\"Jesus\" sID=\"q1\"/>A</p><p>B<q eID=\"q1\"/> C</p>",
+            &mut w,
+        );
+        let unit = w.finish_unit();
+        assert_eq!(unit.text, "A\nB C");
+        assert!(unit.spans.contains(&(0..3, SpanKind::Woj)));
+
+        let mut w = Writer::new();
+        feed(
+            "<q who=\"Jesus\" sID=\"q1\"/>A<q who=\"Jesus\" sID=\"q2\"/>B<q eID=\"q1\"/>C<q eID=\"q2\"/>",
+            &mut w,
+        );
+        let unit = w.finish_unit();
+        assert!(unit.spans.contains(&(0..2, SpanKind::Woj)));
+        assert!(unit.spans.contains(&(1..3, SpanKind::Woj)));
+    }
+
+    #[test]
+    fn cdata_preserves_literal_text_without_decoding_entities() {
+        let mut w = Writer::new();
+        feed("<p><![CDATA[Love & mercy <b> &amp;]]></p>", &mut w);
+        let unit = w.finish_unit();
+        assert_eq!(unit.text, "Love & mercy <b> &amp;");
+        assert!(w.dropped.is_empty());
     }
 
     #[test]

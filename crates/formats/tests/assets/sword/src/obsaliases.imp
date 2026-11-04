@@ -1,0 +1,20 @@
+$$$A
+@LINK B
+$$$ABC
+Upper-case entry.
+$$$B
+@LINK C
+$$$C
+Terminal entry.
+$$$CYCLE1
+@LINK CYCLE2
+$$$CYCLE2
+@LINK CYCLE1
+$$$LOWER
+@LINK abc
+$$$MISSING
+@LINK NOWHERE
+$$$UPPER
+@LINK ABC
+$$$abc
+Lower-case entry.

@@ -1,0 +1,151 @@
+{
+  "content_hash": "sha256:b1e8143677cbc4e628dff33b785ac7c10c8826f3d35efb894ec1e8545481f7ca",
+  "keys": [],
+  "manifest": {
+    "abbreviation": "ObsHebrewThml",
+    "attribution": "Licence: Creative Commons: CC0\nText source: https://github.com/inhesrom/openbiblesoftware\nImported from the SWORD module ObsHebrewThml.",
+    "key_schemes": [
+      "passage"
+    ],
+    "language": "en",
+    "license": "CC0-1.0",
+    "resource_id": "obshebrewthml",
+    "resource_type": "bible",
+    "source_file": "ObsHebrewThml",
+    "source_format": "sword",
+    "source_url": "https://github.com/inhesrom/openbiblesoftware",
+    "title": "Synthetic ObsHebrewThml regression fixture"
+  },
+  "report": {
+    "books": [
+      [
+        "PSA",
+        1,
+        3
+      ]
+    ],
+    "dropped_markup": {},
+    "entries": 0,
+    "license_missing": false,
+    "notes": 0,
+    "source_format": "sword (ThML)",
+    "tagged_words": 0,
+    "verse_map": {
+      "absent": 2575,
+      "unmapped": 0
+    },
+    "verses": 3,
+    "versification_hint": "MT",
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "PSA",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..64",
+          "chapter": 3,
+          "kind": "chapter",
+          "text": "A numbered title. See last Verse and Ps 3:9. Final native Verse."
+        },
+        {
+          "at": "0..64",
+          "kind": "para",
+          "style": "prose",
+          "text": "A numbered title. See last Verse and Ps 3:9. Final native Verse."
+        },
+        {
+          "at": "0..17",
+          "kind": "verse",
+          "last": 1,
+          "text": "A numbered title.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 1
+          }
+        },
+        {
+          "at": "18..44",
+          "kind": "verse",
+          "last": 2,
+          "text": "See last Verse and Ps 3:9.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 2
+          }
+        },
+        {
+          "at": "22..32",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 9
+              },
+              "start": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "last Verse"
+        },
+        {
+          "at": "37..43",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 9
+              },
+              "start": {
+                "book": "PSA",
+                "chapter": 3,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "Ps 3:9"
+        },
+        {
+          "at": "45..64",
+          "kind": "verse",
+          "last": 9,
+          "text": "Final native Verse.",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 9
+          }
+        }
+      ],
+      "text": "A numbered title. See last Verse and Ps 3:9. Final native Verse.",
+      "title": "Psalms"
+    }
+  ],
+  "verses": [
+    {
+      "last": 1,
+      "text": "A numbered title.",
+      "verse": "Ps 3:1"
+    },
+    {
+      "last": 2,
+      "text": "See last Verse and Ps 3:9.",
+      "verse": "Ps 3:2"
+    },
+    {
+      "last": 9,
+      "text": "Final native Verse.",
+      "verse": "Ps 3:9"
+    }
+  ]
+}
