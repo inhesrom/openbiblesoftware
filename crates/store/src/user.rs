@@ -1,6 +1,6 @@
 //! The User database (#17): one SQLite file in the platform data folder holding everything the
-//! user makes — preferences, the Last session, named Layouts and the Preferred order now;
-//! Annotations later (#61).
+//! user makes: preferences, the Last session, named Layouts, the Preferred order, and the
+//! Notebooks, Annotations and Anchors with the `notes_fts` index of Note bodies (#61).
 //!
 //! Safety rules: WAL journaling; `PRAGMA user_version` with forward-only migrations; a copy of
 //! the file is taken before any migration runs; and at every launch a rolling backup (the
@@ -17,7 +17,7 @@ use crate::error::StoreError;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 3;
+pub const USER_SCHEMA_VERSION: u32 = 4;
 
 /// How many launch backups are kept.
 pub const ROLLING_BACKUPS: usize = 5;
@@ -33,9 +33,11 @@ const MIGRATIONS: &[&str] = &[
                           saved_at INTEGER NOT NULL);",
     // 2 → 3: Preferred order (rank 0 is the best; ranks are only compared within a type).
     "CREATE TABLE preferred_order (resource_id TEXT PRIMARY KEY, rank INTEGER NOT NULL);",
+    // 3 → 4: Annotations (#61). See `annotation_store.rs`.
+    crate::annotation_store::SCHEMA,
 ];
 
-fn sql(e: rusqlite::Error) -> StoreError {
+pub(crate) fn sql(e: rusqlite::Error) -> StoreError {
     StoreError::Sqlite(e.to_string())
 }
 
@@ -59,7 +61,7 @@ pub struct OpenReport {
 /// The User database.
 #[derive(Debug)]
 pub struct UserStore {
-    conn: Connection,
+    pub(crate) conn: Connection,
     path: PathBuf,
 }
 
@@ -117,6 +119,9 @@ impl UserStore {
                 report.migration_backup = Some(backup);
             }
             store.migrate(found, target)?;
+        }
+        if store.schema_version()? >= 4 {
+            store.ensure_default_notebook()?;
         }
         report.launch_backup = Some(store.rolling_backup()?);
         Ok((store, report))

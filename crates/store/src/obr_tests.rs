@@ -586,3 +586,98 @@ fn starter_format_two_and_three_have_identical_logical_content() {
     }
     assert_eq!(count, 16);
 }
+
+/// Delegates only the required methods, so the trait's default methods run.
+struct Defaults<'a>(&'a ObrReader);
+
+impl ResourceStore for Defaults<'_> {
+    fn manifest(&self) -> &obs_model::Manifest {
+        self.0.manifest()
+    }
+    fn summary(&self) -> Result<Summary, StoreError> {
+        self.0.summary()
+    }
+    fn unit_ids(&self) -> Result<Vec<UnitId>, StoreError> {
+        self.0.unit_ids()
+    }
+    fn unit(&self, id: &UnitId) -> Result<Option<obs_model::TextUnit>, StoreError> {
+        self.0.unit(id)
+    }
+    fn spans_in(&self, unit: &UnitId, range: Range<usize>) -> Result<Vec<Span>, StoreError> {
+        self.0.spans_in(unit, range)
+    }
+    fn verse(&self, verse: Verse) -> Result<Option<obs_model::BibleVerse>, StoreError> {
+        self.0.verse(verse)
+    }
+    fn verses(&self) -> Result<Vec<obs_model::BibleVerse>, StoreError> {
+        self.0.verses()
+    }
+    fn lookup_key(&self, key: &Key) -> Result<Vec<obs_model::KeyEntry>, StoreError> {
+        self.0.lookup_key(key)
+    }
+    fn lemmas_for_transliteration(&self, t: &str) -> Result<Vec<String>, StoreError> {
+        self.0.lemmas_for_transliteration(t)
+    }
+    fn keys(&self, scheme: KeyScheme) -> Result<Vec<obs_model::KeyEntry>, StoreError> {
+        self.0.keys(scheme)
+    }
+    fn unit_alias(&self, old: &UnitId) -> Result<Option<UnitId>, StoreError> {
+        self.0.unit_alias(old)
+    }
+    fn verse_map(&self) -> Result<Option<VerseMap>, StoreError> {
+        self.0.verse_map()
+    }
+    fn cross_references_from(
+        &self,
+        passage: Passage,
+    ) -> Result<Vec<obs_model::CrossReference>, StoreError> {
+        self.0.cross_references_from(passage)
+    }
+    fn entity(&self, id: &str) -> Result<Option<obs_model::Entity>, StoreError> {
+        self.0.entity(id)
+    }
+    fn mentions_in(&self, passage: Passage) -> Result<Vec<obs_model::Mention>, StoreError> {
+        self.0.mentions_in(passage)
+    }
+    fn load(&self) -> Result<Resource, StoreError> {
+        self.0.load()
+    }
+}
+
+/// The SQL versions of `unit_text` and `verses_overlapping` (used to anchor Annotations,
+/// #61) answer like the trait's generic versions.
+#[test]
+fn unit_text_and_verses_overlapping_match_the_generic_versions() {
+    let dir = TempDir::new("overlap");
+    let path = dir.path("kjv.obr");
+    write_obr(&sample_resource(), &path).unwrap();
+    let reader = ObrReader::open(&path).unwrap();
+    let generic = Defaults(&reader);
+    let jhn = UnitId::book(Book::John);
+    let (kind, text) = reader.unit_text(&jhn).unwrap().unwrap();
+    assert_eq!(
+        (kind, text.clone()),
+        generic.unit_text(&jhn).unwrap().unwrap()
+    );
+    assert!(
+        reader
+            .unit_text(&UnitId::new("NOPE").unwrap())
+            .unwrap()
+            .is_none()
+    );
+    for unit in [jhn.clone(), UnitId::book(Book::Psalms), UnitId::note(1)] {
+        for range in [0..1, 0..10_000, 140..150, 141..142, 5..5] {
+            assert_eq!(
+                reader.verses_overlapping(&unit, range.clone()).unwrap(),
+                generic.verses_overlapping(&unit, range.clone()).unwrap(),
+                "{unit} {range:?}"
+            );
+        }
+    }
+    let both = reader.verses_overlapping(&jhn, 0..text.len()).unwrap();
+    assert_eq!(both.len(), 2);
+    assert_eq!(
+        both[1].1,
+        Some(Some(Passage::verse(Verse::new(Book::John, 3, 17))))
+    );
+}
