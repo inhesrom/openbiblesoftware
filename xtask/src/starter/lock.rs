@@ -23,7 +23,9 @@ pub struct Lock {
 pub struct Source {
     /// Stable slug of the Resource this source becomes. Never reused.
     pub resource_id: String,
-    /// Which Import parser reads it: `usfm` (a zip of USFM books).
+    /// Which Import parser reads it: `usfm` (a zip of USFM books),
+    /// `openbible-cross-references` (OpenBible.info's zip of `cross_references.txt`) or `tipnr`
+    /// (STEPBible's TIPNR text file).
     pub importer: String,
     /// The pinned download. `file://` paths are allowed (tests, local mirrors).
     pub url: String,
@@ -74,7 +76,7 @@ pub struct IdChange {
     pub new: String,
 }
 
-pub const IMPORTERS: &[&str] = &["usfm"];
+pub const IMPORTERS: &[&str] = &["usfm", "openbible-cross-references", "tipnr"];
 
 /// Hosts whose site terms restrict republishing (#20 decision 3).
 const REFUSED_HOSTS: &[&str] = &["ccel.org"];

@@ -100,6 +100,13 @@ fn show_summary(r: &ObrReader) -> Result<String, String> {
         "\ncounts          {} units, {} spans, {} verses, {} keys, {} unit aliases",
         s.units, s.spans, s.verses, s.keys, s.unit_aliases
     );
+    if s.cross_references + s.entities + s.mentions > 0 {
+        let _ = writeln!(
+            out,
+            "datasets        {} cross-references, {} entities, {} mentions",
+            s.cross_references, s.entities, s.mentions
+        );
+    }
     if let Some(map) = &resource.verse_map {
         let _ = writeln!(
             out,

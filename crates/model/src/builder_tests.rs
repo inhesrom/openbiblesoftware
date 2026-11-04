@@ -129,7 +129,7 @@ fn content_hash_is_stable_and_ignores_insertion_order() {
     // come with a FORMAT_VERSION bump.
     assert_eq!(
         a.manifest.content_hash,
-        "sha256:9ecd79bdd0488f9a7363525d64cf04febbc04f416ea5f740afbef24b95ff657a"
+        "sha256:ac9d3e7f7922d29f27dfacef73f0aba27c5405ad25a094a6ae47597e0dbb9b53"
     );
 }
 
@@ -363,4 +363,155 @@ fn unit_aliases_must_point_at_live_units() {
             ..
         }
     )));
+}
+
+fn dataset_manifest(resource_type: ResourceType) -> Manifest {
+    let mut m = Manifest::new("dataset-test", "Dataset (test)", "DS", resource_type, "en");
+    m.key_schemes = vec![KeyScheme::Passage];
+    m.license = "CC-BY-4.0".into();
+    m
+}
+
+fn v(book: Book, chapter: u16, verse: u16) -> Passage {
+    Passage::verse(Verse::new(book, chapter, verse))
+}
+
+fn person(id: &str, name: &str) -> crate::Entity {
+    crate::Entity {
+        id: id.into(),
+        name: name.into(),
+        kind: crate::EntityKind::Male,
+        strongs: None,
+        other_names: Vec::new(),
+        region: None,
+        relations: Vec::new(),
+    }
+}
+
+#[test]
+fn cross_references_are_ordered_deduplicated_and_hashed() {
+    let xref = |to: Passage, votes| crate::CrossReference {
+        from: v(Book::Genesis, 1, 1),
+        to,
+        votes,
+    };
+    let mut b = ResourceBuilder::new(dataset_manifest(ResourceType::CrossReferenceSet));
+    b.add_cross_reference(xref(v(Book::John, 1, 1), 60));
+    b.add_cross_reference(xref(v(Book::Psalms, 33, 6), 40));
+    b.add_cross_reference(xref(v(Book::John, 1, 1), 60));
+    let r = b.build().unwrap();
+    assert_eq!(
+        r.cross_references,
+        [
+            xref(v(Book::Psalms, 33, 6), 40),
+            xref(v(Book::John, 1, 1), 60)
+        ]
+    );
+    let empty = ResourceBuilder::new(dataset_manifest(ResourceType::CrossReferenceSet))
+        .build()
+        .unwrap();
+    assert_ne!(r.manifest.content_hash, empty.manifest.content_hash);
+}
+
+#[test]
+fn every_cross_reference_target_must_be_a_valid_standard_reference() {
+    let mut b = ResourceBuilder::new(dataset_manifest(ResourceType::CrossReferenceSet));
+    // 3 John has 14 verses in the Standard versification; Psalm 3 has a title slot, Gen 1 not.
+    let bad_target = v(Book::ThirdJohn, 1, 15);
+    let bad_source = v(Book::Genesis, 1, 0);
+    b.add_cross_reference(crate::CrossReference {
+        from: v(Book::Genesis, 1, 1),
+        to: bad_target,
+        votes: 1,
+    });
+    b.add_cross_reference(crate::CrossReference {
+        from: bad_source,
+        to: v(Book::Psalms, 3, 0),
+        votes: 1,
+    });
+    let errs = errors(b);
+    assert_eq!(
+        errs,
+        [
+            ValidationError::NotStandardPassage {
+                what: "cross-reference source",
+                passage: bad_source
+            },
+            ValidationError::NotStandardPassage {
+                what: "cross-reference target",
+                passage: bad_target
+            },
+        ]
+    );
+    assert!(
+        errs[1]
+            .to_string()
+            .contains("is not a valid Standard versification reference")
+    );
+}
+
+#[test]
+fn dataset_records_only_in_their_resource_type() {
+    let mut b = ResourceBuilder::new(manifest());
+    b.add_cross_reference(crate::CrossReference {
+        from: v(Book::Genesis, 1, 1),
+        to: v(Book::John, 1, 1),
+        votes: 1,
+    });
+    b.add_entity(person("Adam@Gen.2.19-Jud", "Adam"));
+    b.add_mention("Adam@Gen.2.19-Jud", v(Book::Genesis, 2, 19));
+    let errs = errors(b);
+    for what in ["cross-reference", "entity", "mention"] {
+        assert!(
+            errs.contains(&ValidationError::DatasetInWrongType {
+                what,
+                resource_type: ResourceType::Bible
+            }),
+            "{what}: {errs:?}"
+        );
+    }
+}
+
+#[test]
+fn entities_and_mentions_must_resolve() {
+    let mut b = ResourceBuilder::new(dataset_manifest(ResourceType::PeopleAndPlaces));
+    let mut cain = person("Cain@Gen.4.1-1Jn", "Cain");
+    cain.relations.push(crate::EntityRelation {
+        relation: crate::Relation::Father,
+        entity: "Adam@Gen.2.19-Jud".into(),
+        uncertain: false,
+    });
+    b.add_entity(cain.clone());
+    b.add_entity(person("Adam@Gen.2.19-Jud", "Adam"));
+    b.add_mention("Cain@Gen.4.1-1Jn", v(Book::Genesis, 4, 1));
+    b.add_mention("Cain@Gen.4.1-1Jn", v(Book::Genesis, 4, 1));
+    let r = b.build().unwrap();
+    let ids: Vec<&str> = r.entities.iter().map(|e| e.id.as_str()).collect();
+    assert_eq!(ids, ["Adam@Gen.2.19-Jud", "Cain@Gen.4.1-1Jn"]);
+    assert_eq!(r.mentions.len(), 1, "duplicate mentions merge");
+
+    let mut b = ResourceBuilder::new(dataset_manifest(ResourceType::PeopleAndPlaces));
+    b.add_entity(cain.clone());
+    b.add_entity(cain);
+    b.add_entity(person("Nobody@Gen.1.1", " "));
+    b.add_mention("Seth@Gen.4.25-Luk", v(Book::Genesis, 4, 25));
+    b.add_mention("Nobody@Gen.1.1", v(Book::Genesis, 1, 32));
+    let errs = errors(b);
+    assert!(errs.contains(&ValidationError::DuplicateEntity("Cain@Gen.4.1-1Jn".into())));
+    assert!(errs.contains(&ValidationError::EmptyEntityField {
+        entity: "Nobody@Gen.1.1".into(),
+        field: "name"
+    }));
+    assert!(errs.contains(&ValidationError::UnknownEntity {
+        what: "relation",
+        entity: "Adam@Gen.2.19-Jud".into()
+    }));
+    assert!(errs.contains(&ValidationError::UnknownEntity {
+        what: "mention",
+        entity: "Seth@Gen.4.25-Luk".into()
+    }));
+    assert!(errs.contains(&ValidationError::NotStandardPassage {
+        what: "mention",
+        passage: v(Book::Genesis, 1, 32)
+    }));
 }
