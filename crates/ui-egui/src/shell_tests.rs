@@ -2151,6 +2151,35 @@ mod library {
     }
 
     #[test]
+    fn removing_the_last_resource_of_a_selected_language_restores_unfiltered_rows() {
+        let mut h = Harness::new();
+        h.click_text("Hebrew");
+        assert_eq!(row_names(&h), ["HEB"]);
+        let p = row_pos(&h, "HEB");
+        right_click(&mut h, p);
+        h.click_text("Remove…");
+        h.click_text("Cancel");
+        assert_eq!(row_names(&h), ["HEB"], "Cancel keeps the language filter");
+
+        let p = row_pos(&h, "HEB");
+        right_click(&mut h, p);
+        h.click_text("Remove…");
+        h.click_text("Remove");
+        assert!(h.shell.st.session.library.get("heb-test").is_none());
+        assert_eq!(h.shell.st.session.library.languages(), ["English"]);
+        assert_eq!(row_names(&h), ["TB", "HNUM"]);
+        let tab = h.tab_id("Library");
+        assert!(h.shell.st.tabs[&tab].languages.is_empty());
+        assert!(h.find("Nothing matches the filter.").is_none());
+
+        // The remaining chip still toggles normally; no hidden selection survives.
+        h.click_text("English");
+        h.click_text("English");
+        assert_eq!(row_names(&h), ["TB", "HNUM"]);
+        assert!(h.shell.st.tabs[&tab].languages.is_empty());
+    }
+
+    #[test]
     fn enter_double_click_and_right_click_open() {
         let mut h = Harness::new();
         let count = |h: &Harness, id: &str| {

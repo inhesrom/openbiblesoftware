@@ -38,9 +38,13 @@ enum Action {
 
 impl State {
     pub(super) fn library_body(&mut self, ui: &mut Ui, tab: TabId) {
-        let Some(t) = self.tabs.get(&tab) else {
+        let Some(t) = self.tabs.get_mut(&tab) else {
             return;
         };
+        let languages = self.session.library.languages();
+        // Removal can retire a chip; never leave its filter selected invisibly.
+        t.languages
+            .retain(|lang| languages.contains(&lang.as_str()));
         let filter = LibraryFilter {
             text: t.filter.clone(),
             languages: t.languages.clone(),
@@ -72,7 +76,7 @@ impl State {
                 }
                 // Language chips.
                 ui.horizontal_wrapped(|ui| {
-                    for lang in lib.languages() {
+                    for lang in languages {
                         let on = filter.languages.iter().any(|l| l == lang);
                         let chip = egui::Button::selectable(on, lang).corner_radius(11.0);
                         if ui
