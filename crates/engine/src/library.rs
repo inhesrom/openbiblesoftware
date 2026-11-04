@@ -164,11 +164,18 @@ impl Library {
     }
 
     /// Whether `path` is a file directly inside the library directory (Remove deletes those;
-    /// a file opened from elsewhere is only taken off the list).
+    /// a file opened from elsewhere is only taken off the list). Resolve directory aliases,
+    /// not the file itself: Remove also handles files already deleted outside the app.
     pub fn holds_file(&self, path: &std::path::Path) -> bool {
         self.dir
             .as_deref()
-            .is_some_and(|d| path.parent() == Some(d))
+            .zip(path.parent())
+            .is_some_and(
+                |(dir, parent)| match (dir.canonicalize(), parent.canonicalize()) {
+                    (Ok(dir), Ok(parent)) => dir == parent,
+                    _ => false,
+                },
+            )
     }
 
     /// The language chips: the [`language_name`]s of the library's Resources, alphabetically.

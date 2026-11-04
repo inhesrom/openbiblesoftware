@@ -233,6 +233,63 @@ fn remove_asks_first_then_deletes_the_obr_from_the_library() {
 }
 
 #[test]
+fn remove_deletes_an_absolute_drop_after_a_relative_scan_and_stays_removed() {
+    // Keep the fixture under the working directory so the scan can use a relative path
+    // without changing the process-wide working directory (tests run in parallel).
+    let root = PathBuf::from(format!(".obs-library-relative-drop-{}", std::process::id()));
+    let lib = root.join("library");
+    let db = root.join("user.db");
+    std::fs::create_dir_all(&lib).unwrap();
+    let file = write_bible(&lib, "kjv", "KJV", "en")
+        .canonicalize()
+        .unwrap();
+    let mut s = launch(&lib, &db);
+    assert!(s.library.get("kjv").unwrap().path.is_relative());
+
+    // The app's file-drop handler adds the same Resource using an absolute path.
+    s.library.add_file(&file).unwrap();
+    assert_eq!(s.library.get("kjv").unwrap().path, file);
+    let out = s.run("library.remove", &json!({ "id": "kjv" })).unwrap();
+    assert!(
+        out["confirm"]
+            .as_str()
+            .unwrap()
+            .contains("kjv.obr is deleted")
+    );
+    assert!(file.is_file(), "asking must not delete the file");
+    let out = s
+        .run("library.remove", &json!({ "id": "kjv", "confirm": true }))
+        .unwrap();
+    assert_eq!(out["deleted_file"], true);
+    assert!(!file.exists());
+    assert!(s.library.get("kjv").is_none());
+    drop(s);
+
+    let s = launch(&lib, &db);
+    assert!(s.library.get("kjv").is_none());
+    assert!(s.library.preferred_order().is_empty());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn holds_file_normalizes_parent_directories_but_requires_a_direct_child() {
+    let (lib, _) = temp("directory-identities");
+    let mut library = Library::new();
+    library.scan(&lib.join("..").join("library"));
+    assert!(library.holds_file(&lib.join("kjv.obr")));
+    assert!(library.holds_file(&lib.join("..").join("library").join("kjv.obr")));
+
+    let nested = lib.join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    assert!(!library.holds_file(&nested.join("kjv.obr")));
+    assert!(!library.holds_file(&lib.parent().unwrap().join("kjv.obr")));
+    assert!(!library.holds_file(&lib.join("nonexistent").join("kjv.obr")));
+    assert!(!Library::new().holds_file(&lib.join("kjv.obr")));
+    std::fs::remove_dir_all(lib.parent().unwrap()).unwrap();
+}
+
+#[test]
 fn remove_leaves_a_file_outside_the_library_folder_alone() {
     let (lib, db) = temp("remove-outside");
     let elsewhere = lib.parent().unwrap().join("elsewhere");
