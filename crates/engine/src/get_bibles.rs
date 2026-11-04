@@ -341,6 +341,7 @@ pub struct GetBibles {
     offline: Option<String>,
     refreshing: Option<JobId>,
     cache_path: Option<PathBuf>,
+    sword_dir: Option<PathBuf>,
 }
 
 impl GetBibles {
@@ -362,6 +363,16 @@ impl GetBibles {
     pub fn set_cache_path(&mut self, path: PathBuf) {
         self.cache_path = Some(path);
         self.load_cache();
+    }
+
+    /// The app-managed SWORD folder downloads install into. Defaults to
+    /// [`default_sword_dir`].
+    pub fn set_sword_dir(&mut self, dir: PathBuf) {
+        self.sword_dir = Some(dir);
+    }
+
+    pub fn sword_dir(&self) -> Option<PathBuf> {
+        self.sword_dir.clone().or_else(default_sword_dir)
     }
 
     fn load_cache(&mut self) {
@@ -398,6 +409,34 @@ pub fn default_catalog_cache() -> Option<PathBuf> {
     Some(crate::library::data_dir()?.join("sword-catalog.json"))
 }
 
+/// The app-managed SWORD folder: `$OBS_SWORD_DIR`, else `sword` in the app's data folder.
+pub fn default_sword_dir() -> Option<PathBuf> {
+    if let Some(p) = std::env::var_os("OBS_SWORD_DIR") {
+        return Some(PathBuf::from(p));
+    }
+    Some(crate::library::data_dir()?.join("sword"))
+}
+
+/// What a Bible's row offers: Download, progress, Open, or Retry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BibleStatus {
+    Available,
+    /// Downloading or importing; `phase` as on the Import report.
+    InProgress {
+        resource_id: String,
+        phase: crate::ImportPhase,
+        done: u64,
+        total: u64,
+    },
+    Installed {
+        resource_id: String,
+    },
+    Failed {
+        resource_id: String,
+        error: String,
+    },
+}
+
 fn now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -406,6 +445,108 @@ fn now_secs() -> u64 {
 }
 
 impl Session {
+    /// Where `listing` stands: in the Library, downloading, failed, or available.
+    pub fn bible_status(&self, listing: &BibleListing) -> BibleStatus {
+        let mut best = BibleStatus::Available;
+        for r in self.imports.records() {
+            let Some(origin) = &r.origin else {
+                continue;
+            };
+            if !(origin.module.eq_ignore_ascii_case(&listing.module) && origin.repo == listing.repo)
+            {
+                continue;
+            }
+            let id = r.resource_id.clone();
+            let status = if self.imports.job_of(&id).is_some() {
+                BibleStatus::InProgress {
+                    resource_id: id,
+                    phase: r.phase.clone(),
+                    done: r.done,
+                    total: r.total,
+                }
+            } else if r.phase == crate::ImportPhase::Complete && self.library.get(&id).is_some() {
+                BibleStatus::Installed { resource_id: id }
+            } else if r.phase == crate::ImportPhase::Failed {
+                BibleStatus::Failed {
+                    resource_id: id,
+                    error: r.error.clone().unwrap_or_default(),
+                }
+            } else {
+                continue;
+            };
+            let rank = |s: &BibleStatus| match s {
+                BibleStatus::Installed { .. } => 3,
+                BibleStatus::InProgress { .. } => 2,
+                BibleStatus::Failed { .. } => 1,
+                BibleStatus::Available => 0,
+            };
+            if rank(&status) > rank(&best) {
+                best = status;
+            }
+        }
+        best
+    }
+
+    /// Download `module` from its repository and import it, with its live Import report.
+    /// A failed earlier attempt is replaced (Retry). Returns the Resource id, report Tab and job.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn download_bible(&mut self, module: &str) -> Result<(String, u64, JobId), String> {
+        let catalog = self
+            .get_bibles
+            .catalog()
+            .ok_or("The Bible catalog has not been fetched yet")?;
+        let listing = catalog
+            .get(module)
+            .cloned()
+            .ok_or_else(|| format!("No repository offers {module}"))?;
+        let repo = catalog
+            .repo(&listing.repo)
+            .cloned()
+            .ok_or_else(|| format!("Repository {} is not in the catalog", listing.repo))?;
+        match self.bible_status(&listing) {
+            BibleStatus::Installed { .. } => {
+                return Err(format!("{} is already in your Library", listing.title));
+            }
+            BibleStatus::InProgress { .. } => {
+                return Err(format!("{} is already downloading", listing.title));
+            }
+            BibleStatus::Failed { .. } | BibleStatus::Available => {}
+        }
+        // Retry: drop earlier failed attempts and their report Tabs.
+        let failed: Vec<String> = self
+            .imports
+            .records()
+            .filter(|r| {
+                r.phase == crate::ImportPhase::Failed
+                    && r.origin.as_ref().is_some_and(|o| {
+                        o.module.eq_ignore_ascii_case(&listing.module) && o.repo == listing.repo
+                    })
+            })
+            .map(|r| r.resource_id.clone())
+            .collect();
+        for id in failed {
+            self.imports.reports.remove(&id);
+            let tabs: Vec<crate::TabId> = self
+                .workspace
+                .tabs()
+                .filter(|t| t.kind == crate::TabKind::ImportReport(id.clone()))
+                .map(|t| t.id)
+                .collect();
+            for tab in tabs {
+                self.workspace.close(tab);
+            }
+        }
+        let sword_dir = self
+            .get_bibles
+            .sword_dir()
+            .ok_or("No folder for downloaded SWORD modules")?;
+        self.start_import(crate::ImportSource::Repository {
+            repo,
+            module: listing.module,
+            sword_dir,
+        })
+    }
+
     /// Start a catalog refresh unless one is running. Returns the job.
     pub fn refresh_bible_catalog(&mut self) -> JobId {
         if let Some(job) = self.get_bibles.refreshing {
@@ -456,6 +597,12 @@ impl Session {
     }
 }
 
+const MODULE: ParamSpec = ParamSpec {
+    name: "module",
+    kind: ParamKind::String,
+    required: true,
+    help: "SWORD module name from the catalog",
+};
 const QUERY: ParamSpec = ParamSpec {
     name: "query",
     kind: ParamKind::String,
@@ -482,6 +629,14 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         },
     },
     CommandSpec {
+        id: "getbibles.download",
+        label: "Download Bible",
+        shortcut: None,
+        params: &[MODULE],
+        enabled: desktop,
+        run: download,
+    },
+    CommandSpec {
         id: "getbibles.list",
         label: "List available Bibles",
         shortcut: None,
@@ -490,6 +645,30 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         run: list,
     },
 ];
+
+fn desktop(_: &Session) -> bool {
+    cfg!(not(target_arch = "wasm32"))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn download(_: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
+    Err(CommandError::Failed {
+        command: "getbibles.download",
+        message: "Downloads require desktop".into(),
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn download(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    let module = p.str("module").unwrap_or_default();
+    let (id, tab, job) = s
+        .download_bible(module)
+        .map_err(|message| CommandError::Failed {
+            command: "getbibles.download",
+            message,
+        })?;
+    Ok(json!({"id": id, "tab": tab, "job": job.0}))
+}
 
 fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let Some(catalog) = s.get_bibles.catalog() else {
