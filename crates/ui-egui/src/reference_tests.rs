@@ -566,12 +566,35 @@ fn range_and_split_map_reference_popups_keep_one_preview_per_written_target() {
         h.ctx.enable_accesskit();
         h.events.push(Event::PointerMoved(pos2(1.0, 1.0)));
         h.frames(3);
+        // The replaced file reloads the Cross-references Tool: settle before counting
+        // headings so its reappearing "John 3:16" group never races the popup's.
+        for _ in 0..120 {
+            if h.find("Loading Cross-references…").is_none() && h.find("John 11:25-26").is_some()
+            {
+                break;
+            }
+            h.paced_frame();
+        }
         let headings = |h: &Harness| h.texts().iter().filter(|t| **t == heading).count();
+        let preview_texts = |h: &Harness| -> Vec<String> {
+            h.tree
+                .as_ref()
+                .into_iter()
+                .flat_map(|tree| tree.nodes.iter())
+                .filter(|(_, node)| node.role() == egui::Role::Label)
+                .filter_map(|(_, node)| node.value().map(str::to_string))
+                .filter(|text| text.starts_with("For God"))
+                .collect()
+        };
         let before = headings(&h);
         let spot = reference_spot(&h, bible, span);
         h.events.push(Event::PointerMoved(spot));
-        for _ in 0..10 {
+        // Hold the hover until the worker's target translation and preview both land.
+        for _ in 0..120 {
             h.paced_frame();
+            if h.find("Loading Scripture reference…").is_none() && !preview_texts(&h).is_empty() {
+                break;
+            }
         }
         assert_eq!(headings(&h), before + 1, "{heading}: {:?}", h.texts());
         assert!(h.find("Loading Scripture reference…").is_none());
@@ -579,16 +602,7 @@ fn range_and_split_map_reference_popups_keep_one_preview_per_written_target() {
             h.find("Preview shortened — click the reference to read")
                 .is_none()
         );
-        let previews: Vec<String> = h
-            .tree
-            .as_ref()
-            .unwrap()
-            .nodes
-            .iter()
-            .filter(|(_, node)| node.role() == egui::Role::Label)
-            .filter_map(|(_, node)| node.value().map(str::to_string))
-            .filter(|text| text.starts_with("For God"))
-            .collect();
+        let previews = preview_texts(&h);
         assert_eq!(previews.len(), 1, "{heading}: {previews:?}");
         assert!(previews[0].starts_with("For God so loved"));
         assert!(previews[0].contains("For God sent not"), "{}", previews[0]);
