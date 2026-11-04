@@ -396,6 +396,67 @@ fn tagnt_follows_na27_and_notes_other_editions() {
     );
 }
 
+fn assert_tagnt_shared_compound_dictionary(r: &Resource) {
+    let words = tagged_words(r, v(Book::Matthew, 2, 8));
+    let (_, parts) = words.iter().find(|(text, _)| *text == nfc("κἀγὼ")).unwrap();
+    // Mat.2.8#19 supplies κἀγώ=and I for the whole compound, not G1473.
+    let expected: Vec<MorphemePart> = [("G1473", "P-1NS"), ("G2532", "CONJ")]
+        .into_iter()
+        .map(|(strongs, morph)| MorphemePart {
+            strongs: strongs.parse().unwrap(),
+            lemma: None,
+            morph: Some(morph.to_string()),
+            gloss: None,
+        })
+        .collect();
+    assert_eq!(*parts, expected);
+    // The same source identifies G1473's Lemma independently in Mat.3.11#01.
+    assert_eq!(
+        tagged_words(r, v(Book::Matthew, 3, 11))[0].1,
+        [part("G1473", "ἐγώ", "P-1NS", "I myself")]
+    );
+}
+
+fn assert_tagnt_aligned_compound_dictionary(r: &Resource) {
+    for (verse, text, expected) in [
+        (
+            v(Book::Matthew, 19, 6),
+            "οὐκέτι",
+            vec![
+                part("G3756", "οὐ", "PRT-N", "no"),
+                part("G2089", "ἔτι", "ADV", "still"),
+            ],
+        ),
+        (
+            v(Book::John, 4, 2),
+            "καίτοιγε",
+            vec![
+                part("G2532", "καί", "CONJ", "and"),
+                part("G5104", "τοι", "PRT", "certainly"),
+                part("G1065", "γέ", "PRT", "indeed"),
+            ],
+        ),
+    ] {
+        let words = tagged_words(r, verse);
+        let (_, parts) = words.iter().find(|(word, _)| *word == nfc(text)).unwrap();
+        assert_eq!(*parts, expected, "{verse}: {text}");
+    }
+}
+
+#[test]
+fn tagnt_shared_compound_dictionary_is_not_first_morpheme_metadata() {
+    let (r, report) = import(StepbibleText::Tagnt, &[fixture("tagnt-compounds.txt")]);
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    assert_tagnt_shared_compound_dictionary(&r);
+}
+
+#[test]
+fn tagnt_aligned_compound_dictionary_keeps_per_part_metadata() {
+    let (r, report) = import(StepbibleText::Tagnt, &[fixture("tagnt-compounds.txt")]);
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    assert_tagnt_aligned_compound_dictionary(&r);
+}
+
 #[test]
 fn tahot_preserves_every_meaning_variant_including_ketiv() {
     let (r, report) = import(StepbibleText::Tahot, &[fixture("tahot-variants.txt")]);
@@ -603,6 +664,10 @@ fn full_tahot_and_tagnt() {
     ] {
         let (r, report) = import(text, &files(prefix));
         eprintln!("{report}");
+        if text == StepbibleText::Tagnt {
+            assert_tagnt_shared_compound_dictionary(&r);
+            assert_tagnt_aligned_compound_dictionary(&r);
+        }
         assert_eq!(report.books.len(), books);
         assert_eq!(report.verses, verses, "{prefix}: complete pinned edition");
         assert_eq!(report.tagged_words, words, "{prefix}: all Tagged words");

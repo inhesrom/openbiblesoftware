@@ -104,7 +104,7 @@ name = "STEPBible TAHOT and TAGNT (Translators Amalgamated Hebrew OT and Greek N
 license = "CC-BY-4.0"
 source = "https://STEPBible.github.io/STEPBible-Data/ (STEPBible-Data commit 5de0a47f35f0fc13dfe1430d104e5db8a4285f9c, Translators Amalgamated OT+NT)"
 copyright = "Data created by www.STEPBible.org based on work at Tyndale House Cambridge; credit: STEP Bible, www.STEPBible.org"
-changes = "Each file keeps its licence header and only selected word lines from a few verses of Genesis, Exodus, Numbers, Nehemiah, Psalms, Isaiah, Daniel, Malachi, Matthew, Mark, John, Acts, Ephesians and Revelation, as import test fixtures; Variant-regression excerpts omit trailing whitespace; the per-verse summary lines are left out."
+changes = "Each file keeps its licence header and only selected word lines from a few verses of Genesis, Exodus, Numbers, Nehemiah, Psalms, Isaiah, Daniel, Malachi, Matthew, Mark, John, Acts, Ephesians and Revelation, as import test fixtures; Variant and compound-regression excerpts omit trailing whitespace; the per-verse summary lines are left out."
 
 [[asset]]
 path = "crates/fonts/assets/gentium/*"

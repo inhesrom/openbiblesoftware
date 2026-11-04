@@ -940,6 +940,9 @@ impl TagntBook {
 
         let tags: Vec<&str> = reading.tags.split(" + ").collect();
         let dictionary: Vec<&str> = reading.dictionary.split(" + ").collect();
+        // A shared compound entry (e.g. κἀγώ=and I for G1473 + G2532) does
+        // not describe the first part. Only pair entries when all parts align.
+        let aligned_dictionary = dictionary.len() == tags.len();
         let single = tags.len() == 1;
         let mut parts = Vec::with_capacity(tags.len());
         for (i, tag) in tags.iter().enumerate() {
@@ -951,6 +954,7 @@ impl TagntBook {
             part.morph = some_text(morph);
             let (lemma, gloss) = dictionary
                 .get(i)
+                .filter(|_| aligned_dictionary)
                 .and_then(|d| d.split_once('='))
                 .unwrap_or(("", ""));
             part.lemma = lemma.split(',').next().and_then(some_text);
