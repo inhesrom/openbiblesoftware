@@ -228,6 +228,7 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     }
     s.library.remove(&id);
     s.imports.reports.remove(&id);
+    s.forget_search_index(&id);
     if let Some(user) = &s.user {
         let _ = user.set_preference(&format!("import-report/{id}"), "null");
     }

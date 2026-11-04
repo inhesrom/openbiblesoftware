@@ -15,7 +15,12 @@ use crate::{
     Effect, JobContext, JobEvent, JobEventKind, JobId, LibraryEntry, OpenRequest, Session, TabKind,
 };
 
-pub const DEFERRED_INDEX: &str = "Search index: built when Search arrives (#58)";
+/// Shown when the Import did not build the Search index itself (no cache directory was set
+/// up for it); the Session builds it in the background instead (#58).
+pub const DEFERRED_INDEX: &str = "Search index: built in the background";
+
+/// Shown when nothing can build the Search index here (no cache directory).
+pub const UNAVAILABLE_INDEX: &str = "Search index: unavailable (no cache folder)";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ImportPhase {
@@ -34,8 +39,11 @@ pub enum ImportIndexStatus {
     Failed(String),
 }
 
-/// #58 fills this hook. It runs on the Import worker after the immutable `.obr` is written.
-/// Implementations report actual index progress through `ctx.progress`; no simulated work.
+/// Builds the new Resource's Search index during the Import's Index phase. It runs on the
+/// Import worker after the immutable `.obr` is written, reports real progress through
+/// `ctx.progress` and stops when `ctx.is_cancelled()`. The app installs
+/// [`crate::CacheIndexer`] (via [`Session::set_search_cache_dir`]); without it the index is
+/// [`ImportIndexStatus::Deferred`] to a background rebuild.
 pub trait ImportIndexer: std::fmt::Debug + Send + Sync {
     fn build(
         &self,
@@ -139,8 +147,10 @@ impl Session {
     /// job consumers; do not silently swallow Search/Guide results.
     pub fn poll_imports(&mut self) -> Vec<JobEvent> {
         let mut other = Vec::new();
+        let mut imported = Vec::new();
         let events = self.jobs().drain_events();
         let events = self.poll_get_bibles(events);
+        let events = self.poll_search_indexes(events);
         for event in events {
             let Some(id) = self.imports.active.get(&event.id).cloned() else {
                 other.push(event);
@@ -174,6 +184,7 @@ impl Session {
                         record.report = Some(out.report);
                         record.index = out.index;
                         self.library.add(out.entry);
+                        imported.push(id.clone());
                         if let Err(e) = self.save_preferred_order() {
                             self.workspace.push_effect(Effect::Message(format!(
                                 "Could not save the Preferred order: {e}"
@@ -206,6 +217,10 @@ impl Session {
             if terminal {
                 self.imports.active.remove(&event.id);
             }
+        }
+        // The Import built the cache (or the background rebuild now will).
+        for id in imported {
+            self.refresh_search_index(&id);
         }
         other
     }

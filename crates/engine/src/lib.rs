@@ -29,6 +29,9 @@ mod library_commands;
 pub mod link;
 pub mod persist;
 pub mod resource_navigation;
+pub mod search;
+#[cfg(test)]
+mod search_tests;
 mod session;
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
@@ -52,7 +55,7 @@ pub use compare::{
 };
 pub use import::{
     DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,
-    ImportSource, Imports,
+    ImportSource, Imports, UNAVAILABLE_INDEX,
 };
 pub use jobs::{
     Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step, sword_installer,
@@ -63,6 +66,12 @@ pub use library::{
 pub use library_commands::annotations_phrase;
 pub use link::LINK_SETS;
 pub use persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, UserData, WorkspaceSnapshot};
+#[cfg(not(target_arch = "wasm32"))]
+pub use search::CacheIndexer;
+pub use search::{
+    INDEX_VERSION, IndexStatus, ResourceHits, SearchIndexes, SearchRequest, SearchResults,
+    default_search_cache_dir,
+};
 pub use session::{JobMode, Session};
 pub use word_info::{LemmaCard, LexiconGloss, PartRole, ShownWord, WordInfo, WordPart};
 pub use workspace::{

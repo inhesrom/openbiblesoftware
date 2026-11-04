@@ -2549,7 +2549,9 @@ mod import {
     use std::sync::{Mutex, mpsc};
     use std::time::{Duration, Instant};
 
-    use obs_engine::{DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, JobContext};
+    use obs_engine::{
+        ImportIndexStatus, ImportIndexer, ImportPhase, JobContext, UNAVAILABLE_INDEX,
+    };
     use obs_model::ResourceType;
 
     use super::*;
@@ -2734,6 +2736,59 @@ mod import {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// An Import whose indexer left the Search index to the background (#58).
+    #[derive(Debug)]
+    struct LeaveItIndexer;
+    impl ImportIndexer for LeaveItIndexer {
+        fn build(
+            &self,
+            _: &obs_model::Resource,
+            _: &Path,
+            _: &JobContext,
+        ) -> Result<ImportIndexStatus, String> {
+            Ok(ImportIndexStatus::Deferred)
+        }
+    }
+
+    #[test]
+    fn a_report_shows_the_background_search_index_build_until_it_is_ready() {
+        let (root, source, lib) = fixture("background");
+        let mut h = Harness::new();
+        assert!(h.shell.st.session.library.scan(&lib).is_empty());
+        h.shell.st.session.set_search_cache_dir(root.join("cache"));
+        h.shell
+            .st
+            .session
+            .imports
+            .set_indexer(Arc::new(LeaveItIndexer));
+        h.frames(2);
+        let id = pick(&mut h, &source);
+        h.shell.st.session.jobs().pump(1); // the Import
+        h.frames(2);
+        assert_eq!(record(&h, &id).index, ImportIndexStatus::Deferred);
+        assert!(
+            matches!(
+                h.shell.st.session.search.status(&id),
+                Some(obs_engine::IndexStatus::Indexing { .. })
+            ),
+            "queued for the background build"
+        );
+        assert!(
+            h.find(obs_engine::DEFERRED_INDEX).is_some(),
+            "{:?}",
+            h.texts()
+        );
+        h.shell.st.session.jobs().pump(1); // the background index build
+        h.frames(2);
+        assert_eq!(
+            h.shell.st.session.search.status(&id),
+            Some(&obs_engine::IndexStatus::Ready)
+        );
+        assert!(h.find("Search index: built").is_some(), "{:?}", h.texts());
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn a_picked_sword_conf_imports_through_the_report_tab_and_opens() {
         let (root, _, lib) = fixture("sword");
@@ -2779,10 +2834,11 @@ mod import {
         assert_eq!(rec.phase, ImportPhase::Complete);
         let report = rec.report.clone().unwrap();
 
-        // Summary, Unmapped/Absent counts, the licence warning and the deferred Search index.
+        // Summary, Unmapped/Absent counts, the licence warning and the Search index (this
+        // Session has no cache folder to build it in).
         for want in [
             "Import complete",
-            DEFERRED_INDEX,
+            UNAVAILABLE_INDEX,
             "2 source file(s) · usfm",
             "2 Bible book(s) · 2 Verses · 0 notes · 0 Tagged words",
             "Unmapped verses: 0",
