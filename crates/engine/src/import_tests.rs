@@ -288,6 +288,8 @@ fn sword_conf_file_imports_through_the_app_import_with_the_conf_licence() {
             .resource_id,
         id
     );
+    // Windows cannot delete files the Session still holds open (user.db).
+    drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -324,6 +326,8 @@ fn sword_folder_imports_the_named_module_and_asks_for_one_when_several() {
     assert!(error.contains("ObsKjvOsis"), "{error}");
     assert!(s.library.get(&id).is_none());
     assert!(!root.join(format!("library/{id}.obr")).exists());
+    // Windows cannot delete files the Session still holds open (user.db).
+    drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }
 
