@@ -215,6 +215,106 @@ fn prose_references_preserve_utf8_offsets_and_do_not_duplicate_links() {
 }
 
 #[test]
+fn prose_micah_references_are_not_roman_numerals() {
+    for source in ["Mic. v. 7", "mic. v. 7", "MIC. V. 7"] {
+        let text = html::render(source, None, &mut ImportReport::default());
+        let expected = parse_reference("Micah 5:7", &Standard, None).unwrap();
+        assert!(
+            text.spans.iter().any(|(range, kind)| {
+                &text.text[range.clone()] == source
+                    && matches!(kind, SpanKind::ScriptureRef { targets } if targets == &expected)
+            }),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn prose_reference_lists_keep_contextual_chapter_continuations() {
+    for (source, expected) in [
+        ("Ps. cxxi. 2; cxxiv. 8", "Ps 121:2; 124:8"),
+        ("Ps. civ. 13; lxv. 9, 10", "Ps 104:13; 65:9,10"),
+        ("John i. 9; ix. 5", "John 1:9; 9:5"),
+        ("Ps 121:2; 124:8", "Ps 121:2; 124:8"),
+        ("Ps 121:2, 124:8", "Ps 121:2; 124:8"),
+    ] {
+        let text = html::render(
+            &format!("é. {source}. Next sentence."),
+            None,
+            &mut ImportReport::default(),
+        );
+        let refs: Vec<_> = text
+            .spans
+            .iter()
+            .filter_map(|(range, kind)| {
+                if let SpanKind::ScriptureRef { targets } = kind {
+                    Some((&text.text[range.clone()], targets))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            refs,
+            vec![(source, &parse_reference(expected, &Standard, None).unwrap())]
+        );
+    }
+}
+
+#[test]
+fn mhc_wiki_indentation_is_not_visible_text() {
+    let mut i = import(ResourceType::Commentary);
+    import_mhc(&mut i, r#"<mediawiki><page><title>MHC/Volume 1/Genesis/Chapter 1</title><revision><text>==Verses 1-2==
+:'''I.''' First.
+
+::'''1.''' Second.
+
+:::'''(1.)''' Third: prose colon stays.
+::'''2.''' Fourth.
+</text></revision></page></mediawiki>"#).unwrap();
+    let (resource, _) = i.finish().unwrap();
+    assert_eq!(
+        resource.units[0].text.trim_end(),
+        "I. First.\n1. Second.\n(1.) Third: prose colon stays.\n2. Fourth."
+    );
+    assert!(
+        !resource.units[0]
+            .text
+            .lines()
+            .any(|line| line.starts_with(':'))
+    );
+}
+
+#[test]
+fn mhc_real_fixture_preserves_micah_and_psalm_targets_without_wiki_markers() {
+    let mut i = import(ResourceType::Commentary);
+    import_mhc(&mut i, include_str!("../../tests/fixtures/study/mhc.xml")).unwrap();
+    let (resource, _) = i.finish().unwrap();
+    for (source, expected) in [
+        ("Mic. v. 7", "Micah 5:7"),
+        ("Ps. cxxi. 2; cxxiv. 8", "Ps 121:2; 124:8"),
+    ] {
+        let expected = parse_reference(expected, &Standard, None).unwrap();
+        assert!(
+            resource.units.iter().any(|unit| {
+                unit.spans.iter().any(|span| {
+            &unit.text[span.range()] == source
+                && matches!(&span.kind, SpanKind::ScriptureRef { targets } if targets == &expected)
+        })
+            }),
+            "{source}"
+        );
+    }
+    for unit in &resource.units {
+        assert!(
+            !unit.text.lines().any(|line| line.starts_with(':')),
+            "{}",
+            unit.id
+        );
+    }
+}
+
+#[test]
 fn invalid_mhc_section_and_xml_fail_instead_of_shipping_bad_keys() {
     let mut i = import(ResourceType::Commentary);
     assert!(import_mhc(&mut i, "<mediawiki><page></mediawiki>").is_err());

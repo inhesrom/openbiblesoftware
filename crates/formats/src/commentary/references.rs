@@ -33,6 +33,18 @@ pub(super) fn parse(text: &str, context: Option<Verse>, roman: bool) -> Option<P
             }
         })
         .into_owned();
+    // Normalize Bible-book names before Roman chapters: lowercase `mic` is Micah,
+    // not the Roman numeral 1099. Canonical OSIS casing protects it below.
+    static WORD: OnceLock<Regex> = OnceLock::new();
+    text = re(&WORD, r"\b[1-3]?[A-Za-z]+\b")
+        .replace_all(&text, |c: &Captures<'_>| {
+            ONLINE
+                .iter()
+                .position(|a| a.eq_ignore_ascii_case(&c[0]))
+                .map(|i| Book::ALL[i].osis().to_string())
+                .unwrap_or_else(|| c[0].to_string())
+        })
+        .into_owned();
     if roman {
         text = text.replace(", &c.", "").replace("&c.", "");
         static INITIAL_VERSE: OnceLock<Regex> = OnceLock::new();
@@ -87,16 +99,6 @@ pub(super) fn parse(text: &str, context: Option<Verse>, roman: bool) -> Option<P
             .into_owned();
         text = text.replace(", &c.", "").replace("&c.", "");
     }
-    static WORD: OnceLock<Regex> = OnceLock::new();
-    text = re(&WORD, r"\b[1-3]?[A-Za-z]+\b")
-        .replace_all(&text, |c: &Captures<'_>| {
-            ONLINE
-                .iter()
-                .position(|a| a.eq_ignore_ascii_case(&c[0]))
-                .map(|i| Book::ALL[i].osis().to_string())
-                .unwrap_or_else(|| c[0].to_string())
-        })
-        .into_owned();
     parse_reference(
         text.trim().trim_end_matches([',', ';', '.']),
         &Standard,
@@ -122,8 +124,9 @@ pub(super) fn annotate_prose(text: &mut crate::text_buf::TextBuf, context: Optio
             .collect();
         names.sort_by_key(|s| std::cmp::Reverse(s.len()));
         names.dedup();
+        let chapter_verse = r"(?:[ivxlcdm]+\.\s*\d+|\d+[:.]\d+)";
         Regex::new(&format!(
-            r"(?i)\b(?:{})\.?\s+(?:[ivxlcdm]+\.\s*\d+|\d+[:.]\d+)(?:\s*[-,]\s*\d+)*",
+            r"(?i)\b(?:{})\.?\s+{chapter_verse}(?:\s*[;,]\s*{chapter_verse}|\s*[-,]\s*\d+)*",
             names.join("|")
         ))
         .expect("Bible book names are escaped")

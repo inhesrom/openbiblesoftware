@@ -192,6 +192,7 @@ fn emit(import: &mut StudyImport, passage: Passage, suffix: &str, source: &str) 
     static ITALIC: OnceLock<Regex> = OnceLock::new();
     static HEAD: OnceLock<Regex> = OnceLock::new();
     static PARA: OnceLock<Regex> = OnceLock::new();
+    static INDENT: OnceLock<Regex> = OnceLock::new();
     static NOTE: OnceLock<Regex> = OnceLock::new();
     static POEM: OnceLock<Regex> = OnceLock::new();
     let source = re(&NAV, r"(?m)^\s*\*\s*\[\[.*?\]\]\s*$").replace_all(source, "");
@@ -215,7 +216,9 @@ fn emit(import: &mut StudyImport, passage: Passage, suffix: &str, source: &str) 
             c[1].trim().lines().collect::<Vec<_>>().join("<br>")
         )
     });
-    let source = re(&PARA, r"\n\s*\n|\n:+").replace_all(&source, "<br>");
+    // Strip line-leading wiki indentation before blank-line folding consumes newlines.
+    let source = re(&INDENT, r"(?m)^:+").replace_all(&source, "<br>");
+    let source = re(&PARA, r"\n\s*\n").replace_all(&source, "<br>");
     // Notes remain separate units, with stable section-local ids and zero-width markers.
     let notes = re(&NOTE, r"(?is)<ref(?:\s[^>]*)?>(.*?)</ref>");
     let mut text = crate::text_buf::TextBuf::new();

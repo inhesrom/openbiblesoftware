@@ -55,8 +55,8 @@ Generated artifacts and full downloads are not committed.
 
 | Resource | Units | Numbered Verses covered by sections | Scripture-reference spans | `.obr` MB |
 |---|---:|---:|---:|---:|
-| MHC | 5,477 | 31,061 | 63,613 | 62.7 |
-| JFB | 19,774 | 31,102 | 40,416 | 27.8 |
+| MHC | 5,477 | 31,061 | 63,612 | 62.7 |
+| JFB | 19,774 | 31,102 | 40,419 | 27.8 |
 | Easton | 3,961 | — | 24,067 | 8.0 |
 | Smith | 4,561 | — | 15,004 | 6.8 |
 
@@ -79,6 +79,15 @@ reported rather than silently turned into invalid references.
 - `commentary::tests`: Roman/contextual reference parsing, UTF-8 span offsets,
   unlinked prose, malformed XML/offsets, notes and poetry, duplicate anchors,
   leading empty anchors and chapter-scoped missing-anchor repair.
+- PR #100 review regressions: protect Micah's abbreviation before Roman conversion;
+  preserve chapter-relative continuations such as `Ps. cxxi. 2; cxxiv. 8` in one
+  Scripture-reference span; convert line-leading wiki indentation independently of
+  blank-line paragraph separation. Four new tests failed before the fixes and pass
+  afterward, including assertions against the real MHC excerpt. The refreshed MHC
+  golden removes only indentation colons from text, updates byte offsets, and adds
+  Psalm 124:8 to the existing reference's targets. Full CI (including wasm), the
+  deterministic ten-Resource build, full pinned-edition test and benchmark passed
+  again after these fixes.
 
 Small public-domain excerpts, provenance notes and golden JSON live under
 `crates/formats/tests/fixtures/study/`; ordinary CI requires no downloads.
