@@ -606,6 +606,54 @@ mod tests {
     }
 
     #[test]
+    fn chapter_layout_is_virtualized_and_resize_keeps_the_current_location() {
+        let doc = crate::tests::numbered_bible("kjv-num", "KJV-numbered", "KJV", false);
+        let extent: Vec<_> =
+            obs_scripture::Passage::chapter(&obs_scripture::Standard, Book::Genesis, 31)
+                .unwrap()
+                .verses(&obs_scripture::Standard)
+                .collect();
+        let mut view = ComparisonView::new(TextSettings::default());
+        view.set(vec![doc], Some(0), true, extent);
+        let ctx = egui::Context::default();
+        let mut atlas = AtlasTexture::default();
+        let palette = Palette::for_tone(obs_engine::PageTone::Paper);
+        for _ in 0..100 {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(600.0, 400.0))),
+                    ..Default::default()
+                },
+                |ui| {
+                    comparison_pane(ui, &mut view, &mut atlas, &palette);
+                },
+            );
+            output.textures_delta.clear();
+            if !view.has_pending() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(!view.has_pending(), "visible rows settle off-thread");
+        let measured = (0..view.blocks.len())
+            .filter(|&i| view.heights.is_measured(i))
+            .count();
+        assert!(
+            measured > 0 && measured < 10,
+            "only viewport laid out: {measured}"
+        );
+        assert_eq!(view.blocks.len(), 55, "whole chapter available");
+        let verse = Verse::new(Book::Genesis, 31, 30);
+        view.jump_to(verse);
+        view.set_width(300.0);
+        view.set_settings(TextSettings {
+            size: 24.0,
+            ..TextSettings::default()
+        });
+        assert_eq!(view.current_location(), Some(verse));
+    }
+
+    #[test]
     fn a_reading_doc_answers_as_a_compared_bible() {
         let doc = crate::tests::numbered_bible("heb-num", "Hebrew-numbered", "HNUM", true);
         let g = |c, v| Verse::new(Book::Genesis, c, v);

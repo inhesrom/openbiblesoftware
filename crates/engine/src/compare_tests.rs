@@ -248,6 +248,30 @@ fn absent_merged_and_shared_rows() {
         Cell::Text { .. }
     ));
 
+    // The same merge through an explicit Verse map, including an extent starting mid-merge.
+    let mapped = TestBible {
+        language: "en",
+        map: Some(VerseMap::new(
+            vec![VerseMapEntry {
+                verse: mt(17, 1),
+                last: 2,
+                standard: Some(Passage::new(mt(17, 1), mt(17, 2)).unwrap()),
+            }],
+            vec![],
+            &Standard,
+        )),
+        verses: vec![(mt(17, 1), 2, "one and two".into())],
+    };
+    assert_eq!(cell_for(&mapped, mt(17, 1), mt(17, 1)), first);
+    assert_eq!(
+        cell_for(&mapped, mt(17, 2), mt(17, 1)),
+        Cell::Merged {
+            into: mt(17, 1),
+            native: mt(17, 1)
+        }
+    );
+    assert_eq!(cell_for(&mapped, mt(17, 2), mt(17, 2)), first);
+
     // Hebrew Ps 51:1-2 are the Standard title: both share the title row.
     let ps = |v| Verse::new(Book::Psalms, 51, v);
     let entries = vec![
@@ -437,11 +461,10 @@ fn a_typed_range_narrows_the_chapter_until_cleared_or_a_jump_leaves_it() {
         comparison(&s, t).extent(rom(8, 28)),
         range.verses(&Standard).collect::<Vec<_>>()
     );
-    // Jumps inside the chapter keep it…
+    // A typed single-Verse jump inside the chapter keeps the range chip too.
     s.run("tab.go", &json!({ "tab": t.0, "text": "Ro 8:30" }))
         .unwrap();
-    s.run("tab.go", &json!({ "tab": t.0, "text": "Ro 8:28-39" }))
-        .unwrap();
+    assert_eq!(comparison(&s, t).range, Some(range));
     s.workspace.navigate(t, rom(8, 1));
     assert_eq!(comparison(&s, t).range, Some(range));
     // …a jump to another chapter clears it…

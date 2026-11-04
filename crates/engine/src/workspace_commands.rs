@@ -528,11 +528,12 @@ fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         return Err(failed(ID, "no reference"));
     };
     s.workspace.navigate(tab, verse);
-    // Text Comparison: a typed range narrows the chapter to it, as a removable chip.
+    // A typed range replaces the chip; other jumps retain it until they leave its chapters.
     if let Some(t) = s.workspace.tab_mut(tab)
         && t.kind == TabKind::Tool(Tool::TextComparison)
+        && let Some(range) = passage.filter(|p| crate::compare::narrows(*p))
     {
-        t.comparison.range = passage.filter(|p| crate::compare::narrows(*p));
+        t.comparison.range = Some(range);
     }
     Ok(json!({ "tab": tab.0, "verse": verse.osis(), "text": own }))
 }
