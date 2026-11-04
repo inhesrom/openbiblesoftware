@@ -3,6 +3,8 @@
 //! - A workspace crate may depend only on workspace crates in the same or a lower layer.
 //! - Below L6 no crate may depend, even transitively, on a UI crate (egui, eframe, winit, rfd, …).
 //! - Only `obs-store` may depend directly on SQLite crates.
+//! - No library crate may depend, even transitively, on a networking crate; only apps may
+//!   (offline-first engine; Get Bibles, #91, injects its transport from the app).
 //! - Every workspace crate outside `apps/` and `xtask` must be listed in [`LAYERS`].
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -40,6 +42,24 @@ const UI_CRATES: &[&str] = &[
     "winit",
     "rfd",
     "accesskit_winit",
+];
+
+/// Crates that make network connections. Only apps may depend on them, directly or
+/// transitively; libraries take a transport from the app instead.
+const NET_CRATES: &[&str] = &[
+    "ureq",
+    "reqwest",
+    "hyper",
+    "h2",
+    "isahc",
+    "curl",
+    "attohttpc",
+    "minreq",
+    "rustls",
+    "native-tls",
+    "openssl",
+    "tungstenite",
+    "suppaftp",
 ];
 
 /// Crates only `obs-store` may depend on directly.
@@ -216,6 +236,19 @@ pub fn check(pkgs: &[Package]) -> Vec<String> {
                 }
             }
         }
+        for net in NET_CRATES {
+            if pkg.transitive_deps.contains(*net) {
+                let how = if pkg.external_deps.contains(*net) {
+                    "directly"
+                } else {
+                    "transitively"
+                };
+                errors.push(format!(
+                    "`{}` (L{layer}) depends {how} on networking crate `{net}`; only apps may",
+                    pkg.name
+                ));
+            }
+        }
         if pkg.name != SQLITE_OWNER {
             for db in SQLITE_CRATES {
                 if pkg.external_deps.contains(*db) {
@@ -293,6 +326,28 @@ mod tests {
     #[test]
     fn real_layout_passes() {
         assert_eq!(check(&good()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn networking_crate_in_a_library_fails_but_an_app_may_use_it() {
+        let mut pkgs = good();
+        pkgs[3].external_deps.insert("ureq".into());
+        pkgs[3].transitive_deps.insert("ureq".into());
+        let errors = check(&pkgs);
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("`obs-engine`"), "{errors:?}");
+        assert!(errors[0].contains("directly on networking crate `ureq`"));
+
+        let mut pkgs = good();
+        pkgs[4].transitive_deps.insert("rustls".into());
+        let errors = check(&pkgs);
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("`obs-ui-egui` (L6) depends transitively"));
+
+        let mut pkgs = good();
+        pkgs[5].external_deps.insert("ureq".into());
+        pkgs[5].transitive_deps.insert("rustls".into());
+        assert_eq!(check(&pkgs), Vec::<String>::new());
     }
 
     #[test]

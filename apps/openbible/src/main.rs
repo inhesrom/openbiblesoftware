@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 use obs_ui_egui::bench::{BenchConfig, run, synthetic_bible};
 
+mod fetch;
+
 fn bench(args: &[String]) -> ExitCode {
     let mut cfg = BenchConfig::default();
     let mut json: Option<String> = None;
@@ -73,7 +75,9 @@ fn main() -> ExitCode {
         options,
         Box::new(|_cc| {
             Ok(Box::new(
-                obs_ui_egui::App::with_file(file).with_automation_from_env(),
+                obs_ui_egui::App::with_file(file)
+                    .with_fetch(Arc::new(fetch::HttpFetch::new()))
+                    .with_automation_from_env(),
             ))
         }),
     ) {

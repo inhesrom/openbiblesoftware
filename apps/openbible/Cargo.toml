@@ -10,6 +10,10 @@ publish.workspace = true
 
 [dependencies]
 obs-ui-egui.workspace = true
+obs-formats.workspace = true
+# Get Bibles (#91): the only network client. Apps alone may use one (`cargo xtask layers`);
+# the engine reaches SWORD repositories through the `Fetch` this app hands it.
+ureq = "3"
 serde_json.workspace = true
 eframe = { workspace = true, features = ["wayland", "x11", "accesskit"] }
 

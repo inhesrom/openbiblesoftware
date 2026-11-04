@@ -27,6 +27,9 @@ pub mod resource_navigation;
 mod session;
 pub mod word_info;
 pub mod workspace;
+
+/// SWORD repository transport types (Get Bibles, #91).
+pub use obs_formats::sword_repo;
 mod workspace_commands;
 
 pub use appearance::{Appearance, PageTone, Theme};
@@ -39,7 +42,9 @@ pub use import::{
     DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,
     ImportSource, Imports,
 };
-pub use jobs::{Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step};
+pub use jobs::{
+    Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step, sword_installer,
+};
 pub use library::{
     Library, LibraryEntry, LibraryFilter, default_library_dir, default_user_db, language_name,
 };

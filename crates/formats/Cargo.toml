@@ -20,8 +20,9 @@ serde_json.workspace = true
 unicode-normalization.workspace = true
 roxmltree = "0.21"
 usfm3 = "0.3"
-# CC0 SWORD module reader; no installer or network (offline-only rule), so it stays wasm-clean.
-sword-modules = { version = "0.1", default-features = false, features = ["zip", "bzip2", "xz"] }
+# CC0 SWORD module reader and installer. `install` (catalogs, package zips) but never `https`:
+# the app hands in its own transport (Get Bibles, #91), so no networking crate below apps.
+sword-modules = { version = "0.1", default-features = false, features = ["zip", "bzip2", "xz", "install"] }
 obs-scripture.workspace = true
 obs-model.workspace = true
 
