@@ -19,14 +19,28 @@ use serde_json::{Value, json};
 use crate::compare_view::{ComparisonBible, ComparisonView, comparison_pane, paint_star};
 use crate::doc::ReadingDoc;
 use crate::palette::Palette;
-use crate::pane::{AtlasTexture, reading_pane};
+use crate::pane::{AtlasTexture, WordHit, reading_pane};
 use crate::theme;
 use crate::view::ReadingView;
+use crate::workers::SnippetCache;
 
 mod import_tab;
 mod library_tab;
 #[path = "references.rs"]
 pub(crate) mod references;
+mod word_info_tab;
+
+/// How long the pointer rests on a Tagged word before Word Info follows it (#18 rule 16).
+pub(crate) const HOVER_DWELL_SECS: f64 = 0.15;
+
+/// The pointer resting on a Tagged word: where, since when, and whether Word Info has it.
+#[derive(Debug, Clone, PartialEq)]
+struct Dwell {
+    tab: TabId,
+    word: WordHit,
+    since: f64,
+    shown: bool,
+}
 
 /// Per-Tab UI state the engine does not need.
 #[derive(Default)]
@@ -80,6 +94,10 @@ pub(crate) struct State {
     split_held: bool,
     /// egui_tiles Tabs containers ↔ engine Panels.
     pub(crate) panels: std::collections::HashMap<TileId, PanelId>,
+    /// The Tagged word the pointer is resting on, for Word Info's dwell.
+    dwell: Option<Dwell>,
+    /// Inline-snippet layouts for Word Info's word and Lemma.
+    snippets: SnippetCache,
 }
 
 /// The app window's content: menus, Search field and the docked Workspace.
@@ -116,6 +134,8 @@ impl Shell {
                 now: 0.0,
                 split_held: false,
                 panels: std::collections::HashMap::new(),
+                dwell: None,
+                snippets: SnippetCache::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -594,6 +614,10 @@ impl Shell {
             if other_required || (needs_tab && focused.is_none()) {
                 continue;
             }
+            // A disabled command leaves its key to whoever else wants it (Esc, say).
+            if !self.st.session.is_enabled(spec.id) {
+                continue;
+            }
             if ui.input_mut(|i| i.consume_shortcut(&sc)) {
                 let params = match (needs_tab, focused) {
                     (true, Some(t)) => json!({ "tab": t.0 }),
@@ -755,6 +779,8 @@ fn not_yet(id: &str) -> &'static str {
     match id {
         "library.import" => "Import a local USFM file or folder",
         "layout.save" => "Saved Layouts arrive with #37",
+        "word_info.word_study" => "Word Study arrives with #55",
+        "word_info.search" => "Search arrives with #59",
         _ => "Not available yet",
     }
 }
@@ -947,6 +973,7 @@ impl State {
             TabKind::Guide(g) => placeholder(&mut body, g.title(), guide_ticket(g)),
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
             TabKind::Tool(Tool::CrossReferences) => self.cross_references_body(&mut body, tab),
+            TabKind::Tool(Tool::WordInfo) => self.word_info_body(&mut body, tab),
             TabKind::Tool(t) => placeholder(&mut body, t.title(), tool_ticket(t)),
         }
     }
@@ -984,9 +1011,9 @@ impl State {
         if let Some(n) = out.hovered_verse_number {
             verse_number_tooltip(ui, &view.doc, n);
         }
-        if out.user_moved
-            && let Some(key) = view.current_entry()
-        {
+        let entry = out.user_moved.then(|| view.current_entry()).flatten();
+        self.word_hovered(ui, tab, out.hovered_word, out.clicked_word);
+        if let Some(key) = entry {
             self.session.workspace.user_scrolled_entry(tab, key);
         }
         if let Some(at) = at {
@@ -1364,11 +1391,24 @@ impl State {
         match kind {
             HeaderBox::Keyless => {}
             HeaderBox::FollowsHover => {
-                ui.label(
-                    RichText::new("Follows hover")
-                        .small()
-                        .color(theme::c().muted),
-                );
+                if self.session.word_info.pinned {
+                    let r = ui.add(
+                        egui::Button::new(RichText::new("📌 Pinned").small()).corner_radius(11.0),
+                    );
+                    if r.on_hover_text(
+                        "Pinned to the clicked word. Click (or press Esc) to follow hover again.",
+                    )
+                    .clicked()
+                    {
+                        self.run("word_info.unpin", &json!({}));
+                    }
+                } else {
+                    ui.label(
+                        RichText::new("Follows hover")
+                            .small()
+                            .color(theme::c().muted),
+                    );
+                }
             }
             HeaderBox::Filter => {
                 if let Some(t) = self.tabs.get_mut(&tab) {

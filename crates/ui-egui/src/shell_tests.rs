@@ -545,8 +545,14 @@ fn opening_word_info_twice_focuses_the_existing_tab() {
         .collect();
     assert_eq!(wi.len(), 1);
     assert_eq!(h.shell.st.session.workspace.focused(), Some(wi[0]));
-    // It is the active Tab of its Panel: its body shows.
-    assert!(h.find("Word Info arrives with #50").is_some());
+    // It is the active Tab of its Panel: its body shows (empty until a word is hovered).
+    assert!(
+        h.texts()
+            .iter()
+            .any(|t| t.contains("Rest the pointer on a word")),
+        "{:?}",
+        h.texts()
+    );
     // Both menu clicks ran the command (the default layout ran it once before).
     let log = h.shell.st.session.command_log();
     assert_eq!(log.iter().filter(|c| **c == "tool.word_info").count(), 3);
@@ -2831,3 +2837,6 @@ mod import {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[path = "word_info_tests.rs"]
+mod word_info;

@@ -4,10 +4,13 @@
 use std::path::Path;
 
 use obs_engine::resource_navigation::ResourceNavigation;
-use obs_layout::{BlockSource, unit_blocks};
+use std::ops::Range;
+use std::sync::OnceLock;
+
+use obs_layout::{BlockSource, SpanIndex, unit_blocks};
 use obs_model::{
-    BibleVerse, Direction, KeyEntry, Manifest, ParaStyle, Resource, Span, SpanKind, TextUnit,
-    UnitId, UnitKind,
+    BibleVerse, Direction, KeyEntry, Manifest, MorphemePart, ParaStyle, Resource, Span, SpanKind,
+    TextUnit, UnitId, UnitKind,
 };
 use obs_scripture::{ListedVersification, Verse, VerseMap};
 #[cfg(not(target_arch = "wasm32"))]
@@ -38,6 +41,8 @@ pub struct ReadingDoc {
     pub versification: ListedVersification,
     /// How its numbering corresponds to the Standard versification (none: identical).
     pub verse_map: Option<std::sync::Arc<VerseMap>>,
+    /// Each unit's interactive spans, indexed on first hover.
+    span_indexes: Vec<OnceLock<SpanIndex>>,
 }
 
 impl ReadingDoc {
@@ -125,6 +130,7 @@ impl ReadingDoc {
             .enumerate()
             .map(|(i, v)| (v.verse, i))
             .collect();
+        let span_indexes = units.iter().map(|_| OnceLock::new()).collect();
         Self {
             manifest,
             navigation: std::sync::Arc::new(ResourceNavigation::new(keys)),
@@ -135,7 +141,27 @@ impl ReadingDoc {
             verse_index,
             versification,
             verse_map: None,
+            span_indexes,
         }
+    }
+
+    /// The innermost Tagged word at unit byte `byte`: its bytes and its morphemes.
+    pub fn tagged_word_at(
+        &self,
+        unit: usize,
+        byte: usize,
+    ) -> Option<(Range<usize>, &[MorphemePart])> {
+        let u = self.units.get(unit)?;
+        let index = self
+            .span_indexes
+            .get(unit)?
+            .get_or_init(|| SpanIndex::new(u));
+        index.at(u, byte).into_iter().find_map(|s| match &s.kind {
+            SpanKind::TaggedWord { parts } if !parts.is_empty() => {
+                Some((s.start as usize..s.end as usize, parts.as_slice()))
+            }
+            _ => None,
+        })
     }
 
     pub fn entry_position(&self, entry: &KeyEntry) -> Option<(usize, usize)> {

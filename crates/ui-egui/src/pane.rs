@@ -68,8 +68,15 @@ impl AtlasTexture {
     }
 }
 
+/// A Tagged word the pointer is on: which unit and which bytes of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WordHit {
+    pub unit: usize,
+    pub range: std::ops::Range<usize>,
+}
+
 /// What happened in the reading pane this frame.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PaneOutput {
     /// The user moved the view (wheel, keys, scrollbar, selection auto-scroll).
     pub user_moved: bool,
@@ -78,6 +85,11 @@ pub struct PaneOutput {
     /// Unit and span indexes of the Scripture reference under the pointer.
     pub hovered_reference: Option<(usize, usize)>,
     pub reference_clicked: bool,
+    /// The Tagged word under the pointer (underlined this frame; Word Info follows it after
+    /// its dwell, #18 rule 16).
+    pub hovered_word: Option<WordHit>,
+    /// The Tagged word clicked this frame (Word Info pins it).
+    pub clicked_word: Option<WordHit>,
 }
 
 /// Draw the reading pane into all the space `ui` has, and handle its input. `flash` marks a
@@ -216,6 +228,43 @@ pub fn reading_pane(
             );
         }
     }
+    // The Tagged word under the pointer is underlined at once, pinned or not.
+    let hovered_word = response.hover_pos().and_then(|p| {
+        let (unit, UnitPos::Text(byte)) =
+            view.hit_in_unit_at(p.x - text_rect.left(), p.y - rect.top())?
+        else {
+            return None;
+        };
+        let (range, _) = view.doc.tagged_word_at(unit, byte)?;
+        Some(WordHit { unit, range })
+    });
+    if let Some(w) = &hovered_word {
+        let sel = Selection {
+            anchor: DocPos {
+                unit: w.unit,
+                byte: w.range.start,
+            },
+            head: DocPos {
+                unit: w.unit,
+                byte: w.range.end,
+            },
+            granularity: Granularity::Grapheme,
+        };
+        for [x0, _, x1, y1] in selection_rects(view, &sel, rect.height()) {
+            let y = rect.top() + y1 - 1.5;
+            painter.line_segment(
+                [
+                    pos2(text_rect.left() + x0, y),
+                    pos2(text_rect.left() + x1, y),
+                ],
+                egui::Stroke::new(1.0, palette.underline),
+            );
+        }
+        if !view.dragging_scrollbar && response.clicked() {
+            out.clicked_word = Some(w.clone());
+        }
+    }
+    out.hovered_word = hovered_word;
     let texture = atlas.sync(ui.ctx());
     let mut mesh = Mesh::with_texture(texture);
     mesh.reserve_vertices(quads.len() * 4);

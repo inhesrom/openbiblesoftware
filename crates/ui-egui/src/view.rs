@@ -315,9 +315,15 @@ impl ReadingView {
     /// What is under a point (`x` from the text's left edge, `y` from the viewport top), if
     /// its block is laid out.
     pub fn hit_at(&self, x: f32, y: f32) -> Option<UnitPos> {
-        for (_, top, laid) in self.laid_in_view(y + 1.0) {
+        self.hit_in_unit_at(x, y).map(|(_, pos)| pos)
+    }
+
+    /// [`Self::hit_at`] with the index of the unit the hit is in.
+    pub fn hit_in_unit_at(&self, x: f32, y: f32) -> Option<(usize, UnitPos)> {
+        for (index, top, laid) in self.laid_in_view(y + 1.0) {
             if y >= top && y < top + laid.height {
-                return laid.hit(x, y - top).map(|h| h.source);
+                let unit = self.doc.blocks[index].unit;
+                return laid.hit(x, y - top).map(|h| (unit, h.source));
             }
         }
         None
