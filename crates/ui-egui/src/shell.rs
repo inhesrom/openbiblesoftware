@@ -136,8 +136,7 @@ impl Shell {
             .st
             .session
             .library
-            .of_type(ResourceType::Bible)
-            .next()
+            .preferred(ResourceType::Bible)
             .map(|e| e.manifest.resource_id.clone());
         if let Some(id) = first {
             // The first Bible starts in Link set A, so Bibles opened from it follow along.

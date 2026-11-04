@@ -92,7 +92,18 @@ impl Session {
             crate::appearance::apply_json(&v, &mut self.appearance, &mut self.text);
         }
         if let Ok(order) = user.preferred_order() {
-            self.library.set_preferred_order(order);
+            self.library.set_preferred_order(order.clone());
+            // Pin the initial order too: a later Import must not sort ahead of Resources
+            // the user already had, even if they have never moved a row.
+            let current = self.library.preferred_order();
+            if current != order
+                && let Err(e) = user.save_preferred_order(&current)
+            {
+                self.workspace
+                    .push_effect(crate::workspace::Effect::Message(format!(
+                        "Could not save the Preferred order: {e}"
+                    )));
+            }
         }
         self.user = Some(user);
     }

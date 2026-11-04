@@ -211,9 +211,11 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         });
         return Ok(json!({ "confirm": message, "annotations": annotations }));
     }
-    if in_dir {
-        std::fs::remove_file(&entry.path)
-            .map_err(|e| failed(CMD, format!("{}: {e}", entry.path.display())))?;
+    if in_dir
+        && let Err(e) = std::fs::remove_file(&entry.path)
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        return Err(failed(CMD, format!("{}: {e}", entry.path.display())));
     }
     let open: Vec<_> = s
         .workspace

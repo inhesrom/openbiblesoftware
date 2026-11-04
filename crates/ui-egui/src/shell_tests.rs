@@ -1862,9 +1862,9 @@ mod text_comparison {
 mod library {
     use super::*;
 
-    const ABBREVS: [&str; 4] = ["TB", "HEB", "HNUM", "KJV"];
-    /// Height of one Library row (`library_tab::ROW_H`).
-    const ROW_H: f32 = 28.0;
+    use super::super::library_tab::ROW_H;
+
+    const ABBREVS: [&str; 5] = ["TB", "HEB", "HNUM", "KJV", "DICT"];
 
     /// The Panel holding the Library Tab.
     fn library_panel(h: &Harness) -> Rect {
@@ -1964,7 +1964,7 @@ mod library {
 
     #[test]
     fn rows_are_grouped_by_type_with_language_and_licence() {
-        let h = Harness::new();
+        let mut h = Harness::new();
         assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
         let panel = library_panel(&h);
         for t in [
@@ -1984,6 +1984,25 @@ mod library {
             );
         }
         assert_eq!(starred(&h), "TB");
+
+        h.shell.st.session.library.add(LibraryEntry {
+            manifest: obs_model::Manifest::new(
+                "test-dictionary",
+                "Test Dictionary",
+                "DICT",
+                obs_model::ResourceType::Dictionary,
+                "en",
+            ),
+            path: "/nonexistent/test-dictionary.obr".into(),
+        });
+        h.frames(2);
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM", "DICT"]);
+        let bibles = h.find("BIBLES").unwrap();
+        let dictionaries = h.find("DICTIONARIES").unwrap();
+        assert!(bibles.bottom() < row_pos(&h, "TB").y);
+        assert!(row_pos(&h, "HNUM").y < dictionaries.top());
+        assert!(dictionaries.bottom() < row_pos(&h, "DICT").y);
+        assert!(h.find("Test Dictionary").is_some());
     }
 
     #[test]
@@ -2190,6 +2209,27 @@ mod library {
     }
 
     #[test]
+    fn the_about_tab_shows_none_recorded_for_empty_attribution() {
+        let mut h = Harness::new();
+        let mut entry = h
+            .shell
+            .st
+            .session
+            .library
+            .get("test-bible")
+            .unwrap()
+            .clone();
+        entry.manifest.attribution.clear();
+        entry.manifest.changes = Some("No text changes.".into());
+        h.shell.st.session.library.add(entry);
+        h.shell
+            .run("resource.about", &json!({ "id": "test-bible" }));
+        h.frames(2);
+        assert!(h.find("None recorded.").is_some());
+        assert!(h.find("No text changes.").is_some());
+    }
+
+    #[test]
     fn remove_deletes_the_obr_from_the_library_after_confirmation() {
         let dir = std::env::temp_dir().join(format!("obs-shell-remove-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -2232,5 +2272,7 @@ mod library {
         );
         h.click_text("Library");
         assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        drop(h);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

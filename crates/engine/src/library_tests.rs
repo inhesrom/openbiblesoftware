@@ -87,6 +87,8 @@ fn reordering_persists_across_restarts_and_changes_which_bible_is_starred() {
     let s = launch(&lib, &db);
     assert_eq!(bibles(&s), ["kjv", "web", "asv"]);
     assert_eq!(starred(&s), "kjv");
+    drop(s);
+    std::fs::remove_dir_all(lib.parent().unwrap()).unwrap();
 }
 
 #[test]
@@ -103,6 +105,8 @@ fn new_imports_go_to_the_bottom_of_their_type() {
     let s = launch(&lib, &db);
     assert_eq!(bibles(&s), ["web", "kjv", "asv"]);
 
+    drop(s);
+
     // The same holds when the User database is attached before Resources are added.
     let mut s = Session::new(JobMode::Inline);
     let (store, _) = obs_store::UserStore::open(&db).unwrap();
@@ -111,6 +115,36 @@ fn new_imports_go_to_the_bottom_of_their_type() {
         s.library.add_file(&lib.join(format!("{id}.obr"))).unwrap();
     }
     assert_eq!(bibles(&s), ["web", "kjv", "asv"]);
+    drop(s);
+    std::fs::remove_dir_all(lib.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn new_imports_stay_last_across_restarts_without_any_moves() {
+    let (lib, db) = temp("imports-no-moves");
+    write_bible(&lib, "kjv", "KJV", "en");
+    write_bible(&lib, "web", "WEB", "en");
+    let s = launch(&lib, &db);
+    assert_eq!(bibles(&s), ["kjv", "web"]);
+    assert_eq!(
+        s.user.as_ref().unwrap().preferred_order().unwrap(),
+        ["kjv", "web"]
+    );
+    drop(s);
+
+    write_bible(&lib, "asv", "ASV", "en");
+    let s = launch(&lib, &db);
+    assert_eq!(bibles(&s), ["kjv", "web", "asv"]);
+    assert_eq!(starred(&s), "kjv");
+    drop(s);
+
+    // Each launch also pins newly seen Resources, not just the first launch.
+    write_bible(&lib, "bsb", "BSB", "en");
+    let s = launch(&lib, &db);
+    assert_eq!(bibles(&s), ["kjv", "web", "asv", "bsb"]);
+    assert_eq!(starred(&s), "kjv");
+    drop(s);
+    std::fs::remove_dir_all(lib.parent().unwrap()).unwrap();
 }
 
 #[test]
@@ -194,6 +228,8 @@ fn remove_asks_first_then_deletes_the_obr_from_the_library() {
     let s = launch(&lib, &db);
     assert_eq!(bibles(&s), ["web"]);
     assert_eq!(s.library.preferred_order(), ["web"]);
+    drop(s);
+    std::fs::remove_dir_all(lib.parent().unwrap()).unwrap();
 }
 
 #[test]
@@ -218,6 +254,8 @@ fn remove_leaves_a_file_outside_the_library_folder_alone() {
     assert_eq!(out["deleted_file"], false);
     assert!(file.is_file());
     assert!(s.library.get("mine").is_none());
+    drop(s);
+    std::fs::remove_dir_all(lib.parent().unwrap()).unwrap();
 }
 
 #[test]
@@ -304,4 +342,31 @@ fn the_about_tab_is_keyless_and_one_per_resource() {
     assert!(snap.tabs.is_empty());
     assert_eq!(annotations_phrase(1), "1 Annotation refers");
     assert_eq!(annotations_phrase(3), "3 Annotations refer");
+    drop(s);
+    std::fs::remove_dir_all(lib.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn remove_succeeds_when_the_obr_was_deleted_outside_the_app() {
+    let (lib, db) = temp("remove-missing");
+    let file = write_bible(&lib, "kjv", "KJV", "en");
+    let mut s = launch(&lib, &db);
+    s.run("resource.open", &json!({ "id": "kjv" })).unwrap();
+    s.run("resource.about", &json!({ "id": "kjv" })).unwrap();
+    s.run("library.remove", &json!({ "id": "kjv" })).unwrap();
+    std::fs::remove_file(file).unwrap();
+    s.run("library.remove", &json!({ "id": "kjv", "confirm": true }))
+        .unwrap();
+    assert!(s.library.get("kjv").is_none());
+    assert!(s.workspace.tabs().next().is_none());
+    assert!(
+        s.user
+            .as_ref()
+            .unwrap()
+            .preferred_order()
+            .unwrap()
+            .is_empty()
+    );
+    drop(s);
+    std::fs::remove_dir_all(lib.parent().unwrap()).unwrap();
 }

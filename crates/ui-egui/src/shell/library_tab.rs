@@ -14,7 +14,7 @@ use crate::pane::reading_pane;
 use crate::theme;
 
 /// Height of one Library row.
-const ROW_H: f32 = 28.0;
+pub(crate) const ROW_H: f32 = 28.0;
 /// Width of the drag handle at the left of a row.
 const HANDLE_W: f32 = 22.0;
 
@@ -282,7 +282,11 @@ impl State {
                         // Verbatim, through the text pipeline (fonts for every script).
                         let width = ui.available_width();
                         let palette = self.palette;
-                        if let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) {
+                        if m.attribution.is_empty() {
+                            ui.label("None recorded.");
+                        } else if let Some(view) =
+                            self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut())
+                        {
                             // As tall as the text (once laid out), so the page scrolls rather
                             // than a box inside it; only a very long Attribution scrolls itself.
                             #[allow(clippy::cast_possible_truncation)]
