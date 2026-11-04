@@ -23,6 +23,8 @@ use crate::pane::{AtlasTexture, reading_pane};
 use crate::theme;
 use crate::view::ReadingView;
 
+mod library_tab;
+
 /// Per-Tab UI state the engine does not need.
 #[derive(Default)]
 struct TabUi {
@@ -33,6 +35,11 @@ struct TabUi {
     error: Option<String>,
     /// A verse marked after a jump, and when the mark started.
     flash: Option<(Verse, f64)>,
+    /// Library Tab: the language chips that are on, the selected row and the row whose
+    /// handle is being dragged (resource ids).
+    languages: Vec<String>,
+    selected: Option<String>,
+    dragging: Option<String>,
     /// A Text Comparison Tab's view.
     comparison: Option<ComparisonView>,
     /// Failed selected Bibles are retried only on request (or after removal/reselection).
@@ -52,6 +59,8 @@ pub(crate) struct State {
     window: Option<(String, String)>,
     /// The Layout-name prompt: the Layout being renamed (none: saving a new one) and the text.
     prompt: Option<(Option<String>, String)>,
+    /// The Remove… confirmation: resource id, window title and message.
+    confirm: Option<(String, String, String)>,
     /// When the Last session was last checked for saving.
     last_save: f64,
     /// This frame's Page-tone palette.
@@ -88,6 +97,7 @@ impl Shell {
                 toast: None,
                 window: None,
                 prompt: None,
+                confirm: None,
                 last_save: 0.0,
                 palette: Palette::PAPER,
                 search: String::new(),
@@ -115,8 +125,8 @@ impl Shell {
         out
     }
 
-    /// The default arrangement: the first Bible in one Panel; the Library and Word Info in a
-    /// Panel to its right.
+    /// The default arrangement: the ★ Bible (first in Preferred order) in one Panel; the
+    /// Library and Word Info in a Panel to its right.
     pub fn reset_layout(&mut self) {
         self.st.session.workspace.clear();
         self.apply_effects();
@@ -126,8 +136,7 @@ impl Shell {
             .st
             .session
             .library
-            .of_type(ResourceType::Bible)
-            .next()
+            .preferred(ResourceType::Bible)
             .map(|e| e.manifest.resource_id.clone());
         if let Some(id) = first {
             // The first Bible starts in Link set A, so Bibles opened from it follow along.
@@ -212,6 +221,14 @@ impl Shell {
                 }
                 Effect::Message(m) => self.st.toast(m),
                 Effect::Show { title, body } => self.st.window = Some((title, body)),
+                Effect::ConfirmRemove {
+                    resource_id,
+                    title,
+                    message,
+                } => self.st.confirm = Some((resource_id, title, message)),
+                Effect::Removed(id) => {
+                    self.st.docs.remove(&id);
+                }
             }
         }
         self.record_layout();
@@ -765,8 +782,8 @@ impl State {
         if kind == Some(TabKind::Tool(Tool::TextComparison)) {
             ui_state.comparison = Some(ComparisonView::new(self.session.text));
         }
-        if let Some(TabKind::Resource(id)) = kind {
-            match self.doc(&id) {
+        if let Some(TabKind::Resource(id)) = &kind {
+            match self.doc(id) {
                 Ok(doc) => {
                     let mut view = ReadingView::new(Arc::clone(&doc), self.session.text);
                     if let Some(t) = self.session.workspace.tab_mut(tab) {
@@ -793,6 +810,12 @@ impl State {
                 }
                 Err(e) => ui_state.error = Some(e),
             }
+        }
+        if let Some(TabKind::About(id)) = &kind
+            && let Some(e) = self.session.library.get(id)
+        {
+            let doc = ReadingDoc::from_text(e.manifest.clone(), &e.manifest.attribution);
+            ui_state.view = Some(ReadingView::new(Arc::new(doc), self.session.text));
         }
         self.tabs.insert(tab, ui_state);
     }
@@ -842,6 +865,7 @@ impl State {
         match kind {
             TabKind::Resource(_) => self.reading_body(&mut body, tab),
             TabKind::Library => self.library_body(&mut body, tab),
+            TabKind::About(id) => self.about_body(&mut body, tab, &id),
             TabKind::Guide(g) => placeholder(&mut body, g.title(), guide_ticket(g)),
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
             TabKind::Tool(t) => placeholder(&mut body, t.title(), tool_ticket(t)),
@@ -1074,76 +1098,6 @@ impl State {
         }
     }
 
-    fn library_body(&mut self, ui: &mut Ui, tab: TabId) {
-        let filter = self
-            .tabs
-            .get(&tab)
-            .map(|t| t.filter.to_lowercase())
-            .unwrap_or_default();
-        let mut open: Option<String> = None;
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(14, 10))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        let lib = &self.session.library;
-                        if lib.entries().is_empty() {
-                            ui.label(
-                                RichText::new(
-                                    "Your library is empty. Drop a .obr file on the window, or \
-                                     make one with `obs-cli import`.",
-                                )
-                                .color(theme::c().muted),
-                            );
-                        }
-                        for ty in RESOURCE_TYPES {
-                            let rows: Vec<_> = lib
-                                .of_type(ty)
-                                .filter(|e| {
-                                    filter.is_empty()
-                                        || e.manifest.title.to_lowercase().contains(&filter)
-                                        || e.manifest.abbreviation.to_lowercase().contains(&filter)
-                                })
-                                .collect();
-                            if rows.is_empty() {
-                                continue;
-                            }
-                            ui.add_space(4.0);
-                            ui.label(
-                                RichText::new(type_name(ty).to_uppercase())
-                                    .size(10.5)
-                                    .strong()
-                                    .color(theme::c().muted),
-                            );
-                            for e in rows {
-                                let m = &e.manifest;
-                                let r = ui.add(
-                                    egui::Button::new(
-                                        RichText::new(format!("{}  {}", m.abbreviation, m.title))
-                                            .color(theme::c().ink),
-                                    )
-                                    .frame(false),
-                                );
-                                let r = r.on_hover_text(format!(
-                                    "{} · {} · {}",
-                                    m.language, m.license, m.resource_id
-                                ));
-                                if r.clicked() {
-                                    open = Some(m.resource_id.clone());
-                                }
-                            }
-                        }
-                    });
-            });
-        if let Some(id) = open {
-            let split = self.split_held;
-            self.run("resource.open", &json!({ "id": id, "split": split }));
-        }
-    }
-
     fn header(&mut self, ui: &mut Ui, tab: TabId, kind: &TabKind) {
         let focused = self.session.workspace.focused() == Some(tab);
         let fill = if focused {
@@ -1247,6 +1201,7 @@ impl State {
 
     fn header_box(&mut self, ui: &mut Ui, tab: TabId, kind: HeaderBox, width: f32) {
         match kind {
+            HeaderBox::Keyless => {}
             HeaderBox::FollowsHover => {
                 ui.label(
                     RichText::new("Follows hover")
@@ -1256,12 +1211,16 @@ impl State {
             }
             HeaderBox::Filter => {
                 if let Some(t) = self.tabs.get_mut(&tab) {
-                    ui.add(
+                    let r = ui.add(
                         egui::TextEdit::singleline(&mut t.filter)
                             .hint_text("Filter")
                             .desired_width(width)
                             .margin(egui::Margin::symmetric(8, 4)),
                     );
+                    if r.lost_focus() {
+                        // TextEdit releases focus on Enter; don't let that same key open a row.
+                        ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+                    }
                 }
             }
             HeaderBox::Word | HeaderBox::Reference => {
@@ -1306,7 +1265,17 @@ impl State {
     }
 
     fn tab_menu(&mut self, ui: &mut Ui, tab: TabId) {
+        let resource = match self.session.workspace.tab(tab).map(|t| &t.kind) {
+            Some(TabKind::Resource(id)) => Some(id.clone()),
+            _ => None,
+        };
         ui.menu_button(RichText::new("…").color(theme::c().muted), |ui| {
+            if let Some(id) = &resource
+                && ui.button("About").clicked()
+            {
+                self.run("resource.about", &json!({ "id": id }));
+                ui.close();
+            }
             if ui
                 .add(egui::Button::new("Close Tab").shortcut_text("Ctrl+W"))
                 .clicked()
@@ -1373,6 +1342,7 @@ impl State {
     fn overlays(&mut self, ui: &Ui) {
         let ctx = ui.ctx().clone();
         self.layout_prompt(&ctx);
+        self.remove_prompt(&ctx);
         if let Some((msg, t)) = &self.toast {
             if self.now - t < 4.0 {
                 let screen = ctx.content_rect();

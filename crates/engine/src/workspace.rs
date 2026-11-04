@@ -66,6 +66,8 @@ pub enum TabKind {
     Library,
     /// A Resource from the library, by its resource id.
     Resource(String),
+    /// A Resource's About Tab (keyless): manifest, licence and Attribution, by resource id.
+    About(String),
     Guide(Guide),
     Tool(Tool),
 }
@@ -81,6 +83,8 @@ pub enum HeaderBox {
     Filter,
     /// "Follows hover" (Word Info).
     FollowsHover,
+    /// No box: the Tab has no Key (About).
+    Keyless,
 }
 
 /// Which remembered-Panel slot a Tab kind uses.
@@ -88,16 +92,18 @@ pub enum HeaderBox {
 enum Slot {
     Library,
     Resource,
+    About,
     Guide(Guide),
     Tool(Tool),
 }
 
 impl TabKind {
-    /// Library, Notes and Word Info have at most one Tab each.
+    /// Library, Notes and Word Info have at most one Tab each, and each Resource at most
+    /// one About Tab.
     pub fn single_instance(&self) -> bool {
         matches!(
             self,
-            TabKind::Library | TabKind::Tool(Tool::Notes | Tool::WordInfo)
+            TabKind::Library | TabKind::About(_) | TabKind::Tool(Tool::Notes | Tool::WordInfo)
         )
     }
 
@@ -112,13 +118,17 @@ impl TabKind {
             TabKind::Tool(Tool::WordInfo) => HeaderBox::FollowsHover,
             TabKind::Guide(Guide::WordStudy) => HeaderBox::Word,
             TabKind::Tool(Tool::Search) => HeaderBox::Filter,
+            TabKind::About(_) => HeaderBox::Keyless,
             _ => HeaderBox::Reference,
         }
     }
 
     /// Whether the header has a link chip.
     pub fn has_link_chip(&self) -> bool {
-        !matches!(self, TabKind::Library | TabKind::Tool(Tool::Notes))
+        !matches!(
+            self,
+            TabKind::Library | TabKind::About(_) | TabKind::Tool(Tool::Notes)
+        )
     }
 
     /// Key schemes a Tab of this kind follows. A Resource's come from its manifest instead.
@@ -136,6 +146,7 @@ impl TabKind {
         match self {
             TabKind::Library => Slot::Library,
             TabKind::Resource(_) => Slot::Resource,
+            TabKind::About(_) => Slot::About,
             TabKind::Guide(g) => Slot::Guide(*g),
             TabKind::Tool(t) => Slot::Tool(*t),
         }
@@ -287,6 +298,15 @@ pub enum Effect {
         title: String,
         body: String,
     },
+    /// Ask the user to confirm removing a Resource; `message` states how many Annotations
+    /// refer to it. Confirming runs `library.remove` with `confirm`.
+    ConfirmRemove {
+        resource_id: String,
+        title: String,
+        message: String,
+    },
+    /// A Resource left the library: drop anything loaded from it.
+    Removed(String),
 }
 
 /// How the caller asked for a Tab to be opened.

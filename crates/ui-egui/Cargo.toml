@@ -19,7 +19,7 @@ serde_json.workspace = true
 unicode-segmentation.workspace = true
 obs-layout.workspace = true
 obs-render.workspace = true
-egui.workspace = true
+egui = { workspace = true, features = ["monochrome_emoji_fonts", "serde"] }
 eframe = { workspace = true, features = ["default_fonts", "glow", "wayland", "x11"] }
 egui_tiles.workspace = true
 
