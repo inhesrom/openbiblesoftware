@@ -46,7 +46,16 @@ impl Harness {
     /// Start the app as a launch would: with a User database at `db`, restoring the Last
     /// session from it (or the default layout).
     fn launch(db: Option<&std::path::Path>) -> Self {
-        let mut session = Session::new(JobMode::Inline);
+        Self::launch_with(db, JobMode::Inline)
+    }
+
+    /// Jobs run on real worker threads, as on the desktop.
+    fn threaded() -> Self {
+        Self::launch_with(None, JobMode::Threads(1))
+    }
+
+    fn launch_with(db: Option<&std::path::Path>, mode: JobMode) -> Self {
+        let mut session = Session::new(mode);
         if let Some(db) = db {
             let (store, _) = obs_store::UserStore::open(db).unwrap();
             session.attach_user(Box::new(store));
@@ -2509,3 +2518,309 @@ mod text_comparison {
 
 #[path = "resource_tabs_tests.rs"]
 mod resource_tabs;
+
+/// Import from the Library menu and the live Import report Tab (#47).
+mod import {
+    use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, mpsc};
+    use std::time::{Duration, Instant};
+
+    use obs_engine::{DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, JobContext};
+    use obs_model::ResourceType;
+
+    use super::*;
+
+    /// A temporary library folder and a USFM folder `WEB` of two Bible books, one with
+    /// markup the span vocabulary drops.
+    fn fixture(name: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let root =
+            std::env::temp_dir().join(format!("obs-shell-import-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let source = root.join("WEB");
+        let lib = root.join("library");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&lib).unwrap();
+        std::fs::write(
+            source.join("GEN.usfm"),
+            "\\id GEN\n\\c 1\n\\p\n\\v 1 In the beginning God created the heavens and the earth.\n\\ip An introduction the report must list as dropped.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            source.join("JHN.usfm"),
+            "\\id JHN\n\\c 1\n\\p\n\\v 1 In the beginning was the Word.\n",
+        )
+        .unwrap();
+        (root, source, lib)
+    }
+
+    /// Bible rows in the Library Tab, top to bottom, by abbreviation.
+    fn bible_rows(h: &Harness) -> Vec<String> {
+        let panel = h
+            .panels()
+            .into_iter()
+            .find(|(_, t)| t.iter().any(|t| t == "Library"))
+            .map(|(r, _)| r)
+            .unwrap();
+        let mut rows: Vec<(f32, String)> = h
+            .shapes
+            .iter()
+            .filter(|(r, t)| {
+                ["TB", "HEB", "HNUM", "WEB-1"].contains(&t.as_str()) && panel.contains(r.center())
+            })
+            .map(|(r, t)| (r.center().y, t.clone()))
+            .collect();
+        rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+        rows.into_iter().map(|(_, t)| t).collect()
+    }
+
+    /// Hand the shell a picked path the way the `rfd` thread does, without a native dialog.
+    fn pick(h: &mut Harness, path: &Path) -> String {
+        let (tx, rx) = mpsc::channel();
+        h.shell.st.picker = Some(rx);
+        tx.send(Some(path.to_path_buf())).unwrap();
+        h.frames(2);
+        h.shell
+            .st
+            .session
+            .workspace
+            .tabs()
+            .find_map(|t| match &t.kind {
+                TabKind::ImportReport(id) => Some(id.clone()),
+                _ => None,
+            })
+            .expect("the report Tab opens as soon as the Import starts")
+    }
+
+    fn record(h: &Harness, id: &str) -> obs_engine::ImportRecord {
+        h.shell.st.session.imports.report(id).unwrap().clone()
+    }
+
+    /// #58's seam, standing in: reports one step of index progress, then waits to be released.
+    #[derive(Debug)]
+    struct HeldIndexer {
+        entered: mpsc::Sender<()>,
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+    impl ImportIndexer for HeldIndexer {
+        fn build(
+            &self,
+            _: &obs_model::Resource,
+            _: &Path,
+            ctx: &JobContext,
+        ) -> Result<ImportIndexStatus, String> {
+            ctx.progress(1, 3);
+            self.entered.send(()).unwrap();
+            self.release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(20))
+                .unwrap();
+            ctx.progress(3, 3);
+            Ok(ImportIndexStatus::Built)
+        }
+    }
+
+    #[test]
+    fn library_import_opens_a_chooser_then_a_report_tab_that_fills_in_live_without_freezing_frames()
+    {
+        let (root, source, lib) = fixture("live");
+        let mut h = Harness::threaded();
+        assert!(h.shell.st.session.library.scan(&lib).is_empty());
+        let (entered, held) = mpsc::channel();
+        let (release, rx) = mpsc::channel();
+        h.shell
+            .st
+            .session
+            .imports
+            .set_indexer(Arc::new(HeldIndexer {
+                entered,
+                release: Mutex::new(rx),
+            }));
+        h.frames(2);
+
+        // Library → Import… is enabled and asks whether to pick a file or a folder.
+        h.open_menu("Library");
+        h.click_text("Import…");
+        assert!(
+            h.find("Choose a USFM file or a folder of Bible books.")
+                .is_some(),
+            "{:?}",
+            h.texts()
+        );
+        assert!(h.find("USFM folder…").is_some());
+        h.shell.st.pick_import = false;
+
+        // The picked folder starts an engine job and opens the report Tab at once; nothing is
+        // parsed on the UI thread, so the Resource is not in the Library yet.
+        let id = pick(&mut h, &source);
+        assert_eq!(id, "web-1");
+        assert!(
+            h.panels()
+                .iter()
+                .any(|(_, t)| t.iter().any(|t| t == "Import report"))
+        );
+        assert!(h.find("Import in progress").is_some(), "{:?}", h.texts());
+        assert!(h.find(&source.display().to_string()).is_some());
+        held.recv_timeout(Duration::from_secs(20)).unwrap();
+
+        // The worker is now held inside the Index phase. Frames keep coming at interactive
+        // speed and show the live phase: Parse done, Search index 1 / 3.
+        let started = Instant::now();
+        let mut saw_index_progress = false;
+        for _ in 0..20 {
+            let t = Instant::now();
+            h.paced_frame();
+            assert!(
+                t.elapsed() < Duration::from_millis(500),
+                "a frame blocked on the Import"
+            );
+            saw_index_progress |= h.find("Search index: 1 / 3").is_some();
+        }
+        assert!(started.elapsed() < Duration::from_secs(10));
+        assert!(saw_index_progress, "{:?}", h.texts());
+        assert_eq!(record(&h, &id).phase, ImportPhase::Index);
+        if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+            let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+            h.screenshot(&dir.join("import-report-in-progress.ppm"));
+        }
+        assert!(h.find("Parse complete").is_some());
+        assert!(h.shell.st.session.library.get(&id).is_none());
+        // Menus still answer while the job runs.
+        h.open_menu("Library");
+        assert!(h.find("Import…").is_some());
+        h.click_text("Import…");
+        h.shell.st.pick_import = false;
+        h.frames(2);
+
+        // Released, the report completes in place and the Bible is the last of its type.
+        release.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while record(&h, &id).phase != ImportPhase::Complete && Instant::now() < deadline {
+            h.paced_frame();
+        }
+        h.frames(2);
+        assert!(h.find("Import complete").is_some(), "{:?}", h.texts());
+        assert!(h.find("Search index: built").is_some());
+        assert_eq!(record(&h, &id).index, ImportIndexStatus::Built);
+        h.click_text("Library");
+        assert_eq!(bible_rows(&h), ["TB", "HEB", "HNUM", "WEB-1"]);
+        assert!(lib.join("web-1.obr").is_file());
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_finished_report_shows_the_summary_warnings_and_actions_and_remove_import_deletes_the_resource()
+     {
+        let (root, source, lib) = fixture("report");
+        let mut h = Harness::new();
+        assert!(h.shell.st.session.library.scan(&lib).is_empty());
+        h.frames(2);
+        let id = pick(&mut h, &source);
+        h.shell.st.session.jobs().pump(1);
+        h.frames(2);
+        let rec = record(&h, &id);
+        assert_eq!(rec.phase, ImportPhase::Complete);
+        let report = rec.report.clone().unwrap();
+
+        // Summary, Unmapped/Absent counts, the licence warning and the deferred Search index.
+        for want in [
+            "Import complete",
+            DEFERRED_INDEX,
+            "2 source file(s) · usfm",
+            "2 Bible book(s) · 2 Verses · 0 notes · 0 Tagged words",
+            "Unmapped verses: 0",
+            &format!("Absent verses: {}", report.verse_map.unwrap().absent),
+            "Dropped markup (1)",
+            "Source files and Bible books",
+        ] {
+            assert!(h.find(want).is_some(), "{want:?} missing: {:?}", h.texts());
+        }
+        assert!(report.verse_map.unwrap().absent > 0);
+        assert!(report.license_missing);
+        assert!(h.texts().iter().any(|t| t.starts_with("Licence: unknown")));
+        // Dropped markup expands to the markers and their counts.
+        assert!(h.find("\\ip ×1").is_none());
+        h.click_text("Dropped markup (1)");
+        h.frames(8); // the header's open animation
+        assert!(h.find("\\ip ×1").is_some(), "{:?}", h.texts());
+        h.click_text("Source files and Bible books");
+        h.frames(8);
+        assert!(h.find("GEN.usfm").is_some(), "{:?}", h.texts());
+        assert!(
+            h.find("JHN · 1 chapters · 1 Verses").is_some(),
+            "{:?}",
+            h.texts()
+        );
+        if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+            let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+            h.screenshot(&dir.join("import-report.ppm"));
+        }
+
+        // Open, About (which links back to the latest report) and Remove import.
+        h.click_text("Open");
+        assert!(
+            h.panels()
+                .iter()
+                .any(|(_, t)| t.iter().any(|t| t == "WEB-1")),
+            "{:?}",
+            h.panels()
+        );
+        h.click_text("Import report");
+        h.click_text("About");
+        assert!(
+            h.panels()
+                .iter()
+                .any(|(_, t)| t.iter().any(|t| t == "About · WEB-1")),
+            "{:?}",
+            h.panels()
+        );
+        assert!(h.find("Latest Import report").is_some(), "{:?}", h.texts());
+        let reports_before = h
+            .shell
+            .st
+            .session
+            .workspace
+            .tabs()
+            .filter(|t| t.kind == TabKind::ImportReport(id.clone()))
+            .count();
+        h.click_text("Latest Import report");
+        assert_eq!(
+            h.shell
+                .st
+                .session
+                .workspace
+                .tabs()
+                .filter(|t| t.kind == TabKind::ImportReport(id.clone()))
+                .count(),
+            reports_before
+        );
+        assert!(
+            h.find("Import complete").is_some(),
+            "the report Tab is focused again"
+        );
+        assert_eq!(
+            h.shell
+                .st
+                .session
+                .library
+                .of_type(ResourceType::Bible)
+                .last()
+                .unwrap()
+                .manifest
+                .resource_id,
+            id
+        );
+
+        h.click_text("Remove import…");
+        assert!(h.shell.st.confirm.is_some());
+        h.click_text("Remove");
+        h.frames(2);
+        assert!(!lib.join("web-1.obr").exists(), "the .obr is deleted");
+        assert!(h.shell.st.session.library.get(&id).is_none());
+        assert!(h.shell.st.session.imports.report(&id).is_none());
+        assert!(h.shell.st.session.workspace.tabs().all(|t| !matches!(&t.kind, TabKind::Resource(r) | TabKind::About(r) | TabKind::ImportReport(r) if *r == id)));
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

@@ -125,10 +125,6 @@ fn has_user(s: &Session) -> bool {
     s.user.is_some()
 }
 
-fn never(_: &Session) -> bool {
-    false
-}
-
 const fn open_cmd(
     id: &'static str,
     label: &'static str,
@@ -232,9 +228,6 @@ const fn simple(
 pub(crate) const COMMANDS: &[CommandSpec] = &[
     open_cmd("library.open", "Library", Some("Ctrl+Shift+L"), |s, p| {
         open(s, p, TabKind::Library)
-    }),
-    simple("library.import", "Import…", None, never, |_, _| {
-        Ok(Value::Null)
     }),
     CommandSpec {
         id: "resource.open",
@@ -466,6 +459,7 @@ fn request(p: &Params<'_>) -> OpenRequest {
 pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
     match kind {
         TabKind::Library => "Library".into(),
+        TabKind::ImportReport(_) => "Import report".into(),
         TabKind::Resource(id) => s
             .library
             .get(id)

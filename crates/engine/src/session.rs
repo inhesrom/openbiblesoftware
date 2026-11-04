@@ -38,6 +38,7 @@ pub struct Session {
     commands: CommandRegistry,
     jobs: JobQueue,
     pub library: Library,
+    pub imports: crate::import::Imports,
     pub workspace: Workspace,
     /// Text settings for Resource text (the View menu).
     pub text: TextSettings,
@@ -62,6 +63,7 @@ impl Session {
             commands: builtin::registry(),
             jobs,
             library: Library::new(),
+            imports: crate::import::Imports::default(),
             workspace: Workspace::new(),
             text: TextSettings::default(),
             appearance: crate::appearance::Appearance::default(),
@@ -106,6 +108,7 @@ impl Session {
             }
         }
         self.user = Some(user);
+        self.restore_import_reports();
     }
 
     /// Save the library's Preferred order.

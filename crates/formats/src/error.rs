@@ -8,6 +8,8 @@ use obs_model::ValidationErrors;
 #[derive(Debug)]
 pub enum ImportError {
     NoBooks,
+    /// The caller asked the Import to stop.
+    Cancelled,
     /// A file without a `\id` line.
     MissingId(String),
     DuplicateBook {
@@ -38,6 +40,7 @@ impl fmt::Display for ImportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ImportError::NoBooks => f.write_str("no Bible books found"),
+            ImportError::Cancelled => f.write_str("Import cancelled"),
             ImportError::MissingId(name) => write!(f, "{name}: no \\id line"),
             ImportError::DuplicateBook {
                 code,

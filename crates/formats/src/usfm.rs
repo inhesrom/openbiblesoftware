@@ -120,7 +120,16 @@ impl UsfmImport {
     }
 
     /// Parse every book and build the Resource.
-    pub fn finish(mut self) -> Result<(Resource, ImportReport), ImportError> {
+    pub fn finish(self) -> Result<(Resource, ImportReport), ImportError> {
+        self.finish_with_progress(|_, _| true)
+    }
+
+    /// Report books parsed, including zero before parsing. Return false to cancel between
+    /// Bible books. Desktop callers run this on an engine worker, never the UI thread.
+    pub fn finish_with_progress(
+        mut self,
+        mut progress: impl FnMut(usize, usize) -> bool,
+    ) -> Result<(Resource, ImportReport), ImportError> {
         if self.books.is_empty() {
             return Err(ImportError::NoBooks);
         }
@@ -177,7 +186,10 @@ impl UsfmImport {
         };
         let mut facts: Vec<VerseFacts> = Vec::new();
         let mut other_verses = 0usize;
-        for (code, name, source) in &self.books {
+        for (i, (code, name, source)) in self.books.iter().enumerate() {
+            if !progress(i, self.books.len()) {
+                return Err(ImportError::Cancelled);
+            }
             let usj = crate::usfm_tree::parse(source)
                 .map_err(|e| ImportError::Usj(format!("{name}: {e}")))?;
             let book = Book::from_usfm(code);
@@ -219,6 +231,9 @@ impl UsfmImport {
             for (range, verse, last) in out.verses {
                 builder.add_verse(&unit, range, verse, last);
             }
+        }
+        if !progress(self.books.len(), self.books.len()) {
+            return Err(ImportError::Cancelled);
         }
         report.notes = ctx.notes.len();
         for note in ctx.notes {

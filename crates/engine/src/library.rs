@@ -29,6 +29,14 @@ impl Library {
         Self::default()
     }
 
+    pub fn directory(&self) -> Option<&std::path::Path> {
+        self.dir.as_deref()
+    }
+
+    pub fn set_directory(&mut self, dir: PathBuf) {
+        self.dir = Some(dir);
+    }
+
     pub fn entries(&self) -> &[LibraryEntry] {
         &self.entries
     }
