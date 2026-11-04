@@ -1,0 +1,265 @@
+{
+  "resource_id": "kjv-strongs",
+  "resource_type": "bible",
+  "key": "John 3:16",
+  "verses": [
+    {
+      "verse": "John 3:16",
+      "last": 16,
+      "standard": "John 3:16",
+      "unit": "JHN",
+      "text": "¶ For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 144,
+          "kind": "chapter",
+          "chapter": 3
+        },
+        {
+          "start": 0,
+          "end": 144,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 144,
+          "kind": "verse",
+          "verse": {
+            "book": "JHN",
+            "chapter": 3,
+            "verse": 16
+          },
+          "last": 16
+        },
+        {
+          "start": 0,
+          "end": 144,
+          "kind": "woj"
+        },
+        {
+          "start": 3,
+          "end": 6,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1063"
+            }
+          ]
+        },
+        {
+          "start": 7,
+          "end": 10,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2316"
+            }
+          ]
+        },
+        {
+          "start": 11,
+          "end": 13,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3779"
+            }
+          ]
+        },
+        {
+          "start": 14,
+          "end": 19,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G25"
+            }
+          ]
+        },
+        {
+          "start": 20,
+          "end": 29,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2889"
+            }
+          ]
+        },
+        {
+          "start": 31,
+          "end": 35,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5620"
+            }
+          ]
+        },
+        {
+          "start": 36,
+          "end": 43,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1325"
+            }
+          ]
+        },
+        {
+          "start": 44,
+          "end": 47,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G846"
+            }
+          ]
+        },
+        {
+          "start": 48,
+          "end": 61,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3439"
+            }
+          ]
+        },
+        {
+          "start": 62,
+          "end": 65,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5207"
+            }
+          ]
+        },
+        {
+          "start": 67,
+          "end": 71,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2443"
+            }
+          ]
+        },
+        {
+          "start": 72,
+          "end": 81,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3956"
+            }
+          ]
+        },
+        {
+          "start": 82,
+          "end": 91,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4100"
+            }
+          ]
+        },
+        {
+          "start": 92,
+          "end": 94,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1519"
+            }
+          ]
+        },
+        {
+          "start": 95,
+          "end": 98,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G846"
+            }
+          ]
+        },
+        {
+          "start": 99,
+          "end": 105,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G622"
+            }
+          ]
+        },
+        {
+          "start": 106,
+          "end": 109,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3361"
+            }
+          ]
+        },
+        {
+          "start": 110,
+          "end": 116,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G622"
+            }
+          ]
+        },
+        {
+          "start": 118,
+          "end": 121,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G235"
+            }
+          ]
+        },
+        {
+          "start": 122,
+          "end": 126,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2192"
+            }
+          ]
+        },
+        {
+          "start": 127,
+          "end": 138,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G166"
+            }
+          ]
+        },
+        {
+          "start": 139,
+          "end": 143,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2222"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

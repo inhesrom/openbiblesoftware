@@ -1,0 +1,40 @@
+{
+  "resource_id": "bsb",
+  "resource_type": "bible",
+  "key": "Gen 31:55",
+  "verses": [
+    {
+      "verse": "Gen 31:55",
+      "last": 55,
+      "standard": "Gen 31:55",
+      "unit": "GEN",
+      "text": "Early the next morning, Laban got up and kissed his grandchildren and daughters and blessed them. Then he left to return home.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 126,
+          "kind": "chapter",
+          "chapter": 31
+        },
+        {
+          "start": 0,
+          "end": 126,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 126,
+          "kind": "verse",
+          "verse": {
+            "book": "GEN",
+            "chapter": 31,
+            "verse": 55
+          },
+          "last": 55
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

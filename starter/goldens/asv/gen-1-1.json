@@ -1,0 +1,140 @@
+{
+  "resource_id": "asv",
+  "resource_type": "bible",
+  "key": "Gen 1:1",
+  "verses": [
+    {
+      "verse": "Gen 1:1",
+      "last": 1,
+      "standard": "Gen 1:1",
+      "unit": "GEN",
+      "text": "In the beginning God created the heavens and the earth.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 55,
+          "kind": "chapter",
+          "chapter": 1
+        },
+        {
+          "start": 0,
+          "end": 55,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 55,
+          "kind": "verse",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 1
+          },
+          "last": 1
+        },
+        {
+          "start": 0,
+          "end": 2,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ]
+        },
+        {
+          "start": 3,
+          "end": 6,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254"
+            }
+          ]
+        },
+        {
+          "start": 7,
+          "end": 16,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H7225"
+            }
+          ]
+        },
+        {
+          "start": 17,
+          "end": 20,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ]
+        },
+        {
+          "start": 21,
+          "end": 28,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254"
+            }
+          ]
+        },
+        {
+          "start": 29,
+          "end": 32,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254"
+            }
+          ]
+        },
+        {
+          "start": 33,
+          "end": 40,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ]
+        },
+        {
+          "start": 41,
+          "end": 44,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ]
+        },
+        {
+          "start": 45,
+          "end": 48,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1254"
+            }
+          ]
+        },
+        {
+          "start": 49,
+          "end": 54,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H8064"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

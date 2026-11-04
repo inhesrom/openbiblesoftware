@@ -1,0 +1,276 @@
+{
+  "resource_id": "tahot",
+  "resource_type": "bible",
+  "key": "Gen 31:55",
+  "verses": [
+    {
+      "verse": "Gen 32:1",
+      "last": 1,
+      "standard": "Gen 31:55",
+      "unit": "GEN",
+      "text": "וַיַּשְׁכֵּ֨ם לָבָ֜ן בַּבֹּ֗קֶר וַיְנַשֵּׁ֧ק לְבָנָ֛יו וְלִבְנוֹתָ֖יו וַיְבָ֣רֶךְ אֶתְהֶ֑ם וַיֵּ֛לֶךְ וַיָּ֥שָׁב לָבָ֖ן לִמְקֹמֽוֹ׃",
+      "spans": [
+        {
+          "start": 0,
+          "end": 251,
+          "kind": "chapter",
+          "chapter": 32
+        },
+        {
+          "start": 0,
+          "end": 251,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 251,
+          "kind": "verse",
+          "verse": {
+            "book": "GEN",
+            "chapter": 32,
+            "verse": 1
+          },
+          "last": 1
+        },
+        {
+          "start": 0,
+          "end": 26,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9001",
+              "lemma": "ו",
+              "morph": "Hc",
+              "gloss": "and"
+            },
+            {
+              "strongs": "H7925",
+              "lemma": "שָׁכַם",
+              "morph": "HVhw3ms",
+              "gloss": "he rose early"
+            }
+          ]
+        },
+        {
+          "start": 27,
+          "end": 39,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3837A",
+              "lemma": "לָבָן",
+              "morph": "HNpm",
+              "gloss": "Laban"
+            }
+          ]
+        },
+        {
+          "start": 40,
+          "end": 60,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9003",
+              "lemma": "ב",
+              "morph": "HRd",
+              "gloss": "in the"
+            },
+            {
+              "strongs": "H1242",
+              "lemma": "בֹּ֫קֶר",
+              "morph": "HNcmsa",
+              "gloss": "morning"
+            }
+          ]
+        },
+        {
+          "start": 61,
+          "end": 85,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9001",
+              "lemma": "ו",
+              "morph": "Hc",
+              "gloss": "and"
+            },
+            {
+              "strongs": "H5401A",
+              "lemma": "נָשַׁק",
+              "morph": "HVpw3ms",
+              "gloss": "he kissed"
+            }
+          ]
+        },
+        {
+          "start": 86,
+          "end": 104,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9005",
+              "lemma": "ל",
+              "morph": "HR",
+              "gloss": "<to>"
+            },
+            {
+              "strongs": "H1121G",
+              "lemma": "בֵּן",
+              "morph": "HNcmpc",
+              "gloss": "sons"
+            },
+            {
+              "strongs": "H9023",
+              "morph": "HSp3ms",
+              "gloss": "his"
+            }
+          ]
+        },
+        {
+          "start": 105,
+          "end": 133,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9002",
+              "lemma": "ו",
+              "morph": "HC",
+              "gloss": "and"
+            },
+            {
+              "strongs": "H9005",
+              "lemma": "ל",
+              "morph": "HR",
+              "gloss": "<to>"
+            },
+            {
+              "strongs": "H1323G",
+              "lemma": "בַּת",
+              "morph": "HNcfpc",
+              "gloss": "daughters"
+            },
+            {
+              "strongs": "H9023",
+              "morph": "HSp3ms",
+              "gloss": "his"
+            }
+          ]
+        },
+        {
+          "start": 134,
+          "end": 156,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9001",
+              "lemma": "ו",
+              "morph": "Hc",
+              "gloss": "and"
+            },
+            {
+              "strongs": "H1288",
+              "lemma": "בָּרַךְ",
+              "morph": "HVpw3ms",
+              "gloss": "he blessed"
+            }
+          ]
+        },
+        {
+          "start": 157,
+          "end": 173,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H853",
+              "lemma": "אֵת",
+              "morph": "HTo",
+              "gloss": "<obj.>"
+            },
+            {
+              "strongs": "H9038",
+              "morph": "HSp3mp",
+              "gloss": "them"
+            }
+          ]
+        },
+        {
+          "start": 174,
+          "end": 194,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9001",
+              "lemma": "ו",
+              "morph": "Hc",
+              "gloss": "and"
+            },
+            {
+              "strongs": "H1980G",
+              "lemma": "הָלַךְ",
+              "morph": "HVqw3ms",
+              "gloss": "he went"
+            }
+          ]
+        },
+        {
+          "start": 195,
+          "end": 215,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9001",
+              "lemma": "ו",
+              "morph": "Hc",
+              "gloss": "and"
+            },
+            {
+              "strongs": "H7725G",
+              "lemma": "שׁוּב",
+              "morph": "HVqw3ms",
+              "gloss": "he returned"
+            }
+          ]
+        },
+        {
+          "start": 216,
+          "end": 228,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H3837A",
+              "lemma": "לָבָן",
+              "morph": "HNpm",
+              "gloss": "Laban"
+            }
+          ]
+        },
+        {
+          "start": 229,
+          "end": 249,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9005",
+              "lemma": "ל",
+              "morph": "HR",
+              "gloss": "to"
+            },
+            {
+              "strongs": "H4725",
+              "lemma": "מָקוֹם",
+              "morph": "HNcmsc",
+              "gloss": "own place"
+            },
+            {
+              "strongs": "H9023",
+              "morph": "HSp3ms",
+              "gloss": "his"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

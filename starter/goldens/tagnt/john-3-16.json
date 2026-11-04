@@ -1,0 +1,365 @@
+{
+  "resource_id": "tagnt",
+  "resource_type": "bible",
+  "key": "John 3:16",
+  "verses": [
+    {
+      "verse": "John 3:16",
+      "last": 16,
+      "standard": "John 3:16",
+      "unit": "JHN",
+      "text": "οὕτως γὰρ ἠγάπησεν ὁ θεὸς τὸν κόσμον, ὥστε τὸν υἱὸν τὸν μονογενῆ ἔδωκεν, ἵνα πᾶς ὁ πιστεύων εἰς αὐτὸν μὴ ἀπόληται ἀλλ᾽ ἔχῃ ζωὴν αἰώνιον.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 272,
+          "kind": "chapter",
+          "chapter": 3
+        },
+        {
+          "start": 0,
+          "end": 272,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 272,
+          "kind": "verse",
+          "verse": {
+            "book": "JHN",
+            "chapter": 3,
+            "verse": 16
+          },
+          "last": 16
+        },
+        {
+          "start": 0,
+          "end": 11,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3779",
+              "lemma": "οὕτω",
+              "morph": "ADV",
+              "gloss": "Thus"
+            }
+          ]
+        },
+        {
+          "start": 12,
+          "end": 19,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1063",
+              "lemma": "γάρ",
+              "morph": "CONJ",
+              "gloss": "for"
+            }
+          ]
+        },
+        {
+          "start": 20,
+          "end": 37,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G25",
+              "lemma": "ἀγαπάω",
+              "morph": "V-AAI-3S",
+              "gloss": "loved"
+            }
+          ]
+        },
+        {
+          "start": 38,
+          "end": 41,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3588",
+              "lemma": "ὁ",
+              "morph": "T-NSM",
+              "gloss": "<the>"
+            }
+          ]
+        },
+        {
+          "start": 42,
+          "end": 51,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2316",
+              "lemma": "θεός",
+              "morph": "N-NSM-T",
+              "gloss": "God"
+            }
+          ]
+        },
+        {
+          "start": 52,
+          "end": 59,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3588",
+              "lemma": "ὁ",
+              "morph": "T-ASM",
+              "gloss": "the"
+            }
+          ]
+        },
+        {
+          "start": 60,
+          "end": 72,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2889",
+              "lemma": "κόσμος",
+              "morph": "N-ASM",
+              "gloss": "world,"
+            }
+          ]
+        },
+        {
+          "start": 74,
+          "end": 83,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5620",
+              "lemma": "ὥστε",
+              "morph": "CONJ",
+              "gloss": "that"
+            }
+          ]
+        },
+        {
+          "start": 84,
+          "end": 91,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3588",
+              "lemma": "ὁ",
+              "morph": "T-ASM",
+              "gloss": "the"
+            }
+          ]
+        },
+        {
+          "start": 92,
+          "end": 102,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G5207",
+              "lemma": "υἱός",
+              "morph": "N-ASM",
+              "gloss": "Son"
+            }
+          ]
+        },
+        {
+          "start": 103,
+          "end": 110,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3588",
+              "lemma": "ὁ",
+              "morph": "T-ASM",
+              "gloss": "the"
+            }
+          ]
+        },
+        {
+          "start": 111,
+          "end": 128,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3439",
+              "lemma": "μονογενής",
+              "morph": "A-ASM",
+              "gloss": "only begotten"
+            }
+          ]
+        },
+        {
+          "start": 129,
+          "end": 142,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1325",
+              "lemma": "δίδωμι",
+              "morph": "V-AAI-3S",
+              "gloss": "He gave,"
+            }
+          ]
+        },
+        {
+          "start": 144,
+          "end": 151,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2443",
+              "lemma": "ἵνα",
+              "morph": "CONJ",
+              "gloss": "so that"
+            }
+          ]
+        },
+        {
+          "start": 152,
+          "end": 159,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3956",
+              "lemma": "πᾶς",
+              "morph": "A-NSM",
+              "gloss": "everyone"
+            }
+          ]
+        },
+        {
+          "start": 160,
+          "end": 163,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3588",
+              "lemma": "ὁ",
+              "morph": "T-NSM",
+              "gloss": "who"
+            }
+          ]
+        },
+        {
+          "start": 164,
+          "end": 180,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4100",
+              "lemma": "πιστεύω",
+              "morph": "V-PAP-NSM",
+              "gloss": "is believing"
+            }
+          ]
+        },
+        {
+          "start": 181,
+          "end": 188,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1519",
+              "lemma": "εἰς",
+              "morph": "PREP",
+              "gloss": "in"
+            }
+          ]
+        },
+        {
+          "start": 189,
+          "end": 201,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G846",
+              "lemma": "αὐτός",
+              "morph": "P-ASM",
+              "gloss": "Him"
+            }
+          ]
+        },
+        {
+          "start": 202,
+          "end": 207,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3361",
+              "lemma": "μή",
+              "morph": "PRT-N",
+              "gloss": "not"
+            }
+          ]
+        },
+        {
+          "start": 208,
+          "end": 225,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G622",
+              "lemma": "ἀπολλύω",
+              "morph": "V-2AMS-3S",
+              "gloss": "may perish"
+            }
+          ]
+        },
+        {
+          "start": 226,
+          "end": 236,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G235",
+              "lemma": "ἀλλά",
+              "morph": "CONJ",
+              "gloss": "but"
+            }
+          ]
+        },
+        {
+          "start": 237,
+          "end": 245,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2192",
+              "lemma": "ἔχω",
+              "morph": "V-PAS-3S",
+              "gloss": "may have"
+            }
+          ]
+        },
+        {
+          "start": 246,
+          "end": 255,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2222",
+              "lemma": "ζωή",
+              "morph": "N-ASF",
+              "gloss": "life"
+            }
+          ]
+        },
+        {
+          "start": 256,
+          "end": 271,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G166",
+              "lemma": "αἰώνιος",
+              "morph": "A-ASF",
+              "gloss": "eternal."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

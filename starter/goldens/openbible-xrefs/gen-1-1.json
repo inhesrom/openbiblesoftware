@@ -1,0 +1,1681 @@
+{
+  "resource_id": "openbible-xrefs",
+  "resource_type": "cross_reference_set",
+  "key": "Gen 1:1",
+  "cross_references": [
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "EXO",
+          "chapter": 20,
+          "verse": 11
+        },
+        "end": {
+          "book": "EXO",
+          "chapter": 20,
+          "verse": 11
+        }
+      },
+      "votes": 155
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "EXO",
+          "chapter": 31,
+          "verse": 18
+        },
+        "end": {
+          "book": "EXO",
+          "chapter": 31,
+          "verse": 18
+        }
+      },
+      "votes": -41
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "1CH",
+          "chapter": 16,
+          "verse": 26
+        },
+        "end": {
+          "book": "1CH",
+          "chapter": 16,
+          "verse": 26
+        }
+      },
+      "votes": 58
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "NEH",
+          "chapter": 9,
+          "verse": 6
+        },
+        "end": {
+          "book": "NEH",
+          "chapter": 9,
+          "verse": 6
+        }
+      },
+      "votes": 101
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JOB",
+          "chapter": 26,
+          "verse": 13
+        },
+        "end": {
+          "book": "JOB",
+          "chapter": 26,
+          "verse": 13
+        }
+      },
+      "votes": 42
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JOB",
+          "chapter": 38,
+          "verse": 4
+        },
+        "end": {
+          "book": "JOB",
+          "chapter": 38,
+          "verse": 4
+        }
+      },
+      "votes": 148
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 8,
+          "verse": 3
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 8,
+          "verse": 3
+        }
+      },
+      "votes": 76
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 33,
+          "verse": 6
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 33,
+          "verse": 6
+        }
+      },
+      "votes": 69
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 33,
+          "verse": 9
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 33,
+          "verse": 9
+        }
+      },
+      "votes": 88
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 89,
+          "verse": 11
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 89,
+          "verse": 12
+        }
+      },
+      "votes": 63
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 90,
+          "verse": 2
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 90,
+          "verse": 2
+        }
+      },
+      "votes": 62
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 96,
+          "verse": 5
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 96,
+          "verse": 5
+        }
+      },
+      "votes": 62
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 102,
+          "verse": 25
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 102,
+          "verse": 25
+        }
+      },
+      "votes": 73
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 104,
+          "verse": 24
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 104,
+          "verse": 24
+        }
+      },
+      "votes": 65
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 104,
+          "verse": 30
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 104,
+          "verse": 30
+        }
+      },
+      "votes": 60
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 115,
+          "verse": 15
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 115,
+          "verse": 15
+        }
+      },
+      "votes": 83
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 121,
+          "verse": 2
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 121,
+          "verse": 2
+        }
+      },
+      "votes": 66
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 124,
+          "verse": 8
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 124,
+          "verse": 8
+        }
+      },
+      "votes": 72
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 134,
+          "verse": 3
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 134,
+          "verse": 3
+        }
+      },
+      "votes": 60
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 136,
+          "verse": 5
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 136,
+          "verse": 5
+        }
+      },
+      "votes": 79
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 146,
+          "verse": 6
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 146,
+          "verse": 6
+        }
+      },
+      "votes": 60
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PSA",
+          "chapter": 148,
+          "verse": 4
+        },
+        "end": {
+          "book": "PSA",
+          "chapter": 148,
+          "verse": 5
+        }
+      },
+      "votes": 59
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PRO",
+          "chapter": 3,
+          "verse": 19
+        },
+        "end": {
+          "book": "PRO",
+          "chapter": 3,
+          "verse": 19
+        }
+      },
+      "votes": 88
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PRO",
+          "chapter": 8,
+          "verse": 22
+        },
+        "end": {
+          "book": "PRO",
+          "chapter": 8,
+          "verse": 30
+        }
+      },
+      "votes": 77
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "PRO",
+          "chapter": 16,
+          "verse": 4
+        },
+        "end": {
+          "book": "PRO",
+          "chapter": 16,
+          "verse": 4
+        }
+      },
+      "votes": 66
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ECC",
+          "chapter": 12,
+          "verse": 1
+        },
+        "end": {
+          "book": "ECC",
+          "chapter": 12,
+          "verse": 1
+        }
+      },
+      "votes": 27
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ISA",
+          "chapter": 37,
+          "verse": 16
+        },
+        "end": {
+          "book": "ISA",
+          "chapter": 37,
+          "verse": 16
+        }
+      },
+      "votes": 63
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ISA",
+          "chapter": 40,
+          "verse": 26
+        },
+        "end": {
+          "book": "ISA",
+          "chapter": 40,
+          "verse": 26
+        }
+      },
+      "votes": 59
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ISA",
+          "chapter": 40,
+          "verse": 28
+        },
+        "end": {
+          "book": "ISA",
+          "chapter": 40,
+          "verse": 28
+        }
+      },
+      "votes": 68
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ISA",
+          "chapter": 42,
+          "verse": 5
+        },
+        "end": {
+          "book": "ISA",
+          "chapter": 42,
+          "verse": 5
+        }
+      },
+      "votes": 163
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ISA",
+          "chapter": 44,
+          "verse": 24
+        },
+        "end": {
+          "book": "ISA",
+          "chapter": 44,
+          "verse": 24
+        }
+      },
+      "votes": 98
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ISA",
+          "chapter": 45,
+          "verse": 18
+        },
+        "end": {
+          "book": "ISA",
+          "chapter": 45,
+          "verse": 18
+        }
+      },
+      "votes": 253
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ISA",
+          "chapter": 51,
+          "verse": 13
+        },
+        "end": {
+          "book": "ISA",
+          "chapter": 51,
+          "verse": 13
+        }
+      },
+      "votes": 56
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ISA",
+          "chapter": 51,
+          "verse": 16
+        },
+        "end": {
+          "book": "ISA",
+          "chapter": 51,
+          "verse": 16
+        }
+      },
+      "votes": 61
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ISA",
+          "chapter": 65,
+          "verse": 17
+        },
+        "end": {
+          "book": "ISA",
+          "chapter": 65,
+          "verse": 17
+        }
+      },
+      "votes": 57
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JER",
+          "chapter": 10,
+          "verse": 12
+        },
+        "end": {
+          "book": "JER",
+          "chapter": 10,
+          "verse": 12
+        }
+      },
+      "votes": 78
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JER",
+          "chapter": 32,
+          "verse": 17
+        },
+        "end": {
+          "book": "JER",
+          "chapter": 32,
+          "verse": 17
+        }
+      },
+      "votes": 91
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JER",
+          "chapter": 51,
+          "verse": 15
+        },
+        "end": {
+          "book": "JER",
+          "chapter": 51,
+          "verse": 15
+        }
+      },
+      "votes": 90
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ZEC",
+          "chapter": 12,
+          "verse": 1
+        },
+        "end": {
+          "book": "ZEC",
+          "chapter": 12,
+          "verse": 1
+        }
+      },
+      "votes": 68
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "MAT",
+          "chapter": 11,
+          "verse": 25
+        },
+        "end": {
+          "book": "MAT",
+          "chapter": 11,
+          "verse": 25
+        }
+      },
+      "votes": 17
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "MRK",
+          "chapter": 13,
+          "verse": 19
+        },
+        "end": {
+          "book": "MRK",
+          "chapter": 13,
+          "verse": 19
+        }
+      },
+      "votes": 58
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "JHN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 1,
+          "verse": 3
+        }
+      },
+      "votes": 383
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ACT",
+          "chapter": 4,
+          "verse": 24
+        },
+        "end": {
+          "book": "ACT",
+          "chapter": 4,
+          "verse": 24
+        }
+      },
+      "votes": 62
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ACT",
+          "chapter": 14,
+          "verse": 15
+        },
+        "end": {
+          "book": "ACT",
+          "chapter": 14,
+          "verse": 15
+        }
+      },
+      "votes": 79
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ACT",
+          "chapter": 17,
+          "verse": 24
+        },
+        "end": {
+          "book": "ACT",
+          "chapter": 17,
+          "verse": 24
+        }
+      },
+      "votes": 133
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ROM",
+          "chapter": 1,
+          "verse": 19
+        },
+        "end": {
+          "book": "ROM",
+          "chapter": 1,
+          "verse": 20
+        }
+      },
+      "votes": 59
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "ROM",
+          "chapter": 11,
+          "verse": 36
+        },
+        "end": {
+          "book": "ROM",
+          "chapter": 11,
+          "verse": 36
+        }
+      },
+      "votes": 62
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "1CO",
+          "chapter": 8,
+          "verse": 6
+        },
+        "end": {
+          "book": "1CO",
+          "chapter": 8,
+          "verse": 6
+        }
+      },
+      "votes": 74
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "EPH",
+          "chapter": 3,
+          "verse": 9
+        },
+        "end": {
+          "book": "EPH",
+          "chapter": 3,
+          "verse": 9
+        }
+      },
+      "votes": 54
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "COL",
+          "chapter": 1,
+          "verse": 16
+        },
+        "end": {
+          "book": "COL",
+          "chapter": 1,
+          "verse": 17
+        }
+      },
+      "votes": 175
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "HEB",
+          "chapter": 1,
+          "verse": 2
+        },
+        "end": {
+          "book": "HEB",
+          "chapter": 1,
+          "verse": 2
+        }
+      },
+      "votes": 69
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "HEB",
+          "chapter": 1,
+          "verse": 10
+        },
+        "end": {
+          "book": "HEB",
+          "chapter": 1,
+          "verse": 10
+        }
+      },
+      "votes": 193
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "HEB",
+          "chapter": 3,
+          "verse": 4
+        },
+        "end": {
+          "book": "HEB",
+          "chapter": 3,
+          "verse": 4
+        }
+      },
+      "votes": 69
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "HEB",
+          "chapter": 11,
+          "verse": 3
+        },
+        "end": {
+          "book": "HEB",
+          "chapter": 11,
+          "verse": 3
+        }
+      },
+      "votes": 277
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "2PE",
+          "chapter": 3,
+          "verse": 5
+        },
+        "end": {
+          "book": "2PE",
+          "chapter": 3,
+          "verse": 5
+        }
+      },
+      "votes": 107
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "1JN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "1JN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "votes": 59
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "REV",
+          "chapter": 3,
+          "verse": 14
+        },
+        "end": {
+          "book": "REV",
+          "chapter": 3,
+          "verse": 14
+        }
+      },
+      "votes": 47
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "REV",
+          "chapter": 4,
+          "verse": 11
+        },
+        "end": {
+          "book": "REV",
+          "chapter": 4,
+          "verse": 11
+        }
+      },
+      "votes": 207
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "REV",
+          "chapter": 10,
+          "verse": 6
+        },
+        "end": {
+          "book": "REV",
+          "chapter": 10,
+          "verse": 6
+        }
+      },
+      "votes": 62
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "REV",
+          "chapter": 14,
+          "verse": 7
+        },
+        "end": {
+          "book": "REV",
+          "chapter": 14,
+          "verse": 7
+        }
+      },
+      "votes": 82
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "REV",
+          "chapter": 21,
+          "verse": 6
+        },
+        "end": {
+          "book": "REV",
+          "chapter": 21,
+          "verse": 6
+        }
+      },
+      "votes": 58
+    },
+    {
+      "from": {
+        "start": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "GEN",
+          "chapter": 1,
+          "verse": 1
+        }
+      },
+      "to": {
+        "start": {
+          "book": "REV",
+          "chapter": 22,
+          "verse": 13
+        },
+        "end": {
+          "book": "REV",
+          "chapter": 22,
+          "verse": 13
+        }
+      },
+      "votes": 60
+    }
+  ]
+}

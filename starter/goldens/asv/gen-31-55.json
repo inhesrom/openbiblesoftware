@@ -1,0 +1,40 @@
+{
+  "resource_id": "asv",
+  "resource_type": "bible",
+  "key": "Gen 31:55",
+  "verses": [
+    {
+      "verse": "Gen 31:55",
+      "last": 55,
+      "standard": "Gen 31:55",
+      "unit": "GEN",
+      "text": "And early in the morning Laban rose up, and kissed his sons and his daughters, and blessed them: and Laban departed, and returned unto his place.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 145,
+          "kind": "chapter",
+          "chapter": 31
+        },
+        {
+          "start": 0,
+          "end": 145,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 145,
+          "kind": "verse",
+          "verse": {
+            "book": "GEN",
+            "chapter": 31,
+            "verse": 55
+          },
+          "last": 55
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

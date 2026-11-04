@@ -1,0 +1,65 @@
+{
+  "resource_id": "bsb",
+  "resource_type": "bible",
+  "key": "John 3:16",
+  "verses": [
+    {
+      "verse": "John 3:16",
+      "last": 16,
+      "standard": "John 3:16",
+      "unit": "JHN",
+      "text": "For God so loved the world that He gave His one and only Son, that everyone who believes in Him shall not perish but have eternal life.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 135,
+          "kind": "chapter",
+          "chapter": 3
+        },
+        {
+          "start": 0,
+          "end": 135,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 135,
+          "kind": "woj"
+        },
+        {
+          "start": 0,
+          "end": 135,
+          "kind": "verse",
+          "verse": {
+            "book": "JHN",
+            "chapter": 3,
+            "verse": 16
+          },
+          "last": 16
+        },
+        {
+          "start": 56,
+          "end": 56,
+          "kind": "note_ref",
+          "note": "note.4026",
+          "note_kind": "footnote"
+        }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "note.4026",
+      "kind": "note",
+      "text": "Or only begotten or unique; also in verse 18",
+      "spans": [
+        {
+          "start": 20,
+          "end": 26,
+          "kind": "italic"
+        }
+      ]
+    }
+  ]
+}

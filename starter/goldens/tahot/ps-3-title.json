@@ -1,0 +1,151 @@
+{
+  "resource_id": "tahot",
+  "resource_type": "bible",
+  "key": "Ps 3:title",
+  "verses": [
+    {
+      "verse": "Ps 3:1",
+      "last": 1,
+      "standard": "Ps 3:title",
+      "unit": "PSA",
+      "text": "מִזְמ֥וֹר לְדָוִ֑ד בְּ֝בָרְח֗וֹ מִפְּנֵ֤י ׀ אַבְשָׁל֬וֹם בְּנֽוֹ׃",
+      "spans": [
+        {
+          "start": 0,
+          "end": 124,
+          "kind": "chapter",
+          "chapter": 3
+        },
+        {
+          "start": 0,
+          "end": 124,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 124,
+          "kind": "psalm_title"
+        },
+        {
+          "start": 0,
+          "end": 124,
+          "kind": "verse",
+          "verse": {
+            "book": "PSA",
+            "chapter": 3,
+            "verse": 1
+          },
+          "last": 1
+        },
+        {
+          "start": 0,
+          "end": 18,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H4210",
+              "lemma": "מִזְמוֹר",
+              "morph": "HNcmsa",
+              "gloss": "a psalm"
+            }
+          ]
+        },
+        {
+          "start": 19,
+          "end": 35,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9005",
+              "lemma": "ל",
+              "morph": "HR",
+              "gloss": "of"
+            },
+            {
+              "strongs": "H1732",
+              "lemma": "דָּוִד",
+              "morph": "HNpm",
+              "gloss": "David"
+            }
+          ]
+        },
+        {
+          "start": 36,
+          "end": 60,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9003",
+              "lemma": "ב",
+              "morph": "HR",
+              "gloss": "when"
+            },
+            {
+              "strongs": "H1272",
+              "lemma": "בָּרַח",
+              "morph": "HVqcc",
+              "gloss": "fled"
+            },
+            {
+              "strongs": "H9043",
+              "morph": "HSp3ms",
+              "gloss": "he"
+            }
+          ]
+        },
+        {
+          "start": 61,
+          "end": 79,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H9006",
+              "lemma": "מ",
+              "morph": "HR",
+              "gloss": "from"
+            },
+            {
+              "strongs": "H6440G",
+              "lemma": "פָּנֶה",
+              "morph": "HNcmpc",
+              "gloss": "before"
+            }
+          ]
+        },
+        {
+          "start": 83,
+          "end": 107,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H53",
+              "lemma": "אֲבִישָׁלוֹם",
+              "morph": "HNpm",
+              "gloss": "Absalom"
+            }
+          ]
+        },
+        {
+          "start": 108,
+          "end": 122,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "H1121A",
+              "lemma": "בֵּן",
+              "morph": "HNcmsc",
+              "gloss": "son"
+            },
+            {
+              "strongs": "H9023",
+              "morph": "HSp3ms",
+              "gloss": "his"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

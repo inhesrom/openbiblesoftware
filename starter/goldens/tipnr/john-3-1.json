@@ -1,0 +1,143 @@
+{
+  "resource_id": "tipnr",
+  "resource_type": "people_and_places",
+  "key": "John 3:1",
+  "entities": [
+    {
+      "id": "Judah@Gen.29.35-Rev",
+      "name": "Judah",
+      "kind": "male",
+      "strongs": "H3063G",
+      "other_names": [
+        "Judean",
+        "Jew",
+        "Jewish"
+      ],
+      "region": "Tribe of Judah",
+      "relations": [
+        {
+          "relation": "father",
+          "entity": "Israel@Gen.25.26-Rev"
+        },
+        {
+          "relation": "mother",
+          "entity": "Leah@Gen.29.16-Rut"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Reuben@Gen.29.32-Rev"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Simeon@Gen.29.33-Rev"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Levi@Gen.29.34-Rev"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Dan@Gen.30.6-1Ch"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Naphtali@Gen.30.8-Rev"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Gad@Gen.30.11-Rev"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Asher@Gen.30.13-Rev"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Issachar@Gen.30.18-Rev"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Zebulun@Gen.30.20-Rev"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Dinah@Gen.30.21-"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Joseph@Gen.30.24-Rev"
+        },
+        {
+          "relation": "sibling",
+          "entity": "Benjamin@Gen.35.18-Rev"
+        },
+        {
+          "relation": "partner",
+          "entity": "Bath-shua@Gen.38.2-1Ch"
+        },
+        {
+          "relation": "partner",
+          "entity": "Tamar@Gen.38.6-Mat"
+        },
+        {
+          "relation": "offspring",
+          "entity": "Er@Gen.38.3-1Ch"
+        },
+        {
+          "relation": "offspring",
+          "entity": "Onan@Gen.38.4-1Ch"
+        },
+        {
+          "relation": "offspring",
+          "entity": "Shelah@Gen.38.5-1Ch"
+        },
+        {
+          "relation": "offspring",
+          "entity": "Perez@Gen.38.29-Luk"
+        },
+        {
+          "relation": "offspring",
+          "entity": "Zerah@Gen.38.30-Mat"
+        }
+      ]
+    },
+    {
+      "id": "Nicodemus@Jhn.3.1-",
+      "name": "Nicodemus",
+      "kind": "male",
+      "strongs": "G3530"
+    }
+  ],
+  "mentions": [
+    {
+      "entity": "Judah@Gen.29.35-Rev",
+      "passage": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 1
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 1
+        }
+      }
+    },
+    {
+      "entity": "Nicodemus@Jhn.3.1-",
+      "passage": {
+        "start": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 1
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 3,
+          "verse": 1
+        }
+      }
+    }
+  ]
+}

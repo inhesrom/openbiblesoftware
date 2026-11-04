@@ -1,0 +1,68 @@
+{
+  "resource_id": "strongs-hebrew",
+  "resource_type": "lexicon",
+  "key": "H1254",
+  "units": [
+    {
+      "id": "H1254",
+      "kind": "entry",
+      "title": "בָּרָא",
+      "text": "בָּרָא bârâʼ (baw-raw')\na primitive root; (absolutely) to create; (qualified) to cut down (a wood), select, feed (as formative processes)\nKJV: choose, create (creator), cut down, dispatch, do, make (fat).",
+      "spans": [
+        {
+          "start": 0,
+          "end": 32,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 12,
+          "kind": "bold"
+        },
+        {
+          "start": 13,
+          "end": 21,
+          "kind": "italic"
+        },
+        {
+          "start": 33,
+          "end": 146,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 64,
+          "end": 73,
+          "kind": "italic"
+        },
+        {
+          "start": 87,
+          "end": 98,
+          "kind": "italic"
+        },
+        {
+          "start": 109,
+          "end": 115,
+          "kind": "italic"
+        },
+        {
+          "start": 117,
+          "end": 121,
+          "kind": "italic"
+        },
+        {
+          "start": 147,
+          "end": 213,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 147,
+          "end": 151,
+          "kind": "bold"
+        }
+      ]
+    }
+  ]
+}

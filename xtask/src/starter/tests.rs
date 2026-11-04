@@ -89,6 +89,8 @@ evidence = "evidence/web.md"
         previous: None,
         out: dir.join("out"),
         cache: dir.join("cache"),
+        goldens: dir.join("goldens"),
+        update_goldens: false,
     }
 }
 
@@ -339,6 +341,8 @@ evidence = "evidence/{id}.md"
         previous: None,
         out: dir.join("out"),
         cache: dir.join("cache"),
+        goldens: dir.join("goldens"),
+        update_goldens: false,
     }
 }
 
@@ -846,6 +850,8 @@ evidence = "evidence/lexicons.md"
         previous: None,
         out: dir.join("out"),
         cache: dir.join("cache"),
+        goldens: dir.join("goldens"),
+        update_goldens: false,
     }
 }
 
@@ -1085,6 +1091,8 @@ sha256 = "{}"
         previous: None,
         out: dir.join("out"),
         cache: dir.join("cache"),
+        goldens: dir.join("goldens"),
+        update_goldens: false,
     }
 }
 
@@ -1161,4 +1169,145 @@ fn a_usfm_source_takes_no_extra_files() {
     std::fs::write(&config.lock, lock).unwrap();
     let err = format!("{:#}", build(&config).unwrap_err());
     assert!(err.contains("takes no extra files"), "{err}");
+}
+
+#[test]
+fn golden_snapshots_gate_the_build_with_reviewable_diffs() {
+    let dir = scratch("goldens");
+    let (zip, sha) = fixture_zip(&dir, &[]);
+    let mut config = setup(&dir, &zip, &sha, true);
+    std::fs::create_dir_all(&config.goldens).unwrap();
+    std::fs::write(
+        config.goldens.join(goldens::LIST_FILE),
+        "[[golden]]\nresource_id = \"web\"\npassage = \"Gen 1:1\"\n",
+    )
+    .unwrap();
+
+    // A listed golden with no committed snapshot fails the build, naming it.
+    let err = format!("{:#}", build(&config).unwrap_err());
+    assert!(
+        err.contains("web Gen 1:1") && err.contains("not committed yet"),
+        "{err}"
+    );
+
+    // --update-goldens writes the snapshot for review; the clean rebuild then passes.
+    config.update_goldens = true;
+    build(&config).unwrap();
+    let file = config.goldens.join("web/gen-1-1.json");
+    let written = std::fs::read_to_string(&file).unwrap();
+    assert!(written.contains("In the beginning"), "{written}");
+    config.update_goldens = false;
+    build(&config).unwrap();
+    let report = std::fs::read_to_string(config.out.join(REPORT_FILE)).unwrap();
+    assert!(report.contains("| web Gen 1:1 | unchanged |"), "{report}");
+
+    // An edit to the committed snapshot fails the build with a unified diff of the change,
+    // on stderr and in the report's Golden snapshots section.
+    std::fs::write(
+        &file,
+        written.replace("In the beginning", "IN THE BEGINNING"),
+    )
+    .unwrap();
+    let err = format!("{:#}", build(&config).unwrap_err());
+    assert!(
+        err.contains("--- committed") && err.contains("+++ built"),
+        "{err}"
+    );
+    assert!(
+        err.contains("-") && err.contains("IN THE BEGINNING") && err.contains("In the beginning"),
+        "{err}"
+    );
+    assert!(err.contains("--update-goldens"), "{err}");
+    let report = std::fs::read_to_string(config.out.join(REPORT_FILE)).unwrap();
+    assert!(
+        report.contains("### web Gen 1:1 changed") && report.contains("```diff"),
+        "{report}"
+    );
+}
+
+#[test]
+fn a_golden_naming_a_missing_resource_or_an_empty_key_fails() {
+    let dir = scratch("goldens-missing");
+    let (zip, sha) = fixture_zip(&dir, &[]);
+    let config = setup(&dir, &zip, &sha, true);
+    std::fs::create_dir_all(&config.goldens).unwrap();
+    std::fs::write(
+        config.goldens.join(goldens::LIST_FILE),
+        "[[golden]]\nresource_id = \"kjv\"\npassage = \"Gen 1:1\"\n",
+    )
+    .unwrap();
+    let err = format!("{:#}", build(&config).unwrap_err());
+    assert!(err.contains("`kjv` is not in the lock"), "{err}");
+
+    // The WEB excerpt has no Obadiah: a Key that opens nothing has to fail, not snapshot
+    // an empty file.
+    std::fs::write(
+        config.goldens.join(goldens::LIST_FILE),
+        "[[golden]]\nresource_id = \"web\"\npassage = \"Obad 1:1\"\n",
+    )
+    .unwrap();
+    let err = format!("{:#}", build(&config).unwrap_err());
+    assert!(
+        err.contains("web Obad 1:1") && err.contains("nothing in `web` opens at that Key"),
+        "{err}"
+    );
+}
+
+#[test]
+fn an_unresolved_strongs_number_fails_the_build_naming_the_item() {
+    // The TAHOT excerpt's Tagged words use Strong's numbers far beyond the one-entry TBESH
+    // excerpt, so adding that Lexicon to the lock must fail the structural checks.
+    let dir = scratch("tahot-strongs");
+    let config = setup_tahot(&dir, true);
+    let tbesh = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("crates/formats/tests/assets/lexicon/tbesh-excerpt.txt");
+    let sha = sha256_hex(&std::fs::read(&tbesh).unwrap());
+    let starter = config.lock.parent().unwrap();
+    std::fs::write(
+        starter.join("evidence/tbesh.md"),
+        format!("Licence: CC BY 4.0.\nsha256 {sha}\n"),
+    )
+    .unwrap();
+    let lock = std::fs::read_to_string(&config.lock).unwrap()
+        + &format!(
+            r#"
+[[source]]
+resource_id = "tbesh"
+importer = "stepbible-tbes"
+url = "file://{}"
+sha256 = "{sha}"
+title = "tbesh"
+abbreviation = "tbesh"
+language = "en"
+spdx = "CC-BY-4.0"
+attribution = "tbesh fixture Attribution."
+changes = "Converted."
+provenance = "Test fixture."
+evidence = "evidence/tbesh.md"
+"#,
+            tbesh.display().to_string().replace('\\', "/")
+        );
+    std::fs::write(&config.lock, lock).unwrap();
+    let err = format!("{:#}", build(&config).unwrap_err());
+    assert!(err.contains("structural check"), "{err}");
+    assert!(
+        err.contains("resolves in no Lexicon (`tahot` Gen 1:1"),
+        "{err}"
+    );
+    assert!(!config.out.join("tahot.obr").exists(), "nothing published");
+}
+
+#[test]
+fn the_build_report_counts_the_structural_coverage() {
+    let dir = scratch("report-coverage");
+    let (zip, sha) = fixture_zip(&dir, &[]);
+    let config = setup(&dir, &zip, &sha, true);
+    build(&config).unwrap();
+    let report = std::fs::read_to_string(config.out.join(REPORT_FILE)).unwrap();
+    assert!(report.contains("## Structural checks"), "{report}");
+    assert!(report.contains("All passed. 1 Bible(s):"), "{report}");
+    assert!(report.contains("## Golden snapshots"), "{report}");
+    assert!(report.contains("None listed."), "{report}");
 }

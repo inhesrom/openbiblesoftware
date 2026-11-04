@@ -1,0 +1,40 @@
+{
+  "resource_id": "bsb",
+  "resource_type": "bible",
+  "key": "Gen 1:1",
+  "verses": [
+    {
+      "verse": "Gen 1:1",
+      "last": 1,
+      "standard": "Gen 1:1",
+      "unit": "GEN",
+      "text": "In the beginning God created the heavens and the earth.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 55,
+          "kind": "chapter",
+          "chapter": 1
+        },
+        {
+          "start": 0,
+          "end": 55,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 55,
+          "kind": "verse",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 1
+          },
+          "last": 1
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

@@ -1,0 +1,246 @@
+{
+  "resource_id": "web",
+  "resource_type": "bible",
+  "key": "3John 1:14",
+  "verses": [
+    {
+      "verse": "3 Jn 1:14",
+      "last": 14,
+      "standard": "3 Jn 1:14",
+      "unit": "3JN",
+      "text": "but I hope to see you soon. Then we will speak face to face.\nPeace be to you. The friends greet you. Greet the friends by name.",
+      "spans": [
+        {
+          "start": 0,
+          "end": 127,
+          "kind": "chapter",
+          "chapter": 1
+        },
+        {
+          "start": 0,
+          "end": 60,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 127,
+          "kind": "verse",
+          "verse": {
+            "book": "3JN",
+            "chapter": 1,
+            "verse": 14
+          },
+          "last": 14
+        },
+        {
+          "start": 0,
+          "end": 3,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1161"
+            }
+          ]
+        },
+        {
+          "start": 4,
+          "end": 5,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ]
+        },
+        {
+          "start": 6,
+          "end": 10,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G1679"
+            }
+          ]
+        },
+        {
+          "start": 11,
+          "end": 13,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4314"
+            }
+          ]
+        },
+        {
+          "start": 14,
+          "end": 17,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G3708"
+            }
+          ]
+        },
+        {
+          "start": 18,
+          "end": 21,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4771"
+            }
+          ]
+        },
+        {
+          "start": 28,
+          "end": 32,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ]
+        },
+        {
+          "start": 33,
+          "end": 35,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ]
+        },
+        {
+          "start": 36,
+          "end": 40,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ]
+        },
+        {
+          "start": 41,
+          "end": 46,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2980"
+            }
+          ]
+        },
+        {
+          "start": 47,
+          "end": 51,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4750"
+            }
+          ]
+        },
+        {
+          "start": 52,
+          "end": 54,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4314"
+            }
+          ]
+        },
+        {
+          "start": 55,
+          "end": 59,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4750"
+            }
+          ]
+        },
+        {
+          "start": 61,
+          "end": 127,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 67,
+          "end": 69,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ]
+        },
+        {
+          "start": 70,
+          "end": 72,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4314"
+            }
+          ]
+        },
+        {
+          "start": 73,
+          "end": 76,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4771"
+            }
+          ]
+        },
+        {
+          "start": 78,
+          "end": 81,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ]
+        },
+        {
+          "start": 96,
+          "end": 99,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G4771"
+            }
+          ]
+        },
+        {
+          "start": 107,
+          "end": 110,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ]
+        },
+        {
+          "start": 119,
+          "end": 121,
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "strongs": "G2532"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": []
+}

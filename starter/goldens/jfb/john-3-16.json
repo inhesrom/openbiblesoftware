@@ -1,0 +1,138 @@
+{
+  "resource_id": "jfb",
+  "resource_type": "commentary",
+  "key": "John 3:16",
+  "units": [
+    {
+      "id": "John.3.16-John.3.16",
+      "kind": "section",
+      "title": "John 3:16",
+      "text": "16. For God so loved, &c.--What proclamation of the Gospel has been so oft on the lips of missionaries and preachers in every age since it was first uttered? What has sent such thrilling sensations through millions of mankind? What has been honored to bring such multitudes to the feet of Christ? What to kindle in the cold and selfish breasts of mortals the fires of self-sacrificing love to mankind, as these words of transparent simplicity, yet overpowering majesty? The picture embraces several distinct compartments: \"THE WORLD\"--in its widest sense--ready \"to perish\"; the immense \"LOVE OF GOD\" to that perishing world, measurable only, and conceivable only, by the gift which it drew forth from Him; THE GIFT itself--\"He so loved the world that He gave His only begotten Son,\" or, in the language of Paul, \"spared not His own Son\" (Ro 8:32), or in that addressed to Abraham when ready to offer Isaac on the altar, \"withheld not His Son, His only Son, whom He loved\" (Ge 22:16); the FRUIT of this stupendous gift--not only deliverance from impending \"perdition,\" but the bestowal of everlasting life; the MODE in which all takes effect--by \"believing\" on the Son. How would Nicodemus' narrow Judaism become invisible in the blaze of this Sun of righteousness seen rising on \"the world\" with healing in His wings! (Mal 4:2).\n",
+      "spans": [
+        {
+          "start": 0,
+          "end": 1329,
+          "kind": "para",
+          "style": "prose"
+        },
+        {
+          "start": 0,
+          "end": 21,
+          "kind": "bold"
+        },
+        {
+          "start": 556,
+          "end": 561,
+          "kind": "italic"
+        },
+        {
+          "start": 563,
+          "end": 572,
+          "kind": "italic"
+        },
+        {
+          "start": 601,
+          "end": 625,
+          "kind": "italic"
+        },
+        {
+          "start": 728,
+          "end": 730,
+          "kind": "italic"
+        },
+        {
+          "start": 755,
+          "end": 759,
+          "kind": "italic"
+        },
+        {
+          "start": 814,
+          "end": 824,
+          "kind": "italic"
+        },
+        {
+          "start": 839,
+          "end": 846,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "ROM",
+                "chapter": 8,
+                "verse": 32
+              },
+              "end": {
+                "book": "ROM",
+                "chapter": 8,
+                "verse": 32
+              }
+            }
+          ]
+        },
+        {
+          "start": 922,
+          "end": 934,
+          "kind": "italic"
+        },
+        {
+          "start": 974,
+          "end": 982,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "GEN",
+                "chapter": 22,
+                "verse": 16
+              },
+              "end": {
+                "book": "GEN",
+                "chapter": 22,
+                "verse": 16
+              }
+            }
+          ]
+        },
+        {
+          "start": 1029,
+          "end": 1045,
+          "kind": "italic"
+        },
+        {
+          "start": 1057,
+          "end": 1067,
+          "kind": "italic"
+        },
+        {
+          "start": 1073,
+          "end": 1106,
+          "kind": "italic"
+        },
+        {
+          "start": 1147,
+          "end": 1156,
+          "kind": "italic"
+        },
+        {
+          "start": 1320,
+          "end": 1327,
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "start": {
+                "book": "MAL",
+                "chapter": 4,
+                "verse": 2
+              },
+              "end": {
+                "book": "MAL",
+                "chapter": 4,
+                "verse": 2
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
