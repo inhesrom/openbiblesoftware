@@ -12,7 +12,7 @@ use obs_engine::{
     Effect, HeaderBox, JobMode, LayoutNode, MENUS, MenuItem, PanelId, Placement, Session, TabId,
     TabKind, Tool,
 };
-use obs_model::ResourceType;
+use obs_model::{Key, ResourceType};
 use obs_scripture::{Passage, RefStyle, Standard, Verse, format_passage};
 use serde_json::{Value, json};
 
@@ -199,8 +199,14 @@ impl Shell {
                         if view.jump_to(verse) {
                             t.flash = Some((verse, now));
                         } else {
-                            self.st.toast(format!("{verse} is not in this Bible"));
+                            self.st
+                                .toast(format!("No section or Verse for {verse} in this Resource"));
                         }
+                    }
+                }
+                Effect::NavigateEntry { tab, key } => {
+                    if let Some(view) = self.st.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) {
+                        view.jump_to_entry(&key);
                     }
                 }
                 Effect::Follow { tab, verse, flash } => {
@@ -787,7 +793,11 @@ impl State {
                 Ok(doc) => {
                     let mut view = ReadingView::new(Arc::clone(&doc), self.session.text);
                     if let Some(t) = self.session.workspace.tab_mut(tab) {
-                        t.versification = Some(Arc::new(doc.versification.clone()));
+                        t.versification = (doc.manifest.resource_type == ResourceType::Bible)
+                            .then(|| Arc::new(doc.versification.clone()));
+                        if doc.manifest.resource_type != ResourceType::Bible {
+                            t.navigation = Some(Arc::clone(&doc.navigation));
+                        }
                         t.verse_map = doc.verse_map.clone();
                         if !doc.manifest.key_schemes.is_empty() {
                             t.key_schemes = doc.manifest.key_schemes.clone();
@@ -801,10 +811,37 @@ impl State {
                             .filter(|t| t.id != tab && t.kind.is_reading() && t.verse_map.is_none())
                             .find_map(|t| t.history.current())
                     });
-                    if let Some(v) = at
-                        && view.jump_to(v)
-                    {
-                        self.session.workspace.scrolled(tab, v);
+                    if let Some(v) = at {
+                        let local = if doc.manifest.resource_type == ResourceType::Commentary {
+                            doc.navigation.section(v).and_then(|e| match e.key {
+                                Key::Passage(p) => Some(p.start()),
+                                _ => None,
+                            })
+                        } else {
+                            Some(v)
+                        };
+                        if let Some(v) = local
+                            && view.jump_to(v)
+                        {
+                            self.session.workspace.scrolled(tab, v);
+                        }
+                    }
+                    if matches!(
+                        doc.manifest.resource_type,
+                        ResourceType::Lexicon | ResourceType::Dictionary
+                    ) {
+                        let ws = &self.session.workspace;
+                        let key = ws
+                            .tab(tab)
+                            .and_then(|t| t.entry_history.current())
+                            .or_else(|| ws.set_entry_location(tab))
+                            .or_else(|| doc.navigation.entries().next().map(|e| e.key.clone()));
+                        if let Some(key) = key
+                            && view.jump_to_entry(&key)
+                            && let Some(t) = self.session.workspace.tab_mut(tab)
+                        {
+                            t.entry_history.scrolled_to(key);
+                        }
                     }
                     ui_state.view = Some(view);
                 }
@@ -839,6 +876,13 @@ impl State {
         let Some(t) = self.session.workspace.tab(tab) else {
             return String::new();
         };
+        if matches!(t.header_box(), HeaderBox::Lexicon | HeaderBox::Headword) {
+            return t
+                .entry_history
+                .current()
+                .map(|k| k.to_string())
+                .unwrap_or_default();
+        }
         let Some(v) = t.history.current() else {
             return String::new();
         };
@@ -858,6 +902,14 @@ impl State {
             return;
         };
         self.header(ui, tab, &kind);
+        if self
+            .session
+            .workspace
+            .tab(tab)
+            .is_some_and(|t| matches!(t.header_box(), HeaderBox::Lexicon | HeaderBox::Headword))
+        {
+            self.entry_buttons(ui, tab);
+        }
         // The body gets exactly the rest of the pane, whatever the header did (#13 finding).
         let rect = egui::Rect::from_min_max(pos2(pane.left(), ui.cursor().top()), pane.max);
         let mut body = ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt(("body", tab)));
@@ -901,6 +953,11 @@ impl State {
         let at = view.current_location();
         if let Some(n) = out.hovered_verse_number {
             verse_number_tooltip(ui, &view.doc, n);
+        }
+        if out.user_moved
+            && let Some(key) = view.current_entry()
+        {
+            self.session.workspace.user_scrolled_entry(tab, key);
         }
         if let Some(at) = at {
             let ws = &mut self.session.workspace;
@@ -1117,16 +1174,18 @@ impl State {
                     if kind.has_link_chip() {
                         self.link_chip(ui, tab);
                     }
-                    let passage = kind.header_box() == HeaderBox::Reference;
-                    if passage {
+                    let header = self
+                        .session
+                        .workspace
+                        .tab(tab)
+                        .map_or(kind.header_box(), |t| t.header_box());
+                    if matches!(
+                        header,
+                        HeaderBox::Reference | HeaderBox::Lexicon | HeaderBox::Headword
+                    ) {
                         self.history_buttons(ui, tab);
                     }
-                    self.header_box(
-                        ui,
-                        tab,
-                        kind.header_box(),
-                        if narrow { 110.0 } else { 140.0 },
-                    );
+                    self.header_box(ui, tab, header, if narrow { 110.0 } else { 140.0 });
                     let title = self.title(tab, kind);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         self.tab_menu(ui, tab);
@@ -1174,9 +1233,45 @@ impl State {
         }
     }
 
+    fn entry_buttons(&mut self, ui: &mut Ui, tab: TabId) {
+        let enabled = |forward| {
+            self.session.workspace.tab(tab).is_some_and(|t| {
+                t.entry_history.current().is_some_and(|key| {
+                    t.navigation
+                        .as_ref()
+                        .and_then(|n| n.adjacent(&key, forward))
+                        .is_some()
+                })
+            })
+        };
+        let previous = enabled(false);
+        let next = enabled(true);
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(previous, egui::Button::new("Previous entry"))
+                .clicked()
+            {
+                self.run("tab.previous_entry", &json!({ "tab": tab.0 }));
+            }
+            if ui
+                .add_enabled(next, egui::Button::new("Next entry"))
+                .clicked()
+            {
+                self.run("tab.next_entry", &json!({ "tab": tab.0 }));
+            }
+        });
+    }
+
     fn history_buttons(&mut self, ui: &mut Ui, tab: TabId) {
         let (back, fwd) = self.session.workspace.tab(tab).map_or((false, false), |t| {
-            (t.history.can_go_back(), t.history.can_go_forward())
+            if matches!(t.header_box(), HeaderBox::Lexicon | HeaderBox::Headword) {
+                (
+                    t.entry_history.can_go_back(),
+                    t.entry_history.can_go_forward(),
+                )
+            } else {
+                (t.history.can_go_back(), t.history.can_go_forward())
+            }
         });
         let arrow = |s: &str| {
             egui::Button::new(RichText::new(s).size(18.0))
@@ -1223,12 +1318,13 @@ impl State {
                     }
                 }
             }
-            HeaderBox::Word | HeaderBox::Reference => {
+            HeaderBox::Word | HeaderBox::Reference | HeaderBox::Lexicon | HeaderBox::Headword => {
                 let shown = self.location_text(tab);
-                let hint = if kind == HeaderBox::Word {
-                    "Strong's number or word"
-                } else {
-                    "Go to passage"
+                let hint = match kind {
+                    HeaderBox::Word => "Strong's number or word",
+                    HeaderBox::Lexicon => "Strong's number or Lemma",
+                    HeaderBox::Headword => "Headword",
+                    _ => "Go to passage",
                 };
                 let Some(t) = self.tabs.get_mut(&tab) else {
                     return;
@@ -1246,8 +1342,7 @@ impl State {
                 }
                 if r.lost_focus() {
                     t.edit = None;
-                    if ui.input(|i| i.key_pressed(egui::Key::Enter)) && kind == HeaderBox::Reference
-                    {
+                    if ui.input(|i| i.key_pressed(egui::Key::Enter)) && kind != HeaderBox::Word {
                         self.session.workspace.user_focused(tab);
                         let out = self
                             .session

@@ -1,12 +1,13 @@
-//! A Bible opened for reading: its text units, blocks in reading order, and verse list.
+//! A Resource opened for reading: text units, blocks, Bible Verses and non-Bible Keys.
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
+use obs_engine::resource_navigation::ResourceNavigation;
 use obs_layout::{BlockSource, unit_blocks};
 use obs_model::{
-    BibleVerse, Direction, Manifest, ParaStyle, Resource, Span, SpanKind, TextUnit, UnitId,
-    UnitKind,
+    BibleVerse, Direction, KeyEntry, Manifest, ParaStyle, Resource, Span, SpanKind, TextUnit,
+    UnitId, UnitKind,
 };
 use obs_scripture::{ListedVersification, Verse, VerseMap};
 #[cfg(not(target_arch = "wasm32"))]
@@ -24,6 +25,7 @@ pub struct DocBlock {
 #[derive(Debug)]
 pub struct ReadingDoc {
     pub manifest: Manifest,
+    pub navigation: std::sync::Arc<ResourceNavigation>,
     pub units: Vec<TextUnit>,
     pub blocks: Vec<DocBlock>,
     /// Bible Verses in document order (empty for non-Bibles).
@@ -51,7 +53,11 @@ impl ReadingDoc {
                 units.push(u);
             }
         }
-        let mut doc = Self::build(reader.manifest().clone(), units, reader.verses()?);
+        let mut keys = Vec::new();
+        for scheme in &reader.manifest().key_schemes {
+            keys.extend(reader.keys(*scheme)?);
+        }
+        let mut doc = Self::build(reader.manifest().clone(), units, reader.verses()?, keys);
         doc.verse_map = reader.verse_map()?.map(std::sync::Arc::new);
         Ok(doc)
     }
@@ -63,7 +69,7 @@ impl ReadingDoc {
             .into_iter()
             .filter(|u| u.kind != UnitKind::Note)
             .collect();
-        let mut doc = Self::build(resource.manifest, units, resource.verses);
+        let mut doc = Self::build(resource.manifest, units, resource.verses, resource.keys);
         doc.verse_map = resource.verse_map.map(std::sync::Arc::new);
         doc
     }
@@ -94,10 +100,15 @@ impl ReadingDoc {
             text: text.to_string(),
             spans,
         };
-        Self::build(manifest, vec![unit], Vec::new())
+        Self::build(manifest, vec![unit], Vec::new(), Vec::new())
     }
 
-    fn build(manifest: Manifest, units: Vec<TextUnit>, verses: Vec<BibleVerse>) -> Self {
+    fn build(
+        manifest: Manifest,
+        units: Vec<TextUnit>,
+        verses: Vec<BibleVerse>,
+        keys: Vec<KeyEntry>,
+    ) -> Self {
         let mut blocks = Vec::new();
         for (i, u) in units.iter().enumerate() {
             for source in unit_blocks(u) {
@@ -116,6 +127,7 @@ impl ReadingDoc {
             .collect();
         Self {
             manifest,
+            navigation: std::sync::Arc::new(ResourceNavigation::new(keys)),
             units,
             blocks,
             verses,
@@ -126,12 +138,22 @@ impl ReadingDoc {
         }
     }
 
+    pub fn entry_position(&self, entry: &KeyEntry) -> Option<(usize, usize)> {
+        Some((
+            self.units.iter().position(|u| u.id == entry.unit)?,
+            entry.range.map_or(0, |r| r.0 as usize),
+        ))
+    }
+
     pub fn direction(&self) -> Direction {
         self.manifest.direction
     }
 
     /// The Bible Verse (own numbering) containing `verse`, as (unit index, start byte).
     pub fn verse_position(&self, verse: Verse) -> Option<(usize, usize)> {
+        if self.manifest.resource_type == obs_model::ResourceType::Commentary {
+            return self.entry_position(self.navigation.section(verse)?);
+        }
         let i = self.verses.iter().position(|v| {
             v.verse.book == verse.book
                 && v.verse.chapter == verse.chapter
@@ -181,6 +203,17 @@ impl ReadingDoc {
 
     /// Unit bytes of the Bible Verse at `byte` of `unit`.
     pub fn verse_range_at(&self, unit: usize, byte: usize) -> Option<std::ops::Range<usize>> {
+        if self.manifest.resource_type == obs_model::ResourceType::Commentary {
+            let verse = self.verse_containing(unit, byte)?;
+            let entry = self.navigation.section(verse)?;
+            return Some(
+                entry
+                    .range
+                    .map_or(0..self.units.get(unit)?.text.len(), |(a, b)| {
+                        a as usize..b as usize
+                    }),
+            );
+        }
         self.verses
             .iter()
             .zip(&self.verse_units)
@@ -191,6 +224,9 @@ impl ReadingDoc {
 
     /// The verse of `unit` containing unit byte `byte`: the last one starting at or before it.
     pub fn verse_containing(&self, unit: usize, byte: usize) -> Option<Verse> {
+        if self.manifest.resource_type == obs_model::ResourceType::Commentary {
+            return self.navigation.passage_at(&self.units.get(unit)?.id, byte);
+        }
         self.verses
             .iter()
             .zip(&self.verse_units)

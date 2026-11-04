@@ -6,7 +6,8 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use obs_model::KeyScheme;
+use crate::resource_navigation::ResourceNavigation;
+use obs_model::{Key, KeyScheme};
 use obs_scripture::{ListedVersification, Verse, VerseMap};
 use serde::{Deserialize, Serialize};
 
@@ -79,6 +80,10 @@ pub enum HeaderBox {
     Reference,
     /// A Strong's number or English word (Word Study).
     Word,
+    /// A Lexicon Strong's number or Lemma.
+    Lexicon,
+    /// A Dictionary headword.
+    Headword,
     /// A filter field, and no link chip (Library, Notes).
     Filter,
     /// "Follows hover" (Word Info).
@@ -154,24 +159,34 @@ impl TabKind {
 }
 
 /// A Tab's Back/Forward history of locations, in the Tab's own numbering.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct History {
-    back: Vec<Verse>,
-    current: Option<Verse>,
-    forward: Vec<Verse>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct History<T = Verse> {
+    back: Vec<T>,
+    current: Option<T>,
+    forward: Vec<T>,
 }
 
 /// History keeps at most this many entries each way.
 pub const HISTORY_LIMIT: usize = 100;
 
-impl History {
-    pub fn current(&self) -> Option<Verse> {
-        self.current
+impl<T> Default for History<T> {
+    fn default() -> Self {
+        Self {
+            back: Vec::new(),
+            current: None,
+            forward: Vec::new(),
+        }
+    }
+}
+
+impl<T: Clone + PartialEq> History<T> {
+    pub fn current(&self) -> Option<T> {
+        self.current.clone()
     }
 
     /// A jump: the old location goes on the Back stack and Forward is cleared.
-    pub fn visit(&mut self, to: Verse) {
-        if let Some(old) = self.current
+    pub fn visit(&mut self, to: T) {
+        if let Some(old) = self.current.clone()
             && old != to
         {
             self.back.push(old);
@@ -184,7 +199,7 @@ impl History {
     }
 
     /// Scrolling moves the location without making a history entry.
-    pub fn scrolled_to(&mut self, at: Verse) {
+    pub fn scrolled_to(&mut self, at: T) {
         self.current = Some(at);
     }
 
@@ -196,21 +211,21 @@ impl History {
         !self.forward.is_empty()
     }
 
-    pub fn back(&mut self) -> Option<Verse> {
+    pub fn back(&mut self) -> Option<T> {
         let to = self.back.pop()?;
-        if let Some(cur) = self.current {
+        if let Some(cur) = self.current.clone() {
             self.forward.push(cur);
         }
-        self.current = Some(to);
+        self.current = Some(to.clone());
         Some(to)
     }
 
-    pub fn forward(&mut self) -> Option<Verse> {
+    pub fn forward(&mut self) -> Option<T> {
         let to = self.forward.pop()?;
-        if let Some(cur) = self.current {
+        if let Some(cur) = self.current.clone() {
             self.back.push(cur);
         }
-        self.current = Some(to);
+        self.current = Some(to.clone());
         Some(to)
     }
 }
@@ -222,6 +237,8 @@ pub struct Tab {
     pub kind: TabKind,
     pub title: String,
     pub history: History,
+    pub entry_history: History<Key>,
+    pub navigation: Option<Arc<ResourceNavigation>>,
     /// The Resource's own numbering, for reading typed references (ADR 0002 rule 10).
     pub versification: Option<Arc<ListedVersification>>,
     /// A Bible's Verse map to the Standard versification (none: it numbers like the Standard).
@@ -235,6 +252,32 @@ pub struct Tab {
 }
 
 impl Tab {
+    pub fn header_box(&self) -> HeaderBox {
+        if matches!(self.kind, TabKind::Resource(_)) {
+            if self.key_schemes.contains(&KeyScheme::Headword) {
+                return HeaderBox::Headword;
+            }
+            if self.key_schemes.contains(&KeyScheme::StrongsNumber)
+                || self.key_schemes.contains(&KeyScheme::Lemma)
+            {
+                return HeaderBox::Lexicon;
+            }
+        }
+        self.kind.header_box()
+    }
+
+    fn local_passage(&self, verse: Verse) -> Option<Verse> {
+        if let Some(nav) = &self.navigation
+            && self.follows_passages()
+        {
+            return match &nav.section(verse)?.key {
+                Key::Passage(p) => Some(p.start()),
+                _ => None,
+            };
+        }
+        Some(verse)
+    }
+
     fn follows_passages(&self) -> bool {
         self.key_schemes.contains(&KeyScheme::Passage)
     }
@@ -275,6 +318,11 @@ pub enum Effect {
     Navigate {
         tab: TabId,
         verse: Verse,
+    },
+    /// Move a Lexicon or Dictionary to its entry Key.
+    NavigateEntry {
+        tab: TabId,
+        key: Key,
     },
     /// A Link-set member follows another; `flash` marks the target after an explicit jump.
     Follow {
@@ -449,6 +497,8 @@ impl Workspace {
                 kind,
                 title,
                 history: History::default(),
+                entry_history: History::default(),
+                navigation: None,
                 versification: None,
                 verse_map: None,
                 key_schemes,
@@ -559,12 +609,89 @@ impl Workspace {
     /// Record a jump in a Tab's history, move its view, and move its Link set (flashing the
     /// target in every member).
     pub fn navigate(&mut self, tab: TabId, verse: Verse) {
-        if let Some(t) = self.tabs.get_mut(&tab) {
-            t.history.visit(verse);
-            t.moved_to(verse);
-            self.effects.push(Effect::Navigate { tab, verse });
+        if let Some(t) = self.tabs.get_mut(&tab)
+            && let Some(local) = t.local_passage(verse)
+        {
+            t.history.visit(local);
+            t.moved_to(local);
+            self.effects.push(Effect::Navigate { tab, verse: local });
             self.broadcast(tab, verse, true);
         }
+    }
+
+    /// Entry navigation broadcasts only to members supporting this Key scheme.
+    pub fn navigate_entry(&mut self, tab: TabId, key: Key) {
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        t.entry_history.visit(key.clone());
+        self.effects.push(Effect::NavigateEntry {
+            tab,
+            key: key.clone(),
+        });
+        self.broadcast_entry(tab, &key);
+    }
+
+    pub fn user_scrolled_entry(&mut self, tab: TabId, key: Key) {
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        if t.entry_history.current().as_ref() == Some(&key) {
+            return;
+        }
+        t.entry_history.scrolled_to(key.clone());
+        self.broadcast_entry(tab, &key);
+    }
+
+    fn broadcast_entry(&mut self, tab: TabId, key: &Key) {
+        let Some(link) = self.tabs.get(&tab).and_then(|t| t.link) else {
+            return;
+        };
+        for t in self.tabs.values_mut().filter(|t| {
+            t.id != tab && t.link == Some(link) && t.key_schemes.contains(&key.scheme())
+        }) {
+            if let Some(entry) = t.navigation.as_ref().and_then(|n| n.lookup(key)) {
+                t.entry_history.scrolled_to(entry.key.clone());
+                self.effects.push(Effect::NavigateEntry {
+                    tab: t.id,
+                    key: entry.key.clone(),
+                });
+            }
+        }
+    }
+
+    pub fn entry_history(&mut self, tab: TabId, back: bool) -> Option<Key> {
+        let t = self.tabs.get_mut(&tab)?;
+        let key = if back {
+            t.entry_history.back()?
+        } else {
+            t.entry_history.forward()?
+        };
+        self.effects.push(Effect::NavigateEntry {
+            tab,
+            key: key.clone(),
+        });
+        self.broadcast_entry(tab, &key);
+        Some(key)
+    }
+
+    /// A compatible entry Key from another member, focused member first.
+    pub fn set_entry_location(&self, tab: TabId) -> Option<Key> {
+        let t = self.tabs.get(&tab)?;
+        let link = t.link?;
+        let mut members: Vec<_> = self
+            .tabs
+            .values()
+            .filter(|m| m.id != tab && m.link == Some(link))
+            .collect();
+        members.sort_by_key(|m| Some(m.id) != self.focused);
+        members.into_iter().find_map(|m| {
+            let key = m.entry_history.current()?;
+            if !t.key_schemes.contains(&key.scheme()) {
+                return None;
+            }
+            Some(t.navigation.as_ref()?.lookup(&key)?.key.clone())
+        })
     }
 
     /// The view moved without the user scrolling it (a follow settling, a resize): update
@@ -614,6 +741,12 @@ impl Workspace {
         if let Some(v) = self.set_location(tab) {
             self.follow(tab, v, false);
         }
+        if let Some(key) = self.set_entry_location(tab) {
+            if let Some(t) = self.tabs.get_mut(&tab) {
+                t.entry_history.scrolled_to(key.clone());
+            }
+            self.effects.push(Effect::NavigateEntry { tab, key });
+        }
     }
 
     /// The Standard Verse a Link set is at, read from its members other than `except`
@@ -641,7 +774,11 @@ impl Workspace {
             return None;
         }
         let std = self.standard_location_of(t.link?, tab)?;
-        to_native(t.verse_map.as_deref(), t.versification.as_deref(), std)
+        t.local_passage(to_native(
+            t.verse_map.as_deref(),
+            t.versification.as_deref(),
+            std,
+        )?)
     }
 
     fn follow(&mut self, tab: TabId, verse: Verse, flash: bool) {
@@ -672,7 +809,11 @@ impl Workspace {
             .values()
             .filter(|t| t.id != from && t.link == Some(link) && t.follows_passages())
             .filter_map(|t| {
-                let to = to_native(t.verse_map.as_deref(), t.versification.as_deref(), std)?;
+                let to = t.local_passage(to_native(
+                    t.verse_map.as_deref(),
+                    t.versification.as_deref(),
+                    std,
+                )?)?;
                 (t.history.current() != Some(to) || flash).then_some((t.id, to))
             })
             .collect();
@@ -726,6 +867,14 @@ impl Workspace {
                     kind: t.kind,
                     title: t.title,
                     history,
+                    entry_history: {
+                        let mut h = History::default();
+                        if let Some(k) = t.entry_location {
+                            h.scrolled_to(k);
+                        }
+                        h
+                    },
+                    navigation: None,
                     versification: None,
                     verse_map: None,
                     key_schemes,
