@@ -26,6 +26,7 @@ use crate::workers::SnippetCache;
 
 mod credits_tab;
 mod get_bibles_tab;
+mod guide_tab;
 mod import_tab;
 mod library_tab;
 #[path = "references.rs"]
@@ -66,6 +67,8 @@ struct TabUi {
     reference_passage: Option<Passage>,
     reference_at: Option<Passage>,
     expanded_references: std::collections::BTreeSet<Verse>,
+    /// A Passage Guide section whose header is being dragged.
+    guide_drag: Option<obs_engine::GuideSection>,
 }
 
 /// How long a jump's flash lasts, in seconds.
@@ -562,7 +565,10 @@ impl Shell {
     /// polls them, so running work keeps frames coming while the app is idle. Background
     /// Search index builds (#58) need only a slow poll.
     fn background_repaint(&self) -> Option<std::time::Duration> {
-        if self.st.session.imports.is_running() || self.st.picker.is_some() {
+        if self.st.session.imports.is_running()
+            || self.st.picker.is_some()
+            || self.st.session.guides.is_busy()
+        {
             Some(std::time::Duration::from_millis(16))
         } else if self.st.session.search.is_building() {
             Some(std::time::Duration::from_millis(250))
@@ -577,7 +583,12 @@ impl Shell {
         self.st.references.refresh(&self.st.session.library);
         self.st.now = ui.input(|i| i.time);
         self.st.split_held = ui.input(|i| i.modifiers.command);
-        // Poll, never wait: parsing, Resource writes and Search-index hooks live on workers.
+        // Poll, never wait: parsing, Resource writes, Search-index hooks and Guide sections
+        // live on workers. Without worker threads (wasm), Guide sections step here, a job a
+        // frame.
+        if !self.st.session.jobs().is_threaded() && self.st.session.guides.is_busy() {
+            self.st.session.jobs().pump(1);
+        }
         let _other_jobs = self.st.session.poll_imports();
         self.st.poll_picker();
         self.apply_effects();
@@ -989,6 +1000,9 @@ impl State {
             TabKind::ImportReport(id) => self.import_body(&mut body, &id),
             TabKind::GetBibles => self.get_bibles_body(&mut body),
             TabKind::Credits => self.credits_body(&mut body, tab),
+            TabKind::Guide(obs_engine::Guide::PassageGuide) => {
+                self.passage_guide_body(&mut body, tab)
+            }
             TabKind::Guide(g) => placeholder(&mut body, g.title(), guide_ticket(g)),
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
             TabKind::Tool(Tool::CrossReferences) => self.cross_references_body(&mut body, tab),
@@ -1501,10 +1515,17 @@ impl State {
             .workspace
             .tab(tab)
             .is_some_and(|t| t.kind == TabKind::Library);
+        let guide = match self.session.workspace.tab(tab).map(|t| &t.kind) {
+            Some(TabKind::Guide(g)) if !g.sections().is_empty() => Some(*g),
+            _ => None,
+        };
         ui.menu_button(RichText::new("…").color(theme::c().muted), |ui| {
             if library && ui.button("Import…").clicked() {
                 self.run("library.import", &json!({}));
                 ui.close();
+            }
+            if let Some(g) = guide {
+                self.guide_menu(ui, g);
             }
             if let Some(id) = &resource
                 && ui.button("About").clicked()

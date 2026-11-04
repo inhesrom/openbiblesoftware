@@ -588,7 +588,9 @@ fn menu_items_are_dispatched_through_the_command_registry() {
     assert!(!h.shell.st.session.text.red_letter);
     h.open_menu("Guides");
     h.click_text("Passage Guide");
-    assert!(h.find("Passage Guide arrives with #53").is_some());
+    // The Passage Guide (#53) opens with its sections, no longer a placeholder.
+    assert!(h.find("Commentaries").is_some(), "{:?}", h.texts());
+    assert!(h.find("Passage Guide arrives with #53").is_none());
     // The + on a tab bar runs the same commands.
     let plus = h
         .shapes
@@ -2948,6 +2950,8 @@ mod word_info;
 
 #[path = "credits_tests.rs"]
 mod credits;
+#[path = "guide_tests.rs"]
+mod guide;
 
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {
