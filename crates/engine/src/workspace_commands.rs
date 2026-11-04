@@ -358,7 +358,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     simple("help.credits", "Credits", None, always, credits),
     CommandSpec {
         id: "tab.go",
-        label: "Go to reference",
+        label: "Go to Key",
         shortcut: None,
         params: &[
             TAB,
@@ -366,11 +366,27 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 name: "text",
                 kind: ParamKind::String,
                 required: true,
-                help: "Reference, read in the Tab's own numbering (`Jn 3:16`, `2:4`, `5`)",
+                help: "Bible reference in the Tab's numbering, or Strong's number, Lemma or headword",
             },
         ],
         enabled: always,
         run: go,
+    },
+    CommandSpec {
+        id: "tab.previous_entry",
+        label: "Previous entry",
+        shortcut: None,
+        params: &[TAB],
+        enabled: always,
+        run: |s, p| adjacent_entry(s, p, false),
+    },
+    CommandSpec {
+        id: "tab.next_entry",
+        label: "Next entry",
+        shortcut: None,
+        params: &[TAB],
+        enabled: always,
+        run: |s, p| adjacent_entry(s, p, true),
     },
     CommandSpec {
         id: "tab.back",
@@ -479,7 +495,20 @@ fn open_resource(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> 
             format!("{id} is not in the library"),
         ));
     }
-    open(s, p, TabKind::Resource(id.to_string()))
+    let schemes = s
+        .library
+        .get(id)
+        .map(|e| e.manifest.key_schemes.clone())
+        .unwrap_or_default();
+    let out = open(s, p, TabKind::Resource(id.to_string()))?;
+    if let Some(tab) = out["tab"]
+        .as_u64()
+        .and_then(|id| s.workspace.tab_mut(TabId(id)))
+        && !schemes.is_empty()
+    {
+        tab.key_schemes = schemes;
+    }
+    Ok(out)
 }
 
 fn tab_param(command: &'static str, s: &Session, p: &Params<'_>) -> Result<TabId, CommandError> {
@@ -501,6 +530,19 @@ fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let Some(t) = s.workspace.tab(tab) else {
         return Err(failed(ID, "no tab"));
     };
+    if matches!(
+        t.header_box(),
+        crate::HeaderBox::Lexicon | crate::HeaderBox::Headword
+    ) {
+        let key = t
+            .navigation
+            .as_ref()
+            .and_then(|n| n.parse_entry(text))
+            .map(|e| e.key.clone())
+            .ok_or_else(|| failed(ID, format!("No entry for {text}")))?;
+        s.workspace.navigate_entry(tab, key.clone());
+        return Ok(json!({ "tab": tab.0, "key": key }));
+    }
     let context = t.history.current();
     let (start, own, passage) = match &t.versification {
         Some(v) => {
@@ -533,6 +575,11 @@ fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let Some(verse) = start else {
         return Err(failed(ID, "no reference"));
     };
+    if let Some(nav) = &t.navigation
+        && nav.section(verse).is_none()
+    {
+        return Err(failed(ID, "No earlier section in this Commentary"));
+    }
     s.workspace.navigate(tab, verse);
     // A typed range replaces the chip; other jumps retain it until they leave its chapters.
     if let Some(t) = s.workspace.tab_mut(tab)
@@ -547,6 +594,14 @@ fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
 fn history(s: &mut Session, p: Params<'_>, back: bool) -> Result<Value, CommandError> {
     let id = if back { "tab.back" } else { "tab.forward" };
     let tab = tab_param(id, s, &p)?;
+    if s.workspace.tab(tab).is_some_and(|t| {
+        matches!(
+            t.header_box(),
+            crate::HeaderBox::Lexicon | crate::HeaderBox::Headword
+        )
+    }) {
+        return Ok(json!({ "key": s.workspace.entry_history(tab, back) }));
+    }
     let to: Option<Verse> = if back {
         s.workspace.back(tab)
     } else {
@@ -689,4 +744,26 @@ fn credits(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
         body: CREDITS.into(),
     });
     Ok(Value::Null)
+}
+
+fn adjacent_entry(s: &mut Session, p: Params<'_>, forward: bool) -> Result<Value, CommandError> {
+    let id = if forward {
+        "tab.next_entry"
+    } else {
+        "tab.previous_entry"
+    };
+    let tab = tab_param(id, s, &p)?;
+    let key = s
+        .workspace
+        .tab(tab)
+        .and_then(|t| {
+            let current = t.entry_history.current()?;
+            t.navigation
+                .as_ref()?
+                .adjacent(&current, forward)
+                .map(|e| e.key.clone())
+        })
+        .ok_or_else(|| failed(id, "No adjacent entry"))?;
+    s.workspace.navigate_entry(tab, key.clone());
+    Ok(json!({ "key": key }))
 }

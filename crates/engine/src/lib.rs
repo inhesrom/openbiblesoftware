@@ -21,6 +21,7 @@ mod library;
 mod library_commands;
 pub mod link;
 pub mod persist;
+pub mod resource_navigation;
 mod session;
 pub mod workspace;
 mod workspace_commands;
@@ -59,3 +60,6 @@ mod library_tests;
 
 #[cfg(test)]
 mod compare_tests;
+
+#[cfg(test)]
+mod resource_navigation_tests;

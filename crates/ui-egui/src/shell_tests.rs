@@ -2452,3 +2452,6 @@ mod text_comparison {
         });
     }
 }
+
+#[path = "resource_tabs_tests.rs"]
+mod resource_tabs;

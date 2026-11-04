@@ -105,6 +105,8 @@ pub struct TabSnapshot {
     pub title: String,
     /// The Current location, in the Tab's own numbering.
     pub location: Option<Verse>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_location: Option<obs_model::Key>,
     pub link: Option<char>,
 }
 
@@ -213,6 +215,7 @@ impl Workspace {
                     kind: t.kind.clone(),
                     title: t.title.clone(),
                     location: t.history.current(),
+                    entry_location: t.entry_history.current(),
                     link: t.link,
                 })
                 .collect(),

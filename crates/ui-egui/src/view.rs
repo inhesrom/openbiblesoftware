@@ -481,6 +481,42 @@ impl ReadingView {
         true
     }
 
+    /// Entry Tabs use exactly the same blocks, selection, layout workers and atlas as Bibles.
+    pub fn jump_to_entry(&mut self, key: &obs_model::Key) -> bool {
+        let Some(entry) = self.doc.navigation.lookup(key) else {
+            return false;
+        };
+        let Some((unit, byte)) = self.doc.entry_position(entry) else {
+            return false;
+        };
+        let Some(block) = self.doc.block_at(unit, byte) else {
+            return false;
+        };
+        let Some(laid) = self.laid(block) else {
+            return false;
+        };
+        let top = laid
+            .from_unit(byte)
+            .and_then(|p| laid.lines.iter().find(|l| l.bytes.end > p))
+            .map_or(0.0, |l| l.top);
+        self.anchor = (block, top);
+        self.sticky = None;
+        self.pending_follow = None;
+        true
+    }
+
+    pub fn current_entry(&self) -> Option<obs_model::Key> {
+        let unit = &self
+            .doc
+            .units
+            .get(self.doc.blocks.get(self.anchor.0)?.unit)?
+            .id;
+        self.doc
+            .navigation
+            .entry_for_unit(unit)
+            .map(|e| e.key.clone())
+    }
+
     fn current_location_opt(&mut self) -> Option<Verse> {
         if let Some(v) = self.sticky {
             return Some(v);
