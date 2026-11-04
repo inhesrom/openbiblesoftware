@@ -437,3 +437,152 @@ fn strongs_lookup_falls_back_from_an_extended_to_a_base_number() {
     // A base number with no entry finds nothing.
     assert!(units("G26").is_empty());
 }
+
+#[test]
+fn compact_spans_preserve_every_range_query_and_use_typed_columns() {
+    let dir = TempDir::new("compact-ranges");
+    let path = dir.path("sample.obr");
+    let resource = sample_resource();
+    write_obr(&resource, &path).unwrap();
+    let reader = ObrReader::open(&path).unwrap();
+    let conn = Connection::open(&path).unwrap();
+    let wrong_types: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM spans WHERE typeof(kind) != 'integer' OR typeof(attrs) != 'blob'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(wrong_types, 0);
+    for unit in &resource.units {
+        for start in 0..=unit.text.len() + 1 {
+            for end in [
+                start.saturating_sub(1),
+                start,
+                start + 1,
+                unit.text.len() + 1,
+            ] {
+                let expected: Vec<_> = unit
+                    .spans
+                    .iter()
+                    .filter(|span| {
+                        let s = span.start as usize;
+                        let e = span.end as usize;
+                        if start >= end {
+                            s <= start && e >= start
+                        } else {
+                            (s < end && e > start) || (s == e && s >= start && s <= end)
+                        }
+                    })
+                    .cloned()
+                    .collect();
+                assert_eq!(reader.spans_in(&unit.id, start..end).unwrap(), expected);
+            }
+        }
+        assert!(
+            reader
+                .spans_in(&unit.id, usize::MAX..usize::MAX)
+                .unwrap()
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn corrupt_compact_span_columns_are_rejected_by_the_reader() {
+    let dir = TempDir::new("compact-corrupt");
+    let path = dir.path("sample.obr");
+    for change in [
+        "kind = 99",
+        "attrs = X'FF'",
+        "kind = 4, attrs = X'FFFFFFFF0F'",
+    ] {
+        write_obr(&sample_resource(), &path).unwrap();
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(&format!(
+                "UPDATE spans SET {change} WHERE unit = 0 AND seq = 0"
+            ))
+            .unwrap();
+        let reader = ObrReader::open(&path).unwrap();
+        assert!(matches!(
+            reader.unit(&UnitId::book(Book::Psalms)),
+            Err(StoreError::Corrupt(_))
+        ));
+    }
+}
+
+/// Full pinned builds are local/release evidence, not a network requirement for ordinary CI.
+/// Set OBS_COMPACT_BEFORE/AFTER to format-2/format-3 Starter output directories.
+#[test]
+#[ignore = "requires both full Starter builds; see docs/dev/obr-span-storage.md"]
+fn starter_format_two_and_three_have_identical_logical_content() {
+    let before = PathBuf::from(std::env::var_os("OBS_COMPACT_BEFORE").unwrap());
+    let after = PathBuf::from(std::env::var_os("OBS_COMPACT_AFTER").unwrap());
+    let mut count = 0;
+    for entry in std::fs::read_dir(&before).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|ext| ext != "obr") {
+            continue;
+        }
+        let old = Connection::open(&path).unwrap();
+        let reader = ObrReader::open(&after.join(path.file_name().unwrap())).unwrap();
+        let mut resource = reader.load().unwrap(); // validates all content against its logical hash
+        let old_hash: String = old
+            .query_row("SELECT content_hash FROM manifest", [], |r| r.get(0))
+            .unwrap();
+        // Format version participates in the hash. Rehash the identical logical content
+        // with the old version, without changing the production hash contract.
+        resource.manifest.format_version = 2;
+        assert_eq!(resource.content_hash(), old_hash);
+        for (ord, unit) in resource.units.iter().enumerate() {
+            let (id, text): (String, String) = old
+                .query_row(
+                    "SELECT id, text FROM units WHERE ord = ?1",
+                    [ord as i64],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(unit.id.as_str(), id);
+            assert_eq!(unit.text, text);
+            let mut stmt = old
+                .prepare("SELECT start, end, kind, attrs FROM spans WHERE unit = ?1 ORDER BY seq")
+                .unwrap();
+            let old_spans = stmt
+                .query_map([ord as i64], |r| {
+                    Ok((
+                        r.get::<_, u32>(0)?,
+                        r.get::<_, u32>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, Option<String>>(3)?,
+                    ))
+                })
+                .unwrap();
+            let old_spans: Vec<Span> = old_spans
+                .map(|r| {
+                    let (start, end, kind, attrs) = r.unwrap();
+                    let mut attrs: serde_json::Map<String, serde_json::Value> = attrs
+                        .map(|a| serde_json::from_str(&a).unwrap())
+                        .unwrap_or_default();
+                    attrs.insert("kind".into(), kind.into());
+                    Span {
+                        start,
+                        end,
+                        kind: serde_json::from_value(attrs.into()).unwrap(),
+                    }
+                })
+                .collect();
+            assert_eq!(
+                unit.spans, old_spans,
+                "{} {}",
+                resource.manifest.resource_id, unit.id
+            );
+        }
+        eprintln!(
+            "{}: identical logical hash and every text/span",
+            resource.manifest.resource_id
+        );
+        count += 1;
+    }
+    assert_eq!(count, 16);
+}
