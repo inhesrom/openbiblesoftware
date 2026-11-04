@@ -5,6 +5,7 @@
 
 mod a11y;
 pub mod bench;
+mod compare_view;
 mod doc;
 mod heights;
 mod palette;
@@ -17,6 +18,7 @@ mod workers;
 
 use std::path::PathBuf;
 
+pub use compare_view::{ComparisonOutput, ComparisonView, comparison_pane};
 pub use doc::{DocBlock, ReadingDoc};
 pub use heights::HeightIndex;
 pub use palette::{HIGHLIGHT_STYLES, Palette, contrast};

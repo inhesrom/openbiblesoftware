@@ -108,6 +108,15 @@ impl VerseMap {
             .unwrap_or_default()
     }
 
+    /// The entries of the Bible Verses that correspond to a Standard Verse, in document order.
+    pub fn entries_for(&self, standard: Verse) -> impl Iterator<Item = &VerseMapEntry> {
+        self.reverse
+            .get(&standard)
+            .into_iter()
+            .flatten()
+            .filter_map(|&i| self.entries.get(i))
+    }
+
     /// The first Bible Verse a Standard Verse maps to, as Link-set followers use (ADR 0002
     /// rule 9).
     pub fn first_native(&self, standard: Verse) -> Option<Verse> {
@@ -231,6 +240,13 @@ mod tests {
             Some(p(v(Book::John, 1, 1), v(Book::John, 1, 2)))
         );
         assert_eq!(map.to_native(v(Book::John, 1, 2)), [v(Book::John, 1, 1)]);
+        assert_eq!(
+            map.entries_for(v(Book::Psalms, 51, 0))
+                .map(|e| e.verse)
+                .collect::<Vec<_>>(),
+            [v(Book::Psalms, 51, 1), v(Book::Psalms, 51, 2)]
+        );
+        assert_eq!(map.entries_for(v(Book::John, 1, 3)).count(), 0);
         assert_eq!(map.unmapped().count(), 1);
         assert!(map.is_absent(v(Book::Matthew, 17, 21)));
         assert!(!map.is_identity());

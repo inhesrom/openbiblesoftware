@@ -496,7 +496,7 @@ fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         return Err(failed(ID, "no tab"));
     };
     let context = t.history.current();
-    let (start, own) = match &t.versification {
+    let (start, own, passage) = match &t.versification {
         Some(v) => {
             let list = parse_reference(text, v.as_ref(), context)
                 .map_err(|e| failed(ID, e.kind.to_string()))?;
@@ -510,6 +510,7 @@ fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             (
                 start,
                 first.map(|p| format_passage(p, v.as_ref(), RefStyle::Long)),
+                first,
             )
         }
         None => {
@@ -519,6 +520,7 @@ fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             (
                 first.map(|p| p.start()),
                 first.map(|p| format_passage(p, &Standard, RefStyle::Long)),
+                first,
             )
         }
     };
@@ -526,6 +528,13 @@ fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         return Err(failed(ID, "no reference"));
     };
     s.workspace.navigate(tab, verse);
+    // A typed range replaces the chip; other jumps retain it until they leave its chapters.
+    if let Some(t) = s.workspace.tab_mut(tab)
+        && t.kind == TabKind::Tool(Tool::TextComparison)
+        && let Some(range) = passage.filter(|p| crate::compare::narrows(*p))
+    {
+        t.comparison.range = Some(range);
+    }
     Ok(json!({ "tab": tab.0, "verse": verse.osis(), "text": own }))
 }
 

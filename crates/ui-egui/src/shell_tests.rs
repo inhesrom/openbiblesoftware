@@ -24,6 +24,9 @@ struct Harness {
     os_theme: egui::Theme,
     /// The last AccessKit tree update (when AccessKit is on).
     tree: Option<egui::accesskit::TreeUpdate>,
+    /// Textures as the GPU would hold them, and last frame's shapes (for [`Harness::screenshot`]).
+    textures: std::collections::HashMap<egui::TextureId, egui::ColorImage>,
+    last_shapes: Vec<egui::epaint::ClippedShape>,
 }
 
 fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
@@ -67,6 +70,8 @@ impl Harness {
             meshes: Vec::new(),
             os_theme: egui::Theme::Light,
             tree: None,
+            textures: std::collections::HashMap::new(),
+            last_shapes: Vec::new(),
         };
         h.frames(3);
         h
@@ -83,8 +88,27 @@ impl Harness {
         self.time += 1.0 / 60.0;
         let shell = &mut self.shell;
         let mut out = self.ctx.run_ui(input, |ui| shell.ui(ui));
-        // No GPU here: the texture uploads are dropped on purpose.
+        // No GPU here: texture uploads are kept as images, for screenshots only.
+        for (id, deltas) in std::mem::take(&mut out.textures_delta.set) {
+            for delta in deltas {
+                let egui::ImageData::Color(img) = delta.image;
+                match (delta.pos, self.textures.get_mut(&id)) {
+                    (Some([x0, y0]), Some(tex)) => {
+                        for y in 0..img.size[1] {
+                            for x in 0..img.size[0] {
+                                tex.pixels[(y0 + y) * tex.size[0] + x0 + x] =
+                                    img.pixels[y * img.size[0] + x];
+                            }
+                        }
+                    }
+                    _ => {
+                        self.textures.insert(id, (*img).clone());
+                    }
+                }
+            }
+        }
         out.textures_delta.clear();
+        self.last_shapes = out.shapes.clone();
         if let Some(t) = out.platform_output.accesskit_update.take() {
             self.tree = Some(t);
         }
@@ -209,6 +233,76 @@ impl Harness {
                 .then(a.0.top().total_cmp(&b.0.top()))
         });
         out
+    }
+
+    /// Rasterize last frame as the GPU would (premultiplied alpha, nearest texels) into a PPM.
+    fn screenshot(&self, path: &std::path::Path) {
+        let ppp = 1.0;
+        let (w, h) = (1400usize, 900usize);
+        let prims = self.ctx.tessellate(self.last_shapes.clone(), ppp);
+        let mut px = vec![[0.0f32; 3]; w * h];
+        for p in &prims {
+            let egui::epaint::Primitive::Mesh(m) = &p.primitive else {
+                continue;
+            };
+            let tex = self.textures.get(&m.texture_id);
+            let clip = p
+                .clip_rect
+                .intersect(Rect::from_min_size(Pos2::ZERO, vec2(w as f32, h as f32)));
+            for tri in m.indices.chunks(3) {
+                let [a, b, c] = [0, 1, 2].map(|i| m.vertices[tri[i] as usize]);
+                let lo = a.pos.min(b.pos).min(c.pos).max(clip.min);
+                let hi = a.pos.max(b.pos).max(c.pos).min(clip.max);
+                let area =
+                    (b.pos - a.pos).x * (c.pos - a.pos).y - (b.pos - a.pos).y * (c.pos - a.pos).x;
+                if area.abs() < 1e-6 || lo.x >= hi.x || lo.y >= hi.y {
+                    continue;
+                }
+                for y in lo.y.floor() as usize..hi.y.ceil() as usize {
+                    for x in lo.x.floor() as usize..hi.x.ceil() as usize {
+                        let q = pos2(x as f32 + 0.5, y as f32 + 0.5);
+                        let edge = |p0: Pos2, p1: Pos2| {
+                            (p1 - p0).x * (q - p0).y - (p1 - p0).y * (q - p0).x
+                        };
+                        let (wa, wb, wc) = (
+                            edge(b.pos, c.pos) / area,
+                            edge(c.pos, a.pos) / area,
+                            edge(a.pos, b.pos) / area,
+                        );
+                        if wa < -1e-4 || wb < -1e-4 || wc < -1e-4 || x >= w || y >= h {
+                            continue;
+                        }
+                        let mut src = [0.0f32; 4];
+                        for (v, wt) in [(a, wa), (b, wb), (c, wc)] {
+                            for (k, ch) in v.color.to_array().iter().enumerate() {
+                                src[k] += f32::from(*ch) / 255.0 * wt;
+                            }
+                        }
+                        if let Some(t) = tex {
+                            let uv =
+                                a.uv.to_vec2() * wa + b.uv.to_vec2() * wb + c.uv.to_vec2() * wc;
+                            let tx = ((uv.x * t.size[0] as f32) as usize).min(t.size[0] - 1);
+                            let ty = ((uv.y * t.size[1] as f32) as usize).min(t.size[1] - 1);
+                            let texel = t.pixels[ty * t.size[0] + tx].to_array();
+                            for k in 0..4 {
+                                src[k] *= f32::from(texel[k]) / 255.0;
+                            }
+                        }
+                        let d = &mut px[y * w + x];
+                        for k in 0..3 {
+                            d[k] = src[k] + d[k] * (1.0 - src[3]);
+                        }
+                    }
+                }
+            }
+        }
+        let mut out = format!("P6\n{w} {h}\n255\n").into_bytes();
+        out.extend(
+            px.iter()
+                .flat_map(|p| p.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)),
+        );
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, out).unwrap();
     }
 
     fn tab_id(&self, title: &str) -> obs_engine::TabId {
@@ -1242,5 +1336,508 @@ mod a11y {
         let mut h = Harness::new();
         h.frames(2);
         assert!(h.tree.is_none());
+    }
+}
+
+mod text_comparison {
+    use super::*;
+    use crate::compare_view::{ABSENT, NOT_COMPARED};
+    use obs_engine::{Cell, Marks, TabId};
+
+    /// TB (Link set A) and a Text Comparison beside it in Link set A, comparing TB, HEB and
+    /// HNUM (the default: the first Bibles in Preferred order).
+    fn harness() -> (Harness, TabId, TabId) {
+        let mut h = Harness::new();
+        let tb = h.tab_id("TB");
+        h.shell.st.session.workspace.user_focused(tb);
+        h.shell
+            .run("tool.text_comparison", &json!({ "split": true }));
+        h.frames(2);
+        let cmp = h.tab_id("Text Comparison");
+        h.shell
+            .run("tab.link", &json!({ "tab": cmp.0, "set": "A" }));
+        h.frames(2);
+        (h, tb, cmp)
+    }
+
+    fn settle(h: &mut Harness, cmp: TabId) {
+        for _ in 0..400 {
+            h.paced_frame();
+            let pending = h.shell.st.tabs[&cmp]
+                .comparison
+                .as_ref()
+                .is_some_and(|v| v.has_pending());
+            if !pending {
+                h.frames(2);
+                return;
+            }
+        }
+        panic!("comparison never settled");
+    }
+
+    fn view(h: &Harness, cmp: TabId) -> &crate::compare_view::ComparisonView {
+        h.shell.st.tabs[&cmp].comparison.as_ref().unwrap()
+    }
+
+    fn pane_rect(h: &Harness, tab: TabId) -> Rect {
+        let tiles = &h.shell.tree.tiles;
+        tiles.rect(tiles.find_pane(&tab).unwrap()).unwrap()
+    }
+
+    /// Texts painted inside the comparison pane.
+    fn texts_in(h: &Harness, tab: TabId) -> Vec<String> {
+        let r = pane_rect(h, tab);
+        h.shapes
+            .iter()
+            .filter(|(s, _)| r.contains(s.center()))
+            .map(|(_, t)| t.clone())
+            .collect()
+    }
+
+    #[test]
+    fn gen_31_32_compares_kjv_and_a_hebrew_numbered_bible_on_the_same_rows() {
+        let (mut h, tb, cmp) = harness();
+        h.shell
+            .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:55" }));
+        settle(&mut h, cmp);
+        let v = view(&h, cmp);
+        assert_eq!(v.current_location(), Some(ge(31, 55)));
+        // The whole chapter, one block per Standard Verse.
+        assert_eq!(v.blocks.len(), 55);
+        assert_eq!(v.blocks[0].verse, ge(31, 1));
+        let row = |b: &obs_engine::VerseBlock, i: usize| b.cells[i].cell.clone();
+        let b = v.blocks.iter().find(|b| b.verse == ge(31, 55)).unwrap();
+        // TB 31:55 and HNUM 32:1 share the row; HEB (Gen 1 only) is absent.
+        assert!(matches!(row(b, 0), Cell::Text { natives, .. } if natives == [(ge(31, 55), 55)]));
+        assert_eq!(row(b, 1), Cell::Absent);
+        assert!(matches!(row(b, 2), Cell::Text { natives, .. } if natives == [(ge(32, 1), 1)]));
+        let texts = texts_in(&h, cmp);
+        for want in ["Genesis 31:55", "TB", "HEB", "HNUM", "32:1", ABSENT] {
+            assert!(texts.iter().any(|t| t == want), "{want:?} not in {texts:?}");
+        }
+
+        // Chapter 32 the same way: KJV 32:1 is HNUM 32:2.
+        h.shell
+            .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 32:1" }));
+        settle(&mut h, cmp);
+        let v = view(&h, cmp);
+        assert_eq!(v.blocks.len(), 32);
+        let b = &v.blocks[0];
+        assert_eq!(b.verse, ge(32, 1));
+        assert!(matches!(row(b, 2), Cell::Text { natives, .. } if natives == [(ge(32, 2), 2)]));
+        assert!(texts_in(&h, cmp).iter().any(|t| t == "32:2"));
+    }
+
+    #[test]
+    fn scrolling_the_comparison_drives_linked_bibles() {
+        let (mut h, tb, cmp) = harness();
+        h.shell.st.session.workspace.user_focused(tb);
+        h.shell
+            .run("resource.open", &json!({ "id": "heb-num", "split": true }));
+        h.frames(3);
+        let hn = h.tab_id("HNUM");
+        h.shell
+            .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:50" }));
+        settle(&mut h, cmp);
+        assert_eq!(view(&h, cmp).current_location(), Some(ge(31, 50)));
+        // Wheel over the comparison until its top row is Standard Gen 31:55.
+        let over = pane_rect(&h, cmp).center();
+        h.events.push(Event::PointerMoved(over));
+        let mut steps = 0;
+        while view(&h, cmp).current_location() != Some(ge(31, 55)) {
+            h.events.push(Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(0.0, -8.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers: Modifiers::NONE,
+            });
+            h.paced_frame();
+            steps += 1;
+            assert!(
+                steps < 600,
+                "stuck at {:?}",
+                view(&h, cmp).current_location()
+            );
+        }
+        let ws = &h.shell.st.session.workspace;
+        assert_eq!(ws.tab(cmp).unwrap().history.current(), Some(ge(31, 55)));
+        // The linked Bibles follow: TB to 31:55, HNUM to its own 32:1.
+        h.frames(3);
+        assert_eq!(location(&mut h, tb), Some(ge(31, 55)));
+        assert_eq!(location(&mut h, hn), Some(ge(32, 1)));
+        assert_eq!(view(&h, cmp).current_location(), Some(ge(31, 55)));
+    }
+
+    #[test]
+    fn chips_choose_the_base_and_differences_are_marked_against_it() {
+        let (mut h, tb, cmp) = harness();
+        h.shell
+            .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:10" }));
+        settle(&mut h, cmp);
+        let marks = |h: &Harness| -> Vec<Marks> {
+            let v = view(h, cmp);
+            let b = v.blocks.iter().find(|b| b.verse == ge(31, 10)).unwrap();
+            b.cells.iter().map(|c| c.marks.clone()).collect()
+        };
+        // HNUM's text at Standard 31:10 is its own 31:10 here (same words), so nothing differs.
+        let m = marks(&h);
+        assert_eq!(m[0], Marks::Base);
+        assert_eq!(m[1], Marks::None, "HEB is absent here");
+        assert_eq!(m[2], Marks::Diff(Default::default()));
+
+        // ☆ on the HNUM chip makes it the ★ base.
+        let r = pane_rect(&h, cmp);
+        let chip = h
+            .shapes
+            .iter()
+            .filter(|(s, t)| t == "HNUM" && r.contains(s.center()))
+            .map(|(s, _)| *s)
+            .min_by(|a, b| a.top().total_cmp(&b.top()))
+            .unwrap();
+        h.click(pos2(chip.left() - 9.0, chip.center().y));
+        let c = &h.shell.st.session.workspace.tab(cmp).unwrap().comparison;
+        assert_eq!(c.base.as_deref(), Some("heb-num"));
+        assert_eq!(marks(&h)[2], Marks::Base);
+        assert_eq!(marks(&h)[0], Marks::Diff(Default::default()));
+
+        // In chapter 32 the numbering differs, so the texts do: words are tinted.
+        h.shell
+            .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 32:3" }));
+        settle(&mut h, cmp);
+        let v = view(&h, cmp);
+        let b = v.blocks.iter().find(|b| b.verse == ge(32, 3)).unwrap();
+        assert!(matches!(&b.cells[0].marks, Marks::Diff(d) if !d.changed.is_empty()));
+
+        // The Hebrew Bible's rows are not compared with an English base.
+        h.shell
+            .run("tab.go", &json!({ "tab": cmp.0, "text": "Gen 1:1" }));
+        settle(&mut h, cmp);
+        let v = view(&h, cmp);
+        assert_eq!(v.blocks[0].cells[1].marks, Marks::NotCompared);
+        assert!(texts_in(&h, cmp).iter().any(|t| t == NOT_COMPARED));
+    }
+
+    #[test]
+    fn a_typed_range_shows_as_a_removable_chip() {
+        let (mut h, _, cmp) = harness();
+        h.shell.st.session.workspace.user_focused(cmp);
+        h.shell
+            .run("tab.go", &json!({ "tab": cmp.0, "text": "Gen 31:50-32:2" }));
+        settle(&mut h, cmp);
+        assert_eq!(view(&h, cmp).blocks.len(), 8);
+        let chip = texts_in(&h, cmp)
+            .into_iter()
+            .find(|t| t.ends_with('×') && t.len() > 2)
+            .unwrap_or_else(|| panic!("no range chip in {:?}", texts_in(&h, cmp)));
+        h.click_text(&chip);
+        assert_eq!(
+            h.shell
+                .st
+                .session
+                .workspace
+                .tab(cmp)
+                .unwrap()
+                .comparison
+                .range,
+            None
+        );
+        h.frames(2);
+        assert_eq!(view(&h, cmp).blocks.len(), 55);
+    }
+
+    const KJV_JN_3_16: &str = "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.";
+    const WEB_JN_3_16: &str = "For God so loved the world, that he gave his one and only Son, that whoever believes in him should not perish, but have eternal life.";
+
+    /// A Bible holding only John 3:16.
+    fn john(id: &str, abbrev: &str, text: &str) -> Arc<ReadingDoc> {
+        use obs_model::{
+            KeyScheme, Manifest, ParaStyle, ResourceBuilder, ResourceType, SpanKind,
+            TextAccumulator, UnitId, UnitKind,
+        };
+        let mut m = Manifest::new(id, abbrev, abbrev, ResourceType::Bible, "en");
+        m.key_schemes = vec![KeyScheme::Passage];
+        m.license = "LicenseRef-PD".into();
+        let mut b = ResourceBuilder::new(m);
+        let unit = UnitId::book(obs_scripture::Book::John);
+        let mut t = TextAccumulator::new();
+        let r = t.push(text);
+        b.add_unit(unit.clone(), UnitKind::BibleBook, None, t.into_string());
+        b.add_span(
+            &unit,
+            r.clone(),
+            SpanKind::Para {
+                style: ParaStyle::Prose,
+            },
+        );
+        b.add_verse(
+            &unit,
+            r,
+            obs_scripture::Verse::new(obs_scripture::Book::John, 3, 16),
+            16,
+        );
+        Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
+    }
+
+    /// The comparison narrowed to KJV and WEB at John 3:16.
+    fn kjv_web_harness() -> (Harness, TabId) {
+        let (mut h, _, cmp) = harness();
+        add_doc(&mut h.shell, john("kjv", "KJV", KJV_JN_3_16));
+        add_doc(&mut h.shell, john("web", "WEB", WEB_JN_3_16));
+        for id in ["test-bible", "heb-test", "heb-num"] {
+            h.shell
+                .run("compare.bible", &json!({ "tab": cmp.0, "id": id }));
+        }
+        h.shell
+            .run("tab.go", &json!({ "tab": cmp.0, "text": "Jn 3:16" }));
+        settle(&mut h, cmp);
+        (h, cmp)
+    }
+
+    #[test]
+    fn diff_marks_known_kjv_web_wording_differences_in_jn_3_16() {
+        let (h, cmp) = kjv_web_harness();
+        let v = view(&h, cmp);
+        let b = v
+            .blocks
+            .iter()
+            .find(|b| b.verse == obs_scripture::Verse::new(obs_scripture::Book::John, 3, 16))
+            .unwrap();
+        assert_eq!(b.cells.len(), 2);
+        assert_eq!(b.cells[0].marks, Marks::Base);
+        let Marks::Diff(d) = &b.cells[1].marks else {
+            panic!("{:?}", b.cells[1].marks)
+        };
+        let words: Vec<&str> = d.changed.iter().map(|r| &WEB_JN_3_16[r.clone()]).collect();
+        assert_eq!(words, ["one", "and", "whoever", "believes", "eternal"]);
+        assert_eq!(d.missing, [WEB_JN_3_16.find("Son").unwrap()]);
+        let texts = texts_in(&h, cmp);
+        assert!(texts.iter().any(|t| t == "KJV") && texts.iter().any(|t| t == "WEB"));
+    }
+
+    #[test]
+    fn unavailable_selected_bibles_keep_rows_and_retry_only_on_request() {
+        for (id, is_base) in [("heb-num", false), ("test-bible", true)] {
+            let (mut h, tb, cmp) = harness();
+            h.shell
+                .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:55" }));
+            let doc = h.shell.st.docs.remove(id).unwrap();
+            settle(&mut h, cmp);
+            assert_eq!(view(&h, cmp).blocks.last().unwrap().cells.len(), 3);
+            let errors = &h.shell.st.tabs[&cmp].comparison_errors;
+            assert_eq!(errors.len(), 1);
+            let error = errors[id].clone();
+            let message = if is_base {
+                "Base Bible unavailable — differences not shown:"
+            } else {
+                "Bible unavailable:"
+            };
+            assert!(
+                texts_in(&h, cmp)
+                    .iter()
+                    .any(|s| s.starts_with(message) && s.contains(&error))
+            );
+            assert!(h.find("Retry unavailable Bibles").is_some());
+            assert!(
+                texts_in(&h, cmp)
+                    .iter()
+                    .any(|s| s == &doc.manifest.abbreviation)
+            );
+            if is_base {
+                assert!(
+                    view(&h, cmp)
+                        .blocks
+                        .iter()
+                        .flat_map(|b| &b.cells)
+                        .all(|c| c.marks == Marks::None),
+                    "no diff against an unavailable base"
+                );
+            }
+            // Even if loading could now succeed, frames must retain the cached failure.
+            h.shell.st.docs.insert(id.to_string(), doc);
+            h.frames(4);
+            assert_eq!(h.shell.st.tabs[&cmp].comparison_errors[id], error);
+            assert!(texts_in(&h, cmp).iter().any(|s| s.starts_with(message)));
+            h.click_text("Retry unavailable Bibles");
+            settle(&mut h, cmp);
+            assert!(h.shell.st.tabs[&cmp].comparison_errors.is_empty());
+            assert!(!texts_in(&h, cmp).iter().any(|s| s.starts_with(message)));
+            let block = view(&h, cmp).blocks.last().unwrap();
+            assert_eq!(block.cells[0].marks, Marks::Base);
+            assert!(matches!(block.cells[2].marks, Marks::Diff(_)));
+        }
+    }
+
+    #[test]
+    fn comparison_publishes_visible_bible_text_and_reference_labels_to_accesskit() {
+        use egui::accesskit::Role;
+        let (mut h, cmp) = kjv_web_harness();
+        h.ctx.enable_accesskit();
+        settle(&mut h, cmp);
+        let tree = h.tree.as_ref().unwrap();
+        let nodes: std::collections::HashMap<_, _> =
+            tree.nodes.iter().map(|(id, n)| (*id, n)).collect();
+        let document = nodes
+            .values()
+            .find(|n| n.role() == Role::Document && n.label() == Some("Text Comparison"))
+            .unwrap();
+        let paragraphs: Vec<_> = document
+            .children()
+            .iter()
+            .filter_map(|id| nodes.get(id))
+            .filter(|n| n.role() == Role::Paragraph)
+            .collect();
+        assert!(
+            !paragraphs.is_empty() && paragraphs.len() < 36 * 2,
+            "only visible Verse rows published"
+        );
+        for (bible, text) in [("KJV", KJV_JN_3_16), ("WEB", WEB_JN_3_16)] {
+            let paragraph = paragraphs
+                .iter()
+                .find(|n| {
+                    n.label()
+                        .is_some_and(|s| s.starts_with(&format!("{bible} — John 3:16")))
+                })
+                .unwrap();
+            assert!(paragraph.bounds().is_some());
+            let runs: Vec<_> = paragraph
+                .children()
+                .iter()
+                .map(|id| nodes[id])
+                .filter(|n| n.role() == Role::TextRun)
+                .collect();
+            let shown: String = runs.iter().map(|n| n.value().unwrap()).collect();
+            assert_eq!(shown, text);
+            for run in runs {
+                assert_eq!(
+                    run.character_lengths().len(),
+                    run.value().unwrap().chars().count()
+                );
+                assert!(run.bounds().is_some());
+            }
+        }
+        h.shell
+            .run("tab.go", &json!({ "tab": cmp.0, "text": "Jn 3:1" }));
+        settle(&mut h, cmp);
+        assert!(
+            !h.tree
+                .as_ref()
+                .unwrap()
+                .nodes
+                .iter()
+                .any(|(_, n)| n.role() == Role::Paragraph
+                    && n.label().is_some_and(|s| s.contains("John 3:16")))
+        );
+    }
+
+    #[test]
+    fn comparison_body_labels_use_page_colours_for_every_theme_and_tone() {
+        fn check(
+            shape: &Shape,
+            body_top: f32,
+            pane: Rect,
+            palette: crate::Palette,
+            found: &mut Vec<String>,
+        ) {
+            match shape {
+                Shape::Vec(shapes) => {
+                    for s in shapes {
+                        check(s, body_top, pane, palette, found);
+                    }
+                }
+                Shape::Text(t) if pane.contains(t.pos) && t.pos.y > body_top => {
+                    let text = t.galley.text();
+                    let expected = if ["TB", "HEB", "HNUM"].contains(&text) {
+                        palette.ink
+                    } else {
+                        palette.verse_number
+                    };
+                    for section in &t.galley.job.sections {
+                        assert_eq!(
+                            t.override_text_color.unwrap_or(section.format.color),
+                            expected,
+                            "{text}"
+                        );
+                    }
+                    assert!(
+                        crate::palette::contrast(expected, palette.page) >= 4.5,
+                        "{text}"
+                    );
+                    found.push(text.to_string());
+                }
+                _ => {}
+            }
+        }
+        let (mut h, _, cmp) = harness();
+        for (_, theme, _) in obs_engine::Theme::ALL {
+            for os in [egui::Theme::Light, egui::Theme::Dark] {
+                h.os_theme = os;
+                h.shell.run("view.theme", &json!({ "value": theme }));
+                for (_, tone, _) in obs_engine::PageTone::ALL {
+                    h.shell.run("view.page_tone", &json!({ "value": tone }));
+                    let mut found = Vec::new();
+                    for passage in ["Gen 31:55", "Gen 1:1"] {
+                        h.shell
+                            .run("tab.go", &json!({ "tab": cmp.0, "text": passage }));
+                        settle(&mut h, cmp);
+                        let pane = pane_rect(&h, cmp);
+                        let top = h
+                            .shapes
+                            .iter()
+                            .filter(|(r, s)| {
+                                pane.contains(r.center())
+                                    && (s == "Genesis 31:55" || s == "Genesis 1:1")
+                            })
+                            .max_by(|a, b| a.0.top().total_cmp(&b.0.top()))
+                            .unwrap()
+                            .0
+                            .top();
+                        for clipped in &h.last_shapes {
+                            check(
+                                &clipped.shape,
+                                top - 1.0,
+                                pane,
+                                h.shell.st.palette,
+                                &mut found,
+                            );
+                        }
+                    }
+                    for want in ["TB", "HEB", "HNUM", "32:1", ABSENT, NOT_COMPARED] {
+                        assert!(
+                            found.iter().any(|s| s == want),
+                            "{theme}/{tone}/{os:?}: {want} missing"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Writes `target/previews/text-comparison-*.ppm` (the whole window, rasterized from the
+    /// real frame) when `UPDATE_PREVIEWS` is set.
+    #[test]
+    fn previews() {
+        if std::env::var_os("UPDATE_PREVIEWS").is_none() {
+            return;
+        }
+        let (mut h, tb, cmp) = harness();
+        h.shell
+            .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:55" }));
+        settle(&mut h, cmp);
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+        h.screenshot(&dir.join("text-comparison-gen-31-55.ppm"));
+        let (h, _) = kjv_web_harness();
+        h.screenshot(&dir.join("text-comparison-jn-3-16.ppm"));
+    }
+
+    /// ★ and ☆ are painted shapes: the chrome fonts lack them.
+    #[test]
+    fn chip_symbols_are_in_the_chrome_fonts() {
+        let h = Harness::new();
+        h.ctx.fonts_mut(|f| {
+            for s in ["×", "—", "+ Bible"] {
+                assert!(f.has_glyphs(&egui::FontId::proportional(12.0), s), "{s}");
+            }
+        });
     }
 }

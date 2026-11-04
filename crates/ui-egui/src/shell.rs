@@ -16,6 +16,7 @@ use obs_model::ResourceType;
 use obs_scripture::{Passage, RefStyle, Standard, Verse, format_passage};
 use serde_json::{Value, json};
 
+use crate::compare_view::{ComparisonBible, ComparisonView, comparison_pane, paint_star};
 use crate::doc::ReadingDoc;
 use crate::palette::Palette;
 use crate::pane::{AtlasTexture, reading_pane};
@@ -32,6 +33,10 @@ struct TabUi {
     error: Option<String>,
     /// A verse marked after a jump, and when the mark started.
     flash: Option<(Verse, f64)>,
+    /// A Text Comparison Tab's view.
+    comparison: Option<ComparisonView>,
+    /// Failed selected Bibles are retried only on request (or after removal/reselection).
+    comparison_errors: BTreeMap<String, String>,
 }
 
 /// How long a jump's flash lasts, in seconds.
@@ -757,6 +762,9 @@ impl State {
     fn opened(&mut self, tab: TabId) {
         let mut ui_state = TabUi::default();
         let kind = self.session.workspace.tab(tab).map(|t| t.kind.clone());
+        if kind == Some(TabKind::Tool(Tool::TextComparison)) {
+            ui_state.comparison = Some(ComparisonView::new(self.session.text));
+        }
         if let Some(TabKind::Resource(id)) = kind {
             match self.doc(&id) {
                 Ok(doc) => {
@@ -835,6 +843,7 @@ impl State {
             TabKind::Resource(_) => self.reading_body(&mut body, tab),
             TabKind::Library => self.library_body(&mut body, tab),
             TabKind::Guide(g) => placeholder(&mut body, g.title(), guide_ticket(g)),
+            TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
             TabKind::Tool(t) => placeholder(&mut body, t.title(), tool_ticket(t)),
         }
     }
@@ -876,6 +885,192 @@ impl State {
             } else if !following && ws.tab(tab).is_some_and(|t| t.history.current() != Some(at)) {
                 ws.scrolled(tab, at);
             }
+        }
+    }
+
+    /// Text Comparison: the Bible chips, then the Verse blocks. The view follows the Tab's
+    /// location (moved by its Link set or reference box) and scrolling it moves the Link set.
+    fn comparison_body(&mut self, ui: &mut Ui, tab: TabId) {
+        let Some(t) = self.session.workspace.tab(tab) else {
+            return;
+        };
+        let comparison = t.comparison.clone();
+        let location = t.history.current();
+        let bibles = comparison.bibles(&self.session.library);
+        let base = comparison.base_index(&bibles);
+        let Some(tab_ui) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        let mut errors = std::mem::take(&mut tab_ui.comparison_errors);
+        errors.retain(|id, _| bibles.contains(id));
+        let mut docs = Vec::new();
+        for id in &bibles {
+            let result = match errors.get(id) {
+                Some(error) => Err(error.clone()),
+                None => self.doc(id),
+            };
+            if let Err(error) = &result {
+                errors.insert(id.clone(), error.clone());
+            }
+            if let Some(entry) = self.session.library.get(id) {
+                docs.push(ComparisonBible {
+                    id: id.clone(),
+                    abbreviation: entry.manifest.abbreviation.clone(),
+                    language: entry.manifest.language.clone(),
+                    doc: result,
+                });
+            }
+        }
+        let extent = location.map(|v| comparison.extent(v)).unwrap_or_default();
+        self.comparison_chips(ui, tab, &comparison, &bibles, base);
+        if !errors.is_empty() && ui.button("Retry unavailable Bibles").clicked() {
+            errors.clear();
+        }
+        let palette = self.palette;
+        let Some(tab_ui) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        tab_ui.comparison_errors = errors;
+        let Some(view) = tab_ui.comparison.as_mut() else {
+            return;
+        };
+        view.set_settings(self.session.text);
+        view.set(docs, base, comparison.differences, extent);
+        if location != view.synced {
+            if let Some(v) = location {
+                view.jump_to(v);
+            }
+            view.synced = location;
+        }
+        let out = comparison_pane(ui, view, &mut self.atlas, &palette);
+        if out.user_moved
+            && let Some(v) = view.current_location()
+            && Some(v) != view.synced
+        {
+            view.synced = Some(v);
+            self.session.workspace.user_scrolled(tab, v);
+        }
+    }
+
+    /// The chips under a Text Comparison header: one per Bible (☆ makes it the ★ base, ×
+    /// removes it), + Bible, Show differences, and the typed range's removable chip.
+    fn comparison_chips(
+        &mut self,
+        ui: &mut Ui,
+        tab: TabId,
+        comparison: &obs_engine::Comparison,
+        bibles: &[String],
+        base: Option<usize>,
+    ) {
+        let mut run: Option<(&'static str, Value)> = None;
+        let abbrev = |id: &str| {
+            self.session
+                .library
+                .get(id)
+                .map_or_else(|| id.to_string(), |e| e.manifest.abbreviation.clone())
+        };
+        let others: Vec<(String, String)> = self
+            .session
+            .library
+            .of_type(ResourceType::Bible)
+            .filter(|e| !bibles.contains(&e.manifest.resource_id))
+            .map(|e| {
+                (
+                    e.manifest.resource_id.clone(),
+                    format!("{} — {}", e.manifest.abbreviation, e.manifest.title),
+                )
+            })
+            .collect();
+        egui::Frame::new()
+            .fill(theme::c().surface)
+            .inner_margin(egui::Margin::symmetric(10, 5))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    let small = |s: &str| {
+                        egui::Button::new(RichText::new(s).size(12.0))
+                            .frame(false)
+                            .min_size(vec2(16.0, 20.0))
+                    };
+                    for (i, id) in bibles.iter().enumerate() {
+                        egui::Frame::new()
+                            .fill(theme::c().field)
+                            .stroke(Stroke::new(1.0, theme::c().rule))
+                            .corner_radius(11.0)
+                            .inner_margin(egui::Margin::symmetric(6, 0))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 2.0;
+                                    let (rect, r) = ui.allocate_exact_size(
+                                        vec2(16.0, 20.0),
+                                        egui::Sense::click(),
+                                    );
+                                    let color = if r.hovered() || Some(i) == base {
+                                        theme::c().lapis
+                                    } else {
+                                        theme::c().muted
+                                    };
+                                    paint_star(
+                                        ui.painter(),
+                                        rect.center(),
+                                        6.0,
+                                        Some(i) == base,
+                                        color,
+                                    );
+                                    if r.on_hover_text("Compare the others with this Bible")
+                                        .clicked()
+                                    {
+                                        run = Some((
+                                            "compare.base",
+                                            json!({ "tab": tab.0, "id": id }),
+                                        ));
+                                    }
+                                    ui.label(RichText::new(abbrev(id)).size(12.5));
+                                    if ui.add(small("×")).on_hover_text("Remove").clicked() {
+                                        run = Some((
+                                            "compare.bible",
+                                            json!({ "tab": tab.0, "id": id }),
+                                        ));
+                                    }
+                                });
+                            });
+                    }
+                    ui.menu_button(RichText::new("+ Bible").size(12.5), |ui| {
+                        if others.is_empty() {
+                            ui.label(RichText::new("Every Bible is shown").color(theme::c().muted));
+                        }
+                        for (id, label) in &others {
+                            if ui.button(label).clicked() {
+                                run = Some(("compare.bible", json!({ "tab": tab.0, "id": id })));
+                                ui.close();
+                            }
+                        }
+                    });
+                    let mut differences = comparison.differences;
+                    if ui
+                        .checkbox(&mut differences, RichText::new("Differences").size(12.5))
+                        .clicked()
+                    {
+                        run = Some(("compare.differences", json!({ "tab": tab.0 })));
+                    }
+                    if let Some(range) = comparison.range {
+                        let text = format_passage(range, &Standard, RefStyle::Short);
+                        if ui
+                            .add(
+                                egui::Button::new(RichText::new(format!("{text}  ×")).size(12.5))
+                                    .corner_radius(11.0),
+                            )
+                            .on_hover_text("Show the whole chapter")
+                            .clicked()
+                        {
+                            run = Some(("compare.clear_range", json!({ "tab": tab.0 })));
+                        }
+                    }
+                });
+            });
+        if let Some((id, params)) = run {
+            self.run(id, &params);
         }
     }
 
