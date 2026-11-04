@@ -38,7 +38,9 @@ pub trait Job: Send + 'static {
     fn step(&mut self, ctx: &JobContext) -> Result<Step, String>;
 }
 
-/// Handed to every step: report progress, check cancellation.
+/// Handed to every step: report progress, check cancellation. Clones report for the same
+/// job (e.g. from a download callback).
+#[derive(Clone)]
 pub struct JobContext {
     id: JobId,
     cancel: Arc<AtomicBool>,
@@ -372,6 +374,22 @@ impl Drop for JobQueue {
     }
 }
 
+/// A SWORD installer for a job: every byte goes through `fetch`; download progress is the
+/// job's progress, and cancelling the job stops the transfer.
+pub fn sword_installer(
+    fetch: std::sync::Arc<dyn obs_formats::sword_repo::Fetch>,
+    ctx: &JobContext,
+) -> obs_formats::sword_repo::Installer {
+    let ctx = ctx.clone();
+    obs_formats::sword_repo::installer(
+        fetch,
+        Arc::new(move |done, total| {
+            ctx.progress(done, total.unwrap_or(0));
+            !ctx.is_cancelled()
+        }),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -555,5 +573,63 @@ mod tests {
         });
         std::thread::sleep(Duration::from_millis(5));
         drop(q); // must not hang
+    }
+
+    /// Streams forever in 1 KiB chunks until the progress callback says stop.
+    #[derive(Debug)]
+    struct Endless;
+    impl obs_formats::sword_repo::Fetch for Endless {
+        fn get(
+            &self,
+            _: &str,
+            progress: obs_formats::sword_repo::Progress<'_>,
+        ) -> Result<Vec<u8>, obs_formats::sword_repo::FetchError> {
+            let mut done = 0;
+            loop {
+                done += 1024;
+                if !progress(done, None) {
+                    return Err(obs_formats::sword_repo::FetchError::Cancelled);
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+    }
+
+    #[test]
+    fn sword_installer_reports_download_progress_and_stops_when_the_job_is_cancelled() {
+        let q = JobQueue::threaded(1);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let id = q.submit_fn("download", move |ctx| {
+            let inst = sword_installer(Arc::new(Endless), ctx);
+            let _ = tx.send(());
+            let repo = obs_formats::sword_repo::Repository::from_url(
+                "Mock",
+                "https://example.invalid/sword",
+            )
+            .map_err(|e| e.to_string())?;
+            match inst.catalog(&repo) {
+                Err(e) if obs_formats::sword_repo::is_cancelled(&e) => Err("cancelled".into()),
+                Err(e) => Err(e.to_string()),
+                Ok(_) => Ok(()),
+            }
+        });
+        rx.recv_timeout(WAIT).unwrap();
+        let mut saw_progress = false;
+        while let Some(e) = q.wait_event(WAIT) {
+            if e.id == id && matches!(e.kind, JobEventKind::Progress { done, .. } if done > 0) {
+                saw_progress = true;
+                break;
+            }
+        }
+        assert!(saw_progress);
+        assert!(q.cancel(id));
+        let events = events_until_done(&q, id);
+        assert!(
+            matches!(
+                events.last(),
+                Some(JobEventKind::Cancelled | JobEventKind::Failed(_))
+            ),
+            "{events:?}"
+        );
     }
 }

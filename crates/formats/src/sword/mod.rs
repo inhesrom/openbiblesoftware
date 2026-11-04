@@ -19,6 +19,7 @@
 
 mod gbf;
 mod osis;
+pub mod repo;
 mod thml;
 mod writer;
 mod xml;

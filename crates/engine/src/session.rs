@@ -52,6 +52,9 @@ pub struct Session {
     pub user: Option<Box<dyn UserData>>,
     /// The Last session as last written, to skip writes that change nothing.
     saved_session: Option<String>,
+    /// How SWORD repositories are reached (#91). The app installs its network transport;
+    /// until then only local `file://` repositories answer.
+    fetch: std::sync::Arc<dyn obs_formats::sword_repo::Fetch>,
 }
 
 impl Session {
@@ -73,7 +76,19 @@ impl Session {
             log: Vec::new(),
             user: None,
             saved_session: None,
+            fetch: std::sync::Arc::new(obs_formats::sword_repo::LocalFetch),
         }
+    }
+
+    /// Install the app's transport for SWORD repositories (Get Bibles, #91). The engine
+    /// never opens network connections itself.
+    pub fn set_fetch(&mut self, fetch: std::sync::Arc<dyn obs_formats::sword_repo::Fetch>) {
+        self.fetch = fetch;
+    }
+
+    /// The transport for SWORD repositories, for handing to a job.
+    pub fn fetch(&self) -> std::sync::Arc<dyn obs_formats::sword_repo::Fetch> {
+        std::sync::Arc::clone(&self.fetch)
     }
 
     pub fn commands(&self) -> &CommandRegistry {

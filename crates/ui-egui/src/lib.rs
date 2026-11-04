@@ -116,6 +116,13 @@ impl App {
         }
     }
 
+    /// Hand the engine the app's transport for SWORD repositories (Get Bibles, #91). Without
+    /// one, only local `file://` repositories answer.
+    pub fn with_fetch(mut self, fetch: std::sync::Arc<dyn obs_engine::sword_repo::Fetch>) -> Self {
+        self.shell.session_mut().set_fetch(fetch);
+        self
+    }
+
     /// Smoke-check automation. `OBS_SCRIPT="frame command {json}; …"` runs commands through
     /// the registry at the given frames (a `"tab": "focused"` parameter means the focused
     /// Tab). `OBS_SHOT=out.ppm` saves a screenshot at `OBS_SHOT_FRAME` (default 60) and closes.
