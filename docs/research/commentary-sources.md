@@ -15,7 +15,7 @@
 - **Wikisource MHC is complete.** The "volumes 1–3 and 6" worry in #20 is out of date: the table of contents now lists all six volumes, and every Bible book has full text. The fallback (Matthew Henry's *Concise*) is not needed and was not evaluated further.
 - **Wikisource got its MHC text from CCEL.** The work's talk page gives "Source: Christian Classics Ethereal Library". We take no CCEL-hosted file, and Wikisource tags the work `{{PD-old}}`, so it passes the gate as written. But this is the main risk of this spike (see [Risks](#risks)).
 - **JFB has a clean non-CCEL host.** Third Millennium Ministries (thirdmill.org) serves the editor's own 75-file archive. The edition says on every page that it "is in the public domain", and its notice adds "may be freely used and distributed". The Internet Archive's 2012 capture matches the live file byte for byte.
-- Neither source is added to `starter/sources.toml` here; that is #44's job, together with the converters. The [proposed lock entries](#proposed-lock-entries) are checked against the provenance gate by the test `the_proposed_commentary_lock_entries_pass_the_provenance_gate`.
+- Both sources are now in `starter/sources.toml` (#44), checked by `the_real_lock_passes_the_provenance_gate`.
 
 ## Matthew Henry's Commentary on the Whole Bible
 
@@ -81,46 +81,9 @@ The pinned revisions were fetched one by one (`index.php?oldid=…&action=raw`, 
 
 ## Proposed lock entries
 
-For #44 to add to `starter/sources.toml` with the converters. The importer names are proposals; the provenance-gate test checks everything else in these entries (evidence names the sha256, no CCEL host, required fields filled).
+Implemented by #44 in `starter/sources.toml`. The provenance gate checks the importer names, evidence hashes, hosts and required fields. See [converter verification](../dev/starter-study-converters.md) for build results and the source repairs.
 
-<!-- proposed-lock: read by xtask/src/starter/tests.rs -->
-```toml
-[[source]]
-resource_id = "mhc"
-importer = "wikisource-mhc"
-url = "https://web.archive.org/web/20261103225156id_/https://en.wikisource.org/w/api.php?action=query&generator=allpages&gapprefix=Matthew+Henry%27s+Commentary+on+the+Whole+Bible&gaplimit=max&export=1&exportnowrap=1"
-origin_url = "https://en.wikisource.org/w/api.php?action=query&generator=allpages&gapprefix=Matthew+Henry%27s+Commentary+on+the+Whole+Bible&gaplimit=max&export=1&exportnowrap=1"
-sha256 = "149a9a9fe7bfef10ab4d3ae99662051fe90a19243e53735ce85f323db30e0934"
-title = "Matthew Henry's Commentary on the Whole Bible"
-abbreviation = "MHC"
-language = "en"
-edition = "Complete (1706-1721), English Wikisource transcription, 134 pages, revisions to 2022-12-23 (export captured 2026-11-03)"
-publisher = "Wikisource"
-homepage = "https://en.wikisource.org/wiki/Matthew_Henry%27s_Commentary_on_the_Whole_Bible"
-spdx = "LicenseRef-PublicDomain"
-attribution = "Matthew Henry, An Exposition of the Old and New Testament (1706-1721), Romans to Revelation completed by other ministers from his notes. Public domain. Transcription from Wikisource, which took its text from the Christian Classics Ethereal Library."
-changes = "Converted from Wikisource wikitext to the Open Bible resource format. The commentary text is unchanged; wiki templates, links and page navigation are replaced by plain text and Bible reference spans. Luke 18:9-43 is missing from the source."
-provenance = "Wikisource tags the work {{PD-old}} (archived 2026-11-03): published before 1931, author died more than 100 years ago."
-evidence = "evidence/mhc.md"
-
-[[source]]
-resource_id = "jfb"
-importer = "jfb-html"
-url = "https://web.archive.org/web/20120504083056id_/http://thirdmill.org/files/english/texts/JFB/JFB-UPD3.zip"
-origin_url = "https://thirdmill.org/files/english/texts/JFB/JFB-UPD3.zip"
-sha256 = "b242392883f5f26a8e0a8cfc4995e9cdb73fa165d9dd754b057ce039c8f258ec"
-title = "Commentary Critical and Explanatory on the Whole Bible"
-abbreviation = "JFB"
-language = "en"
-edition = "Jamieson, Fausset and Brown (1871), expanded electronic edition by Ernie Stefanik from Woodside Bible Fellowship's scan (JFB-UPD3.zip, last updated 2001-01-25)"
-publisher = "Third Millennium Ministries (host)"
-homepage = "https://thirdmill.org/files/english/texts/JFB/JFB00.htm"
-spdx = "LicenseRef-PublicDomain"
-attribution = "Robert Jamieson, A. R. Fausset and David Brown, Commentary Critical and Explanatory on the Whole Bible (1871). Expanded electronic edition prepared from text scanned by Woodside Bible Fellowship, edited by Ernie Stefanik. This expanded electronic edition is in the public domain."
-changes = "Converted from HTML to the Open Bible resource format. The commentary text is unchanged; page navigation and the Bible Gateway links are dropped, and each linked reference is kept as a Bible reference span."
-provenance = "The edition's own notice inside the pinned zip (JFB00H.htm): in the public domain and may be freely used and distributed."
-evidence = "evidence/jfb.md"
-```
+Entries now live in [`starter/sources.toml`](../../starter/sources.toml); the real-lock provenance test checks them.
 
 ## Recommended importer shape for #44
 
@@ -142,7 +105,7 @@ Both converters write a Commentary through `ResourceBuilder`, Keyed by Passage i
 3. Every `bible.gospelcom.net/bible?…passage=` link becomes a Bible reference span from its `passage` parameter (already OnLine Bible abbreviations, e.g. `Pr 19:9`), so no prose parsing is needed. Drop the URL itself.
 4. Markup: `<B>`, `<I>`, `<FONT SIZE=-1>` small caps, `&nbsp;` indents, `<P>`/`<BR>` paragraphs. Drop the navigation table and the public-domain banner (the notice is shown in About instead).
 
-**Lock and gate:** add `wikisource-mhc` and `jfb-html` to `lock::IMPORTERS` and the `build_one` match, move the two entries above into `starter/sources.toml`, add `mhc` and `jfb` to `the_real_lock_passes_the_provenance_gate`, and delete `the_proposed_commentary_lock_entries_pass_the_provenance_gate` together with the `proposed-lock` block here.
+**Lock and gate:** #44 registers `wikisource-mhc` and `jfb-html` in `lock::IMPORTERS` and `build_one`, and checks their real lock entries in `the_real_lock_passes_the_provenance_gate`. The temporary proposed-entry test and block have been removed.
 
 ## Risks
 

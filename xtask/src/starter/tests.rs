@@ -260,6 +260,10 @@ fn the_real_lock_passes_the_provenance_gate() {
             "strongs-greek",
             "bdb",
             "abbott-smith",
+            "mhc",
+            "jfb",
+            "easton",
+            "smith",
         ]
     );
 }
@@ -444,46 +448,303 @@ fn no_tipnr_description_text_appears_in_the_built_obr() {
     assert!(checked > 50, "only {checked} description texts checked");
 }
 
-/// The MHC and JFB lock entries proposed by the #39 commentary-source spike, read from its
-/// findings note. #44 moves them into `starter/sources.toml` with the converters and deletes
-/// this test.
+/// Golden text/spans from the real pinned editions, round-tripped through `.obr`.
+/// No network: small excerpts are checked in alongside their source/evidence notes.
 #[test]
-fn the_proposed_commentary_lock_entries_pass_the_provenance_gate() {
+fn study_golden_sections_open_by_passage_and_dictionary_alias() {
+    use obs_formats::{
+        DictionaryData, StudyImport, import_dictionary, import_jfb_book, import_mhc,
+    };
+    use obs_model::{Key, Manifest, ResourceType, SpanKind};
+    use obs_scripture::{Book, Standard, parse_reference};
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let note = std::fs::read_to_string(root.join("docs/research/commentary-sources.md")).unwrap();
-    let entries = note
-        .split_once("<!-- proposed-lock")
-        .and_then(|(_, rest)| rest.split_once("```toml\n"))
-        .and_then(|(_, rest)| rest.split_once("```"))
-        .map(|(entries, _)| entries)
-        .expect("the findings note has a proposed-lock toml block");
-    let proposed: Lock = toml::from_str(&format!("size_budget_mb = 400\n{entries}")).unwrap();
-    let ids: Vec<&str> = proposed
+    let fixtures = root.join("crates/formats/tests/fixtures/study");
+    let bytes = |name: &str| std::fs::read(fixtures.join(name)).unwrap();
+    let text = |name: &str| std::fs::read_to_string(fixtures.join(name)).unwrap();
+    let dir = scratch("study-goldens");
+    for id in ["mhc", "jfb", "easton", "smith"] {
+        let commentary = matches!(id, "mhc" | "jfb");
+        let mut import = StudyImport::new(Manifest::new(
+            id,
+            id,
+            id,
+            if commentary {
+                ResourceType::Commentary
+            } else {
+                ResourceType::Dictionary
+            },
+            "en",
+        ));
+        match id {
+            "mhc" => import_mhc(&mut import, &text("mhc.xml")).unwrap(),
+            "jfb" => {
+                import_jfb_book(&mut import, Book::Genesis, &text("jfb-genesis-1.htm")).unwrap()
+            }
+            "easton" => import_dictionary(
+                &mut import,
+                DictionaryData::Easton {
+                    index: &bytes("easton.idx"),
+                    data: &bytes("easton.dat"),
+                    block_index: &bytes("easton.zdx"),
+                    blocks: &bytes("easton.zdt"),
+                },
+            )
+            .unwrap(),
+            "smith" => import_dictionary(
+                &mut import,
+                DictionaryData::Smith {
+                    index: &bytes("smith.idx"),
+                    data: &bytes("smith.dat"),
+                },
+            )
+            .unwrap(),
+            _ => unreachable!(),
+        }
+        let (resource, _) = import.finish().unwrap();
+        let path = dir.join(format!("{id}.obr"));
+        write_obr(&resource, &path).unwrap();
+        let reader = ObrReader::open(&path).unwrap();
+        assert_eq!(reader.load().unwrap(), resource);
+        let key = if commentary {
+            Key::Passage(
+                parse_reference(
+                    if id == "mhc" { "Gen 1:1-2" } else { "Gen 1:1" },
+                    &Standard,
+                    None,
+                )
+                .unwrap()
+                .passages()[0],
+            )
+        } else {
+            Key::Headword("Abraham".into())
+        };
+        let hit = reader.lookup_key(&key).unwrap().remove(0);
+        let unit = reader.unit(&hit.unit).unwrap().unwrap();
+        assert!(
+            unit.spans
+                .iter()
+                .any(|s| matches!(s.kind, SpanKind::ScriptureRef { .. })),
+            "{id}"
+        );
+        if id == "easton" {
+            let blocks = obs_layout::unit_blocks(&unit);
+            assert_eq!(blocks[0].kind, obs_layout::BlockKind::Heading(2));
+            assert_eq!(&unit.text[blocks[0].range.clone()], "Abraham");
+        }
+        if id == "jfb" {
+            let lines: Vec<_> = unit.text.lines().collect();
+            assert_eq!(lines.len(), 5);
+            assert_study_layout_lines(&unit, obs_model::ParaStyle::Prose, &lines);
+        }
+        let actual = serde_json::to_string_pretty(&unit).unwrap() + "\n";
+        let golden = fixtures.join(format!("golden-{id}.json"));
+        if std::env::var_os("UPDATE_STUDY_GOLDENS").is_some() {
+            std::fs::write(&golden, &actual).unwrap();
+        }
+        assert_eq!(actual, std::fs::read_to_string(golden).unwrap(), "{id}");
+        if !commentary {
+            let aliases = reader.lookup_key(&Key::Headword("Abram".into())).unwrap();
+            assert!(aliases.iter().any(|k| k.alias && k.unit == unit.id), "{id}");
+            assert!(
+                aliases
+                    .iter()
+                    .any(|k| !k.alias && k.unit.as_str() == "Abram"),
+                "original short entry stays"
+            );
+        }
+    }
+}
+
+/// Wide layout must still keep each explicit source line in its own styled block.
+fn assert_study_layout_lines(
+    unit: &obs_model::TextUnit,
+    style: obs_model::ParaStyle,
+    lines: &[&str],
+) {
+    use obs_layout::{BlockKind, TextSettings, block_paragraph, layout, unit_blocks};
+    let blocks = unit_blocks(unit);
+    assert_eq!(blocks.len(), lines.len(), "{}", unit.text);
+    for (block, expected) in blocks.iter().zip(lines) {
+        assert_eq!(block.kind, BlockKind::Paragraph(style));
+        assert_eq!(&unit.text[block.range.clone()], *expected);
+        let paragraph = block_paragraph(
+            unit,
+            block,
+            obs_model::Direction::Ltr,
+            &TextSettings::default(),
+        );
+        let laid = layout(&paragraph, 100_000.0, obs_fonts::ShapeCache::shared());
+        assert_eq!(laid.lines.len(), 1);
+        assert_eq!(laid.text, *expected);
+    }
+}
+
+#[test]
+fn study_jfb_explicit_breaks_remain_separate_lines_at_wide_layout() {
+    use obs_formats::{StudyImport, import_jfb_book};
+    use obs_model::{Manifest, ParaStyle, ResourceType};
+    let mut import = StudyImport::new(Manifest::new(
+        "jfb",
+        "JFB",
+        "JFB",
+        ResourceType::Commentary,
+        "en",
+    ));
+    import_jfb_book(
+        &mut import,
+        obs_scripture::Book::Genesis,
+        r#"<A NAME="Ge1_1"> </A><p><br><b>First line<br>Second line</b><br><br>Third line<br></p>"#,
+    )
+    .unwrap();
+    let (resource, _) = import.finish().unwrap();
+    assert_study_layout_lines(
+        &resource.units[0],
+        ParaStyle::Prose,
+        &["First line", "Second line", "Third line"],
+    );
+    // Inline formatting remains intact even when its range crosses a block boundary.
+    let bold = resource.units[0]
+        .spans
+        .iter()
+        .find(|s| matches!(s.kind, obs_model::SpanKind::Bold))
+        .unwrap();
+    assert_eq!(
+        &resource.units[0].text[bold.range()],
+        "First line\nSecond line"
+    );
+}
+
+#[test]
+fn study_mhc_poetry_retains_style_and_two_lines_at_wide_layout() {
+    use obs_formats::{StudyImport, import_mhc};
+    use obs_model::{Manifest, ParaStyle, ResourceType};
+    let mut import = StudyImport::new(Manifest::new(
+        "mhc",
+        "MHC",
+        "MHC",
+        ResourceType::Commentary,
+        "en",
+    ));
+    import_mhc(&mut import, r#"<mediawiki><page><title>MHC/Volume 1/Genesis/Chapter 1</title><revision><text>==Verses 1-2==
+&lt;poem&gt;First line
+Second line&lt;/poem&gt;
+</text></revision></page></mediawiki>"#).unwrap();
+    let (resource, _) = import.finish().unwrap();
+    assert_study_layout_lines(
+        &resource.units[0],
+        ParaStyle::Poetry1,
+        &["First line", "Second line"],
+    );
+}
+
+/// Full-edition coverage, Standard reference validation and byte determinism. Explicitly run
+/// after `xtask starter` populates the pinned cache; CI's offline tests use the goldens above.
+#[test]
+#[ignore = "requires the full pinned Starter downloads in target/starter-cache"]
+fn pinned_study_editions_have_complete_coverage_and_stable_bytes() {
+    use obs_model::{Key, SpanKind};
+    use obs_scripture::{Book, Standard, Verse, Versification};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let config = Config::defaults(root);
+    let lock = Lock::load(&config.lock).unwrap();
+    let dir = scratch("study-full");
+    for source in lock
         .sources
         .iter()
-        .map(|s| s.resource_id.as_str())
-        .collect();
-    assert_eq!(ids, ["mhc", "jfb"]);
-
-    // Check them next to the real entries, so ids must not collide either.
-    let config = Config::defaults(root);
-    let mut lock_file = Lock::load(&config.lock).unwrap();
-    lock_file.sources.extend(proposed.sources);
-    let changes = IdChanges::load(&config.id_changes).unwrap();
-    let err = lock::check(&lock_file, config.lock.parent().unwrap(), &changes)
-        .unwrap_err()
-        .to_string();
-    // The converters are #44's work; everything else must already pass the gate.
-    let problems: Vec<&str> = err.lines().skip(1).map(str::trim).collect();
-    assert_eq!(problems.len(), 2, "{err}");
-    assert!(
-        problems[0].starts_with("mhc: unknown importer `wikisource-mhc`"),
-        "{err}"
-    );
-    assert!(
-        problems[1].starts_with("jfb: unknown importer `jfb-html`"),
-        "{err}"
-    );
+        .filter(|s| matches!(s.resource_id.as_str(), "mhc" | "jfb" | "easton" | "smith"))
+    {
+        let bytes =
+            std::fs::read(config.cache.join(&source.sha256)).expect("run xtask starter first");
+        assert_eq!(sha256_hex(&bytes), source.sha256);
+        let files = vec![bytes];
+        let built = build_one(source, &files, None, &IdChanges::default()).unwrap();
+        let resource = built.resource;
+        let id = &source.resource_id;
+        for unit in &resource.units {
+            for span in &unit.spans {
+                if let SpanKind::ScriptureRef { targets } = &span.kind {
+                    for p in targets.iter() {
+                        assert!(
+                            Standard.contains(p.start()) && Standard.contains(p.end()),
+                            "{id}: {p}"
+                        );
+                    }
+                }
+            }
+        }
+        if matches!(id.as_str(), "mhc" | "jfb") {
+            let chapters: BTreeSet<_> = resource
+                .keys
+                .iter()
+                .filter(|k| !k.unit.as_str().ends_with(".book-intro"))
+                .filter_map(|k| match k.key {
+                    Key::Passage(p) => Some((p.start().book, p.start().chapter)),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(chapters.len(), 1189, "{id}");
+            assert_eq!(
+                chapters
+                    .iter()
+                    .map(|(b, _)| b)
+                    .collect::<BTreeSet<_>>()
+                    .len(),
+                66
+            );
+            let covered: BTreeSet<_> = resource
+                .keys
+                .iter()
+                .filter(|k| !k.unit.as_str().contains("intro"))
+                .flat_map(|k| match k.key {
+                    Key::Passage(p) => p
+                        .verses(&Standard)
+                        .filter(|v| v.verse > 0)
+                        .collect::<Vec<_>>(),
+                    _ => vec![],
+                })
+                .collect();
+            if id == "jfb" {
+                assert_eq!(
+                    covered.len(),
+                    31102,
+                    "missing {:?}",
+                    Standard
+                        .verses()
+                        .filter(|v| v.verse > 0 && !covered.contains(v))
+                        .collect::<Vec<_>>()
+                );
+            } else {
+                assert_eq!(covered.len(), 31061);
+                for v in 9..=43 {
+                    assert!(!covered.contains(&Verse::new(Book::Luke, 18, v)));
+                }
+                assert!(
+                    resource
+                        .manifest
+                        .changes
+                        .as_deref()
+                        .unwrap()
+                        .contains("Luke 18:9-43")
+                );
+                assert!(
+                    resource
+                        .manifest
+                        .attribution
+                        .contains("Christian Classics Ethereal Library")
+                );
+            }
+        }
+        let first = dir.join(format!("{id}-a.obr"));
+        let second = dir.join(format!("{id}-b.obr"));
+        write_obr(&resource, &first).unwrap();
+        let rebuilt = build_one(source, &files, None, &IdChanges::default()).unwrap();
+        write_obr(&rebuilt.resource, &second).unwrap();
+        assert_eq!(
+            std::fs::read(first).unwrap(),
+            std::fs::read(second).unwrap(),
+            "{id}"
+        );
+    }
 }
 
 /// Write a lock with the six Lexicon fixtures (excerpts of the real sources) and their evidence.
