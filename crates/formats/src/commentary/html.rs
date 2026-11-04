@@ -116,17 +116,55 @@ pub(super) fn render(source: &str, context: Option<Verse>, report: &mut ImportRe
         }
     }
     references::annotate_prose(&mut out, context);
-    // Wiki line breaks have no <p> wrapper. Keep paragraph boundaries for layout/Search.
+    // Layout treats each structural span as one block, not its embedded newlines.
+    // Split explicit breaks without losing paragraph/poetry style or inline spans.
+    let spans = std::mem::take(&mut out.spans);
+    for (range, kind) in spans {
+        if matches!(kind, SpanKind::Para { .. }) {
+            let mut start = range.start;
+            for line in out.text[range].split_inclusive('\n') {
+                let end = start + line.trim_end_matches('\n').len();
+                if end > start {
+                    out.spans.push((start..end, kind.clone()));
+                }
+                start += line.len();
+            }
+        } else {
+            out.spans.push((range, kind));
+        }
+    }
+    // Wiki line breaks may have no <p> wrapper. Fill only uncovered text: fallback
+    // prose overlapping a heading would hide that heading in unit_blocks.
+    let mut covered: Vec<_> = out
+        .spans
+        .iter()
+        .filter_map(|(range, kind)| {
+            matches!(kind, SpanKind::Para { .. } | SpanKind::Heading { .. })
+                .then_some(range.clone())
+        })
+        .collect();
+    covered.sort_by_key(|range| range.start);
     let mut start = 0;
     for line in out.text.split_inclusive('\n') {
         let end = start + line.trim_end_matches('\n').len();
-        if end > start
-            && !out.spans.iter().any(|(r, k)| {
-                matches!(k, SpanKind::Para { .. }) && r.start <= start && r.end >= end
-            })
+        let mut cursor = start;
+        for range in covered
+            .iter()
+            .filter(|range| range.start < end && range.end > start)
         {
+            if cursor < range.start {
+                out.spans.push((
+                    cursor..range.start,
+                    SpanKind::Para {
+                        style: ParaStyle::Prose,
+                    },
+                ));
+            }
+            cursor = cursor.max(range.end);
+        }
+        if cursor < end {
             out.spans.push((
-                start..end,
+                cursor..end,
                 SpanKind::Para {
                     style: ParaStyle::Prose,
                 },

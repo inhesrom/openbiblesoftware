@@ -4195,6 +4195,7 @@ dependencies = [
  "cargo_metadata",
  "flate2",
  "globset",
+ "obs-fonts",
  "obs-formats",
  "obs-layout",
  "obs-model",

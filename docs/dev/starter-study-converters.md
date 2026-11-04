@@ -49,15 +49,15 @@ cargo xtask bench
 Rebased onto #41 (`1bc035f`); combined lock includes OpenBible.info, TIPNR and six Lexicons.
 All passed locally again, including the wasm check (the target was available in this run).
 Two complete builds produced byte-identical output files. `dist/starter/` totals
-**360.4 MB / 400 MB**, including the manifest/report; `.obr` files total 358.1 MB.
+**361.2 MB / 400 MB**, including the manifest/report; `.obr` files total 358.9 MB.
 Search caches remain the separate #58 pipeline step and must also fit the budget.
 Generated artifacts and full downloads are not committed.
 
 | Resource | Units | Numbered Verses covered by sections | Scripture-reference spans | `.obr` MB |
 |---|---:|---:|---:|---:|
-| MHC | 5,477 | 31,061 | 63,612 | 62.7 |
-| JFB | 19,774 | 31,102 | 40,419 | 27.8 |
-| Easton | 3,961 | — | 24,067 | 8.0 |
+| MHC | 5,477 | 31,061 | 63,612 | 62.6 |
+| JFB | 19,774 | 31,102 | 40,419 | 28.9 |
+| Easton | 3,961 | — | 24,067 | 7.8 |
 | Smith | 4,561 | — | 15,004 | 6.8 |
 
 Both Commentaries contain all 66 Bible books and 1,189 chapters. MHC's section-only
@@ -88,6 +88,16 @@ reported rather than silently turned into invalid references.
   Psalm 124:8 to the existing reference's targets. Full CI (including wasm), the
   deterministic sixteen-Resource build, full pinned-edition test and benchmark passed
   again after these fixes.
+
+- Rendering-review regressions: fallback prose excludes heading-covered ranges;
+  explicit breaks split paragraph spans while preserving poetry style and inline
+  markup. Persisted Easton Abraham retains its heading in `unit_blocks`; the real
+  JFB golden renders all five source lines independently. Synthetic JFB paragraphs
+  (including leading, repeated and trailing breaks) and two-line MHC poetry stay
+  separate at 100,000 px layout width. Golden text and inline spans are unchanged:
+  only Easton's duplicate paragraph and JFB's structural paragraph ranges change.
+  Full local CI (including wasm), pinned-edition tests, deterministic Starter build
+  and benchmark passed again; current sizes above include these structural fixes.
 
 Small public-domain excerpts, provenance notes and golden JSON live under
 `crates/formats/tests/fixtures/study/`; ordinary CI requires no downloads.

@@ -25,6 +25,7 @@ walkdir = "2"
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [dev-dependencies]
+obs-fonts.workspace = true
 obs-layout.workspace = true
 
 [lints]

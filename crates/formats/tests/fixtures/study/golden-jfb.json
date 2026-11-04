@@ -43,7 +43,7 @@
     },
     {
       "start": 45,
-      "end": 1181,
+      "end": 184,
       "kind": "para",
       "style": "prose"
     },
@@ -82,6 +82,12 @@
           }
         }
       ]
+    },
+    {
+      "start": 185,
+      "end": 635,
+      "kind": "para",
+      "style": "prose"
     },
     {
       "start": 185,
@@ -179,8 +185,20 @@
     },
     {
       "start": 636,
+      "end": 713,
+      "kind": "para",
+      "style": "prose"
+    },
+    {
+      "start": 636,
       "end": 643,
       "kind": "bold"
+    },
+    {
+      "start": 714,
+      "end": 1181,
+      "kind": "para",
+      "style": "prose"
     },
     {
       "start": 714,

@@ -526,6 +526,16 @@ fn study_golden_sections_open_by_passage_and_dictionary_alias() {
                 .any(|s| matches!(s.kind, SpanKind::ScriptureRef { .. })),
             "{id}"
         );
+        if id == "easton" {
+            let blocks = obs_layout::unit_blocks(&unit);
+            assert_eq!(blocks[0].kind, obs_layout::BlockKind::Heading(2));
+            assert_eq!(&unit.text[blocks[0].range.clone()], "Abraham");
+        }
+        if id == "jfb" {
+            let lines: Vec<_> = unit.text.lines().collect();
+            assert_eq!(lines.len(), 5);
+            assert_study_layout_lines(&unit, obs_model::ParaStyle::Prose, &lines);
+        }
         let actual = serde_json::to_string_pretty(&unit).unwrap() + "\n";
         let golden = fixtures.join(format!("golden-{id}.json"));
         if std::env::var_os("UPDATE_STUDY_GOLDENS").is_some() {
@@ -543,6 +553,88 @@ fn study_golden_sections_open_by_passage_and_dictionary_alias() {
             );
         }
     }
+}
+
+/// Wide layout must still keep each explicit source line in its own styled block.
+fn assert_study_layout_lines(
+    unit: &obs_model::TextUnit,
+    style: obs_model::ParaStyle,
+    lines: &[&str],
+) {
+    use obs_layout::{BlockKind, TextSettings, block_paragraph, layout, unit_blocks};
+    let blocks = unit_blocks(unit);
+    assert_eq!(blocks.len(), lines.len(), "{}", unit.text);
+    for (block, expected) in blocks.iter().zip(lines) {
+        assert_eq!(block.kind, BlockKind::Paragraph(style));
+        assert_eq!(&unit.text[block.range.clone()], *expected);
+        let paragraph = block_paragraph(
+            unit,
+            block,
+            obs_model::Direction::Ltr,
+            &TextSettings::default(),
+        );
+        let laid = layout(&paragraph, 100_000.0, obs_fonts::ShapeCache::shared());
+        assert_eq!(laid.lines.len(), 1);
+        assert_eq!(laid.text, *expected);
+    }
+}
+
+#[test]
+fn study_jfb_explicit_breaks_remain_separate_lines_at_wide_layout() {
+    use obs_formats::{StudyImport, import_jfb_book};
+    use obs_model::{Manifest, ParaStyle, ResourceType};
+    let mut import = StudyImport::new(Manifest::new(
+        "jfb",
+        "JFB",
+        "JFB",
+        ResourceType::Commentary,
+        "en",
+    ));
+    import_jfb_book(
+        &mut import,
+        obs_scripture::Book::Genesis,
+        r#"<A NAME="Ge1_1"> </A><p><br><b>First line<br>Second line</b><br><br>Third line<br></p>"#,
+    )
+    .unwrap();
+    let (resource, _) = import.finish().unwrap();
+    assert_study_layout_lines(
+        &resource.units[0],
+        ParaStyle::Prose,
+        &["First line", "Second line", "Third line"],
+    );
+    // Inline formatting remains intact even when its range crosses a block boundary.
+    let bold = resource.units[0]
+        .spans
+        .iter()
+        .find(|s| matches!(s.kind, obs_model::SpanKind::Bold))
+        .unwrap();
+    assert_eq!(
+        &resource.units[0].text[bold.range()],
+        "First line\nSecond line"
+    );
+}
+
+#[test]
+fn study_mhc_poetry_retains_style_and_two_lines_at_wide_layout() {
+    use obs_formats::{StudyImport, import_mhc};
+    use obs_model::{Manifest, ParaStyle, ResourceType};
+    let mut import = StudyImport::new(Manifest::new(
+        "mhc",
+        "MHC",
+        "MHC",
+        ResourceType::Commentary,
+        "en",
+    ));
+    import_mhc(&mut import, r#"<mediawiki><page><title>MHC/Volume 1/Genesis/Chapter 1</title><revision><text>==Verses 1-2==
+&lt;poem&gt;First line
+Second line&lt;/poem&gt;
+</text></revision></page></mediawiki>"#).unwrap();
+    let (resource, _) = import.finish().unwrap();
+    assert_study_layout_lines(
+        &resource.units[0],
+        ParaStyle::Poetry1,
+        &["First line", "Second line"],
+    );
 }
 
 /// Full-edition coverage, Standard reference validation and byte determinism. Explicitly run

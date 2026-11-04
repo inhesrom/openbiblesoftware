@@ -139,6 +139,32 @@ fn smith_headword_and_alias_preserve_both_entries() {
 }
 
 #[test]
+fn fallback_paragraphs_exclude_heading_text_even_with_unwrapped_prose() {
+    let text = html::render(
+        "Before <title>Heading</title> after",
+        None,
+        &mut ImportReport::default(),
+    );
+    let structural: Vec<_> = text
+        .spans
+        .iter()
+        .filter(|(_, kind)| matches!(kind, SpanKind::Para { .. } | SpanKind::Heading { .. }))
+        .collect();
+    assert_eq!(structural.len(), 3);
+    for (i, (range, _)) in structural.iter().enumerate() {
+        for (other, _) in &structural[i + 1..] {
+            assert!(range.end <= other.start || other.end <= range.start);
+        }
+    }
+    assert!(
+        structural
+            .iter()
+            .any(|(range, kind)| matches!(kind, SpanKind::Heading { .. })
+                && &text.text[range.clone()] == "Heading")
+    );
+}
+
+#[test]
 fn malformed_dictionary_offsets_fail_without_panicking() {
     let mut i = import(ResourceType::Dictionary);
     assert!(
