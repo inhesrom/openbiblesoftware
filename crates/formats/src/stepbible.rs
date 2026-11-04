@@ -804,17 +804,47 @@ impl<'a> Reading<'a> {
     }
 }
 
-/// Words other editions add, noted where they would stand.
+/// Contiguous added words with the same supporting editions. A meaning variant belongs
+/// to one source row, so that row always forms its own group.
 #[derive(Default)]
-struct AddedRun {
+struct AddedGroup {
     greek: Vec<String>,
     english: Vec<String>,
     editions: Vec<String>,
+    variants: String,
+}
+
+/// Words other editions add, noted where they would stand.
+#[derive(Default)]
+struct AddedRun {
+    groups: Vec<AddedGroup>,
 }
 
 impl AddedRun {
     fn push(&mut self, line: &Line) {
-        self.greek.push(
+        let editions: Vec<String> = edition_names(line.col(G_EDITIONS))
+            .map(str::to_string)
+            .collect();
+        let variants = line.col(G_MEANING_VARIANTS);
+        let group = match self.groups.last_mut() {
+            Some(group)
+                if group.editions == editions
+                    && group.variants.is_empty()
+                    && variants.is_empty() =>
+            {
+                group
+            }
+            _ => {
+                self.groups.push(AddedGroup {
+                    editions,
+                    variants: variants.to_string(),
+                    ..AddedGroup::default()
+                });
+                let last = self.groups.len() - 1;
+                &mut self.groups[last]
+            }
+        };
+        group.greek.push(
             greek_word(line.col(G_GREEK))
                 .replace('¶', "")
                 .trim()
@@ -822,31 +852,35 @@ impl AddedRun {
         );
         let english = plain_english(line.col(G_ENGLISH));
         if !english.is_empty() {
-            self.english.push(english.to_string());
-        }
-        for name in edition_names(line.col(G_EDITIONS)) {
-            if !self.editions.iter().any(|e| e == name) {
-                self.editions.push(name.to_string());
-            }
+            group.english.push(english.to_string());
         }
     }
 
     fn text(&self, whole_verse: Option<Verse>) -> String {
-        let greek = self.greek.join(" ");
-        let english = self.english.join(" ");
-        let editions = self.editions.join(", ");
         let head = match whole_verse {
-            Some(v) => format!(
-                "Verse {}:{} is not in {BASE_EDITION}. {editions} have:",
-                v.chapter, v.verse
-            ),
-            None => format!("Not in {BASE_EDITION}. {editions} add:"),
+            Some(v) => format!("Verse {}:{} is not in {BASE_EDITION}.", v.chapter, v.verse),
+            None => format!("Not in {BASE_EDITION}."),
         };
-        if english.is_empty() {
-            format!("{head} {greek}")
-        } else {
-            format!("{head} {greek} “{english}”")
-        }
+        let verb = if whole_verse.is_some() { "have" } else { "add" };
+        let groups: Vec<String> = self
+            .groups
+            .iter()
+            .map(|group| {
+                let mut text = format!(
+                    "{} {verb}: {}",
+                    group.editions.join(", "),
+                    group.greek.join(" ")
+                );
+                if !group.english.is_empty() {
+                    text.push_str(&format!(" “{}”", group.english.join(" ")));
+                }
+                if !group.variants.is_empty() {
+                    text.push_str(&format!(" ({})", tagnt_variant_note(&group.variants)));
+                }
+                text
+            })
+            .collect();
+        format!("{head} {}", groups.join("; "))
     }
 }
 
@@ -860,15 +894,17 @@ impl TagntBook {
         let mut run = AddedRun::default();
         let mut any_word = false;
         for line in lines {
-            if in_base_edition(line.col(G_EDITIONS)) {
-                if !run.greek.is_empty() {
+            let reading = if in_base_edition(line.col(G_EDITIONS)) {
+                Some(Reading::of(line))
+            } else {
+                Reading::base_variant(line)
+            };
+            if let Some(reading) = reading {
+                if !run.groups.is_empty() {
                     self.em.enter(verse);
                     self.em.note(run.text(None), ctx);
                     run = AddedRun::default();
                 }
-                self.word(verse, &Reading::of(line), line.kind, ctx);
-                any_word = true;
-            } else if let Some(reading) = Reading::base_variant(line) {
                 self.word(verse, &reading, line.kind, ctx);
                 any_word = true;
             } else if line.kind.contains(['K', 'O']) {
@@ -877,7 +913,7 @@ impl TagntBook {
                 run.push(line);
             }
         }
-        if !run.greek.is_empty() {
+        if !run.groups.is_empty() {
             if any_word {
                 self.em.note(run.text(None), ctx);
             } else {

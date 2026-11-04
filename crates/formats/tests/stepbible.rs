@@ -442,6 +442,59 @@ fn tagnt_base_variant_preserves_both_unselected_readings() {
     );
 }
 
+#[test]
+fn tagnt_added_word_preserves_meaning_variants_absent_from_na27() {
+    let (r, report) = import(StepbibleText::Tagnt, &[fixture("tagnt-variants.txt")]);
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    let verse = v(Book::Ephesians, 4, 6);
+    assert_eq!(verse_text(&r, verse), "πᾶσιν");
+    assert_eq!(
+        notes_in(&r, verse),
+        ["Not in NA27. TR add: ὑμῖν. “in you.” (Variant: Byz: ἡμῖν “in us”)"]
+    );
+}
+
+#[test]
+fn tagnt_addition_groups_keep_exact_edition_support() {
+    let (r, _) = import(StepbibleText::Tagnt, &[fixture("tagnt-variants.txt")]);
+    let verse = v(Book::Revelation, 22, 21);
+    assert_eq!(verse_text(&r, verse), "πάντων");
+    assert_eq!(
+        notes_in(&r, verse),
+        [
+            "Not in NA27. TR add: ὑμῶν. “of you” (Variant: Tyn, WH, Treg, Byz: ἁγίων “saints.”); Tyn, TR, Byz add: ἀμήν. “Amen.”"
+        ]
+    );
+}
+
+#[test]
+fn tagnt_flushes_addition_before_base_variant_word() {
+    let (r, _) = import(StepbibleText::Tagnt, &[fixture("tagnt-variants.txt")]);
+    let verse = v(Book::John, 8, 7);
+    assert_eq!(verse_text(&r, verse), "εἶπεν αὐτοῖς,");
+    assert_eq!(
+        notes_in(&r, verse),
+        [
+            "Not in NA27. TR, Byz add: πρὸς “to”",
+            "Variant: TR, Byz: αὐτούς “them”",
+        ]
+    );
+    let unit = r.unit(&UnitId::book(Book::John)).unwrap();
+    let marker = unit
+        .spans
+        .iter()
+        .find(|s| {
+            matches!(&s.kind,
+                SpanKind::NoteRef { note, .. }
+                    if r.unit(note).unwrap().text == "Not in NA27. TR, Byz add: πρὸς “to”"
+            )
+        })
+        .unwrap();
+    assert_eq!(marker.start, "εἶπεν".len() as u32);
+    assert_eq!(marker.end, marker.start);
+    assert!(marker.start < unit.text.find("αὐτοῖς").unwrap() as u32);
+}
+
 fn paragraphs(unit: &TextUnit) -> Vec<&str> {
     unit.spans
         .iter()
