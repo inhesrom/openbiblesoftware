@@ -4,8 +4,8 @@
 //! Layer L2. No SQLite and no UI here; compiles for `wasm32-unknown-unknown`.
 
 mod dataset;
-mod openbible;
 mod lexicon;
+mod openbible;
 mod report;
 mod text_buf;
 mod tipnr;
@@ -14,11 +14,11 @@ mod usfm_tree;
 mod verse_map;
 
 pub use dataset::{DatasetError, DatasetOptions};
-pub use openbible::{DROPPED_NOT_STANDARD, OPENBIBLE_FORMAT, import_openbible_cross_references};
 pub use lexicon::{
     LexiconError, LexiconOptions, import_abbott_smith, import_bdb, import_strongs_greek,
     import_strongs_hebrew, import_tbes,
 };
+pub use openbible::{DROPPED_NOT_STANDARD, OPENBIBLE_FORMAT, import_openbible_cross_references};
 pub use report::{BookReport, ImportReport, VerseMapCounts};
 pub use tipnr::{TIPNR_FORMAT, import_tipnr, tipnr_description_texts};
 pub use usfm::{ImportError, UsfmImport, UsfmOptions, slugify, usfm_book_code};

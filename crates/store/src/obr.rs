@@ -32,8 +32,8 @@ use std::path::{Path, PathBuf};
 
 use obs_model::{
     BibleVerse, CrossReference, Direction, Entity, EntityKind, EntityRelation, FORMAT_VERSION, Key,
-    KeyEntry, KeyScheme, LemmaTransliteration, Manifest, Mention, Origin, Resource, ResourceType, Span, TextUnit, UnitId,
-    UnitKind,
+    KeyEntry, KeyScheme, LemmaTransliteration, Manifest, Mention, Origin, Resource, ResourceType,
+    Span, TextUnit, UnitId, UnitKind,
 };
 use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, VerseMapEntry};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
