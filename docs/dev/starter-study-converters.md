@@ -31,7 +31,7 @@ Commentary Tabs (#49) consume the existing Passage Keys and `scripture_ref` span
   with samples in the report; readable display-text references can still be recognized.
   Italics, bold, headings, paragraphs, poetry and notes use the existing span vocabulary.
   Small caps and superscript presentation have no generic span kind: visible text is
-  retained and unsupported presentation is counted, without changing format version 1.
+  retained and unsupported presentation is counted, without changing the existing format version (now 2 after #43).
 
 ## Full-edition verification
 
@@ -46,16 +46,17 @@ cargo xtask ci
 cargo xtask bench
 ```
 
-All passed locally, including the wasm check (the target was available in this run).
+Rebased onto #43 (`38da565`); combined lock includes OpenBible.info and TIPNR.
+All passed locally again, including the wasm check (the target was available in this run).
 Two complete builds produced byte-identical output files. `dist/starter/` totals
-**290.0 MB / 400 MB**, including the manifest/report; `.obr` files total 288.7 MB.
+**306.4 MB / 400 MB**, including the manifest/report; `.obr` files total 305.2 MB.
 Search caches remain the separate #58 pipeline step and must also fit the budget.
 Generated artifacts and full downloads are not committed.
 
 | Resource | Units | Numbered Verses covered by sections | Scripture-reference spans | `.obr` MB |
 |---|---:|---:|---:|---:|
 | MHC | 5,477 | 31,061 | 63,613 | 62.7 |
-| JFB | 19,774 | 31,102 | 40,416 | 27.7 |
+| JFB | 19,774 | 31,102 | 40,416 | 27.8 |
 | Easton | 3,961 | — | 24,067 | 8.0 |
 | Smith | 4,561 | — | 15,004 | 6.8 |
 
@@ -73,7 +74,7 @@ reported rather than silently turned into invalid references.
 - `pinned_study_editions_have_complete_coverage_and_stable_bytes`: opt-in full cache
   test; verifies hashes, complete chapter coverage, JFB's 31,102 Verses, MHC's known
   gap/Attribution, every reference target, and independent byte-identical rebuilds.
-- `the_real_lock_passes_the_provenance_gate`: all eight actual source entries,
+- `the_real_lock_passes_the_provenance_gate`: all ten actual source entries,
   archived evidence hashes and the no-CCEL-host rule. No doc-coupled temporary test.
 - `commentary::tests`: Roman/contextual reference parsing, UTF-8 span offsets,
   unlinked prose, malformed XML/offsets, notes and poetry, duplicate anchors,

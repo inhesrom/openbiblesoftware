@@ -553,7 +553,11 @@ fn pinned_study_editions_have_complete_coverage_and_stable_bytes() {
     let config = Config::defaults(root);
     let lock = Lock::load(&config.lock).unwrap();
     let dir = scratch("study-full");
-    for source in lock.sources.iter().filter(|s| matches!(s.resource_id.as_str(), "mhc" | "jfb" | "easton" | "smith")) {
+    for source in lock
+        .sources
+        .iter()
+        .filter(|s| matches!(s.resource_id.as_str(), "mhc" | "jfb" | "easton" | "smith"))
+    {
         let bytes =
             std::fs::read(config.cache.join(&source.sha256)).expect("run xtask starter first");
         assert_eq!(sha256_hex(&bytes), source.sha256);
