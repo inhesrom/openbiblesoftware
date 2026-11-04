@@ -3,3 +3,8 @@
 * text=auto eol=lf
 *.ttf binary
 *.obr binary
+# Dictionary indexes address byte offsets in their legacy-encoded data files.
+crates/formats/tests/fixtures/study/*.dat binary
+crates/formats/tests/fixtures/study/*.idx binary
+crates/formats/tests/fixtures/study/*.zdt binary
+crates/formats/tests/fixtures/study/*.zdx binary
