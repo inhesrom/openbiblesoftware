@@ -37,7 +37,7 @@ pub use compare::{
 };
 pub use import::{
     DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,
-    Imports,
+    ImportSource, Imports,
 };
 pub use jobs::{Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step};
 pub use library::{

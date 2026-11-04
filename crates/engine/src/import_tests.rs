@@ -251,3 +251,99 @@ fn unrelated_job_events_are_returned_to_the_host() {
         |e| matches!(&e.kind, JobEventKind::Finished(out) if out.downcast_ref::<u32>() == Some(&42))
     ));
 }
+
+fn sword_assets() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/sword")
+}
+
+#[test]
+fn sword_conf_file_imports_through_the_app_import_with_the_conf_licence() {
+    let (mut s, root) = fixture("sword-conf", JobMode::Inline);
+    let conf = sword_assets().join("mods.d/obskjvosis.conf");
+    let id = start(&mut s, &conf);
+    assert_eq!(id, "obskjvosis-1");
+    assert!(s.library.get(&id).is_none(), "no parsing in the command");
+    assert!(
+        s.workspace
+            .tabs()
+            .any(|t| t.kind == TabKind::ImportReport(id.clone()))
+    );
+    finish(&mut s);
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Complete, "{:?}", record.error);
+    let report = record.report.as_ref().unwrap();
+    assert!(report.source_format.starts_with("sword"));
+    assert!(report.verses > 0);
+    assert!(!report.license_missing);
+    let entry = s.library.get(&id).unwrap();
+    assert_eq!(entry.manifest.resource_type, ResourceType::Bible);
+    assert_eq!(entry.manifest.abbreviation, "KJV-O");
+    assert!(entry.path.starts_with(root.join("library")));
+    assert_eq!(
+        s.library
+            .of_type(ResourceType::Bible)
+            .last()
+            .unwrap()
+            .manifest
+            .resource_id,
+        id
+    );
+    // Windows cannot delete files the Session still holds open (user.db).
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn sword_folder_imports_the_named_module_and_asks_for_one_when_several() {
+    let (mut s, root) = fixture("sword-folder", JobMode::Inline);
+    let id = s
+        .run(
+            "import.start",
+            &json!({"path": sword_assets(), "module": "ObsNotes"}),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(id, "obsnotes-1");
+    finish(&mut s);
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Complete, "{:?}", record.error);
+    assert!(record.source.ends_with("(ObsNotes)"));
+    assert_eq!(
+        s.library.get(&id).unwrap().manifest.resource_type,
+        ResourceType::Commentary
+    );
+
+    // A folder of several modules and no module named: the report says which to choose,
+    // and nothing lands in the Library.
+    let id = start(&mut s, &sword_assets());
+    finish(&mut s);
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Failed);
+    let error = record.error.as_deref().unwrap();
+    assert!(error.contains("several modules"), "{error}");
+    assert!(error.contains("ObsKjvOsis"), "{error}");
+    assert!(s.library.get(&id).is_none());
+    assert!(!root.join(format!("library/{id}.obr")).exists());
+    // Windows cannot delete files the Session still holds open (user.db).
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn import_source_detects_sword_by_conf_file_or_mods_d_folder() {
+    let assets = sword_assets();
+    assert!(matches!(
+        ImportSource::detect(assets.clone(), None),
+        ImportSource::Sword { module: None, .. }
+    ));
+    assert!(matches!(
+        ImportSource::detect(assets.join("mods.d/obsnotes.conf"), None),
+        ImportSource::Sword { .. }
+    ));
+    assert_eq!(
+        ImportSource::detect("/x/GEN.usfm".into(), None),
+        ImportSource::Usfm("/x/GEN.usfm".into())
+    );
+}

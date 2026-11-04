@@ -2661,6 +2661,7 @@ mod import {
             h.texts()
         );
         assert!(h.find("USFM folder…").is_some());
+        assert!(h.find("SWORD module…").is_some());
         h.shell.st.pick_import = false;
 
         // The picked folder starts an engine job and opens the report Tab at once; nothing is
@@ -2718,6 +2719,37 @@ mod import {
         h.click_text("Library");
         assert_eq!(bible_rows(&h), ["TB", "HEB", "HNUM", "WEB-1"]);
         assert!(lib.join("web-1.obr").is_file());
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_picked_sword_conf_imports_through_the_report_tab_and_opens() {
+        let (root, _, lib) = fixture("sword");
+        let conf = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../formats/tests/assets/sword/mods.d/obskjvosis.conf");
+        let mut h = Harness::new();
+        assert!(h.shell.st.session.library.scan(&lib).is_empty());
+        h.frames(2);
+        let id = pick(&mut h, &conf);
+        assert_eq!(id, "obskjvosis-1");
+        h.shell.st.session.jobs().pump(1);
+        h.frames(2);
+        let rec = record(&h, &id);
+        assert_eq!(rec.phase, ImportPhase::Complete, "{:?}", rec.error);
+        assert!(!rec.report.unwrap().license_missing);
+        for want in ["Import complete", "1 source file(s) · sword (OSIS)"] {
+            assert!(h.find(want).is_some(), "{want:?} missing: {:?}", h.texts());
+        }
+        h.click_text("Open");
+        assert!(
+            h.panels()
+                .iter()
+                .any(|(_, t)| t.iter().any(|t| t == "KJV-O")),
+            "{:?}",
+            h.panels()
+        );
+        assert!(lib.join("obskjvosis-1.obr").is_file());
         drop(h);
         std::fs::remove_dir_all(root).unwrap();
     }
