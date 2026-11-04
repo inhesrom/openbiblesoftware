@@ -2094,6 +2094,29 @@ mod library {
     }
 
     #[test]
+    fn dropping_over_another_panel_does_not_change_or_persist_preferred_order() {
+        let db = temp_db("outside-library-drop");
+        let mut h = Harness::launch(Some(&db));
+        let panel = library_panel(&h);
+        let y = row_pos(&h, "TB").y - 8.0;
+        let other = h
+            .panels()
+            .into_iter()
+            .map(|(r, _)| r)
+            .find(|r| !r.intersects(panel) && r.y_range().contains(y))
+            .expect("another Panel alongside Library");
+        h.drag(handle(&h, "HNUM"), pos2(other.center().x, y));
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        assert_eq!(starred(&h), "TB");
+        assert!(!h.shell.st.session.command_log().contains(&"library.move"));
+        h.shell.save_session(true);
+        drop(h);
+        let h = Harness::launch(Some(&db));
+        assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
+        assert_eq!(starred(&h), "TB");
+    }
+
+    #[test]
     fn filtering_by_text_and_by_language_works_together() {
         let mut h = Harness::new();
         // Text: "hebrew" matches the Hebrew test Bible and the Hebrew-numbered one.
@@ -2206,6 +2229,48 @@ mod library {
             .filter(|t| matches!(t.kind, TabKind::About(_)))
             .count();
         assert_eq!(abouts, 1);
+    }
+
+    #[test]
+    fn the_about_tab_applies_live_text_size_and_line_spacing() {
+        let mut h = Harness::new();
+        let mut entry = h
+            .shell
+            .st
+            .session
+            .library
+            .get("test-bible")
+            .unwrap()
+            .clone();
+        entry.manifest.attribution = "Public domain text.\nAttribution shown verbatim.".into();
+        h.shell.st.session.library.add(entry);
+        h.shell
+            .run("resource.about", &json!({ "id": "test-bible" }));
+        settle_all(&mut h);
+        let about = h.tab_id("About · TB");
+        let height = |h: &Harness| -> f32 {
+            let view = h.shell.st.tabs[&about].view.as_ref().unwrap();
+            let laid = view.laid_in_view(600.0);
+            assert!(!laid.is_empty(), "Attribution must be laid out");
+            laid.iter().map(|(_, _, block)| block.height).sum()
+        };
+        let initial = height(&h);
+        h.shell.run("view.text_larger", &json!({}));
+        settle_all(&mut h);
+        let larger = height(&h);
+        let view = h.shell.st.tabs[&about].view.as_ref().unwrap();
+        assert_eq!(view.settings().size, h.shell.st.session.text.size);
+        assert!(larger > initial, "larger text: {larger} <= {initial}");
+        h.shell
+            .run("view.line_spacing", &json!({ "value": "loose" }));
+        settle_all(&mut h);
+        let view = h.shell.st.tabs[&about].view.as_ref().unwrap();
+        assert_eq!(
+            view.settings().line_spacing,
+            h.shell.st.session.text.line_spacing
+        );
+        assert!(height(&h) > larger * 1.2, "line spacing must change layout");
+        assert_eq!(h.tab_id("About · TB"), about, "About was never reopened");
     }
 
     #[test]

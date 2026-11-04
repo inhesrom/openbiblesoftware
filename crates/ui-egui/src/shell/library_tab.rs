@@ -53,6 +53,7 @@ impl State {
         let mut drag_start: Option<String> = None;
         let mut drag_end = false;
         let mut rows: Vec<Row> = Vec::new();
+        let mut drop_region = Rect::NOTHING;
         egui::Frame::new()
             .fill(theme::c().field)
             .inner_margin(egui::Margin::symmetric(14, 10))
@@ -87,7 +88,7 @@ impl State {
                     }
                 });
                 ui.add_space(4.0);
-                egui::ScrollArea::vertical()
+                let scroll = egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         let mut any = false;
@@ -151,6 +152,7 @@ impl State {
                             );
                         }
                     });
+                drop_region = scroll.inner_rect.intersect(ui.clip_rect());
             });
 
         // Dragging a handle: a line marks the gap the row would drop into, and dropping moves
@@ -167,7 +169,7 @@ impl State {
         let pointer = ui.ctx().pointer_interact_pos();
         let dragged = drag_start.clone().or(dragging);
         if let (Some(id), Some(p)) = (dragged, pointer)
-            && let Some(slot) = drop_slot(&rows, &id, p.y)
+            && let Some(slot) = drop_slot(&rows, &id, p, drop_region)
         {
             if drag_end {
                 action = Some(Action::Move(id, slot.to));
@@ -287,6 +289,7 @@ impl State {
                         } else if let Some(view) =
                             self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut())
                         {
+                            view.set_settings(self.session.text);
                             // As tall as the text (once laid out), so the page scrolls rather
                             // than a box inside it; only a very long Attribution scrolls itself.
                             #[allow(clippy::cast_possible_truncation)]
@@ -501,9 +504,13 @@ struct DropSlot {
 }
 
 /// The gap a dragged row drops into: after every other row of its type whose centre is above
-/// `y`. `None` when that leaves the row where it is, or when `y` is more than a row away from
-/// the rows of its type (dropping there cancels).
-fn drop_slot(rows: &[Row], dragged: &str, y: f32) -> Option<DropSlot> {
+/// the pointer. `None` outside the Library's visible list, when that leaves the row where it
+/// is, or when the pointer is more than a row away from the rows of its type.
+fn drop_slot(rows: &[Row], dragged: &str, pointer: egui::Pos2, region: Rect) -> Option<DropSlot> {
+    if !region.contains(pointer) {
+        return None;
+    }
+    let y = pointer.y;
     let me = rows.iter().find(|r| r.id == dragged)?;
     let others: Vec<&Row> = rows
         .iter()
@@ -613,7 +620,27 @@ mod tests {
     }
 
     fn drop_at(dragged: &str, y: f32) -> Option<(usize, f32)> {
-        drop_slot(&rows(), dragged, y).map(|s| (s.to, s.y))
+        drop_slot(&rows(), dragged, pos2(100.0, y), drop_region()).map(|s| (s.to, s.y))
+    }
+
+    fn drop_region() -> Rect {
+        Rect::from_min_max(pos2(0.0, -ROW_H), pos2(200.0, 96.0 + ROW_H))
+    }
+
+    #[test]
+    fn drops_outside_the_visible_library_list_cancel() {
+        let region = drop_region();
+        for p in [
+            pos2(region.left() - 1.0, 8.0),
+            pos2(region.right() + 1.0, 8.0),
+            pos2(100.0, region.top() - 1.0),
+            pos2(100.0, region.bottom() + 1.0),
+        ] {
+            assert_eq!(drop_slot(&rows(), "C", p, region), None);
+        }
+        // Even a row still partly laid out above the viewport is not a drop target there.
+        let clipped = Rect::from_min_max(pos2(0.0, 10.0), region.max);
+        assert_eq!(drop_slot(&rows(), "C", pos2(100.0, 8.0), clipped), None);
     }
 
     #[test]
@@ -644,10 +671,19 @@ mod tests {
         rows.remove(1);
         rows[1].rect = rows[1].rect.translate(vec2(0.0, -(ROW_H + 6.0)));
         // C onto the upper half of A: first.
-        assert_eq!(drop_slot(&rows, "C", 5.0).map(|s| s.to), Some(0));
+        assert_eq!(
+            drop_slot(&rows, "C", pos2(100.0, 5.0), drop_region()).map(|s| s.to),
+            Some(0)
+        );
         // A onto the lower half of C: after C, so last of all three.
-        assert_eq!(drop_slot(&rows, "A", 60.0).map(|s| s.to), Some(2));
+        assert_eq!(
+            drop_slot(&rows, "A", pos2(100.0, 60.0), drop_region()).map(|s| s.to),
+            Some(2)
+        );
         // A onto the upper half of C: before C, after the hidden B.
-        assert_eq!(drop_slot(&rows, "A", 36.0).map(|s| s.to), Some(1));
+        assert_eq!(
+            drop_slot(&rows, "A", pos2(100.0, 36.0), drop_region()).map(|s| s.to),
+            Some(1)
+        );
     }
 }
