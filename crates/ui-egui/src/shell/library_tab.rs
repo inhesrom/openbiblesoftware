@@ -406,7 +406,7 @@ fn library_row(
         pos2(rect.left() + 6.0, y),
         Align2::LEFT_CENTER,
         "≡",
-        font.clone(),
+        FontId::monospace(14.0),
         if handle.hovered() { c.ink } else { c.muted },
     );
     if first {

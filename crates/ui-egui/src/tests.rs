@@ -9,6 +9,35 @@ use obs_scripture::{Book, Verse};
 
 use super::*;
 
+#[test]
+fn automation_injects_input_before_its_scheduled_ui_frame() {
+    use eframe::App as _;
+
+    let events: Vec<(u32, egui::Event)> =
+        serde_json::from_str(r#"[[1,{"PointerMoved":{"x":900.0,"y":100.0}}],[2,{"Text":"test"}]]"#)
+            .unwrap();
+    let mut app = App {
+        shell: Shell::new(obs_engine::Session::new(obs_engine::JobMode::Inline)),
+        styled: false,
+        frame: 0,
+        script: Vec::new(),
+        input_script: events.clone(),
+        shot: None,
+    };
+    let ctx = egui::Context::default();
+    for frame in 1..=3 {
+        app.frame = frame - 1;
+        let mut input = egui::RawInput::default();
+        app.raw_input_hook(&ctx, &mut input);
+        let expected: Vec<_> = events
+            .iter()
+            .filter(|(at, _)| *at == frame)
+            .map(|(_, event)| event.clone())
+            .collect();
+        assert_eq!(input.events, expected);
+    }
+}
+
 const WORDS: &[&str] = &[
     "And", "Laban", "said", "to", "Jacob", "behold", "this", "heap", "and", "pillar", "which", "I",
     "have", "cast", "betwixt", "me", "and", "thee", "is", "a", "witness",

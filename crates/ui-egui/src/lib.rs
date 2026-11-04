@@ -40,6 +40,7 @@ pub struct App {
     frame: u32,
     /// `OBS_SCRIPT`: commands to run at given frames; `OBS_SHOT`: a screenshot to take.
     script: Vec<(u32, String, serde_json::Value)>,
+    input_script: Vec<(u32, egui::Event)>,
     shot: Option<(u32, PathBuf)>,
 }
 
@@ -110,6 +111,7 @@ impl App {
             styled: false,
             frame: 0,
             script: Vec::new(),
+            input_script: Vec::new(),
             shot: None,
         }
     }
@@ -117,6 +119,8 @@ impl App {
     /// Smoke-check automation. `OBS_SCRIPT="frame command {json}; …"` runs commands through
     /// the registry at the given frames (a `"tab": "focused"` parameter means the focused
     /// Tab). `OBS_SHOT=out.ppm` saves a screenshot at `OBS_SHOT_FRAME` (default 60) and closes.
+    /// `OBS_INPUT` is a JSON array of `[frame, egui::Event]` pairs, injected before that
+    /// frame's UI. It exercises pointer/keyboard-only controls without OS input permissions.
     pub fn with_automation_from_env(mut self) -> Self {
         if let Ok(script) = std::env::var("OBS_SCRIPT") {
             for step in script.split(';') {
@@ -133,6 +137,12 @@ impl App {
                 }
             }
         }
+        if let Ok(input) = std::env::var("OBS_INPUT") {
+            match serde_json::from_str(&input) {
+                Ok(events) => self.input_script = events,
+                Err(e) => eprintln!("openbible: invalid OBS_INPUT: {e}"),
+            }
+        }
         if let Ok(path) = std::env::var("OBS_SHOT") {
             let at = std::env::var("OBS_SHOT_FRAME")
                 .ok()
@@ -145,7 +155,7 @@ impl App {
 
     fn automate(&mut self, ctx: &egui::Context) {
         self.frame += 1;
-        if self.script.is_empty() && self.shot.is_none() {
+        if self.script.is_empty() && self.input_script.is_empty() && self.shot.is_none() {
             return;
         }
         ctx.request_repaint();
@@ -219,6 +229,16 @@ impl App {
 }
 
 impl eframe::App for App {
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, input: &mut egui::RawInput) {
+        for (_, event) in self
+            .input_script
+            .iter()
+            .filter(|(at, _)| *at == self.frame + 1)
+        {
+            input.events.push(event.clone());
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if !self.styled {
             theme::install(ui.ctx());

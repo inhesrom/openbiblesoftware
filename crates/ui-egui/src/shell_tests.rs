@@ -1965,6 +1965,10 @@ mod library {
     #[test]
     fn rows_are_grouped_by_type_with_language_and_licence() {
         let mut h = Harness::new();
+        h.ctx.fonts_mut(|fonts| {
+            assert!(fonts.has_glyph(&egui::FontId::proportional(14.0), '★'));
+            assert!(fonts.has_glyph(&egui::FontId::monospace(14.0), '≡'));
+        });
         assert_eq!(row_names(&h), ["TB", "HEB", "HNUM"]);
         let panel = library_panel(&h);
         for t in [
