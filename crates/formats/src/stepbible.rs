@@ -31,9 +31,10 @@ use obs_model::{
 use obs_scripture::{Book, Passage, Standard, StrongsNumber, Verse, VerseMap};
 use unicode_normalization::char::is_combining_mark;
 
+use crate::error::ImportError;
 use crate::report::{BookReport, ImportReport, VerseMapCounts};
 use crate::text_buf::TextBuf;
-use crate::usfm::{ImportError, slugify};
+use crate::usfm::slugify;
 use crate::verse_map::{VerseFacts, build_verse_map};
 
 /// Which STEPBible dataset the files hold.
