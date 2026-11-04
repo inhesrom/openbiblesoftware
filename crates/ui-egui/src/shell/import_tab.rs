@@ -8,6 +8,15 @@ use super::State;
 use super::library_tab::section;
 use crate::theme;
 
+/// What the Import… chooser asks the native picker for.
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+enum Pick {
+    UsfmFile,
+    UsfmFolder,
+    SwordConf,
+}
+
 impl State {
     /// The Import report Tab: live phases while the job runs, then the summary and actions.
     pub(super) fn import_body(&mut self, ui: &mut Ui, id: &str) {
@@ -62,15 +71,15 @@ impl State {
         }
     }
 
-    /// The Import… chooser: a USFM file or a folder of Bible books. The native picker can
-    /// wait for the user indefinitely, so it runs on its own thread and reports back through
-    /// [`State::poll_picker`].
+    /// The Import… chooser: a USFM file, a folder of Bible books, or a SWORD module's
+    /// `.conf` file. The native picker can wait for the user indefinitely, so it runs on its
+    /// own thread and reports back through [`State::poll_picker`].
     pub(super) fn import_chooser(&mut self, ctx: &egui::Context) {
         if !self.pick_import {
             return;
         }
         let mut open = true;
-        let mut folder = None;
+        let mut chosen = None;
         egui::Window::new("Import a Resource")
             .open(&mut open)
             .collapsible(false)
@@ -78,41 +87,52 @@ impl State {
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
                 ui.label("Choose a USFM file or a folder of Bible books.");
+                ui.label("For a SWORD module, choose its .conf file in mods.d/.");
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     if ui.button("USFM file…").clicked() {
-                        folder = Some(false);
+                        chosen = Some(Pick::UsfmFile);
                     }
                     if ui.button("USFM folder…").clicked() {
-                        folder = Some(true);
+                        chosen = Some(Pick::UsfmFolder);
+                    }
+                    if ui.button("SWORD module…").clicked() {
+                        chosen = Some(Pick::SwordConf);
                     }
                 });
             });
         self.pick_import = open;
-        let Some(folder) = folder else {
+        let Some(chosen) = chosen else {
             return;
         };
         self.pick_import = false;
-        self.spawn_picker(ctx, folder);
+        self.spawn_picker(ctx, chosen);
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn spawn_picker(&mut self, _: &egui::Context, _: bool) {
+    fn spawn_picker(&mut self, _: &egui::Context, _: Pick) {
         self.toast("Local file Import requires desktop");
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn spawn_picker(&mut self, ctx: &egui::Context, folder: bool) {
+    fn spawn_picker(&mut self, ctx: &egui::Context, chosen: Pick) {
         let (tx, rx) = std::sync::mpsc::channel();
         let ctx = ctx.clone();
         let spawned = std::thread::Builder::new()
             .name("obs-import-picker".into())
             .spawn(move || {
-                let dialog = rfd::FileDialog::new().set_title("Import USFM Resource");
-                let selected = if folder {
-                    dialog.pick_folder()
-                } else {
-                    dialog.add_filter("USFM", &["usfm", "sfm"]).pick_file()
+                let selected = match chosen {
+                    Pick::UsfmFolder => rfd::FileDialog::new()
+                        .set_title("Import USFM Resource")
+                        .pick_folder(),
+                    Pick::UsfmFile => rfd::FileDialog::new()
+                        .set_title("Import USFM Resource")
+                        .add_filter("USFM", &["usfm", "sfm"])
+                        .pick_file(),
+                    Pick::SwordConf => rfd::FileDialog::new()
+                        .set_title("Import SWORD module (its .conf file in mods.d/)")
+                        .add_filter("SWORD module conf", &["conf"])
+                        .pick_file(),
                 };
                 let _ = tx.send(selected);
                 ctx.request_repaint();

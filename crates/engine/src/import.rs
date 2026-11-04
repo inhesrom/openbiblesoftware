@@ -191,7 +191,13 @@ const SOURCE: ParamSpec = ParamSpec {
     name: "path",
     kind: ParamKind::String,
     required: true,
-    help: "USFM file or folder on this machine",
+    help: "USFM file or folder, SWORD library folder or module .conf file on this machine",
+};
+const MODULE: ParamSpec = ParamSpec {
+    name: "module",
+    kind: ParamKind::String,
+    required: false,
+    help: "SWORD module to import from a library folder",
 };
 const ID: ParamSpec = ParamSpec {
     name: "id",
@@ -216,7 +222,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         id: "import.start",
         label: "Import selected source",
         shortcut: None,
-        params: &[SOURCE],
+        params: &[SOURCE, MODULE],
         enabled: desktop,
         run: start,
     },
@@ -255,6 +261,71 @@ fn open_report(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     Ok(json!({"tab": tab.0}))
 }
 
+/// What one Import reads: USFM books, or one module of a SWORD library.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ImportSource {
+    /// A USFM file or a folder of USFM books.
+    Usfm(std::path::PathBuf),
+    /// A SWORD library folder (holding `mods.d/`) or a module's `.conf` file, and the module
+    /// to import (`None`: the conf file's module, or the library's only module).
+    Sword {
+        path: std::path::PathBuf,
+        module: Option<String>,
+    },
+}
+
+impl ImportSource {
+    /// Tell the source kind from the path: a `.conf` file, or a folder holding `mods.d/`, is
+    /// SWORD; anything else is USFM.
+    pub fn detect(path: std::path::PathBuf, module: Option<String>) -> Self {
+        let is_conf = path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("conf"));
+        if is_conf || path.join("mods.d").is_dir() || module.is_some() {
+            Self::Sword { path, module }
+        } else {
+            Self::Usfm(path)
+        }
+    }
+
+    fn path(&self) -> &Path {
+        match self {
+            Self::Usfm(p) | Self::Sword { path: p, .. } => p,
+        }
+    }
+
+    /// The name the new Resource id is made from.
+    fn stem(&self) -> String {
+        match self {
+            Self::Sword {
+                module: Some(m), ..
+            } => m.clone(),
+            Self::Sword { path, .. } if path.is_dir() => path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+            _ => self
+                .path()
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+        }
+    }
+
+    /// Shown on the Import report.
+    fn describe(&self) -> String {
+        match self {
+            Self::Sword {
+                path,
+                module: Some(m),
+            } => format!("{} ({m})", path.display()),
+            _ => self.path().display().to_string(),
+        }
+    }
+}
+
 /// The browser has no local files to read and no `.obr` writer; `desktop` keeps the
 /// command disabled there.
 #[cfg(target_arch = "wasm32")]
@@ -266,107 +337,177 @@ fn start(_: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
 fn start(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let path = std::path::PathBuf::from(p.str("path").unwrap_or_default());
     if path.as_os_str().is_empty() {
-        return Err(failed("import.start", "Choose a USFM file or folder"));
+        return Err(failed(
+            "import.start",
+            "Choose a USFM file or folder, or a SWORD module",
+        ));
     }
-    let dir = s
-        .library
-        .directory()
-        .map(Path::to_path_buf)
-        .or_else(crate::default_library_dir)
-        .ok_or_else(|| failed("import.start", "No library directory"))?;
-    s.library.set_directory(dir.clone());
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("imported");
-    let slug = obs_formats::slugify(stem);
-    // Every Import is a new edition, never an implicit revision or overwrite of user text.
-    let mut n = 1u64;
-    let id = loop {
-        let id = format!("{}-{n}", slug.chars().take(44).collect::<String>());
-        if s.library.get(&id).is_none() && s.imports.report(&id).is_none() {
-            break id;
+    let module = p
+        .str("module")
+        .filter(|m| !m.is_empty())
+        .map(str::to_string);
+    let (id, tab, job) = s
+        .start_import(ImportSource::detect(path, module))
+        .map_err(|e| failed("import.start", e))?;
+    Ok(json!({"id": id, "tab": tab, "job": job.0}))
+}
+
+impl Session {
+    /// Start an Import job and open its live report Tab. Return the new Resource id, the
+    /// Tab id and the job.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn start_import(&mut self, source: ImportSource) -> Result<(String, u64, JobId), String> {
+        let dir = self
+            .library
+            .directory()
+            .map(Path::to_path_buf)
+            .or_else(crate::default_library_dir)
+            .ok_or("No library directory")?;
+        self.library.set_directory(dir.clone());
+        let slug = obs_formats::slugify(&source.stem());
+        // Every Import is a new edition, never an implicit revision or overwrite of user text.
+        let mut n = 1u64;
+        let id = loop {
+            let id = format!("{}-{n}", slug.chars().take(44).collect::<String>());
+            if self.library.get(&id).is_none() && self.imports.report(&id).is_none() {
+                break id;
+            }
+            n += 1;
+        };
+        let record = ImportRecord {
+            resource_id: id.clone(),
+            source: source.describe(),
+            phase: ImportPhase::Parse,
+            done: 0,
+            total: 0,
+            report: None,
+            index: ImportIndexStatus::Deferred,
+            error: None,
+        };
+        let indexer = Arc::clone(&self.imports.indexer);
+        let worker_id = id.clone();
+        let job = self.jobs().submit_fn("Import", move |ctx| {
+            import_source(&source, &dir, &worker_id, indexer.as_ref(), ctx)
+        });
+        self.imports.active.insert(job, id.clone());
+        self.imports.reports.insert(id.clone(), record);
+        let tab = self.workspace.open(
+            TabKind::ImportReport(id.clone()),
+            "Import report".into(),
+            OpenRequest::default(),
+        );
+        Ok((id, tab.0, job))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+type Parsed = (Resource, ImportReport);
+
+#[cfg(not(target_arch = "wasm32"))]
+fn tool_version() -> String {
+    format!("Open Bible {}", env!("CARGO_PKG_VERSION"))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_usfm(
+    path: &Path,
+    id: &str,
+    ctx: &JobContext,
+) -> Result<Parsed, Box<dyn std::error::Error>> {
+    use obs_formats::{UsfmImport, UsfmOptions};
+    let mut files = if path.is_dir() {
+        let mut files = Vec::new();
+        for entry in std::fs::read_dir(path)? {
+            let p = entry?.path();
+            if p.is_file()
+                && p.extension()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|s| matches!(s.to_ascii_lowercase().as_str(), "sfm" | "usfm"))
+            {
+                files.push(p);
+            }
         }
-        n += 1;
+        files
+    } else {
+        vec![path.to_path_buf()]
     };
-    let record = ImportRecord {
-        resource_id: id.clone(),
-        source: path.display().to_string(),
-        phase: ImportPhase::Parse,
-        done: 0,
-        total: 0,
-        report: None,
-        index: ImportIndexStatus::Deferred,
-        error: None,
-    };
-    let indexer = Arc::clone(&s.imports.indexer);
-    let worker_id = id.clone();
-    let job = s.jobs().submit_fn("Import", move |ctx| {
-        import_source(&path, &dir, &worker_id, indexer.as_ref(), ctx)
+    files.sort();
+    let source = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let mut import = UsfmImport::new(UsfmOptions {
+        resource_id: id.into(),
+        title: source.clone(),
+        source_file: source,
+        tool_version: tool_version(),
+        ..Default::default()
     });
-    s.imports.active.insert(job, id.clone());
-    s.imports.reports.insert(id.clone(), record);
-    let tab = s.workspace.open(
-        TabKind::ImportReport(id.clone()),
-        "Import report".into(),
-        OpenRequest::default(),
-    );
-    Ok(json!({"id": id, "tab": tab.0, "job": job.0}))
+    for file in files {
+        if ctx.is_cancelled() {
+            return Err("Import cancelled".into());
+        }
+        import.add_book(
+            &file.file_name().unwrap_or_default().to_string_lossy(),
+            std::fs::read_to_string(&file)?,
+        )?;
+    }
+    Ok(import.finish_with_progress(|done, total| {
+        ctx.progress(done as u64, total as u64);
+        !ctx.is_cancelled()
+    })?)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_sword(
+    path: &Path,
+    module: Option<&str>,
+    id: &str,
+) -> Result<Parsed, Box<dyn std::error::Error>> {
+    use obs_formats::{SwordOptions, SwordSource, import_sword};
+    let source = SwordSource::open(path)?;
+    let module = match module
+        .map(str::to_string)
+        .or_else(|| source.default_module())
+    {
+        Some(m) => m,
+        None => {
+            let names: Vec<String> = source
+                .modules()
+                .into_iter()
+                .filter(|m| m.resource_type.is_some())
+                .map(|m| m.name)
+                .collect();
+            return Err(format!(
+                "this SWORD folder holds several modules; choose one module's .conf file in mods.d/ ({})",
+                names.join(", ")
+            )
+            .into());
+        }
+    };
+    let options = SwordOptions {
+        resource_id: id.into(),
+        tool_version: tool_version(),
+        ..Default::default()
+    };
+    Ok(import_sword(&source, &module, &options)?)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn import_source(
-    path: &Path,
+    source: &ImportSource,
     dir: &Path,
     id: &str,
     indexer: &dyn ImportIndexer,
     ctx: &JobContext,
 ) -> Result<Imported, String> {
-    use obs_formats::{UsfmImport, UsfmOptions};
     let run = || -> Result<Imported, Box<dyn std::error::Error>> {
         ctx.phase("Parse");
-        let mut files = if path.is_dir() {
-            let mut files = Vec::new();
-            for entry in std::fs::read_dir(path)? {
-                let p = entry?.path();
-                if p.is_file()
-                    && p.extension()
-                        .and_then(|s| s.to_str())
-                        .is_some_and(|s| matches!(s.to_ascii_lowercase().as_str(), "sfm" | "usfm"))
-                {
-                    files.push(p);
-                }
-            }
-            files
-        } else {
-            vec![path.to_path_buf()]
+        let (resource, report) = match source {
+            ImportSource::Usfm(path) => parse_usfm(path, id, ctx)?,
+            ImportSource::Sword { path, module } => parse_sword(path, module.as_deref(), id)?,
         };
-        files.sort();
-        let source = path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .into_owned();
-        let mut import = UsfmImport::new(UsfmOptions {
-            resource_id: id.into(),
-            title: source.clone(),
-            source_file: source,
-            tool_version: format!("Open Bible {}", env!("CARGO_PKG_VERSION")),
-            ..Default::default()
-        });
-        for file in files {
-            if ctx.is_cancelled() {
-                return Err("Import cancelled".into());
-            }
-            import.add_book(
-                &file.file_name().unwrap_or_default().to_string_lossy(),
-                std::fs::read_to_string(&file)?,
-            )?;
-        }
-        let (resource, report) = import.finish_with_progress(|done, total| {
-            ctx.progress(done as u64, total as u64);
-            !ctx.is_cancelled()
-        })?;
         if ctx.is_cancelled() {
             return Err("Import cancelled".into());
         }
@@ -395,5 +536,5 @@ fn import_source(
             index,
         })
     };
-    run().map_err(|e| format!("{}: {e}", path.display()))
+    run().map_err(|e| format!("{}: {e}", source.path().display()))
 }
