@@ -396,7 +396,11 @@ fn import_stepbible(
 /// recorded and made available); `None` for other licences.
 fn changes_note(resource: &Resource) -> Option<String> {
     let m = &resource.manifest;
-    if !m.license.split([' ', '(', ')']).any(|l| l.starts_with("CC-BY")) {
+    if !m
+        .license
+        .split([' ', '(', ')'])
+        .any(|l| l.starts_with("CC-BY"))
+    {
         return None;
     }
     let mut s = format!("# Changes made to {} (`{}`)\n\n", m.title, m.resource_id);

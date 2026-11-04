@@ -370,7 +370,10 @@ fn a_usfm_source_takes_no_extra_files() {
     let (zip, sha) = fixture_zip(&dir, &[]);
     let config = setup(&dir, &zip, &sha, true);
     let lock = std::fs::read_to_string(&config.lock).unwrap()
-        + &format!("\n[[source.extra_file]]\nurl = \"file://{}\"\nsha256 = \"{sha}\"\n", zip.display());
+        + &format!(
+            "\n[[source.extra_file]]\nurl = \"file://{}\"\nsha256 = \"{sha}\"\n",
+            zip.display()
+        );
     std::fs::write(&config.lock, lock).unwrap();
     let err = format!("{:#}", build(&config).unwrap_err());
     assert!(err.contains("takes no extra files"), "{err}");

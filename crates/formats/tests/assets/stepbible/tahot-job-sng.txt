@@ -45,6 +45,12 @@ Psa.3.8(3.9)#03=L	עַֽל\־	'al-	[is] towards	{H5921A}\H9014	HR			H5921A			{H5
 Psa.3.8(3.9)#04=L	עַמְּ/ךָ֖	'a.me./Kha	people/ your	{H5971A}/H9021	HNcmsc/Sp2ms			H5971A			{H5971A=עַם=: people»people:1_people;_nation}/H9021=Ps2m=your					
 Psa.3.8(3.9)#05=L	בִרְכָתֶ֣/ךָ	vir.kha.Te./kha	blessing/ your	{H1293}/H9021	HNcfsc/Sp2ms			H1293			{H1293=בְּרָכָה=blessing}/H9021=Ps2m=your					
 Psa.3.8(3.9)#06=L	סֶּֽלָה\׃	Se.lah	Selah	{H5542}\H9016	HTj			H5542			{H5542=סֶ֫לָה=Selah»Selah@Psa.3.2-Hab}\H9016=׃=verseEnd					
+Psa.23.0(23.1)#01=L	מִזְמ֥וֹר	miz.Mor	a psalm	{H4210}	HNcmsa			H4210			{H4210=מִזְמוֹר=melody}					
+Psa.23.0(23.1)#02=L	לְ/דָוִ֑ד	le./da.Vid	of/ David	H9005/{H1732}	HR/Npm			H1732			H9005=ל=to/{H1732=דָּוִד=David»David@Rut.4.17-Rev}					
+Psa.23.1#03=L	יְהוָ֥ה	Yah.weh	Yahweh	{H3068G}	HNpt			H3068G			{H3068G=יהוה=LORD»LORD@Gen.1.1-Heb}					
+Psa.23.1#04=L	רֹ֝עִ֗/י	ro.'/I	[is] shepherd/ my	{H7462B}/H9020	HVqrmsc/Sp1bs			H7462B			{H7462B=רָעָה=to pasture}/H9020=Ps1c=my					
+Psa.23.1#05=L	לֹ֣א	lo'	not	{H3808}	HTn			H3808			{H3808=לֹא=not}					
+Psa.23.1#06=L	אֶחְסָֽר\׃	'ech.Sar	I lack	{H2637}\H9016	HVqi1cs			H2637			{H2637=חָסֵר=to lack}\H9016=׃=verseEnd					
 Psa.51.0(51.1)#01=L	לַ/מְנַצֵּ֗חַ	la/m.na.Tze.ach	to the/ choirmaster	H9005/{H5329}	HRd/Vprmsa			H5329			H9005=ל=to/{H5329=נָצַח=to conduct}					
 Psa.51.0(51.1)#02=L	מִזְמ֥וֹר	miz.Mor	a psalm	{H4210}	HNcmsa			H4210			{H4210=מִזְמוֹר=melody}					
 Psa.51.0(51.1)#03=L	לְ/דָוִֽד\׃	le./da.Vid	of/ David	H9005/{H1732}\H9016	HR/Npm			H1732			H9005=ל=to/{H1732=דָּוִד=David»David@Rut.4.17-Rev}\H9016=׃=verseEnd					

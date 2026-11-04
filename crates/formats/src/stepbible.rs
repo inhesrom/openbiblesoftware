@@ -4,7 +4,8 @@
 //! - **Verses** use the numbering of the original-language text: the reference in round
 //!   brackets when there is one (TAHOT `Gen.31.55(32.1)` is Hebrew Gen 32:1; TAGNT
 //!   `Act.13.39(13.38)` is NA Act 13:38), else the English (NRSV) reference. The Verse map to
-//!   the Standard versification is built from TVTMS, as for every Import.
+//!   the Standard versification is built from TVTMS, as for every Import; a Hebrew Verse that
+//!   holds a short Psalm title and the first English verse (Ps 23:1) also covers the title slot.
 //! - **Tagged words** carry their morpheme parts in order. A TAHOT word `וְ/הָ/אָ֗רֶץ` with
 //!   dStrongs `H9002/H9009/{H0776G}` has three parts: the prefixes ו and ה, then the root, each
 //!   with its own Strong's number, Lemma, Morphology code and Gloss. Strong's numbers are
@@ -19,7 +20,7 @@
 //!   variants; words restored from a parallel passage (R) or the Septuagint (X); TAGNT's
 //!   meaning variants; and words that other editions add and that change the translation.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::Range;
 
 use obs_model::{
@@ -27,7 +28,7 @@ use obs_model::{
     Origin, ParaStyle, Resource, ResourceBuilder, ResourceType, SpanKind, UnitId, UnitKind,
     is_valid_resource_id, tokenize,
 };
-use obs_scripture::{Book, StrongsNumber, Verse};
+use obs_scripture::{Book, Passage, Standard, StrongsNumber, Verse, VerseMap};
 use unicode_normalization::char::is_combining_mark;
 
 use crate::report::{BookReport, ImportReport, VerseMapCounts};
@@ -168,6 +169,8 @@ struct Ctx {
     notes: Vec<Note>,
     warnings: Vec<String>,
     tagged_words: usize,
+    /// Verses (own numbering) holding words of a Psalm title (English verse 0).
+    title_verses: BTreeSet<Verse>,
 }
 
 struct BookOutput {
@@ -554,6 +557,7 @@ impl TahotBook {
             self.em.tagged_word(start..end, parts, ctx);
         }
         if line.english_verse == 0 {
+            ctx.title_verses.insert(line.verse);
             if let Some(start) = first_start {
                 self.em.extend_title(start);
             }
@@ -635,10 +639,7 @@ fn in_base_edition(editions: &str) -> bool {
 
 /// Edition names of `editions`, without displacements.
 fn edition_names(editions: &str) -> impl Iterator<Item = &str> {
-    editions
-        .split('+')
-        .map(edition)
-        .filter(|n| !n.is_empty())
+    editions.split('+').map(edition).filter(|n| !n.is_empty())
 }
 
 /// A TAGNT English rendering without its verse-number hints (`{8.1} And` → `And`).
@@ -774,8 +775,12 @@ struct AddedRun {
 
 impl AddedRun {
     fn push(&mut self, line: &Line) {
-        self.greek
-            .push(greek_word(line.col(G_GREEK)).replace('¶', "").trim().to_string());
+        self.greek.push(
+            greek_word(line.col(G_GREEK))
+                .replace('¶', "")
+                .trim()
+                .to_string(),
+        );
         let english = plain_english(line.col(G_ENGLISH));
         if !english.is_empty() {
             self.english.push(english.to_string());
@@ -1054,7 +1059,8 @@ impl StepbibleImport {
             buf.push_text(&note.text);
             builder.add_unit(note.id, UnitKind::Note, None, buf.text);
         }
-        let outcome = build_verse_map(&facts);
+        let mut outcome = build_verse_map(&facts);
+        outcome.map = cover_psalm_titles(&outcome.map, &ctx.title_verses);
         report.verse_map = Some(VerseMapCounts {
             unmapped: outcome.map.unmapped().count(),
             absent: outcome.map.absent().len(),
@@ -1065,6 +1071,42 @@ impl StepbibleImport {
         report.warnings = ctx.warnings;
         Ok((resource, report))
     }
+}
+
+/// A short Hebrew Psalm title shares Verse 1 with the first English verse (Hebrew Ps 23:1 is
+/// "A psalm of David. Yahweh is my shepherd …"), and TVTMS maps that Verse to Standard verse
+/// 1 only. Widen it to start at the title slot, so the title is not Absent.
+fn cover_psalm_titles(map: &VerseMap, title_verses: &BTreeSet<Verse>) -> VerseMap {
+    let absent: HashSet<Verse> = map.absent().iter().copied().collect();
+    let mut covered: HashSet<Verse> = HashSet::new();
+    let entries = map
+        .entries()
+        .iter()
+        .map(|e| {
+            let mut e = *e;
+            if let Some(p) = e.standard
+                && title_verses.contains(&e.verse)
+            {
+                let start = p.start();
+                let title = Verse::new(start.book, start.chapter, 0);
+                if start.verse == 1
+                    && absent.contains(&title)
+                    && let Ok(widened) = Passage::new(title, p.end())
+                {
+                    e.standard = Some(widened);
+                    covered.insert(title);
+                }
+            }
+            e
+        })
+        .collect();
+    let absent = map
+        .absent()
+        .iter()
+        .filter(|v| !covered.contains(v))
+        .copied()
+        .collect();
+    VerseMap::new(entries, absent, &Standard)
 }
 
 #[cfg(test)]
@@ -1108,15 +1150,11 @@ mod tests {
         );
         assert_eq!(spelling_ketiv("L= בָּנָ֖/ו ¦ ;"), None);
         assert_eq!(
-            tagnt_variant_note(
-                "ἐπηρώτων (t=epērōtōn) were asking - G1905=V-IAI-3P in: TR+Byz"
-            ),
+            tagnt_variant_note("ἐπηρώτων (t=epērōtōn) were asking - G1905=V-IAI-3P in: TR+Byz"),
             "Variant: TR, Byz: ἐπηρώτων “were asking”"
         );
         assert_eq!(
-            tagnt_variant_note(
-                "a (t=a) x - G1=N in: TR ¦ b (o=b) y - G2=N in: Byz»1"
-            ),
+            tagnt_variant_note("a (t=a) x - G1=N in: TR ¦ b (o=b) y - G2=N in: Byz»1"),
             "Variants: TR: a “x”; Byz: b “y”"
         );
     }

@@ -79,7 +79,9 @@ fn tagged_words(r: &Resource, verse: Verse) -> Vec<(String, Vec<MorphemePart>)> 
         .iter()
         .filter(|s| s.start >= bv.start && s.end <= bv.end)
         .filter_map(|s| match &s.kind {
-            SpanKind::TaggedWord { parts } => Some((unit.text[s.range()].to_string(), parts.clone())),
+            SpanKind::TaggedWord { parts } => {
+                Some((unit.text[s.range()].to_string(), parts.clone()))
+            }
             _ => None,
         })
         .collect()
@@ -125,14 +127,8 @@ fn tahot_gen_1_1_yields_the_expected_morpheme_parts() {
                 part("H7225G", "רֵאשִׁית", "HNcfsa", "beginning"),
             ],
         ),
-        (
-            "בָּרָ֣א",
-            vec![part("H1254A", "בָּרָא", "HVqp3ms", "he created")],
-        ),
-        (
-            "אֱלֹהִ֑ים",
-            vec![part("H430G", "אֱלֹהִים", "HNcmpa", "God")],
-        ),
+        ("בָּרָ֣א", vec![part("H1254A", "בָּרָא", "HVqp3ms", "he created")]),
+        ("אֱלֹהִ֑ים", vec![part("H430G", "אֱלֹהִים", "HNcmpa", "God")]),
         ("אֵ֥ת", vec![part("H853", "אֵת", "HTo", "<obj.>")]),
         (
             "הַשָּׁמַ֖יִם",
@@ -231,22 +227,30 @@ fn every_tahot_and_tagnt_verse_is_mapped_or_explicitly_unmapped() {
         let counts = report.verse_map.unwrap();
         assert_eq!(counts.unmapped, map.unmapped().count());
         let unmapped: Vec<String> = map.unmapped().map(|e| e.verse.to_string()).collect();
-        assert!(unmapped.is_empty(), "{}: {unmapped:?}", r.manifest.resource_id);
+        assert!(
+            unmapped.is_empty(),
+            "{}: {unmapped:?}",
+            r.manifest.resource_id
+        );
     }
 
     // TAHOT keeps the Hebrew numbering; the Verse map takes it to the Standard.
     let (r, _) = tahot();
     let map = r.verse_map.as_ref().unwrap();
     let to = |verse: Verse| map.to_standard(verse).map(Passage::start);
-    assert_eq!(
-        to(v(Book::Genesis, 32, 1)),
-        Some(v(Book::Genesis, 31, 55))
-    );
+    assert_eq!(to(v(Book::Genesis, 32, 1)), Some(v(Book::Genesis, 31, 55)));
     assert_eq!(to(v(Book::Genesis, 32, 2)), Some(v(Book::Genesis, 32, 1)));
     assert_eq!(to(v(Book::Malachi, 3, 19)), Some(v(Book::Malachi, 4, 1)));
     assert_eq!(to(v(Book::Psalms, 3, 1)), Some(v(Book::Psalms, 3, 0)));
     assert_eq!(to(v(Book::Psalms, 3, 2)), Some(v(Book::Psalms, 3, 1)));
     assert_eq!(to(v(Book::Psalms, 51, 2)), Some(v(Book::Psalms, 51, 0)));
+    // Hebrew Ps 23:1 holds the title and the first English verse: it covers both, so the
+    // title slot is not Absent.
+    assert_eq!(
+        map.to_standard(v(Book::Psalms, 23, 1)),
+        Passage::new(v(Book::Psalms, 23, 0), v(Book::Psalms, 23, 1)).ok()
+    );
+    assert!(!map.is_absent(v(Book::Psalms, 23, 0)));
     assert_eq!(to(v(Book::Genesis, 1, 1)), Some(v(Book::Genesis, 1, 1)));
 
     // TAGNT keeps the NA numbering: NRSV Acts 13:39's first words are NA 13:38.
@@ -254,7 +258,8 @@ fn every_tahot_and_tagnt_verse_is_mapped_or_explicitly_unmapped() {
     let map = r.verse_map.as_ref().unwrap();
     assert!(map.to_standard(v(Book::Acts, 13, 38)).is_some());
     assert_eq!(
-        map.to_standard(v(Book::Revelation, 12, 18)).map(Passage::start),
+        map.to_standard(v(Book::Revelation, 12, 18))
+            .map(Passage::start),
         Some(v(Book::Revelation, 13, 1))
     );
 }
@@ -316,7 +321,10 @@ fn tahot_manifest_text_paragraphs_and_notes() {
         .iter()
         .find(|s| s.kind == SpanKind::PsalmTitle)
         .unwrap();
-    assert_eq!(&psa.text[title.range()], verse_text(&r, v(Book::Psalms, 3, 1)));
+    assert_eq!(
+        &psa.text[title.range()],
+        verse_text(&r, v(Book::Psalms, 3, 1))
+    );
 }
 
 #[test]
@@ -336,17 +344,26 @@ fn tagnt_follows_na27_and_notes_other_editions() {
     assert_eq!(words[0].0, "Βίβλος");
     assert_eq!(words[0].1, [part("G976", "βίβλος", "N-NSF", "[The] book")]);
     assert_eq!(words[7].0, "Ἀβραάμ");
-    assert_eq!(verse_text(&r, v(Book::Matthew, 1, 1)), "Βίβλος γενέσεως Ἰησοῦ Χριστοῦ υἱοῦ Δαυὶδ υἱοῦ Ἀβραάμ.");
+    assert_eq!(
+        verse_text(&r, v(Book::Matthew, 1, 1)),
+        "Βίβλος γενέσεως Ἰησοῦ Χριστοῦ υἱοῦ Δαυὶδ υἱοῦ Ἀβραάμ."
+    );
 
     // The doxology of Mat 6:13 is not in NA27: one note, not text.
     assert!(!verse_text(&r, v(Book::Matthew, 6, 13)).contains("δόξα"));
     let notes = notes_in(&r, v(Book::Matthew, 6, 13));
     assert!(
-        notes.iter().any(|n| n.starts_with("Not in NA27. TR, Byz add: ὅτι σοῦ")),
+        notes
+            .iter()
+            .any(|n| n.starts_with("Not in NA27. TR, Byz add: ὅτι σοῦ")),
         "{notes:?}"
     );
     // Mat 17:21 is an Absent verse here, with a note where it would be.
-    assert!(!r.verses.iter().any(|bv| bv.verse == v(Book::Matthew, 17, 21)));
+    assert!(
+        !r.verses
+            .iter()
+            .any(|bv| bv.verse == v(Book::Matthew, 17, 21))
+    );
     let mat = r.unit(&UnitId::book(Book::Matthew)).unwrap();
     assert!(mat.spans.iter().any(|s| matches!(&s.kind,
         SpanKind::NoteRef { note, .. } if r.unit(note).unwrap().text.starts_with("Verse 17:21 is not in NA27."))));
@@ -493,6 +510,12 @@ fn full_tahot_and_tagnt() {
         assert_eq!(map.entries().len(), r.verses.len());
         let absent: Vec<String> = map.absent().iter().map(Verse::to_string).collect();
         eprintln!("absent {absent:?}");
+        // Every Hebrew Psalm title reaches its Standard title slot; Ps 119 has none in Hebrew.
+        let titles: Vec<&String> = absent.iter().filter(|v| v.ends_with(":title")).collect();
+        assert!(
+            titles.iter().all(|v| *v == "Ps 119:title"),
+            "{prefix}: {titles:?}"
+        );
         assert_eq!(map.unmapped().count(), 0, "{prefix}");
         let mut bad = std::collections::BTreeSet::new();
         for unit in &r.units {
@@ -507,6 +530,9 @@ fn full_tahot_and_tagnt() {
                 }
             }
         }
-        assert!(bad.is_empty(), "{prefix}: codes that do not expand: {bad:?}");
+        assert!(
+            bad.is_empty(),
+            "{prefix}: codes that do not expand: {bad:?}"
+        );
     }
 }

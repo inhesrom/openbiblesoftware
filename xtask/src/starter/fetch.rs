@@ -52,7 +52,8 @@ fn file_name(url: &str) -> String {
     while i < b.len() {
         let hex = |c: u8| (c as char).to_digit(16);
         if b[i] == b'%'
-            && let (Some(Some(h)), Some(Some(l))) = (b.get(i + 1).map(|&c| hex(c)), b.get(i + 2).map(|&c| hex(c)))
+            && let (Some(Some(h)), Some(Some(l))) =
+                (b.get(i + 1).map(|&c| hex(c)), b.get(i + 2).map(|&c| hex(c)))
         {
             out.push((h * 16 + l) as u8);
             i += 3;
@@ -79,8 +80,7 @@ fn fetch_file(resource_id: &str, url: &str, sha256: &str, cache: &Path) -> Resul
             .with_context(|| format!("cannot remove {}", cached.display()))?;
     }
     let partial = cache.join(format!("{sha256}.partial"));
-    download(url, &partial)
-        .with_context(|| format!("{resource_id}: download of {url} failed"))?;
+    download(url, &partial).with_context(|| format!("{resource_id}: download of {url} failed"))?;
     let bytes =
         std::fs::read(&partial).with_context(|| format!("cannot read {}", partial.display()))?;
     let actual = sha256_hex(&bytes);

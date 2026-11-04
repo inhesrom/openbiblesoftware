@@ -73,7 +73,16 @@ fn near_equal_word_counts_still_map_verses_the_standard_lacks() {
         Book::Malachi,
         3,
         (1..=24)
-            .map(|n| (n, if (22..=24).contains(&n) { [13, 13, 15][usize::from(n - 22)] } else { 20 }))
+            .map(|n| {
+                (
+                    n,
+                    if (22..=24).contains(&n) {
+                        [13, 13, 15][usize::from(n - 22)]
+                    } else {
+                        20
+                    },
+                )
+            })
             .collect(),
     );
     bible.remove(&(Book::Malachi, 4));
