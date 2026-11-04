@@ -511,3 +511,86 @@ fn descending_scripture_reference_click_keeps_first_written_target() {
         );
     }
 }
+
+#[test]
+fn range_and_split_map_reference_popups_keep_one_preview_per_written_target() {
+    let (mut h, files, bible, _tool) = setup("references-range-popup", false);
+    let range = Passage::new(john(16).start(), john(17).start()).unwrap();
+    // An identity-mapped range stays one target; a Standard Verse split across two native
+    // Verses previews once. Neither becomes per-Verse targets that the popup limit truncates.
+    for (revision, standard_17, heading) in
+        [(2, john(17), "John 3:16-17"), (3, john(16), "John 3:16")]
+    {
+        let mut resource = obs_store::sample_resource();
+        let map = resource.verse_map.take().unwrap();
+        let entries = map
+            .entries()
+            .iter()
+            .map(|e| obs_scripture::VerseMapEntry {
+                standard: (e.verse != john(17).start())
+                    .then_some(e.standard)
+                    .flatten()
+                    .or(Some(standard_17)),
+                ..*e
+            })
+            .collect();
+        resource.verse_map = Some(obs_scripture::VerseMap::new(
+            entries,
+            map.absent().to_vec(),
+            &obs_scripture::Standard,
+        ));
+        let unit = resource
+            .units
+            .iter_mut()
+            .find(|u| u.id == obs_model::UnitId::book(Book::John))
+            .unwrap();
+        unit.spans.push(obs_model::Span {
+            start: 0,
+            end: 3,
+            kind: obs_model::SpanKind::ScriptureRef {
+                targets: vec![range].into(),
+            },
+        });
+        let span = unit.spans.len() - 1;
+        // Previews read the library file through its own Verse map, so replace it as well.
+        resource.manifest.revision = revision;
+        resource.manifest.content_hash = resource.content_hash();
+        add_file(&mut h, &files, &resource);
+        h.shell.st.docs.insert(
+            "kjv-sample".into(),
+            Arc::new(ReadingDoc::from_resource(resource)),
+        );
+        h.shell.st.opened(bible);
+        h.shell.st.session.workspace.focus(bible);
+        h.shell.apply_effects();
+        h.ctx.enable_accesskit();
+        h.events.push(Event::PointerMoved(pos2(1.0, 1.0)));
+        h.frames(3);
+        let headings = |h: &Harness| h.texts().iter().filter(|t| **t == heading).count();
+        let before = headings(&h);
+        let spot = reference_spot(&h, bible, span);
+        h.events.push(Event::PointerMoved(spot));
+        for _ in 0..10 {
+            h.paced_frame();
+        }
+        assert_eq!(headings(&h), before + 1, "{heading}: {:?}", h.texts());
+        assert!(h.find("Loading Scripture reference…").is_none());
+        assert!(
+            h.find("Preview shortened — click the reference to read")
+                .is_none()
+        );
+        let previews: Vec<String> = h
+            .tree
+            .as_ref()
+            .unwrap()
+            .nodes
+            .iter()
+            .filter(|(_, node)| node.role() == egui::Role::Label)
+            .filter_map(|(_, node)| node.value().map(str::to_string))
+            .filter(|text| text.starts_with("For God"))
+            .collect();
+        assert_eq!(previews.len(), 1, "{heading}: {previews:?}");
+        assert!(previews[0].starts_with("For God so loved"));
+        assert!(previews[0].contains("For God sent not"), "{}", previews[0]);
+    }
+}

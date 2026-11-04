@@ -26,7 +26,7 @@ use crate::view::ReadingView;
 mod import_tab;
 mod library_tab;
 #[path = "references.rs"]
-mod references;
+pub(crate) mod references;
 
 /// Per-Tab UI state the engine does not need.
 #[derive(Default)]
@@ -980,7 +980,7 @@ impl State {
         let at = view.current_location();
         let reference = out
             .hovered_reference
-            .map(|(unit, span)| references::targets(&view.doc, unit, span));
+            .map(|(unit, span)| references::TargetKey::new(&view.doc, unit, span));
         if let Some(n) = out.hovered_verse_number {
             verse_number_tooltip(ui, &view.doc, n);
         }
@@ -997,16 +997,40 @@ impl State {
                 ws.scrolled(tab, at);
             }
         }
-        if let Some(targets) = reference {
-            self.reference_popup(ui, &targets);
-            if out.reference_clicked
-                && let Some(passage) = targets.first()
-            {
-                self.reference_navigate(
+        if let Some(key) = reference {
+            if out.reference_clicked {
+                self.references.pending_clicks.insert(
                     tab,
-                    *passage,
-                    ui.input(|i| i.modifiers.command || i.modifiers.ctrl),
+                    (
+                        key.clone(),
+                        ui.input(|i| i.modifiers.command || i.modifiers.ctrl),
+                    ),
                 );
+            }
+            match self.references.targets.get(key) {
+                Some(Ok(targets)) => self.reference_popup(ui, &targets),
+                Some(Err(error)) => self.reference_message_popup(ui, &error),
+                None => {
+                    self.reference_message_popup(ui, "Loading Scripture reference…");
+                    ui.ctx().request_repaint();
+                }
+            }
+        }
+        // A click on a cold cache must not disappear when the pointer leaves the span.
+        if let Some((key, new_tab)) = self.references.pending_clicks.get(&tab).cloned() {
+            match self.references.targets.get(key) {
+                None => ui.ctx().request_repaint(),
+                Some(result) => {
+                    self.references.pending_clicks.remove(&tab);
+                    match result {
+                        Ok(targets) => {
+                            if let Some(passage) = targets.iter().flat_map(|p| p.iter()).next() {
+                                self.reference_navigate(tab, *passage, new_tab);
+                            }
+                        }
+                        Err(error) => self.toast(error),
+                    }
+                }
             }
         }
     }

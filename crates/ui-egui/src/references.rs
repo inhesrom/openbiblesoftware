@@ -1,25 +1,26 @@
 //! Cross-references and reference popups share asynchronous data and snippet caches.
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Weak};
 
 use egui::{Mesh, Pos2, Rect, Sense, Shape, Ui, vec2};
 use obs_engine::cross_references::{self, BiblePreview, ReferenceGroup, TOP_REFERENCES};
 use obs_engine::{JobEventKind, JobId, JobQueue, Library};
 use obs_layout::ColorRole;
 use obs_model::{Direction, SpanKind};
-use obs_scripture::{Passage, RefStyle, Standard, Verse, format_passage};
+use obs_scripture::{Passage, PassageList, RefStyle, Standard, Verse, format_passage};
 
 use super::{State, TabId};
 use crate::{ReadingDoc, SnippetCache};
 
-struct Queries<T> {
+struct Queries<T, K = Passage> {
     jobs: JobQueue,
-    pending: BTreeMap<JobId, Passage>,
-    ready: HashMap<Passage, Result<Arc<T>, String>>,
+    pending: BTreeMap<JobId, K>,
+    ready: HashMap<K, Result<Arc<T>, String>>,
 }
 
-impl<T: Send + 'static> Default for Queries<T> {
+impl<T: Send + 'static, K> Default for Queries<T, K> {
     fn default() -> Self {
         Self {
             jobs: if cfg!(target_arch = "wasm32") {
@@ -33,7 +34,7 @@ impl<T: Send + 'static> Default for Queries<T> {
     }
 }
 
-impl<T: Send + 'static> Queries<T> {
+impl<T: Send + 'static, K: Clone + Eq + Hash + Send + 'static> Queries<T, K> {
     fn clear(&mut self) {
         for id in self.pending.keys() {
             self.jobs.cancel(*id);
@@ -42,11 +43,10 @@ impl<T: Send + 'static> Queries<T> {
         self.ready.clear();
     }
 
-    fn get(
+    fn get_key(
         &mut self,
-        library: &Library,
-        passage: Passage,
-        query: impl FnOnce(&Library, Passage) -> Result<T, String> + Send + 'static,
+        passage: K,
+        query: impl FnOnce(K) -> Result<T, String> + Send + 'static,
     ) -> Option<Result<Arc<T>, String>> {
         if !self.jobs.is_threaded() {
             self.jobs.pump(1);
@@ -75,19 +75,85 @@ impl<T: Send + 'static> Queries<T> {
             return Some(result.clone());
         }
         if self.pending.len() < 32 && !self.pending.values().any(|p| *p == passage) {
-            let library = library.clone();
+            let key = passage.clone();
             let id = self
                 .jobs
-                .submit_fn("Scripture references", move |_| query(&library, passage));
+                .submit_fn("Scripture references", move |_| query(key));
             self.pending.insert(id, passage);
         }
         None
     }
 }
 
+impl<T: Send + 'static> Queries<T> {
+    fn get(
+        &mut self,
+        library: &Library,
+        passage: Passage,
+        query: impl FnOnce(&Library, Passage) -> Result<T, String> + Send + 'static,
+    ) -> Option<Result<Arc<T>, String>> {
+        let library = library.clone();
+        self.get_key(passage, move |p| query(&library, p))
+    }
+}
+
+/// A Weak handle keeps the allocation's address reserved without retaining a closed
+/// document's text: pointer reuse cannot return another revision's targets, and neither
+/// hashing nor equality walks Resource text or Verse maps.
+#[derive(Clone)]
+pub(crate) struct TargetKey {
+    doc: Weak<ReadingDoc>,
+    unit: usize,
+    span: usize,
+}
+
+impl TargetKey {
+    pub(crate) fn new(doc: &Arc<ReadingDoc>, unit: usize, span: usize) -> Self {
+        Self {
+            doc: Arc::downgrade(doc),
+            unit,
+            span,
+        }
+    }
+}
+
+impl PartialEq for TargetKey {
+    fn eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.doc, &other.doc) && self.unit == other.unit && self.span == other.span
+    }
+}
+impl Eq for TargetKey {}
+impl Hash for TargetKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Weak::as_ptr(&self.doc).hash(state);
+        self.unit.hash(state);
+        self.span.hash(state);
+    }
+}
+
+/// One group per written target, even when its map has gaps. Popup limits count groups,
+/// not individual mapped Verses; separate written targets are never sorted or merged.
+type Targets = Vec<PassageList>;
+
+#[derive(Default)]
+pub(crate) struct TargetCache {
+    queries: Queries<Targets, TargetKey>,
+}
+
+impl TargetCache {
+    pub(crate) fn get(&mut self, key: TargetKey) -> Option<Result<Arc<Targets>, String>> {
+        self.queries.get_key(key, |key| {
+            let doc = key.doc.upgrade().ok_or("The Resource was closed")?;
+            Ok(targets(&doc, key.unit, key.span))
+        })
+    }
+}
+
 #[derive(Default)]
 pub(super) struct References {
     groups: Queries<Vec<ReferenceGroup>>,
+    pub targets: TargetCache,
+    pub pending_clicks: BTreeMap<TabId, (TargetKey, bool)>,
     previews: Queries<BiblePreview>,
     snippets: SnippetCache,
     preview_text: Arc<std::sync::Mutex<cross_references::BiblePreviewCache>>,
@@ -117,26 +183,35 @@ impl References {
     }
 }
 
-/// Scripture-reference spans in Bibles use native numbering; Cross-references always use
-/// Standard. Keep every mapped Passage in written order, including split/merged Verses,
-/// and omit Unmapped ones. Sorting or merging would change the first click destination.
-pub(super) fn targets(doc: &ReadingDoc, unit: usize, span: usize) -> Vec<Passage> {
+/// Native translation runs only on the worker. Scan map entries once per written target,
+/// rather than linearly searching the entire map for every Verse of a large Passage.
+fn targets(doc: &ReadingDoc, unit: usize, span: usize) -> Targets {
     let Some(span) = doc.units.get(unit).and_then(|u| u.spans.get(span)) else {
         return vec![];
     };
-    match &span.kind {
-        SpanKind::Xref { targets } => targets.passages().to_vec(),
-        SpanKind::ScriptureRef { targets } => match &doc.verse_map {
-            Some(map) => targets
-                .passages()
+    let (written, map) = match &span.kind {
+        SpanKind::Xref { targets } => (targets, None),
+        SpanKind::ScriptureRef { targets } => (targets, doc.verse_map.as_ref()),
+        _ => return vec![],
+    };
+    written
+        .iter()
+        .map(|p| {
+            let Some(map) = map else {
+                return vec![*p].into();
+            };
+            map.entries()
                 .iter()
-                .flat_map(|p| p.verses(&doc.versification))
-                .filter_map(|v| map.to_standard(v))
-                .collect(),
-            None => targets.passages().to_vec(),
-        },
-        _ => vec![],
-    }
+                .filter_map(|entry| {
+                    let end = Verse::new(entry.verse.book, entry.verse.chapter, entry.last);
+                    (entry.verse <= p.end() && p.start() <= end)
+                        .then_some(entry.standard)
+                        .flatten()
+                })
+                .collect::<PassageList>()
+                .merged(&Standard)
+        })
+        .collect()
 }
 
 impl State {
@@ -211,7 +286,7 @@ impl State {
                             navigate = Some(row.target);
                         }
                         if r.hovered() {
-                            self.reference_popup(ui, &[row.target]);
+                            self.reference_popup(ui, &[vec![row.target].into()]);
                         }
                         self.preview(ui, Passage::verse(row.target.start()), true);
                     }
@@ -313,7 +388,19 @@ impl State {
         }
     }
 
-    pub(super) fn reference_popup(&mut self, ui: &Ui, passages: &[Passage]) {
+    pub(super) fn reference_message_popup(&self, ui: &Ui, message: &str) {
+        egui::Tooltip::always_open(
+            ui.ctx().clone(),
+            ui.layer_id(),
+            ui.scope_id().with("scripture-preview"),
+            egui::PopupAnchor::Pointer,
+        )
+        .show(|ui| {
+            ui.label(message);
+        });
+    }
+
+    pub(super) fn reference_popup(&mut self, ui: &Ui, passages: &[PassageList]) {
         egui::Tooltip::always_open(
             ui.ctx().clone(),
             ui.layer_id(),
@@ -322,10 +409,32 @@ impl State {
         )
         .show(|ui| {
             ui.set_width(360.0);
-            // A bounded popup; each target stays independently reachable in the Resource.
-            for passage in passages.iter().take(3) {
-                ui.strong(format_passage(*passage, &Standard, RefStyle::Short));
-                self.preview(ui, *passage, false);
+            // Bound work even when one written target maps to many disjoint Passages.
+            for target in passages.iter().take(3) {
+                let mut remaining = 20;
+                for passage in target {
+                    if remaining == 0 {
+                        ui.small("Preview shortened — click the reference to read");
+                        break;
+                    }
+                    let verses: Vec<_> = passage.verses(&Standard).take(remaining + 1).collect();
+                    let count = verses.len().min(remaining);
+                    let last = count.checked_sub(1).and_then(|i| verses.get(i));
+                    let Some(Ok(shown)) =
+                        verses.first().zip(last).map(|(s, e)| Passage::new(*s, *e))
+                    else {
+                        continue;
+                    };
+                    ui.strong(format_passage(*passage, &Standard, RefStyle::Short));
+                    self.preview(ui, shown, false);
+                    remaining -= count;
+                    if verses.len() > count {
+                        ui.small("Preview shortened — click the reference to read");
+                    }
+                }
+                if target.is_empty() {
+                    ui.label("No Standard equivalent");
+                }
             }
             if passages.len() > 3 {
                 ui.small("More Passages in this reference");
