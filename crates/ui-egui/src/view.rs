@@ -331,21 +331,21 @@ impl ReadingView {
                 continue;
             }
             let hit = laid.hit(x, y - top)?;
+            let unit = self.doc.blocks[block].unit;
             let byte = match hit.source {
                 UnitPos::Text(byte) => byte,
                 UnitPos::Object {
-                    anchor,
-                    object: obs_layout::InlineObject::ScriptureReference,
-                } => anchor,
+                    object: obs_layout::InlineObject::ScriptureReference { span },
+                    ..
+                } => return Some((unit, span)),
                 _ => return None,
             };
-            let unit = self.doc.blocks[block].unit;
             let span = self.doc.units[unit].spans.iter().position(|s| {
                 matches!(
                     s.kind,
                     obs_model::SpanKind::ScriptureRef { .. } | obs_model::SpanKind::Xref { .. }
-                ) && ((s.start as usize <= byte && byte < s.end as usize)
-                    || (s.start == s.end && s.start as usize == byte))
+                ) && s.start as usize <= byte
+                    && byte < s.end as usize
             })?;
             return Some((unit, span));
         }

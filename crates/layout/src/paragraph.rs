@@ -12,7 +12,10 @@ pub enum InlineObject {
     /// A verse number (or, for verse 1, the chapter number) before a Bible Verse.
     VerseNumber(Verse),
     /// A zero-width Scripture-reference span rendered as a hoverable marker.
-    ScriptureReference,
+    ScriptureReference {
+        /// Index in the source TextUnit's spans; anchors need not be unique.
+        span: usize,
+    },
     /// A footnote or cross-reference marker for a note unit.
     NoteMarker { note: UnitId, kind: NoteKind },
 }

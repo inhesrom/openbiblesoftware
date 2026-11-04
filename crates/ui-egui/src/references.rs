@@ -345,15 +345,9 @@ impl State {
             .tab(opener)
             .is_some_and(|t| t.link.is_some());
         if linked && !new_tab {
-            if let Some(t) = self.session.workspace.tab(opener)
-                && let Some(native) = obs_engine::link::to_native(
-                    t.verse_map.as_deref(),
-                    t.versification.as_deref(),
-                    passage.start(),
-                )
-            {
-                self.session.workspace.navigate(opener, native);
-            }
+            self.session
+                .workspace
+                .navigate_standard(opener, passage.start());
             return;
         }
         let id = self

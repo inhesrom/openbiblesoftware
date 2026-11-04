@@ -877,15 +877,8 @@ impl State {
             ui_state.view = Some(ReadingView::new(Arc::new(doc), self.session.text));
         }
         self.tabs.insert(tab, ui_state);
-        if let Some(standard) = self.references.pending_navigation.remove(&tab)
-            && let Some(t) = self.session.workspace.tab(tab)
-            && let Some(native) = obs_engine::link::to_native(
-                t.verse_map.as_deref(),
-                t.versification.as_deref(),
-                standard,
-            )
-        {
-            self.session.workspace.navigate(tab, native);
+        if let Some(standard) = self.references.pending_navigation.remove(&tab) {
+            self.session.workspace.navigate_standard(tab, standard);
         }
     }
 
