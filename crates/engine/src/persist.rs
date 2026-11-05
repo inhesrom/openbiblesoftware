@@ -181,8 +181,10 @@ pub trait UserData: std::fmt::Debug {
     fn move_favorite(&self, id: i64, folder: &str) -> Result<bool, String>;
     /// Add a Visit made now to History (which forgets Visits past its cap).
     fn record_visit(&self, label: &str, location: &str) -> Result<(), String>;
-    /// History, newest first.
-    fn history(&self) -> Result<Vec<VisitRow>, String>;
+    /// History, newest first, with its days counted to the local day of `at` (Unix seconds).
+    fn history_as_of(&self, at: i64) -> Result<Vec<VisitRow>, String>;
+    /// The local day of `at` (Unix seconds), `YYYY-MM-DD`.
+    fn local_day(&self, at: i64) -> Result<String, String>;
     fn clear_history(&self) -> Result<(), String>;
 
     // Annotations (#61). Every edit is [`UserData::apply_changes`]; see `annotations.rs`.
@@ -261,8 +263,11 @@ impl UserData for obs_store::UserStore {
     fn record_visit(&self, label: &str, location: &str) -> Result<(), String> {
         obs_store::UserStore::record_visit(self, label, location).map_err(|e| e.to_string())
     }
-    fn history(&self) -> Result<Vec<VisitRow>, String> {
-        obs_store::UserStore::history(self).map_err(|e| e.to_string())
+    fn history_as_of(&self, at: i64) -> Result<Vec<VisitRow>, String> {
+        obs_store::UserStore::history_as_of(self, at).map_err(|e| e.to_string())
+    }
+    fn local_day(&self, at: i64) -> Result<String, String> {
+        obs_store::UserStore::local_day(self, at).map_err(|e| e.to_string())
     }
     fn clear_history(&self) -> Result<(), String> {
         obs_store::UserStore::clear_history(self).map_err(|e| e.to_string())

@@ -215,8 +215,10 @@ fn the_history_tool_shows_the_last_sessions_locations_in_order() {
     s.run("tab.link", &json!({ "tab": web.0, "set": "A" }))
         .unwrap();
     // The UI records History after each frame's effects, once new Tabs are placed: these
-    // have no location yet (no UI places them here), so they make no Visits.
+    // have no location yet (no UI places them here), so they stay queued. BSB's jumps say
+    // where it went; WEB is recorded where it is once it has a location (following BSB).
     s.record_history();
+    assert!(s.history().is_empty());
     go(&mut s, bsb, "Gen 1:1");
     go(&mut s, bsb, "Rom 8:28");
     assert_eq!(at(&s, web), Some(v(Book::Romans, 8, 28)));
@@ -238,6 +240,7 @@ fn the_history_tool_shows_the_last_sessions_locations_in_order() {
         "John 3:16 · BSB",
         "Romans 8:28 · BSB",
         "Genesis 1:1 · BSB",
+        "Romans 8:28 · WEB",
     ];
     assert_eq!(labels(&s), expected);
     let days = s.history_days("");
@@ -251,7 +254,14 @@ fn the_history_tool_shows_the_last_sessions_locations_in_order() {
         .flat_map(|d| d.visits)
         .map(|v| v.label)
         .collect();
-    assert_eq!(found, ["Romans 8:28 · BSB", "Romans 8:28 · BSB"]);
+    assert_eq!(
+        found,
+        [
+            "Romans 8:28 · BSB",
+            "Romans 8:28 · BSB",
+            "Romans 8:28 · WEB"
+        ]
+    );
 
     // Opening a Visit brings that Tab kind back at that location.
     let john = s.history()[3].id;
@@ -267,7 +277,10 @@ fn the_history_tool_shows_the_last_sessions_locations_in_order() {
     let st = s.search_tab(t).unwrap();
     assert_eq!((st.mode, st.query.as_str()), (SearchMode::Bible, "loved"));
 
+    // Clearing History forgets the Visits not yet recorded too (the two opens above).
     s.run("history.clear", &json!({})).unwrap();
+    assert!(s.history().is_empty());
+    s.save_last_session().unwrap();
     assert!(s.history().is_empty());
     drop(s);
     let s = launch(&root);
@@ -322,4 +335,87 @@ fn locations_round_trip_through_json() {
         }),
     };
     assert_eq!(TabLocation::from_json(&loc.to_json()), Some(loc));
+}
+
+#[test]
+fn searches_run_one_after_another_in_one_tab_are_each_a_visit() {
+    let root = folder("searches");
+    let mut s = launch(&root);
+    let search = tab(&s.run("search.run", &json!({ "text": "loved" })).unwrap());
+    s.run(
+        "search.run",
+        &json!({ "tab": search.0, "text": "good", "bibles": "web" }),
+    )
+    .unwrap();
+    // Recorded together (on quit): each Visit keeps the Search it was.
+    s.save_last_session().unwrap();
+    drop(s);
+
+    let mut s = launch(&root);
+    assert_eq!(
+        labels(&s),
+        ["“good” · Bible Search", "“loved” · Bible Search"]
+    );
+    let loved = s.history()[1].clone();
+    let saved = loved.location.search.as_ref().unwrap();
+    assert_eq!((saved.query.as_str(), &saved.bibles), ("loved", &None));
+    let t = tab(&s.run("history.open", &json!({ "id": loved.id })).unwrap());
+    assert_eq!(s.search_tab(t).unwrap().query, "loved");
+    drop(s);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn a_saved_search_of_the_star_bible_opens_without_a_reused_tabs_bible_choice() {
+    let root = folder("star-bible");
+    let mut s = launch(&root);
+    let search = tab(&s.run("search.run", &json!({ "text": "loved" })).unwrap());
+    assert_eq!(s.search_tab(search).unwrap().bibles, None);
+    let id = s.run("favorite.add", &json!({ "tab": search.0 })).unwrap()["id"].clone();
+    // The same Search Tab now searches WEB, chosen.
+    s.run(
+        "search.run",
+        &json!({ "tab": search.0, "text": "good", "bibles": "web" }),
+    )
+    .unwrap();
+    assert_eq!(
+        s.search_tab(search).unwrap().bibles,
+        Some(vec!["web".to_string()])
+    );
+    let out = s.run("favorite.open", &json!({ "id": id })).unwrap();
+    assert_eq!(tab(&out), search);
+    let st = s.search_tab(search).unwrap();
+    assert_eq!((st.query.as_str(), &st.bibles), ("loved", &None));
+    assert!(s.favorite_of(search).is_some());
+    drop(s);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn history_day_headings_move_on_at_midnight() {
+    let root = folder("midnight");
+    let mut s = launch(&root);
+    let bsb = open(&mut s, "bsb");
+    go(&mut s, bsb, "Jn 3:16");
+    s.record_history();
+    let headings = |s: &Session| {
+        s.history_days("")
+            .into_iter()
+            .map(|d| d.heading)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(headings(&s), ["Today"]);
+    // A day later, with History left open: its headings are worked out again.
+    let tomorrow = unix_now_for_tests() + 86_400;
+    s.refresh_history_day_as_of(tomorrow);
+    assert_eq!(headings(&s), ["Yesterday"]);
+    // Within the same day, nothing is read again.
+    s.refresh_history_day_as_of(tomorrow + 1);
+    assert_eq!(headings(&s), ["Yesterday"]);
+    drop(s);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+fn unix_now_for_tests() -> i64 {
+    i64::try_from(crate::get_bibles::now_secs()).unwrap()
 }

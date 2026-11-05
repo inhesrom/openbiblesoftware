@@ -146,17 +146,23 @@ impl UserStore {
 
     /// History, newest first.
     pub fn history(&self) -> Result<Vec<VisitRow>, StoreError> {
+        self.history_as_of(crate::user::now())
+    }
+
+    /// History, newest first, its `days_ago` counted to the local day of `at` (Unix seconds).
+    pub fn history_as_of(&self, at: i64) -> Result<Vec<VisitRow>, StoreError> {
         let mut stmt = self
             .conn
             .prepare_cached(
                 "SELECT id, visited_at, day,
-                        CAST(julianday(date('now', 'localtime')) - julianday(day) AS INTEGER),
+                        CAST(julianday(date(?1, 'unixepoch', 'localtime')) - julianday(day)
+                             AS INTEGER),
                         strftime('%H:%M', visited_at, 'unixepoch', 'localtime'), label, location
                  FROM history ORDER BY visited_at DESC, id DESC",
             )
             .map_err(sql)?;
         let rows = stmt
-            .query_map([], |r| {
+            .query_map([at], |r| {
                 Ok(VisitRow {
                     id: r.get(0)?,
                     visited_at: r.get(1)?,
@@ -169,6 +175,15 @@ impl UserStore {
             })
             .map_err(sql)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(sql)
+    }
+
+    /// The local day of `at` (Unix seconds), `YYYY-MM-DD`, as History's days are kept.
+    pub fn local_day(&self, at: i64) -> Result<String, StoreError> {
+        self.conn
+            .query_row("SELECT date(?1, 'unixepoch', 'localtime')", [at], |r| {
+                r.get(0)
+            })
+            .map_err(sql)
     }
 
     /// Forget every Visit.

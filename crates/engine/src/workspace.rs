@@ -474,9 +474,19 @@ pub struct Workspace {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingVisit {
     pub tab: TabId,
-    /// Where a jump went: the Tab's Passage location and entry Key just after it. `None` for
-    /// a Tab just opened, which the UI places later; History reads where it is then.
-    pub at: Option<(Option<Verse>, Option<Key>)>,
+    /// Where a jump went, just after it. `None` for a Tab just opened, which the UI places
+    /// later; History reads where it is then.
+    pub at: Option<VisitedAt>,
+}
+
+/// Where a Tab was just after a jump: its Passage location, entry Key and Search fields, read
+/// when the jump is made (the Tab may move again before History records it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VisitedAt {
+    pub verse: Option<Verse>,
+    pub key: Option<Key>,
+    /// A Search Tab's fields (none for other Tabs, or with an empty query).
+    pub search: Option<crate::favorites::SavedSearch>,
 }
 
 impl Workspace {
@@ -529,16 +539,31 @@ impl Workspace {
     /// A Tab jumped (not scrolled, and not following its Link set): History records where
     /// it is now.
     pub(crate) fn visited(&mut self, tab: TabId) {
-        let at = self
-            .tabs
-            .get(&tab)
-            .map(|t| (t.history.current(), t.entry_history.current()));
+        let at = self.tabs.get(&tab).map(|t| VisitedAt {
+            verse: t.history.current(),
+            key: t.entry_history.current(),
+            search: (t.kind == TabKind::Tool(Tool::Search))
+                .then(|| crate::favorites::SavedSearch::of(&t.search))
+                .flatten(),
+        });
         self.visits.push(PendingVisit { tab, at });
     }
 
     /// Tabs opened or jumped since the last call, oldest first.
     pub fn take_visits(&mut self) -> Vec<PendingVisit> {
         std::mem::take(&mut self.visits)
+    }
+
+    /// Put back Visits History could not record yet (Tabs not yet placed), before any queued
+    /// since they were taken.
+    pub(crate) fn keep_visits(&mut self, mut kept: Vec<PendingVisit>) {
+        kept.append(&mut self.visits);
+        self.visits = kept;
+    }
+
+    /// Forget every queued Visit (History was cleared).
+    pub(crate) fn forget_visits(&mut self) {
+        self.visits.clear();
     }
 
     fn existing(&self, kind: &TabKind) -> Option<TabId> {

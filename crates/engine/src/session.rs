@@ -235,9 +235,11 @@ impl Session {
         }
     }
 
-    /// Write the Last session if it changed since the last write (and History's new Visits).
+    /// Write the Last session if it changed since the last write (and History's new Visits,
+    /// refreshing its day headings after midnight).
     pub fn save_last_session(&mut self) -> Result<(), String> {
         self.record_history();
+        self.refresh_history_day();
         let Some(user) = &self.user else {
             return Ok(());
         };

@@ -203,3 +203,31 @@ fn the_history_tool_shows_the_last_sessions_locations_in_order() {
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn opening_the_first_bible_is_in_history_after_a_restart_without_a_jump() {
+    let dir = folder("first-open");
+    write_bsb(&dir);
+    let mut h = launch(&dir);
+    // A Workspace with nothing open, so BSB has no Link set or other Bible to start beside.
+    let open: Vec<TabId> = h.shell.st.session.workspace.tabs().map(|t| t.id).collect();
+    for t in open {
+        h.shell.run("tab.close", &json!({ "tab": t.0 }));
+    }
+    settle_all(&mut h);
+    h.shell.run("history.clear", &json!({}));
+    // BSB gets its location only once its text is laid out, a frame after it opens.
+    let bsb = open_bsb(&mut h);
+    assert_eq!(location(&mut h, bsb), Some(v(Book::Genesis, 1, 1)));
+    h.shell.save_session(true);
+    drop(h);
+
+    let h = launch(&dir);
+    let labels: Vec<&str> = (h.shell.st.session.history().iter())
+        .map(|v| v.label.as_str())
+        .collect();
+    // The oldest Visit (the relaunch's own Tabs are newer).
+    assert_eq!(labels.last(), Some(&"Genesis 1:1 · BSB"), "{labels:?}");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

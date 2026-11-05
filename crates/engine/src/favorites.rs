@@ -11,10 +11,12 @@ use obs_scripture::{Passage, RefStyle, Standard, Verse, format_passage};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::bible_search::{SearchMode, SearchRequestFields};
+use crate::bible_search::{SearchMode, SearchRequestFields, SearchTab};
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
 use crate::session::Session;
-use crate::workspace::{Effect, Guide, HeaderBox, OpenRequest, PanelId, TabId, TabKind, Tool};
+use crate::workspace::{
+    Effect, Guide, HeaderBox, OpenRequest, PanelId, PendingVisit, TabId, TabKind, Tool, VisitedAt,
+};
 
 /// A Search as a Favorite or Visit keeps it: what the Search Tool's fields held.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,6 +37,21 @@ pub struct SavedSearch {
     /// Notes mode's Notebook (none: all).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notebook: Option<String>,
+}
+
+impl SavedSearch {
+    /// A Search Tab's fields, unless its query is empty.
+    pub(crate) fn of(st: &SearchTab) -> Option<Self> {
+        (!st.query.trim().is_empty()).then(|| Self {
+            mode: st.mode,
+            query: st.query.clone(),
+            scope: st.scope.clone(),
+            bibles: st.bibles.clone(),
+            types: st.library.types.clone(),
+            resources: st.library.resources.clone(),
+            notebook: st.notebook.clone(),
+        })
+    }
 }
 
 /// Where a Tab is: its kind and Current location. What a Favorite or a Visit opens.
@@ -100,6 +117,8 @@ pub struct FavoritesAndHistory {
     history: Vec<Visit>,
     /// The last location History recorded, so returning to it records nothing.
     last_visit: Option<TabLocation>,
+    /// The local day History's day headings were worked out on (`YYYY-MM-DD`).
+    history_day: Option<String>,
 }
 
 impl Session {
@@ -130,11 +149,16 @@ impl Session {
     }
 
     fn reload_history(&mut self) {
-        let rows = self
-            .user
-            .as_ref()
-            .and_then(|u| u.history().ok())
-            .unwrap_or_default();
+        self.reload_history_as_of(unix_now());
+    }
+
+    /// Load History with its day headings as of `at` (Unix seconds).
+    fn reload_history_as_of(&mut self, at: i64) {
+        let Some(user) = &self.user else {
+            return;
+        };
+        let rows = user.history_as_of(at).unwrap_or_default();
+        self.places.history_day = user.local_day(at).ok();
         self.places.history = rows
             .into_iter()
             .filter_map(|r| {
@@ -191,6 +215,23 @@ impl Session {
             .find(|f| f.location == location)
     }
 
+    /// Work History's day headings out again if the local day has changed since they were
+    /// ("Today" becomes "Yesterday" at midnight). Saving the Last session (at most once a
+    /// second while the app runs) calls this.
+    pub(crate) fn refresh_history_day(&mut self) {
+        self.refresh_history_day_as_of(unix_now());
+    }
+
+    pub(crate) fn refresh_history_day_as_of(&mut self, at: i64) {
+        let Some(user) = &self.user else {
+            return;
+        };
+        let today = user.local_day(at).ok();
+        if today.is_some() && today != self.places.history_day {
+            self.reload_history_as_of(at);
+        }
+    }
+
     /// History, newest first.
     pub fn history(&self) -> &[Visit] {
         &self.places.history
@@ -223,16 +264,12 @@ impl Session {
         self.location_at(tab, None)
     }
 
-    /// [`Self::location_of`], with the Tab's Passage location and entry Key taken from `at`
-    /// when given (where a jump went, read later).
-    fn location_at(
-        &self,
-        tab: TabId,
-        at: Option<(Option<Verse>, Option<Key>)>,
-    ) -> Option<(TabLocation, String)> {
+    /// [`Self::location_of`], with the Tab's Passage location, entry Key and Search fields
+    /// taken from `at` when given (where a jump went, read later).
+    fn location_at(&self, tab: TabId, at: Option<&VisitedAt>) -> Option<(TabLocation, String)> {
         let t = self.workspace.tab(tab)?;
         let (verse, entry_key) = match at {
-            Some(at) => at,
+            Some(at) => (at.verse, at.key.clone()),
             None => (t.history.current(), t.entry_history.current()),
         };
         let place = |verse: Verse| TabLocation {
@@ -277,23 +314,14 @@ impl Session {
                 Some((place(v), format!("{} · {}", reference(v), title(&t.kind))))
             }
             TabKind::Tool(Tool::Search) => {
-                let st = &t.search;
-                if st.query.trim().is_empty() {
-                    return None;
-                }
-                let search = SavedSearch {
-                    mode: st.mode,
-                    query: st.query.clone(),
-                    scope: st.scope.clone(),
-                    bibles: st.bibles.clone(),
-                    types: st.library.types.clone(),
-                    resources: st.library.resources.clone(),
-                    notebook: st.notebook.clone(),
+                let search = match at {
+                    Some(at) => at.search.clone()?,
+                    None => SavedSearch::of(&t.search)?,
                 };
                 let label = format!(
                     "“{}” · {} {}",
-                    st.query.trim(),
-                    st.mode.label(),
+                    search.query.trim(),
+                    search.mode.label(),
                     Tool::Search.title()
                 );
                 Some((
@@ -373,38 +401,55 @@ impl Session {
 
     fn open_search(&mut self, search: &SavedSearch, req: OpenRequest) -> TabId {
         let tab = self.search_tab_for(None, req);
+        // Every field as saved, even "none": a reused Search Tab's own choices do not carry
+        // over (no Bibles chosen means the ★ Bible, not this Tab's last choice).
         if let Some(st) = self.search_tab_mut(tab) {
             st.mode = search.mode;
             st.notebook = search.notebook.clone();
+            st.bibles = search.bibles.clone();
         }
-        let library =
-            (search.mode == SearchMode::Library).then(|| crate::library_search::LibraryScope {
-                types: search.types.clone(),
-                resources: search.resources.clone(),
-            });
         self.run_search(
             tab,
             SearchRequestFields {
                 query: search.query.clone(),
                 scope: Some(search.scope.clone()),
                 bibles: search.bibles.clone(),
-                library,
+                library: Some(crate::library_search::LibraryScope {
+                    types: search.types.clone(),
+                    resources: search.resources.clone(),
+                }),
             },
         );
         tab
     }
 
-    /// Record a Visit for every Tab opened or jumped since the last call, where it is now.
-    /// The UI calls this once it has applied the engine's effects (so a new Resource Tab has
-    /// its location); without a User database the Visits are dropped.
+    /// Record a Visit for every Tab opened or jumped since the last call: where a jump went,
+    /// and where an opened Tab is now. The UI calls this once it has applied the engine's
+    /// effects; a new Resource Tab the UI has not placed yet (no location until its text is
+    /// laid out) stays queued until it has one, unless it jumps first. Without a User
+    /// database the Visits are dropped.
     pub fn record_history(&mut self) {
         let visits = self.workspace.take_visits();
         if visits.is_empty() || self.user.is_none() {
             return;
         }
         let mut recorded = false;
-        for visit in visits {
-            let Some((location, label)) = self.location_at(visit.tab, visit.at) else {
+        let mut unplaced: Vec<PendingVisit> = Vec::new();
+        for (i, visit) in visits.iter().enumerate() {
+            let opened = visit.at.is_none();
+            if opened && visits[i + 1..].iter().any(|later| later.tab == visit.tab) {
+                // Its later jump is where it went.
+                continue;
+            }
+            let Some((location, label)) = self.location_at(visit.tab, visit.at.as_ref()) else {
+                if opened
+                    && self
+                        .workspace
+                        .tab(visit.tab)
+                        .is_some_and(|t| t.kind.is_reading())
+                {
+                    unplaced.push(visit.clone());
+                }
                 continue;
             };
             if self.places.last_visit.as_ref() == Some(&location) {
@@ -421,10 +466,15 @@ impl Session {
             self.places.last_visit = Some(location);
             recorded = true;
         }
+        self.workspace.keep_visits(unplaced);
         if recorded {
             self.reload_history();
         }
     }
+}
+
+fn unix_now() -> i64 {
+    i64::try_from(crate::get_bibles::now_secs()).unwrap_or(i64::MAX)
 }
 
 fn title(kind: &TabKind) -> &'static str {
@@ -661,6 +711,8 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 .as_ref()
                 .ok_or_else(|| failed(CMD, "no User database"))?;
             user.clear_history().map_err(|e| failed(CMD, e))?;
+            // Visits not yet recorded are History too.
+            s.workspace.forget_visits();
             s.places.history.clear();
             s.places.last_visit = None;
             Ok(Value::Null)
