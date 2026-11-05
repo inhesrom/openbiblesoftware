@@ -820,12 +820,14 @@ fn link(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     Ok(json!({ "tab": tab.0, "set": link.map(String::from) }))
 }
 
-/// Set the Text size (clamped), save it and show it briefly ("Text 18 pt").
+/// Set the Text size (clamped), save it and show it briefly ("Text 18 pt"). The size is
+/// shown only once saved, so a failed save's error toast is not replaced by it.
 fn set_text_size(s: &mut Session, size: f32) -> Result<Value, CommandError> {
     s.text.size = size.clamp(TEXT_SIZE_MIN, TEXT_SIZE_MAX);
+    let out = view_saved(s, json!({ "size": s.text.size }))?;
     s.workspace
         .push_effect(Effect::Message(format!("Text {} pt", s.text.size)));
-    view_saved(s, json!({ "size": s.text.size }))
+    Ok(out)
 }
 
 fn view_saved(s: &mut Session, out: Value) -> Result<Value, CommandError> {

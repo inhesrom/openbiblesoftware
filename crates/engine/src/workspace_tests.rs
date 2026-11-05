@@ -279,6 +279,25 @@ fn text_size_steps_undo_exactly_reset_to_the_default_and_show_the_size() {
     assert_eq!(key("view.text_reset"), Some("Ctrl+0"));
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn a_text_size_that_cannot_be_saved_is_an_error_not_a_size_message() {
+    let dir = std::env::temp_dir().join(format!("obs-text-size-unsaved-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (store, _) = obs_store::UserStore::open(&dir.join("user.db")).unwrap();
+    let mut s = session();
+    s.attach_user(Box::new(crate::testing::PreferenceWritesFail(store)));
+    s.workspace.take_effects();
+    for id in ["view.text_larger", "view.text_smaller", "view.text_reset"] {
+        let err = s.run(id, &json!({})).unwrap_err().to_string();
+        assert!(err.contains("disk full"), "{id}: {err}");
+        assert_eq!(s.workspace.take_effects(), vec![], "{id}");
+    }
+    drop(s);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn interface_size_is_a_view_choice_kept_apart_from_text_size() {
     let mut s = session();

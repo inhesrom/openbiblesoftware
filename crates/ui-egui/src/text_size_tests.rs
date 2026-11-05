@@ -252,3 +252,25 @@ fn interface_size_scales_the_chrome_survives_a_restart_and_text_keys_never_chang
     drop(h);
     std::fs::remove_dir_all(db.parent().unwrap()).unwrap();
 }
+
+#[test]
+fn a_text_size_that_cannot_be_saved_shows_the_error_not_the_size() {
+    let db = temp_db("text-size-unsaved");
+    let mut h = Harness::new();
+    let (store, _) = obs_store::UserStore::open(&db).unwrap();
+    h.shell
+        .st
+        .session
+        .attach_user(Box::new(obs_engine::testing::PreferenceWritesFail(store)));
+    let default = obs_layout::TextSettings::default().size;
+    press(&mut h, LAYOUTS[0].larger[0], CTRL);
+    let texts = h.texts();
+    assert!(
+        texts.iter().any(|t| t.contains("disk full")),
+        "no save error in {texts:?}"
+    );
+    let size = format!("Text {} pt", default + 1.0);
+    assert!(!texts.contains(&size.as_str()), "{size} hides the error");
+    drop(h);
+    std::fs::remove_dir_all(db.parent().unwrap()).unwrap();
+}
