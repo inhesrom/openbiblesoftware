@@ -36,6 +36,10 @@ pub const UNDO_LIMIT: usize = 500;
 /// Longest Notebook name, in characters.
 pub const MAX_NOTEBOOK_NAME: usize = 100;
 
+/// User database preference holding the id of the Notebook last chosen for a new Annotation
+/// (#18 rule 8: new Annotations go into the Notebook last used).
+pub const LAST_NOTEBOOK_PREF: &str = "annotations.last_notebook";
+
 // ------------------------------------------------------------------------------------ undo
 
 /// One undoable step: the row Changes one command made, applied together.
@@ -408,11 +412,26 @@ impl Session {
             .ok_or_else(|| format!("There is no Notebook {id}"))
     }
 
-    /// The Notebook `id`, or the default when `None`.
-    fn notebook_or_default(&self, id: Option<&str>) -> Result<Notebook, String> {
+    /// The Notebook new Annotations go into unless another is chosen: the one last used
+    /// (a User database preference), or the default when that is unset or gone.
+    pub fn last_notebook(&self) -> Result<Notebook, String> {
+        let last = self.user_data()?.preference(LAST_NOTEBOOK_PREF)?;
+        let notebooks = self.notebooks()?;
+        last.and_then(|id| notebooks.iter().find(|n| n.id == id).cloned())
+            .or_else(|| notebooks.into_iter().find(|n| n.is_default))
+            .ok_or_else(|| "The User database has no default Notebook".to_string())
+    }
+
+    /// The Notebook `id`, remembered as the last used; when `None`, the last used one.
+    fn notebook_for_new(&self, id: Option<&str>) -> Result<Notebook, String> {
         match id {
-            Some(id) => self.notebook(id),
-            None => self.default_notebook(),
+            Some(id) => {
+                let notebook = self.notebook(id)?;
+                self.user_data()?
+                    .set_preference(LAST_NOTEBOOK_PREF, &notebook.id)?;
+                Ok(notebook)
+            }
+            None => self.last_notebook(),
         }
     }
 
@@ -454,14 +473,15 @@ impl Session {
     }
 
     /// Highlight a selection: one Highlight per text unit (Bible book) it covers, all in one
-    /// undo step. Returns the new Highlights.
+    /// undo step, in `notebook` (remembered as the last used) or else the last used one.
+    /// Returns the new Highlights.
     pub fn highlight(
         &mut self,
         sel: &Selection,
         style: HighlightStyle,
         notebook: Option<&str>,
     ) -> Result<Vec<Annotation>, String> {
-        let notebook = self.notebook_or_default(notebook)?;
+        let notebook = self.notebook_for_new(notebook)?;
         let parts = self.selection_segments(sel)?;
         let now = now_ms();
         let made: Vec<Annotation> = parts
@@ -489,14 +509,15 @@ impl Session {
         Ok(made)
     }
 
-    /// Make a Note with `body`, anchored as `target` says.
+    /// Make a Note with `body`, anchored as `target` says, in `notebook` (remembered as the
+    /// last used) or else the last used one.
     pub fn add_note(
         &mut self,
         target: &NoteTarget,
         body: &str,
         notebook: Option<&str>,
     ) -> Result<Annotation, String> {
-        let notebook = self.notebook_or_default(notebook)?;
+        let notebook = self.notebook_for_new(notebook)?;
         let anchor = match target {
             NoteTarget::Nothing => None,
             NoteTarget::Passage(passage) => Some(Anchor::Passage {
@@ -710,7 +731,7 @@ const NOTEBOOK: ParamSpec = ParamSpec {
     name: "notebook",
     kind: ParamKind::String,
     required: false,
-    help: "Notebook id (default: the default Notebook)",
+    help: "Notebook id (default: the Notebook last used, else the default Notebook)",
 };
 const ID: ParamSpec = ParamSpec {
     name: "id",
@@ -749,14 +770,15 @@ fn can_redo(s: &Session) -> bool {
     s.user.is_some() && s.history.redo_label().is_some()
 }
 
-/// No default shortcuts yet: the Shell runs a shortcut's command before any text field sees
-/// the key, so Ctrl+Z would undo a Highlight while the user edits a Note. #62 binds Ctrl+Z,
-/// Ctrl+Shift+Z, Ctrl+1…5 and Ctrl+Shift+N with text-field focus in mind.
+/// Ctrl+Z and Ctrl+Shift+Z are the undo keys of text fields too, so the Shell leaves them to a
+/// focused text field (a Note being written, a reference box) instead of running these
+/// commands (#62). Ctrl+1…5 and Ctrl+Shift+N act on the reading-pane selection, which only the
+/// Shell knows, so the Shell binds them itself.
 pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "edit.undo",
         label: "Undo",
-        shortcut: None,
+        shortcut: Some("Ctrl+Z"),
         params: &[],
         enabled: can_undo,
         run: run_undo,
@@ -764,7 +786,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "edit.redo",
         label: "Redo",
-        shortcut: None,
+        shortcut: Some("Ctrl+Shift+Z"),
         params: &[],
         enabled: can_redo,
         run: run_redo,
