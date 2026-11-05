@@ -268,6 +268,29 @@ pub mod bibles {
         standard: Option<&[Option<Verse>]>,
         tagged: &[(&str, &str)],
     ) -> Resource {
+        build_bible(id, abbrev, verses, standard, tagged, Direction::Ltr, false)
+    }
+
+    /// A Bible of `verses` printed as a real paragraphed Bible is (the WEB, BSB, TAHOT): each
+    /// book one paragraph, so most verses (and their numbers) start mid-line.
+    pub fn paragraphed_bible(
+        id: &str,
+        abbrev: &str,
+        verses: &[(Verse, &str)],
+        direction: Direction,
+    ) -> Resource {
+        build_bible(id, abbrev, verses, None, &[], direction, true)
+    }
+
+    fn build_bible(
+        id: &str,
+        abbrev: &str,
+        verses: &[(Verse, &str)],
+        standard: Option<&[Option<Verse>]>,
+        tagged: &[(&str, &str)],
+        direction: Direction,
+        one_paragraph: bool,
+    ) -> Resource {
         let mut m = Manifest::new(
             id,
             format!("{abbrev} (test)"),
@@ -276,7 +299,7 @@ pub mod bibles {
             "en",
         );
         m.key_schemes = vec![KeyScheme::Passage];
-        m.direction = Direction::Ltr;
+        m.direction = direction;
         m.license = "LicenseRef-PD".into();
         m.attribution = "Public domain test text.".into();
         m.origin = Origin::Imported;
@@ -297,14 +320,25 @@ pub mod bibles {
             }
             let text = t.into_string();
             b.add_unit(unit.clone(), UnitKind::BibleBook, None, text.clone());
-            for (verse, range) in placed {
+            if one_paragraph {
                 b.add_span(
                     &unit,
-                    range.clone(),
+                    0..text.len(),
                     SpanKind::Para {
                         style: ParaStyle::Prose,
                     },
                 );
+            }
+            for (verse, range) in placed {
+                if !one_paragraph {
+                    b.add_span(
+                        &unit,
+                        range.clone(),
+                        SpanKind::Para {
+                            style: ParaStyle::Prose,
+                        },
+                    );
+                }
                 for (word, strongs) in tagged {
                     if let Some(at) = text[range.clone()].find(word) {
                         let at = range.start + at;

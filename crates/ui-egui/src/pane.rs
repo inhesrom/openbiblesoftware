@@ -342,9 +342,18 @@ pub fn reading_pane(
     } else {
         Vec::new()
     };
-    // Space taken so far beside each verse number (margin marks, other Bibles' Notes).
-    let mut beside: std::collections::HashMap<DocPos, f32> = std::collections::HashMap::new();
+    // Marks for a verse number go in the column's margin on the number's line (left of the
+    // column in left-to-right text, right of it in right-to-left text): a verse that starts
+    // mid-line has the previous verse's words just before its number. Space taken so far in
+    // each line's margin, keyed by the line's top.
+    let mut beside: std::collections::HashMap<i64, f32> = std::collections::HashMap::new();
     let gap = (size * 0.12).max(2.0);
+    // The pane's own room, in text coordinates: marks never go under the scrollbar or
+    // outside the pane.
+    let (room_left, room_right) = (
+        rect.left() - text_rect.left() + 1.0,
+        track.left() - text_rect.left() - 1.0,
+    );
     for (mark, rects) in marks.iter().zip(&mark_rects) {
         match mark.kind {
             MarkKind::Highlight(style) if palette.highlight(style).is_none() => {
@@ -369,25 +378,25 @@ pub fn reading_pane(
                 }
             }
             MarkKind::Margin(_) | MarkKind::VerseNote => {
-                let Some(edge) = verse_number_edge(view, &in_view, mark, rects, size, rtl) else {
+                let Some(band) = verse_number_line(view, &in_view, mark, rects, size) else {
                     continue;
                 };
-                // Laid outward from the number, one after another, in Mark order.
-                let used = beside.entry(mark.start).or_insert(0.0);
+                // Laid outward from the column, one after another, in Mark order.
+                let used = beside.entry((band[1] * 4.0).round() as i64).or_insert(0.0);
                 let (w, h, round) = match mark.kind {
                     MarkKind::Margin(_) => {
                         let w = (size * 0.16).max(2.5);
-                        (w, edge.band[3] - edge.band[1], w / 2.0)
+                        (w, band[3] - band[1], w / 2.0)
                     }
                     _ => (size * 0.42, size * 0.48, 1.5),
                 };
                 let x = if rtl {
-                    edge.x + gap + *used
+                    (text_rect.width() + gap + *used).min(room_right - w)
                 } else {
-                    edge.x - gap - *used - w
+                    (-gap - *used - w).max(room_left)
                 };
                 *used += w + gap;
-                let r = to_screen([x, edge.band[1], x + w, edge.band[1] + h]);
+                let r = to_screen([x, band[1], x + w, band[1] + h]);
                 match mark.kind {
                     MarkKind::Margin(style) => {
                         painter.rect_filled(r, round, palette.mark(style));
@@ -484,39 +493,23 @@ fn note_marker(
     Some([x, y, x + w, y + h])
 }
 
-/// Where marks beside a verse number go: the number's outer edge (its left in left-to-right
-/// text, its right in right-to-left text) and the text band of its line.
-struct VerseNumberEdge {
-    x: f32,
-    band: [f32; 4],
-}
-
-/// The verse number of the Verse a Mark covers (its range starts at the Verse, where the
-/// number is laid out): the outer edge of the first line of the range. `None` while the
-/// Verse's start is not laid out in view.
-fn verse_number_edge(
+/// The text band (relative to the text's left edge and the viewport top) of the line that
+/// holds the verse number of the Verse a Mark covers: its range starts at the Verse, where
+/// the number is laid out, so that is the range's first line. `None` while the Verse's start
+/// is not laid out in view.
+fn verse_number_line(
     view: &ReadingView,
     in_view: &[usize],
     mark: &Mark,
     rects: &[[f32; 4]],
     size: f32,
-    rtl: bool,
-) -> Option<VerseNumberEdge> {
+) -> Option<[f32; 4]> {
     let first = rects.first()?;
     let start_block = view.doc.block_at(mark.start.unit, mark.start.byte)?;
     if !in_view.contains(&start_block) {
         return None;
     }
-    let line = rects.iter().filter(|r| (r[1] - first[1]).abs() < 0.5);
-    let x = if rtl {
-        line.map(|r| r[2]).fold(f32::MIN, f32::max)
-    } else {
-        line.map(|r| r[0]).fold(f32::MAX, f32::min)
-    };
-    Some(VerseNumberEdge {
-        x,
-        band: text_band(*first, size),
-    })
+    Some(text_band(*first, size))
 }
 
 /// A small note: a filled card with two ruled lines in the page colour.

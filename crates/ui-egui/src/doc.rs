@@ -40,6 +40,11 @@ pub struct ReadingDoc {
     /// The Bible's own numbering (references typed for it are read in it, ADR 0002 rule 10).
     pub versification: ListedVersification,
     /// How its numbering corresponds to the Standard versification (none: identical).
+    ///
+    /// Set it only while building the document (as `open` and `from_resource` do), before
+    /// anything looks up Verses by Standard Passage: the first such lookup
+    /// (`verses_for_standard`, and so `marks_for`) caches an index built from this map in
+    /// `standard_index`, and changing the map afterwards leaves that index stale.
     pub verse_map: Option<std::sync::Arc<VerseMap>>,
     /// Each unit's interactive spans, indexed on first hover.
     span_indexes: Vec<OnceLock<SpanIndex>>,

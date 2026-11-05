@@ -1,15 +1,15 @@
 //! Annotations across Bibles (#63), through the headless harness: open-text fixtures of four
 //! Bibles written as real `.obr` files, a real User database, and what each reading pane
 //! paints. A Highlight made in one Bible shows in every other Bible that has its Passage:
-//! whole Verses when it covered whole Verses, else only a margin mark beside the verse
-//! number; Notes show their marker at the verse number.
+//! whole Verses when it covered whole Verses, else only a margin mark on the line of each
+//! touched Verse's number; Notes show their marker in the same margin.
 
 use std::path::{Path, PathBuf};
 
 use egui::Color32;
-use obs_engine::testing::bibles::{bible, v};
+use obs_engine::testing::bibles::{bible, paragraphed_bible, v};
 use obs_engine::{Anchor, Content, TabId};
-use obs_model::Resource;
+use obs_model::{Direction, Resource};
 use obs_scripture::{Book, Passage, Verse};
 
 use super::*;
@@ -202,20 +202,56 @@ fn assert_verse_highlighted(h: &Harness, title: &str, verse: Verse, color: Color
     }
 }
 
-/// A margin mark sits just outside the verse number (the Verse's first line rect), on that
-/// line, and is thin.
-fn assert_margin_mark(h: &Harness, title: &str, verse: Verse, color: Color32) {
+/// A Tab's text column on screen: its left and right edges.
+fn column(h: &Harness, tab: TabId) -> (f32, f32) {
+    let v = view(h, tab);
+    (v.text_origin[0], v.text_origin[0] + v.width())
+}
+
+/// Marks beside a verse number sit in the column's margin (left of it in left-to-right
+/// text, right of it in right-to-left text) on the line where the Verse starts, inside the
+/// Panel and clear of its scrollbar: never over the previous Verse's words, which come just
+/// before the number when a Verse starts mid-line.
+fn assert_in_margin(h: &Harness, title: &str, verse: Verse, m: Rect) {
     let tab = h.tab_id(title);
     let first = verse_rects(h, tab, verse)[0];
+    let (left, right) = column(h, tab);
+    let panel = pane_of(h, title);
+    if view(h, tab).doc.direction() == Direction::Rtl {
+        assert!(
+            m.left() >= right && m.right() <= panel.right() - 10.0,
+            "{title}: {m:?} is not in the right margin of {left}..{right} in {panel:?}"
+        );
+    } else {
+        assert!(
+            m.right() <= left && m.left() >= panel.left(),
+            "{title}: {m:?} is not in the left margin of {left}..{right} in {panel:?}"
+        );
+    }
+    assert!(
+        m.top() >= first.top() - 0.1 && m.bottom() <= first.bottom() + 0.1,
+        "{title}: {m:?} is not on the line of {verse:?} at {first:?}"
+    );
+}
+
+/// One margin mark for the Verse: thin, just outside the text column, on the line of its
+/// verse number.
+fn assert_margin_mark(h: &Harness, title: &str, verse: Verse, color: Color32) {
     let marks = painted_in(h, title, color);
     assert_eq!(marks.len(), 1, "{title}: margin marks {marks:?}");
     let m = marks[0];
+    assert_in_margin(h, title, verse, m);
+    let (left, right) = column(h, h.tab_id(title));
+    let outside = if view(h, h.tab_id(title)).doc.direction() == Direction::Rtl {
+        m.left() - right
+    } else {
+        left - m.right()
+    };
     assert!(
-        m.right() <= first.left() && first.left() - m.right() < 6.0,
-        "{title}: mark {m:?} is not just before the verse number at {first:?}"
+        (0.0..6.0).contains(&outside),
+        "{title}: {m:?} is not just outside {left}..{right}"
     );
     assert!(m.width() < 6.0 && m.height() > 10.0, "{m:?}");
-    assert!(m.top() >= first.top() - 0.1 && m.bottom() <= first.bottom() + 0.1);
 }
 
 /// The KJV Verse's bytes, as `annotation.highlight` params over `from`..`to` inside it
@@ -444,6 +480,153 @@ fn an_annotation_on_hebrew_numbered_ps_51_3_maps_to_standard_ps_51_1() {
     assert_eq!(markers.len(), 1, "{markers:?}");
     let first = verse_rects(&h, hp, ps(3))[0];
     assert!(markers[0].right() <= first.left() && markers[0].top() >= first.top() - 0.1);
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Real paragraphed Bibles (the WEB, the BSB) start most verses mid-line, right after the
+/// previous verse's last word. Marks for a verse number go in the margin on the number's
+/// line, not over that word; a partial Highlight over several Verses marks each of them.
+#[test]
+fn marks_in_a_paragraphed_bible_sit_on_the_verse_numbers_line() {
+    let dir = folder("paragraphed");
+    let john: Vec<(Verse, &str)> = (15..=17)
+        .map(|n| (jn(n), JOHN_BSB[n as usize - 15]))
+        .collect();
+    let resources = vec![
+        english("kjv", "KJV", JOHN_KJV),
+        paragraphed_bible("bsb", "BSB", &john, Direction::Ltr),
+    ];
+    let mut h = launch_with(&dir, &resources, "Jn 3:15");
+    let bsb = h.tab_id("BSB");
+    let (left, _) = column(&h, bsb);
+    // The 16 comes mid-line, after the end of 15 (the 17 starts a line in this width).
+    let first = verse_rects(&h, bsb, jn(16))[0];
+    assert!(first.left() > left + 20.0, "16 starts its line: {first:?}");
+    // Part of the KJV's 3:16, through part of 3:17.
+    let mut params = kjv_selection(&h, jn(16), Some("so loved the world"));
+    params["end"] = kjv_selection(&h, jn(17), Some("condemn the world"))["end"].clone();
+    params["style"] = json!("green");
+    h.shell.run("annotation.highlight", &params);
+    h.frames(2);
+    let stored = h.shell.st.session.annotations(None).unwrap();
+    let anchor = stored[0].anchor.as_ref().unwrap();
+    assert_eq!(
+        anchor.passage(),
+        Some(Passage::new(jn(16), jn(17)).unwrap())
+    );
+    assert!(!anchor.text_range().unwrap().whole_verses);
+    let palette = h.shell.st.palette;
+    let green = palette.marks[1];
+    assert!(painted_in(&h, "BSB", palette.highlights[1]).is_empty());
+    let marks = painted_in(&h, "BSB", green);
+    assert_eq!(marks.len(), 2, "{marks:?}");
+    let mut marks = marks;
+    marks.sort_by(|a, b| a.top().total_cmp(&b.top()));
+    assert_in_margin(&h, "BSB", jn(16), marks[0]);
+    assert_in_margin(&h, "BSB", jn(17), marks[1]);
+    // Never over the words before the verse number.
+    let before = verse_rects(&h, bsb, jn(15));
+    for m in &marks {
+        assert!(
+            !before.iter().any(|r| r.intersects(*m)),
+            "{m:?} over {before:?}"
+        );
+    }
+
+    // A Note on 3:16 from elsewhere: its marker on the 16's line too, outside the mark.
+    h.shell.run(
+        "annotation.note",
+        &json!({ "body": "Agape", "passage": "Jn 3:16" }),
+    );
+    h.frames(2);
+    let markers = painted_in(&h, "BSB", palette.note_marker);
+    assert_eq!(markers.len(), 1, "{markers:?}");
+    assert_in_margin(&h, "BSB", jn(16), markers[0]);
+    assert!(
+        markers[0].right() <= marks[0].left(),
+        "{markers:?} vs {marks:?}"
+    );
+    assert!(!before.iter().any(|r| r.intersects(markers[0])));
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// In a right-to-left Bible (the TAHOT) the marks go in the margin right of the column, on
+/// the verse number's line, and stay inside the Panel, clear of its scrollbar.
+#[test]
+fn marks_in_a_right_to_left_bible_stay_inside_the_pane() {
+    let dir = folder("rtl");
+    let gn = |n| v(Book::Genesis, 1, n);
+    let kjv = bible(
+        "kjv",
+        "KJV",
+        &[
+            (
+                gn(1),
+                "In the beginning God created the heaven and the earth.",
+            ),
+            (
+                gn(2),
+                "And the earth was without form, and void; and darkness was upon the face of the deep. And the Spirit of God moved upon the face of the waters.",
+            ),
+            (
+                gn(3),
+                "And God said, Let there be light: and there was light.",
+            ),
+        ],
+        None,
+        &[],
+    );
+    let mut hebrew = paragraphed_bible(
+        "heb",
+        "HEB",
+        &[
+            (gn(1), "בְּרֵאשִׁית בָּרָא אֱלֹהִים אֵת הַשָּׁמַיִם וְאֵת הָאָרֶץ׃"),
+            (
+                gn(2),
+                "וְהָאָרֶץ הָיְתָה תֹהוּ וָבֹהוּ וְחֹשֶׁךְ עַל־פְּנֵי תְהוֹם וְרוּחַ אֱלֹהִים מְרַחֶפֶת עַל־פְּנֵי הַמָּיִם׃",
+            ),
+            (gn(3), "וַיֹּאמֶר אֱלֹהִים יְהִי אוֹר וַיְהִי־אוֹר׃"),
+        ],
+        Direction::Rtl,
+    );
+    hebrew.manifest.language = "hbo".into();
+    let mut h = launch_with(&dir, &[kjv, hebrew], "Gen 1:1");
+    let heb = h.tab_id("HEB");
+    let (_, right) = column(&h, heb);
+    let first = verse_rects(&h, heb, gn(2))[0];
+    assert!(
+        first.right() < right - 20.0,
+        "1:2 starts its line: {first:?}"
+    );
+
+    let v = view(&h, h.tab_id("KJV"));
+    let (unit, start) = v.doc.verse_position(gn(2)).unwrap();
+    let range = v.doc.verse_range_at(unit, start).unwrap();
+    let at = range.start + v.doc.units[unit].text[range].find("without form").unwrap();
+    let unit_id = v.doc.units[unit].id.as_str().to_string();
+    h.shell.run(
+        "annotation.highlight",
+        &json!({ "resource": "kjv", "start_unit": unit_id, "start": at, "end": at + 12 }),
+    );
+    h.shell.run(
+        "annotation.note",
+        &json!({ "body": "Tohu wa-bohu", "passage": "Gen 1:2" }),
+    );
+    h.frames(2);
+    let palette = h.shell.st.palette;
+    assert_margin_mark(&h, "HEB", gn(2), palette.marks[0]);
+    let mark = painted_in(&h, "HEB", palette.marks[0])[0];
+    let markers = painted_in(&h, "HEB", palette.note_marker);
+    assert_eq!(markers.len(), 1, "{markers:?}");
+    assert_in_margin(&h, "HEB", gn(2), markers[0]);
+    // Laid outward from the column: the Note's marker right of the margin mark.
+    assert!(markers[0].left() >= mark.right(), "{markers:?} vs {mark:?}");
+    // Hovering it previews the Note.
+    h.events.push(Event::PointerMoved(markers[0].center()));
+    h.frames(3);
+    assert!(h.find("Tohu wa-bohu").is_some(), "{:?}", h.texts());
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -11,8 +11,8 @@
 //! - **In every other Bible**, a Passage anchor is mapped from the Standard versification
 //!   through that Bible's Verse map. A Highlight that covered its Verses whole (or has no
 //!   Text range) highlights those Verses; one that covered part of a Verse shows only a
-//!   margin mark beside the verse number, because word offsets differ between translations.
-//!   A Note shows its marker at the verse number.
+//!   margin mark beside the number of each Verse it touches, because word offsets differ
+//!   between translations. A Note shows one marker, beside its first Verse's number.
 //! - Text-range anchors (non-Bible Resources, Unmapped verses) show only in their Resource.
 
 use std::collections::HashMap;
@@ -32,10 +32,10 @@ pub enum MarkKind {
     /// A small marker at the end of the range; hovering it previews the Note.
     Note,
     /// A Highlight made over part of a Verse in another Bible: a bar in the style's colour
-    /// beside the verse number of the Verse the range starts at.
+    /// in the margin on the verse number's line, for each Verse the range touches.
     Margin(HighlightStyle),
-    /// A Note from another Bible (or one without a Text range): its marker beside the verse
-    /// number of the Verse its range starts at.
+    /// A Note from another Bible (or one without a Text range): its marker in the margin on
+    /// the line of the verse number of the Verse its range starts at.
     VerseNote,
 }
 
@@ -141,9 +141,13 @@ pub fn marks_for(doc: &ReadingDoc, annotations: &[Annotation]) -> Vec<Mark> {
                             push(s, e, here);
                         }
                     }
+                    // A margin mark at each Verse it touches: one over 3:16-18 marks 3:17
+                    // and 3:18 too, so every Verse with marked words says so.
                     MarkKind::Highlight(style) => {
-                        if let Some((s, e)) = first_verse(doc, passage) {
-                            push(s, e, MarkKind::Margin(style));
+                        for i in doc.verses_for_standard(passage) {
+                            if let Some((s, e)) = verse_span(doc, i) {
+                                push(s, e, MarkKind::Margin(style));
+                            }
                         }
                     }
                     _ => {

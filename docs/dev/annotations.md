@@ -1,7 +1,7 @@
 # Annotation service, storage and undo (#61)
 
 Notebooks, Notes and Highlights live in the User database (`obs_store::UserStore`, schema
-v4). The engine reaches them only through the `UserData` trait; `crates/engine/src/
+v5). The engine reaches them only through the `UserData` trait; `crates/engine/src/
 annotations.rs` holds the service on `Session` and the `annotation.*`, `notebook.*` and
 `edit.*` commands. The origin Bible's UI is #62 and other Bibles #63 (both below); the Notes
 Tool (#64) and re-anchoring (#65) are still to come.
@@ -114,22 +114,34 @@ or deleted).
 A Passage anchor shows in every Bible that contains its Passage (ADR 0001); `marks_for` maps
 the Standard Passage through each Bible's Verse map (ADR 0002). `ReadingDoc` builds, on
 first use, an index of its Verses by Standard Passage (sorted by start, with a running
-maximum of ends), so finding the Verses of a Passage is two binary searches.
+maximum of ends), so finding the Verses of a Passage is two binary searches. The index is
+cached from `ReadingDoc::verse_map`, so that map is set only while the document is built;
+changing it after the first lookup would leave the index stale.
 
 - **Whole or partial.** When a selection becomes a Passage anchor, the engine records on its
   origin Text range whether it covers every Verse it touches whole (`whole_verses`; white
   space and punctuation at a Verse's ends, such as a KJV `¶` or the final full stop, do not
   count). Other Bibles then highlight those Verses, in runs of adjacent Verses so headings
   between them stay clear. A partial range shows only a **margin mark**: a thin bar in the
-  style's colour just outside the verse number of its first Verse (left of it in
-  left-to-right text, right of it in right-to-left text), because word offsets differ
-  between translations. A Passage anchor without a Text range counts as whole. Rows made
-  before schema v5 read as partial: a margin mark never implies that words are marked.
-  When re-anchoring (#65) drops a Text range, the flag goes with it and the Highlight shows
-  as whole Verses everywhere, as ADR 0006 says.
-- **Notes** from another Bible (or with no Text range at all) show their marker beside the
-  verse number of their first Verse, outside any margin marks there; hovering previews the
-  Note as in the origin Bible.
+  style's colour, because word offsets differ between translations. A Passage anchor
+  without a Text range counts as whole. Rows made before schema v5 read as partial: a
+  margin mark never implies that words are marked. When re-anchoring (#65) drops a Text
+  range, the flag goes with it and the Highlight shows as whole Verses everywhere, as
+  ADR 0006 says.
+- **Several Verses, partly.** A partial Highlight over several Verses (from the middle of
+  3:16 to the middle of 3:18) puts a margin mark beside **each** Verse it touches, 3:17
+  included, not only the first: every Verse with marked words says so. Only one mark per
+  style and Verse is drawn.
+- **Where marks beside a verse number go.** In the text column's margin, on the line that
+  holds the verse number: left of the column in left-to-right text, right of it in
+  right-to-left text (the TAHOT), laid outward from the column in creation order. Not
+  right beside the number: in a paragraphed Bible (WEB, BSB) most Verses start mid-line,
+  where the space before the number is the previous Verse's last word. When two Verses
+  start on one line, their marks share that line's margin. Marks never leave the pane or
+  go under its scrollbar (they are clamped to the pane's own room).
+- **Notes** from another Bible (or with no Text range at all) show one marker, in the same
+  margin on the line of their first Verse's number, outside any margin marks there;
+  hovering previews the Note as in the origin Bible.
 - **Text-range anchors** (non-Bible Resources, Unmapped verses) show only in their own
   Resource.
 - **What is drawn.** `Session::annotations_in_text` leaves out Annotations of Notebooks
