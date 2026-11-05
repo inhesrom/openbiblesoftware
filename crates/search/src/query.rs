@@ -564,8 +564,25 @@ fn quote(s: &str) -> String {
     format!("\"{}\"", s.replace('"', "\"\""))
 }
 
-fn term(field: Field, words: &[String], prefix: bool) -> Part {
-    let mut s = format!("{} : {}", field.column(), quote(&words.join(" ")));
+/// Which FTS5 table a query is compiled for: a Search index (columns `text`, `strong`,
+/// `lemma`) or the Notes index (one column, `body`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Target {
+    Index,
+    Notes,
+}
+
+impl Target {
+    fn column(self, field: Field) -> &'static str {
+        match self {
+            Target::Index => field.column(),
+            Target::Notes => "body",
+        }
+    }
+}
+
+fn term(target: Target, field: Field, words: &[String], prefix: bool) -> Part {
+    let mut s = format!("{} : {}", target.column(field), quote(&words.join(" ")));
     if prefix {
         s.push_str(" *");
     }
@@ -578,8 +595,11 @@ pub(crate) fn is_original_script(s: &str) -> bool {
     })
 }
 
+fn words_of(s: &str) -> Vec<String> {
+    tokenize(s).into_iter().map(|t| t.text).collect()
+}
+
 fn lemma_part(text: &str, lookup: &dyn LemmaLookup) -> Part {
-    let words_of = |s: &str| -> Vec<String> { tokenize(s).into_iter().map(|t| t.text).collect() };
     let lemmas: Vec<Vec<String>> = if is_original_script(text) {
         vec![words_of(text)]
     } else {
@@ -596,7 +616,7 @@ fn lemma_part(text: &str, lookup: &dyn LemmaLookup) -> Part {
     let alts: Vec<String> = lemmas
         .iter()
         .filter(|w| !w.is_empty())
-        .filter_map(|w| term(Field::Lemma, w, false).wrapped())
+        .filter_map(|w| term(Target::Index, Field::Lemma, w, false).wrapped())
         .collect();
     match alts.len() {
         0 => Part::Nothing,
@@ -605,13 +625,32 @@ fn lemma_part(text: &str, lookup: &dyn LemmaLookup) -> Part {
     }
 }
 
-fn compile_part(q: &Query, lookup: &dyn LemmaLookup) -> Result<Part, QueryError> {
+fn compile_part(q: &Query, lookup: &dyn LemmaLookup, target: Target) -> Result<Part, QueryError> {
     match q {
-        Query::Word { word, prefix, .. } => {
-            Ok(term(Field::Text, std::slice::from_ref(word), *prefix))
+        Query::Word { word, prefix, .. } => Ok(term(
+            target,
+            Field::Text,
+            std::slice::from_ref(word),
+            *prefix,
+        )),
+        Query::Phrase { words, prefix, .. } => Ok(term(target, Field::Text, words, *prefix)),
+        // A Note has no Strong's or Lemma column: the number or Lemma as written in it.
+        Query::Strong { number, .. } if target == Target::Notes => Ok(term(
+            target,
+            Field::Text,
+            &words_of(&number.to_string()),
+            false,
+        )),
+        Query::Lemma { text, .. } if target == Target::Notes => {
+            let words = words_of(text);
+            Ok(if words.is_empty() {
+                Part::Nothing
+            } else {
+                term(target, Field::Text, &words, false)
+            })
         }
-        Query::Phrase { words, prefix, .. } => Ok(term(Field::Text, words, *prefix)),
         Query::Strong { number, .. } => Ok(term(
+            target,
             Field::Strong,
             &[number.to_string().to_lowercase()],
             false,
@@ -624,7 +663,7 @@ fn compile_part(q: &Query, lookup: &dyn LemmaLookup) -> Result<Part, QueryError>
                 if let Query::Not { span, .. } = a {
                     return Err(error(QueryErrorKind::ExcludedAlternative, span.clone()));
                 }
-                if let Some(s) = compile_part(a, lookup)?.wrapped() {
+                if let Some(s) = compile_part(a, lookup, target)?.wrapped() {
                     parts.push(s);
                 }
             }
@@ -641,11 +680,11 @@ fn compile_part(q: &Query, lookup: &dyn LemmaLookup) -> Result<Part, QueryError>
             for a in all {
                 match a {
                     Query::Not { query, .. } => {
-                        if let Some(s) = compile_part(query, lookup)?.wrapped() {
+                        if let Some(s) = compile_part(query, lookup, target)?.wrapped() {
                             not.push(s);
                         }
                     }
-                    a => match compile_part(a, lookup)?.wrapped() {
+                    a => match compile_part(a, lookup, target)?.wrapped() {
                         Some(s) => must.push(s),
                         None => nothing = true,
                     },
@@ -679,7 +718,18 @@ fn compile_part(q: &Query, lookup: &dyn LemmaLookup) -> Result<Part, QueryError>
 
 /// Compile a parsed query to an FTS5 MATCH expression.
 pub fn compile(q: &Query, lemmas: &dyn LemmaLookup) -> Result<Compiled, QueryError> {
-    Ok(match compile_part(q, lemmas)? {
+    Ok(match compile_part(q, lemmas, Target::Index)? {
+        Part::Atom(s) | Part::Group(s) => Compiled::Match(s),
+        Part::Nothing => Compiled::Nothing,
+    })
+}
+
+/// Compile a parsed query for the Notes index (#16: one grammar for Bible, Library and
+/// Notes). Note bodies have one column, `body`, of normalized words: words, phrases,
+/// prefixes and boolean operators work as everywhere; a Strong's number or a Lemma matches
+/// itself written in the Note.
+pub fn compile_notes(q: &Query) -> Result<Compiled, QueryError> {
+    Ok(match compile_part(q, &NoLexicon, Target::Notes)? {
         Part::Atom(s) | Part::Group(s) => Compiled::Match(s),
         Part::Nothing => Compiled::Nothing,
     })

@@ -593,3 +593,46 @@ fn previews() {
         std::fs::write(dir.join(format!("{name}.svg")), svg).unwrap();
     }
 }
+
+/// A Note body's Bible references are drawn in the link colour; positions still map back to
+/// the body's bytes (#64).
+#[test]
+fn styled_snippets_colour_their_ranges_and_keep_positions() {
+    let s = TextSettings::default();
+    let text = "See Jn 3:16 and Rom 5:8 today";
+    let a = find(text, "Jn 3:16");
+    let b = find(text, "Rom 5:8");
+    let para = styled_snippet_paragraph(
+        text,
+        ColorRole::Ink,
+        &[(b.clone(), ColorRole::Link), (a.clone(), ColorRole::Link)],
+        false,
+        &s,
+    );
+    let joined: String = para.runs.iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(joined, text);
+    let mut at = 0;
+    for r in &para.runs {
+        let RunSource::Text { unit_start } = r.source else {
+            panic!("{:?}", r.source)
+        };
+        assert_eq!(unit_start, at);
+        let linked = a.contains(&at) || b.contains(&at);
+        assert_eq!(r.style.role == ColorRole::Link, linked, "{:?}", r.text);
+        at += r.text.len();
+    }
+    let laid = layout(&para, 400.0, ShapeCache::shared());
+    assert_eq!(laid.text, text);
+    // Out-of-range or overlapping ranges are clipped, never panic.
+    let odd = styled_snippet_paragraph(
+        text,
+        ColorRole::Ink,
+        &[(3..999, ColorRole::Link), (1..5, ColorRole::Accent)],
+        false,
+        &s,
+    );
+    assert_eq!(
+        odd.runs.iter().map(|r| r.text.as_str()).collect::<String>(),
+        text
+    );
+}

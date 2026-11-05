@@ -18,7 +18,10 @@ mod usfm;
 mod usfm_tree;
 mod verse_map;
 
-pub use commentary::{DictionaryData, StudyImport, import_dictionary, import_jfb_book, import_mhc};
+pub use commentary::{
+    DictionaryData, StudyImport, import_dictionary, import_jfb_book, import_mhc,
+    scripture_references,
+};
 pub use dataset::{DatasetError, DatasetOptions};
 pub use error::ImportError;
 pub use lexicon::{

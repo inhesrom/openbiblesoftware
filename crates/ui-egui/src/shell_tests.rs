@@ -2620,6 +2620,9 @@ mod annotation;
 #[path = "annotations_across_tests.rs"]
 mod annotations_across;
 
+#[path = "notes_tests.rs"]
+mod notes;
+
 /// Import from the Library menu and the live Import report Tab (#47).
 mod import {
     use std::path::{Path, PathBuf};

@@ -581,6 +581,25 @@ impl ReadingView {
         None
     }
 
+    /// Bring a text position (unit index, byte) to the top of the view: the Notes Tool
+    /// following a Text-range anchor (#64).
+    pub fn jump_to_pos(&mut self, unit: usize, byte: usize) -> bool {
+        let Some(block) = self.doc.block_at(unit, byte) else {
+            return false;
+        };
+        let Some(laid) = self.laid(block) else {
+            return false;
+        };
+        let top = laid
+            .from_unit(byte)
+            .and_then(|p| laid.lines.iter().find(|l| l.bytes.end > p))
+            .map_or(0.0, |l| l.top);
+        self.anchor = (block, top);
+        self.sticky = None;
+        self.pending_follow = None;
+        true
+    }
+
     pub fn current_entry(&self) -> Option<obs_model::Key> {
         let unit = &self
             .doc

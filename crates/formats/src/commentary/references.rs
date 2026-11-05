@@ -1,4 +1,8 @@
-//! Reference spellings used by the locked editions, not a new user-input grammar.
+//! Bible references found in text: the spellings the locked Commentary editions use in their
+//! links and prose, and references the user typed in a Note body (#64,
+//! [`scripture_references`]). Both are read by the Standard reference parser; nothing here
+//! adds a grammar of its own. Note prose is matched conservatively (see
+//! [`scripture_references`]): English words that are also book abbreviations need a period.
 use obs_scripture::{Book, PassageList, Standard, Verse, parse_reference};
 use regex::{Captures, Regex};
 use std::sync::OnceLock;
@@ -144,4 +148,104 @@ pub(super) fn annotate_prose(text: &mut crate::text_buf::TextBuf, context: Optio
                 .push((found.range(), obs_model::SpanKind::ScriptureRef { targets }));
         }
     }
+}
+
+/// English words that are also spellings of a Bible book (`Is` Isaiah, `So` Song of Songs,
+/// `Re` Revelation): in Note prose they name a book only when written with a period
+/// (`Is. 53:5`), since "Is 2:30 OK?" and "So 3:15 then" are times, not references.
+const ENGLISH_WORDS: [&str; 10] = ["Am", "Is", "So", "Re", "Ex", "He", "Ho", "Ac", "Act", "Ob"];
+
+/// The book word of a reference that starts `text`: the last run of letters before the first
+/// number after one (`Cor` in `1 Cor 13:4`, `Am` in `I Am 3:15`).
+fn book_word(text: &str) -> Option<std::ops::Range<usize>> {
+    let mut word: Option<std::ops::Range<usize>> = None;
+    let mut chars = text.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if c.is_alphabetic() {
+            let mut end = i + c.len_utf8();
+            while let Some(&(j, d)) = chars.peek() {
+                if !d.is_alphabetic() {
+                    break;
+                }
+                end = j + d.len_utf8();
+                chars.next();
+            }
+            word = Some(i..end);
+        } else if c.is_ascii_digit() && word.is_some() {
+            break;
+        }
+    }
+    word
+}
+
+/// Whether the reference starting `text` names its book with an English word and no period.
+fn english_book(text: &str) -> Option<usize> {
+    let w = book_word(text)?;
+    let dotted = text[w.end..].starts_with('.');
+    (!dotted
+        && ENGLISH_WORDS
+            .iter()
+            .any(|e| e.eq_ignore_ascii_case(&text[w.clone()])))
+    .then_some(w.end)
+}
+
+/// Bible references written in plain text that the user typed (a Note body, #64), read in the
+/// Standard versification (ADR 0002): each found reference's byte range and Passages, in text
+/// order. A reference is a capitalized Bible book name or abbreviation (any spelling the
+/// reference box accepts: `Jn`, `Rom`, `1 Cor`, `Psalm`) followed by chapter:verse, then
+/// optionally more of a list (`Jn 3:16-18; Rom 5:8`, `1 Cor 13:4, 7`). A bare `Romans 8` stays
+/// text, since book names double as words ("Job 5", "Mark 4"), and so does a lowercase word
+/// ("I am 3:15" is not Amos). English words that are also book spellings ([`ENGLISH_WORDS`]:
+/// `Am`, `Is`, `So`, `Re` …) name a book only with a period (`Is. 53:5`), so "Is 2:30 OK?"
+/// stays text and a list stops before one ("Rom 5:8; So 3 of us" links Rom 5:8 only); the
+/// app's own abbreviations (`Isa`, `Song`, `Rev`, `Amos`) always work. A candidate that does
+/// not parse (verse out of range) shrinks to its longest leading list that does, else stays
+/// text.
+#[expect(clippy::expect_used, reason = "the pattern is a source-code constant")]
+pub fn scripture_references(text: &str) -> Vec<(std::ops::Range<usize>, PassageList)> {
+    static CANDIDATE: OnceLock<Regex> = OnceLock::new();
+    static SEPARATOR: OnceLock<Regex> = OnceLock::new();
+    let regex = CANDIDATE.get_or_init(|| {
+        let book = r"(?:[1-3]\s?|I{1,3}\s)?\p{Lu}\p{L}+\.?\s*";
+        let item = r"\d+(?::\d+)?(?:\s*[-–—]\s*\d+(?::\d+)?)?";
+        Regex::new(&format!(
+            r"\b{book}\d+:\d+(?:\s*[-–—]\s*\d+(?::\d+)?)?(?:\s*[;,]\s*(?:{book})?{item})*"
+        ))
+        .expect("constant regular expression")
+    });
+    let separator = re(&SEPARATOR, r"\s*[;,]\s*");
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(found) = regex.find_at(text, at) {
+        let candidate = found.as_str();
+        if let Some(end) = english_book(candidate) {
+            // Not a reference; one may start after the word.
+            at = found.start() + end;
+            continue;
+        }
+        // The list stops before an item naming its book with an English word.
+        let mut ends: Vec<usize> = Vec::new();
+        let mut limit = candidate.len();
+        for sep in separator.find_iter(candidate) {
+            let rest = &candidate[sep.end()..];
+            if rest.starts_with(char::is_alphabetic) && english_book(rest).is_some() {
+                limit = sep.start();
+                break;
+            }
+            ends.push(sep.start());
+        }
+        ends.push(limit);
+        at = found.start() + limit;
+        // The whole list, else each shorter leading list.
+        for end in ends.into_iter().rev() {
+            let Some(head) = candidate.get(..end) else {
+                continue;
+            };
+            if let Some(list) = parse(head, None, false).filter(|l| !l.is_empty()) {
+                out.push((found.start()..found.start() + end, list));
+                break;
+            }
+        }
+    }
+    out
 }

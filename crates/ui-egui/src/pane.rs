@@ -104,6 +104,8 @@ pub struct PaneOutput {
     pub context_clicked: bool,
     /// The Note marker under the pointer: the Note's id and the marker's screen rect.
     pub hovered_note: Option<(String, Rect)>,
+    /// The Note marker clicked this frame: the Note's id (it opens in the Notes Tool, #64).
+    pub clicked_note: Option<String>,
     /// The user moved the view (wheel, keys, scrollbar, selection auto-scroll).
     pub user_moved: bool,
     /// The verse number under the pointer, in the Bible's own numbering.
@@ -375,6 +377,9 @@ pub fn reading_pane(
                 paint_note_marker(&painter, marker, palette);
                 if hover.is_some_and(|p| marker.expand(3.0).contains(p)) {
                     out.hovered_note = Some((mark.id.clone(), marker));
+                    if response.clicked() {
+                        out.clicked_note = Some(mark.id.clone());
+                    }
                 }
             }
             MarkKind::Margin(_) | MarkKind::VerseNote => {

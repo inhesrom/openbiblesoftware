@@ -31,6 +31,7 @@ mod guide_tab;
 mod guide_words;
 mod import_tab;
 mod library_tab;
+mod notes_tab;
 #[path = "references.rs"]
 pub(crate) mod references;
 mod search_tab;
@@ -126,6 +127,8 @@ pub(crate) struct State {
     marks: annotate::MarkCache,
     /// The popup Note editor, when open.
     note_editor: Option<annotate::NoteEditor>,
+    /// The Notes Tool's column, cards and the card being edited (#64).
+    notes_ui: notes_tab::NotesUi,
 }
 
 /// The app window's content: menus, Search field and the docked Workspace.
@@ -167,6 +170,7 @@ impl Shell {
                 snippets: SnippetCache::default(),
                 marks: annotate::MarkCache::default(),
                 note_editor: None,
+                notes_ui: notes_tab::NotesUi::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -333,6 +337,32 @@ impl Shell {
                 Effect::Removed(id) => {
                     self.st.docs.remove(&id);
                     self.st.marks.forget(&id);
+                }
+                Effect::NavigateStandard { tab, verse } => {
+                    self.st.session.workspace.navigate_standard(tab, verse);
+                }
+                Effect::RevealText { tab, unit, byte } => {
+                    let now = self.st.now;
+                    let shown = self
+                        .st
+                        .tabs
+                        .get_mut(&tab)
+                        .and_then(|t| {
+                            let view = t.view.as_mut()?;
+                            let u = view.doc.units.iter().position(|x| x.id == unit)?;
+                            if !view.jump_to_pos(u, byte) {
+                                return None;
+                            }
+                            if let Some(v) = view.doc.verse_containing(u, byte) {
+                                t.flash = Some((crate::pane::Flash::Verse(v), now));
+                            }
+                            Some(())
+                        })
+                        .is_some();
+                    if !shown {
+                        self.st
+                            .toast("That text is no longer in this Resource".to_string());
+                    }
                 }
             }
         }
@@ -688,12 +718,16 @@ impl Shell {
             });
         self.apply_effects();
         self.st.overlays(ui);
+        // A Notes card being edited saves as the user types, and at once once its Tab is not
+        // drawn (#64): checked here, since the Notes Tab's own code only runs while drawn.
+        self.st.notes_after_frame(ui.ctx());
         self.apply_effects();
         let closing = ui.input(|i| i.viewport().close_requested());
         if closing {
             // A Note being written is saved, as if focus had left it. One that cannot be saved
             // keeps the window open, showing why, until it is saved or discarded.
             self.st.save_note();
+            self.st.save_card_edit(true);
             if self.st.note_editor.is_some() {
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -1184,7 +1218,7 @@ impl State {
             TabKind::Tool(Tool::CrossReferences) => self.cross_references_body(&mut body, tab),
             TabKind::Tool(Tool::WordInfo) => self.word_info_body(&mut body, tab),
             TabKind::Tool(Tool::Search) => self.search_body(&mut body, tab),
-            TabKind::Tool(t) => placeholder(&mut body, t.title(), tool_ticket(t)),
+            TabKind::Tool(Tool::Notes) => self.notes_body(&mut body, tab),
         }
     }
 
@@ -1840,27 +1874,6 @@ fn type_name(t: ResourceType) -> &'static str {
         ResourceType::CrossReferenceSet => "Cross-references",
         ResourceType::PeopleAndPlaces => "People and places",
     }
-}
-
-fn tool_ticket(t: Tool) -> &'static str {
-    match t {
-        Tool::Search => "#59",
-        Tool::TextComparison => "#52",
-        Tool::Notes => "#64",
-        Tool::WordInfo => "#50",
-        Tool::CrossReferences => "#51",
-    }
-}
-
-fn placeholder(ui: &mut Ui, title: &str, ticket: &str) {
-    egui::Frame::new().fill(theme::c().field).show(ui, |ui| {
-        ui.set_min_size(ui.available_size());
-        ui.centered_and_justified(|ui| {
-            ui.label(
-                RichText::new(format!("{title} arrives with {ticket}")).color(theme::c().muted),
-            );
-        });
-    });
 }
 
 /// "Standard: Genesis 31:55" beside a verse number whose Standard equivalent differs.

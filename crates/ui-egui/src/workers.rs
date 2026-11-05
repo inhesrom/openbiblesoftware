@@ -209,6 +209,35 @@ impl SnippetCache {
         None
     }
 
+    /// Like [`Self::get`], with the byte ranges in `styled` drawn in their own colour roles (a
+    /// Note body's Bible references as links, #64).
+    pub fn get_styled(
+        &mut self,
+        text: &str,
+        base: obs_layout::ColorRole,
+        styled: &[(std::ops::Range<usize>, obs_layout::ColorRole)],
+        width: f32,
+        settings: &obs_layout::TextSettings,
+    ) -> Option<Arc<LaidBlock>> {
+        use std::hash::{Hash, Hasher};
+        if styled.is_empty() {
+            return self.get(text, base, false, width, settings);
+        }
+        self.drain();
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (text, base, styled, width.to_bits(), settings.key()).hash(&mut h);
+        let key = h.finish();
+        if let Some(l) = self.ready.get(&key) {
+            return Some(Arc::clone(l));
+        }
+        if self.ready.len() > 2000 {
+            self.ready.clear();
+        }
+        let para = obs_layout::styled_snippet_paragraph(text, base, styled, false, settings);
+        self.client.submit(key, para, width);
+        None
+    }
+
     pub fn has_pending(&self) -> bool {
         self.client.pending() > 0
     }

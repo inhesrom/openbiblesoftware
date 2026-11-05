@@ -33,6 +33,9 @@ use crate::session::Session;
 /// Undo steps kept; older ones are forgotten.
 pub const UNDO_LIMIT: usize = 500;
 
+/// The undo label of a Note text edit.
+const EDIT_NOTE: &str = "Edit Note";
+
 /// Longest Notebook name, in characters.
 pub const MAX_NOTEBOOK_NAME: usize = 100;
 
@@ -608,13 +611,53 @@ impl Session {
 
     /// Replace a Note's text.
     pub fn edit_note(&mut self, id: &str, body: &str) -> Result<Annotation, String> {
-        self.edit_annotation(id, "Edit Note", true, |a| match &mut a.content {
+        self.edit_annotation(id, EDIT_NOTE, true, |a| match &mut a.content {
             Content::Note { body: b } => {
                 *b = body.to_string();
                 Ok(())
             }
             Content::Highlight { .. } => Err("Only a Note has text to edit".into()),
         })
+    }
+
+    /// Replace a Note's text as a continuation of the previous undo step when that step was an
+    /// edit of this same Note's text, so one undo reverts a whole editing pass (a Notes card
+    /// saves as the user types, #64); otherwise as a new step, like [`Self::edit_note`].
+    pub fn continue_note_edit(&mut self, id: &str, body: &str) -> Result<Annotation, String> {
+        let before = self.annotation(id)?;
+        let continues = self.history.redo.is_empty()
+            && self.history.undo.last().is_some_and(|step| {
+                step.label == EDIT_NOTE
+                    && step.changes.len() == 1
+                    && step.changes[0].after.as_ref() == Some(&Row::Annotation(before.clone()))
+            });
+        if !continues {
+            return self.edit_note(id, body);
+        }
+        let Content::Note { body: old } = &before.content else {
+            return Err("Only a Note has text to edit".into());
+        };
+        if old == body {
+            return Ok(before);
+        }
+        let after = Annotation {
+            content: Content::Note {
+                body: body.to_string(),
+            },
+            modified_at: now_ms().max(before.modified_at),
+            ..before.clone()
+        };
+        self.user_data()?.apply_changes(&[Change::update(
+            Row::Annotation(before),
+            Row::Annotation(after.clone()),
+        )])?;
+        if let Some(step) = self.history.undo.last_mut()
+            && let Some(change) = step.changes.first_mut()
+        {
+            change.after = Some(Row::Annotation(after.clone()));
+        }
+        self.annotations_revision += 1;
+        Ok(after)
     }
 
     /// Change a Highlight's style.
@@ -937,6 +980,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 required: true,
                 help: "The Note's new text",
             },
+            ParamSpec {
+                name: "continue",
+                kind: ParamKind::Boolean,
+                required: false,
+                help: "Merge into the previous undo step if it edited this Note's text (saving while typing)",
+            },
         ],
         enabled: has_user,
         run: run_edit,
@@ -1184,9 +1233,13 @@ fn run_note(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
 fn run_edit(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const CMD: &str = "annotation.edit";
     let id = p.str("id").unwrap_or_default();
-    let a = s
-        .edit_note(id, p.str("body").unwrap_or_default())
-        .map_err(|e| failed(CMD, e))?;
+    let body = p.str("body").unwrap_or_default();
+    let a = if p.bool("continue").unwrap_or(false) {
+        s.continue_note_edit(id, body)
+    } else {
+        s.edit_note(id, body)
+    }
+    .map_err(|e| failed(CMD, e))?;
     Ok(json!({ "annotation": to_json(&a) }))
 }
 

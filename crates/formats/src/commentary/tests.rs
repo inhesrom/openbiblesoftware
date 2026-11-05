@@ -347,3 +347,77 @@ fn invalid_mhc_section_and_xml_fail_instead_of_shipping_bad_keys() {
     let mut i = import(ResourceType::Commentary);
     assert!(import_mhc(&mut i,"<mediawiki><page><title>MHC/Volume 1/Genesis/Chapter 1</title><revision><text>==Verses 40-44==\nInvalid.</text></revision></page></mediawiki>").is_err());
 }
+
+/// Note bodies (#64): references with a book and chapter:verse become Standard Passages with
+/// their byte ranges; other numbers and bare chapters stay text.
+#[test]
+fn scripture_references_in_typed_text() {
+    let text = "Compare Jn 3:16-18; Rom 5:8 with 1 Cor 13:4, 7. Job 5 times; I am 3:15 late. \
+                Also Gen 99:1 and Mt 5:43; 1990 was a year. Then Psalm 23:1.";
+    let found = scripture_references(text);
+    let shown: Vec<(&str, String)> = found
+        .iter()
+        .map(|(r, l)| {
+            (
+                &text[r.clone()],
+                obs_scripture::format_passage_list(l, &Standard, obs_scripture::RefStyle::Short),
+            )
+        })
+        .collect();
+    let want = |s: &str| {
+        obs_scripture::format_passage_list(
+            &parse_reference(s, &Standard, None).unwrap(),
+            &Standard,
+            obs_scripture::RefStyle::Short,
+        )
+    };
+    assert_eq!(
+        shown,
+        vec![
+            ("Jn 3:16-18; Rom 5:8", want("John 3:16-18; Romans 5:8")),
+            ("1 Cor 13:4, 7", want("1 Corinthians 13:4, 7")),
+            // "; 1990" is not a chapter of Matthew: the list stops before it.
+            ("Mt 5:43", want("Matthew 5:43")),
+            ("Psalm 23:1", want("Psalms 23:1")),
+        ]
+    );
+    assert!(scripture_references("").is_empty());
+    assert!(scripture_references("\u{202E}Jn 3:\u{FEFF}16").is_empty());
+}
+
+/// English words that are also book spellings (`Is`, `So`, `Re`, `Am`) are times or prose in a
+/// Note, not references, unless written with a period; a list stops before one.
+#[test]
+fn english_words_are_not_books_in_typed_text_without_a_period() {
+    let text = "Is 2:30 OK? So 3:15 then. Re 4:00 call. I Am 1:1 sure. Is. 53:5 and Isa 7:14; \
+                Rom 5:8; So 3 of us. Gal 2:20, Is 4:1; Rev 3:20, Re. 22:21.";
+    let shown: Vec<(&str, String)> = scripture_references(text)
+        .iter()
+        .map(|(r, l)| {
+            (
+                &text[r.clone()],
+                obs_scripture::format_passage_list(l, &Standard, obs_scripture::RefStyle::Short),
+            )
+        })
+        .collect();
+    let want = |s: &str| {
+        obs_scripture::format_passage_list(
+            &parse_reference(s, &Standard, None).unwrap(),
+            &Standard,
+            obs_scripture::RefStyle::Short,
+        )
+    };
+    assert_eq!(
+        shown,
+        vec![
+            ("Is. 53:5", want("Isaiah 53:5")),
+            // The list stops before "So 3".
+            ("Isa 7:14; Rom 5:8", want("Isaiah 7:14; Romans 5:8")),
+            ("Gal 2:20", want("Galatians 2:20")),
+            (
+                "Rev 3:20, Re. 22:21",
+                want("Revelation 3:20; Revelation 22:21")
+            ),
+        ]
+    );
+}

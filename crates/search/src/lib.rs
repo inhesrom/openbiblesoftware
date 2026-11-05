@@ -12,8 +12,8 @@ pub use index::{
     DocumentKind, HitOrder, INDEX_VERSION, SearchError, SearchHit, SearchIndex, SearchOptions,
 };
 pub use query::{
-    Compiled, Field, LemmaLookup, NoLexicon, Query, QueryError, QueryErrorKind, compile, parse,
-    to_fts5,
+    Compiled, Field, LemmaLookup, NoLexicon, Query, QueryError, QueryErrorKind, compile,
+    compile_notes, parse, to_fts5,
 };
 
 #[cfg(test)]

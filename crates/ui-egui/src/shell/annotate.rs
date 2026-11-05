@@ -10,7 +10,9 @@
 //!   when focus leaves it (a click elsewhere, Esc) or on Ctrl+Enter. New Annotations go into
 //!   the Notebook last used, which the engine remembers in the User database.
 //! - Highlights and Note markers are drawn by the reading pane from [`Mark`]s, reloaded
-//!   whenever the engine's annotation revision changes; hovering a marker previews its Note.
+//!   whenever the engine's annotation revision changes; hovering a marker previews its Note
+//!   and clicking it opens the Note in the Notes Tool (#64). Notebooks hidden with their
+//!   Show-in-text toggle are not drawn.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -171,7 +173,13 @@ fn style_shortcut(style: HighlightStyle) -> String {
 }
 
 /// Paint one style's swatch into `rect`: its background, or the red underline on the page.
-fn paint_swatch(ui: &Ui, rect: Rect, style: HighlightStyle, palette: &Palette, hovered: bool) {
+pub(super) fn paint_swatch(
+    ui: &Ui,
+    rect: Rect,
+    style: HighlightStyle,
+    palette: &Palette,
+    hovered: bool,
+) {
     let p = ui.painter();
     let fill = palette.highlight(style).unwrap_or(palette.page);
     p.rect_filled(rect, 3.0, fill);
@@ -237,7 +245,11 @@ fn toolbar_row(ui: &mut Ui, palette: &Palette, can_annotate: bool) -> Option<Ann
 
 /// "■ Yellow": the style's name after a square of its colour; the red underline's name is
 /// underlined in its colour.
-fn menu_label(ui: &Ui, style: HighlightStyle, palette: &Palette) -> egui::text::LayoutJob {
+pub(super) fn menu_label(
+    ui: &Ui,
+    style: HighlightStyle,
+    palette: &Palette,
+) -> egui::text::LayoutJob {
     use egui::text::TextFormat;
     let font = egui::TextStyle::Button.resolve(ui.style());
     let ink = ui.visuals().text_color();
@@ -424,28 +436,29 @@ impl State {
         }
     }
 
-    /// Save the open Note editor's Note (nothing is saved when it is empty) and close it. If
-    /// the save fails, the editor stays open with the error, keeping the text.
-    pub(super) fn save_note(&mut self) {
-        let Some(mut ed) = self.note_editor.take() else {
-            return;
-        };
+    /// Save the open Note editor's Note (nothing is saved when it is empty) and close it,
+    /// returning the new Note's id. If the save fails, the editor stays open with the error,
+    /// keeping the text.
+    pub(super) fn save_note(&mut self) -> Option<String> {
+        let mut ed = self.note_editor.take()?;
         let body = ed.body.trim();
         if body.is_empty() {
-            return;
+            return None;
         }
         let mut params = ed.target.clone();
         params["body"] = json!(body);
         params["notebook"] = json!(ed.notebook);
         match self.session.run("annotation.note", &params) {
-            Ok(_) => {
+            Ok(out) => {
                 if let Some(view) = self.tabs.get_mut(&ed.tab).and_then(|t| t.view.as_mut()) {
                     view.selection = None;
                 }
+                out["id"].as_str().map(String::from)
             }
             Err(e) => {
                 ed.error = Some(e.to_string());
                 self.note_editor = Some(ed);
+                None
             }
         }
     }
@@ -515,6 +528,10 @@ impl State {
         if let Some((id, marker)) = &out.hovered_note {
             self.note_preview(ui, id, *marker);
         }
+        if let Some(id) = &out.clicked_note {
+            let split = ui.input(|i| i.modifiers.command);
+            self.run("notes.open", &json!({ "id": id, "split": split }));
+        }
         if let Some((action, at)) = picked {
             self.annotate(ui.ctx(), tab, action, at);
         }
@@ -550,7 +567,7 @@ impl State {
             );
             ui.label(body);
             ui.label(
-                RichText::new("Opening it in Notes arrives with #64")
+                RichText::new("Click to open it in Notes")
                     .small()
                     .color(theme::c().muted),
             );
@@ -590,6 +607,7 @@ impl State {
         };
         let mut save = false;
         let mut discard = false;
+        let mut open_in_notes = false;
         let shown = egui::Area::new(egui::Id::unique("note-editor"))
             .order(egui::Order::Foreground)
             .fixed_pos(anchor)
@@ -640,8 +658,16 @@ impl State {
                         {
                             save = true;
                         }
-                        ui.add_enabled(false, egui::Button::new("Open in Notes"))
-                            .on_disabled_hover_text("The Notes Tool arrives with #64");
+                        if ui
+                            .add_enabled(
+                                !ed.body.trim().is_empty(),
+                                egui::Button::new("Open in Notes"),
+                            )
+                            .on_hover_text("Save, and go on writing in the Notes Tool")
+                            .clicked()
+                        {
+                            open_in_notes = true;
+                        }
                         if ui
                             .button("Discard")
                             .on_hover_text("Close without saving")
@@ -663,6 +689,10 @@ impl State {
         ed.rect = Some(shown.response.rect);
         if discard {
             self.note_editor = None;
+        } else if open_in_notes {
+            if let Some(id) = self.save_note() {
+                self.run("notes.open", &json!({ "id": id }));
+            }
         } else if save {
             self.save_note();
         }

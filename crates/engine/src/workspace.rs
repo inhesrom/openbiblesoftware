@@ -402,6 +402,19 @@ pub enum Effect {
     },
     /// A Resource left the library: drop anything loaded from it.
     Removed(String),
+    /// Go to a Standard Verse in a Tab opened just now, once its Verse map is loaded (the
+    /// Notes Tool following a Passage anchor, #64): the Tab's Link set follows.
+    NavigateStandard {
+        tab: TabId,
+        verse: Verse,
+    },
+    /// Bring a position in a Tab's Resource into view: a text unit and a UTF-8 byte offset
+    /// into it (the Notes Tool following a Text-range anchor, #64).
+    RevealText {
+        tab: TabId,
+        unit: obs_model::UnitId,
+        byte: usize,
+    },
     /// Host opens a native picker off the UI thread, then runs `import.start`.
     PickImport,
 }

@@ -4,7 +4,8 @@ Notebooks, Notes and Highlights live in the User database (`obs_store::UserStore
 v5). The engine reaches them only through the `UserData` trait; `crates/engine/src/
 annotations.rs` holds the service on `Session` and the `annotation.*`, `notebook.*` and
 `edit.*` commands. The origin Bible's UI is #62 and other Bibles #63 (both below); the Notes
-Tool (#64) and re-anchoring (#65) are still to come.
+Tool and Notes search are #64 ([notes-tool.md](notes-tool.md)); re-anchoring (#65) is still to
+come.
 
 ## Tables
 
@@ -93,7 +94,8 @@ or deleted).
   `notebook`) on a click outside it, Esc, Ctrl+Enter or quitting; an empty Note is not
   saved; Discard closes it without saving. If the save fails, the editor stays open with its
   text and the error. Starting another Note does not replace it, and closing the window is
-  cancelled until the Note is saved or discarded. Open in Notes is disabled until #64.
+  cancelled until the Note is saved or discarded. **Open in Notes** saves the Note and opens
+  it in the Notes Tool (#64) to go on writing there.
 - **Drawing them.** `MarkCache` reloads the Annotations when `Session::annotations_revision`
   moves and turns those whose Text range is in a Resource into `Mark`s over document
   positions. A range whose text no longer reads as its quote is not drawn over other words:
@@ -106,8 +108,8 @@ or deleted).
   (the newest on top); the red underline and Note markers go over it. Colours come from the
   Page tone's palette when painting (#21), so a theme switch never re-lays anything out.
 - **Note markers** sit just past the end of the Note's range, raised like a superscript;
-  hovering one previews the Note and its Notebook. Clicking it will open the Notes Tool
-  (#64).
+  hovering one previews the Note and its Notebook. Clicking it opens the Note in the Notes
+  Tool (#64).
 
 ## In other Bibles (#63)
 
@@ -148,7 +150,7 @@ changing it after the first lookup would leave the index stale.
   whose **Show in text** is off, and Highlights while View → Show Highlights is off. Both
   are in the User database (the Notebook row, and the `view` preference). The View menu has
   Show Highlights and a "Notebooks in text" submenu with each Notebook's toggle; the Notes
-  Tool (#64) will show the same toggle per Notebook. Toggling either moves
+  Tool (#64) shows the same toggle (👁) per Notebook. Toggling either moves
   `annotations_revision`, so `MarkCache` reloads.
 - **Colours** come from the Page tone's palette: each tone has a margin-mark colour per style
   (`Palette::marks`), at least 3:1 against its page (tested with the other palette pairs).
