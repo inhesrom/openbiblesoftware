@@ -1,9 +1,10 @@
-# The Search Tool: Bible mode (#59)
+# The Search Tool: Bible mode (#59) and Library mode (#60)
 
-The Search Tool is one Tab with a **Bible / Library / Notes** switch (#16 rule 9). Bible mode is
-built here. Library mode comes with #60 and Notes mode with #64; until then those modes show
-"… arrives with #60/#64". The Search index caches it reads are described in
-[search-index.md](search-index.md).
+The Search Tool is one Tab with a **Bible / Library / Notes** switch (#16 rule 9). Bible and
+Library modes are built; Notes mode comes with #64 and until then shows "Notes search arrives
+with #64". Both modes share the query grammar and parser, the highlighting, the recent queries
+(kept for each mode), the keyboard navigation, the background jobs and the rules for opening
+hits. The Search index caches they read are described in [search-index.md](search-index.md).
 
 ## How it fits together
 
@@ -11,7 +12,10 @@ built here. Library mode comes with #60 and Notes mode with #64; until then thos
 |---|---|---|
 | `obs-search` | `Highlighter` | Hit highlighting in Rust (#16 rule 7). Surface terms are found by re-tokenizing the display text with the shared normalizer. `strong:`/`lemma:` terms mark the matching `tagged_word` spans. In a Hebrew word of several morphemes, only the matching morphemes are marked. |
 | `obs-engine` | `bible_search` | Per-Tab state (`Tab::search`): mode, query, Scope, chosen Bibles, inline error, results, selection. Also Scope parsing and presets, the mapping from Standard scope to verse ordinals through each Verse map, the Verse list in Standard canonical order, snippet pages, recent queries, and opening hits. Commands: `search.run`, `search.mode`, `search.scope`, `search.bible`, `search.open`. |
-| `obs-ui-egui` | `shell/search_tab.rs`, `search_view.rs` | The Tab body: fields, picker, summary line, and the virtualized results pane drawn by the inline-snippet mode, with the highlights painted under the glyphs. Also ↑/↓/Enter and clicks. |
+| `obs-engine` | `library_search` | Library mode on the same Tab state and jobs: the Resource picker's scope (`LibraryScope`), grouping by Resource, excerpts, and opening a hit at its paragraph. Commands: `search.resource`, `search.resource_type` (and `search.run`'s `resources`). |
+| `obs-engine` | `Workspace::navigate_text`, `Effect::NavigateText` | A Resource Tab goes to a Key and scrolls a Text range to the top (a Library hit's paragraph). |
+| `obs-ui-egui` | `shell/search_tab.rs`, `search_view.rs` | The Tab body: fields, pickers, summary line, and the virtualized results pane drawn by the inline-snippet mode, with the highlights painted under the glyphs. Also ↑/↓/Enter and clicks. |
+| `obs-ui-egui` | `ReadingView::jump_to_text`, `pane::Flash::Text` | Scrolling a Resource Tab to a paragraph and flashing it. |
 
 ## A search, step by step
 
@@ -54,10 +58,44 @@ again until the library changes; a search over that Bible then reports the error
   Tab, a new Tab opens there. An Unmapped verse never moves a Link set.
 - **Ctrl/Cmd-click** (or Ctrl/Cmd+Enter) always opens a new Tab, split off to the right.
 
+## Library mode (#60)
+
+- **Search scope (#16 rule 10).** The Resource picker chooses whole Resource types
+  (Commentaries, Lexicons, Dictionaries) and single Resources. The default is every
+  Commentary, Lexicon and Dictionary. A chosen type also covers Resources added to the library
+  later. The chips under the query box show what is searched (× leaves one out), and
+  **Choose…** lists each type with its Resources as checkboxes. Leaving out one Resource of a
+  whole type keeps the type's other Resources, one by one. Choosing every Resource of a type
+  one by one makes it the whole type again. Bibles are searched in Bible mode; Cross-reference
+  sets and People & places indexes have no prose to search.
+- **Results (#16 rule 12).** Groups by Resource: Commentaries, then Lexicons, then
+  Dictionaries, each type in Preferred order. Resources without hits are left out. Inside a
+  group, hits are best first (`bm25`). The summary says
+  `9 paragraphs in 4 Resources (4 searched)` and each group's header says
+  `TCC — Test Covenant Commentary · 3 hits`. A row is the unit's title or Key (a Strong's
+  number goes before a Lexicon's Lemma title: `H1285 · בְּרִית`), drawn by the text pipeline
+  so Greek and Hebrew titles shape correctly, then an excerpt of the paragraph: about 320
+  bytes around its first hit, cut at spaces, with `…` where text was left out.
+- **Documents.** A row is one Search index document: a paragraph, or a heading or other text
+  outside paragraphs (#58). That is why a Dictionary's `Covenant` heading can be a hit of its
+  own (and, being short, its best one).
+- **Opening a hit (#16 rule 14).** Click or Enter: a Tab of that Resource in the Search Tab's
+  Link set, else the most recently active Tab of that Resource, else a new Tab. The Tab goes
+  to the Key covering the paragraph, so Back returns to where it was and a Commentary's Link
+  set follows its Passage. Then it scrolls the paragraph to the top of the view and flashes it.
+  The paragraph stays at the top when the pane is resized, until the user scrolls.
+  Ctrl/Cmd-click (or Ctrl/Cmd+Enter) always opens a new Tab, split off to the right.
+
+Previews, from the synthetic open-text test Resources: [`covenant` results](../previews/search-library-results.png)
+and [a hit opened at its paragraph](../previews/search-library-opened.png). To make them again, run
+`UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui library_search_previews`, which writes
+`target/previews/search-library/*.ppm`.
+
 ## Hand-over from other Tools
 
 `search.run` takes `text`, plus optional `scope`, `bibles` (comma-separated resource ids),
-`mode`, `tab` and `split`. It runs in the most recently active Search Tab, or opens one.
+`resources` (Library mode: comma-separated `commentary`, `lexicon`, `dictionary` and resource
+ids), `mode`, `tab` and `split`. It runs in the most recently active Search Tab, or opens one.
 Without `mode` the search runs in whatever mode that Tab was left in, so a hand-over always
 passes the `mode` it means (`"bible"` for every hand-over below).
 
@@ -77,3 +115,8 @@ Both tests need the Starter library in the platform data folder. They build the 
 caches once into `$TMPDIR/obs-real-search-cache`. The second test prints the search time and
 how long the first results page takes to draw after the results arrive (#19 target:
 ≤ 150 ms).
+
+The first command also runs `real_starter_library_covenant_in_mhc_jfb_easton_and_smith`, which
+searches the Starter MHC, JFB, Easton and Smith for `covenant`. On the development machine it
+found 2324 paragraphs (MHC 1601, JFB 515, Easton 95, Smith 113) in 7 ms of searching, 17 ms
+including the first page of excerpts.

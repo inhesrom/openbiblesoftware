@@ -57,8 +57,8 @@ struct TabUi {
     edit: Option<String>,
     filter: String,
     error: Option<String>,
-    /// A verse marked after a jump, and when the mark started.
-    flash: Option<(Verse, f64)>,
+    /// A verse or Text range marked after a jump, and when the mark started.
+    flash: Option<(crate::pane::Flash, f64)>,
     /// Library Tab: the language chips that are on, the selected row and the row whose
     /// handle is being dragged (resource ids).
     languages: Vec<String>,
@@ -260,7 +260,7 @@ impl Shell {
                         && let Some(view) = t.view.as_mut()
                     {
                         if view.jump_to(verse) {
-                            t.flash = Some((verse, now));
+                            t.flash = Some((crate::pane::Flash::Verse(verse), now));
                         } else {
                             self.st
                                 .toast(format!("No section or Verse for {verse} in this Resource"));
@@ -279,7 +279,41 @@ impl Shell {
                         && view.follow(verse)
                         && flash
                     {
-                        t.flash = Some((verse, now));
+                        t.flash = Some((crate::pane::Flash::Verse(verse), now));
+                    }
+                }
+                Effect::NavigateText {
+                    tab,
+                    unit,
+                    range,
+                    key,
+                } => {
+                    let now = self.st.now;
+                    if let Some(t) = self.st.tabs.get_mut(&tab)
+                        && let Some(view) = t.view.as_mut()
+                    {
+                        let index = view.doc.units.iter().position(|u| u.id == unit);
+                        let (start, end) = (range.start as usize, range.end as usize);
+                        if let Some(i) = index
+                            && view.jump_to_text(i, start)
+                        {
+                            let flash = crate::pane::Flash::Text {
+                                unit: i,
+                                range: start..end,
+                            };
+                            t.flash = Some((flash, now));
+                        } else {
+                            // The text is not shown (a note): its Key, at least.
+                            let shown = match &key {
+                                Some(Key::Passage(p)) => view.jump_to(p.start()),
+                                Some(k) => view.jump_to_entry(k),
+                                None => false,
+                            };
+                            if !shown {
+                                self.st
+                                    .toast(format!("“{unit}” is not shown in this Resource"));
+                            }
+                        }
                     }
                 }
                 Effect::ResetLayout => self.reset_layout(),
@@ -1137,7 +1171,7 @@ impl State {
             return;
         };
         view.set_settings(text);
-        let flash = t.flash.and_then(|(v, start)| {
+        let flash = t.flash.clone().and_then(|(v, start)| {
             let age = self.now - start;
             (age < FLASH_SECS).then(|| {
                 let a = (1.0 - age / FLASH_SECS).clamp(0.0, 1.0) as f32;

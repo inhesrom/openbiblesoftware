@@ -1,5 +1,6 @@
 //! The Search Tool (#59; #16 rules 9–11 and 14; #18): one Tool with a Bible / Library / Notes
-//! switch. Bible mode is implemented here; Library (#60) and Notes (#64) come later.
+//! switch. Bible mode is implemented here, Library mode (#60) in [`crate::library_search`]
+//! on the same Tab state, jobs and commands; Notes (#64) comes later.
 //!
 //! A Bible search runs on Enter over the Bibles chosen in the picker (default: the ★ Bible,
 //! first in Preferred order) within a Search scope: a Passage list in the Standard
@@ -77,8 +78,7 @@ impl SearchMode {
     /// The ticket a mode that is not built yet arrives with.
     pub fn ticket(self) -> Option<&'static str> {
         match self {
-            SearchMode::Bible => None,
-            SearchMode::Library => Some("#60"),
+            SearchMode::Bible | SearchMode::Library => None,
             SearchMode::Notes => Some("#64"),
         }
     }
@@ -94,6 +94,8 @@ pub enum ErrorField {
     Query,
     Scope,
     Bibles,
+    /// The Library mode's Resource picker.
+    Resources,
     /// The search itself failed.
     Search,
 }
@@ -108,13 +110,28 @@ pub struct InlineError {
 }
 
 impl InlineError {
-    fn new(field: ErrorField, message: impl Into<String>, span: Option<Range<usize>>) -> Self {
+    pub(crate) fn new(
+        field: ErrorField,
+        message: impl Into<String>,
+        span: Option<Range<usize>>,
+    ) -> Self {
         Self {
             field,
             message: message.into(),
             span,
         }
     }
+}
+
+/// Parse and compile a query on the UI thread, so its errors show at once (inline, #16).
+/// Returns the trimmed query.
+pub(crate) fn check_query(query: &str) -> Result<String, InlineError> {
+    let query = query.trim().to_string();
+    let parsed = obs_search::parse(&query)
+        .map_err(|e| InlineError::new(ErrorField::Query, e.kind.to_string(), Some(e.span)))?;
+    obs_search::compile(&parsed, &obs_search::NoLexicon)
+        .map_err(|e| InlineError::new(ErrorField::Query, e.kind.to_string(), Some(e.span)))?;
+    Ok(query)
 }
 
 // ----------------------------------------------------------------------------------- scope
@@ -472,7 +489,7 @@ pub fn snippet(
 
 // ------------------------------------------------------------------------- per-Tab state
 
-/// One Search Tab's state: the mode, the fields, and the last Bible search's results.
+/// One Search Tab's state: the mode, the fields, and the last search's results.
 #[derive(Debug, Clone, Default)]
 pub struct SearchTab {
     pub mode: SearchMode,
@@ -482,15 +499,20 @@ pub struct SearchTab {
     pub scope: String,
     /// The Bibles chosen in the picker, in order; `None` until the user picks: the ★ Bible.
     pub bibles: Option<Vec<String>>,
+    /// Library mode's Search scope: Resource types and single Resources (#60).
+    pub library: crate::library_search::LibraryScope,
     pub error: Option<InlineError>,
     pub results: Option<Arc<BibleResults>>,
+    /// The last Library search's results (#60).
+    pub library_results: Option<Arc<crate::library_search::LibraryResults>>,
     /// A search is running.
     pub running: bool,
     /// The row chosen with ↑/↓ (Enter opens it).
     pub selected: Option<usize>,
-    /// Snippets by page ([`PAGE_ROWS`] rows): for each row, one per hit.
-    pages: BTreeMap<usize, Arc<Vec<Vec<Snippet>>>>,
-    loading: BTreeSet<usize>,
+    /// Snippets by page ([`PAGE_ROWS`] rows): for each row, one per hit (Library rows have
+    /// one hit each).
+    pub(crate) pages: BTreeMap<usize, Arc<Vec<Vec<Snippet>>>>,
+    pub(crate) loading: BTreeSet<usize>,
     /// Bumped by every search; older jobs' results are dropped.
     generation: u64,
 }
@@ -534,8 +556,18 @@ impl SearchTab {
         self.generation
     }
 
+    /// Rows of the results shown (Verse rows in Bible mode, paragraph rows in Library mode).
+    pub fn row_count(&self) -> usize {
+        match (&self.results, &self.library_results) {
+            (Some(r), _) => r.rows.len(),
+            (None, Some(r)) => r.rows.len(),
+            (None, None) => 0,
+        }
+    }
+
     fn clear_results(&mut self) {
         self.results = None;
+        self.library_results = None;
         self.pages.clear();
         self.loading.clear();
         self.selected = None;
@@ -544,27 +576,27 @@ impl SearchTab {
     }
 }
 
-/// A Bible search job in flight.
+/// A search job in flight (Bible or Library mode).
 // Jobs run only on the desktop.
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum JobKind {
+pub(crate) enum JobKind {
     Run,
     Page(usize),
 }
 
 #[derive(Debug, Clone, Copy)]
-struct BibleJob {
-    tab: TabId,
-    generation: u64,
-    kind: JobKind,
+pub(crate) struct BibleJob {
+    pub(crate) tab: TabId,
+    pub(crate) generation: u64,
+    pub(crate) kind: JobKind,
 }
 
 /// The Session's Bible-search bookkeeping: jobs in flight, recent queries and the Verse
 /// outlines read so far.
 #[derive(Debug, Default)]
 pub struct BibleSearches {
-    jobs: BTreeMap<JobId, BibleJob>,
+    pub(crate) jobs: BTreeMap<JobId, BibleJob>,
     recent: BTreeMap<SearchMode, Vec<String>>,
     /// Outlines by resource id and content hash, shared with the jobs that read them.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
@@ -643,16 +675,18 @@ struct RunOutput {
 }
 
 /// What a snippet job hands back.
-struct PageOutput(Vec<Vec<Snippet>>);
+pub(crate) struct PageOutput(pub(crate) Vec<Vec<Snippet>>);
 
 /// What a search asks for: the fields of `search.run`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct BibleSearchRequest {
+pub struct SearchRequestFields {
     pub query: String,
     /// The Scope field; `None` keeps the Tab's.
     pub scope: Option<String>,
     /// Bibles to search; `None` keeps the Tab's choice.
     pub bibles: Option<Vec<String>>,
+    /// Library mode's Resources; `None` keeps the Tab's choice.
+    pub library: Option<crate::library_search::LibraryScope>,
 }
 
 impl Session {
@@ -664,7 +698,7 @@ impl Session {
             .map(|t| &t.search)
     }
 
-    fn search_tab_mut(&mut self, tab: TabId) -> Option<&mut SearchTab> {
+    pub(crate) fn search_tab_mut(&mut self, tab: TabId) -> Option<&mut SearchTab> {
         self.workspace
             .tab_mut(tab)
             .filter(|t| t.kind == TabKind::Tool(Tool::Search))
@@ -691,7 +725,7 @@ impl Session {
         recent
     }
 
-    fn remember_search(&mut self, mode: SearchMode, query: &str) {
+    pub(crate) fn remember_search(&mut self, mode: SearchMode, query: &str) {
         let mut recent = self.recent_searches(mode);
         recent.retain(|q| q != query);
         recent.insert(0, query.to_string());
@@ -748,14 +782,10 @@ impl Session {
             .open(kind, Tool::Search.title().to_string(), req)
     }
 
-    /// Run a Bible search in a Search Tab: check the query, Scope and Bibles (errors go
-    /// inline), remember the query, and start the search over the ready indexes. Returns the
-    /// inline error, if any.
-    pub fn run_bible_search(
-        &mut self,
-        tab: TabId,
-        request: BibleSearchRequest,
-    ) -> Option<InlineError> {
+    /// Run a search in a Search Tab, in its mode: check the query and the mode's Search scope
+    /// (errors go inline), remember the query, and start the search over the ready indexes.
+    /// Returns the inline error, if any.
+    pub fn run_search(&mut self, tab: TabId, request: SearchRequestFields) -> Option<InlineError> {
         self.cancel_bible_jobs(tab);
         let fields = {
             let st = self.search_tab_mut(tab)?;
@@ -766,15 +796,19 @@ impl Session {
             if let Some(b) = request.bibles {
                 st.bibles = Some(b);
             }
+            if let Some(l) = request.library {
+                st.library = l;
+            }
             st.clear_results();
             st.error = None;
-            if st.mode != SearchMode::Bible {
-                // Library and Notes searches come with #60 and #64.
-                return None;
-            }
             st.clone()
         };
-        let error = self.start_bible_search(tab, &fields);
+        let error = match fields.mode {
+            SearchMode::Bible => self.start_bible_search(tab, &fields),
+            SearchMode::Library => self.start_library_search(tab, &fields),
+            // Notes searches come with #64.
+            SearchMode::Notes => None,
+        };
         if let Some(st) = self.search_tab_mut(tab) {
             st.error = error.clone();
         }
@@ -782,24 +816,10 @@ impl Session {
     }
 
     fn start_bible_search(&mut self, tab: TabId, st: &SearchTab) -> Option<InlineError> {
-        let query = st.query.trim().to_string();
-        let parsed = match obs_search::parse(&query) {
+        let query = match check_query(&st.query) {
             Ok(q) => q,
-            Err(e) => {
-                return Some(InlineError::new(
-                    ErrorField::Query,
-                    e.kind.to_string(),
-                    Some(e.span),
-                ));
-            }
+            Err(e) => return Some(e),
         };
-        if let Err(e) = obs_search::compile(&parsed, &obs_search::NoLexicon) {
-            return Some(InlineError::new(
-                ErrorField::Query,
-                e.kind.to_string(),
-                Some(e.span),
-            ));
-        }
         let scope = match parse_scope(&st.scope) {
             Ok(s) => s,
             Err(e) => return Some(e),
@@ -909,7 +929,7 @@ impl Session {
         None
     }
 
-    fn cancel_bible_jobs(&mut self, tab: TabId) {
+    pub(crate) fn cancel_bible_jobs(&mut self, tab: TabId) {
         let ids: Vec<JobId> = self
             .bible_search
             .jobs
@@ -928,6 +948,10 @@ impl Session {
         let Some(st) = self.search_tab(tab) else {
             return;
         };
+        if st.results.is_none() && st.library_results.is_some() {
+            self.request_library_snippets(tab, rows);
+            return;
+        }
         let Some(results) = st.results.clone() else {
             return;
         };
@@ -1095,14 +1119,29 @@ impl Session {
             match (event.kind, job.kind) {
                 (JobEventKind::Finished(out), JobKind::Run) => {
                     st.running = false;
-                    if let Ok(out) = out.downcast::<RunOutput>() {
-                        let RunOutput {
-                            results,
-                            first_page,
-                        } = *out;
-                        st.selected = (!results.rows.is_empty()).then_some(0);
-                        st.results = Some(results);
-                        st.pages.insert(0, Arc::new(first_page));
+                    match out.downcast::<RunOutput>() {
+                        Ok(out) => {
+                            let RunOutput {
+                                results,
+                                first_page,
+                            } = *out;
+                            st.selected = (!results.rows.is_empty()).then_some(0);
+                            st.results = Some(results);
+                            st.pages.insert(0, Arc::new(first_page));
+                        }
+                        Err(out) => {
+                            if let Ok(out) =
+                                out.downcast::<crate::library_search::LibraryRunOutput>()
+                            {
+                                let crate::library_search::LibraryRunOutput {
+                                    results,
+                                    first_page,
+                                } = *out;
+                                st.selected = (!results.rows.is_empty()).then_some(0);
+                                st.library_results = Some(results);
+                                st.pages.insert(0, Arc::new(first_page));
+                            }
+                        }
                     }
                 }
                 (JobEventKind::Finished(out), JobKind::Page(p)) => {
@@ -1133,6 +1172,9 @@ impl Session {
         new_tab: bool,
     ) -> Result<(&'static str, Option<TabId>), String> {
         let st = self.search_tab(tab).ok_or("not a Search Tab")?;
+        if st.results.is_none() && st.library_results.is_some() {
+            return self.open_library_hit(tab, row, new_tab);
+        }
         let results = st.results.clone().ok_or("no results")?;
         let r = results.rows.get(row).ok_or("no such row")?;
         let h = r.hits.get(hit).or(r.hits.first()).ok_or("no such hit")?;
@@ -1179,7 +1221,7 @@ impl Session {
 // --------------------------------------------------------------------------------- desktop
 
 #[cfg(not(target_arch = "wasm32"))]
-mod desktop {
+pub(crate) mod desktop {
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -1256,10 +1298,9 @@ mod desktop {
     /// The search job: compile the query (Lemma transliterations through the Lexicons), map
     /// the scope through each Bible's Verse map, search each index, build the Verse list and
     /// the first page of snippets.
-    pub(super) fn run(input: RunInput, ctx: &JobContext) -> Result<RunOutput, String> {
-        let started = std::time::Instant::now();
-        let lexicons = input.lexicons.clone();
-        let lookup = move |translit: &str| -> Vec<String> {
+    /// `lemma:` transliterations resolved through the Lexicons' transliteration columns.
+    pub(crate) fn lemma_lookup(lexicons: Vec<PathBuf>) -> impl Fn(&str) -> Vec<String> {
+        move |translit: &str| -> Vec<String> {
             let mut out = Vec::new();
             for path in &lexicons {
                 if let Ok(reader) = ObrReader::open(path)
@@ -1269,7 +1310,12 @@ mod desktop {
                 }
             }
             out
-        };
+        }
+    }
+
+    pub(super) fn run(input: RunInput, ctx: &JobContext) -> Result<RunOutput, String> {
+        let started = std::time::Instant::now();
+        let lookup = lemma_lookup(input.lexicons.clone());
         let parsed = obs_search::parse(&input.query).map_err(|e| e.to_string())?;
         let compiled = obs_search::compile(&parsed, &lookup).map_err(|e| e.to_string())?;
         let highlighter = Highlighter::new(&parsed, &lookup);
@@ -1384,7 +1430,7 @@ mod desktop {
 
 // -------------------------------------------------------------------------------- commands
 
-const TAB: ParamSpec = ParamSpec {
+pub(crate) const TAB: ParamSpec = ParamSpec {
     name: "tab",
     kind: ParamKind::Integer,
     required: true,
@@ -1397,14 +1443,18 @@ const SPLIT: ParamSpec = ParamSpec {
     help: "Open in a new Tab split off to the right (Ctrl/Cmd held)",
 };
 
-fn failed(command: &'static str, message: impl ToString) -> CommandError {
+pub(crate) fn failed(command: &'static str, message: impl ToString) -> CommandError {
     CommandError::Failed {
         command,
         message: message.to_string(),
     }
 }
 
-fn tab_param(command: &'static str, s: &Session, p: &Params<'_>) -> Result<TabId, CommandError> {
+pub(crate) fn tab_param(
+    command: &'static str,
+    s: &Session,
+    p: &Params<'_>,
+) -> Result<TabId, CommandError> {
     let tab = p
         .i64("tab")
         .and_then(|n| u64::try_from(n).ok())
@@ -1419,7 +1469,7 @@ fn tab_param(command: &'static str, s: &Session, p: &Params<'_>) -> Result<TabId
     Ok(tab)
 }
 
-fn error_json(e: Option<&InlineError>) -> Value {
+pub(crate) fn error_json(e: Option<&InlineError>) -> Value {
     e.map_or(Value::Null, |e| {
         json!({
             "field": format!("{:?}", e.field).to_lowercase(),
@@ -1457,6 +1507,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 kind: ParamKind::String,
                 required: false,
                 help: "Comma-separated Bible resource ids (default: the Tab's choice, else the ★ Bible)",
+            },
+            ParamSpec {
+                name: "resources",
+                kind: ParamKind::String,
+                required: false,
+                help: "Library mode: comma-separated Resource types (commentary, lexicon, dictionary) and resource ids (default: the Tab's choice, else every Commentary, Lexicon and Dictionary)",
             },
             ParamSpec {
                 name: "mode",
@@ -1569,26 +1625,34 @@ fn search_run(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             .map(String::from)
             .collect::<Vec<_>>()
     });
-    let error = s.run_bible_search(
+    let library = match p.str("resources") {
+        None => None,
+        Some(r) => Some(
+            crate::library_search::LibraryScope::parse(r, &s.library).map_err(|e| failed(ID, e))?,
+        ),
+    };
+    let error = s.run_search(
         tab,
-        BibleSearchRequest {
+        SearchRequestFields {
             query: text,
             scope: p.str("scope").map(String::from),
             bibles,
+            library,
         },
     );
     Ok(json!({ "tab": tab.0, "error": error_json(error.as_ref()) }))
 }
 
-/// Run the Tab's search again (after its scope or Bibles changed), if it has a query.
-fn rerun(s: &mut Session, tab: TabId) -> Option<InlineError> {
+/// Run the Tab's search again (after its scope, Bibles or Resources changed), if it has a
+/// query.
+pub(crate) fn rerun(s: &mut Session, tab: TabId) -> Option<InlineError> {
     let query = s.search_tab(tab)?.query.clone();
     if query.trim().is_empty() {
         return None;
     }
-    s.run_bible_search(
+    s.run_search(
         tab,
-        BibleSearchRequest {
+        SearchRequestFields {
             query,
             ..Default::default()
         },

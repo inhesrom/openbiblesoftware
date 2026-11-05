@@ -1,14 +1,20 @@
-//! The Search Tool's results (#59, #16 rule 11): a virtualized Verse list in Standard
-//! canonical order. Each row is a reference and the matching text of each searched Bible,
-//! drawn by the inline-snippet mode (Hebrew rows right to left) with the engine's highlights
-//! painted under the glyphs. Only the rows in view are laid out (off the UI thread) and only
-//! their pages of snippets are fetched.
+//! The Search Tool's results: a virtualized list whose rows are laid out only when in view
+//! (off the UI thread), with only their pages of snippets fetched. Text is drawn by the
+//! inline-snippet mode with the engine's highlights painted under the glyphs.
+//!
+//! - **Bible mode** (#59, #16 rule 11): the Verse list in Standard canonical order. Each row
+//!   is a reference and the matching text of each searched Bible (Hebrew rows right to left).
+//! - **Library mode** (#60, #16 rule 12): paragraph rows grouped by Resource, a header above
+//!   each group's first row. Each row is its unit's title or Key and an excerpt of the
+//!   paragraph.
 
 use std::ops::Range;
 
 use egui::{Align2, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
-use obs_engine::SearchTab;
+use obs_engine::library_search::row_label;
+use obs_engine::{BibleResults, LibraryResults, SearchTab};
 use obs_layout::{ColorRole, TextSettings};
+use obs_render::GlyphQuad;
 
 use crate::compare_view::range_rects;
 use crate::heights::HeightIndex;
@@ -22,6 +28,12 @@ pub const LABEL_WIDTH: f32 = 70.0;
 const ROW_HEAD: f32 = 22.0;
 const HIT_GAP: f32 = 4.0;
 const ROW_GAP: f32 = 10.0;
+/// A Library group's header line.
+const GROUP_HEAD: f32 = 30.0;
+/// How far Library rows are indented under their group's header.
+const INDENT: f32 = 14.0;
+/// Library row labels are drawn this much smaller than the text.
+const LABEL_SCALE: f32 = 0.85;
 const MARGIN: f32 = 12.0;
 const SCROLLBAR: f32 = 10.0;
 
@@ -67,6 +79,8 @@ pub struct SearchView {
     snippets: SnippetCache,
     /// What the last frame drew.
     pub last: SearchFrame,
+    /// Where each row in view was drawn last frame (for tests and hit-testing).
+    pub row_rects: Vec<(usize, Rect)>,
 }
 
 impl SearchView {
@@ -81,6 +95,7 @@ impl SearchView {
             reveal: None,
             snippets: SnippetCache::default(),
             last: SearchFrame::default(),
+            row_rects: Vec::new(),
         }
     }
 
@@ -104,6 +119,27 @@ impl SearchView {
         ROW_HEAD + hits as f32 * (2.0 * self.line_height() + HIT_GAP) + ROW_GAP
     }
 
+    /// A Library row: its label and three lines of excerpt (and its group's header).
+    fn library_estimate(&self, starts_group: bool) -> f32 {
+        let head = if starts_group { GROUP_HEAD } else { 0.0 };
+        head + self.line_height() * (LABEL_SCALE + 3.0) + HIT_GAP + ROW_GAP
+    }
+
+    /// Estimated heights of the Tab's result rows.
+    fn estimates(&self, tab: &SearchTab) -> Vec<f32> {
+        match (&tab.results, &tab.library_results) {
+            (Some(r), _) => r
+                .rows
+                .iter()
+                .map(|row| self.estimate(row.hits.len()))
+                .collect(),
+            (None, Some(r)) => (0..r.rows.len())
+                .map(|i| self.library_estimate(r.starts_group(i)))
+                .collect(),
+            (None, None) => Vec::new(),
+        }
+    }
+
     fn reset_heights(&mut self) {
         let rows = self.shown.map_or(0, |(_, n)| n);
         let per = self.estimate(1);
@@ -113,19 +149,12 @@ impl SearchView {
 
     /// Follow the Tab's latest search: a new one starts at the top.
     fn sync(&mut self, tab: &SearchTab) {
-        let rows = tab.results.as_ref().map_or(0, |r| r.rows.len());
-        let key = (tab.generation(), rows);
+        let key = (tab.generation(), tab.row_count());
         if self.shown == Some(key) {
             return;
         }
         self.shown = Some(key);
-        let estimates = tab.results.as_ref().map_or_else(Vec::new, |r| {
-            r.rows
-                .iter()
-                .map(|row| self.estimate(row.hits.len()))
-                .collect()
-        });
-        self.heights = HeightIndex::new(estimates);
+        self.heights = HeightIndex::new(self.estimates(tab));
         self.anchor = (0, 0.0);
         self.reveal = None;
     }
@@ -196,6 +225,19 @@ impl SearchView {
     }
 }
 
+/// What one frame paints, gathered row by row.
+struct Paint<'a> {
+    painter: &'a egui::Painter,
+    palette: &'a Palette,
+    accessible: bool,
+    pane: egui::Id,
+    quads: Vec<GlyphQuad>,
+    tints: Vec<Rect>,
+    /// Hit areas: rect, row and hit.
+    targets: Vec<(Rect, usize, usize)>,
+    frame: SearchFrame,
+}
+
 /// Draw the results of `tab` into all the space `ui` has; handle scrolling and clicks.
 pub fn search_pane(
     ui: &mut Ui,
@@ -222,12 +264,7 @@ pub fn search_pane(
         })
         .is_some();
     painter.rect_filled(rect, 0.0, palette.page);
-    let Some(results) = tab.results.clone() else {
-        let message = if tab.running {
-            "Searching…"
-        } else {
-            "Type a search above and press Enter"
-        };
+    let center_message = |message: &str| {
         painter.text(
             rect.center(),
             Align2::CENTER_CENTER,
@@ -235,18 +272,28 @@ pub fn search_pane(
             FontId::proportional(14.0),
             palette.verse_number,
         );
-        view.last = SearchFrame::default();
-        return out;
     };
-    if results.rows.is_empty() {
-        painter.text(
-            rect.center(),
-            Align2::CENTER_CENTER,
-            "No verses match",
-            FontId::proportional(14.0),
-            palette.verse_number,
-        );
+    let bible = tab.results.clone();
+    let library = tab.library_results.clone();
+    if bible.is_none() && library.is_none() {
+        center_message(if tab.running {
+            "Searching…"
+        } else {
+            "Type a search above and press Enter"
+        });
         view.last = SearchFrame::default();
+        view.row_rects.clear();
+        return out;
+    }
+    let rows = tab.row_count();
+    if rows == 0 {
+        center_message(if bible.is_some() {
+            "No verses match"
+        } else {
+            "No paragraphs match"
+        });
+        view.last = SearchFrame::default();
+        view.row_rects.clear();
         return out;
     }
     let left = rect.left() + MARGIN;
@@ -276,122 +323,38 @@ pub fn search_pane(
     view.apply_reveal();
 
     let ppp = ui.ctx().pixels_per_point();
-    let settings = view.settings;
-    let text_left = left + LABEL_WIDTH;
-    let text_width = view.text_width();
-    let label_font = FontId::proportional(13.0);
-    let small = FontId::proportional(11.0);
-    let hit_tint = palette.search_hit;
     let hover = ui
         .input(|i| i.pointer.hover_pos())
         .filter(|p| rect.contains(*p));
-    let mut quads = Vec::new();
-    let mut tints: Vec<Rect> = Vec::new();
-    let mut targets: Vec<(Rect, usize, usize)> = Vec::new();
-    let mut row_rects: Vec<(Rect, usize)> = Vec::new();
-    let mut frame = SearchFrame::default();
+    let mut paint = Paint {
+        painter: &painter,
+        palette,
+        accessible,
+        pane: response.id,
+        quads: Vec::new(),
+        tints: Vec::new(),
+        targets: Vec::new(),
+        frame: SearchFrame::default(),
+    };
+    let mut row_rects: Vec<(usize, Rect)> = Vec::new();
     let (first, offset) = view.anchor;
     let mut y = rect.top() - offset;
     let mut i = first;
-    while i < results.rows.len() && y < rect.bottom() {
-        let row = &results.rows[i];
+    while i < rows && y < rect.bottom() {
         let background = painter.add(Shape::Noop);
-        let reference = results.row_reference(row);
-        painter.text(
-            pos2(left, y + 4.0),
-            Align2::LEFT_TOP,
-            &reference,
-            FontId::proportional(12.5),
-            palette.verse_number,
-        );
-        let mut row_y = y + ROW_HEAD;
-        let mut measured = true;
-        for (j, h) in row.hits.iter().enumerate() {
-            let bible = results.bibles.get(h.bible);
-            let abbreviation = bible.map_or("", |b| b.abbreviation.as_str());
-            let rtl = bible.is_some_and(|b| b.rtl);
-            painter.text(
-                pos2(left, row_y + 2.0),
-                Align2::LEFT_TOP,
-                abbreviation,
-                label_font.clone(),
-                palette.ink,
-            );
-            let mut label_h = 18.0;
-            // The Bible's own number where it differs from the row's Standard Verse.
-            if row.standard.is_some_and(|s| s != h.native) {
-                painter.text(
-                    pos2(left, row_y + label_h),
-                    Align2::LEFT_TOP,
-                    format!("{}:{}", h.native.chapter, h.native.verse),
-                    small.clone(),
-                    palette.verse_number,
-                );
-                label_h += 14.0;
-            }
-            let mut height = view.line_height();
-            let mut laid_for_a11y = None;
-            let snippet = tab.snippet(i, j);
-            let laid = snippet.and_then(|s| {
-                view.snippets
-                    .get(&s.text, ColorRole::Ink, rtl, text_width, &settings)
-            });
-            match (snippet, laid) {
-                (Some(s), Some(laid)) => {
-                    for r in &s.highlights {
-                        for [x0, y0, x1, y1] in range_rects(&laid, r) {
-                            tints.push(Rect::from_min_max(
-                                pos2(text_left + x0, row_y + y0),
-                                pos2(text_left + x1, row_y + y1),
-                            ));
-                        }
-                    }
-                    quads.extend(atlas.atlas.quads(&laid, [text_left, row_y], ppp));
-                    height = laid.height;
-                    laid_for_a11y = Some((laid, s.text.clone()));
-                    frame.drawn += 1;
-                }
-                _ => {
-                    measured = false;
-                    frame.placeholders += 1;
-                    painter.rect_filled(
-                        Rect::from_min_size(
-                            pos2(text_left, row_y + height * 0.3),
-                            vec2(text_width, height * 0.35),
-                        ),
-                        2.0,
-                        palette.verse_number.gamma_multiply(0.12),
-                    );
-                }
-            }
-            height = height.max(label_h);
-            let hit_rect = Rect::from_min_max(
-                pos2(left, row_y),
-                pos2(text_left + text_width, row_y + height),
-            );
-            targets.push((hit_rect, i, j));
-            if accessible && let Some((laid, text)) = &laid_for_a11y {
-                crate::a11y::publish_comparison_row(
-                    ui,
-                    response.id,
-                    response.id.with(("search-hit", i, j)),
-                    format!("{abbreviation} — {reference}"),
-                    Rect::from_min_size(pos2(text_left, row_y), vec2(text_width, height)),
-                    text,
-                    Some(laid),
-                );
-            }
-            row_y += height + HIT_GAP;
-        }
-        let height = row_y - y + ROW_GAP;
+        let (height, measured, top) = match (&bible, &library) {
+            (Some(r), _) => bible_row(ui, view, tab, r, i, left, y, atlas, ppp, &mut paint),
+            (None, Some(r)) => library_row(ui, view, tab, r, i, left, y, atlas, ppp, &mut paint),
+            (None, None) => break,
+        };
         if measured {
             view.heights.set(i, height);
         }
         let row_rect = Rect::from_min_max(
-            pos2(rect.left(), y),
+            pos2(rect.left(), top),
             pos2(rect.right() - SCROLLBAR, y + height - ROW_GAP / 2.0),
         );
-        row_rects.push((row_rect, i));
+        row_rects.push((i, row_rect));
         let fill = if tab.selected == Some(i) {
             Some(palette.selection)
         } else if hover.is_some_and(|p| row_rect.contains(p)) {
@@ -410,12 +373,19 @@ pub fn search_pane(
         y += height;
         i += 1;
     }
+    let Paint {
+        quads,
+        tints,
+        targets,
+        mut frame,
+        ..
+    } = paint;
     frame.visible = first..i;
     if view.has_pending() || frame.placeholders > 0 {
         ui.ctx().request_repaint();
     }
     for r in tints {
-        painter.rect_filled(r, 2.0, hit_tint);
+        painter.rect_filled(r, 2.0, palette.search_hit);
     }
     let texture = atlas.sync(ui.ctx());
     let mut mesh = Mesh::with_texture(texture);
@@ -453,12 +423,12 @@ pub fn search_pane(
             .iter()
             .find(|(r, _, _)| r.contains(p))
             .map(|&(_, row, hit)| SearchClick { row, hit, new_tab });
-        // A click on a row's reference line opens its first Bible.
+        // A click elsewhere on a row (a Bible row's reference line) opens its first hit.
         if out.clicked.is_none() {
             out.clicked = row_rects
                 .iter()
-                .find(|(r, _)| r.contains(p))
-                .map(|&(_, row)| SearchClick {
+                .find(|(_, r)| r.contains(p))
+                .map(|&(row, _)| SearchClick {
                     row,
                     hit: 0,
                     new_tab,
@@ -466,6 +436,229 @@ pub fn search_pane(
         }
     }
     view.last = frame.clone();
+    view.row_rects = row_rects;
     out.frame = frame;
     out
+}
+
+/// Paint a laid snippet at `origin` with its highlights; returns its height.
+fn paint_laid(
+    paint: &mut Paint<'_>,
+    atlas: &mut AtlasTexture,
+    laid: &obs_layout::LaidBlock,
+    highlights: &[Range<usize>],
+    origin: Pos2,
+    ppp: f32,
+) -> f32 {
+    for r in highlights {
+        for [x0, y0, x1, y1] in range_rects(laid, r) {
+            paint.tints.push(Rect::from_min_max(
+                pos2(origin.x + x0, origin.y + y0),
+                pos2(origin.x + x1, origin.y + y1),
+            ));
+        }
+    }
+    paint
+        .quads
+        .extend(atlas.atlas.quads(laid, [origin.x, origin.y], ppp));
+    laid.height
+}
+
+/// A grey bar where text will be once its snippet or layout arrives.
+fn placeholder(paint: &mut Paint<'_>, origin: Pos2, width: f32, height: f32) {
+    paint.frame.placeholders += 1;
+    paint.painter.rect_filled(
+        Rect::from_min_size(
+            pos2(origin.x, origin.y + height * 0.3),
+            vec2(width, height * 0.35),
+        ),
+        2.0,
+        paint.palette.verse_number.gamma_multiply(0.12),
+    );
+}
+
+/// One Verse row: the reference, then each Bible's label and text. Returns its height,
+/// whether it is fully laid out, and where its highlight area starts.
+#[allow(clippy::too_many_arguments)]
+fn bible_row(
+    ui: &mut Ui,
+    view: &mut SearchView,
+    tab: &SearchTab,
+    results: &BibleResults,
+    i: usize,
+    left: f32,
+    y: f32,
+    atlas: &mut AtlasTexture,
+    ppp: f32,
+    paint: &mut Paint<'_>,
+) -> (f32, bool, f32) {
+    let palette = paint.palette;
+    let settings = view.settings;
+    let text_left = left + LABEL_WIDTH;
+    let text_width = view.text_width();
+    let row = &results.rows[i];
+    let reference = results.row_reference(row);
+    paint.painter.text(
+        pos2(left, y + 4.0),
+        Align2::LEFT_TOP,
+        &reference,
+        FontId::proportional(12.5),
+        palette.verse_number,
+    );
+    let mut row_y = y + ROW_HEAD;
+    let mut measured = true;
+    for (j, h) in row.hits.iter().enumerate() {
+        let bible = results.bibles.get(h.bible);
+        let abbreviation = bible.map_or("", |b| b.abbreviation.as_str());
+        let rtl = bible.is_some_and(|b| b.rtl);
+        paint.painter.text(
+            pos2(left, row_y + 2.0),
+            Align2::LEFT_TOP,
+            abbreviation,
+            FontId::proportional(13.0),
+            palette.ink,
+        );
+        let mut label_h = 18.0;
+        // The Bible's own number where it differs from the row's Standard Verse.
+        if row.standard.is_some_and(|s| s != h.native) {
+            paint.painter.text(
+                pos2(left, row_y + label_h),
+                Align2::LEFT_TOP,
+                format!("{}:{}", h.native.chapter, h.native.verse),
+                FontId::proportional(11.0),
+                palette.verse_number,
+            );
+            label_h += 14.0;
+        }
+        let mut height = view.line_height();
+        let origin = pos2(text_left, row_y);
+        let snippet = tab.snippet(i, j);
+        let laid = snippet.and_then(|s| {
+            view.snippets
+                .get(&s.text, ColorRole::Ink, rtl, text_width, &settings)
+        });
+        match (snippet, laid) {
+            (Some(s), Some(laid)) => {
+                height = paint_laid(paint, atlas, &laid, &s.highlights, origin, ppp);
+                paint.frame.drawn += 1;
+                if paint.accessible {
+                    crate::a11y::publish_comparison_row(
+                        ui,
+                        paint.pane,
+                        paint.pane.with(("search-hit", i, j)),
+                        format!("{abbreviation} — {reference}"),
+                        Rect::from_min_size(origin, vec2(text_width, height)),
+                        &s.text,
+                        Some(&laid),
+                    );
+                }
+            }
+            _ => {
+                measured = false;
+                placeholder(paint, origin, text_width, height);
+            }
+        }
+        height = height.max(label_h);
+        let hit_rect = Rect::from_min_max(
+            pos2(left, row_y),
+            pos2(text_left + text_width, row_y + height),
+        );
+        paint.targets.push((hit_rect, i, j));
+        row_y += height + HIT_GAP;
+    }
+    (row_y - y + ROW_GAP, measured, y)
+}
+
+/// One Library row: its group's header if it is the group's first, then the unit's title or
+/// Key and the paragraph's excerpt. Returns its height, whether it is fully laid out, and
+/// where its highlight area starts (below the header).
+#[allow(clippy::too_many_arguments)]
+fn library_row(
+    ui: &mut Ui,
+    view: &mut SearchView,
+    tab: &SearchTab,
+    results: &LibraryResults,
+    i: usize,
+    left: f32,
+    y: f32,
+    atlas: &mut AtlasTexture,
+    ppp: f32,
+    paint: &mut Paint<'_>,
+) -> (f32, bool, f32) {
+    let palette = paint.palette;
+    let settings = view.settings;
+    let mut label_settings = settings;
+    label_settings.size *= LABEL_SCALE;
+    let row = &results.rows[i];
+    let group = results.group_of(i);
+    let mut row_y = y;
+    if results.starts_group(i)
+        && let Some(g) = group
+    {
+        paint.painter.text(
+            pos2(left, y + 8.0),
+            Align2::LEFT_TOP,
+            results.group_header(g),
+            FontId::proportional(13.5),
+            palette.ink,
+        );
+        row_y += GROUP_HEAD;
+    }
+    let top = row_y;
+    let text_left = left + INDENT;
+    let text_width = (view.width - INDENT).max(60.0);
+    let rtl = group.is_some_and(|g| g.rtl);
+    let mut measured = true;
+    // The unit's title or Key, through the text pipeline (Lexicon titles are Greek or Hebrew).
+    let label = row_label(row);
+    let origin = pos2(text_left, row_y + 2.0);
+    let label_h = match view.snippets.get(
+        &label,
+        ColorRole::Accent,
+        false,
+        text_width,
+        &label_settings,
+    ) {
+        Some(laid) => paint_laid(paint, atlas, &laid, &[], origin, ppp),
+        None => {
+            measured = false;
+            let h = view.line_height() * LABEL_SCALE;
+            placeholder(paint, origin, text_width * 0.3, h);
+            h
+        }
+    };
+    row_y += 2.0 + label_h + 2.0;
+    let mut height = view.line_height();
+    let origin = pos2(text_left, row_y);
+    let snippet = tab.snippet(i, 0);
+    let laid = snippet.and_then(|s| {
+        view.snippets
+            .get(&s.text, ColorRole::Ink, rtl, text_width, &settings)
+    });
+    match (snippet, laid) {
+        (Some(s), Some(laid)) => {
+            height = paint_laid(paint, atlas, &laid, &s.highlights, origin, ppp);
+            paint.frame.drawn += 1;
+            if paint.accessible {
+                let abbreviation = group.map_or("", |g| g.abbreviation.as_str());
+                crate::a11y::publish_comparison_row(
+                    ui,
+                    paint.pane,
+                    paint.pane.with(("search-hit", i, 0)),
+                    format!("{abbreviation} — {label}"),
+                    Rect::from_min_size(origin, vec2(text_width, height)),
+                    &s.text,
+                    Some(&laid),
+                );
+            }
+        }
+        _ => {
+            measured = false;
+            placeholder(paint, origin, text_width, height);
+        }
+    }
+    row_y += height + HIT_GAP;
+    let hit_rect = Rect::from_min_max(pos2(left, top), pos2(text_left + text_width, row_y));
+    paint.targets.push((hit_rect, i, 0));
+    (row_y - y + ROW_GAP, measured, top)
 }

@@ -36,6 +36,9 @@ pub mod jobs;
 pub mod key_words;
 mod library;
 mod library_commands;
+pub mod library_search;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod library_search_tests;
 pub mod link;
 pub mod people_places;
 pub mod persist;
@@ -63,9 +66,9 @@ pub use annotations::{
 };
 pub use appearance::{Appearance, PageTone, Theme};
 pub use bible_search::{
-    BibleOutline, BibleResults, BibleSearchRequest, ErrorField, InlineError, RowHit, Scope,
-    ScopePreset, SearchMode, SearchTab, SearchedBible, Snippet, VerseRow, parse_scope,
-    scope_presets, verse_rows,
+    BibleOutline, BibleResults, ErrorField, InlineError, RowHit, Scope, ScopePreset, SearchMode,
+    SearchRequestFields, SearchTab, SearchedBible, Snippet, VerseRow, parse_scope, scope_presets,
+    verse_rows,
 };
 pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSpec, Params};
 pub use compare::{
@@ -89,6 +92,9 @@ pub use library::{
     default_user_db, language_name,
 };
 pub use library_commands::annotations_phrase;
+pub use library_search::{
+    LIBRARY_TYPES, LibraryGroup, LibraryResults, LibraryRow, LibraryScope, SearchedResource,
+};
 pub use link::LINK_SETS;
 pub use people_places::{ArticleLink, Fact, PersonOrPlace};
 pub use persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, UserData, WorkspaceSnapshot};

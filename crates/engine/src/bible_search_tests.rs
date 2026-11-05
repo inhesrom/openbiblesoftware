@@ -467,11 +467,11 @@ fn recent_queries_are_kept_per_mode_in_the_user_database() {
     let mut again = Session::new(JobMode::Inline);
     again.attach_user(Box::new(store));
     assert_eq!(again.recent_searches(SearchMode::Bible)[0], "love");
-    // Library and Notes searches are not built yet: no search runs in those modes.
-    let tab = search(&mut again, json!({ "text": "grace", "mode": "library" }));
+    // Notes searches are not built yet: no search runs in that mode.
+    let tab = search(&mut again, json!({ "text": "grace", "mode": "notes" }));
     let st = again.search_tab(tab).unwrap();
-    assert_eq!(st.mode, SearchMode::Library);
-    assert!(st.results.is_none() && st.error.is_none());
+    assert_eq!(st.mode, SearchMode::Notes);
+    assert!(st.results.is_none() && st.library_results.is_none() && st.error.is_none());
     drop(again);
     std::fs::remove_dir_all(root).unwrap();
 }

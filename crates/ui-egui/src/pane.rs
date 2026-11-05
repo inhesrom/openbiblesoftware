@@ -69,6 +69,17 @@ impl AtlasTexture {
     }
 }
 
+/// What a jump marks for a moment: a verse (in the Resource's own numbering), or a Text
+/// range of one unit (a Library search hit's paragraph, #60).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Flash {
+    Verse(Verse),
+    Text {
+        unit: usize,
+        range: std::ops::Range<usize>,
+    },
+}
+
 /// A Tagged word the pointer is on: which unit and which bytes of it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WordHit {
@@ -108,15 +119,15 @@ pub struct PaneOutput {
 }
 
 /// Draw the reading pane into all the space `ui` has, and handle its input. `flash` marks a
-/// verse (after a jump) with a colour whose alpha fades it out. `marks` are the Highlights
-/// and Notes to draw, oldest first: Highlight backgrounds under the glyphs (newest on top),
-/// the red underline and Note markers over them.
+/// verse or a Text range (after a jump) with a colour whose alpha fades it out. `marks` are
+/// the Highlights and Notes to draw, oldest first: Highlight backgrounds under the glyphs
+/// (newest on top), the red underline and Note markers over them.
 pub fn reading_pane(
     ui: &mut Ui,
     view: &mut ReadingView,
     atlas: &mut AtlasTexture,
     palette: &Palette,
-    flash: Option<(Verse, Color32)>,
+    flash: Option<(Flash, Color32)>,
     marks: &[Mark],
 ) -> PaneOutput {
     let mut out = PaneOutput::default();
@@ -211,10 +222,14 @@ pub fn reading_pane(
     if view.has_pending() {
         ui.ctx().request_repaint();
     }
-    if let Some((verse, color)) = flash
-        && let Some((unit, byte)) = view.doc.verse_position(verse)
-        && let Some(range) = view.doc.verse_range_at(unit, byte)
-    {
+    let flashed = flash.and_then(|(f, color)| match f {
+        Flash::Verse(verse) => {
+            let (unit, byte) = view.doc.verse_position(verse)?;
+            Some((unit, view.doc.verse_range_at(unit, byte)?, color))
+        }
+        Flash::Text { unit, range } => Some((unit, range, color)),
+    });
+    if let Some((unit, range, color)) = flashed {
         let sel = Selection {
             anchor: DocPos {
                 unit,
