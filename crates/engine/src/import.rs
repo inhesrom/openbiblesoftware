@@ -510,7 +510,8 @@ impl Session {
     }
 
     /// Download a newer version of the module a Resource was downloaded from and import it
-    /// as the next Resource revision of that Resource (#136): same id, file and place in the
+    /// as the next Resource revision of that Resource (#136): same id, the same `.obr` file
+    /// (whatever it is named; the library does not tie file names to ids) and place in the
     /// Preferred order, and its Annotations are re-anchored once it is in. The row on Get
     /// Resources shows the progress; no Import report Tab opens. If it fails, the revision
     /// in the library stays as it was.
@@ -525,12 +526,15 @@ impl Session {
             .library
             .get(resource_id)
             .ok_or_else(|| format!("{resource_id} is not in the library"))?;
-        let dir = entry
-            .path
+        let path = entry.path.clone();
+        let dir = path
             .parent()
             .map(Path::to_path_buf)
             .ok_or("No library directory")?;
-        let revision = entry.manifest.revision.saturating_add(1);
+        let revision = Revision {
+            number: entry.manifest.revision.saturating_add(1),
+            path,
+        };
         let record = self
             .imports
             .report(resource_id)
@@ -553,14 +557,14 @@ impl Session {
     }
 
     /// Record a running Import of `source` as Resource `id` and queue its job. `revision`:
-    /// write it as that Resource revision of `id`, replacing the `.obr` in the library.
+    /// write it as that Resource revision of `id`, replacing its `.obr` in the library.
     #[cfg(not(target_arch = "wasm32"))]
     fn submit_import(
         &mut self,
         source: ImportSource,
         dir: &Path,
         id: &str,
-        revision: Option<u32>,
+        revision: Option<Revision>,
     ) -> JobId {
         let id = id.to_string();
         let (phase, origin) = match &source {
@@ -609,7 +613,16 @@ impl Session {
 struct Target<'a> {
     dir: &'a Path,
     id: &'a str,
-    revision: Option<u32>,
+    revision: Option<Revision>,
+}
+
+/// A Resource revision replacing the `.obr` file at `path`: the file the library read the
+/// Resource from, which need not be named after its id.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone)]
+struct Revision {
+    number: u32,
+    path: std::path::PathBuf,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -813,14 +826,16 @@ fn import_source(
             return Err(cancelled());
         }
         std::fs::create_dir_all(dir)?;
-        let out = dir.join(format!("{id}.obr"));
-        // A new Resource revision is written beside the one in the library (a name the
-        // library scan skips) and replaces it in one rename once indexed, so the revision
-        // before it stays whole if the update fails or is cancelled.
-        let written = if let Some(revision) = to.revision {
-            resource.manifest.revision = revision;
-            dir.join(format!("{id}.obr.update"))
+        // A new Resource revision is written beside the file in the library (a name the
+        // library scan skips) and replaces that exact file in one rename once indexed, so the
+        // revision before it stays whole if the update fails or is cancelled.
+        let (out, written) = if let Some(revision) = &to.revision {
+            resource.manifest.revision = revision.number;
+            let mut staged = revision.path.clone().into_os_string();
+            staged.push(".update");
+            (revision.path.clone(), std::path::PathBuf::from(staged))
         } else {
+            let out = dir.join(format!("{id}.obr"));
             // Reserve filename, including files not scanned (or written by another app
             // instance).
             let reservation = std::fs::OpenOptions::new()
@@ -828,7 +843,7 @@ fn import_source(
                 .create_new(true)
                 .open(&out)?;
             drop(reservation);
-            out.clone()
+            (out.clone(), out)
         };
         made.obr = Some(written.clone());
         obs_store::write_obr(&resource, &written)?;

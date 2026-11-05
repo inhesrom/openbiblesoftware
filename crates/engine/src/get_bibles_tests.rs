@@ -1136,6 +1136,71 @@ fn a_failed_update_keeps_the_revision_in_the_library() {
 }
 
 #[test]
+fn an_update_replaces_the_resource_file_the_library_read_whatever_it_is_named() {
+    let (mut s, repos, root) = ready("update-renamed", JobMode::Inline);
+    let library = root.join("library");
+    let id = download(&mut s, "ObsKjvGbf");
+    // The user renames the file; another Resource now sits under the downloaded one's
+    // id-named file. The library ties neither file name to an id.
+    std::fs::rename(library.join(format!("{id}.obr")), library.join("zzz.obr")).unwrap();
+    let mut unrelated = obs_store::sample_resource();
+    unrelated.manifest.resource_id = "unrelated".into();
+    obs_store::write_obr(&unrelated, &library.join(format!("{id}.obr"))).unwrap();
+    assert!(s.library.scan(&library).is_empty());
+    assert_eq!(s.library.get(&id).unwrap().path, library.join("zzz.obr"));
+
+    repos.publish(
+        "crosswire",
+        "obskjvgbf.conf",
+        "1.1",
+        Some((JOHN_1_1, JOHN_1_1_FIXED)),
+    );
+    refresh(&mut s);
+    s.run("getbibles.update", &json!({"module": "ObsKjvGbf"}))
+        .unwrap();
+    settle(&mut s);
+    let entry = s.library.get(&id).unwrap();
+    assert_eq!(entry.manifest.revision, 2);
+    assert_eq!(
+        entry.path,
+        library.join("zzz.obr"),
+        "the same file, updated"
+    );
+    let mut files = obr_files(&library);
+    files.sort();
+    assert_eq!(files, [format!("{id}.obr"), "zzz.obr".to_string()]);
+    assert_eq!(
+        s.library.get("unrelated").unwrap().manifest,
+        unrelated.manifest,
+        "the other Resource is untouched"
+    );
+
+    // After a restart the library still has the new revision, not the one before it.
+    let mut restarted = Library::default();
+    assert!(restarted.scan(&library).is_empty());
+    assert_eq!(restarted.get(&id).unwrap().manifest.revision, 2);
+    assert_eq!(restarted.get("unrelated").unwrap().manifest.revision, 1);
+    assert_eq!(
+        s.listing_status(&listing_of(&s, "ObsKjvGbf")),
+        ListingStatus::Installed {
+            resource_id: id.clone()
+        }
+    );
+
+    // Remove deletes that file and leaves the other Resource's.
+    s.run("library.remove", &json!({"id": id, "confirm": true}))
+        .unwrap();
+    settle(&mut s);
+    assert_eq!(obr_files(&library), [format!("{id}.obr")]);
+    let mut restarted = Library::default();
+    assert!(restarted.scan(&library).is_empty());
+    assert!(restarted.get(&id).is_none());
+    assert!(restarted.get("unrelated").is_some());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn offline_the_tab_makes_no_up_to_date_claim() {
     let (mut s, repos, root) = ready("update-offline", JobMode::Inline);
     // Nothing downloaded: nothing to claim.
