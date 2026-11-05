@@ -421,6 +421,29 @@ fn every_tagged_word_is_visited_like_the_generic_walk() {
     assert_eq!(fast, collect(&Defaults(&reader)));
 }
 
+/// Tagged words with their unit and start byte (#56) match the generic walk, in document
+/// order.
+#[test]
+fn tagged_words_with_positions_match_the_generic_walk() {
+    let dir = TempDir::new("tagged-words-at");
+    let path = dir.path("kjv.obr");
+    write_obr(&sample_resource(), &path).unwrap();
+    let reader = ObrReader::open(&path).unwrap();
+    let collect = |store: &dyn ResourceStore| {
+        let mut seen = Vec::new();
+        store
+            .for_each_tagged_word_at(&mut |unit, start, parts| {
+                seen.push((unit.to_string(), start, parts[0].strongs.to_string()));
+            })
+            .unwrap();
+        seen
+    };
+    let fast = collect(&reader);
+    assert_eq!(fast.len(), 2, "{fast:?}");
+    assert!(fast.windows(2).all(|w| w[0].1 < w[1].1 || w[0].0 != w[1].0));
+    assert_eq!(fast, collect(&Defaults(&reader)));
+}
+
 /// A two-entry Lexicon: H1254A (extended, with its base number as a secondary Key) and G5485.
 fn lexicon() -> Resource {
     use obs_model::{Manifest, ResourceBuilder, ResourceType};

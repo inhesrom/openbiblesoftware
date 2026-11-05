@@ -108,6 +108,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::bible_search::COMMANDS)
         .chain(crate::word_study::COMMANDS)
         .chain(crate::library_search::COMMANDS)
+        .chain(crate::word_sections::COMMANDS)
     {
         // Ids in COMMANDS are unique (checked by a test), so registration cannot fail.
         let _ = r.register(*spec);

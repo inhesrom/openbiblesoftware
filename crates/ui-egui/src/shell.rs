@@ -36,6 +36,7 @@ mod notes_tab;
 pub(crate) mod references;
 mod search_tab;
 mod word_info_tab;
+mod word_sections_view;
 mod word_study_tab;
 
 /// How long the pointer rests on a Tagged word before Word Info follows it (#18 rule 16).
@@ -87,6 +88,10 @@ struct TabUi {
     /// the number in `lexicon_entries_for` (otherwise only the first is expanded).
     lexicon_open: BTreeMap<String, bool>,
     lexicon_entries_for: Option<obs_scripture::StrongsNumber>,
+    /// Word Study (#56): the form filtering Occurrences (a [`obs_engine::Form::label`]) and
+    /// whether Translated as shows every rendering, for `lexicon_entries_for`.
+    occurrence_form: Option<String>,
+    renderings_all: bool,
 }
 
 /// How long a jump's flash lasts, in seconds.

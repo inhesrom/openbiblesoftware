@@ -1,7 +1,8 @@
-# Word Study: header, Lexicon entries and the English-word chooser (#55)
+# Word Study: header, sections and the English-word chooser (#55, #56)
 
 Decisions #15 (Word Study sections, Guide arrangement) and #20 rule 5 (derived indexes).
-Translated as, Occurrences and Forms are #56. The Guide framework is #53
+The header, Lexicon entries and the chooser are #55; Translated as, Occurrences and Forms are
+#56 (see [below](#translated-as-occurrences-and-forms-56)). The Guide framework is #53
 ([passage-guide.md](passage-guide.md)); the Word Study uses it unchanged.
 
 ## Contract
@@ -43,6 +44,48 @@ Translated as, Occurrences and Forms are #56. The Guide framework is #53
   number, else the word Word Info shows), a Passage Guide Key word (#54: `guide.word_study
   {strongs, tab?}`, which also closes a moved Tab's chooser) and the box. A plain click
   moves the focused or most recent Word Study; Ctrl/Cmd-click opens a new one.
+
+## Translated as, Occurrences and Forms (#56)
+
+`obs_engine::word_sections` computes them as Guide sections (`GuideSection::TranslatedAs`,
+`Occurrences`, `Forms`; ids `translated_as`, `occurrences`, `forms`), each its own job.
+Default order: Lexicon entries, Translated as, Occurrences, Forms; **Forms starts collapsed**
+(`GuideSection::collapsed_by_default`, also after Reset arrangement). An arrangement saved
+before #56 gains the three at their default places.
+
+- **Translated as** (`TranslatedAs`): the renderings of the number in the tagged English Bible
+  the chooser would read (most Strong's numbers rendered; Preferred order breaks ties) that
+  renders it, from its rendering index, grouped and counted, most frequent first
+  (`renderings_of`: a base number counts its homographs). A Bible that tags only base numbers
+  answers an extended one with its base ("How the KJV (as H1254) translates it"). Each
+  rendering is a link: `search.run {text: 'strong:G5485 "favour"', mode: "bible", bibles:
+  <that Bible>}` (Ctrl/Cmd-click: a new Search Tab). The first 16 show, then Show all.
+- **Occurrences** (`OccurrenceList`): counted in the first Bible in Preferred order in the
+  number's original language that tags it (TAGNT for G, TAHOT for H), else the first tagged
+  Bible that does (the KJV when the library has no original-language Bible): the same rule as
+  the header's total. The section holds every Verse with the number (Standard canonical
+  order; an Unmapped verse at its own number) and, per occurrence, its form, so the UI counts
+  per Bible book and filters by form without asking again (`OccurrenceList::filtered`). The
+  UI draws a bar per Bible book, the first 50 Verses (`OCCURRENCE_ROWS`) and Show all in
+  Search (`strong:G5485`, in the preview Bible and the counted Bible). A row opens its Verse
+  (`word_study.open_verse {bible, verse, new_tab?}`: the Bible's most recent Tab, else a new
+  one).
+- **Previews**: the text of each shown Verse in the Translated as Bible (else the counted
+  Bible itself), with the number's Tagged words highlighted by the Search Highlighter and
+  drawn by the inline-snippet pipeline with the Search hit tint. They are read only for the
+  rows shown: `Session::occurrence_previews(&PreviewBible, &[Verse])` never waits, reads the
+  missing ones in one job and keeps them (per Bible, highlighted number and Verse).
+- **Forms** (`Forms`): the number's Morphology in the original-language Bible only, in
+  plain English (`Morph::short`, "noun, dat. fem. sing.", "Qal perfect, 3rd masc. sing."),
+  with counts, most frequent first; codes that read the same are one form, and the codes and
+  the long reading are the tooltip. Clicking a form filters Occurrences (bars, count and
+  Verses) to it; clicking it again, or Clear in Occurrences, shows every form. The filter is
+  per Tab and resets when the Word Study moves to another number.
+- **Concordance**: each counting Bible's Tagged words are gathered once per revision into a
+  `Concordance` (Strong's number → Verses and Morphology codes) by one SQL pass over its
+  `tagged_word` spans (`ResourceStore::for_each_tagged_word_at`, new), and shared by later
+  jobs. The rendering indexes are shared between the Guide sections and the header/chooser
+  (`Guides::indexes`, `WordStudies::with_indexes`).
 
 ## The rendering index (#20 rule 5)
 
@@ -89,6 +132,31 @@ saved order there: BDB, Strong's, TBESH (all three, first expanded) until the us
 TBESH up in the Library.
 
 ## Evidence
+
+#56:
+
+- Engine `word_sections_tests` (open fixtures `testing::kjv_grace` and `tagnt_grace`, KJV
+  and TAGNT-style Luke 1:30 … Ephesians 2:8): G5485 is "grace ×6, favour ×3" from the KJV and
+  hands `strong:G5485 "favour"` to Search; Occurrences from TAGNT per book (Luke 3, John 3,
+  Acts 1, Romans 1, Ephesians 1) in Standard order; the dative form leaves Luke 2:52 and
+  Ephesians 2:8; KJV previews highlight "favour" and "grace … grace"; Forms counts and Forms
+  collapsed by default; H1254A from the Hebrew Bible with KJV previews highlighting H1254; a
+  KJV-only library counts in the KJV with no Forms; `word_study.open_verse`. Store
+  `tagged_words_with_positions_match_the_generic_walk`.
+- UI `shell::tests::word_study::g5485_translated_as_occurrences_and_forms_filter`: the
+  renderings, Forms collapsed until its header is clicked, Occurrences rows and bars, clicking
+  a form filters the list (and again clears it), a rendering opens Search with its query.
+- Starter library (manual, `cargo test --release -p obs-engine --lib
+  word_sections_tests::starter_library -- --ignored --nocapture`, NASB left out): G5485 in
+  the KJV is grace ×129, favour ×6, thank ×6, thanks ×4, pleasure ×2 and 9 renderings once
+  (2.1 s cold, deriving the rendering indexes of pre-#55 `.obr` files); 155 occurrences in
+  147 Verses of TAGNT (Romans 24, 2 Corinthians 18, Acts 17 …; 144 ms cold); Forms nom. ×60,
+  acc. ×44, gen. ×27, dat. ×24; 50 KJV previews in ~210 ms. H1254A: 53 in TAHOT (390 ms cold,
+  gathering TAHOT), 18 forms led by Qal perfect 3rd masc. sing. ×11; Translated as (KJV, as
+  H1254) created ×33, create ×8, creator ×3. H3068 with TAHOT gathered: 6,528 in 5,525 Verses
+  in 6 ms.
+
+#55:
 
 - Engine `word_study_tests`: the box; "love" offers G25 ×3, G26 ×2, G5368 ×2 from the KJV
   fixture; one-number words go straight there, also from a cached chooser; a poorly tagged

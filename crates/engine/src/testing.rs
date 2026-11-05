@@ -1266,3 +1266,118 @@ pub mod study {
         )
     }
 }
+
+/// KJV verses (public domain) where G5485 is rendered "grace" six times and "favour" three
+/// times, tagged with Strong's numbers only, the way KJV+Strong's is (#56).
+pub fn kjv_grace() -> obs_model::Resource {
+    use obs_scripture::{Book, Verse};
+    let v = Verse::new;
+    tagged_bible(
+        "kjv-grace",
+        "King James Version with Strong's (test)",
+        "KJV",
+        "en",
+        &[
+            (
+                v(Book::Luke, 1, 30),
+                "And the angel{G32} said{G2036} unto her, Fear{G5399} not{G3361}, Mary{G3137}: \
+                 for thou hast found{G2147} favour{G5485} with God{G2316}.",
+            ),
+            (
+                v(Book::Luke, 2, 40),
+                "And the child{G3813} grew{G837}, and waxed_strong{G2901} in spirit{G4151}, \
+                 filled{G4137} with wisdom{G4678}: and the grace{G5485} of God{G2316} was{G2258} \
+                 upon him.",
+            ),
+            (
+                v(Book::Luke, 2, 52),
+                "And Jesus{G2424} increased{G4298} in wisdom{G4678} and stature{G2244}, and in \
+                 favour{G5485} with God{G2316} and man{G444}.",
+            ),
+            (
+                v(Book::John, 1, 14),
+                "And the Word{G3056} was_made{G1096} flesh{G4561}, and dwelt{G4637} among us, \
+                 full{G4134} of grace{G5485} and truth{G225}.",
+            ),
+            (
+                v(Book::John, 1, 16),
+                "And of his fulness{G4138} have all{G3956} we received{G2983}, and \
+                 grace{G5485} for{G473} grace{G5485}.",
+            ),
+            (
+                v(Book::Acts, 2, 47),
+                "Praising{G134} God{G2316}, and having{G2192} favour{G5485} with all{G3650} the \
+                 people{G2992}.",
+            ),
+            (
+                v(Book::Romans, 1, 5),
+                "By whom we have received{G2983} grace{G5485} and apostleship{G651}, for \
+                 obedience{G5218} to the faith{G4102} among all{G3956} nations{G1484}, for his \
+                 name{G3686}:",
+            ),
+            (
+                v(Book::Ephesians, 2, 8),
+                "For by grace{G5485} are ye saved{G4982} through faith{G4102}; and that not of \
+                 yourselves: it is the gift{G1435} of God{G2316}:",
+            ),
+        ],
+    )
+}
+
+/// The same Verses as STEPBible's TAGNT tags them (CC BY), with G5485's Morphology:
+/// accusative four times, dative twice, genitive twice and nominative once.
+pub fn tagnt_grace() -> obs_model::Resource {
+    use obs_scripture::{Book, Verse};
+    let v = Verse::new;
+    tagged_bible(
+        "tagnt-grace",
+        "Translators Amalgamated Greek NT (test)",
+        "TAGNT",
+        "grc",
+        &[
+            (
+                v(Book::Luke, 1, 30),
+                "εὗρες{G2147|εὑρίσκω|V-2AAI-2S|you_have_found} γὰρ{G1063|γάρ|CONJ|for} \
+                 χάριν{G5485|χάρις|N-ASF|favor} παρὰ{G3844|παρά|PREP|with} \
+                 τῷ{G3588|ὁ|T-DSM|-} θεῷ{G2316|θεός|N-DSM-T|God}.",
+            ),
+            (
+                v(Book::Luke, 2, 40),
+                "καὶ{G2532|καί|CONJ|and} χάρις{G5485|χάρις|N-NSF|[the]_grace} \
+                 θεοῦ{G2316|θεός|N-GSM-T|of_God} ἦν{G1510|εἰμί|V-IAI-3S|was} \
+                 ἐπ᾽{G1909|ἐπί|PREP|upon} αὐτό{G846|αὐτός|P-ASN|Him}.",
+            ),
+            (
+                v(Book::Luke, 2, 52),
+                "καὶ{G2532|καί|CONJ|and} χάριτι{G5485|χάρις|N-DSF|in_favor} \
+                 παρὰ{G3844|παρά|PREP|with} θεῷ{G2316|θεός|N-DSM-T|God}.",
+            ),
+            (
+                v(Book::John, 1, 14),
+                "πλήρης{G4134|πλήρης|A-NSM|full} χάριτος{G5485|χάρις|N-GSF|of_grace} \
+                 καὶ{G2532|καί|CONJ|and} ἀληθείας{G225|ἀλήθεια|N-GSF|of_truth}.",
+            ),
+            (
+                v(Book::John, 1, 16),
+                "καὶ{G2532|καί|CONJ|and} χάριν{G5485|χάρις|N-ASF|grace} \
+                 ἀντὶ{G473|ἀντί|PREP|upon} χάριτος{G5485|χάρις|N-GSF|grace}.",
+            ),
+            (
+                v(Book::Acts, 2, 47),
+                "ἔχοντες{G2192|ἔχω|V-PAP-NPM|having} χάριν{G5485|χάρις|N-ASF|favor} \
+                 πρὸς{G4314|πρός|PREP|with} ὅλον{G3650|ὅλος|A-ASM|all} \
+                 τὸν{G3588|ὁ|T-ASM|the} λαόν{G2992|λαός|N-ASM|people}.",
+            ),
+            (
+                v(Book::Romans, 1, 5),
+                "ἐλάβομεν{G2983|λαμβάνω|V-2AAI-1P|we_received} χάριν{G5485|χάρις|N-ASF|grace} \
+                 καὶ{G2532|καί|CONJ|and} ἀποστολὴν{G651|ἀποστολή|N-ASF|apostleship}",
+            ),
+            (
+                v(Book::Ephesians, 2, 8),
+                "τῇ{G3588|ὁ|T-DSF|-} γὰρ{G1063|γάρ|CONJ|for} χάριτί{G5485|χάρις|N-DSF|by_grace} \
+                 ἐστε{G1510|εἰμί|V-PAI-2P|you_are} σεσῳσμένοι{G4982|σῴζω|V-RPP-NPM|saved}",
+            ),
+        ],
+    )
+}

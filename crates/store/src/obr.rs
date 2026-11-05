@@ -34,7 +34,7 @@
 //! format version, so a file is checked before any table is read.
 
 use std::cell::OnceCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
@@ -1205,6 +1205,50 @@ impl ResourceStore for ObrReader {
                 .map_err(|e| corrupt(format!("tagged word attributes: {e}")))?;
             if let obs_model::SpanKind::TaggedWord { parts } = span_from(i64::from(kind), attrs)? {
                 f(&parts);
+            }
+        }
+        Ok(())
+    }
+
+    fn for_each_tagged_word_at(
+        &self,
+        f: &mut dyn FnMut(&UnitId, u32, &[obs_model::MorphemePart]),
+    ) -> Result<(), StoreError> {
+        let mut ids: HashMap<i64, UnitId> = HashMap::new();
+        {
+            let mut stmt = self
+                .conn
+                .prepare_cached("SELECT ord, id FROM units")
+                .map_err(sql)?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
+                .map_err(sql)?;
+            for row in rows {
+                let (ord, id) = row.map_err(sql)?;
+                ids.insert(ord, unit_id(id)?);
+            }
+        }
+        let (kind, _) = span_columns(&obs_model::SpanKind::TaggedWord { parts: Vec::new() });
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT unit, start, attrs FROM spans WHERE kind = ?1 ORDER BY unit, seq",
+            )
+            .map_err(sql)?;
+        let mut rows = stmt.query([i64::from(kind)]).map_err(sql)?;
+        while let Some(row) = rows.next().map_err(sql)? {
+            let ord: i64 = row.get(0).map_err(sql)?;
+            let start = to_u32(row.get::<_, i64>(1).map_err(sql)?, "span start")?;
+            let unit = ids
+                .get(&ord)
+                .ok_or_else(|| corrupt(format!("no unit with ordinal {ord}")))?;
+            let attrs = row
+                .get_ref(2)
+                .map_err(sql)?
+                .as_blob()
+                .map_err(|e| corrupt(format!("tagged word attributes: {e}")))?;
+            if let obs_model::SpanKind::TaggedWord { parts } = span_from(i64::from(kind), attrs)? {
+                f(unit, start, &parts);
             }
         }
         Ok(())

@@ -22,6 +22,16 @@ fn n(text: &str) -> StrongsNumber {
 /// A library of real `.obr` files: the KJV-style Bible with Strong's numbers, the Hebrew
 /// Bible and the Starter Lexicon excerpts (TBESH, TBESG, Strong's Hebrew, BDB).
 fn setup(h: &mut Harness, name: &str) -> Files {
+    let mut resources = vec![
+        obs_engine::testing::kjv_love(),
+        obs_engine::testing::hebrew_bara(),
+    ];
+    resources.extend(obs_engine::testing::starter_lexicon_excerpts());
+    setup_with(h, name, &resources)
+}
+
+/// A library of real `.obr` files made of `resources`.
+fn setup_with(h: &mut Harness, name: &str, resources: &[obs_model::Resource]) -> Files {
     let dir = std::env::temp_dir().join(format!(
         "obs-shell-word-study-{name}-{}",
         std::process::id()
@@ -30,12 +40,7 @@ fn setup(h: &mut Harness, name: &str) -> Files {
     std::fs::create_dir_all(&dir).unwrap();
     let files = Files(dir);
     h.shell.st.session.library = Library::new();
-    let mut resources = vec![
-        obs_engine::testing::kjv_love(),
-        obs_engine::testing::hebrew_bara(),
-    ];
-    resources.extend(obs_engine::testing::starter_lexicon_excerpts());
-    for r in &resources {
+    for r in resources {
         let path = files.0.join(format!("{}.obr", r.manifest.resource_id));
         obs_store::write_obr(r, &path).unwrap();
         h.shell.st.session.library.add_file(&path).unwrap();
@@ -298,5 +303,122 @@ fn word_info_and_strongs_links_open_word_study() {
     h.frames(2);
     assert_eq!(key_of(&h, study), Some(Key::StrongsNumber(n("H2438H"))));
     assert_eq!(h.shell.session().workspace.focused(), Some(study));
+    drop(h);
+}
+
+/// #56: Translated as from the KJV, Occurrences from TAGNT with KJV previews, and Forms
+/// (collapsed at first) filtering Occurrences; a rendering hands its query to Search.
+#[test]
+fn g5485_translated_as_occurrences_and_forms_filter() {
+    let mut h = Harness::new();
+    let _files = setup_with(
+        &mut h,
+        "grace",
+        &[
+            obs_engine::testing::kjv_grace(),
+            obs_engine::testing::tagnt_grace(),
+        ],
+    );
+    let tab = open_word_study(&mut h);
+    type_in_box(&mut h, tab, "Strong's number or word", "G5485");
+    assert_eq!(key_of(&h, tab), Some(Key::StrongsNumber(n("G5485"))));
+    // Translated as, from KJV+Strong's: grace, then favour.
+    until(&mut h, "the renderings", |h| {
+        find_in(h, tab, "grace ×6").is_some() && find_in(h, tab, "favour ×3").is_some()
+    });
+    let top = |h: &Harness, t: &str| find_in(h, tab, t).map(|r| (r.top(), r.left()));
+    assert!(top(&h, "grace ×6") <= top(&h, "favour ×3"));
+    // Forms starts collapsed: its header shows, its forms do not.
+    let dative = "noun, dat. fem. sing. ×2";
+    until(&mut h, "the Forms header", |h| {
+        find_in(h, tab, "Forms").is_some()
+    });
+    assert!(find_in(&h, tab, dative).is_none(), "{:?}", h.texts());
+    // Drag-free arrangement change: Forms to the top so everything fits on screen.
+    h.shell.run(
+        "guide.move_section",
+        &json!({ "guide": "word_study", "section": "forms", "to": 0 }),
+    );
+    h.frames(2);
+    let header = find_in(&h, tab, "Forms").unwrap().center();
+    h.click(header);
+    until(&mut h, "the forms", |h| find_in(h, tab, dative).is_some());
+    for form in [
+        "noun, acc. fem. sing. ×4",
+        "noun, gen. fem. sing. ×2",
+        "noun, nom. fem. sing. ×1",
+    ] {
+        assert!(
+            find_in(&h, tab, form).is_some(),
+            "no {form}: {:?}",
+            h.texts()
+        );
+    }
+    // Occurrences: every Verse (the first in view), with a bar per Bible book.
+    until(&mut h, "the Occurrences rows", |h| {
+        find_in(h, tab, "Luke 1:30").is_some()
+    });
+    for book in ["Luke", "John", "Acts", "Rom", "Eph"] {
+        assert!(find_in(&h, tab, book).is_some(), "no {book} bar");
+    }
+    assert!(
+        find_in(&h, tab, "9 occurrences in 8 Verses of the TAGNT").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    settle(&mut h);
+    if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/previews/word-study");
+        h.frames(30);
+        h.screenshot(&dir.join("word-study-g5485.ppm"));
+    }
+
+    // Clicking the dative filters Occurrences to Luke 2:52 and Ephesians 2:8.
+    let at = find_in(&h, tab, dative).unwrap().center();
+    h.click(at);
+    h.frames(3);
+    assert!(
+        find_in(&h, tab, "2 occurrences in 2 Verses of the TAGNT").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    assert!(find_in(&h, tab, "Form: noun, dat. fem. sing.").is_some());
+    for shown in ["Luke 2:52", "Eph 2:8"] {
+        assert!(
+            find_in(&h, tab, shown).is_some(),
+            "no {shown}: {:?}",
+            h.texts()
+        );
+    }
+    for hidden in [
+        "Luke 1:30",
+        "Luke 2:40",
+        "John 1:14",
+        "Acts 2:47",
+        "Rom 1:5",
+        "John",
+    ] {
+        assert!(find_in(&h, tab, hidden).is_none(), "{hidden} still listed");
+    }
+    // Clicking it again shows every form.
+    let at = find_in(&h, tab, dative).unwrap().center();
+    h.click(at);
+    h.frames(3);
+    assert!(find_in(&h, tab, "Luke 1:30").is_some());
+
+    // A rendering opens Search for its Verses in the KJV.
+    let at = find_in(&h, tab, "favour ×3").unwrap().center();
+    h.click(at);
+    h.frames(2);
+    let ws = &h.shell.session().workspace;
+    let search = ws
+        .tabs()
+        .find(|t| t.kind == TabKind::Tool(obs_engine::Tool::Search))
+        .map(|t| t.id)
+        .expect("a Search Tab");
+    let st = h.shell.session().search_tab(search).unwrap();
+    assert_eq!(st.query, "strong:G5485 \"favour\"");
+    assert_eq!(st.bibles.as_deref(), Some(&["kjv-grace".to_string()][..]));
     drop(h);
 }
