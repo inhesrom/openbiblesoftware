@@ -3102,7 +3102,7 @@ mod get_bibles {
         assert!(
             h.panels()
                 .iter()
-                .any(|(_, t)| t.iter().any(|t| t == "Get Bibles")),
+                .any(|(_, t)| t.iter().any(|t| t == "Get Resources")),
             "{:?}",
             h.panels()
         );
@@ -3112,11 +3112,11 @@ mod get_bibles {
     fn library_get_bibles_shows_nasb_1995_first_with_licence_and_size_then_one_click_installs_it() {
         let (mut h, repos, root) = setup("flow");
         open_get_bibles(&mut h);
-        assert!(h.find("FEATURED · 1").is_some(), "{:?}", h.texts());
+        assert!(h.find("FEATURED BIBLES · 1").is_some(), "{:?}", h.texts());
         assert!(h.find("ALL BIBLES · 5").is_some(), "{:?}", h.texts());
         // NASB 1995 heads Featured, with the conf's licence and InstallSize.
         let nasb = first(&h, NASB);
-        let featured = h.find("FEATURED · 1").unwrap();
+        let featured = h.find("FEATURED BIBLES · 1").unwrap();
         let all = h.find("ALL BIBLES · 5").unwrap();
         assert!(featured.top() < nasb.top() && nasb.top() < all.top());
         assert!(h.find("Copyrighted").is_some());
@@ -3127,8 +3127,13 @@ mod get_bibles {
             h.texts()
         );
         assert!(
-            h.find("Copyrighted; Permission to distribute granted to CrossWire")
-                .is_some()
+            h.find(
+                "Used by Word Study › Translated as and Occurrences · Copyrighted; Permission \
+                 to distribute granted to CrossWire"
+            )
+            .is_some(),
+            "{:?}",
+            h.texts()
         );
         assert!(
             h.find("Public domain").is_some(),
@@ -3161,7 +3166,7 @@ mod get_bibles {
             || u == obs_engine::sword_repo::MASTER_REPO_LIST_URL));
 
         // Back on Get Bibles the row says Installed and opens the Bible.
-        let tab = h.tab_at("Get Bibles");
+        let tab = h.tab_at("Get Resources");
         h.click(tab);
         assert!(h.find("Installed").is_some(), "{:?}", h.texts());
         let open = row_button(&h, NASB, "Open");
@@ -3193,7 +3198,7 @@ mod get_bibles {
         h.shell.st.get_bibles_ui.query = "nothing like this".into();
         h.frames(2);
         assert!(
-            h.find("No Bible matches the search and language.")
+            h.find("Nothing matches the search, type and language.")
                 .is_some()
         );
         drop(h);
@@ -3227,7 +3232,7 @@ mod get_bibles {
         );
         // Back online, Try again clears the banner.
         repos.set_offline(false);
-        let tab = h.tab_at("Get Bibles");
+        let tab = h.tab_at("Get Resources");
         h.click(tab);
         h.click_text("Try again");
         settle(&mut h);
@@ -3303,12 +3308,15 @@ mod get_bibles {
         let t = std::time::Instant::now();
         open_get_bibles(&mut h);
         println!("catalog loaded in {:.1}s", t.elapsed().as_secs_f64());
-        let featured = first(&h, "FEATURED · 13");
+        let featured = first(&h, "FEATURED BIBLES · 13");
         let nasb = first(&h, NASB);
         assert!(featured.top() < nasb.top(), "{:?}", h.texts());
         assert!(
-            h.find("Copyrighted; Permission to distribute granted to CrossWire")
-                .is_some()
+            h.texts()
+                .iter()
+                .any(|t| t.ends_with("Copyrighted; Permission to distribute granted to CrossWire")),
+            "{:?}",
+            h.texts()
         );
         h.screenshot(&shots.join("live-get-bibles.ppm"));
 
@@ -3327,7 +3335,7 @@ mod get_bibles {
         );
         h.screenshot(&shots.join("live-import-report.ppm"));
 
-        let tab = h.tab_at("Get Bibles");
+        let tab = h.tab_at("Get Resources");
         h.click(tab);
         assert!(h.find("Installed").is_some(), "{:?}", h.texts());
         let open = row_button(&h, NASB, "Open");
@@ -3345,7 +3353,7 @@ mod get_bibles {
         // Now offline: every fetch fails. The Tab keeps the real catalog it cached, says so,
         // and the Bible just downloaded still reads.
         h.shell.st.session.set_fetch(Arc::new(Offline));
-        let tab = h.tab_at("Get Bibles");
+        let tab = h.tab_at("Get Resources");
         h.click(tab);
         h.shell.run("getbibles.refresh", &json!({}));
         settle(&mut h);
@@ -3366,6 +3374,191 @@ mod get_bibles {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    const STRONGS: &str = "Strong's Greek Bible Dictionary";
+    const MT_NOTES: &str = "Synthetic ObsHebrewNotes regression fixture";
+
+    /// Visual evidence for docs/previews/ when `UPDATE_PREVIEWS` is set.
+    fn preview(h: &Harness, name: &str) {
+        if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+            let dir =
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+            std::fs::create_dir_all(&dir).unwrap();
+            h.screenshot(&dir.join(format!("{name}.ppm")));
+        }
+    }
+
+    fn open_get_resources(h: &mut Harness) {
+        h.open_menu("Library");
+        h.click_text("Get Resources…");
+        settle(h);
+        assert!(
+            h.panels()
+                .iter()
+                .any(|(_, t)| t.iter().any(|t| t == "Get Resources")),
+            "{:?}",
+            h.panels()
+        );
+    }
+
+    #[test]
+    fn get_resources_lists_every_type_and_the_lexicons_filter_installs_strongs_greek_in_one_click()
+    {
+        let (mut h, _repos, root) = setup("types");
+        open_get_resources(&mut h);
+        // All types: a Featured section per type that has one, then every listing.
+        assert!(h.find("FEATURED BIBLES · 1").is_some(), "{:?}", h.texts());
+        assert!(h.find("FEATURED LEXICONS · 1").is_some(), "{:?}", h.texts());
+        assert!(h.find("FEATURED COMMENTARIES · 0").is_none());
+        assert!(h.find("ALL RESOURCES · 10").is_some(), "{:?}", h.texts());
+        for t in ["Bibles", "Lexicons", "Commentaries", "Dictionaries", "All"] {
+            assert!(h.find(t).is_some(), "type filter {t:?}: {:?}", h.texts());
+        }
+        assert!(
+            h.find("Lexicon · StrongsGreek · English · 0.9 MB · from CrossWire")
+                .is_some(),
+            "{:?}",
+            h.texts()
+        );
+        preview(&h, "get-resources-all");
+
+        h.click_text("Lexicons");
+        h.frames(2);
+        assert_eq!(
+            h.shell.st.session.get_bibles.type_filter(),
+            Some(obs_model::ResourceType::Lexicon)
+        );
+        assert!(h.find("FEATURED LEXICONS · 1").is_some(), "{:?}", h.texts());
+        assert!(h.find("ALL LEXICONS · 1").is_some(), "{:?}", h.texts());
+        assert!(h.find(NASB).is_none(), "Bibles filtered out");
+        assert!(
+            h.find("Used by Word Study › Lexicon entries and Word Info · Public Domain")
+                .is_some(),
+            "{:?}",
+            h.texts()
+        );
+        preview(&h, "get-resources-lexicons");
+
+        let at = row_button(&h, STRONGS, "Download");
+        h.click(at);
+        assert!(!h.shell.st.pick_import && h.shell.st.confirm.is_none());
+        settle(&mut h);
+        let id = "strongsgreek-1";
+        let record = h.shell.st.session.imports.report(id).unwrap().clone();
+        assert_eq!(record.phase, ImportPhase::Complete, "{:?}", record.error);
+        assert_eq!(
+            h.shell
+                .st
+                .session
+                .library
+                .get(id)
+                .unwrap()
+                .manifest
+                .resource_type,
+            obs_model::ResourceType::Lexicon
+        );
+        let tab = h.tab_at("Get Resources");
+        h.click(tab);
+        assert!(h.find("Installed").is_some(), "{:?}", h.texts());
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_commentary_import_refuses_is_shown_disabled_with_the_reason() {
+        let (mut h, _repos, root) = setup("refused");
+        open_get_resources(&mut h);
+        h.click_text("Commentaries");
+        h.frames(2);
+        assert!(h.find("ALL COMMENTARIES · 3").is_some(), "{:?}", h.texts());
+        assert!(
+            h.find("Used by Passage Guide › Commentaries · Creative Commons: CC0")
+                .is_some(),
+            "{:?}",
+            h.texts()
+        );
+        // Shown, not hidden; its Download does nothing.
+        let at = row_button(&h, MT_NOTES, "Not supported yet");
+        let download = row_button(&h, MT_NOTES, "Download");
+        h.click(download);
+        settle(&mut h);
+        assert!(h.shell.st.session.imports.records().next().is_none());
+        // The reason is on hover.
+        // The tooltip shows once the pointer has rested (a second of frames).
+        h.events.push(Event::PointerMoved(at));
+        h.frames(60);
+        assert!(
+            h.texts()
+                .iter()
+                .any(|t| t.contains("Commentary numbering MT")),
+            "{:?}",
+            h.texts()
+        );
+        preview(&h, "get-resources-not-supported");
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_type_filter_search_and_language_filter_combine() {
+        let (mut h, _repos, root) = setup("combine");
+        open_get_resources(&mut h);
+        h.shell.st.get_bibles_ui.query = "greek".into();
+        h.frames(2);
+        assert!(h.find("ALL RESOURCES · 2").is_some(), "{:?}", h.texts());
+        h.click_text("Lexicons");
+        h.frames(2);
+        assert!(h.find("ALL LEXICONS · 1").is_some(), "{:?}", h.texts());
+        h.shell.st.get_bibles_ui.language = Some("grc".into());
+        h.frames(2);
+        assert!(h.find("ALL LEXICONS · 0").is_some(), "{:?}", h.texts());
+        assert!(
+            h.find("Nothing matches the search, type and language.")
+                .is_some()
+        );
+        h.click_text("Bibles");
+        h.frames(2);
+        assert!(h.find("ALL BIBLES · 1").is_some(), "{:?}", h.texts());
+        assert!(h.find("Greek test Bible").is_some());
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn offline_the_tab_opens_from_the_cache_with_lexicons_commentaries_and_dictionaries() {
+        let (mut h, repos, root) = setup("offline-types");
+        open_get_resources(&mut h);
+        repos.set_offline(true);
+        h.shell.run("getbibles.refresh", &json!({}));
+        settle(&mut h);
+        assert!(
+            h.texts()
+                .iter()
+                .any(|t| t.starts_with("Offline: showing the catalog from")),
+            "{:?}",
+            h.texts()
+        );
+        for (filter, header, title) in [
+            ("Lexicons", "ALL LEXICONS · 1", STRONGS),
+            (
+                "Commentaries",
+                "ALL COMMENTARIES · 3",
+                "Open Bible test notes (ThML commentary)",
+            ),
+            (
+                "Dictionaries",
+                "ALL DICTIONARIES · 1",
+                "Open Bible test topics (OSIS dictionary)",
+            ),
+        ] {
+            h.click_text(filter);
+            h.frames(2);
+            assert!(h.find(header).is_some(), "{filter}: {:?}", h.texts());
+            assert!(h.find(title).is_some(), "{filter}: {:?}", h.texts());
+        }
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn a_failed_download_offers_retry_on_its_row() {
         let (mut h, repos, root) = setup("retry");
@@ -3374,14 +3567,14 @@ mod get_bibles {
         let at = row_button(&h, NASB, "Download");
         h.click(at);
         settle(&mut h);
-        let tab = h.tab_at("Get Bibles");
+        let tab = h.tab_at("Get Resources");
         h.click(tab);
         assert!(h.find("Failed").is_some(), "{:?}", h.texts());
         repos.set_offline(false);
         let retry = row_button(&h, NASB, "Retry");
         h.click(retry);
         settle(&mut h);
-        let tab = h.tab_at("Get Bibles");
+        let tab = h.tab_at("Get Resources");
         h.click(tab);
         assert!(h.find("Installed").is_some(), "{:?}", h.texts());
         drop(h);

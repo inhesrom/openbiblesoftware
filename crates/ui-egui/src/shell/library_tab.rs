@@ -587,7 +587,7 @@ pub(super) fn section(ui: &mut Ui, title: &str) {
     );
 }
 
-fn type_singular(t: ResourceType) -> &'static str {
+pub(super) fn type_singular(t: ResourceType) -> &'static str {
     match t {
         ResourceType::Bible => "Bible",
         ResourceType::Commentary => "Commentary",

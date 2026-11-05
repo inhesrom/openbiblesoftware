@@ -45,6 +45,7 @@ pub const MENUS: &[Menu] = &[
         items: &[
             C("library.open"),
             C("library.import"),
+            C("library.get_resources"),
             C("library.get_bibles"),
             Separator,
             Resources,
@@ -253,19 +254,27 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         open(s, p, TabKind::Library)
     }),
     CommandSpec {
+        id: "library.get_resources",
+        label: "Get Resources…",
+        shortcut: None,
+        params: &[PANEL, SPLIT, crate::get_bibles::TYPE],
+        enabled: always,
+        run: |s, p| {
+            let ty = crate::get_bibles::type_filter_from_id(p.str("type").unwrap_or_default())
+                .map_err(|message| CommandError::Failed {
+                    command: "library.get_resources",
+                    message,
+                })?;
+            open_get_resources(s, p, ty)
+        },
+    },
+    CommandSpec {
         id: "library.get_bibles",
         label: "Get Bibles…",
         shortcut: None,
         params: OPEN,
         enabled: always,
-        run: |s, p| {
-            let out = open(s, p, TabKind::GetBibles)?;
-            // Show the cached catalog at once; refresh it in the background when stale.
-            if s.get_bibles.needs_refresh(crate::get_bibles::now_secs()) {
-                s.refresh_bible_catalog();
-            }
-            Ok(out)
-        },
+        run: |s, p| open_get_resources(s, p, Some(obs_model::ResourceType::Bible)),
     },
     CommandSpec {
         id: "resource.open",
@@ -574,7 +583,7 @@ pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
     match kind {
         TabKind::Library => "Library".into(),
         TabKind::ImportReport(_) => "Import report".into(),
-        TabKind::GetBibles => "Get Bibles".into(),
+        TabKind::GetBibles => GET_RESOURCES_TITLE.into(),
         TabKind::Credits => "Credits".into(),
         TabKind::Resource(id) => s
             .library
@@ -590,6 +599,30 @@ pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
         TabKind::Tool(t) => t.title().into(),
     }
 }
+
+/// The Get Resources Tab with its type filter set to `ty` (All when `None`).
+fn open_get_resources(
+    s: &mut Session,
+    p: Params<'_>,
+    ty: Option<obs_model::ResourceType>,
+) -> Result<Value, CommandError> {
+    s.get_bibles.set_type_filter(ty);
+    let out = open(s, p, TabKind::GetBibles)?;
+    // A Layout saved before #132 still calls the Tab "Get Bibles".
+    if let Some(tab) = out["tab"]
+        .as_u64()
+        .and_then(|t| s.workspace.tab_mut(TabId(t)))
+    {
+        tab.title = GET_RESOURCES_TITLE.into();
+    }
+    // Show the cached catalog at once; refresh it in the background when stale.
+    if s.get_bibles.needs_refresh(crate::get_bibles::now_secs()) {
+        s.refresh_resource_catalog();
+    }
+    Ok(out)
+}
+
+const GET_RESOURCES_TITLE: &str = "Get Resources";
 
 fn open(s: &mut Session, p: Params<'_>, kind: TabKind) -> Result<Value, CommandError> {
     let title = title_of(s, &kind);

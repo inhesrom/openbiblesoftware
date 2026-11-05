@@ -125,6 +125,10 @@ _Avoid_: Default library, Base package
 Adding a Resource to the library from a local file in an open format (USFM or SWORD in v0.1). Every Import produces an Import report.
 _Avoid_: Install, Download
 
+**Get Resources**:
+The Tab that lists the Bibles, Lexicons, Commentaries and Dictionaries offered by online SWORD repositories, Featured ones first, each one click from download and Import. "Get Bibles" is the same Tab filtered to Bibles.
+_Avoid_: Store, Shop, Module manager, Install (for the whole flow)
+
 **Import report**:
 The summary shown after an Import: what was brought in, which markup was dropped, how many Unmapped and Absent verses the Bible has, and any licence information that was missing.
 _Avoid_: Import log, Conversion warnings

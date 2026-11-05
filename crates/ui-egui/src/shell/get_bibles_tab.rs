@@ -1,18 +1,21 @@
-//! The Get Bibles Tab (#91): Featured Bibles first, then every Bible from every repository
-//! on CrossWire's master list, each one click from the Library.
+//! The Get Resources Tab (#91, #132): Featured Bibles, Lexicons, Commentaries and
+//! Dictionaries first, then every one from every repository on CrossWire's master list, each
+//! one click from the Library. A type filter sits beside the search and language filter.
 
 use egui::{Color32, RichText, Ui};
-use obs_engine::get_bibles::{BibleListing, BibleStatus};
+use obs_engine::get_bibles::{LISTED_TYPES, ListingStatus, ResourceListing};
+use obs_engine::library_search::type_plural;
 use obs_engine::{ImportPhase, language_name};
+use obs_model::ResourceType;
 use serde_json::json;
 
 use super::State;
 use super::import_tab::megabytes;
-use super::library_tab::section;
+use super::library_tab::{section, type_singular};
 use crate::theme;
 
 /// Every row (and section header) is this tall, so the list can be virtualized.
-const ROW_HEIGHT: f32 = 58.0;
+const ROW_HEIGHT: f32 = 80.0;
 
 /// The Tab's own search and language filter.
 #[derive(Debug, Default)]
@@ -22,8 +25,8 @@ pub(super) struct GetBiblesUi {
 }
 
 enum Item<'a> {
-    Header(&'static str, usize),
-    Bible(&'a BibleListing),
+    Header(String, usize),
+    Listing(&'a ResourceListing),
     Empty(&'static str),
 }
 
@@ -79,6 +82,7 @@ fn ago(then: u64) -> String {
 impl State {
     pub(super) fn get_bibles_body(&mut self, ui: &mut Ui) {
         let mut action: Option<Action> = None;
+        let mut new_type: Option<Option<ResourceType>> = None;
         egui::Frame::new()
             .fill(theme::c().field)
             .inner_margin(egui::Margin::symmetric(14, 10))
@@ -89,7 +93,7 @@ impl State {
                 if gb.is_refreshing() {
                     ui.horizontal(|ui| {
                         ui.spinner();
-                        ui.label("Checking SWORD repositories for Bibles…");
+                        ui.label("Checking SWORD repositories for Resources…");
                     });
                 }
                 if let Some(why) = gb.offline() {
@@ -105,7 +109,7 @@ impl State {
                                          a connection.",
                                         ago(c.fetched_at)
                                     ),
-                                    None => "Offline: the Bible catalog could not be loaded, \
+                                    None => "Offline: the Resource catalog could not be loaded, \
                                              and there is no saved copy yet."
                                         .to_string(),
                                 };
@@ -120,7 +124,7 @@ impl State {
                 let Some(catalog) = gb.catalog() else {
                     if !gb.is_refreshing() && gb.offline().is_none() {
                         ui.horizontal(|ui| {
-                            ui.label("The Bible catalog has not been loaded.");
+                            ui.label("The Resource catalog has not been loaded.");
                             if ui.button("Load catalog").clicked() {
                                 action = Some(Action::Run("getbibles.refresh", json!({})));
                             }
@@ -129,15 +133,25 @@ impl State {
                     return;
                 };
 
-                // Search and language filter for "All Bibles".
+                // Type filter, then search and language filter for the "All" list.
                 let filter = &mut self.get_bibles_ui;
+                let ty = gb.type_filter();
+                ui.horizontal_wrapped(|ui| {
+                    let types = LISTED_TYPES.into_iter().map(Some).chain([None]);
+                    for t in types {
+                        let label = t.map_or("All", type_plural);
+                        if ui.selectable_label(ty == t, label).clicked() && ty != t {
+                            new_type = Some(t);
+                        }
+                    }
+                });
                 // Never wider than the Panel: a wide row would widen every row below it and
                 // push their buttons out of view.
                 let search_width = (ui.available_width() - 220.0).clamp(120.0, 280.0);
                 ui.horizontal_wrapped(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut filter.query)
-                            .hint_text("Search Bibles by name or abbreviation")
+                            .hint_text("Search by name or abbreviation")
                             .desired_width(search_width),
                     );
                     let shown = filter
@@ -151,7 +165,7 @@ impl State {
                         .height(400.0)
                         .show_ui(ui, |ui| {
                             ui.selectable_value(&mut filter.language, None, "All languages");
-                            for (code, n) in catalog.languages() {
+                            for (code, n) in catalog.languages(ty) {
                                 let label = format!("{} ({code}) · {n}", language_name(&code));
                                 ui.selectable_value(&mut filter.language, Some(code), label);
                             }
@@ -167,16 +181,33 @@ impl State {
                 });
                 ui.add_space(6.0);
 
-                let featured = catalog.featured();
-                let all = catalog.all(&filter.query, filter.language.as_deref());
+                // A Featured section per type shown; with All, empty ones are left out.
                 let mut items: Vec<Item> = Vec::new();
-                items.push(Item::Header("Featured", featured.len()));
-                items.extend(featured.into_iter().map(Item::Bible));
-                items.push(Item::Header("All Bibles", all.len()));
-                if all.is_empty() {
-                    items.push(Item::Empty("No Bible matches the search and language."));
+                for t in LISTED_TYPES
+                    .into_iter()
+                    .filter(|t| ty.is_none_or(|ty| ty == *t))
+                {
+                    let featured = catalog.featured(t);
+                    if ty.is_none() && featured.is_empty() {
+                        continue;
+                    }
+                    items.push(Item::Header(
+                        format!("Featured {}", type_plural(t)),
+                        featured.len(),
+                    ));
+                    items.extend(featured.into_iter().map(Item::Listing));
                 }
-                items.extend(all.into_iter().map(Item::Bible));
+                let all = catalog.all(&filter.query, filter.language.as_deref(), ty);
+                items.push(Item::Header(
+                    format!("All {}", ty.map_or("Resources", type_plural)),
+                    all.len(),
+                ));
+                if all.is_empty() {
+                    items.push(Item::Empty(
+                        "Nothing matches the search, type and language.",
+                    ));
+                }
+                items.extend(all.into_iter().map(Item::Listing));
 
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
@@ -192,9 +223,9 @@ impl State {
                                     Item::Empty(msg) => {
                                         ui.label(RichText::new(*msg).color(theme::c().muted));
                                     }
-                                    Item::Bible(b) => {
-                                        let status = self.session.bible_status(b);
-                                        if let Some(a) = bible_row(ui, b, &status) {
+                                    Item::Listing(b) => {
+                                        let status = self.session.listing_status(b);
+                                        if let Some(a) = listing_row(ui, b, &status, ty.is_none()) {
                                             action = Some(a);
                                         }
                                     }
@@ -203,20 +234,41 @@ impl State {
                         }
                     });
             });
+        if let Some(ty) = new_type {
+            self.session.get_bibles.set_type_filter(ty);
+        }
         if let Some(Action::Run(command, params)) = action {
             self.run(command, &params);
         }
     }
 }
 
-/// One Bible: title, facts, licence, and its Download / progress / Open / Retry control.
-/// The control is laid out first, from the right, so long titles or licences never push it
-/// out of the Panel; the text is truncated into what is left.
-fn bible_row(ui: &mut Ui, b: &BibleListing, status: &BibleStatus) -> Option<Action> {
+/// One listing: title, facts, what it is used by, licence, and its Download / progress /
+/// Open / Retry control. A module Import refuses has a disabled Download, the reason on
+/// hover. The control is laid out first, from the right, so long titles or licences never
+/// push it out of the Panel; the text is truncated into what is left. `show_type` names the
+/// Resource type among the facts (the All filter).
+fn listing_row(
+    ui: &mut Ui,
+    b: &ResourceListing,
+    status: &ListingStatus,
+    show_type: bool,
+) -> Option<Action> {
     let mut action = None;
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         match status {
-            BibleStatus::Available => {
+            ListingStatus::Available if b.refused.is_some() => {
+                let why = b.refused.as_deref().unwrap_or_default();
+                ui.add_enabled(false, egui::Button::new("Download"))
+                    .on_disabled_hover_text(format!("Import cannot read this module yet: {why}"));
+                ui.label(
+                    RichText::new("Not supported yet")
+                        .small()
+                        .color(theme::c().muted),
+                )
+                .on_hover_text(why);
+            }
+            ListingStatus::Available => {
                 if ui
                     .button("Download")
                     .on_hover_text(format!("Download {} {}", b.module, b.source_label()))
@@ -228,7 +280,7 @@ fn bible_row(ui: &mut Ui, b: &BibleListing, status: &BibleStatus) -> Option<Acti
                     ));
                 }
             }
-            BibleStatus::InProgress {
+            ListingStatus::InProgress {
                 resource_id,
                 phase,
                 done,
@@ -252,13 +304,13 @@ fn bible_row(ui: &mut Ui, b: &BibleListing, status: &BibleStatus) -> Option<Acti
                         .text(text),
                 );
             }
-            BibleStatus::Installed { resource_id } => {
+            ListingStatus::Installed { resource_id } => {
                 if ui.button("Open").clicked() {
                     action = Some(Action::Run("resource.open", json!({"id": resource_id})));
                 }
                 ui.label(RichText::new("Installed").small().color(theme::c().muted));
             }
-            BibleStatus::Failed { error, .. } => {
+            ListingStatus::Failed { error, .. } => {
                 if ui.button("Retry").on_hover_text(error.as_str()).clicked() {
                     action = Some(Action::Run(
                         "getbibles.download",
@@ -282,10 +334,12 @@ fn bible_row(ui: &mut Ui, b: &BibleListing, status: &BibleStatus) -> Option<Acti
                             .as_deref()
                             .unwrap_or("No DistributionLicense in the conf"),
                     );
-                let mut facts = vec![
-                    b.abbreviation.clone(),
-                    language_name(&b.language).to_string(),
-                ];
+                let mut facts = Vec::new();
+                if show_type {
+                    facts.push(type_singular(b.kind).to_string());
+                }
+                facts.push(b.abbreviation.clone());
+                facts.push(language_name(&b.language).to_string());
                 if let Some(size) = b.size {
                     facts.push(megabytes(size));
                 }
@@ -299,10 +353,19 @@ fn bible_row(ui: &mut Ui, b: &BibleListing, status: &BibleStatus) -> Option<Acti
                     .truncate(),
                 );
             });
-            if let Some(licence) = &b.licence {
+            let notes: Vec<&str> = b
+                .used_by()
+                .into_iter()
+                .chain(b.licence.as_deref())
+                .collect();
+            if !notes.is_empty() {
                 ui.add(
-                    egui::Label::new(RichText::new(licence).small().color(theme::c().muted))
-                        .truncate(),
+                    egui::Label::new(
+                        RichText::new(notes.join(" · "))
+                            .small()
+                            .color(theme::c().muted),
+                    )
+                    .truncate(),
                 );
             }
         });

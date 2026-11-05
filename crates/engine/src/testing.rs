@@ -48,8 +48,11 @@ fn copy_dir(from: &Path, to: &Path) {
 
 /// Repositories on the mock master list:
 /// - "Lockman Foundation": `NASB1995` (copyrighted licence line, `InstallSize`).
-/// - "CrossWire": `ObsKjvOsis`, `ObsKjvGbf`, `ObsHebrew`, a locked `ObsLocked`, and the
-///   commentary `ObsNotes` (not a Bible).
+/// - "CrossWire": the Bibles `ObsKjvOsis`, `ObsKjvGbf`, `ObsHebrew` and a locked `ObsLocked`;
+///   the Lexicon `StrongsGreek` (the open test Greek lexicon under the Featured name, with
+///   G26); the Commentary `ObsNotes` (KJV numbering, John 3:16); the Dictionary `ObsTopics`;
+///   and two Commentaries Import refuses: `ObsHebrewNotes` (MT numbering) and `ObsLinks`
+///   (`HREFCom`).
 /// - "eBible.org": a second `ObsKjvOsis` and `ObsGreekBible` (`Lang=grc`).
 /// - "Broken": a directory that does not exist.
 #[derive(Debug)]
@@ -102,6 +105,27 @@ impl MockRepos {
                 ("obskjvgbf.conf", plain("obskjvgbf.conf")),
                 ("obshebrew.conf", plain("obshebrew.conf")),
                 ("obsnotes.conf", plain("obsnotes.conf")),
+                ("obstopics.conf", plain("obstopics.conf")),
+                ("obshebrewnotes.conf", plain("obshebrewnotes.conf")),
+                (
+                    "strongsgreek.conf",
+                    conf_variant(
+                        "obsgreek.conf",
+                        "StrongsGreek",
+                        &[
+                            ("Description", "Strong's Greek Bible Dictionary"),
+                            ("DistributionLicense", "Public Domain"),
+                            ("InstallSize", "863426"),
+                        ],
+                    ),
+                ),
+                (
+                    "obslinks.conf",
+                    "[ObsLinks]\nDataPath=./modules/comments/hrefcom/obslinks/\nModDrv=HREFCom\n\
+                     Lang=en\nDescription=Open Bible test web links\n\
+                     DistributionLicense=Public Domain\n"
+                        .to_string(),
+                ),
                 (
                     "obslocked.conf",
                     conf_variant("obskjvgbf.conf", "ObsLocked", &[("CipherKey", "")]),

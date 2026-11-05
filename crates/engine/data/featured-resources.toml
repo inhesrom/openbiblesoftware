@@ -1,0 +1,62 @@
+# Get Resources (#132): the Featured sections for Lexicons, Commentaries and Dictionaries,
+# top to bottom. Featured Bibles are in featured-bibles.toml. Change the order or the lists
+# here; no code changes needed. `repo` is the repository's caption on CrossWire's master list.
+# When a module is not in its repo, the same module from another repository is shown.
+#
+# Every module below was checked against the live catalogs and downloaded and imported
+# (docs/research/get-resources-catalog.md): each is in CrossWire's main repository, unlocked,
+# with `DistributionLicense=Public Domain`. Left out: Thayer (in no repository), Gill (only in
+# Xiphos, no licence, "All Rights Reserved" in its About) and AbbottSmith (keyed by Greek
+# lemma, not Strong's number, so SWORD Import finds no entries yet).
+
+[[lexicon]]
+module = "StrongsGreek"
+repo = "CrossWire"
+
+[[lexicon]]
+module = "StrongsHebrew"
+repo = "CrossWire"
+
+[[lexicon]]
+module = "BDBGlosses_Strongs"
+repo = "CrossWire"
+
+[[commentary]]
+module = "MHC"
+repo = "CrossWire"
+
+[[commentary]]
+module = "JFB"
+repo = "CrossWire"
+
+[[commentary]]
+module = "Barnes"
+repo = "CrossWire"
+
+[[commentary]]
+module = "Clarke"
+repo = "CrossWire"
+
+[[commentary]]
+module = "TSK"
+repo = "CrossWire"
+
+[[dictionary]]
+module = "Easton"
+repo = "CrossWire"
+
+[[dictionary]]
+module = "Smith"
+repo = "CrossWire"
+
+[[dictionary]]
+module = "ISBE"
+repo = "CrossWire"
+
+[[dictionary]]
+module = "Nave"
+repo = "CrossWire"
+
+[[dictionary]]
+module = "Hitchcock"
+repo = "CrossWire"
