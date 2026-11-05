@@ -11,7 +11,9 @@
 //!    item, and nothing is written until they pass.
 //! 6. Write `dist/starter/<id>.obr`, the prebuilt Search index caches in
 //!    `dist/starter/search/` (#58; the app uses a cache found in `search/` beside a Resource's
-//!    `.obr` as long as its key matches), `CHANGES-<id>.md` for CC BY sources,
+//!    `.obr` as long as its key matches), the People & places ↔ Dictionary alias caches in
+//!    `dist/starter/aliases/` (#54, with `starter/aliases.toml` applied; an override naming an
+//!    entity or headword the Resources lack fails the build), `CHANGES-<id>.md` for CC BY sources,
 //!    `starter-manifest.json` and `starter-build-report.md`, and check the size budget
 //!    (Resources plus caches).
 //! 7. Compare the golden-passage snapshots in `starter/goldens/` (`goldens`); a difference
@@ -50,6 +52,8 @@ pub const MANIFEST_FILE: &str = "starter-manifest.json";
 pub const REPORT_FILE: &str = "starter-build-report.md";
 /// Where the prebuilt Search index caches go, inside the output directory.
 pub const SEARCH_DIR: &str = "search";
+/// Where the prebuilt People & places ↔ Dictionary alias caches go (#54).
+pub const ALIAS_DIR: &str = obs_engine::aliases::ALIAS_DIR;
 
 const USAGE: &str = "usage: cargo xtask starter [--out DIR] [--cache DIR] [--previous MANIFEST] [--check-determinism] [--update-goldens]
 
@@ -260,6 +264,9 @@ pub fn build(config: &Config) -> Result<String> {
             .collect()
     });
     let search_bytes: Vec<u64> = caches.into_iter().collect::<Result<_>>()?;
+    let overrides = obs_engine::aliases::Overrides::parse(obs_engine::aliases::STARTER_OVERRIDES)
+        .map_err(|e| anyhow!("starter/aliases.toml: {e}"))?;
+    write_alias_caches(&resources, &config.out.join(ALIAS_DIR), &overrides)?;
     for source in lock_file
         .sources
         .iter()
@@ -341,6 +348,54 @@ pub fn build(config: &Config) -> Result<String> {
         config.out.display()
     );
     Ok(summary)
+}
+
+/// Write the alias cache of every (People & places index, Dictionary) pair among `resources`
+/// into `dir` (the derived index of #20 that matches TIPNR names to Dictionary headwords).
+/// Fails, naming each, if an override for one of these Dictionaries names an entity or a
+/// headword the pair does not have. Returns the files written.
+pub fn write_alias_caches(
+    resources: &[&Resource],
+    dir: &Path,
+    overrides: &obs_engine::aliases::Overrides,
+) -> Result<Vec<PathBuf>> {
+    use obs_model::{KeyScheme, ResourceType};
+    let of = |ty: ResourceType| {
+        resources
+            .iter()
+            .filter(move |r| r.manifest.resource_type == ty)
+    };
+    let mut written = Vec::new();
+    let mut problems = Vec::new();
+    for index in of(ResourceType::PeopleAndPlaces) {
+        for dictionary in of(ResourceType::Dictionary) {
+            let headwords: Vec<obs_model::KeyEntry> = dictionary
+                .keys
+                .iter()
+                .filter(|k| k.key.scheme() == KeyScheme::Headword)
+                .cloned()
+                .collect();
+            let (table, found) = obs_engine::aliases::build(
+                &index.manifest,
+                &index.entities,
+                &dictionary.manifest,
+                &headwords,
+                overrides,
+            );
+            problems.extend(found);
+            let path = obs_engine::aliases::write_table(dir, &table)
+                .with_context(|| format!("cannot write an alias cache in {}", dir.display()))?;
+            written.push(path);
+        }
+    }
+    if !problems.is_empty() {
+        bail!(
+            "starter/aliases.toml has {} override(s) the Starter Resources cannot satisfy:\n{}",
+            problems.len(),
+            list_failures(&problems)
+        );
+    }
+    Ok(written)
 }
 
 /// The published change record of a CC BY source (`CHANGES-<id>.md`, #20 decision 4).
@@ -627,7 +682,7 @@ fn clean_outputs(out: &Path) -> Result<()> {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        if path.is_dir() && name == SEARCH_DIR {
+        if path.is_dir() && (name == SEARCH_DIR || name == ALIAS_DIR) {
             std::fs::remove_dir_all(&path)
                 .with_context(|| format!("cannot remove {}", path.display()))?;
             continue;

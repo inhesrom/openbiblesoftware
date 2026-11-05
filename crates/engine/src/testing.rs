@@ -514,3 +514,297 @@ pub mod bibles {
         }
     }
 }
+
+/// A small Strong's-tagged Bible (one unit per Bible book, one paragraph per chapter) for
+/// Guide tests (#54). Each verse is written as words; a tagged word carries its parts in
+/// braces: `loved{G25}`, `loved{G25|ἀγαπάω|V-AAI-3S|loved}`, several parts joined by `+`.
+/// `_` inside a word or a part is a space (`only_begotten{G3439}`).
+pub fn tagged_bible(
+    id: &str,
+    title: &str,
+    abbreviation: &str,
+    language: &str,
+    verses: &[(obs_scripture::Verse, &str)],
+) -> obs_model::Resource {
+    use obs_model::{
+        KeyScheme, Manifest, MorphemePart, ParaStyle, ResourceBuilder, ResourceType, SpanKind,
+        UnitId, UnitKind,
+    };
+    let mut manifest = Manifest::new(id, title, abbreviation, ResourceType::Bible, language);
+    manifest.key_schemes = vec![KeyScheme::Passage];
+    manifest.license = "LicenseRef-PD".into();
+    let mut b = ResourceBuilder::new(manifest);
+    let mut books: Vec<obs_scripture::Book> = verses.iter().map(|(v, _)| v.book).collect();
+    books.dedup();
+    for book in books {
+        let unit = UnitId::book(book);
+        let mut text = String::new();
+        let mut spans: Vec<(std::ops::Range<usize>, SpanKind)> = Vec::new();
+        let mut verse_ranges = Vec::new();
+        let mut chapters: Vec<(u16, usize, usize)> = Vec::new();
+        for (verse, words) in verses.iter().filter(|(v, _)| v.book == book) {
+            if !text.is_empty() {
+                text.push(' ');
+            }
+            let start = text.len();
+            for (i, token) in words.split_whitespace().enumerate() {
+                if i > 0 {
+                    text.push(' ');
+                }
+                // `word{parts}` and any punctuation after the brace.
+                let (word, tags, trailing) = match (token.find('{'), token.rfind('}')) {
+                    (Some(open), Some(close)) => (
+                        &token[..open],
+                        Some(&token[open + 1..close]),
+                        &token[close + 1..],
+                    ),
+                    _ => (token, None, ""),
+                };
+                let at = text.len();
+                text.push_str(&word.replace('_', " "));
+                let end = text.len();
+                if let Some(t) = tags {
+                    let parts = t
+                        .split('+')
+                        .map(|p| {
+                            let mut f = p.split('|');
+                            let strongs = f.next().unwrap().parse().unwrap();
+                            let mut next = || {
+                                f.next()
+                                    .filter(|s| !s.is_empty())
+                                    .map(|s| s.replace('_', " "))
+                            };
+                            MorphemePart {
+                                strongs,
+                                lemma: next(),
+                                morph: next(),
+                                gloss: next(),
+                            }
+                        })
+                        .collect();
+                    spans.push((at..end, SpanKind::TaggedWord { parts }));
+                }
+                text.push_str(trailing);
+            }
+            let end = text.len();
+            verse_ranges.push((start..end, *verse));
+            match chapters.last_mut() {
+                Some((c, _, e)) if *c == verse.chapter => *e = end,
+                _ => chapters.push((verse.chapter, start, end)),
+            }
+        }
+        b.add_unit(
+            unit.clone(),
+            UnitKind::BibleBook,
+            Some(format!("{book:?}")),
+            text,
+        );
+        for (chapter, start, end) in chapters {
+            b.add_span(&unit, start..end, SpanKind::Chapter { chapter });
+            b.add_span(
+                &unit,
+                start..end,
+                SpanKind::Para {
+                    style: ParaStyle::Prose,
+                },
+            );
+        }
+        for (range, kind) in spans {
+            b.add_span(&unit, range, kind);
+        }
+        for (range, verse) in verse_ranges {
+            b.add_verse(&unit, range, verse, verse.verse);
+        }
+    }
+    b.build().unwrap()
+}
+
+/// The TIPNR excerpt of the format tests (STEPBible, CC BY) as a People & places index.
+pub fn tipnr() -> obs_model::Resource {
+    let text = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../formats/tests/assets/tipnr/tipnr-excerpt.txt"),
+    )
+    .unwrap();
+    let options = obs_formats::DatasetOptions {
+        resource_id: "tipnr".into(),
+        title: "Translators Individualised Proper Names".into(),
+        ..Default::default()
+    };
+    obs_formats::import_tipnr(&text, &options).unwrap().0
+}
+
+/// Easton's or Smith's Bible Dictionary, reduced to the public-domain Abraham and Abram
+/// entries of the #44 study fixtures (with the converter's Abram → Abraham alias).
+pub fn dictionary(id: &str) -> obs_model::Resource {
+    use obs_formats::{DictionaryData, StudyImport, import_dictionary};
+    use obs_model::{Manifest, ResourceType};
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/fixtures/study");
+    let bytes = |name: &str| std::fs::read(dir.join(name)).unwrap();
+    let (title, abbreviation) = match id {
+        "easton" => ("Easton's Bible Dictionary", "Easton"),
+        _ => ("Smith's Bible Dictionary", "Smith"),
+    };
+    let mut manifest = Manifest::new(id, title, abbreviation, ResourceType::Dictionary, "en");
+    manifest.license = "LicenseRef-PD".into();
+    let mut import = StudyImport::new(manifest);
+    let (index, data) = (bytes(&format!("{id}.idx")), bytes(&format!("{id}.dat")));
+    let (block_index, blocks) = if id == "easton" {
+        (bytes("easton.zdx"), bytes("easton.zdt"))
+    } else {
+        Default::default()
+    };
+    let input = if id == "easton" {
+        DictionaryData::Easton {
+            index: &index,
+            data: &data,
+            block_index: &block_index,
+            blocks: &blocks,
+        }
+    } else {
+        DictionaryData::Smith {
+            index: &index,
+            data: &data,
+        }
+    };
+    import_dictionary(&mut import, input).unwrap();
+    import.finish().unwrap().0
+}
+
+/// A Lexicon of synthetic entries, `(Strong's number, Lemma, Gloss)`, laid out as the
+/// Starter converters write them: the Lemma line, then the Gloss.
+pub fn lexicon(
+    id: &str,
+    abbreviation: &str,
+    entries: &[(&str, &str, &str)],
+) -> obs_model::Resource {
+    use obs_model::{Key, KeyScheme, Manifest, ResourceBuilder, ResourceType, UnitId, UnitKind};
+    let mut manifest = Manifest::new(id, id, abbreviation, ResourceType::Lexicon, "en");
+    manifest.key_schemes = vec![KeyScheme::StrongsNumber];
+    manifest.license = "CC0-1.0".into();
+    let mut b = ResourceBuilder::new(manifest);
+    for (number, lemma, gloss) in entries {
+        let unit = UnitId::new(*number).unwrap();
+        b.add_unit(
+            unit.clone(),
+            UnitKind::Entry,
+            Some((*lemma).into()),
+            format!("{lemma}\n{gloss}"),
+        );
+        b.add_key(
+            Key::StrongsNumber(number.parse().unwrap()),
+            &unit,
+            None,
+            false,
+        );
+    }
+    b.build().unwrap()
+}
+
+fn jn(c: u16, v: u16) -> obs_scripture::Verse {
+    obs_scripture::Verse::new(obs_scripture::Book::John, c, v)
+}
+
+fn gn12(v: u16) -> obs_scripture::Verse {
+    obs_scripture::Verse::new(obs_scripture::Book::Genesis, 12, v)
+}
+
+/// KJV (public domain) John 1:1-2 and 3:16-17, tagged with Strong's numbers only, the way
+/// KJV+Strong's is: no Lemma, no Morphology, untagged articles.
+pub fn kjv_john() -> obs_model::Resource {
+    tagged_bible(
+        "kjv",
+        "King James Version with Strong's",
+        "KJV",
+        "en",
+        &[
+            (
+                jn(1, 1),
+                "In{G1722} the beginning{G746} was{G2258} the Word{G3056}, and{G2532} the \
+                 Word{G3056} was{G2258} with{G4314} God{G2316}, and{G2532} the Word{G3056} \
+                 was{G2258} God{G2316}.",
+            ),
+            (
+                jn(1, 2),
+                "The same{G3778} was{G2258} in{G1722} the beginning{G746} with{G4314} God{G2316}.",
+            ),
+            (
+                jn(3, 16),
+                "For{G1063} God{G2316} so{G3779} loved{G25} the world{G2889}, that{G5620} \
+                 he_gave{G1325} his{G846} only_begotten{G3439} Son{G5207}, that{G2443} \
+                 whosoever{G3956} believeth{G4100} in{G1519} him{G846} should not{G3361} \
+                 perish{G622}, but{G235} have{G2192} everlasting{G166} life{G2222}.",
+            ),
+            (
+                jn(3, 17),
+                "For{G1063} God{G2316} sent{G649} not{G3756} his{G846} Son{G5207} into{G1519} \
+                 the world{G2889} to condemn{G2919} the world{G2889}; but{G235} that{G2443} \
+                 the world{G2889} through{G1223} him{G846} might be_saved{G4982}.",
+            ),
+        ],
+    )
+}
+
+/// John 3:16 as STEPBible's TAGNT tags it (CC BY): every word with Lemma, Morphology and
+/// Gloss, the article included.
+pub fn tagnt_john_3_16() -> obs_model::Resource {
+    tagged_bible(
+        "tagnt",
+        "Translators Amalgamated Greek NT",
+        "TAGNT",
+        "grc",
+        &[(
+            jn(3, 16),
+            "οὕτως{G3779|οὕτω|ADV|Thus} γὰρ{G1063|γάρ|CONJ|for} \
+             ἠγάπησεν{G25|ἀγαπάω|V-AAI-3S|loved} ὁ{G3588|ὁ|T-NSM|the} \
+             θεὸς{G2316|θεός|N-NSM-T|God} τὸν{G3588|ὁ|T-ASM|the} \
+             κόσμον{G2889|κόσμος|N-ASM|world,} ὥστε{G5620|ὥστε|CONJ|that} \
+             τὸν{G3588|ὁ|T-ASM|the} υἱὸν{G5207|υἱός|N-ASM|Son} τὸν{G3588|ὁ|T-ASM|the} \
+             μονογενῆ{G3439|μονογενής|A-ASM|only_begotten} ἔδωκεν{G1325|δίδωμι|V-AAI-3S|He_gave,} \
+             ἵνα{G2443|ἵνα|CONJ|so_that} πᾶς{G3956|πᾶς|A-NSM|everyone} ὁ{G3588|ὁ|T-NSM|who} \
+             πιστεύων{G4100|πιστεύω|V-PAP-NSM|is_believing} εἰς{G1519|εἰς|PREP|in} \
+             αὐτὸν{G846|αὐτός|P-ASM|Him} μὴ{G3361|μή|PRT-N|not} \
+             ἀπόληται{G622|ἀπολλύω|V-2AMS-3S|may_perish} ἀλλ᾽{G235|ἀλλά|CONJ|but} \
+             ἔχῃ{G2192|ἔχω|V-PAS-3S|may_have} ζωὴν{G2222|ζωή|N-ASF|life} \
+             αἰώνιον{G166|αἰώνιος|A-ASF|eternal.}",
+        )],
+    )
+}
+
+/// KJV Genesis 12:1 (public domain) with Strong's numbers.
+pub fn kjv_genesis_12() -> obs_model::Resource {
+    tagged_bible(
+        "kjv-gen",
+        "King James Version (Genesis 12)",
+        "KJV",
+        "en",
+        &[
+            (
+                gn12(1),
+                "Now the LORD{H3068} had said{H559} unto Abram{H87}, Get{H3212} thee out of \
+                 thy country{H776}, and from thy kindred{H4138}, and from thy father's{H1} \
+                 house{H1004}, unto a land{H776} that I will shew{H7200} thee:",
+            ),
+            (
+                gn12(4),
+                "So Abram{H87} departed{H3212}, as the LORD{H3068} had spoken{H1696} unto him; \
+                 and Lot{H3876} went{H3212} with him: and Abram{H87} was seventy{H7657} and \
+                 five{H2568} years{H8141} old{H1121} when he departed{H3318} out of \
+                 Haran{H2771}.",
+            ),
+        ],
+    )
+}
+
+/// A Lexicon with G25, G3439 and G3588 (synthetic glosses).
+pub fn greek_lexicon() -> obs_model::Resource {
+    lexicon(
+        "lexicon",
+        "LEX",
+        &[
+            ("G25", "ἀγαπάω", "to love"),
+            ("G3439", "μονογενής", "only, unique"),
+            ("G3588", "ὁ", "the (definite article)"),
+        ],
+    )
+}

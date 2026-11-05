@@ -277,9 +277,23 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         None,
         open_passage_guide,
     ),
-    open_cmd("guide.word_study", "Word Study", None, |s, p| {
-        open(s, p, TabKind::Guide(Guide::WordStudy))
-    }),
+    CommandSpec {
+        id: "guide.word_study",
+        label: "Word Study",
+        shortcut: None,
+        params: &[
+            PANEL,
+            SPLIT,
+            ParamSpec {
+                name: "strongs",
+                kind: ParamKind::String,
+                required: false,
+                help: "Strong's number to study, e.g. `G25` (Key words, #54)",
+            },
+        ],
+        enabled: always,
+        run: open_word_study,
+    },
     open_cmd("tool.search", "Search", Some("Ctrl+Shift+F"), |s, p| {
         open(s, p, TabKind::Tool(Tool::Search))
     }),
@@ -564,6 +578,28 @@ fn open_passage_guide(s: &mut Session, p: Params<'_>) -> Result<Value, CommandEr
         && t.history.current().is_none()
     {
         t.history.scrolled_to(v);
+    }
+    Ok(out)
+}
+
+/// A Word Study Tab, at a Strong's number when one is given (its Key, kept in the Tab's entry
+/// history like a Lexicon's).
+fn open_word_study(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "guide.word_study";
+    let number = p
+        .str("strongs")
+        .map(|t| {
+            t.parse::<obs_scripture::StrongsNumber>()
+                .map_err(|e| failed(ID, e.to_string()))
+        })
+        .transpose()?;
+    let mut out = open(s, p, TabKind::Guide(Guide::WordStudy))?;
+    if let Some(n) = number
+        && let Some(tab) = out["tab"].as_u64()
+    {
+        let key = obs_model::Key::StrongsNumber(n);
+        s.workspace.navigate_entry(TabId(tab), key.clone());
+        out["key"] = json!(key);
     }
     Ok(out)
 }

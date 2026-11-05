@@ -12,6 +12,7 @@ publish.workspace = true
 anyhow = "1"
 cargo_metadata = "0.23"
 globset = "0.4"
+obs-engine.workspace = true
 obs-formats.workspace = true
 obs-scripture.workspace = true
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

@@ -426,7 +426,9 @@ fn arrangement_commands_change_every_guide_of_the_kind_and_persist_across_restar
         order(&s),
         [
             ("commentaries", false, false),
-            ("cross_references", false, false)
+            ("cross_references", false, false),
+            ("key_words", false, false),
+            ("people_and_places", false, false)
         ]
     );
     let g = |extra: serde_json::Value| {
@@ -446,6 +448,8 @@ fn arrangement_commands_change_every_guide_of_the_kind_and_persist_across_restar
     let changed = vec![
         ("cross_references", true, false),
         ("commentaries", false, true),
+        ("key_words", false, false),
+        ("people_and_places", false, false),
     ];
     assert_eq!(order(&s), changed);
     // Word Study's arrangement is its own.
@@ -474,7 +478,9 @@ fn arrangement_commands_change_every_guide_of_the_kind_and_persist_across_restar
         order(&s),
         [
             ("commentaries", false, false),
-            ("cross_references", false, false)
+            ("cross_references", false, false),
+            ("key_words", false, false),
+            ("people_and_places", false, false)
         ]
     );
 }
@@ -483,22 +489,51 @@ fn arrangement_commands_change_every_guide_of_the_kind_and_persist_across_restar
 fn a_saved_arrangement_tolerates_unknown_missing_and_repeated_sections() {
     let a = GuideArrangement::from_json(
         Guide::PassageGuide,
-        r#"{"sections":[{"id":"people_and_places","hidden":true},{"id":"cross_references","collapsed":true},{"id":"cross_references"}]}"#,
+        r#"{"sections":[{"id":"no_such_section","hidden":true},{"id":"cross_references","collapsed":true},{"id":"cross_references"}]}"#,
     );
     let ids: Vec<_> = a
         .sections
         .iter()
         .map(|p| (p.section.id(), p.collapsed))
         .collect();
-    assert_eq!(ids, [("commentaries", false), ("cross_references", true)]);
+    assert_eq!(
+        ids,
+        [
+            ("commentaries", false),
+            ("cross_references", true),
+            ("key_words", false),
+            ("people_and_places", false)
+        ]
+    );
+    // An arrangement saved before #54 added Key words and People & places gets them at
+    // their default places, after Cross-references, keeping the user's order.
+    let a = GuideArrangement::from_json(
+        Guide::PassageGuide,
+        r#"{"sections":[{"id":"cross_references"},{"id":"commentaries","hidden":true}]}"#,
+    );
+    let ids: Vec<_> = a
+        .sections
+        .iter()
+        .map(|p| (p.section.id(), p.hidden))
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            ("cross_references", false),
+            ("key_words", false),
+            ("people_and_places", false),
+            ("commentaries", true)
+        ]
+    );
     assert_eq!(
         GuideArrangement::from_json(Guide::PassageGuide, "not json"),
         GuideArrangement::default_for(Guide::PassageGuide)
     );
     let mut a = GuideArrangement::default_for(Guide::PassageGuide);
     assert!(a.move_to(GuideSection::Commentaries, 99));
-    assert_eq!(a.sections[1].section, GuideSection::Commentaries);
-    assert!(!a.move_to(GuideSection::Commentaries, 1));
+    // Clamped to the end.
+    assert_eq!(a.sections[3].section, GuideSection::Commentaries);
+    assert!(!a.move_to(GuideSection::Commentaries, 3));
     assert_eq!(
         GuideArrangement::from_json(Guide::PassageGuide, &a.to_json()),
         a

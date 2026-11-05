@@ -18,28 +18,42 @@ use obs_store::{ResourceStore, StoreError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::aliases::AliasCache;
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
 use crate::cross_references::ReferenceGroup;
+use crate::key_words::{BibleCache, KeyWords};
+use crate::people_places::PersonOrPlace;
 use crate::resource_navigation::ResourceNavigation;
 use crate::workspace::Guide;
 use crate::{Effect, JobContext, JobEvent, JobEventKind, JobId, Library, Session};
 
-/// One kind of Guide section. Key words and People & places arrive with #54; the Word Study
-/// sections with #55. Ids are stored in the User database and never renamed.
+/// One kind of Guide section. The Word Study sections arrive with #55. Ids are stored in the
+/// User database and never renamed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GuideSection {
     Commentaries,
     CrossReferences,
+    /// #54: [`crate::key_words`].
+    KeyWords,
+    /// #54: [`crate::people_places`].
+    PeopleAndPlaces,
 }
 
 impl GuideSection {
-    pub const ALL: [GuideSection; 2] = [GuideSection::Commentaries, GuideSection::CrossReferences];
+    pub const ALL: [GuideSection; 4] = [
+        GuideSection::Commentaries,
+        GuideSection::CrossReferences,
+        GuideSection::KeyWords,
+        GuideSection::PeopleAndPlaces,
+    ];
 
     /// Stable id, as stored and as passed to commands.
     pub fn id(self) -> &'static str {
         match self {
             GuideSection::Commentaries => "commentaries",
             GuideSection::CrossReferences => "cross_references",
+            GuideSection::KeyWords => "key_words",
+            GuideSection::PeopleAndPlaces => "people_and_places",
         }
     }
 
@@ -51,6 +65,8 @@ impl GuideSection {
         match self {
             GuideSection::Commentaries => "Commentaries",
             GuideSection::CrossReferences => "Cross-references",
+            GuideSection::KeyWords => "Key words",
+            GuideSection::PeopleAndPlaces => "People & places",
         }
     }
 
@@ -59,6 +75,8 @@ impl GuideSection {
         match self {
             GuideSection::Commentaries => ResourceType::Commentary,
             GuideSection::CrossReferences => ResourceType::CrossReferenceSet,
+            GuideSection::KeyWords => ResourceType::Bible,
+            GuideSection::PeopleAndPlaces => ResourceType::PeopleAndPlaces,
         }
     }
 
@@ -78,6 +96,18 @@ impl GuideSection {
             }
             (GuideSection::CrossReferences, true) => {
                 "None in your library: no Cross-references start in this Passage."
+            }
+            (GuideSection::KeyWords, false) => {
+                "None in your library. Add a Bible with Strong's numbers to see the Passage's key words."
+            }
+            (GuideSection::KeyWords, true) => {
+                "None in your library: no Bible with Strong's numbers has this Passage."
+            }
+            (GuideSection::PeopleAndPlaces, false) => {
+                "None in your library. Add a People & places index to see who and where this Passage mentions."
+            }
+            (GuideSection::PeopleAndPlaces, true) => {
+                "None in your library: no person or place is listed for this Passage."
             }
         }
     }
@@ -101,7 +131,12 @@ impl Guide {
     /// The Guide's sections in their default order.
     pub fn sections(self) -> &'static [GuideSection] {
         match self {
-            Guide::PassageGuide => &[GuideSection::Commentaries, GuideSection::CrossReferences],
+            Guide::PassageGuide => &[
+                GuideSection::Commentaries,
+                GuideSection::CrossReferences,
+                GuideSection::KeyWords,
+                GuideSection::PeopleAndPlaces,
+            ],
             Guide::WordStudy => &[],
         }
     }
@@ -273,6 +308,10 @@ pub enum SectionData {
     /// Cross-references grouped by source Verse, ranked by votes (see
     /// [`crate::cross_references::group_references`]).
     CrossReferences(Vec<ReferenceGroup>),
+    /// Distinct Strong's numbers of the Passage, rarest first (#54).
+    KeyWords(KeyWords),
+    /// People and places mentioned in the Passage, in reading order (#54).
+    PeopleAndPlaces(Vec<PersonOrPlace>),
 }
 
 impl SectionData {
@@ -281,6 +320,8 @@ impl SectionData {
         match self {
             SectionData::Commentaries(rows) => rows.len(),
             SectionData::CrossReferences(groups) => groups.iter().map(|g| g.rows.len()).sum(),
+            SectionData::KeyWords(k) => k.words.len(),
+            SectionData::PeopleAndPlaces(rows) => rows.len(),
         }
     }
 
@@ -311,11 +352,14 @@ pub trait SectionSource: std::fmt::Debug + Send + Sync {
 }
 
 /// Reads sections from the library's `.obr` files. Each Commentary's Passage Keys are loaded
-/// once per Resource revision and shared by later jobs.
+/// once per Resource revision and shared by later jobs, as are Bibles' Verse maps and
+/// Strong's totals and the Dictionary alias tables.
 #[derive(Debug, Default)]
 pub struct LibrarySections {
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     navigation: Mutex<BTreeMap<(String, u32, String), Arc<ResourceNavigation>>>,
+    bibles: BibleCache,
+    aliases: Arc<AliasCache>,
 }
 
 impl SectionSource for LibrarySections {
@@ -337,11 +381,30 @@ impl SectionSource for LibrarySections {
                 crate::cross_references::library_references(library, *passage)
                     .map(SectionData::CrossReferences)
             }
+            GuideSection::KeyWords => {
+                crate::key_words::library_key_words(library, *passage, &self.bibles)
+                    .map(SectionData::KeyWords)
+            }
+            GuideSection::PeopleAndPlaces => crate::people_places::library_people_and_places(
+                library,
+                *passage,
+                &self.bibles,
+                &self.aliases,
+            )
+            .map(SectionData::PeopleAndPlaces),
         }
     }
 }
 
 impl LibrarySections {
+    /// Sections that share `aliases` with the Session (which keeps them current).
+    pub fn with_aliases(aliases: Arc<AliasCache>) -> Self {
+        Self {
+            aliases,
+            ..Self::default()
+        }
+    }
+
     /// One row per Commentary in Preferred order that has a section on `passage`. A
     /// Commentary that cannot be read is skipped so the others still show; the section only
     /// fails when every Commentary failed.
@@ -535,17 +598,24 @@ pub struct Guides {
     wanted: BTreeSet<(Key, GuideSection)>,
     library: Vec<(String, u32, String, std::path::PathBuf)>,
     source: Arc<dyn SectionSource>,
+    /// The People & places ↔ Dictionary alias caches (#54), shared with the default source.
+    aliases: Arc<AliasCache>,
+    /// The job refreshing them at library load.
+    alias_job: Option<JobId>,
 }
 
 impl Default for Guides {
     fn default() -> Self {
+        let aliases = Arc::new(AliasCache::default());
         Self {
             arrangements: BTreeMap::new(),
             results: BTreeMap::new(),
             pending: BTreeMap::new(),
             wanted: BTreeSet::new(),
             library: Vec::new(),
-            source: Arc::new(LibrarySections::default()),
+            source: Arc::new(LibrarySections::with_aliases(Arc::clone(&aliases))),
+            aliases,
+            alias_job: None,
         }
     }
 }
@@ -560,9 +630,14 @@ impl Guides {
         self.results.clear();
     }
 
-    /// Whether a section job is queued or running.
+    /// Whether a section job (or the alias refresh) is queued or running.
     pub fn is_busy(&self) -> bool {
-        !self.pending.is_empty()
+        !self.pending.is_empty() || self.alias_job.is_some()
+    }
+
+    /// The People & places ↔ Dictionary alias caches.
+    pub fn aliases(&self) -> &Arc<AliasCache> {
+        &self.aliases
     }
 
     /// The arrangement for a kind of Guide.
@@ -634,6 +709,21 @@ impl Session {
         }
         let mut other = Vec::new();
         for event in events {
+            if Some(event.id) == self.guides.alias_job {
+                if let JobEventKind::Failed(e) = &event.kind {
+                    self.workspace.push_effect(Effect::Message(format!(
+                        "Could not match People & places to Dictionaries: {e}"
+                    )));
+                }
+                if event.kind.is_terminal() {
+                    self.guides.alias_job = None;
+                    // Sections computed before the refresh may have missed an article.
+                    self.guides
+                        .results
+                        .retain(|(_, s), _| *s != GuideSection::PeopleAndPlaces);
+                }
+                continue;
+            }
             if !self.guides.pending.contains_key(&event.id) {
                 other.push(event);
                 continue;
@@ -658,6 +748,25 @@ impl Session {
             self.guides.results.insert(w, status);
         }
         other
+    }
+
+    /// Where alias caches are written ([`crate::aliases::default_alias_cache_dir`] in the app).
+    pub fn set_alias_cache_dir(&mut self, dir: std::path::PathBuf) {
+        self.guides.aliases.set_dir(dir);
+    }
+
+    /// Make the People & places ↔ Dictionary alias cache of every pair in the library current,
+    /// in the background: at library load, a table whose Resources changed is rebuilt (#20).
+    pub fn refresh_alias_caches(&mut self) {
+        if let Some(job) = self.guides.alias_job.take() {
+            self.jobs().cancel(job);
+        }
+        let aliases = Arc::clone(&self.guides.aliases);
+        let library = self.library.clone();
+        let job = self
+            .jobs()
+            .submit_fn("Dictionary aliases", move |_| aliases.refresh(&library));
+        self.guides.alias_job = Some(job);
     }
 
     /// Load each kind of Guide's saved arrangement from the User database.

@@ -235,7 +235,10 @@ fn sections_appear_as_they_finish_without_blocking_frames() {
     assert!(saw_references, "{:?}", h.texts());
     assert!(find_in(&h, guide, "Loading…").is_some(), "{:?}", h.texts());
     assert!(find_in(&h, guide, "Alpha Commentary").is_none());
-    assert_eq!(headers(&h, guide), ["Commentaries", "Cross-references"]);
+    assert_eq!(
+        headers(&h, guide)[..2],
+        ["Commentaries", "Cross-references"]
+    );
     // Menus still answer while the section is held.
     h.open_menu("Guides");
     assert!(h.find("Word Study").is_some());
@@ -290,18 +293,47 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
     let first = open_guide(&mut h);
     let second = open_guide(&mut h);
     h.frames(4);
-    assert_eq!(headers(&h, first), ["Commentaries", "Cross-references"]);
-    assert_eq!(headers(&h, second), ["Commentaries", "Cross-references"]);
+    assert_eq!(
+        headers(&h, first),
+        [
+            "Commentaries",
+            "Cross-references",
+            "Key words",
+            "People & places"
+        ]
+    );
+    assert_eq!(
+        headers(&h, second),
+        [
+            "Commentaries",
+            "Cross-references",
+            "Key words",
+            "People & places"
+        ]
+    );
 
     // Drag the Cross-references header above Commentaries in the first Guide.
     let from = find_in(&h, first, "Cross-references").unwrap().center();
     let to = find_in(&h, first, "Commentaries").unwrap().center() - vec2(0.0, 20.0);
     h.drag(from, to);
     h.frames(2);
-    assert_eq!(headers(&h, first), ["Cross-references", "Commentaries"]);
+    assert_eq!(
+        headers(&h, first),
+        [
+            "Cross-references",
+            "Commentaries",
+            "Key words",
+            "People & places"
+        ]
+    );
     assert_eq!(
         headers(&h, second),
-        ["Cross-references", "Commentaries"],
+        [
+            "Cross-references",
+            "Commentaries",
+            "Key words",
+            "People & places"
+        ],
         "the arrangement is per kind of Guide, not per Tab"
     );
 
@@ -315,7 +347,15 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
     h.frames(2);
     assert!(!has_prefix_in(&h, first, hint));
     assert!(!has_prefix_in(&h, second, hint));
-    assert_eq!(headers(&h, first), ["Cross-references", "Commentaries"]);
+    assert_eq!(
+        headers(&h, first),
+        [
+            "Cross-references",
+            "Commentaries",
+            "Key words",
+            "People & places"
+        ]
+    );
 
     // Quit and relaunch: the Guides come back with the same arrangement.
     h.shell.save_session(true);
@@ -332,7 +372,15 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
         .collect();
     assert_eq!(guides.len(), 2);
     for g in &guides {
-        assert_eq!(headers(&h, *g), ["Cross-references", "Commentaries"]);
+        assert_eq!(
+            headers(&h, *g),
+            [
+                "Cross-references",
+                "Commentaries",
+                "Key words",
+                "People & places"
+            ]
+        );
         assert!(!has_prefix_in(&h, *g, hint));
     }
 
@@ -351,19 +399,38 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
         .center();
     h.click(hide);
     h.frames(2);
-    assert_eq!(headers(&h, guides[1]), ["Commentaries"]);
+    assert_eq!(
+        headers(&h, guides[1]),
+        ["Commentaries", "Key words", "People & places"]
+    );
     let show = find_in(&h, guides[1], "Show Cross-references")
         .unwrap()
         .center();
     h.click(show);
     h.frames(2);
-    assert_eq!(headers(&h, guides[1]), ["Cross-references", "Commentaries"]);
+    assert_eq!(
+        headers(&h, guides[1]),
+        [
+            "Cross-references",
+            "Commentaries",
+            "Key words",
+            "People & places"
+        ]
+    );
     let menu = find_in(&h, guides[0], "…").unwrap().center();
     h.click(menu);
     h.click_text("Reset arrangement");
     h.frames(2);
     for g in &guides {
-        assert_eq!(headers(&h, *g), ["Commentaries", "Cross-references"]);
+        assert_eq!(
+            headers(&h, *g),
+            [
+                "Commentaries",
+                "Cross-references",
+                "Key words",
+                "People & places"
+            ]
+        );
         assert!(has_prefix_in(&h, *g, hint) || find_in(&h, *g, "Loading…").is_some());
     }
     drop(h);
@@ -486,5 +553,210 @@ fn the_guide_box_takes_a_passage_range() {
     until(&mut h, "Commentary rows for the range", |h| {
         find_in(h, guide, "Alpha Commentary").is_some() && find_in(h, guide, "Beta Notes").is_some()
     });
+    drop(h);
+}
+
+/// A library of `.obr` files from the #54 fixtures; the first Bible goes to `reference` in
+/// Link set A and a Passage Guide opens beside it with `section` moved to the top. Returns
+/// the Bible and the Guide.
+fn setup_words(
+    h: &mut Harness,
+    name: &str,
+    resources: &[obs_model::Resource],
+    reference: &str,
+    section: GuideSection,
+) -> (Files, TabId, TabId) {
+    let dir = std::env::temp_dir().join(format!("obs-shell-words-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let files = Files(dir);
+    h.shell.st.session.library = Library::new();
+    for r in resources {
+        add_file(h, &files, r);
+    }
+    h.shell.reset_layout();
+    let id = resources[0].manifest.resource_id.clone();
+    let bible = h
+        .shell
+        .st
+        .session
+        .workspace
+        .tabs()
+        .find(|t| t.kind == TabKind::Resource(id.clone()))
+        .unwrap()
+        .id;
+    h.shell
+        .run("tab.go", &json!({ "tab": bible.0, "text": reference }));
+    h.frames(2);
+    h.shell.run(
+        "guide.move_section",
+        &json!({ "guide": "passage_guide", "section": section.id(), "to": 0 }),
+    );
+    let guide = open_guide(h);
+    (files, bible, guide)
+}
+
+#[test]
+fn key_words_lead_with_rare_words_and_a_click_opens_a_word_study() {
+    use obs_engine::testing::{greek_lexicon, kjv_john, tagnt_john_3_16};
+    let mut h = Harness::new();
+    let (_files, _bible, guide) = setup_words(
+        &mut h,
+        "key-words",
+        &[kjv_john(), tagnt_john_3_16(), greek_lexicon()],
+        "Jn 3:16",
+        GuideSection::KeyWords,
+    );
+    until(&mut h, "the Key words rows", |h| {
+        find_in(h, guide, "agapao").is_some() && find_in(h, guide, "kosmos").is_some()
+    });
+    // Let the Lemma snippets finish laying out, so rows stay where they are.
+    for _ in 0..20 {
+        h.paced_frame();
+    }
+    // Rarest first (κόσμος, four times in this Bible, after the words found once); the
+    // 13th and most common, θεός, waits behind Show all; function words are left out.
+    let love = find_in(&h, guide, "agapao").unwrap();
+    let world = find_in(&h, guide, "kosmos").unwrap();
+    assert!(love.top() < world.top());
+    assert!(
+        find_in(&h, guide, "1× · 4 in KJV").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    assert!(find_in(&h, guide, "theos").is_none());
+    // Scroll the Guide so Show all is in view, show the rest, and scroll back.
+    let wheel = |h: &mut Harness, dy: f32| {
+        h.events.push(Event::PointerMoved(pane(h, guide).center()));
+        h.events.push(Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: vec2(0.0, dy),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: Modifiers::NONE,
+        });
+        h.frames(4);
+    };
+    wheel(&mut h, -400.0);
+    let all = find_in(&h, guide, "Show all 13").unwrap().center();
+    h.click(all);
+    h.frames(2);
+    assert!(
+        find_in(&h, guide, "Show fewer").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    let world = find_in(&h, guide, "kosmos").unwrap();
+    let god = find_in(&h, guide, "theos").unwrap();
+    assert!(world.top() < god.top());
+    assert!(find_in(&h, guide, "1× · 5 in KJV").is_some());
+    wheel(&mut h, 2000.0);
+    assert!(find_in(&h, guide, "to love").is_some());
+    assert!(find_in(&h, guide, "gar").is_none(), "γάρ is a conjunction");
+    assert!(has_prefix_in(&h, guide, "7 function words left out"));
+    assert!(
+        headers(&h, guide).first().map(String::as_str) == Some("Key words"),
+        "{:?}",
+        headers(&h, guide)
+    );
+    if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews/guide");
+        h.frames(30);
+        h.screenshot(&dir.join("key-words.ppm"));
+    }
+
+    // A click opens a Word Study at the word's Strong's number; the Guide stays put.
+    let tabs = h.shell.session().workspace.tabs().count();
+    h.click(love.center());
+    h.frames(2);
+    let ws = &h.shell.session().workspace;
+    assert_eq!(ws.tabs().count(), tabs + 1);
+    let study = ws.focused().unwrap();
+    let t = ws.tab(study).unwrap();
+    assert_eq!(t.kind, TabKind::Guide(Guide::WordStudy));
+    assert_eq!(
+        t.entry_history.current(),
+        Some(Key::StrongsNumber("G25".parse().unwrap()))
+    );
+    assert_eq!(ws.tab(guide).unwrap().history.current(), Some(john(3, 16)));
+
+    // Another word reuses that Word Study; Ctrl/Cmd-click opens a new one.
+    h.shell.session_mut().workspace.focus(guide);
+    h.shell.apply_effects();
+    h.frames(2);
+    let only = find_in(&h, guide, "monogenes").unwrap().center();
+    h.click(only);
+    h.frames(2);
+    let ws = &h.shell.session().workspace;
+    assert_eq!(ws.tabs().count(), tabs + 1);
+    assert_eq!(
+        ws.tab(study).unwrap().entry_history.current(),
+        Some(Key::StrongsNumber("G3439".parse().unwrap()))
+    );
+    h.shell.session_mut().workspace.focus(guide);
+    h.shell.apply_effects();
+    h.frames(2);
+    let world = find_in(&h, guide, "kosmos").unwrap().center();
+    h.modifiers = Modifiers::COMMAND;
+    h.click(world);
+    h.modifiers = Modifiers::NONE;
+    h.frames(2);
+    assert_eq!(h.shell.session().workspace.tabs().count(), tabs + 2);
+    drop(h);
+}
+
+#[test]
+fn gen_12_1_lists_abram_and_its_link_opens_eastons_abraham() {
+    use obs_engine::testing::{dictionary, kjv_genesis_12, tipnr};
+    let mut h = Harness::new();
+    let (_files, bible, guide) = setup_words(
+        &mut h,
+        "people",
+        &[
+            kjv_genesis_12(),
+            tipnr(),
+            dictionary("easton"),
+            dictionary("smith"),
+        ],
+        "Gen 12:1",
+        GuideSection::PeopleAndPlaces,
+    );
+    until(&mut h, "Abram's row", |h| {
+        find_in(h, guide, "Abram").is_some() && find_in(h, guide, "Easton: Abraham").is_some()
+    });
+    for _ in 0..20 {
+        h.paced_frame();
+    }
+    assert!(find_in(&h, guide, "(Abraham)").is_some(), "{:?}", h.texts());
+    assert!(has_prefix_in(&h, guide, "Man · "));
+    assert!(find_in(&h, guide, "Father").is_some());
+    assert!(find_in(&h, guide, "Smith: Abraham").is_some());
+    if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews/guide");
+        h.frames(30);
+        h.screenshot(&dir.join("people-and-places.ppm"));
+    }
+
+    // The link opens Easton at its Abraham article, leaving the Guide and the Bible.
+    let tabs = h.shell.session().workspace.tabs().count();
+    let link = find_in(&h, guide, "Easton: Abraham").unwrap().center();
+    h.click(link);
+    h.frames(3);
+    let ws = &h.shell.session().workspace;
+    assert_eq!(ws.tabs().count(), tabs + 1);
+    let easton = ws.focused().unwrap();
+    let t = ws.tab(easton).unwrap();
+    assert_eq!(t.kind, TabKind::Resource("easton".into()));
+    assert_eq!(
+        t.entry_history.current(),
+        Some(Key::Headword("Abraham".into()))
+    );
+    let gen_12_1 = Verse::new(Book::Genesis, 12, 1);
+    assert_eq!(ws.tab(guide).unwrap().history.current(), Some(gen_12_1));
+    assert_eq!(ws.tab(bible).unwrap().history.current(), Some(gen_12_1));
+    // The Dictionary's header box shows the article.
+    assert!(h.find("Abraham").is_some());
     drop(h);
 }

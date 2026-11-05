@@ -12,6 +12,7 @@
 //! assert_eq!(out["text"], "John 3:16-18");
 //! ```
 
+pub mod aliases;
 pub mod annotations;
 pub mod appearance;
 pub mod bible_search;
@@ -28,11 +29,15 @@ mod get_bibles_tests;
 pub mod guide;
 #[cfg(test)]
 mod guide_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod guide_words_tests;
 pub mod import;
 pub mod jobs;
+pub mod key_words;
 mod library;
 mod library_commands;
 pub mod link;
+pub mod people_places;
 pub mod persist;
 pub mod resource_navigation;
 pub mod search;
@@ -75,11 +80,13 @@ pub use import::{
 pub use jobs::{
     Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step, sword_installer,
 };
+pub use key_words::{KeyWord, KeyWords};
 pub use library::{
     Library, LibraryEntry, LibraryFilter, default_library_dir, default_user_db, language_name,
 };
 pub use library_commands::annotations_phrase;
 pub use link::LINK_SETS;
+pub use people_places::{ArticleLink, Fact, PersonOrPlace};
 pub use persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, UserData, WorkspaceSnapshot};
 #[cfg(not(target_arch = "wasm32"))]
 pub use search::CacheIndexer;
