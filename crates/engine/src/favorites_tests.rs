@@ -126,6 +126,8 @@ fn starring_rom_8_28_in_bsb_and_opening_it_after_a_restart_lands_there() {
         .unwrap();
     assert_ne!(tab(&out), t);
     assert_eq!(at(&s, tab(&out)), Some(v(Book::Romans, 8, 28)));
+    // Windows cannot remove the User database while it is open.
+    drop(s);
     std::fs::remove_dir_all(&root).unwrap();
 }
 
@@ -197,6 +199,7 @@ fn favorites_go_into_folders_move_between_them_and_are_removed() {
     let t = s.workspace.tab(tab(&out)).unwrap();
     assert_eq!(t.kind, TabKind::Guide(Guide::WordStudy));
     assert_eq!(t.entry_history.current().unwrap().to_string(), "G26");
+    drop(s);
     std::fs::remove_dir_all(&root).unwrap();
 }
 
@@ -269,6 +272,7 @@ fn the_history_tool_shows_the_last_sessions_locations_in_order() {
     drop(s);
     let s = launch(&root);
     assert!(s.history().is_empty());
+    drop(s);
     std::fs::remove_dir_all(&root).unwrap();
 }
 
@@ -287,6 +291,7 @@ fn a_favorite_of_a_removed_resource_says_so() {
         err.to_string().contains("no longer in your library"),
         "{err}"
     );
+    drop(s);
     std::fs::remove_dir_all(&root).unwrap();
 }
 
