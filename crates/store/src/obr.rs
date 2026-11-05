@@ -622,6 +622,23 @@ impl ObrReader {
         unit_id(id)
     }
 
+    /// The spans of `unit` that start inside `range` (`range.start <= start < range.end`), in
+    /// canonical order. Unlike [`ResourceStore::spans_in`], enclosing spans (paragraphs,
+    /// chapters) are not looked for, so this is a short index range scan anywhere in a long
+    /// unit: what a search snippet needs for the Tagged words and headings of one Verse.
+    pub fn spans_starting_in(
+        &self,
+        unit: &UnitId,
+        range: Range<usize>,
+    ) -> Result<Vec<Span>, StoreError> {
+        let ord = self
+            .unit_ord(unit)?
+            .ok_or_else(|| StoreError::UnknownUnit(unit.to_string()))?;
+        let s = i64::try_from(range.start).unwrap_or(i64::MAX);
+        let e = i64::try_from(range.end).unwrap_or(i64::MAX);
+        self.spans_where(ord, "AND start >= ?2 AND start < ?3", &[s, e])
+    }
+
     fn spans_where(&self, ord: i64, filter: &str, args: &[i64]) -> Result<Vec<Span>, StoreError> {
         let query = format!(
             "SELECT start, end, kind, attrs FROM spans WHERE unit = ?1 {filter} ORDER BY seq"

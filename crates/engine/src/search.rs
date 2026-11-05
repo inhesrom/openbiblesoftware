@@ -362,6 +362,7 @@ impl Session {
                 if let Some(old) = self.search.stale.remove(resource_id) {
                     self.search.discard(&old);
                 }
+                self.read_outline_ahead(resource_id);
                 return;
             }
             find_stale(self.search.cache_dir.as_deref(), &entry.path, &key)
@@ -379,6 +380,7 @@ impl Session {
         match stale {
             Some(old) => {
                 self.search.stale.insert(resource_id.to_string(), old);
+                self.read_outline_ahead(resource_id);
             }
             None => {
                 self.search.stale.remove(resource_id);
@@ -531,6 +533,7 @@ impl Session {
             self.search.discard(&old);
         }
         self.search.ready.insert(id.to_string(), path);
+        self.read_outline_ahead(id);
     }
 
     /// Search the requested Resources' ready indexes now, on this thread. Resources still
@@ -608,7 +611,7 @@ impl Session {
     /// and rebuilt (or found again, e.g. prebuilt) instead of failing the search. A Failed
     /// build is retried once per session.
     #[cfg(not(target_arch = "wasm32"))]
-    fn open_search_index(&mut self, id: &str) -> Result<Opened, NotReady> {
+    pub(crate) fn open_search_index(&mut self, id: &str) -> Result<Opened, NotReady> {
         let Some(entry) = self.library.get(id) else {
             return Err(NotReady::NotInLibrary);
         };
@@ -657,7 +660,7 @@ impl Session {
 
 /// An index a search can use.
 #[cfg(not(target_arch = "wasm32"))]
-enum Opened {
+pub(crate) enum Opened {
     /// The current cache.
     Current(obs_store::SqliteSearchIndex),
     /// An older index version's cache, while the current one is rebuilt.
@@ -666,7 +669,7 @@ enum Opened {
 
 /// Why a Resource could not be searched now.
 #[cfg(not(target_arch = "wasm32"))]
-enum NotReady {
+pub(crate) enum NotReady {
     Indexing,
     Failed(String),
     NotInLibrary,

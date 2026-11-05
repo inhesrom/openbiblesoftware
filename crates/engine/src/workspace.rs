@@ -137,7 +137,8 @@ impl TabKind {
             TabKind::Library | TabKind::Tool(Tool::Notes) => HeaderBox::Filter,
             TabKind::Tool(Tool::WordInfo) => HeaderBox::FollowsHover,
             TabKind::Guide(Guide::WordStudy) => HeaderBox::Word,
-            TabKind::Tool(Tool::Search) => HeaderBox::Filter,
+            // The query, mode and scope fields are the Tab's body (#59).
+            TabKind::Tool(Tool::Search) => HeaderBox::Keyless,
             TabKind::About(_)
             | TabKind::ImportReport(_)
             | TabKind::GetBibles
@@ -275,6 +276,8 @@ pub struct Tab {
     pub link: Option<char>,
     /// What a Text Comparison Tab compares (unused by other kinds).
     pub comparison: Comparison,
+    /// A Search Tab's mode, fields and results (unused by other kinds).
+    pub search: crate::bible_search::SearchTab,
 }
 
 impl Tab {
@@ -407,6 +410,9 @@ pub struct Workspace {
     last_other_panel: Option<PanelId>,
     remembered: BTreeMap<Slot, PanelId>,
     effects: Vec<Effect>,
+    /// When each Tab was last active (a counter), for "the most recently active Tab".
+    activity: BTreeMap<TabId, u64>,
+    clock: u64,
     /// How the UI currently arranges the Panels (kept up to date by the UI, for saving).
     pub arrangement: Option<LayoutNode>,
 }
@@ -532,6 +538,7 @@ impl Workspace {
                 key_schemes,
                 link,
                 comparison: Comparison::default(),
+                search: Default::default(),
             },
         );
         // A linked Tool or Guide starts at its Link set's location. (Bibles wait until their
@@ -547,6 +554,15 @@ impl Workspace {
         id
     }
 
+    /// The most recently active Tab that `pred` accepts.
+    pub fn most_recent(&self, pred: impl Fn(&Tab) -> bool) -> Option<TabId> {
+        self.tabs
+            .values()
+            .filter(|t| pred(t))
+            .max_by_key(|t| (self.activity.get(&t.id).copied().unwrap_or(0), t.id))
+            .map(|t| t.id)
+    }
+
     /// Make `tab` the focused Tab (and its Panel the last-active one of its kind).
     pub fn focus(&mut self, tab: TabId) {
         let Some(kind) = self.tabs.get(&tab).map(|t| t.kind.clone()) else {
@@ -558,6 +574,8 @@ impl Workspace {
     }
 
     fn note_active(&mut self, tab: TabId, kind: &TabKind) {
+        self.clock += 1;
+        self.activity.insert(tab, self.clock);
         if let Some(p) = self.panel_of(tab) {
             self.remembered.insert(kind.slot(), p);
             if kind.is_reading() {
@@ -583,6 +601,7 @@ impl Workspace {
         if self.tabs.remove(&tab).is_none() {
             return false;
         }
+        self.activity.remove(&tab);
         for (tabs, active) in self.panels.values_mut() {
             tabs.retain(|t| *t != tab);
             if *active == Some(tab) {
@@ -609,6 +628,7 @@ impl Workspace {
             .collect();
         for t in gone {
             self.tabs.remove(&t);
+            self.activity.remove(&t);
             if self.focused == Some(t) {
                 self.focused = None;
             }
@@ -797,7 +817,7 @@ impl Workspace {
 
     /// The Standard Verse a Link set is at, read from its members other than `except`
     /// (the focused member first).
-    fn standard_location_of(&self, link: char, except: TabId) -> Option<Verse> {
+    pub(crate) fn standard_location_of(&self, link: char, except: TabId) -> Option<Verse> {
         let mut members: Vec<&Tab> = self
             .tabs
             .values()
@@ -901,6 +921,7 @@ impl Workspace {
         self.tabs.clear();
         self.panels.clear();
         self.remembered.clear();
+        self.activity.clear();
         self.focused = None;
         for t in snap.tabs {
             let mut history = History::default();
@@ -930,6 +951,7 @@ impl Workspace {
                     key_schemes,
                     link: t.link,
                     comparison: Comparison::default(),
+                    search: Default::default(),
                 },
             );
         }

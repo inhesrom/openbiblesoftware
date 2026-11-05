@@ -110,6 +110,17 @@ fn queries_find_units_spans_verses_keys_and_aliases() {
         r.spans_in(&UnitId::new("nope").unwrap(), 0..1),
         Err(StoreError::UnknownUnit(_))
     ));
+    // Only spans that start inside the range: the Tagged words, not the chapter and
+    // paragraph that enclose them from byte 0.
+    let starting = r.spans_starting_in(&jhn, 1..v16.end as usize).unwrap();
+    assert!(starting.iter().all(|s| (1..v16.end).contains(&s.start)));
+    let mut starting = names(starting);
+    starting.sort_unstable();
+    assert_eq!(starting, ["note_ref", "tagged_word", "tagged_word"]);
+    assert!(matches!(
+        r.spans_starting_in(&UnitId::new("nope").unwrap(), 0..1),
+        Err(StoreError::UnknownUnit(_))
+    ));
 
     let title = r.verse(Verse::new(Book::Psalms, 3, 0)).unwrap().unwrap();
     assert_eq!(title.start, 0);

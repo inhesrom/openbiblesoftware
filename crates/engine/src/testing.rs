@@ -242,3 +242,275 @@ pub fn commentary(
     }
     b.build().unwrap()
 }
+
+/// Open-text Bibles for Search Tool tests (#59): hand-made KJV/WEB excerpts, a long Psalm,
+/// and a TAHOT excerpt imported from the STEPBible test asset plus a TAHOT-style Gen 1:27.
+pub mod bibles {
+    use std::path::Path;
+
+    use obs_model::{
+        Direction, KeyScheme, Manifest, MorphemePart, Origin, ParaStyle, Resource, ResourceBuilder,
+        ResourceType, SpanKind, TextAccumulator, UnitId, UnitKind,
+    };
+    use obs_scripture::{Book, Passage, Verse, VerseMap, VerseMapEntry};
+
+    pub fn v(book: Book, chapter: u16, verse: u16) -> Verse {
+        Verse::new(book, chapter, verse)
+    }
+
+    /// A Bible of `verses` (canonical order), one unit per book, each verse its own paragraph.
+    /// `standard` maps each verse to its Standard Passage (`None`: Unmapped); without it the
+    /// Bible numbers like the Standard. `tagged` words get one Strong's number each.
+    pub fn bible(
+        id: &str,
+        abbrev: &str,
+        verses: &[(Verse, &str)],
+        standard: Option<&[Option<Verse>]>,
+        tagged: &[(&str, &str)],
+    ) -> Resource {
+        let mut m = Manifest::new(
+            id,
+            format!("{abbrev} (test)"),
+            abbrev,
+            ResourceType::Bible,
+            "en",
+        );
+        m.key_schemes = vec![KeyScheme::Passage];
+        m.direction = Direction::Ltr;
+        m.license = "LicenseRef-PD".into();
+        m.attribution = "Public domain test text.".into();
+        m.origin = Origin::Imported;
+        m.source_format = "hand-made".into();
+        m.import_tool_version = "test".into();
+        let mut b = ResourceBuilder::new(m);
+        let mut books: Vec<Book> = verses.iter().map(|(v, _)| v.book).collect();
+        books.dedup();
+        for book in books {
+            let unit = UnitId::book(book);
+            let mut t = TextAccumulator::new();
+            let mut placed = Vec::new();
+            for (verse, text) in verses.iter().filter(|(v, _)| v.book == book) {
+                if t.pos() > 0 {
+                    t.push(" ");
+                }
+                placed.push((*verse, t.push(text)));
+            }
+            let text = t.into_string();
+            b.add_unit(unit.clone(), UnitKind::BibleBook, None, text.clone());
+            for (verse, range) in placed {
+                b.add_span(
+                    &unit,
+                    range.clone(),
+                    SpanKind::Para {
+                        style: ParaStyle::Prose,
+                    },
+                );
+                for (word, strongs) in tagged {
+                    if let Some(at) = text[range.clone()].find(word) {
+                        let at = range.start + at;
+                        b.add_span(
+                            &unit,
+                            at..at + word.len(),
+                            SpanKind::TaggedWord {
+                                parts: vec![MorphemePart::new(strongs.parse().unwrap())],
+                            },
+                        );
+                    }
+                }
+                b.add_verse(&unit, range, verse, verse.verse);
+            }
+        }
+        if let Some(standard) = standard {
+            let entries = b
+                .verses()
+                .iter()
+                .zip(standard)
+                .map(|(bv, s)| VerseMapEntry {
+                    verse: bv.verse,
+                    last: bv.last,
+                    standard: s.map(Passage::verse),
+                })
+                .collect();
+            b.set_verse_map(VerseMap::new(entries, Vec::new(), &obs_scripture::Standard));
+        }
+        b.build().unwrap()
+    }
+
+    pub const LOVE_KJV: &[(Book, u16, u16, &str)] = &[
+        (
+            Book::Leviticus,
+            19,
+            18,
+            "Thou shalt not avenge, nor bear any grudge against the children of thy people, but thou shalt love thy neighbour as thyself: I am the LORD.",
+        ),
+        (
+            Book::Matthew,
+            5,
+            43,
+            "Ye have heard that it hath been said, Thou shalt love thy neighbour, and hate thine enemy.",
+        ),
+        (
+            Book::Matthew,
+            22,
+            39,
+            "And the second is like unto it, Thou shalt love thy neighbour as thyself.",
+        ),
+        (
+            Book::Romans,
+            13,
+            10,
+            "Love worketh no ill to his neighbour: therefore love is the fulfilling of the law.",
+        ),
+    ];
+
+    pub const LOVE_WEB: &[(Book, u16, u16, &str)] = &[
+        (
+            Book::Leviticus,
+            19,
+            18,
+            "“You shall not take vengeance, nor bear any grudge against the children of your people; but you shall love your neighbor as yourself. I am Yahweh.",
+        ),
+        (
+            Book::Matthew,
+            5,
+            43,
+            "“You have heard that it was said, ‘You shall love your neighbor, and hate your enemy.’",
+        ),
+        (
+            Book::Matthew,
+            22,
+            39,
+            "A second likewise is this, ‘You shall love your neighbor as yourself.’",
+        ),
+        (
+            Book::Romans,
+            13,
+            10,
+            "Love doesn’t harm a neighbor. Love therefore is the fulfillment of the law.",
+        ),
+    ];
+
+    pub fn verses(list: &[(Book, u16, u16, &'static str)]) -> Vec<(Verse, &'static str)> {
+        list.iter().map(|&(b, c, n, t)| (v(b, c, n), t)).collect()
+    }
+
+    /// The TAHOT Gen 1:1 lines of the STEPBible test excerpt, plus a TAHOT-style Gen 1:27 whose
+    /// first word is וַ/יִּבְרָא (prefix H9001, root H1254A).
+    pub fn tahot() -> Resource {
+        let asset = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../formats/tests/assets/stepbible/tahot-gen-deu.txt");
+        let text = std::fs::read_to_string(asset).unwrap();
+        let mut lines: Vec<String> = text
+            .lines()
+            .filter(|l| l.starts_with("Gen.1.1#"))
+            .map(String::from)
+            .collect();
+        assert_eq!(lines.len(), 7, "Gen 1:1 has seven words");
+        let row = |cols: [&str; 12]| cols.join("\t") + "\t\t\t\t";
+        lines.push(row([
+            "Gen.1.27#01=L",
+            "וַ/יִּבְרָ֨א",
+            "vai./yiv.Ra'",
+            "and/ he created",
+            "H9001/{H1254A}",
+            "HC/Vqw3ms",
+            "",
+            "",
+            "H1254A",
+            "",
+            "",
+            "H9001=ו=and/{H1254A=בָּרָא=to create}",
+        ]));
+        lines.push(row([
+            "Gen.1.27#02=L",
+            "אֱלֹהִ֤ים",
+            "'E.lo.Him",
+            "God",
+            "{H0430G}",
+            "HNcmpa",
+            "",
+            "",
+            "H0430G",
+            "",
+            "",
+            "{H0430G=אֱלֹהִים=God}",
+        ]));
+        lines.push(row([
+            "Gen.1.27#03=L",
+            "אֶת\\־",
+            "'et-",
+            "<obj.>",
+            "{H0853}",
+            "HTo",
+            "",
+            "",
+            "H0853",
+            "",
+            "",
+            "{H0853=אֵת=[Obj.]}",
+        ]));
+        lines.push(row([
+            "Gen.1.27#04=L",
+            "הָֽ/אָדָם֙\\׃",
+            "ha./'a.Dam",
+            "the/ man",
+            "H9009/{H0120G}\\H9016",
+            "HTd/Ncmsa",
+            "",
+            "",
+            "H0120G",
+            "",
+            "",
+            "H9009=ה=the/{H0120G=אָדָם=man}\\H9016=׃=verseEnd",
+        ]));
+        let mut import = obs_formats::StepbibleImport::new(obs_formats::StepbibleOptions {
+            text: obs_formats::StepbibleText::Tahot,
+            resource_id: "tahot".into(),
+            title: "TAHOT (test)".into(),
+            abbreviation: "TAHOT".into(),
+            source_file: "tahot".into(),
+            tool_version: "test".into(),
+            ..Default::default()
+        });
+        import.add_file("tahot-test.txt", lines.join("\n"));
+        import.finish().unwrap().0
+    }
+
+    /// The KJV and WEB of four "love thy neighbour" verses (KJV `love` and `neighbour` tagged
+    /// H157 and H7453).
+    pub fn kjv() -> Resource {
+        bible(
+            "kjv",
+            "KJV",
+            &verses(LOVE_KJV),
+            None,
+            &[("love", "H157"), ("neighbour", "H7453")],
+        )
+    }
+
+    pub fn web() -> Resource {
+        bible("web", "WEB", &verses(LOVE_WEB), None, &[])
+    }
+
+    /// Psalm 119:1-`n`, each verse mentioning "love" and "law".
+    pub fn psalms(n: u16) -> Resource {
+        let text: Vec<(Verse, String)> = (1..=n)
+            .map(|k| {
+                (
+                    v(Book::Psalms, 119, k),
+                    format!("Verse {k}: O how love I thy law! it is my meditation all the day."),
+                )
+            })
+            .collect();
+        let refs: Vec<(Verse, &str)> = text.iter().map(|(v, t)| (*v, t.as_str())).collect();
+        bible("psalms", "PSA", &refs, None, &[])
+    }
+
+    /// Write each Resource to `dir/<id>.obr`.
+    pub fn write_library(dir: &Path, resources: &[Resource]) {
+        std::fs::create_dir_all(dir).unwrap();
+        for r in resources {
+            obs_store::write_obr(r, &dir.join(format!("{}.obr", r.manifest.resource_id))).unwrap();
+        }
+    }
+}

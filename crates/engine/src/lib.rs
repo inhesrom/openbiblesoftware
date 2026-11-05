@@ -14,6 +14,9 @@
 
 pub mod annotations;
 pub mod appearance;
+pub mod bible_search;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod bible_search_tests;
 mod builtin;
 pub mod command;
 pub mod compare;
@@ -51,6 +54,11 @@ pub use annotations::{
     Row, Selection, TextPos, TextRange, UndoHistory, UndoStep,
 };
 pub use appearance::{Appearance, PageTone, Theme};
+pub use bible_search::{
+    BibleOutline, BibleResults, BibleSearchRequest, ErrorField, InlineError, RowHit, Scope,
+    ScopePreset, SearchMode, SearchTab, SearchedBible, Snippet, VerseRow, parse_scope,
+    scope_presets, verse_rows,
+};
 pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSpec, Params};
 pub use compare::{
     Cell, ComparedBible, ComparedCell, Comparison, DEFAULT_BIBLES, Marks, VerseBlock, WordDiff,

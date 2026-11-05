@@ -93,7 +93,10 @@ impl State {
             None => format!("({})", doc.manifest.abbreviation),
         };
         let rtl = doc.direction() == obs_model::Direction::Rtl;
-        ShownWord::new(written, rtl, reference, parts, |n| self.lexicon_gloss(n))
+        let bible = doc.manifest.resource_id.clone();
+        let mut shown = ShownWord::new(written, rtl, reference, parts, |n| self.lexicon_gloss(n))?;
+        shown.bible = Some(bible);
+        Some(shown)
     }
 
     /// The gloss of the first Lexicon in Preferred order for a Strong's number: its entry's

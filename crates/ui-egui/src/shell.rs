@@ -31,6 +31,7 @@ mod import_tab;
 mod library_tab;
 #[path = "references.rs"]
 pub(crate) mod references;
+mod search_tab;
 mod word_info_tab;
 
 /// How long the pointer rests on a Tagged word before Word Info follows it (#18 rule 16).
@@ -62,6 +63,9 @@ struct TabUi {
     dragging: Option<String>,
     /// A Text Comparison Tab's view.
     comparison: Option<ComparisonView>,
+    /// A Search Tab's results view and its fields being edited.
+    search: Option<crate::search_view::SearchView>,
+    search_fields: search_tab::Fields,
     /// Failed selected Bibles are retried only on request (or after removal/reselection).
     comparison_errors: BTreeMap<String, String>,
     reference_passage: Option<Passage>,
@@ -565,9 +569,11 @@ impl Shell {
     /// polls them, so running work keeps frames coming while the app is idle. Background
     /// Search index builds (#58) need only a slow poll.
     fn background_repaint(&self) -> Option<std::time::Duration> {
+        // Bible searches and their snippet pages (#59) are applied by a frame too.
         if self.st.session.imports.is_running()
             || self.st.picker.is_some()
             || self.st.session.guides.is_busy()
+            || self.st.session.bible_search_running()
         {
             Some(std::time::Duration::from_millis(16))
         } else if self.st.session.search.is_building() {
@@ -808,7 +814,6 @@ fn not_yet(id: &str) -> &'static str {
         "library.import" => "Import a local USFM file or folder",
         "layout.save" => "Saved Layouts arrive with #37",
         "word_info.word_study" => "Word Study arrives with #55",
-        "word_info.search" => "Search arrives with #59",
         _ => "Not available yet",
     }
 }
@@ -863,6 +868,9 @@ impl State {
         let kind = self.session.workspace.tab(tab).map(|t| t.kind.clone());
         if kind == Some(TabKind::Tool(Tool::TextComparison)) {
             ui_state.comparison = Some(ComparisonView::new(self.session.text));
+        }
+        if kind == Some(TabKind::Tool(Tool::Search)) {
+            ui_state.search = Some(crate::search_view::SearchView::new(self.session.text));
         }
         if let Some(TabKind::Resource(id)) = &kind {
             match self.doc(id) {
@@ -1007,6 +1015,7 @@ impl State {
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
             TabKind::Tool(Tool::CrossReferences) => self.cross_references_body(&mut body, tab),
             TabKind::Tool(Tool::WordInfo) => self.word_info_body(&mut body, tab),
+            TabKind::Tool(Tool::Search) => self.search_body(&mut body, tab),
             TabKind::Tool(t) => placeholder(&mut body, t.title(), tool_ticket(t)),
         }
     }

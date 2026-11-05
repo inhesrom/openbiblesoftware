@@ -41,6 +41,8 @@ pub struct Session {
     pub imports: crate::import::Imports,
     /// Per-Resource Search index status and background rebuilds (#58).
     pub search: crate::search::SearchIndexes,
+    /// Bible searches in flight, recent queries and Verse outlines (#59).
+    pub bible_search: crate::bible_search::BibleSearches,
     /// Get Bibles catalog (#91).
     pub get_bibles: crate::get_bibles::GetBibles,
     pub workspace: Workspace,
@@ -80,6 +82,7 @@ impl Session {
             library: Library::new(),
             imports: crate::import::Imports::default(),
             search: crate::search::SearchIndexes::default(),
+            bible_search: crate::bible_search::BibleSearches::default(),
             get_bibles: crate::get_bibles::GetBibles::default(),
             workspace: Workspace::new(),
             text: TextSettings::default(),
@@ -141,6 +144,7 @@ impl Session {
             }
         }
         self.user = Some(user);
+        self.bible_search.forget_recent();
         self.history.clear();
         self.annotations_revision += 1;
         self.restore_import_reports();

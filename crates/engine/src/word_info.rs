@@ -73,6 +73,8 @@ pub struct ShownWord {
     pub reference: String,
     pub main: LemmaCard,
     pub parts: Vec<WordPart>,
+    /// The Bible it was read in (resource id), for "Search this word".
+    pub bible: Option<String>,
 }
 
 impl ShownWord {
@@ -120,6 +122,7 @@ impl ShownWord {
             reference,
             main: main?,
             parts: word_parts,
+            bible: None,
         })
     }
 

@@ -299,7 +299,8 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         open(s, p, TabKind::Tool(Tool::CrossReferences))
     }),
     // Word Info (#50): the pinned panel follows hover again on Esc or the header's 📌; Copy
-    // hands the UI the card text. Word Study ▸ and Search this word wait for #55 and #59.
+    // hands the UI the card text; Search this word searches its Bible for the word's
+    // Strong's number (#59). Word Study ▸ waits for #55.
     simple(
         "word_info.unpin",
         "Unpin Word Info",
@@ -336,8 +337,8 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         "word_info.search",
         "Search this word",
         None,
-        never,
-        |_, _| Ok(Value::Null),
+        |s| s.word_info.shown.is_some(),
+        word_info_search,
     ),
     CommandSpec {
         id: "layout.save",
@@ -494,19 +495,6 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         ],
         enabled: always,
         run: link,
-    },
-    CommandSpec {
-        id: "search.run",
-        label: "Search",
-        shortcut: None,
-        params: &[ParamSpec {
-            name: "text",
-            kind: ParamKind::String,
-            required: true,
-            help: "What to search for",
-        }],
-        enabled: always,
-        run: search,
     },
 ];
 
@@ -798,16 +786,31 @@ fn layout_delete(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> 
     Ok(json!({ "deleted": name }))
 }
 
-fn search(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
-    let text = p.str("text").unwrap_or_default().to_string();
-    let title = Tool::Search.title().to_string();
-    let tab = s
-        .workspace
-        .open(TabKind::Tool(Tool::Search), title, OpenRequest::default());
-    s.workspace.push_effect(Effect::Message(format!(
-        "Search for “{text}” arrives with the Search Tool (#59)"
-    )));
-    Ok(json!({ "tab": tab.0 }))
+/// Word Info's "Search this word": `strong:` and the main Strong's number, in the Bible the
+/// word was read in (falling back to the Search Tab's own choice when that Bible is gone).
+/// Always in Bible mode, whatever mode the Search Tab was left in.
+fn word_info_search(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "word_info.search";
+    let shown = s
+        .word_info
+        .shown
+        .as_ref()
+        .ok_or_else(|| failed(ID, "nothing is shown"))?;
+    let query = format!("strong:{}", shown.strongs());
+    let bibles = shown
+        .bible
+        .clone()
+        .filter(|id| {
+            s.library
+                .get(id)
+                .is_some_and(|e| e.manifest.resource_type == obs_model::ResourceType::Bible)
+        })
+        .map(|id| id.to_string());
+    let mut params = json!({ "text": query, "mode": "bible" });
+    if let Some(b) = bibles {
+        params["bibles"] = json!(b);
+    }
+    s.run("search.run", &params)
 }
 
 fn about(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
