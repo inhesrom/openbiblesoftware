@@ -287,6 +287,38 @@ fn right_click_on_an_untagged_word_offers_the_english_word_chooser() {
 }
 
 #[test]
+fn right_click_on_untagged_text_inside_a_selection_targets_the_verse_clicked() {
+    let mut h = Harness::new();
+    let _files = setup(&mut h, "untagged-in-selection");
+    let kjv = open_at_john_3_16(&mut h, "kjv");
+    // Select from "loved" (John 3:16) to "saved" (John 3:17), then right-click the
+    // untagged "might" in John 3:17.
+    let loved = super::word_info::word_spot(&h, kjv, "loved");
+    let saved = super::word_info::word_spot(&h, kjv, "saved");
+    h.drag(loved, saved);
+    assert!(h.shell.st.has_selection(kjv));
+    let might = super::word_info::word_spot(&h, kjv, "might");
+    right_click(&mut h, might);
+    assert!(menu_open(&h), "{:?}", h.texts());
+    // The selection is kept; the Verse is the one clicked, and no Strong's number is
+    // offered (the selection starts in "loved", G25).
+    let view = h.shell.st.tabs[&kjv].view.as_ref().unwrap();
+    let sel = view.selection.unwrap();
+    let text = crate::selection::selected_text(&view.doc, &sel);
+    assert!(text.contains("oved") && text.contains("might"), "{text:?}");
+    // The Tab headers show John 3:16 too: the Verse target is the label after "Verse".
+    let texts = h.texts();
+    let verse = texts
+        .iter()
+        .position(|t| *t == "Verse")
+        .map(|i| texts[i + 1]);
+    assert_eq!(verse, Some("John 3:17"), "{texts:?}");
+    assert!(h.find("Strong's number").is_none(), "{:?}", h.texts());
+    assert!(h.find("G25").is_none(), "{:?}", h.texts());
+    drop(h);
+}
+
+#[test]
 fn the_verse_target_opens_passage_keyed_tools_at_the_verse() {
     let mut h = Harness::new();
     let _files = setup(&mut h, "verse");

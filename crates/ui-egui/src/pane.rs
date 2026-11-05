@@ -118,7 +118,8 @@ pub struct PaneOutput {
     pub hovered_word: Option<WordHit>,
     /// The Tagged word clicked this frame (Word Info pins it).
     pub clicked_word: Option<WordHit>,
-    /// Where in the text the pointer is (for the right-click menu opened from the keyboard).
+    /// Where in the text the pointer is when the right-click menu opens (by a right-click or
+    /// from the keyboard): its Verse and Tagged word are there, not at the selection's start.
     pub pointer_at: Option<DocPos>,
 }
 
@@ -452,7 +453,7 @@ pub fn reading_pane(
     }
     if let Some(p) = response.hover_pos()
         && !track.contains(p)
-        && ui.input(menu_key_pressed)
+        && (response.secondary_clicked() || ui.input(menu_key_pressed))
     {
         let y = p.y.clamp(rect.top(), rect.bottom() - 1.0) - rect.top();
         out.pointer_at = view.pos_at(p.x - text_rect.left(), y);

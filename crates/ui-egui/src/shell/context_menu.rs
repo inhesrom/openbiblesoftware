@@ -673,7 +673,8 @@ impl State {
         let doc = Arc::clone(&view.doc);
         let sel = view.selection.filter(|s| has_text(view, s));
         let selection = sel.map(|s| selected_text(&doc, &s).trim().to_string());
-        // Where the click was: the word under the pointer, else the selection's start.
+        // Where the click was: the word under the pointer, else the text under it, else (the
+        // menu opened from the keyboard with the pointer off the text) the selection's start.
         let at = out
             .hovered_word
             .as_ref()
