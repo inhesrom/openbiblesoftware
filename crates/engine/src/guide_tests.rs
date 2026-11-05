@@ -453,7 +453,9 @@ fn arrangement_commands_change_every_guide_of_the_kind_and_persist_across_restar
     ];
     assert_eq!(order(&s), changed);
     // Word Study's arrangement is its own.
-    assert!(s.guides.arrangement(Guide::WordStudy).sections.is_empty());
+    let word_study = s.guides.arrangement(Guide::WordStudy);
+    assert_eq!(word_study, GuideArrangement::default_for(Guide::WordStudy));
+    assert_eq!(word_study.sections[0].section, GuideSection::LexiconEntries);
     assert!(
         s.run(
             "guide.move_section",

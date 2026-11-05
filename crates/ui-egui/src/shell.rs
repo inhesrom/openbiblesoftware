@@ -35,6 +35,7 @@ mod library_tab;
 pub(crate) mod references;
 mod search_tab;
 mod word_info_tab;
+mod word_study_tab;
 
 /// How long the pointer rests on a Tagged word before Word Info follows it (#18 rule 16).
 pub(crate) const HOVER_DWELL_SECS: f64 = 0.15;
@@ -81,6 +82,10 @@ struct TabUi {
     selection_rect: Option<egui::Rect>,
     /// Passage Guide sections showing all their rows (Key words, People & places).
     guide_expanded: std::collections::BTreeSet<obs_engine::GuideSection>,
+    /// Word Study: Lexicon entries expanded (true) or collapsed by the user, by entry id, for
+    /// the number in `lexicon_entries_for` (otherwise only the first is expanded).
+    lexicon_open: BTreeMap<String, bool>,
+    lexicon_entries_for: Option<obs_scripture::StrongsNumber>,
 }
 
 /// How long a jump's flash lasts, in seconds.
@@ -589,6 +594,7 @@ impl Shell {
             || self.st.picker.is_some()
             || self.st.session.guides.is_busy()
             || self.st.session.bible_search_running()
+            || self.st.session.word_study.is_busy()
         {
             Some(std::time::Duration::from_millis(16))
         } else if self.st.session.search.is_building() {
@@ -607,7 +613,9 @@ impl Shell {
         // Poll, never wait: parsing, Resource writes, Search-index hooks and Guide sections
         // live on workers. Without worker threads (wasm), Guide sections step here, a job a
         // frame.
-        if !self.st.session.jobs().is_threaded() && self.st.session.guides.is_busy() {
+        if !self.st.session.jobs().is_threaded()
+            && (self.st.session.guides.is_busy() || self.st.session.word_study.is_busy())
+        {
             self.st.session.jobs().pump(1);
         }
         let _other_jobs = self.st.session.poll_imports();
@@ -848,7 +856,7 @@ fn not_yet(id: &str) -> &'static str {
     match id {
         "library.import" => "Import a local USFM file or folder",
         "layout.save" => "Saved Layouts arrive with #37",
-        "word_info.word_study" => "Word Study arrives with #55",
+        "word_info.word_study" => "Rest the pointer on a word with a Strong's number first",
         _ => "Not available yet",
     }
 }
@@ -1052,7 +1060,15 @@ impl State {
         let Some(t) = self.session.workspace.tab(tab) else {
             return String::new();
         };
-        if matches!(t.header_box(), HeaderBox::Lexicon | HeaderBox::Headword) {
+        if t.header_box() == HeaderBox::Word
+            && let Some(words) = self.session.word_study.choosing(tab)
+        {
+            return words.to_string();
+        }
+        if matches!(
+            t.header_box(),
+            HeaderBox::Lexicon | HeaderBox::Headword | HeaderBox::Word
+        ) {
             return t
                 .entry_history
                 .current()
@@ -1100,7 +1116,7 @@ impl State {
             TabKind::Guide(obs_engine::Guide::PassageGuide) => {
                 self.passage_guide_body(&mut body, tab)
             }
-            TabKind::Guide(g) => placeholder(&mut body, g.title(), guide_ticket(g)),
+            TabKind::Guide(obs_engine::Guide::WordStudy) => self.word_study_body(&mut body, tab),
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
             TabKind::Tool(Tool::CrossReferences) => self.cross_references_body(&mut body, tab),
             TabKind::Tool(Tool::WordInfo) => self.word_info_body(&mut body, tab),
@@ -1407,7 +1423,10 @@ impl State {
                         .map_or(kind.header_box(), |t| t.header_box());
                     if matches!(
                         header,
-                        HeaderBox::Reference | HeaderBox::Lexicon | HeaderBox::Headword
+                        HeaderBox::Reference
+                            | HeaderBox::Lexicon
+                            | HeaderBox::Headword
+                            | HeaderBox::Word
                     ) {
                         self.history_buttons(ui, tab);
                     }
@@ -1490,7 +1509,10 @@ impl State {
 
     fn history_buttons(&mut self, ui: &mut Ui, tab: TabId) {
         let (back, fwd) = self.session.workspace.tab(tab).map_or((false, false), |t| {
-            if matches!(t.header_box(), HeaderBox::Lexicon | HeaderBox::Headword) {
+            if matches!(
+                t.header_box(),
+                HeaderBox::Lexicon | HeaderBox::Headword | HeaderBox::Word
+            ) {
                 (
                     t.entry_history.can_go_back(),
                     t.entry_history.can_go_forward(),
@@ -1581,7 +1603,7 @@ impl State {
                 }
                 if r.lost_focus() {
                     t.edit = None;
-                    if ui.input(|i| i.key_pressed(egui::Key::Enter)) && kind != HeaderBox::Word {
+                    if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         self.session.workspace.user_focused(tab);
                         let out = self
                             .session
@@ -1764,13 +1786,6 @@ fn tool_ticket(t: Tool) -> &'static str {
         Tool::Notes => "#64",
         Tool::WordInfo => "#50",
         Tool::CrossReferences => "#51",
-    }
-}
-
-fn guide_ticket(g: obs_engine::Guide) -> &'static str {
-    match g {
-        obs_engine::Guide::PassageGuide => "#53",
-        obs_engine::Guide::WordStudy => "#55",
     }
 }
 

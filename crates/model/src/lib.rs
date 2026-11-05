@@ -27,6 +27,7 @@ mod key;
 mod manifest;
 pub mod morph;
 mod normalize;
+mod renderings;
 mod translit;
 mod unit;
 
@@ -39,6 +40,7 @@ pub use manifest::{
 };
 pub use morph::{Morph, MorphError, MorphLanguage, MorphPart, PartOfSpeech};
 pub use normalize::{NORMALIZER_VERSION, Token, normalize, tokenize};
+pub use renderings::{Rendering, RenderingIndex, StrongsTotal, rendering_key};
 pub use translit::{
     LemmaTransliteration, TRANSLITERATION_VERSION, transliterate, transliteration_index,
     transliteration_key,

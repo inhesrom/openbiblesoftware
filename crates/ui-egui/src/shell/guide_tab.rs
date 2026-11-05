@@ -1,5 +1,6 @@
-//! The Passage Guide Tab (#53): the Guide's Passage, then its sections in the Guide
-//! arrangement's order. Sections come from the engine as pure data computed on the job queue
+//! Guide Tabs (#53): the Guide's Key (a Passage Guide's Passage, a Word Study's header), then
+//! its sections in the Guide arrangement's order ([`State::guide_page`], shared by every kind
+//! of Guide). Sections come from the engine as pure data computed on the job queue
 //! ([`obs_engine::Session::guide_section`]); a section still computing shows "Loading…" and
 //! the frame goes on. Headers collapse on click and reorder by dragging; the arrangement is
 //! the engine's, per kind of Guide, so every Passage Guide shows the same one.
@@ -23,7 +24,7 @@ const ROW_LINES: usize = 3;
 const POPUP_LINES: usize = 14;
 
 /// What the user did in the Guide this frame.
-enum Action {
+pub(super) enum Action {
     Toggle(GuideSection),
     Hide(GuideSection),
     Show(GuideSection),
@@ -32,6 +33,18 @@ enum Action {
     Commentary(CommentaryRow, bool),
     /// Key words and People & places (#54).
     Words(WordsAction),
+    /// Word Study (#55): open a Strong's number (a new Tab when Ctrl/Cmd is held).
+    WordStudy(obs_scripture::StrongsNumber, bool),
+    /// Word Study: a chooser row; plain click moves this Guide, Ctrl/Cmd-click opens a new one.
+    Choose(obs_scripture::StrongsNumber, bool),
+    /// Word Study: close the English-word chooser.
+    StopChoosing,
+    /// Word Study: expand (true) or collapse one Lexicon entry, by [`LexiconEntry::id`].
+    ///
+    /// [`LexiconEntry::id`]: obs_engine::LexiconEntry::id
+    ToggleEntry(String, bool),
+    /// Word Study: open a Lexicon at an entry.
+    OpenLexicon(obs_engine::LexiconEntry, bool),
 }
 
 /// One visible section as drawn this frame, for working out where a dragged header lands.
@@ -68,9 +81,36 @@ impl State {
             t.expanded_references.clear();
             t.guide_expanded.clear();
         }
-        let dragging = t.guide_drag;
-        let key = Key::Passage(passage);
-        let arrangement = self.session.guides.arrangement(Guide::PassageGuide);
+        let title = format_passage(passage, &Standard, RefStyle::Long);
+        self.guide_page(
+            ui,
+            tab,
+            Guide::PassageGuide,
+            &Key::Passage(passage),
+            &mut |_, ui| {
+                ui.label(
+                    RichText::new(title.clone())
+                        .font(theme::display(20.0))
+                        .color(theme::c().ink),
+                );
+                None
+            },
+        );
+    }
+
+    /// A Guide's page: `head` (the Guide's Key), then its sections in the Guide arrangement's
+    /// order, each computed on the job queue. Headers collapse on click, move by dragging and
+    /// hide with ×, for every Guide of the kind.
+    pub(super) fn guide_page(
+        &mut self,
+        ui: &mut Ui,
+        tab: TabId,
+        guide: Guide,
+        key: &Key,
+        head: &mut dyn FnMut(&mut Self, &mut Ui) -> Option<Action>,
+    ) {
+        let dragging = self.tabs.get(&tab).and_then(|t| t.guide_drag);
+        let arrangement = self.session.guides.arrangement(guide);
         let mut action: Option<Action> = None;
         let mut drawn: Vec<Drawn> = Vec::new();
         let mut drag_start: Option<GuideSection> = None;
@@ -81,14 +121,12 @@ impl State {
             .inner_margin(egui::Margin::symmetric(14, 10))
             .show(ui, |ui| {
                 ui.set_min_size(ui.available_size());
-                ui.label(
-                    RichText::new(format_passage(passage, &Standard, RefStyle::Long))
-                        .font(theme::display(20.0))
-                        .color(theme::c().ink),
-                );
+                if let Some(a) = head(self, ui) {
+                    action = Some(a);
+                }
                 ui.add_space(4.0);
                 let scroll = egui::ScrollArea::vertical()
-                    .id_salt(("passage-guide", tab))
+                    .id_salt((guide.id(), tab))
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         let mut any = false;
@@ -97,10 +135,11 @@ impl State {
                             let section = place.section;
                             let top = ui.cursor().top();
                             // Ask even when collapsed, so the header can show a count.
-                            let status = self.session.guide_section(&key, section);
+                            let status = self.session.guide_section(key, section);
                             let header = section_header(
                                 ui,
                                 tab,
+                                guide,
                                 section,
                                 place.collapsed,
                                 &status,
@@ -120,9 +159,7 @@ impl State {
                             }
                             if !place.collapsed {
                                 ui.add_space(4.0);
-                                if let Some(a) =
-                                    self.section_body(ui, tab, section, &status, passage)
-                                {
+                                if let Some(a) = self.section_body(ui, tab, section, &status, key) {
                                     action = Some(a);
                                 }
                             }
@@ -163,7 +200,7 @@ impl State {
             });
 
         // Dragging a header: a line marks where it would land; dropping moves it there for
-        // every Passage Guide. Escape cancels.
+        // every Guide of the kind. Escape cancels.
         let mut dragging = drag_start.or(dragging);
         if !drag_end && drag_start.is_none() && !ui.input(|i| i.pointer.any_down()) {
             dragging = None;
@@ -209,14 +246,14 @@ impl State {
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.guide_drag = if drag_end { None } else { dragging };
         }
-        if self.session.guides.is_busy() {
+        if self.session.guides.is_busy() || self.session.word_study.is_busy() {
             ui.ctx().request_repaint();
         }
         let Some(action) = action else {
             return;
         };
         self.session.workspace.user_focused(tab);
-        let guide = Guide::PassageGuide.id();
+        let guide = guide.id();
         match action {
             Action::Toggle(s) => {
                 self.run(
@@ -240,6 +277,7 @@ impl State {
             Action::Reference(passage, new_tab) => self.reference_navigate(tab, passage, new_tab),
             Action::Commentary(row, new_tab) => self.open_commentary(tab, &row, new_tab),
             Action::Words(a) => self.words_action(tab, a),
+            action => self.word_study_action(tab, action),
         }
     }
 
@@ -279,7 +317,7 @@ impl State {
         tab: TabId,
         section: GuideSection,
         status: &SectionStatus,
-        passage: Passage,
+        key: &Key,
     ) -> Option<Action> {
         let data = match status {
             SectionStatus::Loading => {
@@ -320,9 +358,15 @@ impl State {
             SectionData::KeyWords(k) => self
                 .key_words_section(ui, tab, k, new_tab)
                 .map(Action::Words),
-            SectionData::PeopleAndPlaces(rows) => self
-                .people_section(ui, tab, rows, passage, new_tab)
-                .map(Action::Words),
+            SectionData::PeopleAndPlaces(rows) => {
+                // People & places is a Passage Guide section: its Key is a Passage.
+                let Key::Passage(passage) = key else {
+                    return None;
+                };
+                self.people_section(ui, tab, rows, *passage, new_tab)
+                    .map(Action::Words)
+            }
+            SectionData::LexiconEntries(entries) => self.lexicon_entries(ui, tab, entries),
         }
     }
 
@@ -487,6 +531,7 @@ struct Header {
 fn section_header(
     ui: &mut Ui,
     tab: TabId,
+    guide: Guide,
     section: GuideSection,
     collapsed: bool,
     status: &SectionStatus,
@@ -500,7 +545,10 @@ fn section_header(
         } else {
             egui::CursorIcon::Grab
         })
-        .on_hover_text("Click to collapse or expand · drag to move (every Passage Guide)");
+        .on_hover_text(format!(
+            "Click to collapse or expand · drag to move (every {})",
+            guide.title()
+        ));
     let c = theme::c();
     let painter = ui.painter_at(rect);
     let fill = if dragging {
@@ -573,7 +621,7 @@ fn section_header(
             ui.scope_id().with(("guide-hide", tab, section.id())),
             Sense::click(),
         )
-        .on_hover_text("Hide this section in every Passage Guide");
+        .on_hover_text(format!("Hide this section in every {}", guide.title()));
     painter.text(
         hide_rect.center(),
         Align2::CENTER_CENTER,
@@ -587,7 +635,7 @@ fn section_header(
     }
 }
 
-fn hint_page(ui: &mut Ui, text: &str) {
+pub(super) fn hint_page(ui: &mut Ui, text: &str) {
     egui::Frame::new()
         .fill(theme::c().field)
         .inner_margin(egui::Margin::symmetric(18, 14))

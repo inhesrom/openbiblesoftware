@@ -728,3 +728,108 @@ fn unit_text_and_verses_overlapping_match_the_generic_versions() {
         Some(Some(Passage::verse(Verse::new(Book::John, 3, 17))))
     );
 }
+
+#[test]
+fn rendering_index_round_trips_and_older_files_answer_none() {
+    let dir = TempDir::new("renderings");
+    let path = dir.path("kjv.obr");
+    let resource = sample_resource();
+    assert!(!resource.renderings.renderings.is_empty());
+    assert!(!resource.renderings.totals.is_empty());
+    write_obr(&resource, &path).unwrap();
+    {
+        let r = ObrReader::open(&path).unwrap();
+        assert_eq!(
+            r.rendering_index().unwrap().as_ref(),
+            Some(&resource.renderings)
+        );
+        assert_eq!(r.load().unwrap(), resource);
+    }
+    // A file written before the index existed: no tables, `None`, and `load` does not
+    // derive it (a Search index build never uses it; Word Study derives it lazily).
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("DROP TABLE renderings; DROP TABLE strongs_totals;")
+            .unwrap();
+    }
+    let r = ObrReader::open(&path).unwrap();
+    assert_eq!(r.rendering_index().unwrap(), None);
+    let loaded = r.load().unwrap();
+    assert!(loaded.renderings.is_empty());
+    assert_eq!(
+        Resource {
+            renderings: resource.renderings.clone(),
+            ..loaded
+        },
+        resource
+    );
+}
+
+#[test]
+fn part_of_speech_is_stored_as_a_stable_id_and_unknown_ids_read_as_none() {
+    let dir = TempDir::new("renderings-pos");
+    let path = dir.path("tahot.obr");
+    let mut resource = sample_resource();
+    // Every number gets a part of speech, including the one whose display name differs
+    // from its id (Foreign: "transliterated word").
+    let first = resource.renderings.totals[0].strongs;
+    for t in &mut resource.renderings.totals {
+        t.part_of_speech = Some(if t.strongs == first {
+            obs_model::PartOfSpeech::Foreign
+        } else {
+            obs_model::PartOfSpeech::Verb
+        });
+    }
+    write_obr(&resource, &path).unwrap();
+    {
+        let conn = Connection::open(&path).unwrap();
+        let stored: Vec<String> = conn
+            .prepare("SELECT DISTINCT part_of_speech FROM strongs_totals ORDER BY 1")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let mut want = vec!["foreign".to_string()];
+        if resource.renderings.totals.len() > 1 {
+            want.push("verb".to_string());
+        }
+        assert_eq!(stored, want, "ids, not display names");
+    }
+    assert_eq!(
+        ObrReader::open(&path).unwrap().rendering_index().unwrap(),
+        Some(resource.renderings.clone())
+    );
+    // A value this build does not know (a renamed label, a newer writer): no part of
+    // speech, and the file still loads (Search index builds load every Bible).
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute(
+            "UPDATE strongs_totals SET part_of_speech = 'transliterated word' WHERE strongs = ?1",
+            [first.to_string()],
+        )
+        .unwrap();
+    }
+    let r = ObrReader::open(&path).unwrap();
+    let index = r.rendering_index().unwrap().unwrap();
+    let total = index.totals.iter().find(|t| t.strongs == first).unwrap();
+    assert_eq!(total.part_of_speech, None);
+    assert_eq!(total.count, resource.renderings.totals[0].count);
+    let loaded = r.load().unwrap();
+    assert_eq!(loaded.renderings, index);
+    assert_eq!(loaded.units, resource.units);
+}
+
+#[test]
+fn only_bibles_get_a_rendering_index() {
+    let lex = lexicon();
+    assert!(lex.renderings.is_empty());
+    let dir = TempDir::new("renderings-lex");
+    let path = dir.path("lex.obr");
+    write_obr(&lex, &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    assert_eq!(
+        r.rendering_index().unwrap(),
+        Some(RenderingIndex::default())
+    );
+}

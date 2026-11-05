@@ -284,6 +284,7 @@ mod tests {
             entities: vec![],
             mentions: vec![],
             transliterations: vec![],
+            renderings: Default::default(),
         }
     }
 

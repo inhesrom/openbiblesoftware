@@ -48,6 +48,9 @@ mod session;
 #[doc(hidden)]
 pub mod testing;
 pub mod word_info;
+pub mod word_study;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod word_study_tests;
 pub mod workspace;
 
 /// SWORD repository transport types (Get Bibles, #91).
@@ -82,7 +85,8 @@ pub use jobs::{
 };
 pub use key_words::{KeyWord, KeyWords};
 pub use library::{
-    Library, LibraryEntry, LibraryFilter, default_library_dir, default_user_db, language_name,
+    Library, LibraryEntry, LibraryFilter, STARTER_PREFERRED_ORDER, default_library_dir,
+    default_user_db, language_name,
 };
 pub use library_commands::annotations_phrase;
 pub use link::LINK_SETS;
@@ -96,6 +100,10 @@ pub use search::{
 };
 pub use session::{JobMode, Session};
 pub use word_info::{LemmaCard, LexiconGloss, PartRole, ShownWord, WordInfo, WordPart};
+pub use word_study::{
+    Choice, Chooser, LexiconEntry, Occurrences, WordStatus, WordStudies, WordStudyHeader,
+    WordStudyInput,
+};
 pub use workspace::{
     Effect, Guide, HeaderBox, History, OpenRequest, PanelId, Placement, Tab, TabId, TabKind, Tool,
     Workspace,

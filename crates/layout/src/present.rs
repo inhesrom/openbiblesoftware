@@ -11,6 +11,7 @@
 //! | `added`, `italic`, `emphasis`, `selah` | italic |
 //! | `bold` | bold |
 //! | `scripture_ref`, non-empty `xref` | `Link` role |
+//! | `tagged_word` in an `entry` unit (a Lexicon's Strong's link) | `Link` role |
 //! | `verse` start | verse number object, superscript; verse 1 shows the chapter number |
 //! | zero-width `note_ref` | note marker object `†` |
 //!
@@ -19,7 +20,7 @@
 use std::ops::Range;
 
 use obs_fonts::{FaceId, Script};
-use obs_model::{Direction, ParaStyle, Span, SpanKind, TextUnit};
+use obs_model::{Direction, ParaStyle, Span, SpanKind, TextUnit, UnitKind};
 use unicode_script::UnicodeScript;
 
 use crate::paragraph::{Align, InlineObject, Paragraph, Run, RunSource};
@@ -215,6 +216,11 @@ pub fn block_paragraph(
                         flags.role = flags.role.or(Some(ColorRole::WordsOfJesus));
                     }
                     SpanKind::ScriptureRef { .. } | SpanKind::Xref { .. } => {
+                        flags.role = Some(ColorRole::Link);
+                    }
+                    // A Strong's number in a Lexicon or Dictionary entry is a link to its
+                    // Word Study (#55); Tagged words in a Bible stay plain text.
+                    SpanKind::TaggedWord { .. } if unit.kind == UnitKind::Entry => {
                         flags.role = Some(ColorRole::Link);
                     }
                     _ => {}

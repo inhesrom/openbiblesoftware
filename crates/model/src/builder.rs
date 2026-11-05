@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use crate::dataset::{CrossReference, Entity, Mention};
 use crate::key::{Key, KeyEntry};
 use crate::manifest::{FORMAT_VERSION, Manifest, ResourceType, is_valid_resource_id};
+use crate::renderings::RenderingIndex;
 use crate::translit::{LemmaTransliteration, transliteration_index};
 use crate::unit::{BibleVerse, Span, SpanKind, TextUnit, UnitId, UnitKind};
 
@@ -42,6 +43,9 @@ pub struct Resource {
     /// Transliteration index of the Lemma Keys (#20 rule 5), sorted. Derived from the Keys with
     /// the shared scheme, so not part of the content hash.
     pub transliterations: Vec<LemmaTransliteration>,
+    /// A Bible's English rendering → Strong's index and Strong's totals (#20 rule 5), from its
+    /// Tagged words; empty for other Resource types. Derived, so not part of the content hash.
+    pub renderings: RenderingIndex,
 }
 
 /// One problem found while validating a Resource.
@@ -375,8 +379,8 @@ impl ResourceBuilder {
         self.verses.len()
     }
 
-    /// Validate, put spans and keys in canonical order, build the transliteration index, and
-    /// fill in the content hash.
+    /// Validate, put spans and keys in canonical order, build the transliteration and
+    /// rendering indexes, and fill in the content hash.
     pub fn build(self) -> Result<Resource, ValidationErrors> {
         let mut errors = Vec::new();
         let mut units = self.units;
@@ -409,6 +413,11 @@ impl ResourceBuilder {
         mentions.sort();
         mentions.dedup();
         let transliterations = transliteration_index(&keys);
+        let renderings = if self.manifest.resource_type == ResourceType::Bible {
+            RenderingIndex::build(&units)
+        } else {
+            RenderingIndex::default()
+        };
         let mut resource = Resource {
             manifest: self.manifest,
             units,
@@ -421,6 +430,7 @@ impl ResourceBuilder {
             entities,
             mentions,
             transliterations,
+            renderings,
         };
         if let Err(more) = resource.validate() {
             errors.extend(more.0);

@@ -103,7 +103,7 @@ fn hebrew_lexicon_doc() -> Arc<ReadingDoc> {
 }
 
 /// Where `word`'s glyphs sit on screen in `tab`'s reading pane.
-fn word_spot(h: &Harness, tab: TabId, word: &str) -> Pos2 {
+pub(super) fn word_spot(h: &Harness, tab: TabId, word: &str) -> Pos2 {
     let view = h.shell.st.tabs[&tab].view.as_ref().unwrap();
     let [ox, oy] = view.text_origin;
     for (index, top, laid) in view.laid_in_view(900.0) {
@@ -407,8 +407,8 @@ fn the_header_chip_unpins_and_copy_writes_the_cards() {
     let text = out["text"].as_str().unwrap();
     assert!(text.contains("H1254A"), "{text}");
     assert!(text.contains("Genesis 1:1 (HEB)"), "{text}");
-    // Word Study ▸ waits for its ticket, disabled with a tooltip; Search this word works (#59).
-    assert!(!h.shell.st.session.is_enabled("word_info.word_study"));
+    // Word Study › opens the shown word (#55); Search this word works (#59).
+    assert!(h.shell.st.session.is_enabled("word_info.word_study"));
     assert!(h.shell.st.session.is_enabled("word_info.search"));
     assert!(h.find("Word Study ›").is_some());
     assert!(h.find("Search this word").is_some());

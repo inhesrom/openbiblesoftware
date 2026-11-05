@@ -153,6 +153,7 @@ impl Session {
         let events = self.poll_search_indexes(events);
         let events = self.poll_guides(events);
         let events = self.poll_bible_searches(events);
+        let events = self.poll_word_studies(events);
         for event in events {
             let Some(id) = self.imports.active.get(&event.id).cloned() else {
                 other.push(event);
