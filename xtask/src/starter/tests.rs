@@ -1345,6 +1345,12 @@ fn the_build_report_counts_the_structural_coverage() {
     assert!(report.contains("All passed. 1 Bible(s):"), "{report}");
     assert!(report.contains("## Golden snapshots"), "{report}");
     assert!(report.contains("None listed."), "{report}");
+    // The alias caches count toward the total and the size budget like the Search indexes
+    // (this fixture has no People & places index, so there are none).
+    assert!(
+        report.contains("People & places alias caches (`aliases/`, 0 bytes)"),
+        "{report}"
+    );
 }
 
 /// #67: every CC BY source of the real lock gets a published change record, and the record
@@ -1399,4 +1405,86 @@ fn every_cc_by_source_in_the_real_lock_has_a_complete_changes_record() {
             assert!(text.contains(&format!("- Source: {home}")), "{id}");
         }
     }
+}
+
+/// The prebuilt People & places ↔ Dictionary alias caches (#54): one deterministic file per
+/// pair, named by both content hashes, with overrides applied, and a build failure naming
+/// any override the Resources cannot satisfy.
+#[test]
+fn alias_caches_are_prebuilt_per_pair_with_overrides_checked() {
+    use obs_engine::aliases::{AliasTable, Overrides, file_name};
+    use obs_formats::{DictionaryData, StudyImport, import_dictionary};
+    use obs_model::{Manifest, ResourceType};
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let assets = root.join("crates/formats/tests");
+    let tipnr = import_tipnr(
+        &std::fs::read_to_string(assets.join("assets/tipnr/tipnr-excerpt.txt")).unwrap(),
+        &DatasetOptions {
+            resource_id: "tipnr".into(),
+            title: "TIPNR".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .0;
+    let bytes = |name: &str| std::fs::read(assets.join("fixtures/study").join(name)).unwrap();
+    let mut import = StudyImport::new(Manifest::new(
+        "easton",
+        "Easton",
+        "Easton",
+        ResourceType::Dictionary,
+        "en",
+    ));
+    import_dictionary(
+        &mut import,
+        DictionaryData::Easton {
+            index: &bytes("easton.idx"),
+            data: &bytes("easton.dat"),
+            block_index: &bytes("easton.zdx"),
+            blocks: &bytes("easton.zdt"),
+        },
+    )
+    .unwrap();
+    let easton = import.finish().unwrap().0;
+    let resources = [&tipnr, &easton];
+
+    let dir = scratch("aliases");
+    let overrides = Overrides::parse(
+        "[[alias]]\ndictionary = \"easton\"\nentity = \"Sarah@Gen.11.29-1Pe\"\nheadword = \"Abraham\"\n\
+         [[alias]]\ndictionary = \"smith\"\nentity = \"Nobody@Gen.1.1\"\nheadword = \"X\"\n",
+    )
+    .unwrap();
+    let written = write_alias_caches(&resources, &dir.join(ALIAS_DIR), &overrides).unwrap();
+    assert_eq!(written.len(), 1);
+    let name = file_name(&tipnr.manifest, &easton.manifest);
+    assert_eq!(written[0], dir.join(ALIAS_DIR).join(&name));
+    let first = std::fs::read(&written[0]).unwrap();
+    let table = AliasTable::from_json(std::str::from_utf8(&first).unwrap()).unwrap();
+    assert_eq!(table.headword("Abraham@Gen.11.26-1Pe"), Some("Abraham"));
+    assert_eq!(
+        table.headword("Sarah@Gen.11.29-1Pe"),
+        Some("Abraham"),
+        "the override"
+    );
+    assert!(table.is_for(&tipnr.manifest, &easton.manifest, &overrides));
+    // Deterministic: a second build writes the same bytes.
+    write_alias_caches(&resources, &dir.join(ALIAS_DIR), &overrides).unwrap();
+    assert_eq!(std::fs::read(&written[0]).unwrap(), first);
+
+    // An override naming an entity or headword the pair lacks fails, naming it.
+    let bad = Overrides::parse(
+        "[[alias]]\ndictionary = \"easton\"\nentity = \"Nobody@Gen.1.1\"\nheadword = \"Abraham\"\n\
+         [[alias]]\ndictionary = \"easton\"\nentity = \"Abraham@Gen.11.26-1Pe\"\nheadword = \"Patriarchs\"\n",
+    )
+    .unwrap();
+    let err = write_alias_caches(&resources, &dir.join("bad"), &bad)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("Nobody@Gen.1.1") && err.contains("Patriarchs"),
+        "{err}"
+    );
+    // The committed overrides parse (the full Starter build applies them).
+    Overrides::parse(obs_engine::aliases::STARTER_OVERRIDES).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
 }

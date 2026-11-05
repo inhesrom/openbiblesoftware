@@ -277,9 +277,29 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         None,
         open_passage_guide,
     ),
-    open_cmd("guide.word_study", "Word Study", None, |s, p| {
-        open(s, p, TabKind::Guide(Guide::WordStudy))
-    }),
+    CommandSpec {
+        id: "guide.word_study",
+        label: "Word Study",
+        shortcut: None,
+        params: &[
+            PANEL,
+            SPLIT,
+            ParamSpec {
+                name: "strongs",
+                kind: ParamKind::String,
+                required: false,
+                help: "Strong's number to study, e.g. `G25` (Key words, #54)",
+            },
+            ParamSpec {
+                name: "tab",
+                kind: ParamKind::Integer,
+                required: false,
+                help: "An open Word Study Tab to move (and focus) instead of opening a new one",
+            },
+        ],
+        enabled: always,
+        run: open_word_study,
+    },
     open_cmd("tool.search", "Search", Some("Ctrl+Shift+F"), |s, p| {
         open(s, p, TabKind::Tool(Tool::Search))
     }),
@@ -564,6 +584,38 @@ fn open_passage_guide(s: &mut Session, p: Params<'_>) -> Result<Value, CommandEr
         && t.history.current().is_none()
     {
         t.history.scrolled_to(v);
+    }
+    Ok(out)
+}
+
+/// A Word Study Tab, at a Strong's number when one is given (its Key, kept in the Tab's entry
+/// history like a Lexicon's). With `tab`, that open Word Study Tab moves there instead.
+fn open_word_study(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "guide.word_study";
+    let number = p
+        .str("strongs")
+        .map(|t| {
+            t.parse::<obs_scripture::StrongsNumber>()
+                .map_err(|e| failed(ID, e.to_string()))
+        })
+        .transpose()?;
+    let mut out = match p.i64("tab") {
+        Some(_) => {
+            let tab = tab_param(ID, s, &p)?;
+            if s.workspace.tab(tab).map(|t| &t.kind) != Some(&TabKind::Guide(Guide::WordStudy)) {
+                return Err(failed(ID, format!("Tab {} is not a Word Study", tab.0)));
+            }
+            s.workspace.focus(tab);
+            json!({ "tab": tab.0 })
+        }
+        None => open(s, p, TabKind::Guide(Guide::WordStudy))?,
+    };
+    if let Some(n) = number
+        && let Some(tab) = out["tab"].as_u64()
+    {
+        let key = obs_model::Key::StrongsNumber(n);
+        s.workspace.navigate_entry(TabId(tab), key.clone());
+        out["key"] = json!(key);
     }
     Ok(out)
 }

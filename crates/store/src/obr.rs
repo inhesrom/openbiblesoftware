@@ -1076,6 +1076,33 @@ impl ResourceStore for ObrReader {
             .next())
     }
 
+    fn entities(&self) -> Result<Vec<Entity>, StoreError> {
+        self.entity_rows("", &[])
+    }
+
+    fn for_each_tagged_word(
+        &self,
+        f: &mut dyn FnMut(&[obs_model::MorphemePart]),
+    ) -> Result<(), StoreError> {
+        let (kind, _) = span_columns(&obs_model::SpanKind::TaggedWord { parts: Vec::new() });
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT attrs FROM spans WHERE kind = ?1")
+            .map_err(sql)?;
+        let mut rows = stmt.query([i64::from(kind)]).map_err(sql)?;
+        while let Some(row) = rows.next().map_err(sql)? {
+            let attrs = row
+                .get_ref(0)
+                .map_err(sql)?
+                .as_blob()
+                .map_err(|e| corrupt(format!("tagged word attributes: {e}")))?;
+            if let obs_model::SpanKind::TaggedWord { parts } = span_from(i64::from(kind), attrs)? {
+                f(&parts);
+            }
+        }
+        Ok(())
+    }
+
     fn mentions_in(&self, passage: Passage) -> Result<Vec<Mention>, StoreError> {
         let longest =
             self.longest_span(&self.mention_span, "SELECT max(end - start) FROM mentions")?;

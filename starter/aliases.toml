@@ -1,0 +1,68 @@
+# People & places ↔ Dictionary headword overrides (#54, decision #20).
+#
+# The Passage Guide links each TIPNR person or place to the Dictionary article whose headword
+# (or a part of it, or an alias) matches the entity's name or one of its other names. That
+# matching is a derived cache, rebuilt whenever either Resource's content changes. These
+# entries correct it where names alone pick the wrong article or none:
+#
+#   dictionary  the Dictionary's resource id
+#   entity      the TIPNR unique name (the entity id), e.g. `Abraham@Gen.11.26-1Pe`
+#   headword    the article to link, exactly as the Dictionary spells it; "" means no link
+#
+# This file is compiled into the app and applied when the cache is (re)built, including the
+# prebuilt Starter caches `cargo xtask starter` writes to `dist/starter/aliases/`. That build
+# fails if an entry names an entity or headword the Starter Resources do not have.
+
+# Easton gives each Herod his own article; TIPNR tells them apart by first mention.
+[[alias]]
+dictionary = "easton"
+entity = "Herod@Mat.2.1-Act"
+headword = "Herod the Great"
+
+[[alias]]
+dictionary = "easton"
+entity = "Herod@Mat.14.1-Act"
+headword = "Herod Antipas"
+
+[[alias]]
+dictionary = "easton"
+entity = "Herod@Act.12.1-"
+headword = "Herod Agrippa I."
+
+[[alias]]
+dictionary = "easton"
+entity = "Agrippa@Act.25.13-"
+headword = "Agrippa II."
+
+# Easton treats every Mary in one article.
+[[alias]]
+dictionary = "easton"
+entity = "Mary_Magdalene@Mat.27.56-Jhn"
+headword = "Mary"
+
+# Easton files the Negeb under its English name.
+[[alias]]
+dictionary = "easton"
+entity = "Negeb@Gen.12.9-Zec"
+headword = "South"
+
+[[alias]]
+dictionary = "easton"
+entity = "Sinai_Wilderness@Exo.19.1-Num"
+headword = "Sinai"
+
+# Smith gives the best-known Marys their own articles.
+[[alias]]
+dictionary = "smith"
+entity = "Mary@Mat.1.16-Act"
+headword = "Mary The Virgin"
+
+[[alias]]
+dictionary = "smith"
+entity = "Mary@Luk.10.39-Jhn"
+headword = "Mary, Sister Of Lazarus"
+
+[[alias]]
+dictionary = "smith"
+entity = "Mary@Act.12.12"
+headword = "Mary, Mother Of Mark"

@@ -12,6 +12,7 @@ use obs_scripture::{Passage, RefStyle, Standard, format_passage};
 use serde_json::json;
 
 use super::State;
+use super::guide_words::WordsAction;
 use crate::theme;
 
 /// Height of a section header.
@@ -29,6 +30,8 @@ enum Action {
     Move(GuideSection, usize),
     Reference(Passage, bool),
     Commentary(CommentaryRow, bool),
+    /// Key words and People & places (#54).
+    Words(WordsAction),
 }
 
 /// One visible section as drawn this frame, for working out where a dragged header lands.
@@ -63,6 +66,7 @@ impl State {
         if t.reference_at != Some(passage) {
             t.reference_at = Some(passage);
             t.expanded_references.clear();
+            t.guide_expanded.clear();
         }
         let dragging = t.guide_drag;
         let key = Key::Passage(passage);
@@ -116,7 +120,9 @@ impl State {
                             }
                             if !place.collapsed {
                                 ui.add_space(4.0);
-                                if let Some(a) = self.section_body(ui, tab, section, &status) {
+                                if let Some(a) =
+                                    self.section_body(ui, tab, section, &status, passage)
+                                {
                                     action = Some(a);
                                 }
                             }
@@ -233,6 +239,7 @@ impl State {
             }
             Action::Reference(passage, new_tab) => self.reference_navigate(tab, passage, new_tab),
             Action::Commentary(row, new_tab) => self.open_commentary(tab, &row, new_tab),
+            Action::Words(a) => self.words_action(tab, a),
         }
     }
 
@@ -272,6 +279,7 @@ impl State {
         tab: TabId,
         section: GuideSection,
         status: &SectionStatus,
+        passage: Passage,
     ) -> Option<Action> {
         let data = match status {
             SectionStatus::Loading => {
@@ -309,6 +317,12 @@ impl State {
                 }
                 clicked
             }
+            SectionData::KeyWords(k) => self
+                .key_words_section(ui, tab, k, new_tab)
+                .map(Action::Words),
+            SectionData::PeopleAndPlaces(rows) => self
+                .people_section(ui, tab, rows, passage, new_tab)
+                .map(Action::Words),
         }
     }
 
@@ -372,7 +386,14 @@ impl State {
 
     /// Draw Resource text through the inline-snippet pipeline, at most `lines` lines (a
     /// placeholder bar until a worker has laid it out).
-    fn guide_snippet(&mut self, ui: &mut Ui, text: &str, role: ColorRole, rtl: bool, lines: usize) {
+    pub(super) fn guide_snippet(
+        &mut self,
+        ui: &mut Ui,
+        text: &str,
+        role: ColorRole,
+        rtl: bool,
+        lines: usize,
+    ) {
         let settings: TextSettings = self.session.text;
         let width = ui.available_width().max(40.0);
         let line = settings.size * settings.line_spacing;

@@ -383,6 +383,42 @@ fn people_and_places_round_trip_and_answer_by_passage() {
         .map(|m| m.entity)
         .collect();
     assert_eq!(at_11_26, [abraham.id.as_str(), "Terah@Gen.11.24-Luk"]);
+    // Every entity at once (the Dictionary alias cache, #54), like the generic version.
+    let all = r.entities().unwrap();
+    assert_eq!(all, resource.entities);
+    assert_eq!(Defaults(&r).entities().unwrap(), all);
+}
+
+/// Tagged words read straight from the span table match a walk over every unit (#54).
+#[test]
+fn every_tagged_word_is_visited_like_the_generic_walk() {
+    let dir = TempDir::new("tagged-words");
+    let path = dir.path("kjv.obr");
+    write_obr(&sample_resource(), &path).unwrap();
+    let reader = ObrReader::open(&path).unwrap();
+    let collect = |store: &dyn ResourceStore| {
+        let mut seen = Vec::new();
+        store
+            .for_each_tagged_word(&mut |parts| {
+                seen.extend(
+                    parts
+                        .iter()
+                        .map(|p| (p.strongs.to_string(), p.lemma.clone())),
+                );
+            })
+            .unwrap();
+        seen.sort();
+        seen
+    };
+    let fast = collect(&reader);
+    assert_eq!(
+        fast,
+        [
+            ("G2316".to_string(), Some("θεός".to_string())),
+            ("G25".to_string(), None)
+        ]
+    );
+    assert_eq!(fast, collect(&Defaults(&reader)));
 }
 
 /// A two-entry Lexicon: H1254A (extended, with its base number as a secondary Key) and G5485.

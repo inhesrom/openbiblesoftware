@@ -28,6 +28,7 @@ mod annotate;
 mod credits_tab;
 mod get_bibles_tab;
 mod guide_tab;
+mod guide_words;
 mod import_tab;
 mod library_tab;
 #[path = "references.rs"]
@@ -78,6 +79,8 @@ struct TabUi {
     toolbar: bool,
     /// Where the selection was drawn last frame, in screen points.
     selection_rect: Option<egui::Rect>,
+    /// Passage Guide sections showing all their rows (Key words, People & places).
+    guide_expanded: std::collections::BTreeSet<obs_engine::GuideSection>,
 }
 
 /// How long a jump's flash lasts, in seconds.

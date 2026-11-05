@@ -1,8 +1,8 @@
 use std::ops::Range;
 
 use obs_model::{
-    BibleVerse, CrossReference, Entity, Key, KeyEntry, KeyScheme, Manifest, Mention, Resource,
-    Span, TextUnit, UnitId, UnitKind,
+    BibleVerse, CrossReference, Entity, Key, KeyEntry, KeyScheme, Manifest, Mention, MorphemePart,
+    Resource, Span, SpanKind, TextUnit, UnitId, UnitKind,
 };
 use obs_scripture::{Passage, StrongsNumber, Verse, VerseMap};
 
@@ -117,6 +117,27 @@ pub trait ResourceStore {
 
     /// A People & places index's mentions that overlap `passage` (Standard versification).
     fn mentions_in(&self, passage: Passage) -> Result<Vec<Mention>, StoreError>;
+
+    /// Every entity of a People & places index, ordered by id.
+    fn entities(&self) -> Result<Vec<Entity>, StoreError> {
+        Ok(self.load()?.entities)
+    }
+
+    /// Call `f` with the parts of every Tagged word in the Resource, in no particular order.
+    /// Used to count a Bible's Strong's numbers (Key words' totals, #54).
+    fn for_each_tagged_word(&self, f: &mut dyn FnMut(&[MorphemePart])) -> Result<(), StoreError> {
+        for id in self.unit_ids()? {
+            let Some(unit) = self.unit(&id)? else {
+                continue;
+            };
+            for span in &unit.spans {
+                if let SpanKind::TaggedWord { parts } = &span.kind {
+                    f(parts);
+                }
+            }
+        }
+        Ok(())
+    }
 
     /// The whole Resource, validated, with its content hash checked against the manifest.
     fn load(&self) -> Result<Resource, StoreError>;

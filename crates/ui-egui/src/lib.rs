@@ -77,6 +77,12 @@ impl App {
                 session.set_search_cache_dir(dir);
             }
             session.refresh_search_indexes();
+            // People & places ↔ Dictionary aliases (#54): a derived cache per pair, rebuilt in
+            // the background when either Resource changed (or used prebuilt for the Starter).
+            if let Some(dir) = obs_engine::aliases::default_alias_cache_dir() {
+                session.set_alias_cache_dir(dir);
+            }
+            session.refresh_alias_caches();
         }
         #[cfg(target_arch = "wasm32")]
         if let Some(p) = &path {
