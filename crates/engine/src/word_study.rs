@@ -2,9 +2,10 @@
 //!
 //! - **Box.** The Word Study's header box takes a Strong's number (`G5485`, `H1254`, the
 //!   extended `H1254A`) or English words. A number moves the Guide there; words open the
-//!   English-word chooser: the Strong's numbers the first Strong's-tagged English Bible in
-//!   Preferred order renders with those words, each with its count ("love → G25 ×…, G26 ×…").
-//!   When exactly one number renders them the Guide goes straight to it.
+//!   English-word chooser: the Strong's numbers the best tagged English Bible (the most
+//!   Strong's numbers rendered; Preferred order breaks ties) renders with those words, each
+//!   with its count ("love → G25 ×…, G26 ×…"). When exactly one number renders them the Guide goes
+//!   straight to it, also when the answer was already computed.
 //! - **Header** (always on top, not a section): Lemma, transliteration, Strong's number, short
 //!   Gloss and the Lexicon it came from (the first Lexicon in Preferred order with an entry),
 //!   part of speech and total occurrences (the Bibles' rendering indexes; see
@@ -15,8 +16,8 @@
 //!
 //! The header and the chooser are computed on the job queue like Guide sections, so asking
 //! never waits. The rendering index lives in each Bible's `.obr` (built by `ResourceBuilder`);
-//! for a file that predates it, it is derived from the Bible's text once per revision and kept
-//! in memory.
+//! for a file that predates it, it is derived from the Bible's text here (not in
+//! `ObrReader::load`), once per revision under a per-Bible lock, and kept in memory.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
@@ -153,46 +154,58 @@ fn is_original_language(entry: &LibraryEntry, number: StrongsNumber) -> bool {
     }
 }
 
+/// A Bible revision: resource id, revision, content hash.
+type Identity = (String, u32, String);
+
+/// One Bible revision's index, filled by the first job that needs it. Its lock is held while
+/// the index is read or derived, so a second job asking for the same Bible waits for that
+/// one instead of deriving it again.
+type Slot = Arc<Mutex<Option<Arc<RenderingIndex>>>>;
+
 /// Each Bible's rendering index, read from its `.obr` (or derived from its text for a file
 /// that predates the index) once per revision and shared by later jobs.
 #[derive(Debug, Default)]
 pub struct RenderingIndexes {
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    loaded: Mutex<BTreeMap<(String, u32, String), Arc<RenderingIndex>>>,
+    loaded: Mutex<BTreeMap<Identity, Slot>>,
 }
 
 impl RenderingIndexes {
     /// A Bible's rendering index.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn get(&self, entry: &LibraryEntry) -> Result<Arc<RenderingIndex>, String> {
-        use obs_store::ResourceStore;
         let m = &entry.manifest;
         let identity = (m.resource_id.clone(), m.revision, m.content_hash.clone());
-        if let Some(index) = self
-            .loaded
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .get(&identity)
-        {
-            return Ok(Arc::clone(index));
-        }
-        let reader = obs_store::ObrReader::open(&entry.path).map_err(|e| e.to_string())?;
-        let index = match reader.rendering_index().map_err(|e| e.to_string())? {
-            Some(index) => index,
-            None => {
-                let mut units = Vec::new();
-                for id in reader.unit_ids().map_err(|e| e.to_string())? {
-                    if let Some(u) = reader.unit(&id).map_err(|e| e.to_string())? {
-                        units.push(u);
-                    }
+        self.get_with(identity, || read_or_derive(entry))
+    }
+
+    /// The index for `identity`: the one already in memory, else `load`'s, kept for later
+    /// calls. Only one `load` runs per identity at a time; a failed one is not kept.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    pub(crate) fn get_with(
+        &self,
+        identity: Identity,
+        load: impl FnOnce() -> Result<RenderingIndex, String>,
+    ) -> Result<Arc<RenderingIndex>, String> {
+        let slot = {
+            let mut loaded = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
+            match loaded.get(&identity) {
+                Some(slot) => Arc::clone(slot),
+                None => {
+                    // An older revision of the same Bible is not asked for again.
+                    loaded.retain(|(id, _, _), _| *id != identity.0);
+                    let slot = Slot::default();
+                    loaded.insert(identity, Arc::clone(&slot));
+                    slot
                 }
-                RenderingIndex::build(&units)
             }
         };
-        let index = Arc::new(index);
-        let mut loaded = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
-        loaded.retain(|(id, _, _), _| *id != identity.0);
-        loaded.insert(identity, Arc::clone(&index));
+        let mut slot = slot.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(index) = slot.as_ref() {
+            return Ok(Arc::clone(index));
+        }
+        let index = Arc::new(load()?);
+        *slot = Some(Arc::clone(&index));
         Ok(index)
     }
 
@@ -201,9 +214,35 @@ impl RenderingIndexes {
         Err("Opening Resources is not supported here".into())
     }
 
+    /// Every Strong's-tagged English Bible (one whose index has renderings) with its index,
+    /// the best tagged first: the most Strong's numbers rendered, Preferred order breaking
+    /// ties. Not the most Tagged words: the Starter eBible ASV and WEB tag about twice as
+    /// many words as the KJV but on fewer numbers (no G25 or G26 at all; "the" is H3605
+    /// ten thousand times), so they would outrank it and answer "love" poorly.
+    fn tagged_english_bibles<'a>(
+        &'a self,
+        library: &'a Library,
+    ) -> Vec<(&'a LibraryEntry, Arc<RenderingIndex>)> {
+        let mut bibles: Vec<(&LibraryEntry, Arc<RenderingIndex>, usize)> = self
+            .tagged_bibles(library)
+            .filter(|(_, i)| !i.renderings.is_empty())
+            .map(|(e, i)| {
+                let numbers = i
+                    .renderings
+                    .iter()
+                    .map(|r| r.strongs)
+                    .collect::<BTreeSet<_>>()
+                    .len();
+                (e, i, numbers)
+            })
+            .collect();
+        // Stable: equally tagged Bibles keep their Preferred order.
+        bibles.sort_by_key(|b| std::cmp::Reverse(b.2));
+        bibles.into_iter().map(|(e, i, _)| (e, i)).collect()
+    }
+
     /// The Strong's-tagged Bibles in Preferred order with their indexes, loaded one at a time
-    /// as the caller goes (most lookups stop at the first). A Bible that cannot be read, or
-    /// has no Tagged words, is skipped.
+    /// as the caller goes. A Bible that cannot be read, or has no Tagged words, is skipped.
     fn tagged_bibles<'a>(
         &'a self,
         library: &'a Library,
@@ -213,6 +252,23 @@ impl RenderingIndexes {
             .filter_map(|e| Some((e, self.get(e).ok()?)))
             .filter(|(_, index)| !index.totals.is_empty())
     }
+}
+
+/// A Bible's index from its `.obr`, or derived from its text when the file predates it.
+#[cfg(not(target_arch = "wasm32"))]
+fn read_or_derive(entry: &LibraryEntry) -> Result<RenderingIndex, String> {
+    use obs_store::ResourceStore;
+    let reader = obs_store::ObrReader::open(&entry.path).map_err(|e| e.to_string())?;
+    if let Some(index) = reader.rendering_index().map_err(|e| e.to_string())? {
+        return Ok(index);
+    }
+    let mut units = Vec::new();
+    for id in reader.unit_ids().map_err(|e| e.to_string())? {
+        if let Some(u) = reader.unit(&id).map_err(|e| e.to_string())? {
+            units.push(u);
+        }
+    }
+    Ok(RenderingIndex::build(&units))
 }
 
 /// The Lexicon entries for `number`: every Lexicon in Preferred order that has it (extended
@@ -386,18 +442,17 @@ pub fn header(
     }
 }
 
-/// The chooser for English words: the first Strong's-tagged English Bible in Preferred order
-/// that renders them, its numbers with counts, each with the first Lexicon's Lemma and gloss.
+/// The chooser for English words: the best tagged Strong's-tagged English Bible (the most
+/// Strong's numbers rendered; Preferred order breaking ties, so a poorly tagged Bible the
+/// user ranks first does not answer) that renders them, else the next one that does; its
+/// numbers with counts, each with the first Lexicon's Lemma and gloss.
 pub fn chooser(library: &Library, indexes: &RenderingIndexes, words: &str) -> Chooser {
-    let mut has_tagged_bible = false;
-    let found = indexes
-        .tagged_bibles(library)
-        .filter(|(_, i)| !i.renderings.is_empty())
-        .find_map(|(e, i)| {
-            has_tagged_bible = true;
-            let numbers = i.numbers_for(words);
-            (!numbers.is_empty()).then_some((e, numbers))
-        });
+    let bibles = indexes.tagged_english_bibles(library);
+    let has_tagged_bible = !bibles.is_empty();
+    let found = bibles.into_iter().find_map(|(e, i)| {
+        let numbers = i.numbers_for(words);
+        (!numbers.is_empty()).then_some((e, numbers))
+    });
     let Some((bible, numbers)) = found else {
         return Chooser {
             words: words.to_string(),
@@ -645,8 +700,15 @@ impl Session {
         self.word_study
             .choosing
             .insert(tab, (words.to_string(), at));
-        // Ask now, so a one-number answer can move the Tab even before a frame asks.
-        let _ = self.word_chooser(words);
+        // Ask now, so a one-number answer can move the Tab even before a frame asks. When the
+        // answer is already known (asked before), no job event will come: go there now.
+        if let WordStatus::Ready(c) = self.word_chooser(words)
+            && let [only] = c.choices.as_slice()
+        {
+            self.word_study.choosing.remove(&tab);
+            self.workspace
+                .navigate_entry(tab, Key::StrongsNumber(only.strongs));
+        }
     }
 
     /// Close a Word Study Tab's chooser.

@@ -211,6 +211,142 @@ fn words_with_one_number_go_straight_to_it_and_unknown_words_say_so() {
 }
 
 #[test]
+fn one_number_words_go_straight_there_when_the_answer_is_cached_too() {
+    let t = Temp::new("one-cached");
+    let mut s = session(&t, false);
+    let tab = open_word_study(&mut s);
+    // The chooser for "created" is computed (and cached) before the box asks for it.
+    assert_eq!(chooser(&mut s, "created").choices.len(), 1);
+    s.run("tab.go", &json!({ "tab": tab.0, "text": "G26" }))
+        .unwrap();
+    // No job runs and no event arrives this time: the Tab goes there at once, without a
+    // one-row chooser.
+    s.run("tab.go", &json!({ "tab": tab.0, "text": "Created" }))
+        .unwrap();
+    assert_eq!(key_of(&s, tab), Some(Key::StrongsNumber(n("H1254"))));
+    assert_eq!(s.word_study.choosing(tab), None);
+    assert!(!s.word_study.is_busy());
+    // Words with several numbers still open the chooser from the cache.
+    let _ = chooser(&mut s, "love");
+    s.run("tab.go", &json!({ "tab": tab.0, "text": "love" }))
+        .unwrap();
+    assert_eq!(s.word_study.choosing(tab), Some("love"));
+    assert_eq!(key_of(&s, tab), Some(Key::StrongsNumber(n("H1254"))));
+    drop(s);
+}
+
+/// A poorly tagged English Bible, like the eBible ASV in the Starter library: more Tagged
+/// words than the KJV fixture, but on few Strong's numbers (most of them function words
+/// tagged with one number), one "love", and "charity" that the KJV fixture does not have.
+fn sparse_bible() -> obs_model::Resource {
+    use obs_scripture::{Book, Verse};
+    let the = vec![("the", "H3605", None); 40];
+    let text = vec!["the"; 40].join(" ");
+    testing::tagged_bible(
+        "asv-sparse",
+        "Poorly tagged Bible (test)",
+        "ASV",
+        "en",
+        &[
+            (Verse::new(Book::Genesis, 1, 1), &text, &the),
+            (
+                Verse::new(Book::John, 15, 13),
+                "Greater love hath no man than this",
+                &[("love", "G26", None)],
+            ),
+            (
+                Verse::new(Book::Colossians, 3, 14),
+                "And above all these things put on charity",
+                &[("charity", "G26", None)],
+            ),
+        ],
+    )
+}
+
+#[test]
+fn the_chooser_reads_the_best_tagged_english_bible_whatever_its_rank() {
+    let t = Temp::new("most-tagged");
+    let sparse = sparse_bible();
+    let words =
+        |r: &obs_model::Resource| -> u32 { r.renderings.renderings.iter().map(|r| r.count).sum() };
+    assert!(
+        words(&sparse) > words(&testing::kjv_love()),
+        "more Tagged words, fewer numbers"
+    );
+    write(&t.0, &sparse);
+    let mut s = session(&t, true);
+    // The user ranks the sparse Bible first (★), as a Preferred order saved before #55 does
+    // with the Starter ASV.
+    let mut order = s.library.preferred_order();
+    order.retain(|id| id != "asv-sparse");
+    order.insert(0, "asv-sparse".into());
+    s.library.set_preferred_order(order);
+    assert_eq!(
+        s.library
+            .of_type(obs_model::ResourceType::Bible)
+            .next()
+            .map(|e| e.manifest.resource_id.as_str()),
+        Some("asv-sparse")
+    );
+    let c = chooser(&mut s, "love");
+    assert_eq!(c.bible, Some(("kjv-love".into(), "KJV".into())));
+    let offered: Vec<String> = c.choices.iter().map(|c| c.strongs.to_string()).collect();
+    assert_eq!(offered, ["G25", "G26", "G5368"]);
+    // Words the most tagged Bible does not render fall to the next tagged Bible that does.
+    let charity = chooser(&mut s, "charity");
+    assert_eq!(charity.bible, Some(("asv-sparse".into(), "ASV".into())));
+    assert_eq!(charity.choices.len(), 1);
+    assert_eq!(charity.choices[0].strongs, n("G26"));
+    drop(s);
+}
+
+#[test]
+fn a_bible_index_is_derived_once_even_when_two_jobs_ask_at_once() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let indexes = Arc::new(crate::word_study::RenderingIndexes::default());
+    let loads = Arc::new(AtomicUsize::new(0));
+    let identity = || ("kjv".to_string(), 1, "hash".to_string());
+    let threads: Vec<_> = (0..4)
+        .map(|_| {
+            let indexes = Arc::clone(&indexes);
+            let loads = Arc::clone(&loads);
+            std::thread::spawn(move || {
+                indexes
+                    .get_with(identity(), || {
+                        loads.fetch_add(1, Ordering::SeqCst);
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        Ok(obs_model::RenderingIndex::default())
+                    })
+                    .unwrap()
+            })
+        })
+        .collect();
+    let got: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+    assert_eq!(loads.load(Ordering::SeqCst), 1, "derived once");
+    assert!(got.iter().all(|i| Arc::ptr_eq(i, &got[0])));
+    // A failed load is not kept: the next ask tries again.
+    let other = ("web".to_string(), 1, "hash".to_string());
+    assert!(
+        indexes
+            .get_with(other.clone(), || Err("unreadable".into()))
+            .is_err()
+    );
+    assert!(
+        indexes
+            .get_with(other, || Ok(obs_model::RenderingIndex::default()))
+            .is_ok()
+    );
+    // A new revision replaces the old one.
+    loads.store(0, Ordering::SeqCst);
+    let next = ("kjv".to_string(), 2, "hash2".to_string());
+    let _ = indexes.get_with(next, || {
+        loads.fetch_add(1, Ordering::SeqCst);
+        Ok(obs_model::RenderingIndex::default())
+    });
+    assert_eq!(loads.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn h1254a_lists_tbesh_then_bdb_then_strongs() {
     // The Starter Preferred order for Lexicons (decision #15: TBESH/TBESG, BDB, Abbott-Smith,
     // Strong's) applies although the files scan as bdb, strongs-hebrew, tbesg, tbesh.
@@ -391,6 +527,16 @@ fn starter_library() -> Option<PathBuf> {
     dir.join("kjv-strongs.obr").is_file().then_some(dir)
 }
 
+/// The English Bible the chooser should read in an installed library: the KJV, unless an
+/// imported NASB 1995 (tagged with more numbers) is there too.
+fn best_tagged(dir: &Path) -> &'static str {
+    if dir.join("nasb1995.obr").is_file() {
+        "nasb1995"
+    } else {
+        "kjv-strongs"
+    }
+}
+
 #[test]
 #[ignore = "needs the installed Starter library"]
 fn starter_library_love_and_h1254a() {
@@ -403,6 +549,11 @@ fn starter_library_love_and_h1254a() {
     let started = std::time::Instant::now();
     let c = chooser(&mut s, "love");
     eprintln!("chooser for “love” in {:?}: {c:#?}", started.elapsed());
+    // The KJV in a Starter-only library; an imported Bible tagged as well may win (NASB).
+    assert_eq!(
+        c.bible.as_ref().map(|b| b.0.as_str()),
+        Some(best_tagged(&dir))
+    );
     let offered: Vec<String> = c.choices.iter().map(|c| c.strongs.to_string()).collect();
     for wanted in ["G25", "G26", "G5368"] {
         assert!(offered.contains(&wanted.to_string()), "{offered:?}");
@@ -431,6 +582,71 @@ fn starter_library_love_and_h1254a() {
     eprintln!("H1254A header: {h:#?}");
     assert_eq!(h.transliteration.as_deref(), Some("bara"));
     assert!(h.occurrences.as_ref().is_some_and(|o| o.count > 0));
+    drop(s);
+}
+
+/// An install that ran the app before #55 has its Preferred order saved in file order (ASV
+/// ★ among Bibles, BDB before TBESH), and a saved order wins over the Starter order. The
+/// chooser still reads the KJV (the best tagged English Bible); the Lexicon entries follow
+/// the user's saved order (not migrated: it is the user's ranking).
+#[test]
+#[ignore = "needs the installed Starter library"]
+fn starter_library_with_a_preferred_order_saved_before_55() {
+    let Some(dir) = starter_library() else {
+        eprintln!("no Starter library; skipped");
+        return;
+    };
+    let t = Temp::new("saved-order");
+    let mut file_order: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| {
+            let p = e.ok()?.path();
+            let stem = p.file_stem()?.to_string_lossy().into_owned();
+            (p.extension()? == "obr").then_some(stem)
+        })
+        .collect();
+    file_order.sort();
+    let (store, _) = obs_store::UserStore::open(&t.0.join("user.db")).unwrap();
+    store.save_preferred_order(&file_order).unwrap();
+    let mut s = Session::new(JobMode::Inline);
+    s.library.scan(&dir);
+    s.attach_user(Box::new(store));
+    let star = s
+        .library
+        .preferred(obs_model::ResourceType::Bible)
+        .map(|e| e.manifest.resource_id.clone());
+    eprintln!("★ Bible: {star:?}");
+    assert_ne!(star.as_deref(), Some("kjv-strongs"), "the saved order wins");
+
+    let c = chooser(&mut s, "love");
+    let offered: Vec<(String, u32)> = c
+        .choices
+        .iter()
+        .map(|c| (c.strongs.to_string(), c.count))
+        .collect();
+    eprintln!("“love” from {:?}: {offered:?}", c.bible);
+    assert_eq!(
+        c.bible.as_ref().map(|b| b.0.as_str()),
+        Some(best_tagged(&dir))
+    );
+    for wanted in ["G25", "G26", "G5368"] {
+        assert!(
+            offered.iter().any(|(n, count)| n == wanted && *count > 0),
+            "{offered:?}"
+        );
+    }
+
+    let entries = lexicon_entries(&mut s, "H1254A");
+    let order: Vec<&str> = entries.iter().map(|e| e.resource_id.as_str()).collect();
+    eprintln!("H1254A Lexicon entries (saved order): {order:?}");
+    for id in ["tbesh", "bdb", "strongs-hebrew"] {
+        assert!(order.contains(&id), "{order:?}");
+    }
+    let saved = |id: &str| file_order.iter().position(|o| o == id);
+    assert!(
+        order.windows(2).all(|w| saved(w[0]) <= saved(w[1])),
+        "Lexicons in the saved order: {order:?}"
+    );
     drop(s);
 }
 

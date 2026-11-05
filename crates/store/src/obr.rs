@@ -21,11 +21,13 @@
 //! Passage overlap is an integer range query.
 //! | `transliterations` | `transliteration` → `lemma`: the transliteration index of the Lemma Keys |
 //! | `renderings` | A Bible's English rendering → Strong's index: `rendering` (normalized words), `strongs`, `count` |
-//! | `strongs_totals` | A Bible's Tagged-word parts per Strong's number: `strongs`, `count`, `part_of_speech` |
+//! | `strongs_totals` | A Bible's Tagged-word parts per Strong's number: `strongs`, `count`, `part_of_speech` (a stable id, `PartOfSpeech::id`; unknown ids read as none) |
 //!
 //! `renderings` and `strongs_totals` arrived after format 3 was first shipped (#55). A file
-//! without them still opens: [`ResourceStore::rendering_index`] answers `None` and the caller
-//! derives the index from the text.
+//! without them still opens: [`ResourceStore::rendering_index`] answers `None`, and
+//! [`ObrReader::load`] leaves `Resource::renderings` empty (it does not derive the index:
+//! Search index builds load every Bible and never use it). A caller that needs the index
+//! derives it from the text.
 //!
 //! Files are written once, deterministically (same Resource ⇒ byte-identical file), and opened
 //! read-only. `PRAGMA application_id` marks the file type and `PRAGMA user_version` holds the
@@ -438,7 +440,7 @@ fn insert_renderings(
         stmt.execute(params![
             t.strongs.to_string(),
             t.count,
-            t.part_of_speech.map(PartOfSpeech::name)
+            t.part_of_speech.map(PartOfSpeech::id)
         ])
         .map_err(sql)?;
     }
@@ -1093,13 +1095,9 @@ impl ResourceStore for ObrReader {
         };
         let mut totals = Vec::with_capacity(rows.len());
         for (number, n, pos) in rows {
-            let part_of_speech = match pos {
-                None => None,
-                Some(p) => Some(
-                    PartOfSpeech::from_name(&p)
-                        .ok_or_else(|| corrupt(format!("unknown part of speech `{p}`")))?,
-                ),
-            };
+            // A stable id (`PartOfSpeech::id`); one this build does not know (a newer
+            // writer's) is no part of speech, never a damaged file.
+            let part_of_speech = pos.as_deref().and_then(PartOfSpeech::from_id);
             totals.push(StrongsTotal {
                 strongs: strongs(number)?,
                 count: count(n)?,
@@ -1286,13 +1284,9 @@ impl ResourceStore for ObrReader {
             .collect::<Result<_, _>>()
             .map_err(sql)?
         };
-        let renderings = match self.rendering_index()? {
-            Some(index) => index,
-            None if self.manifest.resource_type == ResourceType::Bible => {
-                RenderingIndex::build(&units)
-            }
-            None => RenderingIndex::default(),
-        };
+        // A file that predates the index loads without one; deriving it here would cost every
+        // Search index build of an older Bible for nothing (Word Study derives it lazily).
+        let renderings = self.rendering_index()?.unwrap_or_default();
         let resource = Resource {
             manifest: self.manifest.clone(),
             units,

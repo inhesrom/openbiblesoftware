@@ -63,9 +63,29 @@ const PARTS_OF_SPEECH: [PartOfSpeech; 12] = [
 ];
 
 impl PartOfSpeech {
-    /// Stable id, as stored in a `.obr` (the same text as [`PartOfSpeech::name`]).
-    pub fn from_name(name: &str) -> Option<Self> {
-        PARTS_OF_SPEECH.into_iter().find(|p| p.name() == name)
+    /// Stable id, as stored in a `.obr`. Unlike [`PartOfSpeech::name`] (display text, which
+    /// may be reworded), an id never changes once shipped.
+    pub fn id(self) -> &'static str {
+        match self {
+            PartOfSpeech::Noun => "noun",
+            PartOfSpeech::Adjective => "adjective",
+            PartOfSpeech::Verb => "verb",
+            PartOfSpeech::Pronoun => "pronoun",
+            PartOfSpeech::Article => "article",
+            PartOfSpeech::Preposition => "preposition",
+            PartOfSpeech::Conjunction => "conjunction",
+            PartOfSpeech::Adverb => "adverb",
+            PartOfSpeech::Particle => "particle",
+            PartOfSpeech::Interjection => "interjection",
+            PartOfSpeech::Suffix => "suffix",
+            PartOfSpeech::Foreign => "foreign",
+        }
+    }
+
+    /// The part of speech with stable id `id`; `None` for an id this build does not know
+    /// (a reader treats it as no part of speech rather than a damaged file).
+    pub fn from_id(id: &str) -> Option<Self> {
+        PARTS_OF_SPEECH.into_iter().find(|p| p.id() == id)
     }
 }
 
@@ -325,10 +345,17 @@ mod tests {
     }
 
     #[test]
-    fn part_of_speech_names_round_trip() {
+    fn part_of_speech_ids_round_trip_and_are_not_display_text() {
         for p in PARTS_OF_SPEECH {
-            assert_eq!(PartOfSpeech::from_name(p.name()), Some(p));
+            assert_eq!(PartOfSpeech::from_id(p.id()), Some(p));
         }
-        assert_eq!(PartOfSpeech::from_name("gerund"), None);
+        let ids: std::collections::BTreeSet<&str> =
+            PARTS_OF_SPEECH.into_iter().map(PartOfSpeech::id).collect();
+        assert_eq!(ids.len(), PARTS_OF_SPEECH.len(), "ids are unique");
+        // The stored id is fixed even where the display name differs.
+        assert_eq!(PartOfSpeech::Foreign.id(), "foreign");
+        assert_eq!(PartOfSpeech::Foreign.name(), "transliterated word");
+        assert_eq!(PartOfSpeech::from_id("transliterated word"), None);
+        assert_eq!(PartOfSpeech::from_id("gerund"), None);
     }
 }
