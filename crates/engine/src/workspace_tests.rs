@@ -338,12 +338,13 @@ fn interface_size_is_a_view_choice_kept_apart_from_text_size() {
     // Saved with the other View preferences, and read back (old records keep the default).
     let mut a = Appearance::default();
     let mut t = obs_layout::TextSettings::default();
-    let saved = crate::appearance::to_json(&s.appearance, &s.text);
+    let mut f = FontChoices::default();
+    let saved = crate::appearance::to_json(&s.appearance, &s.text, &s.fonts);
     assert_eq!(saved["interface_size"], "larger");
-    crate::appearance::apply_json(&saved, &mut a, &mut t);
+    crate::appearance::apply_json(&saved, &mut a, &mut t, &mut f);
     assert_eq!(a.interface_size, InterfaceSize::Larger);
     let mut a = Appearance::default();
-    crate::appearance::apply_json(&json!({ "theme": "dark" }), &mut a, &mut t);
+    crate::appearance::apply_json(&json!({ "theme": "dark" }), &mut a, &mut t, &mut f);
     assert_eq!(a.interface_size, InterfaceSize::Normal);
 }
 
@@ -432,4 +433,72 @@ fn help_credits_opens_one_credits_tab_and_refocuses_it() {
     assert_eq!(credits, 1);
     // It is not a reading Tab: it does not land in the reading Panel.
     assert_ne!(s.workspace.panel_of(first), s.workspace.panel_of(kjv));
+}
+
+/// View → Fonts (#138): font choices by family and style, kept in the User database.
+#[test]
+fn font_choices_are_saved_by_name_and_survive_a_restart() {
+    let root = std::env::temp_dir().join(format!("obs-fonts-pref-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let db = root.join("user.db");
+    let mut s = session();
+    s.attach_user(Box::new(obs_store::UserStore::open(&db).unwrap().0));
+    assert_eq!(s.fonts, FontChoices::default(), "bundled fonts by default");
+    s.run("view.fonts", &json!({})).unwrap();
+    assert!(s.workspace.take_effects().contains(&Effect::ShowFonts));
+    let out = s
+        .run(
+            "view.font",
+            &json!({ "slot": "latin", "family": "Charis SIL", "style": "Italic" }),
+        )
+        .unwrap();
+    assert_eq!(out["family"], "Charis SIL");
+    s.run(
+        "view.font",
+        &json!({ "slot": "interface", "family": "Inter" }),
+    )
+    .unwrap();
+    assert!(
+        s.run("view.font", &json!({ "slot": "arabic", "family": "X" }))
+            .is_err()
+    );
+    let latin = s.fonts.get(FontSlot::Latin).unwrap();
+    assert_eq!(
+        (latin.family.as_str(), latin.style.as_str()),
+        ("Charis SIL", "Italic")
+    );
+    assert_eq!(s.fonts.get(FontSlot::Interface).unwrap().style, "Regular");
+    assert_eq!(s.fonts.get(FontSlot::Hebrew), None);
+    // The font is missing here: tell the user once, and remember that across a restart.
+    assert!(s.font_missing(FontSlot::Latin));
+    assert!(!s.font_missing(FontSlot::Latin));
+    assert!(
+        !s.font_missing(FontSlot::Greek),
+        "nothing chosen, nothing missing"
+    );
+    drop(s);
+
+    let mut again = session();
+    again.attach_user(Box::new(obs_store::UserStore::open(&db).unwrap().0));
+    let latin = again.fonts.get(FontSlot::Latin).unwrap();
+    assert_eq!(
+        (latin.family.as_str(), latin.style.as_str()),
+        ("Charis SIL", "Italic")
+    );
+    assert!(!again.font_missing(FontSlot::Latin), "already told");
+    assert_eq!(
+        again.fonts.get(FontSlot::Interface).unwrap().family,
+        "Inter"
+    );
+    // Found again: a later absence is worth a notice again.
+    again.font_found(FontSlot::Latin);
+    assert!(again.font_missing(FontSlot::Latin));
+    // Choosing the bundled font clears the choice.
+    again
+        .run("view.font", &json!({ "slot": "latin", "family": "" }))
+        .unwrap();
+    assert_eq!(again.fonts.get(FontSlot::Latin), None);
+    drop(again);
+    std::fs::remove_dir_all(root).unwrap();
 }

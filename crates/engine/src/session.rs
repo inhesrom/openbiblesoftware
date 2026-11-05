@@ -52,6 +52,9 @@ pub struct Session {
     pub text: TextSettings,
     /// Theme and Page tone (the View menu).
     pub appearance: crate::appearance::Appearance,
+    /// The fonts chosen in View → Fonts (#138), by name. The UI loads them and puts the
+    /// reading faces into [`Self::text`].
+    pub fonts: crate::appearance::FontChoices,
     /// What Word Info shows and whether it is pinned (#50).
     pub word_info: crate::word_info::WordInfo,
     /// Guide arrangements and Guide sections computed on the job queue (#53).
@@ -99,6 +102,7 @@ impl Session {
             workspace: Workspace::new(),
             text: TextSettings::default(),
             appearance: crate::appearance::Appearance::default(),
+            fonts: crate::appearance::FontChoices::default(),
             word_info: crate::word_info::WordInfo::default(),
             guides,
             word_study,
@@ -142,7 +146,12 @@ impl Session {
         if let Ok(Some(v)) = user.preference(VIEW_PREF)
             && let Ok(v) = serde_json::from_str::<serde_json::Value>(&v)
         {
-            crate::appearance::apply_json(&v, &mut self.appearance, &mut self.text);
+            crate::appearance::apply_json(
+                &v,
+                &mut self.appearance,
+                &mut self.text,
+                &mut self.fonts,
+            );
         }
         if let Ok(order) = user.preferred_order() {
             self.library.set_preferred_order(order.clone());
@@ -194,8 +203,32 @@ impl Session {
         let Some(user) = &self.user else {
             return Ok(());
         };
-        let v = crate::appearance::to_json(&self.appearance, &self.text);
+        let v = crate::appearance::to_json(&self.appearance, &self.text, &self.fonts);
         user.set_preference(VIEW_PREF, &v.to_string())
+    }
+
+    /// The chosen font for `slot` is not installed here. Returns whether to tell the user:
+    /// once, until the font is found again (the notice is remembered with the choice).
+    pub fn font_missing(&mut self, slot: crate::appearance::FontSlot) -> bool {
+        let Some(c) = self.fonts.get_mut(slot) else {
+            return false;
+        };
+        if c.missing_noticed {
+            return false;
+        }
+        c.missing_noticed = true;
+        let _ = self.save_view_preferences();
+        true
+    }
+
+    /// The chosen font for `slot` was found: a later absence is worth a notice again.
+    pub fn font_found(&mut self, slot: crate::appearance::FontSlot) {
+        if let Some(c) = self.fonts.get_mut(slot)
+            && c.missing_noticed
+        {
+            c.missing_noticed = false;
+            let _ = self.save_view_preferences();
+        }
     }
 
     /// Write the Last session if it changed since the last write.

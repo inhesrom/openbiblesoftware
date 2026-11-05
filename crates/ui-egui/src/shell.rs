@@ -26,6 +26,7 @@ use crate::workers::SnippetCache;
 
 mod annotate;
 mod credits_tab;
+mod fonts_window;
 mod get_bibles_tab;
 mod guide_tab;
 mod guide_words;
@@ -135,6 +136,8 @@ pub(crate) struct State {
     note_editor: Option<annotate::NoteEditor>,
     /// The Notes Tool's column, cards and the card being edited (#64).
     notes_ui: notes_tab::NotesUi,
+    /// The Fonts window and the fonts loaded for View → Fonts (#138).
+    fonts_ui: fonts_window::FontsUi,
 }
 
 /// The app window's content: menus, Search field and the docked Workspace.
@@ -177,6 +180,7 @@ impl Shell {
                 marks: annotate::MarkCache::default(),
                 note_editor: None,
                 notes_ui: notes_tab::NotesUi::default(),
+                fonts_ui: fonts_window::FontsUi::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -189,6 +193,12 @@ impl Shell {
 
     pub fn session_mut(&mut self) -> &mut Session {
         &mut self.st.session
+    }
+
+    /// Where installed fonts come from, for View → Fonts (#138). Without one, only the
+    /// bundled fonts can be chosen.
+    pub fn set_system_fonts(&mut self, fonts: Arc<dyn crate::SystemFonts>) {
+        self.st.fonts_ui.set_source(fonts);
     }
 
     /// Run a command and apply what it changed. Failures become a toast.
@@ -340,6 +350,7 @@ impl Shell {
                     message,
                 } => self.st.confirm = Some((resource_id, title, message)),
                 Effect::PickImport => self.st.pick_import = true,
+                Effect::ShowFonts => self.st.fonts_ui.open = true,
                 Effect::Removed(id) => {
                     self.st.docs.remove(&id);
                     self.st.marks.forget(&id);
@@ -712,6 +723,7 @@ impl Shell {
     /// Draw the whole window.
     pub fn ui(&mut self, ui: &mut Ui) {
         self.apply_appearance(ui.ctx());
+        self.st.apply_fonts(ui.ctx());
         self.st.references.refresh(&self.st.session.library);
         self.st.now = ui.input(|i| i.time);
         self.st.split_held = ui.input(|i| i.modifiers.command);
@@ -1881,6 +1893,7 @@ impl State {
         self.layout_prompt(&ctx);
         self.remove_prompt(&ctx);
         self.import_chooser(&ctx);
+        self.fonts_window(&ctx);
         if let Some((msg, t)) = &self.toast {
             if self.now - t < 4.0 {
                 let screen = ctx.content_rect();

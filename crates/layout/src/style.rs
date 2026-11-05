@@ -1,7 +1,7 @@
 //! Styles carried by laid-out text. Colours are **roles**, never RGB: the painter resolves
 //! them from the active Page tone, so a theme change never re-lays-out text (#21 rule 4).
 
-use obs_fonts::{FaceId, ShapeStyle, face};
+use obs_fonts::{FaceId, ReadingFaces, ShapeStyle, face};
 
 /// What a piece of text is, for colouring. The painter maps each role to a colour per tone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -46,6 +46,9 @@ pub struct TextSettings {
     pub hebrew_line_height: f32,
     pub red_letter: bool,
     pub verse_numbers: VerseNumbers,
+    /// The reading font of each script (View → Fonts, #138). A character the chosen face
+    /// lacks is drawn in the bundled face for its script.
+    pub fonts: ReadingFaces,
 }
 
 impl Default for TextSettings {
@@ -57,6 +60,7 @@ impl Default for TextSettings {
             hebrew_line_height: 0.82,
             red_letter: true,
             verse_numbers: VerseNumbers::Superscript,
+            fonts: ReadingFaces::default(),
         }
     }
 }
@@ -72,7 +76,13 @@ impl TextSettings {
             self.hebrew_line_height.to_bits(),
             u32::from(self.red_letter),
             self.verse_numbers as u32,
-        ] {
+        ]
+        .into_iter()
+        .chain(
+            [self.fonts.latin, self.fonts.greek, self.fonts.hebrew]
+                .iter()
+                .flat_map(|set| set.faces().map(FaceId::code)),
+        ) {
             h ^= u64::from(bits);
             h = h.wrapping_mul(0x0100_0000_01b3);
         }

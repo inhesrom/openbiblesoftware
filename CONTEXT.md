@@ -211,6 +211,18 @@ _Avoid_: Zoom, Font size
 One zoom on the whole app window: menus, Tab bars, headers and dialogs grow or shrink, with Resource text scaled along on top of its Text size (View → Interface size: Smaller, Default, Larger). It is kept in the User database. No Text size key changes it.
 _Avoid_: Zoom, UI scale, DPI
 
+**Reading font**:
+The font Resource text of one script is drawn in: one each for Latin, Greek and Hebrew, chosen in View → Fonts. It is a Bundled font by default, or a font installed on the computer, stored by family and style name. Characters a Reading font lacks are drawn in the Bundled font for that script.
+_Avoid_: Text font, Body font, Resource font
+
+**Interface font**:
+The font of the app's own menus, labels and buttons, chosen in View → Fonts. Resource text never uses it.
+_Avoid_: UI font, System font, Chrome font
+
+**Bundled font**:
+A font shipped inside the app: Gentium Plus for Latin and Greek, Ezra SIL for Hebrew. It is the default Reading font and the fallback when a chosen font is missing or lacks a character.
+_Avoid_: Default font, Built-in font
+
 ### Guides
 
 **Guide**:

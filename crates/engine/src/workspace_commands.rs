@@ -104,6 +104,7 @@ pub const MENUS: &[Menu] = &[
                 command: "view.verse_numbers",
             },
             C("view.red_letter"),
+            C("view.fonts"),
             Separator,
             C("view.highlights"),
             MenuItem::Notebooks,
@@ -485,6 +486,37 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         s.text.red_letter = !s.text.red_letter;
         view_saved(s, json!({ "on": s.text.red_letter }))
     }),
+    simple("view.fonts", "Fonts…", None, always, |s, _| {
+        s.workspace.push_effect(Effect::ShowFonts);
+        Ok(Value::Null)
+    }),
+    CommandSpec {
+        id: "view.font",
+        label: "Choose a font",
+        shortcut: None,
+        params: &[
+            ParamSpec {
+                name: "slot",
+                kind: ParamKind::String,
+                required: true,
+                help: "latin, greek, hebrew or interface",
+            },
+            ParamSpec {
+                name: "family",
+                kind: ParamKind::String,
+                required: false,
+                help: "Font family installed on this computer; empty or missing for the bundled font",
+            },
+            ParamSpec {
+                name: "style",
+                kind: ParamKind::String,
+                required: false,
+                help: "Style of the family (default Regular)",
+            },
+        ],
+        enabled: always,
+        run: set_font,
+    },
     simple(
         "view.highlights",
         "Show Highlights",
@@ -878,6 +910,32 @@ fn set_text_size(s: &mut Session, size: f32) -> Result<Value, CommandError> {
     s.workspace
         .push_effect(Effect::Message(format!("Text {} pt", s.text.size)));
     Ok(out)
+}
+
+/// `view.font`: choose the font of one slot by family and style (#138). The UI loads it and
+/// lays text out again; a missing font falls back to the bundled one.
+fn set_font(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    use crate::appearance::{FontChoice, FontSlot};
+    let id = p.str("slot").unwrap_or_default();
+    let slot = FontSlot::from_id(id)
+        .ok_or_else(|| failed("view.font", format!("“{id}” is not a font slot")))?;
+    let family = p.str("family").unwrap_or_default().trim();
+    let choice = (!family.is_empty()).then(|| FontChoice {
+        family: family.to_string(),
+        style: p
+            .str("style")
+            .map(str::trim)
+            .filter(|st| !st.is_empty())
+            .unwrap_or("Regular")
+            .to_string(),
+        missing_noticed: false,
+    });
+    let out = match &choice {
+        Some(c) => json!({ "slot": slot.id(), "family": c.family, "style": c.style }),
+        None => json!({ "slot": slot.id(), "family": null }),
+    };
+    s.fonts.set(slot, choice);
+    view_saved(s, out)
 }
 
 fn view_saved(s: &mut Session, out: Value) -> Result<Value, CommandError> {

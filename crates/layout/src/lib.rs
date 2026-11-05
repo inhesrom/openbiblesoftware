@@ -26,11 +26,13 @@ pub use estimate::estimate_height;
 pub use layout::{Hit, LaidBlock, LaidItem, LaidLine, UnitPos, layout};
 pub use paragraph::{Align, InlineObject, Paragraph, Run, RunSource};
 pub use present::{
-    BlockKind, BlockSource, block_paragraph, snippet_paragraph, styled_snippet_paragraph,
-    unit_blocks,
+    BlockKind, BlockSource, SYNTHETIC_SMALL_CAPS, block_paragraph, snippet_paragraph,
+    styled_snippet_paragraph, unit_blocks,
 };
 pub use spans::SpanIndex;
 pub use style::{ColorRole, RunStyle, TextSettings, VerseNumbers};
 
+#[cfg(test)]
+mod reading_font_tests;
 #[cfg(test)]
 mod tests;

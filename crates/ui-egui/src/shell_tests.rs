@@ -75,12 +75,25 @@ impl Harness {
         mode: JobMode,
         obr_dir: Option<&std::path::Path>,
     ) -> Self {
+        Self::launch_with_fonts(db, mode, obr_dir, None)
+    }
+
+    /// Like [`Self::launch_full`], with `fonts` as the computer's installed fonts (#138).
+    fn launch_with_fonts(
+        db: Option<&std::path::Path>,
+        mode: JobMode,
+        obr_dir: Option<&std::path::Path>,
+        fonts: Option<Arc<dyn crate::SystemFonts>>,
+    ) -> Self {
         let mut session = Session::new(mode);
         if let Some(db) = db {
             let (store, _) = obs_store::UserStore::open(db).unwrap();
             session.attach_user(Box::new(store));
         }
         let mut shell = Shell::new(session);
+        if let Some(fonts) = fonts {
+            shell.set_system_fonts(fonts);
+        }
         match obr_dir {
             Some(dir) => {
                 let path = dir.join("test-bible.obr");
@@ -3045,6 +3058,9 @@ mod word_study;
 
 #[path = "search_tests.rs"]
 mod search;
+
+#[path = "fonts_tests.rs"]
+mod fonts;
 
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {
