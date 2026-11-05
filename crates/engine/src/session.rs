@@ -39,6 +39,8 @@ pub struct Session {
     jobs: JobQueue,
     pub library: Library,
     pub imports: crate::import::Imports,
+    /// Per-Resource Search index status and background rebuilds (#58).
+    pub search: crate::search::SearchIndexes,
     /// Get Bibles catalog (#91).
     pub get_bibles: crate::get_bibles::GetBibles,
     pub workspace: Workspace,
@@ -75,6 +77,7 @@ impl Session {
             jobs,
             library: Library::new(),
             imports: crate::import::Imports::default(),
+            search: crate::search::SearchIndexes::default(),
             get_bibles: crate::get_bibles::GetBibles::default(),
             workspace: Workspace::new(),
             text: TextSettings::default(),

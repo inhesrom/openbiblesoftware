@@ -558,6 +558,19 @@ impl Shell {
         }
     }
 
+    /// How soon to draw again without input: job events are applied only when a frame
+    /// polls them, so running work keeps frames coming while the app is idle. Background
+    /// Search index builds (#58) need only a slow poll.
+    fn background_repaint(&self) -> Option<std::time::Duration> {
+        if self.st.session.imports.is_running() || self.st.picker.is_some() {
+            Some(std::time::Duration::from_millis(16))
+        } else if self.st.session.search.is_building() {
+            Some(std::time::Duration::from_millis(250))
+        } else {
+            None
+        }
+    }
+
     /// Draw the whole window.
     pub fn ui(&mut self, ui: &mut Ui) {
         self.apply_appearance(ui.ctx());
@@ -568,9 +581,8 @@ impl Shell {
         let _other_jobs = self.st.session.poll_imports();
         self.st.poll_picker();
         self.apply_effects();
-        if self.st.session.imports.is_running() || self.st.picker.is_some() {
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(16));
+        if let Some(after) = self.background_repaint() {
+            ui.ctx().request_repaint_after(after);
         }
         self.shortcuts(ui);
         egui::Panel::top("menus")

@@ -3,6 +3,7 @@
 mod import;
 mod inspect;
 mod layout;
+mod search;
 mod shape;
 
 use std::process::ExitCode;
@@ -20,6 +21,9 @@ commands:
                                                 import a SWORD module (Bible, Commentary, Lexicon, Dictionary)
   inspect <file.obr> [--unit ID] [--verse REF]  show a resource file's contents
   layout <file.obr> --unit ID [--width PX]       lay a unit out, report lines and timing
+  index <file.obr>... [--out DIR]               build Search index caches (default: the app's cache folder)
+  search <file.obr> [query] [--repeat N]        time a query on a Search index; no query runs the
+                                                whole-Bible timing set (words/Strong's <= 100 ms, phrases <= 250 ms)
   shape [--size PX] [--svg OUT] [--smcp] <text>... shape text with the bundled fonts
   write-sample <file.obr>                       write a tiny sample Bible (for trying inspect)
   commands                                     list engine commands
@@ -28,7 +32,8 @@ commands:
 
 examples:
   obs-cli run reference.parse text='jn 3:16-18; rom 5:8'
-  obs-cli run text.transliterate text=ἀγάπη";
+  obs-cli run text.transliterate text=ἀγάπη
+  obs-cli search ~/.local/share/OpenBible/library/kjv-strongs.obr '\"in the beginning\"'";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -60,6 +65,8 @@ fn main() -> ExitCode {
         Some("import") => import::import(&args[1..]),
         Some("inspect") => inspect::inspect(&args[1..]),
         Some("layout") => layout::layout_cmd(&args[1..]),
+        Some("index") => search::index(&args[1..]),
+        Some("search") => search::search(&args[1..]),
         Some("shape") => shape::shape(&args[1..]),
         Some("write-sample") => inspect::write_sample(&args[1..]),
         Some(other) => {

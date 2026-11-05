@@ -212,3 +212,45 @@ fn layout_reports_blocks_and_lines() {
     assert!(err.contains("no unit"), "{err}");
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn index_builds_a_search_cache_and_search_times_a_query() {
+    let path = temp_obr("indexed.obr");
+    let p = path.to_str().expect("utf-8 path");
+    let cache = path.with_file_name("search-cache");
+    let c = cache.to_str().expect("utf-8 path");
+    let (ok, _, err) = cli(&["write-sample", p]);
+    assert!(ok, "{err}");
+
+    let (ok, out, err) = cli(&["index", p, "--out", c]);
+    assert!(ok, "{err}");
+    assert!(out.contains("4 documents"), "{out}");
+    let built: Vec<_> = std::fs::read_dir(&cache)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(built.len(), 1, "{built:?}");
+    assert!(built[0].starts_with("kjv-sample.") && built[0].ends_with(".v1.obsidx"));
+
+    let (ok, out, err) = cli(&[
+        "search",
+        p,
+        "\"only begotten\"",
+        "--cache",
+        c,
+        "--repeat",
+        "3",
+    ]);
+    assert!(ok, "{err}");
+    assert!(out.contains("\"only begotten\": 1 hits"), "{out}");
+    assert!(out.contains("John 3:16"), "{out}");
+
+    // A missing cache is built on demand; a bad query is an error, not a crash.
+    std::fs::remove_dir_all(&cache).unwrap();
+    let (ok, out, err) = cli(&["search", p, "world", "--cache", c, "--repeat", "1"]);
+    assert!(ok, "{err}");
+    assert!(out.contains("world: 2 hits"), "{out}");
+    let (ok, _, err) = cli(&["search", p, "strong:X", "--cache", c]);
+    assert!(!ok);
+    assert!(err.contains("Strong's"), "{err}");
+}

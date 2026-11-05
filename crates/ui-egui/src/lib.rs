@@ -68,6 +68,12 @@ impl App {
             if let Some(cache) = obs_engine::get_bibles::default_catalog_cache() {
                 session.get_bibles.set_cache_path(cache);
             }
+            // Search indexes (#58): Imports build theirs into the cache folder (this installs
+            // the Import indexer); missing or stale ones rebuild in the background.
+            if let Some(dir) = obs_engine::default_search_cache_dir() {
+                session.set_search_cache_dir(dir);
+            }
+            session.refresh_search_indexes();
         }
         #[cfg(target_arch = "wasm32")]
         if let Some(p) = &path {
@@ -224,6 +230,7 @@ impl App {
             .map(|e| e.manifest.resource_id.clone());
         match added {
             Ok(id) => {
+                self.shell.session_mut().refresh_search_index(&id);
                 self.shell
                     .run("resource.open", &serde_json::json!({ "id": id }));
             }

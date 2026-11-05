@@ -217,6 +217,10 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     {
         return Err(failed(CMD, format!("{}: {e}", entry.path.display())));
     }
+    if in_dir {
+        // Its prebuilt Search index caches (the Starter library ships them) go with it.
+        crate::search::remove_prebuilt_search_indexes(&entry.path, &id);
+    }
     let open: Vec<_> = s
         .workspace
         .tabs()
@@ -228,6 +232,7 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     }
     s.library.remove(&id);
     s.imports.reports.remove(&id);
+    s.forget_search_index(&id);
     if let Some(user) = &s.user {
         let _ = user.set_preference(&format!("import-report/{id}"), "null");
     }

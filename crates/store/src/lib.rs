@@ -1,5 +1,5 @@
 //! The only crate that uses SQLite: the `.obr` Resource file reader and writer (ADR 0003), the
-//! User database with its Annotations, and later the Search index caches.
+//! User database with its Annotations, and the per-Resource Search index caches (#58).
 //!
 //! Layer L2. The storage traits ([`ResourceStore`]) compile everywhere, including
 //! `wasm32-unknown-unknown`. The SQLite implementations ([`ObrReader`], [`write_obr`]) need
@@ -18,6 +18,8 @@ mod obr;
 mod resource_store;
 #[cfg(not(target_arch = "wasm32"))]
 mod sample;
+#[cfg(not(target_arch = "wasm32"))]
+mod search_index;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 mod span_codec;
 #[cfg(not(target_arch = "wasm32"))]
@@ -35,5 +37,10 @@ pub use obr::{APPLICATION_ID, ObrReader, write_obr};
 pub use resource_store::{MappedVerse, ResourceStore, Summary};
 #[cfg(not(target_arch = "wasm32"))]
 pub use sample::sample_resource;
+#[cfg(not(target_arch = "wasm32"))]
+pub use search_index::{
+    IndexKey, SEARCH_APPLICATION_ID, SEARCH_INDEX_EXTENSION, SqliteSearchIndex, build_search_index,
+    remove_search_indexes, search_index_files,
+};
 #[cfg(not(target_arch = "wasm32"))]
 pub use user::{OpenReport, ROLLING_BACKUPS, USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore};

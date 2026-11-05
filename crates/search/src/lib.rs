@@ -3,8 +3,12 @@
 //! Layer L2. This crate must stay free of UI dependencies and compile for
 //! `wasm32-unknown-unknown` (checked by `cargo xtask layers` and `cargo xtask wasm`).
 
+pub mod index;
 pub mod query;
 
+pub use index::{
+    DocumentKind, HitOrder, INDEX_VERSION, SearchError, SearchHit, SearchIndex, SearchOptions,
+};
 pub use query::{
     Compiled, Field, LemmaLookup, NoLexicon, Query, QueryError, QueryErrorKind, compile, parse,
     to_fts5,

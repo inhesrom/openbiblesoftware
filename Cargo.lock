@@ -2453,6 +2453,7 @@ dependencies = [
  "obs-layout",
  "obs-model",
  "obs-scripture",
+ "obs-search",
  "obs-store",
  "serde_json",
 ]
@@ -4731,6 +4732,7 @@ dependencies = [
  "obs-layout",
  "obs-model",
  "obs-scripture",
+ "obs-search",
  "obs-store",
  "serde",
  "serde_json",

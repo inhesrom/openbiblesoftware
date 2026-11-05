@@ -31,6 +31,8 @@ pub enum StoreError {
     /// A User database edit breaks a rule (such as deleting the default Notebook); nothing
     /// was written.
     Rejected(String),
+    /// The caller cancelled a long build (a Search index).
+    Cancelled,
 }
 
 impl fmt::Display for StoreError {
@@ -52,6 +54,7 @@ impl fmt::Display for StoreError {
             StoreError::UnknownUnit(id) => write!(f, "no text unit `{id}` in this resource"),
             StoreError::Conflict(why) => write!(f, "{why} changed since; nothing was saved"),
             StoreError::Rejected(why) => f.write_str(why),
+            StoreError::Cancelled => write!(f, "cancelled"),
         }
     }
 }

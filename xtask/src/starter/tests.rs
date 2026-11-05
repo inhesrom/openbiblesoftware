@@ -120,6 +120,25 @@ fn two_clean_builds_are_byte_identical() {
     assert_eq!(m.revision, 1);
     let report = std::fs::read_to_string(config.out.join(REPORT_FILE)).unwrap();
     assert!(report.contains("| `web` | 1 |"), "{report}");
+
+    // The prebuilt Search index cache is keyed by the Resource's content hash and the index
+    // version, byte-identical across builds (compare_dirs covers `search/`), and searchable.
+    let key = obs_store::IndexKey::new(m, obs_search::INDEX_VERSION);
+    let cache = config.out.join(SEARCH_DIR).join(key.file_name());
+    let index = obs_store::SqliteSearchIndex::open(&cache, Some(&key)).unwrap();
+    let hits = obs_search::SearchIndex::search(
+        &index,
+        &obs_search::to_fts5("beginning", &obs_search::NoLexicon).unwrap(),
+        &obs_search::SearchOptions::default(),
+    )
+    .unwrap();
+    assert!(!hits.is_empty());
+    assert!(report.contains("Search index (MB)"), "{report}");
+    // A rebuild into the same folder replaces the outputs, caches included (close them
+    // first: Windows cannot delete open files).
+    drop((index, reader));
+    build(&config).unwrap();
+    compare_dirs(&config.out, &second.out).unwrap();
 }
 
 #[test]

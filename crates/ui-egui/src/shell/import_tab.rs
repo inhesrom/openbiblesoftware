@@ -1,7 +1,10 @@
 //! Native source selection and live, keyless Import report Tabs (#47).
 
 use egui::{RichText, Ui};
-use obs_engine::{DEFERRED_INDEX, ImportIndexStatus, ImportPhase, ImportRecord, ImportReport};
+use obs_engine::{
+    DEFERRED_INDEX, ImportIndexStatus, ImportPhase, ImportRecord, ImportReport, IndexStatus,
+    UNAVAILABLE_INDEX,
+};
 use serde_json::json;
 
 use super::State;
@@ -26,6 +29,8 @@ impl State {
             });
             return;
         };
+        // The Search index's live state, once the Resource is in the library (#58).
+        let index = self.session.search.status(id).cloned();
         let mut action: Option<&'static str> = None;
         egui::Frame::new()
             .fill(theme::c().field)
@@ -50,7 +55,7 @@ impl State {
                         );
                         ui.label(RichText::new(&record.source).color(theme::c().muted));
                         ui.add_space(10.0);
-                        phases(ui, &record);
+                        phases(ui, &record, index.as_ref());
                         let running = matches!(
                             record.phase,
                             ImportPhase::Download | ImportPhase::Parse | ImportPhase::Index
@@ -181,7 +186,7 @@ pub(super) fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1_000_000.0)
 }
 
-fn phases(ui: &mut Ui, record: &ImportRecord) {
+fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
     if let Some(origin) = &record.origin {
         section(ui, "Download");
         match record.phase {
@@ -253,14 +258,31 @@ fn phases(ui: &mut Ui, record: &ImportRecord) {
         (ImportPhase::Failed, _) => {
             ui.label("Search index: not built");
         }
-        (ImportPhase::Complete, ImportIndexStatus::Deferred) => {
-            ui.label(DEFERRED_INDEX);
+        // Not built by the Import: the background rebuild's live state.
+        (ImportPhase::Complete, ImportIndexStatus::Deferred | ImportIndexStatus::Failed(_)) => {
+            match (index, &record.index) {
+                (Some(IndexStatus::Ready), _) => {
+                    ui.label("Search index: built");
+                }
+                (Some(IndexStatus::Indexing { done, total }), _) if *total > 0 => {
+                    ui.add(
+                        egui::ProgressBar::new(*done as f32 / *total as f32)
+                            .text(format!("Search index: {done} / {total}")),
+                    );
+                }
+                (Some(IndexStatus::Unavailable), _) => {
+                    ui.label(UNAVAILABLE_INDEX);
+                }
+                (Some(IndexStatus::Failed(e)), _) | (_, ImportIndexStatus::Failed(e)) => {
+                    ui.colored_label(theme::c().warn, format!("Search index failed: {e}"));
+                }
+                _ => {
+                    ui.label(DEFERRED_INDEX);
+                }
+            }
         }
         (ImportPhase::Complete, ImportIndexStatus::Built) => {
             ui.label("Search index: built");
-        }
-        (ImportPhase::Complete, ImportIndexStatus::Failed(e)) => {
-            ui.colored_label(theme::c().warn, format!("Search index failed: {e}"));
         }
     }
 }
