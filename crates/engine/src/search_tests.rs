@@ -105,7 +105,7 @@ fn missing_caches_build_one_at_a_time_and_ready_ones_serve_meanwhile() {
 }
 
 #[test]
-fn changing_the_index_version_rebuilds_while_ready_indexes_keep_serving() {
+fn changing_the_index_version_rebuilds_while_the_old_indexes_keep_serving() {
     let (mut s, root) = fixture("version");
     s.refresh_search_indexes();
     step(&mut s);
@@ -116,26 +116,196 @@ fn changing_the_index_version_rebuilds_while_ready_indexes_keep_serving() {
             .all(|n| n.ends_with(&format!(".v{INDEX_VERSION}.obsidx")))
     );
 
-    // A new index version: every cache is stale and is rebuilt in the background.
+    // A new index version: every cache is stale and is rebuilt in the background, one at a
+    // time. The kjv-a build is submitted but held (Inline jobs run only when pumped).
     let next = INDEX_VERSION + 1;
     s.set_search_index_version(next);
     s.refresh_search_indexes();
     assert!(s.search.is_building());
-    assert_eq!(search(&mut s, "world").indexing, ["kjv-a", "kjv-b"]);
-
-    // The first rebuilt index serves while the other is still indexing.
-    step(&mut s);
-    let r = search(&mut s, "world");
-    assert_eq!(counts(&r), [("kjv-a", 2)]);
-    assert_eq!(r.indexing, ["kjv-b"]);
-    assert!(r.failed.is_empty());
-
-    step(&mut s);
+    for id in ["kjv-a", "kjv-b"] {
+        assert!(matches!(
+            s.search.status(id),
+            Some(IndexStatus::Indexing { .. })
+        ));
+        assert!(
+            s.search.stale_path(id).is_some(),
+            "{id} keeps its old cache"
+        );
+    }
+    // During the rebuild, searches still find everything, through the old caches.
     let r = search(&mut s, "world");
     assert_eq!(counts(&r), [("kjv-a", 2), ("kjv-b", 2)]);
+    assert_eq!(r.stale, ["kjv-a", "kjv-b"]);
+    assert!(r.indexing.is_empty() && r.failed.is_empty());
+    let out = s.run("search.indexes", &json!({})).unwrap();
+    assert_eq!(out["indexes"][0]["status"], "indexing");
+    assert!(out["indexes"][0]["stale"].is_string(), "{out}");
+
+    // kjv-a's rebuild is Ready and swapped in; kjv-b still serves from its old cache.
+    step(&mut s);
+    assert_eq!(s.search.status("kjv-a"), Some(&IndexStatus::Ready));
+    assert_eq!(s.search.stale_path("kjv-a"), None);
+    let r = search(&mut s, "world");
+    assert_eq!(counts(&r), [("kjv-a", 2), ("kjv-b", 2)]);
+    assert_eq!(r.stale, ["kjv-b"]);
+    assert!(r.indexing.is_empty() && r.failed.is_empty());
+
+    step(&mut s);
+    assert!(!s.search.is_building());
+    let r = search(&mut s, "world");
+    assert_eq!(counts(&r), [("kjv-a", 2), ("kjv-b", 2)]);
+    assert!(r.stale.is_empty() && r.indexing.is_empty());
     let new = cache_files(&root);
     assert_eq!(new.len(), 2, "the stale caches are removed: {new:?}");
     assert!(new.iter().all(|n| n.ends_with(&format!(".v{next}.obsidx"))));
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn after_a_version_change_a_fresh_launch_serves_the_old_caches_while_rebuilding() {
+    let (mut s, root) = fixture("relaunch");
+    s.refresh_search_indexes();
+    step(&mut s);
+    step(&mut s);
+    drop(s);
+
+    // The next release bumps the version: its first launch finds only old-version caches.
+    let mut s = Session::new(JobMode::Inline);
+    s.library.scan(&root.join("library"));
+    s.set_search_index_version(INDEX_VERSION + 1);
+    s.set_search_cache_dir(root.join("cache"));
+    s.refresh_search_indexes();
+    assert!(s.search.is_building());
+    let r = search(&mut s, "world");
+    assert_eq!(counts(&r), [("kjv-a", 2), ("kjv-b", 2)]);
+    assert_eq!(r.stale, ["kjv-a", "kjv-b"]);
+    step(&mut s);
+    step(&mut s);
+    let r = search(&mut s, "world");
+    assert_eq!(counts(&r), [("kjv-a", 2), ("kjv-b", 2)]);
+    assert!(r.stale.is_empty());
+    assert_eq!(cache_files(&root).len(), 2);
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_corrupt_cache_with_the_right_name_is_deleted_and_rebuilt() {
+    let (mut s, root) = fixture("corrupt");
+    s.refresh_search_indexes();
+    step(&mut s);
+    step(&mut s);
+    let a = s.search.path("kjv-a").unwrap().to_path_buf();
+    let b = s.search.path("kjv-b").unwrap().to_path_buf();
+    drop(s);
+
+    // At launch: a truncated file, and another Resource's cache under kjv-b's name.
+    std::fs::write(&a, b"not a database").unwrap();
+    let mut other = obs_store::sample_resource();
+    other.manifest.resource_id = "kjv-c".into();
+    let c = obs_store::build_search_index(
+        &other,
+        INDEX_VERSION,
+        &root.join("elsewhere"),
+        &mut |_, _| true,
+    )
+    .unwrap();
+    std::fs::copy(&c, &b).unwrap();
+    let mut s = Session::new(JobMode::Inline);
+    s.library.scan(&root.join("library"));
+    s.set_search_cache_dir(root.join("cache"));
+    s.refresh_search_indexes();
+    assert!(
+        !a.exists() && !b.exists(),
+        "deleted: {:?}",
+        cache_files(&root)
+    );
+    assert!(s.search.is_building());
+    step(&mut s);
+    step(&mut s);
+    assert_eq!(
+        counts(&search(&mut s, "world")),
+        [("kjv-a", 2), ("kjv-b", 2)]
+    );
+
+    // While running: a Ready cache that goes bad is deleted and rebuilt, not trusted again.
+    std::fs::write(&a, b"garbage").unwrap();
+    let r = search(&mut s, "world");
+    assert_eq!(counts(&r), [("kjv-b", 2)]);
+    assert_eq!(r.indexing, ["kjv-a"]);
+    assert!(s.search.is_building(), "queued");
+    assert!(!a.exists());
+    step(&mut s);
+    assert_eq!(
+        counts(&search(&mut s, "world")),
+        [("kjv-a", 2), ("kjv-b", 2)]
+    );
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_failed_build_is_retried_once_per_session_by_a_search() {
+    let (mut s, root) = fixture("retry");
+    let obr = root.join("library/kjv-a.obr");
+    let good = std::fs::read(&obr).unwrap();
+    std::fs::write(&obr, b"broken").unwrap();
+    s.refresh_search_indexes();
+    step(&mut s);
+    assert!(matches!(
+        s.search.status("kjv-a"),
+        Some(IndexStatus::Failed(_))
+    ));
+    step(&mut s);
+
+    // Repaired (say a transient I/O error): the next search retries it.
+    std::fs::write(&obr, &good).unwrap();
+    let r = search(&mut s, "world");
+    assert_eq!(r.indexing, ["kjv-a"]);
+    assert!(s.search.is_building());
+    step(&mut s);
+    assert_eq!(
+        counts(&search(&mut s, "world")),
+        [("kjv-a", 2), ("kjv-b", 2)]
+    );
+
+    // A build that keeps failing is retried only once per session.
+    std::fs::write(&obr, b"broken").unwrap();
+    std::fs::remove_file(s.search.path("kjv-a").unwrap()).unwrap();
+    let r = search(&mut s, "world");
+    assert_eq!(r.indexing, ["kjv-a"]);
+    step(&mut s);
+    let r = search(&mut s, "world");
+    assert_eq!(r.failed.len(), 1, "{r:?}");
+    assert!(!s.search.is_building(), "no second retry");
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn removing_and_re_adding_a_resource_while_it_builds_rebuilds_it() {
+    let (mut s, root) = fixture("readd");
+    s.refresh_search_indexes();
+    // kjv-a's build is submitted (held); remove it, then add it back.
+    let entry = s.library.remove("kjv-a").unwrap();
+    s.forget_search_index("kjv-a");
+    s.library.add(entry);
+    s.refresh_search_index("kjv-a");
+    assert!(matches!(
+        s.search.status("kjv-a"),
+        Some(IndexStatus::Indexing { .. })
+    ));
+    step(&mut s); // the cancelled build
+    step(&mut s); // kjv-b
+    step(&mut s); // kjv-a again
+    assert!(!s.search.is_building());
+    assert_eq!(s.search.status("kjv-a"), Some(&IndexStatus::Ready));
+    // Re-added, kjv-a is now last in the library.
+    assert_eq!(
+        counts(&search(&mut s, "world")),
+        [("kjv-b", 2), ("kjv-a", 2)]
+    );
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -197,6 +367,12 @@ fn prebuilt_caches_beside_the_library_are_used_without_rebuilding() {
         Some(IndexStatus::Indexing { .. })
     ));
     assert_eq!(counts(&search(&mut s, "world")), [("kjv-a", 2)]);
+
+    // Remove from library deletes the prebuilt cache with the `.obr`.
+    s.run("library.remove", &json!({"id": "kjv-a", "confirm": true}))
+        .unwrap();
+    assert!(!root.join("library/kjv-a.obr").exists());
+    assert!(!shipped.exists(), "the prebuilt cache goes too");
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }

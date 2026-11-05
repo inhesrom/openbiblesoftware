@@ -217,6 +217,10 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     {
         return Err(failed(CMD, format!("{}: {e}", entry.path.display())));
     }
+    if in_dir {
+        // Its prebuilt Search index caches (the Starter library ships them) go with it.
+        crate::search::remove_prebuilt_search_indexes(&entry.path, &id);
+    }
     let open: Vec<_> = s
         .workspace
         .tabs()

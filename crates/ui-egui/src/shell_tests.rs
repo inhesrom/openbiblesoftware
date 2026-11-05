@@ -2778,6 +2778,11 @@ mod import {
             "{:?}",
             h.texts()
         );
+        // Idle, the app still wakes up to move the background build along.
+        assert_eq!(
+            h.shell.background_repaint(),
+            Some(std::time::Duration::from_millis(250))
+        );
         h.shell.st.session.jobs().pump(1); // the background index build
         h.frames(2);
         assert_eq!(
@@ -2785,6 +2790,7 @@ mod import {
             Some(&obs_engine::IndexStatus::Ready)
         );
         assert!(h.find("Search index: built").is_some(), "{:?}", h.texts());
+        assert_eq!(h.shell.background_repaint(), None, "nothing left to build");
         drop(h);
         std::fs::remove_dir_all(root).unwrap();
     }

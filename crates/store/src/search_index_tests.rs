@@ -331,3 +331,78 @@ fn removing_one_resources_caches_keeps_similar_names() {
     removed.sort();
     assert_eq!(removed, ["kjv.0123.v1.obsidx"]);
 }
+
+#[test]
+fn removing_matches_whole_names_only() {
+    let dir = TempDir::new("exact");
+    for name in [
+        "kjv.0123.v1.obsidx",
+        "kjv.b.0123.v1.obsidx",
+        "kjv.0123.v1.obsidx.1-0.partial",
+        "kjv.0123.vx.obsidx",
+        "kjv..v1.obsidx",
+    ] {
+        std::fs::write(dir.0.join(name), b"x").unwrap();
+    }
+    let removed: Vec<String> = remove_search_indexes(&dir.0, "kjv", None)
+        .iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(removed, ["kjv.0123.v1.obsidx"]);
+    assert_eq!(search_index_files(&dir.0, "kjv").len(), 0);
+}
+
+#[test]
+fn unchecked_resource_ids_stay_inside_the_cache_folder() {
+    let dir = TempDir::new("ids");
+    let key = |id: &str| IndexKey {
+        resource_id: id.into(),
+        content_hash: "sha256:0123456789abcdef0123".into(),
+        version: 1,
+    };
+    assert_eq!(key("kjv-1").file_name(), "kjv-1.0123456789abcdef.v1.obsidx");
+    for id in ["a.b", "../x", "a/b", "C:\\x", "KJV", "", &"a".repeat(65)] {
+        let name = key(id).file_name();
+        assert!(name.starts_with('_'), "{id}: {name}");
+        assert_eq!(name.split('.').count(), 4, "{id}: {name}");
+        assert!(!name.contains(['/', '\\', ':']), "{id}: {name}");
+        assert!(is_cache_of(&name, id));
+        assert!(!is_cache_of(&name, "a"), "{id}: {name}");
+    }
+    assert_ne!(key("a.b").file_name(), key("a.c").file_name());
+    // A Resource whose id has a dot is built (inside the folder) and pruned on its own.
+    let mut r = sample_resource();
+    r.manifest.resource_id = "a.b".into();
+    let path = build(&r, 1, &dir.0);
+    assert_eq!(path.parent(), Some(dir.0.as_path()));
+    std::fs::write(dir.0.join("a.0123.v1.obsidx"), b"x").unwrap();
+    assert!(remove_search_indexes(&dir.0, "a", None).len() == 1);
+    assert!(path.is_file(), "`a`'s caches do not include `a.b`'s");
+    assert_eq!(search_index_files(&dir.0, "a.b"), [path]);
+}
+
+#[test]
+fn temp_files_are_unique_per_build() {
+    let dir = TempDir::new("tmp");
+    let r = sample_resource();
+    let mut seen = Vec::new();
+    for _ in 0..2 {
+        build_search_index(&r, 1, &dir.0, &mut |_, _| {
+            for e in std::fs::read_dir(&dir.0).unwrap() {
+                let name = e.unwrap().file_name().to_string_lossy().into_owned();
+                if name.ends_with(".partial") && !seen.contains(&name) {
+                    seen.push(name);
+                }
+            }
+            true
+        })
+        .unwrap();
+    }
+    assert_eq!(seen.len(), 2, "{seen:?}");
+    assert!(
+        seen.iter()
+            .all(|n| n.contains(&std::process::id().to_string()))
+    );
+    let left: Vec<_> = std::fs::read_dir(&dir.0).unwrap().collect();
+    assert_eq!(left.len(), 1, "only the cache remains");
+}

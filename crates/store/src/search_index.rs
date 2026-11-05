@@ -94,8 +94,10 @@ impl IndexKey {
         }
     }
 
-    /// `<resource_id>.<first 16 hex digits of the content hash>.v<version>.obsidx`. Resource
-    /// ids never contain `.`, so `<resource_id>.` prefixes exactly one Resource's caches.
+    /// `<stem>.<first 16 hex digits of the content hash>.v<version>.obsidx`, where `<stem>`
+    /// is the resource id if it is a plain id ([`file_stem`]). The name never leaves the
+    /// directory it is joined to, and its four dot-separated parts identify exactly one
+    /// Resource's caches.
     pub fn file_name(&self) -> String {
         let hash: String = self
             .content_hash
@@ -104,18 +106,65 @@ impl IndexKey {
             .filter(char::is_ascii_alphanumeric)
             .take(16)
             .collect();
+        let hash = if hash.is_empty() { "0".into() } else { hash };
         format!(
             "{}.{hash}.v{}.{SEARCH_INDEX_EXTENSION}",
-            self.resource_id, self.version
+            file_stem(&self.resource_id),
+            self.version
         )
     }
 }
 
-/// Whether `name` is a Search index cache file of `resource_id`.
+/// The file-name stem of `resource_id`'s caches: the id itself if it is `[a-z0-9-]{1,64}`
+/// (every id the importers make), else `_` and a hash of it, so an unchecked id from a
+/// dropped `.obr` (`a.b`, `../x`, `C:\x`) can neither escape the cache folder nor share
+/// another Resource's names. `_` is never in a plain id, so the two kinds cannot collide.
+fn file_stem(resource_id: &str) -> String {
+    let plain = (1..=64).contains(&resource_id.len())
+        && resource_id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    if plain {
+        return resource_id.to_string();
+    }
+    // FNV-1a: stable across Rust releases, unlike `DefaultHasher`.
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in resource_id.bytes() {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("_{h:016x}")
+}
+
+/// Whether `name` is exactly a Search index cache file name of `resource_id`:
+/// `<stem>.<hash>.v<version>.obsidx`.
 fn is_cache_of(name: &str, resource_id: &str) -> bool {
-    name.strip_prefix(resource_id)
-        .and_then(|rest| rest.strip_prefix('.'))
-        .is_some_and(|rest| rest.ends_with(&format!(".{SEARCH_INDEX_EXTENSION}")))
+    let parts: Vec<&str> = name.split('.').collect();
+    let [stem, hash, version, ext] = parts.as_slice() else {
+        return false;
+    };
+    *stem == file_stem(resource_id)
+        && (1..=16).contains(&hash.len())
+        && hash.bytes().all(|b| b.is_ascii_alphanumeric())
+        && version
+            .strip_prefix('v')
+            .is_some_and(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))
+        && *ext == SEARCH_INDEX_EXTENSION
+}
+
+/// `resource_id`'s cache files in `dir` (any content hash or version), sorted by name.
+pub fn search_index_files(dir: &Path, resource_id: &str) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out: Vec<PathBuf> = rd
+        .filter_map(Result::ok)
+        .filter(|e| is_cache_of(&e.file_name().to_string_lossy(), resource_id))
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .collect();
+    out.sort();
+    out
 }
 
 /// Delete `resource_id`'s cache files in `dir`, except `keep`. Best effort: a file that
@@ -388,7 +437,11 @@ pub fn build_search_index(
     std::fs::create_dir_all(dir)?;
     let name = key.file_name();
     let path = dir.join(&name);
-    let tmp = dir.join(format!("{name}.partial"));
+    // Unique per build, so two builds of the same key (two app instances, or an Import and
+    // a background rebuild) never share, or delete, each other's temp file.
+    static BUILDS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = BUILDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = dir.join(format!("{name}.{}-{n}.partial", std::process::id()));
     if tmp.exists() {
         std::fs::remove_file(&tmp)?;
     }

@@ -5,10 +5,12 @@
 //! `search/` folder beside the Resource's `.obr` (where the Starter library ships its prebuilt
 //! caches). A Resource without a usable cache is queued for a background rebuild, one at a
 //! time so index builds never take every job worker. Meanwhile searches use the indexes that
-//! are ready and report the rest as indexing; a cache that has gone missing (deleted under
-//! the app) is simply rebuilt.
+//! are ready, and a Resource being rebuilt after an index version change keeps being searched
+//! through its old cache (reported as stale) until the new one is Ready, when the old one is
+//! swapped out and deleted. A cache that has gone missing, is corrupt or belongs to another
+//! key is deleted (from the cache directory) and rebuilt.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use obs_search::{HitOrder, SearchHit};
@@ -26,7 +28,7 @@ pub enum IndexStatus {
     Indexing { done: u64, total: u64 },
     /// Searchable.
     Ready,
-    /// The last build failed; retried at the next refresh.
+    /// The last build failed; retried at the next refresh, and once per session by a search.
     Failed(String),
     /// Nothing can build it here (no cache directory).
     Unavailable,
@@ -40,8 +42,22 @@ pub struct SearchIndexes {
     status: BTreeMap<String, IndexStatus>,
     /// The cache file of each Ready index.
     ready: BTreeMap<String, PathBuf>,
+    /// An older cache (same Resource and content, another index version) of a Resource being
+    /// rebuilt, searched until the rebuild is Ready.
+    stale: BTreeMap<String, PathBuf>,
+    /// Resources whose Failed build a search has already retried this session.
+    retried: BTreeSet<String>,
     queue: VecDeque<String>,
-    running: Option<(JobId, String)>,
+    running: Option<Running>,
+}
+
+/// The background build in flight.
+#[derive(Debug, Clone)]
+struct Running {
+    job: JobId,
+    id: String,
+    /// The Resource was forgotten (removed) while this build ran: its outcome is ignored.
+    cancelled: bool,
 }
 
 impl Default for SearchIndexes {
@@ -51,6 +67,8 @@ impl Default for SearchIndexes {
             version: INDEX_VERSION,
             status: BTreeMap::new(),
             ready: BTreeMap::new(),
+            stale: BTreeMap::new(),
+            retried: BTreeSet::new(),
             queue: VecDeque::new(),
             running: None,
         }
@@ -76,6 +94,11 @@ impl SearchIndexes {
         self.ready.get(resource_id).map(PathBuf::as_path)
     }
 
+    /// The older cache searched while a Resource's index is rebuilt (see [`IndexStatus::Indexing`]).
+    pub fn stale_path(&self, resource_id: &str) -> Option<&Path> {
+        self.stale.get(resource_id).map(PathBuf::as_path)
+    }
+
     pub fn cache_dir(&self) -> Option<&Path> {
         self.cache_dir.as_deref()
     }
@@ -94,23 +117,102 @@ impl SearchIndexes {
         self.ready.remove(id);
         self.status
             .insert(id.to_string(), IndexStatus::Indexing { done: 0, total: 0 });
-        if !self.queue.iter().any(|q| q == id) && self.running.as_ref().is_none_or(|(_, r)| r != id)
-        {
+        let running = self
+            .running
+            .as_ref()
+            .is_some_and(|r| r.id == id && !r.cancelled);
+        if !running && !self.queue.iter().any(|q| q == id) {
             self.queue.push_back(id.to_string());
+        }
+    }
+
+    /// Whether `path` is a file of the cache directory (ours to delete; prebuilt caches beside
+    /// the library are not).
+    fn in_cache_dir(&self, path: &Path) -> bool {
+        self.cache_dir
+            .as_deref()
+            .is_some_and(|d| path.parent() == Some(d))
+    }
+
+    /// Delete `path` if it is in the cache directory (best effort).
+    fn discard(&self, path: &Path) {
+        if self.in_cache_dir(path) {
+            let _ = std::fs::remove_file(path);
         }
     }
 }
 
-/// Where a Resource's cache may already be: the cache directory, then `search/` beside its
+/// The folders a Resource's cache may be in: the cache directory, then `search/` beside its
 /// `.obr` (prebuilt).
 #[cfg(not(target_arch = "wasm32"))]
-fn find_cache(cache_dir: Option<&Path>, obr: &Path, name: &str) -> Option<PathBuf> {
-    let beside = obr.parent().map(|d| d.join("search").join(name));
+fn cache_folders(cache_dir: Option<&Path>, obr: &Path) -> Vec<PathBuf> {
+    let beside = obr.parent().map(|d| d.join("search"));
     cache_dir
-        .map(|d| d.join(name))
+        .map(Path::to_path_buf)
         .into_iter()
         .chain(beside)
-        .find(|p| p.is_file())
+        .collect()
+}
+
+/// A usable cache with exactly `key`, if there is one. A file with the right name that does
+/// not open as that key (truncated, foreign, mismatched) is deleted if it is in the cache
+/// directory, and skipped otherwise.
+#[cfg(not(target_arch = "wasm32"))]
+fn find_cache(indexes: &SearchIndexes, obr: &Path, key: &obs_store::IndexKey) -> Option<PathBuf> {
+    let name = key.file_name();
+    for dir in cache_folders(indexes.cache_dir(), obr) {
+        let path = dir.join(&name);
+        if !path.is_file() {
+            continue;
+        }
+        if obs_store::SqliteSearchIndex::open(&path, Some(key)).is_ok() {
+            return Some(path);
+        }
+        indexes.discard(&path);
+    }
+    None
+}
+
+/// An older cache of the same Resource and content at another index version, to search
+/// while the current one is rebuilt: the newest such version, the cache directory first.
+/// Caches of other content are never used: their offsets point into the old text.
+#[cfg(not(target_arch = "wasm32"))]
+fn find_stale(cache_dir: Option<&Path>, obr: &Path, key: &obs_store::IndexKey) -> Option<PathBuf> {
+    let mut best: Option<(u32, PathBuf)> = None;
+    for dir in cache_folders(cache_dir, obr) {
+        for path in obs_store::search_index_files(&dir, &key.resource_id) {
+            let Ok(index) = obs_store::SqliteSearchIndex::open(&path, None) else {
+                continue;
+            };
+            let k = index.key();
+            if k.resource_id == key.resource_id
+                && k.content_hash == key.content_hash
+                && k.version != key.version
+                && best.as_ref().is_none_or(|(v, _)| k.version > *v)
+            {
+                best = Some((k.version, path));
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
+/// Whether an open cache is an older index of `key`'s Resource and content.
+#[cfg(not(target_arch = "wasm32"))]
+fn is_stale_of(index: &obs_store::SqliteSearchIndex, key: &obs_store::IndexKey) -> bool {
+    let k = index.key();
+    k.resource_id == key.resource_id && k.content_hash == key.content_hash
+}
+
+/// Delete the prebuilt caches in `search/` beside a Resource's `.obr` (Remove from library
+/// deletes the `.obr` itself).
+pub(crate) fn remove_prebuilt_search_indexes(obr: &Path, resource_id: &str) {
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(dir) = obr.parent() {
+        obs_store::remove_search_indexes(&dir.join("search"), resource_id, None);
+    }
+    #[cfg(target_arch = "wasm32")]
+    let _ = (obr, resource_id);
 }
 
 /// The Import indexer (#47's seam): builds the new Resource's cache in the cache directory
@@ -161,8 +263,12 @@ pub struct ResourceHits {
 pub struct SearchResults {
     /// In the order the Resources were requested.
     pub resources: Vec<ResourceHits>,
-    /// Requested Resources whose index is being built ("Indexing *Resource*…").
+    /// Requested Resources whose index is being built and that have no older index to search
+    /// meanwhile ("Indexing *Resource*…").
     pub indexing: Vec<String>,
+    /// Requested Resources searched through their older (stale) index while theirs is
+    /// rebuilt; their hits are in [`Self::resources`].
+    pub stale: Vec<String>,
     /// Requested Resources whose index could not be built, with the reason.
     pub failed: Vec<(String, String)>,
 }
@@ -208,9 +314,10 @@ impl Session {
         }
     }
 
-    /// Check every library Resource's cache: Ready if a cache with its current key exists,
-    /// otherwise queue a background rebuild. Indexes already Ready keep serving while others
-    /// build. Resources no longer in the library are forgotten.
+    /// Check every library Resource's cache: Ready if a usable cache with its current key
+    /// exists, otherwise queue a background rebuild (searching its older cache meanwhile, if it
+    /// has one). Indexes already Ready keep serving while others build. Resources no longer in
+    /// the library are forgotten.
     pub fn refresh_search_indexes(&mut self) {
         let ids: Vec<String> = self
             .library
@@ -245,27 +352,37 @@ impl Session {
             return;
         };
         #[cfg(not(target_arch = "wasm32"))]
-        {
+        let stale = {
             let key = obs_store::IndexKey::new(&entry.manifest, self.search.version);
-            if let Some(path) = find_cache(
-                self.search.cache_dir.as_deref(),
-                &entry.path,
-                &key.file_name(),
-            ) {
+            if let Some(path) = find_cache(&self.search, &entry.path, &key) {
                 self.search
                     .status
                     .insert(resource_id.to_string(), IndexStatus::Ready);
                 self.search.ready.insert(resource_id.to_string(), path);
+                if let Some(old) = self.search.stale.remove(resource_id) {
+                    self.search.discard(&old);
+                }
                 return;
             }
-        }
+            find_stale(self.search.cache_dir.as_deref(), &entry.path, &key)
+        };
         let _ = entry;
         if self.search.cache_dir.is_none() {
             self.search.ready.remove(resource_id);
+            self.search.stale.remove(resource_id);
             self.search
                 .status
                 .insert(resource_id.to_string(), IndexStatus::Unavailable);
             return;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        match stale {
+            Some(old) => {
+                self.search.stale.insert(resource_id.to_string(), old);
+            }
+            None => {
+                self.search.stale.remove(resource_id);
+            }
         }
         self.search.set_indexing(resource_id);
         self.start_next_index_build();
@@ -276,11 +393,16 @@ impl Session {
     pub fn forget_search_index(&mut self, resource_id: &str) {
         self.search.status.remove(resource_id);
         self.search.ready.remove(resource_id);
+        self.search.stale.remove(resource_id);
+        self.search.retried.remove(resource_id);
         self.search.queue.retain(|q| q != resource_id);
-        if let Some((job, id)) = &self.search.running
-            && id == resource_id
+        if let Some(run) = self.search.running.as_mut()
+            && run.id == resource_id
+            && !run.cancelled
         {
-            self.jobs().cancel(*job);
+            run.cancelled = true;
+            let job = run.job;
+            self.jobs().cancel(job);
         }
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(dir) = &self.search.cache_dir {
@@ -311,7 +433,11 @@ impl Session {
                             .map_err(|e| format!("{}: {e}", obr.display()))?;
                         build_cache(&resource, version, &dir, ctx)
                     });
-                self.search.running = Some((job, id));
+                self.search.running = Some(Running {
+                    job,
+                    id,
+                    cancelled: false,
+                });
                 return;
             }
             let _ = entry;
@@ -325,17 +451,21 @@ impl Session {
     pub(crate) fn poll_search_indexes(&mut self, events: Vec<JobEvent>) -> Vec<JobEvent> {
         let mut other = Vec::new();
         for event in events {
-            let Some((job, id)) = self.search.running.clone() else {
+            let Some(run) = self.search.running.clone() else {
                 other.push(event);
                 continue;
             };
-            if event.id != job {
+            if event.id != run.job {
                 other.push(event);
                 continue;
             }
+            let id = run.id;
             let tracked = self.library.get(&id).is_some() && self.search.status.contains_key(&id);
+            // A build cancelled by Remove from library: if the Resource is back, its own
+            // build is queued, so this outcome is not its status.
+            let current = tracked && !run.cancelled;
             match event.kind {
-                JobEventKind::Progress { done, total } if tracked => {
+                JobEventKind::Progress { done, total } if current => {
                     self.search
                         .status
                         .insert(id.clone(), IndexStatus::Indexing { done, total });
@@ -343,10 +473,9 @@ impl Session {
                 JobEventKind::Finished(out) => {
                     self.search.running = None;
                     if let Ok(path) = out.downcast::<PathBuf>() {
-                        if tracked {
-                            self.search.status.insert(id.clone(), IndexStatus::Ready);
-                            self.search.ready.insert(id, *path);
-                        } else {
+                        if current {
+                            self.index_built(&id, *path);
+                        } else if !tracked {
                             // Removed from the library while it was being built.
                             let _ = std::fs::remove_file(*path);
                         }
@@ -354,13 +483,13 @@ impl Session {
                 }
                 JobEventKind::Failed(e) => {
                     self.search.running = None;
-                    if tracked {
+                    if current {
                         self.search.status.insert(id, IndexStatus::Failed(e));
                     }
                 }
                 JobEventKind::Cancelled => {
                     self.search.running = None;
-                    if tracked {
+                    if current {
                         self.search
                             .status
                             .insert(id, IndexStatus::Failed("cancelled".into()));
@@ -373,6 +502,35 @@ impl Session {
             }
         }
         other
+    }
+
+    /// A background build finished: swap the new cache in for the stale one, which is
+    /// deleted. If the Resource changed meanwhile (the cache is for older content), check
+    /// again instead.
+    fn index_built(&mut self, id: &str, path: PathBuf) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let want = self
+                .library
+                .get(id)
+                .map(|e| obs_store::IndexKey::new(&e.manifest, self.search.version).file_name());
+            let got = path.file_name().map(|n| n.to_string_lossy().into_owned());
+            if want.is_none() || want != got {
+                self.search.status.remove(id);
+                self.search.ready.remove(id);
+                self.refresh_search_index(id);
+                return;
+            }
+        }
+        self.search
+            .status
+            .insert(id.to_string(), IndexStatus::Ready);
+        if let Some(old) = self.search.stale.remove(id)
+            && old != path
+        {
+            self.search.discard(&old);
+        }
+        self.search.ready.insert(id.to_string(), path);
     }
 
     /// Search the requested Resources' ready indexes now, on this thread. Resources still
@@ -419,7 +577,11 @@ impl Session {
         let mut results = SearchResults::default();
         for id in ids {
             let index = match self.open_search_index(&id) {
-                Ok(index) => index,
+                Ok(Opened::Current(index)) => index,
+                Ok(Opened::Stale(index)) => {
+                    results.stale.push(id.clone());
+                    index
+                }
                 Err(NotReady::Indexing) => {
                     results.indexing.push(id);
                     continue;
@@ -441,32 +603,48 @@ impl Session {
         Ok(results)
     }
 
-    /// Open a Resource's ready index. A cache that has gone missing or been replaced is
-    /// rebuilt (or found again, e.g. prebuilt) instead of failing the search.
+    /// Open a Resource's ready index, or its stale one while it is rebuilt. A cache that has
+    /// gone missing, been replaced or become unreadable is deleted (from the cache directory)
+    /// and rebuilt (or found again, e.g. prebuilt) instead of failing the search. A Failed
+    /// build is retried once per session.
     #[cfg(not(target_arch = "wasm32"))]
-    fn open_search_index(&mut self, id: &str) -> Result<obs_store::SqliteSearchIndex, NotReady> {
+    fn open_search_index(&mut self, id: &str) -> Result<Opened, NotReady> {
         let Some(entry) = self.library.get(id) else {
             return Err(NotReady::NotInLibrary);
         };
         let key = obs_store::IndexKey::new(&entry.manifest, self.search.version);
-        for _ in 0..2 {
+        for _ in 0..3 {
             match self.search.status.get(id).cloned() {
                 Some(IndexStatus::Ready) => {
-                    let opened = self
-                        .search
-                        .ready
-                        .get(id)
-                        .map(|p| obs_store::SqliteSearchIndex::open(p, Some(&key)));
-                    if let Some(Ok(index)) = opened {
-                        return Ok(index);
+                    if let Some(path) = self.search.ready.get(id).cloned() {
+                        match obs_store::SqliteSearchIndex::open(&path, Some(&key)) {
+                            Ok(index) => return Ok(Opened::Current(index)),
+                            Err(_) => self.search.discard(&path),
+                        }
                     }
-                    // Deleted or replaced under us: look again, else rebuild.
+                    // Deleted, replaced or corrupt under us: look again, else rebuild.
                     self.search.status.remove(id);
                     self.search.ready.remove(id);
                     self.refresh_search_index(id);
                 }
-                Some(IndexStatus::Indexing { .. }) => return Err(NotReady::Indexing),
-                Some(IndexStatus::Failed(e)) => return Err(NotReady::Failed(e)),
+                Some(IndexStatus::Indexing { .. }) => {
+                    if let Some(path) = self.search.stale.get(id).cloned() {
+                        if let Ok(index) = obs_store::SqliteSearchIndex::open(&path, None)
+                            && is_stale_of(&index, &key)
+                        {
+                            return Ok(Opened::Stale(index));
+                        }
+                        self.search.stale.remove(id);
+                    }
+                    return Err(NotReady::Indexing);
+                }
+                Some(IndexStatus::Failed(e)) => {
+                    if !self.search.retried.insert(id.to_string()) {
+                        return Err(NotReady::Failed(e));
+                    }
+                    self.search.status.remove(id);
+                    self.refresh_search_index(id);
+                }
                 Some(IndexStatus::Unavailable) => {
                     return Err(NotReady::Failed("no Search index cache directory".into()));
                 }
@@ -475,6 +653,15 @@ impl Session {
         }
         Err(NotReady::Indexing)
     }
+}
+
+/// An index a search can use.
+#[cfg(not(target_arch = "wasm32"))]
+enum Opened {
+    /// The current cache.
+    Current(obs_store::SqliteSearchIndex),
+    /// An older index version's cache, while the current one is rebuilt.
+    Stale(obs_store::SqliteSearchIndex),
 }
 
 /// Why a Resource could not be searched now.
@@ -540,6 +727,9 @@ fn indexes(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
             v["resource_id"] = json!(id);
             if let Some(p) = s.search.path(id) {
                 v["path"] = json!(p.display().to_string());
+            }
+            if let Some(p) = s.search.stale_path(id) {
+                v["stale"] = json!(p.display().to_string());
             }
             v
         })
