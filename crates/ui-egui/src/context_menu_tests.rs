@@ -281,8 +281,57 @@ fn right_click_on_an_untagged_word_offers_the_english_word_chooser() {
     right_click(&mut h, should);
     h.click_text("🔎 Search this");
     let (query, bibles) = search_query(&h);
-    assert_eq!(query, "should");
+    assert_eq!(query, "\"should\"");
     assert_eq!(bibles.as_deref(), Some(&["kjv".to_string()][..]));
+    drop(h);
+}
+
+#[test]
+fn search_this_on_a_selected_uppercase_and_searches_the_word_not_the_operator() {
+    // Revelation 19:16 in capitals: a selected "AND" is the word, not the AND operator
+    // (unquoted, the query parser drops it and the search is empty).
+    let caps = obs_engine::testing::tagged_bible(
+        "caps",
+        "Capitals Bible",
+        "CAPS",
+        "en",
+        &[(
+            Verse::new(Book::Revelation, 19, 16),
+            "And he hath on his vesture and on his thigh a name written, \
+             KING OF KINGS, AND LORD OF LORDS.",
+        )],
+    );
+    let mut h = Harness::new();
+    let _files = setup_with(&mut h, "literal-operator", &[caps]);
+    let tab = h
+        .shell
+        .run("resource.open", &json!({ "id": "caps", "split": true }))
+        .unwrap()["tab"]
+        .as_u64()
+        .map(TabId)
+        .unwrap();
+    h.frames(2);
+    h.shell
+        .run("tab.go", &json!({ "tab": tab.0, "text": "Rev 19:16" }));
+    settle_all(&mut h);
+    let and = super::word_info::word_spot(&h, tab, "AND");
+    right_click(&mut h, and);
+    assert!(h.find("“AND”").is_some(), "{:?}", h.texts());
+    h.click_text("🔎 Search this");
+    settle_search(&mut h);
+    let ws = &h.shell.session().workspace;
+    let search = ws
+        .tabs()
+        .find(|t| t.kind == TabKind::Tool(Tool::Search))
+        .map(|t| t.id)
+        .unwrap();
+    let st = h.shell.session().search_tab(search).unwrap();
+    assert!(st.error.is_none(), "{:?}", st.error);
+    let results = st.results.as_ref().expect("Bible results");
+    assert!(!results.rows.is_empty(), "{}", results.summary());
+    let (query, bibles) = search_query(&h);
+    assert_eq!(query, "\"AND\"");
+    assert_eq!(bibles.as_deref(), Some(&["caps".to_string()][..]));
     drop(h);
 }
 
@@ -598,7 +647,7 @@ fn ctrl_cmd_click_on_a_search_action_opens_a_new_search_tab() {
     assert_eq!(tabs.len(), 3, "a third Search Tab");
     assert_eq!(query_of(&h, open[0]), "world");
     assert_eq!(query_of(&h, new), "strong:G25");
-    assert!(tabs.iter().any(|t| query_of(&h, *t) == "loved"));
+    assert!(tabs.iter().any(|t| query_of(&h, *t) == "\"loved\""));
 
     // Without Ctrl/Cmd the most recent Search Tab runs it.
     let at = loved(&mut h);

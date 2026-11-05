@@ -428,9 +428,10 @@ impl State {
         });
     }
 
-    /// Search for selected text (#142): a phrase when it is several words. In a Bible, Bible
-    /// search in that Bible; elsewhere, Library search in that Resource. In the most recent
-    /// Search Tab, or a new one with `new_tab` (Ctrl/Cmd held).
+    /// Search for selected text (#142), always quoted so it is searched literally: a
+    /// selected `OR`, `AND`, `NOT`, `G25`, `-word` or `word*` is the text, not query syntax.
+    /// In a Bible, Bible search in that Bible; elsewhere, Library search in that Resource.
+    /// In the most recent Search Tab, or a new one with `new_tab` (Ctrl/Cmd held).
     pub(super) fn search_text(
         &mut self,
         text: &str,
@@ -442,12 +443,7 @@ impl State {
         if words.is_empty() {
             return;
         }
-        let joined = words.join(" ").replace('"', "");
-        let query = if words.len() > 1 {
-            format!("\"{joined}\"")
-        } else {
-            joined
-        };
+        let query = format!("\"{}\"", words.join(" ").replace('"', ""));
         let params = if ty == ResourceType::Bible {
             json!({ "text": query, "mode": "bible", "bibles": resource, "split": new_tab })
         } else {
