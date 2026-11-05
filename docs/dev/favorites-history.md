@@ -38,7 +38,10 @@ Favorite or Visit is saved, so it still reads well if the Resource later leaves 
 3. A Word Study moves the most recently active Word Study Tab (`word_study::open_at`).
 4. Otherwise the most recently active Tab of that kind moves there (a jump: it gets a Back
    entry and its Link set follows). With none, or with `split`, a new Tab opens: a new
-   Resource Tab starts at the location once the UI loads it; a Guide or Tool jumps there.
+   Resource Tab starts at the location once the UI loads it, then jumps there
+   (`Effect::NavigateOpened`, applied once its Verse map is known) so the Link set it
+   joined from the focused Tab follows, each member in its own numbering; a Guide or Tool
+   jumps there.
 
 ## Recording History
 

@@ -425,6 +425,14 @@ pub enum Effect {
         tab: TabId,
         verse: Verse,
     },
+    /// Go to a location, in the Tab's own numbering, in a Resource Tab opened just now at it
+    /// (a Favorite or a History Visit), once its Verse map is loaded: a jump, so its Link set
+    /// follows.
+    NavigateOpened {
+        tab: TabId,
+        verse: Option<Verse>,
+        key: Option<Key>,
+    },
     /// Bring a position in a Tab's Resource into view: a text unit and a UTF-8 byte offset
     /// into it (the Notes Tool following a Text-range anchor, #64).
     RevealText {

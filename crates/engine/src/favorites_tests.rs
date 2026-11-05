@@ -104,6 +104,16 @@ fn starring_rom_8_28_in_bsb_and_opening_it_after_a_restart_lands_there() {
     assert_eq!(at(&s, t), Some(v(Book::Romans, 8, 28)));
     assert_eq!(s.workspace.focused(), Some(t));
     assert!(s.favorite_of(t).is_some());
+    // Once the UI has loaded it, the new Tab jumps there, so its Link set follows.
+    assert!(
+        s.workspace
+            .take_effects()
+            .contains(&Effect::NavigateOpened {
+                tab: t,
+                verse: Some(v(Book::Romans, 8, 28)),
+                key: None,
+            })
+    );
 
     // With BSB open elsewhere, that Tab moves there instead of a new one opening.
     go(&mut s, t, "Gen 1:1");
@@ -398,21 +408,34 @@ fn history_day_headings_move_on_at_midnight() {
     let bsb = open(&mut s, "bsb");
     go(&mut s, bsb, "Jn 3:16");
     s.record_history();
+    let visit = s.history()[0].clone();
+    s.run("history.clear", &json!({})).unwrap();
+    // The same Visit, made at a chosen time (15 June 2025, 12:00 UTC), not the clock's.
+    let visited_at = 1_749_988_800;
+    let (db, _) = obs_store::UserStore::open(&root.join("user.db")).unwrap();
+    db.record_visit_at(&visit.label, &visit.location.to_json(), visited_at)
+        .unwrap();
     let headings = |s: &Session| {
         s.history_days("")
             .into_iter()
             .map(|d| d.heading)
             .collect::<Vec<_>>()
     };
+    s.refresh_history_day_as_of(visited_at);
     assert_eq!(headings(&s), ["Today"]);
-    // A day later, with History left open: its headings are worked out again.
-    let tomorrow = unix_now_for_tests() + 86_400;
-    s.refresh_history_day_as_of(tomorrow);
+    // The first hour of the next local day (whatever this machine's time zone and its
+    // daylight-saving changes), with History left open: its headings are worked out again.
+    let day = db.local_day(visited_at).unwrap();
+    let mut next_day = visited_at;
+    while db.local_day(next_day).unwrap() == day {
+        next_day += 3_600;
+    }
+    s.refresh_history_day_as_of(next_day);
     assert_eq!(headings(&s), ["Yesterday"]);
     // Within the same day, nothing is read again.
-    s.refresh_history_day_as_of(tomorrow + 1);
+    s.refresh_history_day_as_of(next_day + 1);
     assert_eq!(headings(&s), ["Yesterday"]);
-    drop(s);
+    drop((s, db));
     std::fs::remove_dir_all(&root).unwrap();
 }
 

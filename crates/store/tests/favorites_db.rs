@@ -77,11 +77,17 @@ fn favorites_survive_a_reopen_in_their_folders() {
 fn history_is_newest_first_with_its_local_day_and_can_be_cleared() {
     let (db, _) = UserStore::open(&tmp("history")).unwrap();
     let t = now();
-    db.record_visit_at("Genesis 1:1 · BSB", "1", t - 86_400)
+    // The previous local day: not always 86,400 seconds back (daylight-saving changes).
+    let today = db.local_day(t).unwrap();
+    let mut yesterday = t - 3_600;
+    while db.local_day(yesterday).unwrap() == today {
+        yesterday -= 3_600;
+    }
+    db.record_visit_at("Genesis 1:1 · BSB", "1", yesterday)
         .unwrap();
     db.record_visit_at("Romans 8:28 · BSB", "2", t).unwrap();
     db.record_visit_at("John 3:16 · BSB", "3", t).unwrap();
-    let h = db.history().unwrap();
+    let h = db.history_as_of(t).unwrap();
     let labels: Vec<&str> = h.iter().map(|v| v.label.as_str()).collect();
     assert_eq!(
         labels,

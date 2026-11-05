@@ -390,7 +390,8 @@ impl Session {
         }
         let tab = crate::workspace_commands::open_tab(self, kind.clone(), req);
         if kind.is_reading() {
-            // The UI places a new Resource Tab at its own location once it has loaded it.
+            // The UI places a new Resource Tab at its own location once it has loaded it, then
+            // jumps there so the Link set it joined follows (in its numbering, known only then).
             if let Some(t) = self.workspace.tab_mut(tab) {
                 if let Some(v) = location.verse {
                     t.history.visit(v);
@@ -399,6 +400,11 @@ impl Session {
                     t.entry_history.visit(key.clone());
                 }
             }
+            self.workspace.push_effect(Effect::NavigateOpened {
+                tab,
+                verse: location.verse,
+                key: location.key.clone(),
+            });
         } else if let Some(v) = location.verse {
             self.workspace.navigate(tab, v);
         }

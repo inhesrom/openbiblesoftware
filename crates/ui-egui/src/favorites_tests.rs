@@ -231,3 +231,103 @@ fn opening_the_first_bible_is_in_history_after_a_restart_without_a_jump() {
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A Favorite or History Visit opening a new Resource Tab is a jump: the Link set the Tab
+/// joins follows it, translated into each member's numbering. HEB numbers Ps 51 the Hebrew
+/// way (51:5 is Standard 51:3); BSB numbers it like the Standard.
+#[test]
+fn opening_a_favorite_or_visit_in_a_new_tab_moves_its_link_set() {
+    let dir = folder("link-set");
+    let long = "Have mercy upon me, O God, according to thy lovingkindness: according unto the \
+                multitude of thy tender mercies blot out my transgressions.";
+    let ps = |n| v(Book::Psalms, 51, n);
+    let mut bsb_text: Vec<(Verse, String)> = (1..=31)
+        .map(|n| (v(Book::Genesis, 1, n), format!("Genesis 1:{n}. {long}")))
+        .collect();
+    bsb_text.extend((1..=19).map(|n| (ps(n), format!("Psalm 51:{n}. {long}"))));
+    let heb_text: Vec<(Verse, String)> = (1..=21)
+        .map(|n| (ps(n), format!("Psalm 51:{n} (Hebrew). {long}")))
+        .collect();
+    let heb_standard: Vec<Option<Verse>> = (1..=21).map(|n| Some(ps(n.max(2) - 2))).collect();
+    let bsb_verses: Vec<(Verse, &str)> = bsb_text.iter().map(|(v, t)| (*v, t.as_str())).collect();
+    let heb_verses: Vec<(Verse, &str)> = heb_text.iter().map(|(v, t)| (*v, t.as_str())).collect();
+    obs_engine::testing::bibles::write_library(
+        &dir,
+        &[
+            bible("bsb", "BSB", &bsb_verses, None, &[]),
+            bible("heb", "HEB", &heb_verses, Some(&heb_standard), &[]),
+        ],
+    );
+    let mut h = Harness::launch_full(Some(&dir.join("user.db")), JobMode::Inline, Some(&dir));
+    for id in ["bsb", "heb"] {
+        let lib = &mut h.shell.st.session.library;
+        lib.add_file(&dir.join(format!("{id}.obr"))).unwrap();
+    }
+    let open: Vec<TabId> = h.shell.st.session.workspace.tabs().map(|t| t.id).collect();
+    for t in open {
+        h.shell.run("tab.close", &json!({ "tab": t.0 }));
+    }
+    settle_all(&mut h);
+    let open_resource = |h: &mut Harness, id: &str| {
+        let out = h
+            .shell
+            .run("resource.open", &json!({ "id": id, "split": true }))
+            .unwrap();
+        settle_all(h);
+        TabId(out["tab"].as_u64().unwrap())
+    };
+
+    // Star HEB at its Ps 51:5, then close it.
+    let heb = open_resource(&mut h, "heb");
+    go(&mut h, heb, "Ps 51:5");
+    let favorite = h
+        .shell
+        .run("favorite.add", &json!({ "tab": heb.0 }))
+        .unwrap()["id"]
+        .clone();
+    h.shell.run("tab.close", &json!({ "tab": heb.0 }));
+    settle_all(&mut h);
+
+    // BSB at Gen 1:1, in Link set A; the Favorite opens HEB from it, so HEB joins A.
+    let bsb = open_resource(&mut h, "bsb");
+    h.shell
+        .run("tab.link", &json!({ "tab": bsb.0, "set": "A" }));
+    go(&mut h, bsb, "Gen 1:1");
+    assert_eq!(location(&mut h, bsb), Some(v(Book::Genesis, 1, 1)));
+    let out = h
+        .shell
+        .run("favorite.open", &json!({ "id": favorite }))
+        .unwrap();
+    settle_all(&mut h);
+    let heb = TabId(out["tab"].as_u64().unwrap());
+    let ws = &h.shell.st.session.workspace;
+    assert_eq!(ws.tab(heb).unwrap().link, Some('A'));
+    assert_eq!(location(&mut h, heb), Some(ps(5)));
+    assert_eq!(
+        location(&mut h, bsb),
+        Some(ps(3)),
+        "BSB follows, in its numbering"
+    );
+    assert_eq!(h.shell.st.location_text(bsb), "Psalms 51:3");
+
+    // The same from History: BSB back at Gen 1:1, HEB closed, its Visit opened from BSB.
+    go(&mut h, bsb, "Gen 1:1");
+    h.shell.run("tab.close", &json!({ "tab": heb.0 }));
+    h.shell.st.session.workspace.user_focused(bsb);
+    settle_all(&mut h);
+    assert_eq!(location(&mut h, bsb), Some(v(Book::Genesis, 1, 1)));
+    let visit = (h.shell.st.session.history().iter())
+        .find(|v| v.label.ends_with("· HEB"))
+        .expect("HEB's Visit")
+        .id;
+    let out = h
+        .shell
+        .run("history.open", &json!({ "id": visit }))
+        .unwrap();
+    settle_all(&mut h);
+    let heb = TabId(out["tab"].as_u64().unwrap());
+    assert_eq!(location(&mut h, heb), Some(ps(5)));
+    assert_eq!(location(&mut h, bsb), Some(ps(3)));
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

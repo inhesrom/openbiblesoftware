@@ -386,6 +386,15 @@ impl Shell {
                 Effect::NavigateStandard { tab, verse } => {
                     self.st.session.workspace.navigate_standard(tab, verse);
                 }
+                Effect::NavigateOpened { tab, verse, key } => {
+                    let ws = &mut self.st.session.workspace;
+                    if let Some(v) = verse {
+                        ws.navigate(tab, v);
+                    }
+                    if let Some(key) = key {
+                        ws.navigate_entry(tab, key);
+                    }
+                }
                 Effect::RevealText { tab, unit, byte } => {
                     let now = self.st.now;
                     let shown = self
