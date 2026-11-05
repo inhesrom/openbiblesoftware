@@ -192,12 +192,12 @@ fn key_words_without_a_strongs_tagged_bible_are_empty_with_a_hint() {
     assert!(k.words.is_empty());
     assert!(
         GuideSection::KeyWords
-            .empty_hint(&s.library)
+            .empty_hint(&s.library, &s.guides.indexes())
             .contains("no Bible with Strong's numbers")
     );
     assert!(
         GuideSection::KeyWords
-            .empty_hint(&Library::new())
+            .empty_hint(&Library::new(), &Default::default())
             .contains("Add a Bible with Strong's numbers")
     );
     drop(s);
@@ -277,7 +277,7 @@ fn people_and_places_without_an_index_are_empty_with_a_hint() {
     write(&t.lib(), &kjv_genesis_12());
     let mut s = session(&t);
     assert!(people(&mut s, Passage::verse(gen_12(1))).is_empty());
-    let hint = GuideSection::PeopleAndPlaces.empty_hint(&s.library);
+    let hint = GuideSection::PeopleAndPlaces.empty_hint(&s.library, &s.guides.indexes());
     assert!(hint.contains("Add a People & places index"), "{hint}");
     drop(s);
 }

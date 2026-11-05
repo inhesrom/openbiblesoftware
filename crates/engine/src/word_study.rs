@@ -215,6 +215,22 @@ impl RenderingIndexes {
         Err("Opening Resources is not supported here".into())
     }
 
+    /// A Bible's rendering index if a job has already read it; never reads, nor waits for a
+    /// job reading it (for the UI thread).
+    pub fn loaded(&self, entry: &LibraryEntry) -> Option<Arc<RenderingIndex>> {
+        let m = &entry.manifest;
+        let identity = (m.resource_id.clone(), m.revision, m.content_hash.clone());
+        let slot = {
+            let loaded = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
+            Arc::clone(loaded.get(&identity)?)
+        };
+        match slot.try_lock() {
+            Ok(index) => index.clone(),
+            Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner().clone(),
+            Err(std::sync::TryLockError::WouldBlock) => None,
+        }
+    }
+
     /// Every Strong's-tagged English Bible (one whose index has renderings) with its index,
     /// the best tagged first: the most Strong's numbers rendered, Preferred order breaking
     /// ties. Not the most Tagged words: the Starter eBible ASV and WEB tag about twice as
@@ -719,12 +735,21 @@ impl Session {
                 if self.word_study.previews.len() >= PREVIEWS_LIMIT {
                     self.word_study.previews.clear();
                 }
-                // A batch that failed shows empty previews rather than asking again.
+                // A batch that failed shows why rather than asking again.
                 let read: Vec<(Verse, OccurrencePreview)> = match result {
                     Ok(Computed::Previews(p)) => p.clone(),
-                    _ => verses
+                    Ok(_) => verses
                         .iter()
-                        .map(|v| (*v, OccurrencePreview::default()))
+                        .map(|v| {
+                            (
+                                *v,
+                                OccurrencePreview::failed("Unexpected Word Study result"),
+                            )
+                        })
+                        .collect(),
+                    Err(e) => verses
+                        .iter()
+                        .map(|v| (*v, OccurrencePreview::failed(e.clone())))
                         .collect(),
                 };
                 for (v, p) in read {

@@ -121,7 +121,7 @@ fn g5485_is_translated_grace_and_favour_in_the_kjv() {
     // A number no English Bible renders: nothing, and the hint says why.
     assert!(translated_as(&mut s, "G9999").renderings.is_empty());
     assert_eq!(
-        GuideSection::TranslatedAs.empty_hint(&s.library),
+        GuideSection::TranslatedAs.empty_hint(&s.library, &s.guides.indexes()),
         "None in your library: no English Bible with Strong's numbers translates this word."
     );
     drop(s);
@@ -201,7 +201,7 @@ fn occurrences_come_from_tagnt_per_book_with_forms_and_kjv_previews() {
     assert!(o.filtered(Some("no such form")).verses.is_empty());
     // Show all in Search: the `strong:` query in the preview Bible, then TAGNT.
     assert_eq!(o.search_query(n("G5485")), "strong:G5485");
-    assert_eq!(o.search_bibles(), "kjv-grace,tagnt-grace");
+    assert_eq!(o.search_bibles(n("G5485")), "kjv-grace,tagnt-grace");
 
     // Previews come from the KJV with the word highlighted, read only when asked for.
     let bible = o.preview.clone().unwrap();
@@ -315,10 +315,10 @@ fn an_extended_number_counts_in_the_hebrew_bible_with_its_forms() {
     let o = occurrences(&mut s, "G5485");
     assert_eq!((o.bible_id.as_str(), o.count()), ("kjv-grace", 9));
     assert!(o.forms.is_empty());
-    assert_eq!(o.search_bibles(), "kjv-grace");
+    assert_eq!(o.search_bibles(n("G5485")), "kjv-grace");
     assert!(forms(&mut s, "G5485").forms.is_empty());
     assert_eq!(
-        GuideSection::Forms.empty_hint(&s.library),
+        GuideSection::Forms.empty_hint(&s.library, &s.guides.indexes()),
         "None in your library. Add a Hebrew or Greek Bible with Morphology (TAHOT, TAGNT) \
          to see this word's forms."
     );
@@ -363,6 +363,208 @@ fn an_occurrence_opens_its_bible_at_the_verse() {
         .is_err()
     );
     drop(s);
+}
+
+/// Psalm 3 numbered as the Hebrew Bible numbers it: the superscription is verse 1, so the
+/// last verse is 9 (the Standard's 8).
+fn hebrew_psalm_3() -> obs_model::Resource {
+    let texts = [
+        "A Psalm of David, when he fled from Absalom his son.",
+        "LORD, how are they increased that trouble me!",
+        "Many there be which say of my soul,",
+        "But thou, O LORD, art a shield for me;",
+        "I cried unto the LORD with my voice,",
+        "I laid me down and slept;",
+        "I will not be afraid of ten thousands of people,",
+        "Arise, O LORD; save me, O my God:",
+        "Salvation belongeth unto the LORD: thy blessing is upon thy people. Selah.",
+    ];
+    let verses: Vec<(Verse, &str)> = texts
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (v(Book::Psalms, 3, i as u16 + 1), *t))
+        .collect();
+    let standard: Vec<Option<Verse>> = (0..texts.len())
+        .map(|i| Some(v(Book::Psalms, 3, i as u16)))
+        .collect();
+    testing::bibles::bible(
+        "heb-ps",
+        "HPS",
+        &verses,
+        Some(&standard),
+        &[("LORD", "H3068")],
+    )
+}
+
+#[test]
+fn an_occurrence_opens_at_a_verse_the_standard_does_not_have() {
+    // Ps 3:9 in Hebrew numbering is Standard Ps 3:8; Standard Ps 3 has no verse 9, so the
+    // reference is read in the Bible's own numbering.
+    let t = Temp::new("open-native");
+    let mut s = session(&t.0, &[hebrew_psalm_3()]);
+    let out = s
+        .run(
+            "word_study.open_verse",
+            &json!({ "bible": "heb-ps", "verse": "Ps 3:9" }),
+        )
+        .unwrap();
+    let tab = TabId(out["tab"].as_u64().unwrap());
+    assert_eq!(
+        s.workspace.tab(tab).unwrap().history.current(),
+        Some(v(Book::Psalms, 3, 9))
+    );
+    // A Verse the Bible itself lacks is still refused.
+    assert!(
+        s.run(
+            "word_study.open_verse",
+            &json!({ "bible": "heb-ps", "verse": "Ps 3:10" })
+        )
+        .is_err()
+    );
+    drop(s);
+}
+
+#[test]
+fn show_all_in_search_looks_for_the_number_each_bible_tags() {
+    // With the Hebrew Bible, H1254A is counted there; the KJV tags only H1254, so Search
+    // for `strong:H1254A` would find nothing in it and it is left out.
+    let t = Temp::new("search-extended");
+    let mut s = session(&t.0, &[testing::kjv_love(), testing::hebrew_bara()]);
+    let number = n("H1254A");
+    let o = occurrences(&mut s, "H1254A");
+    assert_eq!(o.search_query(number), "strong:H1254A");
+    assert_eq!(o.search_bibles(number), "heb-bara");
+    drop(s);
+
+    // KJV only: H1254A is counted as H1254, so Search looks for H1254 in the KJV.
+    let t = Temp::new("search-base");
+    let mut s = session(&t.0, &[testing::kjv_love()]);
+    let o = occurrences(&mut s, "H1254A");
+    assert_eq!(o.counted, Some(n("H1254")));
+    assert_eq!(o.search_query(number), "strong:H1254");
+    assert_eq!(o.search_bibles(number), "kjv-love");
+    drop(s);
+}
+
+#[test]
+fn a_preview_that_cannot_be_read_says_so() {
+    let t = Temp::new("preview-failed");
+    let mut s = grace_session(&t);
+    let o = occurrences(&mut s, "G5485");
+    let bible = o.preview.clone().unwrap();
+    assert_eq!(bible.id, "kjv-grace");
+    // The preview Bible's file goes away before its previews are read.
+    std::fs::remove_file(t.0.join("kjv-grace.obr")).unwrap();
+    let wanted = [v(Book::Luke, 1, 30)];
+    s.occurrence_previews(&bible, &wanted);
+    pump(&mut s);
+    let got = s.occurrence_previews(&bible, &wanted);
+    let p = got[0].as_ref().unwrap();
+    assert!(p.text.is_empty());
+    assert!(p.error.is_some(), "{p:?}");
+    drop(s);
+}
+
+#[test]
+fn empty_hints_ask_for_a_bible_with_strongs_numbers() {
+    // Only TAGNT: no English Bible with Strong's numbers, so Translated as suggests one.
+    let t = Temp::new("hint-tagnt");
+    let mut s = session(&t.0, &[testing::tagnt_grace()]);
+    assert!(translated_as(&mut s, "G5485").renderings.is_empty());
+    assert_eq!(
+        GuideSection::TranslatedAs.empty_hint(&s.library, &s.guides.indexes()),
+        "None in your library. Add an English Bible with Strong's numbers (the KJV with \
+         Strong's) to see how this word is translated."
+    );
+    // TAGNT has Strong's numbers, so an Occurrences miss says nothing has the word.
+    assert!(occurrences(&mut s, "G9999").verses.is_empty());
+    assert_eq!(
+        GuideSection::Occurrences.empty_hint(&s.library, &s.guides.indexes()),
+        "None in your library: no Bible with Strong's numbers has this word."
+    );
+    drop(s);
+
+    // Only an untagged English Bible: both sections suggest adding a tagged one.
+    let t = Temp::new("hint-untagged");
+    let web = testing::bibles::bible(
+        "web",
+        "WEB",
+        &[(v(Book::Luke, 1, 30), "you have found favor with God.")],
+        None,
+        &[],
+    );
+    let mut s = session(&t.0, &[web]);
+    assert!(translated_as(&mut s, "G5485").renderings.is_empty());
+    assert!(occurrences(&mut s, "G5485").verses.is_empty());
+    assert_eq!(
+        GuideSection::TranslatedAs.empty_hint(&s.library, &s.guides.indexes()),
+        "None in your library. Add an English Bible with Strong's numbers (the KJV with \
+         Strong's) to see how this word is translated."
+    );
+    assert_eq!(
+        GuideSection::Occurrences.empty_hint(&s.library, &s.guides.indexes()),
+        "None in your library. Add a Bible with Strong's numbers to see where this word \
+         occurs."
+    );
+    drop(s);
+}
+
+#[test]
+fn a_verse_map_that_does_not_line_up_is_read_verse_by_verse() {
+    use obs_scripture::{Passage, VerseMap, VerseMapEntry};
+    let unit = obs_model::UnitId::book(Book::Psalms);
+    let verse = |verse: Verse, start: u32| obs_model::BibleVerse {
+        verse,
+        last: verse.verse,
+        unit: unit.clone(),
+        start,
+        end: start + 1,
+    };
+    let verses = [
+        verse(v(Book::Psalms, 2, 12), 0),
+        verse(v(Book::Psalms, 3, 2), 2),
+        verse(v(Book::Psalms, 3, 9), 4),
+    ];
+    // Entries for the last two Verses only: by position they would land on the wrong ones.
+    let entry = |native: Verse, standard: Verse| VerseMapEntry {
+        verse: native,
+        last: native.verse,
+        standard: Some(Passage::verse(standard)),
+    };
+    let map = VerseMap::new(
+        vec![
+            entry(v(Book::Psalms, 3, 2), v(Book::Psalms, 3, 1)),
+            entry(v(Book::Psalms, 3, 9), v(Book::Psalms, 3, 8)),
+        ],
+        Vec::new(),
+        &obs_scripture::Standard,
+    );
+    assert_eq!(
+        crate::word_sections::standard_verses(&verses, Some(&map)),
+        [
+            (v(Book::Psalms, 2, 12), Some(v(Book::Psalms, 2, 12))),
+            (v(Book::Psalms, 3, 2), Some(v(Book::Psalms, 3, 1))),
+            (v(Book::Psalms, 3, 9), Some(v(Book::Psalms, 3, 8))),
+        ]
+    );
+    // Lined up, the map is read by position: an Unmapped verse stays Unmapped.
+    let unmapped = VerseMap::new(
+        vec![
+            VerseMapEntry {
+                verse: v(Book::Psalms, 2, 12),
+                last: 12,
+                standard: None,
+            },
+            entry(v(Book::Psalms, 3, 2), v(Book::Psalms, 3, 1)),
+            entry(v(Book::Psalms, 3, 9), v(Book::Psalms, 3, 8)),
+        ],
+        Vec::new(),
+        &obs_scripture::Standard,
+    );
+    assert_eq!(
+        crate::word_sections::standard_verses(&verses, Some(&unmapped))[0],
+        (v(Book::Psalms, 2, 12), None)
+    );
 }
 
 fn starter_library() -> Option<PathBuf> {

@@ -395,7 +395,7 @@ fn h1254a_lists_tbesh_then_bdb_then_strongs() {
     // Nothing for a number no Lexicon has; no Lexicon at all names the kind it needs.
     assert!(lexicon_entries(&mut s, "G9999").is_empty());
     assert_eq!(
-        GuideSection::LexiconEntries.empty_hint(&Library::new()),
+        GuideSection::LexiconEntries.empty_hint(&Library::new(), &Default::default()),
         "None in your library. Add a Lexicon to read its entry for this word."
     );
     drop(s);

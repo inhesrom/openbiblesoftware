@@ -158,16 +158,27 @@ impl OccurrenceList {
         out
     }
 
-    /// The Search query for every occurrence: `strong:G5485`.
+    /// The number Show all in Search looks for: the one counted (an extended number's base in
+    /// a Bible that tags only base numbers), else the Word Study's own.
+    fn search_number(&self, number: StrongsNumber) -> StrongsNumber {
+        self.counted.unwrap_or(number)
+    }
+
+    /// The Search query for every occurrence: `strong:G5485`, with the number counted
+    /// (Search matches an extended number exactly).
     pub fn search_query(&self, number: StrongsNumber) -> String {
-        format!("strong:{number}")
+        format!("strong:{}", self.search_number(number))
     }
 
     /// The Bibles Show all in Search searches: the preview Bible first (its text is what the
-    /// rows show), then the counted Bible.
-    pub fn search_bibles(&self) -> String {
+    /// rows show), then the counted Bible. The preview Bible is left out when it tags the
+    /// number differently (the KJV's H1254 for TAHOT's H1254A): the query finds nothing there.
+    pub fn search_bibles(&self, number: StrongsNumber) -> String {
+        let wanted = self.search_number(number);
         let mut ids: Vec<&str> = Vec::new();
-        if let Some(p) = &self.preview {
+        if let Some(p) = &self.preview
+            && p.highlight == wanted
+        {
             ids.push(&p.id);
         }
         if !self.bible_id.is_empty() && !ids.contains(&self.bible_id.as_str()) {
@@ -227,17 +238,11 @@ impl Concordance {
         let map = store.verse_map()?;
         let mut by_unit: HashMap<obs_model::UnitId, Vec<(u32, u32, u32)>> = HashMap::new();
 
-        let mut out = Concordance::default();
+        let mut out = Concordance {
+            verses: standard_verses(&verses, map.as_ref()),
+            ..Concordance::default()
+        };
         for (i, v) in verses.iter().enumerate() {
-            let standard = match &map {
-                Some(m) => m
-                    .entries()
-                    .get(i)
-                    .and_then(|e| e.standard)
-                    .map(|p| p.start()),
-                None => Some(v.verse),
-            };
-            out.verses.push((v.verse, standard));
             by_unit
                 .entry(v.unit.clone())
                 .or_default()
@@ -306,6 +311,22 @@ impl Concordance {
     fn code(&self, id: u32) -> Option<&str> {
         self.codes.get(id as usize).map(String::as_str)
     }
+}
+
+/// Each Bible Verse (own numbering) with its Standard Verse (`None`: Unmapped), as the
+/// Search Tool's outline reads them: the Verse map by position only when it lines up with the
+/// verse list, otherwise looked up Verse by Verse.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+pub(crate) fn standard_verses(
+    verses: &[obs_model::BibleVerse],
+    map: Option<&obs_scripture::VerseMap>,
+) -> Vec<(Verse, Option<Verse>)> {
+    let listed: Vec<(Verse, u16)> = verses.iter().map(|v| (v.verse, v.last)).collect();
+    crate::bible_search::BibleOutline::new(&listed, map)
+        .verses
+        .into_iter()
+        .map(|v| (v.native, v.standard.map(|p| p.start())))
+        .collect()
 }
 
 /// The plain-English form of a Morphology code and its spelled-out reading; the raw code when
@@ -595,13 +616,27 @@ pub fn forms(
 }
 
 /// One Occurrences row's preview: the Verse's text in the preview Bible with the word
-/// highlighted. Empty text when the Bible does not have the Verse.
+/// highlighted. Empty text when the Bible does not have the Verse, or (with `error`) when it
+/// could not be read.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct OccurrencePreview {
     pub text: String,
     pub highlights: Vec<Range<usize>>,
     /// The Verse in the preview Bible's own numbering, for opening it there.
     pub native: Option<Verse>,
+    /// Why the preview could not be read (the Bible's file failed), so the row does not say
+    /// the Bible lacks the Verse.
+    pub error: Option<String>,
+}
+
+impl OccurrencePreview {
+    /// A preview that could not be read.
+    pub fn failed(error: impl Into<String>) -> Self {
+        Self {
+            error: Some(error.into()),
+            ..Self::default()
+        }
+    }
 }
 
 /// Read previews of Standard `verses` from `bible`.
@@ -648,10 +683,14 @@ pub fn read_previews(
             continue;
         };
         let unit = first.unit.clone();
-        let text = texts
-            .entry(unit.clone())
-            .or_insert_with(|| reader.unit_text(&unit).ok().flatten().map(|(_, text)| text));
-        let Some(text) = text.as_deref() else {
+        if !texts.contains_key(&unit) {
+            let text = reader
+                .unit_text(&unit)
+                .map_err(|e| e.to_string())?
+                .map(|(_, text)| text);
+            texts.insert(unit.clone(), text);
+        }
+        let Some(text) = texts.get(&unit).and_then(Option::as_deref) else {
             out.push((standard, OccurrencePreview::default()));
             continue;
         };
@@ -666,10 +705,27 @@ pub fn read_previews(
                 text: snippet.text,
                 highlights: snippet.highlights,
                 native: Some(first.verse),
+                error: None,
             },
         ));
     }
     Ok(out)
+}
+
+/// A Bible's own Versification, from its verse list.
+#[cfg(not(target_arch = "wasm32"))]
+fn read_versification(entry: &LibraryEntry) -> Option<obs_scripture::ListedVersification> {
+    use obs_store::ResourceStore;
+    let reader = obs_store::ObrReader::open(&entry.path).ok()?;
+    let verses = reader.verses().ok()?;
+    Some(obs_scripture::ListedVersification::new(
+        verses.iter().map(|v| (v.verse, v.last)),
+    ))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_versification(_: &LibraryEntry) -> Option<obs_scripture::ListedVersification> {
+    None
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -682,6 +738,21 @@ pub fn read_previews(
 }
 
 impl crate::Session {
+    /// A Bible's own Versification: its open Tab's, else read from its verse list. `None`
+    /// when it is not in the library or cannot be read here.
+    fn bible_versification(&self, id: &str) -> Option<Arc<obs_scripture::ListedVersification>> {
+        let kind = TabKind::Resource(id.to_string());
+        if let Some(v) = self
+            .workspace
+            .most_recent(|t| t.kind == kind)
+            .and_then(|t| self.workspace.tab(t))
+            .and_then(|t| t.versification.clone())
+        {
+            return Some(v);
+        }
+        read_versification(self.library.get(id)?).map(Arc::new)
+    }
+
     /// Open a Bible at a Verse in its own numbering (an Occurrences row): its most recently
     /// active Tab goes there (and its Link set follows); with `new_tab`, or when it has no
     /// Tab, a new Tab opens there.
@@ -742,7 +813,13 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[CommandSpec {
         };
         let bible = p.str("bible").unwrap_or_default().to_string();
         let text = p.str("verse").unwrap_or_default();
-        let verse = obs_scripture::parse_reference(text, &obs_scripture::Standard, None)
+        // In the Bible's own numbering (TAHOT's Ps 3:9 is not a Standard Verse).
+        let own = s.bible_versification(&bible);
+        let parsed = match &own {
+            Some(v) => obs_scripture::parse_reference(text, v.as_ref(), None),
+            None => obs_scripture::parse_reference(text, &obs_scripture::Standard, None),
+        };
+        let verse = parsed
             .ok()
             .and_then(|l| l.passages().first().map(|p| p.start()))
             .ok_or_else(|| failed(format!("“{text}” is not a Verse")))?;

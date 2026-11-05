@@ -1329,7 +1329,7 @@ pub fn kjv_grace() -> obs_model::Resource {
 pub fn tagnt_grace() -> obs_model::Resource {
     use obs_scripture::{Book, Verse};
     let v = Verse::new;
-    tagged_bible(
+    let mut r = tagged_bible(
         "tagnt-grace",
         "Translators Amalgamated Greek NT (test)",
         "TAGNT",
@@ -1379,5 +1379,8 @@ pub fn tagnt_grace() -> obs_model::Resource {
                  ἐστε{G1510|εἰμί|V-PAI-2P|you_are} σεσῳσμένοι{G4982|σῴζω|V-RPP-NPM|saved}",
             ),
         ],
-    )
+    );
+    r.manifest.license = "CC-BY-4.0".into();
+    r.manifest.attribution = "STEPBible.org (Tyndale House, Cambridge), CC BY 4.0.".into();
+    r
 }

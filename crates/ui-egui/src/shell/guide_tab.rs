@@ -355,7 +355,10 @@ impl State {
         };
         if data.is_empty() {
             ui.label(
-                RichText::new(section.empty_hint(&self.session.library)).color(theme::c().muted),
+                RichText::new(
+                    section.empty_hint(&self.session.library, &self.session.guides.indexes()),
+                )
+                .color(theme::c().muted),
             );
             return None;
         }

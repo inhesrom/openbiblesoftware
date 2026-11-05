@@ -67,14 +67,18 @@ before #56 gains the three at their default places.
   order; an Unmapped verse at its own number) and, per occurrence, its form, so the UI counts
   per Bible book and filters by form without asking again (`OccurrenceList::filtered`). The
   UI draws a bar per Bible book, the first 50 Verses (`OCCURRENCE_ROWS`) and Show all in
-  Search (`strong:G5485`, in the preview Bible and the counted Bible). A row opens its Verse
+  Search (`strong:` the number counted, in the preview Bible and the counted Bible; the
+  preview Bible is left out when it tags the number differently, as the KJV's H1254 for
+  TAHOT's H1254A, since Search matches an extended number exactly). A row opens its Verse
   (`word_study.open_verse {bible, verse, new_tab?}`: the Bible's most recent Tab, else a new
-  one).
+  one; `verse` is read in that Bible's own numbering, so TAHOT's Ps 3:9 opens).
 - **Previews**: the text of each shown Verse in the Translated as Bible (else the counted
   Bible itself), with the number's Tagged words highlighted by the Search Highlighter and
   drawn by the inline-snippet pipeline with the Search hit tint. They are read only for the
   rows shown: `Session::occurrence_previews(&PreviewBible, &[Verse])` never waits, reads the
-  missing ones in one job and keeps them (per Bible, highlighted number and Verse).
+  missing ones in one job and keeps them (per Bible, highlighted number and Verse). A batch
+  that fails keeps its error (`OccurrencePreview::error`) and the row says the Bible could
+  not be read, not that it lacks the Verse.
 - **Forms** (`Forms`): the number's Morphology in the original-language Bible only, in
   plain English (`Morph::short`, "noun, dat. fem. sing.", "Qal perfect, 3rd masc. sing."),
   with counts, most frequent first; codes that read the same are one form, and the codes and
@@ -141,7 +145,10 @@ TBESH up in the Library.
   Acts 1, Romans 1, Ephesians 1) in Standard order; the dative form leaves Luke 2:52 and
   Ephesians 2:8; KJV previews highlight "favour" and "grace … grace"; Forms counts and Forms
   collapsed by default; H1254A from the Hebrew Bible with KJV previews highlighting H1254; a
-  KJV-only library counts in the KJV with no Forms; `word_study.open_verse`. Store
+  KJV-only library counts in the KJV with no Forms; `word_study.open_verse`, also at a Verse
+  only the Bible's own numbering has (Hebrew Ps 3:9); Show all in Search with an extended
+  number; a preview batch that fails; empty hints that need a Strong's-tagged (English)
+  Bible; a Verse map that does not line up with the verse list. Store
   `tagged_words_with_positions_match_the_generic_walk`.
 - UI `shell::tests::word_study::g5485_translated_as_occurrences_and_forms_filter`: the
   renderings, Forms collapsed until its header is clicked, Occurrences rows and bars, clicking

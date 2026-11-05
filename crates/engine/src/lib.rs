@@ -55,7 +55,7 @@ mod session;
 pub mod testing;
 pub mod word_info;
 pub mod word_sections;
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod word_sections_tests;
 pub mod word_study;
 #[cfg(all(test, not(target_arch = "wasm32")))]

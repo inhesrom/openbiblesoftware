@@ -261,7 +261,7 @@ fn with_no_commentaries_the_section_is_empty_and_names_the_resource_it_needs() {
     let mut s = session(&t, false);
     let key = Key::Passage(Passage::verse(john(3, 16)));
     assert!(ready(settle(&mut s, &key, GuideSection::Commentaries)).is_empty());
-    let hint = GuideSection::Commentaries.empty_hint(&s.library);
+    let hint = GuideSection::Commentaries.empty_hint(&s.library, &s.guides.indexes());
     assert!(hint.starts_with("None in your library"));
     assert!(hint.contains("Add a Commentary"));
     // With Commentaries that do not cover the Passage, the hint says so instead.
@@ -269,12 +269,12 @@ fn with_no_commentaries_the_section_is_empty_and_names_the_resource_it_needs() {
     s.library.scan(&t.lib());
     assert!(
         !GuideSection::Commentaries
-            .empty_hint(&s.library)
+            .empty_hint(&s.library, &s.guides.indexes())
             .contains("Add a Commentary")
     );
     assert!(
         GuideSection::CrossReferences
-            .empty_hint(&Library::new())
+            .empty_hint(&Library::new(), &Default::default())
             .contains("Add a Cross-reference set")
     );
 }

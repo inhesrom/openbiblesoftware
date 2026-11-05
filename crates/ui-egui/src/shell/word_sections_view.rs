@@ -244,6 +244,14 @@ impl State {
                 Some(p) if !p.text.is_empty() => {
                     self.highlighted_snippet(ui, &p.text, &p.highlights, rtl, PREVIEW_LINES);
                 }
+                Some(p) if p.error.is_some() => {
+                    let e = p.error.as_deref().unwrap_or_default();
+                    ui.label(
+                        RichText::new(format!("Could not read the {preview_abbreviation}: {e}"))
+                            .small()
+                            .color(c.warn),
+                    );
+                }
                 Some(_) => {
                     ui.label(
                         RichText::new(format!("Not in the {preview_abbreviation}"))
@@ -312,7 +320,7 @@ impl State {
             {
                 action = Some(Action::Search {
                     text: o.search_query(number),
-                    bibles: o.search_bibles(),
+                    bibles: o.search_bibles(number),
                     new_tab,
                 });
             }

@@ -111,10 +111,24 @@ impl GuideSection {
     }
 
     /// What an empty section says (#15 rule 1): with no Resource of the kind it needs, a
-    /// hint naming that kind; otherwise that nothing in the library covers the Key.
-    pub fn empty_hint(self, library: &Library) -> &'static str {
+    /// hint naming that kind; otherwise that nothing in the library covers the Key. Translated
+    /// as and Occurrences need a Bible with Strong's numbers (English for Translated as):
+    /// that is read from the rendering `indexes` the section's job loaded (never read here).
+    pub fn empty_hint(
+        self,
+        library: &Library,
+        indexes: &crate::word_study::RenderingIndexes,
+    ) -> &'static str {
         let mut needed = library.of_type(self.resource_type());
         let has = match self {
+            // A Bible whose index has English renderings, as the chooser counts them.
+            GuideSection::TranslatedAs => {
+                needed.any(|e| indexes.loaded(e).is_some_and(|i| !i.renderings.is_empty()))
+            }
+            // Any Bible with Tagged words.
+            GuideSection::Occurrences => {
+                needed.any(|e| indexes.loaded(e).is_some_and(|i| !i.totals.is_empty()))
+            }
             // Forms need a Hebrew or Greek Bible (TAHOT, TAGNT).
             GuideSection::Forms => needed.any(|e| {
                 [
