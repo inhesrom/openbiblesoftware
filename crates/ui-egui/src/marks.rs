@@ -67,7 +67,8 @@ pub struct Mark {
 /// under Needs attention, #65). A Text range in this Resource whose text no longer reads as
 /// its quote is never drawn over other words: a Passage anchor falls back to its whole
 /// Verse(s) (ADR 0006), and a bare Text range is left out. Re-anchoring normally fixes both
-/// before the Resource is shown; this guards Resources replaced outside the app.
+/// before the Resource is shown; this guards Resources replaced outside the app. A Passage
+/// anchor whose origin re-anchoring did not find shows as whole Verses everywhere.
 pub fn marks_for(doc: &ReadingDoc, annotations: &[Annotation]) -> Vec<Mark> {
     let units: HashMap<&UnitId, usize> = doc
         .units
@@ -96,7 +97,10 @@ pub fn marks_for(doc: &ReadingDoc, annotations: &[Annotation]) -> Vec<Mark> {
             Content::Highlight { style } => MarkKind::Highlight(style),
             Content::Note { .. } => MarkKind::Note,
         };
-        match anchor.text_range() {
+        // A Passage anchor's origin that re-anchoring did not find is kept for later but not
+        // drawn: the Annotation shows as whole Verses, in every Bible.
+        let range = anchor.text_range().filter(|r| !r.orphaned);
+        match range {
             // Its own Resource: exact, or whole Verses when the range went stale.
             Some(range) if range.resource_id == doc.manifest.resource_id => {
                 let (start, end) = (range.start as usize, range.end as usize);
@@ -135,7 +139,7 @@ pub fn marks_for(doc: &ReadingDoc, annotations: &[Annotation]) -> Vec<Mark> {
                 let Some(passage) = anchor.passage().filter(|_| bible) else {
                     continue;
                 };
-                let whole = anchor.text_range().is_none_or(|r| r.whole_verses);
+                let whole = range.is_none_or(|r| r.whole_verses);
                 match here {
                     MarkKind::Highlight(_) if whole => {
                         for (s, e) in verse_runs(doc, passage) {

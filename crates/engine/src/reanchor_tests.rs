@@ -294,16 +294,33 @@ fn a_deleted_quote_orphans_a_text_range_and_shows_a_passage_anchor_on_whole_vers
         2,
     ));
     let s = lib.launch();
-    // The Passage anchor keeps its Verse and loses its Text range: whole Verses.
+    // The Passage anchor keeps its Verse and shows as whole Verses; its Text range is kept
+    // (quote, context, Resource, hash), marked not found, never dropped (ADR 0006).
     let a = s.annotation(&bible_hl).unwrap();
     match a.anchor.as_ref().unwrap() {
         Anchor::Passage { passage, origin } => {
             assert_eq!(passage.start(), v(Book::Genesis, 1, 2));
-            assert!(origin.is_none());
+            let origin = origin.as_ref().expect("the origin is kept");
+            assert!(origin.orphaned);
+            assert_eq!(origin.quote, "and void");
+            assert_eq!(origin.resource_id, "tb");
+            assert_eq!(origin.content_hash, old_tb.manifest.content_hash);
         }
         other => panic!("{other:?}"),
     }
-    assert!(!a.is_orphaned());
+    assert!(!a.is_orphaned(), "not listed under Needs attention");
+    let card = s
+        .note_cards("")
+        .unwrap()
+        .into_iter()
+        .find(|c| c.annotation.id == bible_hl)
+        .unwrap();
+    assert_eq!(
+        card.quote.as_deref(),
+        Some("and void"),
+        "the card keeps its quote"
+    );
+    assert!(card.attention.is_none() && card.followable());
     assert_eq!(s.reanchoring.report("tb").unwrap().whole_verses, 1);
     // The Text-range anchor is orphaned, keeping its quote.
     let n = s.annotation(&commentary_note).unwrap();
@@ -322,6 +339,142 @@ fn a_deleted_quote_orphans_a_text_range_and_shows_a_passage_anchor_on_whole_vers
     drop(s);
     let s = lib.launch_pending();
     assert!(!s.reanchoring.is_busy());
+    drop(s);
+    // The old revision comes back: the kept range is found again, exact to the word.
+    lib.write(&old_tb);
+    let s = lib.launch();
+    let report = s.reanchoring.report("tb").unwrap();
+    assert_eq!((report.moved, report.whole_verses), (1, 0), "{report:?}");
+    let r = range(&s, &bible_hl).unwrap();
+    assert!(!r.orphaned);
+    assert_eq!(pointed(&old_tb, &r), "and void");
+    assert_eq!(r.content_hash, old_tb.manifest.content_hash);
+}
+
+#[test]
+fn a_moved_range_gets_its_coverage_and_own_reference_worked_out_again() {
+    let lib = Lib::new("coverage");
+    let esth = |v4: &str, v5: &str, revision: u32| {
+        let list = [
+            (
+                v(Book::Esther, 10, 3),
+                "For Mardocheus was next unto the king.",
+            ),
+            (v(Book::Esther, 10, 4), v4),
+            (v(Book::Esther, 10, 5), v5),
+        ];
+        // 10:4 and 10:5 are Unmapped (as in the LXX's additions).
+        let standard = [Some(v(Book::Esther, 10, 3)), None, None];
+        let mut r = bible("lxx", "LXX", &list, Some(&standard), &[]);
+        r.manifest.revision = revision;
+        r
+    };
+    let old_lxx = esth(
+        "Then Mardocheus said, God hath done these things.",
+        "For I remember a dream.",
+        1,
+    );
+    let old_tb = tb(GEN_1, 1);
+    lib.write(&old_lxx);
+    lib.write(&old_tb);
+    let unit = old_lxx.units[0].id.as_str().to_string();
+    let (unmapped, whole) = {
+        let mut s = lib.launch();
+        (
+            highlight(&mut s, &old_lxx, &unit, "God hath done these things", 0),
+            highlight(&mut s, &old_tb, "GEN", GEN_1[2], 0),
+        )
+    };
+    let mut s = lib.launch();
+    assert_eq!(
+        range(&s, &unmapped).unwrap().native_ref.as_deref(),
+        Some("Esth.10.4")
+    );
+    assert!(range(&s, &whole).unwrap().whole_verses);
+    drop(s);
+    // The words move to 10:5; Genesis 1:3 grows, so the Highlight covers only part of it.
+    let new_lxx = esth(
+        "Then Mardocheus said, I remember.",
+        "For God hath done these things, and a dream.",
+        2,
+    );
+    let mut grown = GEN_1;
+    grown[2] = "And God said, Let there be light: and there was light. And it was so.";
+    let new_tb = tb(grown, 2);
+    lib.write(&new_lxx);
+    lib.write(&new_tb);
+    s = lib.launch();
+    let r = range(&s, &unmapped).unwrap();
+    assert_eq!(pointed(&new_lxx, &r), "God hath done these things");
+    assert_eq!(
+        r.native_ref.as_deref(),
+        Some("Esth.10.5"),
+        "label and Bible order"
+    );
+    let card = s
+        .note_cards("")
+        .unwrap()
+        .into_iter()
+        .find(|c| c.annotation.id == unmapped)
+        .unwrap();
+    assert!(card.reference.contains("10:5"), "{}", card.reference);
+    let r = range(&s, &whole).unwrap();
+    assert_eq!(pointed(&new_tb, &r), GEN_1[2]);
+    assert!(
+        !r.whole_verses,
+        "other Bibles show a margin mark, not the whole Verse"
+    );
+}
+
+#[test]
+fn undo_bringing_back_a_deleted_annotation_reanchors_it() {
+    let lib = Lib::new("undo-delete");
+    let old = tb(GEN_1, 1);
+    lib.write(&old);
+    let mut s = lib.launch();
+    let id = highlight(&mut s, &old, "GEN", "darkness", 0);
+    let kept = s
+        .run("notebook.create", &json!({ "name": "Study" }))
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let other = highlight(&mut s, &old, "GEN", "light", 0);
+    s.run("annotation.move", &json!({ "id": other, "notebook": kept }))
+        .unwrap();
+    s.run("annotation.delete", &json!({ "id": id })).unwrap();
+    s.run(
+        "notebook.delete",
+        &json!({ "id": kept, "annotations": "delete" }),
+    )
+    .unwrap();
+    assert!(s.annotations(None).unwrap().is_empty());
+    // A new revision arrives while they are deleted: nothing to re-anchor.
+    let mut fixed = GEN_1;
+    fixed[0] = "In the beginning God created the heaven and the earth.";
+    let new = tb(fixed, 2);
+    lib.write(&new);
+    s.library.add_file(&lib.path(&new)).unwrap();
+    assert!(!s.reanchor_resource("tb"));
+    // Undo the Notebook delete, then the Annotation delete: both come back made against the
+    // old revision, and are re-anchored; until then their Marks wait.
+    for (label, id, quote) in [
+        ("Delete Notebook", &other, "light"),
+        ("Delete Highlight", &id, "darkness"),
+    ] {
+        assert_eq!(s.undo().unwrap().as_deref(), Some(label));
+        assert!(s.is_reanchoring("tb"), "{label}: re-anchoring queued");
+        settle(&mut s);
+        let r = range(&s, id).unwrap();
+        assert_eq!(r.content_hash, new.manifest.content_hash, "{label}");
+        assert_eq!(pointed(&new, &r), quote, "{label}");
+    }
+    // Redo and undo still land on the moved rows.
+    assert_eq!(s.redo().unwrap().as_deref(), Some("Delete Highlight"));
+    assert!(s.annotation(&id).is_err());
+    assert!(s.undo().unwrap().is_some());
+    assert!(!s.is_reanchoring("tb"), "already up to date");
+    assert_eq!(pointed(&new, &range(&s, &id).unwrap()), "darkness");
 }
 
 #[test]
@@ -438,16 +591,21 @@ fn a_removed_resource_keeps_its_annotations_dormant_and_a_reimport_brings_them_b
     };
     lib.remove(&old);
     {
-        let s = lib.launch();
+        let mut s = lib.launch();
         let a = s.annotation(&id).unwrap();
         assert!(!a.is_orphaned(), "dormant, not orphaned");
         assert_eq!(
             range(&s, &id).unwrap().content_hash,
             old.manifest.content_hash
         );
+        // Named as the User database last knew it, though it left before this launch.
         let card = s.note_cards("").unwrap().remove(0);
-        assert_eq!(card.missing.as_deref(), Some("tcm is not in the library"));
+        assert_eq!(card.missing.as_deref(), Some("TCM is not in the library"));
         assert!(card.attention.is_none());
+        assert!(card.reference.contains("TCM"), "{}", card.reference);
+        assert!(!card.followable());
+        let e = s.follow_annotation(&id, false).unwrap_err();
+        assert_eq!(e, "TCM is not in the library");
     }
     // Re-imported as a new revision with a sentence inserted.
     let new = notes_on(
@@ -505,6 +663,16 @@ fn reattach_and_keep_without_anchor_clear_the_warning_and_undo() {
             .contains("TCM")
     );
     let before = s.annotation(&h).unwrap();
+    // Its old offsets point at other words now: it is not followed there.
+    for card in s.note_cards("").unwrap() {
+        assert!(
+            !card.followable(),
+            "an Orphaned annotation is re-attached, not followed"
+        );
+    }
+    let e = s.follow_annotation(&h, false).unwrap_err();
+    assert!(e.contains("not found in TCM"), "{e}");
+    assert!(s.run("notes.follow", &json!({ "id": h })).is_err());
 
     // Re-attach the Highlight on "Pentateuch".
     let at = "The Pentateuch was written down."

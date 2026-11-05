@@ -324,6 +324,45 @@ impl UserStore {
         }
         tx.commit().map_err(sql)
     }
+
+    /// The last known `(resource_id, abbreviation, title)` of every Resource seen (#65): how
+    /// the cards of a Resource no longer in the library name it.
+    pub fn resource_names(&self) -> Result<Vec<(String, String, String)>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT resource_id, abbreviation, title FROM resource_names ORDER BY resource_id",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .map_err(sql)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(sql)
+    }
+
+    /// Remember Resources' abbreviations and titles, `(resource_id, abbreviation, title)`,
+    /// replacing what was known of them. Others are kept.
+    pub fn save_resource_names(
+        &self,
+        names: &[(String, String, String)],
+    ) -> Result<(), StoreError> {
+        let tx = self.conn.unchecked_transaction().map_err(sql)?;
+        {
+            let mut stmt = tx
+                .prepare_cached(
+                    "INSERT INTO resource_names (resource_id, abbreviation, title)
+                     VALUES (?1, ?2, ?3)
+                     ON CONFLICT (resource_id) DO UPDATE
+                     SET abbreviation = excluded.abbreviation, title = excluded.title",
+                )
+                .map_err(sql)?;
+            for (id, abbreviation, title) in names {
+                stmt.execute(params![id, abbreviation, title])
+                    .map_err(sql)?;
+            }
+        }
+        tx.commit().map_err(sql)
+    }
 }
 
 /// Rolling backups of `stem` in `dir`, oldest first, with their sequence numbers.

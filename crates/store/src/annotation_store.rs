@@ -99,12 +99,20 @@ ALTER TABLE anchors ADD COLUMN whole_verses INTEGER NOT NULL DEFAULT 0
 ";
 
 /// Migration 5 → 6 (#65): `anchors.status`, `ok` or `orphaned` (#17 rule 4). Re-anchoring
-/// marks a Text-range anchor whose quote it could not find again `orphaned`; the row keeps
-/// its quote, context and offsets. A Passage anchor is never orphaned (its Text range is
-/// dropped instead), which the CHECK holds.
+/// marks a Text range whose quote it could not find again `orphaned`; the row keeps its
+/// quote, context and offsets. On a Text-range anchor that makes an Orphaned annotation; on
+/// a Passage anchor's origin it means the Annotation shows as whole Verses while the range
+/// waits to be found again. `resource_names` keeps the last known abbreviation and title of
+/// every Resource seen, so the cards of one removed while the app was closed still name it
+/// (#17 rule 13).
 pub(crate) const SCHEMA_6: &str = "
 ALTER TABLE anchors ADD COLUMN status TEXT NOT NULL DEFAULT 'ok'
-    CHECK (status IN ('ok', 'orphaned') AND (status = 'ok' OR kind = 'text_range'));
+    CHECK (status IN ('ok', 'orphaned'));
+CREATE TABLE resource_names (
+    resource_id TEXT PRIMARY KEY,
+    abbreviation TEXT NOT NULL,
+    title TEXT NOT NULL
+);
 ";
 
 /// Name of the default Notebook when it is first made. The user may rename it.

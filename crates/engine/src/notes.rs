@@ -115,9 +115,10 @@ impl Card {
         self.annotation.is_orphaned()
     }
 
-    /// Whether following it can show its text.
+    /// Whether following it can show its text. An Orphaned annotation's offsets point at
+    /// whatever is there now, so it is not followed: it is re-attached instead.
     pub fn followable(&self) -> bool {
-        self.annotation.anchor.is_some() && self.missing.is_none()
+        self.annotation.anchor.is_some() && self.missing.is_none() && !self.annotation.is_orphaned()
     }
 }
 
@@ -191,8 +192,9 @@ pub fn anchor_label(library: &Library, anchor: Option<&Anchor>) -> String {
             }
         }
         Some(Anchor::TextRange { range }) => {
-            let abbr = abbreviation(library, &range.resource_id)
-                .unwrap_or_else(|| range.resource_id.clone());
+            let abbr = library
+                .abbreviation_of(&range.resource_id)
+                .map_or_else(|| range.resource_id.clone(), str::to_string);
             match range.native_ref.as_deref() {
                 Some(native) => {
                     let text = native_passage(native).map_or_else(
@@ -507,8 +509,19 @@ impl Session {
                 new_tab,
             ),
             Some(Anchor::TextRange { range }) => {
+                let name = self
+                    .library
+                    .abbreviation_of(&range.resource_id)
+                    .map_or_else(|| range.resource_id.clone(), str::to_string);
                 if self.library.get(&range.resource_id).is_none() {
-                    return Err(format!("{} is not in the library", range.resource_id));
+                    return Err(format!("{name} is not in the library"));
+                }
+                // Its offsets point at whatever is there now: never shown as if it were its
+                // text (#17 rule 12).
+                if range.orphaned {
+                    return Err(format!(
+                        "This text was not found in {name} after it changed: re-attach it"
+                    ));
                 }
                 let kind = TabKind::Resource(range.resource_id.clone());
                 let existing = (!new_tab)

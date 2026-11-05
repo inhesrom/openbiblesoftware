@@ -57,8 +57,8 @@ Notebook's Annotations still list in the Notes Tool.
 `Session::note_cards(filter)` returns the chosen Notebook's Annotations (or all) as `Card`s:
 the Annotation, its Notebook's name, its reference label, its quote, for a Text-range
 anchor whose Resource left the library "*WEB* is not in the library" (#17 rule 13; the
-abbreviation while the app remembers it, else the id), and for an Orphaned annotation its
-warning.
+abbreviation the User database last knew, also after a restart), and for an Orphaned
+annotation its warning.
 
 - **Order** (`notes.order`): **Bible order** (the default): Passage anchors by Standard
   Passage; Text-range anchors in a Bible by their own reference (`native_ref`) among them;
@@ -116,8 +116,10 @@ warning.
   moves it once the UI has loaded its Verse map.
 - **Text-range anchor**: the most recently active Tab of its Resource, else a new one;
   `Effect::RevealText` scrolls to the unit and byte and flashes the Verse there.
-- **Ctrl/Cmd-click** always opens a new Tab. A Note without an Anchor, or whose Resource is
-  gone, has no link.
+- **Ctrl/Cmd-click** always opens a new Tab. A Note without an Anchor, one whose Resource is
+  gone, and an Orphaned annotation (its offsets point at whatever is there now: it is
+  re-attached instead) have no link; `notes.follow` on them fails with "*TB* is not in the
+  library" or "This text was not found in *TB* after it changed: re-attach it".
 
 ## Opening a Note in Notes
 

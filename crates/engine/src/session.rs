@@ -163,6 +163,7 @@ impl Session {
         self.load_guide_arrangements();
         // Library load: Annotations made against another revision of a Resource move with
         // their text (or are orphaned) before it shows them (#65).
+        self.remember_resource_names();
         self.reanchor_library();
     }
 

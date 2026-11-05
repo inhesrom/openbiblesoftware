@@ -100,8 +100,9 @@ pub struct TextRange {
     /// Re-anchoring (#65, ADR 0006) could not find the quote after the Resource changed: an
     /// **Orphaned annotation**. The range keeps what it last pointed at (quote, context,
     /// offsets, content hash) and is not drawn until the user re-attaches or detaches it.
-    /// Only a Text-range anchor is ever orphaned; a Passage anchor's origin is dropped
-    /// instead.
+    /// On a Passage anchor's origin it means the same (not found within the Passage's
+    /// Verses), but the Annotation is not orphaned: it shows as whole Verses, and the range
+    /// is kept so a later revision (or the old one back) can find it again (ADR 0006).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub orphaned: bool,
 }

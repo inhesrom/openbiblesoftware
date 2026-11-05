@@ -37,8 +37,9 @@ pub struct Library {
     ranking: Vec<String>,
     /// The library directory, once scanned: Remove deletes only `.obr` files inside it.
     dir: Option<PathBuf>,
-    /// Abbreviations of Resources removed in this session, so their dormant Annotations can
-    /// say which Resource is missing ("WEB is not in the library", #17 rule 13).
+    /// Last known abbreviations of Resources not in the library (removed in this session, or
+    /// remembered in the User database), so their dormant Annotations can say which Resource
+    /// is missing ("WEB is not in the library", #17 rule 13).
     departed: std::collections::BTreeMap<String, String>,
 }
 
@@ -65,12 +66,19 @@ impl Library {
             .find(|e| e.manifest.resource_id == resource_id)
     }
 
-    /// A Resource's abbreviation: from the library, else (removed in this session) as it
-    /// was, else `None`.
+    /// A Resource's abbreviation: from the library, else as it was last known (removed in
+    /// this session, or [remembered](Self::remember_abbreviation)), else `None`.
     pub fn abbreviation_of(&self, resource_id: &str) -> Option<&str> {
         self.get(resource_id)
             .map(|e| e.manifest.abbreviation.as_str())
             .or_else(|| self.departed.get(resource_id).map(String::as_str))
+    }
+
+    /// Remember the abbreviation of a Resource that may not be in the library (as the User
+    /// database last knew it), for [`Self::abbreviation_of`].
+    pub fn remember_abbreviation(&mut self, resource_id: &str, abbreviation: &str) {
+        self.departed
+            .insert(resource_id.to_string(), abbreviation.to_string());
     }
 
     /// A Resource's place in the Preferred order: its saved rank; else, for a Starter

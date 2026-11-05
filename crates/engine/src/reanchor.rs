@@ -16,9 +16,14 @@
 //! - **Outcomes.** A Text-range anchor that is not found becomes **orphaned**: it keeps its
 //!   quote, context and offsets and is listed under Needs attention. A Passage anchor never
 //!   changes its Standard Passage; only its origin Text range is looked for, within the Verses
-//!   of that Passage, and when it is not found the range is dropped, so the Annotation shows
-//!   as whole Verses. Annotations of Resources not in the library are left alone (dormant)
-//!   until the Resource comes back.
+//!   of that Passage, and when it is not found the range is kept but marked not found
+//!   (`orphaned`), so the Annotation shows as whole Verses and a later revision can find it
+//!   again. A range found again gets its Bible's own reference and whole-Verse coverage
+//!   worked out anew. Annotations of Resources not in the library are left alone (dormant)
+//!   until the Resource comes back; the User database remembers Resource names so their
+//!   cards still say which one is missing.
+//! - **Undo and Redo** that bring rows back (a deleted Annotation or Notebook) re-anchor their
+//!   Resources when those rows were made against another revision.
 //! - **Writes** are one checked change list (`UserStore::apply_changes`), so a row edited
 //!   meanwhile is never overwritten: the plan is made again. Automatic re-anchoring is not an
 //!   undo step; the undo history is rebased onto the moved anchors, so undoing an earlier
@@ -33,7 +38,7 @@ use obs_store::ResourceStore;
 use obs_store::annotation::quote_with_context;
 use serde_json::{Value, json};
 
-use crate::annotations::{Anchor, Annotation, Change, Row, TextRange, standard_of};
+use crate::annotations::{Anchor, Annotation, Change, Row, TextRange, coverage, standard_of};
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params};
 use crate::session::Session;
 use crate::workspace::Effect;
@@ -50,12 +55,13 @@ pub enum Outcome {
     /// Found elsewhere: other offsets, another unit (`unit_alias`), or an Orphaned annotation
     /// found again.
     Moved,
-    /// A Passage anchor whose Text range was not found: the range is dropped and it shows as
-    /// whole Verses.
+    /// A Passage anchor whose Text range was not found: it shows as whole Verses; the range is
+    /// kept, marked not found.
     WholeVerses,
     /// A Text-range anchor that was not found: it is now an Orphaned annotation.
     Orphaned,
-    /// An Orphaned annotation still not found.
+    /// An Orphaned annotation (or a Passage anchor already on whole Verses) still not
+    /// found.
     StillOrphaned,
 }
 
@@ -354,6 +360,51 @@ impl Verses {
     }
 }
 
+/// `range` found again in `text` (unit `unit`'s text in `store`'s current revision) within
+/// `window`, as its anchor will store it: new offsets, quote, context and content hash, and
+/// what it now covers (its Bible's own reference and whole-Verse coverage, worked out as for
+/// a new selection). `None`: not found.
+fn found_at(
+    store: &dyn ResourceStore,
+    anchor: &Anchor,
+    range: &TextRange,
+    unit: &UnitId,
+    text: &str,
+    window: Range<usize>,
+) -> Result<Option<TextRange>, String> {
+    let Some(r) = locate(range, text, window) else {
+        return Ok(None);
+    };
+    let Some((prefix, quote, suffix)) = quote_with_context(text, r.start, r.end) else {
+        return Ok(None);
+    };
+    let (Ok(start), Ok(end)) = (u32::try_from(r.start), u32::try_from(r.end)) else {
+        return Ok(None);
+    };
+    let cover = coverage(store, unit, text, r.clone())?;
+    let native_ref = match anchor {
+        // As a new selection's Passage anchor: its own reference only without a Standard
+        // Passage.
+        Anchor::Passage { .. } => cover.native_ref.filter(|_| cover.standard.is_none()),
+        // A Text-range anchor keeps the Bible's own reference of where it is now (its label
+        // and Bible order); outside a Bible there is none.
+        Anchor::TextRange { .. } => cover.native_ref,
+    };
+    Ok(Some(TextRange {
+        unit: unit.clone(),
+        start,
+        end,
+        quote: quote.to_string(),
+        prefix: prefix.to_string(),
+        suffix: suffix.to_string(),
+        content_hash: store.manifest().content_hash.clone(),
+        native_ref,
+        whole_verses: cover.whole_verses,
+        orphaned: false,
+        ..range.clone()
+    }))
+}
+
 /// Re-anchor the Annotations that have a Text range in `store`'s Resource against its
 /// current revision. Annotations of other Resources are left out. Pure: nothing is written.
 pub fn plan(store: &dyn ResourceStore, annotations: &[Annotation]) -> Result<Plan, String> {
@@ -399,24 +450,14 @@ pub fn plan(store: &dyn ResourceStore, annotations: &[Annotation]) -> Result<Pla
             }
             (Anchor::TextRange { .. }, Some(t)) => Some(0..t.len()),
         };
-        let found = text.zip(window).and_then(|(t, w)| {
-            let r = locate(range, t, w)?;
-            let (prefix, quote, suffix) = quote_with_context(t, r.start, r.end)?;
-            Some(TextRange {
-                unit: unit.clone(),
-                start: u32::try_from(r.start).ok()?,
-                end: u32::try_from(r.end).ok()?,
-                quote: quote.to_string(),
-                prefix: prefix.to_string(),
-                suffix: suffix.to_string(),
-                content_hash: hash.to_string(),
-                orphaned: false,
-                ..range.clone()
-            })
-        });
+        let found = match (text, window) {
+            (Some(t), Some(w)) => found_at(store, anchor, range, &unit, t, w)?,
+            _ => None,
+        };
         let (anchor, outcome) = match (anchor, found) {
             (Anchor::Passage { passage, .. }, Some(origin)) => {
-                let moved = origin.unit != range.unit
+                let moved = range.orphaned
+                    || origin.unit != range.unit
                     || (origin.start, origin.end) != (range.start, range.end);
                 (
                     Anchor::Passage {
@@ -443,13 +484,22 @@ pub fn plan(store: &dyn ResourceStore, annotations: &[Annotation]) -> Result<Pla
                     },
                 )
             }
-            // The Standard Passage stays; the Highlight or Note shows as whole Verses.
+            // The Standard Passage stays; the Highlight or Note shows as whole Verses. The
+            // range is kept, marked not found, so nothing is lost (ADR 0006) and a later
+            // revision (or this one going back) can find it again.
             (Anchor::Passage { passage, .. }, None) => (
                 Anchor::Passage {
                     passage: *passage,
-                    origin: None,
+                    origin: Some(TextRange {
+                        orphaned: true,
+                        ..range.clone()
+                    }),
                 },
-                Outcome::WholeVerses,
+                if range.orphaned {
+                    Outcome::StillOrphaned
+                } else {
+                    Outcome::WholeVerses
+                },
             ),
             // Kept with what it last pointed at, until the user re-attaches, detaches or
             // deletes it.
@@ -515,6 +565,51 @@ impl Session {
         self.reanchoring.is_running(resource_id)
     }
 
+    /// Bring the last known Resource names up to date both ways (#17 rule 13): names the
+    /// User database remembers are known to the library (so the cards of a Resource removed
+    /// while the app was closed still name it), and the library's Resources are remembered
+    /// in the User database. Run at library load and after a Resource is added.
+    pub fn remember_resource_names(&mut self) {
+        let Some(user) = self.user.as_deref() else {
+            return;
+        };
+        let known = match user.resource_names() {
+            Ok(known) => known,
+            Err(e) => {
+                self.workspace.push_effect(Effect::Message(format!(
+                    "Could not read the Resource names: {e}"
+                )));
+                return;
+            }
+        };
+        let fresh: Vec<(String, String, String)> = self
+            .library
+            .entries()
+            .iter()
+            .map(|e| {
+                (
+                    e.manifest.resource_id.clone(),
+                    e.manifest.abbreviation.clone(),
+                    e.manifest.title.clone(),
+                )
+            })
+            .filter(|n| !known.contains(n))
+            .collect();
+        let saved = if fresh.is_empty() {
+            Ok(())
+        } else {
+            user.save_resource_names(&fresh)
+        };
+        for (id, abbreviation, _) in &known {
+            self.library.remember_abbreviation(id, abbreviation);
+        }
+        if let Err(e) = saved {
+            self.workspace.push_effect(Effect::Message(format!(
+                "Could not save the Resource names: {e}"
+            )));
+        }
+    }
+
     /// Check every library Resource and re-anchor, in the background, those with Annotations
     /// made against another revision. Returns the Resources queued.
     pub fn reanchor_library(&mut self) -> Vec<String> {
@@ -552,6 +647,29 @@ impl Session {
         }
         self.submit_reanchor(resource_id, &all);
         true
+    }
+
+    /// After Undo or Redo wrote `changes`: rows it brought back (a deleted Annotation, a
+    /// Notebook's) were not in the database when their Resource was last re-anchored, so
+    /// their anchors may be made against an older revision. Re-anchor those Resources.
+    /// Returns the Resources queued.
+    pub(crate) fn reanchor_written(&mut self, changes: &[Change]) -> Vec<String> {
+        let stale: BTreeSet<String> = changes
+            .iter()
+            .filter_map(|c| match &c.after {
+                Some(Row::Annotation(a)) => Some(a),
+                _ => None,
+            })
+            .filter_map(|a| {
+                let id = &a.anchor.as_ref()?.text_range()?.resource_id;
+                let entry = self.library.get(id)?;
+                is_stale(a, id, &entry.manifest.content_hash).then(|| id.clone())
+            })
+            .collect();
+        stale
+            .into_iter()
+            .filter(|id| self.reanchor_resource(id))
+            .collect()
     }
 
     fn submit_reanchor(&mut self, resource_id: &str, all: &[Annotation]) {

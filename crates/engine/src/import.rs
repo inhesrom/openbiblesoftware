@@ -222,6 +222,9 @@ impl Session {
                 self.imports.active.remove(&event.id);
             }
         }
+        if !imported.is_empty() {
+            self.remember_resource_names();
+        }
         // The Import built the cache (or the background rebuild now will).
         for id in imported {
             self.refresh_search_index(&id);

@@ -205,10 +205,10 @@ fn the_v5_migration_adds_show_in_text_and_whole_verse_coverage() {
 }
 
 /// Migration 5 → 6 (#65): existing anchors read as not orphaned; an Orphaned annotation's
-/// Text-range anchor round-trips with its quote, and a Passage anchor's Text range can never
-/// be stored orphaned.
+/// Text-range anchor round-trips with its quote, as does a Passage anchor's origin that was
+/// not found; Resource names are remembered.
 #[test]
-fn the_v6_migration_adds_the_orphaned_status() {
+fn the_v6_migration_adds_the_orphaned_status_and_resource_names() {
     let dir = Dir::new("migrate6");
     let kept = {
         let (v5, _) = UserStore::open_to(&dir.db(), 5).unwrap();
@@ -275,7 +275,7 @@ fn the_v6_migration_adds_the_orphaned_status() {
     assert!(db.annotation_dump().unwrap().contains("orphaned"));
 
     let nb = default_of(&db);
-    let bad = highlight(
+    let kept_origin = highlight(
         &nb.id,
         Anchor::Passage {
             passage: Passage::verse(jn(16)),
@@ -285,10 +285,32 @@ fn the_v6_migration_adds_the_orphaned_status() {
             }),
         },
     );
-    assert!(
-        db.apply_changes(&[Change::insert(Row::Annotation(bad))])
-            .is_err(),
-        "a Passage anchor's Text range is dropped, never orphaned"
+    // A Passage anchor's origin that was not found is kept, marked, and round-trips; the
+    // Annotation itself is not orphaned (it shows as whole Verses).
+    db.apply_changes(&[Change::insert(Row::Annotation(kept_origin.clone()))])
+        .unwrap();
+    let back = db.annotation(&kept_origin.id).unwrap().unwrap();
+    assert_eq!(back, kept_origin);
+    assert!(!back.is_orphaned());
+
+    // The last known Resource names: none after the migration; saved ones are replaced
+    // by id and others kept.
+    assert!(db.resource_names().unwrap().is_empty());
+    let name =
+        |id: &str, abbr: &str, title: &str| (id.to_string(), abbr.to_string(), title.to_string());
+    db.save_resource_names(&[
+        name("web", "WEB", "World English Bible"),
+        name("tcm", "TCM", "Old"),
+    ])
+    .unwrap();
+    db.save_resource_names(&[name("tcm", "TCM2", "Test Commentary")])
+        .unwrap();
+    assert_eq!(
+        db.resource_names().unwrap(),
+        vec![
+            name("tcm", "TCM2", "Test Commentary"),
+            name("web", "WEB", "World English Bible")
+        ]
     );
 }
 

@@ -1,7 +1,7 @@
 # Annotation service, storage and undo (#61)
 
 Notebooks, Notes and Highlights live in the User database (`obs_store::UserStore`, schema
-v5). The engine reaches them only through the `UserData` trait; `crates/engine/src/
+v6). The engine reaches them only through the `UserData` trait; `crates/engine/src/
 annotations.rs` holds the service on `Session` and the `annotation.*`, `notebook.*` and
 `edit.*` commands. The origin Bible's UI is #62 and other Bibles #63 (both below); the Notes
 Tool and Notes search are #64 ([notes-tool.md](notes-tool.md)); re-anchoring and Orphaned
@@ -13,7 +13,8 @@ annotations are #65 (below, `crates/engine/src/reanchor.rs`).
 |---|---|
 | `notebooks` | `id` (UUIDv7), `name`, `is_default` (exactly one row, partial unique index), timestamps (ms), `show_in_text` (schema v5) |
 | `annotations` | `id`, `notebook_id` (deferred FK), `kind` `note`/`highlight`, `style` (Highlights), `body` (Notes), timestamps |
-| `anchors` | at most one per Annotation. Passage anchors: Standard start/end as canonical book number (1–66), chapter, verse. Text range (a Text-range anchor, or a Passage anchor's origin): `resource_id`, `unit_id`, `start_byte`, `end_byte`, `quote`, `prefix`, `suffix`, `content_hash`, `native_ref`, `whole_verses` (schema v5), `status` `ok`/`orphaned` (schema v6; only a Text-range anchor can be orphaned) |
+| `anchors` | at most one per Annotation. Passage anchors: Standard start/end as canonical book number (1–66), chapter, verse. Text range (a Text-range anchor, or a Passage anchor's origin): `resource_id`, `unit_id`, `start_byte`, `end_byte`, `quote`, `prefix`, `suffix`, `content_hash`, `native_ref`, `whole_verses` (schema v5), `status` `ok`/`orphaned` (schema v6: the quote was not found after the Resource changed; on a Text-range anchor an Orphaned annotation, on a Passage anchor's origin a range kept while the Annotation shows as whole Verses) |
+| `resource_names` | schema v6: `resource_id`, last known `abbreviation` and `title` of every Resource seen, so cards of a Resource no longer in the library still name it |
 | `notes_fts` | FTS5 over Note bodies in normalized-word form (the Search index's form), keyed by `annotation_id` |
 
 A CHECK makes a stored Text range without its quote, context or content hash impossible
@@ -131,9 +132,10 @@ changing it after the first lookup would leave the index stale.
   between them stay clear. A partial range shows only a **margin mark**: a thin bar in the
   style's colour, because word offsets differ between translations. A Passage anchor
   without a Text range counts as whole. Rows made before schema v5 read as partial: a
-  margin mark never implies that words are marked. When re-anchoring (#65) drops a Text
-  range, the flag goes with it and the Highlight shows as whole Verses everywhere, as
-  ADR 0006 says.
+  margin mark never implies that words are marked. When re-anchoring (#65) moves a Text
+  range, the flag (and the Bible's own reference, `native_ref`) is worked out again for
+  where it is now. When it does not find one, the range is kept marked not found and the
+  Highlight shows as whole Verses everywhere, as ADR 0006 says.
 - **Several Verses, partly.** A partial Highlight over several Verses (from the middle of
   3:16 to the middle of 3:18) puts a margin mark beside **each** Verse it touches, 3:17
   included, not only the first: every Verse with marked words says so. Only one mark per
@@ -182,10 +184,14 @@ background job; the Notes Tool's side is in [notes-tool.md](notes-tool.md).
   punctuation the quote had at its ends. Case is not ignored and there is no approximate
   matching (v0.1). A Passage anchor's origin is looked for only within the bytes of the
   Verses its Standard Passage maps to in the new revision.
-- **Outcomes.** Found: offsets, quote, context and content hash are rewritten (`Unchanged` if
-  the offsets and unit are the same, else `Moved`). Not found: a Passage anchor drops its
-  origin (`WholeVerses`: it shows on whole Verses everywhere, never orphaned); a Text-range
-  anchor keeps everything it had and gets `status = 'orphaned'` (`Orphaned`). A
+- **Outcomes.** Found: offsets, quote, context and content hash are rewritten, and
+  `whole_verses` and `native_ref` are worked out again for the new place as for a new
+  selection (`Unchanged` if the offsets and unit are the same, else `Moved`). Not found: a
+  Passage anchor keeps its origin with `status = 'orphaned'` (`WholeVerses`: it shows on
+  whole Verses everywhere and is not listed under Needs attention; its card keeps the
+  quote; the range is never lost, and is found again if a later revision, or the old one,
+  has it); a Text-range anchor keeps everything it had and gets `status = 'orphaned'`
+  (`Orphaned`). A
   `ReanchorReport` counts each; a toast reports moves, fall-backs and new orphans
   ("WEB changed: 2 Annotations moved with their text, 1 needs attention ...").
 - **Writes.** One `apply_changes` list of row updates (never an insert or delete): a row
@@ -193,8 +199,12 @@ background job; the Notes Tool's side is in [notes-tool.md](notes-tool.md).
   If the Resource was removed or replaced meanwhile, the plan is dropped (and redone for the
   replacement). Automatic re-anchoring is not an undo step; instead `UndoHistory::rebase`
   gives every recorded row of a moved Annotation its new anchor, so Ctrl+Z on an earlier edit
-  still lands. Re-attach and Keep without anchor are ordinary undo steps.
+  still lands. Re-attach and Keep without anchor are ordinary undo steps. Undo or Redo that
+  brings rows back (a deleted Annotation, a deleted Notebook's Annotations) re-anchors their
+  Resources when those rows were made against another revision (`reanchor_written`), with
+  the same gate.
 - **Removed Resource.** Its Annotations are left as they are (dormant, not orphaned): Passage
   anchors still show in every other Bible, Text-range cards say "*WEB* is not in the library"
-  (the abbreviation while the app remembers it, else the id). Importing it again runs the
+  (the abbreviation the User database's `resource_names` last knew, also after a restart;
+  the id only for a Resource never seen with a User database). Importing it again runs the
   same re-anchoring.

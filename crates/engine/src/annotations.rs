@@ -215,6 +215,72 @@ fn store_err(e: StoreError) -> String {
     e.to_string()
 }
 
+/// What a Text range covers, as its anchor records it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Coverage {
+    /// In a Bible: the Standard Passage spanning the mapped Verses it touches.
+    pub standard: Option<Passage>,
+    /// It covers every Verse it touches whole (white space and punctuation at a Verse's ends
+    /// aside); only with a Standard Passage.
+    pub whole_verses: bool,
+    /// In a Bible: the Bible's own reference (OSIS) of the Verses it touches.
+    pub native_ref: Option<String>,
+}
+
+/// What bytes `range` of unit `unit` (whose text is `text`) cover in `store`'s Resource:
+/// see [`Coverage`]. Outside a Bible, nothing.
+pub(crate) fn coverage(
+    store: &dyn ResourceStore,
+    unit: &UnitId,
+    text: &str,
+    range: std::ops::Range<usize>,
+) -> Result<Coverage, String> {
+    let (s, e) = (range.start, range.end);
+    // The Verses of this unit that the range touches, and what they map to.
+    let touched = if store.manifest().resource_type == ResourceType::Bible {
+        store.verses_overlapping(unit, s..e).map_err(store_err)?
+    } else {
+        Vec::new()
+    };
+    let standard: Vec<Passage> = touched
+        .iter()
+        .filter_map(|(v, mapped)| standard_of(*mapped, v.verse, v.last))
+        .collect();
+    let span = match (
+        standard.iter().map(|p| p.start()).min(),
+        standard.iter().map(|p| p.end()).max(),
+    ) {
+        (Some(start), Some(end)) => Passage::new(start, end).ok(),
+        _ => None,
+    };
+    // Whole Verses: the range reaches from the first touched Verse's first word to the last
+    // one's last word (white space and punctuation at a Verse's ends do not count).
+    let whole_verses = span.is_some()
+        && match (touched.first(), touched.last()) {
+            (Some((first, _)), Some((last, _))) => {
+                let core = |v: &obs_model::BibleVerse| words_of(text, v.range());
+                s <= core(first).start && e >= core(last).end
+            }
+            _ => false,
+        };
+    let native_ref = match (touched.first(), touched.last()) {
+        (Some((first, _)), Some((last, _))) => {
+            let end = Verse::new(last.verse.book, last.verse.chapter, last.last);
+            Some(if first.verse == end {
+                first.verse.osis()
+            } else {
+                format!("{}-{}", first.verse.osis(), end.osis())
+            })
+        }
+        _ => None,
+    };
+    Ok(Coverage {
+        standard: span,
+        whole_verses,
+        native_ref,
+    })
+}
+
 /// Split a selection into one [`Segment`] per text unit, capturing quote and context and, in a
 /// Bible, the Standard Passage each part maps to. Footnote bodies between the ends are
 /// skipped (they are not shown in the text), and whitespace at the ends of each part is left
@@ -258,44 +324,13 @@ pub fn segments(store: &dyn ResourceStore, sel: &Selection) -> Result<Vec<Segmen
         let Some((prefix, quote, suffix)) = quote_with_context(text, s, e) else {
             continue;
         };
-        // The Verses of this unit that the range touches, and what they map to.
-        let touched = if in_bible {
-            store.verses_overlapping(id, s..e).map_err(store_err)?
-        } else {
-            Vec::new()
-        };
-        let standard: Vec<Passage> = touched
-            .iter()
-            .filter_map(|(v, mapped)| standard_of(*mapped, v.verse, v.last))
-            .collect();
-        let span = match (
-            standard.iter().map(|p| p.start()).min(),
-            standard.iter().map(|p| p.end()).max(),
-        ) {
-            (Some(start), Some(end)) => Passage::new(start, end).ok(),
-            _ => None,
-        };
-        // Whole Verses: the range reaches from the first touched Verse's first word to the
-        // last one's last word (white space and punctuation at a Verse's ends do not count).
-        let whole_verses = span.is_some()
-            && match (touched.first(), touched.last()) {
-                (Some((first, _)), Some((last, _))) => {
-                    let core = |v: &obs_model::BibleVerse| words_of(text, v.range());
-                    s <= core(first).start && e >= core(last).end
-                }
-                _ => false,
-            };
-        let native_ref = match (touched.first(), touched.last()) {
-            (Some((first, _)), Some((last, _))) if span.is_none() => {
-                let end = Verse::new(last.verse.book, last.verse.chapter, last.last);
-                Some(if first.verse == end {
-                    first.verse.osis()
-                } else {
-                    format!("{}-{}", first.verse.osis(), end.osis())
-                })
-            }
-            _ => None,
-        };
+        let Coverage {
+            standard: span,
+            whole_verses,
+            native_ref,
+        } = coverage(store, id, text, s..e)?;
+        // A Bible's own reference only where no Standard Passage says where it is.
+        let native_ref = native_ref.filter(|_| span.is_none());
         let (start, end) = (
             u32::try_from(s).map_err(|_| "selection is too long")?,
             u32::try_from(e).map_err(|_| "selection is too long")?,
@@ -421,13 +456,16 @@ impl Session {
         let Some(step) = self.history.undo.pop() else {
             return Ok(None);
         };
-        if let Err(e) = self.user_data()?.apply_changes(&inverse(&step.changes)) {
+        let written = inverse(&step.changes);
+        if let Err(e) = self.user_data()?.apply_changes(&written) {
             self.history.clear();
             return Err(format!("Could not undo {}: {e}", step.label));
         }
         let label = step.label.clone();
         self.history.redo.push(step);
         self.annotations_revision += 1;
+        // Rows brought back may be anchored to an older revision of their Resource (#65).
+        self.reanchor_written(&written);
         Ok(Some(label))
     }
 
@@ -442,8 +480,11 @@ impl Session {
             return Err(format!("Could not redo {}: {e}", step.label));
         }
         let label = step.label.clone();
+        let written = step.changes.clone();
         self.history.undo.push(step);
         self.annotations_revision += 1;
+        // Rows brought back may be anchored to an older revision of their Resource (#65).
+        self.reanchor_written(&written);
         Ok(Some(label))
     }
 
