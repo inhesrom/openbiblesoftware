@@ -468,6 +468,8 @@ pub struct Workspace {
     /// Tabs that were opened or jumped since the last [`Workspace::take_visits`], oldest
     /// first, for History (#155).
     visits: Vec<PendingVisit>,
+    /// Tabs closed while History still had Visits of theirs to record, kept until it has.
+    closed_with_visits: BTreeMap<TabId, Tab>,
 }
 
 /// A Tab opened or jumped, for History to record (#155).
@@ -554,16 +556,38 @@ impl Workspace {
         std::mem::take(&mut self.visits)
     }
 
-    /// Put back Visits History could not record yet (Tabs not yet placed), before any queued
-    /// since they were taken.
+    /// Put back Visits History could not record yet (Tabs not yet placed, or a failed write),
+    /// before any queued since they were taken. Closed Tabs no queued Visit needs are let go.
     pub(crate) fn keep_visits(&mut self, mut kept: Vec<PendingVisit>) {
         kept.append(&mut self.visits);
         self.visits = kept;
+        let visits = &self.visits;
+        self.closed_with_visits
+            .retain(|id, _| visits.iter().any(|v| v.tab == *id));
     }
 
     /// Forget every queued Visit (History was cleared).
     pub(crate) fn forget_visits(&mut self) {
         self.visits.clear();
+        self.closed_with_visits.clear();
+    }
+
+    /// The Tab a queued Visit is of: open, or closed since the Visit was queued.
+    pub(crate) fn visited_tab(&self, id: TabId) -> Option<&Tab> {
+        self.tabs
+            .get(&id)
+            .or_else(|| self.closed_with_visits.get(&id))
+    }
+
+    /// Take a Tab out, keeping it for History while a queued Visit is of it.
+    fn remove_tab(&mut self, id: TabId) -> bool {
+        let Some(t) = self.tabs.remove(&id) else {
+            return false;
+        };
+        if self.visits.iter().any(|v| v.tab == id) {
+            self.closed_with_visits.insert(id, t);
+        }
+        true
     }
 
     fn existing(&self, kind: &TabKind) -> Option<TabId> {
@@ -701,7 +725,7 @@ impl Workspace {
     }
 
     pub fn close(&mut self, tab: TabId) -> bool {
-        if self.tabs.remove(&tab).is_none() {
+        if !self.remove_tab(tab) {
             return false;
         }
         self.activity.remove(&tab);
@@ -730,7 +754,7 @@ impl Workspace {
             .copied()
             .collect();
         for t in gone {
-            self.tabs.remove(&t);
+            self.remove_tab(t);
             self.activity.remove(&t);
             if self.focused == Some(t) {
                 self.focused = None;
@@ -1070,7 +1094,15 @@ impl Workspace {
     /// Replace everything with a saved snapshot. Locations are set without history; the UI
     /// rebuilds the dock on [`Effect::Rebuild`].
     pub fn restore(&mut self, snap: WorkspaceSnapshot) {
-        self.tabs.clear();
+        // Tabs with Visits still queued are kept for History, unless a restored Tab takes
+        // their id (its Visits would name the wrong Tab).
+        let restored: Vec<TabId> = snap.tabs.iter().map(|t| TabId(t.id)).collect();
+        self.visits.retain(|v| !restored.contains(&v.tab));
+        for (id, t) in std::mem::take(&mut self.tabs) {
+            if self.visits.iter().any(|v| v.tab == id) {
+                self.closed_with_visits.insert(id, t);
+            }
+        }
         self.panels.clear();
         self.remembered.clear();
         self.activity.clear();

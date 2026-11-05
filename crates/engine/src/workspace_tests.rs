@@ -287,7 +287,7 @@ fn a_text_size_that_cannot_be_saved_is_an_error_not_a_size_message() {
     std::fs::create_dir_all(&dir).unwrap();
     let (store, _) = obs_store::UserStore::open(&dir.join("user.db")).unwrap();
     let mut s = session();
-    s.attach_user(Box::new(crate::testing::PreferenceWritesFail(store)));
+    s.attach_user(Box::new(crate::testing::WritesFail::preferences(store)));
     s.workspace.take_effects();
     for id in ["view.text_larger", "view.text_smaller", "view.text_reset"] {
         let err = s.run(id, &json!({})).unwrap_err().to_string();

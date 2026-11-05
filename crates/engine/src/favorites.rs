@@ -15,7 +15,8 @@ use crate::bible_search::{SearchMode, SearchRequestFields, SearchTab};
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
 use crate::session::Session;
 use crate::workspace::{
-    Effect, Guide, HeaderBox, OpenRequest, PanelId, PendingVisit, TabId, TabKind, Tool, VisitedAt,
+    Effect, Guide, HeaderBox, OpenRequest, PanelId, PendingVisit, Tab, TabId, TabKind, Tool,
+    VisitedAt,
 };
 
 /// A Search as a Favorite or Visit keeps it: what the Search Tool's fields held.
@@ -119,7 +120,13 @@ pub struct FavoritesAndHistory {
     last_visit: Option<TabLocation>,
     /// The local day History's day headings were worked out on (`YYYY-MM-DD`).
     history_day: Option<String>,
+    /// When writing a Visit last failed (Unix seconds), until one is written again: the
+    /// queued Visits wait [`HISTORY_RETRY_SECS`] before the next try.
+    history_failed_at: Option<i64>,
 }
+
+/// How long History waits after a failed write before trying its queued Visits again.
+const HISTORY_RETRY_SECS: i64 = 5;
 
 impl Session {
     /// Load Favorites and History from the User database.
@@ -261,13 +268,12 @@ impl Session {
     /// Where a Tab is now, and how to name it: `None` for Tabs without a Current location
     /// (the Library, Notes, About …) or before they have one.
     pub fn location_of(&self, tab: TabId) -> Option<(TabLocation, String)> {
-        self.location_at(tab, None)
+        self.location_at(self.workspace.tab(tab)?, None)
     }
 
-    /// [`Self::location_of`], with the Tab's Passage location, entry Key and Search fields
-    /// taken from `at` when given (where a jump went, read later).
-    fn location_at(&self, tab: TabId, at: Option<&VisitedAt>) -> Option<(TabLocation, String)> {
-        let t = self.workspace.tab(tab)?;
+    /// [`Self::location_of`] for Tab `t`, with its Passage location, entry Key and Search
+    /// fields taken from `at` when given (where a jump went, read later).
+    fn location_at(&self, t: &Tab, at: Option<&VisitedAt>) -> Option<(TabLocation, String)> {
         let (verse, entry_key) = match at {
             Some(at) => (at.verse, at.key.clone()),
             None => (t.history.current(), t.entry_history.current()),
@@ -426,29 +432,48 @@ impl Session {
     /// Record a Visit for every Tab opened or jumped since the last call: where a jump went,
     /// and where an opened Tab is now. The UI calls this once it has applied the engine's
     /// effects; a new Resource Tab the UI has not placed yet (no location until its text is
-    /// laid out) stays queued until it has one, unless it jumps first. Without a User
-    /// database the Visits are dropped.
+    /// laid out) stays queued until it has one, unless it jumps first; a Tab closed since
+    /// is recorded where it was. When a write fails, that Visit and the ones after it stay
+    /// queued, in order, and are tried again a few seconds later (the failure is shown
+    /// once). Without a User database the Visits are dropped.
     pub fn record_history(&mut self) {
+        self.record_history_as_of(unix_now());
+    }
+
+    /// [`Self::record_history`] at `now` (Unix seconds).
+    pub(crate) fn record_history_as_of(&mut self, now: i64) {
+        if self
+            .places
+            .history_failed_at
+            .is_some_and(|failed| now < failed + HISTORY_RETRY_SECS)
+        {
+            return;
+        }
         let visits = self.workspace.take_visits();
         if visits.is_empty() || self.user.is_none() {
+            self.workspace.keep_visits(Vec::new());
             return;
         }
         let mut recorded = false;
-        let mut unplaced: Vec<PendingVisit> = Vec::new();
+        let mut kept: Vec<PendingVisit> = Vec::new();
         for (i, visit) in visits.iter().enumerate() {
             let opened = visit.at.is_none();
             if opened && visits[i + 1..].iter().any(|later| later.tab == visit.tab) {
                 // Its later jump is where it went.
                 continue;
             }
-            let Some((location, label)) = self.location_at(visit.tab, visit.at.as_ref()) else {
+            let found = self
+                .workspace
+                .visited_tab(visit.tab)
+                .and_then(|t| self.location_at(t, visit.at.as_ref()));
+            let Some((location, label)) = found else {
                 if opened
                     && self
                         .workspace
                         .tab(visit.tab)
                         .is_some_and(|t| t.kind.is_reading())
                 {
-                    unplaced.push(visit.clone());
+                    kept.push(visit.clone());
                 }
                 continue;
             };
@@ -459,14 +484,19 @@ impl Session {
                 return;
             };
             if let Err(e) = user.record_visit(&label, &location.to_json()) {
-                self.workspace
-                    .push_effect(Effect::Message(format!("Could not save History: {e}")));
+                if self.places.history_failed_at.is_none() {
+                    self.workspace
+                        .push_effect(Effect::Message(format!("Could not save History: {e}")));
+                }
+                self.places.history_failed_at = Some(now);
+                kept.extend_from_slice(&visits[i..]);
                 break;
             }
+            self.places.history_failed_at = None;
             self.places.last_visit = Some(location);
             recorded = true;
         }
-        self.workspace.keep_visits(unplaced);
+        self.workspace.keep_visits(kept);
         if recorded {
             self.reload_history();
         }
@@ -713,6 +743,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
             user.clear_history().map_err(|e| failed(CMD, e))?;
             // Visits not yet recorded are History too.
             s.workspace.forget_visits();
+            s.places.history_failed_at = None;
             s.places.history.clear();
             s.places.last_visit = None;
             Ok(Value::Null)

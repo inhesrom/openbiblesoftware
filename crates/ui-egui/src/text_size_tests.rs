@@ -261,7 +261,9 @@ fn a_text_size_that_cannot_be_saved_shows_the_error_not_the_size() {
     h.shell
         .st
         .session
-        .attach_user(Box::new(obs_engine::testing::PreferenceWritesFail(store)));
+        .attach_user(Box::new(obs_engine::testing::WritesFail::preferences(
+            store,
+        )));
     let default = obs_layout::TextSettings::default().size;
     press(&mut h, LAYOUTS[0].larger[0], CTRL);
     let texts = h.texts();

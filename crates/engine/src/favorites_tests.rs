@@ -419,3 +419,109 @@ fn history_day_headings_move_on_at_midnight() {
 fn unix_now_for_tests() -> i64 {
     i64::try_from(crate::get_bibles::now_secs()).unwrap()
 }
+
+#[test]
+fn closing_a_tab_before_history_records_it_keeps_its_visits() {
+    let root = folder("closed");
+    let mut s = launch(&root);
+    let bsb = open(&mut s, "bsb");
+    go(&mut s, bsb, "Jn 3:16");
+    let search = tab(&s.run("search.run", &json!({ "text": "loved" })).unwrap());
+    // Both Tabs close before the UI's frame records History; the Last session is saved on
+    // quit, with History's Visits.
+    s.run("tab.close", &json!({ "tab": search.0 })).unwrap();
+    s.run("tab.close", &json!({ "tab": bsb.0 })).unwrap();
+    s.save_last_session().unwrap();
+    drop(s);
+
+    let s = launch(&root);
+    assert_eq!(labels(&s), ["“loved” · Bible Search", "John 3:16 · BSB"]);
+    drop(s);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn visits_history_failed_to_write_are_kept_in_order_and_written_on_retry() {
+    let root = folder("retry");
+    let mut s = Session::new(JobMode::Inline);
+    assert!(s.library.scan(&root.join("library")).is_empty());
+    let (store, _) = obs_store::UserStore::open(&root.join("user.db")).unwrap();
+    s.attach_user(Box::new(crate::testing::WritesFail::visits(store, 1)));
+    let bsb = open(&mut s, "bsb");
+    go(&mut s, bsb, "Gen 1:1");
+    go(&mut s, bsb, "Jn 3:16");
+    go(&mut s, bsb, "Rom 8:28");
+    s.workspace.take_effects();
+    let now = unix_now_for_tests();
+    // The first write fails: nothing is recorded, and the failure is shown once.
+    s.record_history_as_of(now);
+    assert!(s.history().is_empty());
+    let messages = |s: &mut Session| {
+        s.workspace
+            .take_effects()
+            .into_iter()
+            .filter(|e| matches!(e, Effect::Message(_)))
+            .count()
+    };
+    assert_eq!(messages(&mut s), 1);
+    // A jump while it waits joins the queue after them.
+    go(&mut s, bsb, "Gen 1:1");
+    s.record_history_as_of(now + 1);
+    assert!(s.history().is_empty());
+    assert_eq!(messages(&mut s), 0);
+    // A few seconds later every Visit is written, in order.
+    s.record_history_as_of(now + 5);
+    let expected = [
+        "Genesis 1:1 · BSB",
+        "Romans 8:28 · BSB",
+        "John 3:16 · BSB",
+        "Genesis 1:1 · BSB",
+    ];
+    assert_eq!(labels(&s), expected);
+    assert_eq!(messages(&mut s), 0);
+    drop(s);
+
+    let s = launch(&root);
+    assert_eq!(labels(&s), expected);
+    drop(s);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn a_word_study_favorite_moves_the_most_recently_active_word_study_tab() {
+    let root = folder("word-study-tabs");
+    let mut s = launch(&root);
+    let a = tab(&s
+        .run("word_study.open", &json!({ "strongs": "G26" }))
+        .unwrap());
+    let fav = s.run("favorite.add", &json!({ "tab": a.0 })).unwrap();
+    let b = tab(&s
+        .run(
+            "word_study.open",
+            &json!({ "strongs": "G5485", "new_tab": true }),
+        )
+        .unwrap());
+    assert_ne!(a, b);
+    // Study A, active again, moves on; then the Favorites Tool takes the focus.
+    s.workspace.focus(a);
+    s.run("word_study.open", &json!({ "strongs": "G1" }))
+        .unwrap();
+    assert_eq!(key_of(&s, a), "G1");
+    s.run("tool.favorites", &json!({})).unwrap();
+    let out = s.run("favorite.open", &json!({ "id": fav["id"] })).unwrap();
+    assert_eq!(tab(&out), a);
+    assert_eq!(key_of(&s, a), "G26");
+    assert_eq!(key_of(&s, b), "G5485");
+    drop(s);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+fn key_of(s: &Session, t: TabId) -> String {
+    s.workspace
+        .tab(t)
+        .unwrap()
+        .entry_history
+        .current()
+        .unwrap()
+        .to_string()
+}

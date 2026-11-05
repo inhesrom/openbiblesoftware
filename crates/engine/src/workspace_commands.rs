@@ -1001,6 +1001,8 @@ fn layout_restore(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError>
         )
     })?;
     let snap = snap.without_missing(|id| s.library.get(id).is_some());
+    // Where the closing Tabs went is History before they are replaced.
+    s.record_history();
     s.workspace.restore(snap);
     Ok(json!({ "name": name }))
 }
