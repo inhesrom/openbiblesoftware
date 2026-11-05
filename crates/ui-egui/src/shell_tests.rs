@@ -3749,6 +3749,54 @@ mod get_bibles {
     }
 
     #[test]
+    fn an_update_with_new_copyright_notes_refreshes_the_open_about_tab() {
+        let (mut h, repos, root) = downloaded_gbf("update-about");
+        let id = "obskjvgbf-1";
+        h.shell.run("resource.about", &json!({ "id": id }));
+        h.frames(2);
+        let about = h
+            .shell
+            .st
+            .session
+            .workspace
+            .tabs()
+            .find(|t| t.kind == TabKind::About(id.into()))
+            .unwrap()
+            .id;
+        let attribution = |h: &Harness| {
+            h.shell.st.tabs[&about].view.as_ref().unwrap().doc.units[0]
+                .text
+                .clone()
+        };
+        assert!(!attribution(&h).contains("Copyright notes"));
+        repos.publish("crosswire", "obskjvgbf.conf", "1.1", None);
+        repos.add_conf_line(
+            "crosswire",
+            "obskjvgbf.conf",
+            "CopyrightNotes=Corrected in 1.1",
+        );
+        h.shell.run("getbibles.refresh", &json!({}));
+        settle(&mut h);
+        h.shell
+            .run("getbibles.update", &json!({"module": "ObsKjvGbf"}));
+        settle(&mut h);
+        let manifest = &h.shell.st.session.library.get(id).unwrap().manifest;
+        assert_eq!(manifest.revision, 2);
+        assert!(
+            manifest
+                .attribution
+                .contains("Copyright notes: Corrected in 1.1")
+        );
+        assert_eq!(
+            attribution(&h),
+            manifest.attribution.clone(),
+            "the open About Tab shows the new revision's Attribution"
+        );
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn offline_the_tab_never_says_the_downloads_are_up_to_date() {
         let (mut h, repos, root) = downloaded_gbf("update-offline");
         assert!(says_up_to_date(&h));

@@ -190,6 +190,16 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             ),
         ));
     }
+    // An update still running would write its file and SWORD copy back after the removal.
+    if s.imports.job_of(&id).is_some() {
+        return Err(failed(
+            CMD,
+            format!(
+                "{} is being updated. Wait for the update to finish, then remove it.",
+                entry.manifest.abbreviation
+            ),
+        ));
+    }
     let annotations = s.annotations_referring(&id);
     let in_dir = s.library.holds_file(&entry.path);
     let sword_copy = s.sword_copy_of(&id);

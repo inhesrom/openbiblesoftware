@@ -208,6 +208,15 @@ impl MockRepos {
             }
         }
     }
+
+    /// Add `line` (`Key=value`) to the conf of a module in repository folder `repo`.
+    pub fn add_conf_line(&self, repo: &str, conf_file: &str, line: &str) {
+        let conf_path = self.root.join(repo).join("mods.d").join(conf_file);
+        let mut conf = std::fs::read_to_string(&conf_path).unwrap();
+        conf.push_str(line);
+        conf.push('\n');
+        std::fs::write(&conf_path, conf).unwrap();
+    }
 }
 
 /// Replace `from` with `to` in every entry of a RawText testament (6-byte index entries:

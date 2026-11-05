@@ -134,6 +134,10 @@ impl Imports {
     pub fn is_update(&self, id: &str) -> bool {
         self.replacing.contains_key(id)
     }
+    /// The record of the revision in the library that the running update of `id` replaces.
+    pub(crate) fn replaced(&self, id: &str) -> Option<&ImportRecord> {
+        self.replacing.get(id)
+    }
 }
 
 fn pref(id: &str) -> String {

@@ -984,6 +984,16 @@ fn bumping_a_module_version_shows_update_available_and_updating_keeps_its_notes_
         .unwrap();
     assert_eq!(out["id"], id.as_str());
     assert!(s.imports.is_update(&id));
+    // While it is downloading, the other download being current says nothing about this
+    // one: it is updating, not up to date and not offered again.
+    let summary = s.resource_updates();
+    assert_eq!(summary.updating, std::slice::from_ref(&id));
+    assert!(summary.updates.is_empty());
+    assert_eq!(summary.downloaded, 2);
+    assert!(!summary.up_to_date());
+    let list = s.run("getbibles.list", &json!({"query": "gbf"})).unwrap();
+    assert_eq!(list["updates"]["updating"][0], id.as_str());
+    assert_eq!(list["updates"]["up_to_date"], false);
     assert!(matches!(
         s.listing_status(&gbf),
         ListingStatus::InProgress { .. }
@@ -1196,6 +1206,50 @@ fn a_download_from_before_updates_gets_its_version_from_its_sword_copy() {
         Some("1.0")
     );
     assert_eq!(s.resource_updates().updates.len(), 1);
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn removing_a_resource_while_it_is_updating_is_refused_and_deletes_nothing() {
+    let (mut s, repos, root) = ready("remove-updating", JobMode::Inline);
+    let id = download(&mut s, "ObsKjvGbf");
+    repos.publish(
+        "crosswire",
+        "obskjvgbf.conf",
+        "1.1",
+        Some((JOHN_1_1, JOHN_1_1_FIXED)),
+    );
+    refresh(&mut s);
+    s.run("getbibles.update", &json!({"module": "ObsKjvGbf"}))
+        .unwrap();
+    assert!(s.imports.job_of(&id).is_some(), "the update is queued");
+    // Neither the question nor the confirmed Remove go through while it runs.
+    for confirm in [false, true] {
+        let err = s
+            .run("library.remove", &json!({"id": id, "confirm": confirm}))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("is being updated"), "{err}");
+    }
+    assert!(s.library.get(&id).is_some());
+    assert!(
+        !s.workspace
+            .take_effects()
+            .iter()
+            .any(|e| matches!(e, Effect::ConfirmRemove { .. } | Effect::Removed(_)))
+    );
+    settle(&mut s);
+    assert!(!s.imports.is_running(), "no Import left tracked");
+    assert_eq!(s.library.get(&id).unwrap().manifest.revision, 2);
+    // Once the update is in, Remove deletes the new revision and its SWORD copy for good.
+    s.run("library.remove", &json!({"id": id, "confirm": true}))
+        .unwrap();
+    settle(&mut s);
+    assert!(obr_files(&root.join("library")).is_empty());
+    assert!(sword_modules(&root.join("sword")).is_empty());
+    s.library.scan(&root.join("library"));
+    assert!(s.library.get(&id).is_none());
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }

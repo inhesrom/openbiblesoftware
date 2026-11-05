@@ -636,6 +636,9 @@ pub struct UpdatesSummary {
     /// Downloaded Resources that could not be checked: their repository did not answer or
     /// no longer lists the module, or the version they were imported at is not known.
     pub unchecked: Vec<String>,
+    /// Downloaded Resources being updated now: their revision in the Library is still the
+    /// old one, so they are neither offered an update nor up to date until it is in.
+    pub updating: Vec<String>,
     /// Downloaded Resources in the Library.
     pub downloaded: usize,
 }
@@ -648,6 +651,7 @@ impl UpdatesSummary {
             && self.downloaded > 0
             && self.updates.is_empty()
             && self.unchecked.is_empty()
+            && self.updating.is_empty()
     }
 }
 
@@ -779,10 +783,12 @@ impl Session {
         })
     }
 
-    /// The downloaded Resources in the Library: (Resource id, its origin).
+    /// The downloaded Resources in the Library: (Resource id, origin of the revision in the
+    /// Library). A Resource being updated counts with the revision it is replacing.
     fn downloaded(&self) -> Vec<(String, crate::import::RepoOrigin)> {
         self.imports
             .records()
+            .map(|r| self.imports.replaced(&r.resource_id).unwrap_or(r))
             .filter(|r| {
                 r.phase == crate::ImportPhase::Complete
                     && self.library.get(&r.resource_id).is_some()
@@ -833,7 +839,12 @@ impl Session {
         let downloaded = self.downloaded();
         let mut updates = Vec::new();
         let mut unchecked = Vec::new();
+        let mut updating = Vec::new();
         for (id, origin) in &downloaded {
+            if self.imports.is_update(id) {
+                updating.push(id.clone());
+                continue;
+            }
             let listing = gb.catalog().and_then(|c| {
                 let l = c.get(&origin.module)?;
                 let repo_failed = c.failed.iter().any(|(r, _)| *r == origin.repo);
@@ -858,6 +869,7 @@ impl Session {
             check,
             updates,
             unchecked,
+            updating,
             downloaded: downloaded.len(),
         }
     }
@@ -1142,6 +1154,7 @@ fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             "id": u.resource_id, "module": u.module, "installed": u.installed,
             "available": u.available})).collect::<Vec<_>>(),
         "unchecked": summary.unchecked,
+        "updating": summary.updating,
         "checked_at": match summary.check {
             UpdateCheck::Checked { at } => Some(at),
             _ => None,
