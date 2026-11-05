@@ -21,7 +21,7 @@ mod workers;
 
 use std::path::PathBuf;
 
-pub use compare_view::{ComparisonOutput, ComparisonView, comparison_pane};
+pub use compare_view::{ComparisonContext, ComparisonOutput, ComparisonView, comparison_pane};
 pub use doc::{DocBlock, ReadingDoc};
 pub use heights::HeightIndex;
 pub use marks::{Mark, MarkKind, marks_for};

@@ -114,7 +114,7 @@ impl State {
     }
 
     /// What Word Info shows for a Tagged word of a reading Tab.
-    fn shown_word(&mut self, tab: TabId, hit: &WordHit) -> Option<ShownWord> {
+    pub(super) fn shown_word(&mut self, tab: TabId, hit: &WordHit) -> Option<ShownWord> {
         let doc = std::sync::Arc::clone(&self.tabs.get(&tab)?.view.as_ref()?.doc);
         let (range, parts) = doc.tagged_word_at(hit.unit, hit.range.start)?;
         let unit = doc.units.get(hit.unit)?;

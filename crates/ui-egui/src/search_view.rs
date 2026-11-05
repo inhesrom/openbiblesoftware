@@ -58,10 +58,14 @@ pub struct SearchClick {
 }
 
 /// What happened in the results pane this frame.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct SearchOutput {
     pub clicked: Option<SearchClick>,
     pub frame: SearchFrame,
+    /// The pane's own response (for its right-click menu).
+    pub response: Option<egui::Response>,
+    /// The row right-clicked this frame (#142).
+    pub context_row: Option<usize>,
 }
 
 /// One Search Tab's results view: row heights and where it is scrolled.
@@ -435,9 +439,18 @@ pub fn search_pane(
                 });
         }
     }
+    if response.secondary_clicked()
+        && let Some(p) = response.interact_pointer_pos()
+    {
+        out.context_row = row_rects
+            .iter()
+            .find(|(_, r)| r.contains(p))
+            .map(|&(row, _)| row);
+    }
     view.last = frame.clone();
     view.row_rects = row_rects;
     out.frame = frame;
+    out.response = Some(response);
     out
 }
 

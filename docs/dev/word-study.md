@@ -42,8 +42,11 @@ The header, Lexicon entries and the chooser are #55; Translated as, Occurrences 
   new_tab?}`, Strong's links in a Lexicon entry (in the section and in a Lexicon Tab, where
   they are now drawn as links), the Guides menu (`guide.word_study`: starts at the Link set's
   number, else the word Word Info shows), a Passage Guide Key word (#54: `guide.word_study
-  {strongs, tab?}`, which also closes a moved Tab's chooser) and the box. A plain click
-  moves the focused or most recent Word Study; Ctrl/Cmd-click opens a new one.
+  {strongs, tab?}`, which also closes a moved Tab's chooser), the box, and the right-click
+  menu (#142, [context-menu.md](context-menu.md)): Word Study on a Tagged word's Lemma or
+  Strong's number, and `word_study.choose {words, new_tab?}` (the English-word chooser) on an
+  untagged word. A plain click moves the focused or most recent Word Study; Ctrl/Cmd-click
+  opens a new one.
 
 ## Translated as, Occurrences and Forms (#56)
 

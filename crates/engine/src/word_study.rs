@@ -869,12 +869,34 @@ pub(crate) fn open_at(
     request: OpenRequest,
     new_tab: bool,
 ) -> TabId {
+    let tab = study_tab(s, request, new_tab);
+    s.stop_choosing(tab);
+    s.workspace.navigate_entry(tab, Key::StrongsNumber(number));
+    tab
+}
+
+/// Open the English-word chooser for `words` (#142): in the focused or most recent Word Study
+/// Tab, or a new one with `new_tab` or when there is none.
+pub(crate) fn choose_at(
+    s: &mut Session,
+    words: &str,
+    request: OpenRequest,
+    new_tab: bool,
+) -> TabId {
+    let tab = study_tab(s, request, new_tab);
+    s.choose_words(tab, words);
+    tab
+}
+
+/// The Word Study Tab to show something in: the focused or most recent one (focused), or a new
+/// one with `new_tab` or a split request, or when there is none.
+fn study_tab(s: &mut Session, request: OpenRequest, new_tab: bool) -> TabId {
     let kind = TabKind::Guide(Guide::WordStudy);
     // The focused Word Study Tab is the most recently active one.
     let existing = (!new_tab && !request.split)
         .then(|| s.workspace.most_recent(|t| t.kind == kind))
         .flatten();
-    let tab = match existing {
+    match existing {
         Some(tab) => {
             s.workspace.focus(tab);
             tab
@@ -882,10 +904,7 @@ pub(crate) fn open_at(
         None => s
             .workspace
             .open(kind, Guide::WordStudy.title().into(), request),
-    };
-    s.stop_choosing(tab);
-    s.workspace.navigate_entry(tab, Key::StrongsNumber(number));
-    tab
+    }
 }
 
 fn failed(command: &'static str, message: impl ToString) -> CommandError {
@@ -910,43 +929,83 @@ pub(crate) fn word_info_number(s: &Session) -> Option<StrongsNumber> {
     s.word_info.shown.as_ref().map(crate::ShownWord::strongs)
 }
 
-pub(crate) const COMMANDS: &[CommandSpec] = &[CommandSpec {
-    id: "word_study.open",
-    label: "Open Word Study",
-    shortcut: None,
-    params: &[
-        ParamSpec {
-            name: "strongs",
-            kind: ParamKind::String,
-            required: true,
-            help: "Strong's number, e.g. G5485 or H1254A",
+const NEW_TAB: ParamSpec = ParamSpec {
+    name: "new_tab",
+    kind: ParamKind::Boolean,
+    required: false,
+    help: "Open a new Word Study Tab even if one is open (Ctrl/Cmd-click)",
+};
+const PANEL: ParamSpec = ParamSpec {
+    name: "panel",
+    kind: ParamKind::Integer,
+    required: false,
+    help: "Panel whose + was used",
+};
+const SPLIT: ParamSpec = ParamSpec {
+    name: "split",
+    kind: ParamKind::Boolean,
+    required: false,
+    help: "Open in a new Panel split off to the right (Ctrl/Cmd held)",
+};
+
+pub(crate) const COMMANDS: &[CommandSpec] = &[
+    CommandSpec {
+        id: "word_study.open",
+        label: "Open Word Study",
+        shortcut: None,
+        params: &[
+            ParamSpec {
+                name: "strongs",
+                kind: ParamKind::String,
+                required: true,
+                help: "Strong's number, e.g. G5485 or H1254A",
+            },
+            NEW_TAB,
+            PANEL,
+            SPLIT,
+        ],
+        enabled: always,
+        run: |s, p| {
+            const ID: &str = "word_study.open";
+            let text = p.str("strongs").unwrap_or_default();
+            let number: StrongsNumber = text.parse().map_err(|e| failed(ID, e))?;
+            let new_tab = p.bool("new_tab").unwrap_or(false);
+            let tab = open_at(s, number, request(&p), new_tab);
+            Ok(json!({ "tab": tab.0, "key": number.to_string() }))
         },
-        ParamSpec {
-            name: "new_tab",
-            kind: ParamKind::Boolean,
-            required: false,
-            help: "Open a new Word Study Tab even if one is open (Ctrl/Cmd-click)",
-        },
-        ParamSpec {
-            name: "panel",
-            kind: ParamKind::Integer,
-            required: false,
-            help: "Panel whose + was used",
-        },
-        ParamSpec {
-            name: "split",
-            kind: ParamKind::Boolean,
-            required: false,
-            help: "Open in a new Panel split off to the right (Ctrl/Cmd held)",
-        },
-    ],
-    enabled: always,
-    run: |s, p| {
-        const ID: &str = "word_study.open";
-        let text = p.str("strongs").unwrap_or_default();
-        let number: StrongsNumber = text.parse().map_err(|e| failed(ID, e))?;
-        let new_tab = p.bool("new_tab").unwrap_or(false);
-        let tab = open_at(s, number, request(&p), new_tab);
-        Ok(json!({ "tab": tab.0, "key": number.to_string() }))
     },
-}];
+    // An untagged word's way into Word Study (#142): the English-word chooser for the words,
+    // as if they were typed into the Word Study's box.
+    CommandSpec {
+        id: "word_study.choose",
+        label: "Word Study for English words",
+        shortcut: None,
+        params: &[
+            ParamSpec {
+                name: "words",
+                kind: ParamKind::String,
+                required: true,
+                help: "English words, e.g. `love` (a Strong's number studies that number)",
+            },
+            NEW_TAB,
+            PANEL,
+            SPLIT,
+        ],
+        enabled: always,
+        run: |s, p| {
+            const ID: &str = "word_study.choose";
+            let text = p.str("words").unwrap_or_default();
+            let new_tab = p.bool("new_tab").unwrap_or(false);
+            match parse_input(text).map_err(|e| failed(ID, e))? {
+                WordStudyInput::Strongs(n) => {
+                    let tab = open_at(s, n, request(&p), new_tab);
+                    Ok(json!({ "tab": tab.0, "key": n.to_string() }))
+                }
+                WordStudyInput::Words(words) => {
+                    let tab = choose_at(s, &words, request(&p), new_tab);
+                    Ok(json!({ "tab": tab.0, "choose": words }))
+                }
+            }
+        },
+    },
+];

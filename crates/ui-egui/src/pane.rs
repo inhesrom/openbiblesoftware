@@ -118,6 +118,8 @@ pub struct PaneOutput {
     pub hovered_word: Option<WordHit>,
     /// The Tagged word clicked this frame (Word Info pins it).
     pub clicked_word: Option<WordHit>,
+    /// Where in the text the pointer is (for the right-click menu opened from the keyboard).
+    pub pointer_at: Option<DocPos>,
 }
 
 /// Draw the reading pane into all the space `ui` has, and handle its input. `flash` marks a
@@ -448,6 +450,13 @@ pub fn reading_pane(
     {
         out.hovered_verse_number = Some(v);
     }
+    if let Some(p) = response.hover_pos()
+        && !track.contains(p)
+        && ui.input(menu_key_pressed)
+    {
+        let y = p.y.clamp(rect.top(), rect.bottom() - 1.0) - rect.top();
+        out.pointer_at = view.pos_at(p.x - text_rect.left(), y);
+    }
     if let Some(p) = response.hover_pos() {
         out.hovered_reference = view.reference_at(p.x - text_rect.left(), p.y - rect.top());
         if out.hovered_reference.is_some() {
@@ -589,18 +598,8 @@ fn handle_selection(
             view.selection = None;
         }
         if response.secondary_clicked() {
-            // Right-click acts on the selection under the pointer, else on the clicked word.
-            if let Some(at) = pointer.and_then(|p| pos_at(view, p))
-                && !view
-                    .selection
-                    .is_some_and(|s| has_text(view, &s) && s.contains(&view.doc, at))
-            {
-                let word = Selection {
-                    anchor: at,
-                    head: at,
-                    granularity: Granularity::Word,
-                };
-                view.selection = has_text(view, &word).then_some(word);
+            if let Some(at) = pointer.and_then(|p| pos_at(view, p)) {
+                select_for_menu(view, at);
             }
             input.context_clicked = true;
         }
@@ -620,6 +619,34 @@ fn handle_selection(
         ui.ctx().copy_text(copy_text(&view.doc, &sel));
     }
     input
+}
+
+/// Shift+F10 or the Menu key: open the right-click menu from the keyboard (#142).
+pub(crate) fn menu_key_pressed(i: &egui::InputState) -> bool {
+    i.events.iter().any(|e| {
+        matches!(
+            e,
+            egui::Event::Key { key, pressed: true, modifiers, .. }
+                if *key == egui::Key::Menu || (*key == egui::Key::F10 && modifiers.shift)
+        )
+    })
+}
+
+/// The right-click menu acts on the selection under `at`, else on the word there (which
+/// becomes the selection; none when `at` is not on a word).
+pub(crate) fn select_for_menu(view: &mut ReadingView, at: DocPos) {
+    if view
+        .selection
+        .is_some_and(|s| has_text(view, &s) && s.contains(&view.doc, at))
+    {
+        return;
+    }
+    let word = Selection {
+        anchor: at,
+        head: at,
+        granularity: Granularity::Word,
+    };
+    view.selection = has_text(view, &word).then_some(word);
 }
 
 /// Whether a selection covers any text other than white space (stopping at the first such

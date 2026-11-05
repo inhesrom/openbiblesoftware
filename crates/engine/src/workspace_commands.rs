@@ -141,6 +141,23 @@ const TAB: ParamSpec = ParamSpec {
     help: "The Tab",
 };
 const OPEN: &[ParamSpec] = &[PANEL, SPLIT];
+/// Passage-keyed Guides and Tools can open at a Passage (from the right-click menu, #142).
+const AT_PASSAGE: &[ParamSpec] = &[
+    PANEL,
+    SPLIT,
+    ParamSpec {
+        name: "passage",
+        kind: ParamKind::String,
+        required: false,
+        help: "Bible reference in the Standard versification, e.g. `Jn 3:16`: a Tab of this kind in the focused Tab's Link set moves there, else a new one opens there",
+    },
+    ParamSpec {
+        name: "new_tab",
+        kind: ParamKind::Boolean,
+        required: false,
+        help: "With `passage`: always open a new Tab (Ctrl/Cmd-click)",
+    },
+];
 const NAME: ParamSpec = ParamSpec {
     name: "name",
     kind: ParamKind::String,
@@ -316,12 +333,14 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         enabled: always,
         run: open_resource,
     },
-    open_cmd(
-        "guide.passage_guide",
-        "Passage Guide",
-        None,
-        open_passage_guide,
-    ),
+    CommandSpec {
+        id: "guide.passage_guide",
+        label: "Passage Guide",
+        shortcut: None,
+        params: AT_PASSAGE,
+        enabled: always,
+        run: open_passage_guide,
+    },
     CommandSpec {
         id: "guide.word_study",
         label: "Word Study",
@@ -348,9 +367,21 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     open_cmd("tool.search", "Search", Some("Ctrl+Shift+F"), |s, p| {
         open(s, p, TabKind::Tool(Tool::Search))
     }),
-    open_cmd("tool.text_comparison", "Text Comparison", None, |s, p| {
-        open(s, p, TabKind::Tool(Tool::TextComparison))
-    }),
+    CommandSpec {
+        id: "tool.text_comparison",
+        label: "Text Comparison",
+        shortcut: None,
+        params: AT_PASSAGE,
+        enabled: always,
+        run: |s, p| {
+            const ID: &str = "tool.text_comparison";
+            let kind = TabKind::Tool(Tool::TextComparison);
+            match open_at_passage(s, &p, kind.clone(), ID)? {
+                Some(out) => Ok(out),
+                None => open(s, p, kind),
+            }
+        },
+    },
     open_cmd("tool.notes", "Notes", None, |s, p| {
         open(s, p, TabKind::Tool(Tool::Notes))
     }),
@@ -360,9 +391,21 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         Some("Ctrl+Shift+I"),
         |s, p| open(s, p, TabKind::Tool(Tool::WordInfo)),
     ),
-    open_cmd("tool.cross_references", "Cross-references", None, |s, p| {
-        open(s, p, TabKind::Tool(Tool::CrossReferences))
-    }),
+    CommandSpec {
+        id: "tool.cross_references",
+        label: "Cross-references",
+        shortcut: None,
+        params: AT_PASSAGE,
+        enabled: always,
+        run: |s, p| {
+            const ID: &str = "tool.cross_references";
+            let kind = TabKind::Tool(Tool::CrossReferences);
+            match open_at_passage(s, &p, kind.clone(), ID)? {
+                Some(out) => Ok(out),
+                None => open(s, p, kind),
+            }
+        },
+    },
     open_cmd("tool.favorites", "Favorites", None, |s, p| {
         open(s, p, TabKind::Tool(Tool::Favorites))
     }),
@@ -713,6 +756,10 @@ pub(crate) fn open_tab(s: &mut Session, kind: TabKind, req: OpenRequest) -> TabI
 /// A Passage Guide starts where its Link set is; unlinked, at the Passage the focused Tab
 /// shows (like Logos opening a Guide on the active reference).
 fn open_passage_guide(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "guide.passage_guide";
+    if let Some(out) = open_at_passage(s, &p, TabKind::Guide(Guide::PassageGuide), ID)? {
+        return Ok(out);
+    }
     let from = s
         .workspace
         .focused()
@@ -734,6 +781,52 @@ fn open_passage_guide(s: &mut Session, p: Params<'_>) -> Result<Value, CommandEr
         t.history.scrolled_to(v);
     }
     Ok(out)
+}
+
+/// With a `passage` param: show it in a Tab of `kind`. The most recent such Tab in the focused
+/// Tab's Link set (or, from an unlinked Tab, an unlinked one) moves there; with `new_tab` or
+/// `split`, or when there is none, a new one opens (joining the focused Tab's Link set). The
+/// Link set follows, as after any jump. `None` without the param.
+fn open_at_passage(
+    s: &mut Session,
+    p: &Params<'_>,
+    kind: TabKind,
+    id: &'static str,
+) -> Result<Option<Value>, CommandError> {
+    let Some(text) = p.str("passage") else {
+        return Ok(None);
+    };
+    let list =
+        parse_reference(text, &Standard, None).map_err(|e| failed(id, e.kind.to_string()))?;
+    let verse = list
+        .passages()
+        .first()
+        .map(|p| p.start())
+        .ok_or_else(|| failed(id, "no reference"))?;
+    let opener = s
+        .workspace
+        .focused()
+        .and_then(|t| s.workspace.tab(t))
+        .and_then(|t| t.link);
+    let new_tab = p.bool("new_tab").unwrap_or(false) || p.bool("split").unwrap_or(false);
+    let existing = (!new_tab)
+        .then(|| {
+            s.workspace
+                .most_recent(|t| t.kind == kind && t.link == opener)
+        })
+        .flatten();
+    let tab = match existing {
+        Some(tab) => {
+            s.workspace.focus(tab);
+            tab
+        }
+        None => {
+            let title = title_of(s, &kind);
+            s.workspace.open(kind, title, request(p))
+        }
+    };
+    s.workspace.navigate_standard(tab, verse);
+    Ok(Some(json!({ "tab": tab.0, "verse": verse.osis() })))
 }
 
 /// A Word Study Tab. With `strongs` it is at that number (its Key, kept in the Tab's entry

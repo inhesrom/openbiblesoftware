@@ -465,6 +465,7 @@ impl State {
         let mut shown = st.clone();
         shown.selected = select;
         let out = search_pane(ui, view, &shown, &mut self.atlas, &palette);
+        self.search_menu(ui, tab, out.response.as_ref(), out.context_row);
         if select != st.selected
             && let Some(ws) = self.session.workspace.tab_mut(tab)
         {
