@@ -2,11 +2,15 @@ use std::ops::Range;
 
 use obs_model::{
     BibleVerse, CrossReference, Entity, Key, KeyEntry, KeyScheme, Manifest, Mention, Resource,
-    Span, TextUnit, UnitId,
+    Span, TextUnit, UnitId, UnitKind,
 };
 use obs_scripture::{Passage, StrongsNumber, Verse, VerseMap};
 
 use crate::error::StoreError;
+
+/// A Bible Verse with the Standard Passage its Verse map gives it: `Some(None)` for an
+/// Unmapped verse, `None` when the Bible has no Verse map.
+pub type MappedVerse = (BibleVerse, Option<Option<Passage>>);
 
 /// Row counts of an open Resource.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -33,6 +37,36 @@ pub trait ResourceStore {
 
     /// One unit with all of its spans, or `None`.
     fn unit(&self, id: &UnitId) -> Result<Option<TextUnit>, StoreError>;
+
+    /// One unit's kind and text, without its spans.
+    fn unit_text(&self, id: &UnitId) -> Result<Option<(UnitKind, String)>, StoreError> {
+        Ok(self.unit(id)?.map(|u| (u.kind, u.text)))
+    }
+
+    /// The Bible Verses of `unit` whose text overlaps `range`, in document order, each with
+    /// its Standard Passage from the Verse map: `Some(None)` for an Unmapped verse, `None` when
+    /// the Bible has no Verse map.
+    fn verses_overlapping(
+        &self,
+        unit: &UnitId,
+        range: Range<usize>,
+    ) -> Result<Vec<MappedVerse>, StoreError> {
+        let map = self.verse_map()?;
+        Ok(self
+            .verses()?
+            .into_iter()
+            .enumerate()
+            .filter(|(_, v)| {
+                v.unit == *unit && (v.start as usize) < range.end && range.start < v.end as usize
+            })
+            .map(|(i, v)| {
+                let standard = map
+                    .as_ref()
+                    .map(|m| m.entries().get(i).and_then(|e| e.standard));
+                (v, standard)
+            })
+            .collect())
+    }
 
     /// Spans of `unit` that overlap `range` (zero-width spans inside or at its edges count),
     /// in canonical order.

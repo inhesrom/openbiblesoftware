@@ -52,6 +52,10 @@ pub struct Session {
     log: Vec<&'static str>,
     /// The User database, when there is one.
     pub user: Option<Box<dyn UserData>>,
+    /// Undo and redo of annotation edits (#61).
+    pub(crate) history: crate::annotations::UndoHistory,
+    /// Bumped by every change to the annotation tables.
+    pub(crate) annotations_revision: u64,
     /// The Last session as last written, to skip writes that change nothing.
     saved_session: Option<String>,
     /// How SWORD repositories are reached (#91). The app installs its network transport;
@@ -78,6 +82,8 @@ impl Session {
             word_info: crate::word_info::WordInfo::default(),
             log: Vec::new(),
             user: None,
+            history: crate::annotations::UndoHistory::default(),
+            annotations_revision: 0,
             saved_session: None,
             fetch: std::sync::Arc::new(obs_formats::sword_repo::LocalFetch),
         }
@@ -129,6 +135,8 @@ impl Session {
             }
         }
         self.user = Some(user);
+        self.history.clear();
+        self.annotations_revision += 1;
         self.restore_import_reports();
     }
 
@@ -140,10 +148,14 @@ impl Session {
         user.save_preferred_order(&self.library.preferred_order())
     }
 
-    /// How many Annotations refer to a Resource (shown in its About Tab and its Remove
-    /// confirmation). Annotations are stored from #61 on; until then none exist.
-    pub fn annotations_referring(&self, _resource_id: &str) -> u64 {
-        0
+    /// How many Annotations have a Text range in a Resource (shown in its About Tab and its
+    /// Remove confirmation). Passage anchors without a Text range show in every Bible and
+    /// belong to none.
+    pub fn annotations_referring(&self, resource_id: &str) -> u64 {
+        self.user
+            .as_ref()
+            .and_then(|u| u.annotations_referring(resource_id).ok())
+            .unwrap_or(0)
     }
 
     /// Save the View preferences.

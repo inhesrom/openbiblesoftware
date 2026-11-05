@@ -818,6 +818,78 @@ impl ResourceStore for ObrReader {
         }))
     }
 
+    fn unit_text(&self, id: &UnitId) -> Result<Option<(UnitKind, String)>, StoreError> {
+        let row = self
+            .conn
+            .prepare_cached("SELECT kind, text FROM units WHERE id = ?1")
+            .map_err(sql)?
+            .query_row([id.as_str()], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .optional()
+            .map_err(sql)?;
+        row.map(|(kind, text)| Ok((enum_from::<UnitKind>("unit kind", &kind)?, text)))
+            .transpose()
+    }
+
+    fn verses_overlapping(
+        &self,
+        unit: &UnitId,
+        range: Range<usize>,
+    ) -> Result<Vec<crate::resource_store::MappedVerse>, StoreError> {
+        let Some(ord) = self.unit_ord(unit)? else {
+            return Ok(Vec::new());
+        };
+        let has_map: bool = self
+            .conn
+            .query_row("SELECT EXISTS (SELECT 1 FROM verse_map)", [], |r| r.get(0))
+            .map_err(sql)?;
+        let s = i64::try_from(range.start).unwrap_or(i64::MAX);
+        let e = i64::try_from(range.end).unwrap_or(i64::MAX);
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT v.book, v.chapter, v.verse, v.last, v.unit, v.start, v.end,
+                        m.std_start, m.std_end
+                 FROM verses v LEFT JOIN verse_map m ON m.ordinal = v.ordinal
+                 WHERE v.unit = ?1 AND v.start < ?3 AND v.end > ?2 ORDER BY v.ordinal",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(params![ord, s, e], |r| {
+                Ok((
+                    self.verse_row(r)?,
+                    r.get::<_, Option<String>>(7)?,
+                    r.get::<_, Option<String>>(8)?,
+                ))
+            })
+            .map_err(sql)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(sql)?;
+        rows.into_iter()
+            .map(|(row, a, b)| {
+                let (book, chapter, verse, last, _, start, end) = row;
+                let book =
+                    Book::from_usfm(&book).ok_or_else(|| corrupt(format!("bad book `{book}`")))?;
+                let v = BibleVerse {
+                    verse: Verse::new(book, to_u16(chapter, "chapter")?, to_u16(verse, "verse")?),
+                    last: to_u16(last, "verse")?,
+                    unit: unit.clone(),
+                    start: to_u32(start, "verse start")?,
+                    end: to_u32(end, "verse end")?,
+                };
+                let standard = match (a, b) {
+                    (Some(a), Some(b)) => Some(
+                        Passage::new(verse_from(&a)?, verse_from(&b)?)
+                            .map_err(|e| corrupt(format!("verse map of {}: {e}", v.verse)))?,
+                    ),
+                    _ => None,
+                };
+                Ok((v, has_map.then_some(standard)))
+            })
+            .collect()
+    }
+
     fn spans_in(&self, unit: &UnitId, range: Range<usize>) -> Result<Vec<Span>, StoreError> {
         let ord = self
             .unit_ord(unit)?

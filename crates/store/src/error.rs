@@ -25,6 +25,12 @@ pub enum StoreError {
     /// The Resource in the file does not pass validation.
     Invalid(ValidationErrors),
     UnknownUnit(String),
+    /// A User database edit was planned against rows that have changed since; nothing was
+    /// written.
+    Conflict(String),
+    /// A User database edit breaks a rule (such as deleting the default Notebook); nothing
+    /// was written.
+    Rejected(String),
 }
 
 impl fmt::Display for StoreError {
@@ -44,6 +50,8 @@ impl fmt::Display for StoreError {
             StoreError::Corrupt(why) => write!(f, "resource file is damaged: {why}"),
             StoreError::Invalid(errors) => write!(f, "resource file is invalid: {errors}"),
             StoreError::UnknownUnit(id) => write!(f, "no text unit `{id}` in this resource"),
+            StoreError::Conflict(why) => write!(f, "{why} changed since; nothing was saved"),
+            StoreError::Rejected(why) => f.write_str(why),
         }
     }
 }
