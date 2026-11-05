@@ -35,6 +35,7 @@ mod notes_tab;
 #[path = "references.rs"]
 pub(crate) mod references;
 mod search_tab;
+mod starter_tab;
 mod word_info_tab;
 mod word_sections_view;
 mod word_study_tab;
@@ -342,6 +343,29 @@ impl Shell {
                 Effect::Removed(id) => {
                     self.st.docs.remove(&id);
                     self.st.marks.forget(&id);
+                }
+                Effect::Replaced(id) => {
+                    self.st.docs.remove(&id);
+                    self.st.marks.forget(&id);
+                    // Its open Tabs (and every Text Comparison) load the new text, where they
+                    // were.
+                    let reload: Vec<TabId> = self
+                        .st
+                        .session
+                        .workspace
+                        .tabs()
+                        .filter(|t| match &t.kind {
+                            TabKind::Resource(r) | TabKind::About(r) => *r == id,
+                            TabKind::Tool(Tool::TextComparison) => true,
+                            _ => false,
+                        })
+                        .map(|t| t.id)
+                        .collect();
+                    for tab in reload {
+                        if self.st.tabs.contains_key(&tab) {
+                            self.st.opened(tab);
+                        }
+                    }
                 }
                 Effect::NavigateStandard { tab, verse } => {
                     self.st.session.workspace.navigate_standard(tab, verse);
@@ -669,6 +693,8 @@ impl Shell {
     fn background_repaint(&self) -> Option<std::time::Duration> {
         // Bible searches and their snippet pages (#59) are applied by a frame too.
         if self.st.session.imports.is_running()
+            || self.st.session.starter.download().is_some()
+            || self.st.session.starter.is_checking()
             || self.st.picker.is_some()
             || self.st.session.guides.is_busy()
             || self.st.session.bible_search_running()
@@ -700,6 +726,9 @@ impl Shell {
             self.st.session.jobs().pump(1);
         }
         let _other_jobs = self.st.session.poll_imports();
+        // A Starter library Tab restored with the session needs the released manifest too;
+        // here, not at restore, so it comes through the app's transport.
+        self.st.session.load_starter_manifest_for_open_tab();
         self.st.poll_picker();
         self.apply_effects();
         if let Some(after) = self.background_repaint() {
@@ -1239,6 +1268,7 @@ impl State {
             TabKind::About(id) => self.about_body(&mut body, tab, &id),
             TabKind::ImportReport(id) => self.import_body(&mut body, &id),
             TabKind::GetBibles => self.get_bibles_body(&mut body),
+            TabKind::StarterLibrary => self.starter_body(&mut body),
             TabKind::Credits => self.credits_body(&mut body, tab),
             TabKind::Guide(obs_engine::Guide::PassageGuide) => {
                 self.passage_guide_body(&mut body, tab)

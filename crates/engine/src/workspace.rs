@@ -73,6 +73,9 @@ pub enum TabKind {
     ImportReport(String),
     /// Get Bibles (#91): download Bibles from SWORD repositories. Keyless, single instance.
     GetBibles,
+    /// Library → Starter library… (#131): which Starter Resources are in the Library, with
+    /// Add back and the download. Keyless, single instance.
+    StarterLibrary,
     /// Help → Credits (#67): Starter Resources, data built into the app, fonts and
     /// third-party licences. Keyless, single instance.
     Credits,
@@ -107,6 +110,7 @@ enum Slot {
     About,
     ImportReport,
     GetBibles,
+    StarterLibrary,
     Credits,
     Guide(Guide),
     Tool(Tool),
@@ -122,6 +126,7 @@ impl TabKind {
                 | TabKind::About(_)
                 | TabKind::ImportReport(_)
                 | TabKind::GetBibles
+                | TabKind::StarterLibrary
                 | TabKind::Credits
                 | TabKind::Tool(Tool::Notes | Tool::WordInfo)
         )
@@ -142,6 +147,7 @@ impl TabKind {
             TabKind::About(_)
             | TabKind::ImportReport(_)
             | TabKind::GetBibles
+            | TabKind::StarterLibrary
             | TabKind::Credits => HeaderBox::Keyless,
             _ => HeaderBox::Reference,
         }
@@ -155,6 +161,7 @@ impl TabKind {
                 | TabKind::About(_)
                 | TabKind::ImportReport(_)
                 | TabKind::GetBibles
+                | TabKind::StarterLibrary
                 | TabKind::Credits
                 | TabKind::Tool(Tool::Notes)
         )
@@ -178,6 +185,7 @@ impl TabKind {
             TabKind::About(_) => Slot::About,
             TabKind::ImportReport(_) => Slot::ImportReport,
             TabKind::GetBibles => Slot::GetBibles,
+            TabKind::StarterLibrary => Slot::StarterLibrary,
             TabKind::Credits => Slot::Credits,
             TabKind::Guide(g) => Slot::Guide(*g),
             TabKind::Tool(t) => Slot::Tool(*t),
@@ -402,6 +410,9 @@ pub enum Effect {
     },
     /// A Resource left the library: drop anything loaded from it.
     Removed(String),
+    /// A Resource's file was replaced under the same id (a Resource revision, a re-Import):
+    /// drop anything loaded from it and load its open Tabs again.
+    Replaced(String),
     /// Go to a Standard Verse in a Tab opened just now, once its Verse map is loaded (the
     /// Notes Tool following a Passage anchor, #64): the Tab's Link set follows.
     NavigateStandard {

@@ -23,6 +23,7 @@ fn automation_injects_input_before_its_scheduled_ui_frame() {
         script: Vec::new(),
         input_script: events.clone(),
         shot: None,
+        offer_starter: false,
     };
     let ctx = egui::Context::default();
     for frame in 1..=3 {

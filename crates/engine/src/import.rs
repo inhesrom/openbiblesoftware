@@ -150,6 +150,7 @@ impl Session {
         let mut imported = Vec::new();
         let events = self.jobs().drain_events();
         let events = self.poll_get_bibles(events);
+        let events = self.poll_starter(events);
         let events = self.poll_search_indexes(events);
         let events = self.poll_guides(events);
         let events = self.poll_bible_searches(events);
@@ -187,7 +188,11 @@ impl Session {
                         record.phase = ImportPhase::Complete;
                         record.report = Some(out.report);
                         record.index = out.index;
+                        let replaced = self.library.get(&id).is_some();
                         self.library.add(out.entry);
+                        if replaced {
+                            self.workspace.push_effect(Effect::Replaced(id.clone()));
+                        }
                         imported.push(id.clone());
                         if let Err(e) = self.save_preferred_order() {
                             self.workspace.push_effect(Effect::Message(format!(
@@ -222,15 +227,10 @@ impl Session {
                 self.imports.active.remove(&event.id);
             }
         }
-        if !imported.is_empty() {
-            self.remember_resource_names();
-        }
-        // The Import built the cache (or the background rebuild now will).
-        for id in imported {
-            self.refresh_search_index(&id);
-            // A re-import of a Resource with Annotations re-anchors them (#65).
-            self.reanchor_resource(&id);
-        }
+        // The Import built the cache (or the background rebuild now will); a re-import of a
+        // Resource with Annotations re-anchors them (#65). The Starter library adds its
+        // Resources through the same path (#131).
+        self.finish_adding(&imported);
         other
     }
 }

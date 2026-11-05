@@ -45,6 +45,9 @@ pub struct App {
     script: Vec<(u32, String, serde_json::Value)>,
     input_script: Vec<(u32, egui::Event)>,
     shot: Option<(u32, PathBuf)>,
+    /// Open Library → Starter library… on the first frame, to offer the download (#131).
+    /// Not at construction: its list comes through the transport [`Self::with_fetch`] sets.
+    offer_starter: bool,
 }
 
 impl App {
@@ -98,6 +101,20 @@ impl App {
                 Err(e) => problems.push(format!("User database {}: {e}", db.display())),
             }
         }
+        // The Starter library (#131): added from the bundle on the first run (newer revisions
+        // and new Starter Resources later); without a bundle, offered for download once.
+        #[cfg(not(target_arch = "wasm32"))]
+        let offer_starter = {
+            session
+                .starter
+                .set_download_base(&obs_engine::starter::default_download_base());
+            let sync =
+                session.sync_starter_library(obs_engine::starter::find_starter_bundle().as_deref());
+            problems.extend(sync.problems);
+            sync.offer_download
+        };
+        #[cfg(target_arch = "wasm32")]
+        let offer_starter = false;
         let mut shell = Shell::new(session);
         shell.restore_or_default();
         // A file given on the command line opens on top of the restored Workspace.
@@ -132,6 +149,7 @@ impl App {
             script: Vec::new(),
             input_script: Vec::new(),
             shot: None,
+            offer_starter,
         }
     }
 
@@ -287,6 +305,9 @@ impl eframe::App for App {
             for p in dropped {
                 self.dropped(p);
             }
+        }
+        if std::mem::take(&mut self.offer_starter) {
+            self.shell.run("library.starter", &serde_json::json!({}));
         }
         self.shell.ui(ui);
         let ctx = ui.ctx().clone();

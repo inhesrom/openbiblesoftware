@@ -53,6 +53,9 @@ pub mod search;
 #[cfg(test)]
 mod search_tests;
 mod session;
+pub mod starter;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod starter_tests;
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub mod testing;

@@ -27,6 +27,19 @@ pub struct ReleaseResource {
     /// sha256 of the `.obr` file.
     pub file_sha256: String,
     pub bytes: u64,
+    /// What the app's Starter library dialog shows for a Resource it has not downloaded yet
+    /// (#131): its manifest's title, abbreviation, Resource type, language and SPDX licence.
+    /// Absent from manifests written before #131.
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub abbreviation: String,
+    #[serde(default)]
+    pub resource_type: Option<obs_model::ResourceType>,
+    #[serde(default)]
+    pub language: String,
+    #[serde(default)]
+    pub license: String,
     /// Live text-unit ids, in document order.
     pub units: Vec<String>,
     /// Retired unit id → its replacement (the `unit_alias` table).
@@ -219,6 +232,11 @@ mod tests {
             content_hash: "sha256:old".into(),
             file_sha256: String::new(),
             bytes: 0,
+            title: String::new(),
+            abbreviation: String::new(),
+            resource_type: None,
+            language: String::new(),
+            license: String::new(),
             units: units.iter().map(|s| s.to_string()).collect(),
             unit_aliases: aliases
                 .iter()

@@ -1481,3 +1481,90 @@ impl crate::UserData for PreferenceWritesFail {
         crate::UserData::annotation_dump(&self.0)
     }
 }
+
+/// A small Starter library (#131): a KJV-style Bible with the Starter id `kjv-strongs`
+/// (Genesis 1:1-3, public domain) and the Starter Lexicon excerpts (TBESH and TBESG under
+/// CC BY 4.0, BDB, Strong's Hebrew), each marked as built by `xtask starter`.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn starter_set() -> Vec<obs_model::Resource> {
+    use obs_scripture::{Book, Verse};
+    let verses = [
+        (
+            Verse::new(Book::Genesis, 1, 1),
+            "In the beginning God created the heaven and the earth.",
+        ),
+        (
+            Verse::new(Book::Genesis, 1, 2),
+            "And the earth was without form, and void; and darkness was upon the face of the deep.",
+        ),
+        (
+            Verse::new(Book::Genesis, 1, 3),
+            "And God said, Let there be light: and there was light.",
+        ),
+    ];
+    let mut kjv = bibles::bible("kjv-strongs", "KJV", &verses, None, &[]);
+    kjv.manifest.license = "LicenseRef-PublicDomain".into();
+    let mut set = vec![kjv];
+    for mut r in starter_lexicon_excerpts() {
+        r.manifest.license = if r.manifest.resource_id.starts_with("tbes") {
+            "CC-BY-4.0".into()
+        } else {
+            "LicenseRef-PublicDomain".into()
+        };
+        set.push(r);
+    }
+    for r in &mut set {
+        r.manifest.origin = obs_model::Origin::Starter;
+    }
+    set
+}
+
+/// Write `resources` into `dir` as `cargo xtask starter` does: one `.obr` each, its prebuilt
+/// Search index cache in `search/`, a change record for each CC BY one, and the
+/// `starter-manifest.json` naming each file's sha256 (#131).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn write_starter_bundle(dir: &Path, resources: &[obs_model::Resource]) {
+    std::fs::create_dir_all(dir).unwrap();
+    let mut items = Vec::new();
+    for r in resources {
+        let id = &r.manifest.resource_id;
+        let path = dir.join(format!("{id}.obr"));
+        obs_store::write_obr(r, &path).unwrap();
+        obs_store::build_search_index(
+            r,
+            obs_search::INDEX_VERSION,
+            &dir.join("search"),
+            &mut |_, _| true,
+        )
+        .unwrap();
+        if obs_model::is_cc_by(&r.manifest.license) {
+            std::fs::write(
+                dir.join(obs_model::changes_record_file(id)),
+                format!("# Changes we made: {id}\n"),
+            )
+            .unwrap();
+        }
+        let bytes = std::fs::read(&path).unwrap();
+        let m = &r.manifest;
+        items.push(serde_json::json!({
+            "resource_id": id,
+            "revision": m.revision,
+            "content_hash": m.content_hash,
+            "file_sha256": crate::starter::sha256_hex(&bytes),
+            "bytes": bytes.len(),
+            "title": m.title,
+            "abbreviation": m.abbreviation,
+            "resource_type": m.resource_type,
+            "language": m.language,
+            "license": m.license,
+            "units": r.units.iter().map(|u| u.id.as_str()).collect::<Vec<_>>(),
+            "unit_aliases": {},
+        }));
+    }
+    let manifest = serde_json::json!({ "format": 1, "resources": items });
+    std::fs::write(
+        dir.join(crate::starter::MANIFEST_FILE),
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    )
+    .unwrap();
+}
