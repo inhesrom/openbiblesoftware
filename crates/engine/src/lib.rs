@@ -40,6 +40,9 @@ pub mod library_search;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod library_search_tests;
 pub mod link;
+pub mod notes;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod notes_tests;
 pub mod people_places;
 pub mod persist;
 pub mod resource_navigation;
@@ -96,6 +99,7 @@ pub use library_search::{
     LIBRARY_TYPES, LibraryGroup, LibraryResults, LibraryRow, LibraryScope, SearchedResource,
 };
 pub use link::LINK_SETS;
+pub use notes::{Card, CardOrder, NoteHit, NotesFilter, NotesResults, NotesTool, body_references};
 pub use people_places::{ArticleLink, Fact, PersonOrPlace};
 pub use persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, UserData, WorkspaceSnapshot};
 #[cfg(not(target_arch = "wasm32"))]

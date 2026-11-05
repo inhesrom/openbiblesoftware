@@ -1,8 +1,8 @@
 # The Search Tool: Bible mode (#59) and Library mode (#60)
 
 The Search Tool is one Tab with a **Bible / Library / Notes** switch (#16 rule 9). Bible and
-Library modes are built; Notes mode comes with #64 and until then shows "Notes search arrives
-with #64". Both modes share the query grammar and parser, the highlighting, the recent queries
+Library modes are described here; Notes mode (#64) is described in [notes-tool.md](notes-tool.md).
+Bible and Library modes share the query grammar and parser, the highlighting, the recent queries
 (kept for each mode), the keyboard navigation, the background jobs and the rules for opening
 hits. The Search index caches they read are described in [search-index.md](search-index.md).
 

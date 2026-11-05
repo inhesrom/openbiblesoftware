@@ -56,6 +56,8 @@ pub struct Session {
     pub guides: crate::guide::Guides,
     /// Word Study headers and English-word choosers computed on the job queue (#55).
     pub word_study: crate::word_study::WordStudies,
+    /// The Notes Tool's Notebook choice, card order and card to reveal (#64).
+    pub notes: crate::notes::NotesTool,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
     log: Vec<&'static str>,
     /// The User database, when there is one.
@@ -92,6 +94,7 @@ impl Session {
             word_info: crate::word_info::WordInfo::default(),
             guides: crate::guide::Guides::default(),
             word_study: crate::word_study::WordStudies::default(),
+            notes: crate::notes::NotesTool::default(),
             log: Vec::new(),
             user: None,
             history: crate::annotations::UndoHistory::default(),

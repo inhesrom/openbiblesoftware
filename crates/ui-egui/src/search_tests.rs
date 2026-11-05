@@ -309,10 +309,10 @@ fn query_errors_show_inline_under_the_box() {
     h.frames(2);
     let message = "“X1” is not a Strong's number (try G5485 or H1254A)";
     assert!(h.find(message).is_some(), "{:?}", h.texts());
-    // Notes mode is not built yet.
+    // Notes mode (#64) starts with its own prompt.
     switch_mode(&mut h, "Notes");
     assert!(
-        h.find("Notes search arrives with #64").is_some(),
+        h.find("Type a search above and press Enter").is_some(),
         "{:?}",
         h.texts()
     );

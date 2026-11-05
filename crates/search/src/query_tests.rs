@@ -284,3 +284,30 @@ fn fuzzed_input_never_panics_or_emits_unescaped_syntax() {
     }
     assert!(matched > 10_000, "only {matched} queries compiled");
 }
+
+/// Notes search (#64) reads the same grammar against the Notes index's one `body` column.
+#[test]
+fn notes_queries_search_the_body_column() {
+    let notes = |q: &str| match compile_notes(&parse(q).unwrap()).unwrap() {
+        Compiled::Match(s) => s,
+        Compiled::Nothing => "<nothing>".into(),
+    };
+    let table: &[(&str, &str)] = &[
+        ("Laban heap", r#"body : "laban" AND body : "heap""#),
+        (r#""a witness""#, r#"body : "a witness""#),
+        ("witn*", r#"body : "witn" *"#),
+        ("faith -works", r#"body : "faith" NOT body : "works""#),
+        (
+            "(faith OR hope) love",
+            r#"(body : "faith" OR body : "hope") AND body : "love""#,
+        ),
+        // A Strong's number or Lemma is matched as written in the Note.
+        ("G5485", r#"body : "g5485""#),
+        ("lemma:ἀγάπη", r#"body : "αγαπη""#),
+    ];
+    for (q, want) in table {
+        assert_eq!(notes(q), *want, "{q}");
+    }
+    // The Search index form is unchanged.
+    assert_eq!(fts("G5485"), r#"strong : "g5485""#);
+}

@@ -450,6 +450,63 @@ fn push_text(
     }
 }
 
+/// A one-off paragraph of plain text in `base`, with the byte ranges in `styled` drawn in
+/// their own colour role (a Note body's Bible references as links, #64). Byte positions map
+/// back to `text` (as unit positions), so hit tests and range rects work on them.
+pub fn styled_snippet_paragraph(
+    text: &str,
+    base: ColorRole,
+    styled: &[(std::ops::Range<usize>, ColorRole)],
+    rtl: bool,
+    settings: &TextSettings,
+) -> Paragraph {
+    let mut para = snippet_paragraph("", base, rtl, settings);
+    let flags = |role| Flags {
+        role: Some(role),
+        ..Flags::default()
+    };
+    let mut at = 0;
+    let mut ranges: Vec<&(std::ops::Range<usize>, ColorRole)> = styled.iter().collect();
+    ranges.sort_by_key(|(r, _)| r.start);
+    for (range, role) in ranges {
+        let (start, end) = (range.start.max(at), range.end.min(text.len()));
+        let (Some(before), Some(inside)) = (text.get(at..start), text.get(start..end)) else {
+            continue;
+        };
+        if start >= end {
+            continue;
+        }
+        push_text(
+            &mut para.runs,
+            before,
+            at,
+            flags(base),
+            settings.size,
+            settings,
+        );
+        push_text(
+            &mut para.runs,
+            inside,
+            start,
+            flags(*role),
+            settings.size,
+            settings,
+        );
+        at = end;
+    }
+    if let Some(rest) = text.get(at..) {
+        push_text(
+            &mut para.runs,
+            rest,
+            at,
+            flags(base),
+            settings.size,
+            settings,
+        );
+    }
+    para
+}
+
 /// A one-off paragraph of plain text (inline-snippet mode: previews, popups, Word Info).
 pub fn snippet_paragraph(
     text: &str,

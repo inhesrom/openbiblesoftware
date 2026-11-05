@@ -1,6 +1,6 @@
 //! The Search Tool (#59; #16 rules 9–11 and 14; #18): one Tool with a Bible / Library / Notes
 //! switch. Bible mode is implemented here, Library mode (#60) in [`crate::library_search`]
-//! on the same Tab state, jobs and commands; Notes (#64) comes later.
+//! on the same Tab state, jobs and commands, and Notes mode in `notes.rs` (#64).
 //!
 //! A Bible search runs on Enter over the Bibles chosen in the picker (default: the ★ Bible,
 //! first in Preferred order) within a Search scope: a Passage list in the Standard
@@ -72,14 +72,6 @@ impl SearchMode {
             SearchMode::Bible => "Bible",
             SearchMode::Library => "Library",
             SearchMode::Notes => "Notes",
-        }
-    }
-
-    /// The ticket a mode that is not built yet arrives with.
-    pub fn ticket(self) -> Option<&'static str> {
-        match self {
-            SearchMode::Bible | SearchMode::Library => None,
-            SearchMode::Notes => Some("#64"),
         }
     }
 
@@ -509,6 +501,9 @@ pub struct SearchTab {
     pub running: bool,
     /// The row chosen with ↑/↓ (Enter opens it).
     pub selected: Option<usize>,
+    /// Notes mode: the Notebook searched (`None`: all), and the Notes found (#64).
+    pub notebook: Option<String>,
+    pub notes: Option<Arc<crate::notes::NotesResults>>,
     /// Snippets by page ([`PAGE_ROWS`] rows): for each row, one per hit (Library rows have
     /// one hit each).
     pub(crate) pages: BTreeMap<usize, Arc<Vec<Vec<Snippet>>>>,
@@ -568,6 +563,7 @@ impl SearchTab {
     fn clear_results(&mut self) {
         self.results = None;
         self.library_results = None;
+        self.notes = None;
         self.pages.clear();
         self.loading.clear();
         self.selected = None;
@@ -806,8 +802,7 @@ impl Session {
         let error = match fields.mode {
             SearchMode::Bible => self.start_bible_search(tab, &fields),
             SearchMode::Library => self.start_library_search(tab, &fields),
-            // Notes searches come with #64.
-            SearchMode::Notes => None,
+            SearchMode::Notes => self.run_notes_search(tab),
         };
         if let Some(st) = self.search_tab_mut(tab) {
             st.error = error.clone();

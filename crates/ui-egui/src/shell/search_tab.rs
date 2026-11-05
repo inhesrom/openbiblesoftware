@@ -3,12 +3,15 @@
 //! mode's Search scope (Bible: the Scope field with its presets and the Bible picker;
 //! Library: the Resource picker by type or Resource), the summary line and the results (the
 //! Verse list, or paragraphs grouped by Resource). ↑/↓ move through the results and Enter
-//! opens one; Ctrl/Cmd-click opens it in a new Tab.
+//! opens one; Ctrl/Cmd-click opens it in a new Tab. Notes mode (#64) has a Notebook filter
+//! beside the Scope field and lists the Notes found, newest change first; opening one shows
+//! it in the Notes Tool.
 
-use egui::{RichText, Stroke, Ui, vec2};
+use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, pos2, vec2};
 use obs_engine::bible_search::{ErrorField, InlineError, PAGE_ROWS, SearchMode, scope_presets};
 use obs_engine::library_search::{LIBRARY_TYPES, type_id, type_plural};
 use obs_engine::{SearchTab, TabId};
+use obs_layout::ColorRole;
 use obs_model::ResourceType;
 use serde_json::{Value, json};
 
@@ -99,6 +102,16 @@ impl State {
             })
             .collect();
         let error = st.error.clone();
+        let notebooks: Vec<(String, String)> = if st.mode == SearchMode::Notes {
+            self.session
+                .notebooks()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|n| (n.id, n.name))
+                .collect()
+        } else {
+            Vec::new()
+        };
         egui::Frame::new()
             .fill(theme::c().surface)
             .inner_margin(egui::Margin::symmetric(10, 6))
@@ -147,8 +160,6 @@ impl State {
                     self.resource_picker(ui, tab, &st, &mut run);
                     error_line(ui, error.as_ref(), ErrorField::Resources, "");
                     error_line(ui, error.as_ref(), ErrorField::Search, "");
-                }
-                if st.mode != SearchMode::Bible {
                     return;
                 }
                 ui.horizontal(|ui| {
@@ -182,6 +193,40 @@ impl State {
                     .on_hover_text("Scope presets");
                 });
                 error_line(ui, error.as_ref(), ErrorField::Scope, &scope);
+                if st.mode == SearchMode::Notes {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Notebook").small().color(theme::c().muted));
+                        let current = st
+                            .notebook
+                            .as_ref()
+                            .and_then(|id| notebooks.iter().find(|(n, _)| n == id))
+                            .map_or("All Notebooks", |(_, name)| name.as_str());
+                        egui::ComboBox::from_id_salt(("search-notebook", tab))
+                            .selected_text(current)
+                            .show_ui(ui, |ui| {
+                                if ui
+                                    .selectable_label(st.notebook.is_none(), "All Notebooks")
+                                    .clicked()
+                                {
+                                    run.push((
+                                        "search.notebook",
+                                        json!({ "tab": tab.0, "value": "all" }),
+                                    ));
+                                }
+                                for (id, name) in &notebooks {
+                                    let on = st.notebook.as_ref() == Some(id);
+                                    if ui.selectable_label(on, name).clicked() {
+                                        run.push((
+                                            "search.notebook",
+                                            json!({ "tab": tab.0, "value": id }),
+                                        ));
+                                    }
+                                }
+                            });
+                    });
+                    error_line(ui, error.as_ref(), ErrorField::Search, "");
+                    return;
+                }
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     ui.label(RichText::new("Bibles").small().color(theme::c().muted));
@@ -232,8 +277,8 @@ impl State {
             t.search_fields.query = query;
             t.search_fields.scope = scope;
         }
-        if let Some(ticket) = st.mode.ticket() {
-            super::placeholder(ui, &format!("{} search", st.mode.label()), ticket);
+        if st.mode == SearchMode::Notes {
+            self.notes_results(ui, tab, &st);
         } else {
             self.search_results(ui, tab, &st);
         }
@@ -440,6 +485,164 @@ impl State {
                 "search.open",
                 &json!({ "tab": tab.0, "row": row, "hit": hit, "split": split }),
             );
+        }
+    }
+
+    /// Notes mode's results (#16 rule 13): newest change first, each row the Note's anchor
+    /// reference, its Notebook and a snippet with the hits marked, drawn by the text pipeline.
+    /// A click opens the Note in the Notes Tool; Ctrl/Cmd-click goes to its text in a new Tab.
+    /// ↑/↓ move through the rows and Enter opens one.
+    fn notes_results(&mut self, ui: &mut Ui, tab: TabId, st: &SearchTab) {
+        let muted = theme::c().muted;
+        let Some(results) = st.notes.clone() else {
+            ui.add_space(30.0);
+            ui.vertical_centered(|ui| {
+                ui.label(RichText::new("Type a search above and press Enter").color(muted));
+            });
+            return;
+        };
+        egui::Frame::new()
+            .inner_margin(egui::Margin::symmetric(12, 4))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    RichText::new(results.summary())
+                        .strong()
+                        .color(theme::c().ink),
+                );
+            });
+        let rows = results.hits.len();
+        if rows == 0 {
+            ui.add_space(20.0);
+            ui.vertical_centered(|ui| {
+                ui.label(RichText::new("No notes match").color(muted));
+            });
+            return;
+        }
+        let focused = self.session.workspace.focused() == Some(tab);
+        let typing = ui.memory(|m| m.focused().is_some());
+        let mut select = st.selected;
+        let mut open: Option<(usize, bool)> = None;
+        if focused && !typing {
+            ui.input_mut(|i| {
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown) {
+                    select = Some(select.map_or(0, |s| (s + 1).min(rows - 1)));
+                }
+                if i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp) {
+                    select = Some(select.map_or(0, |s| s.saturating_sub(1)));
+                }
+                let split = i.modifiers.command;
+                let enter = i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
+                    || i.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter);
+                if enter && let Some(s) = select {
+                    open = Some((s, split));
+                }
+            });
+        }
+        let settings = self.session.text;
+        let palette = self.palette;
+        let line = settings.size * settings.line_spacing * 1.2;
+        let row_height = 26.0 + 2.0 * line;
+        egui::ScrollArea::vertical()
+            .id_salt(("notes-hits", tab))
+            .auto_shrink([false, false])
+            .show_rows(ui, row_height, rows, |ui, range| {
+                for i in range {
+                    let hit = &results.hits[i];
+                    let (rect, r) = ui.allocate_exact_size(
+                        vec2(ui.available_width(), row_height),
+                        Sense::click(),
+                    );
+                    let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+                    let fill = if select == Some(i) {
+                        palette.selection
+                    } else if r.hovered() {
+                        palette.hover
+                    } else {
+                        palette.page
+                    };
+                    painter.rect_filled(rect, 0.0, fill);
+                    painter.text(
+                        rect.min + vec2(12.0, 4.0),
+                        egui::Align2::LEFT_TOP,
+                        format!("{} · {}", hit.reference, hit.notebook),
+                        egui::FontId::proportional(12.5),
+                        palette.verse_number,
+                    );
+                    let width = (rect.width() - 24.0).max(60.0);
+                    let origin = rect.min + vec2(12.0, 22.0);
+                    if let Some(laid) = self.snippets.get(
+                        &hit.snippet.text,
+                        ColorRole::Ink,
+                        false,
+                        width,
+                        &settings,
+                    ) {
+                        for h in &hit.snippet.highlights {
+                            for [x0, y0, x1, y1] in crate::compare_view::range_rects(&laid, h) {
+                                painter.rect_filled(
+                                    Rect::from_min_max(
+                                        origin + vec2(x0, y0),
+                                        origin + vec2(x1, y1),
+                                    ),
+                                    2.0,
+                                    palette.search_hit,
+                                );
+                            }
+                        }
+                        let quads = self.atlas.atlas.quads(
+                            &laid,
+                            [origin.x, origin.y],
+                            ui.ctx().pixels_per_point(),
+                        );
+                        let mut mesh = Mesh::with_texture(self.atlas.sync(ui.ctx()));
+                        for q in quads {
+                            mesh.add_rect_with_uv(
+                                Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
+                                Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
+                                palette.color(q.role),
+                            );
+                        }
+                        painter.add(Shape::mesh(mesh));
+                    } else {
+                        painter.rect_filled(
+                            Rect::from_min_size(
+                                pos2(origin.x, origin.y + line * 0.3),
+                                vec2(width, line * 0.35),
+                            ),
+                            2.0,
+                            palette.verse_number.gamma_multiply(0.12),
+                        );
+                        ui.ctx().request_repaint();
+                    }
+                    painter.hline(
+                        rect.x_range(),
+                        rect.bottom() - 0.5,
+                        Stroke::new(1.0, palette.verse_number.gamma_multiply(0.2)),
+                    );
+                    r.widget_info(|| {
+                        egui::WidgetInfo::labeled(egui::Role::Button, true, &hit.snippet.text)
+                    });
+                    if r.clicked() {
+                        select = Some(i);
+                        open = Some((i, ui.input(|i| i.modifiers.command)));
+                    }
+                }
+            });
+        if select != st.selected
+            && let Some(ws) = self.session.workspace.tab_mut(tab)
+        {
+            ws.search.selected = select;
+        }
+        if let Some((row, split)) = open
+            && let Some(hit) = results.hits.get(row)
+        {
+            self.session.workspace.user_focused(tab);
+            if split {
+                self.run("notes.follow", &json!({ "id": hit.id, "split": true }));
+            } else {
+                self.run("notes.open", &json!({ "id": hit.id }));
+            }
         }
     }
 }

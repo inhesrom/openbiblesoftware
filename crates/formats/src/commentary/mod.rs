@@ -18,6 +18,7 @@ use crate::{ImportReport, text_buf::TextBuf};
 pub use dictionary::{DictionaryData, import_dictionary};
 pub use jfb::import_jfb_book;
 pub use mhc::import_mhc;
+pub use references::scripture_references;
 
 /// Collects edition sections before writing through the shared ResourceBuilder.
 /// Archive and download handling belong to the caller, not these pure-data converters.

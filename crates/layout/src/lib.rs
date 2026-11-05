@@ -25,7 +25,10 @@ mod style;
 pub use estimate::estimate_height;
 pub use layout::{Hit, LaidBlock, LaidItem, LaidLine, UnitPos, layout};
 pub use paragraph::{Align, InlineObject, Paragraph, Run, RunSource};
-pub use present::{BlockKind, BlockSource, block_paragraph, snippet_paragraph, unit_blocks};
+pub use present::{
+    BlockKind, BlockSource, block_paragraph, snippet_paragraph, styled_snippet_paragraph,
+    unit_blocks,
+};
 pub use spans::SpanIndex;
 pub use style::{ColorRole, RunStyle, TextSettings, VerseNumbers};
 
