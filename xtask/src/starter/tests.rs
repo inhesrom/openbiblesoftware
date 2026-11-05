@@ -134,7 +134,9 @@ fn two_clean_builds_are_byte_identical() {
     .unwrap();
     assert!(!hits.is_empty());
     assert!(report.contains("Search index (MB)"), "{report}");
-    // A rebuild into the same folder replaces the outputs, caches included.
+    // A rebuild into the same folder replaces the outputs, caches included (close them
+    // first: Windows cannot delete open files).
+    drop((index, reader));
     build(&config).unwrap();
     compare_dirs(&config.out, &second.out).unwrap();
 }
