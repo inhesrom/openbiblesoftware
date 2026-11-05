@@ -264,6 +264,8 @@ fn sections_appear_as_they_finish_without_blocking_frames() {
         h.frames(30);
         h.screenshot(&dir.join("passage-guide.ppm"));
     }
+    // The Session holds the .obr files open; close it before `Files` deletes them.
+    drop(h);
 }
 
 #[test]
@@ -278,6 +280,7 @@ fn with_no_commentaries_in_the_library_the_section_shows_its_hint() {
     until(&mut h, "Cross-references", |h| {
         find_in(h, guide, "John 11:25-26").is_some()
     });
+    drop(h);
 }
 
 #[test]
@@ -439,6 +442,7 @@ fn clicks_follow_the_navigation_rules() {
     let ws = &h.shell.session().workspace;
     assert_eq!(ws.tabs().count(), tabs + 2);
     assert_ne!(ws.focused(), Some(alpha));
+    drop(h);
 }
 
 #[test]
@@ -482,4 +486,5 @@ fn the_guide_box_takes_a_passage_range() {
     until(&mut h, "Commentary rows for the range", |h| {
         find_in(h, guide, "Alpha Commentary").is_some() && find_in(h, guide, "Beta Notes").is_some()
     });
+    drop(h);
 }

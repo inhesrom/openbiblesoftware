@@ -588,8 +588,15 @@ fn menu_items_are_dispatched_through_the_command_registry() {
     assert!(!h.shell.st.session.text.red_letter);
     h.open_menu("Guides");
     h.click_text("Passage Guide");
-    // The Passage Guide (#53) opens with its sections, no longer a placeholder.
-    assert!(h.find("Commentaries").is_some(), "{:?}", h.texts());
+    // The Passage Guide (#53) opens as itself, no longer a placeholder. The focused Credits
+    // Tab has no Passage, so the Guide asks for one.
+    assert!(
+        h.texts()
+            .iter()
+            .any(|t| t.starts_with("Type a Passage in the box above")),
+        "{:?}",
+        h.texts()
+    );
     assert!(h.find("Passage Guide arrives with #53").is_none());
     // The + on a tab bar runs the same commands.
     let plus = h
