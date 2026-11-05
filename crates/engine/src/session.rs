@@ -64,6 +64,8 @@ pub struct Session {
     pub user: Option<Box<dyn UserData>>,
     /// Undo and redo of annotation edits (#61).
     pub(crate) history: crate::annotations::UndoHistory,
+    /// Re-anchoring jobs and reports (#65).
+    pub reanchoring: crate::reanchor::Reanchoring,
     /// Bumped by every change to the annotation tables.
     pub(crate) annotations_revision: u64,
     /// The Last session as last written, to skip writes that change nothing.
@@ -101,6 +103,7 @@ impl Session {
             log: Vec::new(),
             user: None,
             history: crate::annotations::UndoHistory::default(),
+            reanchoring: crate::reanchor::Reanchoring::default(),
             annotations_revision: 0,
             saved_session: None,
             fetch: std::sync::Arc::new(obs_formats::sword_repo::LocalFetch),
@@ -158,6 +161,9 @@ impl Session {
         self.annotations_revision += 1;
         self.restore_import_reports();
         self.load_guide_arrangements();
+        // Library load: Annotations made against another revision of a Resource move with
+        // their text (or are orphaned) before it shows them (#65).
+        self.reanchor_library();
     }
 
     /// Save the library's Preferred order.

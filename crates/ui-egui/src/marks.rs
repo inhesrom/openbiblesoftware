@@ -63,10 +63,11 @@ pub struct Mark {
 }
 
 /// The Marks of `doc`'s Resource among `annotations`, in creation order (see the module
-/// docs for where each Annotation shows). A Text range in this Resource whose text no longer
-/// reads as its quote is not drawn over other words: a Passage anchor falls back to its whole
-/// Verse(s) (ADR 0006), and a bare Text range is left out until re-anchoring (#65) moves or
-/// orphans it.
+/// docs for where each Annotation shows). An Orphaned annotation is not drawn (it is listed
+/// under Needs attention, #65). A Text range in this Resource whose text no longer reads as
+/// its quote is never drawn over other words: a Passage anchor falls back to its whole
+/// Verse(s) (ADR 0006), and a bare Text range is left out. Re-anchoring normally fixes both
+/// before the Resource is shown; this guards Resources replaced outside the app.
 pub fn marks_for(doc: &ReadingDoc, annotations: &[Annotation]) -> Vec<Mark> {
     let units: HashMap<&UnitId, usize> = doc
         .units
@@ -77,7 +78,7 @@ pub fn marks_for(doc: &ReadingDoc, annotations: &[Annotation]) -> Vec<Mark> {
     let bible = doc.manifest.resource_type == ResourceType::Bible && !doc.verses.is_empty();
     let mut marks: Vec<(i64, Mark)> = Vec::new();
     for a in annotations {
-        let Some(anchor) = a.anchor.as_ref() else {
+        let Some(anchor) = a.anchor.as_ref().filter(|x| !x.is_orphaned()) else {
             continue;
         };
         let mut push = |start: DocPos, end: DocPos, kind: MarkKind| {

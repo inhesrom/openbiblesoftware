@@ -240,6 +240,8 @@ impl App {
         match added {
             Ok(id) => {
                 self.shell.session_mut().refresh_search_index(&id);
+                // A new revision of a Resource with Annotations re-anchors them (#65).
+                self.shell.session_mut().reanchor_resource(&id);
                 self.shell
                     .run("resource.open", &serde_json::json!({ "id": id }));
             }

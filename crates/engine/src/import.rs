@@ -154,6 +154,7 @@ impl Session {
         let events = self.poll_guides(events);
         let events = self.poll_bible_searches(events);
         let events = self.poll_word_studies(events);
+        let events = self.poll_reanchoring(events);
         for event in events {
             let Some(id) = self.imports.active.get(&event.id).cloned() else {
                 other.push(event);
@@ -224,6 +225,8 @@ impl Session {
         // The Import built the cache (or the background rebuild now will).
         for id in imported {
             self.refresh_search_index(&id);
+            // A re-import of a Resource with Annotations re-anchors them (#65).
+            self.reanchor_resource(&id);
         }
         other
     }

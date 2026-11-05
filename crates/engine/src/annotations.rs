@@ -76,6 +76,24 @@ impl UndoHistory {
         self.redo.clear();
     }
 
+    /// Re-anchoring moved an Annotation's anchor from `before`'s to `after`'s outside the
+    /// history: every recorded row of it that still has the old anchor gets the new one, so
+    /// undoing and redoing steps recorded before the move land on the rows as they are now.
+    pub fn rebase(&mut self, before: &Annotation, after: &Annotation) {
+        for step in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+            for change in &mut step.changes {
+                for row in [&mut change.before, &mut change.after] {
+                    if let Some(Row::Annotation(a)) = row
+                        && a.id == before.id
+                        && a.anchor == before.anchor
+                    {
+                        a.anchor = after.anchor.clone();
+                    }
+                }
+            }
+        }
+    }
+
     fn push(&mut self, step: UndoStep) {
         if self.undo.len() >= UNDO_LIMIT {
             self.undo.remove(0);
@@ -160,7 +178,11 @@ pub fn note_anchor(segments: &[Segment]) -> Option<Anchor> {
 /// The Standard Passage of one Bible Verse (own numbering, covering up to verse `last`):
 /// its Verse map entry (`mapped`), or, for a Bible without a map, the Verse itself when the
 /// Standard versification has it. `None` for an Unmapped verse.
-fn standard_of(mapped: Option<Option<Passage>>, native: Verse, last: u16) -> Option<Passage> {
+pub(crate) fn standard_of(
+    mapped: Option<Option<Passage>>,
+    native: Verse,
+    last: u16,
+) -> Option<Passage> {
     match mapped {
         Some(standard) => standard,
         None => {
@@ -290,6 +312,7 @@ pub fn segments(store: &dyn ResourceStore, sel: &Selection) -> Result<Vec<Segmen
                 content_hash: manifest.content_hash.clone(),
                 native_ref,
                 whole_verses,
+                orphaned: false,
             },
             standard: span,
             in_bible,
@@ -685,6 +708,44 @@ impl Session {
         })
     }
 
+    /// **Re-attach here** (#17 rule 12): anchor an Annotation (an Orphaned one, typically) on a
+    /// selection, as a new Annotation there would be anchored, as one undo step. It is no
+    /// longer orphaned. A Highlight needs a selection within one text unit (Bible book).
+    pub fn reattach(&mut self, id: &str, sel: &Selection) -> Result<Annotation, String> {
+        let a = self.annotation(id)?;
+        let parts = self.selection_segments(sel)?;
+        let anchor = if a.is_note() {
+            note_anchor(&parts)
+        } else {
+            match parts.as_slice() {
+                [one] => Some(one.anchor()),
+                _ => {
+                    return Err(
+                        "A Highlight is re-attached within one book: select less text".into(),
+                    );
+                }
+            }
+        };
+        let anchor = anchor.ok_or("Select some text first")?;
+        self.edit_annotation(id, "Re-attach", true, |a| {
+            a.anchor = Some(anchor);
+            Ok(())
+        })
+    }
+
+    /// **Keep without anchor** (#17 rule 12): a Note (an Orphaned one, typically) stops
+    /// pointing at any text and stays in its Notebook, as one undo step. A Highlight needs an
+    /// Anchor, so it cannot.
+    pub fn detach(&mut self, id: &str) -> Result<Annotation, String> {
+        self.edit_annotation(id, "Keep without anchor", true, |a| {
+            if !a.is_note() {
+                return Err("A Highlight needs its text: re-attach it or delete it".into());
+            }
+            a.anchor = None;
+            Ok(())
+        })
+    }
+
     pub fn delete_annotation(&mut self, id: &str) -> Result<(), String> {
         let a = self.annotation(id)?;
         let label = if a.is_note() {
@@ -1027,6 +1088,41 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         run: run_delete,
     },
     CommandSpec {
+        id: "annotation.reattach",
+        label: "Re-attach here",
+        shortcut: None,
+        params: &[
+            ID,
+            ParamSpec {
+                required: true,
+                ..RESOURCE
+            },
+            ParamSpec {
+                required: true,
+                ..START_UNIT
+            },
+            ParamSpec {
+                required: true,
+                ..START
+            },
+            END_UNIT,
+            ParamSpec {
+                required: true,
+                ..END
+            },
+        ],
+        enabled: has_user,
+        run: run_reattach,
+    },
+    CommandSpec {
+        id: "annotation.detach",
+        label: "Keep without anchor",
+        shortcut: None,
+        params: &[ID],
+        enabled: has_user,
+        run: run_detach,
+    },
+    CommandSpec {
         id: "annotation.get",
         label: "Show Annotation",
         shortcut: None,
@@ -1268,6 +1364,23 @@ fn run_delete(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let id = p.str("id").unwrap_or_default();
     s.delete_annotation(id).map_err(|e| failed(CMD, e))?;
     Ok(json!({ "deleted": id }))
+}
+
+fn run_reattach(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const CMD: &str = "annotation.reattach";
+    let sel = selection(CMD, &p)?;
+    let a = s
+        .reattach(p.str("id").unwrap_or_default(), &sel)
+        .map_err(|e| failed(CMD, e))?;
+    Ok(json!({ "annotation": to_json(&a) }))
+}
+
+fn run_detach(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const CMD: &str = "annotation.detach";
+    let a = s
+        .detach(p.str("id").unwrap_or_default())
+        .map_err(|e| failed(CMD, e))?;
+    Ok(json!({ "annotation": to_json(&a) }))
 }
 
 fn run_get(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {

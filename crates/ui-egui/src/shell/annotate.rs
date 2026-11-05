@@ -106,8 +106,13 @@ impl MarkCache {
         self.by_resource.remove(resource_id);
     }
 
-    /// The Marks to draw in `doc`.
+    /// The Marks to draw in `doc`. None while its Resource's Annotations are being
+    /// re-anchored (#65): they may point at text that moved; they show once the job is
+    /// applied (which moves the annotation revision).
     pub(super) fn marks(&mut self, session: &Session, doc: &ReadingDoc) -> Arc<Vec<Mark>> {
+        if session.is_reanchoring(&doc.manifest.resource_id) {
+            return Arc::new(Vec::new());
+        }
         self.refresh(session);
         let annotations = &self.annotations;
         Arc::clone(
@@ -143,7 +148,7 @@ pub(super) struct NoteEditor {
 }
 
 /// The selection as command params: resource, start_unit, start, end_unit, end.
-fn selection_params(doc: &ReadingDoc, sel: &Selection) -> Option<Value> {
+pub(super) fn selection_params(doc: &ReadingDoc, sel: &Selection) -> Option<Value> {
     let (a, b) = sel.range(doc);
     if a >= b {
         return None;

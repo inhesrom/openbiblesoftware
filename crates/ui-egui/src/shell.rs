@@ -664,6 +664,7 @@ impl Shell {
             || self.st.session.guides.is_busy()
             || self.st.session.bible_search_running()
             || self.st.session.word_study.is_busy()
+            || self.st.session.reanchoring.is_busy()
         {
             Some(std::time::Duration::from_millis(16))
         } else if self.st.session.search.is_building() {
@@ -683,7 +684,9 @@ impl Shell {
         // live on workers. Without worker threads (wasm), Guide sections step here, a job a
         // frame.
         if !self.st.session.jobs().is_threaded()
-            && (self.st.session.guides.is_busy() || self.st.session.word_study.is_busy())
+            && (self.st.session.guides.is_busy()
+                || self.st.session.word_study.is_busy()
+                || self.st.session.reanchoring.is_busy())
         {
             self.st.session.jobs().pump(1);
         }

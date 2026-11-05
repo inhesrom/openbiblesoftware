@@ -47,6 +47,8 @@ pub enum NotesFilter {
     #[default]
     All,
     Notebook(String),
+    /// **Needs attention** (#17 rule 12): the Orphaned annotations, of every Notebook.
+    NeedsAttention,
 }
 
 /// The order of the Notes Tool's cards.
@@ -103,9 +105,16 @@ pub struct Card {
     pub quote: Option<String>,
     /// For a Text-range anchor whose Resource left the library: "LXX is not in the library".
     pub missing: Option<String>,
+    /// For an Orphaned annotation: why it needs attention.
+    pub attention: Option<String>,
 }
 
 impl Card {
+    /// Whether it is an Orphaned annotation (listed under Needs attention).
+    pub fn needs_attention(&self) -> bool {
+        self.annotation.is_orphaned()
+    }
+
     /// Whether following it can show its text.
     pub fn followable(&self) -> bool {
         self.annotation.anchor.is_some() && self.missing.is_none()
@@ -314,23 +323,46 @@ impl Session {
             .map(|n: Notebook| (n.id, n.name))
             .collect();
         let only = match &self.notes.filter {
-            NotesFilter::All => None,
+            NotesFilter::All | NotesFilter::NeedsAttention => None,
             NotesFilter::Notebook(id) if notebooks.contains_key(id) => Some(id.as_str()),
             // The Notebook went away (deleted, or undone): show all.
             NotesFilter::Notebook(_) => None,
         };
+        let attention_only = self.notes.filter == NotesFilter::NeedsAttention;
         let words: Vec<String> = filter.split_whitespace().map(str::to_lowercase).collect();
         let mut cards: Vec<Card> = self
             .annotations(only)?
             .into_iter()
+            .filter(|a| !attention_only || a.is_orphaned())
             .map(|a| {
                 let range = a.anchor.as_ref().and_then(Anchor::text_range);
+                let name = |id: &str| {
+                    self.library
+                        .abbreviation_of(id)
+                        .map_or_else(|| id.to_string(), str::to_string)
+                };
                 let missing = match &a.anchor {
                     Some(Anchor::TextRange { range })
                         if self.library.get(&range.resource_id).is_none() =>
                     {
-                        Some(format!("{} is not in the library", range.resource_id))
+                        Some(format!(
+                            "{} is not in the library",
+                            name(&range.resource_id)
+                        ))
                     }
+                    _ => None,
+                };
+                let attention = match &a.anchor {
+                    Some(Anchor::TextRange { range }) if range.orphaned => Some(format!(
+                        "⚠ This text was not found in {} after it changed. Select the text in a \
+                         reading pane and choose Re-attach here{}.",
+                        name(&range.resource_id),
+                        if a.is_note() {
+                            ", keep the Note without an anchor, or delete it"
+                        } else {
+                            ", or delete it"
+                        }
+                    )),
                     _ => None,
                 };
                 Card {
@@ -338,6 +370,7 @@ impl Session {
                     reference: anchor_label(&self.library, a.anchor.as_ref()),
                     quote: range.map(|r| collapse(&r.quote)),
                     missing,
+                    attention,
                     annotation: a,
                 }
             })
@@ -386,9 +419,12 @@ impl Session {
             req,
         );
         if let Some(a) = annotation {
-            if let NotesFilter::Notebook(n) = &self.notes.filter
-                && *n != a.notebook_id
-            {
+            let listed = match &self.notes.filter {
+                NotesFilter::All => true,
+                NotesFilter::Notebook(n) => *n == a.notebook_id,
+                NotesFilter::NeedsAttention => a.is_orphaned(),
+            };
+            if !listed {
                 self.notes.filter = NotesFilter::All;
             }
             self.notes.reveal = Some((a.id.clone(), a.is_note()));
@@ -613,7 +649,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
             name: "value",
             kind: ParamKind::String,
             required: true,
-            help: "A Notebook id, or `all`",
+            help: "A Notebook id, `all`, or `attention` (Needs attention: the Orphaned annotations)",
         }],
         enabled: has_user,
         run: run_notebook,
@@ -711,6 +747,8 @@ fn run_notebook(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let v = p.str("value").unwrap_or_default();
     s.notes.filter = if v == "all" {
         NotesFilter::All
+    } else if v == "attention" {
+        NotesFilter::NeedsAttention
     } else {
         let known = s.notebooks().map_err(|e| failed(CMD, e))?;
         if !known.iter().any(|n| n.id == v) {

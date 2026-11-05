@@ -57,6 +57,7 @@ fn range(quote: &str) -> TextRange {
         content_hash: "sha256:abc".into(),
         native_ref: None,
         whole_verses: false,
+        orphaned: false,
     }
 }
 
@@ -201,6 +202,94 @@ fn the_v5_migration_adds_show_in_text_and_whole_verse_coverage() {
     )])
     .unwrap();
     assert_eq!(db.notebook(&shown.id).unwrap(), Some(shown));
+}
+
+/// Migration 5 → 6 (#65): existing anchors read as not orphaned; an Orphaned annotation's
+/// Text-range anchor round-trips with its quote, and a Passage anchor's Text range can never
+/// be stored orphaned.
+#[test]
+fn the_v6_migration_adds_the_orphaned_status() {
+    let dir = Dir::new("migrate6");
+    let kept = {
+        let (v5, _) = UserStore::open_to(&dir.db(), 5).unwrap();
+        let nb = default_of(&v5);
+        drop(v5);
+        // A Text-range anchor as schema 5 wrote it (no status column yet).
+        let a = highlight(
+            &nb.id,
+            Anchor::TextRange {
+                range: range("God"),
+            },
+        );
+        let r = range("God");
+        let c = rusqlite::Connection::open(dir.db()).unwrap();
+        c.execute(
+            "INSERT INTO annotations (id, notebook_id, kind, style, body, created_at, modified_at)
+             VALUES (?1, ?2, 'highlight', 'green', '', ?3, ?4)",
+            rusqlite::params![a.id, nb.id, a.created_at, a.modified_at],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO anchors (annotation_id, kind, resource_id, unit_id, start_byte,
+                 end_byte, quote, prefix, suffix, content_hash)
+             VALUES (?1, 'text_range', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![
+                a.id,
+                r.resource_id,
+                r.unit.as_str(),
+                r.start,
+                r.end,
+                r.quote,
+                r.prefix,
+                r.suffix,
+                r.content_hash
+            ],
+        )
+        .unwrap();
+        a
+    };
+    let (db, report) = UserStore::open(&dir.db()).unwrap();
+    assert_eq!(report.found_version, 5);
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
+    let read = db.annotation(&kept.id).unwrap().unwrap();
+    assert_eq!(read, kept);
+    assert!(!read.is_orphaned());
+
+    let orphaned = Annotation {
+        anchor: Some(Anchor::TextRange {
+            range: TextRange {
+                orphaned: true,
+                ..range("God")
+            },
+        }),
+        ..read.clone()
+    };
+    db.apply_changes(&[Change::update(
+        Row::Annotation(read),
+        Row::Annotation(orphaned.clone()),
+    )])
+    .unwrap();
+    let back = db.annotation(&kept.id).unwrap().unwrap();
+    assert!(back.is_orphaned());
+    assert_eq!(back, orphaned);
+    assert!(db.annotation_dump().unwrap().contains("orphaned"));
+
+    let nb = default_of(&db);
+    let bad = highlight(
+        &nb.id,
+        Anchor::Passage {
+            passage: Passage::verse(jn(16)),
+            origin: Some(TextRange {
+                orphaned: true,
+                ..range("God")
+            }),
+        },
+    );
+    assert!(
+        db.apply_changes(&[Change::insert(Row::Annotation(bad))])
+            .is_err(),
+        "a Passage anchor's Text range is dropped, never orphaned"
+    );
 }
 
 #[test]

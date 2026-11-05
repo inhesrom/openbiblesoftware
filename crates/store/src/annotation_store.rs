@@ -98,6 +98,15 @@ ALTER TABLE anchors ADD COLUMN whole_verses INTEGER NOT NULL DEFAULT 0
     CHECK (whole_verses IN (0, 1));
 ";
 
+/// Migration 5 → 6 (#65): `anchors.status`, `ok` or `orphaned` (#17 rule 4). Re-anchoring
+/// marks a Text-range anchor whose quote it could not find again `orphaned`; the row keeps
+/// its quote, context and offsets. A Passage anchor is never orphaned (its Text range is
+/// dropped instead), which the CHECK holds.
+pub(crate) const SCHEMA_6: &str = "
+ALTER TABLE anchors ADD COLUMN status TEXT NOT NULL DEFAULT 'ok'
+    CHECK (status IN ('ok', 'orphaned') AND (status = 'ok' OR kind = 'text_range'));
+";
+
 /// Name of the default Notebook when it is first made. The user may rename it.
 pub const DEFAULT_NOTEBOOK_NAME: &str = "My Notebook";
 
@@ -106,7 +115,7 @@ const NOTEBOOK_COLUMNS: &str = "id, name, is_default, created_at, modified_at, s
 const ANNOTATION_COLUMNS: &str = "a.id, a.notebook_id, a.kind, a.style, a.body, a.created_at,
      a.modified_at, x.kind, x.start_book, x.start_chapter, x.start_verse, x.end_book,
      x.end_chapter, x.end_verse, x.resource_id, x.unit_id, x.start_byte, x.end_byte, x.quote,
-     x.prefix, x.suffix, x.content_hash, x.native_ref, x.whole_verses";
+     x.prefix, x.suffix, x.content_hash, x.native_ref, x.whole_verses, x.status";
 
 const ANNOTATION_FROM: &str = "annotations a LEFT JOIN anchors x ON x.annotation_id = a.id";
 
@@ -150,6 +159,7 @@ fn text_range_from(r: &SqlRow<'_>) -> rusqlite::Result<Option<TextRange>> {
         content_hash: r.get(21)?,
         native_ref: r.get(22)?,
         whole_verses: r.get(23)?,
+        orphaned: r.get::<_, Option<String>>(24)?.as_deref() == Some("orphaned"),
     }))
 }
 
@@ -266,9 +276,9 @@ fn write_anchor(c: &Connection, id: &str, anchor: Option<&Anchor>) -> Result<(),
     c.execute(
         "INSERT INTO anchors (annotation_id, kind, start_book, start_chapter, start_verse,
              end_book, end_chapter, end_verse, resource_id, unit_id, start_byte, end_byte,
-             quote, prefix, suffix, content_hash, native_ref, whole_verses)
+             quote, prefix, suffix, content_hash, native_ref, whole_verses, status)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                 ?18)",
+                 ?18, ?19)",
         params![
             id,
             kind,
@@ -288,6 +298,11 @@ fn write_anchor(c: &Connection, id: &str, anchor: Option<&Anchor>) -> Result<(),
             range.map(|r| &r.content_hash),
             range.and_then(|r| r.native_ref.as_ref()),
             range.is_some_and(|r| r.whole_verses),
+            if range.is_some_and(|r| r.orphaned) {
+                "orphaned"
+            } else {
+                "ok"
+            },
         ],
     )
     .map(drop)

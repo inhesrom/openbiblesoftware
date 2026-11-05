@@ -319,6 +319,7 @@ fn following_a_text_range_anchor_reveals_it_in_its_resource() {
         content_hash: "sha256:x".into(),
         native_ref: None,
         whole_verses: false,
+        orphaned: false,
     };
     let a = Annotation {
         id: obs_store::annotation::new_id_at(now),
@@ -348,7 +349,7 @@ fn following_a_text_range_anchor_reveals_it_in_its_resource() {
     // Its Resource leaves the library: the card says so and cannot be followed.
     s.library.remove("kjv");
     let card = s.note_cards("").unwrap().remove(0);
-    assert_eq!(card.missing.as_deref(), Some("kjv is not in the library"));
+    assert_eq!(card.missing.as_deref(), Some("KJV is not in the library"));
     assert!(!card.followable());
     assert!(s.run("notes.follow", &json!({ "id": a.id })).is_err());
 }
