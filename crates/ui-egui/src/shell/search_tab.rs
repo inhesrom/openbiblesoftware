@@ -1,10 +1,13 @@
-//! The Search Tool's Tab (#59; #16 rules 9–11 and 14): the Bible / Library / Notes switch,
-//! the query box (runs on Enter, recent queries per mode), inline errors, the Scope field
-//! with its presets and the Bible picker, then the summary line and the Verse list. ↑/↓
-//! move through the results and Enter opens one; Ctrl/Cmd-click opens it in a new Tab.
+//! The Search Tool's Tab (#59, #60; #16 rules 9–12 and 14): the Bible / Library / Notes
+//! switch, the query box (runs on Enter, recent queries per mode), inline errors, then the
+//! mode's Search scope (Bible: the Scope field with its presets and the Bible picker;
+//! Library: the Resource picker by type or Resource), the summary line and the results (the
+//! Verse list, or paragraphs grouped by Resource). ↑/↓ move through the results and Enter
+//! opens one; Ctrl/Cmd-click opens it in a new Tab.
 
 use egui::{RichText, Stroke, Ui, vec2};
 use obs_engine::bible_search::{ErrorField, InlineError, PAGE_ROWS, SearchMode, scope_presets};
+use obs_engine::library_search::{LIBRARY_TYPES, type_id, type_plural};
 use obs_engine::{SearchTab, TabId};
 use obs_model::ResourceType;
 use serde_json::{Value, json};
@@ -45,7 +48,9 @@ fn error_line(ui: &mut Ui, error: Option<&InlineError>, field: ErrorField, text:
 pub(super) fn query_hint(mode: SearchMode) -> &'static str {
     match mode {
         SearchMode::Bible => "Words, \"a phrase\", OR, -word, lov*, strong:H1254, lemma:",
-        SearchMode::Library => "Search the library",
+        SearchMode::Library => {
+            "Commentaries, Lexicons, Dictionaries: words, \"a phrase\", OR, lov*"
+        }
         SearchMode::Notes => "Search your notes",
     }
 }
@@ -138,6 +143,11 @@ impl State {
                     });
                 });
                 error_line(ui, error.as_ref(), ErrorField::Query, &query);
+                if st.mode == SearchMode::Library {
+                    self.resource_picker(ui, tab, &st, &mut run);
+                    error_line(ui, error.as_ref(), ErrorField::Resources, "");
+                    error_line(ui, error.as_ref(), ErrorField::Search, "");
+                }
                 if st.mode != SearchMode::Bible {
                     return;
                 }
@@ -232,22 +242,131 @@ impl State {
         }
     }
 
-    /// The summary line, notices about Bibles not searched, and the Verse list.
+    /// Library mode's Search scope: a chip for each Resource type and single Resource
+    /// searched (× leaves it out), and a menu of checkboxes by type and Resource.
+    fn resource_picker(
+        &self,
+        ui: &mut Ui,
+        tab: TabId,
+        st: &SearchTab,
+        run: &mut Vec<(&'static str, Value)>,
+    ) {
+        let library = &self.session.library;
+        let scope = &st.library;
+        let chip = |ui: &mut Ui, label: &str, hover: &str| -> bool {
+            let mut clicked = false;
+            egui::Frame::new()
+                .fill(theme::c().field)
+                .stroke(Stroke::new(1.0, theme::c().rule))
+                .corner_radius(11.0)
+                .inner_margin(egui::Margin::symmetric(6, 0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 2.0;
+                        ui.label(RichText::new(label).size(12.5));
+                        let x = egui::Button::new(RichText::new("×").size(12.0))
+                            .frame(false)
+                            .min_size(vec2(16.0, 20.0));
+                        clicked = ui.add(x).on_hover_text(hover).clicked();
+                    });
+                });
+            clicked
+        };
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.label(RichText::new("Resources").small().color(theme::c().muted));
+            for ty in &scope.types {
+                if library.of_type(*ty).next().is_none() {
+                    continue;
+                }
+                if chip(ui, type_plural(*ty), "Do not search these") {
+                    run.push((
+                        "search.resource_type",
+                        json!({ "tab": tab.0, "value": type_id(*ty) }),
+                    ));
+                }
+            }
+            for id in &scope.resources {
+                let Some(e) = library.get(id) else {
+                    continue;
+                };
+                if chip(ui, &e.manifest.abbreviation, "Do not search this Resource") {
+                    run.push(("search.resource", json!({ "tab": tab.0, "id": id })));
+                }
+            }
+            ui.menu_button(RichText::new("Choose…").size(12.5), |ui| {
+                let mut any = false;
+                for ty in LIBRARY_TYPES {
+                    let entries: Vec<_> = library.of_type(ty).collect();
+                    if entries.is_empty() {
+                        continue;
+                    }
+                    any = true;
+                    let mut all = scope.types.contains(&ty);
+                    if ui
+                        .checkbox(&mut all, format!("All {}", type_plural(ty)))
+                        .clicked()
+                    {
+                        run.push((
+                            "search.resource_type",
+                            json!({ "tab": tab.0, "value": type_id(ty) }),
+                        ));
+                    }
+                    ui.indent(("search-resources", type_id(ty)), |ui| {
+                        for e in entries {
+                            let id = &e.manifest.resource_id;
+                            let mut on = scope.includes(library, id);
+                            let label =
+                                format!("{} — {}", e.manifest.abbreviation, e.manifest.title);
+                            if ui.checkbox(&mut on, label).clicked() {
+                                run.push(("search.resource", json!({ "tab": tab.0, "id": id })));
+                            }
+                        }
+                    });
+                }
+                if !any {
+                    ui.label(
+                        RichText::new("No Commentaries, Lexicons or Dictionaries in the library")
+                            .color(theme::c().muted),
+                    );
+                }
+            })
+            .response
+            .on_hover_text("Choose Resource types or single Resources to search");
+        });
+    }
+
+    /// The summary line, notices about Resources not searched, and the results.
     fn search_results(&mut self, ui: &mut Ui, tab: TabId, st: &SearchTab) {
-        if let Some(r) = &st.results {
+        let summary = match (&st.results, &st.library_results) {
+            (Some(r), _) => Some((
+                r.summary(),
+                r.indexing.clone(),
+                r.stale.clone(),
+                r.failed.clone(),
+            )),
+            (None, Some(r)) => Some((
+                r.summary(),
+                r.indexing.clone(),
+                r.stale.clone(),
+                r.failed.clone(),
+            )),
+            (None, None) => None,
+        };
+        if let Some((summary, indexing, stale, failed)) = &summary {
             egui::Frame::new()
                 .inner_margin(egui::Margin::symmetric(12, 4))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.label(RichText::new(r.summary()).strong().color(theme::c().ink));
-                    for name in &r.indexing {
+                    ui.label(RichText::new(summary).strong().color(theme::c().ink));
+                    for name in indexing {
                         ui.label(
                             RichText::new(format!("Indexing {name}… searched when ready"))
                                 .small()
                                 .color(theme::c().muted),
                         );
                     }
-                    for name in &r.stale {
+                    for name in stale {
                         ui.label(
                             RichText::new(format!(
                                 "{name}: searched through its older index while it is rebuilt"
@@ -256,7 +375,7 @@ impl State {
                             .color(theme::c().muted),
                         );
                     }
-                    for (name, why) in &r.failed {
+                    for (name, why) in failed {
                         ui.label(
                             RichText::new(format!("{name} could not be searched: {why}"))
                                 .small()
@@ -267,7 +386,7 @@ impl State {
         }
         let focused = self.session.workspace.focused() == Some(tab);
         let typing = ui.memory(|m| m.focused().is_some());
-        let rows = st.results.as_ref().map_or(0, |r| r.rows.len());
+        let rows = st.row_count();
         let mut open: Option<(usize, usize, bool)> = None;
         let mut select = st.selected;
         if focused && !typing && rows > 0 {

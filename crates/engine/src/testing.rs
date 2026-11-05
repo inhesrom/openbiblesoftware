@@ -1026,3 +1026,209 @@ pub fn starter_lexicon_excerpts() -> Vec<obs_model::Resource> {
         .0,
     ]
 }
+
+/// Open-text Commentaries, a Lexicon and a Dictionary for Library search tests (#60):
+/// synthetic prose written for these tests (nothing quoted from a Starter edition), several
+/// paragraphs per unit, built the way the Starter converters build them (a heading, then
+/// `para` spans; one Key per unit).
+pub mod study {
+    use obs_model::{
+        Key, KeyScheme, Manifest, ParaStyle, Resource, ResourceBuilder, ResourceType, SpanKind,
+        UnitId, UnitKind,
+    };
+    use obs_scripture::{Book, Passage, Verse};
+
+    /// One unit: its Key, its title (also its heading) and its paragraphs.
+    pub type Entry = (Key, String, Vec<String>);
+
+    /// A Resource of `entries`, one unit each, keyed by their Keys.
+    pub fn resource(
+        id: &str,
+        title: &str,
+        abbreviation: &str,
+        ty: ResourceType,
+        entries: &[Entry],
+    ) -> Resource {
+        let mut manifest = Manifest::new(id, title, abbreviation, ty, "en");
+        manifest.key_schemes = match ty {
+            ResourceType::Commentary => vec![KeyScheme::Passage],
+            ResourceType::Lexicon => vec![KeyScheme::StrongsNumber],
+            _ => vec![KeyScheme::Headword],
+        };
+        manifest.license = "CC0-1.0".into();
+        manifest.attribution = "Synthetic test text.".into();
+        let mut b = ResourceBuilder::new(manifest);
+        for (key, heading, paragraphs) in entries {
+            let unit = match key {
+                Key::Passage(p) => UnitId::new(format!("{}-{}", p.start().osis(), p.end().osis())),
+                k => UnitId::new(k.to_string()),
+            }
+            .unwrap();
+            let kind = match ty {
+                ResourceType::Commentary => UnitKind::Section,
+                _ => UnitKind::Entry,
+            };
+            let mut text = heading.clone();
+            let mut paras = Vec::new();
+            for p in paragraphs {
+                text.push('\n');
+                let start = text.len();
+                text.push_str(p);
+                paras.push(start..text.len());
+            }
+            b.add_unit(unit.clone(), kind, Some(heading.clone()), text);
+            b.add_span(&unit, 0..heading.len(), SpanKind::Heading { level: 2 });
+            for r in paras {
+                b.add_span(
+                    &unit,
+                    r,
+                    SpanKind::Para {
+                        style: ParaStyle::Prose,
+                    },
+                );
+            }
+            b.add_key(key.clone(), &unit, None, false);
+        }
+        b.build().unwrap()
+    }
+
+    fn passage(book: Book, c1: u16, v1: u16, c2: u16, v2: u16) -> Key {
+        Key::Passage(Passage::new(Verse::new(book, c1, v1), Verse::new(book, c2, v2)).unwrap())
+    }
+
+    fn paras(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// A long paragraph without the word "covenant" (`n` tells them apart).
+    pub fn filler(n: usize) -> String {
+        format!(
+            "Remark {n}. The patriarch waits through long years, and the promise of a son is \
+             repeated in plain words. He looks at the stars of the night sky and counts what \
+             cannot be counted. His servants keep the flocks, his tent is pitched among \
+             strangers, and he builds an altar wherever he stops. The narrative moves slowly \
+             here so that the reader feels the length of the waiting, and every delay teaches \
+             patience. Nothing in this remark is hurried; it is meant to fill the page."
+        )
+    }
+
+    /// The paragraph of the Gen 15 section that names the covenant: the sixth, after five
+    /// long [`filler`] paragraphs.
+    pub const GEN15_COVENANT: &str = "Between the pieces a smoking furnace and a burning lamp \
+        pass by, and so the LORD makes a covenant with Abram about the land.";
+
+    /// "Test Covenant Commentary" (TCC): Gen 9:8-17, Gen 15 (its covenant paragraph after
+    /// five long ones) and Jer 31:31-34.
+    pub fn tcc() -> Resource {
+        let mut gen15 = paras(&["Abram is afraid, and the word comes to him in a vision."]);
+        gen15.extend((1..=5).map(filler));
+        gen15.push(GEN15_COVENANT.into());
+        resource(
+            "tcc",
+            "Test Covenant Commentary",
+            "TCC",
+            ResourceType::Commentary,
+            &[
+                (
+                    passage(Book::Genesis, 9, 8, 9, 17),
+                    "Genesis 9:8-17".into(),
+                    paras(&[
+                        "God speaks to Noah and to his sons once the waters have gone down.",
+                        "The covenant with Noah is made with every living creature, and its \
+                         sign is the bow in the cloud: a covenant without conditions.",
+                    ]),
+                ),
+                (
+                    passage(Book::Genesis, 15, 1, 15, 21),
+                    "Genesis 15:1-21".into(),
+                    gen15,
+                ),
+                (
+                    passage(Book::Jeremiah, 31, 31, 31, 34),
+                    "Jeremiah 31:31-34".into(),
+                    paras(&["A new covenant is promised, written on the heart and not on stone."]),
+                ),
+            ],
+        )
+    }
+
+    /// "Second Test Commentary" (TC2): Gen 17:1-14.
+    pub fn tc2() -> Resource {
+        resource(
+            "tc2",
+            "Second Test Commentary",
+            "TC2",
+            ResourceType::Commentary,
+            &[(
+                passage(Book::Genesis, 17, 1, 17, 14),
+                "Genesis 17:1-14".into(),
+                paras(&[
+                    "Abram receives a new name.",
+                    "Circumcision is the token of the covenant in the flesh.",
+                ]),
+            )],
+        )
+    }
+
+    /// "Test Lexicon" (TLX): H1285 and G1242 mention a covenant, G26 does not.
+    pub fn tlx() -> Resource {
+        let strongs = |s: &str| Key::StrongsNumber(s.parse().unwrap());
+        resource(
+            "tlx",
+            "Test Lexicon",
+            "TLX",
+            ResourceType::Lexicon,
+            &[
+                (
+                    strongs("G26"),
+                    "ἀγάπη".into(),
+                    paras(&["Love, goodwill, esteem."]),
+                ),
+                (
+                    strongs("G1242"),
+                    "διαθήκη".into(),
+                    paras(&["A covenant; also a last will or testament."]),
+                ),
+                (
+                    strongs("H1285"),
+                    "בְּרִית".into(),
+                    paras(&["Covenant, alliance, pledge; a treaty between peoples."]),
+                ),
+            ],
+        )
+    }
+
+    /// "Test Bible Dictionary" (TBD): Ark, Covenant (three paragraphs) and Rainbow (no
+    /// covenant).
+    pub fn tbd() -> Resource {
+        let headword = |s: &str| Key::Headword(s.into());
+        resource(
+            "tbd",
+            "Test Bible Dictionary",
+            "TBD",
+            ResourceType::Dictionary,
+            &[
+                (
+                    headword("Ark"),
+                    "Ark".into(),
+                    paras(&["A chest of acacia wood that held the tables of the covenant."]),
+                ),
+                (
+                    headword("Covenant"),
+                    "Covenant".into(),
+                    paras(&[
+                        "An agreement between two parties, binding on both of them.",
+                        "In Scripture a covenant of God with his people is of grace; the old \
+                         covenant and the new covenant are compared at length.",
+                        "See also Ark and Rainbow.",
+                    ]),
+                ),
+                (
+                    headword("Rainbow"),
+                    "Rainbow".into(),
+                    paras(&["The sign set in the cloud after the flood."]),
+                ),
+            ],
+        )
+    }
+}

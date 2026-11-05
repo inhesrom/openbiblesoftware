@@ -362,6 +362,15 @@ pub enum Effect {
         tab: TabId,
         key: Key,
     },
+    /// Move a Resource Tab to a Text range of its text (a Library search hit, #60): the
+    /// paragraph `range` of `unit` goes to the top of the view and is flashed. `key` is the
+    /// Key that covers it, to fall back on when the text is not shown.
+    NavigateText {
+        tab: TabId,
+        unit: obs_model::UnitId,
+        range: std::ops::Range<u32>,
+        key: Option<Key>,
+    },
     /// A Link-set member follows another; `flash` marks the target after an explicit jump.
     Follow {
         tab: TabId,
@@ -673,6 +682,51 @@ impl Workspace {
             t.moved_to(local);
             self.effects.push(Effect::Navigate { tab, verse: local });
             self.broadcast(tab, verse, true);
+        }
+    }
+
+    /// Jump to a Text range of a Resource Tab (a Library search hit) covered by `key`: the
+    /// Key goes into the Tab's history (a Passage Key also moves its Link set, an entry Key
+    /// the members that follow its scheme) and the view scrolls to the range.
+    pub fn navigate_text(
+        &mut self,
+        tab: TabId,
+        unit: obs_model::UnitId,
+        range: std::ops::Range<u32>,
+        key: Option<Key>,
+    ) {
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        match &key {
+            Some(Key::Passage(p)) if t.follows_passages() => {
+                let start = p.start();
+                t.history.visit(start);
+                t.moved_to(start);
+                self.effects.push(Effect::NavigateText {
+                    tab,
+                    unit,
+                    range,
+                    key: key.clone(),
+                });
+                self.broadcast(tab, start, true);
+            }
+            Some(k) if !matches!(k, Key::Passage(_)) => {
+                t.entry_history.visit(k.clone());
+                self.effects.push(Effect::NavigateText {
+                    tab,
+                    unit,
+                    range,
+                    key: key.clone(),
+                });
+                self.broadcast_entry(tab, k);
+            }
+            _ => self.effects.push(Effect::NavigateText {
+                tab,
+                unit,
+                range,
+                key,
+            }),
         }
     }
 

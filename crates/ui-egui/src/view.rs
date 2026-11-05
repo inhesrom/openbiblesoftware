@@ -78,6 +78,9 @@ pub struct ReadingView {
     anchor: (usize, f32),
     /// After a jump, the Current location stays on the target until the user scrolls (#13).
     sticky: Option<Verse>,
+    /// After a jump to a Text range (a Library search hit, #60): its unit index and byte,
+    /// kept at the top across relayouts until the user scrolls.
+    sticky_text: Option<(usize, usize)>,
     /// Blocks laid out so far, on any thread (for tests and the performance overlay).
     pub layouts: u64,
     client: LayoutClient,
@@ -103,6 +106,7 @@ impl ReadingView {
             laid: HashMap::new(),
             anchor: (0, 0.0),
             sticky: None,
+            sticky_text: None,
             layouts: 0,
             client: LayoutClient::default(),
             generation: 0,
@@ -158,7 +162,9 @@ impl ReadingView {
         self.laid.clear();
         self.generation += 1;
         self.client.forget_pending();
-        if let Some(v) = keep {
+        if let Some((unit, byte)) = self.sticky_text {
+            self.jump_to_text(unit, byte);
+        } else if let Some(v) = keep {
             self.jump_to(v);
         }
     }
@@ -193,6 +199,7 @@ impl ReadingView {
             return;
         }
         self.sticky = None;
+        self.sticky_text = None;
         self.pending_follow = None;
         self.anchor.1 += dy;
         self.normalize();
@@ -238,6 +245,7 @@ impl ReadingView {
     /// Jump to a document position (scrollbar drag).
     pub fn scroll_to_position(&mut self, y: f64) {
         self.sticky = None;
+        self.sticky_text = None;
         self.anchor = self.heights.at(y.max(0.0));
         self.normalize();
     }
@@ -491,6 +499,7 @@ impl ReadingView {
         self.prefetch(block);
         self.anchor = (block, 0.0);
         self.sticky = Some(verse);
+        self.sticky_text = None;
         self.pending_follow = Some(verse);
         true
     }
@@ -513,6 +522,7 @@ impl ReadingView {
             .map_or(0.0, |l| l.top);
         self.anchor = (block, top);
         self.sticky = Some(verse);
+        self.sticky_text = None;
         true
     }
 
@@ -524,6 +534,15 @@ impl ReadingView {
         let Some((unit, byte)) = self.doc.entry_position(entry) else {
             return false;
         };
+        let jumped = self.jump_to_text(unit, byte);
+        self.sticky_text = None;
+        jumped
+    }
+
+    /// Jump to byte `byte` of unit `unit` (an index into the document's units): its line goes
+    /// to the top of the view and stays there across relayouts until the user scrolls. This
+    /// is how a Library search hit scrolls to its paragraph (#60).
+    pub fn jump_to_text(&mut self, unit: usize, byte: usize) -> bool {
         let Some(block) = self.doc.block_at(unit, byte) else {
             return false;
         };
@@ -536,8 +555,30 @@ impl ReadingView {
             .map_or(0.0, |l| l.top);
         self.anchor = (block, top);
         self.sticky = None;
+        self.sticky_text = Some((unit, byte));
         self.pending_follow = None;
         true
+    }
+
+    /// The unit (an index into the document's units) at the top of the view.
+    pub fn top_unit(&self) -> Option<usize> {
+        self.doc.blocks.get(self.anchor.0).map(|b| b.unit)
+    }
+
+    /// Where byte `byte` of unit `unit` is drawn relative to the viewport top, if it is laid
+    /// out in a viewport `viewport` tall.
+    pub fn text_top(&mut self, unit: usize, byte: usize, viewport: f32) -> Option<f32> {
+        for vb in self.visible(viewport) {
+            if self.doc.blocks[vb.index].unit != unit {
+                continue;
+            }
+            if let Some(p) = vb.laid.from_unit(byte)
+                && let Some(line) = vb.laid.lines.iter().find(|l| l.bytes.end > p)
+            {
+                return Some(vb.top + line.top);
+            }
+        }
+        None
     }
 
     pub fn current_entry(&self) -> Option<obs_model::Key> {

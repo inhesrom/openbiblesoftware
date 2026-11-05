@@ -1,6 +1,7 @@
-//! The Search Tool (#59) through the shell's real-event headless harness: typing a query and
-//! Enter, the Bible picker, the summary line and highlighted Verse rows, ↑/↓/Enter and
-//! Ctrl/Cmd-click to open hits, and how soon the first results page draws.
+//! The Search Tool (#59, #60) through the shell's real-event headless harness: typing a query
+//! and Enter, the Bible and Resource pickers, the summary line, highlighted Verse rows and
+//! Library rows grouped by Resource, ↑/↓/Enter and Ctrl/Cmd-click to open hits (a Library
+//! hit at its paragraph), and how soon the first results page draws.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -47,28 +48,53 @@ fn settle(h: &mut Harness) {
 /// The Harness with a library of real `.obr` files (KJV, WEB, a long Psalm and TAHOT) whose
 /// Search indexes are built.
 fn harness(name: &str, psalm_verses: u16) -> (Harness, Files) {
-    let root = std::env::temp_dir().join(format!("obs-ui-search-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    let files = Files(root.clone());
-    bibles::write_library(
-        &root.join("library"),
+    harness_of(
+        name,
         &[
             bibles::kjv(),
             bibles::web(),
             bibles::psalms(psalm_verses),
             bibles::tahot(),
         ],
-    );
+    )
+}
+
+/// The Harness with a library of `resources` (in this Preferred order) written as real
+/// `.obr` files, their Search indexes built.
+fn harness_of(name: &str, resources: &[obs_model::Resource]) -> (Harness, Files) {
+    let root = std::env::temp_dir().join(format!("obs-ui-search-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let files = Files(root.clone());
+    bibles::write_library(&root.join("library"), resources);
     let mut h = Harness::new();
     let s = &mut h.shell.st.session;
     s.library = Library::new();
     assert!(s.library.scan(&root.join("library")).is_empty());
-    s.library
-        .set_preferred_order(["kjv", "web", "psalms", "tahot"].map(String::from).to_vec());
+    s.library.set_preferred_order(
+        resources
+            .iter()
+            .map(|r| r.manifest.resource_id.clone())
+            .collect(),
+    );
     s.set_search_cache_dir(root.join("cache"));
     s.refresh_search_indexes();
     settle(&mut h);
     (h, files)
+}
+
+/// KJV, two Commentaries (TCC ★, TC2), a Lexicon (TLX) and a Dictionary (TBD).
+fn library_harness(name: &str) -> (Harness, Files) {
+    use obs_engine::testing::study;
+    harness_of(
+        name,
+        &[
+            bibles::kjv(),
+            study::tcc(),
+            study::tc2(),
+            study::tlx(),
+            study::tbd(),
+        ],
+    )
 }
 
 fn search_tab(h: &Harness) -> TabId {
@@ -111,6 +137,25 @@ fn rects_of(h: &Harness, color: egui::Color32) -> Vec<Rect> {
 
 /// Open the Search Tool, type `query` into its box and press Enter.
 fn type_query(h: &mut Harness, query: &str) {
+    type_query_in(h, obs_engine::SearchMode::Bible, query);
+}
+
+/// Click a mode of the Search Tool's switch (the lowest text of that name: below the menus
+/// and tab bars).
+fn switch_mode(h: &mut Harness, label: &str) {
+    let at = h
+        .shapes
+        .iter()
+        .filter(|(_, t)| t == label)
+        .map(|(r, _)| *r)
+        .max_by(|a, b| a.top().total_cmp(&b.top()))
+        .unwrap();
+    h.click(at.center());
+    h.frames(2);
+}
+
+/// [`type_query`] in a mode (switched to with the switch if the Tab is in another one).
+fn type_query_in(h: &mut Harness, mode: obs_engine::SearchMode, query: &str) {
     if !h
         .shell
         .st
@@ -122,7 +167,11 @@ fn type_query(h: &mut Harness, query: &str) {
         h.shell.run("tool.search", &json!({}));
         h.frames(2);
     }
-    let hint = super::super::search_tab::query_hint(obs_engine::SearchMode::Bible);
+    let tab = search_tab(h);
+    if h.shell.st.session.search_tab(tab).unwrap().mode != mode {
+        switch_mode(h, mode.label());
+    }
+    let hint = super::super::search_tab::query_hint(mode);
     h.click_text(hint);
     h.events.push(Event::Text(query.into()));
     h.frame();
@@ -260,19 +309,10 @@ fn query_errors_show_inline_under_the_box() {
     h.frames(2);
     let message = "“X1” is not a Strong's number (try G5485 or H1254A)";
     assert!(h.find(message).is_some(), "{:?}", h.texts());
-    // Library mode is not built yet.
-    // The mode switch's "Library" is the lowest one (below the menus and tab bars).
-    let library = h
-        .shapes
-        .iter()
-        .filter(|(_, t)| t == "Library")
-        .map(|(r, _)| *r)
-        .max_by(|a, b| a.top().total_cmp(&b.top()))
-        .unwrap();
-    h.click(library.center());
-    h.frames(2);
+    // Notes mode is not built yet.
+    switch_mode(&mut h, "Notes");
     assert!(
-        h.find("Library search arrives with #60").is_some(),
+        h.find("Notes search arrives with #64").is_some(),
         "{:?}",
         h.texts()
     );
@@ -312,6 +352,204 @@ fn word_info_search_this_word_searches_its_bible() {
     }
     // One highlight each: בָּרָא in 1:1, and only the root of וַיִּבְרָא in 1:27.
     assert_eq!(rects_of(&h, h.shell.st.palette.search_hit).len(), 2);
+    drop(h);
+    drop(files);
+}
+
+#[test]
+fn covenant_in_library_mode_draws_commentary_and_dictionary_hits_grouped_by_resource() {
+    let (mut h, files) = library_harness("library-covenant");
+    type_query_in(&mut h, obs_engine::SearchMode::Library, "covenant");
+    settle(&mut h);
+    let tab = search_tab(&h);
+    let st = h.shell.st.session.search_tab(tab).unwrap();
+    assert_eq!(st.mode, obs_engine::SearchMode::Library);
+    assert_eq!(st.query, "covenant");
+    // The default scope: every Commentary, Lexicon and Dictionary, as chips.
+    for text in [
+        "Commentaries",
+        "Lexicons",
+        "Dictionaries",
+        "9 paragraphs in 4 Resources (4 searched)",
+        "TCC — Test Covenant Commentary · 3 hits",
+        "TC2 — Second Test Commentary · 1 hit",
+        "TLX — Test Lexicon · 2 hits",
+    ] {
+        assert!(
+            h.find(text).is_some(),
+            "{text:?} not drawn: {:?}",
+            h.texts()
+        );
+    }
+    // Group headers top to bottom in Preferred order, Commentaries first.
+    let tcc = h.find("TCC — Test Covenant Commentary · 3 hits").unwrap();
+    let tc2 = h.find("TC2 — Second Test Commentary · 1 hit").unwrap();
+    let tlx = h.find("TLX — Test Lexicon · 2 hits").unwrap();
+    assert!(tcc.top() < tc2.top() && tc2.top() < tlx.top());
+    let view = h.shell.st.tabs[&tab].search.as_ref().unwrap();
+    assert_eq!(view.last.placeholders, 0, "every row in view drawn");
+    assert!(view.last.drawn >= 4, "{:?}", view.last);
+    // A highlight under "covenant" in every row in view.
+    let hits = rects_of(&h, h.shell.st.palette.search_hit);
+    for (i, r) in &view.row_rects {
+        assert!(
+            hits.iter().any(|x| r.contains(x.center())),
+            "row {i} has no highlight"
+        );
+    }
+    // The Dictionary group is further down: ↓ moves through the rows (TCC 3, TC2 1, TLX 2)
+    // to its first one, which is scrolled into view with its header.
+    for _ in 0..6 {
+        key(&mut h, egui::Key::ArrowDown, Modifiers::NONE);
+    }
+    settle(&mut h);
+    assert_eq!(
+        h.shell.st.session.search_tab(tab).unwrap().selected,
+        Some(6)
+    );
+    assert!(
+        h.find("TBD — Test Bible Dictionary · 3 hits").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    // The picker leaves Lexicons out and the search runs again.
+    h.click_text("Choose…");
+    h.click_text("All Lexicons");
+    settle(&mut h);
+    let r = h
+        .shell
+        .st
+        .session
+        .search_tab(tab)
+        .unwrap()
+        .library_results
+        .clone()
+        .unwrap();
+    let abbrs: Vec<&str> = r.groups.iter().map(|g| g.abbreviation.as_str()).collect();
+    assert_eq!(abbrs, ["TCC", "TC2", "TBD"]);
+    assert_eq!(
+        h.shell
+            .st
+            .session
+            .recent_searches(obs_engine::SearchMode::Library),
+        ["covenant"]
+    );
+    drop(h);
+    drop(files);
+}
+
+#[test]
+fn clicking_a_library_hit_opens_its_unit_scrolled_to_the_paragraph() {
+    let (mut h, files) = library_harness("library-open");
+    type_query_in(&mut h, obs_engine::SearchMode::Library, "furnace");
+    settle(&mut h);
+    let tab = search_tab(&h);
+    let hit = h
+        .shell
+        .st
+        .session
+        .search_tab(tab)
+        .unwrap()
+        .library_results
+        .clone()
+        .unwrap()
+        .rows[0]
+        .clone();
+    let row = h.shell.st.tabs[&tab].search.as_ref().unwrap().row_rects[0].1;
+    h.click(row.center());
+    settle(&mut h);
+    let tcc = h.tab_id("TCC");
+    let gen15_1 = obs_scripture::Verse::new(obs_scripture::Book::Genesis, 15, 1);
+    assert_eq!(
+        h.shell
+            .st
+            .session
+            .workspace
+            .tab(tcc)
+            .unwrap()
+            .history
+            .current(),
+        Some(gen15_1)
+    );
+    let panel = h
+        .panels()
+        .into_iter()
+        .find(|(_, titles)| titles.iter().any(|t| t == "TCC"))
+        .unwrap()
+        .0;
+    let check = |h: &mut Harness| {
+        let view = h
+            .shell
+            .st
+            .tabs
+            .get_mut(&tcc)
+            .unwrap()
+            .view
+            .as_mut()
+            .unwrap();
+        let unit = view
+            .doc
+            .units
+            .iter()
+            .position(|u| u.id == hit.unit)
+            .unwrap();
+        // The opened Tab shows the hit's unit at the top…
+        assert_eq!(view.top_unit(), Some(unit));
+        // …with the paragraph scrolled to the top of the view, the unit's heading and its
+        // first paragraphs above it.
+        let top = view
+            .text_top(unit, hit.range.start as usize, panel.height())
+            .expect("the paragraph is in view");
+        assert!((0.0..=4.0).contains(&top), "paragraph drawn at {top}");
+        assert!(view.text_top(unit, 0, panel.height()).is_none());
+        let flash = h.shell.st.tabs[&tcc].flash.clone();
+        assert!(
+            flash.is_none() || matches!(flash, Some((crate::pane::Flash::Text { .. }, _))),
+            "{flash:?}"
+        );
+    };
+    check(&mut h);
+    // Again from the Search Tab: the same TCC Tab goes there (no second Tab).
+    h.shell.st.session.workspace.focus(tab);
+    h.shell.apply_effects();
+    h.frames(2);
+    let row = h.shell.st.tabs[&tab].search.as_ref().unwrap().row_rects[0].1;
+    h.click(row.center());
+    settle(&mut h);
+    let tcc_tabs = h
+        .shell
+        .st
+        .session
+        .workspace
+        .tabs()
+        .filter(|t| t.kind == TabKind::Resource("tcc".into()))
+        .count();
+    assert_eq!(tcc_tabs, 1);
+    check(&mut h);
+    drop(h);
+    drop(files);
+}
+
+/// The Library search preview (synthetic open-text fixtures only). Run with
+/// `UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui library_search_previews`; writes
+/// `target/previews/search-library/*.ppm`.
+#[test]
+fn library_search_previews() {
+    if std::env::var_os("UPDATE_PREVIEWS").is_none() {
+        return;
+    }
+    let (mut h, files) = library_harness("library-previews");
+    type_query_in(&mut h, obs_engine::SearchMode::Library, "covenant");
+    settle(&mut h);
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/previews/search-library");
+    std::fs::create_dir_all(&dir).unwrap();
+    h.screenshot(&dir.join("results.ppm"));
+    let tab = search_tab(&h);
+    let row = h.shell.st.tabs[&tab].search.as_ref().unwrap().row_rects[1].1;
+    h.click(row.center());
+    settle(&mut h);
+    h.screenshot(&dir.join("opened.ppm"));
     drop(h);
     drop(files);
 }
