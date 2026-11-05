@@ -3606,4 +3606,167 @@ mod get_bibles {
         drop(h);
         std::fs::remove_dir_all(root).unwrap();
     }
+
+    // ---- Updates (#136) ------------------------------------------------------------------
+
+    const GBF: &str = "King James Version (GBF excerpt)";
+
+    /// Download the GBF test Bible from the Tab's command and show only its row.
+    fn downloaded_gbf(name: &str) -> (Harness, Arc<MockRepos>, PathBuf) {
+        let (mut h, repos, root) = setup(name);
+        open_get_bibles(&mut h);
+        h.shell
+            .run("getbibles.download", &json!({"module": "ObsKjvGbf"}));
+        settle(&mut h);
+        let tab = h.tab_at("Get Resources");
+        h.click(tab);
+        h.shell.st.get_bibles_ui.query = "gbf".into();
+        h.frames(2);
+        assert!(h.find("Installed").is_some(), "{:?}", h.texts());
+        (h, repos, root)
+    }
+
+    fn says_up_to_date(h: &Harness) -> bool {
+        h.texts().iter().any(|t| t.contains("up to date"))
+    }
+
+    #[test]
+    fn an_update_shows_on_its_row_and_in_the_library_menu_and_update_all_reloads_open_tabs() {
+        let (mut h, repos, root) = downloaded_gbf("update");
+        let id = "obskjvgbf-1";
+        assert!(
+            h.find("Your downloaded Resources are up to date (checked just now).")
+                .is_some(),
+            "{:?}",
+            h.texts()
+        );
+        // The Bible is open in a Tab while it is updated.
+        h.shell.run("resource.open", &json!({"id": id}));
+        h.frames(2);
+        let bible = h
+            .shell
+            .st
+            .session
+            .workspace
+            .tabs()
+            .find(|t| t.kind == TabKind::Resource(id.into()))
+            .unwrap()
+            .id;
+        let revision = |h: &Harness| {
+            h.shell.st.tabs[&bible]
+                .view
+                .as_ref()
+                .unwrap()
+                .doc
+                .manifest
+                .revision
+        };
+        assert_eq!(revision(&h), 1);
+
+        // CrossWire publishes 1.1; the next catalog fetch offers it.
+        repos.publish(
+            "crosswire",
+            "obskjvgbf.conf",
+            "1.1",
+            Some(("In<WG1722> the beginning", "In<WG1722> the very beginning")),
+        );
+        h.shell.run("getbibles.refresh", &json!({}));
+        settle(&mut h);
+        let tab = h.tab_at("Get Resources");
+        h.click(tab);
+        assert!(h.find("Update available").is_some(), "{:?}", h.texts());
+        assert!(h.find("1 update available: ObsKjvGbf 1.1").is_some());
+        assert!(h.find("Update all").is_some());
+        assert!(!says_up_to_date(&h), "{:?}", h.texts());
+        // (Its title also heads the open Bible's Tab, so the row is found by its label.)
+        let label = h.find("Update available").unwrap();
+        for button in ["Update", "Open"] {
+            assert!(
+                h.shapes
+                    .iter()
+                    .any(|(r, t)| t == button && (r.center().y - label.center().y).abs() < 20.0),
+                "{button}: {:?}",
+                h.texts()
+            );
+        }
+        preview(&h, "get-resources-update-available");
+
+        // The Library menu counts it, and so does Get Resources… inside it.
+        h.open_menu("Library (1)");
+        assert!(
+            h.find("Get Resources… (1 update)").is_some(),
+            "{:?}",
+            h.texts()
+        );
+        h.open_menu("Library (1)");
+
+        // Update all: the same Resource, its next revision, read again in its open Tab.
+        h.click_text("Update all");
+        settle(&mut h);
+        let tab = h.tab_at("Get Resources");
+        h.click(tab);
+        assert_eq!(
+            h.shell
+                .st
+                .session
+                .library
+                .get(id)
+                .unwrap()
+                .manifest
+                .revision,
+            2
+        );
+        assert_eq!(revision(&h), 2, "the open Tab shows the new revision");
+        assert!(h.find("Update available").is_none());
+        assert!(h.find("Installed").is_some(), "{:?}", h.texts());
+        assert!(
+            h.find("Your downloaded Resources are up to date (checked just now).")
+                .is_some(),
+            "{:?}",
+            h.texts()
+        );
+        assert!(h.find("Library").is_some() && h.find("Library (1)").is_none());
+        preview(&h, "get-resources-updated");
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn one_click_on_update_replaces_the_resource() {
+        let (mut h, repos, root) = downloaded_gbf("update-one");
+        let resources = h.shell.st.session.library.entries().len();
+        repos.publish("crosswire", "obskjvgbf.conf", "2", None);
+        h.shell.run("getbibles.refresh", &json!({}));
+        settle(&mut h);
+        let at = row_button(&h, GBF, "Update");
+        h.click(at);
+        settle(&mut h);
+        let s = &h.shell.st.session;
+        assert_eq!(s.library.get("obskjvgbf-1").unwrap().manifest.revision, 2);
+        assert_eq!(s.library.entries().len(), resources, "no second Resource");
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn offline_the_tab_never_says_the_downloads_are_up_to_date() {
+        let (mut h, repos, root) = downloaded_gbf("update-offline");
+        assert!(says_up_to_date(&h));
+        repos.set_offline(true);
+        h.shell.run("getbibles.refresh", &json!({}));
+        settle(&mut h);
+        let tab = h.tab_at("Get Resources");
+        h.click(tab);
+        assert!(
+            h.find("Updates to your downloaded Resources could not be checked while offline.")
+                .is_some(),
+            "{:?}",
+            h.texts()
+        );
+        assert!(!says_up_to_date(&h), "{:?}", h.texts());
+        assert!(h.find("Installed").is_some());
+        preview(&h, "get-resources-updates-offline");
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

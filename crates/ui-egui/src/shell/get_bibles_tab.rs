@@ -1,9 +1,13 @@
 //! The Get Resources Tab (#91, #132): Featured Bibles, Lexicons, Commentaries and
 //! Dictionaries first, then every one from every repository on CrossWire's master list, each
 //! one click from the Library. A type filter sits beside the search and language filter.
+//! Downloaded Resources whose repository offers a newer version show Update available, with
+//! Update all above the list (#136).
 
 use egui::{Color32, RichText, Ui};
-use obs_engine::get_bibles::{LISTED_TYPES, ListingStatus, ResourceListing};
+use obs_engine::get_bibles::{
+    LISTED_TYPES, ListingStatus, ResourceListing, UpdateCheck, UpdatesSummary,
+};
 use obs_engine::library_search::type_plural;
 use obs_engine::{ImportPhase, language_name};
 use obs_model::ResourceType;
@@ -64,6 +68,88 @@ pub(super) fn licence_badge(licence: Option<&str>) -> (&'static str, Color32) {
     }
 }
 
+/// "Version 1.1 is available (you have 1.0)", on hover over Update available.
+pub(super) fn update_versions(installed: &str, available: &str) -> String {
+    if installed.is_empty() {
+        format!("Version {available} is available")
+    } else {
+        format!("Version {available} is available (you have {installed})")
+    }
+}
+
+/// The line above the list about updates, with Update all when there are any. It says the
+/// downloaded Resources are up to date only when every one of them was checked against a
+/// catalog fetched online (`UpdatesSummary::up_to_date`); offline it says they could not be
+/// checked.
+fn updates_line(ui: &mut Ui, summary: &UpdatesSummary, names: &dyn Fn(&str) -> String) -> bool {
+    let mut update_all = false;
+    let n = summary.updates.len();
+    if n > 0 {
+        egui::Frame::new()
+            .fill(theme::c().verdigris.gamma_multiply(0.12))
+            .inner_margin(egui::Margin::symmetric(10, 6))
+            .corner_radius(4.0)
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    let what = if n == 1 {
+                        "1 update available".to_string()
+                    } else {
+                        format!("{n} updates available")
+                    };
+                    let list: Vec<String> = summary
+                        .updates
+                        .iter()
+                        .map(|u| format!("{} {}", names(&u.resource_id), u.available))
+                        .collect();
+                    ui.colored_label(
+                        theme::c().verdigris,
+                        RichText::new(format!("{what}: {}", list.join(", "))).strong(),
+                    );
+                    if ui
+                        .button("Update all")
+                        .on_hover_text(
+                            "Download each newer version and replace the Resource with it;                              Notes and Highlights move with their text",
+                        )
+                        .clicked()
+                    {
+                        update_all = true;
+                    }
+                });
+            });
+        ui.add_space(4.0);
+    }
+    let muted = |ui: &mut Ui, text: String| {
+        ui.label(RichText::new(text).small().color(theme::c().muted));
+    };
+    match &summary.check {
+        _ if summary.downloaded == 0 => {}
+        UpdateCheck::Offline(_) => muted(
+            ui,
+            "Updates to your downloaded Resources could not be checked while offline.".into(),
+        ),
+        UpdateCheck::Checked { at } if summary.up_to_date() => muted(
+            ui,
+            format!(
+                "Your downloaded Resources are up to date (checked {}).",
+                ago(*at)
+            ),
+        ),
+        UpdateCheck::Checked { .. } if !summary.unchecked.is_empty() => {
+            let list: Vec<String> = summary.unchecked.iter().map(|id| names(id)).collect();
+            muted(
+                ui,
+                format!(
+                    "Could not check {} for updates: its repository did not answer or no \
+                     longer lists it.",
+                    list.join(", ")
+                ),
+            );
+        }
+        _ => {}
+    }
+    update_all
+}
+
 /// "3 hours ago" for the offline banner.
 fn ago(then: u64) -> String {
     let now = std::time::SystemTime::now()
@@ -120,6 +206,12 @@ impl State {
                             });
                         });
                     ui.add_space(4.0);
+                }
+                let summary = self.session.resource_updates();
+                let library = &self.session.library;
+                let names = |id: &str| library.abbreviation_of(id).unwrap_or(id).to_string();
+                if updates_line(ui, &summary, &names) {
+                    action = Some(Action::Run("getbibles.update_all", json!({})));
                 }
                 let Some(catalog) = gb.catalog() else {
                     if !gb.is_refreshing() && gb.offline().is_none() {
@@ -309,6 +401,33 @@ fn listing_row(
                     action = Some(Action::Run("resource.open", json!({"id": resource_id})));
                 }
                 ui.label(RichText::new("Installed").small().color(theme::c().muted));
+            }
+            ListingStatus::UpdateAvailable {
+                resource_id,
+                installed,
+                available,
+            } => {
+                if ui
+                    .button("Update")
+                    .on_hover_text(format!(
+                        "Download version {available} {} and replace the Resource with it; \
+                         Notes and Highlights move with their text",
+                        b.source_label()
+                    ))
+                    .clicked()
+                {
+                    action = Some(Action::Run("getbibles.update", json!({"module": b.module})));
+                }
+                if ui.button("Open").clicked() {
+                    action = Some(Action::Run("resource.open", json!({"id": resource_id})));
+                }
+                ui.label(
+                    RichText::new("Update available")
+                        .small()
+                        .strong()
+                        .color(theme::c().verdigris),
+                )
+                .on_hover_text(update_versions(installed, available));
             }
             ListingStatus::Failed { error, .. } => {
                 if ui.button("Retry").on_hover_text(error.as_str()).clicked() {

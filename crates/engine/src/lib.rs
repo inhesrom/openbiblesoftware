@@ -99,7 +99,7 @@ pub use guide::{
 };
 pub use import::{
     DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,
-    ImportSource, Imports, UNAVAILABLE_INDEX,
+    ImportSource, Imports, RepoOrigin, UNAVAILABLE_INDEX,
 };
 pub use jobs::{
     Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step, sword_installer,

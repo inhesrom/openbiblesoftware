@@ -560,6 +560,19 @@ pub fn default_sword_dir() -> Option<PathBuf> {
     Some(crate::library::data_dir()?.join("sword"))
 }
 
+/// Delete a downloaded module's SWORD copy (data folder and conf) from `sword_dir`.
+pub(crate) fn remove_sword_copy(sword_dir: &std::path::Path, module: &str) -> Result<(), String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        obs_formats::sword_repo::uninstall(sword_dir, module).map_err(|e| e.to_string())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (sword_dir, module);
+        Err("Downloads require desktop".into())
+    }
+}
+
 /// What a listing's row offers: Download, progress, Open, or Retry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListingStatus {
@@ -574,10 +587,74 @@ pub enum ListingStatus {
     Installed {
         resource_id: String,
     },
+    /// In the Library, and its repository offers a newer `Version` of the module (#136).
+    UpdateAvailable {
+        resource_id: String,
+        /// The version imported (empty when its conf had none).
+        installed: String,
+        /// The version the repository offers.
+        available: String,
+    },
     Failed {
         resource_id: String,
         error: String,
     },
+}
+
+/// A downloaded Resource whose repository offers a newer version of its module (#136).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResourceUpdate {
+    pub resource_id: String,
+    pub module: String,
+    pub repo: String,
+    /// The version imported (empty when its conf had none).
+    pub installed: String,
+    pub available: String,
+}
+
+/// How far Get Resources could check the downloaded Resources for updates (#136). Only
+/// [`UpdateCheck::Checked`] with nothing left [`UpdatesSummary::unchecked`] lets the Tab say
+/// they are up to date.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UpdateCheck {
+    /// No catalog yet: nothing was checked.
+    NotChecked,
+    /// The catalog is being fetched now.
+    Checking,
+    /// The last fetch failed (offline, repositories down); any update shown is from the
+    /// saved catalog.
+    Offline(String),
+    /// Checked against the catalog fetched at this time (seconds since the Unix epoch).
+    Checked { at: u64 },
+}
+
+/// The updates Get Resources offers, and how far that is known.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdatesSummary {
+    pub check: UpdateCheck,
+    pub updates: Vec<ResourceUpdate>,
+    /// Downloaded Resources that could not be checked: their repository did not answer or
+    /// no longer lists the module, or the version they were imported at is not known.
+    pub unchecked: Vec<String>,
+    /// Downloaded Resources in the Library.
+    pub downloaded: usize,
+}
+
+impl UpdatesSummary {
+    /// Whether the Tab may say every downloaded Resource is up to date: checked online just
+    /// now, every one of them, and none has an update.
+    pub fn up_to_date(&self) -> bool {
+        matches!(self.check, UpdateCheck::Checked { .. })
+            && self.downloaded > 0
+            && self.updates.is_empty()
+            && self.unchecked.is_empty()
+    }
+}
+
+/// `available` is newer than `installed` (SWORD version order; empty counts as 0).
+fn is_newer(available: Option<&str>, installed: &str) -> bool {
+    obs_formats::sword_repo::compare_versions(available.unwrap_or("0"), installed)
+        == std::cmp::Ordering::Greater
 }
 
 pub(crate) fn now_secs() -> u64 {
@@ -608,7 +685,16 @@ impl Session {
                     total: r.total,
                 }
             } else if r.phase == crate::ImportPhase::Complete && self.library.get(&id).is_some() {
-                ListingStatus::Installed { resource_id: id }
+                match origin.version.as_deref() {
+                    Some(installed) if is_newer(listing.version.as_deref(), installed) => {
+                        ListingStatus::UpdateAvailable {
+                            resource_id: id,
+                            installed: installed.to_string(),
+                            available: listing.version.clone().unwrap_or_default(),
+                        }
+                    }
+                    _ => ListingStatus::Installed { resource_id: id },
+                }
             } else if r.phase == crate::ImportPhase::Failed {
                 ListingStatus::Failed {
                     resource_id: id,
@@ -618,7 +704,7 @@ impl Session {
                 continue;
             };
             let rank = |s: &ListingStatus| match s {
-                ListingStatus::Installed { .. } => 3,
+                ListingStatus::Installed { .. } | ListingStatus::UpdateAvailable { .. } => 3,
                 ListingStatus::InProgress { .. } => 2,
                 ListingStatus::Failed { .. } => 1,
                 ListingStatus::Available => 0,
@@ -650,7 +736,7 @@ impl Session {
             return Err(format!("{} cannot be imported yet: {why}", listing.title));
         }
         match self.listing_status(&listing) {
-            ListingStatus::Installed { .. } => {
+            ListingStatus::Installed { .. } | ListingStatus::UpdateAvailable { .. } => {
                 return Err(format!("{} is already in your Library", listing.title));
             }
             ListingStatus::InProgress { .. } => {
@@ -693,6 +779,161 @@ impl Session {
         })
     }
 
+    /// The downloaded Resources in the Library: (Resource id, its origin).
+    fn downloaded(&self) -> Vec<(String, crate::import::RepoOrigin)> {
+        self.imports
+            .records()
+            .filter(|r| {
+                r.phase == crate::ImportPhase::Complete
+                    && self.library.get(&r.resource_id).is_some()
+            })
+            .filter_map(|r| Some((r.resource_id.clone(), r.origin.clone()?)))
+            .collect()
+    }
+
+    /// The SWORD copy Resource `resource_id` was imported from, when it was downloaded and
+    /// the copy is still in the SWORD folder: (SWORD folder, module). `None` when another
+    /// Resource in the Library was downloaded from the same module.
+    pub fn sword_copy_of(&self, resource_id: &str) -> Option<(PathBuf, String)> {
+        let origin = self.imports.report(resource_id)?.origin.clone()?;
+        let shared = self
+            .downloaded()
+            .iter()
+            .any(|(id, o)| id != resource_id && o.module.eq_ignore_ascii_case(&origin.module));
+        if shared {
+            return None;
+        }
+        let dir = self.get_bibles.sword_dir()?;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let modules = obs_formats::SwordSource::open(&dir).ok()?.modules();
+            let m = modules
+                .into_iter()
+                .find(|m| m.name.eq_ignore_ascii_case(&origin.module))?;
+            Some((dir, m.name))
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = dir;
+            None
+        }
+    }
+
+    /// Every downloaded Resource whose repository offers a newer version, and how far the
+    /// check could go (#136). Checked against the catalog as last fetched; nothing is fetched
+    /// here. Starter Resources are not downloaded, so they are never listed.
+    pub fn resource_updates(&self) -> UpdatesSummary {
+        let gb = &self.get_bibles;
+        let check = match (gb.catalog(), gb.offline()) {
+            _ if gb.is_refreshing() => UpdateCheck::Checking,
+            (_, Some(why)) => UpdateCheck::Offline(why.to_string()),
+            (None, None) => UpdateCheck::NotChecked,
+            (Some(c), None) => UpdateCheck::Checked { at: c.fetched_at },
+        };
+        let downloaded = self.downloaded();
+        let mut updates = Vec::new();
+        let mut unchecked = Vec::new();
+        for (id, origin) in &downloaded {
+            let listing = gb.catalog().and_then(|c| {
+                let l = c.get(&origin.module)?;
+                let repo_failed = c.failed.iter().any(|(r, _)| *r == origin.repo);
+                (l.repo == origin.repo && !repo_failed).then_some(l)
+            });
+            match (listing, origin.version.as_deref()) {
+                (Some(l), Some(installed)) => {
+                    if is_newer(l.version.as_deref(), installed) {
+                        updates.push(ResourceUpdate {
+                            resource_id: id.clone(),
+                            module: l.module.clone(),
+                            repo: l.repo.clone(),
+                            installed: installed.to_string(),
+                            available: l.version.clone().unwrap_or_default(),
+                        });
+                    }
+                }
+                _ => unchecked.push(id.clone()),
+            }
+        }
+        UpdatesSummary {
+            check,
+            updates,
+            unchecked,
+            downloaded: downloaded.len(),
+        }
+    }
+
+    /// Download the newer version of `module` and import it as the next Resource revision
+    /// of the Resource it was downloaded as (#136). Only when the user asks: nothing is ever
+    /// updated in the background. Returns the Resource id and the job.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn update_resource(&mut self, module: &str) -> Result<(String, JobId), String> {
+        let catalog = self
+            .get_bibles
+            .catalog()
+            .ok_or("The Resource catalog has not been fetched yet")?;
+        let listing = catalog
+            .get(module)
+            .cloned()
+            .ok_or_else(|| format!("No repository offers {module}"))?;
+        let repo = catalog
+            .repo(&listing.repo)
+            .cloned()
+            .ok_or_else(|| format!("Repository {} is not in the catalog", listing.repo))?;
+        let ListingStatus::UpdateAvailable { resource_id, .. } = self.listing_status(&listing)
+        else {
+            return Err(format!("{} has no update", listing.title));
+        };
+        let sword_dir = self
+            .get_bibles
+            .sword_dir()
+            .ok_or("No folder for downloaded SWORD modules")?;
+        let job = self.start_update(&resource_id, repo, sword_dir)?;
+        Ok((resource_id, job))
+    }
+
+    /// Fill in the imported version of Resources downloaded before #136 from their SWORD
+    /// copies, so they can be checked for updates. A Resource whose SWORD copy is gone stays
+    /// unknown (never "up to date").
+    pub fn fill_installed_versions(&mut self) {
+        let missing = self.imports.records().any(|r| {
+            r.phase == crate::ImportPhase::Complete
+                && r.origin.as_ref().is_some_and(|o| o.version.is_none())
+        });
+        if !missing {
+            return;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let Some(modules) = self
+                .get_bibles
+                .sword_dir()
+                .and_then(|d| obs_formats::SwordSource::open(&d).ok())
+                .map(|s| s.modules())
+            else {
+                return;
+            };
+            let mut filled = Vec::new();
+            for r in self.imports.reports.values_mut() {
+                if r.phase != crate::ImportPhase::Complete {
+                    continue;
+                }
+                let Some(origin) = r.origin.as_mut().filter(|o| o.version.is_none()) else {
+                    continue;
+                };
+                if let Some(m) = modules
+                    .iter()
+                    .find(|m| m.name.eq_ignore_ascii_case(&origin.module))
+                {
+                    origin.version = Some(m.version.clone().unwrap_or_default());
+                    filled.push(r.resource_id.clone());
+                }
+            }
+            for id in filled {
+                self.save_import_record(&id);
+            }
+        }
+    }
+
     /// Start a catalog refresh unless one is running. Returns the job.
     pub fn refresh_resource_catalog(&mut self) -> JobId {
         if let Some(job) = self.get_bibles.refreshing {
@@ -722,6 +963,7 @@ impl Session {
                     if let Ok(catalog) = out.downcast::<ResourceCatalog>() {
                         self.get_bibles.catalog = Some(*catalog);
                         self.get_bibles.offline = None;
+                        self.fill_installed_versions();
                         if let Err(e) = self.get_bibles.save_cache() {
                             self.workspace.push_effect(crate::Effect::Message(format!(
                                 "Could not cache the Resource catalog: {e}"
@@ -790,6 +1032,22 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         run: download,
     },
     CommandSpec {
+        id: "getbibles.update",
+        label: "Update Resource",
+        shortcut: None,
+        params: &[MODULE],
+        enabled: desktop,
+        run: update,
+    },
+    CommandSpec {
+        id: "getbibles.update_all",
+        label: "Update all Resources",
+        shortcut: None,
+        params: &[],
+        enabled: desktop,
+        run: update_all,
+    },
+    CommandSpec {
         id: "getbibles.list",
         label: "List available Resources",
         shortcut: None,
@@ -823,6 +1081,52 @@ fn download(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     Ok(json!({"id": id, "tab": tab, "job": job.0}))
 }
 
+#[cfg(target_arch = "wasm32")]
+fn update(_: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
+    Err(CommandError::Failed {
+        command: "getbibles.update",
+        message: "Downloads require desktop".into(),
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn update(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    let module = p.str("module").unwrap_or_default();
+    let (id, job) = s
+        .update_resource(module)
+        .map_err(|message| CommandError::Failed {
+            command: "getbibles.update",
+            message,
+        })?;
+    Ok(json!({"id": id, "job": job.0}))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn update_all(_: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
+    Err(CommandError::Failed {
+        command: "getbibles.update_all",
+        message: "Downloads require desktop".into(),
+    })
+}
+
+/// Update every downloaded Resource with an update, one job each. Returns the Resources
+/// started; one that cannot start is reported and does not stop the others.
+#[cfg(not(target_arch = "wasm32"))]
+fn update_all(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
+    let mut started = Vec::new();
+    let mut failed = Vec::new();
+    for u in s.resource_updates().updates {
+        if s.imports.job_of(&u.resource_id).is_some() {
+            continue;
+        }
+        match s.update_resource(&u.module) {
+            Ok((id, _)) => started.push(id),
+            Err(e) => failed.push(json!({"id": u.resource_id, "error": e})),
+        }
+    }
+    Ok(json!({"started": started, "failed": failed}))
+}
+
 /// The listings, filtered by `query`, `language` and `type` (all types when not given).
 /// `featured` holds the Featured rows of the type, or of every type, Bibles first.
 fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
@@ -832,14 +1136,38 @@ fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             message,
         }
     })?;
+    let summary = s.resource_updates();
+    let updates = json!({
+        "available": summary.updates.iter().map(|u| json!({
+            "id": u.resource_id, "module": u.module, "installed": u.installed,
+            "available": u.available})).collect::<Vec<_>>(),
+        "unchecked": summary.unchecked,
+        "checked_at": match summary.check {
+            UpdateCheck::Checked { at } => Some(at),
+            _ => None,
+        },
+        "up_to_date": summary.up_to_date(),
+    });
     let Some(catalog) = s.get_bibles.catalog() else {
-        return Ok(json!({"featured": [], "all": [], "offline": s.get_bibles.offline()}));
+        return Ok(
+            json!({"featured": [], "all": [], "offline": s.get_bibles.offline(),
+                         "updates": updates}),
+        );
     };
     let row = |b: &ResourceListing| {
+        let update = match s.listing_status(b) {
+            ListingStatus::UpdateAvailable {
+                installed,
+                available,
+                ..
+            } => Some(json!({"installed": installed, "available": available})),
+            _ => None,
+        };
         json!({"module": b.module, "type": crate::library_search::type_id(b.kind),
                "repo": b.repo, "title": b.title, "abbreviation": b.abbreviation,
                "language": b.language, "size": b.size, "licence": b.licence,
-               "used_by": b.used_by(), "refused": b.refused})
+               "version": b.version, "used_by": b.used_by(), "refused": b.refused,
+               "update": update})
     };
     let query = p.str("query").unwrap_or_default();
     let language = p.str("language").filter(|l| !l.is_empty());
@@ -852,6 +1180,7 @@ fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     Ok(json!({
         "fetched_at": catalog.fetched_at,
         "offline": s.get_bibles.offline(),
+        "updates": updates,
         "featured": featured,
         "all": catalog.all(query, language, ty).into_iter().map(row).collect::<Vec<_>>(),
     }))

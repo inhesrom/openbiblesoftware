@@ -173,6 +173,73 @@ impl MockRepos {
     pub fn set_offline(&self, offline: bool) {
         self.offline.store(offline, Ordering::Relaxed);
     }
+
+    /// Publish a new version of a module in repository folder `repo` (`crosswire`, …): its
+    /// conf's `Version` becomes `version`, and in a RawText module's text every `from`
+    /// becomes `to` (the verse index is rewritten to match).
+    pub fn publish(&self, repo: &str, conf_file: &str, version: &str, edit: Option<(&str, &str)>) {
+        let dir = self.root.join(repo);
+        let conf_path = dir.join("mods.d").join(conf_file);
+        let conf = std::fs::read_to_string(&conf_path).unwrap();
+        let mut out = String::new();
+        let mut data_path = None;
+        for line in conf.lines() {
+            if line.starts_with("Version=") {
+                continue;
+            }
+            if let Some(p) = line.strip_prefix("DataPath=") {
+                data_path = Some(p.trim_start_matches("./").to_string());
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
+        out.push_str(&format!("Version={version}\n"));
+        std::fs::write(&conf_path, out).unwrap();
+        if let Some((from, to)) = edit {
+            assert!(
+                conf.contains("ModDrv=RawText"),
+                "only RawText text can be edited"
+            );
+            let data = dir.join(data_path.expect("DataPath"));
+            for t in ["ot", "nt"] {
+                if data.join(t).is_file() {
+                    edit_raw_text(&data.join(t), &data.join(format!("{t}.vss")), from, to);
+                }
+            }
+        }
+    }
+}
+
+/// Replace `from` with `to` in every entry of a RawText testament (6-byte index entries:
+/// offset u32, length u16, little-endian), writing the text and its index again. Slots that
+/// shared one stored entry (linked verses) still share it.
+fn edit_raw_text(text: &Path, index: &Path, from: &str, to: &str) {
+    let old = std::fs::read(text).unwrap();
+    let idx = std::fs::read(index).unwrap();
+    let mut data = Vec::new();
+    let mut new_idx = Vec::with_capacity(idx.len());
+    let mut moved: std::collections::HashMap<[u8; 6], [u8; 6]> = std::collections::HashMap::new();
+    for e in idx.as_chunks::<6>().0 {
+        let entry = moved.entry(*e).or_insert_with(|| {
+            let off = u32::from_le_bytes([e[0], e[1], e[2], e[3]]) as usize;
+            let len = u16::from_le_bytes([e[4], e[5]]) as usize;
+            let entry = if len == 0 {
+                String::new()
+            } else {
+                String::from_utf8(old[off..off + len].to_vec())
+                    .unwrap()
+                    .replace(from, to)
+            };
+            let mut out = [0u8; 6];
+            out[..4].copy_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
+            out[4..].copy_from_slice(&u16::try_from(entry.len()).unwrap().to_le_bytes());
+            data.extend_from_slice(entry.as_bytes());
+            out
+        });
+        new_idx.extend_from_slice(entry);
+    }
+    std::fs::write(text, data).unwrap();
+    std::fs::write(index, new_idx).unwrap();
 }
 
 /// The size the mock Lockman repository reports for its NASB1995 package zip (HEAD only;

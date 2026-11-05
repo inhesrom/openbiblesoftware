@@ -192,6 +192,7 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     }
     let annotations = s.annotations_referring(&id);
     let in_dir = s.library.holds_file(&entry.path);
+    let sword_copy = s.sword_copy_of(&id);
     if !p.bool("confirm").unwrap_or(false) {
         let file = entry
             .path
@@ -199,7 +200,10 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             .map(|f| f.to_string_lossy().into_owned())
             .unwrap_or_default();
         let what = if in_dir {
-            format!("Its file {file} is deleted from your library.")
+            let copy = sword_copy.as_ref().map_or(String::new(), |(_, module)| {
+                format!(" So is the SWORD module {module} it was downloaded as.")
+            });
+            format!("Its file {file} is deleted from your library.{copy}")
         } else {
             format!(
                 "It is taken off the list; {file} itself is not in the library folder and stays where it is."
@@ -233,6 +237,19 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         // Its prebuilt Search index caches (the Starter library ships them) go with it.
         crate::search::remove_prebuilt_search_indexes(&entry.path, &id);
     }
+    // A downloaded Resource's SWORD copy goes with it (#136).
+    let sword_removed = match sword_copy.filter(|_| in_dir) {
+        Some((dir, module)) => match crate::get_bibles::remove_sword_copy(&dir, &module) {
+            Ok(()) => Some(module),
+            Err(e) => {
+                s.workspace.push_effect(Effect::Message(format!(
+                    "Could not delete the SWORD module {module}: {e}"
+                )));
+                None
+            }
+        },
+        None => None,
+    };
     let open: Vec<_> = s
         .workspace
         .tabs()
@@ -262,5 +279,5 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         "Removed {}",
         entry.manifest.abbreviation
     )));
-    Ok(json!({ "removed": id, "deleted_file": in_dir }))
+    Ok(json!({ "removed": id, "deleted_file": in_dir, "deleted_sword_module": sword_removed }))
 }
