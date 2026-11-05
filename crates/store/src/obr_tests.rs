@@ -728,3 +728,44 @@ fn unit_text_and_verses_overlapping_match_the_generic_versions() {
         Some(Some(Passage::verse(Verse::new(Book::John, 3, 17))))
     );
 }
+
+#[test]
+fn rendering_index_round_trips_and_older_files_answer_none() {
+    let dir = TempDir::new("renderings");
+    let path = dir.path("kjv.obr");
+    let resource = sample_resource();
+    assert!(!resource.renderings.renderings.is_empty());
+    assert!(!resource.renderings.totals.is_empty());
+    write_obr(&resource, &path).unwrap();
+    {
+        let r = ObrReader::open(&path).unwrap();
+        assert_eq!(
+            r.rendering_index().unwrap().as_ref(),
+            Some(&resource.renderings)
+        );
+        assert_eq!(r.load().unwrap(), resource);
+    }
+    // A file written before the index existed: no tables, `None`, and `load` derives it.
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("DROP TABLE renderings; DROP TABLE strongs_totals;")
+            .unwrap();
+    }
+    let r = ObrReader::open(&path).unwrap();
+    assert_eq!(r.rendering_index().unwrap(), None);
+    assert_eq!(r.load().unwrap(), resource);
+}
+
+#[test]
+fn only_bibles_get_a_rendering_index() {
+    let lex = lexicon();
+    assert!(lex.renderings.is_empty());
+    let dir = TempDir::new("renderings-lex");
+    let path = dir.path("lex.obr");
+    write_obr(&lex, &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    assert_eq!(
+        r.rendering_index().unwrap(),
+        Some(RenderingIndex::default())
+    );
+}

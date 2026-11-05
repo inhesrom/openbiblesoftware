@@ -5,6 +5,21 @@ use std::path::PathBuf;
 
 use obs_model::{Manifest, ResourceType};
 
+/// The Starter library's default Preferred order where it matters for lookups, before the
+/// user ranks anything (decision #15): the KJV with Strong's numbers is the ★ Bible, the
+/// tagged English Bible Word Study and Key words read; the Lexicons go TBESH/TBESG, BDB,
+/// Abbott-Smith, Strong's, so the ★ Lexicon and a Word Study's Lexicon entries lead with the
+/// modern lexicons. Other Starter Resources keep the library's file order.
+pub const STARTER_PREFERRED_ORDER: &[&str] = &[
+    "kjv-strongs",
+    "tbesh",
+    "tbesg",
+    "bdb",
+    "abbott-smith",
+    "strongs-hebrew",
+    "strongs-greek",
+];
+
 /// One Resource in the library.
 #[derive(Debug, Clone)]
 pub struct LibraryEntry {
@@ -47,10 +62,19 @@ impl Library {
             .find(|e| e.manifest.resource_id == resource_id)
     }
 
+    /// A Resource's place in the Preferred order: its saved rank; else, for a Starter
+    /// Resource the user has not ranked, its place in [`STARTER_PREFERRED_ORDER`] after every
+    /// saved one; else the bottom.
     fn rank(&self, resource_id: &str) -> usize {
         self.ranking
             .iter()
             .position(|r| r == resource_id)
+            .or_else(|| {
+                STARTER_PREFERRED_ORDER
+                    .iter()
+                    .position(|r| *r == resource_id)
+                    .map(|p| self.ranking.len() + p)
+            })
             .unwrap_or(usize::MAX)
     }
 

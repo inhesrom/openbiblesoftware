@@ -3024,6 +3024,8 @@ mod word_info;
 mod credits;
 #[path = "guide_tests.rs"]
 mod guide;
+#[path = "word_study_tests.rs"]
+mod word_study;
 
 #[path = "search_tests.rs"]
 mod search;

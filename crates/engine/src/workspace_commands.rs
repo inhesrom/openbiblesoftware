@@ -131,10 +131,6 @@ fn has_user(s: &Session) -> bool {
     s.user.is_some()
 }
 
-fn never(_: &Session) -> bool {
-    false
-}
-
 const fn open_cmd(
     id: &'static str,
     label: &'static str,
@@ -319,8 +315,8 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         open(s, p, TabKind::Tool(Tool::CrossReferences))
     }),
     // Word Info (#50): the pinned panel follows hover again on Esc or the header's 📌; Copy
-    // hands the UI the card text; Search this word searches its Bible for the word's
-    // Strong's number (#59). Word Study ▸ waits for #55.
+    // hands the UI the card text; Word Study › opens the shown word's Strong's number in a
+    // Word Study (#55); Search this word searches its Bible for the word's Strong's number (#59).
     simple(
         "word_info.unpin",
         "Unpin Word Info",
@@ -346,13 +342,19 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
             Ok(json!({ "text": text }))
         },
     ),
-    simple(
-        "word_info.word_study",
-        "Word Study ›",
-        None,
-        never,
-        |_, _| Ok(Value::Null),
-    ),
+    CommandSpec {
+        id: "word_info.word_study",
+        label: "Word Study ›",
+        shortcut: None,
+        params: OPEN,
+        enabled: |s| crate::word_study::word_info_number(s).is_some(),
+        run: |s, p| {
+            let number = crate::word_study::word_info_number(s)
+                .ok_or_else(|| failed("word_info.word_study", "nothing is shown"))?;
+            let tab = crate::word_study::open_at(s, number, request(&p), false);
+            Ok(json!({ "tab": tab.0, "key": number.to_string() }))
+        },
+    },
     simple(
         "word_info.search",
         "Search this word",
@@ -588,8 +590,10 @@ fn open_passage_guide(s: &mut Session, p: Params<'_>) -> Result<Value, CommandEr
     Ok(out)
 }
 
-/// A Word Study Tab, at a Strong's number when one is given (its Key, kept in the Tab's entry
-/// history like a Lexicon's). With `tab`, that open Word Study Tab moves there instead.
+/// A Word Study Tab. With `strongs` it is at that number (its Key, kept in the Tab's entry
+/// history like a Lexicon's). Without, a new one starts at its Link set's Strong's number,
+/// else at the word Word Info shows (like Logos opening a word study on the active word),
+/// otherwise empty. With `tab`, that open Word Study Tab moves (and takes focus) instead.
 fn open_word_study(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const ID: &str = "guide.word_study";
     let number = p
@@ -599,6 +603,7 @@ fn open_word_study(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError
                 .map_err(|e| failed(ID, e.to_string()))
         })
         .transpose()?;
+    let shown = crate::word_study::word_info_number(s);
     let mut out = match p.i64("tab") {
         Some(_) => {
             let tab = tab_param(ID, s, &p)?;
@@ -610,12 +615,30 @@ fn open_word_study(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError
         }
         None => open(s, p, TabKind::Guide(Guide::WordStudy))?,
     };
-    if let Some(n) = number
-        && let Some(tab) = out["tab"].as_u64()
-    {
+    let Some(tab) = out["tab"].as_u64().map(TabId) else {
+        return Ok(out);
+    };
+    if let Some(n) = number {
         let key = obs_model::Key::StrongsNumber(n);
-        s.workspace.navigate_entry(TabId(tab), key.clone());
+        s.stop_choosing(tab);
+        s.workspace.navigate_entry(tab, key.clone());
         out["key"] = json!(key);
+        return Ok(out);
+    }
+    let fresh = s
+        .workspace
+        .tab(tab)
+        .is_some_and(|t| t.entry_history.current().is_none());
+    if fresh {
+        let key = s
+            .workspace
+            .set_entry_location(tab)
+            .or_else(|| shown.map(obs_model::Key::StrongsNumber));
+        if let Some(key) = key
+            && let Some(t) = s.workspace.tab_mut(tab)
+        {
+            t.entry_history.scrolled_to(key);
+        }
     }
     Ok(out)
 }
@@ -663,6 +686,9 @@ fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let Some(t) = s.workspace.tab(tab) else {
         return Err(failed(ID, "no tab"));
     };
+    if t.header_box() == crate::HeaderBox::Word {
+        return crate::word_study::go(s, tab, text);
+    }
     if matches!(
         t.header_box(),
         crate::HeaderBox::Lexicon | crate::HeaderBox::Headword
@@ -730,9 +756,10 @@ fn history(s: &mut Session, p: Params<'_>, back: bool) -> Result<Value, CommandE
     if s.workspace.tab(tab).is_some_and(|t| {
         matches!(
             t.header_box(),
-            crate::HeaderBox::Lexicon | crate::HeaderBox::Headword
+            crate::HeaderBox::Lexicon | crate::HeaderBox::Headword | crate::HeaderBox::Word
         )
     }) {
+        s.stop_choosing(tab);
         return Ok(json!({ "key": s.workspace.entry_history(tab, back) }));
     }
     let to: Option<Verse> = if back {

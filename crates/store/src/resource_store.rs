@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use obs_model::{
     BibleVerse, CrossReference, Entity, Key, KeyEntry, KeyScheme, Manifest, Mention, MorphemePart,
-    Resource, Span, SpanKind, TextUnit, UnitId, UnitKind,
+    RenderingIndex, Resource, Span, SpanKind, TextUnit, UnitId, UnitKind,
 };
 use obs_scripture::{Passage, StrongsNumber, Verse, VerseMap};
 
@@ -98,6 +98,13 @@ pub trait ResourceStore {
     /// transliteration index. The text is reduced to index form first (words, lowercased,
     /// single spaces), so `"Agape"` finds ἀγάπη.
     fn lemmas_for_transliteration(&self, transliteration: &str) -> Result<Vec<String>, StoreError>;
+
+    /// A Bible's English rendering → Strong's index and Strong's totals (#20 rule 5), as
+    /// `ResourceBuilder` built it. `None` when the file predates the index; the caller can
+    /// derive it from the units with [`RenderingIndex::build`].
+    fn rendering_index(&self) -> Result<Option<RenderingIndex>, StoreError> {
+        Ok(None)
+    }
 
     /// Every Key of one scheme, in key order.
     fn keys(&self, scheme: KeyScheme) -> Result<Vec<KeyEntry>, StoreError>;

@@ -54,6 +54,8 @@ pub struct Session {
     pub word_info: crate::word_info::WordInfo,
     /// Guide arrangements and Guide sections computed on the job queue (#53).
     pub guides: crate::guide::Guides,
+    /// Word Study headers and English-word choosers computed on the job queue (#55).
+    pub word_study: crate::word_study::WordStudies,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
     log: Vec<&'static str>,
     /// The User database, when there is one.
@@ -89,6 +91,7 @@ impl Session {
             appearance: crate::appearance::Appearance::default(),
             word_info: crate::word_info::WordInfo::default(),
             guides: crate::guide::Guides::default(),
+            word_study: crate::word_study::WordStudies::default(),
             log: Vec::new(),
             user: None,
             history: crate::annotations::UndoHistory::default(),

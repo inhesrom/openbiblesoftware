@@ -295,6 +295,15 @@ impl Tab {
         self.kind.header_box()
     }
 
+    /// The entry Key this Tab shows for a Link set's `key`: a Lexicon's or Dictionary's own
+    /// entry Key; a Word Study takes any Strong's number as it is (#55).
+    fn entry_key(&self, key: &Key) -> Option<Key> {
+        if self.kind == TabKind::Guide(Guide::WordStudy) {
+            return matches!(key, Key::StrongsNumber(_)).then(|| key.clone());
+        }
+        Some(self.navigation.as_ref()?.lookup(key)?.key.clone())
+    }
+
     fn local_passage(&self, verse: Verse) -> Option<Verse> {
         if let Some(nav) = &self.navigation
             && self.follows_passages()
@@ -698,12 +707,9 @@ impl Workspace {
         for t in self.tabs.values_mut().filter(|t| {
             t.id != tab && t.link == Some(link) && t.key_schemes.contains(&key.scheme())
         }) {
-            if let Some(entry) = t.navigation.as_ref().and_then(|n| n.lookup(key)) {
-                t.entry_history.scrolled_to(entry.key.clone());
-                self.effects.push(Effect::NavigateEntry {
-                    tab: t.id,
-                    key: entry.key.clone(),
-                });
+            if let Some(key) = t.entry_key(key) {
+                t.entry_history.scrolled_to(key.clone());
+                self.effects.push(Effect::NavigateEntry { tab: t.id, key });
             }
         }
     }
@@ -738,7 +744,7 @@ impl Workspace {
             if !t.key_schemes.contains(&key.scheme()) {
                 return None;
             }
-            Some(t.navigation.as_ref()?.lookup(&key)?.key.clone())
+            t.entry_key(&key)
         })
     }
 

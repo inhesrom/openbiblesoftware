@@ -172,6 +172,35 @@ fn laid(
 }
 
 #[test]
+fn strongs_links_in_lexicon_entries_are_links_but_tagged_bible_words_are_not() {
+    let text = "Compare G26 for the noun.";
+    let tagged = |kind| TextUnit {
+        id: UnitId::new("G25").unwrap(),
+        kind,
+        title: None,
+        text: text.into(),
+        spans: vec![span(
+            find(text, "G26"),
+            SpanKind::TaggedWord {
+                parts: vec![MorphemePart::new("G26".parse().unwrap())],
+            },
+        )],
+    };
+    let role = |unit: &TextUnit| {
+        laid(unit, Direction::Ltr, 600.0)[0]
+            .1
+            .runs
+            .iter()
+            .find(|r| r.text == "G26")
+            .unwrap()
+            .style
+            .role
+    };
+    assert_eq!(role(&tagged(UnitKind::Entry)), ColorRole::Link);
+    assert_eq!(role(&tagged(UnitKind::BibleBook)), ColorRole::Ink);
+}
+
+#[test]
 fn blocks_follow_structural_spans() {
     let unit = english_unit();
     let kinds: Vec<BlockKind> = unit_blocks(&unit).iter().map(|b| b.kind).collect();

@@ -20,6 +20,12 @@
 //! Dataset Verses are stored as verse numbers `BBCCCVVV` (book 1-66, chapter, verse), so a
 //! Passage overlap is an integer range query.
 //! | `transliterations` | `transliteration` → `lemma`: the transliteration index of the Lemma Keys |
+//! | `renderings` | A Bible's English rendering → Strong's index: `rendering` (normalized words), `strongs`, `count` |
+//! | `strongs_totals` | A Bible's Tagged-word parts per Strong's number: `strongs`, `count`, `part_of_speech` |
+//!
+//! `renderings` and `strongs_totals` arrived after format 3 was first shipped (#55). A file
+//! without them still opens: [`ResourceStore::rendering_index`] answers `None` and the caller
+//! derives the index from the text.
 //!
 //! Files are written once, deterministically (same Resource ⇒ byte-identical file), and opened
 //! read-only. `PRAGMA application_id` marks the file type and `PRAGMA user_version` holds the
@@ -32,8 +38,8 @@ use std::path::{Path, PathBuf};
 
 use obs_model::{
     BibleVerse, CrossReference, Direction, Entity, EntityKind, EntityRelation, FORMAT_VERSION, Key,
-    KeyEntry, KeyScheme, LemmaTransliteration, Manifest, Mention, Origin, Resource, ResourceType,
-    Span, TextUnit, UnitId, UnitKind,
+    KeyEntry, KeyScheme, LemmaTransliteration, Manifest, Mention, Origin, PartOfSpeech, Rendering,
+    RenderingIndex, Resource, ResourceType, Span, StrongsTotal, TextUnit, UnitId, UnitKind,
 };
 use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, VerseMapEntry};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
@@ -155,6 +161,17 @@ CREATE TABLE transliterations (
     transliteration TEXT NOT NULL,
     lemma TEXT NOT NULL,
     PRIMARY KEY (transliteration, lemma)
+) WITHOUT ROWID;
+CREATE TABLE renderings (
+    rendering TEXT NOT NULL,
+    strongs TEXT NOT NULL,
+    count INTEGER NOT NULL,
+    PRIMARY KEY (rendering, strongs)
+) WITHOUT ROWID;
+CREATE TABLE strongs_totals (
+    strongs TEXT PRIMARY KEY,
+    count INTEGER NOT NULL,
+    part_of_speech TEXT
 ) WITHOUT ROWID;
 ";
 
@@ -336,6 +353,7 @@ fn write_to(r: &Resource, path: &Path) -> Result<(), StoreError> {
                 .execute(params![row.transliteration, row.lemma])
                 .map_err(sql)?;
         }
+        insert_renderings(&tx, &r.renderings)?;
     }
     tx.commit().map_err(sql)?;
     conn.execute_batch("VACUUM;").map_err(sql)?;
@@ -398,6 +416,31 @@ fn insert_datasets(tx: &rusqlite::Transaction<'_>, r: &Resource) -> Result<(), S
                 verse_number(m.passage.end())
             ])
             .map_err(sql)?;
+    }
+    Ok(())
+}
+
+fn insert_renderings(
+    tx: &rusqlite::Transaction<'_>,
+    index: &RenderingIndex,
+) -> Result<(), StoreError> {
+    let mut stmt = tx
+        .prepare("INSERT INTO renderings (rendering, strongs, count) VALUES (?1, ?2, ?3)")
+        .map_err(sql)?;
+    for r in &index.renderings {
+        stmt.execute(params![r.rendering, r.strongs.to_string(), r.count])
+            .map_err(sql)?;
+    }
+    let mut stmt = tx
+        .prepare("INSERT INTO strongs_totals (strongs, count, part_of_speech) VALUES (?1, ?2, ?3)")
+        .map_err(sql)?;
+    for t in &index.totals {
+        stmt.execute(params![
+            t.strongs.to_string(),
+            t.count,
+            t.part_of_speech.map(PartOfSpeech::name)
+        ])
+        .map_err(sql)?;
     }
     Ok(())
 }
@@ -1001,6 +1044,72 @@ impl ResourceStore for ObrReader {
             .map_err(sql)
     }
 
+    fn rendering_index(&self) -> Result<Option<RenderingIndex>, StoreError> {
+        let tables: i64 = self
+            .conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master
+                 WHERE type = 'table' AND name IN ('renderings', 'strongs_totals')",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(sql)?;
+        if tables < 2 {
+            return Ok(None);
+        }
+        let strongs = |s: String| {
+            s.parse::<obs_scripture::StrongsNumber>()
+                .map_err(|e| corrupt(e.to_string()))
+        };
+        let count = |n: i64| to_u32(n, "rendering count");
+        let rows: Vec<(String, String, i64)> = {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT rendering, strongs, count FROM renderings")
+                .map_err(sql)?;
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .map_err(sql)?
+                .collect::<Result<_, _>>()
+                .map_err(sql)?
+        };
+        let mut renderings = Vec::with_capacity(rows.len());
+        for (rendering, number, n) in rows {
+            renderings.push(Rendering {
+                rendering,
+                strongs: strongs(number)?,
+                count: count(n)?,
+            });
+        }
+        renderings.sort();
+        let rows: Vec<(String, i64, Option<String>)> = {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT strongs, count, part_of_speech FROM strongs_totals")
+                .map_err(sql)?;
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .map_err(sql)?
+                .collect::<Result<_, _>>()
+                .map_err(sql)?
+        };
+        let mut totals = Vec::with_capacity(rows.len());
+        for (number, n, pos) in rows {
+            let part_of_speech = match pos {
+                None => None,
+                Some(p) => Some(
+                    PartOfSpeech::from_name(&p)
+                        .ok_or_else(|| corrupt(format!("unknown part of speech `{p}`")))?,
+                ),
+            };
+            totals.push(StrongsTotal {
+                strongs: strongs(number)?,
+                count: count(n)?,
+                part_of_speech,
+            });
+        }
+        totals.sort_by_key(|t| t.strongs);
+        Ok(Some(RenderingIndex { renderings, totals }))
+    }
+
     fn verse_map(&self) -> Result<Option<VerseMap>, StoreError> {
         let rows: Vec<(i64, Option<String>, Option<String>)> = {
             let mut stmt = self
@@ -1177,6 +1286,13 @@ impl ResourceStore for ObrReader {
             .collect::<Result<_, _>>()
             .map_err(sql)?
         };
+        let renderings = match self.rendering_index()? {
+            Some(index) => index,
+            None if self.manifest.resource_type == ResourceType::Bible => {
+                RenderingIndex::build(&units)
+            }
+            None => RenderingIndex::default(),
+        };
         let resource = Resource {
             manifest: self.manifest.clone(),
             units,
@@ -1193,6 +1309,7 @@ impl ResourceStore for ObrReader {
             entities: self.entity_rows("", &[])?,
             mentions: self.mention_rows("", &[])?,
             transliterations,
+            renderings,
         };
         resource.validate().map_err(StoreError::Invalid)?;
         let hash = resource.content_hash();

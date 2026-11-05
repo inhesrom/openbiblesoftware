@@ -37,14 +37,17 @@ pub enum GuideSection {
     KeyWords,
     /// #54: [`crate::people_places`].
     PeopleAndPlaces,
+    /// Word Study (#55): every Lexicon's entry for the Strong's number.
+    LexiconEntries,
 }
 
 impl GuideSection {
-    pub const ALL: [GuideSection; 4] = [
+    pub const ALL: [GuideSection; 5] = [
         GuideSection::Commentaries,
         GuideSection::CrossReferences,
         GuideSection::KeyWords,
         GuideSection::PeopleAndPlaces,
+        GuideSection::LexiconEntries,
     ];
 
     /// Stable id, as stored and as passed to commands.
@@ -54,6 +57,7 @@ impl GuideSection {
             GuideSection::CrossReferences => "cross_references",
             GuideSection::KeyWords => "key_words",
             GuideSection::PeopleAndPlaces => "people_and_places",
+            GuideSection::LexiconEntries => "lexicon_entries",
         }
     }
 
@@ -67,6 +71,7 @@ impl GuideSection {
             GuideSection::CrossReferences => "Cross-references",
             GuideSection::KeyWords => "Key words",
             GuideSection::PeopleAndPlaces => "People & places",
+            GuideSection::LexiconEntries => "Lexicon entries",
         }
     }
 
@@ -77,6 +82,7 @@ impl GuideSection {
             GuideSection::CrossReferences => ResourceType::CrossReferenceSet,
             GuideSection::KeyWords => ResourceType::Bible,
             GuideSection::PeopleAndPlaces => ResourceType::PeopleAndPlaces,
+            GuideSection::LexiconEntries => ResourceType::Lexicon,
         }
     }
 
@@ -109,6 +115,12 @@ impl GuideSection {
             (GuideSection::PeopleAndPlaces, true) => {
                 "None in your library: no person or place is listed for this Passage."
             }
+            (GuideSection::LexiconEntries, false) => {
+                "None in your library. Add a Lexicon to read its entry for this word."
+            }
+            (GuideSection::LexiconEntries, true) => {
+                "None in your library: no Lexicon has an entry for this Strong's number."
+            }
         }
     }
 }
@@ -137,7 +149,7 @@ impl Guide {
                 GuideSection::KeyWords,
                 GuideSection::PeopleAndPlaces,
             ],
-            Guide::WordStudy => &[],
+            Guide::WordStudy => &[GuideSection::LexiconEntries],
         }
     }
 }
@@ -312,6 +324,8 @@ pub enum SectionData {
     KeyWords(KeyWords),
     /// People and places mentioned in the Passage, in reading order (#54).
     PeopleAndPlaces(Vec<PersonOrPlace>),
+    /// Every Lexicon's entry for a Strong's number, in Preferred order (#55).
+    LexiconEntries(Vec<crate::word_study::LexiconEntry>),
 }
 
 impl SectionData {
@@ -322,6 +336,7 @@ impl SectionData {
             SectionData::CrossReferences(groups) => groups.iter().map(|g| g.rows.len()).sum(),
             SectionData::KeyWords(k) => k.words.len(),
             SectionData::PeopleAndPlaces(rows) => rows.len(),
+            SectionData::LexiconEntries(entries) => entries.len(),
         }
     }
 
@@ -370,6 +385,10 @@ impl SectionSource for LibrarySections {
         section: GuideSection,
         _: &JobContext,
     ) -> Result<SectionData, String> {
+        if let (GuideSection::LexiconEntries, Key::StrongsNumber(n)) = (section, key) {
+            return crate::word_study::lexicon_entries(library, *n)
+                .map(SectionData::LexiconEntries);
+        }
         let Key::Passage(passage) = key else {
             return Err(format!("{} needs a Passage", section.title()));
         };
@@ -392,6 +411,9 @@ impl SectionSource for LibrarySections {
                 &self.aliases,
             )
             .map(SectionData::PeopleAndPlaces),
+            GuideSection::LexiconEntries => {
+                Err(format!("{} needs a Strong's number", section.title()))
+            }
         }
     }
 }

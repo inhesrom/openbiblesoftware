@@ -26,6 +26,11 @@ impl State {
         hovered: Option<WordHit>,
         clicked: Option<WordHit>,
     ) {
+        if let Some(w) = &clicked
+            && self.open_strongs_link(ui, tab, w)
+        {
+            return;
+        }
         if let Some(w) = clicked
             && let Some(word) = self.shown_word(tab, &w)
         {
@@ -76,6 +81,36 @@ impl State {
         if let Some(shown) = self.shown_word(tab, &word) {
             self.session.word_info.hover(shown);
         }
+    }
+
+    /// A click on a Strong's link in a Lexicon, Dictionary or Commentary (a Tagged word
+    /// outside a Bible) opens its Word Study (#55); Ctrl/Cmd-click opens a new one. Returns
+    /// whether it did.
+    fn open_strongs_link(&mut self, ui: &Ui, tab: TabId, hit: &WordHit) -> bool {
+        let Some(doc) = self
+            .tabs
+            .get(&tab)
+            .and_then(|t| t.view.as_ref())
+            .map(|v| std::sync::Arc::clone(&v.doc))
+        else {
+            return false;
+        };
+        if doc.manifest.resource_type == ResourceType::Bible {
+            return false;
+        }
+        let Some((_, parts)) = doc.tagged_word_at(hit.unit, hit.range.start) else {
+            return false;
+        };
+        let Some(number) = parts.first().map(|p| p.strongs) else {
+            return false;
+        };
+        let new_tab = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
+        self.session.workspace.user_focused(tab);
+        self.run(
+            "word_study.open",
+            &json!({ "strongs": number.to_string(), "new_tab": new_tab }),
+        );
+        true
     }
 
     /// What Word Info shows for a Tagged word of a reading Tab.
@@ -292,7 +327,14 @@ impl State {
 
     /// Draw `text` through the inline-snippet mode, as tall as its layout (a placeholder bar
     /// until a worker has laid it out).
-    fn snippet(&mut self, ui: &mut Ui, text: &str, rtl: bool, width: f32, settings: &TextSettings) {
+    pub(super) fn snippet(
+        &mut self,
+        ui: &mut Ui,
+        text: &str,
+        rtl: bool,
+        width: f32,
+        settings: &TextSettings,
+    ) {
         let width = width.max(40.0);
         let laid = self
             .snippets

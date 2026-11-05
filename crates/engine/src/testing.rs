@@ -808,3 +808,221 @@ pub fn greek_lexicon() -> obs_model::Resource {
         ],
     )
 }
+
+/// One Verse of [`word_tagged_bible`]: the Verse, its text, and its Tagged words in order, each
+/// as (the words as written, Strong's number, optional Morphology code). Each word is found
+/// in the text after the previous one.
+pub type TestVerse<'a> = (
+    obs_scripture::Verse,
+    &'a str,
+    &'a [(&'a str, &'a str, Option<&'a str>)],
+);
+
+/// A small Strong's-tagged Bible in the Standard versification, one unit per Bible book.
+pub fn word_tagged_bible(
+    id: &str,
+    title: &str,
+    abbreviation: &str,
+    language: &str,
+    verses: &[TestVerse<'_>],
+) -> obs_model::Resource {
+    use obs_model::{
+        KeyScheme, Manifest, MorphemePart, ParaStyle, ResourceBuilder, ResourceType, SpanKind,
+        TextAccumulator, UnitId, UnitKind,
+    };
+    let mut manifest = Manifest::new(id, title, abbreviation, ResourceType::Bible, language);
+    manifest.key_schemes = vec![KeyScheme::Passage];
+    manifest.license = "LicenseRef-PD".into();
+    if language == "hbo" {
+        manifest.direction = obs_model::Direction::Rtl;
+    }
+    let mut b = ResourceBuilder::new(manifest);
+    let mut books: Vec<obs_scripture::Book> = verses.iter().map(|v| v.0.book).collect();
+    books.dedup();
+    for book in books {
+        let unit = UnitId::book(book);
+        let mut t = TextAccumulator::new();
+        let mut spans = Vec::new();
+        let mut placed = Vec::new();
+        for (verse, text, words) in verses.iter().filter(|v| v.0.book == book) {
+            if t.pos() > 0 {
+                t.push(" ");
+            }
+            let range = t.push(text);
+            let mut from = 0;
+            for (word, strongs, morph) in *words {
+                let at = text[from..].find(word).unwrap() + from;
+                from = at + word.len();
+                let mut part = MorphemePart::new(strongs.parse().unwrap());
+                part.morph = morph.map(String::from);
+                spans.push((
+                    range.start + at..range.start + from,
+                    SpanKind::TaggedWord { parts: vec![part] },
+                ));
+            }
+            placed.push((range, *verse));
+        }
+        let len = t.pos();
+        b.add_unit(unit.clone(), UnitKind::BibleBook, None, t.into_string());
+        b.add_span(
+            &unit,
+            0..len,
+            SpanKind::Para {
+                style: ParaStyle::Prose,
+            },
+        );
+        for (range, kind) in spans {
+            b.add_span(&unit, range, kind);
+        }
+        for (range, verse) in placed {
+            b.add_verse(&unit, range, verse, verse.verse);
+        }
+    }
+    b.build().unwrap()
+}
+
+/// A KJV-style English Bible with Strong's numbers (KJV text, public domain): "love" renders
+/// G25 three times, G26 twice and G5368 twice; "created" renders only H1254.
+pub fn kjv_love() -> obs_model::Resource {
+    use obs_scripture::{Book, Verse};
+    word_tagged_bible(
+        "kjv-love",
+        "King James Version with Strong's (test)",
+        "KJV",
+        "en",
+        &[
+            (
+                Verse::new(Book::Genesis, 1, 1),
+                "In the beginning God created the heaven and the earth.",
+                &[
+                    ("God", "H430", None),
+                    ("created", "H1254", Some("strongMorph:TH8804")),
+                ],
+            ),
+            (
+                Verse::new(Book::Matthew, 6, 5),
+                "for they love to pray standing in the synagogues",
+                &[("love", "G5368", None), ("pray", "G4336", None)],
+            ),
+            (
+                Verse::new(Book::John, 13, 34),
+                "That ye love one another; as I have loved you, that ye also love one another.",
+                &[
+                    ("love", "G25", None),
+                    ("loved", "G25", None),
+                    ("love", "G25", None),
+                ],
+            ),
+            (
+                Verse::new(Book::John, 14, 15),
+                "If ye love me, keep my commandments.",
+                &[("love", "G25", None), ("keep", "G5083", None)],
+            ),
+            (
+                Verse::new(Book::John, 15, 13),
+                "Greater love hath no man than this",
+                &[("love", "G26", None)],
+            ),
+            (
+                Verse::new(Book::John, 21, 15),
+                "lovest thou me? Yea, Lord; thou knowest that I love thee.",
+                &[("lovest", "G25", None), ("love", "G5368", None)],
+            ),
+            (
+                Verse::new(Book::FirstJohn, 4, 8),
+                "He that loveth not knoweth not God; for God is love.",
+                &[("loveth", "G25", None), ("love", "G26", None)],
+            ),
+        ],
+    )
+}
+
+/// A Hebrew Bible tagged with extended Strong's numbers and readable Morphology, like TAHOT:
+/// H1254A three times, always a verb.
+pub fn hebrew_bara() -> obs_model::Resource {
+    use obs_scripture::{Book, Verse};
+    word_tagged_bible(
+        "heb-bara",
+        "Hebrew Old Testament (test)",
+        "HOT",
+        "hbo",
+        &[
+            (
+                Verse::new(Book::Genesis, 1, 1),
+                "בְּרֵאשִׁית בָּרָא אֱלֹהִים",
+                &[
+                    ("בָּרָא", "H1254A", Some("HVqp3ms")),
+                    ("אֱלֹהִים", "H430G", Some("HNcmpa")),
+                ],
+            ),
+            (
+                Verse::new(Book::Genesis, 1, 21),
+                "וַיִּבְרָא אֱלֹהִים",
+                &[
+                    ("וַיִּבְרָא", "H1254A", Some("HVqw3ms")),
+                    ("אֱלֹהִים", "H430G", Some("HNcmpa")),
+                ],
+            ),
+            (
+                Verse::new(Book::Genesis, 1, 27),
+                "וַיִּבְרָא אֱלֹהִים",
+                &[
+                    ("וַיִּבְרָא", "H1254A", Some("HVqw3ms")),
+                    ("אֱלֹהִים", "H430G", Some("HNcmpa")),
+                ],
+            ),
+        ],
+    )
+}
+
+/// The Starter Lexicons' converters run over the excerpts of their real sources that the
+/// format tests use, with the Starter resource ids: TBESH, TBESG, Strong's Hebrew and BDB.
+pub fn starter_lexicon_excerpts() -> Vec<obs_model::Resource> {
+    let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/lexicon");
+    let read = |name: &str| std::fs::read_to_string(assets.join(name)).unwrap();
+    let options = |id: &str, title: &str, abbreviation: &str| obs_formats::LexiconOptions {
+        resource_id: id.into(),
+        title: title.into(),
+        abbreviation: abbreviation.into(),
+        source_file: id.into(),
+        tool_version: "test".into(),
+    };
+    let skip = ["Meaning".to_string()];
+    vec![
+        obs_formats::import_tbes(
+            &options(
+                "tbesh",
+                "Brief lexicon of Extended Strongs for Hebrew",
+                "TBESH",
+            ),
+            &read("tbesh-excerpt.txt"),
+            &skip,
+        )
+        .unwrap()
+        .0,
+        obs_formats::import_tbes(
+            &options(
+                "tbesg",
+                "Brief lexicon of Extended Strongs for Greek",
+                "TBESG",
+            ),
+            &read("tbesg-excerpt.txt"),
+            &[],
+        )
+        .unwrap()
+        .0,
+        obs_formats::import_strongs_hebrew(
+            &options("strongs-hebrew", "Strong's Hebrew Dictionary", "Strong's"),
+            &read("strongs-hebrew-excerpt.xml"),
+        )
+        .unwrap()
+        .0,
+        obs_formats::import_bdb(
+            &options("bdb", "Brown-Driver-Briggs", "BDB"),
+            &read("bdb-excerpt.xml"),
+            &read("bdb-lexical-index-excerpt.xml"),
+        )
+        .unwrap()
+        .0,
+    ]
+}
