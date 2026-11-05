@@ -151,6 +151,7 @@ impl Session {
         let events = self.jobs().drain_events();
         let events = self.poll_get_bibles(events);
         let events = self.poll_search_indexes(events);
+        let events = self.poll_guides(events);
         for event in events {
             let Some(id) = self.imports.active.get(&event.id).cloned() else {
                 other.push(event);

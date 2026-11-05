@@ -186,3 +186,59 @@ impl Fetch for MockRepos {
         LocalFetch.get(url, progress)
     }
 }
+
+/// One section of [`commentary`]: its Passage, an optional heading the text starts with,
+/// and the prose after it.
+pub type TestSection<'a> = (obs_scripture::Passage, Option<&'a str>, &'a str);
+
+/// A small public-domain-style Commentary (synthetic prose, nothing quoted from a Starter
+/// edition) with Passage-keyed sections, as the Starter converters build them.
+pub fn commentary(
+    id: &str,
+    title: &str,
+    abbreviation: &str,
+    sections: &[TestSection<'_>],
+) -> obs_model::Resource {
+    use obs_model::{
+        Key, KeyScheme, Manifest, ParaStyle, ResourceBuilder, ResourceType, SpanKind, UnitId,
+        UnitKind,
+    };
+    let mut manifest = Manifest::new(id, title, abbreviation, ResourceType::Commentary, "en");
+    manifest.key_schemes = vec![KeyScheme::Passage];
+    manifest.license = "CC0-1.0".into();
+    let mut b = ResourceBuilder::new(manifest);
+    for (passage, heading, prose) in sections {
+        let unit = UnitId::new(format!(
+            "{}-{}",
+            passage.start().osis(),
+            passage.end().osis()
+        ))
+        .unwrap();
+        let mut text = String::new();
+        if let Some(h) = heading {
+            text.push_str(h);
+            text.push('\n');
+        }
+        let body = text.len();
+        text.push_str(prose);
+        let len = text.len();
+        b.add_unit(
+            unit.clone(),
+            UnitKind::Section,
+            Some(passage.to_string()),
+            text,
+        );
+        if heading.is_some() {
+            b.add_span(&unit, 0..body - 1, SpanKind::Heading { level: 2 });
+        }
+        b.add_span(
+            &unit,
+            body..len,
+            SpanKind::Para {
+                style: ParaStyle::Prose,
+            },
+        );
+        b.add_key(Key::Passage(*passage), &unit, None, false);
+    }
+    b.build().unwrap()
+}

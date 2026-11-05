@@ -262,48 +262,7 @@ impl State {
             .id_salt(("cross-references", tab, passage))
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                for group in groups.iter() {
-                    ui.strong(format_passage(
-                        Passage::verse(group.verse),
-                        &Standard,
-                        RefStyle::Short,
-                    ));
-                    let expanded = self
-                        .tabs
-                        .get(&tab)
-                        .is_some_and(|t| t.expanded_references.contains(&group.verse));
-                    let count = if expanded {
-                        group.rows.len()
-                    } else {
-                        group.rows.len().min(TOP_REFERENCES)
-                    };
-                    for row in &group.rows[..count] {
-                        let label = format_passage(row.target, &Standard, RefStyle::Short);
-                        let r = ui
-                            .link(label)
-                            .on_hover_text(format!("{} · {} votes", row.source_title, row.votes));
-                        if r.clicked() {
-                            navigate = Some(row.target);
-                        }
-                        if r.hovered() {
-                            self.reference_popup(ui, &[vec![row.target].into()]);
-                        }
-                        self.preview(ui, Passage::verse(row.target.start()), true);
-                    }
-                    if group.rows.len() > TOP_REFERENCES
-                        && ui
-                            .button(if expanded { "Show less" } else { "Show all" })
-                            .clicked()
-                        && let Some(t) = self.tabs.get_mut(&tab)
-                    {
-                        if expanded {
-                            t.expanded_references.remove(&group.verse);
-                        } else {
-                            t.expanded_references.insert(group.verse);
-                        }
-                    }
-                    ui.separator();
-                }
+                navigate = self.reference_groups(ui, tab, &groups);
             });
         if let Some(passage) = navigate {
             self.reference_navigate(
@@ -312,6 +271,62 @@ impl State {
                 ui.input(|i| i.modifiers.command || i.modifiers.ctrl),
             );
         }
+    }
+
+    /// Cross-references grouped by source Verse: the top [`TOP_REFERENCES`] targets of each
+    /// (Show all / Show less per Verse), each with its hover popup and a one-line preview
+    /// from the ★ Bible. Shared by the Cross-references Tool and the Passage Guide; returns
+    /// the target clicked this frame.
+    pub(super) fn reference_groups(
+        &mut self,
+        ui: &mut Ui,
+        tab: TabId,
+        groups: &[ReferenceGroup],
+    ) -> Option<Passage> {
+        let mut navigate = None;
+        for group in groups {
+            ui.strong(format_passage(
+                Passage::verse(group.verse),
+                &Standard,
+                RefStyle::Short,
+            ));
+            let expanded = self
+                .tabs
+                .get(&tab)
+                .is_some_and(|t| t.expanded_references.contains(&group.verse));
+            let count = if expanded {
+                group.rows.len()
+            } else {
+                group.rows.len().min(TOP_REFERENCES)
+            };
+            for row in &group.rows[..count] {
+                let label = format_passage(row.target, &Standard, RefStyle::Short);
+                let r = ui
+                    .link(label)
+                    .on_hover_text(format!("{} · {} votes", row.source_title, row.votes));
+                if r.clicked() {
+                    navigate = Some(row.target);
+                }
+                if r.hovered() {
+                    self.reference_popup(ui, &[vec![row.target].into()]);
+                }
+                self.preview(ui, Passage::verse(row.target.start()), true);
+            }
+            if group.rows.len() > TOP_REFERENCES
+                && ui
+                    .button(if expanded { "Show less" } else { "Show all" })
+                    .clicked()
+                && let Some(t) = self.tabs.get_mut(&tab)
+            {
+                if expanded {
+                    t.expanded_references.remove(&group.verse);
+                } else {
+                    t.expanded_references.insert(group.verse);
+                }
+            }
+            ui.separator();
+        }
+        navigate
     }
 
     /// Resource text is always drawn with the glyph atlas. A cache miss only submits work;

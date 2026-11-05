@@ -22,6 +22,9 @@ pub mod cross_references;
 pub mod get_bibles;
 #[cfg(test)]
 mod get_bibles_tests;
+pub mod guide;
+#[cfg(test)]
+mod guide_tests;
 pub mod import;
 pub mod jobs;
 mod library;
@@ -52,6 +55,10 @@ pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSp
 pub use compare::{
     Cell, ComparedBible, ComparedCell, Comparison, DEFAULT_BIBLES, Marks, VerseBlock, WordDiff,
     verse_blocks, word_diff,
+};
+pub use guide::{
+    CommentaryRow, GuideArrangement, GuideSection, Guides, LibrarySections, SectionData,
+    SectionPlace, SectionSource, SectionStatus,
 };
 pub use import::{
     DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,
