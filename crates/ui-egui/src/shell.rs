@@ -24,6 +24,7 @@ use crate::theme;
 use crate::view::ReadingView;
 use crate::workers::SnippetCache;
 
+mod annotate;
 mod credits_tab;
 mod get_bibles_tab;
 mod guide_tab;
@@ -73,6 +74,10 @@ struct TabUi {
     expanded_references: std::collections::BTreeSet<Verse>,
     /// A Passage Guide section whose header is being dragged.
     guide_drag: Option<obs_engine::GuideSection>,
+    /// The selection toolbar is up (from a selection's release until the next press).
+    toolbar: bool,
+    /// Where the selection was drawn last frame, in screen points.
+    selection_rect: Option<egui::Rect>,
 }
 
 /// How long a jump's flash lasts, in seconds.
@@ -109,6 +114,10 @@ pub(crate) struct State {
     dwell: Option<Dwell>,
     /// Inline-snippet layouts for Word Info's word and Lemma.
     snippets: SnippetCache,
+    /// Highlights and Notes to draw, per Resource (#62).
+    marks: annotate::MarkCache,
+    /// The popup Note editor, when open.
+    note_editor: Option<annotate::NoteEditor>,
 }
 
 /// The app window's content: menus, Search field and the docked Workspace.
@@ -148,6 +157,8 @@ impl Shell {
                 panels: std::collections::HashMap::new(),
                 dwell: None,
                 snippets: SnippetCache::default(),
+                marks: annotate::MarkCache::default(),
+                note_editor: None,
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -279,6 +290,7 @@ impl Shell {
                 Effect::PickImport => self.st.pick_import = true,
                 Effect::Removed(id) => {
                     self.st.docs.remove(&id);
+                    self.st.marks.forget(&id);
                 }
             }
         }
@@ -633,16 +645,31 @@ impl Shell {
         self.st.overlays(ui);
         self.apply_effects();
         let closing = ui.input(|i| i.viewport().close_requested());
+        if closing {
+            // A Note being written is saved, as if focus had left it.
+            self.st.save_note();
+        }
         self.save_session(closing);
     }
 
     fn shortcuts(&mut self, ui: &mut Ui) {
         let focused = self.st.session.workspace.focused();
+        // Keys a text field uses itself (Ctrl+Z, Esc …) are left to it while it has focus.
+        let typing = ui.ctx().text_edit_focused();
+        let mut bound: Vec<(&obs_engine::CommandSpec, egui::KeyboardShortcut)> = self
+            .st
+            .session
+            .commands()
+            .iter()
+            .filter(|spec| !(typing && spec.shortcut.is_some_and(annotate::yields_to_text_fields)))
+            .filter_map(|spec| Some((spec, spec.shortcut.and_then(parse_shortcut)?)))
+            .collect();
+        // egui ignores extra Shift and Alt when matching, so Ctrl+Shift+Z goes before Ctrl+Z.
+        bound.sort_by_key(|(_, sc)| {
+            std::cmp::Reverse(u8::from(sc.modifiers.shift) + u8::from(sc.modifiers.alt))
+        });
         let mut run: Vec<(&'static str, Value)> = Vec::new();
-        for spec in self.st.session.commands().iter() {
-            let Some(sc) = spec.shortcut.and_then(parse_shortcut) else {
-                continue;
-            };
+        for (spec, sc) in bound {
             let needs_tab = spec.params.iter().any(|p| p.name == "tab" && p.required);
             let other_required = spec.params.iter().any(|p| p.required && p.name != "tab");
             if other_required || (needs_tab && focused.is_none()) {
@@ -663,6 +690,8 @@ impl Shell {
         for (id, p) in run {
             self.run(id, &p);
         }
+        self.st.annotation_keys(ui);
+        self.apply_effects();
     }
 
     fn menu_bar(&mut self, ui: &mut Ui) {
@@ -1044,7 +1073,8 @@ impl State {
         } else {
             t.flash = None;
         }
-        let out = reading_pane(ui, view, &mut self.atlas, &palette, flash);
+        let marks = self.marks.marks(&self.session, &view.doc);
+        let out = reading_pane(ui, view, &mut self.atlas, &palette, flash, &marks);
         let following = view.is_following();
         let at = view.current_location();
         let reference = out
@@ -1054,7 +1084,7 @@ impl State {
             verse_number_tooltip(ui, &view.doc, n);
         }
         let entry = out.user_moved.then(|| view.current_entry()).flatten();
-        self.word_hovered(ui, tab, out.hovered_word, out.clicked_word);
+        self.word_hovered(ui, tab, out.hovered_word.clone(), out.clicked_word.clone());
         if let Some(key) = entry {
             self.session.workspace.user_scrolled_entry(tab, key);
         }
@@ -1102,6 +1132,7 @@ impl State {
                 }
             }
         }
+        self.after_reading_pane(ui, tab, &out);
     }
 
     /// Text Comparison: the Bible chips, then the Verse blocks. The view follows the Tab's
@@ -1607,6 +1638,7 @@ impl State {
     /// Toasts and the About/Credits window.
     fn overlays(&mut self, ui: &Ui) {
         let ctx = ui.ctx().clone();
+        self.note_editor_ui(&ctx);
         self.layout_prompt(&ctx);
         self.remove_prompt(&ctx);
         self.import_chooser(&ctx);

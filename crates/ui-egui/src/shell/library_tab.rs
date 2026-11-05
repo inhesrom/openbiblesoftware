@@ -308,7 +308,7 @@ impl State {
                             #[allow(clippy::cast_possible_truncation)]
                             let height = (view.position().1 as f32 + 16.0).clamp(48.0, 600.0);
                             ui.allocate_ui(vec2(width, height), |ui| {
-                                reading_pane(ui, view, &mut self.atlas, &palette, None);
+                                reading_pane(ui, view, &mut self.atlas, &palette, None, &[]);
                             });
                         }
                         ui.add_space(10.0);

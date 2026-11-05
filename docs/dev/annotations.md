@@ -3,7 +3,8 @@
 Notebooks, Notes and Highlights live in the User database (`obs_store::UserStore`, schema
 v4). The engine reaches them only through the `UserData` trait; `crates/engine/src/
 annotations.rs` holds the service on `Session` and the `annotation.*`, `notebook.*` and
-`edit.*` commands. There is no UI yet (#62–#64) and no re-anchoring (#65).
+`edit.*` commands. The origin Bible's UI is #62 (below); other Bibles (#63), the Notes Tool
+(#64) and re-anchoring (#65) are still to come.
 
 ## Tables
 
@@ -54,11 +55,44 @@ for just those Verses).
 | Command | Params |
 |---|---|
 | `annotation.highlight` | `resource`, `start_unit`, `start`, `end_unit`?, `end`, `style`? (`yellow` default, `green`, `blue`, `pink`, `red_underline`), `notebook`? |
+| `edit.undo` / `edit.redo` | Ctrl+Z / Ctrl+Shift+Z; enabled only when there is something to undo or redo |
 | `annotation.note` | `body`?, then a selection (as above), or `passage` (one Standard Passage), or neither (no Anchor); `notebook`? |
 | `annotation.edit` / `annotation.style` / `annotation.move` / `annotation.delete` | `id` and `body` / `style` / `notebook` |
 | `annotation.get`, `annotation.list` (`notebook`?), `annotation.search_notes` (`text`) | read only |
 | `notebook.create` (`name`), `notebook.rename` (`id`, `name`), `notebook.delete` (`id`, `annotations`: `move` default or `delete`), `notebook.list` | |
-| `edit.undo`, `edit.redo` | enabled only when there is something to undo or redo |
 
-No default shortcuts yet: the Shell runs a shortcut's command before text fields see the
-key, so #62 binds Ctrl+Z / Ctrl+Shift+Z / Ctrl+1…5 / Ctrl+Shift+N with focus in mind.
+`notebook`, where a command takes it, defaults to the **Notebook last used** (#18 rule 8):
+giving one records it in the User database preference `annotations.last_notebook`
+(`Session::last_notebook()` reads it, falling back to the default Notebook when it is unset
+or deleted).
+
+## In the origin Bible (#62)
+
+`crates/ui-egui/src/shell/annotate.rs` is the UI around a reading pane's selection;
+`crates/ui-egui/src/marks.rs` and the reading pane (`pane.rs`) draw what is stored.
+
+- **Making them.** Releasing a selection (drag, double- or triple-click) shows a floating
+  toolbar above it: 5 style swatches, ✏ Note, Copy and Search this (disabled until #59).
+  Right-click shows the same actions as a menu (on the selection under the pointer, else on
+  the clicked word). Keys: Ctrl+1…5 (styles, in `HighlightStyle::ALL` order), Ctrl+Shift+N
+  (Note), Ctrl+Z / Ctrl+Shift+Z (undo, redo). A Highlight clears the selection so its colour
+  shows at once.
+- **Keys and text fields.** The Shell runs command shortcuts before widgets see the key, so
+  while a text field has focus (`egui::Context::text_edit_focused`) it skips the keys text
+  fields use themselves (Ctrl+Z, Ctrl+Shift+Z, Esc, Alt+←/→) and the annotation keys. The
+  Shell also matches Shift/Alt shortcuts first, because egui ignores extra Shift and Alt.
+- **The Note editor** is a popup anchored under the selection, with a Notebook picker that
+  starts on the last used Notebook. It saves (as `annotation.note` with the picked
+  `notebook`) on a click outside it, Esc, Ctrl+Enter or quitting; an empty Note is not
+  saved; Discard closes it without saving. Open in Notes is disabled until #64.
+- **Drawing them.** `MarkCache` reloads the Annotations when `Session::annotations_revision`
+  moves and turns those whose Text range is in a Resource into `Mark`s over document
+  positions (a range whose text no longer reads as its quote is skipped until #65 re-anchors
+  it). The pane computes their rectangles from the laid-out clusters each frame
+  (`selection::range_rects`, one pass for all Marks), so they follow scrolling, resizing and
+  text-size changes like the selection. Backgrounds go under the glyph mesh in creation order
+  (the newest on top); the red underline and Note markers go over it. Colours come from the
+  Page tone's palette when painting (#21), so a theme switch never re-lays anything out.
+- **Note markers** sit just past the end of the Note's range, raised like a superscript;
+  hovering one previews the Note and its Notebook. Clicking it will open the Notes Tool
+  (#64).
