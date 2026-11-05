@@ -2960,6 +2960,9 @@ mod credits;
 #[path = "guide_tests.rs"]
 mod guide;
 
+#[path = "search_tests.rs"]
+mod search;
+
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {
     use std::path::PathBuf;

@@ -572,7 +572,7 @@ fn term(field: Field, words: &[String], prefix: bool) -> Part {
     Part::Atom(s)
 }
 
-fn is_original_script(s: &str) -> bool {
+pub(crate) fn is_original_script(s: &str) -> bool {
     s.chars().any(|c| {
         matches!(c as u32, 0x0370..=0x03FF | 0x1F00..=0x1FFF | 0x0590..=0x05FF | 0xFB1D..=0xFB4F)
     })

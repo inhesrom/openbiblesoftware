@@ -1,6 +1,6 @@
 # Search index caches (#58)
 
-Every Resource gets one Search index: a SQLite FTS5 file kept apart from its `.obr` (ADR 0003). It is derived data. Deleting it is always safe, because the app rebuilds it in the background. The query grammar and the search UX are decided in #16. The latency targets come from #19.
+Every Resource gets one Search index: a SQLite FTS5 file kept apart from its `.obr` (ADR 0003). It is derived data. Deleting it is always safe, because the app rebuilds it in the background. The query grammar and the search UX are decided in #16. The latency targets come from #19. The Search Tool that searches them is described in [search-tool.md](search-tool.md).
 
 ## How it fits together
 

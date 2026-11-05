@@ -608,7 +608,7 @@ impl Session {
     /// and rebuilt (or found again, e.g. prebuilt) instead of failing the search. A Failed
     /// build is retried once per session.
     #[cfg(not(target_arch = "wasm32"))]
-    fn open_search_index(&mut self, id: &str) -> Result<Opened, NotReady> {
+    pub(crate) fn open_search_index(&mut self, id: &str) -> Result<Opened, NotReady> {
         let Some(entry) = self.library.get(id) else {
             return Err(NotReady::NotInLibrary);
         };
@@ -657,7 +657,7 @@ impl Session {
 
 /// An index a search can use.
 #[cfg(not(target_arch = "wasm32"))]
-enum Opened {
+pub(crate) enum Opened {
     /// The current cache.
     Current(obs_store::SqliteSearchIndex),
     /// An older index version's cache, while the current one is rebuilt.
@@ -666,7 +666,7 @@ enum Opened {
 
 /// Why a Resource could not be searched now.
 #[cfg(not(target_arch = "wasm32"))]
-enum NotReady {
+pub(crate) enum NotReady {
     Indexing,
     Failed(String),
     NotInLibrary,

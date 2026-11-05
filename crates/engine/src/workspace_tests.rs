@@ -276,7 +276,7 @@ fn library_keeps_preferred_order_within_types() {
 #[test]
 fn word_info_commands_follow_the_pin_state() {
     let mut s = session();
-    // Nothing shown yet: nothing to copy or unpin; Word Study and Search wait for #55 / #59.
+    // Nothing shown yet: nothing to copy, unpin or search for; Word Study waits for #55.
     assert!(!s.is_enabled("word_info.copy"));
     assert!(!s.is_enabled("word_info.unpin"));
     assert!(!s.is_enabled("word_info.word_study"));
@@ -291,6 +291,7 @@ fn word_info_commands_follow_the_pin_state() {
         ShownWord::new("בָּרָא", true, "Genesis 1:1 (TAHOT)".into(), &[part], |_| None).unwrap();
     assert!(s.word_info.hover(word.clone()));
     assert!(s.is_enabled("word_info.copy"));
+    assert!(s.is_enabled("word_info.search"));
     assert!(!s.is_enabled("word_info.unpin"));
     let out = s.run("word_info.copy", &json!({})).unwrap();
     assert_eq!(out["text"], word.copy_text());

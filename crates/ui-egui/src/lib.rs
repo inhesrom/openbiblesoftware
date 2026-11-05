@@ -10,6 +10,7 @@ mod doc;
 mod heights;
 mod palette;
 mod pane;
+pub mod search_view;
 mod selection;
 mod shell;
 pub mod theme;
