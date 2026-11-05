@@ -529,6 +529,23 @@ fn a_passage_anchor_with_a_stale_origin_falls_back_to_its_whole_verses() {
     let exact = crate::marks_for(&doc, &stored);
     assert_eq!(exact.len(), 1);
     assert_eq!(exact[0].start, a);
+    // An origin re-anchoring did not find (#65) is kept but not drawn as words, even where
+    // the text still reads as its quote: whole Verse(s).
+    let verse = doc.verse_range_at(a.unit, a.byte).unwrap();
+    let mut not_found = stored.clone();
+    if let Some(obs_engine::Anchor::Passage {
+        origin: Some(origin),
+        ..
+    }) = not_found[0].anchor.as_mut()
+    {
+        origin.orphaned = true;
+    }
+    let marks = crate::marks_for(&doc, &not_found);
+    assert_eq!(marks.len(), 1, "still drawn: {marks:?}");
+    assert_eq!(
+        (marks[0].start.byte, marks[0].end.byte),
+        (verse.start, verse.end)
+    );
     let Some(obs_engine::Anchor::Passage {
         origin: Some(origin),
         ..
@@ -542,7 +559,6 @@ fn a_passage_anchor_with_a_stale_origin_falls_back_to_its_whole_verses() {
     origin.quote = "no longer here".into();
     let marks = crate::marks_for(&doc, &stored);
     assert_eq!(marks.len(), 1, "the Highlight is still drawn");
-    let verse = doc.verse_range_at(a.unit, a.byte).unwrap();
     assert_eq!(
         marks[0].start,
         DocPos {
@@ -745,6 +761,208 @@ fn previews() {
     h.shell.run("view.theme", &json!({ "value": "dark" }));
     h.frames(2);
     h.screenshot(&out.join("annotations-dark.ppm"));
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// #65: an Orphaned annotation is listed under ⚠ Needs attention with its quote and is not
+/// drawn; selecting text in TB and clicking Re-attach here moves it there (drawn at once) and
+/// clears its warning; Ctrl+Z makes it orphaned again.
+#[test]
+fn reattach_moves_an_orphaned_annotation_to_the_selection_and_clears_its_warning() {
+    let dir = folder("reattach");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    let (a, b, word, r) = word_in_view(&h, tb, 200.0);
+    // A Highlight made against an older revision of TB, on words this one no longer has.
+    let unit = view(&h, tb).doc.units[a.unit].id.clone();
+    let session = &mut h.shell.st.session;
+    let notebook = session.default_notebook().unwrap().id;
+    let gone = obs_engine::Annotation {
+        id: obs_store::annotation::new_id(),
+        notebook_id: notebook,
+        content: Content::Highlight {
+            style: HighlightStyle::Yellow,
+        },
+        anchor: Some(obs_engine::Anchor::TextRange {
+            range: obs_engine::TextRange {
+                resource_id: "test-bible".into(),
+                unit,
+                start: a.byte as u32,
+                end: a.byte as u32 + 14,
+                quote: "vanished words".into(),
+                prefix: String::new(),
+                suffix: String::new(),
+                content_hash: "sha256:an-older-revision".into(),
+                native_ref: None,
+                whole_verses: false,
+                orphaned: false,
+            },
+        }),
+        created_at: 1,
+        modified_at: 1,
+    };
+    let id = gone.id.clone();
+    session
+        .user
+        .as_ref()
+        .unwrap()
+        .apply_changes(&[obs_engine::Change::insert(obs_engine::Row::Annotation(
+            gone,
+        ))])
+        .unwrap();
+    // Re-anchoring (the library-load job) cannot find it: it is orphaned, and says so.
+    h.shell
+        .run("annotation.reanchor", &json!({ "resource": "test-bible" }))
+        .unwrap();
+    for _ in 0..20 {
+        h.frame();
+        if !h.shell.st.session.reanchoring.is_busy() {
+            break;
+        }
+    }
+    h.frames(2);
+    assert!(h.shell.st.session.annotation(&id).unwrap().is_orphaned());
+    assert!(
+        h.texts().iter().any(|t| t.contains("1 needs attention")),
+        "the report toast: {:?}",
+        h.texts()
+    );
+    let yellow = h.shell.st.palette.highlights[0];
+    assert!(painted(&h, yellow).is_empty(), "an orphan is not drawn");
+
+    // Notes → ⚠ Needs attention lists it with its quote and the warning.
+    h.shell.run("tool.notes", &json!({})).unwrap();
+    h.frames(10);
+    assert!(h.find("Needs attention").is_some(), "{:?}", h.texts());
+    h.click_text("Needs attention");
+    h.frames(10);
+    let warning = |h: &Harness| h.texts().iter().any(|t| t.contains("was not found in TB"));
+    assert!(warning(&h), "{:?}", h.texts());
+    assert_eq!(h.shell.st.notes_ui.cards_len(), 1);
+    assert!(
+        h.find("Keep without anchor").is_none(),
+        "a Highlight cannot lose its text"
+    );
+
+    // Select a word in TB, then Re-attach here.
+    double_click(&mut h, r.center());
+    assert!(h.shell.st.has_selection(tb));
+    h.frames(2);
+    h.click_text("Re-attach here");
+    h.frames(10);
+    let a2 = h.shell.st.session.annotation(&id).unwrap();
+    assert!(!a2.is_orphaned());
+    let range = a2.anchor.as_ref().unwrap().text_range().unwrap();
+    assert_eq!(range.quote, word);
+    assert_eq!((range.start as usize, range.end as usize), (a.byte, b.byte));
+    assert!(!warning(&h), "the warning is gone: {:?}", h.texts());
+    assert_eq!(h.shell.st.notes_ui.cards_len(), 0);
+    assert!(
+        h.texts()
+            .iter()
+            .any(|t| t.starts_with("Nothing needs attention")),
+        "{:?}",
+        h.texts()
+    );
+    // Drawn over the word at once (the selection made way for it).
+    assert!(!h.shell.st.has_selection(tb));
+    let rects = painted(&h, yellow);
+    assert!(covers(union(&rects), r), "{rects:?} vs word {r:?}");
+
+    // One undo step: orphaned again, not drawn, listed again.
+    press_key(&mut h, egui::Key::Z, Modifiers::COMMAND);
+    h.frames(5);
+    assert!(h.shell.st.session.annotation(&id).unwrap().is_orphaned());
+    assert!(painted(&h, yellow).is_empty());
+    assert!(warning(&h));
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// #65: while a re-anchoring job for TB is pending, its Marks are not painted (they may point
+/// at text that moved); once the job is applied they are, over the same word.
+#[test]
+fn marks_are_not_painted_while_their_resource_is_being_reanchored() {
+    let dir = folder("pending");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    let (_, _, _, r) = word_in_view(&h, tb, 200.0);
+    double_click(&mut h, r.center());
+    press_key(&mut h, egui::Key::Num2, Modifiers::COMMAND);
+    let green = h.shell.st.palette.highlights[1];
+    assert!(covers(union(&painted(&h, green)), r));
+
+    // Its anchor now says it was made against an older revision of TB.
+    let session = &mut h.shell.st.session;
+    let before = session.annotations(None).unwrap().remove(0);
+    let mut stale = before.clone();
+    match stale.anchor.as_mut() {
+        Some(obs_engine::Anchor::Passage {
+            origin: Some(range),
+            ..
+        })
+        | Some(obs_engine::Anchor::TextRange { range }) => {
+            range.content_hash = "sha256:an-older-revision".into();
+        }
+        other => panic!("{other:?}"),
+    }
+    session
+        .user
+        .as_ref()
+        .unwrap()
+        .apply_changes(&[obs_engine::Change::update(
+            obs_engine::Row::Annotation(before),
+            obs_engine::Row::Annotation(stale),
+        )])
+        .unwrap();
+    // Other background work queued first keeps the re-anchoring job waiting a few frames
+    // (one job step runs per frame without worker threads).
+    for _ in 0..3 {
+        session
+            .jobs()
+            .submit_fn("Other work", |_| Ok::<_, String>(()));
+    }
+    let out = h
+        .shell
+        .run("annotation.reanchor", &json!({ "resource": "test-bible" }))
+        .unwrap();
+    assert_eq!(out["queued"], json!(["test-bible"]));
+    for frame in 0..3 {
+        h.frame();
+        assert!(
+            h.shell.st.session.is_reanchoring("test-bible"),
+            "frame {frame}: still pending"
+        );
+        assert!(
+            painted(&h, green).is_empty(),
+            "frame {frame}: not painted while re-anchoring is pending"
+        );
+    }
+    for _ in 0..20 {
+        h.frame();
+        if !h.shell.st.session.reanchoring.is_busy() {
+            break;
+        }
+    }
+    h.frames(2);
+    assert!(!h.shell.st.session.is_reanchoring("test-bible"));
+    assert!(
+        covers(union(&painted(&h, green)), r),
+        "painted again once re-anchored"
+    );
+    let hash = h
+        .shell
+        .st
+        .session
+        .library
+        .get("test-bible")
+        .unwrap()
+        .manifest
+        .content_hash
+        .clone();
+    let a = h.shell.st.session.annotations(None).unwrap().remove(0);
+    assert_eq!(a.anchor.unwrap().text_range().unwrap().content_hash, hash);
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }

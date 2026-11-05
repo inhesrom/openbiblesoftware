@@ -4,9 +4,14 @@
 //! - **Column**: All, each Notebook (its 👁 Show-in-text toggle, its count; right-click or
 //!   double-click to rename, right-click to delete) and + New notebook. Deleting asks what
 //!   happens to the Notebook's Annotations: moved to the default Notebook (pre-selected) or
-//!   deleted; either way Ctrl+Z brings everything back. The ⚠ Needs attention entry lists
-//!   Orphaned annotations; none can exist until re-anchoring (#65) marks them, so it is not
-//!   shown yet.
+//!   deleted; either way Ctrl+Z brings everything back. **⚠ Needs attention** (#65, #17
+//!   rule 12) lists the Orphaned annotations; it shows only when there are some (or while it
+//!   is the chosen entry).
+//! - **Orphaned cards** say their text was not found after their Resource changed, show the
+//!   quote, and offer **Re-attach here** (anchor it on the text selected in the most recently
+//!   used reading pane), **Keep without anchor** (Notes only) and **Delete**; each is one undo
+//!   step. A card whose Resource left the library says so ("WEB is not in the library"): its
+//!   Annotations are dormant until it is imported again.
 //! - **Cards**, in Bible order or by last change, narrowed by the header's filter field.
 //!   A Note card shows its reference, quote and body; a Highlight card its reference, quote
 //!   and style swatch. Clicking a reference follows the anchor (Ctrl/Cmd: a new Tab). Clicking
@@ -35,7 +40,7 @@ use obs_scripture::{PassageList, RefStyle, Standard, format_passage};
 use serde_json::{Value, json};
 
 use super::State;
-use super::annotate::{menu_label, paint_swatch};
+use super::annotate::{menu_label, paint_swatch, selection_params};
 use crate::heights::HeightIndex;
 use crate::theme;
 use crate::workers::SnippetCache;
@@ -124,6 +129,11 @@ pub(super) struct NotesUi {
     notebooks: Vec<Notebook>,
     counts: BTreeMap<String, u64>,
     hidden: BTreeSet<String>,
+    /// How many Orphaned annotations there are (Needs attention).
+    attention: usize,
+    /// Re-attach clicked on a card: its id, the reading Tab with the selection, and the
+    /// selection as command params. Run after the frame's cards.
+    reattach: Option<(String, TabId, Value)>,
     heights: Option<HeightIndex>,
     pub(super) editing: Option<CardEdit>,
     /// A Notebook being renamed: id and text.
@@ -221,6 +231,41 @@ impl State {
         for (id, params) in run {
             self.run(id, &params);
         }
+        self.run_reattach();
+    }
+
+    /// The reading pane whose selection **Re-attach here** uses: the most recently used Tab
+    /// with text selected, and the selection as command params, with where it is
+    /// ("Genesis 1:3 (TB)").
+    pub(super) fn reattach_target(&self) -> Option<(TabId, Value, String)> {
+        let tab = self
+            .session
+            .workspace
+            .most_recent(|t| self.has_selection(t.id))?;
+        let view = self.tabs.get(&tab)?.view.as_ref()?;
+        let sel = view.selection?;
+        let params = selection_params(&view.doc, &sel)?;
+        let label = crate::selection::copy_text(&view.doc, &sel)
+            .lines()
+            .last()
+            .unwrap_or_default()
+            .to_string();
+        Some((tab, params, label))
+    }
+
+    /// Run a Re-attach clicked this frame; on success the selection goes, so the moved
+    /// Highlight or Note marker shows at once.
+    fn run_reattach(&mut self) {
+        let Some((id, tab, mut params)) = self.notes_ui.reattach.take() else {
+            return;
+        };
+        params["id"] = json!(id);
+        if self.run("annotation.reattach", &params).is_some() {
+            if let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) {
+                view.selection = None;
+            }
+            self.toast("Re-attached. Ctrl+Z to undo.".to_string());
+        }
     }
 
     /// Reload the cards and Notebooks when anything they show changed. While a card is edited
@@ -306,6 +351,7 @@ impl State {
             .into_iter()
             .collect();
         ui.hidden = self.session.hidden_in_text();
+        ui.attention = self.session.orphaned_annotations().map_or(0, |a| a.len());
         ui.loaded = Some(want);
     }
 
@@ -442,6 +488,22 @@ impl State {
                         run.push(("notes.notebook", json!({ "value": "all" })));
                     }
                 });
+                // Orphaned annotations (#17 rule 12): only when there are some.
+                let attention = filter == NotesFilter::NeedsAttention;
+                if self.notes_ui.attention > 0 || attention {
+                    ui.horizontal(|ui| {
+                        ui.add_space(4.0);
+                        ui.label(RichText::new("⚠").color(theme::c().warn));
+                        ui.add_space(4.0);
+                        let r = row(ui, attention, "Needs attention", self.notes_ui.attention as u64)
+                            .on_hover_text(
+                                "Annotations whose text was not found after their Resource changed",
+                            );
+                        if r.clicked() {
+                            run.push(("notes.notebook", json!({ "value": "attention" })));
+                        }
+                    });
+                }
                 for nb in &notebooks {
                     let count = self.notes_ui.counts.get(&nb.id).copied().unwrap_or(0);
                     let selected = filter == NotesFilter::Notebook(nb.id.clone());
@@ -651,6 +713,8 @@ impl State {
                 .is_some_and(|t| !t.filter.trim().is_empty());
             let message = if filtered {
                 "Nothing matches the filter"
+            } else if self.session.notes.filter == NotesFilter::NeedsAttention {
+                "Nothing needs attention: every Annotation is anchored to its text."
             } else if self.session.notes.filter != NotesFilter::All {
                 "This Notebook is empty"
             } else {
@@ -744,11 +808,18 @@ impl State {
                     });
                 });
                 if let Some(m) = &card.missing {
+                    ui.label(RichText::new(m).small().color(theme::c().warn))
+                        .on_hover_text("Its Annotations come back when it is imported again");
+                }
+                if let Some(m) = &card.attention {
                     ui.label(RichText::new(m).small().color(theme::c().warn));
                 }
                 if let Some(q) = &card.quote {
                     let width = ui.available_width();
                     self.pipeline_text(ui, &format!("“{q}”"), ColorRole::VerseNumber, &[], width);
+                }
+                if card.needs_attention() {
+                    self.attention_actions(ui, card, run);
                 }
                 if a.is_note() {
                     body_rect = Some(self.card_body(ui, card, run));
@@ -760,6 +831,47 @@ impl State {
         self.notes_ui.drawn.push(DrawnCard {
             id: a.id.clone(),
             body: body_rect,
+        });
+    }
+
+    /// An Orphaned card's actions (#17 rule 12): Re-attach here, Keep without anchor (Notes
+    /// only), Delete.
+    fn attention_actions(
+        &mut self,
+        ui: &mut Ui,
+        card: &Card,
+        run: &mut Vec<(&'static str, Value)>,
+    ) {
+        let a = &card.annotation;
+        let target = self.reattach_target();
+        ui.horizontal(|ui| {
+            let hint = match &target {
+                Some((_, _, at)) => format!("Anchor it on the text selected in {at}"),
+                None => "Select the text in a reading pane first".to_string(),
+            };
+            let r = ui
+                .add_enabled(target.is_some(), egui::Button::new("Re-attach here"))
+                .on_hover_text(&hint)
+                .on_disabled_hover_text(&hint);
+            if r.clicked()
+                && let Some((tab, params, _)) = target
+            {
+                self.notes_ui.reattach = Some((a.id.clone(), tab, params));
+            }
+            if a.is_note()
+                && ui
+                    .button("Keep without anchor")
+                    .on_hover_text("Keep the Note in its Notebook, not tied to any text")
+                    .clicked()
+            {
+                run.push(("annotation.detach", json!({ "id": a.id })));
+            }
+            if ui.button("Delete").clicked() {
+                if self.notes_ui.editing.as_ref().is_some_and(|e| e.id == a.id) {
+                    self.notes_ui.editing = None;
+                }
+                run.push(("annotation.delete", json!({ "id": a.id })));
+            }
         });
     }
 

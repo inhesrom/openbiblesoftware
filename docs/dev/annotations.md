@@ -1,11 +1,11 @@
 # Annotation service, storage and undo (#61)
 
 Notebooks, Notes and Highlights live in the User database (`obs_store::UserStore`, schema
-v5). The engine reaches them only through the `UserData` trait; `crates/engine/src/
+v6). The engine reaches them only through the `UserData` trait; `crates/engine/src/
 annotations.rs` holds the service on `Session` and the `annotation.*`, `notebook.*` and
 `edit.*` commands. The origin Bible's UI is #62 and other Bibles #63 (both below); the Notes
-Tool and Notes search are #64 ([notes-tool.md](notes-tool.md)); re-anchoring (#65) is still to
-come.
+Tool and Notes search are #64 ([notes-tool.md](notes-tool.md)); re-anchoring and Orphaned
+annotations are #65 (below, `crates/engine/src/reanchor.rs`).
 
 ## Tables
 
@@ -13,7 +13,8 @@ come.
 |---|---|
 | `notebooks` | `id` (UUIDv7), `name`, `is_default` (exactly one row, partial unique index), timestamps (ms), `show_in_text` (schema v5) |
 | `annotations` | `id`, `notebook_id` (deferred FK), `kind` `note`/`highlight`, `style` (Highlights), `body` (Notes), timestamps |
-| `anchors` | at most one per Annotation. Passage anchors: Standard start/end as canonical book number (1–66), chapter, verse. Text range (a Text-range anchor, or a Passage anchor's origin): `resource_id`, `unit_id`, `start_byte`, `end_byte`, `quote`, `prefix`, `suffix`, `content_hash`, `native_ref`, `whole_verses` (schema v5) |
+| `anchors` | at most one per Annotation. Passage anchors: Standard start/end as canonical book number (1–66), chapter, verse. Text range (a Text-range anchor, or a Passage anchor's origin): `resource_id`, `unit_id`, `start_byte`, `end_byte`, `quote`, `prefix`, `suffix`, `content_hash`, `native_ref`, `whole_verses` (schema v5), `status` `ok`/`orphaned` (schema v6: the quote was not found after the Resource changed; on a Text-range anchor an Orphaned annotation, on a Passage anchor's origin a range kept while the Annotation shows as whole Verses) |
+| `resource_names` | schema v6: `resource_id`, last known `abbreviation` and `title` of every Resource seen, so cards of a Resource no longer in the library still name it |
 | `notes_fts` | FTS5 over Note bodies in normalized-word form (the Search index's form), keyed by `annotation_id` |
 
 A CHECK makes a stored Text range without its quote, context or content hash impossible
@@ -59,6 +60,9 @@ for just those Verses).
 | `edit.undo` / `edit.redo` | Ctrl+Z / Ctrl+Shift+Z; enabled only when there is something to undo or redo |
 | `annotation.note` | `body`?, then a selection (as above), or `passage` (one Standard Passage), or neither (no Anchor); `notebook`? |
 | `annotation.edit` / `annotation.style` / `annotation.move` / `annotation.delete` | `id` and `body` / `style` / `notebook` |
+| `annotation.reattach` | `id`, then a selection (as above): **Re-attach here**; anchors it as a new Annotation on that selection would be, and it is no longer orphaned. A Highlight needs a selection within one unit |
+| `annotation.detach` | `id`: **Keep without anchor** (Notes only) |
+| `annotation.reanchor` | `resource`?: check now (default: every Resource) and queue re-anchoring where anchors are stale |
 | `annotation.get`, `annotation.list` (`notebook`?), `annotation.search_notes` (`text`) | read only |
 | `notebook.create` (`name`), `notebook.rename` (`id`, `name`), `notebook.delete` (`id`, `annotations`: `move` default or `delete`), `notebook.list` | |
 | `notebook.show_in_text` | `id`, `show`? (default: the other way round); undoable like every Notebook change |
@@ -98,9 +102,10 @@ or deleted).
   it in the Notes Tool (#64) to go on writing there.
 - **Drawing them.** `MarkCache` reloads the Annotations when `Session::annotations_revision`
   moves and turns those whose Text range is in a Resource into `Mark`s over document
-  positions. A range whose text no longer reads as its quote is not drawn over other words:
-  a Passage anchor falls back to its whole Verse(s) in this Bible (ADR 0006); a bare Text
-  range is skipped until #65 re-anchors it. Reloading happens only when the revision changes,
+  positions. Orphaned annotations are not drawn. A range whose text no longer reads as its
+  quote is never drawn over other words: a Passage anchor falls back to its whole Verse(s) in
+  this Bible (ADR 0006); a bare Text range is skipped. Re-anchoring (below) normally fixes
+  both before the Resource shows any Marks. Reloading happens only when the revision changes,
   synchronously on the UI thread (fine at today's scale; large Notebooks may want the job
   queue or incremental updates later). The pane computes their rectangles from the laid-out clusters each frame
   (`selection::range_rects`, one pass for all Marks), so they follow scrolling, resizing and
@@ -127,9 +132,10 @@ changing it after the first lookup would leave the index stale.
   between them stay clear. A partial range shows only a **margin mark**: a thin bar in the
   style's colour, because word offsets differ between translations. A Passage anchor
   without a Text range counts as whole. Rows made before schema v5 read as partial: a
-  margin mark never implies that words are marked. When re-anchoring (#65) drops a Text
-  range, the flag goes with it and the Highlight shows as whole Verses everywhere, as
-  ADR 0006 says.
+  margin mark never implies that words are marked. When re-anchoring (#65) moves a Text
+  range, the flag (and the Bible's own reference, `native_ref`) is worked out again for
+  where it is now. When it does not find one, the range is kept marked not found and the
+  Highlight shows as whole Verses everywhere, as ADR 0006 says.
 - **Several Verses, partly.** A partial Highlight over several Verses (from the middle of
   3:16 to the middle of 3:18) puts a margin mark beside **each** Verse it touches, 3:17
   included, not only the first: every Verse with marked words says so. Only one mark per
@@ -155,3 +161,50 @@ changing it after the first lookup would leave the index stale.
 - **Colours** come from the Page tone's palette: each tone has a margin-mark colour per style
   (`Palette::marks`), at least 3:1 against its page (tested with the other palette pairs).
 - Text Comparison does not draw Annotations in v0.1; its rows carry the diff tints.
+
+## Re-anchoring and Orphaned annotations (#65)
+
+ADR 0006 and #17 rules 9–13; the `unit_alias` table is #20 rule 2. `crates/engine/src/
+reanchor.rs` holds the matching (pure, wasm-clean: `plan` over any `ResourceStore`) and the
+background job; the Notes Tool's side is in [notes-tool.md](notes-tool.md).
+
+- **When.** `attach_user` (library load) checks every library Resource; an Import that adds or
+  replaces one (and a file dropped on the window) checks that one. A Resource needs it when
+  one of its Text ranges was made against another content hash, or when an Orphaned
+  annotation's own hash is the current one again (a revision reverted). Then a job reads the
+  `.obr` on a worker and plans every Annotation with a Text range in it; Orphaned ones are
+  tried again too.
+- **Gate.** Until the plan is applied, `Session::is_reanchoring` is true and `MarkCache`
+  returns no Marks for that Resource, so stale ranges are never drawn over other words.
+  Applying it moves `annotations_revision`, so panes reload at once.
+- **Matching**, per Text range, in order: the Resource's `unit_alias` (old unit id → new);
+  the exact quote at the stored offsets; the exact quote elsewhere in the unit, the
+  occurrence whose stored context (±32 characters) fits best, then the nearest to the old
+  offset; then letters and digits only (white space and punctuation ignored), taking in the
+  punctuation the quote had at its ends. Case is not ignored and there is no approximate
+  matching (v0.1). A Passage anchor's origin is looked for only within the bytes of the
+  Verses its Standard Passage maps to in the new revision.
+- **Outcomes.** Found: offsets, quote, context and content hash are rewritten, and
+  `whole_verses` and `native_ref` are worked out again for the new place as for a new
+  selection (`Unchanged` if the offsets and unit are the same, else `Moved`). Not found: a
+  Passage anchor keeps its origin with `status = 'orphaned'` (`WholeVerses`: it shows on
+  whole Verses everywhere and is not listed under Needs attention; its card keeps the
+  quote; the range is never lost, and is found again if a later revision, or the old one,
+  has it); a Text-range anchor keeps everything it had and gets `status = 'orphaned'`
+  (`Orphaned`). A
+  `ReanchorReport` counts each; a toast reports moves, fall-backs and new orphans
+  ("WEB changed: 2 Annotations moved with their text, 1 needs attention ...").
+- **Writes.** One `apply_changes` list of row updates (never an insert or delete): a row
+  changed while the job ran is a Conflict, and the Resource is planned again (up to 3 times).
+  If the Resource was removed or replaced meanwhile, the plan is dropped (and redone for the
+  replacement). Automatic re-anchoring is not an undo step; instead `UndoHistory::rebase`
+  gives every recorded row of a moved Annotation its new anchor, so Ctrl+Z on an earlier edit
+  still lands. Re-attach and Keep without anchor are ordinary undo steps. Undo or Redo that
+  brings rows back (a deleted Annotation, a deleted Notebook's Annotations) re-anchors their
+  Resources when those rows were made against another revision (`reanchor_written`), with
+  the same gate.
+- **Removed Resource.** Its Annotations are left as they are (dormant, not orphaned): Passage
+  anchors still show in every other Bible, Text-range cards say "*WEB* is not in the library"
+  (the abbreviation the User database's `resource_names` last knew, also after a restart;
+  the id only for a Resource never seen with a User database). Importing it again runs the
+  same re-anchoring.

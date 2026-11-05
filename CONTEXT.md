@@ -259,6 +259,10 @@ _Avoid_: Offset anchor, Location anchor
 An Annotation whose Text-range anchor could no longer be found after its Resource changed. It is kept with the text it quoted until the user re-attaches it, detaches it, or deletes it. Nothing is ever orphaned silently or deleted automatically.
 _Avoid_: Broken note, Lost highlight
 
+**Needs attention**:
+The Notes Tool's list of Orphaned annotations, where each can be re-attached to selected text, kept without an anchor (Notes only) or deleted. It shows only when there are some.
+_Avoid_: Broken links, Errors
+
 **User database**:
 The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements and preferences. Resources and Search indexes are never part of it.
 _Avoid_: Profile, User library, Settings file

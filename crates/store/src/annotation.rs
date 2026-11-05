@@ -97,6 +97,14 @@ pub struct TextRange {
     /// only a margin mark beside the verse number (#17 rule 16).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub whole_verses: bool,
+    /// Re-anchoring (#65, ADR 0006) could not find the quote after the Resource changed: an
+    /// **Orphaned annotation**. The range keeps what it last pointed at (quote, context,
+    /// offsets, content hash) and is not drawn until the user re-attaches or detaches it.
+    /// On a Passage anchor's origin it means the same (not found within the Passage's
+    /// Verses), but the Annotation is not orphaned: it shows as whole Verses, and the range
+    /// is kept so a later revision (or the old one back) can find it again (ADR 0006).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub orphaned: bool,
 }
 
 /// What ties an Annotation to the text.
@@ -130,6 +138,11 @@ impl Anchor {
             Anchor::TextRange { .. } => None,
         }
     }
+
+    /// Whether it is the Text-range anchor of an Orphaned annotation.
+    pub fn is_orphaned(&self) -> bool {
+        matches!(self, Anchor::TextRange { range } if range.orphaned)
+    }
 }
 
 /// What an Annotation is.
@@ -161,6 +174,11 @@ pub struct Annotation {
 impl Annotation {
     pub fn is_note(&self) -> bool {
         matches!(self.content, Content::Note { .. })
+    }
+
+    /// Whether it is an Orphaned annotation (it needs attention).
+    pub fn is_orphaned(&self) -> bool {
+        self.anchor.as_ref().is_some_and(Anchor::is_orphaned)
     }
 
     /// A Note's text; empty for a Highlight.

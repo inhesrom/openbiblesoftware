@@ -651,6 +651,7 @@ fn text_range_anchors_show_only_in_their_resource() {
         content_hash: kjv.manifest.content_hash.clone(),
         native_ref: Some("Ps.51.1".into()),
         whole_verses: false,
+        orphaned: false,
     };
     let a = obs_engine::Annotation {
         id: "a".into(),

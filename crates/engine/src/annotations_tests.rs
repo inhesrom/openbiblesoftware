@@ -449,6 +449,7 @@ fn a_note_across_units_with_nothing_mapped_keeps_the_first_text_range() {
         content_hash: "sha256:0".into(),
         native_ref: None,
         whole_verses: false,
+        orphaned: false,
     };
     let parts = [
         Segment {

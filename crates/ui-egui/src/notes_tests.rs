@@ -660,7 +660,7 @@ fn following_a_card_with_no_bible_open_opens_one_at_the_verse() {
 fn the_notes_symbols_are_in_the_chrome_fonts() {
     let h = Harness::new();
     h.ctx.fonts_mut(|f| {
-        let missing: Vec<&str> = ["👁", "…", "✏", "“”"]
+        let missing: Vec<&str> = ["👁", "…", "✏", "“”", "⚠"]
             .into_iter()
             .filter(|s| !f.has_glyphs(&egui::FontId::proportional(14.0), s))
             .collect();

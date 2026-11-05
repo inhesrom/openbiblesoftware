@@ -37,6 +37,10 @@ pub struct Library {
     ranking: Vec<String>,
     /// The library directory, once scanned: Remove deletes only `.obr` files inside it.
     dir: Option<PathBuf>,
+    /// Last known abbreviations of Resources not in the library (removed in this session, or
+    /// remembered in the User database), so their dormant Annotations can say which Resource
+    /// is missing ("WEB is not in the library", #17 rule 13).
+    departed: std::collections::BTreeMap<String, String>,
 }
 
 impl Library {
@@ -62,6 +66,21 @@ impl Library {
             .find(|e| e.manifest.resource_id == resource_id)
     }
 
+    /// A Resource's abbreviation: from the library, else as it was last known (removed in
+    /// this session, or [remembered](Self::remember_abbreviation)), else `None`.
+    pub fn abbreviation_of(&self, resource_id: &str) -> Option<&str> {
+        self.get(resource_id)
+            .map(|e| e.manifest.abbreviation.as_str())
+            .or_else(|| self.departed.get(resource_id).map(String::as_str))
+    }
+
+    /// Remember the abbreviation of a Resource that may not be in the library (as the User
+    /// database last knew it), for [`Self::abbreviation_of`].
+    pub fn remember_abbreviation(&mut self, resource_id: &str, abbreviation: &str) {
+        self.departed
+            .insert(resource_id.to_string(), abbreviation.to_string());
+    }
+
     /// A Resource's place in the Preferred order: its saved rank; else, for a Starter
     /// Resource the user has not ranked, its place in [`STARTER_PREFERRED_ORDER`] after every
     /// saved one; else the bottom.
@@ -81,6 +100,7 @@ impl Library {
     /// Add a Resource in its Preferred-order place (the bottom of its type if it has none),
     /// or update its entry if it is already listed.
     pub fn add(&mut self, entry: LibraryEntry) {
+        self.departed.remove(&entry.manifest.resource_id);
         if let Some(e) = self
             .entries
             .iter_mut()
@@ -192,7 +212,10 @@ impl Library {
             .iter()
             .position(|e| e.manifest.resource_id == resource_id)?;
         self.ranking.retain(|r| r != resource_id);
-        Some(self.entries.remove(i))
+        let entry = self.entries.remove(i);
+        self.departed
+            .insert(resource_id.to_string(), entry.manifest.abbreviation.clone());
+        Some(entry)
     }
 
     /// Whether `path` is a file directly inside the library directory (Remove deletes those;

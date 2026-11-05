@@ -165,6 +165,11 @@ pub trait UserData: std::fmt::Debug {
     /// The saved Preferred order: resource ids, best first.
     fn preferred_order(&self) -> Result<Vec<String>, String>;
     fn save_preferred_order(&self, ids: &[String]) -> Result<(), String>;
+    /// The last known `(resource_id, abbreviation, title)` of every Resource seen, so a
+    /// removed Resource's Annotations still name it (#65).
+    fn resource_names(&self) -> Result<Vec<(String, String, String)>, String>;
+    /// Remember Resources' abbreviations and titles (others are kept).
+    fn save_resource_names(&self, names: &[(String, String, String)]) -> Result<(), String>;
 
     // Annotations (#61). Every edit is [`UserData::apply_changes`]; see `annotations.rs`.
 
@@ -220,6 +225,12 @@ impl UserData for obs_store::UserStore {
     }
     fn save_preferred_order(&self, ids: &[String]) -> Result<(), String> {
         obs_store::UserStore::save_preferred_order(self, ids).map_err(|e| e.to_string())
+    }
+    fn resource_names(&self) -> Result<Vec<(String, String, String)>, String> {
+        obs_store::UserStore::resource_names(self).map_err(|e| e.to_string())
+    }
+    fn save_resource_names(&self, names: &[(String, String, String)]) -> Result<(), String> {
+        obs_store::UserStore::save_resource_names(self, names).map_err(|e| e.to_string())
     }
     fn notebooks(&self) -> Result<Vec<Notebook>, String> {
         obs_store::UserStore::notebooks(self).map_err(|e| e.to_string())

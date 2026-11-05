@@ -23,9 +23,25 @@ managing every Annotation (#18 rule 7). The Search Tool's Notes mode searches No
   Notebook** (pre-selected) or **Delete them** (#17 rule 19). The default Notebook can be
   renamed but not deleted. Either way it is one undo step: Ctrl+Z brings the Notebook and its
   Annotations back exactly.
-- **⚠ Needs attention** lists Orphaned annotations (#17 rule 12). Nothing can be orphaned
-  until re-anchoring (#65) marks anchors, so the entry is not shown yet; #65 adds it, shown
-  only when there are some.
+- **⚠ Needs attention** (#65, #17 rule 12) lists the Orphaned annotations of every
+  Notebook, with their count. It shows only when there are some, or while it is chosen
+  (then, once all are dealt with: "Nothing needs attention"). `notes.notebook` with
+  `value: attention` chooses it.
+
+### Orphaned cards
+
+An Orphaned annotation's card (in Needs attention and in its Notebook) says "⚠ This text was
+not found in *TB* after it changed", shows its quote, and offers:
+
+- **Re-attach here**: anchors it on the text selected in the most recently used reading pane
+  (`annotation.reattach`), exactly as a new Highlight or Note there would be; the selection
+  clears so it shows at once, and the warning goes. Disabled, with a hint, until some text is
+  selected.
+- **Keep without anchor** (Notes only, `annotation.detach`): the Note stays in its Notebook
+  with no anchor.
+- **Delete**.
+
+Each is one undo step. Re-anchoring itself is described in [annotations.md](annotations.md).
 
 ### Show in text
 
@@ -39,8 +55,10 @@ Notebook's Annotations still list in the Notes Tool.
 ## Cards
 
 `Session::note_cards(filter)` returns the chosen Notebook's Annotations (or all) as `Card`s:
-the Annotation, its Notebook's name, its reference label, its quote and, for a Text-range
-anchor whose Resource left the library, "*id* is not in the library" (#17 rule 13).
+the Annotation, its Notebook's name, its reference label, its quote, for a Text-range
+anchor whose Resource left the library "*WEB* is not in the library" (#17 rule 13; the
+abbreviation the User database last knew, also after a restart), and for an Orphaned
+annotation its warning.
 
 - **Order** (`notes.order`): **Bible order** (the default): Passage anchors by Standard
   Passage; Text-range anchors in a Bible by their own reference (`native_ref`) among them;
@@ -98,8 +116,10 @@ anchor whose Resource left the library, "*id* is not in the library" (#17 rule 1
   moves it once the UI has loaded its Verse map.
 - **Text-range anchor**: the most recently active Tab of its Resource, else a new one;
   `Effect::RevealText` scrolls to the unit and byte and flashes the Verse there.
-- **Ctrl/Cmd-click** always opens a new Tab. A Note without an Anchor, or whose Resource is
-  gone, has no link.
+- **Ctrl/Cmd-click** always opens a new Tab. A Note without an Anchor, one whose Resource is
+  gone, and an Orphaned annotation (its offsets point at whatever is there now: it is
+  re-attached instead) have no link; `notes.follow` on them fails with "*TB* is not in the
+  library" or "This text was not found in *TB* after it changed: re-attach it".
 
 ## Opening a Note in Notes
 

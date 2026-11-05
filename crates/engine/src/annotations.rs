@@ -76,6 +76,24 @@ impl UndoHistory {
         self.redo.clear();
     }
 
+    /// Re-anchoring moved an Annotation's anchor from `before`'s to `after`'s outside the
+    /// history: every recorded row of it that still has the old anchor gets the new one, so
+    /// undoing and redoing steps recorded before the move land on the rows as they are now.
+    pub fn rebase(&mut self, before: &Annotation, after: &Annotation) {
+        for step in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+            for change in &mut step.changes {
+                for row in [&mut change.before, &mut change.after] {
+                    if let Some(Row::Annotation(a)) = row
+                        && a.id == before.id
+                        && a.anchor == before.anchor
+                    {
+                        a.anchor = after.anchor.clone();
+                    }
+                }
+            }
+        }
+    }
+
     fn push(&mut self, step: UndoStep) {
         if self.undo.len() >= UNDO_LIMIT {
             self.undo.remove(0);
@@ -160,7 +178,11 @@ pub fn note_anchor(segments: &[Segment]) -> Option<Anchor> {
 /// The Standard Passage of one Bible Verse (own numbering, covering up to verse `last`):
 /// its Verse map entry (`mapped`), or, for a Bible without a map, the Verse itself when the
 /// Standard versification has it. `None` for an Unmapped verse.
-fn standard_of(mapped: Option<Option<Passage>>, native: Verse, last: u16) -> Option<Passage> {
+pub(crate) fn standard_of(
+    mapped: Option<Option<Passage>>,
+    native: Verse,
+    last: u16,
+) -> Option<Passage> {
     match mapped {
         Some(standard) => standard,
         None => {
@@ -191,6 +213,72 @@ fn words_of(text: &str, range: std::ops::Range<usize>) -> std::ops::Range<usize>
 
 fn store_err(e: StoreError) -> String {
     e.to_string()
+}
+
+/// What a Text range covers, as its anchor records it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Coverage {
+    /// In a Bible: the Standard Passage spanning the mapped Verses it touches.
+    pub standard: Option<Passage>,
+    /// It covers every Verse it touches whole (white space and punctuation at a Verse's ends
+    /// aside); only with a Standard Passage.
+    pub whole_verses: bool,
+    /// In a Bible: the Bible's own reference (OSIS) of the Verses it touches.
+    pub native_ref: Option<String>,
+}
+
+/// What bytes `range` of unit `unit` (whose text is `text`) cover in `store`'s Resource:
+/// see [`Coverage`]. Outside a Bible, nothing.
+pub(crate) fn coverage(
+    store: &dyn ResourceStore,
+    unit: &UnitId,
+    text: &str,
+    range: std::ops::Range<usize>,
+) -> Result<Coverage, String> {
+    let (s, e) = (range.start, range.end);
+    // The Verses of this unit that the range touches, and what they map to.
+    let touched = if store.manifest().resource_type == ResourceType::Bible {
+        store.verses_overlapping(unit, s..e).map_err(store_err)?
+    } else {
+        Vec::new()
+    };
+    let standard: Vec<Passage> = touched
+        .iter()
+        .filter_map(|(v, mapped)| standard_of(*mapped, v.verse, v.last))
+        .collect();
+    let span = match (
+        standard.iter().map(|p| p.start()).min(),
+        standard.iter().map(|p| p.end()).max(),
+    ) {
+        (Some(start), Some(end)) => Passage::new(start, end).ok(),
+        _ => None,
+    };
+    // Whole Verses: the range reaches from the first touched Verse's first word to the last
+    // one's last word (white space and punctuation at a Verse's ends do not count).
+    let whole_verses = span.is_some()
+        && match (touched.first(), touched.last()) {
+            (Some((first, _)), Some((last, _))) => {
+                let core = |v: &obs_model::BibleVerse| words_of(text, v.range());
+                s <= core(first).start && e >= core(last).end
+            }
+            _ => false,
+        };
+    let native_ref = match (touched.first(), touched.last()) {
+        (Some((first, _)), Some((last, _))) => {
+            let end = Verse::new(last.verse.book, last.verse.chapter, last.last);
+            Some(if first.verse == end {
+                first.verse.osis()
+            } else {
+                format!("{}-{}", first.verse.osis(), end.osis())
+            })
+        }
+        _ => None,
+    };
+    Ok(Coverage {
+        standard: span,
+        whole_verses,
+        native_ref,
+    })
 }
 
 /// Split a selection into one [`Segment`] per text unit, capturing quote and context and, in a
@@ -236,44 +324,13 @@ pub fn segments(store: &dyn ResourceStore, sel: &Selection) -> Result<Vec<Segmen
         let Some((prefix, quote, suffix)) = quote_with_context(text, s, e) else {
             continue;
         };
-        // The Verses of this unit that the range touches, and what they map to.
-        let touched = if in_bible {
-            store.verses_overlapping(id, s..e).map_err(store_err)?
-        } else {
-            Vec::new()
-        };
-        let standard: Vec<Passage> = touched
-            .iter()
-            .filter_map(|(v, mapped)| standard_of(*mapped, v.verse, v.last))
-            .collect();
-        let span = match (
-            standard.iter().map(|p| p.start()).min(),
-            standard.iter().map(|p| p.end()).max(),
-        ) {
-            (Some(start), Some(end)) => Passage::new(start, end).ok(),
-            _ => None,
-        };
-        // Whole Verses: the range reaches from the first touched Verse's first word to the
-        // last one's last word (white space and punctuation at a Verse's ends do not count).
-        let whole_verses = span.is_some()
-            && match (touched.first(), touched.last()) {
-                (Some((first, _)), Some((last, _))) => {
-                    let core = |v: &obs_model::BibleVerse| words_of(text, v.range());
-                    s <= core(first).start && e >= core(last).end
-                }
-                _ => false,
-            };
-        let native_ref = match (touched.first(), touched.last()) {
-            (Some((first, _)), Some((last, _))) if span.is_none() => {
-                let end = Verse::new(last.verse.book, last.verse.chapter, last.last);
-                Some(if first.verse == end {
-                    first.verse.osis()
-                } else {
-                    format!("{}-{}", first.verse.osis(), end.osis())
-                })
-            }
-            _ => None,
-        };
+        let Coverage {
+            standard: span,
+            whole_verses,
+            native_ref,
+        } = coverage(store, id, text, s..e)?;
+        // A Bible's own reference only where no Standard Passage says where it is.
+        let native_ref = native_ref.filter(|_| span.is_none());
         let (start, end) = (
             u32::try_from(s).map_err(|_| "selection is too long")?,
             u32::try_from(e).map_err(|_| "selection is too long")?,
@@ -290,6 +347,7 @@ pub fn segments(store: &dyn ResourceStore, sel: &Selection) -> Result<Vec<Segmen
                 content_hash: manifest.content_hash.clone(),
                 native_ref,
                 whole_verses,
+                orphaned: false,
             },
             standard: span,
             in_bible,
@@ -398,13 +456,16 @@ impl Session {
         let Some(step) = self.history.undo.pop() else {
             return Ok(None);
         };
-        if let Err(e) = self.user_data()?.apply_changes(&inverse(&step.changes)) {
+        let written = inverse(&step.changes);
+        if let Err(e) = self.user_data()?.apply_changes(&written) {
             self.history.clear();
             return Err(format!("Could not undo {}: {e}", step.label));
         }
         let label = step.label.clone();
         self.history.redo.push(step);
         self.annotations_revision += 1;
+        // Rows brought back may be anchored to an older revision of their Resource (#65).
+        self.reanchor_written(&written);
         Ok(Some(label))
     }
 
@@ -419,8 +480,11 @@ impl Session {
             return Err(format!("Could not redo {}: {e}", step.label));
         }
         let label = step.label.clone();
+        let written = step.changes.clone();
         self.history.undo.push(step);
         self.annotations_revision += 1;
+        // Rows brought back may be anchored to an older revision of their Resource (#65).
+        self.reanchor_written(&written);
         Ok(Some(label))
     }
 
@@ -681,6 +745,44 @@ impl Session {
         let notebook = self.notebook(notebook)?;
         self.edit_annotation(id, "Move to Notebook", false, |a| {
             a.notebook_id = notebook.id;
+            Ok(())
+        })
+    }
+
+    /// **Re-attach here** (#17 rule 12): anchor an Annotation (an Orphaned one, typically) on a
+    /// selection, as a new Annotation there would be anchored, as one undo step. It is no
+    /// longer orphaned. A Highlight needs a selection within one text unit (Bible book).
+    pub fn reattach(&mut self, id: &str, sel: &Selection) -> Result<Annotation, String> {
+        let a = self.annotation(id)?;
+        let parts = self.selection_segments(sel)?;
+        let anchor = if a.is_note() {
+            note_anchor(&parts)
+        } else {
+            match parts.as_slice() {
+                [one] => Some(one.anchor()),
+                _ => {
+                    return Err(
+                        "A Highlight is re-attached within one book: select less text".into(),
+                    );
+                }
+            }
+        };
+        let anchor = anchor.ok_or("Select some text first")?;
+        self.edit_annotation(id, "Re-attach", true, |a| {
+            a.anchor = Some(anchor);
+            Ok(())
+        })
+    }
+
+    /// **Keep without anchor** (#17 rule 12): a Note (an Orphaned one, typically) stops
+    /// pointing at any text and stays in its Notebook, as one undo step. A Highlight needs an
+    /// Anchor, so it cannot.
+    pub fn detach(&mut self, id: &str) -> Result<Annotation, String> {
+        self.edit_annotation(id, "Keep without anchor", true, |a| {
+            if !a.is_note() {
+                return Err("A Highlight needs its text: re-attach it or delete it".into());
+            }
+            a.anchor = None;
             Ok(())
         })
     }
@@ -1027,6 +1129,41 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         run: run_delete,
     },
     CommandSpec {
+        id: "annotation.reattach",
+        label: "Re-attach here",
+        shortcut: None,
+        params: &[
+            ID,
+            ParamSpec {
+                required: true,
+                ..RESOURCE
+            },
+            ParamSpec {
+                required: true,
+                ..START_UNIT
+            },
+            ParamSpec {
+                required: true,
+                ..START
+            },
+            END_UNIT,
+            ParamSpec {
+                required: true,
+                ..END
+            },
+        ],
+        enabled: has_user,
+        run: run_reattach,
+    },
+    CommandSpec {
+        id: "annotation.detach",
+        label: "Keep without anchor",
+        shortcut: None,
+        params: &[ID],
+        enabled: has_user,
+        run: run_detach,
+    },
+    CommandSpec {
         id: "annotation.get",
         label: "Show Annotation",
         shortcut: None,
@@ -1268,6 +1405,23 @@ fn run_delete(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let id = p.str("id").unwrap_or_default();
     s.delete_annotation(id).map_err(|e| failed(CMD, e))?;
     Ok(json!({ "deleted": id }))
+}
+
+fn run_reattach(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const CMD: &str = "annotation.reattach";
+    let sel = selection(CMD, &p)?;
+    let a = s
+        .reattach(p.str("id").unwrap_or_default(), &sel)
+        .map_err(|e| failed(CMD, e))?;
+    Ok(json!({ "annotation": to_json(&a) }))
+}
+
+fn run_detach(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const CMD: &str = "annotation.detach";
+    let a = s
+        .detach(p.str("id").unwrap_or_default())
+        .map_err(|e| failed(CMD, e))?;
+    Ok(json!({ "annotation": to_json(&a) }))
 }
 
 fn run_get(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
