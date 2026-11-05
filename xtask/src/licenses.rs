@@ -180,6 +180,12 @@ fn generate(root: &Path) -> Result<String> {
     }
     // Every target's crates must be on disk: cargo-about runs offline.
     crate::cargo(root, &["fetch", "--locked"])?;
+    // To a file, not stdout: cargo-about refuses to have its output redirected under
+    // PowerShell (the Windows CI shell), for fear of re-encoding.
+    let json_path = root.join("target/xtask-licenses/cargo-about.json");
+    if let Some(dir) = json_path.parent() {
+        std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    }
     let out = Command::new(cargo_bin())
         .args([
             "about",
@@ -193,7 +199,9 @@ fn generate(root: &Path) -> Result<String> {
             CONFIG,
             "-m",
             APP_MANIFEST,
+            "-o",
         ])
+        .arg(&json_path)
         .current_dir(root)
         .output()
         .context("could not run `cargo about`")?;
@@ -204,8 +212,10 @@ fn generate(root: &Path) -> Result<String> {
             String::from_utf8_lossy(&out.stderr)
         );
     }
+    let bytes = std::fs::read(&json_path)
+        .with_context(|| format!("cargo-about wrote no {}", json_path.display()))?;
     let about: About =
-        serde_json::from_slice(&out.stdout).context("cargo-about printed unexpected JSON")?;
+        serde_json::from_slice(&bytes).context("cargo-about wrote unexpected JSON")?;
     let listing = listing(about);
     let mut json = serde_json::to_string_pretty(&listing)?;
     json.push('\n');
