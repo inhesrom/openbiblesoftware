@@ -69,7 +69,7 @@ fn credit_row(ui: &mut Ui, c: &Credit, library: &Library) {
         });
     });
     field(ui, "Source", |ui| linked_text(ui, &c.source));
-    field(ui, "Credit", |ui| linked_text(ui, &c.credit));
+    field(ui, "Attribution", |ui| linked_text(ui, &c.credit));
     if let Some(e) = &c.edition {
         field(ui, "Edition", |ui| {
             ui.label(e);
