@@ -24,6 +24,7 @@ use crate::theme;
 use crate::view::ReadingView;
 use crate::workers::SnippetCache;
 
+mod credits_tab;
 mod get_bibles_tab;
 mod import_tab;
 mod library_tab;
@@ -975,6 +976,7 @@ impl State {
             TabKind::About(id) => self.about_body(&mut body, tab, &id),
             TabKind::ImportReport(id) => self.import_body(&mut body, &id),
             TabKind::GetBibles => self.get_bibles_body(&mut body),
+            TabKind::Credits => self.credits_body(&mut body, tab),
             TabKind::Guide(g) => placeholder(&mut body, g.title(), guide_ticket(g)),
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
             TabKind::Tool(Tool::CrossReferences) => self.cross_references_body(&mut body, tab),

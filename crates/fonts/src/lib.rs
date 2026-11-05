@@ -17,10 +17,12 @@
 //! ```
 
 mod face;
+mod licenses;
 mod preview;
 mod shape;
 
 pub use face::{Face, FaceError, FaceId, FaceMetrics, face, faces, script_of};
+pub use licenses::{FONT_LICENSES, FontLicense};
 pub use preview::{lines_svg, run_path};
 pub use shape::{
     CacheStats, Cluster, Glyph, ShapeCache, ShapeStyle, ShapedRun, shape_uncached,

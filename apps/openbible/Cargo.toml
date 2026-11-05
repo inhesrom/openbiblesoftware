@@ -15,7 +15,8 @@ obs-formats.workspace = true
 # the engine reaches SWORD repositories through the `Fetch` this app hands it.
 ureq = "3"
 serde_json.workspace = true
-eframe = { workspace = true, features = ["wayland", "x11", "accesskit"] }
+# `links` opens hyperlinks (Credits, About's change record) in the system browser.
+eframe = { workspace = true, features = ["wayland", "x11", "accesskit", "links"] }
 
 [dev-dependencies]
 obs-engine.workspace = true

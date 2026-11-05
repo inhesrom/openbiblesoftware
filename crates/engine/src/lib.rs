@@ -17,6 +17,7 @@ pub mod appearance;
 mod builtin;
 pub mod command;
 pub mod compare;
+pub mod credits;
 pub mod cross_references;
 pub mod get_bibles;
 #[cfg(test)]

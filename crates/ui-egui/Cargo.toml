@@ -29,6 +29,8 @@ rfd = "0.17"
 [dev-dependencies]
 obs-formats.workspace = true
 obs-engine = { workspace = true, features = ["test-support"] }
+# Reads ATTRIBUTION.toml and starter/sources.toml in the Credits tests (#67).
+toml = "1"
 
 [lints]
 workspace = true
