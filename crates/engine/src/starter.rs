@@ -88,6 +88,7 @@ impl StarterManifest {
                 m.format
             ));
         }
+        check_resource_ids(&m.resources)?;
         Ok(m)
     }
 
@@ -178,9 +179,21 @@ pub struct StarterLibrary {
     checking: Option<JobId>,
     download: Option<StarterDownload>,
     error: Option<String>,
+    /// What the last attempt was (the manifest, or Add with the ids asked for), for Retry.
+    attempt: Option<StarterAttempt>,
     /// As loaded from (and saved to) the User database; `None`: never set up.
     state: Option<StarterState>,
     state_loaded: bool,
+}
+
+/// What Retry does again after a failure or a cancel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum StarterAttempt {
+    /// Fetch the released manifest.
+    Check,
+    /// Add these Starter Resources (`None`: every one [`Session::starter_wanted`] lists).
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    Add(Option<Vec<String>>),
 }
 
 impl Default for StarterLibrary {
@@ -193,6 +206,7 @@ impl Default for StarterLibrary {
             checking: None,
             download: None,
             error: None,
+            attempt: None,
             state: None,
             state_loaded: false,
         }
@@ -347,6 +361,26 @@ pub fn default_download_base() -> String {
     std::env::var("OBS_STARTER_URL").unwrap_or_else(|_| RELEASE_DOWNLOADS.to_string())
 }
 
+/// Every id is a valid Resource id (it names a file in the library folder, so `../x` or `/x`
+/// must never get that far) and none is listed twice.
+fn check_resource_ids(items: &[StarterItem]) -> Result<(), String> {
+    let mut seen = BTreeSet::new();
+    for item in items {
+        let id = &item.resource_id;
+        if !obs_model::is_valid_resource_id(id) {
+            return Err(format!(
+                "the Starter library manifest lists {id:?}, which is not a Resource id"
+            ));
+        }
+        if !seen.insert(id.as_str()) {
+            return Err(format!(
+                "the Starter library manifest lists {id} more than once"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Lowercase hex sha256 of `bytes`.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
@@ -362,9 +396,17 @@ fn part_file(lib: &Path, id: &str) -> PathBuf {
     lib.join(format!("{id}.obr.part"))
 }
 
+/// Where an earlier revision waits while its replacement is put in place (never scanned).
+#[cfg(not(target_arch = "wasm32"))]
+fn replaced_file(lib: &Path, id: &str) -> PathBuf {
+    lib.join(format!("{id}.obr.replaced"))
+}
+
 /// Verify each item's bytes (from `read`, in order) against its sha256, stage them in `lib`,
 /// and only when every one is verified, put them all in place as `<id>.obr`. On any
-/// failure every staged file is removed, so nothing is half-added. Returns the new entries.
+/// failure every staged file is removed and every file already put in place is taken back
+/// (an earlier revision it replaced is restored), so nothing is half-added. Returns the new
+/// entries.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn install(
     lib: &Path,
@@ -372,6 +414,8 @@ pub(crate) fn install(
     read: &mut dyn FnMut(&StarterItem) -> Result<Vec<u8>, String>,
 ) -> Result<Vec<LibraryEntry>, String> {
     use obs_store::ResourceStore;
+    // Ids become file names: checked before anything touches the disk.
+    check_resource_ids(items)?;
     std::fs::create_dir_all(lib).map_err(|e| format!("{}: {e}", lib.display()))?;
     let mut staged: Vec<PathBuf> = Vec::new();
     let cleanup = |staged: &[PathBuf]| {
@@ -428,13 +472,59 @@ pub(crate) fn install(
             path: lib.join(format!("{}.obr", item.resource_id)),
         });
     }
-    for (i, (part, entry)) in staged.iter().zip(&entries).enumerate() {
-        if let Err(e) = std::fs::rename(part, &entry.path) {
-            cleanup(&staged[i..]);
-            return Err(format!("{}: {e}", entry.path.display()));
-        }
+    if let Err(e) = commit(lib, items, &staged, &entries) {
+        cleanup(&staged);
+        return Err(e);
     }
     Ok(entries)
+}
+
+/// Put every staged file in place, all or nothing: an earlier revision is moved aside first,
+/// and if any rename fails, the ones done are undone and the earlier revisions restored.
+#[cfg(not(target_arch = "wasm32"))]
+fn commit(
+    lib: &Path,
+    items: &[StarterItem],
+    staged: &[PathBuf],
+    entries: &[LibraryEntry],
+) -> Result<(), String> {
+    // Each one put in place, with where its earlier revision waits.
+    let mut done: Vec<(&Path, Option<PathBuf>)> = Vec::new();
+    let undo = |done: &[(&Path, Option<PathBuf>)]| {
+        for (path, earlier) in done.iter().rev() {
+            let _ = std::fs::remove_file(path);
+            if let Some(earlier) = earlier {
+                let _ = std::fs::rename(earlier, path);
+            }
+        }
+    };
+    for ((item, part), entry) in items.iter().zip(staged).zip(entries) {
+        let path = entry.path.as_path();
+        let earlier = if path.is_file() {
+            let aside = replaced_file(lib, &item.resource_id);
+            if let Err(e) = std::fs::rename(path, &aside) {
+                undo(&done);
+                return Err(format!("{}: {e}", path.display()));
+            }
+            Some(aside)
+        } else {
+            None
+        };
+        if let Err(e) = std::fs::rename(part, path) {
+            if let Some(earlier) = &earlier {
+                let _ = std::fs::rename(earlier, path);
+            }
+            undo(&done);
+            return Err(format!("{}: {e}. Nothing was added.", path.display()));
+        }
+        done.push((path, earlier));
+    }
+    for (_, earlier) in done {
+        if let Some(earlier) = earlier {
+            let _ = std::fs::remove_file(earlier);
+        }
+    }
+    Ok(())
 }
 
 /// Copy what the bundle has beside a Starter Resource into the library folder: its prebuilt
@@ -516,12 +606,7 @@ impl Session {
 
     /// Where a Starter Resource stands in the Library.
     pub fn starter_status(&self, item: &StarterItem) -> StarterStatus {
-        if self
-            .starter
-            .download
-            .as_ref()
-            .is_some_and(|d| d.ids.contains(&item.resource_id))
-        {
+        if self.is_starter_downloading(&item.resource_id) {
             return StarterStatus::Adding;
         }
         match self.library.get(&item.resource_id) {
@@ -613,7 +698,12 @@ impl Session {
             .map(|e| e.manifest.resource_id.clone())
             .collect();
         for entry in entries {
+            let id = entry.manifest.resource_id.clone();
+            let replaced = self.library.get(&id).is_some();
             self.library.add(entry);
+            if replaced {
+                self.workspace.push_effect(crate::Effect::Replaced(id));
+            }
         }
         if let Err(e) = self.save_preferred_order() {
             self.workspace.push_effect(crate::Effect::Message(format!(
@@ -781,6 +871,7 @@ impl Session {
         if self.starter.download.is_some() {
             return Err("The Starter library is already downloading".into());
         }
+        self.starter.attempt = Some(StarterAttempt::Add(ids.map(<[String]>::to_vec)));
         let manifest = self
             .starter
             .manifest()
@@ -852,6 +943,7 @@ impl Session {
             return None;
         }
         self.starter.error = None;
+        self.starter.attempt = Some(StarterAttempt::Check);
         let url = format!("{}{MANIFEST_FILE}", self.starter.download_base);
         let fetch = self.fetch();
         let job = self
@@ -864,6 +956,49 @@ impl Session {
             });
         self.starter.checking = Some(job);
         Some(job)
+    }
+
+    /// A Starter library Tab is open (restored with the Last session or a Layout) and has no
+    /// manifest yet: fetch the released one. Not while one is being fetched, and not after a
+    /// failure, which the Tab shows with Retry. Called by the app each frame, once its
+    /// transport is attached.
+    pub fn load_starter_manifest_for_open_tab(&mut self) -> Option<JobId> {
+        if self.starter.manifest().is_some()
+            || self.starter.checking.is_some()
+            || self.starter.error.is_some()
+            || !self
+                .workspace
+                .tabs()
+                .any(|t| t.kind == crate::TabKind::StarterLibrary)
+        {
+            return None;
+        }
+        self.check_starter_release()
+    }
+
+    /// Whether `resource_id` is part of the Starter library download in flight.
+    pub fn is_starter_downloading(&self, resource_id: &str) -> bool {
+        self.starter
+            .download
+            .as_ref()
+            .is_some_and(|d| d.ids.iter().any(|id| id == resource_id))
+    }
+
+    /// Retry: do the last failed or cancelled attempt again, with the same Starter Resources
+    /// (an Add back stays an Add back). Returns the ids and the job, as [`Self::add_starter`].
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn retry_starter(&mut self) -> Result<(Vec<String>, Option<JobId>), String> {
+        let attempt = self.starter.attempt.clone().unwrap_or_else(|| {
+            if self.starter.manifest().is_none() {
+                StarterAttempt::Check
+            } else {
+                StarterAttempt::Add(None)
+            }
+        });
+        match attempt {
+            StarterAttempt::Check => Ok((Vec::new(), self.check_starter_release())),
+            StarterAttempt::Add(ids) => self.add_starter(ids.as_deref()),
+        }
     }
 
     /// Apply Starter library job events; return the rest.
@@ -958,6 +1093,14 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         },
     },
     CommandSpec {
+        id: "starter.retry",
+        label: "Retry the Starter library",
+        shortcut: None,
+        params: &[],
+        enabled: desktop,
+        run: retry,
+    },
+    CommandSpec {
         id: "starter.check",
         label: "Check the released Starter library",
         shortcut: None,
@@ -995,6 +1138,20 @@ fn add(_: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
         "starter.add",
         "Adding the Starter library requires desktop",
     ))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn retry(_: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
+    Err(failed(
+        "starter.retry",
+        "Adding the Starter library requires desktop",
+    ))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn retry(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
+    let (ids, job) = s.retry_starter().map_err(|e| failed("starter.retry", e))?;
+    Ok(json!({ "ids": ids, "job": job.map(|j| j.0) }))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

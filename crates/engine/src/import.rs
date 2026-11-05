@@ -188,7 +188,11 @@ impl Session {
                         record.phase = ImportPhase::Complete;
                         record.report = Some(out.report);
                         record.index = out.index;
+                        let replaced = self.library.get(&id).is_some();
                         self.library.add(out.entry);
+                        if replaced {
+                            self.workspace.push_effect(Effect::Replaced(id.clone()));
+                        }
                         imported.push(id.clone());
                         if let Err(e) = self.save_preferred_order() {
                             self.workspace.push_effect(Effect::Message(format!(

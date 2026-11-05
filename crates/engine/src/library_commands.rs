@@ -178,6 +178,18 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const CMD: &str = "library.remove";
     let id = p.str("id").unwrap_or_default().to_string();
     let entry = entry(CMD, s, &id)?.clone();
+    // Its newer revision is being downloaded (#131): removing it now would be undone when
+    // the download is put in place.
+    if s.is_starter_downloading(&id) {
+        return Err(failed(
+            CMD,
+            format!(
+                "{} is being downloaded with the Starter library. Cancel the download, or \
+                 wait for it to finish, then remove it.",
+                entry.manifest.abbreviation
+            ),
+        ));
+    }
     let annotations = s.annotations_referring(&id);
     let in_dir = s.library.holds_file(&entry.path);
     if !p.bool("confirm").unwrap_or(false) {

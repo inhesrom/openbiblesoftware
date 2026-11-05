@@ -119,10 +119,11 @@ impl State {
                                     && !starter.is_checking()
                                     && ui.button("Retry").clicked()
                                 {
+                                    // The same attempt again: an Add back stays one.
                                     action = Some(if starter.manifest().is_none() {
                                         ("starter.check", json!({}))
                                     } else {
-                                        ("starter.add", json!({}))
+                                        ("starter.retry", json!({}))
                                     });
                                 }
                             });

@@ -410,6 +410,9 @@ pub enum Effect {
     },
     /// A Resource left the library: drop anything loaded from it.
     Removed(String),
+    /// A Resource's file was replaced under the same id (a Resource revision, a re-Import):
+    /// drop anything loaded from it and load its open Tabs again.
+    Replaced(String),
     /// Go to a Standard Verse in a Tab opened just now, once its Verse map is loaded (the
     /// Notes Tool following a Passage anchor, #64): the Tab's Link set follows.
     NavigateStandard {

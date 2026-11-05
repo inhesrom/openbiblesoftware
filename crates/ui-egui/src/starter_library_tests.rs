@@ -48,7 +48,11 @@ fn settle(h: &mut Harness) {
         h.shell.st.session.jobs().pump(64);
         h.frames(2);
         let s = &h.shell.st.session;
-        if s.starter.download().is_none() && !s.starter.is_checking() && !s.search.is_building() {
+        if s.starter.download().is_none()
+            && !s.starter.is_checking()
+            && !s.search.is_building()
+            && !s.reanchoring.is_busy()
+        {
             break;
         }
     }
@@ -247,4 +251,220 @@ fn a_download_that_fails_verification_says_so_and_retry_adds_it() {
             .map(|e| e.manifest.revision),
         Some(1)
     );
+}
+
+#[test]
+fn a_restored_starter_library_tab_loads_the_released_list_on_relaunch() {
+    let lab = Lab::new("restored");
+    let release = lab.root.join("release");
+    write_starter_bundle(&release, &starter_set());
+    let db = lab.root.join("user.db");
+    let base = obs_engine::sword_repo::file_url(&release);
+    let setup = |s: &mut obs_engine::Session| {
+        s.library.set_directory(lab.root.join("library"));
+        s.set_search_cache_dir(lab.root.join("cache"));
+        s.starter.set_download_base(&base);
+        s.sync_starter_library(None)
+    };
+    {
+        let mut h = Harness::launch(Some(&db));
+        assert!(setup(&mut h.shell.st.session).offer_download);
+        open_starter_library(&mut h);
+        assert!(h.shell.st.session.starter.manifest().is_some());
+        // Quit with the Tab open, nothing downloaded.
+        h.shell.save_session(true);
+    }
+    // Relaunch as the app does: the Last session restores the Tab before any command runs.
+    let mut session = obs_engine::Session::new(obs_engine::JobMode::Inline);
+    let (store, _) = obs_store::UserStore::open(&db).unwrap();
+    session.attach_user(Box::new(store));
+    assert!(!setup(&mut session).offer_download);
+    let mut shell = Shell::new(session);
+    shell.restore_or_default();
+    assert!(
+        shell
+            .st
+            .session
+            .workspace
+            .tabs()
+            .any(|t| t.kind == obs_engine::TabKind::StarterLibrary)
+    );
+    let mut h = Harness::from_shell(shell);
+    settle(&mut h);
+    let s = &h.shell.st.session;
+    assert!(s.starter.manifest().is_some(), "{:?}", s.starter.error());
+    let label = format!(
+        "Download Starter library (≈{} MB)",
+        s.starter_wanted_bytes().div_ceil(1_000_000)
+    );
+    assert!(h.find(&label).is_some(), "{label}: {:?}", h.texts());
+    assert!(h.find(TBESG).is_some(), "{:?}", h.texts());
+}
+
+/// A Starter KJV at `revision`: revision 1 has a typo before "God created", so the fixed
+/// text moves that Highlight one byte left.
+fn kjv(revision: u32) -> obs_model::Resource {
+    use obs_engine::testing::bibles::{bible, v};
+    use obs_scripture::Book;
+    let first = if revision == 1 {
+        "In the beginnning God created the heaven and the earth."
+    } else {
+        "In the beginning God created the heaven and the earth."
+    };
+    let mut r = bible(
+        "kjv-strongs",
+        "KJV",
+        &[
+            (v(Book::Genesis, 1, 1), first),
+            (
+                v(Book::Genesis, 1, 2),
+                "And the earth was without form, and void.",
+            ),
+        ],
+        None,
+        &[],
+    );
+    r.manifest.origin = obs_model::Origin::Starter;
+    r.manifest.revision = revision;
+    r.manifest.license = "LicenseRef-PublicDomain".into();
+    r
+}
+
+/// The text of the open KJV Tab, and the text under its Highlight.
+fn kjv_tab(h: &mut Harness, tab: u64) -> (String, String) {
+    let st = &mut h.shell.st;
+    let doc = st.tabs[&obs_engine::TabId(tab)]
+        .view
+        .as_ref()
+        .unwrap()
+        .doc
+        .clone();
+    let marks = st.marks.marks(&st.session, &doc);
+    let highlights: Vec<_> = marks
+        .iter()
+        .filter(|m| matches!(m.kind, crate::marks::MarkKind::Highlight(_)))
+        .collect();
+    assert_eq!(highlights.len(), 1, "{marks:?}");
+    let m = highlights[0];
+    assert_eq!(m.start.unit, m.end.unit);
+    let text = &doc.units[m.start.unit].text;
+    (
+        doc.units.iter().map(|u| u.text.as_str()).collect(),
+        text[m.start.byte..m.end.byte].to_string(),
+    )
+}
+
+#[test]
+fn a_downloaded_revision_reloads_the_open_tab_and_its_highlight() {
+    let lab = Lab::new("revision");
+    let release = lab.root.join("release");
+    write_starter_bundle(&release, &[kjv(1)]);
+    let mut h = Harness::launch(Some(&lab.root.join("user.db")));
+    {
+        let s = &mut h.shell.st.session;
+        s.library.set_directory(lab.root.join("library"));
+        s.set_search_cache_dir(lab.root.join("cache"));
+        s.starter
+            .set_download_base(&obs_engine::sword_repo::file_url(&release));
+    }
+    open_starter_library(&mut h);
+    h.shell.run("starter.add", &json!({}));
+    settle(&mut h);
+    let out = h
+        .shell
+        .run("resource.open", &json!({ "id": "kjv-strongs" }))
+        .unwrap();
+    let tab = out["tab"].as_u64().unwrap();
+    let v1 = kjv(1);
+    let at = v1.units[0].text.find("God created").unwrap();
+    h.shell
+        .run(
+            "annotation.highlight",
+            &json!({
+                "resource": "kjv-strongs",
+                "start_unit": v1.units[0].id.as_str(),
+                "start": at,
+                "end": at + "God created".len(),
+            }),
+        )
+        .unwrap();
+    h.frames(2);
+    let (text, marked) = kjv_tab(&mut h, tab);
+    assert!(text.contains("beginnning"), "{text}");
+    assert_eq!(marked, "God created");
+
+    // Revision 2 is released and downloaded while the Tab is open.
+    write_starter_bundle(&release, &[kjv(2)]);
+    h.shell.run("starter.check", &json!({}));
+    settle(&mut h);
+    h.shell.run("starter.add", &json!({}));
+    settle(&mut h);
+    assert_eq!(
+        h.shell
+            .st
+            .session
+            .library
+            .get("kjv-strongs")
+            .unwrap()
+            .manifest
+            .revision,
+        2
+    );
+    // The open Tab reads the new text, and the Highlight is still over "God created".
+    let (text, marked) = kjv_tab(&mut h, tab);
+    assert!(text.contains("In the beginning God"), "{text}");
+    assert!(!text.contains("beginnning"), "{text}");
+    assert_eq!(marked, "God created");
+
+    // Closed and opened again: the new text, not a copy loaded before the revision.
+    h.shell.run("tab.close", &json!({ "tab": tab }));
+    let out = h
+        .shell
+        .run("resource.open", &json!({ "id": "kjv-strongs" }))
+        .unwrap();
+    let tab = out["tab"].as_u64().unwrap();
+    h.frames(2);
+    let (text, marked) = kjv_tab(&mut h, tab);
+    assert!(!text.contains("beginnning"), "{text}");
+    assert_eq!(marked, "God created");
+}
+
+#[test]
+fn retry_after_a_failed_add_back_adds_that_resource_back() {
+    let lab = Lab::new("retry-add-back");
+    let release = lab.root.join("release");
+    write_starter_bundle(&release, &starter_set());
+    let mut h = Harness::launch(Some(&lab.root.join("user.db")));
+    {
+        let s = &mut h.shell.st.session;
+        s.library.set_directory(lab.root.join("library"));
+        s.set_search_cache_dir(lab.root.join("cache"));
+        s.starter
+            .set_download_base(&obs_engine::sword_repo::file_url(&release));
+    }
+    open_starter_library(&mut h);
+    h.shell.run("starter.add", &json!({}));
+    settle(&mut h);
+    h.shell
+        .run("library.remove", &json!({ "id": "bdb", "confirm": true }));
+    let bdb = release.join("bdb.obr");
+    let good = std::fs::read(&bdb).unwrap();
+    let mut bad = good.clone();
+    bad[100] ^= 0xff;
+    std::fs::write(&bdb, bad).unwrap();
+    let tab = h.tab_at("Starter library");
+    h.click(tab);
+    let add_back = row_button(&h, BDB, "Add back");
+    h.click(add_back);
+    settle(&mut h);
+    assert!(
+        h.texts().iter().any(|t| t.contains("failed verification")),
+        "{:?}",
+        h.texts()
+    );
+    std::fs::write(&bdb, good).unwrap();
+    h.click_text("Retry");
+    settle(&mut h);
+    assert!(h.shell.st.session.library.get("bdb").is_some());
+    assert!(h.shell.st.session.starter.error().is_none());
 }

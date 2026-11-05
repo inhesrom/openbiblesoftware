@@ -104,6 +104,11 @@ impl Harness {
             crate::tests::numbered_bible("heb-num", "Hebrew-numbered Bible", "HNUM", true),
         );
         shell.restore_or_default();
+        Self::from_shell(shell)
+    }
+
+    /// Draw `shell` (already restored) in a fresh window, as the first frames of a launch.
+    fn from_shell(shell: Shell) -> Self {
         let ctx = egui::Context::default();
         crate::theme::install(&ctx);
         let mut h = Self {

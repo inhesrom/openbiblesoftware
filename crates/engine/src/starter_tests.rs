@@ -608,6 +608,297 @@ fn a_newer_released_revision_is_offered_as_an_update_and_downloaded_in_place() {
     assert_eq!(s.library.entries().len(), 1);
 }
 
+/// The KJV at `revision` and the WEB, as two Starter Bibles.
+fn two_bibles(revision: u32) -> (Resource, Resource) {
+    (
+        starter_bible(
+            "kjv-strongs",
+            "KJV",
+            "In the beginnning God created the heaven and the earth.",
+            revision,
+        ),
+        starter_bible(
+            "web",
+            "WEB",
+            "In the beginning, God created the heavens and the earth.",
+            1,
+        ),
+    )
+}
+
+#[test]
+fn a_failed_commit_of_a_fresh_download_takes_back_every_file_already_in_place() {
+    let lab = Lab::new("commit-fresh");
+    let (kjv, web) = two_bibles(1);
+    testing::write_starter_bundle(&lab.release(), &[kjv, web]);
+    let mut s = lab.downloader(Arc::new(LocalFetch));
+    // The first file goes in place; something is in the way of the second.
+    let order: Vec<String> = s
+        .starter
+        .manifest()
+        .unwrap()
+        .resources
+        .iter()
+        .map(|r| r.resource_id.clone())
+        .collect();
+    assert_eq!(order, ["kjv-strongs", "web"]);
+    std::fs::create_dir_all(lab.lib().join("web.obr")).unwrap();
+    s.run("starter.add", &json!({})).unwrap();
+    settle(&mut s);
+    let error = s.starter.error().unwrap();
+    assert!(error.contains("web.obr"), "{error}");
+    assert!(s.library.entries().is_empty());
+    // Not even the first one stays: nothing half-added, nothing staged.
+    assert!(lab.files().is_empty(), "{:?}", lab.files());
+    assert!(s.starter.state().is_none_or(|st| st.known.is_empty()));
+}
+
+#[test]
+fn a_failed_commit_of_a_revision_restores_the_earlier_revision() {
+    let lab = Lab::new("commit-revision");
+    let (v1, web) = two_bibles(1);
+    testing::write_starter_bundle(&lab.release(), std::slice::from_ref(&v1));
+    let mut s = lab.downloader(Arc::new(LocalFetch));
+    s.run("starter.add", &json!({})).unwrap();
+    settle(&mut s);
+    let kjv = lab.lib().join("kjv-strongs.obr");
+    let earlier = std::fs::read(&kjv).unwrap();
+    // Revision 2 of the KJV and a new WEB, which cannot be put in place.
+    let (v2, _) = two_bibles(2);
+    testing::write_starter_bundle(&lab.release(), &[v2, web]);
+    s.check_starter_release().unwrap();
+    settle(&mut s);
+    std::fs::create_dir_all(lab.lib().join("web.obr")).unwrap();
+    s.run("starter.add", &json!({})).unwrap();
+    settle(&mut s);
+    assert!(s.starter.error().unwrap().contains("web.obr"));
+    // The earlier revision is back, byte for byte, and still the one in the Library.
+    assert_eq!(std::fs::read(&kjv).unwrap(), earlier);
+    assert_eq!(s.library.get("kjv-strongs").unwrap().manifest.revision, 1);
+    assert!(s.library.get("web").is_none());
+    let files = lab.files();
+    assert!(
+        !files
+            .iter()
+            .any(|f| f.ends_with(".part") || f.ends_with(".replaced")),
+        "{files:?}"
+    );
+    assert!(
+        !s.workspace
+            .take_effects()
+            .iter()
+            .any(|e| matches!(e, Effect::Replaced(_)))
+    );
+    // Once the way is clear, Retry puts both in place.
+    std::fs::remove_dir(lab.lib().join("web.obr")).unwrap();
+    s.run("starter.retry", &json!({})).unwrap();
+    settle(&mut s);
+    assert_eq!(s.library.get("kjv-strongs").unwrap().manifest.revision, 2);
+    assert!(s.library.get("web").is_some());
+    assert!(!lab.files().iter().any(|f| f.ends_with(".replaced")));
+}
+
+#[test]
+fn a_downloaded_revision_tells_the_app_to_reload_what_it_loaded_from_the_old_file() {
+    let lab = Lab::new("replaced");
+    let (v1, _) = two_bibles(1);
+    testing::write_starter_bundle(&lab.release(), std::slice::from_ref(&v1));
+    let mut s = lab.downloader(Arc::new(LocalFetch));
+    s.run("starter.add", &json!({})).unwrap();
+    settle(&mut s);
+    // A new Resource is not a replacement.
+    assert!(
+        !s.workspace
+            .take_effects()
+            .iter()
+            .any(|e| matches!(e, Effect::Replaced(_)))
+    );
+    let (v2, _) = two_bibles(2);
+    testing::write_starter_bundle(&lab.release(), std::slice::from_ref(&v2));
+    s.check_starter_release().unwrap();
+    settle(&mut s);
+    s.run("starter.add", &json!({})).unwrap();
+    settle(&mut s);
+    let effects = s.workspace.take_effects();
+    assert!(
+        effects.contains(&Effect::Replaced("kjv-strongs".into())),
+        "{effects:?}"
+    );
+}
+
+#[test]
+fn retry_after_a_failed_or_cancelled_add_back_adds_that_resource_back() {
+    let lab = Lab::new("retry-add-back");
+    testing::write_starter_bundle(&lab.release(), &starter_set());
+    let mut s = lab.downloader(Arc::new(LocalFetch));
+    s.run("starter.add", &json!({})).unwrap();
+    settle(&mut s);
+    s.run("library.remove", &json!({ "id": "bdb", "confirm": true }))
+        .unwrap();
+    // The only one not in the Library is removed: "add all missing" has nothing to add.
+    assert!(s.starter_wanted().is_empty());
+
+    // Cancelled: the first `.obr` fetched is cancelled.
+    s.set_fetch(Arc::new(CancelAt {
+        n: 0,
+        seen: Mutex::new(0),
+    }));
+    s.run("starter.add", &json!({ "id": "bdb" })).unwrap();
+    settle(&mut s);
+    assert_eq!(s.starter.error(), Some("Download cancelled"));
+    s.set_fetch(Arc::new(LocalFetch));
+    let out = s.run("starter.retry", &json!({})).unwrap();
+    assert_eq!(out["ids"], json!(["bdb"]));
+    settle(&mut s);
+    assert!(s.starter.error().is_none(), "{:?}", s.starter.error());
+    assert!(s.library.get("bdb").is_some());
+
+    // Failed: the release's BDB is not the file the manifest names.
+    s.run("library.remove", &json!({ "id": "bdb", "confirm": true }))
+        .unwrap();
+    let bdb = lab.release().join("bdb.obr");
+    let good = std::fs::read(&bdb).unwrap();
+    let mut bad = good.clone();
+    bad[100] ^= 0xff;
+    std::fs::write(&bdb, bad).unwrap();
+    s.run("starter.add", &json!({ "id": "bdb" })).unwrap();
+    settle(&mut s);
+    assert!(s.starter.error().unwrap().contains("failed verification"));
+    std::fs::write(&bdb, good).unwrap();
+    let out = s.run("starter.retry", &json!({})).unwrap();
+    assert_eq!(out["ids"], json!(["bdb"]));
+    settle(&mut s);
+    assert!(s.starter.error().is_none(), "{:?}", s.starter.error());
+    assert!(s.library.get("bdb").is_some());
+    assert!(!s.starter.state().unwrap().removed.contains("bdb"));
+}
+
+#[test]
+fn a_resource_being_downloaded_cannot_be_removed_until_the_download_ends() {
+    let lab = Lab::new("remove-while-downloading");
+    let (v1, _) = two_bibles(1);
+    testing::write_starter_bundle(&lab.release(), std::slice::from_ref(&v1));
+    let mut s = lab.downloader(Arc::new(LocalFetch));
+    s.run("starter.add", &json!({})).unwrap();
+    settle(&mut s);
+    let (v2, _) = two_bibles(2);
+    testing::write_starter_bundle(&lab.release(), std::slice::from_ref(&v2));
+    s.check_starter_release().unwrap();
+    settle(&mut s);
+    // The newer revision's download is queued, not finished (inline jobs run when pumped).
+    s.run("starter.add", &json!({})).unwrap();
+    assert!(s.is_starter_downloading("kjv-strongs"));
+    for confirm in [false, true] {
+        let e = s
+            .run(
+                "library.remove",
+                &json!({ "id": "kjv-strongs", "confirm": confirm }),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("being downloaded"), "{e}");
+    }
+    assert!(lab.lib().join("kjv-strongs.obr").is_file());
+    settle(&mut s);
+    assert_eq!(s.library.get("kjv-strongs").unwrap().manifest.revision, 2);
+    // Once it is in place, removing it sticks.
+    s.run(
+        "library.remove",
+        &json!({ "id": "kjv-strongs", "confirm": true }),
+    )
+    .unwrap();
+    assert!(s.library.get("kjv-strongs").is_none());
+    assert!(s.starter.state().unwrap().removed.contains("kjv-strongs"));
+    assert!(s.starter_wanted().is_empty());
+}
+
+#[test]
+fn a_manifest_with_unsafe_or_repeated_ids_is_refused() {
+    let item = |id: &str| {
+        json!({ "resource_id": id, "revision": 1, "content_hash": "sha256:ab",
+                "file_sha256": "cd", "bytes": 10 })
+    };
+    for id in [
+        "../victim",
+        "/tmp/victim",
+        "a/b",
+        "..",
+        "KJV",
+        "",
+        "x\\..\\y",
+    ] {
+        let text = json!({ "format": 1, "resources": [item(id)] }).to_string();
+        let e = StarterManifest::parse(&text).unwrap_err();
+        assert!(e.contains("not a Resource id"), "{id:?}: {e}");
+    }
+    let text = json!({ "format": 1, "resources": [item("web"), item("web")] }).to_string();
+    assert!(
+        StarterManifest::parse(&text)
+            .unwrap_err()
+            .contains("more than once")
+    );
+}
+
+#[test]
+fn an_unsafe_id_never_touches_a_file_outside_the_library() {
+    let lab = Lab::new("unsafe-id");
+    let victim = lab.root.join("victim.obr.part");
+    std::fs::write(&victim, "not yours").unwrap();
+    let bytes = b"anything".to_vec();
+    let item = |id: &str| starter::StarterItem {
+        resource_id: id.into(),
+        revision: 1,
+        content_hash: String::new(),
+        // The bytes match: a matching sha256 is no proof the path is safe.
+        file_sha256: starter::sha256_hex(&bytes),
+        bytes: bytes.len() as u64,
+        title: String::new(),
+        abbreviation: String::new(),
+        resource_type: None,
+        language: String::new(),
+        license: String::new(),
+    };
+    let mut reads = 0;
+    for items in [
+        vec![item("../victim")],
+        vec![item("web"), item("web")],
+        vec![item("web"), item("/tmp/victim")],
+    ] {
+        let e = starter::install(&lab.lib(), &items, &mut |_| {
+            reads += 1;
+            Ok(bytes.clone())
+        })
+        .unwrap_err();
+        assert!(
+            e.contains("Resource id") || e.contains("more than once"),
+            "{e}"
+        );
+    }
+    assert_eq!(reads, 0, "refused before anything is read or written");
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "not yours");
+    assert!(!lab.lib().exists());
+
+    // From a release: the manifest itself is refused, and the Tab says so.
+    std::fs::create_dir_all(lab.release()).unwrap();
+    let manifest = json!({ "format": 1, "resources": [{
+        "resource_id": "../victim", "revision": 1, "content_hash": "sha256:ab",
+        "file_sha256": starter::sha256_hex(&bytes), "bytes": bytes.len() }] });
+    std::fs::write(
+        lab.release().join(starter::MANIFEST_FILE),
+        manifest.to_string(),
+    )
+    .unwrap();
+    let (mut s, _) = lab.launch(None);
+    s.set_fetch(Arc::new(LocalFetch));
+    s.starter.set_download_base(&file_url(&lab.release()));
+    s.check_starter_release().unwrap();
+    settle(&mut s);
+    assert!(s.starter.manifest().is_none());
+    assert!(s.starter.error().unwrap().contains("not a Resource id"));
+    assert!(s.run("starter.add", &json!({})).is_err());
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "not yours");
+}
+
 #[test]
 fn the_manifest_xtask_writes_parses_and_old_ones_still_do() {
     let old = r#"{"format":1,"resources":[{"resource_id":"web","revision":1,

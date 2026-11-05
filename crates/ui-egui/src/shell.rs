@@ -344,6 +344,29 @@ impl Shell {
                     self.st.docs.remove(&id);
                     self.st.marks.forget(&id);
                 }
+                Effect::Replaced(id) => {
+                    self.st.docs.remove(&id);
+                    self.st.marks.forget(&id);
+                    // Its open Tabs (and every Text Comparison) load the new text, where they
+                    // were.
+                    let reload: Vec<TabId> = self
+                        .st
+                        .session
+                        .workspace
+                        .tabs()
+                        .filter(|t| match &t.kind {
+                            TabKind::Resource(r) | TabKind::About(r) => *r == id,
+                            TabKind::Tool(Tool::TextComparison) => true,
+                            _ => false,
+                        })
+                        .map(|t| t.id)
+                        .collect();
+                    for tab in reload {
+                        if self.st.tabs.contains_key(&tab) {
+                            self.st.opened(tab);
+                        }
+                    }
+                }
                 Effect::NavigateStandard { tab, verse } => {
                     self.st.session.workspace.navigate_standard(tab, verse);
                 }
@@ -703,6 +726,9 @@ impl Shell {
             self.st.session.jobs().pump(1);
         }
         let _other_jobs = self.st.session.poll_imports();
+        // A Starter library Tab restored with the session needs the released manifest too;
+        // here, not at restore, so it comes through the app's transport.
+        self.st.session.load_starter_manifest_for_open_tab();
         self.st.poll_picker();
         self.apply_effects();
         if let Some(after) = self.background_repaint() {
