@@ -102,7 +102,30 @@ struct TabUi {
     favorite_star: Option<egui::Rect>,
     /// History: "Clear History…" is asking to confirm.
     confirm_clear: bool,
+    /// Where a Resource Tab was scrolled in each place it switched away from to a parallel
+    /// resource (#151), oldest first; Back or Forward to that place scrolls there again.
+    parked: Vec<ParkedScroll>,
+    /// How wide the header's right-hand controls were last frame, so the header box leaves
+    /// room for them.
+    header_controls: f32,
 }
+
+/// A Resource Tab's location when it switched to a parallel resource (#151), in that
+/// Resource's own numbering or Keys, and where its view was scrolled there.
+struct ParkedScroll {
+    resource: String,
+    at: ParkedAt,
+    anchor: crate::view::TextAnchor,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ParkedAt {
+    Verse(Verse),
+    Entry(Key),
+}
+
+/// A Tab remembers at most this many parked scroll positions.
+const PARKED_LIMIT: usize = 64;
 
 /// How long a jump's flash lasts, in seconds.
 const FLASH_SECS: f64 = 1.2;
@@ -386,11 +409,7 @@ impl Shell {
                         }
                     }
                 }
-                Effect::Switched(tab) => {
-                    if self.st.tabs.contains_key(&tab) {
-                        self.st.opened(tab);
-                    }
-                }
+                Effect::Switched(tab) => self.st.switched(tab),
                 Effect::NavigateStandard { tab, verse } => {
                     self.st.session.workspace.navigate_standard(tab, verse);
                 }
@@ -1207,7 +1226,52 @@ impl State {
 
     /// A Tab was opened: load its Resource if it has one.
     fn opened(&mut self, tab: TabId) {
-        let mut ui_state = TabUi::default();
+        self.load(tab, TabUi::default(), None);
+    }
+
+    /// A Resource Tab now shows another Resource (#151): park where its view was scrolled
+    /// and load the new one in a pane as wide, where Back or Forward scrolls it back to
+    /// where it was parked.
+    fn switched(&mut self, tab: TabId) {
+        let Some(mut old) = self.tabs.remove(&tab) else {
+            return;
+        };
+        let mut parked = std::mem::take(&mut old.parked);
+        let width = old.view.as_ref().map(ReadingView::width);
+        if let Some(view) = old.view.as_mut() {
+            let at = if matches!(
+                view.doc.manifest.resource_type,
+                ResourceType::Lexicon | ResourceType::Dictionary
+            ) {
+                view.current_entry().map(ParkedAt::Entry)
+            } else {
+                view.current_location().map(ParkedAt::Verse)
+            };
+            if let Some(at) = at
+                && let Some(anchor) = view.text_anchor()
+            {
+                let resource = view.doc.manifest.resource_id.clone();
+                parked.retain(|p| p.resource != resource || p.at != at);
+                parked.push(ParkedScroll {
+                    resource,
+                    at,
+                    anchor,
+                });
+                if parked.len() > PARKED_LIMIT {
+                    parked.remove(0);
+                }
+            }
+        }
+        let ui_state = TabUi {
+            parked,
+            header_controls: old.header_controls,
+            ..TabUi::default()
+        };
+        self.load(tab, ui_state, width);
+    }
+
+    /// Load a Tab's Resource, if it has one, into `ui_state`, laid out `width` wide if known.
+    fn load(&mut self, tab: TabId, mut ui_state: TabUi, width: Option<f32>) {
         let kind = self.session.workspace.tab(tab).map(|t| t.kind.clone());
         if kind == Some(TabKind::Tool(Tool::TextComparison)) {
             ui_state.comparison = Some(ComparisonView::new(self.session.text));
@@ -1219,6 +1283,9 @@ impl State {
             match self.doc(id) {
                 Ok(doc) => {
                     let mut view = ReadingView::new(Arc::clone(&doc), self.session.text);
+                    if let Some(width) = width {
+                        view.set_width(width);
+                    }
                     if let Some(t) = self.session.workspace.tab_mut(tab) {
                         t.versification = (doc.manifest.resource_type == ResourceType::Bible)
                             .then(|| Arc::new(doc.versification.clone()));
@@ -1282,6 +1349,32 @@ impl State {
                         {
                             t.entry_history.scrolled_to(key);
                         }
+                    }
+                    // Back or Forward to a place the Tab switched away from (#151) scrolls
+                    // to where it was there.
+                    let ws = &self.session.workspace;
+                    let here = ws.tab(tab).and_then(|t| {
+                        if matches!(
+                            doc.manifest.resource_type,
+                            ResourceType::Lexicon | ResourceType::Dictionary
+                        ) {
+                            t.entry_history.current().map(ParkedAt::Entry)
+                        } else {
+                            t.history.current().map(ParkedAt::Verse)
+                        }
+                    });
+                    if arrived.is_none()
+                        && let Some(here) = here
+                        && let Some(p) = ui_state
+                            .parked
+                            .iter()
+                            .find(|p| p.resource == *id && p.at == here)
+                    {
+                        let verse = match p.at {
+                            ParkedAt::Verse(v) => Some(v),
+                            ParkedAt::Entry(_) => None,
+                        };
+                        view.restore_text_anchor(p.anchor, verse);
                     }
                     ui_state.view = Some(view);
                 }
@@ -1706,13 +1799,24 @@ impl State {
                     ) {
                         self.history_buttons(ui, tab);
                     }
-                    self.header_box(ui, tab, header, if narrow { 110.0 } else { 140.0 });
+                    // The box leaves room for the controls on the right (measured last frame).
+                    let controls = self.tabs.get(&tab).map_or(0.0, |t| t.header_controls);
+                    let room = ui.available_width() - controls - 2.0 * ui.spacing().item_spacing.x;
+                    let width = room.min(if narrow { 110.0 } else { 140.0 }).max(48.0);
+                    self.header_box(ui, tab, header, width);
                     let title = self.title(tab, kind);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         self.tab_menu(ui, tab);
                         self.favorite_star(ui, tab);
                         if matches!(kind, TabKind::Resource(_)) {
-                            self.parallel_resources(ui, tab);
+                            self.parallel_resources(ui, tab, narrow);
+                        }
+                        let measured = ui.min_rect().width();
+                        if let Some(t) = self.tabs.get_mut(&tab)
+                            && (t.header_controls - measured).abs() > 0.5
+                        {
+                            t.header_controls = measured;
+                            ui.ctx().request_repaint();
                         }
                         if !narrow {
                             ui.add(
@@ -1759,8 +1863,9 @@ impl State {
     }
 
     /// The parallel-resources control of a Resource Tab (#151), laid out right to left:
-    /// ◀, a dropdown of the Resources of the Tab's Resource type in Preferred order, ▶.
-    fn parallel_resources(&mut self, ui: &mut Ui, tab: TabId) {
+    /// ◀, a dropdown of the Resources of the Tab's Resource type in Preferred order, ▶;
+    /// compact in a `narrow` Panel.
+    fn parallel_resources(&mut self, ui: &mut Ui, tab: TabId, narrow: bool) {
         let current = match self.session.workspace.tab(tab).map(|t| &t.kind) {
             Some(TabKind::Resource(id)) => id.clone(),
             _ => return,
@@ -1800,7 +1905,7 @@ impl State {
         ui.add_enabled_ui(others, |ui| {
             egui::ComboBox::from_id_salt(("parallel", tab))
                 .selected_text(RichText::new(shown).small())
-                .width(72.0)
+                .width(if narrow { 52.0 } else { 72.0 })
                 .truncate()
                 .show_ui(ui, |ui| {
                     for (id, abbreviation, title) in &parallel {

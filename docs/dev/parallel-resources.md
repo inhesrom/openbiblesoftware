@@ -27,6 +27,16 @@ same place.
   its Resource once the Tab has switched. The switch itself is one history step: Back
   restores the old Resource and its location in its own numbering, Forward replays the
   switch. Ordinary jumps before and after keep working as before.
+- The Tab keeps its scroll anchor across a switch. The UI parks where the old view was
+  scrolled (`TabUi::parked`: Resource, location in its own numbering or Key, and a
+  `view::TextAnchor` — the top line's unit and byte plus how far into that line) and lays
+  the new Resource out at the same width. When Back or Forward returns to a parked place
+  (the Tab's history location in that Resource matches), the view is scrolled to the
+  anchor rather than to the location's start, so a reader halfway through a long
+  Commentary section is halfway through it again. A fresh switch (▶, ◀, dropdown) still
+  lands on the mapped place and flashes it.
+- The header box shrinks to leave room for the controls on its right (measured the frame
+  before), and the dropdown is narrower in a narrow Panel, so nothing overlaps.
 - The Tab keeps its id, Panel, Link set and history. A switch, and Back/Forward across
   one, does not move the Link set: the place is the same in Standard terms, and a
   fallback (nearest earlier section, Absent verse) is never sent back to the set.
@@ -47,6 +57,11 @@ same place.
   (its Link set's location, else where another Bible is).
 - History is not saved in the Last session (as before); the switched-to Resource and its
   location are.
+- Parked scroll anchors are UI state keyed by (Resource, location), at most 64 per Tab,
+  not engine history: the engine has no layout to anchor to. Two stops at the same place
+  in the same Resource share the latest anchor; the place itself is always right.
+- In a narrow Panel the reference box gives way to the controls (down to 48 points, its
+  text scrolling inside) rather than wrapping the controls onto a second row.
 
 ## Evidence
 
@@ -62,7 +77,9 @@ same place.
 - UI `parallel_resources` (real pointer and key events in the shell harness): ▶ lands on
   TAHOT Ps 3:2 and flashes it, ‹ returns to BSB Ps 3:1, › goes forward again; Ctrl+] and
   Ctrl+[ cycle; the dropdown lists the Bibles and switches; a lone Commentary's control is
-  disabled.
+  disabled; Back across a switch returns to the same scroll position inside a long
+  Commentary section (line, unit byte and offset into the line, and the same text
+  painted), and in a narrow Panel the reference box ends left of ◀.
 - Snapshots: [BSB at Ps 3:1](../previews/parallel-resources-bsb-ps-3-1.png),
   [dropdown](../previews/parallel-resources-dropdown.png),
   [TAHOT at Ps 3:2](../previews/parallel-resources-tahot-ps-3-2.png),

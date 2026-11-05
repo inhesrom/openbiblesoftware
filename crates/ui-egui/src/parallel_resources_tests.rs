@@ -67,6 +67,47 @@ fn top_verse(h: &mut Harness, tab: TabId) -> Option<Verse> {
     view.current_location()
 }
 
+/// Where the Tab's reading view is scrolled to.
+fn top_anchor(h: &mut Harness, tab: TabId) -> crate::view::TextAnchor {
+    let view = h
+        .shell
+        .st
+        .tabs
+        .get_mut(&tab)
+        .unwrap()
+        .view
+        .as_mut()
+        .unwrap();
+    view.text_anchor().unwrap()
+}
+
+/// The texts painted in the Tab's reading pane, top to bottom.
+fn texts_in(h: &Harness, tab: TabId) -> Vec<String> {
+    let tiles = &h.shell.tree.tiles;
+    let pane = tiles.rect(tiles.find_pane(&tab).unwrap()).unwrap();
+    let body = egui::Rect::from_min_max(pane.min + egui::vec2(0.0, 40.0), pane.max);
+    h.shapes
+        .iter()
+        .filter(|(r, _)| body.contains(r.center()))
+        .map(|(_, t)| t.clone())
+        .collect()
+}
+
+/// Turn the mouse wheel over the Tab.
+fn wheel(h: &mut Harness, tab: TabId, dy: f32) {
+    let tiles = &h.shell.tree.tiles;
+    let over = tiles.rect(tiles.find_pane(&tab).unwrap()).unwrap().center();
+    h.events.push(Event::PointerMoved(over));
+    h.events.push(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, dy),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
+        modifiers: Modifiers::NONE,
+    });
+    h.frame();
+}
+
 fn press(h: &mut Harness, key: EguiKey) {
     h.events.push(Event::Key {
         key,
@@ -182,6 +223,124 @@ fn a_type_with_one_resource_shows_the_control_disabled() {
     assert!(
         !h.texts().contains(&"TC — Test Commentary"),
         "no dropdown opened"
+    );
+}
+
+#[test]
+fn back_across_a_switch_returns_to_the_scroll_position_inside_a_long_commentary_section() {
+    let mut h = Harness::new();
+    let long: String = (1..=150)
+        .map(|n| format!("Remark {n} on the psalm of flight."))
+        .collect::<Vec<_>>()
+        .join(" ");
+    for (id, title, abbreviation) in [
+        ("tc", "Test Commentary", "TC"),
+        ("oc", "Other Commentary", "OC"),
+    ] {
+        let commentary = obs_engine::testing::commentary(
+            id,
+            title,
+            abbreviation,
+            &[
+                (
+                    obs_scripture::Passage::verse(ps(3, 1)),
+                    Some("Psalm 3"),
+                    &long,
+                ),
+                (
+                    obs_scripture::Passage::verse(ps(4, 1)),
+                    Some("Psalm 4"),
+                    "On the next psalm.",
+                ),
+            ],
+        );
+        add_doc(
+            &mut h.shell,
+            Arc::new(ReadingDoc::from_resource(commentary)),
+        );
+    }
+    let tab = TabId(
+        h.shell
+            .run("resource.open", &json!({ "id": "tc", "split": true }))
+            .unwrap()["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    h.shell
+        .run("tab.go", &json!({ "tab": tab.0, "text": "Ps 3:1" }));
+    settle_all(&mut h);
+    let start = top_anchor(&mut h, tab);
+    // Halfway down the section, with the wheel (scrolling is animated: let it stop).
+    for _ in 0..6 {
+        wheel(&mut h, tab, -230.0);
+    }
+    h.frames(30);
+    settle_all(&mut h);
+    let scrolled = top_anchor(&mut h, tab);
+    assert_eq!(scrolled.unit, start.unit, "still in the Psalm 3 section");
+    assert!(
+        scrolled.byte > start.byte + 500,
+        "scrolled well into the section: {start:?} → {scrolled:?}"
+    );
+    assert!(
+        scrolled.into > 1.0,
+        "part of a line scrolled off: {scrolled:?}"
+    );
+    assert_eq!(shows(&h, tab), ("tc".into(), Some(ps(3, 1))));
+    let seen = texts_in(&h, tab);
+
+    h.click(in_panel(&h, tab, "▶"));
+    settle_all(&mut h);
+    assert_eq!(shows(&h, tab), ("oc".into(), Some(ps(3, 1))));
+    // A switch opens the other Commentary at the section's start.
+    assert_eq!(top_anchor(&mut h, tab).byte, start.byte);
+
+    h.click(in_panel(&h, tab, "‹"));
+    settle_all(&mut h);
+    assert_eq!(shows(&h, tab), ("tc".into(), Some(ps(3, 1))));
+    let back = top_anchor(&mut h, tab);
+    assert_eq!((back.unit, back.byte), (scrolled.unit, scrolled.byte));
+    assert!(
+        (back.into - scrolled.into).abs() < 0.5,
+        "{scrolled:?} → {back:?}"
+    );
+    assert_eq!(texts_in(&h, tab), seen, "the same text is in view");
+
+    // Forward returns to the other Commentary where it was left.
+    h.click(in_panel(&h, tab, "›"));
+    settle_all(&mut h);
+    assert_eq!(shows(&h, tab).0, "oc");
+    assert_eq!(top_anchor(&mut h, tab).byte, start.byte);
+}
+
+#[test]
+fn the_reference_box_leaves_room_for_the_parallel_controls_in_a_narrow_panel() {
+    let (mut h, tab) = bsb_at_ps_3_1();
+    h.frames(2);
+    let panel = h
+        .panels()
+        .into_iter()
+        .find(|(_, titles)| titles.contains(&"BSB".to_string()))
+        .unwrap()
+        .0;
+    assert!(panel.width() < 430.0, "a narrow Panel: {panel:?}");
+    let text = in_panel(&h, tab, "Psalms 3:1");
+    // The reference box: the narrowest filled rect around its text.
+    let field = h
+        .rects
+        .iter()
+        .map(|(r, _)| *r)
+        .filter(|r| r.contains(text) && r.width() > 40.0 && r.height() < 40.0)
+        .min_by(|a, b| a.width().total_cmp(&b.width()))
+        .expect("the reference box");
+    let previous = in_panel(&h, tab, "◀");
+    assert!(
+        field.right() < previous.x - 4.0,
+        "the box {field:?} overlaps ◀ at {previous:?}"
+    );
+    assert!(
+        panel.contains(in_panel(&h, tab, "…")),
+        "the Tab menu is in the Panel"
     );
 }
 
