@@ -355,6 +355,103 @@ fn the_alias_cache_is_rebuilt_at_library_load_when_either_side_changes() {
     drop(s);
 }
 
+/// At startup the refresh job and a restored Guide's section job can miss the same pair at
+/// once: both get the table, which is built and written once.
+#[test]
+fn jobs_missing_the_same_pair_at_once_share_one_build() {
+    let t = Temp::new("alias-race");
+    genesis_library(&t);
+    let s = session(&t);
+    let tipnr = s.library.get("tipnr").unwrap().clone();
+    let easton = s.library.get("easton").unwrap().clone();
+    let cache = AliasCache::new(Overrides::starter());
+    cache.set_dir(t.cache());
+    let tables: Vec<Arc<aliases::AliasTable>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| scope.spawn(|| cache.table(&tipnr, &easton)))
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap().unwrap())
+            .collect()
+    });
+    assert!(
+        tables.iter().all(|x| Arc::ptr_eq(x, &tables[0])),
+        "built once"
+    );
+    assert_eq!(cache.write_error(), None);
+    let files: Vec<String> = std::fs::read_dir(t.cache())
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        files,
+        [aliases::file_name(&tipnr.manifest, &easton.manifest)]
+    );
+    drop(s);
+}
+
+/// A cache folder that cannot be written costs only the cache file: the links still come,
+/// and the failure is recorded rather than shown at every startup.
+#[test]
+fn an_unwritable_cache_folder_still_gives_links() {
+    let t = Temp::new("alias-unwritable");
+    genesis_library(&t);
+    let mut s = session(&t);
+    // A file where the folder should be: nothing can be created in it, on any platform.
+    let blocked = t.0.join("blocked");
+    std::fs::write(&blocked, "").unwrap();
+    s.set_alias_cache_dir(blocked.clone());
+    let tipnr = s.library.get("tipnr").unwrap().clone();
+    let easton = s.library.get("easton").unwrap().clone();
+    let table = s.guides.aliases().table(&tipnr, &easton).unwrap();
+    assert_eq!(table.headword("Abraham@Gen.11.26-1Pe"), Some("Abraham"));
+    let error = s.guides.aliases().write_error().unwrap_or_default();
+    assert!(error.contains("alias cache"), "{error}");
+    assert_eq!(s.guides.aliases().refresh(&s.library), Ok(2));
+    let rows = people(&mut s, Passage::verse(gen_12(1)));
+    let abram = rows.iter().find(|r| r.name == "Abram").unwrap();
+    assert_eq!(abram.articles.len(), 2, "{:?}", abram.articles);
+    drop(s);
+}
+
+/// The temp file of a write that crashed is swept at the next refresh; one still being
+/// written (young) is left alone.
+#[test]
+fn refresh_sweeps_leftover_temp_files() {
+    let t = Temp::new("alias-partials");
+    genesis_library(&t);
+    let s = session(&t);
+    std::fs::create_dir_all(t.cache()).unwrap();
+    let old = t
+        .cache()
+        .join("tipnr.aaaa--easton.bbbb.v1.aliases.json.123-0.partial");
+    let young = t
+        .cache()
+        .join("tipnr.aaaa--smith.bbbb.v1.aliases.json.123-1.partial");
+    let other = t.cache().join("notes.partial");
+    for f in [&old, &young, &other] {
+        std::fs::write(f, "{ half").unwrap();
+    }
+    let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    for f in [&old, &other] {
+        std::fs::File::options()
+            .write(true)
+            .open(f)
+            .unwrap()
+            .set_modified(hour_ago)
+            .unwrap();
+    }
+    let cache = AliasCache::new(Overrides::starter());
+    cache.set_dir(t.cache());
+    assert_eq!(cache.refresh(&s.library), Ok(2));
+    assert!(!old.exists(), "a leftover is swept");
+    assert!(young.exists(), "a write in progress is not");
+    assert!(other.exists(), "nor a file that is not an alias cache's");
+    drop(s);
+}
+
 #[test]
 fn a_prebuilt_alias_cache_beside_the_resources_is_used_and_overrides_apply() {
     let t = Temp::new("prebuilt");
@@ -419,11 +516,46 @@ fn a_key_word_opens_a_word_study_at_its_strongs_number() {
     );
     // Without a number it opens as before.
     let out = s.run("guide.word_study", &json!({})).unwrap();
-    let tab = s
-        .workspace
-        .tab(TabId(out["tab"].as_u64().unwrap()))
-        .unwrap();
+    let blank = TabId(out["tab"].as_u64().unwrap());
+    let tab = s.workspace.tab(blank).unwrap();
     assert_eq!(tab.entry_history.current(), None);
+
+    // With `tab`, that open Word Study moves (and takes focus) instead: the Key words click
+    // reusing a Tab goes through the command too.
+    let first = s
+        .workspace
+        .tabs()
+        .find(|t| t.entry_history.current().is_some())
+        .map(|t| t.id)
+        .unwrap();
+    let count = s.workspace.tabs().count();
+    let out = s
+        .run(
+            "guide.word_study",
+            &json!({ "strongs": "H430", "tab": first.0 }),
+        )
+        .unwrap();
+    assert_eq!(out["tab"], json!(first.0));
+    assert_eq!(s.workspace.tabs().count(), count, "no new Tab");
+    assert_eq!(s.workspace.focused(), Some(first));
+    let tab = s.workspace.tab(first).unwrap();
+    assert_eq!(
+        tab.entry_history.current(),
+        Some(Key::StrongsNumber("H430".parse().unwrap()))
+    );
+    // Only an open Word Study Tab.
+    let other = s.run("tool.notes", &json!({})).unwrap()["tab"].clone();
+    assert!(
+        s.run(
+            "guide.word_study",
+            &json!({ "strongs": "G25", "tab": other })
+        )
+        .is_err()
+    );
+    assert!(
+        s.run("guide.word_study", &json!({ "strongs": "G25", "tab": 999 }))
+            .is_err()
+    );
 }
 
 fn starter_library() -> Option<Library> {

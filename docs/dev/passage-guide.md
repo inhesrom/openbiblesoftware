@@ -55,10 +55,10 @@ Decisions #15 (sections, Guide arrangement, navigation), #18 (Tab header, placem
   (`ResourceStore::for_each_tagged_word`, a single SQL pass), kept in memory per Bible
   revision (`BibleCache`, with the Verse maps).
 - UI: one line per word (Lemma through the text pipeline, transliteration, Gloss, `1× · 146 in
-  KJV`), the first 12 with Show all. Click opens a Word Study at the Strong's number: the open
-  Word Study Tab moves there, or `guide.word_study {strongs}` opens one (that command now takes
-  an optional `strongs` and puts it in the Tab's entry history, for #55); Ctrl/Cmd-click
-  always opens a new one.
+  KJV`), the first 12 with Show all. Click opens a Word Study at the Strong's number through
+  `guide.word_study {strongs, tab?}`: with `tab` the open Word Study Tab moves there and takes
+  focus, without it a new one opens (the command takes an optional `strongs` and puts it in the
+  Tab's entry history, for #55); Ctrl/Cmd-click always opens a new one.
 
 ## People & places (#54)
 
@@ -86,10 +86,14 @@ Decisions #15 (sections, Guide arrangement, navigation), #18 (Tab header, placem
 - Where: the app's cache folder (`aliases/` beside `search/`, or `$OBS_ALIAS_CACHE`), then the
   prebuilt `aliases/` beside the `.obr` files. `App::with_file` calls
   `Session::set_alias_cache_dir` and `Session::refresh_alias_caches` at library load: a
-  background job makes every pair current and deletes cache-folder files no pair uses. A
-  section job builds a missing table on demand too.
+  background job makes every pair current and deletes cache-folder files no pair uses (and
+  `.partial` temp files over 10 minutes old). A section job builds a missing table on demand
+  too; a per-pair lock makes jobs that miss the same pair at once share one build, and each
+  write has its own temp file. A table that cannot be saved (unwritable cache folder) is still
+  used; the failure is kept in `AliasCache::write_error`, not reported as an error.
 - `cargo xtask starter` writes the Starter's tables to `dist/starter/aliases/` and fails if an
-  override names an entity or headword the Starter Resources lack.
+  override names an entity or headword the Starter Resources lack. Their bytes are in the build
+  report's total and count toward the size budget.
 - Starter coverage (real library): Easton links 3,148 and Smith 3,685 of TIPNR's 4,135
   entities; building both tables takes ~130 ms.
 

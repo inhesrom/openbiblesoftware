@@ -35,6 +35,14 @@ pub const ALIAS_DIR: &str = "aliases";
 /// Extension of an alias cache file.
 pub const ALIAS_EXTENSION: &str = "aliases.json";
 
+/// Extension of the temp file a table is written to before it is renamed into place.
+pub const PARTIAL_EXTENSION: &str = "partial";
+
+/// A temp file older than this is a leftover (a crash mid-write) that [`AliasCache::refresh`]
+/// deletes; a younger one may be another build's, still being written.
+#[cfg(not(target_arch = "wasm32"))]
+const STALE_PARTIAL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
 /// One Resource a table was built from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Side {
@@ -392,6 +400,13 @@ pub struct AliasCache {
     dir: Mutex<Option<PathBuf>>,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     tables: Mutex<BTreeMap<String, Arc<AliasTable>>>,
+    /// One lock per pair (by file name), so two jobs that miss the same pair at once build
+    /// it once and never write the same file together.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    building: Mutex<BTreeMap<String, Arc<Mutex<()>>>>,
+    /// The last failure to save a built table to the cache folder. The table is still used
+    /// (kept in memory); it is just built again next session.
+    write_error: Mutex<Option<String>>,
     overrides: Overrides,
 }
 
@@ -406,6 +421,8 @@ impl AliasCache {
         Self {
             dir: Mutex::new(None),
             tables: Mutex::new(BTreeMap::new()),
+            building: Mutex::new(BTreeMap::new()),
+            write_error: Mutex::new(None),
             overrides,
         }
     }
@@ -421,6 +438,21 @@ impl AliasCache {
 
     pub fn overrides(&self) -> &Overrides {
         &self.overrides
+    }
+
+    /// The last failure to save a built table to the cache folder, if any (the table was
+    /// used anyway; only the cache file is missing).
+    pub fn write_error(&self) -> Option<String> {
+        self.write_error
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    fn pair_lock(&self, name: &str) -> Arc<Mutex<()>> {
+        let mut building = self.building.lock().unwrap_or_else(|p| p.into_inner());
+        Arc::clone(building.entry(name.to_string()).or_default())
     }
 
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
@@ -462,6 +494,16 @@ impl AliasCache {
         {
             return Ok(t);
         }
+        // Only one job looks for (and builds) a pair at a time; one that waited finds the
+        // table the other made.
+        let pair = self.pair_lock(&name);
+        let _building = pair.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(t) = self
+            .remembered(&name)
+            .filter(|t| t.is_for(im, dm, &self.overrides))
+        {
+            return Ok(t);
+        }
         let dir = self.dir();
         let mut folders: Vec<(PathBuf, bool)> = Vec::new();
         if let Some(d) = &dir {
@@ -493,8 +535,12 @@ impl AliasCache {
             }
         }
         let t = Arc::new(self.build_table(index, dictionary)?);
-        if let Some(d) = &dir {
-            write_table(d, &t).map_err(|e| format!("alias cache {}: {e}", d.display()))?;
+        // A cache folder that cannot be written costs a rebuild next session, not the links.
+        if let Some(d) = &dir
+            && let Err(e) = write_table(d, &t)
+        {
+            *self.write_error.lock().unwrap_or_else(|p| p.into_inner()) =
+                Some(format!("alias cache {}: {e}", d.display()));
         }
         self.remember(Arc::clone(&t));
         Ok(t)
@@ -525,8 +571,8 @@ impl AliasCache {
     }
 
     /// Make every pair of the library current (run at library load, on the job queue), and
-    /// delete cache files in the cache folder that no pair uses any more. Returns how many
-    /// pairs there are.
+    /// delete cache files in the cache folder that no pair uses any more, and temp files a
+    /// crashed write left behind. Returns how many pairs there are.
     pub fn refresh(&self, library: &crate::Library) -> Result<usize, String> {
         use obs_model::ResourceType;
         let mut names = Vec::new();
@@ -544,7 +590,8 @@ impl AliasCache {
         {
             for entry in list.flatten() {
                 let file = entry.file_name().to_string_lossy().into_owned();
-                if file.ends_with(ALIAS_EXTENSION) && !names.contains(&file) {
+                let unused = file.ends_with(ALIAS_EXTENSION) && !names.contains(&file);
+                if unused || is_stale_partial(&file, &entry) {
                     let _ = std::fs::remove_file(entry.path());
                 }
             }
@@ -557,19 +604,49 @@ impl AliasCache {
     }
 }
 
+/// An alias cache temp file (`<name>.aliases.json.<pid>-<n>.partial`) old enough to be a
+/// leftover rather than a write in progress.
+#[cfg(not(target_arch = "wasm32"))]
+fn is_stale_partial(file: &str, entry: &std::fs::DirEntry) -> bool {
+    let ours = file
+        .strip_suffix(PARTIAL_EXTENSION)
+        .and_then(|f| f.strip_suffix('.'))
+        .is_some_and(|f| f.contains(&format!(".{ALIAS_EXTENSION}.")));
+    ours && entry
+        .metadata()
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age >= STALE_PARTIAL)
+}
+
 /// Write a table into `dir` under its file name (through a temp file, so a reader never
 /// sees half a file). Returns its path.
+///
+/// Safe to run for the same table at once (two jobs, or two app instances): each write has
+/// its own temp file, and a rename that loses to a table already in place keeps that one
+/// (the build is deterministic). A failed write removes its temp file.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn write_table(dir: &std::path::Path, table: &AliasTable) -> std::io::Result<PathBuf> {
+    static WRITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     std::fs::create_dir_all(dir)?;
-    let path = dir.join(table.file_name());
+    let name = table.file_name();
+    let path = dir.join(&name);
+    let n = WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let temp = dir.join(format!(
-        "{}.{}.partial",
-        table.file_name(),
+        "{name}.{}-{n}.{PARTIAL_EXTENSION}",
         std::process::id()
     ));
-    std::fs::write(&temp, table.to_json())?;
-    std::fs::rename(&temp, &path)?;
+    if let Err(e) = std::fs::write(&temp, table.to_json()) {
+        let _ = std::fs::remove_file(&temp);
+        return Err(e);
+    }
+    if let Err(e) = std::fs::rename(&temp, &path) {
+        let _ = std::fs::remove_file(&temp);
+        if !path.is_file() {
+            return Err(e);
+        }
+    }
     Ok(path)
 }
 
@@ -750,5 +827,44 @@ headword = "No Such Article"
         assert_eq!(AliasTable::from_json(&t.to_json()), Some(t.clone()));
         assert!(t.is_for(&i, &d, &Overrides::none()));
         assert!(!t.is_for(&i, &d, &Overrides::starter()));
+    }
+
+    /// Two jobs (or two app instances) writing the same table at once each succeed, and
+    /// leave one whole file and no temp files behind.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn concurrent_writes_of_one_table_all_succeed_and_leave_no_temp_files() {
+        let dir = std::env::temp_dir().join(format!("obs-alias-writes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (i, d) = manifests();
+        let keys: Vec<KeyEntry> = (0..2000)
+            .map(|n| key(&format!("Name{n}"), "u1", false))
+            .collect();
+        let entities: Vec<Entity> = (0..2000)
+            .map(|n| entity(&format!("Name{n}@Gen.1.1"), &[]))
+            .collect();
+        let (table, _) = build(&i, &entities, &d, &keys, &Overrides::none());
+        let results: Vec<std::io::Result<PathBuf>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| scope.spawn(|| write_table(&dir, &table)))
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        for r in &results {
+            assert!(r.is_ok(), "{r:?}");
+        }
+        let files: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(files, [table.file_name()]);
+        let text = std::fs::read_to_string(dir.join(table.file_name())).unwrap();
+        assert_eq!(AliasTable::from_json(&text), Some(table));
+        // A write that fails (the folder is a file) leaves nothing behind either.
+        let blocked = dir.join("blocked");
+        std::fs::write(&blocked, "").unwrap();
+        assert!(write_table(&blocked, &AliasTable::from_json(&text).unwrap()).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

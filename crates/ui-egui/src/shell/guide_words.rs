@@ -277,21 +277,16 @@ impl State {
                 ws.tabs().filter(|t| t.kind == kind).map(|t| t.id).max()
             })
             .flatten();
-        match existing {
-            Some(tab) => {
-                self.session
-                    .workspace
-                    .navigate_entry(tab, Key::StrongsNumber(number));
-                self.session.workspace.focus(tab);
-            }
+        // Both ways go through the command, so whatever Word Study adds to it applies to a
+        // reused Tab too.
+        let params = match existing {
+            Some(tab) => json!({ "strongs": number.to_string(), "tab": tab.0 }),
             None => {
                 self.session.workspace.focus(guide);
-                self.run(
-                    "guide.word_study",
-                    &json!({ "strongs": number.to_string() }),
-                );
+                json!({ "strongs": number.to_string() })
             }
-        }
+        };
+        self.run("guide.word_study", &params);
     }
 
     /// A Dictionary at an article: its open Tab moves there (Ctrl/Cmd: always a new Tab).

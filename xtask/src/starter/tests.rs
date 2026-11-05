@@ -1345,6 +1345,12 @@ fn the_build_report_counts_the_structural_coverage() {
     assert!(report.contains("All passed. 1 Bible(s):"), "{report}");
     assert!(report.contains("## Golden snapshots"), "{report}");
     assert!(report.contains("None listed."), "{report}");
+    // The alias caches count toward the total and the size budget like the Search indexes
+    // (this fixture has no People & places index, so there are none).
+    assert!(
+        report.contains("People & places alias caches (`aliases/`, 0 bytes)"),
+        "{report}"
+    );
 }
 
 /// #67: every CC BY source of the real lock gets a published change record, and the record

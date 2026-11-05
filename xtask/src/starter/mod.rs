@@ -266,7 +266,10 @@ pub fn build(config: &Config) -> Result<String> {
     let search_bytes: Vec<u64> = caches.into_iter().collect::<Result<_>>()?;
     let overrides = obs_engine::aliases::Overrides::parse(obs_engine::aliases::STARTER_OVERRIDES)
         .map_err(|e| anyhow!("starter/aliases.toml: {e}"))?;
-    write_alias_caches(&resources, &config.out.join(ALIAS_DIR), &overrides)?;
+    let alias_bytes = write_alias_caches(&resources, &config.out.join(ALIAS_DIR), &overrides)?
+        .iter()
+        .map(|p| std::fs::metadata(p).map(|m| m.len()))
+        .sum::<std::io::Result<u64>>()?;
     for source in lock_file
         .sources
         .iter()
@@ -297,7 +300,10 @@ pub fn build(config: &Config) -> Result<String> {
         &built,
         &manifest,
         previous.as_ref(),
-        &search_bytes,
+        CacheBytes {
+            search: &search_bytes,
+            aliases: alias_bytes,
+        },
         budget,
         &structural.coverage,
         &snapshots,
@@ -701,7 +707,7 @@ fn clean_outputs(out: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Bytes of every file under `dir`, including the `search/` caches.
+/// Bytes of every file under `dir`, including the `search/` and `aliases/` caches.
 fn dir_bytes(dir: &Path) -> Result<u64> {
     let mut total = 0;
     for entry in std::fs::read_dir(dir)? {
@@ -784,28 +790,38 @@ fn compare_dirs(a: &Path, b: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Sizes of the prebuilt caches: each Resource's Search index (in Resource order) and all
+/// alias caches together.
+struct CacheBytes<'a> {
+    search: &'a [u64],
+    aliases: u64,
+}
+
 fn build_report(
     built: &[Built],
     manifest: &ReleaseManifest,
     previous: Option<&ReleaseManifest>,
-    search_bytes: &[u64],
+    caches: CacheBytes<'_>,
     budget: u64,
     coverage: &checks::Coverage,
     snapshots: &[goldens::Checked],
 ) -> String {
     let mut s = String::from("# Starter library build report\n\n");
     let obr_bytes: u64 = manifest.resources.iter().map(|r| r.bytes).sum();
-    let index_bytes: u64 = search_bytes.iter().sum();
+    let index_bytes: u64 = caches.search.iter().sum();
+    let alias_bytes = caches.aliases;
     let _ = writeln!(
         s,
         "Total: {} Resource(s), {} MB of Resource files plus {} MB of prebuilt Search index \
-         caches (`{SEARCH_DIR}/`, index version {}) = {} MB; size budget {} MB for the Starter \
-         set plus Search index caches.\n",
+         caches (`{SEARCH_DIR}/`, index version {}) plus {} MB of People & places alias caches \
+         (`{ALIAS_DIR}/`, {alias_bytes} bytes) = {} MB; size budget {} MB for the Starter set \
+         plus its caches.\n",
         manifest.resources.len(),
         mb(obr_bytes),
         mb(index_bytes),
         obs_search::INDEX_VERSION,
-        mb(obr_bytes + index_bytes),
+        mb(alias_bytes),
+        mb(obr_bytes + index_bytes + alias_bytes),
         budget / 1_000_000
     );
     match previous {
@@ -824,7 +840,7 @@ fn build_report(
             r.resource_id,
             r.revision,
             mb(r.bytes),
-            mb(search_bytes.get(i).copied().unwrap_or(0)),
+            mb(caches.search.get(i).copied().unwrap_or(0)),
             r.units.len(),
             b.report.verses,
             b.report.notes,
