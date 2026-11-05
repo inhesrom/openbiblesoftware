@@ -141,7 +141,7 @@ pub use workspace::{
     Effect, Guide, HeaderBox, History, OpenRequest, PanelId, Placement, Tab, TabId, TabKind, Tool,
     Workspace,
 };
-pub use workspace_commands::{MENUS, Menu, MenuItem, choices};
+pub use workspace_commands::{MENUS, Menu, MenuItem, choices, parallel_resources};
 
 #[cfg(test)]
 mod tests;
@@ -166,3 +166,6 @@ mod import_tests;
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod annotations_tests;
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod parallel_resources_tests;

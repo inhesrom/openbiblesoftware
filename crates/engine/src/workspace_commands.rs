@@ -636,6 +636,39 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         enabled: always,
         run: |s, p| history(s, p, false),
     },
+    // Parallel resources (#151): the Tab shows another Resource of its type, at the same place.
+    CommandSpec {
+        id: "tab.parallel",
+        label: "Switch to parallel resource",
+        shortcut: None,
+        params: &[
+            TAB,
+            ParamSpec {
+                name: "id",
+                kind: ParamKind::String,
+                required: true,
+                help: "Resource id of the same Resource type as the Tab's",
+            },
+        ],
+        enabled: always,
+        run: switch_parallel,
+    },
+    CommandSpec {
+        id: "tab.parallel_previous",
+        label: "Previous parallel resource",
+        shortcut: Some("Ctrl+["),
+        params: &[TAB],
+        enabled: focused_can_switch,
+        run: |s, p| cycle_parallel(s, p, false),
+    },
+    CommandSpec {
+        id: "tab.parallel_next",
+        label: "Next parallel resource",
+        shortcut: Some("Ctrl+]"),
+        params: &[TAB],
+        enabled: focused_can_switch,
+        run: |s, p| cycle_parallel(s, p, true),
+    },
     CommandSpec {
         id: "tab.close",
         label: "Close Tab",
@@ -975,21 +1008,26 @@ fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
 fn history(s: &mut Session, p: Params<'_>, back: bool) -> Result<Value, CommandError> {
     let id = if back { "tab.back" } else { "tab.forward" };
     let tab = tab_param(id, s, &p)?;
-    if s.workspace.tab(tab).is_some_and(|t| {
-        matches!(
-            t.header_box(),
-            crate::HeaderBox::Lexicon | crate::HeaderBox::Headword | crate::HeaderBox::Word
-        )
-    }) {
+    let shown = s.workspace.tab(tab).map(|t| t.kind.clone());
+    let mut out = if s.workspace.tab(tab).is_some_and(|t| t.keeps_entries()) {
         s.stop_choosing(tab);
-        return Ok(json!({ "key": s.workspace.entry_history(tab, back) }));
-    }
-    let to: Option<Verse> = if back {
-        s.workspace.back(tab)
+        json!({ "key": s.workspace.entry_history(tab, back) })
     } else {
-        s.workspace.forward(tab)
+        let to: Option<Verse> = if back {
+            s.workspace.back(tab)
+        } else {
+            s.workspace.forward(tab)
+        };
+        json!({ "verse": to.map(|v| v.osis()) })
     };
-    Ok(json!({ "verse": to.map(|v| v.osis()) }))
+    // Back or Forward across a switch between parallel resources (#151).
+    if let Some(TabKind::Resource(now)) = s.workspace.tab(tab).map(|t| t.kind.clone())
+        && shown != Some(TabKind::Resource(now.clone()))
+    {
+        resource_shown(s, tab);
+        out["id"] = json!(now);
+    }
+    Ok(out)
 }
 
 fn link(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
@@ -1184,4 +1222,110 @@ fn adjacent_entry(s: &mut Session, p: Params<'_>, forward: bool) -> Result<Value
         .ok_or_else(|| failed(id, "No adjacent entry"))?;
     s.workspace.navigate_entry(tab, key.clone());
     Ok(json!({ "key": key }))
+}
+
+/// A Resource Tab's parallel resources (#151): every Resource of its Resource type in the
+/// library, its own included, in Preferred order. Empty for other Tabs.
+pub fn parallel_resources(s: &Session, tab: TabId) -> Vec<&crate::LibraryEntry> {
+    let Some(TabKind::Resource(id)) = s.workspace.tab(tab).map(|t| &t.kind) else {
+        return Vec::new();
+    };
+    let Some(ty) = s.library.get(id).map(|e| e.manifest.resource_type) else {
+        return Vec::new();
+    };
+    s.library.of_type(ty).collect()
+}
+
+/// The parallel-resource keys are left to other uses unless the focused Tab is a Resource Tab
+/// (with no focused Tab, as from `obs-cli`, they run and report what is wrong).
+fn focused_can_switch(s: &Session) -> bool {
+    s.workspace
+        .focused()
+        .and_then(|t| s.workspace.tab(t))
+        .is_none_or(|t| matches!(t.kind, TabKind::Resource(_)))
+}
+
+/// `tab.parallel`: show the Resource `id` in the Tab, at the Tab's Current location.
+fn switch_parallel(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "tab.parallel";
+    let tab = tab_param(ID, s, &p)?;
+    let to = p.str("id").unwrap_or_default();
+    let parallel = parallel_resources(s, tab);
+    if parallel.is_empty() {
+        return Err(failed(ID, "this Tab does not show a library Resource"));
+    }
+    if !parallel.iter().any(|e| e.manifest.resource_id == to) {
+        let ty = crate::library_search::type_plural(parallel[0].manifest.resource_type);
+        return Err(failed(
+            ID,
+            format!("{to} is not one of the {ty} in the library"),
+        ));
+    }
+    switch_to(s, tab, to.to_string())
+}
+
+/// `tab.parallel_previous` / `tab.parallel_next`: the Resource before or after the Tab's in
+/// Preferred order, wrapping around.
+fn cycle_parallel(s: &mut Session, p: Params<'_>, forward: bool) -> Result<Value, CommandError> {
+    let id = if forward {
+        "tab.parallel_next"
+    } else {
+        "tab.parallel_previous"
+    };
+    let tab = tab_param(id, s, &p)?;
+    let Some(TabKind::Resource(current)) = s.workspace.tab(tab).map(|t| t.kind.clone()) else {
+        return Err(failed(id, "this Tab does not show a Resource"));
+    };
+    let parallel: Vec<String> = parallel_resources(s, tab)
+        .iter()
+        .map(|e| e.manifest.resource_id.clone())
+        .collect();
+    let Some(at) = parallel.iter().position(|r| *r == current) else {
+        return Err(failed(id, format!("{current} is not in the library")));
+    };
+    if parallel.len() < 2 {
+        let ty = s.library.get(&current).map(|e| e.manifest.resource_type);
+        let what = ty.map_or("Resources", crate::library_search::type_plural);
+        return Err(failed(
+            id,
+            format!("There are no other {what} in the library"),
+        ));
+    }
+    let n = parallel.len();
+    let next = if forward {
+        (at + 1) % n
+    } else {
+        (at + n - 1) % n
+    };
+    switch_to(s, tab, parallel[next].clone())
+}
+
+fn switch_to(s: &mut Session, tab: TabId, to: String) -> Result<Value, CommandError> {
+    s.stop_choosing(tab);
+    if s.workspace.switch_resource(tab, to.clone()) {
+        resource_shown(s, tab);
+    }
+    Ok(json!({ "tab": tab.0, "id": to }))
+}
+
+/// A Resource Tab now shows another Resource: its title and Key schemes are that one's.
+fn resource_shown(s: &mut Session, tab: TabId) {
+    let Some(kind) = s.workspace.tab(tab).map(|t| t.kind.clone()) else {
+        return;
+    };
+    let title = title_of(s, &kind);
+    let schemes = match &kind {
+        TabKind::Resource(id) => s
+            .library
+            .get(id)
+            .map(|e| e.manifest.key_schemes.clone())
+            .unwrap_or_default(),
+        _ => return,
+    };
+    if let Some(t) = s.workspace.tab_mut(tab) {
+        t.title = title;
+        if !schemes.is_empty() {
+            t.key_schemes = schemes;
+        }
+    }
 }
