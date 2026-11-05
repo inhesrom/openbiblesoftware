@@ -331,7 +331,10 @@ pub fn reading_pane(
     // Over the glyphs: the red underline, then Note markers at the end of their ranges.
     let rtl = view.doc.direction() == obs_model::Direction::Rtl;
     let hover = response.hover_pos();
-    let in_view: Vec<usize> = if marks.iter().any(|m| m.kind == MarkKind::Note) {
+    let in_view: Vec<usize> = if marks
+        .iter()
+        .any(|m| m.kind.is_note() || m.kind.at_verse_number())
+    {
         view.laid_in_view(rect.height())
             .iter()
             .map(|(i, _, _)| *i)
@@ -339,6 +342,18 @@ pub fn reading_pane(
     } else {
         Vec::new()
     };
+    // Marks for a verse number go in the column's margin on the number's line (left of the
+    // column in left-to-right text, right of it in right-to-left text): a verse that starts
+    // mid-line has the previous verse's words just before its number. Space taken so far in
+    // each line's margin, keyed by the line's top.
+    let mut beside: std::collections::HashMap<i64, f32> = std::collections::HashMap::new();
+    let gap = (size * 0.12).max(2.0);
+    // The pane's own room, in text coordinates: marks never go under the scrollbar or
+    // outside the pane.
+    let (room_left, room_right) = (
+        rect.left() - text_rect.left() + 1.0,
+        track.left() - text_rect.left() - 1.0,
+    );
     for (mark, rects) in marks.iter().zip(&mark_rects) {
         match mark.kind {
             MarkKind::Highlight(style) if palette.highlight(style).is_none() => {
@@ -360,6 +375,38 @@ pub fn reading_pane(
                 paint_note_marker(&painter, marker, palette);
                 if hover.is_some_and(|p| marker.expand(3.0).contains(p)) {
                     out.hovered_note = Some((mark.id.clone(), marker));
+                }
+            }
+            MarkKind::Margin(_) | MarkKind::VerseNote => {
+                let Some(band) = verse_number_line(view, &in_view, mark, rects, size) else {
+                    continue;
+                };
+                // Laid outward from the column, one after another, in Mark order.
+                let used = beside.entry((band[1] * 4.0).round() as i64).or_insert(0.0);
+                let (w, h, round) = match mark.kind {
+                    MarkKind::Margin(_) => {
+                        let w = (size * 0.16).max(2.5);
+                        (w, band[3] - band[1], w / 2.0)
+                    }
+                    _ => (size * 0.42, size * 0.48, 1.5),
+                };
+                let x = if rtl {
+                    (text_rect.width() + gap + *used).min(room_right - w)
+                } else {
+                    (-gap - *used - w).max(room_left)
+                };
+                *used += w + gap;
+                let r = to_screen([x, band[1], x + w, band[1] + h]);
+                match mark.kind {
+                    MarkKind::Margin(style) => {
+                        painter.rect_filled(r, round, palette.mark(style));
+                    }
+                    _ => {
+                        paint_note_marker(&painter, r, palette);
+                        if hover.is_some_and(|p| r.expand(3.0).contains(p)) {
+                            out.hovered_note = Some((mark.id.clone(), r));
+                        }
+                    }
                 }
             }
             MarkKind::Highlight(_) => {}
@@ -444,6 +491,25 @@ fn note_marker(
     let band = text_band(*last, size);
     let y = band[1];
     Some([x, y, x + w, y + h])
+}
+
+/// The text band (relative to the text's left edge and the viewport top) of the line that
+/// holds the verse number of the Verse a Mark covers: its range starts at the Verse, where
+/// the number is laid out, so that is the range's first line. `None` while the Verse's start
+/// is not laid out in view.
+fn verse_number_line(
+    view: &ReadingView,
+    in_view: &[usize],
+    mark: &Mark,
+    rects: &[[f32; 4]],
+    size: f32,
+) -> Option<[f32; 4]> {
+    let first = rects.first()?;
+    let start_block = view.doc.block_at(mark.start.unit, mark.start.byte)?;
+    if !in_view.contains(&start_block) {
+        return None;
+    }
+    Some(text_band(*first, size))
 }
 
 /// A small note: a filled card with two ruled lines in the page colour.

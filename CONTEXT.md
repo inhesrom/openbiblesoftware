@@ -239,6 +239,10 @@ _Avoid_: Color, Palette
 A named container for Annotations. Every Annotation belongs to exactly one Notebook, and a default Notebook exists.
 _Avoid_: Folder, Collection, Tag
 
+**Show in text**:
+A Notebook's setting for whether its Annotations are drawn in Resource text. Annotations in a Notebook with it off are still kept and listed; they are just not drawn.
+_Avoid_: Visible, Filter, Layer
+
 **Anchor**:
 What ties an Annotation to the text. It is either a Passage anchor or a Text-range anchor.
 _Avoid_: Attachment, Link

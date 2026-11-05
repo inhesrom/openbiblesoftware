@@ -12,7 +12,7 @@ use obs_model::{
     BibleVerse, Direction, KeyEntry, Manifest, MorphemePart, ParaStyle, Resource, Span, SpanKind,
     TextUnit, UnitId, UnitKind,
 };
-use obs_scripture::{ListedVersification, Verse, VerseMap};
+use obs_scripture::{ListedVersification, Passage, Verse, VerseMap};
 #[cfg(not(target_arch = "wasm32"))]
 use obs_store::{ObrReader, ResourceStore, StoreError};
 
@@ -40,9 +40,27 @@ pub struct ReadingDoc {
     /// The Bible's own numbering (references typed for it are read in it, ADR 0002 rule 10).
     pub versification: ListedVersification,
     /// How its numbering corresponds to the Standard versification (none: identical).
+    ///
+    /// Set it only while building the document (as `open` and `from_resource` do), before
+    /// anything looks up Verses by Standard Passage: the first such lookup
+    /// (`verses_for_standard`, and so `marks_for`) caches an index built from this map in
+    /// `standard_index`, and changing the map afterwards leaves that index stale.
     pub verse_map: Option<std::sync::Arc<VerseMap>>,
     /// Each unit's interactive spans, indexed on first hover.
     span_indexes: Vec<OnceLock<SpanIndex>>,
+    /// The Standard Passage of each Verse, built on first use (Annotations in this Bible).
+    standard_index: OnceLock<StandardIndex>,
+}
+
+/// Bible Verses by the Standard Passage they map to (ADR 0002), for finding where a Passage
+/// anchor shows in this Bible: entries sorted by Standard start, with the running maximum of
+/// their ends so a lookup can binary-search both sides.
+#[derive(Debug, Default)]
+struct StandardIndex {
+    /// (Standard Passage, index into `verses`), by Passage start.
+    entries: Vec<(Passage, usize)>,
+    /// `max_end[i]`: the latest end among `entries[..=i]`.
+    max_end: Vec<Verse>,
 }
 
 impl ReadingDoc {
@@ -142,7 +160,72 @@ impl ReadingDoc {
             versification,
             verse_map: None,
             span_indexes,
+            standard_index: OnceLock::new(),
         }
+    }
+
+    fn standard_index(&self) -> &StandardIndex {
+        self.standard_index.get_or_init(|| {
+            let mapped: Option<std::collections::HashMap<Verse, Option<Passage>>> = self
+                .verse_map
+                .as_ref()
+                .map(|m| m.entries().iter().map(|e| (e.verse, e.standard)).collect());
+            let mut entries: Vec<(Passage, usize)> = self
+                .verses
+                .iter()
+                .enumerate()
+                .filter_map(|(i, v)| {
+                    let standard = match &mapped {
+                        // An Unmapped verse, or one the map does not know, has no Passage.
+                        Some(map) => map.get(&v.verse).copied().flatten(),
+                        // Without a Verse map, the Bible numbers like the Standard.
+                        None => Passage::new(
+                            v.verse,
+                            Verse::new(v.verse.book, v.verse.chapter, v.last.max(v.verse.verse)),
+                        )
+                        .ok(),
+                    };
+                    standard.map(|p| (p, i))
+                })
+                .collect();
+            entries.sort_by_key(|(p, i)| (p.start(), *i));
+            let mut max_end = Vec::with_capacity(entries.len());
+            let mut latest: Option<Verse> = None;
+            for (p, _) in &entries {
+                let end = latest.map_or(p.end(), |l| l.max(p.end()));
+                latest = Some(end);
+                max_end.push(end);
+            }
+            StandardIndex { entries, max_end }
+        })
+    }
+
+    /// The Bible Verses (indexes into `verses`, document order) that correspond to any part
+    /// of a Standard Passage, through the Verse map (ADR 0002). Empty for non-Bibles and for
+    /// Passages this Bible lacks (Absent verses).
+    pub fn verses_for_standard(&self, passage: Passage) -> Vec<usize> {
+        let index = self.standard_index();
+        // Entries that can overlap: running max end reaches the start, and start ≤ end.
+        let lo = index.max_end.partition_point(|e| *e < passage.start());
+        let hi = index
+            .entries
+            .partition_point(|(p, _)| p.start() <= passage.end());
+        let mut found: Vec<usize> = index
+            .entries
+            .get(lo..hi)
+            .unwrap_or_default()
+            .iter()
+            .filter(|(p, _)| p.end() >= passage.start())
+            .map(|(_, i)| *i)
+            .collect();
+        found.sort_unstable();
+        found.dedup();
+        found
+    }
+
+    /// Index into `units` of Bible Verse `i` (an index into `verses`).
+    pub fn verse_unit(&self, i: usize) -> Option<usize> {
+        self.verse_units.get(i).copied()
     }
 
     /// The innermost Tagged word at unit byte `byte`: its bytes and its morphemes.

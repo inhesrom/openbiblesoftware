@@ -448,6 +448,7 @@ fn a_note_across_units_with_nothing_mapped_keeps_the_first_text_range() {
         suffix: String::new(),
         content_hash: "sha256:0".into(),
         native_ref: None,
+        whole_verses: false,
     };
     let parts = [
         Segment {
@@ -813,7 +814,7 @@ fn every_command_is_undoable_and_redoable_to_an_identical_database() {
                 rng.pick(&annotations).id.clone()
             }
         };
-        let (id, params) = match rng.below(10) {
+        let (id, params) = match rng.below(11) {
             0 => (
                 "notebook.create",
                 json!({ "name": format!("Notebook {}", rng.below(1000)) }),
@@ -856,9 +857,17 @@ fn every_command_is_undoable_and_redoable_to_an_identical_database() {
                 "annotation.move",
                 json!({ "id": some_annotation(&mut rng), "notebook": rng.pick(&notebooks) }),
             ),
-            _ => (
+            9 => (
                 "annotation.delete",
                 json!({ "id": some_annotation(&mut rng) }),
+            ),
+            _ => (
+                "notebook.show_in_text",
+                match rng.below(3) {
+                    0 => json!({ "id": rng.pick(&notebooks) }),
+                    1 => json!({ "id": rng.pick(&notebooks), "show": true }),
+                    _ => json!({ "id": rng.pick(&notebooks), "show": false }),
+                },
             ),
         };
         let before = dump(&s);
@@ -899,6 +908,7 @@ fn every_command_is_undoable_and_redoable_to_an_identical_database() {
         "annotation.style",
         "annotation.move",
         "annotation.delete",
+        "notebook.show_in_text",
     ] {
         assert!(tried.contains(id), "{id} never changed anything");
     }
@@ -1050,4 +1060,137 @@ fn real_library_highlight_timing() {
     eprintln!("undo: {:?}", t.elapsed());
     drop(s);
     let _ = std::fs::remove_dir_all(&root);
+}
+
+/// #63: whether a Bible Text range covers its Verses whole decides how other Bibles show it
+/// (Verses highlighted, or only a margin mark). White space and punctuation at a Verse's
+/// ends do not count; a Text-range anchor never covers Verses.
+#[test]
+fn a_bible_text_range_records_whether_it_covers_its_verses_whole() {
+    let f = Fixture::new("whole");
+    let mut s = f.session();
+    let whole = |s: &mut Session, unit: &str, from: &str, to: &str| {
+        let a = f.at("test-lxx", unit, from, false);
+        let b = f.at("test-lxx", unit, to, true);
+        let made = highlight(s, sel("test-lxx", unit, a, unit, b));
+        assert_eq!(made.len(), 1);
+        made[0]
+            .anchor
+            .as_ref()
+            .unwrap()
+            .text_range()
+            .unwrap()
+            .whole_verses
+    };
+    // Jn 3:16 from its first word to its last, with or without the full stop.
+    assert!(whole(&mut s, "JHN", "For God so", "begotten Son."));
+    assert!(whole(&mut s, "JHN", "For God so", "begotten Son"));
+    // Jn 3:16-17 whole, and the same selection one word short at either end.
+    assert!(whole(&mut s, "JHN", "For God so", "condemn the world."));
+    assert!(!whole(&mut s, "JHN", "God so loved", "condemn the world."));
+    assert!(!whole(&mut s, "JHN", "For God so", "condemn the"));
+    // One word of Hebrew-numbered Ps 51:3.
+    assert!(!whole(&mut s, "PSA", "mercy", "mercy"));
+    // A Text-range anchor (the Unmapped Esth 10:4) never counts as whole Verses.
+    assert!(!whole(
+        &mut s,
+        "EST",
+        "Then Mardocheus",
+        "done these things."
+    ));
+    drop(s);
+}
+
+/// #63: each Notebook's Show in text, and View → Show Highlights, decide what
+/// `annotations_in_text` hands the reading panes. Both are kept in the User database; Show
+/// in text is undoable like any Notebook change, and every change moves the revision views
+/// reload on.
+#[test]
+fn show_in_text_and_show_highlights_filter_what_is_drawn_and_persist() {
+    let f = Fixture::new("show");
+    let mut s = f.session();
+    let study = s.create_notebook("Study").unwrap();
+    let a = f.at("test-lxx", "JHN", "For God", false);
+    let b = f.at("test-lxx", "JHN", "loved", true);
+    let lit = highlight(&mut s, sel("test-lxx", "JHN", a, "JHN", b));
+    let note = s
+        .run(
+            "annotation.note",
+            &json!({ "body": "hidden later", "passage": "Jn 3:16", "notebook": study.id }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let ids = |s: &Session| -> Vec<String> {
+        s.annotations_in_text()
+            .unwrap()
+            .into_iter()
+            .map(|a| a.id)
+            .collect()
+    };
+    assert_eq!(ids(&s), vec![lit[0].id.clone(), note.clone()]);
+
+    // Hide the Study Notebook: its Note is no longer drawn, but it is still listed.
+    let rev = s.annotations_revision();
+    let out = s
+        .run("notebook.show_in_text", &json!({ "id": study.id }))
+        .unwrap();
+    assert_eq!(out["notebook"]["show_in_text"], json!(false));
+    assert!(s.annotations_revision() > rev);
+    assert_eq!(ids(&s), vec![lit[0].id.clone()]);
+    assert_eq!(s.annotations(None).unwrap().len(), 2);
+    let listed = s.run("notebook.list", &Value::Null).unwrap();
+    let row = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["id"] == json!(study.id))
+        .unwrap()
+        .clone();
+    assert_eq!(row["show_in_text"], json!(false));
+    // An explicit value that is already set changes nothing and adds no undo step.
+    s.run(
+        "notebook.show_in_text",
+        &json!({ "id": study.id, "show": false }),
+    )
+    .unwrap();
+    assert_eq!(s.undo_history().undo_label(), Some("Hide in text"));
+    // Undo shows it again; redo hides it.
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert_eq!(ids(&s).len(), 2);
+    s.run("edit.redo", &Value::Null).unwrap();
+    assert_eq!(ids(&s), vec![lit[0].id.clone()]);
+
+    // View → Show Highlights off: Highlights go, Notes in shown Notebooks stay.
+    s.run(
+        "notebook.show_in_text",
+        &json!({ "id": study.id, "show": true }),
+    )
+    .unwrap();
+    let rev = s.annotations_revision();
+    s.run("view.highlights", &Value::Null).unwrap();
+    assert!(!s.appearance.show_highlights);
+    assert!(s.annotations_revision() > rev);
+    assert_eq!(ids(&s), vec![note.clone()]);
+    s.run(
+        "notebook.show_in_text",
+        &json!({ "id": study.id, "show": false }),
+    )
+    .unwrap();
+    drop(s);
+
+    // Both are remembered by the User database.
+    let s = f.session();
+    assert!(!s.appearance.show_highlights);
+    assert!(
+        !s.notebooks()
+            .unwrap()
+            .iter()
+            .find(|n| n.id == study.id)
+            .unwrap()
+            .show_in_text
+    );
+    assert!(ids(&s).is_empty());
+    drop(s);
 }

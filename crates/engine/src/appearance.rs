@@ -104,10 +104,23 @@ pub fn verse_numbers_id(v: VerseNumbers) -> &'static str {
 }
 
 /// Everything the View menu sets.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Appearance {
     pub theme: Theme,
     pub page_tone: PageTone,
+    /// View → Show Highlights (#18 rule 3): Highlights are drawn in Resource text (on by
+    /// default). Notes follow their Notebook's Show in text only.
+    pub show_highlights: bool,
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        Self {
+            theme: Theme::default(),
+            page_tone: PageTone::default(),
+            show_highlights: true,
+        }
+    }
 }
 
 /// The preference record (JSON in the User database's `preference` table).
@@ -119,6 +132,7 @@ pub(crate) fn to_json(a: &Appearance, t: &TextSettings) -> Value {
         "line_spacing": t.line_spacing,
         "red_letter": t.red_letter,
         "verse_numbers": verse_numbers_id(t.verse_numbers),
+        "highlights": a.show_highlights,
     })
 }
 
@@ -141,6 +155,9 @@ pub(crate) fn apply_json(v: &Value, a: &mut Appearance, t: &mut TextSettings) {
     }
     if let Some(b) = v["red_letter"].as_bool() {
         t.red_letter = b;
+    }
+    if let Some(b) = v["highlights"].as_bool() {
+        a.show_highlights = b;
     }
     match &v["verse_numbers"] {
         Value::String(s) => {

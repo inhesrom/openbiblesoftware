@@ -2617,6 +2617,9 @@ mod resource_tabs;
 #[path = "annotation_tests.rs"]
 mod annotation;
 
+#[path = "annotations_across_tests.rs"]
+mod annotations_across;
+
 /// Import from the Library menu and the live Import report Tab (#47).
 mod import {
     use std::path::{Path, PathBuf};

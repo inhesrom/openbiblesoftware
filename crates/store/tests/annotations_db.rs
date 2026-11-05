@@ -39,6 +39,7 @@ fn notebook(name: &str) -> Notebook {
         id: new_id(),
         name: name.into(),
         is_default: false,
+        show_in_text: true,
         created_at: 10,
         modified_at: 10,
     }
@@ -55,6 +56,7 @@ fn range(quote: &str) -> TextRange {
         suffix: " so loved".into(),
         content_hash: "sha256:abc".into(),
         native_ref: None,
+        whole_verses: false,
     }
 }
 
@@ -145,6 +147,60 @@ fn the_v4_migration_adds_the_annotation_tables_and_a_default_notebook() {
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
     assert_eq!(db.preference("theme").unwrap().as_deref(), Some("dark"));
     default_of(&db);
+}
+
+/// Migration 4 → 5 (#63): every existing Notebook shows in text, and Show in text and
+/// whole-Verse coverage round-trip.
+#[test]
+fn the_v5_migration_adds_show_in_text_and_whole_verse_coverage() {
+    let dir = Dir::new("migrate5");
+    let before = {
+        let (v4, _) = UserStore::open_to(&dir.db(), 4).unwrap();
+        assert_eq!(v4.schema_version().unwrap(), 4);
+        v4.annotation_dump().unwrap()
+    };
+    let (db, report) = UserStore::open(&dir.db()).unwrap();
+    assert_eq!(report.found_version, 4);
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
+    let default = default_of(&db);
+    assert!(
+        before.contains(&default.id),
+        "the v4 default Notebook is kept"
+    );
+    assert!(default.show_in_text, "existing Notebooks show in text");
+
+    // Show in text is a Notebook column; whole_verses a Text-range column.
+    let hidden = Notebook {
+        show_in_text: false,
+        ..notebook("Hidden")
+    };
+    let whole = highlight(
+        &hidden.id,
+        Anchor::Passage {
+            passage: Passage::verse(jn(16)),
+            origin: Some(TextRange {
+                whole_verses: true,
+                ..range("God")
+            }),
+        },
+    );
+    db.apply_changes(&[
+        Change::insert(Row::Notebook(hidden.clone())),
+        Change::insert(Row::Annotation(whole.clone())),
+    ])
+    .unwrap();
+    assert_eq!(db.notebook(&hidden.id).unwrap(), Some(hidden.clone()));
+    assert_eq!(db.annotation(&whole.id).unwrap(), Some(whole));
+    let shown = Notebook {
+        show_in_text: true,
+        ..hidden.clone()
+    };
+    db.apply_changes(&[Change::update(
+        Row::Notebook(hidden),
+        Row::Notebook(shown.clone()),
+    )])
+    .unwrap();
+    assert_eq!(db.notebook(&shown.id).unwrap(), Some(shown));
 }
 
 #[test]

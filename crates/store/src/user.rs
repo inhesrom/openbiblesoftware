@@ -17,7 +17,7 @@ use crate::error::StoreError;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 4;
+pub const USER_SCHEMA_VERSION: u32 = 5;
 
 /// How many launch backups are kept.
 pub const ROLLING_BACKUPS: usize = 5;
@@ -35,6 +35,8 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE preferred_order (resource_id TEXT PRIMARY KEY, rank INTEGER NOT NULL);",
     // 3 → 4: Annotations (#61). See `annotation_store.rs`.
     crate::annotation_store::SCHEMA,
+    // 4 → 5: Show in text per Notebook, whole-Verse coverage of Text ranges (#63).
+    crate::annotation_store::SCHEMA_5,
 ];
 
 pub(crate) fn sql(e: rusqlite::Error) -> StoreError {

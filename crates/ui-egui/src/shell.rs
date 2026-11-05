@@ -792,6 +792,9 @@ impl Shell {
                 };
                 let label = match id {
                     "view.red_letter" if self.st.session.text.red_letter => "✓ Red letter".into(),
+                    "view.highlights" if self.st.session.appearance.show_highlights => {
+                        format!("✓ {}", spec.label)
+                    }
                     _ => spec.label.to_string(),
                 };
                 let mut b = egui::Button::new(label);
@@ -824,6 +827,32 @@ impl Shell {
                 if let Some(id) = picked {
                     self.run(command, &json!({ "value": id }));
                     ui.close();
+                }
+            }
+            MenuItem::Notebooks => {
+                // Each Notebook's Show in text (#17 rule 18); the Notes Tool (#64) shows the
+                // same toggles beside its Notebooks.
+                let notebooks = if self.st.session.user.is_some() {
+                    self.st.session.notebooks().unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                let mut toggled = None;
+                let enabled = self.st.session.is_enabled("notebook.show_in_text");
+                ui.add_enabled_ui(enabled, |ui| {
+                    ui.menu_button("Notebooks in text", |ui| {
+                        for n in &notebooks {
+                            let mut on = n.show_in_text;
+                            if ui.checkbox(&mut on, &n.name).clicked() {
+                                toggled = Some((n.id.clone(), on));
+                            }
+                        }
+                    })
+                    .response
+                    .on_disabled_hover_text("Notebooks are kept in the User database");
+                });
+                if let Some((id, show)) = toggled {
+                    self.run("notebook.show_in_text", &json!({ "id": id, "show": show }));
                 }
             }
             MenuItem::Layouts => {
