@@ -673,6 +673,16 @@ fn new_annotations_go_into_the_notebook_last_used_across_launches() {
         .unwrap()
         .to_string();
     let a = f.at("test-lxx", "JHN", "loved", false);
+    // A rejected Highlight or Note does not change the last used Notebook.
+    let missing = with(
+        sel("no-such-resource", "JHN", a, "JHN", a + 5),
+        json!({ "notebook": study, "style": "yellow" }),
+    );
+    assert!(s.run("annotation.highlight", &missing).is_err());
+    let mut missing_note = missing.clone();
+    missing_note["body"] = json!("x");
+    assert!(s.run("annotation.note", &missing_note).is_err());
+    assert_eq!(s.last_notebook().unwrap(), default);
     let picked = highlight(
         &mut s,
         with(

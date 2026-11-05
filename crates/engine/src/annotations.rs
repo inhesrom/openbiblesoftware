@@ -422,16 +422,22 @@ impl Session {
             .ok_or_else(|| "The User database has no default Notebook".to_string())
     }
 
-    /// The Notebook `id`, remembered as the last used; when `None`, the last used one.
+    /// The Notebook `id`; when `None`, the last used one. See [`Self::remember_notebook`].
     fn notebook_for_new(&self, id: Option<&str>) -> Result<Notebook, String> {
         match id {
-            Some(id) => {
-                let notebook = self.notebook(id)?;
-                self.user_data()?
-                    .set_preference(LAST_NOTEBOOK_PREF, &notebook.id)?;
-                Ok(notebook)
-            }
+            Some(id) => self.notebook(id),
             None => self.last_notebook(),
+        }
+    }
+
+    /// After a new Annotation went into an explicitly chosen Notebook, remember it as the last
+    /// used. Only once the change is applied, so a rejected one leaves the preference alone.
+    /// The Annotation is already stored, so failing to remember the choice is not an error.
+    fn remember_notebook(&self, chosen: Option<&str>, notebook: &Notebook) {
+        if chosen.is_some()
+            && let Ok(user) = self.user_data()
+        {
+            let _ = user.set_preference(LAST_NOTEBOOK_PREF, &notebook.id);
         }
     }
 
@@ -479,9 +485,9 @@ impl Session {
         &mut self,
         sel: &Selection,
         style: HighlightStyle,
-        notebook: Option<&str>,
+        notebook_id: Option<&str>,
     ) -> Result<Vec<Annotation>, String> {
-        let notebook = self.notebook_for_new(notebook)?;
+        let notebook = self.notebook_for_new(notebook_id)?;
         let parts = self.selection_segments(sel)?;
         let now = now_ms();
         let made: Vec<Annotation> = parts
@@ -506,6 +512,7 @@ impl Session {
                 .map(|a| Change::insert(Row::Annotation(a.clone())))
                 .collect(),
         )?;
+        self.remember_notebook(notebook_id, &notebook);
         Ok(made)
     }
 
@@ -515,9 +522,9 @@ impl Session {
         &mut self,
         target: &NoteTarget,
         body: &str,
-        notebook: Option<&str>,
+        notebook_id: Option<&str>,
     ) -> Result<Annotation, String> {
-        let notebook = self.notebook_for_new(notebook)?;
+        let notebook = self.notebook_for_new(notebook_id)?;
         let anchor = match target {
             NoteTarget::Nothing => None,
             NoteTarget::Passage(passage) => Some(Anchor::Passage {
@@ -529,7 +536,7 @@ impl Session {
         let now = now_ms();
         let note = Annotation {
             id: new_id_at(now),
-            notebook_id: notebook.id,
+            notebook_id: notebook.id.clone(),
             content: Content::Note {
                 body: body.to_string(),
             },
@@ -538,6 +545,7 @@ impl Session {
             modified_at: now,
         };
         self.commit("Note", vec![Change::insert(Row::Annotation(note.clone()))])?;
+        self.remember_notebook(notebook_id, &notebook);
         Ok(note)
     }
 

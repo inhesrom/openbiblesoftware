@@ -19,7 +19,7 @@ use egui::{Key, Modifiers, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
 use obs_engine::{Annotation, HighlightStyle, Session, TabId};
 use serde_json::{Value, json};
 
-use super::State;
+use super::{State, consume_exact};
 use crate::doc::ReadingDoc;
 use crate::marks::{Mark, marks_for};
 use crate::palette::{HIGHLIGHT_STYLES, Palette};
@@ -304,11 +304,12 @@ impl State {
         }
         let mut action = None;
         ui.input_mut(|i| {
-            if i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::N) {
+            if consume_exact(i, Modifiers::COMMAND | Modifiers::SHIFT, Key::N) {
                 action = Some(Annotate::Note);
             }
+            // Exactly Ctrl+1…5: Ctrl+Shift+1 or Ctrl+Alt+1 is not a style.
             for (style, key) in HighlightStyle::ALL.into_iter().zip(STYLE_KEYS) {
-                if i.consume_key(Modifiers::COMMAND, key) {
+                if consume_exact(i, Modifiers::COMMAND, key) {
                     action = Some(Annotate::Highlight(style));
                 }
             }
@@ -358,6 +359,10 @@ impl State {
             }
             Annotate::Note => {
                 self.save_note();
+                // The open Note did not save: keep it (and its error) rather than lose its text.
+                if self.note_editor.is_some() {
+                    return;
+                }
                 let notebooks: Vec<(String, String)> = self
                     .session
                     .notebooks()

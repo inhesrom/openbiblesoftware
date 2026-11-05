@@ -160,6 +160,11 @@ fn ctrl_2_draws_a_green_highlight_at_once_and_ctrl_z_removes_it() {
     }
     let green = h.shell.st.palette.highlights[1];
     assert!(painted(&h, green).is_empty());
+    // Ctrl+Shift+2 and Ctrl+Alt+2 are not Ctrl+2: no style.
+    press_key(&mut h, egui::Key::Num2, cmd_shift());
+    press_key(&mut h, egui::Key::Num2, Modifiers::COMMAND | Modifiers::ALT);
+    assert!(h.shell.st.session.annotations(None).unwrap().is_empty());
+    assert!(h.shell.st.has_selection(tb));
 
     // Ctrl+2: green on the very frame the key arrives, exactly over the word.
     press_key(&mut h, egui::Key::Num2, Modifiers::COMMAND);
@@ -180,6 +185,12 @@ fn ctrl_2_draws_a_green_highlight_at_once_and_ctrl_z_removes_it() {
     let range = stored[0].anchor.as_ref().unwrap().text_range().unwrap();
     assert_eq!(range.quote, word);
     assert_eq!((range.start as usize, range.end as usize), (a.byte, b.byte));
+
+    // Ctrl+Shift+Z with nothing to redo does nothing: it is never Ctrl+Z.
+    press_key(&mut h, egui::Key::Z, cmd_shift());
+    press_key(&mut h, egui::Key::Z, cmd_shift());
+    assert_eq!(h.shell.st.session.annotations(None).unwrap().len(), 1);
+    assert!(covers(union(&painted(&h, green)), r));
 
     // Ctrl+Z removes it, again on the same frame; Ctrl+Shift+Z brings it back.
     press_key(&mut h, egui::Key::Z, Modifiers::COMMAND);
@@ -387,6 +398,107 @@ fn an_empty_note_is_not_saved_and_esc_saves_a_written_one() {
     let notes = h.shell.st.session.annotations(None).unwrap();
     assert_eq!(notes.len(), 1);
     assert_eq!(notes[0].body(), "kept");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A Note whose save fails stays in its editor, text and error shown, even when another
+/// Note is started.
+#[test]
+fn a_note_that_fails_to_save_keeps_its_text() {
+    let dir = folder("note-fail");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    let (_, _, _, r) = word_in_view(&h, tb, 120.0);
+    double_click(&mut h, r.center());
+    press_key(&mut h, egui::Key::N, cmd_shift());
+    h.events.push(Event::Text("precious words".into()));
+    h.frame();
+    // Its Notebook goes away underneath it: saving it fails.
+    h.shell.st.note_editor.as_mut().unwrap().notebook = "gone".into();
+    press_key(&mut h, egui::Key::Enter, Modifiers::COMMAND);
+    h.frame();
+    let ed = h
+        .shell
+        .st
+        .note_editor
+        .as_ref()
+        .expect("the editor stays open");
+    assert_eq!(ed.body, "precious words");
+    let shows_error = |h: &Harness| {
+        h.texts()
+            .iter()
+            .any(|t| t.ends_with("There is no Notebook gone"))
+    };
+    assert!(shows_error(&h), "{:?}", h.texts());
+    // Starting a Note again does not replace it.
+    let ctx = h.ctx.clone();
+    h.shell
+        .st
+        .annotate(&ctx, tb, crate::shell::annotate::Annotate::Note, None);
+    h.frame();
+    assert_eq!(
+        h.shell.st.note_editor.as_ref().unwrap().body,
+        "precious words"
+    );
+    assert!(shows_error(&h));
+    assert!(h.shell.st.session.annotations(None).unwrap().is_empty());
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// ADR 0006: a Passage anchor whose origin range no longer reads as its quote (the Resource
+/// changed) is drawn over its whole Verse(s) rather than disappearing.
+#[test]
+fn a_passage_anchor_with_a_stale_origin_falls_back_to_its_whole_verses() {
+    let dir = folder("stale");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    let (a, _, _, r) = word_in_view(&h, tb, 200.0);
+    double_click(&mut h, r.center());
+    press_key(&mut h, egui::Key::Num1, Modifiers::COMMAND);
+    let mut stored = h.shell.st.session.annotations(None).unwrap();
+    assert_eq!(stored.len(), 1);
+    let doc = std::sync::Arc::clone(&view(&h, tb).doc);
+    let exact = crate::marks_for(&doc, &stored);
+    assert_eq!(exact.len(), 1);
+    assert_eq!(exact[0].start, a);
+    let Some(obs_engine::Anchor::Passage {
+        origin: Some(origin),
+        ..
+    }) = stored[0].anchor.as_mut()
+    else {
+        panic!(
+            "a Bible selection gets a Passage anchor: {:?}",
+            stored[0].anchor
+        );
+    };
+    origin.quote = "no longer here".into();
+    let marks = crate::marks_for(&doc, &stored);
+    assert_eq!(marks.len(), 1, "the Highlight is still drawn");
+    let verse = doc.verse_range_at(a.unit, a.byte).unwrap();
+    assert_eq!(
+        marks[0].start,
+        DocPos {
+            unit: a.unit,
+            byte: verse.start
+        }
+    );
+    assert_eq!(
+        marks[0].end,
+        DocPos {
+            unit: a.unit,
+            byte: verse.end
+        }
+    );
+    // A bare Text range has no Verses to fall back to.
+    let Some(obs_engine::Anchor::Passage { origin, .. }) = stored[0].anchor.clone() else {
+        unreachable!()
+    };
+    stored[0].anchor = Some(obs_engine::Anchor::TextRange {
+        range: origin.unwrap(),
+    });
+    assert!(crate::marks_for(&doc, &stored).is_empty());
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }

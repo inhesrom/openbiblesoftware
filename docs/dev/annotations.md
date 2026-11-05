@@ -62,8 +62,8 @@ for just those Verses).
 | `notebook.create` (`name`), `notebook.rename` (`id`, `name`), `notebook.delete` (`id`, `annotations`: `move` default or `delete`), `notebook.list` | |
 
 `notebook`, where a command takes it, defaults to the **Notebook last used** (#18 rule 8):
-giving one records it in the User database preference `annotations.last_notebook`
-(`Session::last_notebook()` reads it, falling back to the default Notebook when it is unset
+giving one records it in the User database preference `annotations.last_notebook` once the
+new Annotation is stored (a rejected one leaves it alone) (`Session::last_notebook()` reads it, falling back to the default Notebook when it is unset
 or deleted).
 
 ## In the origin Bible (#62)
@@ -79,16 +79,22 @@ or deleted).
   shows at once.
 - **Keys and text fields.** The Shell runs command shortcuts before widgets see the key, so
   while a text field has focus (`egui::Context::text_edit_focused`) it skips the keys text
-  fields use themselves (Ctrl+Z, Ctrl+Shift+Z, Esc, Alt+←/→) and the annotation keys. The
-  Shell also matches Shift/Alt shortcuts first, because egui ignores extra Shift and Alt.
+  fields use themselves (Ctrl+Z, Ctrl+Shift+Z, Esc, Alt+←/→) and the annotation keys.
+  Shortcuts match Shift and Alt exactly (`shell::consume_exact`; egui's own matching ignores
+  extra Shift and Alt), so Ctrl+Shift+Z never undoes, even with nothing to redo, and
+  Ctrl+Shift+1 is not a style.
 - **The Note editor** is a popup anchored under the selection, with a Notebook picker that
   starts on the last used Notebook. It saves (as `annotation.note` with the picked
   `notebook`) on a click outside it, Esc, Ctrl+Enter or quitting; an empty Note is not
-  saved; Discard closes it without saving. Open in Notes is disabled until #64.
+  saved; Discard closes it without saving. If the save fails, the editor stays open with its
+  text and the error, and starting another Note does not replace it. Open in Notes is disabled until #64.
 - **Drawing them.** `MarkCache` reloads the Annotations when `Session::annotations_revision`
   moves and turns those whose Text range is in a Resource into `Mark`s over document
-  positions (a range whose text no longer reads as its quote is skipped until #65 re-anchors
-  it). The pane computes their rectangles from the laid-out clusters each frame
+  positions. A range whose text no longer reads as its quote is not drawn over other words:
+  a Passage anchor falls back to its whole Verse(s) in this Bible (ADR 0006); a bare Text
+  range is skipped until #65 re-anchors it. Reloading happens only when the revision changes,
+  synchronously on the UI thread (fine at today's scale; large Notebooks may want the job
+  queue or incremental updates later). The pane computes their rectangles from the laid-out clusters each frame
   (`selection::range_rects`, one pass for all Marks), so they follow scrolling, resizing and
   text-size changes like the selection. Backgrounds go under the glyph mesh in creation order
   (the newest on top); the red underline and Note markers go over it. Colours come from the

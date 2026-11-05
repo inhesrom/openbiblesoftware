@@ -656,7 +656,7 @@ impl Shell {
         let focused = self.st.session.workspace.focused();
         // Keys a text field uses itself (Ctrl+Z, Esc …) are left to it while it has focus.
         let typing = ui.ctx().text_edit_focused();
-        let mut bound: Vec<(&obs_engine::CommandSpec, egui::KeyboardShortcut)> = self
+        let bound: Vec<(&obs_engine::CommandSpec, egui::KeyboardShortcut)> = self
             .st
             .session
             .commands()
@@ -664,10 +664,6 @@ impl Shell {
             .filter(|spec| !(typing && spec.shortcut.is_some_and(annotate::yields_to_text_fields)))
             .filter_map(|spec| Some((spec, spec.shortcut.and_then(parse_shortcut)?)))
             .collect();
-        // egui ignores extra Shift and Alt when matching, so Ctrl+Shift+Z goes before Ctrl+Z.
-        bound.sort_by_key(|(_, sc)| {
-            std::cmp::Reverse(u8::from(sc.modifiers.shift) + u8::from(sc.modifiers.alt))
-        });
         let mut run: Vec<(&'static str, Value)> = Vec::new();
         for (spec, sc) in bound {
             let needs_tab = spec.params.iter().any(|p| p.name == "tab" && p.required);
@@ -679,7 +675,9 @@ impl Shell {
             if !self.st.session.is_enabled(spec.id) {
                 continue;
             }
-            if ui.input_mut(|i| i.consume_shortcut(&sc)) {
+            // Shift and Alt must match exactly: Ctrl+Shift+Z is never Ctrl+Z, even when there is
+            // nothing to redo.
+            if ui.input_mut(|i| consume_exact(i, sc.modifiers, sc.logical_key)) {
                 let params = match (needs_tab, focused) {
                     (true, Some(t)) => json!({ "tab": t.0 }),
                     _ => json!({}),
@@ -862,6 +860,24 @@ fn replace_child(c: &mut Container, old: TileId, new: TileId) {
 }
 
 /// `Ctrl+Shift+L` → an egui shortcut. Ctrl means Cmd on macOS.
+/// Consume presses of `key` with exactly `modifiers`. Unlike egui's `consume_key`, an extra
+/// Shift or Alt does not match (Ctrl+Shift+Z is not Ctrl+Z, Ctrl+Shift+1 is not Ctrl+1).
+pub(crate) fn consume_exact(
+    i: &mut egui::InputState,
+    modifiers: egui::Modifiers,
+    key: egui::Key,
+) -> bool {
+    let before = i.events.len();
+    i.events.retain(|e| {
+        !matches!(
+            e,
+            egui::Event::Key { key: k, modifiers: m, pressed: true, .. }
+                if *k == key && m.matches_exact(modifiers)
+        )
+    });
+    i.events.len() != before
+}
+
 pub fn parse_shortcut(s: &str) -> Option<egui::KeyboardShortcut> {
     let mut mods = egui::Modifiers::NONE;
     let mut key = None;
