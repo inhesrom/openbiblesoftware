@@ -20,7 +20,8 @@ Decisions #15 (sections, Guide arrangement, navigation), #18 (Tab header, placem
   result.
 - `SectionData` is pure data: `Commentaries(Vec<CommentaryRow>)`,
   `CrossReferences(Vec<ReferenceGroup>)`, `KeyWords(KeyWords)` and
-  `PeopleAndPlaces(Vec<PersonOrPlace>)`. `ui-egui` draws it. `SectionSource` computes it;
+  `PeopleAndPlaces(Vec<PersonOrPlace>)`, and the Word Study's `LexiconEntries`,
+  `TranslatedAs`, `Occurrences` and `Forms` ([word-study.md](word-study.md)). `ui-egui` draws it. `SectionSource` computes it;
   `LibrarySections` reads the library's `.obr` files and is the default. Tests install
   their own source to hold a section back (`Guides::set_source`).
 - Commentaries: one row per Commentary in Preferred order. The section chosen is the one the

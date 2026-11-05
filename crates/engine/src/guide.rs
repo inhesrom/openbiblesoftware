@@ -27,8 +27,8 @@ use crate::resource_navigation::ResourceNavigation;
 use crate::workspace::Guide;
 use crate::{Effect, JobContext, JobEvent, JobEventKind, JobId, Library, Session};
 
-/// One kind of Guide section. The Word Study sections arrive with #55. Ids are stored in the
-/// User database and never renamed.
+/// One kind of Guide section. The Word Study's arrived with #55 and #56. Ids are stored in
+/// the User database and never renamed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GuideSection {
     Commentaries,
@@ -39,15 +39,24 @@ pub enum GuideSection {
     PeopleAndPlaces,
     /// Word Study (#55): every Lexicon's entry for the Strong's number.
     LexiconEntries,
+    /// Word Study (#56): the English renderings, grouped and counted.
+    TranslatedAs,
+    /// Word Study (#56): occurrences per Bible book and the first Verses.
+    Occurrences,
+    /// Word Study (#56): the distinct grammatical forms, collapsed by default.
+    Forms,
 }
 
 impl GuideSection {
-    pub const ALL: [GuideSection; 5] = [
+    pub const ALL: [GuideSection; 8] = [
         GuideSection::Commentaries,
         GuideSection::CrossReferences,
         GuideSection::KeyWords,
         GuideSection::PeopleAndPlaces,
         GuideSection::LexiconEntries,
+        GuideSection::TranslatedAs,
+        GuideSection::Occurrences,
+        GuideSection::Forms,
     ];
 
     /// Stable id, as stored and as passed to commands.
@@ -58,6 +67,9 @@ impl GuideSection {
             GuideSection::KeyWords => "key_words",
             GuideSection::PeopleAndPlaces => "people_and_places",
             GuideSection::LexiconEntries => "lexicon_entries",
+            GuideSection::TranslatedAs => "translated_as",
+            GuideSection::Occurrences => "occurrences",
+            GuideSection::Forms => "forms",
         }
     }
 
@@ -72,6 +84,9 @@ impl GuideSection {
             GuideSection::KeyWords => "Key words",
             GuideSection::PeopleAndPlaces => "People & places",
             GuideSection::LexiconEntries => "Lexicon entries",
+            GuideSection::TranslatedAs => "Translated as",
+            GuideSection::Occurrences => "Occurrences",
+            GuideSection::Forms => "Forms",
         }
     }
 
@@ -83,13 +98,48 @@ impl GuideSection {
             GuideSection::KeyWords => ResourceType::Bible,
             GuideSection::PeopleAndPlaces => ResourceType::PeopleAndPlaces,
             GuideSection::LexiconEntries => ResourceType::Lexicon,
+            GuideSection::TranslatedAs | GuideSection::Occurrences | GuideSection::Forms => {
+                ResourceType::Bible
+            }
         }
     }
 
+    /// Whether the section starts collapsed in a new (or reset) Guide arrangement (#15:
+    /// Forms).
+    pub fn collapsed_by_default(self) -> bool {
+        self == GuideSection::Forms
+    }
+
     /// What an empty section says (#15 rule 1): with no Resource of the kind it needs, a
-    /// hint naming that kind; otherwise that nothing in the library covers the Key.
-    pub fn empty_hint(self, library: &Library) -> &'static str {
-        let has = library.of_type(self.resource_type()).next().is_some();
+    /// hint naming that kind; otherwise that nothing in the library covers the Key. Translated
+    /// as and Occurrences need a Bible with Strong's numbers (English for Translated as):
+    /// that is read from the rendering `indexes` the section's job loaded (never read here).
+    pub fn empty_hint(
+        self,
+        library: &Library,
+        indexes: &crate::word_study::RenderingIndexes,
+    ) -> &'static str {
+        let mut needed = library.of_type(self.resource_type());
+        let has = match self {
+            // A Bible whose index has English renderings, as the chooser counts them.
+            GuideSection::TranslatedAs => {
+                needed.any(|e| indexes.loaded(e).is_some_and(|i| !i.renderings.is_empty()))
+            }
+            // Any Bible with Tagged words.
+            GuideSection::Occurrences => {
+                needed.any(|e| indexes.loaded(e).is_some_and(|i| !i.totals.is_empty()))
+            }
+            // Forms need a Hebrew or Greek Bible (TAHOT, TAGNT).
+            GuideSection::Forms => needed.any(|e| {
+                [
+                    obs_scripture::StrongsLanguage::Hebrew,
+                    obs_scripture::StrongsLanguage::Greek,
+                ]
+                .into_iter()
+                .any(|l| crate::key_words::is_original_language(&e.manifest.language, l))
+            }),
+            _ => needed.next().is_some(),
+        };
         match (self, has) {
             (GuideSection::Commentaries, false) => {
                 "None in your library. Add a Commentary to see what it says about this Passage."
@@ -121,6 +171,27 @@ impl GuideSection {
             (GuideSection::LexiconEntries, true) => {
                 "None in your library: no Lexicon has an entry for this Strong's number."
             }
+            (GuideSection::TranslatedAs, false) => {
+                "None in your library. Add an English Bible with Strong's numbers (the KJV with \
+                 Strong's) to see how this word is translated."
+            }
+            (GuideSection::TranslatedAs, true) => {
+                "None in your library: no English Bible with Strong's numbers translates this word."
+            }
+            (GuideSection::Occurrences, false) => {
+                "None in your library. Add a Bible with Strong's numbers to see where this word \
+                 occurs."
+            }
+            (GuideSection::Occurrences, true) => {
+                "None in your library: no Bible with Strong's numbers has this word."
+            }
+            (GuideSection::Forms, false) => {
+                "None in your library. Add a Hebrew or Greek Bible with Morphology (TAHOT, TAGNT) \
+                 to see this word's forms."
+            }
+            (GuideSection::Forms, true) => {
+                "None in your library: no Hebrew or Greek Bible with Morphology has this word."
+            }
         }
     }
 }
@@ -149,7 +220,12 @@ impl Guide {
                 GuideSection::KeyWords,
                 GuideSection::PeopleAndPlaces,
             ],
-            Guide::WordStudy => &[GuideSection::LexiconEntries],
+            Guide::WordStudy => &[
+                GuideSection::LexiconEntries,
+                GuideSection::TranslatedAs,
+                GuideSection::Occurrences,
+                GuideSection::Forms,
+            ],
         }
     }
 }
@@ -166,7 +242,7 @@ impl SectionPlace {
     fn new(section: GuideSection) -> Self {
         Self {
             section,
-            collapsed: false,
+            collapsed: section.collapsed_by_default(),
             hidden: false,
         }
     }
@@ -326,6 +402,12 @@ pub enum SectionData {
     PeopleAndPlaces(Vec<PersonOrPlace>),
     /// Every Lexicon's entry for a Strong's number, in Preferred order (#55).
     LexiconEntries(Vec<crate::word_study::LexiconEntry>),
+    /// English renderings of a Strong's number, most frequent first (#56).
+    TranslatedAs(crate::word_sections::TranslatedAs),
+    /// Where a Strong's number occurs, Verse by Verse (#56).
+    Occurrences(crate::word_sections::OccurrenceList),
+    /// A Strong's number's grammatical forms, most frequent first (#56).
+    Forms(crate::word_sections::Forms),
 }
 
 impl SectionData {
@@ -337,6 +419,9 @@ impl SectionData {
             SectionData::KeyWords(k) => k.words.len(),
             SectionData::PeopleAndPlaces(rows) => rows.len(),
             SectionData::LexiconEntries(entries) => entries.len(),
+            SectionData::TranslatedAs(t) => t.renderings.len(),
+            SectionData::Occurrences(o) => o.count() as usize,
+            SectionData::Forms(f) => f.forms.len(),
         }
     }
 
@@ -375,6 +460,9 @@ pub struct LibrarySections {
     navigation: Mutex<BTreeMap<(String, u32, String), Arc<ResourceNavigation>>>,
     bibles: BibleCache,
     aliases: Arc<AliasCache>,
+    /// Bibles' rendering indexes, shared with the Word Study header and chooser.
+    indexes: Arc<crate::word_study::RenderingIndexes>,
+    concordances: crate::word_sections::Concordances,
 }
 
 impl SectionSource for LibrarySections {
@@ -385,9 +473,27 @@ impl SectionSource for LibrarySections {
         section: GuideSection,
         _: &JobContext,
     ) -> Result<SectionData, String> {
-        if let (GuideSection::LexiconEntries, Key::StrongsNumber(n)) = (section, key) {
-            return crate::word_study::lexicon_entries(library, *n)
-                .map(SectionData::LexiconEntries);
+        if let Key::StrongsNumber(n) = key {
+            use crate::word_sections as ws;
+            let n = *n;
+            return match section {
+                GuideSection::LexiconEntries => {
+                    crate::word_study::lexicon_entries(library, n).map(SectionData::LexiconEntries)
+                }
+                GuideSection::TranslatedAs => Ok(SectionData::TranslatedAs(ws::translated_as(
+                    library,
+                    &self.indexes,
+                    n,
+                ))),
+                GuideSection::Occurrences => {
+                    ws::occurrences(library, &self.indexes, &self.concordances, n)
+                        .map(SectionData::Occurrences)
+                }
+                GuideSection::Forms => {
+                    ws::forms(library, &self.indexes, &self.concordances, n).map(SectionData::Forms)
+                }
+                _ => Err(format!("{} needs a Passage", section.title())),
+            };
         }
         let Key::Passage(passage) = key else {
             return Err(format!("{} needs a Passage", section.title()));
@@ -411,9 +517,10 @@ impl SectionSource for LibrarySections {
                 &self.aliases,
             )
             .map(SectionData::PeopleAndPlaces),
-            GuideSection::LexiconEntries => {
-                Err(format!("{} needs a Strong's number", section.title()))
-            }
+            GuideSection::LexiconEntries
+            | GuideSection::TranslatedAs
+            | GuideSection::Occurrences
+            | GuideSection::Forms => Err(format!("{} needs a Strong's number", section.title())),
         }
     }
 }
@@ -423,6 +530,18 @@ impl LibrarySections {
     pub fn with_aliases(aliases: Arc<AliasCache>) -> Self {
         Self {
             aliases,
+            ..Self::default()
+        }
+    }
+
+    /// Sections that share `aliases` and the Bibles' rendering `indexes` with the Session.
+    pub fn with_shared(
+        aliases: Arc<AliasCache>,
+        indexes: Arc<crate::word_study::RenderingIndexes>,
+    ) -> Self {
+        Self {
+            aliases,
+            indexes,
             ..Self::default()
         }
     }
@@ -624,20 +743,27 @@ pub struct Guides {
     aliases: Arc<AliasCache>,
     /// The job refreshing them at library load.
     alias_job: Option<JobId>,
+    /// Bibles' rendering indexes, shared with the default source and the Word Study.
+    indexes: Arc<crate::word_study::RenderingIndexes>,
 }
 
 impl Default for Guides {
     fn default() -> Self {
         let aliases = Arc::new(AliasCache::default());
+        let indexes = Arc::new(crate::word_study::RenderingIndexes::default());
         Self {
             arrangements: BTreeMap::new(),
             results: BTreeMap::new(),
             pending: BTreeMap::new(),
             wanted: BTreeSet::new(),
             library: Vec::new(),
-            source: Arc::new(LibrarySections::with_aliases(Arc::clone(&aliases))),
+            source: Arc::new(LibrarySections::with_shared(
+                Arc::clone(&aliases),
+                Arc::clone(&indexes),
+            )),
             aliases,
             alias_job: None,
+            indexes,
         }
     }
 }
@@ -660,6 +786,11 @@ impl Guides {
     /// The People & places ↔ Dictionary alias caches.
     pub fn aliases(&self) -> &Arc<AliasCache> {
         &self.aliases
+    }
+
+    /// The Bibles' rendering indexes the default source reads.
+    pub fn indexes(&self) -> Arc<crate::word_study::RenderingIndexes> {
+        Arc::clone(&self.indexes)
     }
 
     /// The arrangement for a kind of Guide.

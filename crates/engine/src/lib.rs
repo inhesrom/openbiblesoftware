@@ -54,6 +54,9 @@ mod session;
 #[doc(hidden)]
 pub mod testing;
 pub mod word_info;
+pub mod word_sections;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod word_sections_tests;
 pub mod word_study;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod word_study_tests;
@@ -110,6 +113,10 @@ pub use search::{
 };
 pub use session::{JobMode, Session};
 pub use word_info::{LemmaCard, LexiconGloss, PartRole, ShownWord, WordInfo, WordPart};
+pub use word_sections::{
+    FilteredOccurrences, Form, Forms, OCCURRENCE_ROWS, OccurrenceList, OccurrencePreview,
+    OccurrenceVerse, PreviewBible, RenderingRow, TranslatedAs,
+};
 pub use word_study::{
     Choice, Chooser, LexiconEntry, Occurrences, WordStatus, WordStudies, WordStudyHeader,
     WordStudyInput,

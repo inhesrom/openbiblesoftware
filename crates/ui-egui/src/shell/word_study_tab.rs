@@ -47,6 +47,8 @@ impl State {
         {
             t.lexicon_entries_for = Some(number);
             t.lexicon_open.clear();
+            t.occurrence_form = None;
+            t.renderings_all = false;
         }
         let status = self.session.word_study_header(number);
         self.guide_page(
@@ -386,6 +388,41 @@ impl State {
                 }
             }
             Action::OpenLexicon(entry, new_tab) => self.open_lexicon(tab, &entry, new_tab),
+            Action::Search {
+                text,
+                bibles,
+                new_tab,
+            } => {
+                self.run(
+                    "search.run",
+                    &json!({ "text": text, "mode": "bible", "bibles": bibles, "split": new_tab }),
+                );
+            }
+            Action::FilterForm(form) => {
+                if let Some(t) = self.tabs.get_mut(&tab) {
+                    t.occurrence_form = form;
+                }
+            }
+            Action::ShowAllRenderings(all) => {
+                if let Some(t) = self.tabs.get_mut(&tab) {
+                    t.renderings_all = all;
+                }
+            }
+            Action::OpenVerse {
+                bible,
+                verse,
+                new_tab,
+            } => {
+                let verse = obs_scripture::format_passage(
+                    obs_scripture::Passage::verse(verse),
+                    &obs_scripture::Standard,
+                    obs_scripture::RefStyle::Short,
+                );
+                self.run(
+                    "word_study.open_verse",
+                    &json!({ "bible": bible, "verse": verse, "new_tab": new_tab }),
+                );
+            }
             _ => {}
         }
     }

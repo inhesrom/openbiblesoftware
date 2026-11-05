@@ -80,6 +80,9 @@ impl Session {
             JobMode::Threads(n) => JobQueue::threaded(n),
             JobMode::Inline => JobQueue::inline(),
         };
+        // The Guide sections and the Word Study header share each Bible's rendering index.
+        let guides = crate::guide::Guides::default();
+        let word_study = crate::word_study::WordStudies::with_indexes(guides.indexes());
         Self {
             commands: builtin::registry(),
             jobs,
@@ -92,8 +95,8 @@ impl Session {
             text: TextSettings::default(),
             appearance: crate::appearance::Appearance::default(),
             word_info: crate::word_info::WordInfo::default(),
-            guides: crate::guide::Guides::default(),
-            word_study: crate::word_study::WordStudies::default(),
+            guides,
+            word_study,
             notes: crate::notes::NotesTool::default(),
             log: Vec::new(),
             user: None,

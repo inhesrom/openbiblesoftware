@@ -19,16 +19,17 @@
 //! for a file that predates it, it is derived from the Bible's text here (not in
 //! `ObrReader::load`), once per revision under a per-Bible lock, and kept in memory.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
 use obs_model::{Direction, Key, RenderingIndex, ResourceType, transliterate};
-use obs_scripture::{StrongsLanguage, StrongsNumber};
+use obs_scripture::{StrongsLanguage, StrongsNumber, Verse};
 use serde_json::{Value, json};
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
 use crate::library::LibraryEntry;
 use crate::word_info::{LexiconGloss, has_original_script};
+use crate::word_sections::{OccurrencePreview, PreviewBible, read_previews};
 use crate::workspace::{Guide, OpenRequest, PanelId, TabId, TabKind};
 use crate::{JobEvent, JobEventKind, JobId, Library, Session};
 
@@ -214,12 +215,28 @@ impl RenderingIndexes {
         Err("Opening Resources is not supported here".into())
     }
 
+    /// A Bible's rendering index if a job has already read it; never reads, nor waits for a
+    /// job reading it (for the UI thread).
+    pub fn loaded(&self, entry: &LibraryEntry) -> Option<Arc<RenderingIndex>> {
+        let m = &entry.manifest;
+        let identity = (m.resource_id.clone(), m.revision, m.content_hash.clone());
+        let slot = {
+            let loaded = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
+            Arc::clone(loaded.get(&identity)?)
+        };
+        match slot.try_lock() {
+            Ok(index) => index.clone(),
+            Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner().clone(),
+            Err(std::sync::TryLockError::WouldBlock) => None,
+        }
+    }
+
     /// Every Strong's-tagged English Bible (one whose index has renderings) with its index,
     /// the best tagged first: the most Strong's numbers rendered, Preferred order breaking
     /// ties. Not the most Tagged words: the Starter eBible ASV and WEB tag about twice as
     /// many words as the KJV but on fewer numbers (no G25 or G26 at all; "the" is H3605
     /// ten thousand times), so they would outrank it and answer "love" poorly.
-    fn tagged_english_bibles<'a>(
+    pub(crate) fn tagged_english_bibles<'a>(
         &'a self,
         library: &'a Library,
     ) -> Vec<(&'a LibraryEntry, Arc<RenderingIndex>)> {
@@ -496,12 +513,18 @@ pub enum WordStatus<T> {
 enum Wanted {
     Header(StrongsNumber),
     Chooser(String),
+    /// Occurrences previews (#56): a batch of Standard Verses from one Bible.
+    Previews(PreviewBible, Vec<Verse>),
 }
 
 enum Computed {
     Header(WordStudyHeader),
     Chooser(Chooser),
+    Previews(Vec<(Verse, OccurrencePreview)>),
 }
+
+/// An Occurrences preview's cache key: the Bible, the number highlighted and the Verse.
+type PreviewKey = (String, StrongsNumber, Verse);
 
 /// Word Study state for a Session: headers and choosers computed on the job queue, and the
 /// Word Study Tabs showing a chooser.
@@ -516,10 +539,15 @@ pub struct WordStudies {
     /// Word Study Tabs showing the English-word chooser: the words typed, and the Key the Tab
     /// was at then (the chooser closes when the Tab moves).
     choosing: BTreeMap<TabId, (String, Option<Key>)>,
+    /// Occurrences previews read so far (#56).
+    previews: HashMap<PreviewKey, Arc<OccurrencePreview>>,
 }
 
 /// Results kept at most (older ones are recomputed when asked for again).
 const RESULTS_LIMIT: usize = 128;
+
+/// Occurrences previews kept at most.
+const PREVIEWS_LIMIT: usize = 4096;
 
 impl WordStudies {
     /// Whether a header or chooser job is queued or running.
@@ -535,6 +563,15 @@ impl WordStudies {
     /// The rendering indexes, shared with jobs.
     pub fn indexes(&self) -> Arc<RenderingIndexes> {
         Arc::clone(&self.indexes)
+    }
+
+    /// Word Study state whose rendering indexes are `indexes` (shared with the Guide
+    /// sections, so each Bible's index is read once).
+    pub fn with_indexes(indexes: Arc<RenderingIndexes>) -> Self {
+        Self {
+            indexes,
+            ..Self::default()
+        }
     }
 }
 
@@ -557,6 +594,7 @@ impl Session {
             self.word_study.library = fingerprint;
             self.word_study.headers.clear();
             self.word_study.choosers.clear();
+            self.word_study.previews.clear();
             for id in self.word_study.pending.keys() {
                 self.jobs().cancel(*id);
             }
@@ -578,6 +616,14 @@ impl Session {
             Wanted::Chooser(words) => self.jobs().submit_fn("Word Study: chooser", move |_| {
                 Ok(Computed::Chooser(chooser(&library, &indexes, &words)))
             }),
+            Wanted::Previews(bible, verses) => {
+                self.jobs().submit_fn("Word Study: previews", move |_| {
+                    let entry = library
+                        .get(&bible.id)
+                        .ok_or_else(|| format!("{} is no longer in the library", bible.id))?;
+                    read_previews(entry, bible.highlight, &verses).map(Computed::Previews)
+                })
+            }
         };
         self.word_study.pending.insert(job, wanted);
     }
@@ -591,6 +637,49 @@ impl Session {
         }
         self.submit_word_study(Wanted::Header(number));
         WordStatus::Loading
+    }
+
+    /// Occurrences previews (#56) of Standard `verses` from `bible`, in order: `None` for one
+    /// not read yet. Never waits: the missing ones are read in one job; ask again on a later
+    /// frame.
+    pub fn occurrence_previews(
+        &mut self,
+        bible: &PreviewBible,
+        verses: &[Verse],
+    ) -> Vec<Option<Arc<OccurrencePreview>>> {
+        self.word_study_library_changed();
+        let key = |v: Verse| (bible.id.clone(), bible.highlight, v);
+        let found: Vec<Option<Arc<OccurrencePreview>>> = verses
+            .iter()
+            .map(|v| self.word_study.previews.get(&key(*v)).cloned())
+            .collect();
+        let missing: Vec<Verse> = verses
+            .iter()
+            .zip(&found)
+            .filter(|(_, f)| f.is_none())
+            .map(|(v, _)| *v)
+            .collect();
+        if missing.is_empty() {
+            return found;
+        }
+        let mut new = Vec::new();
+        for v in missing {
+            let batch =
+                self.word_study.pending.values().find(
+                    |w| matches!(w, Wanted::Previews(b, vs) if b == bible && vs.contains(&v)),
+                );
+            match batch {
+                Some(w) => {
+                    let w = w.clone();
+                    self.word_study.wanted.insert(w);
+                }
+                None => new.push(v),
+            }
+        }
+        if !new.is_empty() {
+            self.submit_word_study(Wanted::Previews(bible.clone(), new));
+        }
+        found
     }
 
     /// The English-word chooser for `words`, like [`Session::word_study_header`].
@@ -642,6 +731,34 @@ impl Session {
                 JobEventKind::Failed(e) => Err(e),
                 _ => continue,
             };
+            if let (Wanted::Previews(bible, verses), result) = (&w, &result) {
+                if self.word_study.previews.len() >= PREVIEWS_LIMIT {
+                    self.word_study.previews.clear();
+                }
+                // A batch that failed shows why rather than asking again.
+                let read: Vec<(Verse, OccurrencePreview)> = match result {
+                    Ok(Computed::Previews(p)) => p.clone(),
+                    Ok(_) => verses
+                        .iter()
+                        .map(|v| {
+                            (
+                                *v,
+                                OccurrencePreview::failed("Unexpected Word Study result"),
+                            )
+                        })
+                        .collect(),
+                    Err(e) => verses
+                        .iter()
+                        .map(|v| (*v, OccurrencePreview::failed(e.clone())))
+                        .collect(),
+                };
+                for (v, p) in read {
+                    self.word_study
+                        .previews
+                        .insert((bible.id.clone(), bible.highlight, v), Arc::new(p));
+                }
+                continue;
+            }
             if self.word_study.headers.len() + self.word_study.choosers.len() >= RESULTS_LIMIT {
                 self.word_study.headers.clear();
                 self.word_study.choosers.clear();
@@ -680,6 +797,7 @@ impl Session {
                         .choosers
                         .insert(words, WordStatus::Failed(e));
                 }
+                (_, Ok(Computed::Previews(_))) | (Wanted::Previews(..), Err(_)) => {}
             }
         }
         // A Tab that closed or moved on no longer chooses.

@@ -45,6 +45,23 @@ pub(super) enum Action {
     ToggleEntry(String, bool),
     /// Word Study: open a Lexicon at an entry.
     OpenLexicon(obs_engine::LexiconEntry, bool),
+    /// Word Study (#56): hand a query over to the Search Tool (Translated as, Show all in
+    /// Search); `bibles` are resource ids, comma-separated.
+    Search {
+        text: String,
+        bibles: String,
+        new_tab: bool,
+    },
+    /// Word Study: filter Occurrences by a form (`None`: every form).
+    FilterForm(Option<String>),
+    /// Word Study: Translated as shows every rendering (true) or the first few.
+    ShowAllRenderings(bool),
+    /// Word Study: open an Occurrences Verse in a Bible (its own numbering).
+    OpenVerse {
+        bible: String,
+        verse: obs_scripture::Verse,
+        new_tab: bool,
+    },
 }
 
 /// One visible section as drawn this frame, for working out where a dragged header lands.
@@ -298,7 +315,9 @@ impl State {
         }
         if ui
             .button("Reset arrangement")
-            .on_hover_text("Default order, every section shown and expanded")
+            .on_hover_text(
+                "The default order, every section shown and expanded or collapsed as at first",
+            )
             .clicked()
         {
             run = Some(("guide.reset_arrangement", json!({ "guide": guide.id() })));
@@ -336,7 +355,10 @@ impl State {
         };
         if data.is_empty() {
             ui.label(
-                RichText::new(section.empty_hint(&self.session.library)).color(theme::c().muted),
+                RichText::new(
+                    section.empty_hint(&self.session.library, &self.session.guides.indexes()),
+                )
+                .color(theme::c().muted),
             );
             return None;
         }
@@ -367,6 +389,15 @@ impl State {
                     .map(Action::Words)
             }
             SectionData::LexiconEntries(entries) => self.lexicon_entries(ui, tab, entries),
+            SectionData::TranslatedAs(t) => {
+                let number = Self::section_number(key)?;
+                self.translated_as_section(ui, tab, t, number, new_tab)
+            }
+            SectionData::Occurrences(o) => {
+                let number = Self::section_number(key)?;
+                self.occurrences_section(ui, tab, o, number, new_tab)
+            }
+            SectionData::Forms(f) => self.forms_section(ui, tab, f),
         }
     }
 

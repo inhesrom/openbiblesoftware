@@ -146,6 +146,26 @@ pub trait ResourceStore {
         Ok(())
     }
 
+    /// Call `f` with the unit, start byte and parts of every Tagged word in the Resource, in
+    /// document order within each unit. Used to find where a Strong's number occurs (Word
+    /// Study Occurrences and Forms, #56).
+    fn for_each_tagged_word_at(
+        &self,
+        f: &mut dyn FnMut(&UnitId, u32, &[MorphemePart]),
+    ) -> Result<(), StoreError> {
+        for id in self.unit_ids()? {
+            let Some(unit) = self.unit(&id)? else {
+                continue;
+            };
+            for span in &unit.spans {
+                if let SpanKind::TaggedWord { parts } = &span.kind {
+                    f(&id, span.start, parts);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// The whole Resource, validated, with its content hash checked against the manifest.
     fn load(&self) -> Result<Resource, StoreError>;
 }

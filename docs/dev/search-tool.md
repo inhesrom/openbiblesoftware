@@ -101,8 +101,12 @@ passes the `mode` it means (`"bible"` for every hand-over below).
 
 - Word Info's **Search this word** runs `strong:<the word's number>` with `mode: "bible"`
   in the Bible the word was read in.
-- Word Study's **Show all** (#55) should run `strong:G5485` with `mode: "bible"`. Its
-  **Translated as** filter (#56) should run `strong:G5485 "favour"` with `mode: "bible"`.
+- Word Study's Occurrences **Show all in Search** (#56) runs `strong:G5485` with `mode:
+  "bible"` in the preview Bible and the counted Bible (`bibles: "kjv-strongs,tagnt"`), with
+  the number counted; the preview Bible is left out when it tags only the base of an
+  extended number. A
+  **Translated as** rendering (#56) runs `strong:G5485 "favour"` with `mode: "bible"` in the
+  Bible the renderings come from.
 
 ## Measuring
 
