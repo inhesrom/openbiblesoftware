@@ -242,7 +242,7 @@ fn sparse_bible() -> obs_model::Resource {
     use obs_scripture::{Book, Verse};
     let the = vec![("the", "H3605", None); 40];
     let text = vec!["the"; 40].join(" ");
-    testing::tagged_bible(
+    testing::word_tagged_bible(
         "asv-sparse",
         "Poorly tagged Bible (test)",
         "ASV",

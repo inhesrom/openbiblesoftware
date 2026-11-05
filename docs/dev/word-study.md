@@ -39,9 +39,10 @@ Translated as, Occurrences and Forms are #56. The Guide framework is #53
   (`poll_word_studies` is chained in `poll_imports`); asking never waits.
 - **Ways in:** Word Info's Word Study › (`word_info.word_study`), `word_study.open {strongs,
   new_tab?}`, Strong's links in a Lexicon entry (in the section and in a Lexicon Tab, where
-  they are now drawn as links), the Guides menu (starts at the Link set's number, else the
-  word Word Info shows) and the box. A plain click moves the focused or most recent Word Study;
-  Ctrl/Cmd-click opens a new one.
+  they are now drawn as links), the Guides menu (`guide.word_study`: starts at the Link set's
+  number, else the word Word Info shows), a Passage Guide Key word (#54: `guide.word_study
+  {strongs, tab?}`, which also closes a moved Tab's chooser) and the box. A plain click
+  moves the focused or most recent Word Study; Ctrl/Cmd-click opens a new one.
 
 ## The rendering index (#20 rule 5)
 
