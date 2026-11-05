@@ -26,6 +26,7 @@ use crate::workers::SnippetCache;
 
 mod annotate;
 mod credits_tab;
+mod favorites_tab;
 mod fonts_window;
 mod get_bibles_tab;
 mod guide_tab;
@@ -94,6 +95,10 @@ struct TabUi {
     /// whether Translated as shows every rendering, for `lexicon_entries_for`.
     occurrence_form: Option<String>,
     renderings_all: bool,
+    /// Where the header's Favorites ☆ was drawn last frame (#155).
+    favorite_star: Option<egui::Rect>,
+    /// History: "Clear History…" is asking to confirm.
+    confirm_clear: bool,
 }
 
 /// How long a jump's flash lasts, in seconds.
@@ -381,6 +386,15 @@ impl Shell {
                 Effect::NavigateStandard { tab, verse } => {
                     self.st.session.workspace.navigate_standard(tab, verse);
                 }
+                Effect::NavigateOpened { tab, verse, key } => {
+                    let ws = &mut self.st.session.workspace;
+                    if let Some(v) = verse {
+                        ws.navigate(tab, v);
+                    }
+                    if let Some(key) = key {
+                        ws.navigate_entry(tab, key);
+                    }
+                }
                 Effect::RevealText { tab, unit, byte } => {
                     let now = self.st.now;
                     let shown = self
@@ -407,6 +421,8 @@ impl Shell {
             }
         }
         self.record_layout();
+        // New Tabs are placed now: History records where they and jumped Tabs are (#155).
+        self.st.session.record_history();
     }
 
     fn container_of(&self, panel: PanelId) -> Option<TileId> {
@@ -948,6 +964,47 @@ impl Shell {
                     self.run("notebook.show_in_text", &json!({ "id": id, "show": show }));
                 }
             }
+            MenuItem::Favorites => {
+                let favorites: Vec<(i64, String, String)> = self
+                    .st
+                    .session
+                    .favorites()
+                    .iter()
+                    .map(|f| (f.id, f.folder.clone(), f.label.clone()))
+                    .collect();
+                let mut picked = None;
+                ui.menu_button("Favorites", |ui| {
+                    if favorites.is_empty() {
+                        ui.label(RichText::new("No Favorites yet").color(theme::c().muted));
+                    }
+                    let mut folder: Option<&str> = None;
+                    for (i, (id, f, label)) in favorites.iter().enumerate() {
+                        if !f.is_empty() {
+                            if folder != Some(f.as_str()) {
+                                folder = Some(f.as_str());
+                                ui.menu_button(f, |ui| {
+                                    for (id, _, label) in
+                                        favorites[i..].iter().take_while(|(_, g, _)| g == f)
+                                    {
+                                        if ui.button(label).clicked() {
+                                            picked = Some(*id);
+                                        }
+                                    }
+                                });
+                            }
+                            continue;
+                        }
+                        if ui.button(label).clicked() {
+                            picked = Some(*id);
+                        }
+                    }
+                });
+                if let Some(id) = picked {
+                    let split = ui.input(|i| i.modifiers.command);
+                    self.run("favorite.open", &json!({ "id": id, "split": split }));
+                    ui.close();
+                }
+            }
             MenuItem::Layouts => {
                 let names = self
                     .st
@@ -1291,6 +1348,8 @@ impl State {
             TabKind::Tool(Tool::WordInfo) => self.word_info_body(&mut body, tab),
             TabKind::Tool(Tool::Search) => self.search_body(&mut body, tab),
             TabKind::Tool(Tool::Notes) => self.notes_body(&mut body, tab),
+            TabKind::Tool(Tool::Favorites) => self.favorites_body(&mut body, tab),
+            TabKind::Tool(Tool::History) => self.history_body(&mut body, tab),
         }
     }
 
@@ -1603,6 +1662,7 @@ impl State {
                     let title = self.title(tab, kind);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         self.tab_menu(ui, tab);
+                        self.favorite_star(ui, tab);
                         if !narrow {
                             ui.add(
                                 egui::Label::new(
@@ -1824,6 +1884,7 @@ impl State {
                 self.run("resource.about", &json!({ "id": id }));
                 ui.close();
             }
+            self.favorite_folder_menu(ui, tab);
             if ui
                 .add(egui::Button::new("Close Tab").shortcut_text("Ctrl+W"))
                 .clicked()
@@ -2116,6 +2177,8 @@ impl egui_tiles::Behavior<TabId> for State {
                 "tool.notes",
                 "tool.word_info",
                 "tool.cross_references",
+                "tool.favorites",
+                "tool.history",
             ] {
                 let label = self.session.commands().get(id).map_or(id, |c| c.label);
                 if ui.button(label).clicked() {

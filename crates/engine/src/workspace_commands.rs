@@ -27,6 +27,9 @@ pub enum MenuItem {
     /// "Notebooks in text": a submenu with each Notebook's Show in text toggle
     /// (`notebook.show_in_text`).
     Notebooks,
+    /// "Favorites": a submenu of the Favorites, each Favorites folder a submenu of its own;
+    /// each runs `favorite.open` (#155).
+    Favorites,
     /// A submenu of exclusive choices: one `command` run with `{ "value": id }` per choice,
     /// the current one checked.
     Choice {
@@ -48,6 +51,7 @@ pub const MENUS: &[Menu] = &[
             C("library.get_resources"),
             C("library.get_bibles"),
             C("library.starter"),
+            MenuItem::Favorites,
             Separator,
             Resources,
         ],
@@ -64,6 +68,8 @@ pub const MENUS: &[Menu] = &[
             C("tool.notes"),
             C("tool.word_info"),
             C("tool.cross_references"),
+            C("tool.favorites"),
+            C("tool.history"),
         ],
     },
     Menu {
@@ -356,6 +362,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     ),
     open_cmd("tool.cross_references", "Cross-references", None, |s, p| {
         open(s, p, TabKind::Tool(Tool::CrossReferences))
+    }),
+    open_cmd("tool.favorites", "Favorites", None, |s, p| {
+        open(s, p, TabKind::Tool(Tool::Favorites))
+    }),
+    open_cmd("tool.history", "History", None, |s, p| {
+        open(s, p, TabKind::Tool(Tool::History))
     }),
     // Word Info (#50): the pinned panel follows hover again on Esc or the header's 📌; Copy
     // hands the UI the card text; Word Study › opens the shown word's Strong's number in a
@@ -674,9 +686,28 @@ fn open_get_resources(
 const GET_RESOURCES_TITLE: &str = "Get Resources";
 
 fn open(s: &mut Session, p: Params<'_>, kind: TabKind) -> Result<Value, CommandError> {
-    let title = title_of(s, &kind);
-    let tab = s.workspace.open(kind, title, request(&p));
+    let tab = open_tab(s, kind, request(&p));
     Ok(json!({ "tab": tab.0 }))
+}
+
+/// Open a Tab of `kind` (a Resource Tab follows the Key schemes of its manifest).
+pub(crate) fn open_tab(s: &mut Session, kind: TabKind, req: OpenRequest) -> TabId {
+    let title = title_of(s, &kind);
+    let schemes = match &kind {
+        TabKind::Resource(id) => s
+            .library
+            .get(id)
+            .map(|e| e.manifest.key_schemes.clone())
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let tab = s.workspace.open(kind, title, req);
+    if let Some(t) = s.workspace.tab_mut(tab)
+        && !schemes.is_empty()
+    {
+        t.key_schemes = schemes;
+    }
+    tab
 }
 
 /// A Passage Guide starts where its Link set is; unlinked, at the Passage the focused Tab
@@ -766,20 +797,7 @@ fn open_resource(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> 
             format!("{id} is not in the library"),
         ));
     }
-    let schemes = s
-        .library
-        .get(id)
-        .map(|e| e.manifest.key_schemes.clone())
-        .unwrap_or_default();
-    let out = open(s, p, TabKind::Resource(id.to_string()))?;
-    if let Some(tab) = out["tab"]
-        .as_u64()
-        .and_then(|id| s.workspace.tab_mut(TabId(id)))
-        && !schemes.is_empty()
-    {
-        tab.key_schemes = schemes;
-    }
-    Ok(out)
+    open(s, p, TabKind::Resource(id.to_string()))
 }
 
 fn tab_param(command: &'static str, s: &Session, p: &Params<'_>) -> Result<TabId, CommandError> {
@@ -983,6 +1001,8 @@ fn layout_restore(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError>
         )
     })?;
     let snap = snap.without_missing(|id| s.library.get(id).is_some());
+    // Where the closing Tabs went is History before they are replaced.
+    s.record_history();
     s.workspace.restore(snap);
     Ok(json!({ "name": name }))
 }

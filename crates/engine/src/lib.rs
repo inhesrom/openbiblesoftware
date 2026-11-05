@@ -23,6 +23,9 @@ pub mod command;
 pub mod compare;
 pub mod credits;
 pub mod cross_references;
+pub mod favorites;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod favorites_tests;
 pub mod get_bibles;
 #[cfg(test)]
 mod get_bibles_tests;
@@ -89,6 +92,7 @@ pub use compare::{
     Cell, ComparedBible, ComparedCell, Comparison, DEFAULT_BIBLES, Marks, VerseBlock, WordDiff,
     verse_blocks, word_diff,
 };
+pub use favorites::{Favorite, HistoryDay, SavedSearch, TabLocation, Visit, day_heading};
 pub use guide::{
     CommentaryRow, GuideArrangement, GuideSection, Guides, LibrarySections, SectionData,
     SectionPlace, SectionSource, SectionStatus,

@@ -861,7 +861,7 @@ pub(crate) fn go(s: &mut Session, tab: TabId, text: &str) -> Result<Value, Comma
     }
 }
 
-/// Open a Word Study at `number`: the focused or most recent Word Study Tab moves there (and
+/// Open a Word Study at `number`: the most recently active Word Study Tab moves there (and
 /// its Link set follows); with `new_tab`, or when there is none, a new one opens.
 pub(crate) fn open_at(
     s: &mut Session,
@@ -870,15 +870,9 @@ pub(crate) fn open_at(
     new_tab: bool,
 ) -> TabId {
     let kind = TabKind::Guide(Guide::WordStudy);
-    let focused = s.workspace.focused();
+    // The focused Word Study Tab is the most recently active one.
     let existing = (!new_tab && !request.split)
-        .then(|| {
-            s.workspace
-                .tabs()
-                .filter(|t| t.kind == kind)
-                .max_by_key(|t| (Some(t.id) == focused, t.id))
-                .map(|t| t.id)
-        })
+        .then(|| s.workspace.most_recent(|t| t.kind == kind))
         .flatten();
     let tab = match existing {
         Some(tab) => {

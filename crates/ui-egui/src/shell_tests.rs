@@ -3062,6 +3062,9 @@ mod search;
 #[path = "fonts_tests.rs"]
 mod fonts;
 
+#[path = "favorites_tests.rs"]
+mod favorites;
+
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {
     use std::path::PathBuf;

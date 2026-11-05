@@ -44,7 +44,20 @@ pub const PAGE_ROWS: usize = 30;
 pub const RECENT_LIMIT: usize = 10;
 
 /// The Search Tool's modes (#16 rule 9).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum SearchMode {
     #[default]
     Bible,
@@ -762,7 +775,7 @@ impl Session {
 
     /// The Search Tab a hand-over runs in: `tab` if given, else the most recently active
     /// Search Tab, else a new one.
-    fn search_tab_for(&mut self, tab: Option<TabId>, req: OpenRequest) -> TabId {
+    pub(crate) fn search_tab_for(&mut self, tab: Option<TabId>, req: OpenRequest) -> TabId {
         let kind = TabKind::Tool(Tool::Search);
         if let Some(t) = tab.filter(|t| self.workspace.tab(*t).is_some_and(|t| t.kind == kind)) {
             self.workspace.focus(t);
@@ -799,6 +812,10 @@ impl Session {
             st.error = None;
             st.clone()
         };
+        // A search is somewhere History goes back to (#155).
+        if !fields.query.trim().is_empty() {
+            self.workspace.visited(tab);
+        }
         let error = match fields.mode {
             SearchMode::Bible => self.start_bible_search(tab, &fields),
             SearchMode::Library => self.start_library_search(tab, &fields),

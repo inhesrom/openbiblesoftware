@@ -23,7 +23,7 @@ pub struct TabId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PanelId(pub u64);
 
-/// The Tools of v0.1 plus Cross-references.
+/// The Tools of v0.1 plus Cross-references, Favorites and History (#155).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Tool {
     Search,
@@ -31,6 +31,8 @@ pub enum Tool {
     Notes,
     WordInfo,
     CrossReferences,
+    Favorites,
+    History,
 }
 
 /// The Guides.
@@ -48,6 +50,8 @@ impl Tool {
             Tool::Notes => "Notes",
             Tool::WordInfo => "Word Info",
             Tool::CrossReferences => "Cross-references",
+            Tool::Favorites => "Favorites",
+            Tool::History => "History",
         }
     }
 }
@@ -128,7 +132,7 @@ impl TabKind {
                 | TabKind::GetBibles
                 | TabKind::StarterLibrary
                 | TabKind::Credits
-                | TabKind::Tool(Tool::Notes | Tool::WordInfo)
+                | TabKind::Tool(Tool::Notes | Tool::WordInfo | Tool::Favorites | Tool::History)
         )
     }
 
@@ -139,7 +143,9 @@ impl TabKind {
 
     pub fn header_box(&self) -> HeaderBox {
         match self {
-            TabKind::Library | TabKind::Tool(Tool::Notes) => HeaderBox::Filter,
+            TabKind::Library | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History) => {
+                HeaderBox::Filter
+            }
             TabKind::Tool(Tool::WordInfo) => HeaderBox::FollowsHover,
             TabKind::Guide(Guide::WordStudy) => HeaderBox::Word,
             // The query, mode and scope fields are the Tab's body (#59).
@@ -163,7 +169,7 @@ impl TabKind {
                 | TabKind::GetBibles
                 | TabKind::StarterLibrary
                 | TabKind::Credits
-                | TabKind::Tool(Tool::Notes)
+                | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History)
         )
     }
 
@@ -419,6 +425,14 @@ pub enum Effect {
         tab: TabId,
         verse: Verse,
     },
+    /// Go to a location, in the Tab's own numbering, in a Resource Tab opened just now at it
+    /// (a Favorite or a History Visit), once its Verse map is loaded: a jump, so its Link set
+    /// follows.
+    NavigateOpened {
+        tab: TabId,
+        verse: Option<Verse>,
+        key: Option<Key>,
+    },
     /// Bring a position in a Tab's Resource into view: a text unit and a UTF-8 byte offset
     /// into it (the Notes Tool following a Text-range anchor, #64).
     RevealText {
@@ -459,6 +473,30 @@ pub struct Workspace {
     clock: u64,
     /// How the UI currently arranges the Panels (kept up to date by the UI, for saving).
     pub arrangement: Option<LayoutNode>,
+    /// Tabs that were opened or jumped since the last [`Workspace::take_visits`], oldest
+    /// first, for History (#155).
+    visits: Vec<PendingVisit>,
+    /// Tabs closed while History still had Visits of theirs to record, kept until it has.
+    closed_with_visits: BTreeMap<TabId, Tab>,
+}
+
+/// A Tab opened or jumped, for History to record (#155).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingVisit {
+    pub tab: TabId,
+    /// Where a jump went, just after it. `None` for a Tab just opened, which the UI places
+    /// later; History reads where it is then.
+    pub at: Option<VisitedAt>,
+}
+
+/// Where a Tab was just after a jump: its Passage location, entry Key and Search fields, read
+/// when the jump is made (the Tab may move again before History records it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VisitedAt {
+    pub verse: Option<Verse>,
+    pub key: Option<Key>,
+    /// A Search Tab's fields (none for other Tabs, or with an empty query).
+    pub search: Option<crate::favorites::SavedSearch>,
 }
 
 impl Workspace {
@@ -506,6 +544,58 @@ impl Workspace {
 
     pub fn push_effect(&mut self, e: Effect) {
         self.effects.push(e);
+    }
+
+    /// A Tab jumped (not scrolled, and not following its Link set): History records where
+    /// it is now.
+    pub(crate) fn visited(&mut self, tab: TabId) {
+        let at = self.tabs.get(&tab).map(|t| VisitedAt {
+            verse: t.history.current(),
+            key: t.entry_history.current(),
+            search: (t.kind == TabKind::Tool(Tool::Search))
+                .then(|| crate::favorites::SavedSearch::of(&t.search))
+                .flatten(),
+        });
+        self.visits.push(PendingVisit { tab, at });
+    }
+
+    /// Tabs opened or jumped since the last call, oldest first.
+    pub fn take_visits(&mut self) -> Vec<PendingVisit> {
+        std::mem::take(&mut self.visits)
+    }
+
+    /// Put back Visits History could not record yet (Tabs not yet placed, or a failed write),
+    /// before any queued since they were taken. Closed Tabs no queued Visit needs are let go.
+    pub(crate) fn keep_visits(&mut self, mut kept: Vec<PendingVisit>) {
+        kept.append(&mut self.visits);
+        self.visits = kept;
+        let visits = &self.visits;
+        self.closed_with_visits
+            .retain(|id, _| visits.iter().any(|v| v.tab == *id));
+    }
+
+    /// Forget every queued Visit (History was cleared).
+    pub(crate) fn forget_visits(&mut self) {
+        self.visits.clear();
+        self.closed_with_visits.clear();
+    }
+
+    /// The Tab a queued Visit is of: open, or closed since the Visit was queued.
+    pub(crate) fn visited_tab(&self, id: TabId) -> Option<&Tab> {
+        self.tabs
+            .get(&id)
+            .or_else(|| self.closed_with_visits.get(&id))
+    }
+
+    /// Take a Tab out, keeping it for History while a queued Visit is of it.
+    fn remove_tab(&mut self, id: TabId) -> bool {
+        let Some(t) = self.tabs.remove(&id) else {
+            return false;
+        };
+        if self.visits.iter().any(|v| v.tab == id) {
+            self.closed_with_visits.insert(id, t);
+        }
+        true
     }
 
     fn existing(&self, kind: &TabKind) -> Option<TabId> {
@@ -594,6 +684,7 @@ impl Workspace {
             t.history.scrolled_to(v);
         }
         self.effects.push(Effect::Opened { tab: id, placement });
+        self.visits.push(PendingVisit { tab: id, at: None });
         self.focus(id);
         id
     }
@@ -642,7 +733,7 @@ impl Workspace {
     }
 
     pub fn close(&mut self, tab: TabId) -> bool {
-        if self.tabs.remove(&tab).is_none() {
+        if !self.remove_tab(tab) {
             return false;
         }
         self.activity.remove(&tab);
@@ -671,7 +762,7 @@ impl Workspace {
             .copied()
             .collect();
         for t in gone {
-            self.tabs.remove(&t);
+            self.remove_tab(t);
             self.activity.remove(&t);
             if self.focused == Some(t) {
                 self.focused = None;
@@ -707,6 +798,7 @@ impl Workspace {
             t.history.visit(local);
             t.moved_to(local);
             self.effects.push(Effect::Navigate { tab, verse: local });
+            self.visited(tab);
             self.broadcast(tab, verse, true);
         }
     }
@@ -754,6 +846,7 @@ impl Workspace {
                 key,
             }),
         }
+        self.visited(tab);
     }
 
     /// Entry navigation broadcasts only to members supporting this Key scheme.
@@ -766,6 +859,7 @@ impl Workspace {
             tab,
             key: key.clone(),
         });
+        self.visited(tab);
         self.broadcast_entry(tab, &key);
     }
 
@@ -805,6 +899,7 @@ impl Workspace {
             tab,
             key: key.clone(),
         });
+        self.visited(tab);
         self.broadcast_entry(tab, &key);
         Some(key)
     }
@@ -840,6 +935,7 @@ impl Workspace {
         {
             t.history.visit(native);
             self.effects.push(Effect::Navigate { tab, verse: native });
+            self.visited(tab);
         }
         // A Lexicon can open a Scripture reference without following Passages itself.
         // Even if the opener has no preceding Verse, other members may contain the target.
@@ -871,6 +967,7 @@ impl Workspace {
         let v = t.history.back()?;
         t.moved_to(v);
         self.effects.push(Effect::Navigate { tab, verse: v });
+        self.visited(tab);
         self.broadcast(tab, v, false);
         Some(v)
     }
@@ -880,6 +977,7 @@ impl Workspace {
         let v = t.history.forward()?;
         t.moved_to(v);
         self.effects.push(Effect::Navigate { tab, verse: v });
+        self.visited(tab);
         self.broadcast(tab, v, false);
         Some(v)
     }
@@ -1004,7 +1102,15 @@ impl Workspace {
     /// Replace everything with a saved snapshot. Locations are set without history; the UI
     /// rebuilds the dock on [`Effect::Rebuild`].
     pub fn restore(&mut self, snap: WorkspaceSnapshot) {
-        self.tabs.clear();
+        // Tabs with Visits still queued are kept for History, unless a restored Tab takes
+        // their id (its Visits would name the wrong Tab).
+        let restored: Vec<TabId> = snap.tabs.iter().map(|t| TabId(t.id)).collect();
+        self.visits.retain(|v| !restored.contains(&v.tab));
+        for (id, t) in std::mem::take(&mut self.tabs) {
+            if self.visits.iter().any(|v| v.tab == id) {
+                self.closed_with_visits.insert(id, t);
+            }
+        }
         self.panels.clear();
         self.remembered.clear();
         self.activity.clear();

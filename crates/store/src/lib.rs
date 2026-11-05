@@ -13,6 +13,9 @@ mod annotation_store;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 mod codec;
 mod error;
+mod favorites;
+#[cfg(not(target_arch = "wasm32"))]
+mod favorites_store;
 #[cfg(not(target_arch = "wasm32"))]
 mod obr;
 mod resource_store;
@@ -32,6 +35,7 @@ pub use annotation::{
 #[cfg(not(target_arch = "wasm32"))]
 pub use annotation_store::DEFAULT_NOTEBOOK_NAME;
 pub use error::StoreError;
+pub use favorites::{FavoriteRow, HISTORY_DAYS, HISTORY_LIMIT, VisitRow};
 #[cfg(not(target_arch = "wasm32"))]
 pub use obr::{APPLICATION_ID, ObrReader, write_obr};
 pub use resource_store::{MappedVerse, ResourceStore, Summary};
