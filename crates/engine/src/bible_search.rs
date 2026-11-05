@@ -32,7 +32,7 @@ use serde_json::{Value, json};
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
 use crate::jobs::{JobEvent, JobEventKind, JobId};
-use crate::library::Library;
+use crate::library::{Library, LibraryEntry};
 use crate::session::Session;
 use crate::workspace::{OpenRequest, TabId, TabKind, Tool};
 
@@ -571,6 +571,17 @@ pub struct BibleSearches {
     outlines: Arc<Mutex<BTreeMap<String, Arc<BibleOutline>>>>,
     /// Outlines being read ahead of a search, by job.
     warming: BTreeMap<JobId, String>,
+    /// Bibles whose index became searchable, waiting for their outline to be read ahead
+    /// (one at a time, the ★ Bible first).
+    read_ahead: Vec<String>,
+    /// Outline keys that could not be read: not read ahead again until the library changes.
+    failed_outlines: BTreeSet<String>,
+    /// The library (its [`library_fingerprint`]) when `failed_outlines` was last checked.
+    failed_library: u64,
+    /// Tests of the Search index lifecycle step through jobs one by one: no read-ahead
+    /// jobs between them.
+    #[cfg(test)]
+    pub(crate) no_read_ahead: bool,
 }
 
 impl BibleSearches {
@@ -583,6 +594,46 @@ impl BibleSearches {
     pub fn is_running(&self) -> bool {
         !self.jobs.is_empty()
     }
+
+    /// Whether an outline is being read ahead or waits to be.
+    pub fn is_reading_ahead(&self) -> bool {
+        !self.warming.is_empty() || !self.read_ahead.is_empty()
+    }
+
+    /// Whether the outline with this key (resource id `@` content hash) has been read.
+    pub fn has_outline(&self, key: &str) -> bool {
+        self.outlines
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .contains_key(key)
+    }
+
+    /// Whether the outline with this key could not be read (and is not read ahead again
+    /// until the library changes).
+    pub fn outline_failed(&self, key: &str) -> bool {
+        self.failed_outlines.contains(key)
+    }
+}
+
+/// A Bible's outline cache key: its resource id and content hash.
+fn outline_key(entry: &LibraryEntry) -> String {
+    format!(
+        "{}@{}",
+        entry.manifest.resource_id, entry.manifest.content_hash
+    )
+}
+
+/// A cheap fingerprint of what the library holds (each Resource's id, content and file),
+/// to notice that it changed.
+fn library_fingerprint(library: &Library) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for e in library.entries() {
+        e.manifest.resource_id.hash(&mut h);
+        e.manifest.content_hash.hash(&mut h);
+        e.path.hash(&mut h);
+    }
+    h.finish()
 }
 
 /// What a search job hands back.
@@ -802,7 +853,7 @@ impl Session {
             };
             let abbreviation = entry.manifest.abbreviation.clone();
             let bible = desktop::JobBible {
-                outline_key: format!("{id}@{}", entry.manifest.content_hash),
+                outline_key: outline_key(entry),
                 abbreviation: abbreviation.clone(),
                 rtl: entry.manifest.direction == obs_model::Direction::Rtl,
                 obr: entry.path.clone(),
@@ -923,24 +974,79 @@ impl Session {
         }
     }
 
-    /// Read the outlines of `bibles` in the background if they are not read yet, so the
+    /// Read the outlines of `bibles` in the background now if they are not read yet, so the
     /// first search over them does not wait for it. The Search Tab calls this while it is
-    /// shown.
+    /// shown; Bibles whose index becomes searchable are read ahead anyway
+    /// ([`Self::read_outline_ahead`]), this only puts the chosen ones first.
     pub fn warm_bible_outlines(&mut self, bibles: &[String]) {
-        #[cfg(not(target_arch = "wasm32"))]
         for id in bibles {
-            let Some(entry) = self.library.get(id) else {
-                continue;
-            };
-            let key = format!("{id}@{}", entry.manifest.content_hash);
+            self.bible_search.read_ahead.retain(|q| q != id);
+            self.submit_outline_read(id);
+        }
+    }
+
+    /// A Bible's Search index became searchable: queue its outline to be read ahead, so the
+    /// first search over it does not pay for that read. Outlines are read one at a time, the
+    /// ★ Bible (best in Preferred order) first.
+    pub(crate) fn read_outline_ahead(&mut self, id: &str) {
+        let is_bible = self
+            .library
+            .get(id)
+            .is_some_and(|e| e.manifest.resource_type == ResourceType::Bible);
+        #[cfg(test)]
+        if self.bible_search.no_read_ahead {
+            return;
+        }
+        if is_bible && !self.bible_search.read_ahead.iter().any(|q| q == id) {
+            self.bible_search.read_ahead.push(id.to_string());
+        }
+        self.start_next_read_ahead();
+    }
+
+    /// Submit the next queued read-ahead if no outline is being read.
+    fn start_next_read_ahead(&mut self) {
+        while self.bible_search.warming.is_empty() && !self.bible_search.read_ahead.is_empty() {
+            let library = &self.library;
+            let next = self
+                .bible_search
+                .read_ahead
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, id)| library.position_in_type(id).unwrap_or(usize::MAX))
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            let id = self.bible_search.read_ahead.remove(next);
+            self.submit_outline_read(&id);
+        }
+    }
+
+    /// Start reading a Bible's outline in the background unless it is read, being read, or
+    /// could not be read (until the library changes).
+    fn submit_outline_read(&mut self, id: &str) {
+        let fingerprint = library_fingerprint(&self.library);
+        if fingerprint != self.bible_search.failed_library {
+            self.bible_search.failed_library = fingerprint;
+            self.bible_search.failed_outlines.clear();
+        }
+        let Some(entry) = self.library.get(id) else {
+            return;
+        };
+        let key = outline_key(entry);
+        if self.bible_search.failed_outlines.contains(&key)
+            || self.bible_search.warming.values().any(|k| *k == key)
+        {
+            return;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
             let cached = self
                 .bible_search
                 .outlines
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
                 .contains_key(&key);
-            if cached || self.bible_search.warming.values().any(|k| *k == key) {
-                continue;
+            if cached {
+                return;
             }
             let outlines = Arc::clone(&self.bible_search.outlines);
             let obr = entry.path.clone();
@@ -950,8 +1056,6 @@ impl Session {
             });
             self.bible_search.warming.insert(job, key);
         }
-        #[cfg(target_arch = "wasm32")]
-        let _ = bibles;
     }
 
     /// Apply Bible search events; return the others.
@@ -959,8 +1063,13 @@ impl Session {
         let mut other = Vec::new();
         for event in events {
             if self.bible_search.warming.contains_key(&event.id) {
-                if event.kind.is_terminal() {
-                    self.bible_search.warming.remove(&event.id);
+                if event.kind.is_terminal()
+                    && let Some(key) = self.bible_search.warming.remove(&event.id)
+                {
+                    if matches!(event.kind, JobEventKind::Failed(_)) {
+                        self.bible_search.failed_outlines.insert(key);
+                    }
+                    self.start_next_read_ahead();
                 }
                 continue;
             }

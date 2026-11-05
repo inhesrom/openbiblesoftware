@@ -23,6 +23,7 @@ fn fixture(name: &str) -> (Session, PathBuf) {
         obs_store::write_obr(&r, &root.join(format!("library/{id}.obr"))).unwrap();
     }
     let mut s = Session::new(JobMode::Inline);
+    s.bible_search.no_read_ahead = true;
     assert!(s.library.scan(&root.join("library")).is_empty());
     s.set_search_cache_dir(root.join("cache"));
     (s, root)
@@ -92,6 +93,7 @@ fn missing_caches_build_one_at_a_time_and_ready_ones_serve_meanwhile() {
 
     // A second refresh (next launch) finds them: nothing to build.
     let mut again = Session::new(JobMode::Inline);
+    again.bible_search.no_read_ahead = true;
     again.library.scan(&root.join("library"));
     again.set_search_cache_dir(root.join("cache"));
     again.refresh_search_indexes();
@@ -172,6 +174,7 @@ fn after_a_version_change_a_fresh_launch_serves_the_old_caches_while_rebuilding(
 
     // The next release bumps the version: its first launch finds only old-version caches.
     let mut s = Session::new(JobMode::Inline);
+    s.bible_search.no_read_ahead = true;
     s.library.scan(&root.join("library"));
     s.set_search_index_version(INDEX_VERSION + 1);
     s.set_search_cache_dir(root.join("cache"));
@@ -213,6 +216,7 @@ fn a_corrupt_cache_with_the_right_name_is_deleted_and_rebuilt() {
     .unwrap();
     std::fs::copy(&c, &b).unwrap();
     let mut s = Session::new(JobMode::Inline);
+    s.bible_search.no_read_ahead = true;
     s.library.scan(&root.join("library"));
     s.set_search_cache_dir(root.join("cache"));
     s.refresh_search_indexes();
@@ -457,6 +461,7 @@ fn a_cancelled_import_index_build_leaves_no_cache() {
 fn without_a_cache_directory_indexes_are_unavailable_not_errors() {
     let (_, root) = fixture("nodir");
     let mut s = Session::new(JobMode::Inline);
+    s.bible_search.no_read_ahead = true;
     s.library.scan(&root.join("library"));
     s.refresh_search_indexes();
     assert_eq!(s.search.status("kjv-a"), Some(&IndexStatus::Unavailable));

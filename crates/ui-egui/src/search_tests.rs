@@ -31,7 +31,11 @@ fn settle(h: &mut Harness) {
             .tabs
             .values()
             .any(|t| t.search.as_ref().is_some_and(|v| v.has_pending()));
-        if !s.search.is_building() && !s.bible_search_running() && !layouts {
+        if !s.search.is_building()
+            && !s.bible_search_running()
+            && !s.bible_search.is_reading_ahead()
+            && !layouts
+        {
             h.frames(2);
             return;
         }
@@ -389,8 +393,14 @@ fn real_library_search_timing() {
     }
     let cache: &Path = &std::env::temp_dir().join("obs-real-search-cache");
     s.set_search_cache_dir(cache.to_path_buf());
+    let ready = Instant::now();
     s.refresh_search_indexes();
+    // The Bibles' outlines are read ahead as soon as their indexes are Ready.
     settle(&mut h);
+    eprintln!(
+        "indexes ready and outlines of KJV, WEB and TAHOT read ahead in {:?}",
+        ready.elapsed()
+    );
     h.shell.run("tool.search", &json!({}));
     h.frames(2);
     let tab = search_tab(&h);
@@ -409,18 +419,6 @@ fn real_library_search_timing() {
         })
         .collect();
     let bibles = format!("{},{}", ids[0], ids[1]);
-    // Opening the Tool reads the chosen Bibles' outlines ahead of the first search.
-    h.shell
-        .run("search.bible", &json!({ "tab": tab.0, "id": ids[1] }));
-    h.shell
-        .run("search.bible", &json!({ "tab": tab.0, "id": ids[2] }));
-    let warm = Instant::now();
-    h.frame();
-    while h.shell.st.session.jobs().pump(16) > 0 {}
-    eprintln!(
-        "outlines of KJV, WEB and TAHOT read ahead in {:?}",
-        warm.elapsed()
-    );
     for (query, bibles) in [
         ("\"love thy neighbour\"", bibles.as_str()),
         ("love", bibles.as_str()),

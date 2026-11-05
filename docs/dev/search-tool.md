@@ -24,8 +24,9 @@ built here. Library mode comes with #60 and Notes mode with #64; until then thos
    its Ready index, or the stale one while it is rebuilt. Bibles still indexing are listed
    as "Indexing …" under the summary.
 3. A background job then compiles the query, resolving `lemma:` transliterations through the
-   Lexicons. For each Bible it reads the **outline** (verse list plus Verse map; cached for
-   each content hash) and turns the Standard scope into **verse-ordinal ranges**. A Bible
+   Lexicons. For each Bible it takes the **outline** (verse list plus Verse map, cached for
+   each content hash; see *Outline read-ahead* below) and turns the Standard scope into
+   **verse-ordinal ranges**. A Bible
    Verse is in scope when its Standard Passage overlaps the scope's Passage list. Unmapped
    verses have no Standard Passage, so they are in scope only for Whole Bible, which searches
    every document. The job then searches each index in document order.
@@ -35,6 +36,15 @@ built here. Library mode comes with #60 and Notes mode with #64; until then thos
    its `.obr`, with headings left out and white space collapsed, plus its highlight ranges.
 5. The pane lays out only the rows in view, on the layout workers, and asks the engine for
    their snippet pages as the user scrolls.
+
+## Outline read-ahead
+
+Reading a Bible's outline takes about 0.4 s for a full Bible, so it is not left to the first
+search. As soon as a Bible's index is Ready (found at startup, or built), or searchable
+through a stale cache, its outline is queued to be read in the background. These reads run
+one at a time, the ★ Bible (best in Preferred order) first. A shown Search Tab moves its
+chosen Bibles to the front. An outline that cannot be read is remembered and not tried
+again until the library changes; a search over that Bible then reports the error.
 
 ## Opening a hit (#16 rule 14)
 
@@ -48,11 +58,13 @@ built here. Library mode comes with #60 and Notes mode with #64; until then thos
 
 `search.run` takes `text`, plus optional `scope`, `bibles` (comma-separated resource ids),
 `mode`, `tab` and `split`. It runs in the most recently active Search Tab, or opens one.
+Without `mode` the search runs in whatever mode that Tab was left in, so a hand-over always
+passes the `mode` it means (`"bible"` for every hand-over below).
 
-- Word Info's **Search this word** runs `strong:<the word's number>` in the Bible the word
-  was read in.
-- Word Study's **Show all** (#55) should run `strong:G5485`. Its **Translated as** filter
-  (#56) should run `strong:G5485 "favour"`.
+- Word Info's **Search this word** runs `strong:<the word's number>` with `mode: "bible"`
+  in the Bible the word was read in.
+- Word Study's **Show all** (#55) should run `strong:G5485` with `mode: "bible"`. Its
+  **Translated as** filter (#56) should run `strong:G5485 "favour"` with `mode: "bible"`.
 
 ## Measuring
 

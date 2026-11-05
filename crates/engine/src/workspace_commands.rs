@@ -788,6 +788,7 @@ fn layout_delete(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> 
 
 /// Word Info's "Search this word": `strong:` and the main Strong's number, in the Bible the
 /// word was read in (falling back to the Search Tab's own choice when that Bible is gone).
+/// Always in Bible mode, whatever mode the Search Tab was left in.
 fn word_info_search(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
     const ID: &str = "word_info.search";
     let shown = s
@@ -805,7 +806,7 @@ fn word_info_search(s: &mut Session, _: Params<'_>) -> Result<Value, CommandErro
                 .is_some_and(|e| e.manifest.resource_type == obs_model::ResourceType::Bible)
         })
         .map(|id| id.to_string());
-    let mut params = json!({ "text": query });
+    let mut params = json!({ "text": query, "mode": "bible" });
     if let Some(b) = bibles {
         params["bibles"] = json!(b);
     }

@@ -362,6 +362,7 @@ impl Session {
                 if let Some(old) = self.search.stale.remove(resource_id) {
                     self.search.discard(&old);
                 }
+                self.read_outline_ahead(resource_id);
                 return;
             }
             find_stale(self.search.cache_dir.as_deref(), &entry.path, &key)
@@ -379,6 +380,7 @@ impl Session {
         match stale {
             Some(old) => {
                 self.search.stale.insert(resource_id.to_string(), old);
+                self.read_outline_ahead(resource_id);
             }
             None => {
                 self.search.stale.remove(resource_id);
@@ -531,6 +533,7 @@ impl Session {
             self.search.discard(&old);
         }
         self.search.ready.insert(id.to_string(), path);
+        self.read_outline_ahead(id);
     }
 
     /// Search the requested Resources' ready indexes now, on this thread. Resources still

@@ -68,7 +68,10 @@ fn settle(s: &mut Session) {
     for _ in 0..1000 {
         s.jobs().pump(16);
         assert!(s.poll_imports().is_empty(), "no stray events");
-        if !s.search.is_building() && !s.bible_search_running() {
+        if !s.search.is_building()
+            && !s.bible_search_running()
+            && !s.bible_search.is_reading_ahead()
+        {
             return;
         }
     }
@@ -130,6 +133,91 @@ fn load_map(s: &mut Session, tab: TabId, root: &Path, id: &str) {
 fn cleanup(s: Session, root: PathBuf) {
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+/// The outline cache key of a library Bible.
+fn key_of(s: &Session, id: &str) -> String {
+    format!("{id}@{}", s.library.get(id).unwrap().manifest.content_hash)
+}
+
+fn outline_read(s: &Session, id: &str) -> bool {
+    s.bible_search.has_outline(&key_of(s, id))
+}
+
+#[test]
+fn outlines_are_read_ahead_as_soon_as_each_bible_index_is_ready() {
+    // Built in the background: each outline is read once its index is built, before any
+    // Search Tab exists.
+    let (s, root) = fixture("read-ahead", false);
+    assert!(
+        s.workspace
+            .tabs()
+            .all(|t| t.kind != TabKind::Tool(Tool::Search))
+    );
+    for id in ["kjv", "web", "hnum", "psalms", "tahot"] {
+        assert!(outline_read(&s, id), "{id} not read ahead");
+    }
+    drop(s);
+    // Ready at startup (the caches exist): read ahead from the refresh, the ★ Bible first.
+    let mut s = Session::new(JobMode::Inline);
+    assert!(s.library.scan(&root.join("library")).is_empty());
+    s.library.set_preferred_order(
+        ["web", "kjv", "hnum", "psalms", "tahot"]
+            .map(String::from)
+            .to_vec(),
+    );
+    s.set_search_cache_dir(root.join("cache"));
+    s.refresh_search_indexes();
+    assert!(!s.search.is_building());
+    assert!(s.bible_search.is_reading_ahead());
+    // One outline at a time: the first pump reads only the ★ Bible's.
+    s.jobs().pump(1);
+    s.poll_imports();
+    assert!(outline_read(&s, "web"));
+    assert!(!outline_read(&s, "kjv"));
+    settle(&mut s);
+    for id in ["kjv", "web", "hnum", "psalms", "tahot"] {
+        assert!(outline_read(&s, id), "{id} not read ahead");
+    }
+    cleanup(s, root);
+}
+
+#[test]
+fn an_unreadable_outline_is_not_read_again_until_the_library_changes() {
+    let (mut s, root) = fixture("bad-outline", false);
+    let bad = root.join("bad");
+    write_library(
+        &bad,
+        &[bible(
+            "broken",
+            "BRK",
+            &[(v(Book::Genesis, 1, 1), "In the beginning.")],
+            None,
+            &[],
+        )],
+    );
+    let file = bad.join("broken.obr");
+    s.library.add_file(&file).unwrap();
+    std::fs::write(&file, b"not an obr").unwrap();
+    let key = key_of(&s, "broken");
+    let ids = ["broken".to_string()];
+    s.warm_bible_outlines(&ids);
+    assert!(s.bible_search.is_reading_ahead());
+    settle(&mut s);
+    assert!(s.bible_search.outline_failed(&key));
+    // The Search Tab asks every frame: no new read job.
+    for _ in 0..3 {
+        s.warm_bible_outlines(&ids);
+        assert!(!s.bible_search.is_reading_ahead(), "read again");
+        assert_eq!(s.jobs().pump(16), 0);
+    }
+    // The library changes: the next ask reads it again.
+    s.library.remove("psalms");
+    s.warm_bible_outlines(&ids);
+    assert!(s.bible_search.is_reading_ahead());
+    settle(&mut s);
+    assert!(s.bible_search.outline_failed(&key));
+    cleanup(s, root);
 }
 
 #[test]
@@ -539,6 +627,29 @@ fn word_info_searches_this_word_in_its_bible() {
     cleanup(s, root);
 }
 
+#[test]
+fn search_this_word_switches_a_search_tab_left_in_another_mode_to_bible() {
+    let (mut s, root) = fixture("word-info-mode", false);
+    let tab = search(&mut s, json!({ "text": "love" }));
+    s.run("search.mode", &json!({ "tab": tab.0, "value": "library" }))
+        .unwrap();
+    assert_eq!(s.search_tab(tab).unwrap().mode, SearchMode::Library);
+    let mut part = MorphemePart::new("H1254A".parse().unwrap());
+    part.lemma = Some("בָּרָא".into());
+    let mut word =
+        ShownWord::new("בָּרָ֣א", true, "Genesis 1:1 (TAHOT)".into(), &[part], |_| None).unwrap();
+    word.bible = Some("tahot".into());
+    s.word_info.pin(word);
+    let out = s.run("word_info.search", &json!({})).unwrap();
+    settle(&mut s);
+    assert_eq!(out["tab"], tab.0);
+    let st = s.search_tab(tab).unwrap();
+    assert_eq!(st.mode, SearchMode::Bible);
+    assert_eq!(st.query, "strong:H1254A");
+    assert_eq!(results(&s, tab).rows.len(), 2);
+    cleanup(s, root);
+}
+
 /// The real Starter KJV and WEB (and TAHOT), when this machine has the Starter library. Their
 /// Search index caches are built once into a temp folder kept between runs. Run with
 /// `cargo test --release -p obs-engine real_starter -- --ignored --nocapture`.
@@ -562,8 +673,18 @@ fn real_starter_kjv_and_web_love_thy_neighbour_and_tahot_h1254() {
         );
     }
     s.set_search_cache_dir(std::env::temp_dir().join("obs-real-search-cache"));
+    let ready = std::time::Instant::now();
     s.refresh_search_indexes();
+    // The outlines are read ahead as soon as the indexes are Ready: the first search does
+    // not read them.
     settle(&mut s);
+    for id in &ids {
+        assert!(outline_read(&s, id), "{id} not read ahead");
+    }
+    eprintln!(
+        "indexes ready and outlines read ahead in {:?}",
+        ready.elapsed()
+    );
 
     let started = std::time::Instant::now();
     let tab = search(
