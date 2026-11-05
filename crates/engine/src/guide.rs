@@ -342,7 +342,9 @@ impl SectionSource for LibrarySections {
 }
 
 impl LibrarySections {
-    /// One row per Commentary in Preferred order that has a section on `passage`.
+    /// One row per Commentary in Preferred order that has a section on `passage`. A
+    /// Commentary that cannot be read is skipped so the others still show; the section only
+    /// fails when every Commentary failed.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn commentary_rows(
         &self,
@@ -350,33 +352,47 @@ impl LibrarySections {
         passage: Passage,
     ) -> Result<Vec<CommentaryRow>, String> {
         let mut rows = Vec::new();
+        let mut errors = Vec::new();
         for entry in library.of_type(ResourceType::Commentary) {
-            let m = &entry.manifest;
-            let fail = |e: StoreError| format!("{}: {e}", m.abbreviation);
-            let reader = obs_store::ObrReader::open(&entry.path).map_err(fail)?;
-            let identity = (m.resource_id.clone(), m.revision, m.content_hash.clone());
-            let cached = self
-                .navigation
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .get(&identity)
-                .cloned();
-            let nav = match cached {
-                Some(nav) => nav,
-                None => {
-                    let keys = reader.keys(obs_model::KeyScheme::Passage).map_err(fail)?;
-                    let nav = Arc::new(ResourceNavigation::new(keys));
-                    let mut navs = self.navigation.lock().unwrap_or_else(|p| p.into_inner());
-                    navs.retain(|(id, _, _), _| *id != identity.0);
-                    navs.insert(identity, Arc::clone(&nav));
-                    nav
-                }
-            };
-            if let Some(row) = commentary_row(&reader, &nav, passage).map_err(fail)? {
-                rows.push(row);
+            match self.commentary_entry_row(entry, passage) {
+                Ok(Some(row)) => rows.push(row),
+                Ok(None) => {}
+                Err(e) => errors.push(format!("{}: {e}", entry.manifest.abbreviation)),
             }
         }
+        if rows.is_empty() && !errors.is_empty() {
+            return Err(errors.join("; "));
+        }
         Ok(rows)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn commentary_entry_row(
+        &self,
+        entry: &crate::library::LibraryEntry,
+        passage: Passage,
+    ) -> Result<Option<CommentaryRow>, StoreError> {
+        let m = &entry.manifest;
+        let reader = obs_store::ObrReader::open(&entry.path)?;
+        let identity = (m.resource_id.clone(), m.revision, m.content_hash.clone());
+        let cached = self
+            .navigation
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(&identity)
+            .cloned();
+        let nav = match cached {
+            Some(nav) => nav,
+            None => {
+                let keys = reader.keys(obs_model::KeyScheme::Passage)?;
+                let nav = Arc::new(ResourceNavigation::new(keys));
+                let mut navs = self.navigation.lock().unwrap_or_else(|p| p.into_inner());
+                navs.retain(|(id, _, _), _| *id != identity.0);
+                navs.insert(identity, Arc::clone(&nav));
+                nav
+            }
+        };
+        commentary_row(&reader, &nav, passage)
     }
 
     #[cfg(target_arch = "wasm32")]

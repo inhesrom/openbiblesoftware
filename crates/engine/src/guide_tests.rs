@@ -230,6 +230,31 @@ fn commentaries_give_one_row_per_commentary_in_preferred_order_with_heading_and_
 }
 
 #[test]
+fn an_unreadable_commentary_is_skipped_and_the_others_still_show() {
+    let t = Temp::new("broken");
+    commentaries(&t.lib());
+    let mut s = session(&t, false);
+    // Alpha goes bad after the scan: its file is no longer a readable Resource.
+    std::fs::write(t.lib().join("alpha.obr"), b"not a resource").unwrap();
+    let key = Key::Passage(Passage::verse(john(3, 16)));
+    let data = ready(settle(&mut s, &key, GuideSection::Commentaries));
+    let SectionData::Commentaries(rows) = &*data else {
+        panic!("{data:?}")
+    };
+    let ids: Vec<_> = rows.iter().map(|r| r.resource_id.as_str()).collect();
+    assert_eq!(ids, ["beta"]);
+
+    // When every Commentary that could answer is unreadable, the section reports the error.
+    let sections = LibrarySections::default();
+    std::fs::write(t.lib().join("beta.obr"), b"not a resource").unwrap();
+    std::fs::write(t.lib().join("gamma.obr"), b"not a resource").unwrap();
+    let err = sections
+        .commentary_rows(&s.library, Passage::verse(john(3, 16)))
+        .unwrap_err();
+    assert!(err.contains("ALPHA") && err.contains("BETA"), "{err}");
+}
+
+#[test]
 fn with_no_commentaries_the_section_is_empty_and_names_the_resource_it_needs() {
     let t = Temp::new("hint");
     openbible(&t.lib());
