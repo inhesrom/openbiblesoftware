@@ -8,13 +8,34 @@ use obs_fonts::{FaceId, FaceSet, ReadingScript};
 use super::*;
 use crate::{FontFile, InstalledFamily, SystemFonts};
 
-/// Installed fonts for tests, made from the bundled files: "Test Serif" (no Hebrew letters)
-/// and "Test Hebrew".
+/// Installed fonts for tests, made from the bundled files: "Test Serif" (no Hebrew letters),
+/// "Test Hebrew" and "Test Bitmap" (no outlines).
 struct TestFonts;
+
+/// Gentium Plus Regular with its `glyf` and `loca` tables renamed away: the cmap still maps
+/// every letter, but no glyph has an outline, as in a bitmap-only font.
+fn without_outlines(bytes: &[u8]) -> Vec<u8> {
+    let mut out = bytes.to_vec();
+    let tables = usize::from(u16::from_be_bytes([out[4], out[5]]));
+    for i in 0..tables {
+        let tag = 12 + i * 16;
+        // Renamed in place, keeping the table records sorted by tag.
+        match &out[tag..tag + 4] {
+            b"glyf" => out[tag + 3] = b'F',
+            b"loca" => out[tag + 3] = b'A',
+            _ => {}
+        }
+    }
+    out
+}
 
 impl SystemFonts for TestFonts {
     fn families(&self) -> Vec<InstalledFamily> {
         vec![
+            InstalledFamily {
+                name: "Test Bitmap".into(),
+                styles: vec!["Regular".into()],
+            },
             InstalledFamily {
                 name: "Test Hebrew".into(),
                 styles: vec!["Regular".into()],
@@ -27,6 +48,13 @@ impl SystemFonts for TestFonts {
     }
 
     fn load(&self, family: &str, style: &str, _bold: bool, italic: bool) -> Option<FontFile> {
+        if family == "Test Bitmap" {
+            return Some(FontFile {
+                data: Arc::new(without_outlines(FaceId::Regular.bundled_bytes()?)),
+                index: 0,
+                key: "Test Bitmap/bitmap.ttf".into(),
+            });
+        }
         let file = match family {
             "Test Serif" if italic || style == "Italic" => FaceId::BoldItalic,
             "Test Serif" => FaceId::Bold,
@@ -288,6 +316,72 @@ fn the_interface_font_goes_first_and_keeps_the_symbol_fallbacks() {
     );
     h.shell
         .run("view.font", &json!({ "slot": "interface", "family": "" }));
+    h.frames(2);
+    h.ctx.fonts(|fonts| {
+        let proportional = &fonts.definitions().families[&egui::FontFamily::Proportional];
+        assert!(!proportional.iter().any(|f| f == "interface"));
+    });
+}
+
+/// Glyphs painted for the text in view, and whether each has ink in the atlas.
+fn painted(h: &Harness) -> (usize, bool) {
+    let mut atlas = obs_render::GlyphAtlas::new();
+    let (mut quads, mut inked) = (0, true);
+    for t in h.shell.st.tabs.values() {
+        let Some(v) = &t.view else { continue };
+        for (_, _, block) in v.laid_in_view(2000.0) {
+            for q in atlas.quads(&block, [0.0, 0.0], 1.0) {
+                let side = atlas.side() as f32;
+                let (x0, y0) = ((q.uv_min[0] * side) as usize, (q.uv_min[1] * side) as usize);
+                let (x1, y1) = ((q.uv_max[0] * side) as usize, (q.uv_max[1] * side) as usize);
+                let ink: u32 = (y0..y1)
+                    .flat_map(|y| (x0..x1).map(move |x| (x, y)))
+                    .map(|(x, y)| u32::from(atlas.coverage()[y * atlas.side() + x]))
+                    .sum();
+                quads += 1;
+                inked &= ink > 0;
+            }
+        }
+    }
+    (quads, inked)
+}
+
+/// A bitmap-only font maps letters in its cmap but has no outlines to paint: it is refused,
+/// and the text is painted in the bundled font instead of disappearing.
+#[test]
+fn a_font_without_outlines_is_refused_and_text_still_paints() {
+    let mut h = with_fonts(None);
+    open_bibles(&mut h);
+    let before = painted(&h);
+    assert!(before.0 > 100 && before.1, "{before:?}");
+    h.shell.run(
+        "view.font",
+        &json!({ "slot": "latin", "family": "Test Bitmap" }),
+    );
+    h.frame();
+    assert_eq!(h.shell.st.session.text.fonts, Default::default());
+    let (msg, _) = h.shell.st.toast.clone().unwrap();
+    assert_eq!(
+        msg,
+        "The font “Test Bitmap Regular” cannot be drawn (no outline glyphs, or not a readable \
+         font); Gentium Plus is used for Latin text."
+    );
+    settle_all(&mut h);
+    assert_eq!(painted(&h), before, "every glyph still painted, with ink");
+    h.shell.run("view.fonts", &json!({}));
+    h.frames(2);
+    assert!(
+        h.find("Cannot be drawn (no outline glyphs); Gentium Plus is used.")
+            .is_some(),
+        "{:?}",
+        h.texts()
+    );
+
+    // The interface font is refused the same way: egui's fonts stay as they were.
+    h.shell.run(
+        "view.font",
+        &json!({ "slot": "interface", "family": "Test Bitmap" }),
+    );
     h.frames(2);
     h.ctx.fonts(|fonts| {
         let proportional = &fonts.definitions().families[&egui::FontFamily::Proportional];

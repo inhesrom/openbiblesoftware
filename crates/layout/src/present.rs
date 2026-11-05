@@ -462,7 +462,8 @@ fn cluster_script(cluster: &str) -> Option<ReadingScript> {
 /// Split `text` into runs by script and face: each script gets its reading font (Ezra SIL and
 /// Gentium Plus by default), and a cluster the chosen font lacks falls back to the bundled face.
 /// Neutral clusters (spaces, punctuation, digits) stay with the run before them, or, at the
-/// start, with the first run.
+/// start, with the first cluster that has a script. Every cluster, neutral or not, is drawn
+/// only in a face that covers it.
 fn push_text(
     runs: &mut Vec<Run>,
     text: &str,
@@ -486,27 +487,43 @@ fn push_text(
             role: flags.role.unwrap_or(ColorRole::Ink),
         }
     };
-    let mut start = 0;
-    let mut current: Option<(FaceId, ReadingScript)> = None;
     // With only bundled faces every character is drawn where it is; a chosen face is checked
     // for whole grapheme clusters, so a letter and its marks stay in one face.
-    let clusters: Box<dyn Iterator<Item = (usize, &str)>> = if chooser.all_bundled() {
-        Box::new(
-            text.char_indices()
-                .map(|(i, c)| (i, &text[i..i + c.len_utf8()])),
-        )
-    } else {
-        Box::new(text.grapheme_indices(true))
+    let clusters = || -> Box<dyn Iterator<Item = (usize, &str)>> {
+        if chooser.all_bundled() {
+            Box::new(
+                text.char_indices()
+                    .map(|(i, c)| (i, &text[i..i + c.len_utf8()])),
+            )
+        } else {
+            Box::new(text.grapheme_indices(true))
+        }
     };
-    for (i, cluster) in clusters {
+    // Leading neutral clusters go with the first cluster that has a script, in its face when
+    // that face has them. With no such cluster, such as a maqaf alone between two Tagged
+    // words, they take the script the characters belong to (Gentium Plus has no maqaf).
+    let first = clusters().find_map(|(_, cluster)| {
+        cluster_script(cluster).map(|script| (chooser.face_for(script, cluster), script))
+    });
+    let first_script = first.map(|(_, script)| script).unwrap_or_else(|| {
+        text.chars()
+            .find_map(ReadingScript::of_char)
+            .unwrap_or(ReadingScript::Latin)
+    });
+    let mut start = 0;
+    let mut current: Option<(FaceId, ReadingScript)> = None;
+    for (i, cluster) in clusters() {
         let next = match (cluster_script(cluster), current) {
-            (Some(script), _) => Some((chooser.face_for(script, cluster), script)),
-            (None, Some((face, script))) if chooser.covers(face, cluster) => Some((face, script)),
-            (None, Some((_, script))) => Some((chooser.face_for(script, cluster), script)),
-            (None, None) => None,
+            (Some(script), _) => (chooser.face_for(script, cluster), script),
+            (None, Some((face, script))) if chooser.covers(face, cluster) => (face, script),
+            (None, Some((_, script))) => (chooser.face_for(script, cluster), script),
+            (None, None) => match first {
+                Some((face, script)) if chooser.covers(face, cluster) => (face, script),
+                _ => (chooser.face_for(first_script, cluster), first_script),
+            },
         };
-        let (Some(next), Some(cur)) = (next, current) else {
-            current = current.or(next);
+        let Some(cur) = current else {
+            current = Some(next);
             continue;
         };
         // Latin and Greek in one face stay one run; Hebrew is sized apart.
@@ -522,17 +539,7 @@ fn push_text(
         }
         current = Some(next);
     }
-    if start < text.len() {
-        let (face, script) = current.unwrap_or_else(|| {
-            // Only neutral characters, such as a maqaf between two Tagged words: drawn in the
-            // face of the script they belong to (Gentium Plus has no maqaf).
-            let rest = &text[start..];
-            let script = rest
-                .chars()
-                .find_map(ReadingScript::of_char)
-                .unwrap_or(ReadingScript::Latin);
-            (chooser.face_for(script, rest), script)
-        });
+    if let Some((face, script)) = current {
         push_run(
             runs,
             &text[start..],

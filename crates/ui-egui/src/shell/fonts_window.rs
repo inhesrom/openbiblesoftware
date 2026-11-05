@@ -9,8 +9,8 @@ use std::sync::Arc;
 use egui::RichText;
 use obs_engine::{FontSlot, Session};
 use obs_fonts::{
-    Coverage, FaceId, FaceSet, ReadingFaces, ReadingScript, ShapeCache, face, load_user_face,
-    script_coverage, unload_user_face,
+    Coverage, FaceId, FaceSet, ReadingFaces, ReadingScript, ShapeCache, face, has_outlines,
+    load_user_face, script_coverage, unload_user_face,
 };
 use serde_json::json;
 
@@ -52,8 +52,17 @@ pub(crate) struct FontsUi {
     /// Installed families, read when the window first opens.
     families: Option<Arc<Vec<InstalledFamily>>>,
     filter: String,
-    /// Slots whose chosen font is not installed here.
-    missing: [bool; 4],
+    /// Slots whose chosen font cannot be used here, and why.
+    missing: [Option<Unusable>; 4],
+}
+
+/// Why a chosen font is not used: the bundled font is drawn instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Unusable {
+    NotInstalled,
+    /// Installed, but without outline glyphs (a bitmap-only font) or not readable: glyphs are
+    /// painted from outlines only.
+    Undrawable,
 }
 
 impl Default for FontsUi {
@@ -66,7 +75,7 @@ impl Default for FontsUi {
             loaded: Vec::new(),
             families: None,
             filter: String::new(),
-            missing: [false; 4],
+            missing: [None; 4],
         }
     }
 }
@@ -87,25 +96,28 @@ fn wanted(s: &Session, slot: FontSlot) -> Option<(String, String)> {
         .map(|c| (c.family.clone(), c.style.clone()))
 }
 
-/// The four faces of a chosen family, loaded (each file once, by key). `None` when the family
-/// is not installed or its upright face cannot be read.
+/// The four faces of a chosen family, loaded (each file once, by key). An error when the
+/// family is not installed or its upright face cannot be used; a bold or italic face that
+/// cannot be used is replaced by the upright one.
 fn load_set(
     source: &dyn SystemFonts,
     family: &str,
     style: &str,
     by_key: &mut HashMap<String, FaceId>,
-) -> Option<FaceSet> {
-    let mut load = |bold: bool, italic: bool| -> Option<FaceId> {
-        let file = source.load(family, style, bold, italic)?;
+) -> Result<FaceSet, Unusable> {
+    let mut load = |bold: bool, italic: bool| -> Result<FaceId, Unusable> {
+        let file = source
+            .load(family, style, bold, italic)
+            .ok_or(Unusable::NotInstalled)?;
         if let Some(id) = by_key.get(&file.key) {
-            return Some(*id);
+            return Ok(*id);
         }
-        let id = load_user_face(file.data, file.index).ok()?;
+        let id = load_user_face(file.data, file.index).map_err(|_| Unusable::Undrawable)?;
         by_key.insert(file.key, id);
-        Some(id)
+        Ok(id)
     };
     let regular = load(false, false)?;
-    Some(FaceSet {
+    Ok(FaceSet {
         regular,
         italic: load(false, true).unwrap_or(regular),
         bold: load(true, false).unwrap_or(regular),
@@ -113,13 +125,17 @@ fn load_set(
     })
 }
 
-fn missing_notice(slot: FontSlot, family: &str, style: &str) -> String {
+fn missing_notice(slot: FontSlot, family: &str, style: &str, why: Unusable) -> String {
     let what = match slot.script() {
         Some(s) => format!("for {} text", s.label()),
         None => "for the interface".into(),
     };
+    let problem = match why {
+        Unusable::NotInstalled => "is not installed on this computer",
+        Unusable::Undrawable => "cannot be drawn (no outline glyphs, or not a readable font)",
+    };
     format!(
-        "The font “{family} {style}” is not installed on this computer; {} is used {what}.",
+        "The font “{family} {style}” {problem}; {} is used {what}.",
         slot.bundled_family()
     )
 }
@@ -143,20 +159,20 @@ impl State {
                 .enumerate()
             {
                 let (Some((family, style)), Some(script)) = (&reading[i], slot.script()) else {
-                    self.fonts_ui.missing[slot as usize] = false;
+                    self.fonts_ui.missing[slot as usize] = None;
                     continue;
                 };
                 let set = load_set(&*source, family, style, &mut by_key);
-                self.fonts_ui.missing[slot as usize] = set.is_none();
+                self.fonts_ui.missing[slot as usize] = set.err();
                 match set {
-                    Some(set) => {
+                    Ok(set) => {
                         faces.set(script, set);
                         self.session.font_found(slot);
                     }
-                    None if self.session.font_missing(slot) => {
-                        notices.push(missing_notice(slot, family, style));
+                    Err(why) if self.session.font_missing(slot) => {
+                        notices.push(missing_notice(slot, family, style, why));
                     }
-                    None => {}
+                    Err(_) => {}
                 }
             }
             for id in std::mem::take(&mut self.fonts_ui.loaded) {
@@ -174,21 +190,29 @@ impl State {
             let first = self.fonts_ui.applied_interface.is_none();
             let slot = FontSlot::Interface;
             let data = interface.as_ref().and_then(|(family, style)| {
-                let file = source.load(family, style, false, false);
-                self.fonts_ui.missing[slot as usize] = file.is_none();
+                // egui paints outlines only, like the reading text.
+                let file = source
+                    .load(family, style, false, false)
+                    .ok_or(Unusable::NotInstalled)
+                    .and_then(|f| {
+                        has_outlines(&f.data, f.index)
+                            .then_some(f)
+                            .ok_or(Unusable::Undrawable)
+                    });
+                self.fonts_ui.missing[slot as usize] = file.as_ref().err().copied();
                 match &file {
-                    Some(_) => self.session.font_found(slot),
-                    None if self.session.font_missing(slot) => {
-                        notices.push(missing_notice(slot, family, style));
+                    Ok(_) => self.session.font_found(slot),
+                    Err(why) if self.session.font_missing(slot) => {
+                        notices.push(missing_notice(slot, family, style, *why));
                     }
-                    None => {}
+                    Err(_) => {}
                 }
-                let file = file?;
+                let file = file.ok()?;
                 let blob: Arc<dyn AsRef<[u8]> + Send + Sync> = file.data;
                 Some(egui::FontData::from_blob(blob, file.index))
             });
             if interface.is_none() {
-                self.fonts_ui.missing[slot as usize] = false;
+                self.fonts_ui.missing[slot as usize] = None;
             }
             // The bundled interface fonts are installed at start-up already.
             if !(first && data.is_none()) {
@@ -348,13 +372,14 @@ impl State {
                     });
             }
         });
-        if self.fonts_ui.missing[slot as usize] {
+        if let Some(why) = self.fonts_ui.missing[slot as usize] {
+            let problem = match why {
+                Unusable::NotInstalled => "Not installed on this computer",
+                Unusable::Undrawable => "Cannot be drawn (no outline glyphs)",
+            };
             ui.label(
-                RichText::new(format!(
-                    "Not installed on this computer; {} is used.",
-                    slot.bundled_family()
-                ))
-                .color(theme::c().warn),
+                RichText::new(format!("{problem}; {} is used.", slot.bundled_family()))
+                    .color(theme::c().warn),
             );
         }
         match slot.script() {

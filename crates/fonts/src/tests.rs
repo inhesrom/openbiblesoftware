@@ -252,6 +252,36 @@ fn a_file_that_is_not_a_font_is_refused() {
     );
 }
 
+/// Gentium Plus Regular with its `glyf` and `loca` tables renamed away: the cmap, metrics and
+/// shaping tables stay, but no glyph has an outline, as in a bitmap-only font.
+fn without_outlines(bytes: &[u8]) -> Vec<u8> {
+    let mut out = bytes.to_vec();
+    let tables = usize::from(u16::from_be_bytes([out[4], out[5]]));
+    for i in 0..tables {
+        let tag = 12 + i * 16;
+        // Renamed in place, keeping the table records sorted by tag.
+        match &out[tag..tag + 4] {
+            b"glyf" => out[tag + 3] = b'F',
+            b"loca" => out[tag + 3] = b'A',
+            _ => {}
+        }
+    }
+    out
+}
+
+#[test]
+fn a_font_without_outlines_is_refused() {
+    let bytes = FaceId::Regular.bundled_bytes().unwrap();
+    let bitmap_only = without_outlines(bytes);
+    assert!(has_outlines(bytes, 0) && !has_outlines(&bitmap_only, 0));
+    // Its cmap still claims the letters, so coverage alone would choose it and paint nothing.
+    use skrifa::MetadataProvider as _;
+    let font = skrifa::FontRef::new(&bitmap_only).unwrap();
+    assert!(font.charmap().map('G').is_some());
+    let err = load_user_face(Arc::new(bitmap_only), 0).unwrap_err();
+    assert!(matches!(err.0, FaceId::User(_)));
+}
+
 #[test]
 fn coverage_is_read_from_the_cmap() {
     let gentium = face(FaceId::Regular).unwrap();

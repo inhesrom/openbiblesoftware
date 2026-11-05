@@ -25,7 +25,8 @@ mod reading;
 mod shape;
 
 pub use face::{
-    Face, FaceError, FaceId, FaceMetrics, face, load_user_face, script_of, unload_user_face,
+    Face, FaceError, FaceId, FaceMetrics, face, has_outlines, load_user_face, script_of,
+    unload_user_face,
 };
 pub use licenses::{FONT_LICENSES, FontLicense};
 pub use preview::{lines_svg, run_path};

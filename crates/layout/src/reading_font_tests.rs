@@ -98,6 +98,43 @@ fn characters_a_font_lacks_fall_back_per_cluster() {
     );
 }
 
+/// Punctuation before the first letter is checked like any other cluster: a chosen face
+/// without a reversed quote and figure dash does not draw them as missing glyphs.
+#[test]
+fn leading_punctuation_a_font_lacks_falls_back() {
+    let ezra = user(FaceId::Hebrew);
+    let f = face(ezra).unwrap();
+    assert!(f.covers('a') && !f.covers('\u{201F}') && !f.covers('\u{2012}'));
+    let mut settings = TextSettings::default();
+    settings.fonts.latin = FaceSet::single(ezra);
+    let text = "\u{201F}\u{2012} abc\u{2033}";
+    let para = snippet_paragraph(text, ColorRole::Ink, false, &settings);
+    let runs: Vec<(&str, FaceId)> = para
+        .runs
+        .iter()
+        .map(|r| (r.text.as_str(), r.style.face))
+        .collect();
+    assert_eq!(
+        runs,
+        [
+            ("\u{201F}\u{2012} ", FaceId::Regular),
+            ("abc", ezra),
+            ("\u{2033}", FaceId::Regular)
+        ]
+    );
+    let starts: Vec<RunSource> = para.runs.iter().map(|r| r.source.clone()).collect();
+    assert_eq!(
+        starts,
+        [0, 7, 10].map(|unit_start| RunSource::Text { unit_start })
+    );
+    let block = layout(&para, 2000.0, ShapeCache::shared());
+    assert_eq!(missing_glyphs(&block), 0);
+    // Leading punctuation the font has stays in it, in one run with the words after it.
+    let para = snippet_paragraph("(abc", ColorRole::Ink, false, &settings);
+    assert!(f.covers('('));
+    assert_eq!(runs_by_text(&para), [("(abc", ezra)]);
+}
+
 /// A maqaf or sof pasuq on its own (between Tagged words, so in a piece of its own) is drawn
 /// in the Hebrew face: Gentium Plus has no glyph for it.
 #[test]

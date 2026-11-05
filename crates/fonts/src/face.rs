@@ -190,7 +190,7 @@ fn load(id: FaceId, data: FaceData, index: u32) -> Result<Face, FaceError> {
     .ok_or(FaceError(id))?;
     let font_ref = FontRef::from_index(data.bytes(), index).map_err(|_| FaceError(id))?;
     let m = font_ref.metrics(Size::unscaled(), LocationRef::default());
-    if m.units_per_em == 0 {
+    if m.units_per_em == 0 || !outlined(&font_ref) {
         return Err(FaceError(id));
     }
     let smcp = Tag::new(b"smcp");
@@ -216,6 +216,19 @@ fn load(id: FaceId, data: FaceData, index: u32) -> Result<Face, FaceError> {
         },
         small_caps,
     })
+}
+
+/// Whether the face has outlines (TrueType `glyf`, CFF or CFF2). Glyphs are painted from
+/// outlines only, so a bitmap-only face (`EBDT`, `CBDT` or `sbix` alone) would map letters in
+/// its cmap and then draw nothing: it is refused instead, and the bundled face is used.
+fn outlined(font: &FontRef<'_>) -> bool {
+    font.outline_glyphs().format().is_some()
+}
+
+/// Whether face `index` of a font file has outlines the app can draw (see [`load_user_face`]).
+/// For the interface font, which egui loads itself.
+pub fn has_outlines(bytes: &[u8], index: u32) -> bool {
+    FontRef::from_index(bytes, index).is_ok_and(|f| outlined(&f))
 }
 
 fn load_bundled(id: FaceId) -> Result<Arc<Face>, FaceError> {
@@ -260,7 +273,8 @@ pub fn face(id: FaceId) -> Result<Arc<Face>, FaceError> {
 }
 
 /// Load a font file the app read from this computer (#138): face `index` of `bytes`. Every
-/// call gets a new [`FaceId::User`], usable from any thread until [`unload_user_face`].
+/// call gets a new [`FaceId::User`], usable from any thread until [`unload_user_face`]. A file
+/// that is not a font, or a face without outlines ([`has_outlines`]), is refused.
 pub fn load_user_face(bytes: Arc<Vec<u8>>, index: u32) -> Result<FaceId, FaceError> {
     static NEXT: AtomicU32 = AtomicU32::new(0);
     let id = FaceId::User(NEXT.fetch_add(1, Ordering::Relaxed));
