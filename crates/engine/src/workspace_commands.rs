@@ -4,6 +4,7 @@
 use obs_scripture::{RefStyle, Standard, Verse, Versification, format_passage, parse_reference};
 use serde_json::{Value, json};
 
+use crate::appearance::{TEXT_SIZE_MAX, TEXT_SIZE_MIN, TEXT_SIZE_STEP};
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
 use crate::session::Session;
 use crate::workspace::{Effect, Guide, OpenRequest, PanelId, TabId, TabKind, Tool};
@@ -84,9 +85,14 @@ pub const MENUS: &[Menu] = &[
                 title: "Page tone",
                 command: "view.page_tone",
             },
+            MenuItem::Choice {
+                title: "Interface size",
+                command: "view.interface_size",
+            },
             Separator,
             C("view.text_larger"),
             C("view.text_smaller"),
+            C("view.text_reset"),
             MenuItem::Choice {
                 title: "Line spacing",
                 command: "view.line_spacing",
@@ -184,6 +190,10 @@ pub fn choices(s: &Session, command: &str) -> (Vec<(&'static str, &'static str)>
             PageTone::ALL.iter().map(|t| (t.1, t.2)).collect(),
             s.appearance.page_tone.id(),
         ),
+        "view.interface_size" => (
+            InterfaceSize::ALL.iter().map(|t| (t.1, t.2)).collect(),
+            s.appearance.interface_size.id(),
+        ),
         "view.line_spacing" => (
             LINE_SPACINGS.iter().map(|c| (c.0, c.1)).collect(),
             line_spacing_id(s.text.line_spacing),
@@ -204,6 +214,7 @@ fn run_choice(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let ok = match id {
         "view.theme" => Theme::from_id(v).map(|t| s.appearance.theme = t),
         "view.page_tone" => PageTone::from_id(v).map(|t| s.appearance.page_tone = t),
+        "view.interface_size" => InterfaceSize::from_id(v).map(|t| s.appearance.interface_size = t),
         "view.line_spacing" => LINE_SPACINGS
             .iter()
             .find(|c| c.0 == v)
@@ -417,28 +428,32 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         s.workspace.push_effect(Effect::ResetLayout);
         Ok(Value::Null)
     }),
+    // The keys also match Ctrl+= and Ctrl+Shift+= (the + key unshifted and shifted) and the
+    // numpad's + and −; egui's own whole-window zoom keys are off (#137).
     simple(
         "view.text_larger",
         "Larger text",
         Some("Ctrl+Plus"),
         always,
-        |s, _| {
-            s.text.size = (s.text.size + 1.0).min(40.0);
-            view_saved(s, json!({ "size": s.text.size }))
-        },
+        |s, _| set_text_size(s, s.text.size + TEXT_SIZE_STEP),
     ),
     simple(
         "view.text_smaller",
         "Smaller text",
         Some("Ctrl+Minus"),
         always,
-        |s, _| {
-            s.text.size = (s.text.size - 1.0).max(10.0);
-            view_saved(s, json!({ "size": s.text.size }))
-        },
+        |s, _| set_text_size(s, s.text.size - TEXT_SIZE_STEP),
+    ),
+    simple(
+        "view.text_reset",
+        "Reset text size",
+        Some("Ctrl+0"),
+        always,
+        |s, _| set_text_size(s, obs_layout::TextSettings::default().size),
     ),
     choice("view.theme", "Theme"),
     choice("view.page_tone", "Page tone"),
+    choice("view.interface_size", "Interface size"),
     choice("view.line_spacing", "Line spacing"),
     choice("view.verse_numbers", "Verse numbers"),
     simple("view.red_letter", "Red letter", None, always, |s, _| {
@@ -803,6 +818,16 @@ fn link(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     }
     s.workspace.set_link(tab, link);
     Ok(json!({ "tab": tab.0, "set": link.map(String::from) }))
+}
+
+/// Set the Text size (clamped), save it and show it briefly ("Text 18 pt"). The size is
+/// shown only once saved, so a failed save's error toast is not replaced by it.
+fn set_text_size(s: &mut Session, size: f32) -> Result<Value, CommandError> {
+    s.text.size = size.clamp(TEXT_SIZE_MIN, TEXT_SIZE_MAX);
+    let out = view_saved(s, json!({ "size": s.text.size }))?;
+    s.workspace
+        .push_effect(Effect::Message(format!("Text {} pt", s.text.size)));
+    Ok(out)
 }
 
 fn view_saved(s: &mut Session, out: Value) -> Result<Value, CommandError> {

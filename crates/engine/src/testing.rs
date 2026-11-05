@@ -1384,3 +1384,76 @@ pub fn tagnt_grace() -> obs_model::Resource {
     r.manifest.attribution = "STEPBible.org (Tyndale House, Cambridge), CC BY 4.0.".into();
     r
 }
+
+/// A User database whose preference writes fail ("disk full"); everything else is the real
+/// `store`. For checking that a failed save is reported, not hidden.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
+pub struct PreferenceWritesFail(pub obs_store::UserStore);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl crate::UserData for PreferenceWritesFail {
+    fn preference(&self, key: &str) -> Result<Option<String>, String> {
+        crate::UserData::preference(&self.0, key)
+    }
+    fn set_preference(&self, _key: &str, _value: &str) -> Result<(), String> {
+        Err("disk full".into())
+    }
+    fn last_session(&self) -> Result<Option<String>, String> {
+        crate::UserData::last_session(&self.0)
+    }
+    fn save_last_session(&self, snapshot: &str) -> Result<(), String> {
+        crate::UserData::save_last_session(&self.0, snapshot)
+    }
+    fn layouts(&self) -> Result<Vec<String>, String> {
+        crate::UserData::layouts(&self.0)
+    }
+    fn layout(&self, name: &str) -> Result<Option<String>, String> {
+        crate::UserData::layout(&self.0, name)
+    }
+    fn save_layout(&self, name: &str, snapshot: &str) -> Result<(), String> {
+        crate::UserData::save_layout(&self.0, name, snapshot)
+    }
+    fn rename_layout(&self, from: &str, to: &str) -> Result<bool, String> {
+        crate::UserData::rename_layout(&self.0, from, to)
+    }
+    fn delete_layout(&self, name: &str) -> Result<bool, String> {
+        crate::UserData::delete_layout(&self.0, name)
+    }
+    fn preferred_order(&self) -> Result<Vec<String>, String> {
+        crate::UserData::preferred_order(&self.0)
+    }
+    fn save_preferred_order(&self, ids: &[String]) -> Result<(), String> {
+        crate::UserData::save_preferred_order(&self.0, ids)
+    }
+    fn resource_names(&self) -> Result<Vec<(String, String, String)>, String> {
+        crate::UserData::resource_names(&self.0)
+    }
+    fn save_resource_names(&self, names: &[(String, String, String)]) -> Result<(), String> {
+        crate::UserData::save_resource_names(&self.0, names)
+    }
+    fn notebooks(&self) -> Result<Vec<obs_store::Notebook>, String> {
+        crate::UserData::notebooks(&self.0)
+    }
+    fn notebook_counts(&self) -> Result<Vec<(String, u64)>, String> {
+        crate::UserData::notebook_counts(&self.0)
+    }
+    fn annotation(&self, id: &str) -> Result<Option<obs_store::Annotation>, String> {
+        crate::UserData::annotation(&self.0, id)
+    }
+    fn annotations(&self, notebook: Option<&str>) -> Result<Vec<obs_store::Annotation>, String> {
+        crate::UserData::annotations(&self.0, notebook)
+    }
+    fn annotations_referring(&self, resource_id: &str) -> Result<u64, String> {
+        crate::UserData::annotations_referring(&self.0, resource_id)
+    }
+    fn search_notes(&self, fts_query: &str) -> Result<Vec<String>, String> {
+        crate::UserData::search_notes(&self.0, fts_query)
+    }
+    fn apply_changes(&self, changes: &[obs_store::Change]) -> Result<(), String> {
+        crate::UserData::apply_changes(&self.0, changes)
+    }
+    fn annotation_dump(&self) -> Result<String, String> {
+        crate::UserData::annotation_dump(&self.0)
+    }
+}

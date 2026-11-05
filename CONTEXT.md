@@ -195,6 +195,14 @@ _Avoid_: Workspace (for the saved snapshot), Preset, Arrangement
 The Workspace as the user left it, restored automatically at the next launch. It is not a Layout.
 _Avoid_: Autosave layout
 
+**Text size**:
+How large Resource text is drawn in every Tab, in points. View → Larger text, Smaller text and Reset text size change it (Ctrl/Cmd with +, = or numpad +; − or numpad −; 0). It never changes the Interface size.
+_Avoid_: Zoom, Font size
+
+**Interface size**:
+One zoom on the whole app window: menus, Tab bars, headers and dialogs grow or shrink, with Resource text scaled along on top of its Text size (View → Interface size: Smaller, Default, Larger). It is kept in the User database. No Text size key changes it.
+_Avoid_: Zoom, UI scale, DPI
+
 ### Guides
 
 **Guide**:

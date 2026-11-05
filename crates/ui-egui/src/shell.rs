@@ -625,6 +625,15 @@ impl Shell {
             ctx.set_theme(want);
         }
         theme::set_for(ctx);
+        // Interface size is the only whole-window zoom (#137). egui's own Ctrl+Plus/Minus/0
+        // zoom is off: those keys are Text size. A stale zoom is put back at once.
+        if ctx.options(|o| o.zoom_with_keyboard) {
+            ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        }
+        let zoom = self.st.session.appearance.interface_size.zoom();
+        if ctx.zoom_factor() != zoom {
+            ctx.set_zoom_factor(zoom);
+        }
         let tone = self
             .st
             .session
@@ -756,6 +765,7 @@ impl Shell {
             .iter()
             .filter(|spec| !(typing && spec.shortcut.is_some_and(annotate::yields_to_text_fields)))
             .filter_map(|spec| Some((spec, spec.shortcut.and_then(parse_shortcut)?)))
+            .flat_map(|(spec, sc)| pressed_as(sc).map(move |sc| (spec, sc)))
             .collect();
         let mut run: Vec<(&'static str, Value)> = Vec::new();
         for (spec, sc) in bound {
@@ -984,8 +994,20 @@ fn replace_child(c: &mut Container, old: TileId, new: TileId) {
 pub(crate) fn bindings(session: &obs_engine::Session) -> Vec<egui::KeyboardShortcut> {
     (session.commands().iter())
         .filter_map(|spec| spec.shortcut.and_then(parse_shortcut))
+        .flat_map(pressed_as)
         .chain(annotate::shortcuts())
         .collect()
+}
+
+/// The key reports that press `sc`: itself, and for `+` also `=`. On US, UK and AZERTY
+/// keyboards `+` is Shift+=, so Ctrl+Plus is pressed as Ctrl+= too, as in browsers (#137).
+/// The numpad's + and − report Plus and Minus.
+pub(crate) fn pressed_as(
+    sc: egui::KeyboardShortcut,
+) -> impl Iterator<Item = egui::KeyboardShortcut> {
+    let also = (sc.logical_key == egui::Key::Plus)
+        .then(|| egui::KeyboardShortcut::new(sc.modifiers, egui::Key::Equals));
+    std::iter::once(sc).chain(also)
 }
 
 /// Which of Shift and Alt may be held on top of `sc`'s own modifiers and still press it.
