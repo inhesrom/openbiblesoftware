@@ -214,12 +214,18 @@ pub fn build(config: &Config) -> Result<String> {
         write_obr(&b.resource, &path)
             .with_context(|| format!("cannot write {}", path.display()))?;
         let bytes = std::fs::read(&path)?;
+        let m = &b.resource.manifest;
         released.push(ReleaseResource {
             resource_id: id.clone(),
-            revision: b.resource.manifest.revision,
-            content_hash: b.resource.manifest.content_hash.clone(),
+            revision: m.revision,
+            content_hash: m.content_hash.clone(),
             file_sha256: sha256_hex(&bytes),
             bytes: bytes.len() as u64,
+            title: m.title.clone(),
+            abbreviation: m.abbreviation.clone(),
+            resource_type: Some(m.resource_type),
+            language: m.language.clone(),
+            license: m.license.clone(),
             units: b
                 .resource
                 .units

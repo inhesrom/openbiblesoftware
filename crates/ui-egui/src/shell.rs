@@ -35,6 +35,7 @@ mod notes_tab;
 #[path = "references.rs"]
 pub(crate) mod references;
 mod search_tab;
+mod starter_tab;
 mod word_info_tab;
 mod word_sections_view;
 mod word_study_tab;
@@ -669,6 +670,8 @@ impl Shell {
     fn background_repaint(&self) -> Option<std::time::Duration> {
         // Bible searches and their snippet pages (#59) are applied by a frame too.
         if self.st.session.imports.is_running()
+            || self.st.session.starter.download().is_some()
+            || self.st.session.starter.is_checking()
             || self.st.picker.is_some()
             || self.st.session.guides.is_busy()
             || self.st.session.bible_search_running()
@@ -1239,6 +1242,7 @@ impl State {
             TabKind::About(id) => self.about_body(&mut body, tab, &id),
             TabKind::ImportReport(id) => self.import_body(&mut body, &id),
             TabKind::GetBibles => self.get_bibles_body(&mut body),
+            TabKind::StarterLibrary => self.starter_body(&mut body),
             TabKind::Credits => self.credits_body(&mut body, tab),
             TabKind::Guide(obs_engine::Guide::PassageGuide) => {
                 self.passage_guide_body(&mut body, tab)

@@ -1157,6 +1157,23 @@ fn a_tahot_source_in_several_files_builds_a_hebrew_bible_with_its_changes_note()
     let manifest = ReleaseManifest::load(&config.out.join(MANIFEST_FILE)).unwrap();
     let units = &manifest.resources[0].units;
     assert!(units.iter().any(|u| u == "GEN") && units.iter().any(|u| u == "MAL"));
+    // The app reads the same manifest (#131): what a Starter library row shows before the
+    // Resource is downloaded, and the sha256 a download is checked against.
+    let json = std::fs::read_to_string(config.out.join(MANIFEST_FILE)).unwrap();
+    let app = obs_engine::starter::StarterManifest::parse(&json).unwrap();
+    let row = app.get("tahot").unwrap();
+    assert_eq!(row.resource_type, Some(obs_model::ResourceType::Bible));
+    assert_eq!(
+        (row.language.as_str(), row.license.as_str()),
+        ("hbo", "CC-BY-4.0")
+    );
+    assert_eq!(row.abbreviation, m.abbreviation);
+    assert_eq!(row.title, m.title);
+    assert_eq!(row.revision, m.revision);
+    assert_eq!(
+        row.file_sha256,
+        obs_engine::starter::sha256_hex(&std::fs::read(config.out.join("tahot.obr")).unwrap())
+    );
     // CC BY: the changes are published beside the Resource.
     let changes = std::fs::read_to_string(config.out.join("CHANGES-tahot.md")).unwrap();
     assert!(changes.contains("## Changes we made"), "{changes}");

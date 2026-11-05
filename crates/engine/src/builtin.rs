@@ -100,6 +100,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::library_commands::COMMANDS)
         .chain(crate::import::COMMANDS)
         .chain(crate::get_bibles::COMMANDS)
+        .chain(crate::starter::COMMANDS)
         .chain(crate::compare::COMMANDS)
         .chain(crate::annotations::COMMANDS)
         .chain(crate::reanchor::COMMANDS)

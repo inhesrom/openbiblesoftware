@@ -3033,6 +3033,8 @@ mod word_info;
 mod credits;
 #[path = "guide_tests.rs"]
 mod guide;
+#[path = "starter_library_tests.rs"]
+mod starter_library;
 #[path = "word_study_tests.rs"]
 mod word_study;
 

@@ -118,8 +118,12 @@ The user's ranking of Resources within one Resource type. The first Resource in 
 _Avoid_: Priority, Top Bibles, Favorites
 
 **Starter library**:
-The set of Resources bundled with the installer, available offline from first launch.
+The set of Resources bundled with the installer, available offline from first launch. They are added to the library on the first launch; an installer without them offers to download them under Library → Starter library…, which also lists each one and adds back any that are missing.
 _Avoid_: Default library, Base package
+
+**Removed Starter Resource**:
+A Starter library Resource the user removed from the library. It is remembered in the User database and never added back silently; Library → Starter library… lists it as Removed, with Add back.
+_Avoid_: Deleted resource, Hidden resource
 
 **Import**:
 Adding a Resource to the library from a local file in an open format (USFM or SWORD in v0.1). Every Import produces an Import report.
@@ -276,5 +280,5 @@ The Notes Tool's list of Orphaned annotations, where each can be re-attached to 
 _Avoid_: Broken links, Errors
 
 **User database**:
-The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements and preferences. Resources and Search indexes are never part of it.
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources and preferences. Resources and Search indexes are never part of it.
 _Avoid_: Profile, User library, Settings file

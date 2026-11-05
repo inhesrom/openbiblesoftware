@@ -19,6 +19,8 @@ obs-store.workspace = true
 obs-render.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# Verifies downloaded and bundled Starter library files against their manifest (#131).
+sha2.workspace = true
 # Parses the Featured Bibles data file (Get Bibles, #91).
 toml = "1"
 

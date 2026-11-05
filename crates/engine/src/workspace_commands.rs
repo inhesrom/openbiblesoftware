@@ -47,6 +47,7 @@ pub const MENUS: &[Menu] = &[
             C("library.import"),
             C("library.get_resources"),
             C("library.get_bibles"),
+            C("library.starter"),
             Separator,
             Resources,
         ],
@@ -275,6 +276,21 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         params: OPEN,
         enabled: always,
         run: |s, p| open_get_resources(s, p, Some(obs_model::ResourceType::Bible)),
+    },
+    CommandSpec {
+        id: "library.starter",
+        label: "Starter library…",
+        shortcut: None,
+        params: OPEN,
+        enabled: always,
+        run: |s, p| {
+            let out = open(s, p, TabKind::StarterLibrary)?;
+            // Without a bundle, the rows come from the latest release's manifest.
+            if s.starter.manifest().is_none() {
+                s.check_starter_release();
+            }
+            Ok(out)
+        },
     },
     CommandSpec {
         id: "resource.open",
@@ -584,6 +600,7 @@ pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
         TabKind::Library => "Library".into(),
         TabKind::ImportReport(_) => "Import report".into(),
         TabKind::GetBibles => GET_RESOURCES_TITLE.into(),
+        TabKind::StarterLibrary => "Starter library".into(),
         TabKind::Credits => "Credits".into(),
         TabKind::Resource(id) => s
             .library

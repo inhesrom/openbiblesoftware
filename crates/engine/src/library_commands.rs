@@ -231,6 +231,10 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         s.workspace.close(t);
     }
     s.library.remove(&id);
+    // A removed Starter Resource is never added back silently (#131).
+    if entry.manifest.origin == obs_model::Origin::Starter {
+        s.starter_removed(&id);
+    }
     s.imports.reports.remove(&id);
     s.forget_search_index(&id);
     if let Some(user) = &s.user {

@@ -45,6 +45,8 @@ pub struct Session {
     pub bible_search: crate::bible_search::BibleSearches,
     /// Get Bibles catalog (#91).
     pub get_bibles: crate::get_bibles::GetBibles,
+    /// The Starter library: its bundle, the released manifest and a download (#131).
+    pub starter: crate::starter::StarterLibrary,
     pub workspace: Workspace,
     /// Text settings for Resource text (the View menu).
     pub text: TextSettings,
@@ -93,6 +95,7 @@ impl Session {
             search: crate::search::SearchIndexes::default(),
             bible_search: crate::bible_search::BibleSearches::default(),
             get_bibles: crate::get_bibles::GetBibles::default(),
+            starter: crate::starter::StarterLibrary::default(),
             workspace: Workspace::new(),
             text: TextSettings::default(),
             appearance: crate::appearance::Appearance::default(),
@@ -156,6 +159,7 @@ impl Session {
             }
         }
         self.user = Some(user);
+        self.reload_starter_state();
         self.bible_search.forget_recent();
         self.history.clear();
         self.annotations_revision += 1;
