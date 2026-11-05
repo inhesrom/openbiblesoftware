@@ -80,14 +80,18 @@ or deleted).
 - **Keys and text fields.** The Shell runs command shortcuts before widgets see the key, so
   while a text field has focus (`egui::Context::text_edit_focused`) it skips the keys text
   fields use themselves (Ctrl+Z, Ctrl+Shift+Z, Esc, Alt+←/→) and the annotation keys.
-  Shortcuts match Shift and Alt exactly (`shell::consume_exact`; egui's own matching ignores
-  extra Shift and Alt), so Ctrl+Shift+Z never undoes, even with nothing to redo, and
-  Ctrl+Shift+1 is not a style.
+  Like egui, a shortcut still matches with an extra Shift or Alt held, because some layouts
+  need them for the key (Ctrl+Plus is Ctrl+Shift+= on a US keyboard; digits need Shift on
+  AZERTY). The exception is a key bound more than once with different modifiers: then Shift
+  and Alt must match exactly (`shell::extra_held`, `shell::consume_key`). So Ctrl+Shift+Z
+  never undoes, even when there is nothing to redo. The style keys Ctrl+1…5 accept an
+  extra Shift but not Alt, because Ctrl+Alt is AltGr on Windows.
 - **The Note editor** is a popup anchored under the selection, with a Notebook picker that
   starts on the last used Notebook. It saves (as `annotation.note` with the picked
   `notebook`) on a click outside it, Esc, Ctrl+Enter or quitting; an empty Note is not
   saved; Discard closes it without saving. If the save fails, the editor stays open with its
-  text and the error, and starting another Note does not replace it. Open in Notes is disabled until #64.
+  text and the error. Starting another Note does not replace it, and closing the window is
+  cancelled until the Note is saved or discarded. Open in Notes is disabled until #64.
 - **Drawing them.** `MarkCache` reloads the Annotations when `Session::annotations_revision`
   moves and turns those whose Text range is in a Resource into `Mark`s over document
   positions. A range whose text no longer reads as its quote is not drawn over other words:

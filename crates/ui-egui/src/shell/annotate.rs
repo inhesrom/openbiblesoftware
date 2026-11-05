@@ -19,7 +19,7 @@ use egui::{Key, Modifiers, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
 use obs_engine::{Annotation, HighlightStyle, Session, TabId};
 use serde_json::{Value, json};
 
-use super::{State, consume_exact};
+use super::{State, bindings, consume_key, extra_held};
 use crate::doc::ReadingDoc;
 use crate::marks::{Mark, marks_for};
 use crate::palette::{HIGHLIGHT_STYLES, Palette};
@@ -29,6 +29,16 @@ use crate::theme;
 
 /// The keys of the 5 Highlight styles, in [`HighlightStyle::ALL`] order.
 const STYLE_KEYS: [Key; 5] = [Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5];
+
+/// Ctrl+Shift+N, the Note key.
+const NOTE_KEY: egui::KeyboardShortcut =
+    egui::KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::N);
+
+/// The annotation keys: Ctrl+Shift+N and Ctrl+1…5.
+pub(super) fn shortcuts() -> impl Iterator<Item = egui::KeyboardShortcut> {
+    let styles = STYLE_KEYS.map(|k| egui::KeyboardShortcut::new(Modifiers::COMMAND, k));
+    std::iter::once(NOTE_KEY).chain(styles)
+}
 
 /// Shortcuts that text fields use themselves (undo, redo, leaving the field, moving by word on
 /// macOS). While a text field has focus, the commands bound to them do not run.
@@ -302,14 +312,20 @@ impl State {
         if !self.has_selection(tab) {
             return;
         }
+        let all = bindings(&self.session);
+        // An extra Shift is allowed unless another binding needs it (digits need Shift on
+        // AZERTY), never an extra Alt: Ctrl+Alt is AltGr on Windows.
+        let extra = |sc| Modifiers {
+            alt: false,
+            ..extra_held(sc, &all)
+        };
         let mut action = None;
         ui.input_mut(|i| {
-            if consume_exact(i, Modifiers::COMMAND | Modifiers::SHIFT, Key::N) {
+            if consume_key(i, NOTE_KEY.modifiers, NOTE_KEY.logical_key, extra(NOTE_KEY)) {
                 action = Some(Annotate::Note);
             }
-            // Exactly Ctrl+1…5: Ctrl+Shift+1 or Ctrl+Alt+1 is not a style.
-            for (style, key) in HighlightStyle::ALL.into_iter().zip(STYLE_KEYS) {
-                if consume_exact(i, Modifiers::COMMAND, key) {
+            for (style, sc) in HighlightStyle::ALL.into_iter().zip(shortcuts().skip(1)) {
+                if consume_key(i, sc.modifiers, sc.logical_key, extra(sc)) {
                     action = Some(Annotate::Highlight(style));
                 }
             }

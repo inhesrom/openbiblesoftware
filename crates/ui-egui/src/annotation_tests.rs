@@ -90,6 +90,25 @@ fn press_key(h: &mut Harness, key: egui::Key, modifiers: Modifiers) {
     h.frame();
 }
 
+/// A frame in which the user closes the window: whether the app cancels the close.
+fn close_window(h: &mut Harness) -> bool {
+    let mut input = RawInput {
+        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1400.0, 900.0))),
+        time: Some(h.time),
+        ..Default::default()
+    };
+    (input.viewports.entry(egui::ViewportId::ROOT).or_default())
+        .events
+        .push(egui::ViewportEvent::Close);
+    h.time += 1.0 / 60.0;
+    let shell = &mut h.shell;
+    let mut out = h.ctx.run_ui(input, |ui| shell.ui(ui));
+    // Not drawn: this frame's texture uploads are not kept.
+    out.textures_delta.clear();
+    (out.viewport_output.get(&egui::ViewportId::ROOT))
+        .is_some_and(|v| v.commands.contains(&egui::ViewportCommand::CancelClose))
+}
+
 fn double_click(h: &mut Harness, p: Pos2) {
     // Long after any earlier click, so this is not counted as a triple click.
     h.time += 1.0;
@@ -160,8 +179,7 @@ fn ctrl_2_draws_a_green_highlight_at_once_and_ctrl_z_removes_it() {
     }
     let green = h.shell.st.palette.highlights[1];
     assert!(painted(&h, green).is_empty());
-    // Ctrl+Shift+2 and Ctrl+Alt+2 are not Ctrl+2: no style.
-    press_key(&mut h, egui::Key::Num2, cmd_shift());
+    // Ctrl+Alt+2 (AltGr+2 on Windows) is not Ctrl+2: no style.
     press_key(&mut h, egui::Key::Num2, Modifiers::COMMAND | Modifiers::ALT);
     assert!(h.shell.st.session.annotations(None).unwrap().is_empty());
     assert!(h.shell.st.has_selection(tb));
@@ -206,6 +224,44 @@ fn ctrl_2_draws_a_green_highlight_at_once_and_ctrl_z_removes_it() {
     h.frame();
     assert_eq!(h.shell.st.session.annotations(None).unwrap().len(), 1);
     assert!(!painted(&h, green).is_empty());
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn keys_that_need_shift_on_some_layouts_still_work_and_ctrl_shift_z_never_undoes() {
+    let dir = folder("layouts");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    let (_, _, _, r) = word_in_view(&h, tb, 200.0);
+    double_click(&mut h, r.center());
+    // Digits need Shift on AZERTY: Ctrl+1 arrives as Num1 with Shift held.
+    press_key(&mut h, egui::Key::Num1, cmd_shift());
+    let stored = h.shell.st.session.annotations(None).unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(
+        stored[0].content,
+        Content::Highlight {
+            style: HighlightStyle::ALL[0]
+        }
+    );
+
+    // `+` needs Shift on a US keyboard: winit reports Ctrl+Shift+= as Plus with Shift held.
+    // It is Larger text, not egui's whole-UI zoom.
+    let size = h.shell.st.session.text.size;
+    press_key(&mut h, egui::Key::Plus, cmd_shift());
+    h.frame();
+    assert_eq!(h.shell.st.session.text.size, size + 1.0);
+    assert_eq!(h.ctx.zoom_factor(), 1.0);
+    press_key(&mut h, egui::Key::Minus, Modifiers::COMMAND);
+    assert_eq!(h.shell.st.session.text.size, size);
+
+    // Ctrl+Shift+Z with nothing to redo still never undoes, nor does Ctrl+Alt+Z.
+    press_key(&mut h, egui::Key::Z, cmd_shift());
+    press_key(&mut h, egui::Key::Z, Modifiers::COMMAND | Modifiers::ALT);
+    assert_eq!(h.shell.st.session.annotations(None).unwrap().len(), 1);
+    press_key(&mut h, egui::Key::Z, Modifiers::COMMAND);
+    assert!(h.shell.st.session.annotations(None).unwrap().is_empty());
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -443,6 +499,16 @@ fn a_note_that_fails_to_save_keeps_its_text() {
     );
     assert!(shows_error(&h));
     assert!(h.shell.st.session.annotations(None).unwrap().is_empty());
+    // Closing the window keeps it open, with the Note, until it is discarded.
+    assert!(close_window(&mut h));
+    assert_eq!(
+        h.shell.st.note_editor.as_ref().unwrap().body,
+        "precious words"
+    );
+    h.frame();
+    h.click_text("Discard");
+    assert!(h.shell.st.note_editor.is_none());
+    assert!(!close_window(&mut h));
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }

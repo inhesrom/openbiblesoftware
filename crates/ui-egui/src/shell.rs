@@ -646,8 +646,13 @@ impl Shell {
         self.apply_effects();
         let closing = ui.input(|i| i.viewport().close_requested());
         if closing {
-            // A Note being written is saved, as if focus had left it.
+            // A Note being written is saved, as if focus had left it. One that cannot be saved
+            // keeps the window open, showing why, until it is saved or discarded.
             self.st.save_note();
+            if self.st.note_editor.is_some() {
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
         }
         self.save_session(closing);
     }
@@ -656,6 +661,7 @@ impl Shell {
         let focused = self.st.session.workspace.focused();
         // Keys a text field uses itself (Ctrl+Z, Esc …) are left to it while it has focus.
         let typing = ui.ctx().text_edit_focused();
+        let all = bindings(&self.st.session);
         let bound: Vec<(&obs_engine::CommandSpec, egui::KeyboardShortcut)> = self
             .st
             .session
@@ -675,9 +681,8 @@ impl Shell {
             if !self.st.session.is_enabled(spec.id) {
                 continue;
             }
-            // Shift and Alt must match exactly: Ctrl+Shift+Z is never Ctrl+Z, even when there is
-            // nothing to redo.
-            if ui.input_mut(|i| consume_exact(i, sc.modifiers, sc.logical_key)) {
+            if ui.input_mut(|i| consume_key(i, sc.modifiers, sc.logical_key, extra_held(sc, &all)))
+            {
                 let params = match (needs_tab, focused) {
                     (true, Some(t)) => json!({ "tab": t.0 }),
                     _ => json!({}),
@@ -859,25 +864,61 @@ fn replace_child(c: &mut Container, old: TileId, new: TileId) {
     }
 }
 
-/// `Ctrl+Shift+L` → an egui shortcut. Ctrl means Cmd on macOS.
-/// Consume presses of `key` with exactly `modifiers`. Unlike egui's `consume_key`, an extra
-/// Shift or Alt does not match (Ctrl+Shift+Z is not Ctrl+Z, Ctrl+Shift+1 is not Ctrl+1).
-pub(crate) fn consume_exact(
+/// Every key binding in the app: the commands' and the annotation keys.
+pub(crate) fn bindings(session: &obs_engine::Session) -> Vec<egui::KeyboardShortcut> {
+    (session.commands().iter())
+        .filter_map(|spec| spec.shortcut.and_then(parse_shortcut))
+        .chain(annotate::shortcuts())
+        .collect()
+}
+
+/// Which of Shift and Alt may be held on top of `sc`'s own modifiers and still press it.
+///
+/// Usually both, as egui matches: some keys need them on some layouts (Ctrl+Plus is
+/// Ctrl+Shift+= on a US keyboard). None when another binding in `all` is the same key with other
+/// modifiers, so the two are told apart exactly: Ctrl+Shift+Z is never Ctrl+Z, even when there
+/// is nothing to redo.
+pub(crate) fn extra_held(
+    sc: egui::KeyboardShortcut,
+    all: &[egui::KeyboardShortcut],
+) -> egui::Modifiers {
+    if (all.iter()).any(|o| o.logical_key == sc.logical_key && o.modifiers != sc.modifiers) {
+        egui::Modifiers::NONE
+    } else {
+        egui::Modifiers::SHIFT | egui::Modifiers::ALT
+    }
+}
+
+/// Consume presses of `key` with `modifiers`, plus any of the Shift and Alt in `extra`.
+/// Shift or Alt held but in neither does not match.
+pub(crate) fn consume_key(
     i: &mut egui::InputState,
     modifiers: egui::Modifiers,
     key: egui::Key,
+    extra: egui::Modifiers,
 ) -> bool {
     let before = i.events.len();
     i.events.retain(|e| {
-        !matches!(
-            e,
-            egui::Event::Key { key: k, modifiers: m, pressed: true, .. }
-                if *k == key && m.matches_exact(modifiers)
-        )
+        let egui::Event::Key {
+            key: k,
+            modifiers: m,
+            pressed: true,
+            ..
+        } = e
+        else {
+            return true;
+        };
+        let held = egui::Modifiers {
+            shift: m.shift && !(extra.shift && !modifiers.shift),
+            alt: m.alt && !(extra.alt && !modifiers.alt),
+            ..*m
+        };
+        !(*k == key && held.matches_exact(modifiers))
     });
     i.events.len() != before
 }
 
+/// `Ctrl+Shift+L` → an egui shortcut. Ctrl means Cmd on macOS.
 pub fn parse_shortcut(s: &str) -> Option<egui::KeyboardShortcut> {
     let mut mods = egui::Modifiers::NONE;
     let mut key = None;
