@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use obs_scripture::Verse;
-use obs_store::{Annotation, Change, Notebook};
+use obs_store::{Annotation, Change, FavoriteRow, Notebook, VisitRow};
 
 use crate::workspace::{TabKind, Workspace};
 
@@ -171,6 +171,20 @@ pub trait UserData: std::fmt::Debug {
     /// Remember Resources' abbreviations and titles (others are kept).
     fn save_resource_names(&self, names: &[(String, String, String)]) -> Result<(), String>;
 
+    // Favorites and History (#155); see `favorites.rs`.
+
+    /// Every Favorite, by folder (none first) and then in the order added.
+    fn favorites(&self) -> Result<Vec<FavoriteRow>, String>;
+    /// Add a Favorite at the end of `folder` (empty: none); returns its id.
+    fn add_favorite(&self, folder: &str, label: &str, location: &str) -> Result<i64, String>;
+    fn remove_favorite(&self, id: i64) -> Result<bool, String>;
+    fn move_favorite(&self, id: i64, folder: &str) -> Result<bool, String>;
+    /// Add a Visit made now to History (which forgets Visits past its cap).
+    fn record_visit(&self, label: &str, location: &str) -> Result<(), String>;
+    /// History, newest first.
+    fn history(&self) -> Result<Vec<VisitRow>, String>;
+    fn clear_history(&self) -> Result<(), String>;
+
     // Annotations (#61). Every edit is [`UserData::apply_changes`]; see `annotations.rs`.
 
     /// Every Notebook, the default first.
@@ -231,6 +245,27 @@ impl UserData for obs_store::UserStore {
     }
     fn save_resource_names(&self, names: &[(String, String, String)]) -> Result<(), String> {
         obs_store::UserStore::save_resource_names(self, names).map_err(|e| e.to_string())
+    }
+    fn favorites(&self) -> Result<Vec<FavoriteRow>, String> {
+        obs_store::UserStore::favorites(self).map_err(|e| e.to_string())
+    }
+    fn add_favorite(&self, folder: &str, label: &str, location: &str) -> Result<i64, String> {
+        obs_store::UserStore::add_favorite(self, folder, label, location).map_err(|e| e.to_string())
+    }
+    fn remove_favorite(&self, id: i64) -> Result<bool, String> {
+        obs_store::UserStore::remove_favorite(self, id).map_err(|e| e.to_string())
+    }
+    fn move_favorite(&self, id: i64, folder: &str) -> Result<bool, String> {
+        obs_store::UserStore::move_favorite(self, id, folder).map_err(|e| e.to_string())
+    }
+    fn record_visit(&self, label: &str, location: &str) -> Result<(), String> {
+        obs_store::UserStore::record_visit(self, label, location).map_err(|e| e.to_string())
+    }
+    fn history(&self) -> Result<Vec<VisitRow>, String> {
+        obs_store::UserStore::history(self).map_err(|e| e.to_string())
+    }
+    fn clear_history(&self) -> Result<(), String> {
+        obs_store::UserStore::clear_history(self).map_err(|e| e.to_string())
     }
     fn notebooks(&self) -> Result<Vec<Notebook>, String> {
         obs_store::UserStore::notebooks(self).map_err(|e| e.to_string())

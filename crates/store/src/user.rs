@@ -1,6 +1,7 @@
 //! The User database (#17): one SQLite file in the platform data folder holding everything the
-//! user makes: preferences, the Last session, named Layouts, the Preferred order, and the
-//! Notebooks, Annotations and Anchors with the `notes_fts` index of Note bodies (#61).
+//! user makes: preferences, the Last session, named Layouts, the Preferred order, the
+//! Notebooks, Annotations and Anchors with the `notes_fts` index of Note bodies (#61), and
+//! Favorites and History (#155).
 //!
 //! Safety rules: WAL journaling; `PRAGMA user_version` with forward-only migrations; a copy of
 //! the file is taken before any migration runs; and at every launch a rolling backup (the
@@ -17,7 +18,7 @@ use crate::error::StoreError;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 6;
+pub const USER_SCHEMA_VERSION: u32 = 7;
 
 /// How many launch backups are kept.
 pub const ROLLING_BACKUPS: usize = 5;
@@ -39,13 +40,15 @@ const MIGRATIONS: &[&str] = &[
     crate::annotation_store::SCHEMA_5,
     // 5 → 6: Orphaned annotations: an anchor status (#65).
     crate::annotation_store::SCHEMA_6,
+    // 6 → 7: Favorites and History (#155).
+    crate::favorites_store::SCHEMA_7,
 ];
 
 pub(crate) fn sql(e: rusqlite::Error) -> StoreError {
     StoreError::Sqlite(e.to_string())
 }
 
-fn now() -> i64 {
+pub(crate) fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))

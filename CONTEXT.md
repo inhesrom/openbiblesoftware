@@ -176,7 +176,7 @@ One open thing in a Panel: a Resource, a Guide, or a Tool.
 _Avoid_: View, Document
 
 **Tool**:
-A Tab that is neither a Resource nor a Guide. In v0.1 the Tools are Text Comparison, Word Info, Search, and Notes.
+A Tab that is neither a Resource nor a Guide. In v0.1 the Tools are Text Comparison, Word Info, Search, and Notes; Cross-references, Favorites and History came later.
 _Avoid_: Utility, Widget
 
 **Word Info**:
@@ -198,6 +198,22 @@ _Avoid_: Sync group, Linked panels
 **Layout**:
 A named, saved snapshot of the Workspace, including its Link sets, that the user can restore.
 _Avoid_: Workspace (for the saved snapshot), Preset, Arrangement
+
+**Favorite**:
+A Current location the user has starred, kept with its Tab kind (a Bible or other Resource, a Guide, Text Comparison, Cross-references or a Search) so that opening it brings back that kind of Tab at that location. It may sit in a Favorites folder.
+_Avoid_: Bookmark, Pin, Saved location
+
+**Favorites folder**:
+A named group of Favorites. A Favorite is in at most one; folders exist while they hold Favorites.
+_Avoid_: Collection, Category, Notebook (for Favorites)
+
+**History**:
+The Tool listing the Visits of every Tab, newest first and grouped by day. It keeps 90 days (at most 5,000 Visits), can be filtered, and can be cleared. It is not a Tab's Back/Forward history.
+_Avoid_: Recent, Recently viewed, Journal
+
+**Visit**:
+One entry in History: a Tab's Current location just after the Tab was opened or jumped (typing a reference, following a link, Back or Forward, running a search). Scrolling and following a Link set make no Visit.
+_Avoid_: History entry, Hit
 
 **Last session**:
 The Workspace as the user left it, restored automatically at the next launch. It is not a Layout.
@@ -292,5 +308,5 @@ The Notes Tool's list of Orphaned annotations, where each can be re-attached to 
 _Avoid_: Broken links, Errors
 
 **User database**:
-The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources and preferences. Resources and Search indexes are never part of it.
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History and preferences. Resources and Search indexes are never part of it.
 _Avoid_: Profile, User library, Settings file

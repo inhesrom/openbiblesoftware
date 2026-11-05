@@ -23,7 +23,7 @@ pub struct TabId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PanelId(pub u64);
 
-/// The Tools of v0.1 plus Cross-references.
+/// The Tools of v0.1 plus Cross-references, Favorites and History (#155).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Tool {
     Search,
@@ -31,6 +31,8 @@ pub enum Tool {
     Notes,
     WordInfo,
     CrossReferences,
+    Favorites,
+    History,
 }
 
 /// The Guides.
@@ -48,6 +50,8 @@ impl Tool {
             Tool::Notes => "Notes",
             Tool::WordInfo => "Word Info",
             Tool::CrossReferences => "Cross-references",
+            Tool::Favorites => "Favorites",
+            Tool::History => "History",
         }
     }
 }
@@ -128,7 +132,7 @@ impl TabKind {
                 | TabKind::GetBibles
                 | TabKind::StarterLibrary
                 | TabKind::Credits
-                | TabKind::Tool(Tool::Notes | Tool::WordInfo)
+                | TabKind::Tool(Tool::Notes | Tool::WordInfo | Tool::Favorites | Tool::History)
         )
     }
 
@@ -139,7 +143,9 @@ impl TabKind {
 
     pub fn header_box(&self) -> HeaderBox {
         match self {
-            TabKind::Library | TabKind::Tool(Tool::Notes) => HeaderBox::Filter,
+            TabKind::Library | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History) => {
+                HeaderBox::Filter
+            }
             TabKind::Tool(Tool::WordInfo) => HeaderBox::FollowsHover,
             TabKind::Guide(Guide::WordStudy) => HeaderBox::Word,
             // The query, mode and scope fields are the Tab's body (#59).
@@ -163,7 +169,7 @@ impl TabKind {
                 | TabKind::GetBibles
                 | TabKind::StarterLibrary
                 | TabKind::Credits
-                | TabKind::Tool(Tool::Notes)
+                | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History)
         )
     }
 
@@ -459,6 +465,18 @@ pub struct Workspace {
     clock: u64,
     /// How the UI currently arranges the Panels (kept up to date by the UI, for saving).
     pub arrangement: Option<LayoutNode>,
+    /// Tabs that were opened or jumped since the last [`Workspace::take_visits`], oldest
+    /// first, for History (#155).
+    visits: Vec<PendingVisit>,
+}
+
+/// A Tab opened or jumped, for History to record (#155).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingVisit {
+    pub tab: TabId,
+    /// Where a jump went: the Tab's Passage location and entry Key just after it. `None` for
+    /// a Tab just opened, which the UI places later; History reads where it is then.
+    pub at: Option<(Option<Verse>, Option<Key>)>,
 }
 
 impl Workspace {
@@ -506,6 +524,21 @@ impl Workspace {
 
     pub fn push_effect(&mut self, e: Effect) {
         self.effects.push(e);
+    }
+
+    /// A Tab jumped (not scrolled, and not following its Link set): History records where
+    /// it is now.
+    pub(crate) fn visited(&mut self, tab: TabId) {
+        let at = self
+            .tabs
+            .get(&tab)
+            .map(|t| (t.history.current(), t.entry_history.current()));
+        self.visits.push(PendingVisit { tab, at });
+    }
+
+    /// Tabs opened or jumped since the last call, oldest first.
+    pub fn take_visits(&mut self) -> Vec<PendingVisit> {
+        std::mem::take(&mut self.visits)
     }
 
     fn existing(&self, kind: &TabKind) -> Option<TabId> {
@@ -594,6 +627,7 @@ impl Workspace {
             t.history.scrolled_to(v);
         }
         self.effects.push(Effect::Opened { tab: id, placement });
+        self.visits.push(PendingVisit { tab: id, at: None });
         self.focus(id);
         id
     }
@@ -707,6 +741,7 @@ impl Workspace {
             t.history.visit(local);
             t.moved_to(local);
             self.effects.push(Effect::Navigate { tab, verse: local });
+            self.visited(tab);
             self.broadcast(tab, verse, true);
         }
     }
@@ -754,6 +789,7 @@ impl Workspace {
                 key,
             }),
         }
+        self.visited(tab);
     }
 
     /// Entry navigation broadcasts only to members supporting this Key scheme.
@@ -766,6 +802,7 @@ impl Workspace {
             tab,
             key: key.clone(),
         });
+        self.visited(tab);
         self.broadcast_entry(tab, &key);
     }
 
@@ -805,6 +842,7 @@ impl Workspace {
             tab,
             key: key.clone(),
         });
+        self.visited(tab);
         self.broadcast_entry(tab, &key);
         Some(key)
     }
@@ -840,6 +878,7 @@ impl Workspace {
         {
             t.history.visit(native);
             self.effects.push(Effect::Navigate { tab, verse: native });
+            self.visited(tab);
         }
         // A Lexicon can open a Scripture reference without following Passages itself.
         // Even if the opener has no preceding Verse, other members may contain the target.
@@ -871,6 +910,7 @@ impl Workspace {
         let v = t.history.back()?;
         t.moved_to(v);
         self.effects.push(Effect::Navigate { tab, verse: v });
+        self.visited(tab);
         self.broadcast(tab, v, false);
         Some(v)
     }
@@ -880,6 +920,7 @@ impl Workspace {
         let v = t.history.forward()?;
         t.moved_to(v);
         self.effects.push(Effect::Navigate { tab, verse: v });
+        self.visited(tab);
         self.broadcast(tab, v, false);
         Some(v)
     }

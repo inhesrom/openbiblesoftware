@@ -63,6 +63,8 @@ pub struct Session {
     pub word_study: crate::word_study::WordStudies,
     /// The Notes Tool's Notebook choice, card order and card to reveal (#64).
     pub notes: crate::notes::NotesTool,
+    /// Favorites and History as the User database has them (#155).
+    pub(crate) places: crate::favorites::FavoritesAndHistory,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
     log: Vec<&'static str>,
     /// The User database, when there is one.
@@ -107,6 +109,7 @@ impl Session {
             guides,
             word_study,
             notes: crate::notes::NotesTool::default(),
+            places: crate::favorites::FavoritesAndHistory::default(),
             log: Vec::new(),
             user: None,
             history: crate::annotations::UndoHistory::default(),
@@ -174,6 +177,7 @@ impl Session {
         self.annotations_revision += 1;
         self.restore_import_reports();
         self.load_guide_arrangements();
+        self.load_favorites_and_history();
         // Library load: Annotations made against another revision of a Resource move with
         // their text (or are orphaned) before it shows them (#65).
         self.remember_resource_names();
@@ -231,8 +235,9 @@ impl Session {
         }
     }
 
-    /// Write the Last session if it changed since the last write.
+    /// Write the Last session if it changed since the last write (and History's new Visits).
     pub fn save_last_session(&mut self) -> Result<(), String> {
+        self.record_history();
         let Some(user) = &self.user else {
             return Ok(());
         };
