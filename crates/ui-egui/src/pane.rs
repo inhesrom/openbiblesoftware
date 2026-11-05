@@ -331,7 +331,10 @@ pub fn reading_pane(
     // Over the glyphs: the red underline, then Note markers at the end of their ranges.
     let rtl = view.doc.direction() == obs_model::Direction::Rtl;
     let hover = response.hover_pos();
-    let in_view: Vec<usize> = if marks.iter().any(|m| m.kind == MarkKind::Note) {
+    let in_view: Vec<usize> = if marks
+        .iter()
+        .any(|m| m.kind.is_note() || m.kind.at_verse_number())
+    {
         view.laid_in_view(rect.height())
             .iter()
             .map(|(i, _, _)| *i)
@@ -339,6 +342,9 @@ pub fn reading_pane(
     } else {
         Vec::new()
     };
+    // Space taken so far beside each verse number (margin marks, other Bibles' Notes).
+    let mut beside: std::collections::HashMap<DocPos, f32> = std::collections::HashMap::new();
+    let gap = (size * 0.12).max(2.0);
     for (mark, rects) in marks.iter().zip(&mark_rects) {
         match mark.kind {
             MarkKind::Highlight(style) if palette.highlight(style).is_none() => {
@@ -360,6 +366,38 @@ pub fn reading_pane(
                 paint_note_marker(&painter, marker, palette);
                 if hover.is_some_and(|p| marker.expand(3.0).contains(p)) {
                     out.hovered_note = Some((mark.id.clone(), marker));
+                }
+            }
+            MarkKind::Margin(_) | MarkKind::VerseNote => {
+                let Some(edge) = verse_number_edge(view, &in_view, mark, rects, size, rtl) else {
+                    continue;
+                };
+                // Laid outward from the number, one after another, in Mark order.
+                let used = beside.entry(mark.start).or_insert(0.0);
+                let (w, h, round) = match mark.kind {
+                    MarkKind::Margin(_) => {
+                        let w = (size * 0.16).max(2.5);
+                        (w, edge.band[3] - edge.band[1], w / 2.0)
+                    }
+                    _ => (size * 0.42, size * 0.48, 1.5),
+                };
+                let x = if rtl {
+                    edge.x + gap + *used
+                } else {
+                    edge.x - gap - *used - w
+                };
+                *used += w + gap;
+                let r = to_screen([x, edge.band[1], x + w, edge.band[1] + h]);
+                match mark.kind {
+                    MarkKind::Margin(style) => {
+                        painter.rect_filled(r, round, palette.mark(style));
+                    }
+                    _ => {
+                        paint_note_marker(&painter, r, palette);
+                        if hover.is_some_and(|p| r.expand(3.0).contains(p)) {
+                            out.hovered_note = Some((mark.id.clone(), r));
+                        }
+                    }
                 }
             }
             MarkKind::Highlight(_) => {}
@@ -444,6 +482,41 @@ fn note_marker(
     let band = text_band(*last, size);
     let y = band[1];
     Some([x, y, x + w, y + h])
+}
+
+/// Where marks beside a verse number go: the number's outer edge (its left in left-to-right
+/// text, its right in right-to-left text) and the text band of its line.
+struct VerseNumberEdge {
+    x: f32,
+    band: [f32; 4],
+}
+
+/// The verse number of the Verse a Mark covers (its range starts at the Verse, where the
+/// number is laid out): the outer edge of the first line of the range. `None` while the
+/// Verse's start is not laid out in view.
+fn verse_number_edge(
+    view: &ReadingView,
+    in_view: &[usize],
+    mark: &Mark,
+    rects: &[[f32; 4]],
+    size: f32,
+    rtl: bool,
+) -> Option<VerseNumberEdge> {
+    let first = rects.first()?;
+    let start_block = view.doc.block_at(mark.start.unit, mark.start.byte)?;
+    if !in_view.contains(&start_block) {
+        return None;
+    }
+    let line = rects.iter().filter(|r| (r[1] - first[1]).abs() < 0.5);
+    let x = if rtl {
+        line.map(|r| r[2]).fold(f32::MIN, f32::max)
+    } else {
+        line.map(|r| r[0]).fold(f32::MAX, f32::min)
+    };
+    Some(VerseNumberEdge {
+        x,
+        band: text_band(*first, size),
+    })
 }
 
 /// A small note: a filled card with two ruled lines in the page colour.

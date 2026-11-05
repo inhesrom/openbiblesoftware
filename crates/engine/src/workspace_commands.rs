@@ -23,6 +23,9 @@ pub enum MenuItem {
     Resources,
     /// The saved Layouts, each with Restore, Rename… and Delete.
     Layouts,
+    /// "Notebooks in text": a submenu with each Notebook's Show in text toggle
+    /// (`notebook.show_in_text`).
+    Notebooks,
     /// A submenu of exclusive choices: one `command` run with `{ "value": id }` per choice,
     /// the current one checked.
     Choice {
@@ -93,6 +96,9 @@ pub const MENUS: &[Menu] = &[
                 command: "view.verse_numbers",
             },
             C("view.red_letter"),
+            Separator,
+            C("view.highlights"),
+            MenuItem::Notebooks,
         ],
     },
     Menu {
@@ -439,6 +445,18 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         s.text.red_letter = !s.text.red_letter;
         view_saved(s, json!({ "on": s.text.red_letter }))
     }),
+    simple(
+        "view.highlights",
+        "Show Highlights",
+        None,
+        always,
+        |s, _| {
+            s.appearance.show_highlights = !s.appearance.show_highlights;
+            // What is drawn in text changed: views reload their Annotations.
+            s.annotations_revision += 1;
+            view_saved(s, json!({ "on": s.appearance.show_highlights }))
+        },
+    ),
     simple("help.about", "About Open Bible", None, always, about),
     open_cmd("help.credits", "Credits", None, |s, p| {
         open(s, p, TabKind::Credits)

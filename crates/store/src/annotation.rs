@@ -22,9 +22,17 @@ pub struct Notebook {
     pub id: String,
     pub name: String,
     pub is_default: bool,
+    /// **Show in text** (#17 rule 18): whether its Annotations are drawn in Resource text.
+    /// Hidden ones still list in the Notes Tool.
+    #[serde(default = "shown")]
+    pub show_in_text: bool,
     /// Milliseconds since the Unix epoch.
     pub created_at: i64,
     pub modified_at: i64,
+}
+
+fn shown() -> bool {
+    true
 }
 
 /// One look from the small fixed set used to render a Highlight.
@@ -84,6 +92,11 @@ pub struct TextRange {
     /// `Esth.10.4-Esth.10.6`), since no Standard Passage exists for it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+    /// In a Bible: the range covers every Verse it touches whole (white space and punctuation
+    /// at a Verse's ends aside). Other Bibles then highlight those Verses; otherwise they show
+    /// only a margin mark beside the verse number (#17 rule 16).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub whole_verses: bool,
 }
 
 /// What ties an Annotation to the text.
@@ -393,6 +406,7 @@ mod tests {
                 id: "n".into(),
                 name: name.into(),
                 is_default: false,
+                show_in_text: true,
                 created_at: 1,
                 modified_at: 1,
             })

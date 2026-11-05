@@ -169,6 +169,23 @@ fn standard_of(mapped: Option<Option<Passage>>, native: Verse, last: u16) -> Opt
     }
 }
 
+/// The bytes of `range` in `text` from its first letter or digit to its last: a Verse
+/// without the white space and punctuation at its ends. Empty (at the start) when there is
+/// none.
+fn words_of(text: &str, range: std::ops::Range<usize>) -> std::ops::Range<usize> {
+    let Some(piece) = text.get(range.clone()) else {
+        return range.start..range.start;
+    };
+    let word = |c: char| c.is_alphanumeric();
+    match (piece.find(word), piece.rfind(word)) {
+        (Some(a), Some(b)) => {
+            let last = piece[b..].chars().next().map_or(0, char::len_utf8);
+            range.start + a..range.start + b + last
+        }
+        _ => range.start..range.start,
+    }
+}
+
 fn store_err(e: StoreError) -> String {
     e.to_string()
 }
@@ -233,6 +250,16 @@ pub fn segments(store: &dyn ResourceStore, sel: &Selection) -> Result<Vec<Segmen
             (Some(start), Some(end)) => Passage::new(start, end).ok(),
             _ => None,
         };
+        // Whole Verses: the range reaches from the first touched Verse's first word to the
+        // last one's last word (white space and punctuation at a Verse's ends do not count).
+        let whole_verses = span.is_some()
+            && match (touched.first(), touched.last()) {
+                (Some((first, _)), Some((last, _))) => {
+                    let core = |v: &obs_model::BibleVerse| words_of(text, v.range());
+                    s <= core(first).start && e >= core(last).end
+                }
+                _ => false,
+            };
         let native_ref = match (touched.first(), touched.last()) {
             (Some((first, _)), Some((last, _))) if span.is_none() => {
                 let end = Verse::new(last.verse.book, last.verse.chapter, last.last);
@@ -259,6 +286,7 @@ pub fn segments(store: &dyn ResourceStore, sel: &Selection) -> Result<Vec<Segmen
                 suffix: suffix.to_string(),
                 content_hash: manifest.content_hash.clone(),
                 native_ref,
+                whole_verses,
             },
             standard: span,
             in_bible,
@@ -336,8 +364,9 @@ impl Session {
             .ok_or_else(|| "There is no User database".to_string())
     }
 
-    /// Bumped by every change to the annotation tables (new, edited, undone or redone), so
-    /// views can tell when to reload Annotations.
+    /// Bumped by every change to the annotation tables (new, edited, undone or redone) and to
+    /// what is shown in text (a Notebook's Show in text, View → Show Highlights), so views can
+    /// tell when to reload Annotations.
     pub fn annotations_revision(&self) -> u64 {
         self.annotations_revision
     }
@@ -643,6 +672,7 @@ impl Session {
             id: new_id_at(now),
             name,
             is_default: false,
+            show_in_text: true,
             created_at: now,
             modified_at: now,
         };
@@ -672,6 +702,47 @@ impl Session {
             )],
         )?;
         Ok(after)
+    }
+
+    /// Turn a Notebook's **Show in text** on or off (`None`: the other way round). One undo
+    /// step, like every Notebook change; its modified time stays, since what it holds did not
+    /// change.
+    pub fn set_show_in_text(&mut self, id: &str, show: Option<bool>) -> Result<Notebook, String> {
+        let before = self.notebook(id)?;
+        let show = show.unwrap_or(!before.show_in_text);
+        if show == before.show_in_text {
+            return Ok(before);
+        }
+        let after = Notebook {
+            show_in_text: show,
+            ..before.clone()
+        };
+        let label = if show { "Show in text" } else { "Hide in text" };
+        self.commit(
+            label,
+            vec![Change::update(
+                Row::Notebook(before),
+                Row::Notebook(after.clone()),
+            )],
+        )?;
+        Ok(after)
+    }
+
+    /// The Annotations to draw in Resource text: those of Notebooks with Show in text on, and
+    /// without Highlights while View → Show Highlights is off. Oldest first.
+    pub fn annotations_in_text(&self) -> Result<Vec<Annotation>, String> {
+        let shown: std::collections::HashSet<String> = self
+            .notebooks()?
+            .into_iter()
+            .filter(|n| n.show_in_text)
+            .map(|n| n.id)
+            .collect();
+        let highlights = self.appearance.show_highlights;
+        Ok(self
+            .annotations(None)?
+            .into_iter()
+            .filter(|a| shown.contains(&a.notebook_id) && (highlights || a.is_note()))
+            .collect())
     }
 
     /// Delete a Notebook (never the default), moving its Annotations to the default
@@ -971,6 +1042,22 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         run: run_notebook_delete,
     },
     CommandSpec {
+        id: "notebook.show_in_text",
+        label: "Show in text",
+        shortcut: None,
+        params: &[
+            NOTEBOOK_ID,
+            ParamSpec {
+                name: "show",
+                kind: ParamKind::Boolean,
+                required: false,
+                help: "Draw its Annotations in Resource text (default: the other way round)",
+            },
+        ],
+        enabled: has_user,
+        run: run_notebook_show_in_text,
+    },
+    CommandSpec {
         id: "notebook.list",
         label: "List Notebooks",
         shortcut: None,
@@ -1192,6 +1279,13 @@ fn run_notebook_delete(s: &mut Session, p: Params<'_>) -> Result<Value, CommandE
     Ok(json!({ "deleted": id, key: n }))
 }
 
+fn run_notebook_show_in_text(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    let nb = s
+        .set_show_in_text(p.str("id").unwrap_or_default(), p.bool("show"))
+        .map_err(|e| failed("notebook.show_in_text", e))?;
+    Ok(json!({ "notebook": to_json(&nb) }))
+}
+
 fn run_notebook_list(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
     const CMD: &str = "notebook.list";
     let user = s.user_data().map_err(|e| failed(CMD, e))?;
@@ -1205,7 +1299,13 @@ fn run_notebook_list(s: &mut Session, _: Params<'_>) -> Result<Value, CommandErr
                 .iter()
                 .find(|(id, _)| *id == n.id)
                 .map_or(0, |(_, c)| *c);
-            json!({ "id": n.id, "name": n.name, "default": n.is_default, "count": count })
+            json!({
+                "id": n.id,
+                "name": n.name,
+                "default": n.is_default,
+                "show_in_text": n.show_in_text,
+                "count": count,
+            })
         })
         .collect();
     Ok(Value::Array(list))

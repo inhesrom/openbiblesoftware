@@ -672,6 +672,11 @@ fn highlight_swatches_and_note_markers_are_legible_in_every_tone() {
             }
         }
         assert!(crate::contrast(palette.note_marker, palette.page) >= 3.0);
+        // Margin marks in other Bibles (#63) are thin bars: WCAG's 3:1 for graphics.
+        for style in HighlightStyle::ALL {
+            let c = crate::contrast(palette.mark(style), palette.page);
+            assert!(c >= 3.0, "{style:?} margin mark {c:.2}:1 in {palette:?}");
+        }
         assert!(crate::contrast(palette.underline, palette.page) >= 3.0);
     }
 }

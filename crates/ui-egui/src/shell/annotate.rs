@@ -62,8 +62,9 @@ pub(super) enum Annotate {
     Copy,
 }
 
-/// Annotations as loaded from the User database, and each Resource's [`Mark`]s, reloaded when
-/// the engine's annotation revision moves (any new, edited, undone or redone Annotation).
+/// Annotations shown in text as loaded from the User database, and each Resource's [`Mark`]s,
+/// reloaded when the engine's annotation revision moves (any new, edited, undone or redone
+/// Annotation, a Notebook's Show in text, View → Show Highlights).
 #[derive(Default)]
 pub(super) struct MarkCache {
     revision: Option<u64>,
@@ -80,8 +81,10 @@ impl MarkCache {
             return;
         }
         self.revision = Some(revision);
+        // Only what shows in text: Notebooks with Show in text on, Highlights unless View →
+        // Show Highlights is off (#63).
         self.annotations = if session.user.is_some() {
-            session.annotations(None).unwrap_or_default()
+            session.annotations_in_text().unwrap_or_default()
         } else {
             Vec::new()
         };

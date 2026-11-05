@@ -25,6 +25,9 @@ pub struct Palette {
     pub highlights: [Color32; 4],
     /// The red-underline Highlight style (style 5).
     pub underline: Color32,
+    /// Margin marks of the 5 styles (#63): the style's colour, strong enough to read as a
+    /// thin bar beside a verse number (WCAG's 3:1 for graphics against the page).
+    pub marks: [Color32; 5],
     pub selection: Color32,
     pub hover: Color32,
     pub search_hit: Color32,
@@ -53,6 +56,13 @@ impl Palette {
             rgb(250, 206, 224),
         ],
         underline: rgb(200, 40, 40),
+        marks: [
+            rgb(184, 134, 0),
+            rgb(46, 140, 60),
+            rgb(40, 110, 200),
+            rgb(200, 60, 130),
+            rgb(200, 40, 40),
+        ],
         selection: rgb(211, 224, 244),
         hover: rgb(226, 235, 247),
         search_hit: rgb(255, 214, 120),
@@ -75,6 +85,13 @@ impl Palette {
             rgb(240, 200, 208),
         ],
         underline: rgb(184, 40, 32),
+        marks: [
+            rgb(168, 120, 0),
+            rgb(52, 128, 58),
+            rgb(40, 100, 180),
+            rgb(186, 56, 120),
+            rgb(184, 40, 32),
+        ],
         selection: rgb(214, 208, 222),
         hover: rgb(232, 222, 200),
         search_hit: rgb(250, 204, 110),
@@ -98,6 +115,13 @@ impl Palette {
             rgb(72, 32, 50),
         ],
         underline: rgb(240, 120, 120),
+        marks: [
+            rgb(232, 196, 80),
+            rgb(110, 200, 130),
+            rgb(120, 166, 240),
+            rgb(232, 130, 184),
+            rgb(240, 120, 120),
+        ],
         selection: rgb(36, 56, 88),
         hover: rgb(36, 42, 52),
         search_hit: rgb(80, 62, 16),
@@ -123,6 +147,15 @@ impl Palette {
             HighlightStyle::Pink => Some(self.highlights[3]),
             HighlightStyle::RedUnderline => None,
         }
+    }
+
+    /// A Highlight style's margin mark colour (#63).
+    pub fn mark(&self, style: HighlightStyle) -> Color32 {
+        let i = HighlightStyle::ALL
+            .iter()
+            .position(|s| *s == style)
+            .unwrap_or(0);
+        self.marks[i]
     }
 
     pub fn color(&self, role: ColorRole) -> Color32 {

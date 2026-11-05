@@ -3,16 +3,16 @@
 Notebooks, Notes and Highlights live in the User database (`obs_store::UserStore`, schema
 v4). The engine reaches them only through the `UserData` trait; `crates/engine/src/
 annotations.rs` holds the service on `Session` and the `annotation.*`, `notebook.*` and
-`edit.*` commands. The origin Bible's UI is #62 (below); other Bibles (#63), the Notes Tool
-(#64) and re-anchoring (#65) are still to come.
+`edit.*` commands. The origin Bible's UI is #62 and other Bibles #63 (both below); the Notes
+Tool (#64) and re-anchoring (#65) are still to come.
 
 ## Tables
 
 | Table | Holds |
 |---|---|
-| `notebooks` | `id` (UUIDv7), `name`, `is_default` (exactly one row, partial unique index), timestamps (ms) |
+| `notebooks` | `id` (UUIDv7), `name`, `is_default` (exactly one row, partial unique index), timestamps (ms), `show_in_text` (schema v5) |
 | `annotations` | `id`, `notebook_id` (deferred FK), `kind` `note`/`highlight`, `style` (Highlights), `body` (Notes), timestamps |
-| `anchors` | at most one per Annotation. Passage anchors: Standard start/end as canonical book number (1–66), chapter, verse. Text range (a Text-range anchor, or a Passage anchor's origin): `resource_id`, `unit_id`, `start_byte`, `end_byte`, `quote`, `prefix`, `suffix`, `content_hash`, `native_ref` |
+| `anchors` | at most one per Annotation. Passage anchors: Standard start/end as canonical book number (1–66), chapter, verse. Text range (a Text-range anchor, or a Passage anchor's origin): `resource_id`, `unit_id`, `start_byte`, `end_byte`, `quote`, `prefix`, `suffix`, `content_hash`, `native_ref`, `whole_verses` (schema v5) |
 | `notes_fts` | FTS5 over Note bodies in normalized-word form (the Search index's form), keyed by `annotation_id` |
 
 A CHECK makes a stored Text range without its quote, context or content hash impossible
@@ -60,6 +60,8 @@ for just those Verses).
 | `annotation.edit` / `annotation.style` / `annotation.move` / `annotation.delete` | `id` and `body` / `style` / `notebook` |
 | `annotation.get`, `annotation.list` (`notebook`?), `annotation.search_notes` (`text`) | read only |
 | `notebook.create` (`name`), `notebook.rename` (`id`, `name`), `notebook.delete` (`id`, `annotations`: `move` default or `delete`), `notebook.list` | |
+| `notebook.show_in_text` | `id`, `show`? (default: the other way round); undoable like every Notebook change |
+| `view.highlights` | View → Show Highlights, a toggle kept with the other View preferences |
 
 `notebook`, where a command takes it, defaults to the **Notebook last used** (#18 rule 8):
 giving one records it in the User database preference `annotations.last_notebook` once the
@@ -106,3 +108,36 @@ or deleted).
 - **Note markers** sit just past the end of the Note's range, raised like a superscript;
   hovering one previews the Note and its Notebook. Clicking it will open the Notes Tool
   (#64).
+
+## In other Bibles (#63)
+
+A Passage anchor shows in every Bible that contains its Passage (ADR 0001); `marks_for` maps
+the Standard Passage through each Bible's Verse map (ADR 0002). `ReadingDoc` builds, on
+first use, an index of its Verses by Standard Passage (sorted by start, with a running
+maximum of ends), so finding the Verses of a Passage is two binary searches.
+
+- **Whole or partial.** When a selection becomes a Passage anchor, the engine records on its
+  origin Text range whether it covers every Verse it touches whole (`whole_verses`; white
+  space and punctuation at a Verse's ends, such as a KJV `¶` or the final full stop, do not
+  count). Other Bibles then highlight those Verses, in runs of adjacent Verses so headings
+  between them stay clear. A partial range shows only a **margin mark**: a thin bar in the
+  style's colour just outside the verse number of its first Verse (left of it in
+  left-to-right text, right of it in right-to-left text), because word offsets differ
+  between translations. A Passage anchor without a Text range counts as whole. Rows made
+  before schema v5 read as partial: a margin mark never implies that words are marked.
+  When re-anchoring (#65) drops a Text range, the flag goes with it and the Highlight shows
+  as whole Verses everywhere, as ADR 0006 says.
+- **Notes** from another Bible (or with no Text range at all) show their marker beside the
+  verse number of their first Verse, outside any margin marks there; hovering previews the
+  Note as in the origin Bible.
+- **Text-range anchors** (non-Bible Resources, Unmapped verses) show only in their own
+  Resource.
+- **What is drawn.** `Session::annotations_in_text` leaves out Annotations of Notebooks
+  whose **Show in text** is off, and Highlights while View → Show Highlights is off. Both
+  are in the User database (the Notebook row, and the `view` preference). The View menu has
+  Show Highlights and a "Notebooks in text" submenu with each Notebook's toggle; the Notes
+  Tool (#64) will show the same toggle per Notebook. Toggling either moves
+  `annotations_revision`, so `MarkCache` reloads.
+- **Colours** come from the Page tone's palette: each tone has a margin-mark colour per style
+  (`Palette::marks`), at least 3:1 against its page (tested with the other palette pairs).
+- Text Comparison does not draw Annotations in v0.1; its rows carry the diff tints.

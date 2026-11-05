@@ -83,15 +83,30 @@ CREATE VIRTUAL TABLE notes_fts USING fts5 (
 );
 ";
 
+/// Migration 4 → 5 (#63).
+///
+/// - `notebooks.show_in_text`: the Notebook's **Show in text** toggle (#17 rule 18), on for
+///   every existing Notebook.
+/// - `anchors.whole_verses`: whether a Bible Text range covers the Verses it touches whole,
+///   which decides how other Bibles show it (#17 rule 16). Rows made before it are unknown
+///   and read as partial: other Bibles show them as a margin mark, never implying that words
+///   are marked which were not.
+pub(crate) const SCHEMA_5: &str = "
+ALTER TABLE notebooks ADD COLUMN show_in_text INTEGER NOT NULL DEFAULT 1
+    CHECK (show_in_text IN (0, 1));
+ALTER TABLE anchors ADD COLUMN whole_verses INTEGER NOT NULL DEFAULT 0
+    CHECK (whole_verses IN (0, 1));
+";
+
 /// Name of the default Notebook when it is first made. The user may rename it.
 pub const DEFAULT_NOTEBOOK_NAME: &str = "My Notebook";
 
-const NOTEBOOK_COLUMNS: &str = "id, name, is_default, created_at, modified_at";
+const NOTEBOOK_COLUMNS: &str = "id, name, is_default, created_at, modified_at, show_in_text";
 
 const ANNOTATION_COLUMNS: &str = "a.id, a.notebook_id, a.kind, a.style, a.body, a.created_at,
      a.modified_at, x.kind, x.start_book, x.start_chapter, x.start_verse, x.end_book,
      x.end_chapter, x.end_verse, x.resource_id, x.unit_id, x.start_byte, x.end_byte, x.quote,
-     x.prefix, x.suffix, x.content_hash, x.native_ref";
+     x.prefix, x.suffix, x.content_hash, x.native_ref, x.whole_verses";
 
 const ANNOTATION_FROM: &str = "annotations a LEFT JOIN anchors x ON x.annotation_id = a.id";
 
@@ -104,6 +119,7 @@ fn notebook_from(r: &SqlRow<'_>) -> rusqlite::Result<Notebook> {
         id: r.get(0)?,
         name: r.get(1)?,
         is_default: r.get(2)?,
+        show_in_text: r.get(5)?,
         created_at: r.get(3)?,
         modified_at: r.get(4)?,
     })
@@ -133,6 +149,7 @@ fn text_range_from(r: &SqlRow<'_>) -> rusqlite::Result<Option<TextRange>> {
         suffix: r.get(20)?,
         content_hash: r.get(21)?,
         native_ref: r.get(22)?,
+        whole_verses: r.get(23)?,
     }))
 }
 
@@ -214,12 +231,20 @@ fn write_notebook(c: &Connection, id: &str, n: Option<&Notebook>) -> Result<(), 
             .map(drop),
         Some(n) => c
             .execute(
-                "INSERT INTO notebooks (id, name, is_default, created_at, modified_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
+                "INSERT INTO notebooks (id, name, is_default, created_at, modified_at,
+                     show_in_text)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT (id) DO UPDATE SET name = excluded.name,
                      is_default = excluded.is_default, created_at = excluded.created_at,
-                     modified_at = excluded.modified_at",
-                params![n.id, n.name, n.is_default, n.created_at, n.modified_at],
+                     modified_at = excluded.modified_at, show_in_text = excluded.show_in_text",
+                params![
+                    n.id,
+                    n.name,
+                    n.is_default,
+                    n.created_at,
+                    n.modified_at,
+                    n.show_in_text
+                ],
             )
             .map(drop),
     }
@@ -241,8 +266,9 @@ fn write_anchor(c: &Connection, id: &str, anchor: Option<&Anchor>) -> Result<(),
     c.execute(
         "INSERT INTO anchors (annotation_id, kind, start_book, start_chapter, start_verse,
              end_book, end_chapter, end_verse, resource_id, unit_id, start_byte, end_byte,
-             quote, prefix, suffix, content_hash, native_ref)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+             quote, prefix, suffix, content_hash, native_ref, whole_verses)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
+                 ?18)",
         params![
             id,
             kind,
@@ -261,6 +287,7 @@ fn write_anchor(c: &Connection, id: &str, anchor: Option<&Anchor>) -> Result<(),
             range.map(|r| &r.suffix),
             range.map(|r| &r.content_hash),
             range.and_then(|r| r.native_ref.as_ref()),
+            range.is_some_and(|r| r.whole_verses),
         ],
     )
     .map(drop)
@@ -345,18 +372,21 @@ impl UserStore {
         if has {
             return Ok(());
         }
+        // Only the columns of schema 4, so a database opened at 4 (before a migration
+        // test) gets its default Notebook too; later columns take their defaults.
         let now = crate::annotation::now_ms();
-        write_notebook(
-            &self.conn,
-            "",
-            Some(&Notebook {
-                id: crate::annotation::new_id_at(now),
-                name: DEFAULT_NOTEBOOK_NAME.to_string(),
-                is_default: true,
-                created_at: now,
-                modified_at: now,
-            }),
-        )
+        self.conn
+            .execute(
+                "INSERT INTO notebooks (id, name, is_default, created_at, modified_at)
+                 VALUES (?1, ?2, 1, ?3, ?3)",
+                params![
+                    crate::annotation::new_id_at(now),
+                    DEFAULT_NOTEBOOK_NAME,
+                    now
+                ],
+            )
+            .map(drop)
+            .map_err(sql)
     }
 
     /// Every Notebook: the default first, then by name.
