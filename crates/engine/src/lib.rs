@@ -73,7 +73,7 @@ pub use annotations::{
     Anchor, Annotation, Change, Content, HighlightStyle, NoteTarget, Notebook, NotebookDeletion,
     Row, Selection, TextPos, TextRange, UndoHistory, UndoStep,
 };
-pub use appearance::{Appearance, PageTone, Theme};
+pub use appearance::{Appearance, InterfaceSize, PageTone, Theme};
 pub use bible_search::{
     BibleOutline, BibleResults, ErrorField, InlineError, RowHit, Scope, ScopePreset, SearchMode,
     SearchRequestFields, SearchTab, SearchedBible, Snippet, VerseRow, parse_scope, scope_presets,

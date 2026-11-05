@@ -239,6 +239,96 @@ fn view_and_help_commands_change_session_state() {
 }
 
 #[test]
+fn text_size_steps_undo_exactly_reset_to_the_default_and_show_the_size() {
+    let mut s = session();
+    let default = obs_layout::TextSettings::default().size;
+    assert_eq!(s.text.size, default);
+    for _ in 0..3 {
+        s.run("view.text_larger", &json!({})).unwrap();
+    }
+    assert_eq!(s.text.size, default + 3.0);
+    assert_eq!(
+        s.workspace.take_effects().last(),
+        Some(&Effect::Message(format!("Text {} pt", default + 3.0)))
+    );
+    for _ in 0..3 {
+        s.run("view.text_smaller", &json!({})).unwrap();
+    }
+    assert_eq!(s.text.size, default);
+    s.run("view.text_larger", &json!({})).unwrap();
+    let out = s.run("view.text_reset", &json!({})).unwrap();
+    assert_eq!(out, json!({ "size": default }));
+    assert_eq!(s.text.size, default);
+    assert_eq!(
+        s.workspace.take_effects().last(),
+        Some(&Effect::Message(format!("Text {default} pt")))
+    );
+    // Clamped at both ends.
+    for _ in 0..60 {
+        s.run("view.text_larger", &json!({})).unwrap();
+    }
+    assert_eq!(s.text.size, 40.0);
+    for _ in 0..60 {
+        s.run("view.text_smaller", &json!({})).unwrap();
+    }
+    assert_eq!(s.text.size, 10.0);
+    // Its keys: Ctrl+0 resets; the shell also takes Ctrl+= and the numpad keys (#137).
+    let key = |id: &str| s.commands().get(id).unwrap().shortcut;
+    assert_eq!(key("view.text_larger"), Some("Ctrl+Plus"));
+    assert_eq!(key("view.text_smaller"), Some("Ctrl+Minus"));
+    assert_eq!(key("view.text_reset"), Some("Ctrl+0"));
+}
+
+#[test]
+fn interface_size_is_a_view_choice_kept_apart_from_text_size() {
+    let mut s = session();
+    assert_eq!(s.appearance.interface_size, InterfaceSize::Normal);
+    assert_eq!(s.appearance.interface_size.zoom(), 1.0);
+    let (options, current) = choices(&s, "view.interface_size");
+    assert_eq!(
+        options,
+        [
+            ("smaller", "Smaller"),
+            ("default", "Default"),
+            ("larger", "Larger")
+        ]
+    );
+    assert_eq!(current, "default");
+    let view = MENUS.iter().find(|m| m.title == "View").unwrap();
+    assert!(view.items.contains(&MenuItem::Choice {
+        title: "Interface size",
+        command: "view.interface_size"
+    }));
+    assert!(view.items.contains(&MenuItem::Command("view.text_reset")));
+
+    s.run("view.interface_size", &json!({ "value": "larger" }))
+        .unwrap();
+    assert_eq!(s.appearance.interface_size, InterfaceSize::Larger);
+    assert_eq!(s.appearance.interface_size.zoom(), 1.25);
+    assert!(
+        s.run("view.interface_size", &json!({ "value": "huge" }))
+            .is_err()
+    );
+    let size = s.text.size;
+    for id in ["view.text_larger", "view.text_smaller", "view.text_reset"] {
+        s.run(id, &json!({})).unwrap();
+        assert_eq!(s.appearance.interface_size, InterfaceSize::Larger, "{id}");
+    }
+    assert_eq!(s.text.size, size);
+
+    // Saved with the other View preferences, and read back (old records keep the default).
+    let mut a = Appearance::default();
+    let mut t = obs_layout::TextSettings::default();
+    let saved = crate::appearance::to_json(&s.appearance, &s.text);
+    assert_eq!(saved["interface_size"], "larger");
+    crate::appearance::apply_json(&saved, &mut a, &mut t);
+    assert_eq!(a.interface_size, InterfaceSize::Larger);
+    let mut a = Appearance::default();
+    crate::appearance::apply_json(&json!({ "theme": "dark" }), &mut a, &mut t);
+    assert_eq!(a.interface_size, InterfaceSize::Normal);
+}
+
+#[test]
 fn sync_panels_follows_drags_and_closes() {
     let mut s = session();
     let a = tab(&s.run("resource.open", &json!({ "id": "kjv" })).unwrap());

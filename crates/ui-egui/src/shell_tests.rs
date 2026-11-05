@@ -2617,6 +2617,9 @@ mod resource_tabs;
 #[path = "annotation_tests.rs"]
 mod annotation;
 
+#[path = "text_size_tests.rs"]
+mod text_size;
+
 #[path = "annotations_across_tests.rs"]
 mod annotations_across;
 

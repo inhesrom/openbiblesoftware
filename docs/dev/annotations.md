@@ -93,6 +93,9 @@ or deleted).
   and Alt must match exactly (`shell::extra_held`, `shell::consume_key`). So Ctrl+Shift+Z
   never undoes, even when there is nothing to redo. The style keys Ctrl+1…5 accept an
   extra Shift but not Alt, because Ctrl+Alt is AltGr on Windows.
+  A Ctrl+Plus binding is also pressed as Ctrl+= (`shell::pressed_as`), so Larger text works
+  without Shift; egui's own whole-window zoom keys are off, and the window zoom is the
+  Interface size only (#137).
 - **The Note editor** is a popup anchored under the selection, with a Notebook picker that
   starts on the last used Notebook. It saves (as `annotation.note` with the picked
   `notebook`) on a click outside it, Esc, Ctrl+Enter or quitting; an empty Note is not

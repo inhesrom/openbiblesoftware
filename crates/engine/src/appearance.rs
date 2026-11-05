@@ -1,4 +1,5 @@
-//! Theme, Page tone and Text settings (#21, #66): what the View menu changes. Colours
+//! Theme, Page tone, Interface size and Text settings (#21, #66, #137): what the View menu
+//! changes. Colours
 //! themselves live in the UI; the engine keeps the choices, persists them and runs the
 //! commands that change them.
 
@@ -74,6 +75,47 @@ impl PageTone {
     }
 }
 
+/// How large the app chrome is drawn (#137): menus, Tabs, headers and dialogs, as one zoom on
+/// the whole window (Resource text scales along). Text size is separate, and its keys never
+/// change this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InterfaceSize {
+    Smaller,
+    #[default]
+    Normal,
+    Larger,
+}
+
+impl InterfaceSize {
+    /// Each size, its id, its label and the zoom it draws the window at.
+    pub const ALL: [(InterfaceSize, &'static str, &'static str, f32); 3] = [
+        (InterfaceSize::Smaller, "smaller", "Smaller", 0.9),
+        (InterfaceSize::Normal, "default", "Default", 1.0),
+        (InterfaceSize::Larger, "larger", "Larger", 1.25),
+    ];
+
+    pub fn id(self) -> &'static str {
+        Self::ALL
+            .iter()
+            .find(|t| t.0 == self)
+            .map_or("default", |t| t.1)
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().find(|t| t.1 == id).map(|t| t.0)
+    }
+
+    /// The zoom factor the whole window is drawn at.
+    pub fn zoom(self) -> f32 {
+        Self::ALL.iter().find(|t| t.0 == self).map_or(1.0, |t| t.3)
+    }
+}
+
+/// Text size limits and step, in points (View → Larger text, Smaller text).
+pub const TEXT_SIZE_MIN: f32 = 10.0;
+pub const TEXT_SIZE_MAX: f32 = 40.0;
+pub const TEXT_SIZE_STEP: f32 = 1.0;
+
 /// Line spacing choices, as multiples of the tallest font on a line.
 pub const LINE_SPACINGS: [(&str, &str, f32); 4] = [
     ("compact", "Compact", 1.1),
@@ -108,6 +150,7 @@ pub fn verse_numbers_id(v: VerseNumbers) -> &'static str {
 pub struct Appearance {
     pub theme: Theme,
     pub page_tone: PageTone,
+    pub interface_size: InterfaceSize,
     /// View → Show Highlights (#18 rule 3): Highlights are drawn in Resource text (on by
     /// default). Notes follow their Notebook's Show in text only.
     pub show_highlights: bool,
@@ -118,6 +161,7 @@ impl Default for Appearance {
         Self {
             theme: Theme::default(),
             page_tone: PageTone::default(),
+            interface_size: InterfaceSize::default(),
             show_highlights: true,
         }
     }
@@ -128,6 +172,7 @@ pub(crate) fn to_json(a: &Appearance, t: &TextSettings) -> Value {
     json!({
         "theme": a.theme.id(),
         "page_tone": a.page_tone.id(),
+        "interface_size": a.interface_size.id(),
         "text_size": t.size,
         "line_spacing": t.line_spacing,
         "red_letter": t.red_letter,
@@ -147,8 +192,14 @@ pub(crate) fn apply_json(v: &Value, a: &mut Appearance, t: &mut TextSettings) {
     } else if v["dark_page"].as_bool() == Some(true) {
         a.page_tone = PageTone::Dark;
     }
+    if let Some(x) = v["interface_size"]
+        .as_str()
+        .and_then(InterfaceSize::from_id)
+    {
+        a.interface_size = x;
+    }
     if let Some(size) = v["text_size"].as_f64() {
-        t.size = (size as f32).clamp(10.0, 40.0);
+        t.size = (size as f32).clamp(TEXT_SIZE_MIN, TEXT_SIZE_MAX);
     }
     if let Some(ls) = v["line_spacing"].as_f64() {
         t.line_spacing = (ls as f32).clamp(1.0, 2.0);
