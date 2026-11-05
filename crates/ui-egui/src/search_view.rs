@@ -64,8 +64,8 @@ pub struct SearchOutput {
     pub frame: SearchFrame,
     /// The pane's own response (for its right-click menu).
     pub response: Option<egui::Response>,
-    /// The row right-clicked this frame (#142).
-    pub context_row: Option<usize>,
+    /// Right-clicked this frame (#142): the row, and the hit under the pointer (else 0).
+    pub context: Option<(usize, usize)>,
 }
 
 /// One Search Tab's results view: row heights and where it is scrolled.
@@ -442,10 +442,16 @@ pub fn search_pane(
     if response.secondary_clicked()
         && let Some(p) = response.interact_pointer_pos()
     {
-        out.context_row = row_rects
+        out.context = targets
             .iter()
-            .find(|(_, r)| r.contains(p))
-            .map(|&(row, _)| row);
+            .find(|(r, _, _)| r.contains(p))
+            .map(|&(_, row, hit)| (row, hit))
+            .or_else(|| {
+                row_rects
+                    .iter()
+                    .find(|(_, r)| r.contains(p))
+                    .map(|&(row, _)| (row, 0))
+            });
     }
     view.last = frame.clone();
     view.row_rects = row_rects;

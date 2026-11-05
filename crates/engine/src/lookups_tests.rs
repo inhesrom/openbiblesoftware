@@ -142,6 +142,69 @@ fn lexicon_open_uses_the_first_lexicon_in_preferred_order_with_the_entry() {
 }
 
 #[test]
+fn lookups_move_a_tab_only_in_the_openers_link_set() {
+    let t = Temp::new("link-sets");
+    let mut s = session(&t);
+    let g25 = Key::StrongsNumber("G25".parse().unwrap());
+    let g3439 = Key::StrongsNumber("G3439".parse().unwrap());
+    // KJV in Link set A; the Lexicon already open, in Link set B, at G3439.
+    let kjv = tab(&s.run("resource.open", &json!({ "id": "kjv" })).unwrap());
+    s.run("tab.link", &json!({ "tab": kjv.0, "set": "A" }))
+        .unwrap();
+    let in_b = tab(&s
+        .run(
+            "lexicon.open",
+            &json!({ "strongs": "G3439", "new_tab": true }),
+        )
+        .unwrap());
+    s.run("tab.link", &json!({ "tab": in_b.0, "set": "B" }))
+        .unwrap();
+    s.workspace.focus(kjv);
+    let in_a = tab(&s.run("lexicon.open", &json!({ "strongs": "G25" })).unwrap());
+    assert_ne!(in_a, in_b, "the Lexicon in Link set B stays where it is");
+    assert_eq!(s.workspace.tab(in_a).unwrap().link, Some('A'));
+    assert_eq!(key_of(&s, in_a), Some(g25.clone()));
+    assert_eq!(key_of(&s, in_b), Some(g3439.clone()));
+    // From Link set A again: the Lexicon Tab in A moves.
+    s.workspace.focus(kjv);
+    let again = tab(&s
+        .run("lexicon.open", &json!({ "strongs": "G3439" }))
+        .unwrap());
+    assert_eq!(again, in_a);
+    assert_eq!(key_of(&s, in_a), Some(g3439));
+
+    // From an unlinked Bible: neither linked Lexicon Tab moves; an unlinked one opens.
+    s.workspace.focus(kjv);
+    let love = tab(&s
+        .run("resource.open", &json!({ "id": "kjv-love" }))
+        .unwrap());
+    s.run("tab.link", &json!({ "tab": love.0, "set": "" }))
+        .unwrap();
+    s.workspace.focus(love);
+    let unlinked = tab(&s.run("lexicon.open", &json!({ "strongs": "G25" })).unwrap());
+    assert!(![in_a, in_b].contains(&unlinked));
+    assert_eq!(s.workspace.tab(unlinked).unwrap().link, None);
+    s.workspace.focus(love);
+    let unlinked_again = tab(&s
+        .run("lexicon.open", &json!({ "strongs": "G3439" }))
+        .unwrap());
+    assert_eq!(unlinked_again, unlinked);
+
+    // Dictionaries the same way.
+    s.workspace.focus(kjv);
+    let easton_a = tab(&s
+        .run("dictionary.lookup", &json!({ "text": "Abraham" }))
+        .unwrap());
+    assert_eq!(s.workspace.tab(easton_a).unwrap().link, Some('A'));
+    s.workspace.focus(love);
+    let easton = tab(&s
+        .run("dictionary.lookup", &json!({ "text": "Abram" }))
+        .unwrap());
+    assert_ne!(easton, easton_a);
+    assert_eq!(key_of(&s, easton_a), Some(Key::Headword("Abraham".into())));
+}
+
+#[test]
 fn dictionary_lookup_matches_headwords_after_normalization_and_aliases() {
     let t = Temp::new("dictionary");
     let mut s = session(&t);

@@ -6,8 +6,9 @@
 //! - `dictionary.lookup {text}`: the first Dictionary in Preferred order with a Headword
 //!   matching the text (compared after normalization, aliases included).
 //!
-//! Either moves an open Tab of that Resource to the entry, or opens one; with `new_tab`
-//! (Ctrl/Cmd held) a new Tab always opens.
+//! Either moves the most recent Tab of that Resource in the opener's Link set (from an
+//! unlinked Tab, an unlinked one) to the entry, or opens one there, joining the opener's Link
+//! set; with `new_tab` (Ctrl/Cmd held) a new Tab always opens.
 
 use obs_model::{Key, KeyEntry, ResourceType};
 use obs_scripture::StrongsNumber;
@@ -102,11 +103,16 @@ fn look_up(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     Ok(json!({ "tab": tab.0, "resource": id, "key": key }))
 }
 
-/// Move the most recent Tab of Resource `id` to `key`, or open one there.
+/// Move the most recent Tab of Resource `id` in the opener's Link set to `key`, or open one
+/// there. A Tab in another Link set is left alone: moving it would move that set too.
 fn show_entry(s: &mut Session, id: &str, key: Key, new_tab: bool) -> Result<TabId, CommandError> {
     let kind = TabKind::Resource(id.to_string());
+    let opener = s.workspace.opener_link();
     let open = (!new_tab)
-        .then(|| s.workspace.most_recent(|t| t.kind == kind))
+        .then(|| {
+            s.workspace
+                .most_recent(|t| t.kind == kind && t.link == opener)
+        })
         .flatten();
     let tab = match open {
         Some(tab) => {

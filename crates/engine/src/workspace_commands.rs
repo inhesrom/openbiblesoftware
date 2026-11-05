@@ -803,11 +803,7 @@ fn open_at_passage(
         .first()
         .map(|p| p.start())
         .ok_or_else(|| failed(id, "no reference"))?;
-    let opener = s
-        .workspace
-        .focused()
-        .and_then(|t| s.workspace.tab(t))
-        .and_then(|t| t.link);
+    let opener = s.workspace.opener_link();
     let new_tab = p.bool("new_tab").unwrap_or(false) || p.bool("split").unwrap_or(false);
     let existing = (!new_tab)
         .then(|| {

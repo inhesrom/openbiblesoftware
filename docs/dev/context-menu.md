@@ -16,17 +16,26 @@ The target chosen when the menu opens is the Tagged word's Lemma (else its Stron
 else the selection, else the Verse. A right-click outside the selection selects the word
 clicked (as before #142), so the Selection target is that word.
 
+Each opening replaces what the menu offered before; a right-click with nothing to act on (blank
+Text Comparison space, a Library-mode Search row, a Search pane without results) opens no menu.
+
 ## Where it opens
 
 - **Reading panes** (`shell/context_menu.rs`, `State::reading_menu`): Bibles, Commentaries,
   Lexicons and Dictionaries. A Strong's link in a Lexicon or Commentary is a Tagged word; a
-  Scripture reference under the pointer is the Verse target (its first Passage, once the
-  reference popup has resolved it); a Commentary's Verse is the section's Passage. The Verse
+  Scripture reference under the pointer is the Verse target (its first Passage). While the
+  worker is still translating the reference, the Verse row shows the reference as written with
+  its actions disabled, and the open menu fills it in when the targets arrive (never the Verse
+  around the reference meanwhile); a reference without targets is no Verse target. A
+  Commentary's Verse is the section's Passage. The Verse
   label uses the Bible's own numbering (`RefStyle::Short`); an Unmapped verse keeps Copy and
   Add Note but not the Standard-keyed tools.
 - **Text Comparison** Verse blocks (`ComparisonOutput::context`): the block's Verse; on a row
-  with text, Copy with reference copies that row's Bible.
-- **Search** result rows in Bible mode (`SearchOutput::context_row`): the row's Verse.
+  with text, Copy with reference copies that row's Bible with the reference in **its own
+  numbering** (HNUM's Gen 32:1 under the Standard Gen 31:55 copies as “Genesis 32:1 (HNUM)”;
+  a verse bridge as “Genesis 1:1-2”).
+- **Search** result rows in Bible mode (`SearchOutput::context`): the row's Verse; Copy with
+  reference copies the hit under the pointer (else the row's first) in its Bible's numbering.
 - **Keyboard**: Shift+F10 or the Menu key, in the focused reading pane (not while a text field
   has focus or the Note editor is open), at the word under the pointer (which it selects, like
   a right-click) or else at the selection.
@@ -34,14 +43,17 @@ clicked (as before #142), so the Selection target is that word.
 ## Commands
 
 Every action is an engine command, so the command palette and the Command box reach the same
-things. Ctrl/Cmd held when clicking sends `new_tab: true`.
+things. Ctrl/Cmd held when clicking sends `new_tab: true` (`split: true` for `search.run`, so a
+new Search Tab opens instead of replacing the open one's query).
 
 - `word_study.open {strongs, new_tab?}` — Word Study (moves the focused or most recent Word Study).
 - `word_study.choose {words, new_tab?}` — the English-word chooser for an untagged word (a
   Strong's number studies that number).
 - `lexicon.open {strongs, new_tab?}` — the first Lexicon in Preferred order with an entry for
   the number (an extended number falls back to its base), through
-  `ResourceStore::lookup_strongs`; an open Tab of that Lexicon moves, else one opens.
+  `ResourceStore::lookup_strongs`; the most recent Tab of that Lexicon in the opener's Link
+  set (from an unlinked Tab, an unlinked one) moves, else one opens and joins the opener's Link
+  set. A Tab of it in another Link set is left alone: moving it would move that set.
 - `dictionary.lookup {text, new_tab?}` — the first Dictionary in Preferred order with that
   Headword (normalized; aliases count), the same way.
 - `guide.passage_guide`, `tool.cross_references`, `tool.text_comparison` take `passage`

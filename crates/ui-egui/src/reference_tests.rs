@@ -415,7 +415,7 @@ fn reference_clicks_preserve_standard_target_with_non_reversible_maps() {
     }
 }
 
-fn reference_spot(h: &Harness, tab: obs_engine::TabId, span: usize) -> Pos2 {
+pub(super) fn reference_spot(h: &Harness, tab: obs_engine::TabId, span: usize) -> Pos2 {
     let view = h.shell.st.tabs[&tab].view.as_ref().unwrap();
     let [ox, oy] = view.text_origin;
     for (_, top, laid) in view.laid_in_view(800.0) {

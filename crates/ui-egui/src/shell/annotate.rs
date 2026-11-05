@@ -362,7 +362,9 @@ impl State {
             }
             Annotate::Search => {
                 let text = selected_text(&doc, &sel);
-                self.search_text(&text, &doc.manifest.resource_id, doc.manifest.resource_type);
+                let new_tab = ctx.input(|i| i.modifiers.command);
+                let (id, ty) = (&doc.manifest.resource_id, doc.manifest.resource_type);
+                self.search_text(&text, id, ty, new_tab);
             }
             Annotate::Note => {
                 let copied = copy_text(&doc, &sel);
@@ -427,8 +429,15 @@ impl State {
     }
 
     /// Search for selected text (#142): a phrase when it is several words. In a Bible, Bible
-    /// search in that Bible; elsewhere, Library search in that Resource.
-    pub(super) fn search_text(&mut self, text: &str, resource: &str, ty: ResourceType) {
+    /// search in that Bible; elsewhere, Library search in that Resource. In the most recent
+    /// Search Tab, or a new one with `new_tab` (Ctrl/Cmd held).
+    pub(super) fn search_text(
+        &mut self,
+        text: &str,
+        resource: &str,
+        ty: ResourceType,
+        new_tab: bool,
+    ) {
         let words: Vec<&str> = text.split_whitespace().collect();
         if words.is_empty() {
             return;
@@ -440,9 +449,9 @@ impl State {
             joined
         };
         let params = if ty == ResourceType::Bible {
-            json!({ "text": query, "mode": "bible", "bibles": resource })
+            json!({ "text": query, "mode": "bible", "bibles": resource, "split": new_tab })
         } else {
-            json!({ "text": query, "mode": "library", "resources": resource })
+            json!({ "text": query, "mode": "library", "resources": resource, "split": new_tab })
         };
         self.run("search.run", &params);
     }

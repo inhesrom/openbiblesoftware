@@ -645,10 +645,7 @@ impl Workspace {
         let link = if key_schemes.is_empty() || !kind.has_link_chip() {
             None
         } else {
-            self.focused
-                .and_then(|t| self.tabs.get(&t))
-                .filter(|t| !t.key_schemes.is_empty())
-                .and_then(|t| t.link)
+            self.opener_link()
         };
         self.next_tab += 1;
         let id = TabId(self.next_tab);
@@ -687,6 +684,15 @@ impl Workspace {
         self.visits.push(PendingVisit { tab: id, at: None });
         self.focus(id);
         id
+    }
+
+    /// The Link set a linked Tab opened now joins: the focused Tab's, when it follows a Key
+    /// scheme (`None`: unlinked).
+    pub fn opener_link(&self) -> Option<char> {
+        self.focused
+            .and_then(|t| self.tabs.get(&t))
+            .filter(|t| !t.key_schemes.is_empty())
+            .and_then(|t| t.link)
     }
 
     /// The most recently active Tab that `pred` accepts.

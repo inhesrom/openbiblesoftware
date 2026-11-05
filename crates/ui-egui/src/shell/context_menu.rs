@@ -22,11 +22,14 @@ use egui::{Key, Modifiers, Rect, RichText, Ui, pos2, vec2};
 use obs_engine::link::{ToStandard, to_standard};
 use obs_engine::{HighlightStyle, TabId};
 use obs_model::ResourceType;
-use obs_scripture::{Passage, RefStyle, Standard, StrongsNumber, Verse, format_passage};
+use obs_scripture::{
+    Passage, RefStyle, Standard, StrongsNumber, Verse, Versification, format_passage,
+};
 use serde_json::json;
 
 use super::State;
 use super::annotate::{Annotate, menu_label, style_shortcut};
+use super::references::TargetKey;
 use crate::compare_view::ComparisonContext;
 use crate::doc::ReadingDoc;
 use crate::palette::Palette;
@@ -67,8 +70,50 @@ pub(super) struct VerseTarget {
     /// In a Bible's reading pane: the Bible's own Verse (Copy with reference and Add Note on
     /// verse select it).
     native: Option<Verse>,
-    /// Elsewhere: the Verse's text with its reference, for Copy with reference.
-    copy: Option<String>,
+    /// Elsewhere: a Bible's own Verses, for Copy with reference.
+    copy: Option<VerseCopy>,
+    /// A Scripture reference whose targets are still being translated: the Verse is filled in
+    /// when they arrive (until then `label` is the reference as written, `standard` `None`).
+    resolving: Option<TargetKey>,
+}
+
+impl VerseTarget {
+    /// A Verse in the Standard versification (a Commentary section, a Scripture reference).
+    fn standard(verse: Verse) -> Self {
+        Self {
+            label: format_passage(Passage::verse(verse), &Standard, RefStyle::Short),
+            standard: Some(verse),
+            native: None,
+            copy: None,
+            resolving: None,
+        }
+    }
+}
+
+/// A Bible's own Verses that Copy with reference copies (a Text Comparison row, a Search hit):
+/// the reference is in the Bible's numbering, which can differ from the Standard Verse shown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct VerseCopy {
+    /// The Bible's resource id (its versification writes the reference) and abbreviation.
+    bible: String,
+    abbreviation: String,
+    /// Its own Verses, with the last verse number each covers (`\v 1-2` → 2).
+    natives: Vec<(Verse, u16)>,
+    /// The text as shown; `None`: read from the Bible.
+    text: Option<String>,
+}
+
+/// The reference of a Bible's own Verses in its numbering: "Genesis 32:1", a bridge
+/// "Genesis 1:1-2", several Verses "Genesis 31:55-32:1".
+pub(super) fn native_reference<V: Versification + ?Sized>(
+    natives: &[(Verse, u16)],
+    v11n: &V,
+) -> Option<String> {
+    let &(first, _) = natives.first()?;
+    let &(last, last_n) = natives.last()?;
+    let end = Verse::new(last.book, last.chapter, last_n.max(last.verse));
+    let passage = Passage::new(first, end).unwrap_or(Passage::verse(first));
+    Some(format_passage(passage, v11n, RefStyle::Long))
 }
 
 /// The Tagged word the menu was opened on.
@@ -313,7 +358,11 @@ fn actions_ui(
                 return None;
             };
             let mapped = v.standard.is_some();
-            let unmapped = "An Unmapped verse has no Verse in the Standard versification";
+            let unmapped = if v.resolving.is_some() {
+                "Looking up the reference…"
+            } else {
+                "An Unmapped verse has no Verse in the Standard versification"
+            };
             for (label, action) in [
                 ("Passage Guide", MenuAction::PassageGuide),
                 ("Cross-references", MenuAction::CrossReferences),
@@ -446,9 +495,7 @@ impl State {
                     .unwrap_or_else(|| response.rect.left_top() + vec2(40.0, 40.0)),
             );
         }
-        let opened = (out.context_clicked || key)
-            .then(|| self.reading_targets(tab, out))
-            .flatten();
+        let opened = (out.context_clicked || key).then(|| self.reading_targets(tab, out));
         let Some((action, new_tab)) = self.show_menu(ui, tab, &response, opened, at) else {
             return;
         };
@@ -469,57 +516,16 @@ impl State {
         let Some(response) = response else {
             return;
         };
-        let opened = context.map(|c| {
-            let copy = c.row.as_ref().map(|(abbreviation, text)| {
-                let reference = format_passage(Passage::verse(c.verse), &Standard, RefStyle::Long);
-                format!("{}\n{reference} ({abbreviation})", text.trim())
-            });
+        let opened = response.secondary_clicked().then(|| {
+            let c = context?;
             let verse = VerseTarget {
-                label: format_passage(Passage::verse(c.verse), &Standard, RefStyle::Short),
-                standard: Some(c.verse),
-                native: None,
-                copy,
-            };
-            MenuTargets::new(None, Some(verse), None, None)
-        });
-        if let Some((action, new_tab)) = self.show_menu(ui, tab, response, opened, None)
-            && let Some(m) = self.tabs.get(&tab).and_then(|t| t.menu.clone())
-        {
-            let at = response
-                .interact_pointer_pos()
-                .map(|p| Rect::from_min_size(p, vec2(1.0, 1.0)));
-            self.menu_action(ui.ctx(), tab, &m, action, new_tab, at);
-        }
-    }
-
-    /// A Search Tab's right-click menu: the Verse of the Bible result row clicked.
-    pub(super) fn search_menu(
-        &mut self,
-        ui: &Ui,
-        tab: TabId,
-        response: Option<&egui::Response>,
-        row: Option<usize>,
-    ) {
-        let Some(response) = response else {
-            return;
-        };
-        let opened = row.and_then(|row| {
-            let results = self.session.search_tab(tab)?.results.clone()?;
-            let r = results.rows.get(row)?;
-            let standard = r.standard;
-            let label = match standard {
-                Some(v) => format_passage(Passage::verse(v), &Standard, RefStyle::Short),
-                None => {
-                    let hit = r.hits.first()?;
-                    let abbreviation = &results.bibles.get(hit.bible)?.abbreviation;
-                    format!("{} ({abbreviation})", hit.native.osis())
-                }
-            };
-            let verse = VerseTarget {
-                label,
-                standard,
-                native: None,
-                copy: None,
+                copy: c.row.as_ref().map(|row| VerseCopy {
+                    bible: row.bible.clone(),
+                    abbreviation: row.abbreviation.clone(),
+                    natives: row.natives.clone(),
+                    text: Some(row.text.clone()),
+                }),
+                ..VerseTarget::standard(c.verse)
             };
             Some(MenuTargets::new(None, Some(verse), None, None))
         });
@@ -533,46 +539,131 @@ impl State {
         }
     }
 
-    /// Show `tab`'s menu while it is open: `opened` replaces what it offers (it was just
-    /// opened), `at` opens it there (from the keyboard). Returns the action clicked, and
-    /// whether Ctrl/Cmd was held.
+    /// A Search Tab's right-click menu: the Verse of the Bible result clicked (the hit under
+    /// the pointer, else the row's first). Library results have no menu.
+    pub(super) fn search_menu(
+        &mut self,
+        ui: &Ui,
+        tab: TabId,
+        response: Option<&egui::Response>,
+        context: Option<(usize, usize)>,
+    ) {
+        let Some(response) = response else {
+            return;
+        };
+        let opened = response.secondary_clicked().then(|| {
+            let (row, hit) = context?;
+            let st = self.session.search_tab(tab)?;
+            let results = st.results.as_ref()?;
+            let r = results.rows.get(row)?;
+            let (hit, h) = r
+                .hits
+                .get(hit)
+                .map(|h| (hit, h))
+                .or_else(|| Some((0, r.hits.first()?)))?;
+            let bible = results.bibles.get(h.bible)?;
+            let standard = r.standard;
+            let label = match standard {
+                Some(v) => format_passage(Passage::verse(v), &Standard, RefStyle::Short),
+                None => format!("{} ({})", h.native.osis(), bible.abbreviation),
+            };
+            let copy = VerseCopy {
+                bible: bible.id.clone(),
+                abbreviation: bible.abbreviation.clone(),
+                natives: vec![(h.native, h.last)],
+                text: st.snippet(row, hit).map(|s| s.text.clone()),
+            };
+            let verse = VerseTarget {
+                label,
+                standard,
+                native: None,
+                copy: Some(copy),
+                resolving: None,
+            };
+            Some(MenuTargets::new(None, Some(verse), None, None))
+        });
+        if let Some((action, new_tab)) = self.show_menu(ui, tab, response, opened, None)
+            && let Some(m) = self.tabs.get(&tab).and_then(|t| t.menu.clone())
+        {
+            let at = response
+                .interact_pointer_pos()
+                .map(|p| Rect::from_min_size(p, vec2(1.0, 1.0)));
+            self.menu_action(ui.ctx(), tab, &m, action, new_tab, at);
+        }
+    }
+
+    /// Show `tab`'s menu while it is open. `opened` is set when it was just opened (a
+    /// right-click or the keyboard): what it offers then, replacing what an earlier opening
+    /// offered; with nothing to act on it stays shut. `at` opens it there (from the keyboard).
+    /// Returns the action clicked, and whether Ctrl/Cmd was held.
     fn show_menu(
         &mut self,
         ui: &Ui,
         tab: TabId,
         response: &egui::Response,
-        opened: Option<MenuTargets>,
+        opened: Option<Option<MenuTargets>>,
         at: Option<egui::Pos2>,
     ) -> Option<(MenuAction, bool)> {
         let t = self.tabs.get_mut(&tab)?;
-        if let Some(mut m) = opened {
-            m.at = at;
-            t.menu = Some(m);
+        if let Some(fresh) = opened {
+            t.menu = fresh.map(|m| MenuTargets { at, ..m });
         }
         let mut menu = t.menu.take();
+        if let Some(m) = menu.as_mut() {
+            self.resolve_reference(ui.ctx(), m);
+        }
+        let menu = &mut menu.filter(|m| !m.targets().is_empty());
         let palette = self.palette;
         let can_annotate = self.session.is_enabled("annotation.highlight");
         let mut picked = None;
         let mut popup = egui::Popup::context_menu(response);
-        if at.is_some() {
+        if menu.is_none() {
+            popup = popup.open_memory(egui::SetOpenCommand::Bool(false));
+        } else if at.is_some() {
             popup = popup.open_memory(egui::SetOpenCommand::Bool(true));
         }
         if let Some(pos) = menu.as_ref().and_then(|m| m.at) {
             popup = popup.at_position(pos);
         }
-        popup.show(|ui| match menu.as_mut() {
-            Some(m) if !m.targets().is_empty() => {
+        popup.show(|ui| {
+            if let Some(m) = menu.as_mut() {
                 picked = menu_ui(ui, m, &palette, can_annotate);
-            }
-            _ => {
-                ui.label(RichText::new("Nothing to act on here").color(theme::c().muted));
             }
         });
         let new_tab = ui.input(|i| i.modifiers.command);
         if let Some(t) = self.tabs.get_mut(&tab) {
-            t.menu = menu;
+            t.menu = menu.take();
         }
         picked.map(|p| (p, new_tab))
+    }
+
+    /// An open menu's Scripture reference whose targets have arrived becomes their first
+    /// Verse; one with none (or that failed) is no Verse target.
+    fn resolve_reference(&mut self, ctx: &egui::Context, m: &mut MenuTargets) {
+        let Some(key) = m.verse.as_ref().and_then(|v| v.resolving.clone()) else {
+            return;
+        };
+        let Some(resolved) = self.reference_verse(key) else {
+            ctx.request_repaint();
+            return;
+        };
+        m.verse = resolved;
+        if !m.targets().contains(&m.chosen) {
+            m.chosen = m.targets().first().copied().unwrap_or(Target::Selection);
+        }
+    }
+
+    /// A Scripture reference's Verse target: its first target in the Standard versification
+    /// (`Some(None)`: it has none, or translating failed); `None` while still translating.
+    fn reference_verse(&mut self, key: TargetKey) -> Option<Option<VerseTarget>> {
+        let result = self.references.targets.get(key)?;
+        let first = result
+            .ok()
+            .and_then(|targets| targets.iter().flat_map(|l| l.iter()).next().copied());
+        Some(first.map(|passage| VerseTarget {
+            label: format_passage(passage, &Standard, RefStyle::Short),
+            ..VerseTarget::standard(passage.start())
+        }))
     }
 
     /// What a reading pane's menu offers: its selection (the word right-clicked, or the
@@ -620,8 +711,8 @@ impl State {
         Some(MenuTargets::new(selection, verse, word, resource))
     }
 
-    /// The Verse a reading pane's menu offers: a Scripture reference under the pointer, else
-    /// the Bible's or Commentary's Verse at the click.
+    /// The Verse a reading pane's menu offers: a Scripture reference under the pointer (its
+    /// first target, once translated), else the Bible's or Commentary's Verse at the click.
     fn verse_target(
         &mut self,
         doc: &Arc<ReadingDoc>,
@@ -629,17 +720,23 @@ impl State {
         out: &PaneOutput,
     ) -> Option<VerseTarget> {
         if let Some((unit, span)) = out.hovered_reference {
-            let key = super::references::TargetKey::new(doc, unit, span);
-            if let Some(Ok(targets)) = self.references.targets.get(key)
-                && let Some(passage) = targets.iter().flat_map(|l| l.iter()).next()
-            {
-                return Some(VerseTarget {
-                    label: format_passage(*passage, &Standard, RefStyle::Short),
-                    standard: Some(passage.start()),
+            let written = doc
+                .units
+                .get(unit)
+                .and_then(|u| u.text.get(u.spans.get(span)?.range()))
+                .unwrap_or_default();
+            let key = TargetKey::new(doc, unit, span);
+            return match self.reference_verse(key.clone()) {
+                Some(resolved) => resolved,
+                // Not the Verse around the reference meanwhile: it is not what was clicked.
+                None => Some(VerseTarget {
+                    label: written.trim().to_string(),
+                    standard: None,
                     native: None,
                     copy: None,
-                });
-            }
+                    resolving: Some(key),
+                }),
+            };
         }
         let (unit, byte) = at?;
         let verse = doc.verse_containing(unit, byte)?;
@@ -653,15 +750,11 @@ impl State {
                 standard,
                 native: Some(verse),
                 copy: None,
+                resolving: None,
             });
         }
         // A Commentary's sections are keyed in the Standard versification.
-        Some(VerseTarget {
-            label: format_passage(Passage::verse(verse), &Standard, RefStyle::Short),
-            standard: Some(verse),
-            native: None,
-            copy: None,
-        })
+        Some(VerseTarget::standard(verse))
     }
 
     /// Run a menu action. `at` is where the selection or the click is (for the Note editor).
@@ -689,6 +782,13 @@ impl State {
             .map(|(id, _)| id.clone());
         let open_at = |id: &'static str| (id, json!({ "passage": passage, "new_tab": new_tab }));
         let run: Option<(&'static str, serde_json::Value)> = match action {
+            // The selection as the menu shows it, with the menu's Ctrl/Cmd.
+            MenuAction::Annotate(Annotate::Search) => {
+                if let Some((id, ty)) = &m.resource {
+                    self.search_text(&selection, id, *ty, new_tab);
+                }
+                None
+            }
             MenuAction::Annotate(a) => {
                 self.annotate(ctx, tab, a, at);
                 None
@@ -743,7 +843,7 @@ impl State {
                     _ => None,
                 };
                 query.map(|q| {
-                    let mut params = json!({ "text": q, "mode": "bible" });
+                    let mut params = json!({ "text": q, "mode": "bible", "split": new_tab });
                     if let Some(b) = &bible {
                         params["bibles"] = json!(b);
                     }
@@ -767,8 +867,30 @@ impl State {
         let Some(v) = &m.verse else {
             return;
         };
-        if let Some(text) = &v.copy {
-            ctx.copy_text(text.clone());
+        if let Some(c) = &v.copy {
+            let doc = self.doc(&c.bible).ok();
+            let text = c.text.clone().or_else(|| {
+                let doc = doc.as_ref()?;
+                let texts: Vec<&str> = c
+                    .natives
+                    .iter()
+                    .filter_map(|(n, _)| doc.verse_text(*n))
+                    .collect();
+                Some(
+                    texts
+                        .join(" ")
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                )
+            });
+            let reference = match &doc {
+                Some(doc) => native_reference(&c.natives, &doc.versification),
+                None => native_reference(&c.natives, &Standard),
+            };
+            if let (Some(text), Some(reference)) = (text, reference) {
+                ctx.copy_text(format!("{}\n{reference} ({})", text.trim(), c.abbreviation));
+            }
             return;
         }
         let Some(view) = self.tabs.get(&tab).and_then(|t| t.view.as_ref()) else {

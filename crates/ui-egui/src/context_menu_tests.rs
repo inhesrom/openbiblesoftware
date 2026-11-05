@@ -507,3 +507,299 @@ fn a_strongs_link_in_a_lexicon_is_a_strongs_target() {
     );
     drop(h);
 }
+
+fn search_tabs(h: &Harness) -> Vec<TabId> {
+    h.shell
+        .session()
+        .workspace
+        .tabs()
+        .filter(|t| t.kind == TabKind::Tool(Tool::Search))
+        .map(|t| t.id)
+        .collect()
+}
+
+fn query_of(h: &Harness, tab: TabId) -> String {
+    h.shell.session().search_tab(tab).unwrap().query.clone()
+}
+
+#[test]
+fn ctrl_cmd_click_on_a_search_action_opens_a_new_search_tab() {
+    let mut h = Harness::new();
+    let _files = setup(&mut h, "search-new-tab");
+    let kjv = open_at_john_3_16(&mut h, "kjv");
+    // A Search Tab is open with its own query.
+    h.shell.run(
+        "search.run",
+        &json!({ "text": "world", "mode": "bible", "bibles": "kjv" }),
+    );
+    settle_search(&mut h);
+    let open = search_tabs(&h);
+    assert_eq!(open.len(), 1);
+    // New Search Tabs split Panels off: find the word again each time.
+    let loved = |h: &mut Harness| {
+        h.shell.session_mut().workspace.focus(kjv);
+        h.frames(2);
+        super::word_info::word_spot(h, kjv, "loved")
+    };
+
+    // Search Bible for G25 with Ctrl/Cmd: a new Search Tab; the open one keeps "world".
+    let at = loved(&mut h);
+    right_click(&mut h, at);
+    hover(&mut h, "G25");
+    h.modifiers = Modifiers::COMMAND;
+    h.click_text("🔎 Search Bible for G25");
+    h.modifiers = Modifiers::NONE;
+    let tabs = search_tabs(&h);
+    assert_eq!(tabs.len(), 2, "a second Search Tab");
+    assert_eq!(query_of(&h, open[0]), "world");
+    let new = *tabs.iter().find(|t| **t != open[0]).unwrap();
+    assert_eq!(query_of(&h, new), "strong:G25");
+
+    // Search this with Ctrl/Cmd: another one.
+    let at = loved(&mut h);
+    right_click(&mut h, at);
+    hover(&mut h, "“loved”");
+    h.modifiers = Modifiers::COMMAND;
+    h.click_text("🔎 Search this");
+    h.modifiers = Modifiers::NONE;
+    let tabs = search_tabs(&h);
+    assert_eq!(tabs.len(), 3, "a third Search Tab");
+    assert_eq!(query_of(&h, open[0]), "world");
+    assert_eq!(query_of(&h, new), "strong:G25");
+    assert!(tabs.iter().any(|t| query_of(&h, *t) == "loved"));
+
+    // Without Ctrl/Cmd the most recent Search Tab runs it.
+    let at = loved(&mut h);
+    right_click(&mut h, at);
+    hover(&mut h, "G25");
+    h.click_text("🔎 Search Bible for G25");
+    assert_eq!(search_tabs(&h).len(), 3);
+    drop(h);
+}
+
+#[test]
+fn a_right_click_with_nothing_to_act_on_never_shows_the_last_menu() {
+    let mut h = Harness::new();
+    let _files = setup(&mut h, "stale");
+    let _kjv = open_at_john_3_16(&mut h, "kjv");
+    h.shell.run(
+        "search.run",
+        &json!({ "text": "strong:G25", "mode": "bible", "bibles": "kjv" }),
+    );
+    settle_search(&mut h);
+    settle_all(&mut h);
+    let search = search_tabs(&h)[0];
+    let rows = |h: &Harness| {
+        h.shell.st.tabs[&search]
+            .search
+            .as_ref()
+            .unwrap()
+            .row_rects
+            .clone()
+    };
+    let tiles = &h.shell.tree.tiles;
+    let pane = tiles.rect(tiles.find_pane(&search).unwrap()).unwrap();
+    let (_, row) = *rows(&h).first().expect("a result row");
+    right_click(&mut h, row.center());
+    assert!(menu_open(&h));
+    assert!(h.find("Copy with reference").is_some(), "{:?}", h.texts());
+    press(&mut h, egui::Key::Escape, Modifiers::NONE);
+    assert!(!menu_open(&h));
+
+    // Blank space below the rows: no menu, not the last one.
+    let last = rows(&h).last().unwrap().1;
+    let blank = pos2(last.center().x, (last.bottom() + pane.bottom()) / 2.0);
+    assert!(blank.y > last.bottom() + 10.0, "room below the rows");
+    right_click(&mut h, blank);
+    assert!(!menu_open(&h), "{:?}", h.texts());
+    assert!(h.find("Copy with reference").is_none());
+
+    // The same Search Tab in Library mode: its rows have no menu either.
+    h.shell.run(
+        "search.run",
+        &json!({ "tab": search.0, "text": "love", "mode": "library" }),
+    );
+    settle_search(&mut h);
+    settle_all(&mut h);
+    let (_, row) = *rows(&h).first().expect("a Library result row");
+    right_click(&mut h, row.center());
+    assert!(!menu_open(&h), "{:?}", h.texts());
+    assert!(h.find("Copy with reference").is_none());
+    assert!(h.find("Cross-references").is_none());
+    drop(h);
+}
+
+#[test]
+fn search_results_copy_the_hit_with_its_reference() {
+    let mut h = Harness::new();
+    let _files = setup(&mut h, "search-copy");
+    let _kjv = open_at_john_3_16(&mut h, "kjv");
+    h.shell.run(
+        "search.run",
+        &json!({ "text": "loved", "mode": "bible", "bibles": "kjv" }),
+    );
+    settle_search(&mut h);
+    settle_all(&mut h);
+    let search = search_tabs(&h)[0];
+    let row = h.shell.st.tabs[&search]
+        .search
+        .as_ref()
+        .unwrap()
+        .row_rects
+        .first()
+        .map(|(_, r)| *r)
+        .expect("a result row");
+    right_click(&mut h, row.center());
+    h.click_text("Copy with reference");
+    let copied = h.copied.last().cloned().unwrap_or_default();
+    assert!(
+        copied.starts_with("For God so loved the world")
+            && copied.ends_with("everlasting life.\nJohn 3:16 (KJV)"),
+        "{copied:?}"
+    );
+    drop(h);
+}
+
+#[test]
+fn comparison_copy_cites_the_rows_own_numbering() {
+    // TB, HEB and HNUM: HNUM numbers Genesis 32:1 what the Standard numbers 31:55.
+    let mut h = Harness::new();
+    let tb = h.tab_id("TB");
+    h.shell.st.session.workspace.user_focused(tb);
+    let cmp = h
+        .shell
+        .run(
+            "tool.text_comparison",
+            &json!({ "passage": "Gen 31:55", "split": true }),
+        )
+        .unwrap()["tab"]
+        .as_u64()
+        .map(TabId)
+        .unwrap();
+    for _ in 0..400 {
+        h.paced_frame();
+        let pending = h.shell.st.tabs[&cmp]
+            .comparison
+            .as_ref()
+            .is_some_and(|v| v.has_pending());
+        if !pending {
+            break;
+        }
+    }
+    h.frames(2);
+    let tiles = &h.shell.tree.tiles;
+    let pane = tiles.rect(tiles.find_pane(&cmp).unwrap()).unwrap();
+    let in_pane = |h: &Harness, text: &str| {
+        h.shapes
+            .iter()
+            .filter(|(r, t)| t == text && pane.contains(r.center()))
+            .map(|(r, _)| *r)
+            .min_by(|a, b| a.top().total_cmp(&b.top()))
+            .unwrap_or_else(|| panic!("no {text}: {:?}", h.texts()))
+    };
+    // HNUM's row in the Gen 31:55 block, by its own number.
+    let hnum = in_pane(&h, "32:1");
+    right_click(&mut h, hnum.center());
+    assert!(menu_open(&h), "{:?}", h.texts());
+    assert!(h.find("Gen 31:55").is_some(), "{:?}", h.texts());
+    h.click_text("Copy with reference");
+    let copied = h.copied.last().cloned().unwrap_or_default();
+    assert!(copied.ends_with("\nGenesis 32:1 (HNUM)"), "{copied:?}");
+
+    // TB's row in the same block: the Standard numbering is its own.
+    let block = hnum.top();
+    let tb_row = h
+        .shapes
+        .iter()
+        .filter(|(r, t)| t == "TB" && pane.contains(r.center()) && r.top() < block)
+        .map(|(r, _)| *r)
+        .max_by(|a, b| a.top().total_cmp(&b.top()))
+        .unwrap_or_else(|| panic!("no TB row: {:?}", h.texts()));
+    right_click(&mut h, tb_row.center());
+    h.click_text("Copy with reference");
+    let copied = h.copied.last().cloned().unwrap_or_default();
+    assert!(copied.ends_with("\nGenesis 31:55 (TB)"), "{copied:?}");
+    drop(h);
+}
+
+#[test]
+fn native_references_cover_bridges_and_several_verses() {
+    use crate::shell::context_menu::native_reference;
+    use obs_scripture::Standard;
+    let cases: [(&[(Verse, u16)], &str); 4] = [
+        (&[(ge(32, 1), 1)], "Genesis 32:1"),
+        (&[(ge(1, 1), 2)], "Genesis 1:1-2"),
+        (&[(ge(31, 55), 55), (ge(32, 1), 1)], "Genesis 31:55-32:1"),
+        (&[(ge(31, 54), 55)], "Genesis 31:54-55"),
+    ];
+    for (natives, want) in cases {
+        assert_eq!(native_reference(natives, &Standard).as_deref(), Some(want));
+    }
+    assert_eq!(native_reference(&[], &Standard), None);
+}
+
+#[test]
+fn a_scripture_reference_still_being_translated_fills_in_the_open_menu() {
+    use obs_scripture::Passage;
+    let john = |n| Passage::verse(Verse::new(Book::John, 3, n));
+    let prose = "God gave his Son; on why, see the next verse (v. 17) at length.";
+    let mut commentary = obs_engine::testing::commentary(
+        "refcomm",
+        "Reference Commentary (test)",
+        "RC",
+        &[(john(16), None, prose)],
+    );
+    let at = prose.find("v. 17").unwrap();
+    commentary.units[0].spans.push(obs_model::Span {
+        start: at as u32,
+        end: (at + "v. 17".len()) as u32,
+        kind: obs_model::SpanKind::ScriptureRef {
+            targets: vec![john(17)].into(),
+        },
+    });
+    commentary.manifest.content_hash = commentary.content_hash();
+    let mut h = Harness::new();
+    let _files = setup_with(&mut h, "pending-reference", &[commentary]);
+    let tab = open_at_john_3_16(&mut h, "refcomm");
+    let span = h.shell.st.tabs[&tab]
+        .view
+        .as_ref()
+        .unwrap()
+        .doc
+        .units
+        .iter()
+        .find_map(|u| {
+            u.spans
+                .iter()
+                .position(|s| matches!(s.kind, obs_model::SpanKind::ScriptureRef { .. }))
+        })
+        .expect("the reference span");
+    // The worker translates nothing until released.
+    h.shell.st.references.targets = crate::shell::references::TargetCache::held();
+    let section_verse = |h: &Harness| h.texts().iter().filter(|t| **t == "John 3:16").count();
+    let before = section_verse(&h);
+    let spot = super::references::reference_spot(&h, tab, span);
+    right_click(&mut h, spot);
+    assert!(menu_open(&h), "{:?}", h.texts());
+    // The reference as written, not the section's Verse around it.
+    assert!(h.find("v. 17").is_some(), "{:?}", h.texts());
+    assert_eq!(section_verse(&h), before, "{:?}", h.texts());
+    assert!(h.find("John 3:17").is_none(), "{:?}", h.texts());
+
+    // The targets arrive: the open menu offers the referenced Verse.
+    h.shell.st.references.targets.release();
+    h.frames(3);
+    assert!(menu_open(&h), "{:?}", h.texts());
+    assert!(h.find("John 3:17").is_some(), "{:?}", h.texts());
+    // Off the reference first: its preview, now ready, shows "John 3:17" too.
+    hover(&mut h, "Verse");
+    hover(&mut h, "John 3:17");
+    h.click_text("Passage Guide");
+    assert_eq!(focused_kind(&h), TabKind::Guide(Guide::PassageGuide));
+    let ws = &h.shell.session().workspace;
+    assert_eq!(
+        ws.tab(ws.focused().unwrap()).unwrap().history.current(),
+        Some(Verse::new(Book::John, 3, 17))
+    );
+    drop(h);
+}

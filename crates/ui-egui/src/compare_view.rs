@@ -308,12 +308,23 @@ pub struct ComparisonOutput {
     pub context: Option<ComparisonContext>,
 }
 
-/// A right-click on a Verse block: its Standard Verse and, on a row with text, that row's
-/// Bible abbreviation and Verse text.
+/// A right-click on a Verse block: its Standard Verse and, on a row with text, that row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComparisonContext {
     pub verse: Verse,
-    pub row: Option<(String, String)>,
+    pub row: Option<ComparisonRow>,
+}
+
+/// One Bible's text in a Verse block, as Copy with reference copies it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComparisonRow {
+    /// The Bible's resource id and abbreviation.
+    pub bible: String,
+    pub abbreviation: String,
+    /// Its own Verses in the block (its numbering may differ from the block's Standard
+    /// Verse), with the last verse number each covers.
+    pub natives: Vec<(Verse, u16)>,
+    pub text: String,
 }
 
 /// Highlight rectangles `[x0, y0, x1, y1]` of the clusters of `laid` whose text bytes fall in
@@ -589,10 +600,16 @@ pub fn comparison_pane(
             height = height.max(label_h);
             if let Some(p) = context_at
                 && (row_y..row_y + height + ROW_GAP).contains(&p.y)
-                && let Cell::Text { text, .. } = &c.cell
+                && let Cell::Text { natives, text } = &c.cell
                 && !text.is_empty()
+                && let Some(bible) = view.docs.get(row)
             {
-                row_context = Some((view.abbreviation(row).to_string(), text.clone()));
+                row_context = Some(ComparisonRow {
+                    bible: bible.id.clone(),
+                    abbreviation: bible.abbreviation.clone(),
+                    natives: natives.clone(),
+                    text: text.clone(),
+                });
             }
             if accessible && (accessible_laid.is_some() || !accessible_text.is_empty()) {
                 crate::a11y::publish_comparison_row(
