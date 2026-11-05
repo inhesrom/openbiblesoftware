@@ -1,20 +1,38 @@
-//! Get Bibles (#91): the catalog of Bibles offered by SWORD repositories.
+//! Get Resources (#91, #132): the catalog of Bibles, Lexicons, Commentaries and Dictionaries
+//! offered by SWORD repositories. (The module, Tab kind and command ids keep their Get Bibles
+//! names: saved Layouts and scripts name them.)
 //!
 //! A catalog job reads CrossWire's master repository list and each repository's catalog
-//! through the app's transport ([`Session::set_fetch`]), keeps the Bibles, and caches them so
-//! the Tab opens offline. Every byte comes from the repositories themselves.
+//! through the app's transport ([`Session::set_fetch`]), keeps the modules SWORD Import knows,
+//! and caches them so the Tab opens offline. Every byte comes from the repositories themselves.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use obs_model::ResourceType;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params};
 use crate::{JobEvent, JobEventKind, JobId, Session};
 
-/// The Featured section's data file: module + repository, in display order.
-const FEATURED_TOML: &str = include_str!("../data/featured-bibles.toml");
+/// The Featured Bibles' data file: module + repository, in display order.
+const FEATURED_BIBLES_TOML: &str = include_str!("../data/featured-bibles.toml");
+
+/// The Featured Lexicons, Commentaries and Dictionaries, one array per type.
+const FEATURED_RESOURCES_TOML: &str = include_str!("../data/featured-resources.toml");
+
+/// The Resource types the catalog lists, in the type filter's order.
+pub const LISTED_TYPES: [ResourceType; 4] = [
+    ResourceType::Bible,
+    ResourceType::Lexicon,
+    ResourceType::Commentary,
+    ResourceType::Dictionary,
+];
+
+/// Bumped when the cached catalog's contents change meaning; an older cache is shown but
+/// refreshed at once. 2: Lexicons, Commentaries and Dictionaries (#132).
+pub const CATALOG_VERSION: u32 = 2;
 
 /// Opening Get Bibles refreshes a catalog older than this (6 hours).
 pub const REFRESH_AFTER_SECS: u64 = 6 * 60 * 60;
@@ -22,27 +40,59 @@ pub const REFRESH_AFTER_SECS: u64 = 6 * 60 * 60;
 /// The repository preferred when the same module is offered by several.
 pub const PREFERRED_REPO: &str = "CrossWire";
 
-/// One Featured row as written in the data file.
+/// One Featured row as written in a data file.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct FeaturedBible {
+pub struct FeaturedModule {
     pub module: String,
     pub repo: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 struct FeaturedFile {
-    bible: Vec<FeaturedBible>,
+    bible: Vec<FeaturedModule>,
+    lexicon: Vec<FeaturedModule>,
+    commentary: Vec<FeaturedModule>,
+    dictionary: Vec<FeaturedModule>,
 }
 
-/// The Featured list, in display order.
-pub fn featured_bibles() -> Vec<FeaturedBible> {
-    parse_featured(FEATURED_TOML).unwrap_or_default()
+/// The Featured list of one Resource type, in display order.
+pub fn featured(ty: ResourceType) -> Vec<FeaturedModule> {
+    let text = if ty == ResourceType::Bible {
+        FEATURED_BIBLES_TOML
+    } else {
+        FEATURED_RESOURCES_TOML
+    };
+    let Ok(file) = toml::from_str::<FeaturedFile>(text) else {
+        return Vec::new();
+    };
+    match ty {
+        ResourceType::Bible => file.bible,
+        ResourceType::Lexicon => file.lexicon,
+        ResourceType::Commentary => file.commentary,
+        ResourceType::Dictionary => file.dictionary,
+        ResourceType::CrossReferenceSet | ResourceType::PeopleAndPlaces => Vec::new(),
+    }
 }
 
-fn parse_featured(text: &str) -> Result<Vec<FeaturedBible>, String> {
-    toml::from_str::<FeaturedFile>(text)
-        .map(|f| f.bible)
-        .map_err(|e| e.to_string())
+/// Every Featured list, Bibles first.
+pub fn featured_all() -> Vec<FeaturedModule> {
+    LISTED_TYPES.into_iter().flat_map(featured).collect()
+}
+
+/// A type filter's id in commands: `bibles`, `lexicons`, `commentaries`, `dictionaries`
+/// (singular too, any case); `all` or empty is no filter.
+pub fn type_filter_from_id(id: &str) -> Result<Option<ResourceType>, String> {
+    match id.trim().to_lowercase().as_str() {
+        "" | "all" => Ok(None),
+        "bible" | "bibles" => Ok(Some(ResourceType::Bible)),
+        "lexicon" | "lexicons" => Ok(Some(ResourceType::Lexicon)),
+        "commentary" | "commentaries" => Ok(Some(ResourceType::Commentary)),
+        "dictionary" | "dictionaries" => Ok(Some(ResourceType::Dictionary)),
+        other => Err(format!(
+            "Unknown type {other:?}: use bibles, lexicons, commentaries, dictionaries or all"
+        )),
+    }
 }
 
 /// How to reach one repository again (for downloads), from its catalog.
@@ -77,11 +127,19 @@ impl RepoRef {
     }
 }
 
-/// One Bible a repository offers.
+fn bible() -> ResourceType {
+    ResourceType::Bible
+}
+
+/// One Bible, Lexicon, Commentary or Dictionary a repository offers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BibleListing {
+pub struct ResourceListing {
     /// SWORD module name (`NASB1995`).
     pub module: String,
+    /// What it imports as. A Dictionary module whose conf has `Feature=GreekDef` or
+    /// `HebrewDef` is a Lexicon.
+    #[serde(default = "bible")]
+    pub kind: ResourceType,
     /// Repository caption (`Lockman Foundation`).
     pub repo: String,
     /// `Description` from the conf.
@@ -95,10 +153,31 @@ pub struct BibleListing {
     /// `DistributionLicense` from the conf, as published.
     pub licence: Option<String>,
     pub version: Option<String>,
+    /// A Bible tagged with Strong's numbers (`Feature=StrongsNumbers`).
+    #[serde(default)]
+    pub strongs: bool,
+    /// Why SWORD Import refuses the module today (Commentary numbering, `HREFCom`, …). The
+    /// row is shown, but cannot be downloaded.
+    #[serde(default)]
+    pub refused: Option<String>,
 }
 
-impl BibleListing {
-    fn from_remote(repo: &str, m: &obs_formats::sword_repo::RemoteModule) -> Self {
+impl ResourceListing {
+    /// The listing for a module, or `None` when it is not a type the catalog lists
+    /// (general books) or is locked.
+    fn from_remote(repo: &str, m: &obs_formats::sword_repo::RemoteModule) -> Option<Self> {
+        use obs_formats::sword_repo::ModuleKind;
+        if m.conf.is_locked() {
+            return None;
+        }
+        let has = |f: &str| m.conf.features().iter().any(|x| x.eq_ignore_ascii_case(f));
+        let kind = match m.conf.module_kind().ok()? {
+            ModuleKind::Bible => ResourceType::Bible,
+            ModuleKind::Commentary => ResourceType::Commentary,
+            ModuleKind::Dictionary if has("GreekDef") || has("HebrewDef") => ResourceType::Lexicon,
+            ModuleKind::Dictionary => ResourceType::Dictionary,
+            ModuleKind::GenBook | ModuleKind::Unknown => return None,
+        };
         let conf = &m.conf;
         let text = |k: &str| {
             conf.get(k)
@@ -106,8 +185,9 @@ impl BibleListing {
                 .filter(|v| !v.is_empty())
                 .map(str::to_string)
         };
-        Self {
+        Some(Self {
             module: m.name().to_string(),
+            kind,
             repo: repo.to_string(),
             title: text("Description").unwrap_or_else(|| m.name().to_string()),
             abbreviation: text("Abbreviation").unwrap_or_else(|| m.name().to_string()),
@@ -115,6 +195,21 @@ impl BibleListing {
             size: text("InstallSize").and_then(|s| s.parse().ok()),
             licence: text("DistributionLicense"),
             version: text("Version"),
+            strongs: kind == ResourceType::Bible && has("StrongsNumbers"),
+            refused: obs_formats::sword_import_type(conf).err(),
+        })
+    }
+
+    /// Which features the Resource feeds, for its row: "Used by Passage Guide › Commentaries".
+    pub fn used_by(&self) -> Option<&'static str> {
+        match self.kind {
+            ResourceType::Bible if self.strongs => {
+                Some("Used by Word Study › Translated as and Occurrences")
+            }
+            ResourceType::Lexicon => Some("Used by Word Study › Lexicon entries and Word Info"),
+            ResourceType::Commentary => Some("Used by Passage Guide › Commentaries"),
+            ResourceType::Dictionary => Some("Used by Passage Guide › People & places"),
+            _ => None,
         }
     }
 
@@ -133,25 +228,31 @@ impl BibleListing {
     }
 }
 
-/// The Bibles of every repository on the master list, as last fetched.
+/// The Bibles, Lexicons, Commentaries and Dictionaries of every repository on the master
+/// list, as last fetched.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BibleCatalog {
+pub struct ResourceCatalog {
+    /// [`CATALOG_VERSION`] when it was fetched; 0 for a Bibles-only cache from before #132.
+    #[serde(default)]
+    pub version: u32,
     /// Seconds since the Unix epoch when it was fetched.
     pub fetched_at: u64,
     pub repos: Vec<RepoRef>,
     /// One per module name (case-insensitive), the preferred source kept.
-    pub bibles: Vec<BibleListing>,
+    #[serde(alias = "bibles")]
+    pub listings: Vec<ResourceListing>,
     /// Repositories that could not be read this time, and why.
     pub failed: Vec<(String, String)>,
 }
 
-impl BibleCatalog {
+impl ResourceCatalog {
     /// Build from per-repository listings, one row per module (see [`dedupe`]).
-    pub fn new(fetched_at: u64, repos: Vec<RepoRef>, listings: Vec<BibleListing>) -> Self {
+    pub fn new(fetched_at: u64, repos: Vec<RepoRef>, listings: Vec<ResourceListing>) -> Self {
         Self {
+            version: CATALOG_VERSION,
             fetched_at,
             repos,
-            bibles: dedupe(listings, &featured_bibles()),
+            listings: dedupe(listings, &featured_all()),
             failed: Vec::new(),
         }
     }
@@ -160,26 +261,38 @@ impl BibleCatalog {
         self.repos.iter().find(|r| r.name == name)
     }
 
-    pub fn get(&self, module: &str) -> Option<&BibleListing> {
-        self.bibles
+    pub fn get(&self, module: &str) -> Option<&ResourceListing> {
+        self.listings
             .iter()
             .find(|b| b.module.eq_ignore_ascii_case(module))
     }
 
-    /// The Featured rows, in data-file order; modules no repository offers are left out.
-    pub fn featured(&self) -> Vec<&BibleListing> {
-        featured_bibles()
+    /// The Featured rows of one type, in data-file order; modules no repository offers (or
+    /// offers as another type) are left out.
+    pub fn featured(&self, ty: ResourceType) -> Vec<&ResourceListing> {
+        featured(ty)
             .iter()
             .filter_map(|f| self.get(&f.module))
+            .filter(|b| b.kind == ty)
             .collect()
     }
 
-    /// "All Bibles": every listing matching `query` and, if given, `language`, by title.
-    pub fn all(&self, query: &str, language: Option<&str>) -> Vec<&BibleListing> {
-        let mut out: Vec<&BibleListing> = self
-            .bibles
+    /// "All": every listing of type `ty` (any listed type when `None`) matching `query` and,
+    /// if given, `language`, by title. The three filters combine.
+    pub fn all(
+        &self,
+        query: &str,
+        language: Option<&str>,
+        ty: Option<ResourceType>,
+    ) -> Vec<&ResourceListing> {
+        let mut out: Vec<&ResourceListing> = self
+            .listings
             .iter()
-            .filter(|b| b.matches(query) && language.is_none_or(|l| b.language == l))
+            .filter(|b| {
+                ty.is_none_or(|t| b.kind == t)
+                    && b.matches(query)
+                    && language.is_none_or(|l| b.language == l)
+            })
             .collect();
         out.sort_by(|a, b| {
             a.title
@@ -190,10 +303,15 @@ impl BibleCatalog {
         out
     }
 
-    /// Language codes present, most Bibles first, for the language filter.
-    pub fn languages(&self) -> Vec<(String, usize)> {
+    /// Language codes present among listings of type `ty` (all types when `None`), most
+    /// listings first, for the language filter.
+    pub fn languages(&self, ty: Option<ResourceType>) -> Vec<(String, usize)> {
         let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
-        for b in &self.bibles {
+        for b in self
+            .listings
+            .iter()
+            .filter(|b| ty.is_none_or(|t| b.kind == t))
+        {
             *counts.entry(b.language.as_str()).or_default() += 1;
         }
         let mut out: Vec<(String, usize)> = counts
@@ -205,10 +323,11 @@ impl BibleCatalog {
     }
 }
 
-/// One row per module name (case-insensitive). The source kept is, in order: the
-/// repository the Featured list names, then CrossWire, then the first repository listed.
-pub fn dedupe(listings: Vec<BibleListing>, featured: &[FeaturedBible]) -> Vec<BibleListing> {
-    let rank = |b: &BibleListing| -> u8 {
+/// One row per module name (case-insensitive), whatever its type: a SWORD folder holds one
+/// module of a name. The source kept is, in order: the repository a Featured list names, then
+/// CrossWire, then the first repository listed.
+pub fn dedupe(listings: Vec<ResourceListing>, featured: &[FeaturedModule]) -> Vec<ResourceListing> {
+    let rank = |b: &ResourceListing| -> u8 {
         let featured_here = featured.iter().any(|f| {
             f.module.eq_ignore_ascii_case(&b.module) && f.repo.eq_ignore_ascii_case(&b.repo)
         });
@@ -220,7 +339,7 @@ pub fn dedupe(listings: Vec<BibleListing>, featured: &[FeaturedBible]) -> Vec<Bi
             2
         }
     };
-    let mut kept: Vec<BibleListing> = Vec::new();
+    let mut kept: Vec<ResourceListing> = Vec::new();
     let mut at: BTreeMap<String, usize> = BTreeMap::new();
     for b in listings {
         let key = b.module.to_lowercase();
@@ -239,15 +358,15 @@ pub fn dedupe(listings: Vec<BibleListing>, featured: &[FeaturedBible]) -> Vec<Bi
     kept
 }
 
-/// Read every repository on the master list and keep their Bibles. Repositories that fail
-/// are listed in [`BibleCatalog::failed`]; only a failure to read the master list (or every
-/// repository) fails the whole fetch.
+/// Read every repository on the master list and keep their Bibles, Lexicons, Commentaries
+/// and Dictionaries. Repositories that fail are listed in [`ResourceCatalog::failed`]; only a
+/// failure to read the master list (or every repository) fails the whole fetch.
 pub fn fetch_catalog(
     installer: &obs_formats::sword_repo::Installer,
     fetch: &dyn obs_formats::sword_repo::Fetch,
     is_cancelled: &dyn Fn() -> bool,
     now: u64,
-) -> Result<BibleCatalog, String> {
+) -> Result<ResourceCatalog, String> {
     let repos = installer
         .master_repo_list()
         .map_err(|e| format!("Could not read the repository list: {e}"))?;
@@ -256,26 +375,26 @@ pub fn fetch_catalog(
     Ok(catalog)
 }
 
-/// Featured Bibles whose conf gives no `InstallSize` (Lockman's do not) get the size of
+/// Featured modules whose conf gives no `InstallSize` (Lockman's do not) get the size of
 /// the package zip the download will fetch, asked of the repository without downloading it.
 fn featured_sizes(
-    catalog: &mut BibleCatalog,
+    catalog: &mut ResourceCatalog,
     fetch: &dyn obs_formats::sword_repo::Fetch,
     is_cancelled: &dyn Fn() -> bool,
 ) {
-    for f in featured_bibles() {
+    for f in featured_all() {
         if is_cancelled() {
             return;
         }
         let Some(i) = catalog
-            .bibles
+            .listings
             .iter()
             .position(|b| b.module.eq_ignore_ascii_case(&f.module) && b.size.is_none())
         else {
             continue;
         };
-        let module = catalog.bibles[i].module.clone();
-        let Some(repo) = catalog.repo(&catalog.bibles[i].repo) else {
+        let module = catalog.listings[i].module.clone();
+        let Some(repo) = catalog.repo(&catalog.listings[i].repo) else {
             continue;
         };
         let mut names = vec![module.clone()];
@@ -290,7 +409,7 @@ fn featured_sizes(
                     .flatten()
             })
         });
-        catalog.bibles[i].size = size;
+        catalog.listings[i].size = size;
     }
 }
 
@@ -300,7 +419,7 @@ pub fn fetch_repos(
     repos: &[obs_formats::sword_repo::Repository],
     is_cancelled: &dyn Fn() -> bool,
     now: u64,
-) -> Result<BibleCatalog, String> {
+) -> Result<ResourceCatalog, String> {
     let mut listings = Vec::new();
     let mut refs = Vec::new();
     let mut failed = Vec::new();
@@ -313,9 +432,9 @@ pub fn fetch_repos(
                 refs.push(RepoRef::from_repository(repo));
                 listings.extend(
                     catalog
-                        .of_kind(obs_formats::sword_repo::ModuleKind::Bible)
-                        .filter(|m| !m.conf.is_locked())
-                        .map(|m| BibleListing::from_remote(&repo.name, m)),
+                        .modules
+                        .iter()
+                        .filter_map(|m| ResourceListing::from_remote(&repo.name, m)),
                 );
             }
             Err(e) if obs_formats::sword_repo::is_cancelled(&e) => {
@@ -331,15 +450,17 @@ pub fn fetch_repos(
             .unwrap_or_default();
         return Err(format!("Could not reach any SWORD repository ({why})"));
     }
-    let mut catalog = BibleCatalog::new(now, refs, listings);
+    let mut catalog = ResourceCatalog::new(now, refs, listings);
     catalog.failed = failed;
     Ok(catalog)
 }
 
-/// Get Bibles state on the Session.
+/// Get Resources state on the Session.
 #[derive(Debug, Default)]
 pub struct GetBibles {
-    catalog: Option<BibleCatalog>,
+    catalog: Option<ResourceCatalog>,
+    /// The Tab's type filter; `None` is All. Get Bibles… sets Bibles.
+    type_filter: Option<ResourceType>,
     /// Why the last refresh failed (offline, repository down), while the cache is shown.
     offline: Option<String>,
     refreshing: Option<JobId>,
@@ -348,8 +469,16 @@ pub struct GetBibles {
 }
 
 impl GetBibles {
-    pub fn catalog(&self) -> Option<&BibleCatalog> {
+    pub fn catalog(&self) -> Option<&ResourceCatalog> {
         self.catalog.as_ref()
+    }
+
+    pub fn type_filter(&self) -> Option<ResourceType> {
+        self.type_filter
+    }
+
+    pub fn set_type_filter(&mut self, ty: Option<ResourceType>) {
+        self.type_filter = ty;
     }
 
     /// Set when the last refresh failed; the Tab shows the cached catalog with this message.
@@ -361,15 +490,15 @@ impl GetBibles {
         self.refreshing.is_some()
     }
 
-    /// No catalog yet, the last refresh failed, or the catalog is older than
-    /// [`REFRESH_AFTER_SECS`].
+    /// No catalog yet, the last refresh failed, the catalog is older than
+    /// [`REFRESH_AFTER_SECS`], or it was cached by an older version ([`CATALOG_VERSION`]).
     pub fn needs_refresh(&self, now: u64) -> bool {
         self.refreshing.is_none()
             && (self.offline.is_some()
-                || self
-                    .catalog
-                    .as_ref()
-                    .is_none_or(|c| now.saturating_sub(c.fetched_at) > REFRESH_AFTER_SECS))
+                || self.catalog.as_ref().is_none_or(|c| {
+                    c.version < CATALOG_VERSION
+                        || now.saturating_sub(c.fetched_at) > REFRESH_AFTER_SECS
+                }))
     }
 
     /// Where the catalog is cached. The app sets [`default_catalog_cache`] at startup;
@@ -394,7 +523,7 @@ impl GetBibles {
             return;
         };
         if let Ok(text) = std::fs::read_to_string(path)
-            && let Ok(catalog) = serde_json::from_str::<BibleCatalog>(&text)
+            && let Ok(catalog) = serde_json::from_str::<ResourceCatalog>(&text)
         {
             self.catalog = Some(catalog);
         }
@@ -431,9 +560,9 @@ pub fn default_sword_dir() -> Option<PathBuf> {
     Some(crate::library::data_dir()?.join("sword"))
 }
 
-/// What a Bible's row offers: Download, progress, Open, or Retry.
+/// What a listing's row offers: Download, progress, Open, or Retry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BibleStatus {
+pub enum ListingStatus {
     Available,
     /// Downloading or importing; `phase` as on the Import report.
     InProgress {
@@ -460,8 +589,8 @@ pub(crate) fn now_secs() -> u64 {
 
 impl Session {
     /// Where `listing` stands: in the Library, downloading, failed, or available.
-    pub fn bible_status(&self, listing: &BibleListing) -> BibleStatus {
-        let mut best = BibleStatus::Available;
+    pub fn listing_status(&self, listing: &ResourceListing) -> ListingStatus {
+        let mut best = ListingStatus::Available;
         for r in self.imports.records() {
             let Some(origin) = &r.origin else {
                 continue;
@@ -472,27 +601,27 @@ impl Session {
             }
             let id = r.resource_id.clone();
             let status = if self.imports.job_of(&id).is_some() {
-                BibleStatus::InProgress {
+                ListingStatus::InProgress {
                     resource_id: id,
                     phase: r.phase.clone(),
                     done: r.done,
                     total: r.total,
                 }
             } else if r.phase == crate::ImportPhase::Complete && self.library.get(&id).is_some() {
-                BibleStatus::Installed { resource_id: id }
+                ListingStatus::Installed { resource_id: id }
             } else if r.phase == crate::ImportPhase::Failed {
-                BibleStatus::Failed {
+                ListingStatus::Failed {
                     resource_id: id,
                     error: r.error.clone().unwrap_or_default(),
                 }
             } else {
                 continue;
             };
-            let rank = |s: &BibleStatus| match s {
-                BibleStatus::Installed { .. } => 3,
-                BibleStatus::InProgress { .. } => 2,
-                BibleStatus::Failed { .. } => 1,
-                BibleStatus::Available => 0,
+            let rank = |s: &ListingStatus| match s {
+                ListingStatus::Installed { .. } => 3,
+                ListingStatus::InProgress { .. } => 2,
+                ListingStatus::Failed { .. } => 1,
+                ListingStatus::Available => 0,
             };
             if rank(&status) > rank(&best) {
                 best = status;
@@ -504,11 +633,11 @@ impl Session {
     /// Download `module` from its repository and import it, with its live Import report.
     /// A failed earlier attempt is replaced (Retry). Returns the Resource id, report Tab and job.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn download_bible(&mut self, module: &str) -> Result<(String, u64, JobId), String> {
+    pub fn download_resource(&mut self, module: &str) -> Result<(String, u64, JobId), String> {
         let catalog = self
             .get_bibles
             .catalog()
-            .ok_or("The Bible catalog has not been fetched yet")?;
+            .ok_or("The Resource catalog has not been fetched yet")?;
         let listing = catalog
             .get(module)
             .cloned()
@@ -517,14 +646,17 @@ impl Session {
             .repo(&listing.repo)
             .cloned()
             .ok_or_else(|| format!("Repository {} is not in the catalog", listing.repo))?;
-        match self.bible_status(&listing) {
-            BibleStatus::Installed { .. } => {
+        if let Some(why) = &listing.refused {
+            return Err(format!("{} cannot be imported yet: {why}", listing.title));
+        }
+        match self.listing_status(&listing) {
+            ListingStatus::Installed { .. } => {
                 return Err(format!("{} is already in your Library", listing.title));
             }
-            BibleStatus::InProgress { .. } => {
+            ListingStatus::InProgress { .. } => {
                 return Err(format!("{} is already downloading", listing.title));
             }
-            BibleStatus::Failed { .. } | BibleStatus::Available => {}
+            ListingStatus::Failed { .. } | ListingStatus::Available => {}
         }
         // Retry: drop earlier failed attempts and their report Tabs.
         let failed: Vec<String> = self
@@ -562,12 +694,12 @@ impl Session {
     }
 
     /// Start a catalog refresh unless one is running. Returns the job.
-    pub fn refresh_bible_catalog(&mut self) -> JobId {
+    pub fn refresh_resource_catalog(&mut self) -> JobId {
         if let Some(job) = self.get_bibles.refreshing {
             return job;
         }
         let fetch = self.fetch();
-        let job = self.jobs().submit_fn("Get Bibles catalog", move |ctx| {
+        let job = self.jobs().submit_fn("Get Resources catalog", move |ctx| {
             let installer = crate::sword_installer(fetch.clone(), ctx);
             let cancelled = || ctx.is_cancelled();
             fetch_catalog(&installer, fetch.as_ref(), &cancelled, now_secs())
@@ -576,7 +708,7 @@ impl Session {
         job
     }
 
-    /// Apply Get Bibles job events; return the rest.
+    /// Apply Get Resources catalog job events; return the rest.
     pub(crate) fn poll_get_bibles(&mut self, events: Vec<JobEvent>) -> Vec<JobEvent> {
         let mut other = Vec::new();
         for event in events {
@@ -587,12 +719,12 @@ impl Session {
             match event.kind {
                 JobEventKind::Finished(out) => {
                     self.get_bibles.refreshing = None;
-                    if let Ok(catalog) = out.downcast::<BibleCatalog>() {
+                    if let Ok(catalog) = out.downcast::<ResourceCatalog>() {
                         self.get_bibles.catalog = Some(*catalog);
                         self.get_bibles.offline = None;
                         if let Err(e) = self.get_bibles.save_cache() {
                             self.workspace.push_effect(crate::Effect::Message(format!(
-                                "Could not cache the Bible catalog: {e}"
+                                "Could not cache the Resource catalog: {e}"
                             )));
                         }
                     }
@@ -627,24 +759,31 @@ const LANGUAGE: ParamSpec = ParamSpec {
     name: "language",
     kind: ParamKind::String,
     required: false,
-    help: "Only Bibles in this language (BCP 47 code)",
+    help: "Only Resources in this language (BCP 47 code)",
+};
+/// The type filter, for `getbibles.list` and `library.get_resources`.
+pub(crate) const TYPE: ParamSpec = ParamSpec {
+    name: "type",
+    kind: ParamKind::String,
+    required: false,
+    help: "bibles, lexicons, commentaries, dictionaries or all",
 };
 
 pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "getbibles.refresh",
-        label: "Refresh Bible catalog",
+        label: "Refresh Resource catalog",
         shortcut: None,
         params: &[],
         enabled: crate::command::always,
         run: |s, _| {
-            let job = s.refresh_bible_catalog();
+            let job = s.refresh_resource_catalog();
             Ok(json!({"job": job.0}))
         },
     },
     CommandSpec {
         id: "getbibles.download",
-        label: "Download Bible",
+        label: "Download Resource",
         shortcut: None,
         params: &[MODULE],
         enabled: desktop,
@@ -652,9 +791,9 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "getbibles.list",
-        label: "List available Bibles",
+        label: "List available Resources",
         shortcut: None,
-        params: &[QUERY, LANGUAGE],
+        params: &[QUERY, LANGUAGE, TYPE],
         enabled: crate::command::always,
         run: list,
     },
@@ -676,7 +815,7 @@ fn download(_: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
 fn download(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let module = p.str("module").unwrap_or_default();
     let (id, tab, job) = s
-        .download_bible(module)
+        .download_resource(module)
         .map_err(|message| CommandError::Failed {
             command: "getbibles.download",
             message,
@@ -684,21 +823,36 @@ fn download(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     Ok(json!({"id": id, "tab": tab, "job": job.0}))
 }
 
+/// The listings, filtered by `query`, `language` and `type` (all types when not given).
+/// `featured` holds the Featured rows of the type, or of every type, Bibles first.
 fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    let ty = type_filter_from_id(p.str("type").unwrap_or_default()).map_err(|message| {
+        CommandError::Failed {
+            command: "getbibles.list",
+            message,
+        }
+    })?;
     let Some(catalog) = s.get_bibles.catalog() else {
         return Ok(json!({"featured": [], "all": [], "offline": s.get_bibles.offline()}));
     };
-    let row = |b: &BibleListing| {
-        json!({"module": b.module, "repo": b.repo, "title": b.title,
-               "abbreviation": b.abbreviation, "language": b.language,
-               "size": b.size, "licence": b.licence})
+    let row = |b: &ResourceListing| {
+        json!({"module": b.module, "type": crate::library_search::type_id(b.kind),
+               "repo": b.repo, "title": b.title, "abbreviation": b.abbreviation,
+               "language": b.language, "size": b.size, "licence": b.licence,
+               "used_by": b.used_by(), "refused": b.refused})
     };
     let query = p.str("query").unwrap_or_default();
     let language = p.str("language").filter(|l| !l.is_empty());
+    let featured: Vec<Value> = LISTED_TYPES
+        .into_iter()
+        .filter(|t| ty.is_none_or(|ty| ty == *t))
+        .flat_map(|t| catalog.featured(t))
+        .map(row)
+        .collect();
     Ok(json!({
         "fetched_at": catalog.fetched_at,
         "offline": s.get_bibles.offline(),
-        "featured": catalog.featured().into_iter().map(row).collect::<Vec<_>>(),
-        "all": catalog.all(query, language).into_iter().map(row).collect::<Vec<_>>(),
+        "featured": featured,
+        "all": catalog.all(query, language, ty).into_iter().map(row).collect::<Vec<_>>(),
     }))
 }

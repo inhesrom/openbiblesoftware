@@ -163,12 +163,7 @@ pub fn import_sword(
         module: name.clone(),
         reason,
     };
-    if conf.is_locked() {
-        return Err(unsupported(
-            "it is enciphered (locked) and needs an unlock key from its publisher".into(),
-        ));
-    }
-    let resource_type = resource_type(&conf).map_err(unsupported)?;
+    let resource_type = sword_import_type(&conf).map_err(unsupported)?;
     let (manifest, license_missing) = manifest(&conf, resource_type, options)?;
     let sword_err = |e: sword_modules::Error| ImportError::Sword(format!("{name}: {e}"));
     let opened = source.library.open_module(&name).map_err(sword_err)?;
@@ -190,13 +185,7 @@ pub fn import_sword(
         }
         ResourceType::Commentary => {
             let module = opened.into_verse().map_err(sword_err)?;
-            let v11n = conf.versification();
-            report.versification_hint = Some(v11n.to_string());
-            if !matches!(v11n, "KJV" | "KJVA") {
-                return Err(unsupported(format!(
-                    "Commentary numbering {v11n} cannot yet be normalized to Standard; import refused"
-                )));
-            }
+            report.versification_hint = Some(conf.versification().to_string());
             import_commentary(&module, &mut builder, &mut w, &mut report).map_err(sword_err)?;
         }
         ResourceType::Lexicon | ResourceType::Dictionary => {
@@ -232,7 +221,23 @@ pub fn import_sword(
     Ok((resource, report))
 }
 
-/// What a module imports as, or why it cannot be imported.
+/// What SWORD Import makes of a module, or why it refuses it, from the conf alone: a
+/// repository catalog can tell before anything is downloaded (Get Resources, #132).
+pub fn sword_import_type(conf: &ModuleConf) -> Result<ResourceType, String> {
+    if conf.is_locked() {
+        return Err("it is enciphered (locked) and needs an unlock key from its publisher".into());
+    }
+    let resource_type = resource_type(conf)?;
+    let v11n = conf.versification();
+    if resource_type == ResourceType::Commentary && !matches!(v11n, "KJV" | "KJVA") {
+        return Err(format!(
+            "Commentary numbering {v11n} cannot yet be normalized to Standard; import refused"
+        ));
+    }
+    Ok(resource_type)
+}
+
+/// What a module's driver and features make it, or why it cannot be imported.
 fn resource_type(conf: &ModuleConf) -> Result<ResourceType, String> {
     let drv = conf.mod_drv().map_err(|e| e.to_string())?;
     match drv.kind() {
@@ -892,6 +897,28 @@ mod tests {
             Ok(ResourceType::Dictionary)
         );
         assert!(resource_type(&conf(&[("ModDrv", "RawGenBook")])).is_err());
+        // What a repository catalog shows as not importable, from the conf alone.
+        assert_eq!(
+            sword_import_type(&conf(&[("ModDrv", "zCom4"), ("Versification", "KJVA")])),
+            Ok(ResourceType::Commentary)
+        );
+        assert_eq!(
+            sword_import_type(&conf(&[("ModDrv", "zCom"), ("Versification", "NRSV")])),
+            Err(
+                "Commentary numbering NRSV cannot yet be normalized to Standard; import refused"
+                    .into()
+            )
+        );
+        assert!(
+            sword_import_type(&conf(&[("ModDrv", "HREFCom")]))
+                .unwrap_err()
+                .contains("web pages")
+        );
+        assert!(
+            sword_import_type(&conf(&[("ModDrv", "zText"), ("CipherKey", "")]))
+                .unwrap_err()
+                .contains("locked")
+        );
         assert!(
             resource_type(&conf(&[
                 ("ModDrv", "zLD"),
