@@ -24,6 +24,7 @@ use crate::theme;
 use crate::view::ReadingView;
 use crate::workers::SnippetCache;
 
+mod annotate;
 mod credits_tab;
 mod get_bibles_tab;
 mod guide_tab;
@@ -73,6 +74,10 @@ struct TabUi {
     expanded_references: std::collections::BTreeSet<Verse>,
     /// A Passage Guide section whose header is being dragged.
     guide_drag: Option<obs_engine::GuideSection>,
+    /// The selection toolbar is up (from a selection's release until the next press).
+    toolbar: bool,
+    /// Where the selection was drawn last frame, in screen points.
+    selection_rect: Option<egui::Rect>,
 }
 
 /// How long a jump's flash lasts, in seconds.
@@ -109,6 +114,10 @@ pub(crate) struct State {
     dwell: Option<Dwell>,
     /// Inline-snippet layouts for Word Info's word and Lemma.
     snippets: SnippetCache,
+    /// Highlights and Notes to draw, per Resource (#62).
+    marks: annotate::MarkCache,
+    /// The popup Note editor, when open.
+    note_editor: Option<annotate::NoteEditor>,
 }
 
 /// The app window's content: menus, Search field and the docked Workspace.
@@ -148,6 +157,8 @@ impl Shell {
                 panels: std::collections::HashMap::new(),
                 dwell: None,
                 snippets: SnippetCache::default(),
+                marks: annotate::MarkCache::default(),
+                note_editor: None,
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -279,6 +290,7 @@ impl Shell {
                 Effect::PickImport => self.st.pick_import = true,
                 Effect::Removed(id) => {
                     self.st.docs.remove(&id);
+                    self.st.marks.forget(&id);
                 }
             }
         }
@@ -633,16 +645,33 @@ impl Shell {
         self.st.overlays(ui);
         self.apply_effects();
         let closing = ui.input(|i| i.viewport().close_requested());
+        if closing {
+            // A Note being written is saved, as if focus had left it. One that cannot be saved
+            // keeps the window open, showing why, until it is saved or discarded.
+            self.st.save_note();
+            if self.st.note_editor.is_some() {
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
+        }
         self.save_session(closing);
     }
 
     fn shortcuts(&mut self, ui: &mut Ui) {
         let focused = self.st.session.workspace.focused();
+        // Keys a text field uses itself (Ctrl+Z, Esc …) are left to it while it has focus.
+        let typing = ui.ctx().text_edit_focused();
+        let all = bindings(&self.st.session);
+        let bound: Vec<(&obs_engine::CommandSpec, egui::KeyboardShortcut)> = self
+            .st
+            .session
+            .commands()
+            .iter()
+            .filter(|spec| !(typing && spec.shortcut.is_some_and(annotate::yields_to_text_fields)))
+            .filter_map(|spec| Some((spec, spec.shortcut.and_then(parse_shortcut)?)))
+            .collect();
         let mut run: Vec<(&'static str, Value)> = Vec::new();
-        for spec in self.st.session.commands().iter() {
-            let Some(sc) = spec.shortcut.and_then(parse_shortcut) else {
-                continue;
-            };
+        for (spec, sc) in bound {
             let needs_tab = spec.params.iter().any(|p| p.name == "tab" && p.required);
             let other_required = spec.params.iter().any(|p| p.required && p.name != "tab");
             if other_required || (needs_tab && focused.is_none()) {
@@ -652,7 +681,8 @@ impl Shell {
             if !self.st.session.is_enabled(spec.id) {
                 continue;
             }
-            if ui.input_mut(|i| i.consume_shortcut(&sc)) {
+            if ui.input_mut(|i| consume_key(i, sc.modifiers, sc.logical_key, extra_held(sc, &all)))
+            {
                 let params = match (needs_tab, focused) {
                     (true, Some(t)) => json!({ "tab": t.0 }),
                     _ => json!({}),
@@ -663,6 +693,8 @@ impl Shell {
         for (id, p) in run {
             self.run(id, &p);
         }
+        self.st.annotation_keys(ui);
+        self.apply_effects();
     }
 
     fn menu_bar(&mut self, ui: &mut Ui) {
@@ -830,6 +862,60 @@ fn replace_child(c: &mut Container, old: TileId, new: TileId) {
     if let Some(slot) = children.iter_mut().find(|c| **c == old) {
         *slot = new;
     }
+}
+
+/// Every key binding in the app: the commands' and the annotation keys.
+pub(crate) fn bindings(session: &obs_engine::Session) -> Vec<egui::KeyboardShortcut> {
+    (session.commands().iter())
+        .filter_map(|spec| spec.shortcut.and_then(parse_shortcut))
+        .chain(annotate::shortcuts())
+        .collect()
+}
+
+/// Which of Shift and Alt may be held on top of `sc`'s own modifiers and still press it.
+///
+/// Usually both, as egui matches: some keys need them on some layouts (Ctrl+Plus is
+/// Ctrl+Shift+= on a US keyboard). None when another binding in `all` is the same key with other
+/// modifiers, so the two are told apart exactly: Ctrl+Shift+Z is never Ctrl+Z, even when there
+/// is nothing to redo.
+pub(crate) fn extra_held(
+    sc: egui::KeyboardShortcut,
+    all: &[egui::KeyboardShortcut],
+) -> egui::Modifiers {
+    if (all.iter()).any(|o| o.logical_key == sc.logical_key && o.modifiers != sc.modifiers) {
+        egui::Modifiers::NONE
+    } else {
+        egui::Modifiers::SHIFT | egui::Modifiers::ALT
+    }
+}
+
+/// Consume presses of `key` with `modifiers`, plus any of the Shift and Alt in `extra`.
+/// Shift or Alt held but in neither does not match.
+pub(crate) fn consume_key(
+    i: &mut egui::InputState,
+    modifiers: egui::Modifiers,
+    key: egui::Key,
+    extra: egui::Modifiers,
+) -> bool {
+    let before = i.events.len();
+    i.events.retain(|e| {
+        let egui::Event::Key {
+            key: k,
+            modifiers: m,
+            pressed: true,
+            ..
+        } = e
+        else {
+            return true;
+        };
+        let held = egui::Modifiers {
+            shift: m.shift && !(extra.shift && !modifiers.shift),
+            alt: m.alt && !(extra.alt && !modifiers.alt),
+            ..*m
+        };
+        !(*k == key && held.matches_exact(modifiers))
+    });
+    i.events.len() != before
 }
 
 /// `Ctrl+Shift+L` → an egui shortcut. Ctrl means Cmd on macOS.
@@ -1044,7 +1130,8 @@ impl State {
         } else {
             t.flash = None;
         }
-        let out = reading_pane(ui, view, &mut self.atlas, &palette, flash);
+        let marks = self.marks.marks(&self.session, &view.doc);
+        let out = reading_pane(ui, view, &mut self.atlas, &palette, flash, &marks);
         let following = view.is_following();
         let at = view.current_location();
         let reference = out
@@ -1054,7 +1141,7 @@ impl State {
             verse_number_tooltip(ui, &view.doc, n);
         }
         let entry = out.user_moved.then(|| view.current_entry()).flatten();
-        self.word_hovered(ui, tab, out.hovered_word, out.clicked_word);
+        self.word_hovered(ui, tab, out.hovered_word.clone(), out.clicked_word.clone());
         if let Some(key) = entry {
             self.session.workspace.user_scrolled_entry(tab, key);
         }
@@ -1102,6 +1189,7 @@ impl State {
                 }
             }
         }
+        self.after_reading_pane(ui, tab, &out);
     }
 
     /// Text Comparison: the Bible chips, then the Verse blocks. The view follows the Tab's
@@ -1607,6 +1695,7 @@ impl State {
     /// Toasts and the About/Credits window.
     fn overlays(&mut self, ui: &Ui) {
         let ctx = ui.ctx().clone();
+        self.note_editor_ui(&ctx);
         self.layout_prompt(&ctx);
         self.remove_prompt(&ctx);
         self.import_chooser(&ctx);

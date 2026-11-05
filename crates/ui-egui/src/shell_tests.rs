@@ -24,6 +24,10 @@ struct Harness {
     shapes: Vec<(Rect, String)>,
     /// Vertex colours of textured meshes (glyph quads) drawn last frame.
     meshes: Vec<egui::Color32>,
+    /// Glyph quads (textured-mesh rectangles) drawn last frame.
+    glyphs: Vec<Rect>,
+    /// Filled rectangles and line segments drawn last frame, with their colours.
+    rects: Vec<(Rect, egui::Color32)>,
     /// The operating system's appearance, as the window would report it.
     os_theme: egui::Theme,
     /// The last AccessKit tree update (when AccessKit is on).
@@ -61,13 +65,39 @@ impl Harness {
     }
 
     fn launch_with(db: Option<&std::path::Path>, mode: JobMode) -> Self {
+        Self::launch_full(db, mode, None)
+    }
+
+    /// With `obr_dir`, TB is a real `.obr` file there (written on first use), loaded from
+    /// disk like a library Resource: annotating reads the Resource's text units from its file.
+    fn launch_full(
+        db: Option<&std::path::Path>,
+        mode: JobMode,
+        obr_dir: Option<&std::path::Path>,
+    ) -> Self {
         let mut session = Session::new(mode);
         if let Some(db) = db {
             let (store, _) = obs_store::UserStore::open(db).unwrap();
             session.attach_user(Box::new(store));
         }
         let mut shell = Shell::new(session);
-        add_doc(&mut shell, bible());
+        match obr_dir {
+            Some(dir) => {
+                let path = dir.join("test-bible.obr");
+                if !path.exists() {
+                    std::fs::create_dir_all(dir).unwrap();
+                    let r = crate::tests::numbered_bible_resource(
+                        "test-bible",
+                        "Test Bible",
+                        "TB",
+                        false,
+                    );
+                    obs_store::write_obr(&r, &path).unwrap();
+                }
+                shell.st.session.library.add_file(&path).unwrap();
+            }
+            None => add_doc(&mut shell, bible()),
+        }
         add_doc(&mut shell, hebrew_doc());
         add_doc(
             &mut shell,
@@ -84,6 +114,8 @@ impl Harness {
             time: 0.0,
             shapes: Vec::new(),
             meshes: Vec::new(),
+            glyphs: Vec::new(),
+            rects: Vec::new(),
             os_theme: egui::Theme::Light,
             tree: None,
             textures: std::collections::HashMap::new(),
@@ -138,9 +170,13 @@ impl Harness {
         }
         self.shapes.clear();
         self.meshes.clear();
+        self.glyphs.clear();
+        self.rects.clear();
         for c in out.shapes {
             collect(&c.shape, &mut self.shapes);
             collect_meshes(&c.shape, &mut self.meshes);
+            collect_glyphs(&c.shape, &mut self.glyphs);
+            collect_rects(&c.shape, &mut self.rects);
         }
     }
 
@@ -362,6 +398,32 @@ fn collect_meshes(shape: &Shape, out: &mut Vec<egui::Color32>) {
         Shape::Vec(v) => v.iter().for_each(|s| collect_meshes(s, out)),
         Shape::Mesh(m) if m.texture_id != egui::TextureId::default() => {
             out.extend(m.vertices.iter().map(|v| v.color));
+        }
+        _ => {}
+    }
+}
+
+/// Each glyph quad of a textured mesh (4 vertices per quad, as the reading pane adds them).
+fn collect_glyphs(shape: &Shape, out: &mut Vec<Rect>) {
+    match shape {
+        Shape::Vec(v) => v.iter().for_each(|s| collect_glyphs(s, out)),
+        Shape::Mesh(m) if m.texture_id != egui::TextureId::default() => {
+            for q in m.vertices.chunks(4) {
+                out.push(Rect::from_points(
+                    &q.iter().map(|v| v.pos).collect::<Vec<_>>(),
+                ));
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_rects(shape: &Shape, out: &mut Vec<(Rect, egui::Color32)>) {
+    match shape {
+        Shape::Vec(v) => v.iter().for_each(|s| collect_rects(s, out)),
+        Shape::Rect(r) => out.push((r.rect, r.fill)),
+        Shape::LineSegment { points, stroke } => {
+            out.push((Rect::from_two_pos(points[0], points[1]), stroke.color));
         }
         _ => {}
     }
@@ -2551,6 +2613,9 @@ mod text_comparison {
 
 #[path = "resource_tabs_tests.rs"]
 mod resource_tabs;
+
+#[path = "annotation_tests.rs"]
+mod annotation;
 
 /// Import from the Library menu and the live Import report Tab (#47).
 mod import {

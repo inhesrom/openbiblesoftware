@@ -658,6 +658,68 @@ fn the_default_notebook_stays_and_deleting_another_moves_or_deletes_its_annotati
     drop(s);
 }
 
+/// #18 rule 8: new Annotations go into the Notebook last used, remembered in the User
+/// database across launches; a deleted one falls back to the default.
+#[test]
+fn new_annotations_go_into_the_notebook_last_used_across_launches() {
+    let f = Fixture::new("last-notebook");
+    let mut s = f.session();
+    let default = s.default_notebook().unwrap();
+    assert_eq!(s.last_notebook().unwrap(), default);
+    let study = s
+        .run("notebook.create", &json!({ "name": "Study" }))
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let a = f.at("test-lxx", "JHN", "loved", false);
+    // A rejected Highlight or Note does not change the last used Notebook.
+    let missing = with(
+        sel("no-such-resource", "JHN", a, "JHN", a + 5),
+        json!({ "notebook": study, "style": "yellow" }),
+    );
+    assert!(s.run("annotation.highlight", &missing).is_err());
+    let mut missing_note = missing.clone();
+    missing_note["body"] = json!("x");
+    assert!(s.run("annotation.note", &missing_note).is_err());
+    assert_eq!(s.last_notebook().unwrap(), default);
+    let picked = highlight(
+        &mut s,
+        with(
+            sel("test-lxx", "JHN", a, "JHN", a + 5),
+            json!({ "notebook": study }),
+        ),
+    );
+    assert_eq!(picked[0].notebook_id, study);
+    // Without a Notebook: the last used one, for Highlights and Notes alike.
+    let next = highlight(&mut s, sel("test-lxx", "JHN", a, "JHN", a + 5));
+    assert_eq!(next[0].notebook_id, study);
+    let note = s.run("annotation.note", &json!({ "body": "x" })).unwrap();
+    assert_eq!(note["annotation"]["notebook_id"], study.as_str());
+    drop(s);
+    // Remembered by the User database.
+    let mut s = f.session();
+    assert_eq!(s.last_notebook().unwrap().id, study);
+    s.run(
+        "notebook.delete",
+        &json!({ "id": study, "annotations": "delete" }),
+    )
+    .unwrap();
+    assert_eq!(s.last_notebook().unwrap().id, default.id);
+    let note = s.run("annotation.note", &json!({ "body": "y" })).unwrap();
+    assert_eq!(note["annotation"]["notebook_id"], default.id.as_str());
+    drop(s);
+}
+
+/// Undo keys are bound; the Shell leaves them to a focused text field (#62).
+#[test]
+fn undo_and_redo_have_their_usual_shortcuts() {
+    let s = Session::new(JobMode::Inline);
+    let key = |id: &str| s.commands().get(id).unwrap().shortcut;
+    assert_eq!(key("edit.undo"), Some("Ctrl+Z"));
+    assert_eq!(key("edit.redo"), Some("Ctrl+Shift+Z"));
+}
+
 #[test]
 fn undo_refuses_rows_that_changed_underneath_and_clears_the_history() {
     let f = Fixture::new("conflict");

@@ -60,6 +60,18 @@ pub(crate) fn bible() -> Arc<ReadingDoc> {
 /// The same text as [`bible`]; `hebrew` numbers it the Hebrew way (KJV Gen 31:55 is 32:1 and
 /// KJV 32:n is 32:n+1), with the Verse map that says so.
 pub(crate) fn numbered_bible(id: &str, title: &str, abbrev: &str, hebrew: bool) -> Arc<ReadingDoc> {
+    Arc::new(ReadingDoc::from_resource(numbered_bible_resource(
+        id, title, abbrev, hebrew,
+    )))
+}
+
+/// The Resource behind [`numbered_bible`] (to write as a `.obr` where a test needs a file).
+pub(crate) fn numbered_bible_resource(
+    id: &str,
+    title: &str,
+    abbrev: &str,
+    hebrew: bool,
+) -> obs_model::Resource {
     use obs_scripture::{Passage, Standard, VerseMap, VerseMapEntry};
     let mut m = Manifest::new(id, title, abbrev, ResourceType::Bible, "en");
     m.key_schemes = vec![KeyScheme::Passage];
@@ -123,7 +135,7 @@ pub(crate) fn numbered_bible(id: &str, title: &str, abbrev: &str, hebrew: bool) 
     if hebrew {
         b.set_verse_map(VerseMap::new(map, vec![], &Standard));
     }
-    Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
+    b.build().unwrap()
 }
 
 /// Run frames until the workers have nothing in flight.

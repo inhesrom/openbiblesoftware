@@ -8,6 +8,7 @@ pub mod bench;
 mod compare_view;
 mod doc;
 mod heights;
+mod marks;
 mod palette;
 mod pane;
 pub mod search_view;
@@ -22,10 +23,11 @@ use std::path::PathBuf;
 pub use compare_view::{ComparisonOutput, ComparisonView, comparison_pane};
 pub use doc::{DocBlock, ReadingDoc};
 pub use heights::HeightIndex;
+pub use marks::{Mark, MarkKind, marks_for};
 pub use palette::{HIGHLIGHT_STYLES, Palette, contrast};
 pub use pane::{AtlasTexture, MEASURE_EMS, PaneOutput, reading_pane};
 pub use selection::{
-    DocPos, Granularity, Selection, copy_text, selected_text, selection_rects, word_at,
+    DocPos, Granularity, Selection, copy_text, range_rects, selected_text, selection_rects, word_at,
 };
 pub use shell::{Shell, parse_shortcut};
 pub use view::{Frame, FrameBlock, FrameStats, ReadingView, SYNC_BUDGET, VisibleBlock};

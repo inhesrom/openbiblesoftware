@@ -7,8 +7,9 @@ use egui::{
 };
 use obs_render::GlyphAtlas;
 
+use crate::marks::{Mark, MarkKind};
 use crate::palette::Palette;
-use crate::selection::{DocPos, Granularity, Selection, copy_text, selection_rects};
+use crate::selection::{DocPos, Granularity, Selection, copy_text, range_rects, selection_rects};
 use crate::view::{MARGIN, ReadingView, SYNC_BUDGET};
 use obs_layout::{InlineObject, UnitPos};
 use obs_scripture::Verse;
@@ -76,8 +77,22 @@ pub struct WordHit {
 }
 
 /// What happened in the reading pane this frame.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct PaneOutput {
+    /// The pane's own response (for its right-click menu).
+    pub response: Option<egui::Response>,
+    /// Where the selection is drawn (the union of its rectangles in view), in screen points.
+    pub selection_rect: Option<Rect>,
+    /// A selection was just made: a drag released, or a word or verse double/triple-clicked.
+    /// The selection toolbar appears (#18 rule 8).
+    pub selection_made: bool,
+    /// The pointer went down on the text (the selection toolbar goes away).
+    pub pressed: bool,
+    /// The pane was right-clicked; the selection is now what the menu acts on (the
+    /// clicked word, unless the click was inside the selection).
+    pub context_clicked: bool,
+    /// The Note marker under the pointer: the Note's id and the marker's screen rect.
+    pub hovered_note: Option<(String, Rect)>,
     /// The user moved the view (wheel, keys, scrollbar, selection auto-scroll).
     pub user_moved: bool,
     /// The verse number under the pointer, in the Bible's own numbering.
@@ -93,13 +108,16 @@ pub struct PaneOutput {
 }
 
 /// Draw the reading pane into all the space `ui` has, and handle its input. `flash` marks a
-/// verse (after a jump) with a colour whose alpha fades it out.
+/// verse (after a jump) with a colour whose alpha fades it out. `marks` are the Highlights
+/// and Notes to draw, oldest first: Highlight backgrounds under the glyphs (newest on top),
+/// the red underline and Note markers over them.
 pub fn reading_pane(
     ui: &mut Ui,
     view: &mut ReadingView,
     atlas: &mut AtlasTexture,
     palette: &Palette,
     flash: Option<(Verse, Color32)>,
+    marks: &[Mark],
 ) -> PaneOutput {
     let mut out = PaneOutput::default();
     let rect = ui.available_rect_before_wrap();
@@ -153,7 +171,10 @@ pub fn reading_pane(
         let frac = f64::from(((p.y - track.top()) / track.height()).clamp(0.0, 1.0));
         view.scroll_to_position(frac * total);
     }
-    handle_selection(ui, &response, view, rect, text_rect);
+    out.pressed = response.is_pointer_button_down_on() && !view.dragging_scrollbar;
+    let made = handle_selection(ui, &response, view, rect, text_rect);
+    out.selection_made = made.selection_made;
+    out.context_clicked = made.context_clicked;
     out.user_moved = (view.position().0 - before).abs() > 0.01;
 
     let ppp = ui.ctx().pixels_per_point();
@@ -216,16 +237,31 @@ pub fn reading_pane(
             );
         }
     }
+    let to_screen = |[x0, y0, x1, y1]: [f32; 4]| {
+        Rect::from_min_max(
+            pos2(text_rect.left() + x0, rect.top() + y0),
+            pos2(text_rect.left() + x1, rect.top() + y1),
+        )
+    };
+    // Highlights: backgrounds under the glyphs, oldest first so the newest is on top. They
+    // cover the text's band of the line, not the line spacing around it.
+    let size = view.settings().size;
+    let ranges: Vec<(DocPos, DocPos)> = marks.iter().map(|m| (m.start, m.end)).collect();
+    let mark_rects = range_rects(view, &ranges, rect.height());
+    for (mark, rects) in marks.iter().zip(&mark_rects) {
+        if let MarkKind::Highlight(style) = mark.kind
+            && let Some(fill) = palette.highlight(style)
+        {
+            for r in rects {
+                painter.rect_filled(to_screen(text_band(*r, size)), 1.5, fill);
+            }
+        }
+    }
     if let Some(sel) = view.selection {
-        for [x0, y0, x1, y1] in selection_rects(view, &sel, rect.height()) {
-            painter.rect_filled(
-                Rect::from_min_max(
-                    pos2(text_rect.left() + x0, rect.top() + y0),
-                    pos2(text_rect.left() + x1, rect.top() + y1),
-                ),
-                0.0,
-                palette.selection,
-            );
+        for r in selection_rects(view, &sel, rect.height()) {
+            let r = to_screen(r);
+            painter.rect_filled(r, 0.0, palette.selection);
+            out.selection_rect = Some(out.selection_rect.map_or(r, |u| u.union(r)));
         }
     }
     // The Tagged word under the pointer is underlined at once, pinned or not.
@@ -277,6 +313,43 @@ pub fn reading_pane(
         );
     }
     painter.add(Shape::mesh(mesh));
+    // Over the glyphs: the red underline, then Note markers at the end of their ranges.
+    let rtl = view.doc.direction() == obs_model::Direction::Rtl;
+    let hover = response.hover_pos();
+    let in_view: Vec<usize> = if marks.iter().any(|m| m.kind == MarkKind::Note) {
+        view.laid_in_view(rect.height())
+            .iter()
+            .map(|(i, _, _)| *i)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    for (mark, rects) in marks.iter().zip(&mark_rects) {
+        match mark.kind {
+            MarkKind::Highlight(style) if palette.highlight(style).is_none() => {
+                for r in rects {
+                    let r = to_screen(text_band(*r, size));
+                    let y = r.bottom() - (size * 0.1).max(1.5);
+                    painter.line_segment(
+                        [pos2(r.left(), y), pos2(r.right(), y)],
+                        egui::Stroke::new((size * 0.09).max(1.5), palette.underline),
+                    );
+                }
+            }
+            MarkKind::Note => {
+                let Some(marker) =
+                    note_marker(view, &in_view, mark, rects, size, rtl).map(to_screen)
+                else {
+                    continue;
+                };
+                paint_note_marker(&painter, marker, palette);
+                if hover.is_some_and(|p| marker.expand(3.0).contains(p)) {
+                    out.hovered_note = Some((mark.id.clone(), marker));
+                }
+            }
+            MarkKind::Highlight(_) => {}
+        }
+    }
 
     // Scrollbar.
     let (y, total) = view.position();
@@ -315,7 +388,63 @@ pub fn reading_pane(
             out.reference_clicked = response.clicked();
         }
     }
+    out.response = Some(response);
     out
+}
+
+/// The part of a line rectangle `[x0, y0, x1, y1]` that text of `size` occupies: a band
+/// about 1.4 em tall around the line's middle (all of it in tight lines).
+fn text_band([x0, y0, x1, y1]: [f32; 4], size: f32) -> [f32; 4] {
+    let inset = ((y1 - y0 - size * 1.4) / 2.0).max(0.0);
+    [x0, y0 + inset, x1, y1 - inset]
+}
+
+/// Where a Note's marker goes, relative to the text's left edge and the viewport top: just
+/// past the end of its range (to the left of it in right-to-left text), raised like a
+/// superscript. `None` while the range's end is not laid out in view.
+fn note_marker(
+    view: &ReadingView,
+    in_view: &[usize],
+    mark: &Mark,
+    rects: &[[f32; 4]],
+    size: f32,
+    rtl: bool,
+) -> Option<[f32; 4]> {
+    let last = rects.last()?;
+    // The last rectangle is the range's end only if the end's block is in view.
+    let end_block = view
+        .doc
+        .block_at(mark.end.unit, mark.end.byte.saturating_sub(1))?;
+    if !in_view.contains(&end_block) {
+        return None;
+    }
+    let (w, h) = (size * 0.42, size * 0.48);
+    let x = if rtl {
+        last[0] - w - 1.0
+    } else {
+        last[2] + 1.0
+    };
+    // Raised like a superscript: its top at the text band's top, so it sits over the cap
+    // height rather than over the next word's lowercase letters.
+    let band = text_band(*last, size);
+    let y = band[1];
+    Some([x, y, x + w, y + h])
+}
+
+/// A small note: a filled card with two ruled lines in the page colour.
+fn paint_note_marker(painter: &egui::Painter, r: Rect, palette: &Palette) {
+    painter.rect_filled(r, 1.5, palette.note_marker);
+    let stroke = egui::Stroke::new(1.0, palette.page);
+    for f in [0.38, 0.66] {
+        let y = r.top() + r.height() * f;
+        painter.line_segment([pos2(r.left() + 2.0, y), pos2(r.right() - 2.0, y)], stroke);
+    }
+}
+
+/// What the pointer did to the selection this frame.
+struct SelectionInput {
+    selection_made: bool,
+    context_clicked: bool,
 }
 
 /// Drag to select (auto-scrolling past the pane's edges), double-click a word, triple-click a
@@ -326,7 +455,11 @@ fn handle_selection(
     view: &mut ReadingView,
     rect: Rect,
     text_rect: Rect,
-) {
+) -> SelectionInput {
+    let mut input = SelectionInput {
+        selection_made: false,
+        context_clicked: false,
+    };
     let pos_at = |view: &mut ReadingView, p: Pos2| {
         let y = p.y.clamp(rect.top(), rect.bottom() - 1.0) - rect.top();
         view.pos_at(p.x - text_rect.left(), y)
@@ -344,6 +477,7 @@ fn handle_selection(
                         Granularity::Word
                     },
                 });
+                input.selection_made = true;
             }
         } else if response.drag_started() {
             view.selection = pointer.and_then(|p| pos_at(view, p)).map(Selection::caret);
@@ -368,6 +502,25 @@ fn handle_selection(
         } else if response.clicked() {
             view.selection = None;
         }
+        if response.secondary_clicked() {
+            // Right-click acts on the selection under the pointer, else on the clicked word.
+            if let Some(at) = pointer.and_then(|p| pos_at(view, p))
+                && !view
+                    .selection
+                    .is_some_and(|s| has_text(view, &s) && s.contains(&view.doc, at))
+            {
+                let word = Selection {
+                    anchor: at,
+                    head: at,
+                    granularity: Granularity::Word,
+                };
+                view.selection = has_text(view, &word).then_some(word);
+            }
+            input.context_clicked = true;
+        }
+        if response.drag_stopped() && view.selection.is_some_and(|s| has_text(view, &s)) {
+            input.selection_made = true;
+        }
     }
     if response.drag_stopped() {
         view.dragging_scrollbar = false;
@@ -380,4 +533,21 @@ fn handle_selection(
     {
         ui.ctx().copy_text(copy_text(&view.doc, &sel));
     }
+    input
+}
+
+/// Whether a selection covers any text other than white space (stopping at the first such
+/// character: this runs every frame, whatever the selection's size).
+pub(crate) fn has_text(view: &ReadingView, sel: &Selection) -> bool {
+    let (a, b) = sel.range(&view.doc);
+    a < b
+        && (a.unit..=b.unit).any(|u| {
+            let Some(text) = view.doc.units.get(u).map(|u| u.text.as_str()) else {
+                return false;
+            };
+            let start = if u == a.unit { a.byte } else { 0 };
+            let end = if u == b.unit { b.byte } else { text.len() };
+            text.get(start.min(end)..end.min(text.len()))
+                .is_some_and(|t| t.chars().any(|c| !c.is_whitespace()))
+        })
 }

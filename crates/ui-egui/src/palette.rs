@@ -4,11 +4,12 @@
 //! never touches layout or the glyph atlas: glyphs take their colour per vertex.
 
 use egui::Color32;
-use obs_engine::PageTone;
+use obs_engine::{HighlightStyle, PageTone};
 use obs_layout::ColorRole;
 
 /// The 5 Highlight styles (#18 rule 9): yellow, green, blue and pink backgrounds, and a red
-/// underline. Annotations store only the style's index.
+/// underline, named in [`HighlightStyle::ALL`] order (Ctrl+1 … Ctrl+5). Annotations store only
+/// the style's id, so the theme never touches the User database.
 pub const HIGHLIGHT_STYLES: [&str; 5] = ["Yellow", "Green", "Blue", "Pink", "Red underline"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,6 +110,18 @@ impl Palette {
             PageTone::Sepia => Self::SEPIA,
             PageTone::Dark => Self::DARK,
             PageTone::Paper | PageTone::Auto => Self::PAPER,
+        }
+    }
+
+    /// A Highlight style's background, or `None` for the red underline (drawn over the
+    /// glyphs in [`Palette::underline`]).
+    pub fn highlight(&self, style: HighlightStyle) -> Option<Color32> {
+        match style {
+            HighlightStyle::Yellow => Some(self.highlights[0]),
+            HighlightStyle::Green => Some(self.highlights[1]),
+            HighlightStyle::Blue => Some(self.highlights[2]),
+            HighlightStyle::Pink => Some(self.highlights[3]),
+            HighlightStyle::RedUnderline => None,
         }
     }
 

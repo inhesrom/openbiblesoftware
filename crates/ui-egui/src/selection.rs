@@ -140,20 +140,50 @@ pub fn copy_text(doc: &ReadingDoc, sel: &Selection) -> String {
 /// Highlight rectangles `[x0, y0, x1, y1]` for the selection, relative to the text's left
 /// edge and the viewport top, for the blocks laid out in a viewport `height` tall.
 pub fn selection_rects(view: &ReadingView, sel: &Selection, height: f32) -> Vec<[f32; 4]> {
+    let range = sel.range(&view.doc);
+    range_rects(view, &[range], height)
+        .into_iter()
+        .next()
+        .unwrap_or_default()
+}
+
+/// [`selection_rects`] for many document ranges `[start, end)` at once (Highlights, Note
+/// ranges): one list of rectangles per range, from one pass over the clusters in view. Each
+/// block only tests the ranges that reach into it.
+pub fn range_rects(
+    view: &ReadingView,
+    ranges: &[(DocPos, DocPos)],
+    height: f32,
+) -> Vec<Vec<[f32; 4]>> {
     let doc = &view.doc;
-    let (start, end) = sel.range(doc);
-    if start == end {
-        return Vec::new();
+    let mut out: Vec<Vec<[f32; 4]>> = vec![Vec::new(); ranges.len()];
+    if ranges.iter().all(|(a, b)| a >= b) {
+        return out;
     }
-    let mut out = Vec::new();
     for (index, top, laid) in view.laid_in_view(height) {
-        let unit = doc.blocks[index].unit;
-        if unit < start.unit || unit > end.unit {
+        let block = &doc.blocks[index];
+        let unit = block.unit;
+        let first = DocPos {
+            unit,
+            byte: block.source.range.start,
+        };
+        let last = DocPos {
+            unit,
+            byte: block.source.range.end,
+        };
+        // Ranges reaching into this block (an empty block still has its start position).
+        let active: Vec<usize> = (0..ranges.len())
+            .filter(|&i| {
+                let (a, b) = ranges[i];
+                a < b && a <= last && b > first
+            })
+            .collect();
+        if active.is_empty() {
             continue;
         }
         for line in &laid.lines {
             for item in &line.items {
-                let mut run: Option<[f32; 4]> = None;
+                let mut runs: Vec<Option<[f32; 4]>> = vec![None; active.len()];
                 for (bytes, x0, x1) in item.clusters() {
                     let byte = match laid.to_unit(bytes.start) {
                         Some(UnitPos::Text(b)) => b,
@@ -161,27 +191,35 @@ pub fn selection_rects(view: &ReadingView, sel: &Selection, height: f32) -> Vec<
                         None => continue,
                     };
                     let p = DocPos { unit, byte };
-                    let inside = start <= p && p < end;
-                    match (&mut run, inside) {
-                        (Some(r), true) if (r[2] - x0).abs() < 0.5 || (r[0] - x1).abs() < 0.5 => {
-                            r[0] = r[0].min(x0);
-                            r[2] = r[2].max(x1);
-                        }
-                        (_, true) => {
-                            if let Some(r) = run.take() {
-                                out.push(r);
+                    for (k, &i) in active.iter().enumerate() {
+                        let (start, end) = ranges[i];
+                        let inside = start <= p && p < end;
+                        let run = &mut runs[k];
+                        match (run.as_mut(), inside) {
+                            (Some(r), true)
+                                if (r[2] - x0).abs() < 0.5 || (r[0] - x1).abs() < 0.5 =>
+                            {
+                                r[0] = r[0].min(x0);
+                                r[2] = r[2].max(x1);
                             }
-                            run = Some([x0, top + line.top, x1, top + line.bottom]);
-                        }
-                        (_, false) => {
-                            if let Some(r) = run.take() {
-                                out.push(r);
+                            (_, true) => {
+                                if let Some(r) = run.take() {
+                                    out[i].push(r);
+                                }
+                                *run = Some([x0, top + line.top, x1, top + line.bottom]);
+                            }
+                            (_, false) => {
+                                if let Some(r) = run.take() {
+                                    out[i].push(r);
+                                }
                             }
                         }
                     }
                 }
-                if let Some(r) = run {
-                    out.push(r);
+                for (k, run) in runs.into_iter().enumerate() {
+                    if let Some(r) = run {
+                        out[active[k]].push(r);
+                    }
                 }
             }
         }
