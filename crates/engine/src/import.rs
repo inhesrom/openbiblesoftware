@@ -228,6 +228,7 @@ impl Session {
                         }
                         let replaced = self.library.get(&id).is_some();
                         self.library.add(out.entry);
+                        self.remove_older_search_indexes(&id);
                         // An update is in: nothing to put back.
                         self.imports.replacing.remove(&id);
                         if replaced {

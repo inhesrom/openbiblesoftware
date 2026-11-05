@@ -304,6 +304,7 @@ fn without_an_app_transport_nothing_reaches_the_network() {
 fn ready(name: &str, mode: JobMode) -> (Session, Arc<MockRepos>, PathBuf) {
     let (mut s, repos, root) = session(name);
     refresh(&mut s);
+    let inline = matches!(mode, JobMode::Inline);
     let mut s2 = Session::new(mode);
     s2.set_fetch(repos.clone());
     s2.get_bibles
@@ -312,6 +313,10 @@ fn ready(name: &str, mode: JobMode) -> (Session, Arc<MockRepos>, PathBuf) {
     std::fs::create_dir_all(root.join("library")).unwrap();
     s2.library.scan(&root.join("library"));
     drop(s);
+    // Checked in this Session too, as after the Tab's first refresh.
+    if inline {
+        refresh(&mut s2);
+    }
     (s2, repos, root)
 }
 
@@ -1135,6 +1140,102 @@ fn a_failed_update_keeps_the_revision_in_the_library() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+/// The Import indexer, then the staged revision goes missing: the commit after the Index
+/// phase fails.
+#[derive(Debug)]
+struct StagedFileLost(CacheIndexer);
+
+impl ImportIndexer for StagedFileLost {
+    fn build(
+        &self,
+        resource: &obs_model::Resource,
+        path: &std::path::Path,
+        ctx: &JobContext,
+    ) -> Result<ImportIndexStatus, String> {
+        let built = self.0.build(resource, path, ctx);
+        let mut staged = path.as_os_str().to_owned();
+        staged.push(".update");
+        std::fs::remove_file(staged).unwrap();
+        built
+    }
+}
+
+#[test]
+fn an_update_failing_after_its_index_phase_keeps_the_old_revision_searchable() {
+    let (mut s, repos, root) = ready("update-commit-fails", JobMode::Inline);
+    let cache_dir = root.join("search");
+    s.set_search_cache_dir(cache_dir.clone());
+    let id = download(&mut s, "ObsKjvGbf");
+    settle(&mut s);
+    let caches = || -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(&cache_dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with(&id))
+            .collect();
+        names.sort();
+        names
+    };
+    let before = caches();
+    assert_eq!(before.len(), 1, "{before:?}");
+    assert_eq!(s.search.status(&id), Some(&IndexStatus::Ready));
+
+    repos.publish(
+        "crosswire",
+        "obskjvgbf.conf",
+        "1.1",
+        Some((JOHN_1_1, JOHN_1_1_FIXED)),
+    );
+    refresh(&mut s);
+    let indexer = CacheIndexer {
+        dir: cache_dir.clone(),
+        version: INDEX_VERSION,
+    };
+    s.imports
+        .set_indexer(Arc::new(StagedFileLost(indexer.clone())));
+    s.run("getbibles.update", &json!({"module": "ObsKjvGbf"}))
+        .unwrap();
+    s.workspace.take_effects();
+    settle(&mut s);
+    assert!(
+        s.workspace
+            .take_effects()
+            .iter()
+            .any(|e| matches!(e, Effect::Message(m) if m.starts_with("Could not update "))),
+    );
+    assert_eq!(s.library.get(&id).unwrap().manifest.revision, 1);
+    // The old revision's cache was not removed with the update: it still searches, with no
+    // rebuild.
+    assert!(caches().contains(&before[0]), "{:?}", caches());
+    let hits = s
+        .search(&SearchRequest {
+            query: "beginning".into(),
+            resources: vec![id.clone()],
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(
+        hits.indexing.is_empty() && hits.stale.is_empty(),
+        "{hits:?}"
+    );
+    assert!(hits.total() > 0);
+    assert_eq!(s.search.status(&id), Some(&IndexStatus::Ready));
+
+    // Once an update is in, only the new revision's cache is left.
+    s.imports.set_indexer(Arc::new(indexer));
+    s.run("getbibles.update", &json!({"module": "ObsKjvGbf"}))
+        .unwrap();
+    settle(&mut s);
+    assert_eq!(s.library.get(&id).unwrap().manifest.revision, 2);
+    let after = caches();
+    assert_eq!(after.len(), 1, "{after:?}");
+    assert_ne!(after, before);
+    assert_eq!(s.search.status(&id), Some(&IndexStatus::Ready));
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn an_update_replaces_the_resource_file_the_library_read_whatever_it_is_named() {
     let (mut s, repos, root) = ready("update-renamed", JobMode::Inline);
@@ -1196,6 +1297,52 @@ fn an_update_replaces_the_resource_file_the_library_read_whatever_it_is_named() 
     assert!(restarted.scan(&library).is_empty());
     assert!(restarted.get(&id).is_none());
     assert!(restarted.get("unrelated").is_some());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn after_a_restart_offline_the_saved_catalog_makes_no_up_to_date_claim() {
+    let (mut s, repos, root) = ready_with_user("update-restart");
+    let id = download(&mut s, "ObsKjvGbf");
+    refresh(&mut s);
+    assert!(s.resource_updates().up_to_date());
+    drop(s);
+
+    // Next app start, soon after and with no network. The saved catalog is fresh, so no
+    // refresh runs, and it still shows no update (CrossWire has one it cannot see): the Tab
+    // must say when updates were last checked, not that the downloads are up to date.
+    repos.publish("crosswire", "obskjvgbf.conf", "1.1", None);
+    repos.set_offline(true);
+    let mut s = Session::new(JobMode::Inline);
+    s.set_fetch(repos.clone());
+    s.get_bibles
+        .set_cache_path(root.join("cache/sword-catalog.json"));
+    s.get_bibles.set_sword_dir(root.join("sword"));
+    s.library.scan(&root.join("library"));
+    let (store, _) = obs_store::UserStore::open(&root.join("user.db")).unwrap();
+    s.attach_user(Box::new(store));
+    let at = s.get_bibles.catalog().unwrap().fetched_at;
+    assert!(
+        !s.get_bibles.needs_refresh(at + 60),
+        "fresh cache: nothing fetched"
+    );
+    let summary = s.resource_updates();
+    assert_eq!(summary.downloaded, 1, "the download is restored");
+    assert_eq!(summary.check, UpdateCheck::Saved { at });
+    assert!(summary.updates.is_empty() && summary.unchecked.is_empty());
+    assert!(!summary.up_to_date());
+    let list = s.run("getbibles.list", &json!({})).unwrap();
+    assert_eq!(list["updates"]["up_to_date"], false);
+    assert!(list["updates"]["checked_at"].is_null());
+
+    // Back online, a refresh in this Session checks them and finds the update.
+    repos.set_offline(false);
+    refresh(&mut s);
+    let summary = s.resource_updates();
+    assert!(matches!(summary.check, UpdateCheck::Checked { .. }));
+    assert_eq!(summary.updates.len(), 1);
+    assert_eq!(summary.updates[0].resource_id, id);
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }

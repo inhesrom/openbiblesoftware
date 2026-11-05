@@ -463,6 +463,9 @@ pub struct GetBibles {
     type_filter: Option<ResourceType>,
     /// Why the last refresh failed (offline, repository down), while the cache is shown.
     offline: Option<String>,
+    /// A refresh succeeded in this Session. A catalog loaded from the cache at startup was
+    /// fetched in an earlier one, so it alone never makes the downloads up to date (#136).
+    checked_this_session: bool,
     refreshing: Option<JobId>,
     cache_path: Option<PathBuf>,
     sword_dir: Option<PathBuf>,
@@ -624,6 +627,9 @@ pub enum UpdateCheck {
     /// The last fetch failed (offline, repositories down); any update shown is from the
     /// saved catalog.
     Offline(String),
+    /// Only the catalog saved by an earlier run, fetched at this time, is known: nothing
+    /// was fetched in this Session, so any update shown is from then and no claim is made.
+    Saved { at: u64 },
     /// Checked against the catalog fetched at this time (seconds since the Unix epoch).
     Checked { at: u64 },
 }
@@ -834,6 +840,7 @@ impl Session {
             _ if gb.is_refreshing() => UpdateCheck::Checking,
             (_, Some(why)) => UpdateCheck::Offline(why.to_string()),
             (None, None) => UpdateCheck::NotChecked,
+            (Some(c), None) if !gb.checked_this_session => UpdateCheck::Saved { at: c.fetched_at },
             (Some(c), None) => UpdateCheck::Checked { at: c.fetched_at },
         };
         let downloaded = self.downloaded();
@@ -975,6 +982,7 @@ impl Session {
                     if let Ok(catalog) = out.downcast::<ResourceCatalog>() {
                         self.get_bibles.catalog = Some(*catalog);
                         self.get_bibles.offline = None;
+                        self.get_bibles.checked_this_session = true;
                         self.fill_installed_versions();
                         if let Err(e) = self.get_bibles.save_cache() {
                             self.workspace.push_effect(crate::Effect::Message(format!(

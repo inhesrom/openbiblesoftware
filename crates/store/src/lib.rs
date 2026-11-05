@@ -44,7 +44,7 @@ pub use sample::sample_resource;
 #[cfg(not(target_arch = "wasm32"))]
 pub use search_index::{
     IndexKey, SEARCH_APPLICATION_ID, SEARCH_INDEX_EXTENSION, SqliteSearchIndex, build_search_index,
-    remove_search_indexes, search_index_files,
+    remove_search_indexes, search_index_files, write_search_index,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use user::{OpenReport, ROLLING_BACKUPS, USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore};

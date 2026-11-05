@@ -79,8 +79,9 @@ pub(super) fn update_versions(installed: &str, available: &str) -> String {
 
 /// The line above the list about updates, with Update all when there are any. It says the
 /// downloaded Resources are up to date only when every one of them was checked against a
-/// catalog fetched online (`UpdatesSummary::up_to_date`); offline it says they could not be
-/// checked.
+/// catalog fetched online in this Session (`UpdatesSummary::up_to_date`); offline it says
+/// they could not be checked, and with only the catalog saved by an earlier run it says when
+/// that was.
 fn updates_line(ui: &mut Ui, summary: &UpdatesSummary, names: &dyn Fn(&str) -> String) -> bool {
     let mut update_all = false;
     let n = summary.updates.len();
@@ -126,6 +127,14 @@ fn updates_line(ui: &mut Ui, summary: &UpdatesSummary, names: &dyn Fn(&str) -> S
         UpdateCheck::Offline(_) => muted(
             ui,
             "Updates to your downloaded Resources could not be checked while offline.".into(),
+        ),
+        UpdateCheck::Saved { at } => muted(
+            ui,
+            format!(
+                "Updates to your downloaded Resources were last checked {}. Refresh to check \
+                 again.",
+                ago(*at)
+            ),
         ),
         UpdateCheck::Checked { at } if summary.up_to_date() => muted(
             ui,

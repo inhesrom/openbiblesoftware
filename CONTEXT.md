@@ -134,7 +134,7 @@ The Tab that lists the Bibles, Lexicons, Commentaries and Dictionaries offered b
 _Avoid_: Store, Shop, Module manager, Install (for the whole flow)
 
 **Update available**:
-What Get Resources shows on a downloaded Resource when its SWORD repository now offers a newer `Version` of the module it was downloaded as; the Library menu counts them. Update (one Resource) or Update all downloads it and imports it as the Resource's next Resource revision. Updates are checked when the catalog is fetched, and nothing is downloaded until the user clicks. When the repositories cannot be reached, the Tab says updates could not be checked, never that the Resources are up to date. Starter library Resources are updated with the Starter library, not here.
+What Get Resources shows on a downloaded Resource when its SWORD repository now offers a newer `Version` of the module it was downloaded as; the Library menu counts them. Update (one Resource) or Update all downloads it and imports it as the Resource's next Resource revision. Updates are checked when the catalog is fetched, and nothing is downloaded until the user clicks. When the repositories cannot be reached, or only a catalog saved by an earlier run of the app is known, the Tab says updates could not be checked or when they last were, never that the Resources are up to date. Starter library Resources are updated with the Starter library, not here.
 _Avoid_: Upgrade, New version (as the name of the offer)
 
 **SWORD copy**:
