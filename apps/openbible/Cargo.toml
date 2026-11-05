@@ -15,11 +15,15 @@ obs-formats.workspace = true
 # the engine reaches SWORD repositories through the `Fetch` this app hands it.
 ureq = "3"
 serde_json.workspace = true
+# View → Fonts (#138): installed fonts are enumerated and read here, in the app, so the
+# libraries stay WASM-clean. No memory maps: chosen files are read once into memory.
+fontdb = { version = "0.24", default-features = false, features = ["std", "fs", "fontconfig"] }
 # `links` opens hyperlinks (Credits, About's change record) in the system browser.
 eframe = { workspace = true, features = ["wayland", "x11", "accesskit", "links"] }
 
 [dev-dependencies]
 obs-engine.workspace = true
+obs-fonts.workspace = true
 obs-model.workspace = true
 
 [lints]

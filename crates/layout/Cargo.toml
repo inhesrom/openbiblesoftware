@@ -12,7 +12,6 @@ publish.workspace = true
 obs-scripture.workspace = true
 unicode-bidi.workspace = true
 unicode-linebreak.workspace = true
-unicode-script.workspace = true
 unicode-segmentation.workspace = true
 obs-model.workspace = true
 obs-fonts.workspace = true

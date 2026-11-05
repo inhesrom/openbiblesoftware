@@ -211,3 +211,97 @@ fn svg_preview_draws_outlines() {
     assert!(svg.starts_with("<svg"));
     assert!(svg.matches('M').count() > 20, "few outlines drawn");
 }
+
+/// A bundled font file loaded as if the user had picked it from this computer.
+fn user_copy(id: FaceId) -> FaceId {
+    let bytes = id.bundled_bytes().unwrap().to_vec();
+    load_user_face(Arc::new(bytes), 0).unwrap()
+}
+
+#[test]
+fn user_faces_load_shape_and_unload() {
+    let a = user_copy(FaceId::Italic);
+    let b = user_copy(FaceId::Italic);
+    assert!(
+        matches!(a, FaceId::User(_)) && a != b,
+        "numbers are never reused"
+    );
+    assert!(!a.is_bundled() && FaceId::Regular.is_bundled());
+    let run = shape_uncached("In the beginning", style(a, false)).unwrap();
+    let bundled = shape_uncached("In the beginning", style(FaceId::Italic, false)).unwrap();
+    assert_eq!(run.glyphs, bundled.glyphs);
+    assert_eq!(
+        face(a).unwrap().metrics,
+        face(FaceId::Italic).unwrap().metrics
+    );
+    unload_user_face(a);
+    assert_eq!(face(a).unwrap_err(), FaceError(a));
+    assert!(face(b).is_ok());
+    unload_user_face(b);
+}
+
+#[test]
+fn a_file_that_is_not_a_font_is_refused() {
+    let err = load_user_face(Arc::new(b"not a font".to_vec()), 0).unwrap_err();
+    assert!(matches!(err.0, FaceId::User(_)));
+    assert_eq!(err.to_string(), "the font file could not be read");
+    let ttf = FaceId::Regular.bundled_bytes().unwrap().to_vec();
+    assert!(
+        load_user_face(Arc::new(ttf), 3).is_err(),
+        "no face 3 in a .ttf"
+    );
+}
+
+#[test]
+fn coverage_is_read_from_the_cmap() {
+    let gentium = face(FaceId::Regular).unwrap();
+    let ezra = face(FaceId::Hebrew).unwrap();
+    assert_eq!(
+        script_coverage(&gentium, ReadingScript::Latin),
+        Coverage::Full
+    );
+    assert_eq!(
+        script_coverage(&gentium, ReadingScript::Greek),
+        Coverage::Full
+    );
+    assert_eq!(
+        script_coverage(&gentium, ReadingScript::Hebrew),
+        Coverage::None,
+        "Gentium Plus has no Hebrew letters"
+    );
+    assert_eq!(
+        script_coverage(&ezra, ReadingScript::Hebrew),
+        Coverage::Full
+    );
+    // Ezra SIL has a few Greek letters but no polytonic Greek.
+    assert!(matches!(
+        script_coverage(&ezra, ReadingScript::Greek),
+        Coverage::Partial { .. }
+    ));
+    assert!(gentium.covers('a') && !gentium.covers('א') && ezra.covers('\u{05A5}'));
+}
+
+#[test]
+fn small_caps_support_is_read_from_gsub() {
+    assert!(face(FaceId::Regular).unwrap().has_small_caps());
+    assert!(!face(FaceId::Hebrew).unwrap().has_small_caps());
+}
+
+#[test]
+fn reading_faces_default_to_the_bundled_faces() {
+    let f = ReadingFaces::default();
+    assert_eq!(f.latin.pick(true, true), FaceId::BoldItalic);
+    assert_eq!(f.greek.pick(false, true), FaceId::Italic);
+    assert_eq!(f.hebrew.faces(), [FaceId::Hebrew; 4]);
+    assert_eq!(ReadingScript::of_char('a'), Some(ReadingScript::Latin));
+    assert_eq!(ReadingScript::of_char('λ'), Some(ReadingScript::Greek));
+    assert_eq!(ReadingScript::of_char('ἀ'), Some(ReadingScript::Greek));
+    assert_eq!(ReadingScript::of_char('ב'), Some(ReadingScript::Hebrew));
+    assert_eq!(
+        ReadingScript::of_char('\u{05B0}'),
+        Some(ReadingScript::Hebrew)
+    );
+    assert_eq!(ReadingScript::of_char(' '), None);
+    assert_eq!(ReadingScript::of_char('3'), None);
+    assert_eq!(ReadingScript::of_char('\u{0301}'), None);
+}

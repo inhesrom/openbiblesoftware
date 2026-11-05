@@ -109,21 +109,40 @@ pub fn display(size: f32) -> FontId {
 
 /// Install the fonts and the Study desk style on a context.
 pub fn install(ctx: &egui::Context) {
+    install_fonts(ctx, None);
+    ctx.style_mut_of(egui::Theme::Light, |s| style(s, &LIGHT));
+    ctx.style_mut_of(egui::Theme::Dark, |s| style(s, &DARK));
+}
+
+const INTERFACE: &str = "interface";
+
+/// Install the chrome's fonts: egui's defaults, Gentium Plus Bold for display headings and,
+/// when one is chosen (View → Fonts, #138), the interface font ahead of egui's proportional
+/// fonts. Those stay behind it as fallbacks, so emoji and symbols still draw.
+pub fn install_fonts(ctx: &egui::Context, interface: Option<egui::FontData>) {
     let mut fonts = egui::FontDefinitions::default();
-    fonts.font_data.insert(
-        "gentium-bold".into(),
-        Arc::new(egui::FontData::from_static(FaceId::Bold.bytes())),
-    );
+    if let Some(bold) = FaceId::Bold.bundled_bytes() {
+        fonts.font_data.insert(
+            "gentium-bold".into(),
+            Arc::new(egui::FontData::from_static(bold)),
+        );
+    }
+    if let Some(data) = interface {
+        fonts.font_data.insert(INTERFACE.into(), Arc::new(data));
+        fonts
+            .families
+            .entry(FontFamily::Proportional)
+            .or_default()
+            .insert(0, INTERFACE.into());
+    }
     let mut family = vec!["gentium-bold".to_string()];
     if let Some(p) = fonts.families.get(&FontFamily::Proportional) {
-        family.extend(p.iter().cloned());
+        family.extend(p.iter().filter(|f| *f != INTERFACE).cloned());
     }
     fonts
         .families
         .insert(FontFamily::Name(DISPLAY.into()), family);
     ctx.set_fonts(fonts);
-    ctx.style_mut_of(egui::Theme::Light, |s| style(s, &LIGHT));
-    ctx.style_mut_of(egui::Theme::Dark, |s| style(s, &DARK));
 }
 
 fn style(style: &mut egui::Style, ch: &Chrome) {

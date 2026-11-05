@@ -1,12 +1,13 @@
 //! Estimated block heights, for blocks not laid out yet (#14 rule 7). Refined once laid out;
 //! the scroll position is anchored to a verse, so a wrong estimate never moves the view.
 
-use obs_fonts::FaceId;
+use obs_fonts::{FaceId, Script, script_of};
 
 use crate::paragraph::Paragraph;
 
 /// Average advance per character as a share of the font size: measured on Genesis in Gentium
-/// Plus (English ≈ 0.43) and Ezra SIL (pointed Hebrew, per base letter ≈ 0.55).
+/// Plus (English ≈ 0.43) and Ezra SIL (pointed Hebrew, per base letter ≈ 0.55); other reading
+/// fonts (#138) use the same averages for their script.
 const LATIN_ADVANCE: f32 = 0.43;
 const HEBREW_ADVANCE: f32 = 0.55;
 
@@ -15,7 +16,7 @@ pub fn estimate_height(para: &Paragraph, width: f32) -> f32 {
     let mut text_width = 0.0f32;
     let mut line_size = 0.0f32;
     for r in &para.runs {
-        let per_char = if r.style.face == FaceId::Hebrew {
+        let per_char = if r.style.face == FaceId::Hebrew || script_of(&r.text) == Script::Hebrew {
             HEBREW_ADVANCE
         } else {
             LATIN_ADVANCE

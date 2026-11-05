@@ -9,6 +9,7 @@ use std::sync::Arc;
 use obs_ui_egui::bench::{BenchConfig, run, synthetic_bible};
 
 mod fetch;
+mod fonts;
 #[cfg(test)]
 mod live_tests;
 
@@ -79,6 +80,7 @@ fn main() -> ExitCode {
             Ok(Box::new(
                 obs_ui_egui::App::with_file(file)
                     .with_fetch(Arc::new(fetch::HttpFetch::new()))
+                    .with_system_fonts(Arc::new(fonts::FontdbFonts::system()))
                     .with_automation_from_env(),
             ))
         }),

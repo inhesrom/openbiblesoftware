@@ -15,13 +15,18 @@
 //! | `verse` start | verse number object, superscript; verse 1 shows the chapter number |
 //! | zero-width `note_ref` | note marker object `†` |
 //!
-//! Hebrew runs (by character) use Ezra SIL at `hebrew_scale`; everything else Gentium Plus.
+//! Each script's text uses its reading font (#138; by default Ezra SIL for Hebrew, at
+//! `hebrew_scale`, and Gentium Plus for everything else), falling back per cluster to the
+//! bundled face for characters the chosen font lacks. Verse and chapter numbers follow the
+//! Latin font.
 
 use std::ops::Range;
 
-use obs_fonts::{FaceId, Script};
+use std::sync::Arc;
+
+use obs_fonts::{Face, FaceId, FaceSet, ReadingScript, face};
 use obs_model::{Direction, ParaStyle, Span, SpanKind, TextUnit, UnitKind};
-use unicode_script::UnicodeScript;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::paragraph::{Align, InlineObject, Paragraph, Run, RunSource};
 use crate::style::{ColorRole, RunStyle, TextSettings, VerseNumbers};
@@ -88,11 +93,6 @@ pub fn unit_blocks(unit: &TextUnit) -> Vec<BlockSource> {
     }
     push_plain(&mut out, pos, unit.text.len());
     out
-}
-
-/// Whether a unit's character is Hebrew (letters, points, punctuation).
-fn is_hebrew(c: char) -> bool {
-    c.script() == Script::Hebrew
 }
 
 /// Style flags accumulated from the spans over a piece of text.
@@ -337,11 +337,14 @@ fn push_objects(
                     && block.contains(&a)
                     && (settings.verse_numbers != VerseNumbers::Hidden || verse.verse == 1) =>
             {
+                // Numbers follow the Latin reading font (bold), when it has the digits.
+                let numbers = FaceChooser::new(settings, true, false);
+                let number_face = |t: &str| numbers.face_for(ReadingScript::Latin, t);
                 let (text, style) = if verse.verse == 1 {
                     (
                         format!("{}\u{00A0}", verse.chapter),
                         RunStyle {
-                            face: FaceId::Bold,
+                            face: number_face(&verse.chapter.to_string()),
                             size: body * 1.3,
                             small_caps: false,
                             raise: 0.0,
@@ -352,7 +355,7 @@ fn push_objects(
                     (
                         format!("{}\u{00A0}", verse.verse),
                         RunStyle {
-                            face: FaceId::Bold,
+                            face: number_face(&verse.verse.to_string()),
                             size: body * 0.8,
                             small_caps: false,
                             raise: 0.0,
@@ -363,7 +366,7 @@ fn push_objects(
                     (
                         format!("{}\u{202F}", verse.verse),
                         RunStyle {
-                            face: FaceId::Bold,
+                            face: number_face(&verse.verse.to_string()),
                             size: body * 0.62,
                             small_caps: false,
                             raise: body * 0.38,
@@ -385,8 +388,81 @@ fn push_objects(
     }
 }
 
-/// Split `text` into runs by script, so Hebrew gets Ezra SIL; neutral characters (spaces,
-/// punctuation, digits) stay with the run before them.
+/// Synthetic small capitals (#138): with a reading font that has no `smcp`, lowercase letters
+/// of small-caps text are drawn as capitals at this share of the size.
+pub const SYNTHETIC_SMALL_CAPS: f32 = 0.78;
+
+/// Characters that draw nothing (joiners, direction marks, variation selectors, the
+/// combining grapheme joiner): shaping hides them, so a face need not have them.
+fn is_default_ignorable(c: char) -> bool {
+    matches!(c as u32, 0x034F | 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x2064 | 0xFE00..=0xFE0F | 0xFEFF)
+}
+
+/// Picks the face for each cluster of a text in one style: the chosen reading font of the
+/// cluster's script when it has every character, else the bundled face (per-glyph fallback,
+/// #138).
+struct FaceChooser {
+    chosen: [FaceId; 3],
+    /// The chosen faces that are not bundled, loaded once per text.
+    loaded: [Option<Arc<Face>>; 3],
+    bundled: [FaceId; 3],
+}
+
+impl FaceChooser {
+    fn new(settings: &TextSettings, bold: bool, italic: bool) -> Self {
+        let chosen = ReadingScript::ALL.map(|s| settings.fonts.get(s).pick(bold, italic));
+        Self {
+            chosen,
+            loaded: chosen.map(|id| (!id.is_bundled()).then(|| face(id).ok()).flatten()),
+            bundled: ReadingScript::ALL.map(|s| FaceSet::bundled(s).pick(bold, italic)),
+        }
+    }
+
+    fn all_bundled(&self) -> bool {
+        self.chosen.iter().all(|id| id.is_bundled())
+    }
+
+    fn slot(script: ReadingScript) -> usize {
+        script as usize
+    }
+
+    /// Whether `id` can draw every visible character of `cluster`.
+    fn covers(&self, id: FaceId, cluster: &str) -> bool {
+        if id.is_bundled() {
+            return true;
+        }
+        let Some(f) = self.loaded.iter().flatten().find(|f| f.id == id) else {
+            return false;
+        };
+        cluster
+            .chars()
+            .all(|c| is_default_ignorable(c) || f.covers(c))
+    }
+
+    fn face_for(&self, script: ReadingScript, cluster: &str) -> FaceId {
+        let i = Self::slot(script);
+        let chosen = self.chosen[i];
+        if self.covers(chosen, cluster) {
+            chosen
+        } else {
+            self.bundled[i]
+        }
+    }
+}
+
+/// The script a cluster is drawn as: its first character with one. Maqaf and sof pasuq go with
+/// the text around them, like spaces and punctuation.
+fn cluster_script(cluster: &str) -> Option<ReadingScript> {
+    cluster
+        .chars()
+        .filter(|&c| c != '\u{05BE}' && c != '\u{05C3}' && !c.is_ascii_digit())
+        .find_map(ReadingScript::of_char)
+}
+
+/// Split `text` into runs by script and face: each script gets its reading font (Ezra SIL and
+/// Gentium Plus by default), and a cluster the chosen font lacks falls back to the bundled face.
+/// Neutral clusters (spaces, punctuation, digits) stay with the run before them, or, at the
+/// start, with the first run.
 fn push_text(
     runs: &mut Vec<Run>,
     text: &str,
@@ -395,14 +471,11 @@ fn push_text(
     body: f32,
     settings: &TextSettings,
 ) {
-    let style_for = |hebrew: bool| {
-        let script = if hebrew {
-            Script::Hebrew
-        } else {
-            Script::Latin
-        };
+    let chooser = FaceChooser::new(settings, flags.bold, flags.italic);
+    let style_for = |face: FaceId, script: ReadingScript| {
+        let hebrew = script == ReadingScript::Hebrew;
         RunStyle {
-            face: FaceId::for_script(script, flags.bold, flags.italic),
+            face,
             size: if hebrew {
                 body * settings.hebrew_scale
             } else {
@@ -414,39 +487,108 @@ fn push_text(
         }
     };
     let mut start = 0;
-    let mut current: Option<bool> = None;
-    for (i, c) in text.char_indices() {
-        let hebrew = if is_hebrew(c) && !c.is_whitespace() && c != '\u{05BE}' && c != '\u{05C3}' {
-            Some(true)
-        } else if c.is_alphanumeric() && !c.is_ascii_digit() {
-            Some(false)
-        } else {
-            None
+    let mut current: Option<(FaceId, ReadingScript)> = None;
+    // With only bundled faces every character is drawn where it is; a chosen face is checked
+    // for whole grapheme clusters, so a letter and its marks stay in one face.
+    let clusters: Box<dyn Iterator<Item = (usize, &str)>> = if chooser.all_bundled() {
+        Box::new(
+            text.char_indices()
+                .map(|(i, c)| (i, &text[i..i + c.len_utf8()])),
+        )
+    } else {
+        Box::new(text.grapheme_indices(true))
+    };
+    for (i, cluster) in clusters {
+        let next = match (cluster_script(cluster), current) {
+            (Some(script), _) => Some((chooser.face_for(script, cluster), script)),
+            (None, Some((face, script))) if chooser.covers(face, cluster) => Some((face, script)),
+            (None, Some((_, script))) => Some((chooser.face_for(script, cluster), script)),
+            (None, None) => None,
         };
-        if let (Some(h), Some(cur)) = (hebrew, current)
-            && h != cur
-        {
-            runs.push(Run {
-                text: text[start..i].to_string(),
-                style: style_for(cur),
-                source: RunSource::Text {
-                    unit_start: unit_start + start,
-                },
-            });
+        let (Some(next), Some(cur)) = (next, current) else {
+            current = current.or(next);
+            continue;
+        };
+        // Latin and Greek in one face stay one run; Hebrew is sized apart.
+        let hebrew = |(_, script): (FaceId, ReadingScript)| script == ReadingScript::Hebrew;
+        if next.0 != cur.0 || hebrew(next) != hebrew(cur) {
+            push_run(
+                runs,
+                &text[start..i],
+                unit_start + start,
+                style_for(cur.0, cur.1),
+            );
             start = i;
         }
-        if hebrew.is_some() {
-            current = hebrew;
-        }
+        current = Some(next);
     }
     if start < text.len() {
+        let (face, script) = current.unwrap_or_else(|| {
+            // Only neutral characters, such as a maqaf between two Tagged words: drawn in the
+            // face of the script they belong to (Gentium Plus has no maqaf).
+            let rest = &text[start..];
+            let script = rest
+                .chars()
+                .find_map(ReadingScript::of_char)
+                .unwrap_or(ReadingScript::Latin);
+            (chooser.face_for(script, rest), script)
+        });
+        push_run(
+            runs,
+            &text[start..],
+            unit_start + start,
+            style_for(face, script),
+        );
+    }
+}
+
+/// Push one run. Small-caps text in a face without `smcp` becomes synthetic small caps: ASCII
+/// lowercase letters drawn as capitals at [`SYNTHETIC_SMALL_CAPS`] of the size (byte offsets
+/// are kept, as only ASCII changes case).
+fn push_run(runs: &mut Vec<Run>, text: &str, unit_start: usize, style: RunStyle) {
+    let real = !style.small_caps || face(style.face).is_ok_and(|f| f.has_small_caps());
+    if real {
         runs.push(Run {
-            text: text[start..].to_string(),
-            style: style_for(current.unwrap_or(false)),
+            text: text.to_string(),
+            style,
+            source: RunSource::Text { unit_start },
+        });
+        return;
+    }
+    let mut start = 0;
+    let mut lower: Option<bool> = None;
+    let push = |runs: &mut Vec<Run>, a: usize, b: usize, lower: bool| {
+        let piece = &text[a..b];
+        runs.push(Run {
+            text: if lower {
+                piece.to_ascii_uppercase()
+            } else {
+                piece.to_string()
+            },
+            style: RunStyle {
+                size: if lower {
+                    style.size * SYNTHETIC_SMALL_CAPS
+                } else {
+                    style.size
+                },
+                small_caps: false,
+                ..style
+            },
             source: RunSource::Text {
-                unit_start: unit_start + start,
+                unit_start: unit_start + a,
             },
         });
+    };
+    for (i, c) in text.char_indices() {
+        let is_lower = c.is_ascii_lowercase();
+        if lower.is_some_and(|l| l != is_lower) {
+            push(runs, start, i, !is_lower);
+            start = i;
+        }
+        lower = Some(is_lower);
+    }
+    if start < text.len() {
+        push(runs, start, text.len(), lower.unwrap_or(false));
     }
 }
 

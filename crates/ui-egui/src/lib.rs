@@ -14,6 +14,7 @@ mod pane;
 pub mod search_view;
 mod selection;
 mod shell;
+mod system_fonts;
 pub mod theme;
 mod view;
 mod workers;
@@ -30,6 +31,7 @@ pub use selection::{
     DocPos, Granularity, Selection, copy_text, range_rects, selected_text, selection_rects, word_at,
 };
 pub use shell::{Shell, parse_shortcut};
+pub use system_fonts::{FontFile, InstalledFamily, NoSystemFonts, SystemFonts};
 pub use view::{Frame, FrameBlock, FrameStats, ReadingView, SYNC_BUDGET, VisibleBlock};
 pub use workers::{LayoutClient, SnippetCache, lay_out, set_layout_slowdown};
 
@@ -157,6 +159,13 @@ impl App {
     /// one, only local `file://` repositories answer.
     pub fn with_fetch(mut self, fetch: std::sync::Arc<dyn obs_engine::sword_repo::Fetch>) -> Self {
         self.shell.session_mut().set_fetch(fetch);
+        self
+    }
+
+    /// Hand the shell the app's installed fonts (View → Fonts, #138). Without them, only the
+    /// bundled fonts can be chosen.
+    pub fn with_system_fonts(mut self, fonts: std::sync::Arc<dyn SystemFonts>) -> Self {
+        self.shell.set_system_fonts(fonts);
         self
     }
 

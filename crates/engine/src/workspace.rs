@@ -428,6 +428,8 @@ pub enum Effect {
     },
     /// Host opens a native picker off the UI thread, then runs `import.start`.
     PickImport,
+    /// Open the Fonts window (View → Fonts…, #138).
+    ShowFonts,
 }
 
 /// How the caller asked for a Tab to be opened.

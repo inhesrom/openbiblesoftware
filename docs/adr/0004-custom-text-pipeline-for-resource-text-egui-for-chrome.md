@@ -22,3 +22,15 @@ All text that comes from a Resource goes through our own pipeline, wherever it a
 - **Painting:** one shared glyph atlas (single-channel, subpixel-binned, grown by page) for all Resource text. Each laid-out block becomes an egui mesh. Block textures are dropped from v0.1. A later print or PDF path feeds the same laid-out lines to vello_cpu directly.
 - **Layout off the frame:** a shaped-segment cache shared by all threads (90% hit rate on Genesis) and a layout worker pool that prefetches ±1.5 viewports. The UI thread may spend at most 2 ms per frame on synchronous layout. The block a jump lands in is exempt and is always laid out at once; linked followers and inline snippets settle off-thread a few frames later. With these, steady scrolling held 120 Hz (0.2–0.4% missed frames) without reading-pane placeholders.
 - **Accessibility:** every laid-out block emits an AccessKit paragraph node (text and bounds), with Tagged words and references as link children. Only visible and prefetched blocks emit nodes.
+
+## Amendment (#138): Reading fonts and the Interface font are the user's choice
+
+Resource text no longer uses only the Bundled fonts. View → Fonts chooses a Reading font for each script (Latin, Greek, Hebrew) and an Interface font, each either a Bundled font or a font installed on the computer. So:
+
+- **Installed fonts are read by the app, not the libraries.** The desktop app enumerates them with `fontdb` and hands their bytes to `obs-fonts` (`load_user_face`), through the `SystemFonts` trait of `obs-ui-egui`, as Get Bibles does with its transport. `obs-fonts`, `obs-layout` and `obs-engine` stay free of platform font code and still build for WASM, where only the Bundled fonts are offered.
+- **Loaded faces are `FaceId::User(n)`, never reused.** Shaped segments and atlas glyphs are keyed by face, so a stale entry can never be drawn in another font. Changing a font loads new faces, unloads the old ones and clears the shaped-segment cache; the Text settings change, so every view lays its text out again (anchored on its verse, so Annotations and selection stay put).
+- **Fallback is per grapheme cluster, decided in layout.** A cluster the chosen face cannot draw (by its cmap) is drawn in the Bundled font for its script, so text never shows missing glyphs. A font with no `smcp` gets synthetic small capitals for the divine name.
+- **Choices are stored by family and style name** in the User database, not as files. A font missing on another computer falls back to the Bundled font, with a notice once; the choice is kept for computers that have it.
+- **The Interface font goes first in egui's proportional family**; egui's own fonts stay behind it, so emoji and symbols still draw. Headings keep Gentium Plus Bold.
+
+Considered: a font per Resource (left for later), and `font-kit` instead of `fontdb` (native system APIs, but heavier and with C dependencies on Linux).

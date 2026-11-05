@@ -1,7 +1,6 @@
-//! Theme, Page tone, Interface size and Text settings (#21, #66, #137): what the View menu
-//! changes. Colours
-//! themselves live in the UI; the engine keeps the choices, persists them and runs the
-//! commands that change them.
+//! Theme, Page tone, Interface size, Text settings and Fonts (#21, #66, #137, #138): what the
+//! View menu changes. Colours and font files themselves live in the UI; the engine keeps the
+//! choices, persists them and runs the commands that change them.
 
 use obs_layout::{TextSettings, VerseNumbers};
 use serde_json::{Value, json};
@@ -167,8 +166,131 @@ impl Default for Appearance {
     }
 }
 
+/// What a font choice is for: one reading font per script, and the interface font.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FontSlot {
+    Latin,
+    Greek,
+    Hebrew,
+    Interface,
+}
+
+impl FontSlot {
+    pub const ALL: [FontSlot; 4] = [
+        FontSlot::Latin,
+        FontSlot::Greek,
+        FontSlot::Hebrew,
+        FontSlot::Interface,
+    ];
+
+    pub const fn id(self) -> &'static str {
+        match self {
+            FontSlot::Latin => "latin",
+            FontSlot::Greek => "greek",
+            FontSlot::Hebrew => "hebrew",
+            FontSlot::Interface => "interface",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.id() == id)
+    }
+
+    /// The reading script of the slot; `None` for the interface font.
+    pub const fn script(self) -> Option<obs_fonts::ReadingScript> {
+        match self {
+            FontSlot::Latin => Some(obs_fonts::ReadingScript::Latin),
+            FontSlot::Greek => Some(obs_fonts::ReadingScript::Greek),
+            FontSlot::Hebrew => Some(obs_fonts::ReadingScript::Hebrew),
+            FontSlot::Interface => None,
+        }
+    }
+
+    /// Label in the Fonts window.
+    pub const fn label(self) -> &'static str {
+        match self {
+            FontSlot::Latin => "Latin text",
+            FontSlot::Greek => "Greek text",
+            FontSlot::Hebrew => "Hebrew text",
+            FontSlot::Interface => "Interface",
+        }
+    }
+
+    /// What draws the slot when nothing is chosen (or the chosen font is missing).
+    pub const fn bundled_family(self) -> &'static str {
+        match self.script() {
+            Some(s) => s.bundled_family(),
+            None => "the bundled interface font",
+        }
+    }
+}
+
+/// A font installed on the computer, chosen by family and style name (`"Charis SIL"`,
+/// `"Regular"`). Names, not files, are stored, so the choice still means something on another
+/// machine; where the font is missing the bundled one is used.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FontChoice {
+    pub family: String,
+    pub style: String,
+    /// The user was told this font is missing here (shown once, until it is found again).
+    pub missing_noticed: bool,
+}
+
+/// The font chosen for each [`FontSlot`]; `None` is the bundled font.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FontChoices {
+    slots: [Option<FontChoice>; 4],
+}
+
+impl FontChoices {
+    pub fn get(&self, slot: FontSlot) -> Option<&FontChoice> {
+        self.slots[slot as usize].as_ref()
+    }
+
+    pub fn set(&mut self, slot: FontSlot, choice: Option<FontChoice>) {
+        self.slots[slot as usize] = choice;
+    }
+
+    pub(crate) fn get_mut(&mut self, slot: FontSlot) -> Option<&mut FontChoice> {
+        self.slots[slot as usize].as_mut()
+    }
+
+    fn to_json(&self) -> Value {
+        let mut out = serde_json::Map::new();
+        for slot in FontSlot::ALL {
+            if let Some(c) = self.get(slot) {
+                out.insert(
+                    slot.id().into(),
+                    json!({
+                        "family": c.family,
+                        "style": c.style,
+                        "missing_noticed": c.missing_noticed,
+                    }),
+                );
+            }
+        }
+        Value::Object(out)
+    }
+
+    fn apply_json(&mut self, v: &Value) {
+        for slot in FontSlot::ALL {
+            let c = &v[slot.id()];
+            if let Some(family) = c["family"].as_str().filter(|f| !f.trim().is_empty()) {
+                self.set(
+                    slot,
+                    Some(FontChoice {
+                        family: family.to_string(),
+                        style: c["style"].as_str().unwrap_or("Regular").to_string(),
+                        missing_noticed: c["missing_noticed"].as_bool().unwrap_or(false),
+                    }),
+                );
+            }
+        }
+    }
+}
+
 /// The preference record (JSON in the User database's `preference` table).
-pub(crate) fn to_json(a: &Appearance, t: &TextSettings) -> Value {
+pub(crate) fn to_json(a: &Appearance, t: &TextSettings, f: &FontChoices) -> Value {
     json!({
         "theme": a.theme.id(),
         "page_tone": a.page_tone.id(),
@@ -178,12 +300,14 @@ pub(crate) fn to_json(a: &Appearance, t: &TextSettings) -> Value {
         "red_letter": t.red_letter,
         "verse_numbers": verse_numbers_id(t.verse_numbers),
         "highlights": a.show_highlights,
+        "fonts": f.to_json(),
     })
 }
 
 /// Apply a saved preference record; unknown or missing values keep their defaults. Records
 /// from #37 (a `dark_page` flag and a boolean `verse_numbers`) are read too.
-pub(crate) fn apply_json(v: &Value, a: &mut Appearance, t: &mut TextSettings) {
+pub(crate) fn apply_json(v: &Value, a: &mut Appearance, t: &mut TextSettings, f: &mut FontChoices) {
+    f.apply_json(&v["fonts"]);
     if let Some(x) = v["theme"].as_str().and_then(Theme::from_id) {
         a.theme = x;
     }

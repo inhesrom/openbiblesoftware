@@ -143,7 +143,8 @@ impl Bounds {
 
 /// Raster one glyph: coverage, width, height, and its top-left offset from the pen.
 fn raster(key: GlyphKey) -> Option<(Vec<u8>, usize, usize, f32, f32)> {
-    let font = face(key.face).ok()?.font_ref()?;
+    let face = face(key.face).ok()?;
+    let font = face.font_ref()?;
     let outlines = font.outline_glyphs();
     let glyph = outlines.get(GlyphId::new(key.glyph))?;
     let size = Size::new(key.px_q as f32 / 4.0);
