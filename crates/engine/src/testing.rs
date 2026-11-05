@@ -1456,6 +1456,30 @@ impl crate::UserData for PreferenceWritesFail {
     fn save_resource_names(&self, names: &[(String, String, String)]) -> Result<(), String> {
         crate::UserData::save_resource_names(&self.0, names)
     }
+    fn favorites(&self) -> Result<Vec<obs_store::FavoriteRow>, String> {
+        crate::UserData::favorites(&self.0)
+    }
+    fn add_favorite(&self, folder: &str, label: &str, location: &str) -> Result<i64, String> {
+        crate::UserData::add_favorite(&self.0, folder, label, location)
+    }
+    fn remove_favorite(&self, id: i64) -> Result<bool, String> {
+        crate::UserData::remove_favorite(&self.0, id)
+    }
+    fn move_favorite(&self, id: i64, folder: &str) -> Result<bool, String> {
+        crate::UserData::move_favorite(&self.0, id, folder)
+    }
+    fn record_visit(&self, label: &str, location: &str) -> Result<(), String> {
+        crate::UserData::record_visit(&self.0, label, location)
+    }
+    fn history_as_of(&self, at: i64) -> Result<Vec<obs_store::VisitRow>, String> {
+        crate::UserData::history_as_of(&self.0, at)
+    }
+    fn local_day(&self, at: i64) -> Result<String, String> {
+        crate::UserData::local_day(&self.0, at)
+    }
+    fn clear_history(&self) -> Result<(), String> {
+        crate::UserData::clear_history(&self.0)
+    }
     fn notebooks(&self) -> Result<Vec<obs_store::Notebook>, String> {
         crate::UserData::notebooks(&self.0)
     }
