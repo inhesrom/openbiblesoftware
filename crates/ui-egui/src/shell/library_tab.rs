@@ -246,6 +246,11 @@ impl State {
     }
 
     pub(super) fn about_body(&mut self, ui: &mut Ui, tab: TabId, id: &str) {
+        let changes_record = self
+            .session
+            .library
+            .get(id)
+            .and_then(obs_engine::credits::changes_record_url);
         let Some(m) = self.session.library.get(id).map(|e| e.manifest.clone()) else {
             ui.centered_and_justified(|ui| {
                 ui.colored_label(theme::c().warn, format!("{id} is not in the library"))
@@ -309,6 +314,22 @@ impl State {
                         ui.add_space(10.0);
                         section(ui, "Changes we made");
                         ui.label(m.changes.as_deref().unwrap_or("None recorded."));
+                        // CC BY Starter Resources: the record published with each release
+                        // (#20 decision 4, #67).
+                        if let Some(url) = &changes_record {
+                            // One row: a wrapped link would start mid-line, off its own text.
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new("Published change record:")
+                                        .color(theme::c().muted),
+                                );
+                                ui.hyperlink_to(
+                                    obs_model::changes_record_file(&m.resource_id),
+                                    url,
+                                )
+                                .on_hover_text(url);
+                            });
+                        }
                         ui.add_space(10.0);
                         section(ui, "Source file");
                         ui.label(source_file(&m));

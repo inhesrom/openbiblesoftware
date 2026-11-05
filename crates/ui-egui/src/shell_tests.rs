@@ -31,6 +31,8 @@ struct Harness {
     /// Textures as the GPU would hold them, and last frame's shapes (for [`Harness::screenshot`]).
     textures: std::collections::HashMap<egui::TextureId, egui::ColorImage>,
     last_shapes: Vec<egui::epaint::ClippedShape>,
+    /// URLs the app asked the platform to open (hyperlinks clicked), oldest first.
+    opened: Vec<String>,
 }
 
 fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
@@ -86,6 +88,7 @@ impl Harness {
             tree: None,
             textures: std::collections::HashMap::new(),
             last_shapes: Vec::new(),
+            opened: Vec::new(),
         };
         h.frames(3);
         h
@@ -125,6 +128,11 @@ impl Harness {
         }
         out.textures_delta.clear();
         self.last_shapes = out.shapes.clone();
+        for c in &out.platform_output.commands {
+            if let egui::OutputCommand::OpenUrl(u) = c {
+                self.opened.push(u.url.clone());
+            }
+        }
         if let Some(t) = out.platform_output.accesskit_update.take() {
             self.tree = Some(t);
         }
@@ -565,12 +573,15 @@ fn menu_items_are_dispatched_through_the_command_registry() {
     h.open_menu("Help");
     h.click_text("Credits");
     assert!(h.find("Credits").is_some());
-    assert!(
+    assert_eq!(
         h.shell
             .st
-            .window
-            .as_ref()
-            .is_some_and(|(_, b)| b.contains("TVTMS"))
+            .session
+            .workspace
+            .focused()
+            .and_then(|t| h.shell.st.session.workspace.tab(t))
+            .map(|t| t.kind.clone()),
+        Some(TabKind::Credits)
     );
     h.open_menu("View");
     h.click_text("✓ Red letter");
@@ -2872,6 +2883,9 @@ mod import {
 
 #[path = "word_info_tests.rs"]
 mod word_info;
+
+#[path = "credits_tests.rs"]
+mod credits;
 
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {

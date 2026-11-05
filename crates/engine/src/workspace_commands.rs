@@ -414,7 +414,9 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         view_saved(s, json!({ "on": s.text.red_letter }))
     }),
     simple("help.about", "About Open Bible", None, always, about),
-    simple("help.credits", "Credits", None, always, credits),
+    open_cmd("help.credits", "Credits", None, |s, p| {
+        open(s, p, TabKind::Credits)
+    }),
     CommandSpec {
         id: "tab.go",
         label: "Go to Key",
@@ -527,6 +529,7 @@ pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
         TabKind::Library => "Library".into(),
         TabKind::ImportReport(_) => "Import report".into(),
         TabKind::GetBibles => "Get Bibles".into(),
+        TabKind::Credits => "Credits".into(),
         TabKind::Resource(id) => s
             .library
             .get(id)
@@ -786,23 +789,6 @@ fn about(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
     s.workspace.push_effect(Effect::Show {
         title: "About Open Bible".into(),
         body,
-    });
-    Ok(Value::Null)
-}
-
-/// App-level attribution for data built into the app (#18 constraint for #20).
-pub const CREDITS: &str = "\
-Gentium Plus 6.200, © SIL International, SIL Open Font License 1.1.
-Ezra SIL 2.51, © SIL International, SIL Open Font License 1.1.
-TVTMS (Translators Versification Traditions with Methodology for Standardisation), \
-STEP Bible (www.STEPBible.org), CC BY 4.0; reformatted for verse maps.
-
-Each Resource's own Attribution is shown in its About view.";
-
-fn credits(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
-    s.workspace.push_effect(Effect::Show {
-        title: "Credits".into(),
-        body: CREDITS.into(),
     });
     Ok(Value::Null)
 }

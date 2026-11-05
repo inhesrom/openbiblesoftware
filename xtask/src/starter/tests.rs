@@ -360,10 +360,15 @@ fn cc_by_changes_files_are_complete_deterministic_and_cleaned() {
         assert_eq!(
             text,
             format!(
-                "# Changes we made: {id}\n\nResource: `{id}`\n\nLicence: CC-BY-4.0\n\n\
-             ## Attribution\n\nCredit {id}.\n\n\
-             ## Source\n\n{url}\n\nPinned download: {url}\n\nSHA-256: `{sha}`\n\n\
-             ## Changes we made\n\nConverted.\n",
+                "# Changes we made: {id}\n\n\
+                 {id} ({id}) ships in the Open Bible Software Starter library as the Resource \
+                 `{id}`. This record states the changes we made to the source, as its licence \
+                 asks.\n\n\
+                 - Licence: CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)\n\
+                 - Source: {url}\n\n\
+                 ## Attribution\n\nCredit {id}.\n\n\
+                 ## Pinned downloads\n\n- {url} (SHA-256 `{sha}`)\n\n\
+                 ## Changes we made\n\nConverted.\n",
                 id = source.resource_id,
                 url = source.url,
                 sha = source.sha256,
@@ -1002,19 +1007,30 @@ fn cc_by_changes_artifacts_record_lock_metadata_and_are_deterministic() {
             .out
             .join(format!("CHANGES-{}.md", source.resource_id));
         if ["tbesh", "tbesg", "bdb"].contains(&source.resource_id.as_str()) {
-            assert_eq!(
-                std::fs::read_to_string(path).unwrap(),
+            let text = std::fs::read_to_string(path).unwrap();
+            assert_eq!(text, changes_record(source));
+            for part in [
+                format!("# Changes we made: {}\n", source.title),
+                format!("`{}`", source.resource_id),
+                "- Licence: CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)".into(),
                 format!(
-                    "# Changes we made: {}\n\nResource: `{}`\n\nLicence: CC-BY-4.0\n\n## Attribution\n\n{} fixture Attribution.\n\n## Source\n\n{}\n\nPinned download: {}\n\nSHA-256: `{}`\n\n## Changes we made\n\nConverted {} fixture.\n",
-                    source.title,
-                    source.resource_id,
-                    source.resource_id,
-                    source.url,
-                    source.url,
-                    source.sha256,
-                    source.resource_id,
-                )
-            );
+                    "## Attribution\n\n{} fixture Attribution.\n",
+                    source.resource_id
+                ),
+                format!(
+                    "## Changes we made\n\nConverted {} fixture.\n",
+                    source.resource_id
+                ),
+            ] {
+                assert!(text.contains(&part), "{part:?} missing from:\n{text}");
+            }
+            // Every pinned file (BDB has its lexical index as an extra file).
+            for (url, sha) in source.files() {
+                assert!(
+                    text.contains(&format!("- {url} (SHA-256 `{sha}`)")),
+                    "{text}"
+                );
+            }
         } else {
             assert!(
                 !path.exists(),
@@ -1310,4 +1326,58 @@ fn the_build_report_counts_the_structural_coverage() {
     assert!(report.contains("All passed. 1 Bible(s):"), "{report}");
     assert!(report.contains("## Golden snapshots"), "{report}");
     assert!(report.contains("None listed."), "{report}");
+}
+
+/// #67: every CC BY source of the real lock gets a published change record, and the record
+/// carries the credit, the licence link, every pinned file and the lock's changes note.
+#[test]
+fn every_cc_by_source_in_the_real_lock_has_a_complete_changes_record() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let lock = Lock::load(&root.join("starter/sources.toml")).unwrap();
+    let cc_by: Vec<&Source> = lock
+        .sources
+        .iter()
+        .filter(|s| s.spdx.contains("CC-BY"))
+        .collect();
+    assert!(
+        cc_by.len() >= 7,
+        "the lock has {} CC BY sources",
+        cc_by.len()
+    );
+    for source in &lock.sources {
+        assert_eq!(
+            obs_model::is_cc_by(&source.spdx),
+            source.spdx.contains("CC-BY"),
+            "{}: {}",
+            source.resource_id,
+            source.spdx
+        );
+    }
+    for source in cc_by {
+        let text = changes_record(source);
+        let id = &source.resource_id;
+        assert!(text.starts_with(&format!("# Changes we made: {}\n", source.title)));
+        assert!(text.contains(&format!("`{id}`")), "{id}");
+        assert!(
+            text.contains("https://creativecommons.org/licenses/by/4.0/"),
+            "{id}: no licence link"
+        );
+        assert!(text.contains(source.attribution.trim()), "{id}: no credit");
+        assert!(
+            text.contains(&format!(
+                "## Changes we made\n\n{}\n",
+                source.changes.trim()
+            )),
+            "{id}: no changes note"
+        );
+        for (url, sha) in source.files() {
+            assert!(
+                text.contains(url) && text.contains(sha),
+                "{id}: {url} missing"
+            );
+        }
+        if let Some(home) = &source.homepage {
+            assert!(text.contains(&format!("- Source: {home}")), "{id}");
+        }
+    }
 }

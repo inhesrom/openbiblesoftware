@@ -1,0 +1,42 @@
+# cargo-about configuration for the third-party licence listing shown in Help → Credits (#67).
+# `cargo xtask licenses` runs cargo-about with this file over the desktop app's dependency
+# graph and writes crates/engine/data/third-party-licenses.json; the `licenses` gate of
+# `cargo xtask ci` fails when that file is stale.
+
+# Licences we may ship, in order of preference: for an `A OR B` crate the first one listed
+# here is the one we take. Copyleft alternatives (GPL, LGPL) are deliberately absent, so a
+# dual-licensed crate is always taken under its permissive licence.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "Zlib",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "ISC",
+    "BSL-1.0",
+    "Unlicense",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+    "bzip2-1.0.6",
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+]
+
+# The desktop targets the app ships for, so the listing is the same whichever host runs it.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+
+# Only what ends up in the app: no build scripts, proc-macros' build deps or test-only crates.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# Our own crates (publish = false) are not third-party.
+private = { ignore = true }

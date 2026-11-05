@@ -3,6 +3,7 @@
 mod assets;
 mod bench;
 mod layers;
+mod licenses;
 mod starter;
 mod tvtms;
 
@@ -21,6 +22,8 @@ tasks:
   layers   enforce the crate layering rules (ADR 0005, #12)
   wasm     cargo check every non-app crate for wasm32-unknown-unknown
   assets   every file under an assets/ directory has an ATTRIBUTION.toml entry
+  licenses the committed third-party licence listing matches cargo-about's (`--check`);
+           without `--check`, regenerate it (`cargo xtask licenses --help`)
 
 performance:
   bench    headless reading-pane benchmark; fails past the thresholds in xtask/bench.toml
@@ -55,6 +58,10 @@ fn run() -> Result<()> {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             starter::run(&root, &rest)
         }
+        "licenses" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            licenses::run(&root, &rest)
+        }
         "tvtms" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             tvtms::run(&root, &rest)
@@ -76,6 +83,7 @@ const GATES: &[(&str, Gate)] = &[
     ("fmt", fmt),
     ("layers", layers::run),
     ("assets", assets::run),
+    ("licenses", licenses::gate),
     ("clippy", clippy),
     ("test", test),
     ("wasm", wasm),

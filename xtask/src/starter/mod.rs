@@ -225,32 +225,16 @@ pub fn build(config: &Config) -> Result<String> {
                 .collect(),
         });
     }
-    for source in &lock_file.sources {
-        if source
-            .spdx
-            .split(|c: char| c.is_whitespace() || c == '(' || c == ')')
-            .any(|license| license.starts_with("CC-BY-"))
-        {
-            let text = format!(
-                "# Changes we made: {}\n\nResource: `{}`\n\nLicence: {}\n\n\
-                 ## Attribution\n\n{}\n\n\
-                 ## Source\n\n{}\n\nPinned download: {}\n\nSHA-256: `{}`\n\n\
-                 ## Changes we made\n\n{}\n",
-                source.title,
-                source.resource_id,
-                source.spdx,
-                source.attribution,
-                source.origin_url.as_ref().unwrap_or(&source.url),
-                source.url,
-                source.sha256,
-                source.changes,
-            );
-            let path = config
-                .out
-                .join(format!("CHANGES-{}.md", source.resource_id));
-            std::fs::write(&path, text)
-                .with_context(|| format!("cannot write {}", path.display()))?;
-        }
+    for source in lock_file
+        .sources
+        .iter()
+        .filter(|s| obs_model::is_cc_by(&s.spdx))
+    {
+        let path = config
+            .out
+            .join(obs_model::changes_record_file(&source.resource_id));
+        std::fs::write(&path, changes_record(source))
+            .with_context(|| format!("cannot write {}", path.display()))?;
     }
     let manifest = ReleaseManifest {
         format: MANIFEST_FORMAT,
@@ -323,6 +307,43 @@ pub fn build(config: &Config) -> Result<String> {
         config.out.display()
     );
     Ok(summary)
+}
+
+/// The published change record of a CC BY source (`CHANGES-<id>.md`, #20 decision 4).
+/// CC BY 4.0 §3(a)(1) asks for the credit, a link to the licence and an indication of the
+/// changes made; STEPBible also asks that the changes be recorded and made available. The
+/// record names every pinned file, so the edition changed is exact.
+pub fn changes_record(source: &Source) -> String {
+    let mut s = format!(
+        "# Changes we made: {}\n\n\
+         {} ({}) ships in the Open Bible Software Starter library as the Resource `{}`. \
+         This record states the changes we made to the source, as its licence asks.\n\n",
+        source.title, source.title, source.abbreviation, source.resource_id
+    );
+    let licence = match obs_model::cc_by_license_url(&source.spdx) {
+        Some(url) => format!("{} ({url})", source.spdx),
+        None => source.spdx.clone(),
+    };
+    let _ = writeln!(s, "- Licence: {licence}");
+    if let Some(e) = &source.edition {
+        let _ = writeln!(s, "- Edition: {e}");
+    }
+    if let Some(p) = &source.publisher {
+        let _ = writeln!(s, "- Publisher: {p}");
+    }
+    let origin = source
+        .homepage
+        .as_ref()
+        .or(source.origin_url.as_ref())
+        .unwrap_or(&source.url);
+    let _ = writeln!(s, "- Source: {origin}");
+    let _ = write!(s, "\n## Attribution\n\n{}\n", source.attribution.trim());
+    s.push_str("\n## Pinned downloads\n\n");
+    for (url, sha) in source.files() {
+        let _ = writeln!(s, "- {url} (SHA-256 `{sha}`)");
+    }
+    let _ = write!(s, "\n## Changes we made\n\n{}\n", source.changes.trim());
+    s
 }
 
 fn build_one(

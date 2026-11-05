@@ -121,6 +121,40 @@ impl Manifest {
     pub fn declares(&self, scheme: KeyScheme) -> bool {
         self.key_schemes.contains(&scheme)
     }
+
+    /// Whether this is a Starter Resource under a CC BY licence, so the Starter build
+    /// publishes a [`changes_record_file`] for it (#20 decision 4).
+    pub fn has_changes_record(&self) -> bool {
+        self.origin == Origin::Starter && is_cc_by(&self.license)
+    }
+}
+
+/// Whether an SPDX expression names a Creative Commons Attribution licence (`CC-BY-4.0`,
+/// `CC-BY-SA-4.0`, …), which asks for the changes made to be indicated.
+pub fn is_cc_by(spdx: &str) -> bool {
+    spdx.split(|c: char| c.is_whitespace() || c == '(' || c == ')')
+        .any(|license| license.starts_with("CC-BY-"))
+}
+
+/// The Creative Commons deed of the first CC BY licence in an SPDX expression, e.g.
+/// `https://creativecommons.org/licenses/by/4.0/` for `CC-BY-4.0`.
+pub fn cc_by_license_url(spdx: &str) -> Option<String> {
+    let token = spdx
+        .split(|c: char| c.is_whitespace() || c == '(' || c == ')')
+        .find(|license| license.starts_with("CC-BY-"))?;
+    let (kind, version) = token.strip_prefix("CC-")?.rsplit_once('-')?;
+    if version.is_empty() || !version.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+        return None;
+    }
+    Some(format!(
+        "https://creativecommons.org/licenses/{}/{version}/",
+        kind.to_ascii_lowercase()
+    ))
+}
+
+/// The file name of a CC BY Starter Resource's published change record.
+pub fn changes_record_file(resource_id: &str) -> String {
+    format!("CHANGES-{resource_id}.md")
 }
 
 /// Whether `id` is a valid `resource_id`: 1–64 chars of `a-z`, `0-9` and `-`, not starting or
@@ -133,4 +167,56 @@ pub fn is_valid_resource_id(id: &str) -> bool {
         && id
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cc_by_is_found_anywhere_in_an_spdx_expression() {
+        for yes in [
+            "CC-BY-4.0",
+            "CC-BY-SA-4.0",
+            "(MIT AND CC-BY-4.0)",
+            "LicenseRef-PD OR CC-BY-3.0",
+        ] {
+            assert!(is_cc_by(yes), "{yes}");
+        }
+        for no in [
+            "CC0-1.0",
+            "LicenseRef-PublicDomain",
+            "MIT",
+            "LicenseRef-CC-BY-4.0",
+            "",
+        ] {
+            assert!(!is_cc_by(no), "{no}");
+        }
+    }
+
+    #[test]
+    fn only_cc_by_starter_resources_have_a_changes_record() {
+        let mut m = Manifest::new("tahot", "TAHOT", "TAHOT", ResourceType::Bible, "hbo");
+        m.license = "CC-BY-4.0".into();
+        assert!(!m.has_changes_record(), "imported");
+        m.origin = Origin::Starter;
+        assert!(m.has_changes_record());
+        m.license = "LicenseRef-PublicDomain".into();
+        assert!(!m.has_changes_record());
+        assert_eq!(changes_record_file("tahot"), "CHANGES-tahot.md");
+    }
+
+    #[test]
+    fn cc_by_licences_link_to_their_deed() {
+        assert_eq!(
+            cc_by_license_url("CC-BY-4.0").as_deref(),
+            Some("https://creativecommons.org/licenses/by/4.0/")
+        );
+        assert_eq!(
+            cc_by_license_url("MIT AND CC-BY-SA-3.0").as_deref(),
+            Some("https://creativecommons.org/licenses/by-sa/3.0/")
+        );
+        assert_eq!(cc_by_license_url("CC0-1.0"), None);
+        assert_eq!(cc_by_license_url("CC-BY-"), None);
+    }
 }

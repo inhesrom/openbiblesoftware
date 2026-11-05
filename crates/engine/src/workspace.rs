@@ -73,6 +73,9 @@ pub enum TabKind {
     ImportReport(String),
     /// Get Bibles (#91): download Bibles from SWORD repositories. Keyless, single instance.
     GetBibles,
+    /// Help → Credits (#67): Starter Resources, data built into the app, fonts and
+    /// third-party licences. Keyless, single instance.
+    Credits,
     Guide(Guide),
     Tool(Tool),
 }
@@ -104,6 +107,7 @@ enum Slot {
     About,
     ImportReport,
     GetBibles,
+    Credits,
     Guide(Guide),
     Tool(Tool),
 }
@@ -118,6 +122,7 @@ impl TabKind {
                 | TabKind::About(_)
                 | TabKind::ImportReport(_)
                 | TabKind::GetBibles
+                | TabKind::Credits
                 | TabKind::Tool(Tool::Notes | Tool::WordInfo)
         )
     }
@@ -133,7 +138,10 @@ impl TabKind {
             TabKind::Tool(Tool::WordInfo) => HeaderBox::FollowsHover,
             TabKind::Guide(Guide::WordStudy) => HeaderBox::Word,
             TabKind::Tool(Tool::Search) => HeaderBox::Filter,
-            TabKind::About(_) | TabKind::ImportReport(_) | TabKind::GetBibles => HeaderBox::Keyless,
+            TabKind::About(_)
+            | TabKind::ImportReport(_)
+            | TabKind::GetBibles
+            | TabKind::Credits => HeaderBox::Keyless,
             _ => HeaderBox::Reference,
         }
     }
@@ -146,6 +154,7 @@ impl TabKind {
                 | TabKind::About(_)
                 | TabKind::ImportReport(_)
                 | TabKind::GetBibles
+                | TabKind::Credits
                 | TabKind::Tool(Tool::Notes)
         )
     }
@@ -168,6 +177,7 @@ impl TabKind {
             TabKind::About(_) => Slot::About,
             TabKind::ImportReport(_) => Slot::ImportReport,
             TabKind::GetBibles => Slot::GetBibles,
+            TabKind::Credits => Slot::Credits,
             TabKind::Guide(g) => Slot::Guide(*g),
             TabKind::Tool(t) => Slot::Tool(*t),
         }
@@ -357,7 +367,7 @@ pub enum Effect {
     },
     /// A short message for the user (a toast).
     Message(String),
-    /// A titled text window (About, Credits).
+    /// A titled text window (About).
     Show {
         title: String,
         body: String,

@@ -214,9 +214,16 @@ fn view_and_help_commands_change_session_state() {
     s.run("view.theme", &json!({ "value": "dark" })).unwrap();
     assert_eq!(s.appearance.theme, Theme::Dark);
     assert!(s.run("view.theme", &json!({ "value": "sepia" })).is_err());
-    s.run("help.credits", &json!({})).unwrap();
-    let e = s.workspace.take_effects();
-    assert!(matches!(&e[..], [Effect::Show { body, .. }] if body.contains("TVTMS")));
+    // Credits is a keyless, single-instance Tab (#67).
+    let credits = tab(&s.run("help.credits", &json!({})).unwrap());
+    let t = s.workspace.tab(credits).unwrap();
+    assert_eq!(
+        (t.kind.clone(), t.title.as_str()),
+        (TabKind::Credits, "Credits")
+    );
+    assert_eq!(t.kind.header_box(), HeaderBox::Keyless);
+    assert!(!t.kind.has_link_chip());
+    s.workspace.take_effects();
     assert_eq!(
         s.command_log(),
         [
@@ -296,4 +303,23 @@ fn word_info_commands_follow_the_pin_state() {
     s.run("word_info.unpin", &json!({})).unwrap();
     assert!(!s.word_info.pinned);
     assert!(s.word_info.shown.is_some(), "unpinning keeps the content");
+}
+
+#[test]
+fn help_credits_opens_one_credits_tab_and_refocuses_it() {
+    let mut s = session();
+    let first = tab(&s.run("help.credits", &json!({})).unwrap());
+    let kjv = tab(&s.run("resource.open", &json!({ "id": "kjv" })).unwrap());
+    assert_eq!(s.workspace.focused(), Some(kjv));
+    let again = tab(&s.run("help.credits", &json!({})).unwrap());
+    assert_eq!(again, first);
+    assert_eq!(s.workspace.focused(), Some(first));
+    let credits = s
+        .workspace
+        .tabs()
+        .filter(|t| t.kind == TabKind::Credits)
+        .count();
+    assert_eq!(credits, 1);
+    // It is not a reading Tab: it does not land in the reading Panel.
+    assert_ne!(s.workspace.panel_of(first), s.workspace.panel_of(kjv));
 }

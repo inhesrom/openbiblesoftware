@@ -145,6 +145,14 @@ _Avoid_: Update, Version (for a correction)
 The license and credit text that a Resource requires to be shown, displayed in that Resource's About view.
 _Avoid_: Credits, Copyright notice
 
+**Credits**:
+The app-level list under Help → Credits: every Starter library Resource, the data built into the app, the bundled fonts and the third-party software, each with its licence. A Resource's own Attribution stays in its About view.
+_Avoid_: Acknowledgements, About (for this list)
+
+**Change record**:
+The published `CHANGES-<id>.md` stating the changes made to a CC BY Starter library source, linked from that Resource's About view.
+_Avoid_: Changelog, Diff
+
 ### Workspace
 
 **Workspace**:
