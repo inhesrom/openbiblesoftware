@@ -156,8 +156,9 @@ struct Shared {
 }
 
 /// A test-only pause for the first idle worker to reach it, between its `shutdown` check and
-/// its wait (still holding the queue lock), until the test releases it. `Drop` reports when
-/// its wake-up has been sent, so a test can release the worker only after that (#123).
+/// its wait (still holding the queue lock), until the test releases it. `Drop` reports when it
+/// found the queue lock taken and when its wake-up has been sent, so a test can tell which
+/// came first without timing (#123).
 #[cfg(test)]
 #[derive(Default)]
 struct IdleGate {
@@ -166,10 +167,12 @@ struct IdleGate {
 }
 
 #[cfg(test)]
-#[derive(Default)]
+#[derive(Default, Clone, Copy, Debug)]
 struct IdleGateState {
     /// A worker is held in the gap.
     held: bool,
+    /// `Drop` found the queue lock taken and is waiting for it.
+    lock_waited: bool,
     /// `Drop` has sent its wake-up (`notify_all`).
     woken: bool,
     /// The held worker may go on to its wait; the gate holds no one after this.
@@ -198,14 +201,27 @@ impl IdleGate {
         self.changed.notify_all();
     }
 
-    /// Wait up to `timeout` for `done`; whether it came.
-    fn wait_for(&self, timeout: Duration, done: impl Fn(&IdleGateState) -> bool) -> bool {
+    /// Wait up to `timeout` for `done`; the state then, whether or not it came.
+    fn wait_for(&self, timeout: Duration, done: impl Fn(&IdleGateState) -> bool) -> IdleGateState {
         let s = lock(&self.state);
         let (s, _) = self
             .changed
             .wait_timeout_while(s, timeout, |s| !done(s))
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        done(&s)
+        *s
+    }
+}
+
+/// Releases the gate's worker when dropped, so a test that fails (and unwinds) while the
+/// worker is held, or about to be, still lets the queue it owns drop. Declare it after the
+/// queue: locals drop in reverse order, so the worker is released first.
+#[cfg(test)]
+struct ReleaseIdleGate(Arc<IdleGate>);
+
+#[cfg(test)]
+impl Drop for ReleaseIdleGate {
+    fn drop(&mut self) {
+        self.0.update(|s| s.released = true);
     }
 }
 
@@ -435,6 +451,15 @@ impl Drop for JobQueue {
         // `notify_all` runs; set without the lock, the wake-up could land in between and be
         // lost, leaving `join` below waiting forever (#123).
         {
+            #[cfg(test)]
+            if let Some(gate) = &self.shared.idle_gate
+                && matches!(
+                    self.shared.queue.try_lock(),
+                    Err(std::sync::TryLockError::WouldBlock)
+                )
+            {
+                gate.update(|s| s.lock_waited = true);
+            }
             let _queue = lock(&self.shared.queue);
             self.shared.shutdown.store(true, Ordering::Relaxed);
         }
@@ -621,15 +646,8 @@ mod tests {
         drop_within_wait(q);
     }
 
-    /// #123: dropping the queue while an idle worker is between its `shutdown` check and its
-    /// wait (as a starved runner can leave it, e.g. right after a job) must still stop it. The
-    /// gate holds the worker there until `Drop` has sent its wake-up, or, when `Drop` is
-    /// rightly blocked on the queue lock the worker holds, for `BLOCKED`. Set without the
-    /// lock, `shutdown` and the wake-up land in the gap, the wake-up is lost, and the drop
-    /// hangs.
-    #[test]
-    fn dropping_the_queue_wakes_a_worker_stalled_before_its_wait() {
-        const BLOCKED: Duration = Duration::from_millis(500);
+    /// A one-worker queue whose idle worker the returned gate holds before its wait.
+    fn gated_queue() -> (JobQueue, Arc<IdleGate>) {
         let gate = Arc::new(IdleGate::default());
         let q = JobQueue::with_shared(
             1,
@@ -638,8 +656,21 @@ mod tests {
                 ..Shared::default()
             },
         );
+        (q, gate)
+    }
+
+    /// #123: dropping the queue while an idle worker is between its `shutdown` check and its
+    /// wait (as a starved runner can leave it, e.g. right after a job) must still stop it. The
+    /// gate holds the worker there, holding the queue lock, until `Drop` either reports the
+    /// lock taken (it waits for the worker, as the fix does) or reports its wake-up sent (it
+    /// set `shutdown` without the lock, so the wake-up lands in the gap, is lost, and the drop
+    /// hangs). Which one comes first is decided by the code, not by timing.
+    #[test]
+    fn dropping_the_queue_wakes_a_worker_stalled_before_its_wait() {
+        let (q, gate) = gated_queue();
+        let _release = ReleaseIdleGate(Arc::clone(&gate));
         assert!(
-            gate.wait_for(WAIT, |s| s.held),
+            gate.wait_for(WAIT, |s| s.held).held,
             "the idle worker never reached its wait"
         );
         let (tx, rx) = std::sync::mpsc::channel();
@@ -647,14 +678,32 @@ mod tests {
             drop(q);
             let _ = tx.send(());
         });
-        let woken = gate.wait_for(BLOCKED, |s| s.woken);
+        let seen = gate.wait_for(WAIT, |s| s.lock_waited || s.woken);
         assert!(
-            !woken,
-            "Drop sent its wake-up while a worker held the queue lock"
+            seen.lock_waited && !seen.woken,
+            "Drop did not wait for the queue lock a worker held: {seen:?}"
         );
         gate.update(|s| s.released = true);
         rx.recv_timeout(WAIT)
             .expect("dropping the JobQueue hung: a worker was never woken to shut down");
+    }
+
+    /// A gated test that fails while its worker is held still unwinds: `ReleaseIdleGate`
+    /// lets the worker go, so dropping the queue does not wait forever on the queue lock.
+    #[test]
+    fn a_gated_test_that_fails_still_drops_its_queue() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let unwound = catch_unwind(|| {
+                // `_q` (not `_`) keeps the queue alive until the unwind drops it.
+                let (_q, gate) = gated_queue();
+                let _release = ReleaseIdleGate(Arc::clone(&gate));
+                assert!(gate.wait_for(WAIT, |s| s.held).held);
+                panic!("a failed assertion while the worker is held");
+            });
+            let _ = tx.send(unwound.is_err());
+        });
+        assert_eq!(rx.recv_timeout(WAIT * 2), Ok(true), "unwinding hung");
     }
 
     #[test]
