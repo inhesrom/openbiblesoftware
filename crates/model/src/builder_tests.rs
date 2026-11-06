@@ -126,9 +126,17 @@ fn content_hash_is_stable_and_ignores_insertion_order() {
     assert_eq!(a.manifest.content_hash, b.manifest.content_hash);
     assert_eq!(a.units, b.units);
     // Golden value: changes only when the model or its serialization changes, which must
-    // come with a FORMAT_VERSION bump.
+    // come with a FORMAT_VERSION bump. The format version is hashed too.
     assert_eq!(
         a.manifest.content_hash,
+        "sha256:5918284af8a90d761b3ea97fc677852dc918d22d516dde2bbfe15cf83583b195"
+    );
+    // Format 4 added only the volumes table, outside the hash: the same content hashed as
+    // format 3 is the format 3 golden value.
+    let mut format_3 = a.clone();
+    format_3.manifest.format_version = 3;
+    assert_eq!(
+        format_3.content_hash(),
         "sha256:f87505368c9278b38fe81d3bba8ad10c583d853d42ef3c75360c062bd050dff1"
     );
 }

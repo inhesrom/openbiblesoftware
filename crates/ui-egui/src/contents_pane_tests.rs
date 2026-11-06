@@ -120,7 +120,8 @@ fn prose(b: &mut ResourceBuilder, id: &UnitId, kind: UnitKind, title: &str, text
     );
 }
 
-/// A Commentary in two volumes, with a book introduction keyed by the whole of Genesis.
+/// A Commentary in two volumes, with a book introduction keyed by the whole of Genesis and
+/// a first section starting where it does, at Gen 1:1.
 fn commentary() -> Resource {
     let mut m = Manifest::new(
         "test-mhc",
@@ -139,6 +140,12 @@ fn commentary() -> Resource {
             ge(1, 1),
             ge(50, 26),
             "Genesis is the book of beginnings.",
+        ),
+        (
+            "Gen.1.1-Gen.1.2",
+            ge(1, 1),
+            ge(1, 2),
+            "The creation of heaven and earth.",
         ),
         ("Gen.31.50-Gen.31.54", ge(31, 50), ge(31, 54), long.as_str()),
         ("Gen.32.5-Gen.32.9", ge(32, 5), ge(32, 9), long.as_str()),
@@ -344,6 +351,46 @@ fn a_commentarys_contents_has_volumes_books_chapters_and_sections_and_clicks_jum
     settle_all(&mut h);
     h.frame();
     assert_eq!(highlighted(&mut h, tc).as_deref(), Some("Verses 50–54"));
+}
+
+#[test]
+fn back_and_forward_return_to_the_book_introduction_and_the_section_sharing_its_start() {
+    let mut h = Harness::new();
+    let tb = h.tab_id("TB");
+    h.shell
+        .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:51" }));
+    let tc = open_resource(&mut h, commentary());
+    h.shell
+        .run("tab.contents", &json!({ "tab": tc.0, "on": true }))
+        .unwrap();
+    settle_all(&mut h);
+    assert_eq!(shown_unit(&mut h, tc), "Gen.31.50-Gen.31.54");
+    const INTRO: &str = "Gen.1.1-Gen.50.26.book-intro";
+    const FIRST: &str = "Gen.1.1-Gen.1.2";
+
+    click_in(&mut h, tc, "Introduction");
+    settle_all(&mut h);
+    assert_eq!(shown_unit(&mut h, tc), INTRO);
+    // Chapter 1 goes to its first section, which starts at Gen 1:1 like the introduction:
+    // still a step of its own.
+    click_in(&mut h, tc, "Chapter 1");
+    settle_all(&mut h);
+    assert_eq!(shown_unit(&mut h, tc), FIRST);
+    h.frame();
+    assert_eq!(highlighted(&mut h, tc).as_deref(), Some("Verses 1–2"));
+
+    let step = |h: &mut Harness, command: &str, unit: &str, line: &str| {
+        h.shell.run(command, &json!({ "tab": tc.0 })).unwrap();
+        settle_all(h);
+        assert_eq!(shown_unit(h, tc), unit, "{command}");
+        h.frame();
+        assert_eq!(highlighted(h, tc).as_deref(), Some(line), "{command}");
+    };
+    step(&mut h, "tab.back", INTRO, "Introduction");
+    step(&mut h, "tab.forward", FIRST, "Verses 1–2");
+    step(&mut h, "tab.back", INTRO, "Introduction");
+    step(&mut h, "tab.back", "Gen.31.50-Gen.31.54", "Verses 50–54");
+    step(&mut h, "tab.forward", INTRO, "Introduction");
 }
 
 #[test]

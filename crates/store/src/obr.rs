@@ -1,6 +1,6 @@
 //! The `.obr` file: one read-only SQLite database per Resource (ADR 0003).
 //!
-//! Layout (format version [`FORMAT_VERSION`]):
+//! Layout (format version [`FORMAT_VERSION`]; format 3 is the same without `volumes`):
 //!
 //! | table | rows |
 //! |---|---|
@@ -35,14 +35,17 @@
 //!
 //! | `volumes` | A Commentary's volumes (#176): `book` (USFM code) → `title` of the volume its sections are printed in |
 //!
-//! `volumes` arrived after format 3 was first shipped (#176), for the Contents pane. It is
-//! navigation metadata, outside the content hash, so adding it changes no Resource's content
-//! hash and no format version. A file without it still opens, with no volumes: its Contents
-//! start at the Bible books.
+//! `volumes` is format 4 (#176), for the Contents pane. It is navigation metadata outside the
+//! content hash (which covers the format version, so a format 4 build of unchanged text still
+//! hashes differently from its format 3 build). Every format 4 file has the table, empty when
+//! the Resource names no volumes. A format 3 file still opens ([`OLDEST_FORMAT_VERSION`],
+//! ADR 0010): it has no `volumes` table and reads with no volumes, so its Contents start at
+//! the Bible books.
 //!
 //! Files are written once, deterministically (same Resource ⇒ byte-identical file), and opened
 //! read-only. `PRAGMA application_id` marks the file type and `PRAGMA user_version` holds the
-//! format version, so a file is checked before any table is read.
+//! format version, so a file is checked before any table is read. This build writes
+//! [`FORMAT_VERSION`] and opens [`OLDEST_FORMAT_VERSION`] to [`FORMAT_VERSION`].
 
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, HashMap};
@@ -51,8 +54,9 @@ use std::path::{Path, PathBuf};
 
 use obs_model::{
     BibleVerse, CrossReference, Direction, Entity, EntityKind, EntityRelation, FORMAT_VERSION, Key,
-    KeyEntry, KeyScheme, LemmaTransliteration, Manifest, Mention, Origin, PartOfSpeech, Rendering,
-    RenderingIndex, Resource, ResourceType, Span, StrongsTotal, TextUnit, UnitId, UnitKind,
+    KeyEntry, KeyScheme, LemmaTransliteration, Manifest, Mention, OLDEST_FORMAT_VERSION, Origin,
+    PartOfSpeech, Rendering, RenderingIndex, Resource, ResourceType, Span, StrongsTotal, TextUnit,
+    UnitId, UnitKind,
 };
 use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, VerseMapEntry};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
@@ -64,6 +68,9 @@ use crate::codec::{
 use crate::error::StoreError;
 use crate::resource_store::{MentionStats, ResourceStore, Summary};
 use crate::span_codec::{span_columns, span_from};
+
+/// The format version that added the `volumes` table (#176).
+const VOLUMES_FORMAT_VERSION: u32 = 4;
 
 /// `PRAGMA application_id` of every `.obr` file: ASCII `OBR1`.
 pub const APPLICATION_ID: i32 = 0x4F42_5231;
@@ -560,10 +567,10 @@ impl ObrReader {
                 supported: FORMAT_VERSION,
             });
         }
-        if version < FORMAT_VERSION {
+        if version < OLDEST_FORMAT_VERSION {
             return Err(StoreError::OlderFormat {
                 found: version,
-                supported: FORMAT_VERSION,
+                supported: OLDEST_FORMAT_VERSION,
             });
         }
         let manifest = read_manifest(&conn)?;
@@ -679,10 +686,10 @@ impl ObrReader {
     }
 
     /// A Commentary's volumes (#176): the volume title of each Bible book that has one. Empty
-    /// for a file written before the `volumes` table.
+    /// for a format 3 file, written before the `volumes` table.
     pub fn volumes(&self) -> Result<BTreeMap<Book, String>, StoreError> {
         let mut out = BTreeMap::new();
-        if !self.has_table("volumes")? {
+        if self.manifest.format_version < VOLUMES_FORMAT_VERSION {
             return Ok(out);
         }
         let mut stmt = self

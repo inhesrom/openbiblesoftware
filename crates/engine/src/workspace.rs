@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::resource_navigation::ResourceNavigation;
-use obs_model::{Key, KeyScheme};
+use obs_model::{Key, KeyScheme, UnitId};
 use obs_scripture::{ListedVersification, Passage, Verse, VerseMap};
 use serde::{Deserialize, Serialize};
 
@@ -246,15 +246,28 @@ pub struct History<T = Verse> {
     current: Option<T>,
     /// The Resource `current` is in, once the Tab has switched Resources (else `None`).
     resource: Option<String>,
+    /// The text unit `current` was reached by, when the location alone shows another.
+    unit: Option<UnitStop>,
     forward: Vec<Stop<T>>,
 }
 
-/// One Back/Forward entry: a location, and the Resource it is in once the Tab has switched
-/// between parallel resources.
+/// A text unit a history location was reached by, and where in it, when the location alone
+/// would show another unit: a Commentary's book introduction starts at Gen 1:1, where the
+/// narrower Gen 1:1-2 section wins (#176). Back and Forward go to the unit itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnitStop {
+    pub unit: UnitId,
+    /// Byte offset in the unit's text.
+    pub at: u32,
+}
+
+/// One Back/Forward entry: a location, the Resource it is in once the Tab has switched
+/// between parallel resources, and the unit it was reached by, if any.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Stop<T> {
     at: T,
     resource: Option<String>,
+    unit: Option<UnitStop>,
 }
 
 /// History keeps at most this many entries each way.
@@ -266,6 +279,7 @@ impl<T> Default for History<T> {
             back: Vec::new(),
             current: None,
             resource: None,
+            unit: None,
             forward: Vec::new(),
         }
     }
@@ -289,16 +303,34 @@ impl<T: Clone + PartialEq> History<T> {
         }
     }
 
+    /// The text unit the current location was reached by, when the location alone shows
+    /// another ([`UnitStop`]).
+    pub fn unit(&self) -> Option<&UnitStop> {
+        self.unit.as_ref()
+    }
+
     /// A jump: the old location goes on the Back stack and Forward is cleared.
     pub fn visit(&mut self, to: T) {
+        self.visit_unit(to, None);
+    }
+
+    /// A jump to `to` reached by `unit` ([`UnitStop`]). Going from one unit to another at the
+    /// same location is a step too.
+    pub fn visit_unit(&mut self, to: T, unit: Option<UnitStop>) {
         if let Some(old) = self.current.clone()
-            && old != to
+            && (old != to || self.unit != unit)
         {
             let resource = self.resource.clone();
-            self.push_back(Stop { at: old, resource });
+            let old_unit = self.unit.take();
+            self.push_back(Stop {
+                at: old,
+                resource,
+                unit: old_unit,
+            });
             self.forward.clear();
         }
         self.current = Some(to);
+        self.unit = unit;
     }
 
     /// The Tab switched from Resource `from` to the parallel resource `to` (#151): the old
@@ -310,16 +342,25 @@ impl<T: Clone + PartialEq> History<T> {
             stop.resource.get_or_insert_with(|| from.to_string());
         }
         let resource = Some(self.resource.take().unwrap_or_else(|| from.to_string()));
+        let unit = self.unit.take();
         if let Some(old) = self.current.take() {
-            self.push_back(Stop { at: old, resource });
+            self.push_back(Stop {
+                at: old,
+                resource,
+                unit,
+            });
         }
         self.forward.clear();
         self.current = at;
         self.resource = Some(to);
     }
 
-    /// Scrolling moves the location without making a history entry.
+    /// Scrolling moves the location without making a history entry. Scrolled to another
+    /// location, the view no longer shows the unit it was reached by.
     pub fn scrolled_to(&mut self, at: T) {
+        if self.current.as_ref() != Some(&at) {
+            self.unit = None;
+        }
         self.current = Some(at);
     }
 
@@ -331,26 +372,40 @@ impl<T: Clone + PartialEq> History<T> {
         !self.forward.is_empty()
     }
 
-    /// Back one entry; [`Self::resource`] then tells which Resource it is in.
+    /// Back one entry; [`Self::resource`] then tells which Resource it is in, and
+    /// [`Self::unit`] which unit it was reached by.
     pub fn back(&mut self) -> Option<T> {
         let to = self.back.pop()?;
         if let Some(cur) = self.current.take() {
             let resource = self.resource.clone();
-            self.forward.push(Stop { at: cur, resource });
+            let unit = self.unit.take();
+            self.forward.push(Stop {
+                at: cur,
+                resource,
+                unit,
+            });
         }
         self.resource = to.resource;
+        self.unit = to.unit;
         self.current = Some(to.at.clone());
         Some(to.at)
     }
 
-    /// Forward one entry; [`Self::resource`] then tells which Resource it is in.
+    /// Forward one entry; [`Self::resource`] then tells which Resource it is in, and
+    /// [`Self::unit`] which unit it was reached by.
     pub fn forward(&mut self) -> Option<T> {
         let to = self.forward.pop()?;
         if let Some(cur) = self.current.take() {
             let resource = self.resource.clone();
-            self.push_back(Stop { at: cur, resource });
+            let unit = self.unit.take();
+            self.push_back(Stop {
+                at: cur,
+                resource,
+                unit,
+            });
         }
         self.resource = to.resource;
+        self.unit = to.unit;
         self.current = Some(to.at.clone());
         Some(to.at)
     }
@@ -1084,6 +1139,48 @@ impl Workspace {
         self.visited(tab);
     }
 
+    /// Jump a Resource Tab to text unit `unit` covered by `key`, where `key` alone would show
+    /// another unit (a Commentary's book introduction starts where its first section does;
+    /// two entries share a headword). Like [`Self::navigate_text`], and the history stop
+    /// keeps the unit ([`UnitStop`]), so Back and Forward return to it, and going between
+    /// such units at one location is a step.
+    pub fn navigate_unit(&mut self, tab: TabId, unit: UnitId, at: u32, key: Key) {
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        let stop = Some(UnitStop {
+            unit: unit.clone(),
+            at,
+        });
+        match &key {
+            Key::Passage(p) if t.follows_passages() => {
+                let start = p.start();
+                t.history.visit_unit(start, stop);
+                t.moved_to(start);
+                self.effects.push(Effect::NavigateText {
+                    tab,
+                    unit,
+                    range: at..at,
+                    key: Some(key.clone()),
+                });
+                self.visited(tab);
+                self.broadcast(tab, start, true);
+            }
+            Key::Passage(_) => self.navigate_text(tab, unit, at..at, Some(key)),
+            k => {
+                t.entry_history.visit_unit(k.clone(), stop);
+                self.effects.push(Effect::NavigateText {
+                    tab,
+                    unit,
+                    range: at..at,
+                    key: Some(k.clone()),
+                });
+                self.visited(tab);
+                self.broadcast_entry(tab, &key);
+            }
+        }
+    }
+
     /// Entry navigation broadcasts only to members supporting this Key scheme.
     pub fn navigate_entry(&mut self, tab: TabId, key: Key) {
         let Some(t) = self.tabs.get_mut(&tab) else {
@@ -1135,10 +1232,19 @@ impl Workspace {
             self.visited(tab);
             return Some(key);
         }
-        self.effects.push(Effect::NavigateEntry {
-            tab,
-            key: key.clone(),
-        });
+        let effect = match t.entry_history.unit() {
+            Some(stop) => Effect::NavigateText {
+                tab,
+                unit: stop.unit.clone(),
+                range: stop.at..stop.at,
+                key: Some(key.clone()),
+            },
+            None => Effect::NavigateEntry {
+                tab,
+                key: key.clone(),
+            },
+        };
+        self.effects.push(effect);
         self.visited(tab);
         self.broadcast_entry(tab, &key);
         Some(key)
@@ -1225,7 +1331,16 @@ impl Workspace {
             return v;
         }
         t.moved_to(v);
-        self.effects.push(Effect::Navigate { tab, verse: v });
+        let effect = match t.history.unit() {
+            Some(stop) => Effect::NavigateText {
+                tab,
+                unit: stop.unit.clone(),
+                range: stop.at..stop.at,
+                key: Some(Key::Passage(Passage::verse(v))),
+            },
+            None => Effect::Navigate { tab, verse: v },
+        };
+        self.effects.push(effect);
         self.visited(tab);
         self.broadcast(tab, v, false);
         v

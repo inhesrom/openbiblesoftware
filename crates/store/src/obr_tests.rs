@@ -173,6 +173,16 @@ fn newer_and_older_formats_are_refused_with_typed_errors() {
         matches!(err, StoreError::OlderFormat { found: 0, .. }),
         "{err:?}"
     );
+
+    // Format 2 is older than the oldest this build reads.
+    set_user_version(&path, 2);
+    let err = ObrReader::open(&path).unwrap_err();
+    assert!(
+        matches!(err, StoreError::OlderFormat { found: 2, supported }
+            if supported == OLDEST_FORMAT_VERSION),
+        "{err:?}"
+    );
+    assert!(err.to_string().contains("import it again"));
 }
 
 #[test]
@@ -986,13 +996,51 @@ fn commentary_volumes_round_trip_outside_the_content_hash_and_older_files_have_n
         ])
     );
     assert_eq!(reader.load().unwrap(), resource);
+    assert_eq!(reader.manifest().format_version, FORMAT_VERSION);
     drop(reader);
-    // A file written before the table existed opens with no volumes.
+
+    // A format 3 file, written before the table existed, still opens, with no volumes.
+    let mut format_3 = build(false);
+    format_3.manifest.format_version = 3;
+    format_3.manifest.content_hash = format_3.content_hash();
+    assert_ne!(
+        format_3.manifest.content_hash,
+        resource.manifest.content_hash
+    );
+    write_obr(&format_3, &path).unwrap();
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch("DROP TABLE volumes; VACUUM;")
+        .unwrap();
+    let reader = ObrReader::open(&path).unwrap();
+    assert_eq!(reader.manifest().format_version, 3);
+    assert!(reader.volumes().unwrap().is_empty());
+    assert_eq!(reader.load().unwrap(), format_3);
+
+    // A format 4 file without the table is damaged.
+    write_obr(&resource, &path).unwrap();
     Connection::open(&path)
         .unwrap()
         .execute_batch("DROP TABLE volumes;")
         .unwrap();
     let reader = ObrReader::open(&path).unwrap();
-    assert!(reader.volumes().unwrap().is_empty());
-    assert_eq!(reader.load().unwrap(), build(false));
+    assert!(reader.volumes().is_err());
+}
+
+#[test]
+fn the_builder_writes_only_the_current_format_version() {
+    let mut b = obs_model::ResourceBuilder::new(dataset_manifest(
+        "old",
+        obs_model::ResourceType::Commentary,
+    ));
+    b.manifest_mut().format_version = OLDEST_FORMAT_VERSION;
+    let errors = b.build().unwrap_err();
+    assert!(
+        errors
+            .0
+            .contains(&obs_model::ValidationError::UnsupportedFormatVersion(
+                OLDEST_FORMAT_VERSION
+            )),
+        "{errors}"
+    );
 }

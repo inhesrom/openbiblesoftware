@@ -231,7 +231,7 @@ pub use word_study::{
 };
 pub use workspace::{
     Effect, Guide, HeaderBox, History, OpenRequest, PanelId, Placement, Tab, TabId, TabKind, Tool,
-    Workspace,
+    UnitStop, Workspace,
 };
 pub use workspace_commands::{MENUS, Menu, MenuItem, choices, parallel_resources};
 

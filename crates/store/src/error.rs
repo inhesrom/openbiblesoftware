@@ -18,6 +18,7 @@ pub enum StoreError {
     /// Written by an older build; re-import from the original source.
     OlderFormat {
         found: u32,
+        /// The oldest format version this build reads.
         supported: u32,
     },
     /// Data in the file is malformed.
@@ -47,7 +48,7 @@ impl fmt::Display for StoreError {
             ),
             StoreError::OlderFormat { found, supported } => write!(
                 f,
-                "this resource uses old format version {found} (this app reads version {supported}); import it again from its source"
+                "this resource uses old format version {found} (this app reads version {supported} and newer); import it again from its source"
             ),
             StoreError::Corrupt(why) => write!(f, "resource file is damaged: {why}"),
             StoreError::Invalid(errors) => write!(f, "resource file is invalid: {errors}"),
