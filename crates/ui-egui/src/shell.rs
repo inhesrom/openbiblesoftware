@@ -102,7 +102,30 @@ struct TabUi {
     favorite_star: Option<egui::Rect>,
     /// History: "Clear History…" is asking to confirm.
     confirm_clear: bool,
+    /// Where a Resource Tab was scrolled in each place it switched away from to a parallel
+    /// resource (#151), oldest first; Back or Forward to that place scrolls there again.
+    parked: Vec<ParkedScroll>,
+    /// How wide the header's right-hand controls were last frame, so the header box leaves
+    /// room for them.
+    header_controls: f32,
 }
+
+/// A Resource Tab's location when it switched to a parallel resource (#151), in that
+/// Resource's own numbering or Keys, and where its view was scrolled there.
+struct ParkedScroll {
+    resource: String,
+    at: ParkedAt,
+    anchor: crate::view::TextAnchor,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ParkedAt {
+    Verse(Verse),
+    Entry(Key),
+}
+
+/// A Tab remembers at most this many parked scroll positions.
+const PARKED_LIMIT: usize = 64;
 
 /// How long a jump's flash lasts, in seconds.
 const FLASH_SECS: f64 = 1.2;
@@ -386,6 +409,7 @@ impl Shell {
                         }
                     }
                 }
+                Effect::Switched(tab) => self.st.switched(tab),
                 Effect::NavigateStandard { tab, verse } => {
                     self.st.session.workspace.navigate_standard(tab, verse);
                 }
@@ -1202,7 +1226,52 @@ impl State {
 
     /// A Tab was opened: load its Resource if it has one.
     fn opened(&mut self, tab: TabId) {
-        let mut ui_state = TabUi::default();
+        self.load(tab, TabUi::default(), None);
+    }
+
+    /// A Resource Tab now shows another Resource (#151): park where its view was scrolled
+    /// and load the new one in a pane as wide, where Back or Forward scrolls it back to
+    /// where it was parked.
+    fn switched(&mut self, tab: TabId) {
+        let Some(mut old) = self.tabs.remove(&tab) else {
+            return;
+        };
+        let mut parked = std::mem::take(&mut old.parked);
+        let width = old.view.as_ref().map(ReadingView::width);
+        if let Some(view) = old.view.as_mut() {
+            let at = if matches!(
+                view.doc.manifest.resource_type,
+                ResourceType::Lexicon | ResourceType::Dictionary
+            ) {
+                view.current_entry().map(ParkedAt::Entry)
+            } else {
+                view.current_location().map(ParkedAt::Verse)
+            };
+            if let Some(at) = at
+                && let Some(anchor) = view.text_anchor()
+            {
+                let resource = view.doc.manifest.resource_id.clone();
+                parked.retain(|p| p.resource != resource || p.at != at);
+                parked.push(ParkedScroll {
+                    resource,
+                    at,
+                    anchor,
+                });
+                if parked.len() > PARKED_LIMIT {
+                    parked.remove(0);
+                }
+            }
+        }
+        let ui_state = TabUi {
+            parked,
+            header_controls: old.header_controls,
+            ..TabUi::default()
+        };
+        self.load(tab, ui_state, width);
+    }
+
+    /// Load a Tab's Resource, if it has one, into `ui_state`, laid out `width` wide if known.
+    fn load(&mut self, tab: TabId, mut ui_state: TabUi, width: Option<f32>) {
         let kind = self.session.workspace.tab(tab).map(|t| t.kind.clone());
         if kind == Some(TabKind::Tool(Tool::TextComparison)) {
             ui_state.comparison = Some(ComparisonView::new(self.session.text));
@@ -1214,6 +1283,9 @@ impl State {
             match self.doc(id) {
                 Ok(doc) => {
                     let mut view = ReadingView::new(Arc::clone(&doc), self.session.text);
+                    if let Some(width) = width {
+                        view.set_width(width);
+                    }
                     if let Some(t) = self.session.workspace.tab_mut(tab) {
                         t.versification = (doc.manifest.resource_type == ResourceType::Bible)
                             .then(|| Arc::new(doc.versification.clone()));
@@ -1225,14 +1297,21 @@ impl State {
                             t.key_schemes = doc.manifest.key_schemes.clone();
                         }
                     }
-                    // Start where the Link set is; unlinked, where another Bible is.
+                    // A switch to a parallel resource goes to the same place (#151);
+                    // otherwise start where the Link set is; unlinked, where another Bible is.
+                    let arrived = self.session.workspace.arrival(tab);
                     let ws = &self.session.workspace;
                     let own = ws.tab(tab).and_then(|t| t.history.current());
-                    let at = own.or_else(|| ws.set_location(tab)).or_else(|| {
-                        ws.tabs()
-                            .filter(|t| t.id != tab && t.kind.is_reading() && t.verse_map.is_none())
-                            .find_map(|t| t.history.current())
-                    });
+                    let at = arrived
+                        .or(own)
+                        .or_else(|| ws.set_location(tab))
+                        .or_else(|| {
+                            ws.tabs()
+                                .filter(|t| {
+                                    t.id != tab && t.kind.is_reading() && t.verse_map.is_none()
+                                })
+                                .find_map(|t| t.history.current())
+                        });
                     if let Some(v) = at {
                         let local = if doc.manifest.resource_type == ResourceType::Commentary {
                             doc.navigation.section(v).and_then(|e| match e.key {
@@ -1246,6 +1325,9 @@ impl State {
                             && view.jump_to(v)
                         {
                             self.session.workspace.scrolled(tab, v);
+                            if arrived.is_some() {
+                                ui_state.flash = Some((crate::pane::Flash::Verse(v), self.now));
+                            }
                         }
                     }
                     if matches!(
@@ -1253,9 +1335,12 @@ impl State {
                         ResourceType::Lexicon | ResourceType::Dictionary
                     ) {
                         let ws = &self.session.workspace;
+                        // Another Lexicon or Dictionary's Key (a parallel resource, #151) is
+                        // looked up in this one.
                         let key = ws
                             .tab(tab)
                             .and_then(|t| t.entry_history.current())
+                            .and_then(|k| doc.navigation.lookup(&k).map(|e| e.key.clone()))
                             .or_else(|| ws.set_entry_location(tab))
                             .or_else(|| doc.navigation.entries().next().map(|e| e.key.clone()));
                         if let Some(key) = key
@@ -1264,6 +1349,32 @@ impl State {
                         {
                             t.entry_history.scrolled_to(key);
                         }
+                    }
+                    // Back or Forward to a place the Tab switched away from (#151) scrolls
+                    // to where it was there.
+                    let ws = &self.session.workspace;
+                    let here = ws.tab(tab).and_then(|t| {
+                        if matches!(
+                            doc.manifest.resource_type,
+                            ResourceType::Lexicon | ResourceType::Dictionary
+                        ) {
+                            t.entry_history.current().map(ParkedAt::Entry)
+                        } else {
+                            t.history.current().map(ParkedAt::Verse)
+                        }
+                    });
+                    if arrived.is_none()
+                        && let Some(here) = here
+                        && let Some(p) = ui_state
+                            .parked
+                            .iter()
+                            .find(|p| p.resource == *id && p.at == here)
+                    {
+                        let verse = match p.at {
+                            ParkedAt::Verse(v) => Some(v),
+                            ParkedAt::Entry(_) => None,
+                        };
+                        view.restore_text_anchor(p.anchor, verse);
                     }
                     ui_state.view = Some(view);
                 }
@@ -1370,6 +1481,19 @@ impl State {
     }
 
     fn reading_body(&mut self, ui: &mut Ui, tab: TabId) {
+        // The Tab switched Resources this frame (#151) and its view still shows the old one
+        // until the switch is applied: the old view must not report its location.
+        let stale = match (
+            self.session.workspace.tab(tab).map(|t| &t.kind),
+            self.tabs.get(&tab).and_then(|t| t.view.as_ref()),
+        ) {
+            (Some(TabKind::Resource(id)), Some(view)) => view.doc.manifest.resource_id != *id,
+            _ => false,
+        };
+        if stale {
+            ui.ctx().request_repaint();
+            return;
+        }
         let palette = self.palette;
         let text = self.session.text;
         let Some(t) = self.tabs.get_mut(&tab) else {
@@ -1675,11 +1799,25 @@ impl State {
                     ) {
                         self.history_buttons(ui, tab);
                     }
-                    self.header_box(ui, tab, header, if narrow { 110.0 } else { 140.0 });
+                    // The box leaves room for the controls on the right (measured last frame).
+                    let controls = self.tabs.get(&tab).map_or(0.0, |t| t.header_controls);
+                    let room = ui.available_width() - controls - 2.0 * ui.spacing().item_spacing.x;
+                    let width = room.min(if narrow { 110.0 } else { 140.0 }).max(48.0);
+                    self.header_box(ui, tab, header, width);
                     let title = self.title(tab, kind);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         self.tab_menu(ui, tab);
                         self.favorite_star(ui, tab);
+                        if matches!(kind, TabKind::Resource(_)) {
+                            self.parallel_resources(ui, tab, narrow);
+                        }
+                        let measured = ui.min_rect().width();
+                        if let Some(t) = self.tabs.get_mut(&tab)
+                            && (t.header_controls - measured).abs() > 0.5
+                        {
+                            t.header_controls = measured;
+                            ui.ctx().request_repaint();
+                        }
                         if !narrow {
                             ui.add(
                                 egui::Label::new(
@@ -1721,6 +1859,76 @@ impl State {
                 .tab(tab)
                 .map(|t| t.title.clone())
                 .unwrap_or_default(),
+        }
+    }
+
+    /// The parallel-resources control of a Resource Tab (#151), laid out right to left:
+    /// ◀, a dropdown of the Resources of the Tab's Resource type in Preferred order, ▶;
+    /// compact in a `narrow` Panel.
+    fn parallel_resources(&mut self, ui: &mut Ui, tab: TabId, narrow: bool) {
+        let current = match self.session.workspace.tab(tab).map(|t| &t.kind) {
+            Some(TabKind::Resource(id)) => id.clone(),
+            _ => return,
+        };
+        let parallel: Vec<(String, String, String)> =
+            obs_engine::parallel_resources(&self.session, tab)
+                .iter()
+                .map(|e| {
+                    (
+                        e.manifest.resource_id.clone(),
+                        e.manifest.abbreviation.clone(),
+                        e.manifest.title.clone(),
+                    )
+                })
+                .collect();
+        let others = parallel.len() > 1;
+        let what = self.session.library.get(&current).map_or("Resources", |e| {
+            obs_engine::library_search::type_plural(e.manifest.resource_type)
+        });
+        let arrow = |s: &str| {
+            egui::Button::new(RichText::new(s).small())
+                .frame(false)
+                .min_size(vec2(18.0, 22.0))
+        };
+        let mut run: Option<(&'static str, Value)> = None;
+        let next = ui
+            .add_enabled(others, arrow("▶"))
+            .on_hover_text(format!("Next of your {what} (Ctrl+])"))
+            .on_disabled_hover_text(format!("There are no other {what} in the library"));
+        if next.clicked() {
+            run = Some(("tab.parallel_next", json!({ "tab": tab.0 })));
+        }
+        let shown = parallel
+            .iter()
+            .find(|(id, ..)| *id == current)
+            .map_or(current.clone(), |(_, abbreviation, _)| abbreviation.clone());
+        ui.add_enabled_ui(others, |ui| {
+            egui::ComboBox::from_id_salt(("parallel", tab))
+                .selected_text(RichText::new(shown).small())
+                .width(if narrow { 52.0 } else { 72.0 })
+                .truncate()
+                .show_ui(ui, |ui| {
+                    for (id, abbreviation, title) in &parallel {
+                        let label = format!("{abbreviation} — {title}");
+                        if ui.selectable_label(*id == current, label).clicked() && *id != current {
+                            run = Some(("tab.parallel", json!({ "tab": tab.0, "id": id })));
+                        }
+                    }
+                })
+                .response
+                .on_hover_text(format!("Show another of your {what} here"))
+                .on_disabled_hover_text(format!("There are no other {what} in the library"));
+        });
+        let previous = ui
+            .add_enabled(others, arrow("◀"))
+            .on_hover_text(format!("Previous of your {what} (Ctrl+[)"))
+            .on_disabled_hover_text(format!("There are no other {what} in the library"));
+        if previous.clicked() {
+            run = Some(("tab.parallel_previous", json!({ "tab": tab.0 })));
+        }
+        if let Some((id, params)) = run {
+            self.session.workspace.user_focused(tab);
+            self.run(id, &params);
         }
     }
 

@@ -3073,6 +3073,9 @@ mod favorites;
 #[path = "context_menu_tests.rs"]
 mod context_menu;
 
+#[path = "parallel_resources_tests.rs"]
+mod parallel_resources;
+
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {
     use std::path::PathBuf;

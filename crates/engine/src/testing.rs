@@ -640,6 +640,43 @@ pub mod bibles {
         bible("psalms", "PSA", &refs, None, &[])
     }
 
+    /// The Psalms of the STEPBible TAHOT test excerpt (Job–Song), imported the way the
+    /// Starter library imports TAHOT: Hebrew verse numbers and a Verse map, so its Ps 3:1 is
+    /// the superscription (Standard Ps 3:title) and its Ps 3:2 is Standard Ps 3:1.
+    pub fn tahot_psalms() -> Resource {
+        let asset = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../formats/tests/assets/stepbible/tahot-job-sng.txt");
+        let mut import = obs_formats::StepbibleImport::new(obs_formats::StepbibleOptions {
+            text: obs_formats::StepbibleText::Tahot,
+            resource_id: "tahot".into(),
+            title: "TAHOT (test)".into(),
+            abbreviation: "TAHOT".into(),
+            source_file: "tahot-job-sng.txt".into(),
+            tool_version: "test".into(),
+            ..Default::default()
+        });
+        import.add_file("tahot-job-sng.txt", std::fs::read_to_string(asset).unwrap());
+        import.finish().unwrap().0
+    }
+
+    /// Psalm 3:1-3 of the BSB (public domain) as its USFM download marks it up, with the
+    /// superscription inside verse 1 (`\d \v 1`), imported as the Starter library imports
+    /// the BSB: English numbering, which is the Standard versification's.
+    pub fn bsb_psalm_3() -> Resource {
+        let usfm = "\\id PSA\n\\c 3\n\\s1 Deliver Me, O LORD!\n\\d \\v 1 A Psalm of David, when he fled from his son Absalom.\n\\b\n\\q1 O LORD, how my foes have increased!\n\\q2 How many rise up against me!\n\\q1 \\v 2 Many say of me,\n\\q2 “God will not deliver him.”\n\\qr Selah\n\\q1 \\v 3 But You, O LORD, are a shield around me,\n\\q2 my glory, and the One who lifts my head.\n";
+        let mut import = obs_formats::UsfmImport::new(obs_formats::UsfmOptions {
+            resource_id: "bsb".into(),
+            title: "Berean Standard Bible (test)".into(),
+            abbreviation: "BSB".into(),
+            language: "en".into(),
+            source_file: "PSA.usfm".into(),
+            tool_version: "test".into(),
+            ..Default::default()
+        });
+        import.add_book("PSA.usfm", usfm.into()).unwrap();
+        import.finish().unwrap().0
+    }
+
     /// Write each Resource to `dir/<id>.obr`.
     pub fn write_library(dir: &Path, resources: &[Resource]) {
         std::fs::create_dir_all(dir).unwrap();

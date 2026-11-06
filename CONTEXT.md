@@ -203,6 +203,10 @@ _Avoid_: Position, Cursor
 A lettered group of Tabs (A, B, C…) that share a Current location. When one Tab navigates, every other member whose Resource has that Key scheme follows, translating through Verse maps. A Tab belongs to at most one Link set.
 _Avoid_: Sync group, Linked panels
 
+**Parallel resources**:
+The other Resources of a Resource Tab's Resource type, in Preferred order. The Tab's header switches it to one of them (◀ ▶, the dropdown, Ctrl+[ / Ctrl+]) at the same Current location, translated through Verse maps; a Commentary without that Passage shows its nearest earlier section. The Tab keeps its Link set, and the switch is a step in its Back/Forward history.
+_Avoid_: Parallel Tabs, Resource swap, Synced resources
+
 **Layout**:
 A named, saved snapshot of the Workspace, including its Link sets, that the user can restore.
 _Avoid_: Workspace (for the saved snapshot), Preset, Arrangement

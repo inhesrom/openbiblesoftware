@@ -200,11 +200,24 @@ impl TabKind {
 }
 
 /// A Tab's Back/Forward history of locations, in the Tab's own numbering.
+///
+/// A Resource Tab that has switched between parallel resources (#151) also remembers which
+/// Resource each location is in, so Back and Forward switch it back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct History<T = Verse> {
-    back: Vec<T>,
+    back: Vec<Stop<T>>,
     current: Option<T>,
-    forward: Vec<T>,
+    /// The Resource `current` is in, once the Tab has switched Resources (else `None`).
+    resource: Option<String>,
+    forward: Vec<Stop<T>>,
+}
+
+/// One Back/Forward entry: a location, and the Resource it is in once the Tab has switched
+/// between parallel resources.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Stop<T> {
+    at: T,
+    resource: Option<String>,
 }
 
 /// History keeps at most this many entries each way.
@@ -215,6 +228,7 @@ impl<T> Default for History<T> {
         Self {
             back: Vec::new(),
             current: None,
+            resource: None,
             forward: Vec::new(),
         }
     }
@@ -225,18 +239,46 @@ impl<T: Clone + PartialEq> History<T> {
         self.current.clone()
     }
 
+    /// The Resource the current location is in, once the Tab has switched between parallel
+    /// resources (#151); `None` before.
+    pub fn resource(&self) -> Option<&str> {
+        self.resource.as_deref()
+    }
+
+    fn push_back(&mut self, stop: Stop<T>) {
+        self.back.push(stop);
+        if self.back.len() > HISTORY_LIMIT {
+            self.back.remove(0);
+        }
+    }
+
     /// A jump: the old location goes on the Back stack and Forward is cleared.
     pub fn visit(&mut self, to: T) {
         if let Some(old) = self.current.clone()
             && old != to
         {
-            self.back.push(old);
-            if self.back.len() > HISTORY_LIMIT {
-                self.back.remove(0);
-            }
+            let resource = self.resource.clone();
+            self.push_back(Stop { at: old, resource });
             self.forward.clear();
         }
         self.current = Some(to);
+    }
+
+    /// The Tab switched from Resource `from` to the parallel resource `to` (#151): the old
+    /// location goes on the Back stack (in `from`) and Forward is cleared. The new location is
+    /// `at`, or unknown until the new Resource is loaded.
+    pub fn switch_resource(&mut self, from: &str, to: String, at: Option<T>) {
+        // Every location so far is in `from`, unless the Tab had switched before.
+        for stop in self.back.iter_mut().chain(self.forward.iter_mut()) {
+            stop.resource.get_or_insert_with(|| from.to_string());
+        }
+        let resource = Some(self.resource.take().unwrap_or_else(|| from.to_string()));
+        if let Some(old) = self.current.take() {
+            self.push_back(Stop { at: old, resource });
+        }
+        self.forward.clear();
+        self.current = at;
+        self.resource = Some(to);
     }
 
     /// Scrolling moves the location without making a history entry.
@@ -252,22 +294,28 @@ impl<T: Clone + PartialEq> History<T> {
         !self.forward.is_empty()
     }
 
+    /// Back one entry; [`Self::resource`] then tells which Resource it is in.
     pub fn back(&mut self) -> Option<T> {
         let to = self.back.pop()?;
-        if let Some(cur) = self.current.clone() {
-            self.forward.push(cur);
+        if let Some(cur) = self.current.take() {
+            let resource = self.resource.clone();
+            self.forward.push(Stop { at: cur, resource });
         }
-        self.current = Some(to.clone());
-        Some(to)
+        self.resource = to.resource;
+        self.current = Some(to.at.clone());
+        Some(to.at)
     }
 
+    /// Forward one entry; [`Self::resource`] then tells which Resource it is in.
     pub fn forward(&mut self) -> Option<T> {
         let to = self.forward.pop()?;
-        if let Some(cur) = self.current.clone() {
-            self.back.push(cur);
+        if let Some(cur) = self.current.take() {
+            let resource = self.resource.clone();
+            self.push_back(Stop { at: cur, resource });
         }
-        self.current = Some(to.clone());
-        Some(to)
+        self.resource = to.resource;
+        self.current = Some(to.at.clone());
+        Some(to.at)
     }
 }
 
@@ -292,6 +340,9 @@ pub struct Tab {
     pub comparison: Comparison,
     /// A Search Tab's mode, fields and results (unused by other kinds).
     pub search: crate::bible_search::SearchTab,
+    /// Where a Resource Tab that has just switched to a parallel resource (#151) goes once
+    /// that Resource is loaded: its old location, as a Standard Verse.
+    pub arriving_at: Option<Verse>,
 }
 
 impl Tab {
@@ -332,6 +383,43 @@ impl Tab {
 
     fn follows_passages(&self) -> bool {
         self.key_schemes.contains(&KeyScheme::Passage)
+    }
+
+    /// Whether the Tab's location is an entry Key (Lexicon, Dictionary, Word Study) kept in
+    /// `entry_history`, rather than a Verse kept in `history`.
+    pub fn keeps_entries(&self) -> bool {
+        matches!(
+            self.header_box(),
+            HeaderBox::Lexicon | HeaderBox::Headword | HeaderBox::Word
+        )
+    }
+
+    /// A Back/Forward step left the history in another Resource than the Tab shows: show
+    /// that one (#151). True when it did.
+    fn follow_history_resource(&mut self) -> bool {
+        let resource = if self.keeps_entries() {
+            self.entry_history.resource()
+        } else {
+            self.history.resource()
+        };
+        let Some(resource) = resource.map(String::from) else {
+            return false;
+        };
+        if self.kind == TabKind::Resource(resource.clone()) {
+            return false;
+        }
+        self.show_resource(resource);
+        true
+    }
+
+    /// Show another Resource: what was loaded from the old one is dropped until the UI loads
+    /// the new one.
+    fn show_resource(&mut self, resource: String) {
+        self.kind = TabKind::Resource(resource);
+        self.navigation = None;
+        self.versification = None;
+        self.verse_map = None;
+        self.arriving_at = None;
     }
 
     /// A jump, Back/Forward or follow moved the Tab: a Text Comparison range is cleared once
@@ -444,6 +532,9 @@ pub enum Effect {
     PickImport,
     /// Open the Fonts window (View → Fonts…, #138).
     ShowFonts,
+    /// A Resource Tab now shows another Resource (a parallel resource, or Back/Forward across
+    /// a switch, #151): load it, at the Tab's location.
+    Switched(TabId),
 }
 
 /// How the caller asked for a Tab to be opened.
@@ -670,6 +761,7 @@ impl Workspace {
                 link,
                 comparison: Comparison::default(),
                 search: Default::default(),
+                arriving_at: None,
             },
         );
         // A linked Tool or Guide starts at its Link set's location. (Bibles wait until their
@@ -901,6 +993,11 @@ impl Workspace {
         } else {
             t.entry_history.forward()?
         };
+        if t.follow_history_resource() {
+            self.effects.push(Effect::Switched(tab));
+            self.visited(tab);
+            return Some(key);
+        }
         self.effects.push(Effect::NavigateEntry {
             tab,
             key: key.clone(),
@@ -969,23 +1066,82 @@ impl Workspace {
     }
 
     pub fn back(&mut self, tab: TabId) -> Option<Verse> {
-        let t = self.tabs.get_mut(&tab)?;
-        let v = t.history.back()?;
-        t.moved_to(v);
-        self.effects.push(Effect::Navigate { tab, verse: v });
-        self.visited(tab);
-        self.broadcast(tab, v, false);
-        Some(v)
+        let v = self.tabs.get_mut(&tab)?.history.back()?;
+        Some(self.stepped(tab, v))
     }
 
     pub fn forward(&mut self, tab: TabId) -> Option<Verse> {
-        let t = self.tabs.get_mut(&tab)?;
-        let v = t.history.forward()?;
+        let v = self.tabs.get_mut(&tab)?.history.forward()?;
+        Some(self.stepped(tab, v))
+    }
+
+    /// Back or Forward moved a Tab's history to `v`. Across a switch between parallel
+    /// resources the Tab shows the other Resource again, at the same place: its Link set stays.
+    fn stepped(&mut self, tab: TabId, v: Verse) -> Verse {
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return v;
+        };
+        if t.follow_history_resource() {
+            self.effects.push(Effect::Switched(tab));
+            self.visited(tab);
+            return v;
+        }
         t.moved_to(v);
         self.effects.push(Effect::Navigate { tab, verse: v });
         self.visited(tab);
         self.broadcast(tab, v, false);
-        Some(v)
+        v
+    }
+
+    /// Switch a Resource Tab to the parallel resource `to` (#151), keeping its Link set and
+    /// recording the switch in its history. A Bible or Commentary goes to the same Standard
+    /// Verse once `to` is loaded ([`Self::arrival`]); a Lexicon or Dictionary to the same Key.
+    /// False when the Tab is not a Resource Tab or already shows `to`.
+    pub fn switch_resource(&mut self, tab: TabId, to: String) -> bool {
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return false;
+        };
+        let TabKind::Resource(from) = &t.kind else {
+            return false;
+        };
+        if *from == to {
+            return false;
+        }
+        let from = from.clone();
+        let mut arriving_at = None;
+        if t.keeps_entries() {
+            let key = t.entry_history.current();
+            t.entry_history.switch_resource(&from, to.clone(), key);
+        } else {
+            // An Unmapped verse has no Standard place: the new Resource opens where it would.
+            arriving_at =
+                t.history
+                    .current()
+                    .and_then(|v| match to_standard(t.verse_map.as_deref(), v) {
+                        ToStandard::Verse(s) => Some(s),
+                        ToStandard::Unmapped => None,
+                    });
+            t.history.switch_resource(&from, to.clone(), None);
+        }
+        t.show_resource(to);
+        t.arriving_at = arriving_at;
+        self.effects.push(Effect::Switched(tab));
+        // History records the new Resource where the UI places it, as for a Tab just opened.
+        self.visits.push(PendingVisit { tab, at: None });
+        true
+    }
+
+    /// Where a Tab that switched to a parallel resource goes, now that the UI has loaded that
+    /// Resource (its Verse map and sections): the Standard Verse it left, in the new
+    /// Resource's numbering, or a Commentary's nearest earlier section. Taken once.
+    pub fn arrival(&mut self, tab: TabId) -> Option<Verse> {
+        let t = self.tabs.get_mut(&tab)?;
+        let standard = t.arriving_at.take()?;
+        t.local_passage(to_native(
+            t.verse_map.as_deref(),
+            t.versification.as_deref(),
+            standard,
+        )?)
     }
 
     /// Put a Tab in a Link set (or none). A Tab joining a set moves to the set's location.
@@ -1150,6 +1306,7 @@ impl Workspace {
                     link: t.link,
                     comparison: Comparison::default(),
                     search: Default::default(),
+                    arriving_at: None,
                 },
             );
         }

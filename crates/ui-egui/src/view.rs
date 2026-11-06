@@ -61,6 +61,17 @@ pub struct FrameStats {
     pub applied: usize,
 }
 
+/// Where a view is scrolled to, in its document's text rather than in points, so it survives a
+/// relayout or a new view of the same document: the first visible line's start (`unit`, an
+/// index into the document's units, and `byte` in it) and how far the viewport top is below
+/// that line's top.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextAnchor {
+    pub unit: usize,
+    pub byte: usize,
+    pub into: f32,
+}
+
 #[derive(Debug, Clone)]
 pub struct Frame {
     pub blocks: Vec<FrameBlock>,
@@ -557,6 +568,50 @@ impl ReadingView {
         self.sticky = None;
         self.sticky_text = Some((unit, byte));
         self.pending_follow = None;
+        true
+    }
+
+    /// Where the view is scrolled to, as a [`TextAnchor`].
+    pub fn text_anchor(&mut self) -> Option<TextAnchor> {
+        let (mut i, mut offset) = self.anchor;
+        loop {
+            let laid = self.laid(i)?;
+            if let Some(line) = laid.lines.iter().find(|l| l.bottom > offset + 0.5) {
+                let byte = (line.bytes.start..line.bytes.end)
+                    .find_map(|p| match laid.to_unit(p) {
+                        Some(UnitPos::Text(u)) => Some(u),
+                        Some(UnitPos::Object { anchor, .. }) => Some(anchor),
+                        None => None,
+                    })
+                    .unwrap_or(self.doc.blocks[i].source.range.start);
+                return Some(TextAnchor {
+                    unit: self.doc.blocks[i].unit,
+                    byte,
+                    into: (offset - line.top).max(0.0),
+                });
+            }
+            i += 1;
+            offset = 0.0;
+            if i >= self.doc.blocks.len() {
+                return None;
+            }
+        }
+    }
+
+    /// Scroll back to a [`TextAnchor`] taken from a view of the same document. With a
+    /// `verse`, that stays the Current location until the user scrolls, as after
+    /// [`Self::jump_to`]; without, the anchor's line stays at the top across relayouts, as
+    /// after [`Self::jump_to_text`].
+    pub fn restore_text_anchor(&mut self, at: TextAnchor, verse: Option<Verse>) -> bool {
+        if !self.jump_to_text(at.unit, at.byte) {
+            return false;
+        }
+        self.anchor.1 += at.into;
+        self.normalize();
+        if verse.is_some() {
+            self.sticky = verse;
+            self.sticky_text = None;
+        }
         true
     }
 
