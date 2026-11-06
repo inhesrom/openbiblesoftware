@@ -20,6 +20,9 @@ serde_json.workspace = true
 unicode-normalization.workspace = true
 roxmltree = "0.21"
 usfm3 = "0.3"
+# Reads publishers' USFM zips for the Open catalogue (#134). The same version and features
+# `sword-modules` already uses for SWORD packages, so no new crate.
+zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
 # CC0 SWORD module reader and installer. `install` (catalogs, package zips) but never `https`:
 # the app hands in its own transport (Get Bibles, #91), so no networking crate below apps.
 sword-modules = { version = "0.1", default-features = false, features = ["zip", "bzip2", "xz", "install"] }

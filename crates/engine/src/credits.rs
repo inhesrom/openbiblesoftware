@@ -313,6 +313,51 @@ fn build(attribution: &str, lock: &str, third_party: &str) -> Credits {
     }
 }
 
+/// The Help → Credits section for Resources downloaded from the Open catalogue (#134).
+pub const OPEN_RESOURCES_TITLE: &str = "Downloaded open Resources";
+pub const OPEN_RESOURCES_INTRO: &str = "Openly licensed Resources you downloaded from the Open \
+     catalogue in Get Resources, credited from each one's own licence and Attribution.";
+
+/// A Resource credited from its own manifest: licence, source, Attribution, edition and the
+/// changes made.
+pub fn manifest_credit(m: &Manifest) -> Credit {
+    Credit {
+        name: m.title.clone(),
+        license: m.license.clone(),
+        license_url: cc_by_license_url(&m.license),
+        source: m.source_url.clone().unwrap_or_default(),
+        credit: m.attribution.clone(),
+        edition: m.edition.clone(),
+        changes: m.changes.clone(),
+        note: m
+            .publisher
+            .as_ref()
+            .map(|p| format!("Downloaded from the Open catalogue (published by {p}).")),
+        ..Credit::default()
+    }
+}
+
+impl crate::Session {
+    /// Help → Credits' Downloaded open Resources (#134): every Resource in the Library that
+    /// was downloaded from the Open catalogue, by title, credited from its own manifest. A
+    /// download is credited as soon as it is in the Library, and a removed one drops out.
+    pub fn open_resource_credits(&self) -> Vec<Credit> {
+        let mut out: Vec<Credit> = self
+            .library
+            .entries()
+            .iter()
+            .filter(|e| {
+                self.imports
+                    .report(&e.manifest.resource_id)
+                    .is_some_and(|r| r.open_origin.is_some())
+            })
+            .map(|e| manifest_credit(&e.manifest))
+            .collect();
+        out.sort_by_key(|c| c.name.to_lowercase());
+        out
+    }
+}
+
 /// The published change record of a CC BY Starter Resource.
 pub fn published_changes_url(resource_id: &str) -> String {
     format!("{PUBLISHED_CHANGES}{}", changes_record_file(resource_id))

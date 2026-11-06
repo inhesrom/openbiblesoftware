@@ -1,4 +1,5 @@
-//! Live checks of Get Resources (#91, #132, #133) against the real SWORD repositories. Ignored by default:
+//! Live checks of Get Resources (#91, #132, #133) against the real SWORD repositories, and of
+//! the Open catalogue (#134) against its publishers. Ignored by default:
 //! they need the network and download copyrighted modules. Run them by hand:
 //!
 //! ```sh
@@ -353,4 +354,87 @@ fn live_every_featured_hebrew_and_greek_bible_downloads_and_imports_with_its_tag
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// #134: every Open catalogue entry downloads from its publisher through the app's HTTPS
+/// transport, passes its checks (pinned sha256, or the licence notice inside the zip), and
+/// imports with its licence and Attribution. Public-domain and CC BY-SA texts only.
+#[test]
+#[ignore = "network; downloads every Open catalogue entry to a temp folder"]
+fn live_every_open_catalogue_entry_downloads_checks_and_imports() {
+    let root = temp("open-catalogue");
+    let mut s = session(&root);
+    let sources = s.get_bibles.open_sources().to_vec();
+    assert!(!sources.is_empty());
+    let mut failed = Vec::new();
+    for source in &sources {
+        let out = s
+            .run("getbibles.download_open", &json!({"id": source.id}))
+            .unwrap();
+        let id = out["id"].as_str().unwrap().to_string();
+        s.jobs().pump(1);
+        s.poll_imports();
+        let r = s.imports.report(&id).unwrap().clone();
+        if r.phase != ImportPhase::Complete {
+            failed.push(format!("{}: {:?}", source.id, r.error));
+            continue;
+        }
+        let entry = s.library.get(&id).unwrap();
+        let report = r.report.as_ref().unwrap();
+        let sha = r.open_origin.as_ref().unwrap().sha256.clone().unwrap();
+        println!(
+            "{}: {} ({}) {} books, {} bytes .obr, sha256 {sha}, licence {}",
+            source.id,
+            entry.manifest.title,
+            entry.manifest.abbreviation,
+            report.books.len(),
+            std::fs::metadata(&entry.path).map(|m| m.len()).unwrap_or(0),
+            entry.manifest.license
+        );
+        assert_eq!(entry.manifest.license, source.spdx);
+        assert_eq!(entry.manifest.attribution, source.attribution);
+        assert!(!report.books.is_empty());
+    }
+    assert!(failed.is_empty(), "{failed:#?}");
+    assert_eq!(s.open_resource_credits().len(), sources.len());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// #134: the licence classes of every live listing, and "Free to share" over the live catalog
+/// keeps only Free to share rows. Prints the count of each class and of each unclassified
+/// `DistributionLicense`, for the research note.
+#[test]
+#[ignore = "network"]
+fn live_free_to_share_over_the_live_catalog_keeps_only_free_rows() {
+    use obs_engine::get_bibles::ResourceFilter;
+    use obs_engine::{LicenceClass, LicenceFilter};
+    let root = temp("licence-classes");
+    let mut s = session(&root);
+    refresh(&mut s);
+    let gb = &s.get_bibles;
+    let catalog = gb.catalog().unwrap();
+    let mut counts = std::collections::BTreeMap::new();
+    let mut unclear = std::collections::BTreeMap::new();
+    for b in &catalog.listings {
+        *counts
+            .entry(format!("{:?}", b.licence_class()))
+            .or_insert(0) += 1;
+        if b.licence_class() == LicenceClass::Unclear {
+            *unclear
+                .entry(b.licence.clone().unwrap_or_default())
+                .or_insert(0) += 1;
+        }
+    }
+    println!("{} listings: {counts:?}", catalog.listings.len());
+    println!("Unclear values: {unclear:#?}");
+    let free = gb.all_listings("", None, ResourceFilter::All, LicenceFilter::FreeToShare);
+    assert!(!free.is_empty());
+    assert!(
+        free.iter()
+            .all(|b| b.licence_class() == LicenceClass::FreeToShare)
+    );
+    println!("Free to share: {} rows", free.len());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
 }

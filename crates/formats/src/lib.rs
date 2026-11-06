@@ -16,6 +16,7 @@ mod text_buf;
 mod tipnr;
 mod usfm;
 mod usfm_tree;
+mod usfm_zip;
 mod verse_map;
 
 pub use commentary::{
@@ -35,4 +36,5 @@ pub use sword::repo as sword_repo;
 pub use sword::{SwordModuleInfo, SwordOptions, SwordSource, import_sword, sword_import_type};
 pub use tipnr::{TIPNR_FORMAT, import_tipnr, tipnr_description_texts};
 pub use usfm::{UsfmImport, UsfmOptions, slugify, usfm_book_code};
+pub use usfm_zip::{usfm_zip_books, zip_text_file};
 pub use verse_map::{VerseFacts, VerseMapOutcome, build_verse_map, tvtms_rule_count};

@@ -3,14 +3,16 @@
 //! master list, each one click from the Library. A filter row (the types and Hebrew & Greek)
 //! sits beside the search and language filter. Bible rows carry "Strong's" and "Morphology"
 //! tag badges. Downloaded Resources whose repository offers a newer version show Update
-//! available, with Update all above the list (#136).
+//! available, with Update all above the list (#136). A licence filter (Free to share, Free for
+//! personal use, All licences) applies to every section, and the Open catalogue's rows (#134)
+//! follow the Featured sections; they list even before the SWORD catalog is loaded.
 
 use egui::{Color32, RichText, Ui};
 use obs_engine::get_bibles::{
     ListingStatus, ResourceFilter, ResourceListing, TAG_MORPHOLOGY, TAG_STRONGS, UpdateCheck,
     UpdatesSummary,
 };
-use obs_engine::{ImportPhase, language_name};
+use obs_engine::{ImportPhase, LicenceClass, LicenceFilter, language_name, licence_class};
 use serde_json::json;
 
 use super::State;
@@ -38,33 +40,45 @@ enum Action {
     Run(&'static str, serde_json::Value),
 }
 
-/// A short licence badge and its colour, from a conf's `DistributionLicense`.
+/// A short licence badge and its colour, from a conf's `DistributionLicense` or an SPDX id.
+/// The colour is the licence class (#134): Free to share, Free for personal use, or unclear.
 pub(super) fn licence_badge(licence: Option<&str>) -> (&'static str, Color32) {
+    let class = licence.map_or(LicenceClass::Unclear, licence_class);
+    (licence_badge_text(licence), licence_class_colour(class))
+}
+
+fn licence_class_colour(class: LicenceClass) -> Color32 {
+    match class {
+        LicenceClass::FreeToShare => theme::c().verdigris,
+        LicenceClass::PersonalUse => theme::c().warn,
+        LicenceClass::Unclear => theme::c().muted,
+    }
+}
+
+fn licence_badge_text(licence: Option<&str>) -> &'static str {
     let l = licence.unwrap_or_default().to_ascii_lowercase();
-    let open = theme::c().verdigris;
-    let restricted = theme::c().warn;
     if l.is_empty() {
-        ("Licence unknown", theme::c().muted)
-    } else if l.contains("public domain") {
-        ("Public domain", open)
+        "Licence unknown"
+    } else if l.contains("public domain") || l.contains("publicdomain") {
+        "Public domain"
     } else if l.contains("cc0") {
-        ("CC0", open)
-    } else if l.contains("by-sa") {
-        ("CC BY-SA", open)
-    } else if l.contains("by-nc") {
-        ("CC BY-NC", restricted)
-    } else if l.contains("by-nd") {
-        ("CC BY-ND", restricted)
+        "CC0"
+    } else if l.contains("by-nc") || l.contains("by nc") {
+        "CC BY-NC"
+    } else if l.contains("by-sa") || l.contains("by sa") {
+        "CC BY-SA"
+    } else if l.contains("by-nd") || l.contains("by nd") {
+        "CC BY-ND"
     } else if l.contains("creative commons") || l.contains("cc by") || l.contains("cc-by") {
-        ("CC BY", open)
+        "CC BY"
     } else if l.contains("gpl") {
-        ("GPL", open)
+        "GPL"
     } else if l.contains("non-commercial") || l.contains("noncommercial") {
-        ("Non-commercial", restricted)
+        "Non-commercial"
     } else if l.contains("copyright") {
-        ("Copyrighted", restricted)
+        "Copyrighted"
     } else {
-        ("Other licence", theme::c().muted)
+        "Other licence"
     }
 }
 
@@ -178,6 +192,7 @@ impl State {
     pub(super) fn get_bibles_body(&mut self, ui: &mut Ui) {
         let mut action: Option<Action> = None;
         let mut new_filter: Option<ResourceFilter> = None;
+        let mut new_licence: Option<LicenceFilter> = None;
         egui::Frame::new()
             .fill(theme::c().field)
             .inner_margin(egui::Margin::symmetric(14, 10))
@@ -222,21 +237,20 @@ impl State {
                 if updates_line(ui, &summary, &names) {
                     action = Some(Action::Run("getbibles.update_all", json!({})));
                 }
-                let Some(catalog) = gb.catalog() else {
-                    if !gb.is_refreshing() && gb.offline().is_none() {
-                        ui.horizontal(|ui| {
-                            ui.label("The Resource catalog has not been loaded.");
-                            if ui.button("Load catalog").clicked() {
-                                action = Some(Action::Run("getbibles.refresh", json!({})));
-                            }
-                        });
-                    }
-                    return;
-                };
+                // Without a fetched catalog the Open catalogue (compiled in) still lists.
+                if gb.catalog().is_none() && !gb.is_refreshing() && gb.offline().is_none() {
+                    ui.horizontal(|ui| {
+                        ui.label("The SWORD repositories' catalog has not been loaded.");
+                        if ui.button("Load catalog").clicked() {
+                            action = Some(Action::Run("getbibles.refresh", json!({})));
+                        }
+                    });
+                }
 
-                // Type filter, then search and language filter for the "All" list.
+                // Type filter, licence filter, then search and language filter for "All".
                 let filter = &mut self.get_bibles_ui;
                 let shown_filter = gb.filter();
+                let shown_licence = gb.licence_filter();
                 ui.horizontal_wrapped(|ui| {
                     for f in ResourceFilter::CHOICES {
                         let chip = ui.selectable_label(shown_filter == f, f.label());
@@ -250,6 +264,19 @@ impl State {
                         };
                         if chip.clicked() && shown_filter != f {
                             new_filter = Some(f);
+                        }
+                    }
+                });
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("Licence").small().color(theme::c().muted));
+                    for l in LicenceFilter::CHOICES {
+                        if ui
+                            .selectable_label(shown_licence == l, l.label())
+                            .on_hover_text(l.hover())
+                            .clicked()
+                            && shown_licence != l
+                        {
+                            new_licence = Some(l);
                         }
                     }
                 });
@@ -273,12 +300,12 @@ impl State {
                         .height(400.0)
                         .show_ui(ui, |ui| {
                             ui.selectable_value(&mut filter.language, None, "All languages");
-                            for (code, n) in catalog.languages(shown_filter) {
+                            for (code, n) in gb.languages(shown_filter, shown_licence) {
                                 let label = format!("{} ({code}) · {n}", language_name(&code));
                                 ui.selectable_value(&mut filter.language, Some(code), label);
                             }
                         });
-                    if !self.session.get_bibles.is_refreshing()
+                    if !gb.is_refreshing()
                         && ui
                             .small_button("Refresh")
                             .on_hover_text("Fetch the repositories' catalogs again")
@@ -289,13 +316,19 @@ impl State {
                 });
                 ui.add_space(6.0);
 
-                // The filter's Featured sections; with All, empty ones are left out.
+                // The filter's Featured sections (with All, empty ones are left out), then the
+                // Open catalogue.
                 let mut items: Vec<Item> = Vec::new();
-                for (title, featured) in catalog.featured_sections(shown_filter) {
-                    items.push(Item::Header(title, featured.len()));
-                    items.extend(featured.into_iter().map(Item::Listing));
+                for (title, rows) in gb.sections(shown_filter, shown_licence) {
+                    items.push(Item::Header(title, rows.len()));
+                    items.extend(rows.into_iter().map(Item::Listing));
                 }
-                let all = catalog.all(&filter.query, filter.language.as_deref(), shown_filter);
+                let all = gb.all_listings(
+                    &filter.query,
+                    filter.language.as_deref(),
+                    shown_filter,
+                    shown_licence,
+                );
                 let all_title = match shown_filter {
                     ResourceFilter::All => "All Resources".to_string(),
                     f => format!("All {}", f.label()),
@@ -303,7 +336,7 @@ impl State {
                 items.push(Item::Header(all_title, all.len()));
                 if all.is_empty() {
                     items.push(Item::Empty(
-                        "Nothing matches the search, type and language.",
+                        "Nothing matches the search, type, language and licence.",
                     ));
                 }
                 items.extend(all.into_iter().map(Item::Listing));
@@ -337,9 +370,22 @@ impl State {
         if let Some(f) = new_filter {
             self.session.get_bibles.set_filter(f);
         }
+        if let Some(l) = new_licence {
+            self.session.get_bibles.set_licence_filter(l);
+        }
         if let Some(Action::Run(command, params)) = action {
             self.run(command, &params);
         }
+    }
+}
+
+/// Download a row: a SWORD module from its repository, or an Open catalogue entry from its
+/// publisher (#134).
+fn download(b: &ResourceListing) -> Action {
+    if b.is_open() {
+        Action::Run("getbibles.download_open", json!({"id": b.module}))
+    } else {
+        Action::Run("getbibles.download", json!({"module": b.module}))
     }
 }
 
@@ -388,10 +434,7 @@ fn listing_row(
                     .on_hover_text(format!("Download {} {}", b.module, b.source_label()))
                     .clicked()
                 {
-                    action = Some(Action::Run(
-                        "getbibles.download",
-                        json!({"module": b.module}),
-                    ));
+                    action = Some(download(b));
                 }
             }
             ListingStatus::InProgress {
@@ -453,10 +496,7 @@ fn listing_row(
             }
             ListingStatus::Failed { error, .. } => {
                 if ui.button("Retry").on_hover_text(error.as_str()).clicked() {
-                    action = Some(Action::Run(
-                        "getbibles.download",
-                        json!({"module": b.module}),
-                    ));
+                    action = Some(download(b));
                 }
                 ui.colored_label(theme::c().warn, "Failed")
                     .on_hover_text(error.as_str());
@@ -468,13 +508,17 @@ fn listing_row(
                 egui::Label::new(RichText::new(&b.title).strong().color(theme::c().ink)).truncate(),
             );
             ui.horizontal(|ui| {
-                let (badge, colour) = licence_badge(b.licence.as_deref());
+                // An Open catalogue row's class is declared by its entry, not read from text.
+                let badge = licence_badge_text(b.licence.as_deref());
+                let colour = licence_class_colour(b.licence_class());
                 ui.label(RichText::new(badge).small().strong().color(colour))
-                    .on_hover_text(
+                    .on_hover_text(format!(
+                        "{}: {}",
+                        b.licence_class().label(),
                         b.licence
                             .as_deref()
-                            .unwrap_or("No DistributionLicense in the conf"),
-                    );
+                            .unwrap_or("no DistributionLicense in the conf")
+                    ));
                 for tag in b.tags() {
                     ui.label(RichText::new(tag).small().strong().color(theme::c().lapis))
                         .on_hover_text(tag_hover(tag));
@@ -503,7 +547,21 @@ fn listing_row(
                 .into_iter()
                 .chain(b.licence.as_deref())
                 .collect();
-            if !notes.is_empty() {
+            if let Some(url) = &b.evidence_url {
+                // Open catalogue rows: the archived licence evidence, one click away.
+                ui.horizontal(|ui| {
+                    ui.hyperlink_to(RichText::new("Licence evidence").small(), url)
+                        .on_hover_text(url);
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(notes.join(" · "))
+                                .small()
+                                .color(theme::c().muted),
+                        )
+                        .truncate(),
+                    );
+                });
+            } else if !notes.is_empty() {
                 ui.add(
                     egui::Label::new(
                         RichText::new(notes.join(" · "))

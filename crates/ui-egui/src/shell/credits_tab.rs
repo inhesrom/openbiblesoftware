@@ -1,10 +1,14 @@
 //! Help → Credits (#67): a keyless, single-instance Tab listing every Starter Resource, the
-//! data built into the app, the bundled fonts with their licence texts, third-party crates
-//! with theirs, and the test data in the source repository. The content comes from
-//! [`obs_engine::credits::credits`].
+//! Resources downloaded from the Open catalogue (#134), the data built into the app, the
+//! bundled fonts with their licence texts, third-party crates with theirs, and the test data
+//! in the source repository. The content comes from [`obs_engine::credits::credits`] and
+//! `Session::open_resource_credits`.
 
 use egui::{Align, CollapsingHeader, Layout, RichText, Ui, vec2};
-use obs_engine::credits::{Credit, ThirdParty, changes_record_url, credits, published_changes_url};
+use obs_engine::credits::{
+    Credit, OPEN_RESOURCES_INTRO, OPEN_RESOURCES_TITLE, ThirdParty, changes_record_url, credits,
+    published_changes_url,
+};
 use obs_engine::{Library, TabId};
 
 use super::State;
@@ -14,6 +18,7 @@ use crate::theme;
 impl State {
     pub(super) fn credits_body(&mut self, ui: &mut Ui, tab: TabId) {
         let credits = credits();
+        let downloaded = self.session.open_resource_credits();
         let library = &self.session.library;
         egui::Frame::new()
             .fill(theme::c().field)
@@ -41,13 +46,25 @@ impl State {
                         for p in &credits.problems {
                             ui.colored_label(theme::c().warn, p);
                         }
-                        for s in &credits.sections {
+                        for (i, s) in credits.sections.iter().enumerate() {
                             ui.add_space(16.0);
                             section(ui, s.title);
                             ui.label(RichText::new(s.intro).color(theme::c().muted));
                             for c in &s.credits {
                                 ui.add_space(10.0);
                                 credit_row(ui, c, library);
+                            }
+                            // Downloaded open Resources (#134) follow the Starter library.
+                            if i == 0 && !downloaded.is_empty() {
+                                ui.add_space(16.0);
+                                section(ui, OPEN_RESOURCES_TITLE);
+                                ui.label(
+                                    RichText::new(OPEN_RESOURCES_INTRO).color(theme::c().muted),
+                                );
+                                for c in &downloaded {
+                                    ui.add_space(10.0);
+                                    credit_row(ui, c, library);
+                                }
                             }
                         }
                         ui.add_space(16.0);

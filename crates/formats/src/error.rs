@@ -34,6 +34,8 @@ pub enum ImportError {
     },
     /// A SWORD module with no entries.
     EmptyModule(String),
+    /// A downloaded archive (a publisher's `*_usfm.zip`) that cannot be read.
+    Archive(String),
 }
 
 impl fmt::Display for ImportError {
@@ -68,6 +70,7 @@ impl fmt::Display for ImportError {
             ImportError::EmptyModule(module) => {
                 write!(f, "SWORD module `{module}` has no entries")
             }
+            ImportError::Archive(e) => write!(f, "archive: {e}"),
         }
     }
 }

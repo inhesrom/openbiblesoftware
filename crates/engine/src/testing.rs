@@ -2084,3 +2084,57 @@ pub fn write_starter_bundle(dir: &Path, resources: &[obs_model::Resource]) {
     )
     .unwrap();
 }
+
+/// A zip of `(name, text)` files, as a publisher's `*_usfm.zip`.
+pub fn zip_of(files: &[(String, String)]) -> Vec<u8> {
+    use std::io::Write;
+    let mut out = std::io::Cursor::new(Vec::new());
+    let mut zip = zip::ZipWriter::new(&mut out);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for (name, text) in files {
+        zip.start_file(name.as_str(), options).unwrap();
+        zip.write_all(text.as_bytes()).unwrap();
+    }
+    zip.finish().unwrap();
+    out.into_inner()
+}
+
+/// The licence notice the mock Open catalogue's zip carries, as eBible's `copr.htm` does.
+pub const MOCK_OPEN_NOTICE: &str =
+    "<html><body><h1>World English Bible</h1><p>Public Domain</p></body></html>";
+
+/// A mock Open catalogue (#134): one entry, `web-excerpt`, an eBible-style USFM zip at a
+/// `file://` URL under `root`, built from the open-text WEB test excerpt with `notice` as its
+/// `copr.htm`, and pinned to [`MOCK_OPEN_NOTICE`]. Its other fields are the compiled-in
+/// catalogue's first entry's.
+pub fn mock_open_catalogue(root: &Path, notice: &str) -> Vec<crate::open_catalogue::OpenSource> {
+    let usfm = Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/usfm/web");
+    let mut files: Vec<(String, String)> = std::fs::read_dir(&usfm)
+        .unwrap()
+        .map(|e| {
+            let p = e.unwrap().path();
+            let name = format!("{}webx.usfm", p.file_stem().unwrap().to_string_lossy());
+            (name, std::fs::read_to_string(&p).unwrap())
+        })
+        .collect();
+    files.sort();
+    files.push(("copr.htm".into(), notice.into()));
+    std::fs::create_dir_all(root).unwrap();
+    let zip = root.join("webx_usfm.zip");
+    std::fs::write(&zip, zip_of(&files)).unwrap();
+    let mut source = crate::open_catalogue::open_sources()[0].clone();
+    source.id = "web-excerpt".into();
+    source.url = crate::credits::file_url(&zip);
+    source.title = "World English Bible excerpt".into();
+    source.abbreviation = "WEBX".into();
+    source.language = "en".into();
+    source.publisher = "eBible.org".into();
+    source.sha256 = None;
+    source.licence_file = Some("copr.htm".into());
+    // Pinned to MOCK_OPEN_NOTICE, so any other `notice` is refused.
+    source.licence_notice_sha256 = Some(crate::starter::sha256_hex(
+        crate::open_catalogue::notice_text(MOCK_OPEN_NOTICE).as_bytes(),
+    ));
+    vec![source]
+}

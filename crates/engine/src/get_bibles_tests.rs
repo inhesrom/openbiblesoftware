@@ -47,6 +47,9 @@ fn listing(module: &str, repo: &str) -> ResourceListing {
         strongs: false,
         morphology: false,
         refused: None,
+        source: ListingSource::Sword,
+        evidence_url: None,
+        declared_licence_class: None,
     }
 }
 
