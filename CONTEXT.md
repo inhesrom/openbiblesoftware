@@ -277,6 +277,14 @@ _Avoid_: Exegetical Guide
 The Guide whose Key is a Strong's number. Its sections in v0.1 are Lexicon entries, Translated as, Occurrences, and Forms.
 _Avoid_: Bible Word Study, Lexical study
 
+**Factbook**:
+The Guide whose Key is one person, people group or place of a People & places index. Its header names it and tells it from others of the same name by its family or region ("John, son of Zebedee"); its sections are Summary (other names, the Name meaning and family), Key Passages (every Passage that mentions it), Dictionary articles, and Related people and places. Typing a name that several share shows a chooser listing each of them. It is never in a Link set.
+_Avoid_: Encyclopedia, Profile, Person page
+
+**Name meaning**:
+What a person's or place's name means, from a names Dictionary (Hitchcock's Bible Names in the Starter library), shown in a Factbook's Summary.
+_Avoid_: Etymology, Definition
+
 ### Annotations
 
 **Annotation**:

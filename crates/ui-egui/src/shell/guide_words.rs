@@ -15,7 +15,7 @@ use super::State;
 use crate::theme;
 
 /// Rows shown before "Show all".
-const ROWS_SHOWN: usize = 12;
+pub(super) const ROWS_SHOWN: usize = 12;
 /// Width of the Lemma column of a Key word row.
 const LEMMA_W: f32 = 112.0;
 /// Values of one fact shown before "+N".
@@ -25,17 +25,25 @@ const FACT_VALUES: usize = 5;
 pub(super) enum WordsAction {
     WordStudy(StrongsNumber, bool),
     Article(ArticleLink, bool),
+    /// A person or place's Factbook (#149), by People & places id.
+    Factbook(String, bool),
 }
 
 impl State {
-    fn expanded(&self, tab: TabId, section: GuideSection) -> bool {
+    pub(super) fn expanded(&self, tab: TabId, section: GuideSection) -> bool {
         self.tabs
             .get(&tab)
             .is_some_and(|t| t.guide_expanded.contains(&section))
     }
 
     /// "Show all N" / "Show fewer" under a long section.
-    fn show_all(&mut self, ui: &mut Ui, tab: TabId, section: GuideSection, total: usize) {
+    pub(super) fn show_all(
+        &mut self,
+        ui: &mut Ui,
+        tab: TabId,
+        section: GuideSection,
+        total: usize,
+    ) {
         if total <= ROWS_SHOWN {
             return;
         }
@@ -194,7 +202,21 @@ impl State {
         };
         for row in &rows[..shown] {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(&row.name).strong().color(theme::c().ink));
+                let usual = row.usual_name.as_deref().unwrap_or(&row.name);
+                let name = ui
+                    .add(
+                        egui::Label::new(RichText::new(&row.name).strong().color(theme::c().lapis))
+                            .sense(Sense::click()),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .on_hover_text(format!(
+                        "Open the Factbook on {usual} · Ctrl/Cmd-click opens a new Tab"
+                    ));
+                let label = format!("Factbook: {usual}");
+                name.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, &label));
+                if name.clicked() {
+                    action = Some(WordsAction::Factbook(row.entity.clone(), new_tab));
+                }
                 if let Some(u) = &row.usual_name {
                     ui.label(RichText::new(format!("({u})")).color(theme::c().ink));
                 }
@@ -265,6 +287,13 @@ impl State {
         match action {
             WordsAction::WordStudy(n, new_tab) => self.open_word_study(guide, n, new_tab),
             WordsAction::Article(a, new_tab) => self.open_article(guide, &a, new_tab),
+            WordsAction::Factbook(entity, new_tab) => {
+                self.session.workspace.focus(guide);
+                self.run(
+                    "guide.factbook",
+                    &json!({ "entity": entity, "new_tab": new_tab }),
+                );
+            }
         }
     }
 
@@ -290,7 +319,7 @@ impl State {
     }
 
     /// A Dictionary at an article: its open Tab moves there (Ctrl/Cmd: always a new Tab).
-    fn open_article(&mut self, guide: TabId, a: &ArticleLink, new_tab: bool) {
+    pub(super) fn open_article(&mut self, guide: TabId, a: &ArticleLink, new_tab: bool) {
         let kind = TabKind::Resource(a.resource_id.clone());
         let key = Key::Headword(a.headword.clone());
         let existing = (!new_tab)

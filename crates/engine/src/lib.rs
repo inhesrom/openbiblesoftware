@@ -23,6 +23,9 @@ pub mod command;
 pub mod compare;
 pub mod credits;
 pub mod cross_references;
+pub mod factbook;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod factbook_tests;
 pub mod favorites;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod favorites_tests;
@@ -94,6 +97,10 @@ pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSp
 pub use compare::{
     Cell, ComparedBible, ComparedCell, Comparison, DEFAULT_BIBLES, Marks, VerseBlock, WordDiff,
     verse_blocks, word_diff,
+};
+pub use factbook::{
+    DictionaryArticle, DirectoryEntry, EntityCard, EntityLink, FactbookChooser, FactbookSummary,
+    FamilyFact, NameMeaning, PeopleDirectory, RelatedEntity,
 };
 pub use favorites::{Favorite, HistoryDay, SavedSearch, TabLocation, Visit, day_heading};
 pub use guide::{

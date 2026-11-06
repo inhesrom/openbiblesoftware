@@ -1,0 +1,490 @@
+//! The Factbook Tab (#149): a hub page for one person, people group or place. The header
+//! (name, what tells it from others of that name, kind, where the Bible names it), then the
+//! Guide's sections through the shared [`State::guide_page`]. A name typed into the box shows
+//! the chooser instead, until one entity is chosen. Everything shown is engine data
+//! ([`obs_engine::factbook`]); this file only draws it.
+
+use std::collections::BTreeMap;
+
+use egui::{Rect, RichText, Sense, Stroke, Ui, pos2};
+use obs_engine::{
+    ArticleLink, DictionaryArticle, EntityCard, EntityLink, FactbookSummary, Guide, GuideSection,
+    RelatedEntity, TabId, TabKind, WordStatus,
+};
+use obs_layout::ColorRole;
+use obs_model::{Direction, Key, ResourceType};
+use obs_scripture::{Book, Passage, RefStyle, Standard, format_passage};
+use serde_json::json;
+
+use super::State;
+use super::guide_tab::hint_page;
+use super::guide_words::ROWS_SHOWN;
+use crate::theme;
+
+/// Lines of a Dictionary article excerpt.
+const ARTICLE_LINES: usize = 4;
+
+/// Key Passages shown before "Show all".
+const PASSAGES_SHOWN: usize = 40;
+
+/// What a click in a Factbook asks for. `bool`: Ctrl/Cmd held (a new Tab).
+pub(super) enum FactbookAction {
+    /// Another person or place's Factbook, by People & places id.
+    Entity(String, bool),
+    /// A Key Passage in a Bible.
+    Passage(Passage, bool),
+    /// A Dictionary at an article.
+    Article(ArticleLink, bool),
+    /// Close the chooser.
+    StopChoosing,
+}
+
+impl State {
+    pub(super) fn factbook_body(&mut self, ui: &mut Ui, tab: TabId) {
+        if let Some(name) = self.session.factbooks.choosing(tab).map(str::to_string) {
+            self.factbook_chooser_page(ui, tab, &name);
+            return;
+        }
+        let key = self
+            .session
+            .workspace
+            .tab(tab)
+            .and_then(|t| t.entry_history.current());
+        let Some(Key::Headword(id)) = key else {
+            hint_page(
+                ui,
+                "Type the name of a person or place in the box above (Abraham, John, Bethel), \
+                 or click a name in a Passage Guide's People & places.",
+            );
+            return;
+        };
+        let card = self.session.factbook_card(&id);
+        self.guide_page(
+            ui,
+            tab,
+            Guide::Factbook,
+            &Key::Headword(id.clone()),
+            &mut |_, ui| {
+                factbook_header(ui, &id, &card);
+                None
+            },
+        );
+    }
+
+    /// The chooser: every person or place with the typed name, each told apart by its facts.
+    /// Click one to show it (Ctrl/Cmd-click: a new Factbook); Cancel or Escape goes back.
+    fn factbook_chooser_page(&mut self, ui: &mut Ui, tab: TabId, name: &str) {
+        let status = self.session.factbook_chooser(name);
+        let can_cancel = self
+            .session
+            .workspace
+            .tab(tab)
+            .is_some_and(|t| t.entry_history.current().is_some());
+        let new_tab = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
+        let mut action: Option<FactbookAction> = None;
+        egui::Frame::new()
+            .fill(theme::c().field)
+            .inner_margin(egui::Margin::symmetric(14, 10))
+            .show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(format!("“{name}”"))
+                            .font(theme::display(20.0))
+                            .color(theme::c().ink),
+                    );
+                    if can_cancel
+                        && ui
+                            .small_button("Cancel")
+                            .on_hover_text("Back to the person or place shown before (Esc)")
+                            .clicked()
+                    {
+                        action = Some(FactbookAction::StopChoosing);
+                    }
+                });
+                let chooser = match &status {
+                    WordStatus::Loading => {
+                        ui.label(
+                            RichText::new(format!("Looking up “{name}”…")).color(theme::c().muted),
+                        );
+                        ui.ctx().request_repaint();
+                        return;
+                    }
+                    WordStatus::Failed(e) => {
+                        ui.label(
+                            RichText::new(format!("Could not look up “{name}”: {e}"))
+                                .color(theme::c().warn),
+                        );
+                        return;
+                    }
+                    WordStatus::Ready(c) => c,
+                };
+                if chooser.choices.is_empty() {
+                    let hint = if self
+                        .session
+                        .library
+                        .of_type(ResourceType::PeopleAndPlaces)
+                        .next()
+                        .is_some()
+                    {
+                        format!(
+                            "No person or place is called “{name}”. Try another spelling \
+                             (Abram, Jacob, Bethlehem)."
+                        )
+                    } else {
+                        "No People & places index in your library. Add one (TIPNR) to look up \
+                         people and places."
+                            .to_string()
+                    };
+                    ui.label(RichText::new(hint).color(theme::c().muted));
+                    return;
+                }
+                ui.label(
+                    RichText::new(format!(
+                        "{} people and places called “{name}”. Choose one:",
+                        chooser.choices.len()
+                    ))
+                    .color(theme::c().muted),
+                );
+                ui.add_space(6.0);
+                egui::ScrollArea::vertical()
+                    .id_salt(("factbook-chooser", tab))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        for c in &chooser.choices {
+                            if card_row(ui, c, None) {
+                                action = Some(FactbookAction::Entity(c.entity.clone(), new_tab));
+                            }
+                            ui.add_space(4.0);
+                        }
+                    });
+            });
+        if can_cancel && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            action = Some(FactbookAction::StopChoosing);
+        }
+        if let Some(a) = action {
+            self.session.workspace.user_focused(tab);
+            self.factbook_action(tab, a);
+        }
+    }
+
+    /// Summary: other names, what the name means, and family (each relative a link).
+    pub(super) fn factbook_summary(
+        &mut self,
+        ui: &mut Ui,
+        sum: &FactbookSummary,
+        new_tab: bool,
+    ) -> Option<FactbookAction> {
+        let mut action = None;
+        if !sum.other_names.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new("Also called").small().color(theme::c().muted));
+                ui.label(RichText::new(sum.other_names.join(", ")).color(theme::c().ink));
+            });
+        }
+        if let Some(m) = &sum.meaning {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new("Name means").small().color(theme::c().muted));
+                ui.label(RichText::new(format!("“{}”", m.text)).color(theme::c().ink));
+                if ui
+                    .link(RichText::new(format!("— {}", m.article.abbreviation)).small())
+                    .on_hover_text(format!(
+                        "Open {} at “{}” · Ctrl/Cmd-click opens a new Tab",
+                        m.article.title, m.article.headword
+                    ))
+                    .clicked()
+                {
+                    action = Some(FactbookAction::Article(m.article.clone(), new_tab));
+                }
+            });
+        }
+        for fact in &sum.family {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.label(RichText::new(fact.label).small().color(theme::c().muted));
+                for (i, p) in fact.people.iter().enumerate() {
+                    if i > 0 {
+                        ui.label(RichText::new(",").color(theme::c().muted));
+                    }
+                    if let Some(a) = entity_link(ui, p, new_tab) {
+                        action = Some(a);
+                    }
+                }
+            });
+        }
+        action
+    }
+
+    /// Key Passages: every Passage that mentions them, by Bible book; click one to read it.
+    pub(super) fn factbook_passages(
+        &mut self,
+        ui: &mut Ui,
+        tab: TabId,
+        passages: &[Passage],
+        new_tab: bool,
+    ) -> Option<FactbookAction> {
+        let mut by_book: BTreeMap<Book, Vec<Passage>> = BTreeMap::new();
+        for p in passages {
+            by_book.entry(p.start().book).or_default().push(*p);
+        }
+        let expanded = self.expanded(tab, GuideSection::KeyPassages);
+        let mut left = if expanded {
+            passages.len()
+        } else {
+            PASSAGES_SHOWN
+        };
+        let mut action = None;
+        for (book, list) in &by_book {
+            if left == 0 {
+                break;
+            }
+            let list = &list[..list.len().min(left)];
+            left -= list.len();
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                let total = by_book.get(book).map_or(0, Vec::len);
+                ui.label(
+                    RichText::new(format!("{} · {total}", book.name()))
+                        .strong()
+                        .color(theme::c().ink),
+                );
+                for p in list {
+                    let short = format_passage(*p, &Standard, RefStyle::Short);
+                    // `Gen 12:1` → `12:1` beside the book name.
+                    let local = short
+                        .split_once(' ')
+                        .map_or(short.as_str(), |(_, rest)| rest)
+                        .to_string();
+                    if ui
+                        .link(local)
+                        .on_hover_text(format!("Read {short} · Ctrl/Cmd-click opens a new Tab"))
+                        .clicked()
+                    {
+                        action = Some(FactbookAction::Passage(*p, new_tab));
+                    }
+                }
+            });
+            ui.add_space(2.0);
+        }
+        if passages.len() > PASSAGES_SHOWN {
+            let label = if expanded {
+                "Show fewer".to_string()
+            } else {
+                format!("Show all {}", passages.len())
+            };
+            if ui.small_button(label).clicked()
+                && let Some(t) = self.tabs.get_mut(&tab)
+                && !t.guide_expanded.remove(&GuideSection::KeyPassages)
+            {
+                t.guide_expanded.insert(GuideSection::KeyPassages);
+            }
+        }
+        action
+    }
+
+    /// Dictionary articles: each Dictionary's article, its first lines (Resource text) and
+    /// a link that opens it.
+    pub(super) fn factbook_articles(
+        &mut self,
+        ui: &mut Ui,
+        _tab: TabId,
+        articles: &[DictionaryArticle],
+        new_tab: bool,
+    ) -> Option<FactbookAction> {
+        let mut action = None;
+        for a in articles {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(&a.article.title)
+                        .strong()
+                        .color(theme::c().ink),
+                );
+                if ui
+                    .link(format!(
+                        "{}: {}",
+                        a.article.abbreviation, a.article.headword
+                    ))
+                    .on_hover_text(format!(
+                        "Open {} at “{}” · Ctrl/Cmd-click opens a new Tab",
+                        a.article.title, a.article.headword
+                    ))
+                    .clicked()
+                {
+                    action = Some(FactbookAction::Article(a.article.clone(), new_tab));
+                }
+            });
+            if !a.excerpt.is_empty() {
+                let rtl = a.direction == Direction::Rtl;
+                self.guide_snippet(ui, &a.excerpt, ColorRole::Ink, rtl, ARTICLE_LINES);
+            }
+            ui.add_space(6.0);
+        }
+        action
+    }
+
+    /// Related people and places: each as a chooser-like row, with how they relate.
+    pub(super) fn factbook_related(
+        &mut self,
+        ui: &mut Ui,
+        tab: TabId,
+        rows: &[RelatedEntity],
+        new_tab: bool,
+    ) -> Option<FactbookAction> {
+        let shown = if self.expanded(tab, GuideSection::Related) {
+            rows.len()
+        } else {
+            rows.len().min(ROWS_SHOWN)
+        };
+        let mut action = None;
+        for r in &rows[..shown] {
+            if card_row(ui, &r.card, Some(&r.why)) {
+                action = Some(FactbookAction::Entity(r.card.entity.clone(), new_tab));
+            }
+            ui.add_space(2.0);
+        }
+        self.show_all(ui, tab, GuideSection::Related, rows.len());
+        action
+    }
+
+    pub(super) fn factbook_action(&mut self, tab: TabId, action: FactbookAction) {
+        match action {
+            FactbookAction::Entity(id, true) => {
+                self.run("guide.factbook", &json!({ "entity": id, "new_tab": true }));
+            }
+            FactbookAction::Entity(id, false) => {
+                self.run("tab.go", &json!({ "tab": tab.0, "text": id }));
+            }
+            FactbookAction::StopChoosing => self.session.stop_choosing_factbook(tab),
+            FactbookAction::Article(a, new_tab) => self.open_article(tab, &a, new_tab),
+            FactbookAction::Passage(p, new_tab) => self.open_key_passage(tab, p, new_tab),
+        }
+    }
+
+    /// Read a Key Passage: the most recently active Bible Tab goes there (its Link set
+    /// follows); with Ctrl/Cmd, or with no Bible open, the ★ Bible opens there.
+    fn open_key_passage(&mut self, factbook: TabId, passage: Passage, new_tab: bool) {
+        let library = &self.session.library;
+        let bible = (!new_tab)
+            .then(|| {
+                self.session.workspace.most_recent(|t| match &t.kind {
+                    TabKind::Resource(id) => library
+                        .get(id)
+                        .is_some_and(|e| e.manifest.resource_type == ResourceType::Bible),
+                    _ => false,
+                })
+            })
+            .flatten();
+        match bible {
+            Some(t) => {
+                self.session.workspace.focus(t);
+                self.session.workspace.navigate_standard(t, passage.start());
+            }
+            None => self.reference_navigate(factbook, passage, true),
+        }
+    }
+}
+
+/// The header: name, what tells it apart, and its kind, region and where it is named.
+fn factbook_header(ui: &mut Ui, id: &str, card: &WordStatus<EntityCard>) {
+    let name = obs_engine::people_places::display_name(id);
+    match card {
+        WordStatus::Ready(c) => {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    RichText::new(&c.name)
+                        .font(theme::display(20.0))
+                        .color(theme::c().ink),
+                );
+                if let Some(d) = &c.distinction {
+                    ui.label(RichText::new(d).color(theme::c().ink));
+                }
+            });
+            ui.label(RichText::new(c.details()).color(theme::c().muted));
+        }
+        WordStatus::Loading => {
+            ui.label(
+                RichText::new(name)
+                    .font(theme::display(20.0))
+                    .color(theme::c().ink),
+            );
+            ui.label(RichText::new("Loading…").color(theme::c().muted));
+            ui.ctx().request_repaint();
+        }
+        WordStatus::Failed(e) => {
+            ui.label(
+                RichText::new(name)
+                    .font(theme::display(20.0))
+                    .color(theme::c().ink),
+            );
+            ui.label(RichText::new(e).color(theme::c().warn));
+        }
+    }
+}
+
+/// A relative's name as a link to their Factbook (plain text when there is none).
+fn entity_link(ui: &mut Ui, p: &EntityLink, new_tab: bool) -> Option<FactbookAction> {
+    let text = if p.uncertain {
+        format!("{} (?)", p.name)
+    } else {
+        p.name.clone()
+    };
+    if !p.known {
+        ui.label(RichText::new(text).color(theme::c().ink));
+        return None;
+    }
+    let tip = if p.uncertain {
+        format!(
+            "The source is unsure of this link · Open the Factbook on {} · Ctrl/Cmd-click opens a new Tab",
+            p.name
+        )
+    } else {
+        format!(
+            "Open the Factbook on {} · Ctrl/Cmd-click opens a new Tab",
+            p.name
+        )
+    };
+    ui.link(text)
+        .on_hover_text(tip)
+        .clicked()
+        .then(|| FactbookAction::Entity(p.entity.clone(), new_tab))
+}
+
+/// One person or place as a clickable row: `John (son of Zebedee)`, its details, and `why`
+/// (Related) or what else it is called (chooser). Returns whether it was clicked.
+fn card_row(ui: &mut Ui, c: &EntityCard, why: Option<&str>) -> bool {
+    let top = ui.cursor().min;
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new(c.title()).strong().color(theme::c().lapis));
+        if let Some(why) = why {
+            ui.label(RichText::new(why).color(theme::c().ink));
+        }
+        if let Some(also) = &c.also_called {
+            ui.label(
+                RichText::new(format!("also called {also}"))
+                    .italics()
+                    .color(theme::c().ink),
+            );
+        }
+    });
+    ui.label(RichText::new(c.details()).small().color(theme::c().muted));
+    let rect = Rect::from_min_max(top, pos2(ui.max_rect().right(), ui.cursor().top()));
+    let r = ui
+        .interact(
+            rect,
+            ui.scope_id().with(("factbook-card", &c.entity)),
+            Sense::click(),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Click to open its Factbook · Ctrl/Cmd-click opens a new Tab");
+    let label = format!("Factbook: {}", c.title());
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, &label));
+    if r.hovered() {
+        ui.painter().rect_stroke(
+            rect.expand(2.0),
+            4.0,
+            Stroke::new(1.0, theme::c().hover_rule),
+            egui::StrokeKind::Outside,
+        );
+    }
+    r.clicked()
+}

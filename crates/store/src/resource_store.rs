@@ -12,6 +12,16 @@ use crate::error::StoreError;
 /// Unmapped verse, `None` when the Bible has no Verse map.
 pub type MappedVerse = (BibleVerse, Option<Option<Passage>>);
 
+/// One entity's mentions in a People & places index, summed up.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MentionStats {
+    pub entity: String,
+    pub count: u32,
+    /// The first and last Verses mentioned (Standard versification).
+    pub first: Verse,
+    pub last: Verse,
+}
+
 /// Row counts of an open Resource.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Summary {
@@ -128,6 +138,41 @@ pub trait ResourceStore {
     /// Every entity of a People & places index, ordered by id.
     fn entities(&self) -> Result<Vec<Entity>, StoreError> {
         Ok(self.load()?.entities)
+    }
+
+    /// Every mention of one entity of a People & places index, in Bible order (the
+    /// Factbook's Key Passages, #149).
+    fn mentions_of(&self, entity: &str) -> Result<Vec<Mention>, StoreError> {
+        let mut out: Vec<Mention> = self
+            .load()?
+            .mentions
+            .into_iter()
+            .filter(|m| m.entity == entity)
+            .collect();
+        out.sort_by_key(|m| m.passage);
+        Ok(out)
+    }
+
+    /// How many mentions each entity of a People & places index has and where the first and
+    /// last are, by entity id; entities with none are left out.
+    fn mention_stats(&self) -> Result<Vec<MentionStats>, StoreError> {
+        let mut stats: std::collections::BTreeMap<String, MentionStats> = Default::default();
+        for m in self.load()?.mentions {
+            stats
+                .entry(m.entity.clone())
+                .and_modify(|s| {
+                    s.count += 1;
+                    s.first = s.first.min(m.passage.start());
+                    s.last = s.last.max(m.passage.end());
+                })
+                .or_insert(MentionStats {
+                    entity: m.entity,
+                    count: 1,
+                    first: m.passage.start(),
+                    last: m.passage.end(),
+                });
+        }
+        Ok(stats.into_values().collect())
     }
 
     /// Call `f` with the parts of every Tagged word in the Resource, in no particular order.

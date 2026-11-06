@@ -40,6 +40,8 @@ pub enum Tool {
 pub enum Guide {
     PassageGuide,
     WordStudy,
+    /// A hub page for one person, people group or place of a People & places index (#149).
+    Factbook,
 }
 
 impl Tool {
@@ -61,6 +63,7 @@ impl Guide {
         match self {
             Guide::PassageGuide => "Passage Guide",
             Guide::WordStudy => "Word Study",
+            Guide::Factbook => "Factbook",
         }
     }
 }
@@ -94,6 +97,8 @@ pub enum HeaderBox {
     Reference,
     /// A Strong's number or English word (Word Study).
     Word,
+    /// The name of a person or place (Factbook).
+    Name,
     /// A Lexicon Strong's number or Lemma.
     Lexicon,
     /// A Dictionary headword.
@@ -148,6 +153,7 @@ impl TabKind {
             }
             TabKind::Tool(Tool::WordInfo) => HeaderBox::FollowsHover,
             TabKind::Guide(Guide::WordStudy) => HeaderBox::Word,
+            TabKind::Guide(Guide::Factbook) => HeaderBox::Name,
             // The query, mode and scope fields are the Tab's body (#59).
             TabKind::Tool(Tool::Search) => HeaderBox::Keyless,
             TabKind::About(_)
@@ -169,6 +175,7 @@ impl TabKind {
                 | TabKind::GetBibles
                 | TabKind::StarterLibrary
                 | TabKind::Credits
+                | TabKind::Guide(Guide::Factbook)
                 | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History)
         )
     }
@@ -366,6 +373,9 @@ impl Tab {
         if self.kind == TabKind::Guide(Guide::WordStudy) {
             return matches!(key, Key::StrongsNumber(_)).then(|| key.clone());
         }
+        if self.kind == TabKind::Guide(Guide::Factbook) {
+            return None;
+        }
         Some(self.navigation.as_ref()?.lookup(key)?.key.clone())
     }
 
@@ -385,12 +395,12 @@ impl Tab {
         self.key_schemes.contains(&KeyScheme::Passage)
     }
 
-    /// Whether the Tab's location is an entry Key (Lexicon, Dictionary, Word Study) kept in
-    /// `entry_history`, rather than a Verse kept in `history`.
+    /// Whether the Tab's location is an entry Key (Lexicon, Dictionary, Word Study, Factbook)
+    /// kept in `entry_history`, rather than a Verse kept in `history`.
     pub fn keeps_entries(&self) -> bool {
         matches!(
             self.header_box(),
-            HeaderBox::Lexicon | HeaderBox::Headword | HeaderBox::Word
+            HeaderBox::Lexicon | HeaderBox::Headword | HeaderBox::Word | HeaderBox::Name
         )
     }
 

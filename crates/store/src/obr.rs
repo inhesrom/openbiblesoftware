@@ -51,7 +51,7 @@ use crate::codec::{
     verse_number, verse_text,
 };
 use crate::error::StoreError;
-use crate::resource_store::{ResourceStore, Summary};
+use crate::resource_store::{MentionStats, ResourceStore, Summary};
 use crate::span_codec::{span_columns, span_from};
 
 /// `PRAGMA application_id` of every `.obr` file: ASCII `OBR1`.
@@ -1185,6 +1185,52 @@ impl ResourceStore for ObrReader {
 
     fn entities(&self) -> Result<Vec<Entity>, StoreError> {
         self.entity_rows("", &[])
+    }
+
+    fn mentions_of(&self, entity: &str) -> Result<Vec<Mention>, StoreError> {
+        let ord: Option<i64> = self
+            .conn
+            .prepare_cached("SELECT ord FROM entities WHERE id = ?1")
+            .map_err(sql)?
+            .query_row([entity], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        match ord {
+            Some(ord) => self.mention_rows("WHERE m.entity = ?1", &[ord]),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    fn mention_stats(&self) -> Result<Vec<MentionStats>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT e.id, count(*), min(m.start), max(m.end)
+                 FROM mentions m JOIN entities e ON e.ord = m.entity
+                 GROUP BY e.id ORDER BY e.id",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
+            })
+            .map_err(sql)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (entity, n, first, last) = row.map_err(sql)?;
+            out.push(MentionStats {
+                entity,
+                count: to_u32(n, "mention count")?,
+                first: passage_from_numbers(first, first)?.start(),
+                last: passage_from_numbers(last, last)?.start(),
+            });
+        }
+        Ok(out)
     }
 
     fn for_each_tagged_word(

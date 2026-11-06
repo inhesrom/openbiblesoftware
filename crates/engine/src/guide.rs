@@ -45,10 +45,18 @@ pub enum GuideSection {
     Occurrences,
     /// Word Study (#56): the distinct grammatical forms, collapsed by default.
     Forms,
+    /// Factbook (#149): other names, the name's meaning and family ([`crate::factbook`]).
+    Summary,
+    /// Factbook: every Passage that mentions the person or place.
+    KeyPassages,
+    /// Factbook: each Dictionary's article on them.
+    DictionaryArticles,
+    /// Factbook: people and places linked to them or named with them.
+    Related,
 }
 
 impl GuideSection {
-    pub const ALL: [GuideSection; 8] = [
+    pub const ALL: [GuideSection; 12] = [
         GuideSection::Commentaries,
         GuideSection::CrossReferences,
         GuideSection::KeyWords,
@@ -57,6 +65,10 @@ impl GuideSection {
         GuideSection::TranslatedAs,
         GuideSection::Occurrences,
         GuideSection::Forms,
+        GuideSection::Summary,
+        GuideSection::KeyPassages,
+        GuideSection::DictionaryArticles,
+        GuideSection::Related,
     ];
 
     /// Stable id, as stored and as passed to commands.
@@ -70,6 +82,10 @@ impl GuideSection {
             GuideSection::TranslatedAs => "translated_as",
             GuideSection::Occurrences => "occurrences",
             GuideSection::Forms => "forms",
+            GuideSection::Summary => "summary",
+            GuideSection::KeyPassages => "key_passages",
+            GuideSection::DictionaryArticles => "dictionary_articles",
+            GuideSection::Related => "related",
         }
     }
 
@@ -87,6 +103,10 @@ impl GuideSection {
             GuideSection::TranslatedAs => "Translated as",
             GuideSection::Occurrences => "Occurrences",
             GuideSection::Forms => "Forms",
+            GuideSection::Summary => "Summary",
+            GuideSection::KeyPassages => "Key Passages",
+            GuideSection::DictionaryArticles => "Dictionary articles",
+            GuideSection::Related => "Related people and places",
         }
     }
 
@@ -101,7 +121,16 @@ impl GuideSection {
             GuideSection::TranslatedAs | GuideSection::Occurrences | GuideSection::Forms => {
                 ResourceType::Bible
             }
+            GuideSection::Summary | GuideSection::KeyPassages | GuideSection::Related => {
+                ResourceType::PeopleAndPlaces
+            }
+            GuideSection::DictionaryArticles => ResourceType::Dictionary,
         }
+    }
+
+    /// Whether the section header shows how many rows it has (the Summary has none to count).
+    pub fn counted(self) -> bool {
+        self != GuideSection::Summary
     }
 
     /// Whether the section starts collapsed in a new (or reset) Guide arrangement (#15:
@@ -193,6 +222,24 @@ impl GuideSection {
             (GuideSection::Forms, true) => {
                 "None in your library: no Hebrew or Greek Bible with Morphology has this word."
             }
+            (GuideSection::Summary | GuideSection::KeyPassages | GuideSection::Related, false) => {
+                "None in your library. Add a People & places index (TIPNR) to see this."
+            }
+            (GuideSection::Summary, true) => {
+                "Nothing more is known: no other names, name meaning or family."
+            }
+            (GuideSection::KeyPassages, true) => {
+                "None in your library: no Passage is listed for this person or place."
+            }
+            (GuideSection::Related, true) => {
+                "None in your library: no person or place is linked or named with them."
+            }
+            (GuideSection::DictionaryArticles, false) => {
+                "None in your library. Add a Dictionary (Easton's, Smith's) to read about them."
+            }
+            (GuideSection::DictionaryArticles, true) => {
+                "None in your library: no Dictionary has an article on them."
+            }
         }
     }
 }
@@ -203,13 +250,14 @@ impl Guide {
         match self {
             Guide::PassageGuide => "passage_guide",
             Guide::WordStudy => "word_study",
+            Guide::Factbook => "factbook",
         }
     }
 
+    pub const ALL: [Guide; 3] = [Guide::PassageGuide, Guide::WordStudy, Guide::Factbook];
+
     pub fn from_id(id: &str) -> Option<Self> {
-        [Guide::PassageGuide, Guide::WordStudy]
-            .into_iter()
-            .find(|g| g.id() == id)
+        Self::ALL.into_iter().find(|g| g.id() == id)
     }
 
     /// The Guide's sections in their default order.
@@ -226,6 +274,13 @@ impl Guide {
                 GuideSection::TranslatedAs,
                 GuideSection::Occurrences,
                 GuideSection::Forms,
+            ],
+            // The Atlas (#150) adds Map for places.
+            Guide::Factbook => &[
+                GuideSection::Summary,
+                GuideSection::KeyPassages,
+                GuideSection::DictionaryArticles,
+                GuideSection::Related,
             ],
         }
     }
@@ -409,6 +464,14 @@ pub enum SectionData {
     Occurrences(crate::word_sections::OccurrenceList),
     /// A Strong's number's grammatical forms, most frequent first (#56).
     Forms(crate::word_sections::Forms),
+    /// A Factbook's Summary (#149).
+    FactbookSummary(crate::factbook::FactbookSummary),
+    /// Every Passage that mentions a person or place, in Bible order (#149).
+    KeyPassages(Vec<Passage>),
+    /// Each Dictionary's article on a person or place, in Preferred order (#149).
+    DictionaryArticles(Vec<crate::factbook::DictionaryArticle>),
+    /// People and places related to one (#149).
+    Related(Vec<crate::factbook::RelatedEntity>),
 }
 
 impl SectionData {
@@ -423,6 +486,10 @@ impl SectionData {
             SectionData::TranslatedAs(t) => t.renderings.len(),
             SectionData::Occurrences(o) => o.count() as usize,
             SectionData::Forms(f) => f.forms.len(),
+            SectionData::FactbookSummary(s) => usize::from(!s.is_empty()),
+            SectionData::KeyPassages(p) => p.len(),
+            SectionData::DictionaryArticles(a) => a.len(),
+            SectionData::Related(r) => r.len(),
         }
     }
 
@@ -464,6 +531,8 @@ pub struct LibrarySections {
     /// Bibles' rendering indexes, shared with the Word Study header and chooser.
     indexes: Arc<crate::word_study::RenderingIndexes>,
     concordances: crate::word_sections::Concordances,
+    /// The People & places directory, shared with the Session's Factbooks (#149).
+    directory: Arc<crate::factbook::DirectoryCache>,
 }
 
 impl SectionSource for LibrarySections {
@@ -474,6 +543,15 @@ impl SectionSource for LibrarySections {
         section: GuideSection,
         _: &JobContext,
     ) -> Result<SectionData, String> {
+        if let Key::Headword(entity) = key {
+            return crate::factbook::section(
+                library,
+                &self.directory,
+                &self.aliases,
+                entity,
+                section,
+            );
+        }
         if let Key::StrongsNumber(n) = key {
             use crate::word_sections as ws;
             let n = *n;
@@ -522,6 +600,10 @@ impl SectionSource for LibrarySections {
             | GuideSection::TranslatedAs
             | GuideSection::Occurrences
             | GuideSection::Forms => Err(format!("{} needs a Strong's number", section.title())),
+            GuideSection::Summary
+            | GuideSection::KeyPassages
+            | GuideSection::DictionaryArticles
+            | GuideSection::Related => Err(format!("{} needs a person or place", section.title())),
         }
     }
 }
@@ -535,14 +617,17 @@ impl LibrarySections {
         }
     }
 
-    /// Sections that share `aliases` and the Bibles' rendering `indexes` with the Session.
+    /// Sections that share `aliases`, the Bibles' rendering `indexes` and the People &
+    /// places `directory` with the Session.
     pub fn with_shared(
         aliases: Arc<AliasCache>,
         indexes: Arc<crate::word_study::RenderingIndexes>,
+        directory: Arc<crate::factbook::DirectoryCache>,
     ) -> Self {
         Self {
             aliases,
             indexes,
+            directory,
             ..Self::default()
         }
     }
@@ -671,7 +756,10 @@ fn section_for(nav: &ResourceNavigation, passage: Passage) -> Option<(Passage, &
 
 /// The heading a section's text starts with, and the text after it (whitespace collapsed,
 /// cut at a word boundary to [`EXCERPT_CHARS`]).
-fn heading_and_excerpt(unit: &TextUnit, range: Range<usize>) -> (Option<String>, String) {
+pub(crate) fn heading_and_excerpt(
+    unit: &TextUnit,
+    range: Range<usize>,
+) -> (Option<String>, String) {
     let text = &unit.text;
     let heading = unit.spans.iter().find(|s| {
         matches!(s.kind, SpanKind::Heading { .. })
@@ -746,12 +834,15 @@ pub struct Guides {
     alias_job: Option<JobId>,
     /// Bibles' rendering indexes, shared with the default source and the Word Study.
     indexes: Arc<crate::word_study::RenderingIndexes>,
+    /// The People & places directory, shared with the default source and the Factbook.
+    directory: Arc<crate::factbook::DirectoryCache>,
 }
 
 impl Default for Guides {
     fn default() -> Self {
         let aliases = Arc::new(AliasCache::default());
         let indexes = Arc::new(crate::word_study::RenderingIndexes::default());
+        let directory = Arc::new(crate::factbook::DirectoryCache::default());
         Self {
             arrangements: BTreeMap::new(),
             results: BTreeMap::new(),
@@ -761,10 +852,12 @@ impl Default for Guides {
             source: Arc::new(LibrarySections::with_shared(
                 Arc::clone(&aliases),
                 Arc::clone(&indexes),
+                Arc::clone(&directory),
             )),
             aliases,
             alias_job: None,
             indexes,
+            directory,
         }
     }
 }
@@ -787,6 +880,11 @@ impl Guides {
     /// The People & places ↔ Dictionary alias caches.
     pub fn aliases(&self) -> &Arc<AliasCache> {
         &self.aliases
+    }
+
+    /// The People & places directory the default source and the Factbook read.
+    pub fn directory(&self) -> Arc<crate::factbook::DirectoryCache> {
+        Arc::clone(&self.directory)
     }
 
     /// The Bibles' rendering indexes the default source reads.
@@ -872,9 +970,14 @@ impl Session {
                 if event.kind.is_terminal() {
                     self.guides.alias_job = None;
                     // Sections computed before the refresh may have missed an article.
-                    self.guides
-                        .results
-                        .retain(|(_, s), _| *s != GuideSection::PeopleAndPlaces);
+                    self.guides.results.retain(|(_, s), _| {
+                        !matches!(
+                            s,
+                            GuideSection::PeopleAndPlaces
+                                | GuideSection::Summary
+                                | GuideSection::DictionaryArticles
+                        )
+                    });
                 }
                 continue;
             }
@@ -928,7 +1031,7 @@ impl Session {
         let Some(user) = &self.user else {
             return;
         };
-        for guide in [Guide::PassageGuide, Guide::WordStudy] {
+        for guide in Guide::ALL {
             if let Ok(Some(json)) = user.preference(&pref(guide)) {
                 self.guides
                     .arrangements
@@ -978,7 +1081,7 @@ const GUIDE: ParamSpec = ParamSpec {
     name: "guide",
     kind: ParamKind::String,
     required: true,
-    help: "Kind of Guide: `passage_guide` or `word_study`",
+    help: "Kind of Guide: `passage_guide`, `word_study` or `factbook`",
 };
 const SECTION: ParamSpec = ParamSpec {
     name: "section",

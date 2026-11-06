@@ -73,7 +73,7 @@ pub fn kind_name(kind: EntityKind) -> &'static str {
     }
 }
 
-fn relation_label(r: Relation) -> &'static str {
+pub fn relation_label(r: Relation) -> &'static str {
     match r {
         Relation::Father => "Father",
         Relation::Mother => "Mother",

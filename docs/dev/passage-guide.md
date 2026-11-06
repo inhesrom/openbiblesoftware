@@ -72,6 +72,8 @@ Decisions #15 (sections, Guide arrangement, navigation), #18 (Tab header, placem
   Founded, Founded by, Lived here). TIPNR's descriptions are never stored (#43) or shown.
 - Article links: one per Dictionary in Preferred order with an article on the entity. Click
   opens that Dictionary at the headword (its open Tab moves there; Ctrl/Cmd-click: a new Tab).
+- The name opens the person or place's Factbook (#149, [factbook.md](factbook.md)): the most
+  recent Factbook Tab moves there; Ctrl/Cmd-click opens a new one.
 
 ### Dictionary alias cache (derived, #20)
 

@@ -38,7 +38,7 @@ pub use error::StoreError;
 pub use favorites::{FavoriteRow, HISTORY_DAYS, HISTORY_LIMIT, VisitRow};
 #[cfg(not(target_arch = "wasm32"))]
 pub use obr::{APPLICATION_ID, ObrReader, write_obr};
-pub use resource_store::{MappedVerse, ResourceStore, Summary};
+pub use resource_store::{MappedVerse, MentionStats, ResourceStore, Summary};
 #[cfg(not(target_arch = "wasm32"))]
 pub use sample::sample_resource;
 #[cfg(not(target_arch = "wasm32"))]

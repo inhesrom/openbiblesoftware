@@ -13,6 +13,7 @@ use obs_scripture::{Passage, RefStyle, Standard, format_passage};
 use serde_json::json;
 
 use super::State;
+use super::factbook_tab::FactbookAction;
 use super::guide_words::WordsAction;
 use crate::theme;
 
@@ -62,6 +63,8 @@ pub(super) enum Action {
         verse: obs_scripture::Verse,
         new_tab: bool,
     },
+    /// Factbook (#149): a link, a Key Passage, an article or a chooser row.
+    Factbook(FactbookAction),
 }
 
 /// One visible section as drawn this frame, for working out where a dragged header lands.
@@ -294,6 +297,7 @@ impl State {
             Action::Reference(passage, new_tab) => self.reference_navigate(tab, passage, new_tab),
             Action::Commentary(row, new_tab) => self.open_commentary(tab, &row, new_tab),
             Action::Words(a) => self.words_action(tab, a),
+            Action::Factbook(a) => self.factbook_action(tab, a),
             action => self.word_study_action(tab, action),
         }
     }
@@ -398,6 +402,18 @@ impl State {
                 self.occurrences_section(ui, tab, o, number, new_tab)
             }
             SectionData::Forms(f) => self.forms_section(ui, tab, f),
+            SectionData::FactbookSummary(sum) => self
+                .factbook_summary(ui, sum, new_tab)
+                .map(Action::Factbook),
+            SectionData::KeyPassages(passages) => self
+                .factbook_passages(ui, tab, passages, new_tab)
+                .map(Action::Factbook),
+            SectionData::DictionaryArticles(articles) => self
+                .factbook_articles(ui, tab, articles, new_tab)
+                .map(Action::Factbook),
+            SectionData::Related(rows) => self
+                .factbook_related(ui, tab, rows, new_tab)
+                .map(Action::Factbook),
         }
     }
 
@@ -622,7 +638,7 @@ fn section_header(
         c.ink,
     );
     let count = match status {
-        SectionStatus::Ready(d) if !d.is_empty() => d.count().to_string(),
+        SectionStatus::Ready(d) if !d.is_empty() && section.counted() => d.count().to_string(),
         _ => String::new(),
     };
     if !count.is_empty() {

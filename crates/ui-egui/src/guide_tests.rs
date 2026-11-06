@@ -760,3 +760,111 @@ fn gen_12_1_lists_abram_and_its_link_opens_eastons_abraham() {
     assert!(h.find("Abraham").is_some());
     drop(h);
 }
+
+/// #149: clicking Abram in People & places opens Abraham's Factbook (family, name meaning,
+/// Key Passages); a name typed into its box lists the distinct Johns, and choosing one shows
+/// it.
+#[test]
+fn abram_opens_his_factbook_and_the_john_chooser_lists_the_johns() {
+    use obs_engine::testing::{APOSTLE, dictionary, hitchcock, johns, kjv_genesis_12, tipnr};
+    let mut h = Harness::new();
+    let (_files, _bible, guide) = setup_words(
+        &mut h,
+        "factbook",
+        &[
+            kjv_genesis_12(),
+            tipnr(),
+            dictionary("easton"),
+            dictionary("smith"),
+            hitchcock(),
+            johns(),
+        ],
+        "Gen 12:1",
+        GuideSection::PeopleAndPlaces,
+    );
+    until(&mut h, "Abram's row", |h| {
+        find_in(h, guide, "Abram").is_some() && find_in(h, guide, "Easton: Abraham").is_some()
+    });
+    for _ in 0..20 {
+        h.paced_frame();
+    }
+    let abram = find_in(&h, guide, "Abram").unwrap().center();
+    h.click(abram);
+    h.frames(3);
+    let ws = &h.shell.session().workspace;
+    let factbook = ws.focused().unwrap();
+    let t = ws.tab(factbook).unwrap();
+    assert_eq!(t.kind, TabKind::Guide(Guide::Factbook));
+    assert_eq!(
+        t.entry_history.current(),
+        Some(Key::Headword("Abraham@Gen.11.26-1Pe".into()))
+    );
+    until(&mut h, "Abraham's Factbook", |h| {
+        find_in(h, factbook, "son of Terah").is_some()
+            && find_in(h, factbook, "Terah").is_some()
+            && find_in(h, factbook, "“father of a great multitude”").is_some()
+            && has_prefix_in(h, factbook, "Genesis · ")
+            && find_in(h, factbook, "Easton: Abraham").is_some()
+    });
+    assert!(
+        find_in(&h, factbook, "Abraham").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    assert!(find_in(&h, factbook, "Father").is_some());
+    assert!(find_in(&h, factbook, "Married to").is_some());
+    assert!(find_in(&h, factbook, "Abram").is_some(), "Also called");
+    let titles = headers(&h, factbook);
+    assert_eq!(
+        titles[..2],
+        ["Summary".to_string(), "Key Passages".to_string()],
+        "{titles:?}"
+    );
+    if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews/guide");
+        h.frames(30);
+        h.screenshot(&dir.join("factbook-abraham.ppm"));
+    }
+
+    // A name several people share: the chooser lists each John, told apart by his facts.
+    h.shell
+        .run("tab.go", &json!({ "tab": factbook.0, "text": "John" }));
+    until(&mut h, "the John chooser", |h| {
+        find_in(h, factbook, "John (son of Zebedee)").is_some()
+    });
+    for title in [
+        "John (son of Zechariah)",
+        "John (son of Zebedee)",
+        "John (father of Peter)",
+        "John (Tribe of Levi)",
+        "Mark (son of Mary)",
+    ] {
+        assert!(
+            find_in(&h, factbook, title).is_some(),
+            "{title}: {:?}",
+            h.texts()
+        );
+    }
+    assert!(find_in(&h, factbook, "also called John").is_some());
+    if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews/guide");
+        h.frames(10);
+        h.screenshot(&dir.join("factbook-john-chooser.ppm"));
+    }
+    let apostle = find_in(&h, factbook, "John (son of Zebedee)")
+        .unwrap()
+        .center();
+    h.click(apostle);
+    h.frames(3);
+    let t = h.shell.session().workspace.tab(factbook).unwrap();
+    assert_eq!(
+        t.entry_history.current(),
+        Some(Key::Headword(APOSTLE.into()))
+    );
+    until(&mut h, "the apostle's Factbook", |h| {
+        find_in(h, factbook, "son of Zebedee").is_some()
+    });
+    drop(h);
+}

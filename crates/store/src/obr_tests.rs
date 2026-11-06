@@ -387,6 +387,43 @@ fn people_and_places_round_trip_and_answer_by_passage() {
     let all = r.entities().unwrap();
     assert_eq!(all, resource.entities);
     assert_eq!(Defaults(&r).entities().unwrap(), all);
+    // One entity's mentions in Bible order, and every entity's count (the Factbook, #149),
+    // like the generic versions.
+    let abraham_at: Vec<Passage> = r
+        .mentions_of(&abraham.id)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.passage)
+        .collect();
+    assert_eq!(
+        abraham_at,
+        [verse(Book::Genesis, 11, 26), verse(Book::Genesis, 12, 1)]
+    );
+    assert_eq!(
+        Defaults(&r).mentions_of(&abraham.id).unwrap(),
+        r.mentions_of(&abraham.id).unwrap()
+    );
+    assert!(r.mentions_of("Nobody@Gen.1.1").unwrap().is_empty());
+    let stats = r.mention_stats().unwrap();
+    let gn = |c, v| Verse::new(Book::Genesis, c, v);
+    assert_eq!(
+        stats,
+        [
+            crate::MentionStats {
+                entity: abraham.id.clone(),
+                count: 2,
+                first: gn(11, 26),
+                last: gn(12, 1),
+            },
+            crate::MentionStats {
+                entity: "Terah@Gen.11.24-Luk".into(),
+                count: 1,
+                first: gn(11, 26),
+                last: gn(11, 26),
+            },
+        ]
+    );
+    assert_eq!(Defaults(&r).mention_stats().unwrap(), stats);
 }
 
 /// Tagged words read straight from the span table match a walk over every unit (#54).

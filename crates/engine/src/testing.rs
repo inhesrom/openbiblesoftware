@@ -869,6 +869,158 @@ pub fn dictionary(id: &str) -> obs_model::Resource {
     import.finish().unwrap().0
 }
 
+fn person(
+    id: &str,
+    kind: obs_model::EntityKind,
+    relations: &[(obs_model::Relation, &str)],
+) -> obs_model::Entity {
+    obs_model::Entity {
+        id: id.into(),
+        name: id.split('@').next().unwrap().into(),
+        kind,
+        strongs: None,
+        other_names: Vec::new(),
+        region: None,
+        relations: relations
+            .iter()
+            .map(|(relation, entity)| obs_model::EntityRelation {
+                relation: *relation,
+                entity: (*entity).into(),
+                uncertain: false,
+            })
+            .collect(),
+    }
+}
+
+pub const BAPTIST: &str = "John@Mat.3.1-Act";
+pub const APOSTLE: &str = "John@Mat.4.21-Rev";
+pub const PETERS_FATHER: &str = "John@Mat.16.17-Jhn";
+pub const PRIEST: &str = "John@Act.4.6";
+pub const MARK: &str = "Mark@Act.12.12-1Pe";
+
+/// The New Testament Johns as TIPNR keeps them (structured fields only): four men called
+/// John, and Mark, also called John; their relatives; one mention per Verse.
+pub fn johns() -> obs_model::Resource {
+    use EntityKind::{Female, Male};
+    use Relation::{Father, Mother, Offspring, Sibling};
+    use obs_model::{EntityKind, KeyScheme, Manifest, Relation, ResourceBuilder, ResourceType};
+    let mut m = Manifest::new(
+        "johns",
+        "People & places (Johns)",
+        "PPJ",
+        ResourceType::PeopleAndPlaces,
+        "en",
+    );
+    m.key_schemes = vec![KeyScheme::Passage];
+    m.license = "CC-BY-4.0".into();
+    let mut b = ResourceBuilder::new(m);
+    let mut entities = vec![
+        person(
+            BAPTIST,
+            Male,
+            &[
+                (Father, "Zechariah@Luk.1.5-"),
+                (Mother, "Elizabeth@Luk.1.5-"),
+            ],
+        ),
+        person(
+            APOSTLE,
+            Male,
+            &[
+                (Father, "Zebedee@Mat.4.21-Jhn"),
+                (Sibling, "James@Mat.4.21-Act"),
+            ],
+        ),
+        person(PETERS_FATHER, Male, &[(Offspring, "Peter@Mat.4.18-2Pe")]),
+        person(PRIEST, Male, &[]),
+        person(MARK, Male, &[(Mother, "Mary@Act.12.12")]),
+        person("Zechariah@Luk.1.5-", Male, &[(Offspring, BAPTIST)]),
+        person("Elizabeth@Luk.1.5-", Female, &[(Offspring, BAPTIST)]),
+        person("Zebedee@Mat.4.21-Jhn", Male, &[(Offspring, APOSTLE)]),
+        person(
+            "James@Mat.4.21-Act",
+            Male,
+            &[(Father, "Zebedee@Mat.4.21-Jhn")],
+        ),
+        person("Peter@Mat.4.18-2Pe", Male, &[(Father, PETERS_FATHER)]),
+        person("Mary@Act.12.12", Female, &[(Offspring, MARK)]),
+        person(
+            "Jerusalem@Gen.14.18-Rev",
+            EntityKind::Place,
+            &[(Relation::Inhabitant, PRIEST)],
+        ),
+    ];
+    entities[3].region = Some("Tribe of Levi".into());
+    entities[4].other_names = vec!["John".into(), "John Mark".into()];
+    entities[4].strongs = Some("G3138".parse().unwrap());
+    entities[1].strongs = Some("G2491H".parse().unwrap());
+    entities[0].strongs = Some("G2491G".parse().unwrap());
+    entities[2].strongs = Some("G2491K".parse().unwrap());
+    entities[3].strongs = Some("G2491I".parse().unwrap());
+    for e in entities {
+        b.add_entity(e);
+    }
+    let v = |book, c, n| obs_scripture::Passage::verse(obs_scripture::Verse::new(book, c, n));
+    use obs_scripture::Book;
+    let mentions: &[(&str, obs_scripture::Passage)] = &[
+        (BAPTIST, v(Book::Matthew, 3, 1)),
+        (BAPTIST, v(Book::Matthew, 3, 4)),
+        (BAPTIST, v(Book::Luke, 1, 13)),
+        (BAPTIST, v(Book::Luke, 1, 60)),
+        ("Zechariah@Luk.1.5-", v(Book::Luke, 1, 13)),
+        ("Zechariah@Luk.1.5-", v(Book::Luke, 1, 60)),
+        ("Elizabeth@Luk.1.5-", v(Book::Luke, 1, 60)),
+        (APOSTLE, v(Book::Matthew, 4, 21)),
+        (APOSTLE, v(Book::Mark, 1, 19)),
+        (APOSTLE, v(Book::Revelation, 1, 9)),
+        ("Zebedee@Mat.4.21-Jhn", v(Book::Matthew, 4, 21)),
+        ("James@Mat.4.21-Act", v(Book::Matthew, 4, 21)),
+        ("James@Mat.4.21-Act", v(Book::Mark, 1, 19)),
+        (PETERS_FATHER, v(Book::Matthew, 16, 17)),
+        (PETERS_FATHER, v(Book::John, 1, 42)),
+        ("Peter@Mat.4.18-2Pe", v(Book::Matthew, 16, 17)),
+        ("Peter@Mat.4.18-2Pe", v(Book::John, 1, 42)),
+        (PRIEST, v(Book::Acts, 4, 6)),
+        ("Jerusalem@Gen.14.18-Rev", v(Book::Acts, 4, 5)),
+        (MARK, v(Book::Acts, 12, 12)),
+        (MARK, v(Book::Acts, 12, 25)),
+        ("Mary@Act.12.12", v(Book::Acts, 12, 12)),
+    ];
+    for (id, p) in mentions {
+        b.add_mention(id, *p);
+    }
+    b.build().unwrap()
+}
+
+/// A names Dictionary laid out like Hitchcock's (upper-case headwords; public-domain text).
+pub fn hitchcock() -> obs_model::Resource {
+    use obs_model::{Key, KeyScheme, Manifest, ResourceBuilder, ResourceType, UnitId, UnitKind};
+    let mut m = Manifest::new(
+        "hitchcock",
+        "Hitchcock's Bible Names",
+        "Hitchcock",
+        ResourceType::Dictionary,
+        "en",
+    );
+    m.key_schemes = vec![KeyScheme::Headword];
+    m.license = "LicenseRef-PublicDomain".into();
+    let mut b = ResourceBuilder::new(m);
+    for (head, text) in [
+        ("ABRAHAM", "ABRAHAM, father of a great multitude"),
+        ("JOHN", "JOHN, the grace or mercy of the Lord"),
+    ] {
+        let unit = UnitId::new(head.to_lowercase()).unwrap();
+        b.add_unit(
+            unit.clone(),
+            UnitKind::Entry,
+            Some(head.into()),
+            text.into(),
+        );
+        b.add_key(Key::Headword(head.into()), &unit, None, false);
+    }
+    b.build().unwrap()
+}
+
 /// A Lexicon of synthetic entries, `(Strong's number, Lemma, Gloss)`, laid out as the
 /// Starter converters write them: the Lemma line, then the Gloss.
 pub fn lexicon(
