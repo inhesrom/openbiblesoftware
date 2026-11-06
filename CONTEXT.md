@@ -181,6 +181,14 @@ _Avoid_: Import log, Conversion warnings
 A cache built from one Resource so that it can be searched. It is derived data, never shipped as part of the Resource and never user data, and it can be rebuilt at any time.
 _Avoid_: Index (unqualified), Search database
 
+**Saved search**:
+A search the user kept under a name (Save… beside the query box): its query, the Search Tool's mode (Bible, Library or Notes) and its Search scope. It is listed in the Search Tool's sidebar and offered by the Command box; running one brings all of it back and searches again. Saving under a name already used replaces that one. A Saved search whose Search scope names a Resource or Collection that is gone still runs, over what is left, and says what was left out. Kept in the User database.
+_Avoid_: Bookmark (for a search), Search preset, Stored query
+
+**Search history**:
+The searches run in the Search Tool, newest first with their mode and Search scope, at most the last 50 different ones, listed in its sidebar under History. Clicking one runs it again; Clear empties it. It is not History (the Tool of Visits), although a search also makes a Visit there, and not the Recent menu, which lists only the query texts of one mode. Kept in the User database.
+_Avoid_: History (unqualified, for this), Recent searches
+
 **Search scope**:
 What a search runs over: a Passage list and a set of Resources (or Notebooks for notes). A Library search's Resources can be whole Resource types, Collections and single Resources. It is chosen beside the query, not written inside it.
 _Avoid_: Filter, Range (for the scope)
@@ -280,7 +288,7 @@ One entry in History: a Tab's Current location just after the Tab was opened or 
 _Avoid_: History entry, Hit
 
 **Command box**:
-The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, "pg Rom 8", "eg Jn 3:16", "compare Jn 3:16", "ws agape" and "tg forgiveness" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database.
+The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, a Saved search's name runs it, "pg Rom 8", "eg Jn 3:16", "compare Jn 3:16", "ws agape" and "tg forgiveness" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database.
 _Avoid_: Omnibox, Search bar, Command palette (for the box)
 
 **Launcher**:
@@ -442,5 +450,5 @@ A Markdown or HTML file made from a Notebook (or all of them) or from the Notes 
 _Avoid_: Backup, Report, Notes dump
 
 **User database**:
-The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Command box's recent entries, Copy presets, Collections, Resource tags and preferences. Resources and Search indexes are never part of it.
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, Saved searches and the Search history, the Command box's recent entries, Copy presets, Collections, Resource tags and preferences. Resources and Search indexes are never part of it.
 _Avoid_: Profile, User library, Settings file

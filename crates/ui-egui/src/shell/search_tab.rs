@@ -17,20 +17,28 @@ use obs_layout::ColorRole;
 use obs_model::ResourceType;
 use serde_json::{Value, json};
 
-use super::State;
+use super::{State, search_sidebar};
 use crate::search_view::{SearchView, search_pane};
 use crate::theme;
 
 /// The query and Scope fields as typed, and what the engine last said they were (a search
-/// handed over by another Tool replaces what is typed).
+/// handed over by another Tool, or a Saved search, Search history entry, Favorite or Visit
+/// run here, replaces what is typed).
 #[derive(Default)]
 pub(super) struct Fields {
     query: String,
     scope: String,
-    seen: Option<(String, String)>,
+    seen: Option<(String, String, u64)>,
     /// The Morphology chooser: shown, and what is chosen in it.
     morph_open: bool,
     morph: MorphCriteria,
+    /// The sidebar of Saved searches and Search history (#179): `None` until toggled, when
+    /// it shows if the Tab is wide enough.
+    sidebar: Option<bool>,
+    /// Save…'s name field while its menu is open.
+    pub(super) save_name: Option<String>,
+    /// The sidebar asks whether to clear the Search history.
+    pub(super) confirm_clear_history: bool,
 }
 
 /// `query` with the chooser's `@…` added at the end, so that it describes the word typed
@@ -161,21 +169,40 @@ impl State {
         let Some(st) = self.session.search_tab(tab).cloned() else {
             return;
         };
+        // The sidebar first, so the fields and results get the rest of the Tab.
+        let sidebar = self
+            .tabs
+            .get(&tab)
+            .and_then(|t| t.search_fields.sidebar)
+            .unwrap_or(ui.available_width() >= search_sidebar::SIDEBAR_MIN_TAB_WIDTH);
+        let mut run: Vec<(&'static str, Value)> = Vec::new();
+        if sidebar {
+            egui::Panel::right(("search-sidebar", tab))
+                .resizable(true)
+                .default_size(230.0)
+                .size_range(160.0..=420.0)
+                .frame(
+                    egui::Frame::new()
+                        .fill(theme::c().field)
+                        .inner_margin(egui::Margin::symmetric(10, 8)),
+                )
+                .show(ui, |ui| self.search_sidebar(ui, tab, &mut run));
+        }
         let context = self.session.search_context(tab);
         let Some(t) = self.tabs.get_mut(&tab) else {
             return;
         };
-        let engine_fields = (st.query.clone(), st.scope.clone());
+        let engine_fields = (st.query.clone(), st.scope.clone(), st.restored);
         if t.search_fields.seen.as_ref() != Some(&engine_fields) {
             t.search_fields.query = st.query.clone();
             t.search_fields.scope = st.scope.clone();
             t.search_fields.seen = Some(engine_fields);
         }
-        let mut run: Vec<(&'static str, Value)> = Vec::new();
         let mut query = std::mem::take(&mut t.search_fields.query);
         let mut scope = std::mem::take(&mut t.search_fields.scope);
         let mut morph = std::mem::take(&mut t.search_fields.morph);
         let mut morph_open = t.search_fields.morph_open;
+        let mut toggle_sidebar = false;
         let recent = self.session.recent_searches(st.mode);
         let bibles = st.bibles(&self.session.library);
         if st.mode == SearchMode::Bible {
@@ -234,13 +261,22 @@ impl State {
                             morph_open = !morph_open;
                         }
                     }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .selectable_label(sidebar, "Saved & history")
+                            .on_hover_text("Saved searches and the Search history")
+                            .clicked()
+                        {
+                            toggle_sidebar = true;
+                        }
+                    });
                 });
                 ui.horizontal(|ui| {
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut query)
                             .id_salt(("search-query", tab))
                             .hint_text(query_hint(st.mode))
-                            .desired_width((ui.available_width() - 150.0).max(120.0))
+                            .desired_width((ui.available_width() - 210.0).max(120.0))
                             .margin(egui::Margin::symmetric(8, 4)),
                     );
                     let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -265,6 +301,7 @@ impl State {
                             }
                         }
                     });
+                    self.save_search_button(ui, tab, &query, &scope, &mut run);
                 });
                 error_line(ui, error.as_ref(), ErrorField::Query, &query);
                 if bible_mode
@@ -401,6 +438,16 @@ impl State {
             t.search_fields.scope = scope;
             t.search_fields.morph = morph;
             t.search_fields.morph_open = morph_open;
+            if toggle_sidebar {
+                t.search_fields.sidebar = Some(!sidebar);
+            }
+        }
+        if let Some(notice) = &st.notice {
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(12, 4))
+                .show(ui, |ui| {
+                    ui.label(RichText::new(notice).small().color(theme::c().warn));
+                });
         }
         if st.mode == SearchMode::Notes {
             self.notes_results(ui, tab, &st);

@@ -75,6 +75,8 @@ pub struct Session {
     pub(crate) places: crate::favorites::FavoritesAndHistory,
     /// The Command box's recent entries (#139).
     pub(crate) command_box: crate::command_box::CommandBox,
+    /// Saved searches and the Search history as the User database has them (#179).
+    pub(crate) saved_searches: crate::saved_searches::SavedSearches,
     /// Reading plans as the User database has them, and today's date (#147).
     pub(crate) plans: crate::reading_plans::ReadingPlans,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
@@ -127,6 +129,7 @@ impl Session {
             copy_verses: crate::copy_verses::CopyVerses::default(),
             places: crate::favorites::FavoritesAndHistory::default(),
             command_box: crate::command_box::CommandBox::default(),
+            saved_searches: crate::saved_searches::SavedSearches::default(),
             plans: crate::reading_plans::ReadingPlans::default(),
             log: Vec::new(),
             user: None,
@@ -205,6 +208,7 @@ impl Session {
         self.load_reading_plans();
         self.load_copy_verses();
         self.load_collections();
+        self.load_saved_searches();
         // Library load: Annotations made against another revision of a Resource move with
         // their text (or are orphaned) before it shows them (#65).
         self.remember_resource_names();

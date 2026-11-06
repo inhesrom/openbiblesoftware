@@ -444,8 +444,21 @@ impl Session {
         Ok(tab)
     }
 
-    fn open_search(&mut self, search: &SavedSearch, req: OpenRequest) -> TabId {
-        let tab = self.search_tab_for(None, req);
+    /// Run a search as kept (a Favorite, Visit, Saved search or Search history entry) in the
+    /// Search Tool. A Search scope naming something that is gone still runs, over what is
+    /// left, with a notice on the Tab (#179).
+    pub(crate) fn open_search(&mut self, search: &SavedSearch, req: OpenRequest) -> TabId {
+        self.open_search_in(search, None, req)
+    }
+
+    /// [`Self::open_search`] in Search Tab `tab` when given (its sidebar ran it).
+    pub(crate) fn open_search_in(
+        &mut self,
+        search: &SavedSearch,
+        tab: Option<TabId>,
+        req: OpenRequest,
+    ) -> TabId {
+        let tab = self.search_tab_for(tab, req);
         // Every field as saved, even "none": a reused Search Tab's own choices do not carry
         // over (no Bibles chosen means the ★ Bible, not this Tab's last choice).
         if let Some(st) = self.search_tab_mut(tab) {
@@ -466,6 +479,11 @@ impl Session {
                 }),
             },
         );
+        let notice = self.gone_from_scope(search);
+        if let Some(st) = self.search_tab_mut(tab) {
+            st.notice = notice;
+            st.restored += 1;
+        }
         tab
     }
 

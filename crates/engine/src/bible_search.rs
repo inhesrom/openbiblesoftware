@@ -524,6 +524,12 @@ pub struct SearchTab {
     /// Library mode's Search scope: Resource types and single Resources (#60).
     pub library: crate::library_search::LibraryScope,
     pub error: Option<InlineError>,
+    /// What a Saved search, Search history entry, Favorite or Visit named in its Search scope
+    /// that is gone (#179), said above the results until the next search.
+    pub notice: Option<String>,
+    /// Bumped each time a Saved search, Search history entry, Favorite or Visit sets every
+    /// field, even to what they held: the UI then shows those fields over anything typed.
+    pub restored: u64,
     pub results: Option<Arc<BibleResults>>,
     /// The last Library search's results (#60).
     pub library_results: Option<Arc<crate::library_search::LibraryResults>>,
@@ -605,6 +611,7 @@ impl SearchTab {
     }
 
     fn clear_results(&mut self) {
+        self.notice = None;
         self.results = None;
         self.library_results = None;
         self.notes = None;
@@ -872,6 +879,9 @@ impl Session {
         };
         if let Some(st) = self.search_tab_mut(tab) {
             st.error = error.clone();
+        }
+        if error.is_none() {
+            self.record_search_history(&fields);
         }
         error
     }

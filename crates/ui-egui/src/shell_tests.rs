@@ -4051,3 +4051,6 @@ mod get_bibles {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[path = "saved_searches_tests.rs"]
+mod saved_searches;
