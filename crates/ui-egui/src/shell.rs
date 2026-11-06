@@ -36,6 +36,7 @@ mod guide_tab;
 mod guide_words;
 mod import_tab;
 mod library_tab;
+mod missing_resource;
 mod notes_tab;
 mod reading_plans_tab;
 #[path = "references.rs"]

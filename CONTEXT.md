@@ -292,7 +292,7 @@ The order of a Guide's sections, which ones are collapsed, and which are hidden.
 _Avoid_: Guide layout, Section settings
 
 **Guide section**:
-One block of a Guide that gathers related results (for example commentaries or Cross-references) for the Guide's Key.
+One block of a Guide that gathers related results (for example commentaries or Cross-references) for the Guide's Key. When it finds nothing it says "None in your library" and offers what would fill it: Get Resources at the matching filter (Get Lexicons…, Get Hebrew & Greek texts…), Add the Starter library… when a Starter library Resource that is not in the Library would, and Import a file…. When the Library already has the Resource type but nothing covers the Key (no Lexicon has an entry for this Strong's number), only Get Resources and Import are offered.
 _Avoid_: Panel, Card, Widget
 
 **Passage Guide**:

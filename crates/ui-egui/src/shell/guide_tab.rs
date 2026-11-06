@@ -65,6 +65,8 @@ pub(super) enum Action {
     },
     /// Factbook (#149): a link, a Key Passage, an article or a chooser row.
     Factbook(FactbookAction),
+    /// An empty state's button (#135): Get Resources, the Starter library or Import.
+    Command(&'static str, serde_json::Value),
 }
 
 /// One visible section as drawn this frame, for working out where a dragged header lands.
@@ -298,6 +300,9 @@ impl State {
             Action::Commentary(row, new_tab) => self.open_commentary(tab, &row, new_tab),
             Action::Words(a) => self.words_action(tab, a),
             Action::Factbook(a) => self.factbook_action(tab, a),
+            Action::Command(id, params) => {
+                self.run(id, &params);
+            }
             action => self.word_study_action(tab, action),
         }
     }
@@ -333,7 +338,8 @@ impl State {
         }
     }
 
-    /// A section's content: loading, failed, its empty-state hint, or its rows.
+    /// A section's content: loading, failed, its empty state with the buttons that would fill
+    /// it (#135), or its rows.
     fn section_body(
         &mut self,
         ui: &mut Ui,
@@ -358,13 +364,10 @@ impl State {
             SectionStatus::Ready(data) => data,
         };
         if data.is_empty() {
-            ui.label(
-                RichText::new(
-                    section.empty_hint(&self.session.library, &self.session.guides.indexes()),
-                )
-                .color(theme::c().muted),
-            );
-            return None;
+            let empty = self.session.guide_empty_state(key, section);
+            return self
+                .missing_resource_ui(ui, empty.message, &empty.missing)
+                .map(|(id, params)| Action::Command(id, params));
         }
         let new_tab = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
         match &**data {

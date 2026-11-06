@@ -148,8 +148,18 @@ impl GuideSection {
         library: &Library,
         indexes: &crate::word_study::RenderingIndexes,
     ) -> &'static str {
+        self.empty_message(self.has_needed(library, indexes))
+    }
+
+    /// Whether the Library has the kind of Resource the section reads (#15 rule 1), so an
+    /// empty section means nothing covers the Key rather than that the Resource is missing.
+    pub fn has_needed(
+        self,
+        library: &Library,
+        indexes: &crate::word_study::RenderingIndexes,
+    ) -> bool {
         let mut needed = library.of_type(self.resource_type());
-        let has = match self {
+        match self {
             // A Bible whose index has English renderings, as the chooser counts them.
             GuideSection::TranslatedAs => {
                 needed.any(|e| indexes.loaded(e).is_some_and(|i| !i.renderings.is_empty()))
@@ -168,7 +178,11 @@ impl GuideSection {
                 .any(|l| crate::key_words::is_original_language(&e.manifest.language, l))
             }),
             _ => needed.next().is_some(),
-        };
+        }
+    }
+
+    /// The empty section's text: `has` is [`Self::has_needed`].
+    pub(crate) fn empty_message(self, has: bool) -> &'static str {
         match (self, has) {
             (GuideSection::Commentaries, false) => {
                 "None in your library. Add a Commentary to see what it says about this Passage."

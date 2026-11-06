@@ -339,6 +339,11 @@ fn g5485_translated_as_occurrences_and_forms_filter() {
         "guide.move_section",
         &json!({ "guide": "word_study", "section": "forms", "to": 0 }),
     );
+    // No Lexicon here: its empty state (and its buttons, #135) would push Occurrences down.
+    h.shell.run(
+        "guide.collapse_section",
+        &json!({ "guide": "word_study", "section": "lexicon_entries", "collapsed": true }),
+    );
     h.frames(2);
     let header = find_in(&h, tab, "Forms").unwrap().center();
     h.click(header);

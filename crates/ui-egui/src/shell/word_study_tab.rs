@@ -199,9 +199,21 @@ impl State {
                     c.words
                 )
             } else {
-                "No English Bible in your library has Strong's numbers. Add one (the KJV with \
-                 Strong's) to look up English words, or type a Strong's number."
-                    .to_string()
+                // The Bible Translated as reads is what the chooser needs too (#135).
+                let missing = obs_engine::GuideSection::TranslatedAs.missing_resource(
+                    false,
+                    None,
+                    &self.session.library,
+                    self.session.starter.manifest(),
+                );
+                return self
+                    .missing_resource_ui(
+                        ui,
+                        "No English Bible in your library has Strong's numbers. Add one (the \
+                         KJV with Strong's) to look up English words, or type a Strong's number.",
+                        &missing,
+                    )
+                    .map(|(id, params)| Action::Command(id, params));
             };
             ui.label(RichText::new(hint).color(theme::c().muted));
             return None;
@@ -382,6 +394,9 @@ impl State {
                 self.run("tab.go", &json!({ "tab": tab.0, "text": n.to_string() }));
             }
             Action::StopChoosing => self.session.stop_choosing(tab),
+            Action::Command(id, params) => {
+                self.run(id, &params);
+            }
             Action::ToggleEntry(id, open) => {
                 if let Some(t) = self.tabs.get_mut(&tab) {
                     t.lexicon_open.insert(id, open);
