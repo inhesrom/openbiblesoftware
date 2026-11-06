@@ -482,6 +482,7 @@ impl Session {
         let notice = self.gone_from_scope(search);
         if let Some(st) = self.search_tab_mut(tab) {
             st.notice = notice;
+            st.restored += 1;
         }
         tab
     }

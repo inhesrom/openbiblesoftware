@@ -527,6 +527,9 @@ pub struct SearchTab {
     /// What a Saved search, Search history entry, Favorite or Visit named in its Search scope
     /// that is gone (#179), said above the results until the next search.
     pub notice: Option<String>,
+    /// Bumped each time a Saved search, Search history entry, Favorite or Visit sets every
+    /// field, even to what they held: the UI then shows those fields over anything typed.
+    pub restored: u64,
     pub results: Option<Arc<BibleResults>>,
     /// The last Library search's results (#60).
     pub library_results: Option<Arc<crate::library_search::LibraryResults>>,

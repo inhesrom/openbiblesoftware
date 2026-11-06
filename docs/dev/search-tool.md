@@ -234,15 +234,21 @@ and [a hit opened at its paragraph](../previews/search-library-opened.png). To m
   The names of removed Resources come from the User database's remembered Resource names.
 - **The sidebar.** On the right of the Search Tab, shown by itself when the Tab is at least
   640 px wide; **Saved & history** (beside the mode switch) hides or shows it. Saved searches
-  by name (tooltip: what they search), then History as `query · mode · scope`. A click runs one
-  in this Tab, Ctrl/Cmd-click in a new split; a Saved search's right-click menu deletes it;
-  History's **Clear** asks first. **Save…** after Recent opens a name field (the query to
-  start with) and saves the Tab's search.
+  by name, then History as `query · mode · scope`; each row's tooltip adds
+  `Session::search_scope_details` (the Bibles, the Resource types, Collections and Resources,
+  or the Notebook), so rows alike in their summary can be told apart. A click runs one in this
+  Tab, Ctrl/Cmd-click in a new split; a Saved search's right-click menu deletes it; History's
+  **Clear** asks first. **Save…** after Recent opens a name field (the query to start with)
+  and saves the Tab's search with the query and Scope fields as typed, even when not yet run
+  (Enter not pressed). Running a Saved search, history entry, Favorite or Visit bumps
+  `SearchTab::restored`, which makes the UI show the fields as run over anything typed, even
+  when the query and Scope are the same as before.
 - **Command box.** A Saved search whose name or query contains the text (two characters or
   more) is a suggestion, rank 56, just above Favorites; it runs `search.open_saved`.
 - **Home** (#178) is not built yet; it can list `Session::saved_searches()` and run
   `search.open_saved`.
-- **Commands.** `search.save {tab, name}`, `search.open_saved {name, tab?, panel?, split?}`,
+- **Commands.** `search.save {tab, name, text?, scope?}` (`text`/`scope`: the fields as
+  typed; default the last search's), `search.open_saved {name, tab?, panel?, split?}`,
   `search.delete_saved {name}`, `search.open_history {index, tab?, panel?, split?}` (0: the
   newest), `search.clear_history`, and `search.list_saved` (both lists as JSON, each with its
   `summary`). `search.open_*` answer the Tab, its inline error and its notice.
@@ -250,8 +256,10 @@ and [a hit opened at its paragraph](../previews/search-library-opened.png). To m
 Tests: `crates/engine/src/saved_searches_tests.rs` (`strong:G26` scoped to the New Testament
 saved as "agape in NT", run after a restart with the same results; 55 searches leave the last
 50, each re-runs, Clear lasts across a restart; names; the Command box; a removed Bible and a
-deleted Collection) and `crates/ui-egui/src/saved_searches_tests.rs` (Save… and the sidebar
-through real clicks and typing, across a relaunch). Previews:
+deleted Collection; saving typed fields; scope details) and
+`crates/ui-egui/src/saved_searches_tests.rs` (Save… and the sidebar through real clicks and
+typing, across a relaunch; Save… with fields typed but not run; a Saved search or history
+row replacing what is typed). Previews:
 [the sidebar after saving](../previews/search-saved-sidebar-kittest.png) and
 [a Saved search whose Bible was removed](../previews/search-saved-notice-kittest.png), from
 `UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui --lib saved_searches`.

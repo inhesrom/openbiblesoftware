@@ -197,7 +197,7 @@ pub use reading_plans::{
     PlanDate, PlanTemplate, Reading, ReadingPlan, ReadingPlans, WEEKDAY_NAMES, Weekdays,
 };
 pub use reanchor::{Outcome, Plan, Planned, ReanchorReport, Reanchoring};
-pub use saved_searches::{NamedSearch, SEARCH_HISTORY_LIMIT, SearchHistoryEntry};
+pub use saved_searches::{NamedSearch, SEARCH_HISTORY_LIMIT, SearchHistoryEntry, TypedFields};
 #[cfg(not(target_arch = "wasm32"))]
 pub use search::CacheIndexer;
 pub use search::{

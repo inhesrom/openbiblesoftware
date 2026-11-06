@@ -421,3 +421,114 @@ fn a_search_scope_naming_a_removed_resource_or_collection_still_opens_with_a_not
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn search_save_keeps_the_fields_as_typed_and_a_rerun_marks_the_tab_restored() {
+    let root = folder("typed");
+    let mut s = launch(&root);
+    let t = tab(&run(
+        &mut s,
+        "search.run",
+        json!({ "text": "love", "scope": "John" }),
+    ));
+    // Typed but not run: what is saved, though the last search was "love" in John.
+    run(
+        &mut s,
+        "search.save",
+        json!({ "tab": t.0, "name": "agape", "text": "strong:G26", "scope": "NT" }),
+    );
+    let saved = &s.saved_searches()[0].search;
+    assert_eq!(
+        (saved.query.as_str(), saved.scope.as_str()),
+        ("strong:G26", "NT")
+    );
+    let st = s.search_tab(t).unwrap();
+    assert_eq!((st.query.as_str(), st.scope.as_str()), ("love", "John"));
+    // Only a query typed: the Scope as last run.
+    run(
+        &mut s,
+        "search.save",
+        json!({ "tab": t.0, "name": "banner", "text": "banner" }),
+    );
+    assert_eq!(s.saved_searches()[1].search.scope, "John");
+    let err = s
+        .run(
+            "search.save",
+            &json!({ "tab": t.0, "name": "x", "text": "  " }),
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("Type a search"), "{err}");
+
+    // Run again, even into the same fields, the Tab says it was restored.
+    run(&mut s, "search.save", json!({ "tab": t.0, "name": "love" }));
+    let before = s.search_tab(t).unwrap().restored;
+    run(
+        &mut s,
+        "search.open_saved",
+        json!({ "name": "love", "tab": t.0 }),
+    );
+    assert_eq!(s.search_tab(t).unwrap().restored, before + 1);
+    run(
+        &mut s,
+        "search.open_history",
+        json!({ "index": 0, "tab": t.0 }),
+    );
+    assert_eq!(s.search_tab(t).unwrap().restored, before + 2);
+    run(&mut s, "search.run", json!({ "tab": t.0, "text": "love" }));
+    assert_eq!(
+        s.search_tab(t).unwrap().restored,
+        before + 2,
+        "not by a search"
+    );
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn search_scope_details_name_the_bibles_resources_and_notebook() {
+    let root = folder("details");
+    let mut s = launch(&root);
+    let t = tab(&run(&mut s, "search.run", json!({ "text": "love" })));
+    let of = |s: &Session| {
+        let st = s.search_tab(t).unwrap();
+        s.search_scope_details(&SavedSearch::of(st).unwrap())
+    };
+    assert_eq!(of(&s), "Bibles: the ★ Bible");
+    run(
+        &mut s,
+        "search.run",
+        json!({ "tab": t.0, "text": "love", "bibles": "grk,web" }),
+    );
+    assert_eq!(of(&s), "Bibles: GRK, WEB");
+    run(
+        &mut s,
+        "collection.save",
+        json!({ "name": "Mine", "resources": "tcc" }),
+    );
+    run(
+        &mut s,
+        "search.run",
+        json!({ "tab": t.0, "text": "covenant", "mode": "library" }),
+    );
+    assert_eq!(of(&s), "Resources: Commentaries, Lexicons, Dictionaries");
+    run(
+        &mut s,
+        "search.run",
+        json!({ "tab": t.0, "text": "covenant", "resources": "collection:Mine" }),
+    );
+    assert_eq!(of(&s), "Resources: Collection “Mine”");
+    run(
+        &mut s,
+        "search.run",
+        json!({ "tab": t.0, "text": "covenant", "resources": "tcc" }),
+    );
+    assert_eq!(of(&s), "Resources: TCC");
+    run(
+        &mut s,
+        "search.run",
+        json!({ "tab": t.0, "text": "covenant", "mode": "notes" }),
+    );
+    assert_eq!(of(&s), "All Notebooks");
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}

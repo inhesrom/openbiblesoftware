@@ -5,7 +5,7 @@
 //! ([`State::save_search_button`]).
 
 use egui::{RichText, Ui, vec2};
-use obs_engine::TabId;
+use obs_engine::{SavedSearch, Session, TabId};
 use serde_json::{Value, json};
 
 use super::State;
@@ -27,15 +27,30 @@ fn muted(ui: &mut Ui, text: &str) {
     ui.label(RichText::new(text).small().color(theme::c().muted));
 }
 
-/// One clickable row: the label, with `hover` as its tooltip.
-fn row(ui: &mut Ui, label: &str, hover: &str) -> egui::Response {
+/// One clickable row: the label, with a tooltip of the search's summary (when the label is
+/// a name), its Search scope's details ([`Session::search_scope_details`], made only while
+/// hovered) and `action`.
+fn row(
+    ui: &mut Ui,
+    session: &Session,
+    label: &str,
+    summary: Option<&str>,
+    search: &SavedSearch,
+    action: &str,
+) -> egui::Response {
     ui.add(
         egui::Button::new(RichText::new(label).size(13.0))
             .frame(false)
             .truncate()
             .min_size(vec2(ui.available_width(), 22.0)),
     )
-    .on_hover_text(hover)
+    .on_hover_ui(|ui| {
+        if let Some(summary) = summary {
+            ui.label(summary);
+        }
+        ui.label(session.search_scope_details(search));
+        ui.label(RichText::new(action).small().color(theme::c().muted));
+    })
 }
 
 impl State {
@@ -47,17 +62,16 @@ impl State {
         run: &mut Vec<(&'static str, Value)>,
     ) {
         let split = self.split_held;
-        let saved: Vec<(String, String)> = self
-            .session
+        let session = &self.session;
+        let saved: Vec<(String, String, SavedSearch)> = session
             .saved_searches()
             .iter()
-            .map(|n| (n.name.clone(), n.search.summary()))
+            .map(|n| (n.name.clone(), n.search.summary(), n.search.clone()))
             .collect();
-        let history: Vec<String> = self
-            .session
+        let history: Vec<(String, SavedSearch)> = session
             .search_history()
             .iter()
-            .map(|e| e.search.summary())
+            .map(|e| (e.search.summary(), e.search.clone()))
             .collect();
         let confirming = self
             .tabs
@@ -72,8 +86,9 @@ impl State {
                 if saved.is_empty() {
                     muted(ui, "None yet. Save… beside Search keeps a search by name.");
                 }
-                for (name, summary) in &saved {
-                    let r = row(ui, name, &format!("{summary}\nRun (Ctrl/Cmd-click: in a new split)"));
+                for (name, summary, search) in &saved {
+                    let action = "Run (Ctrl/Cmd-click: in a new split)";
+                    let r = row(ui, session, name, Some(summary), search, action);
                     if r.clicked() {
                         run.push((
                             "search.open_saved",
@@ -117,8 +132,9 @@ impl State {
                 if history.is_empty() {
                     muted(ui, "Searches you run are listed here.");
                 }
-                for (index, summary) in history.iter().enumerate() {
-                    if row(ui, summary, "Run again (Ctrl/Cmd-click: in a new split)").clicked() {
+                for (index, (summary, search)) in history.iter().enumerate() {
+                    let action = "Run again (Ctrl/Cmd-click: in a new split)";
+                    if row(ui, session, summary, None, search, action).clicked() {
                         run.push((
                             "search.open_history",
                             json!({ "index": index, "tab": (!split).then_some(tab.0), "split": split }),
@@ -134,12 +150,14 @@ impl State {
     }
 
     /// The query row's **Save…** button: a name field (the query's text to start with) and
-    /// Save, which runs `search.save` for this Tab.
+    /// Save, which runs `search.save` for this Tab with the query and Scope fields as typed
+    /// (`query`, `scope`), run or not.
     pub(super) fn save_search_button(
         &mut self,
         ui: &mut Ui,
         tab: TabId,
         query: &str,
+        scope: &str,
         run: &mut Vec<(&'static str, Value)>,
     ) {
         let Some(t) = self.tabs.get_mut(&tab) else {
@@ -169,7 +187,15 @@ impl State {
                     if (ui.add_enabled(named, egui::Button::new("Save")).clicked() || enter)
                         && named
                     {
-                        run.push(("search.save", json!({ "tab": tab.0, "name": name.trim() })));
+                        run.push((
+                            "search.save",
+                            json!({
+                                "tab": tab.0,
+                                "name": name.trim(),
+                                "text": query,
+                                "scope": scope,
+                            }),
+                        ));
                         ui.close();
                     }
                 })

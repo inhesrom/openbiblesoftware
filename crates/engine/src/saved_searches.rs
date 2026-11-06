@@ -64,6 +64,14 @@ impl SavedSearch {
     }
 }
 
+/// The query and Scope fields as typed in a Search Tab (not yet run), for
+/// [`Session::save_search`]; `None` keeps the last search's.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TypedFields<'a> {
+    pub query: Option<&'a str>,
+    pub scope: Option<&'a str>,
+}
+
 /// The Saved searches and Search history as the User database has them.
 #[derive(Debug, Default)]
 pub struct SavedSearches {
@@ -118,14 +126,31 @@ impl Session {
     }
 
     /// Save what a Search Tab's fields hold under `name`, replacing a Saved search of that
-    /// name (any case).
-    pub fn save_search(&mut self, tab: TabId, name: &str) -> Result<NamedSearch, String> {
+    /// name (any case). `typed` is the query and Scope fields as the user sees them, typed
+    /// but not yet run; without it, the last search's.
+    pub fn save_search(
+        &mut self,
+        tab: TabId,
+        name: &str,
+        typed: TypedFields<'_>,
+    ) -> Result<NamedSearch, String> {
         let name = name.trim();
         if name.is_empty() {
             return Err("Give the search a name".into());
         }
         let search = self
             .search_tab(tab)
+            .map(|st| {
+                let mut st = st.clone();
+                if let Some(query) = typed.query {
+                    st.query = query.to_string();
+                }
+                if let Some(scope) = typed.scope {
+                    st.scope = scope.to_string();
+                }
+                st
+            })
+            .as_ref()
             .and_then(SavedSearch::of)
             .ok_or("Type a search to save")?;
         let named = NamedSearch {
@@ -216,6 +241,73 @@ impl Session {
         }
         // Kept for this session even when it could not be written.
         self.saved_searches.history = history;
+    }
+
+    /// What a search's Search scope chooses beyond its summary: the Bibles (Bible mode), the
+    /// Resource types, Collections and Resources (Library mode) or the Notebook (Notes mode).
+    /// The Saved search and history rows' tooltip, so that two rows alike in their summary
+    /// can be told apart.
+    pub fn search_scope_details(&self, search: &SavedSearch) -> String {
+        match search.mode {
+            SearchMode::Bible => match &search.bibles {
+                None => "Bibles: the ★ Bible".to_string(),
+                Some(ids) if ids.is_empty() => "Bibles: none".to_string(),
+                Some(ids) => {
+                    let names: Vec<String> = ids.iter().map(|id| self.resource_label(id)).collect();
+                    format!("Bibles: {}", names.join(", "))
+                }
+            },
+            SearchMode::Library => {
+                let mut parts: Vec<String> = search
+                    .types
+                    .iter()
+                    .map(|ty| crate::library_search::type_plural(*ty).to_string())
+                    .collect();
+                parts.extend(
+                    search
+                        .collections
+                        .iter()
+                        .map(|c| format!("Collection “{c}”")),
+                );
+                parts.extend(search.resources.iter().map(|id| self.resource_label(id)));
+                if parts.is_empty() {
+                    "Resources: none".to_string()
+                } else {
+                    format!("Resources: {}", parts.join(", "))
+                }
+            }
+            SearchMode::Notes => match &search.notebook {
+                None => "All Notebooks".to_string(),
+                Some(id) => {
+                    let name = self
+                        .notebooks()
+                        .ok()
+                        .and_then(|all| all.into_iter().find(|n| n.id == *id).map(|n| n.name));
+                    name.map_or_else(
+                        || "Notebook: one that no longer exists".to_string(),
+                        |name| format!("Notebook: {name}"),
+                    )
+                }
+            },
+        }
+    }
+
+    /// A Resource's abbreviation: from the library, else as the User database remembers it
+    /// (removed since), else its id.
+    fn resource_label(&self, id: &str) -> String {
+        if let Some(e) = self.library.get(id) {
+            return e.manifest.abbreviation.clone();
+        }
+        self.user
+            .as_ref()
+            .and_then(|u| u.resource_names().ok())
+            .and_then(|names| {
+                names
+                    .into_iter()
+                    .find(|(rid, _, _)| rid == id)
+                    .map(|(_, abbreviation, _)| abbreviation)
+            })
+            .unwrap_or_else(|| id.to_string())
     }
 
     /// What a search's Search scope names that is gone, as the Search Tab's notice: Bibles
@@ -377,13 +469,29 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 required: true,
                 help: "A name for it (an existing name, any case, is replaced)",
             },
+            ParamSpec {
+                name: "text",
+                kind: ParamKind::String,
+                required: false,
+                help: "The query as typed (default: the last search's)",
+            },
+            ParamSpec {
+                name: "scope",
+                kind: ParamKind::String,
+                required: false,
+                help: "The Scope field as typed (default: the last search's)",
+            },
         ],
         enabled: always,
         run: |s, p| {
             const ID: &str = "search.save";
             let tab = tab_param(ID, s, &p)?;
+            let typed = TypedFields {
+                query: p.str("text"),
+                scope: p.str("scope"),
+            };
             let named = s
-                .save_search(tab, p.str("name").unwrap_or_default())
+                .save_search(tab, p.str("name").unwrap_or_default(), typed)
                 .map_err(|e| failed(ID, e))?;
             s.workspace.push_effect(Effect::Message(format!(
                 "Saved the search “{}”",

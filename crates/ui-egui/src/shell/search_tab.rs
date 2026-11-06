@@ -22,12 +22,13 @@ use crate::search_view::{SearchView, search_pane};
 use crate::theme;
 
 /// The query and Scope fields as typed, and what the engine last said they were (a search
-/// handed over by another Tool replaces what is typed).
+/// handed over by another Tool, or a Saved search, Search history entry, Favorite or Visit
+/// run here, replaces what is typed).
 #[derive(Default)]
 pub(super) struct Fields {
     query: String,
     scope: String,
-    seen: Option<(String, String)>,
+    seen: Option<(String, String, u64)>,
     /// The Morphology chooser: shown, and what is chosen in it.
     morph_open: bool,
     morph: MorphCriteria,
@@ -191,7 +192,7 @@ impl State {
         let Some(t) = self.tabs.get_mut(&tab) else {
             return;
         };
-        let engine_fields = (st.query.clone(), st.scope.clone());
+        let engine_fields = (st.query.clone(), st.scope.clone(), st.restored);
         if t.search_fields.seen.as_ref() != Some(&engine_fields) {
             t.search_fields.query = st.query.clone();
             t.search_fields.scope = st.scope.clone();
@@ -300,7 +301,7 @@ impl State {
                             }
                         }
                     });
-                    self.save_search_button(ui, tab, &query, &mut run);
+                    self.save_search_button(ui, tab, &query, &scope, &mut run);
                 });
                 error_line(ui, error.as_ref(), ErrorField::Query, &query);
                 if bible_mode

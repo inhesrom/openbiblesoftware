@@ -142,15 +142,22 @@ fn key(h: &mut Harness, key: egui::Key, modifiers: Modifiers) {
     h.frames(2);
 }
 
-/// Click a text field showing `at` (its text or hint), replace what it holds with `text`,
-/// and press Enter.
-fn type_into(h: &mut Harness, at: &str, text: &str) {
+/// Click a text field showing `at` (its text or hint) and replace what it holds with `text`,
+/// without pressing Enter.
+fn type_over(h: &mut Harness, at: &str, text: &str) {
     h.click_text(at);
     key(h, egui::Key::A, Modifiers::COMMAND);
     h.events.push(Event::Text(text.into()));
-    h.frame();
+    h.frames(2);
+}
+
+/// [`type_over`], then press Enter.
+fn type_into(h: &mut Harness, at: &str, text: &str) {
+    type_over(h, at, text);
     key(h, egui::Key::Enter, Modifiers::NONE);
 }
+
+const SCOPE_HINT: &str = "Whole Bible, or a Passage list: Rom 1-8; Gal";
 
 /// The Verse list's references.
 fn rows(h: &Harness, tab: TabId) -> Vec<String> {
@@ -176,11 +183,7 @@ fn agape_in_nt_saved_then_run_from_the_sidebar_after_a_restart_gives_the_same_re
     // A wide Search Tab shows its sidebar by itself.
     assert!(h.find("SAVED SEARCHES").is_some(), "{:?}", h.texts());
     assert!(h.find("Searches you run are listed here.").is_some());
-    type_into(
-        &mut h,
-        "Whole Bible, or a Passage list: Rom 1-8; Gal",
-        "New Testament",
-    );
+    type_into(&mut h, SCOPE_HINT, "New Testament");
     let hint = super::super::search_tab::query_hint(obs_engine::SearchMode::Bible);
     type_into(&mut h, hint, "strong:G26");
     settle(&mut h);
@@ -297,6 +300,81 @@ fn a_saved_search_whose_bible_was_removed_opens_with_a_notice() {
     assert!(h.find(notice).is_some(), "{:?}", h.texts());
     assert_eq!(rows(&h, tab), ["1 John 4:8"]);
     preview(&h, "search-saved-notice-kittest");
+    drop(h);
+    drop(files);
+}
+
+#[test]
+fn save_keeps_the_query_and_scope_as_typed_without_enter() {
+    let files = folder("typed");
+    let mut h = launch(&files.0);
+    let tab = search_tab(&h).unwrap();
+    h.shell.run(
+        "search.run",
+        &json!({ "tab": tab.0, "text": "love", "scope": "" }),
+    );
+    settle(&mut h);
+    // Typed over, neither field run.
+    type_over(&mut h, "love", "strong:G26");
+    type_over(&mut h, SCOPE_HINT, "New Testament");
+    h.click_text("Save…");
+    type_into(&mut h, "strong:G26", "agape in NT");
+    settle(&mut h);
+    let saved: Vec<(&str, &str, &str)> = (h.shell.st.session.saved_searches().iter())
+        .map(|n| {
+            (
+                n.name.as_str(),
+                n.search.query.as_str(),
+                n.search.scope.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(saved, [("agape in NT", "strong:G26", "New Testament")]);
+    // Saving runs nothing: the fields still show what is typed.
+    let st = h.shell.st.session.search_tab(tab).unwrap();
+    assert_eq!((st.query.as_str(), st.scope.as_str()), ("love", ""));
+    assert!(h.find("strong:G26").is_some(), "{:?}", h.texts());
+    assert!(h.find("New Testament").is_some(), "{:?}", h.texts());
+    drop(h);
+    drop(files);
+}
+
+#[test]
+fn running_a_saved_or_history_search_replaces_what_is_typed() {
+    let files = folder("replay");
+    let mut h = launch(&files.0);
+    let tab = search_tab(&h).unwrap();
+    h.shell.run(
+        "search.run",
+        &json!({ "tab": tab.0, "text": "love", "scope": "" }),
+    );
+    settle(&mut h);
+    h.shell.run(
+        "search.save",
+        &json!({ "tab": tab.0, "name": "plain love" }),
+    );
+    settle(&mut h);
+    let shows = |h: &Harness| (h.find("love").is_some(), h.find(SCOPE_HINT).is_some());
+
+    // Typed over without Enter, then the Saved search (the same query and Scope) runs.
+    type_over(&mut h, "love", "banner");
+    type_over(&mut h, SCOPE_HINT, "John");
+    assert_eq!(shows(&h), (false, false), "{:?}", h.texts());
+    h.click_text("plain love");
+    settle(&mut h);
+    assert_eq!(shows(&h), (true, true), "{:?}", h.texts());
+    assert!(h.find("banner").is_none() && h.find("John").is_none());
+
+    // The same from the Search history.
+    type_over(&mut h, "love", "banner");
+    type_over(&mut h, SCOPE_HINT, "John");
+    assert_eq!(shows(&h), (false, false), "{:?}", h.texts());
+    h.click_text("love · Bible · Whole Bible");
+    settle(&mut h);
+    assert_eq!(shows(&h), (true, true), "{:?}", h.texts());
+    assert!(h.find("banner").is_none() && h.find("John").is_none());
+    let st = h.shell.st.session.search_tab(tab).unwrap();
+    assert_eq!((st.query.as_str(), st.scope.as_str()), ("love", ""));
     drop(h);
     drop(files);
 }
