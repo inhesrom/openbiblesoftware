@@ -131,6 +131,21 @@ impl InlineError {
     }
 }
 
+/// The User database preference that keeps the Word forms setting.
+const WORD_FORMS_KEY: &str = "search.word_forms";
+
+/// Parse a query as a Bible or Library search runs it: with Word forms on, each bare
+/// English word also matches the other words of its stem (#180).
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+pub(crate) fn parse_query(query: &str, word_forms: bool) -> Result<obs_search::Query, String> {
+    let parsed = obs_search::parse(query).map_err(|e| e.to_string())?;
+    Ok(if word_forms {
+        parsed.with_word_forms()
+    } else {
+        parsed
+    })
+}
+
 /// Parse and compile a query on the UI thread, so its errors show at once (inline, #16).
 /// Returns the trimmed query.
 pub(crate) fn check_query(query: &str) -> Result<String, InlineError> {
@@ -663,6 +678,8 @@ pub(crate) struct BibleJob {
 pub struct BibleSearches {
     pub(crate) jobs: BTreeMap<JobId, BibleJob>,
     recent: BTreeMap<SearchMode, Vec<String>>,
+    /// The Word forms setting, once read from the User database.
+    word_forms: Option<bool>,
     /// Outlines by resource id and content hash, shared with the jobs that read them.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     outlines: Arc<Mutex<BTreeMap<String, Arc<BibleOutline>>>>,
@@ -685,6 +702,7 @@ impl BibleSearches {
     /// Forget the recent queries read so far (another User database was attached).
     pub(crate) fn forget_recent(&mut self) {
         self.recent.clear();
+        self.word_forms = None;
     }
 
     /// Whether a search or snippet job is running.
@@ -788,6 +806,35 @@ impl Session {
             .unwrap_or_default();
         self.bible_search.recent.insert(mode, recent.clone());
         recent
+    }
+
+    /// Whether Bible and Library searches match Word forms (#180): "love" also finds
+    /// "loved", "loving" and "loveth". Off until the user turns it on; kept in the User
+    /// database.
+    pub fn search_word_forms(&mut self) -> bool {
+        if let Some(on) = self.bible_search.word_forms {
+            return on;
+        }
+        let on = self
+            .user
+            .as_ref()
+            .and_then(|u| u.preference(WORD_FORMS_KEY).ok().flatten())
+            .is_some_and(|v| v == "true");
+        self.bible_search.word_forms = Some(on);
+        on
+    }
+
+    /// Turn Word forms on or off for every Bible and Library search.
+    pub fn set_search_word_forms(&mut self, on: bool) {
+        self.bible_search.word_forms = Some(on);
+        if let Some(user) = &self.user
+            && let Err(e) = user.set_preference(WORD_FORMS_KEY, if on { "true" } else { "false" })
+        {
+            self.workspace
+                .push_effect(crate::workspace::Effect::Message(format!(
+                    "Could not save the Word forms setting: {e}"
+                )));
+        }
     }
 
     pub(crate) fn remember_search(&mut self, mode: SearchMode, query: &str) {
@@ -966,8 +1013,10 @@ impl Session {
             .of_type(ResourceType::Lexicon)
             .map(|e| e.path.clone())
             .collect();
+        let word_forms = self.search_word_forms();
         let input = desktop::RunInput {
             query,
+            word_forms,
             scope_text: if scope_text.is_empty() {
                 WHOLE_BIBLE.to_string()
             } else {
@@ -1358,6 +1407,8 @@ pub(crate) mod desktop {
 
     pub(super) struct RunInput {
         pub query: String,
+        /// Word forms on (#180).
+        pub word_forms: bool,
         pub scope_text: String,
         pub scope: Scope,
         pub bibles: Vec<(JobBible, SqliteSearchIndex)>,
@@ -1431,7 +1482,7 @@ pub(crate) mod desktop {
     pub(super) fn run(input: RunInput, ctx: &JobContext) -> Result<RunOutput, String> {
         let started = std::time::Instant::now();
         let lookup = lemma_lookup(input.lexicons.clone());
-        let parsed = obs_search::parse(&input.query).map_err(|e| e.to_string())?;
+        let parsed = parse_query(&input.query, input.word_forms)?;
         let compiled = obs_search::compile(&parsed, &lookup).map_err(|e| e.to_string())?;
         let highlighter = Highlighter::new(&parsed, &lookup);
         let mut per_bible: Vec<(Vec<SearchHit>, Arc<BibleOutline>)> = Vec::new();
@@ -1689,6 +1740,22 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         run: search_bible,
     },
     CommandSpec {
+        id: "search.word_forms",
+        label: "Search word forms",
+        shortcut: None,
+        params: &[
+            TAB,
+            ParamSpec {
+                name: "value",
+                kind: ParamKind::Boolean,
+                required: true,
+                help: "Whether Bible and Library searches also match other forms of English words (love → loved, loveth)",
+            },
+        ],
+        enabled: always,
+        run: search_word_forms,
+    },
+    CommandSpec {
         id: "search.open",
         label: "Open search hit",
         shortcut: None,
@@ -1823,6 +1890,25 @@ fn search_scope(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     }
     let error = rerun(s, tab);
     Ok(json!({ "tab": tab.0, "error": error_json(error.as_ref()) }))
+}
+
+/// Turn Word forms on or off, and run the Tab's search again with it (Bible and Library
+/// modes; Notes searches keep each word as written).
+fn search_word_forms(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "search.word_forms";
+    let tab = tab_param(ID, s, &p)?;
+    let on = p
+        .bool("value")
+        .ok_or_else(|| failed(ID, "value must be true or false"))?;
+    let changed = s.search_word_forms() != on;
+    s.set_search_word_forms(on);
+    let mode = s.search_tab(tab).map(|t| t.mode);
+    let error = if changed && mode != Some(SearchMode::Notes) {
+        rerun(s, tab)
+    } else {
+        None
+    };
+    Ok(json!({ "tab": tab.0, "word_forms": on, "error": error_json(error.as_ref()) }))
 }
 
 fn search_bible(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {

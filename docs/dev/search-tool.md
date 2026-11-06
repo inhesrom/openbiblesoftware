@@ -1,4 +1,4 @@
-# The Search Tool: Bible mode (#59), its Results views (#146) and Library mode (#60)
+# The Search Tool: Bible mode (#59), its Results views (#146), Library mode (#60), Proximity search and Word forms (#180)
 
 The Search Tool is one Tab with a **Bible / Library / Notes** switch (#16 rule 9). Bible and
 Library modes are described here; Notes mode (#64) is described in [notes-tool.md](notes-tool.md).
@@ -11,8 +11,9 @@ hits. The Search index caches they read are described in [search-index.md](searc
 | Layer | Piece | Role |
 |---|---|---|
 | `obs-search` | `Highlighter` | Hit highlighting in Rust (#16 rule 7). Surface terms are found by re-tokenizing the display text with the shared normalizer. `strong:`/`lemma:` terms mark the matching `tagged_word` spans, and `@…` terms the parts whose Morphology meets them. In a Hebrew word of several morphemes, only the matching morphemes are marked. |
+| `obs-search` | `stem` | English stemming for Word forms (#180): the Porter stemmer behind an archaic layer (`-eth`, `-est`, `-edst`, `hath`, `doth`, `saith`). |
 | `obs-search` | `morph` (`MorphCategory`, `MorphCriterion`, `MorphCriteria`) | Morphology criteria (#145): the plain-English values of each kind of grammar, the words a query may use for them, and whether a decoded code meets them. |
-| `obs-engine` | `bible_search` | Per-Tab state (`Tab::search`): mode, query, Scope, chosen Bibles, inline error, results, selection. Also Scope parsing and presets, the mapping from Standard scope to verse ordinals through each Verse map, the Verse list in Standard canonical order, snippet pages, recent queries, and opening hits. Commands: `search.run`, `search.mode`, `search.scope`, `search.bible`, `search.open`. |
+| `obs-engine` | `bible_search` | Per-Tab state (`Tab::search`): mode, query, Scope, chosen Bibles, inline error, results, selection. Also Scope parsing and presets, the mapping from Standard scope to verse ordinals through each Verse map, the Verse list in Standard canonical order, snippet pages, recent queries, and opening hits. The Word forms setting (`Session::search_word_forms`, User database preference `search.word_forms`). Commands: `search.run`, `search.mode`, `search.scope`, `search.bible`, `search.word_forms`, `search.open`. |
 | `obs-engine` | `search_views` | Bible mode's Results views (#146): `ResultsView`, the Results filter (`ResultsFilter`, applied to a copy of the results), `HitGrid`, `chart_bars`, and the Analysis table (`SearchAnalysis`, made by a background job, sorted by `AnalysisSort`, written as CSV). Commands: `search.view`, `search.filter`, `search.chart`, `search.sort`, `search.export_csv` (and `search.open`'s `all`). |
 | `obs-engine` | `library_search` | Library mode on the same Tab state and jobs: the Resource picker's scope (`LibraryScope`), grouping by Resource, excerpts, and opening a hit at its paragraph. Commands: `search.resource`, `search.resource_type`, `search.collection` (and `search.run`'s `resources`). |
 | `obs-engine` | `Workspace::navigate_text`, `Effect::NavigateText` | A Resource Tab goes to a Key and scrolls a Text range to the top (a Library hit's paragraph). |
@@ -101,6 +102,60 @@ and [the chooser adding `@verb aorist imperative` after `strong:G3936`](../previ
 (the app's `OBS_SCRIPT`, `OBS_INPUT` and `OBS_SHOT` automation). [The chooser over the test
 excerpt](../previews/search-morphology-chooser-kittest.png) comes from
 `UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui --lib morphology_chooser`.
+
+## Proximity search and Word forms (#180)
+
+| Query | Finds |
+|---|---|
+| `faith NEAR/5 works`, `faith WITHIN 5 words works` | both in one Verse (paragraph) with at most 5 words between them, either order |
+| `faith BEFORE/3 works` | the same, `faith` first |
+| `"by faith" NEAR/3 work*`, `(faith OR hope) NEAR/2 love` | phrases, prefixes and alternatives on either side |
+| `faith WITHIN 2 verses works` | each Verse with one side whose own Verse or a neighbouring one (same Bible book) has the other: a run of at most 2 Verses holds both |
+| `(faith -dead) WITHIN 3 verses G2041` | any query on either side, in parentheses |
+| `faith WITHIN 2 paragraphs works` | outside Bibles: neighbouring paragraphs of one text unit (`verses` and `paragraphs` both mean the Resource's own documents) |
+
+- **Grammar.** The operators bind tighter than `AND` and `OR` (`grace faith NEAR/5 works` is
+  `grace` and the pair) and are recognised only in these forms, in capitals like the other
+  operators: `NEAR`, `near/5` and `faith WITHIN works` are words. A dangling operator is
+  ignored. `NEAR/n` and `BEFORE/n` join words, phrases and groups of alternatives of them
+  (`G26 NEAR/3 love` is an inline error); `WITHIN n verses` joins any two queries.
+  `WITHIN 0 verses` means the same Verse, as `WITHIN 1 verse` does.
+- **How it runs.** `NEAR/n` is an FTS5 `NEAR` group. `BEFORE/n` finds the `NEAR` candidates
+  and keeps those whose word positions are in order. `WITHIN n verses` searches each side in
+  the Search scope and keeps the Verses with a hit of the other side at most `n - 1`
+  documents away in the same book, a second pass over the neighbouring Verse documents. The
+  results stay a Verse list: James 2:21 ("works") is a row because 2:20 and 2:22 say
+  "faith". Both sides are highlighted.
+- **Notes mode** takes `NEAR/n`; `BEFORE/n` and `WITHIN n verses` are an inline error there.
+- **Word forms.** The **Word forms** checkbox beside the query (Bible and Library modes; off
+  by default) makes each bare English word match every word of its stem in each index:
+  `love` → `love OR loved OR loves OR loving OR loveth OR lovest OR lovedst …`, whatever that
+  Bible actually contains. The stemmer is Porter's (checked against his 23,531-word reference
+  vocabulary) after an archaic layer: `-eth` and `-est` read as `-ing` (`loveth` → `loving`,
+  `seeth` → `seeing`, `lieth` → `lies`), `-edst` as `-ed`, and `hath`, `hast`, `doth`, `dost`,
+  `saith`, `didst`, `wouldst` and the like as their modern verbs; nouns that only end like
+  that (`priest`, `forest`, `harvest`, `teeth`, `Nazareth`) and ordinals (`twentieth`) are left
+  alone. Quoted words (even one), prefixes, Strong's numbers and Lemmas stay exact; Greek and
+  Hebrew use `lemma:`. Highlights mark every word of the stem. Turning it on or off saves the
+  setting (`search.word_forms`) and runs the Tab's search again.
+- **No rebuild.** Each index finds the words of a stem in its own vocabulary when a stemmed
+  query first runs, through an `fts5vocab` table in the connection's `temp` schema, looking
+  only at the words that begin with the stem's first letters (`stem_prefix`). The cache
+  format and `INDEX_VERSION` are unchanged, so no Search index is rebuilt for Word forms
+  (see [search-index.md](search-index.md)).
+- **Timings** on the real KJV (release build, cache open, compile and every hit included;
+  `kjv_search_timing`): `~love` 0.8–1.7 ms (421 Verses; 281 without Word forms), `~the`
+  14–25 ms, `faith NEAR/5 works` 0.4 ms, `faith BEFORE/3 works` 0.7 ms, `the BEFORE/3 lord`
+  31 ms (6,078 Verses), `faith WITHIN 2 verses works` 1.3 ms, `the WITHIN 2 verses and`
+  57 ms (27,261 Verses), `~love NEAR/3 ~god` 9–11 ms; #19's targets are 100 ms for words and
+  250 ms for phrases. The same test checks that `faith WITHIN 2 verses works` finds James
+  2:17, 2:18 and 2:21 and that `love` finds John 3:35 ("loveth") only with Word forms.
+
+Previews, from the real app and the Starter KJV: [`faith WITHIN 2 verses works` in James 2](../previews/search-within-verses-james-app.png)
+and [`love` in 1 John 4 with Word forms](../previews/search-word-forms-1-john-4-app.png) (the app's
+`OBS_SCRIPT` and `OBS_SHOT` automation on macOS). [The toggle over the test
+library](../previews/search-word-forms-kittest.png) comes from
+`UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui --lib the_word_forms_toggle`.
 
 ## Outline read-ahead
 

@@ -19,7 +19,15 @@
 //! `morph` lists every morpheme part of the Tagged words in turn: its Strong's number (then
 //! the base form of an extended one), its code's token, then its Lemma's words. A phrase
 //! such as `"g26 morph3"` therefore finds one part with both (#145); which tokens a query's
-//! Morphology criteria mean is read from `morph_codes` ([`obs_search::MorphQuery::expand`]).
+//! Morphology criteria mean is read from `morph_codes` ([`obs_search::IndexQuery::plan`]).
+//!
+//! Queries one MATCH cannot answer (#180) are planned per index ([`obs_search::Plan`]): a
+//! stemmed word becomes the index's own words of that stem, found through an `fts5vocab`
+//! table over `search`; `BEFORE/n` keeps the `NEAR` candidates in which the word positions
+//! (also read through `fts5vocab`) are in order; `WITHIN n verses` searches each side and
+//! keeps the documents with a hit of the other side among their neighbours. Both vocabulary
+//! tables are in the connection's `temp` schema, so the cache file stays read-only and its
+//! format is unchanged.
 //!
 //! `search` is an external-content table over `docs`: the indexed text lives in the Resource,
 //! and `docs` only locates each document there. The column values are never stored (`docs`
@@ -29,7 +37,7 @@
 //!
 //! Builds are deterministic: the same Resource and version give a byte-identical file.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use obs_model::{
@@ -37,8 +45,8 @@ use obs_model::{
 };
 use obs_scripture::{Passage, Verse};
 use obs_search::{
-    Compiled, DocumentKind, HitOrder, MorphCriteria, MorphVocabulary, SearchError, SearchHit,
-    SearchIndex, SearchOptions,
+    Compiled, DocumentKind, HitOrder, IndexVocabulary, MorphCriteria, Pattern, Plan, SearchError,
+    SearchHit, SearchIndex, SearchOptions,
 };
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
@@ -653,7 +661,7 @@ pub struct SqliteSearchIndex {
 #[derive(Debug, Default)]
 struct IndexCodes(Vec<(String, obs_model::Morph)>);
 
-impl MorphVocabulary for IndexCodes {
+impl IndexCodes {
     fn tokens(&self, criteria: &MorphCriteria) -> Vec<String> {
         self.0
             .iter()
@@ -662,6 +670,45 @@ impl MorphVocabulary for IndexCodes {
             .collect()
     }
 }
+
+/// An open index's codes and words, for [`obs_search::IndexQuery::plan`].
+struct Vocabulary<'a>(&'a SqliteSearchIndex);
+
+impl IndexVocabulary for Vocabulary<'_> {
+    fn morph_tokens(&self, criteria: &MorphCriteria) -> Vec<String> {
+        self.0.codes.tokens(criteria)
+    }
+
+    fn words_with_stem(&self, stem: &str) -> Vec<String> {
+        // A word the index cannot read means no forms: the stemmed word matches nothing.
+        self.0.words_with_stem(stem).unwrap_or_default()
+    }
+}
+
+/// The `fts5vocab` tables of an open index, in its connection's `temp` schema: `search_terms`
+/// (each term of each column) and `search_positions` (each occurrence of a term).
+const VOCABULARY_TABLES: &str =
+    "CREATE VIRTUAL TABLE IF NOT EXISTS temp.search_terms USING fts5vocab(main, search, col);
+     CREATE VIRTUAL TABLE IF NOT EXISTS temp.search_positions USING fts5vocab(main, search, instance);";
+
+/// The first string after every string that begins with `prefix`, if there is one.
+fn prefix_end(prefix: &str) -> Option<String> {
+    let mut chars: Vec<char> = prefix.chars().collect();
+    while let Some(last) = chars.pop() {
+        let next = (u32::from(last) + 1..=u32::from(char::MAX)).find_map(char::from_u32);
+        if let Some(next) = next {
+            chars.push(next);
+            return Some(chars.into_iter().collect());
+        }
+    }
+    None
+}
+
+/// Documents found, by id.
+type Found = BTreeMap<i64, SearchHit>;
+
+/// Start and end word positions of a pattern's occurrences in each document.
+type Occurrences = HashMap<i64, Vec<(u32, u32)>>;
 
 /// The codes of an index; none in a cache built before #145 (it has no `morph` column).
 fn read_codes(conn: &Connection) -> Result<IndexCodes, StoreError> {
@@ -764,42 +811,242 @@ impl SqliteSearchIndex {
     pub fn key(&self) -> &IndexKey {
         &self.key
     }
-}
 
-fn search_error(e: rusqlite::Error) -> SearchError {
-    SearchError(e.to_string())
-}
-
-impl SearchIndex for SqliteSearchIndex {
-    fn resource_id(&self) -> &str {
-        &self.key.resource_id
+    fn vocabulary_tables(&self) -> Result<(), StoreError> {
+        self.conn.execute_batch(VOCABULARY_TABLES).map_err(sql)
     }
 
-    fn document_kind(&self) -> DocumentKind {
-        self.kind
+    /// The words of the `text` field whose stem is `stem`.
+    fn words_with_stem(&self, stem: &str) -> Result<Vec<String>, StoreError> {
+        if !stem.bytes().all(|b| b.is_ascii_lowercase()) {
+            return Ok(vec![stem.to_string()]);
+        }
+        self.vocabulary_tables()?;
+        let prefix = obs_search::stem_prefix(stem);
+        let end = prefix_end(prefix).unwrap_or_default();
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT term FROM temp.search_terms
+                 WHERE term >= ?1 AND term < ?2 AND col = 'text' ORDER BY term",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(params![prefix, end], |r| r.get::<_, String>(0))
+            .map_err(sql)?;
+        let mut out = Vec::new();
+        for term in rows {
+            let term = term.map_err(sql)?;
+            if obs_search::stem(&term) == stem {
+                out.push(term);
+            }
+        }
+        Ok(out)
     }
 
-    fn document_count(&self) -> u64 {
-        self.documents
-    }
-
-    fn search(
+    /// Word positions in the `text` field of each term `word` (a prefix when `prefix`) in
+    /// `documents`.
+    fn word_positions(
         &self,
-        query: &Compiled,
+        word: &str,
+        prefix: bool,
+        documents: &BTreeSet<i64>,
+    ) -> Result<HashMap<i64, Vec<u32>>, StoreError> {
+        let end = if prefix { prefix_end(word) } else { None };
+        let mut q = String::from("SELECT doc, offset FROM temp.search_positions WHERE ");
+        q.push_str(match (prefix, &end) {
+            (false, _) => "term = ?1 AND ?2 IS NULL",
+            (true, Some(_)) => "term >= ?1 AND term < ?2",
+            (true, None) => "term >= ?1 AND ?2 IS NULL",
+        });
+        q.push_str(" AND col = 'text'");
+        let mut stmt = self.conn.prepare_cached(&q).map_err(sql)?;
+        let rows = stmt
+            .query_map(params![word, end], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+            })
+            .map_err(sql)?;
+        let mut out: HashMap<i64, Vec<u32>> = HashMap::new();
+        for row in rows {
+            let (doc, offset) = row.map_err(sql)?;
+            if documents.contains(&doc) {
+                out.entry(doc)
+                    .or_default()
+                    .push(u32::try_from(offset).unwrap_or(u32::MAX));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Where `pattern` occurs in each of `documents`: its words at consecutive positions.
+    fn occurrences(
+        &self,
+        pattern: &Pattern,
+        documents: &BTreeSet<i64>,
+    ) -> Result<Occurrences, StoreError> {
+        self.vocabulary_tables()?;
+        let n = pattern.words.len();
+        let mut words = Vec::with_capacity(n);
+        for (i, w) in pattern.words.iter().enumerate() {
+            let prefix = pattern.prefix && i + 1 == n;
+            words.push(self.word_positions(w, prefix, documents)?);
+        }
+        let mut out = Occurrences::new();
+        let Some((first, rest)) = words.split_first() else {
+            return Ok(out);
+        };
+        let last = u32::try_from(n.saturating_sub(1)).unwrap_or(u32::MAX);
+        for (doc, starts) in first {
+            for &p in starts {
+                let in_row = rest.iter().enumerate().all(|(k, positions)| {
+                    let at = p.saturating_add(u32::try_from(k + 1).unwrap_or(u32::MAX));
+                    positions.get(doc).is_some_and(|ps| ps.contains(&at))
+                });
+                if in_row {
+                    out.entry(*doc)
+                        .or_default()
+                        .push((p, p.saturating_add(last)));
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// The documents of `plan` (in `options.documents`), every hit, scored when ranked.
+    fn evaluate(&self, plan: &Plan, options: &SearchOptions) -> Result<Found, SearchError> {
+        let found =
+            |hits: Vec<SearchHit>| -> Found { hits.into_iter().map(|h| (h.document, h)).collect() };
+        match plan {
+            Plan::Match(expr) => Ok(found(self.run_match(expr, options)?)),
+            Plan::Nothing => Ok(Found::new()),
+            Plan::All { all, not } => {
+                let mut out: Option<Found> = None;
+                for p in all {
+                    let next = self.evaluate(p, options)?;
+                    out = Some(match out {
+                        None => next,
+                        Some(mut acc) => {
+                            acc.retain(|id, _| next.contains_key(id));
+                            for (id, hit) in &mut acc {
+                                hit.score += next.get(id).map_or(0.0, |h| h.score);
+                            }
+                            acc
+                        }
+                    });
+                    if out.as_ref().is_some_and(BTreeMap::is_empty) {
+                        break;
+                    }
+                }
+                let mut out = out.unwrap_or_default();
+                for p in not {
+                    if out.is_empty() {
+                        break;
+                    }
+                    let excluded = self.evaluate(p, options)?;
+                    out.retain(|id, _| !excluded.contains_key(id));
+                }
+                Ok(out)
+            }
+            Plan::Any(any) => {
+                let mut out = Found::new();
+                for p in any {
+                    for (id, hit) in self.evaluate(p, options)? {
+                        match out.get_mut(&id) {
+                            Some(h) => h.score = h.score.min(hit.score),
+                            None => {
+                                out.insert(id, hit);
+                            }
+                        }
+                    }
+                }
+                Ok(out)
+            }
+            Plan::Before {
+                candidates,
+                first,
+                second,
+                words,
+            } => {
+                let mut out = found(self.run_match(candidates, options)?);
+                if out.is_empty() {
+                    return Ok(out);
+                }
+                let documents: BTreeSet<i64> = out.keys().copied().collect();
+                let occurrences = |patterns: &[Pattern]| -> Result<Occurrences, SearchError> {
+                    let mut all = Occurrences::new();
+                    for p in patterns {
+                        let found = self
+                            .occurrences(p, &documents)
+                            .map_err(|e| SearchError(e.to_string()))?;
+                        for (doc, spans) in found {
+                            all.entry(doc).or_default().extend(spans);
+                        }
+                    }
+                    Ok(all)
+                };
+                let firsts = occurrences(first)?;
+                let seconds = occurrences(second)?;
+                out.retain(|doc, _| {
+                    let (Some(a), Some(b)) = (firsts.get(doc), seconds.get(doc)) else {
+                        return false;
+                    };
+                    a.iter().any(|&(_, end)| {
+                        b.iter()
+                            .any(|&(start, _)| start > end && start - end - 1 <= *words)
+                    })
+                });
+                Ok(out)
+            }
+            Plan::Within {
+                left,
+                right,
+                documents,
+            } => {
+                let left = self.evaluate(left, options)?;
+                if left.is_empty() {
+                    return Ok(left);
+                }
+                let right = self.evaluate(right, options)?;
+                let reach = i64::from(documents.saturating_sub(1));
+                let mut out = Found::new();
+                for (id, hit) in &left {
+                    let mut near = false;
+                    for (other, h) in
+                        right.range(id.saturating_sub(reach)..=id.saturating_add(reach))
+                    {
+                        if self.neighbours(hit, h) {
+                            near = true;
+                            out.entry(*other).or_insert_with(|| h.clone());
+                        }
+                    }
+                    if near {
+                        out.entry(*id).or_insert_with(|| hit.clone());
+                    }
+                }
+                Ok(out)
+            }
+        }
+    }
+
+    /// Whether two documents can be neighbours for `WITHIN n verses`: Verses of one Bible
+    /// book, or paragraphs of one text unit.
+    fn neighbours(&self, a: &SearchHit, b: &SearchHit) -> bool {
+        let book = |h: &SearchHit| match &h.key {
+            Some(Key::Passage(p)) => Some(p.start().book),
+            _ => None,
+        };
+        match self.kind {
+            DocumentKind::Verse => book(a).is_some() && book(a) == book(b),
+            DocumentKind::Paragraph => a.unit == b.unit,
+        }
+    }
+
+    /// The hits of one FTS5 MATCH expression.
+    fn run_match(
+        &self,
+        expr: &str,
         options: &SearchOptions,
     ) -> Result<Vec<SearchHit>, SearchError> {
-        let expanded;
-        let expr = match query {
-            Compiled::Match(expr) => expr,
-            Compiled::Morph(m) => {
-                expanded = m.expand(&self.codes);
-                let Compiled::Match(expr) = &expanded else {
-                    return Ok(Vec::new());
-                };
-                expr
-            }
-            Compiled::Nothing => return Ok(Vec::new()),
-        };
         let relevance = options.order == HitOrder::Relevance;
         let mut q =
             String::from("SELECT search.rowid, u.id, u.title, d.start, d.end, d.key_scheme, d.key");
@@ -861,6 +1108,61 @@ impl SearchIndex for SqliteSearchIndex {
             });
         }
         Ok(out)
+    }
+}
+
+fn search_error(e: rusqlite::Error) -> SearchError {
+    SearchError(e.to_string())
+}
+
+impl SearchIndex for SqliteSearchIndex {
+    fn resource_id(&self) -> &str {
+        &self.key.resource_id
+    }
+
+    fn document_kind(&self) -> DocumentKind {
+        self.kind
+    }
+
+    fn document_count(&self) -> u64 {
+        self.documents
+    }
+
+    fn search(
+        &self,
+        query: &Compiled,
+        options: &SearchOptions,
+    ) -> Result<Vec<SearchHit>, SearchError> {
+        let plan = match query {
+            Compiled::Match(expr) => return self.run_match(expr, options),
+            Compiled::PerIndex(q) => q.plan(&Vocabulary(self)),
+            Compiled::Nothing => return Ok(Vec::new()),
+        };
+        match plan {
+            Plan::Match(expr) => self.run_match(&expr, options),
+            Plan::Nothing => Ok(Vec::new()),
+            plan => {
+                // Every hit of each part, then the order and limit asked for.
+                let parts = SearchOptions {
+                    documents: options.documents.clone(),
+                    order: options.order,
+                    limit: None,
+                };
+                let mut hits: Vec<SearchHit> =
+                    self.evaluate(&plan, &parts)?.into_values().collect();
+                if options.order == HitOrder::Relevance {
+                    hits.sort_by(|a, b| {
+                        a.score
+                            .total_cmp(&b.score)
+                            .then(a.document.cmp(&b.document))
+                    });
+                }
+                if let Some(limit) = options.limit {
+                    hits.truncate(limit);
+                }
+                Ok(hits)
+            }
+        }
     }
 }
 

@@ -730,3 +730,85 @@ fn real_starter_kjv_and_web_love_thy_neighbour_and_tahot_h1254() {
     assert!(gen1_27.iter().all(|w| !w.starts_with('ו')), "{gen1_27:?}");
     drop(s);
 }
+
+/// Word forms (#180): off by default; on, "work" finds "worketh" (highlighted) and "hast"
+/// finds "have" and "hath". The setting is kept in the User database and reruns the search.
+#[test]
+fn word_forms_match_archaic_forms_and_are_kept_in_the_user_database() {
+    let (mut s, root) = fixture("word-forms", true);
+    assert!(!s.search_word_forms());
+    let tab = search(&mut s, json!({ "text": "work", "bibles": "kjv" }));
+    assert_eq!(results(&s, tab).rows.len(), 0);
+
+    let out = s
+        .run("search.word_forms", &json!({ "tab": tab.0, "value": true }))
+        .unwrap();
+    settle(&mut s);
+    assert_eq!(out["word_forms"], true);
+    let hl = |t: &str| vec![("KJV".to_string(), vec![t.to_string()])];
+    assert_eq!(
+        shown(&s, tab),
+        [("Romans 13:10".to_string(), hl("worketh"))]
+    );
+    // "Ye have heard that it hath been said".
+    let tab = search(
+        &mut s,
+        json!({ "text": "hast", "bibles": "kjv", "tab": tab.0 }),
+    );
+    let both = vec![(
+        "KJV".to_string(),
+        vec!["have".to_string(), "hath".to_string()],
+    )];
+    assert_eq!(shown(&s, tab), [("Matthew 5:43".to_string(), both)]);
+    // Quoted, a word is exact.
+    let tab = search(
+        &mut s,
+        json!({ "text": "\"worketh\" OR \"hast\"", "tab": tab.0 }),
+    );
+    assert_eq!(
+        shown(&s, tab),
+        [("Romans 13:10".to_string(), hl("worketh"))]
+    );
+    drop(s);
+
+    let (store, _) = obs_store::UserStore::open(&root.join("user.db")).unwrap();
+    let mut again = Session::new(JobMode::Inline);
+    again.attach_user(Box::new(store));
+    assert!(again.search_word_forms());
+    again.set_search_word_forms(false);
+    assert!(!again.search_word_forms());
+    drop(again);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// Proximity (#180): `BEFORE/n` in one Verse, `WITHIN n verses` across neighbouring Verses
+/// of one book, both sides highlighted.
+#[test]
+fn proximity_searches_highlight_both_sides() {
+    let (mut s, root) = fixture("proximity", false);
+    let tab = search(
+        &mut s,
+        json!({ "text": "neighbour BEFORE/0 as", "bibles": "kjv" }),
+    );
+    let refs: Vec<String> = shown(&s, tab).into_iter().map(|r| r.0).collect();
+    assert_eq!(refs, ["Leviticus 19:18", "Matthew 22:39"]);
+    // Matthew 5:43 and 22:39 are neighbours in this Bible; Leviticus is another book.
+    let tab = search(
+        &mut s,
+        json!({ "text": "hate WITHIN 2 verses second", "bibles": "kjv", "tab": tab.0 }),
+    );
+    let hl = |t: &str| vec![("KJV".to_string(), vec![t.to_string()])];
+    assert_eq!(
+        shown(&s, tab),
+        [
+            ("Matthew 5:43".to_string(), hl("hate")),
+            ("Matthew 22:39".to_string(), hl("second")),
+        ]
+    );
+    let tab = search(
+        &mut s,
+        json!({ "text": "grudge WITHIN 2 verses hate", "bibles": "kjv", "tab": tab.0 }),
+    );
+    assert_eq!(results(&s, tab).rows.len(), 0);
+    cleanup(s, root);
+}

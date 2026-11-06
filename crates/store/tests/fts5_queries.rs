@@ -106,8 +106,9 @@ fn lexicon(t: &str) -> Vec<String> {
 fn search(c: &Connection, q: &str) -> Vec<&'static str> {
     let expr = match to_fts5(q, &lexicon).unwrap_or_else(|e| panic!("{q}: {e}")) {
         Compiled::Match(e) => e,
-        // This table has no `morph` column; Morphology is tested on real caches.
-        Compiled::Morph(_) | Compiled::Nothing => return Vec::new(),
+        // This table has no `morph` column and no vocabulary: Morphology, stemming, BEFORE/n
+        // and WITHIN n verses are tested on real caches.
+        Compiled::PerIndex(_) | Compiled::Nothing => return Vec::new(),
     };
     let mut stmt = c
         .prepare("SELECT rowid FROM idx WHERE idx MATCH ?1 ORDER BY rowid")
@@ -142,6 +143,14 @@ fn every_form_matches_what_it_should() {
         ("lemma:בָּרָא", &["Gn 1:1", "Jos 17:15"]),
         (r#"strong:G5485 "favour""#, &["Lk 2:52"]),
         ("lemma:zzz", &[]),
+        // Proximity (#180): "justified by faith", "a man is justified".
+        ("justified NEAR/1 faith", &["Ro 3:28"]),
+        ("faith NEAR/1 justified", &["Ro 3:28"]),
+        ("justified NEAR/5 faith", &["Ro 3:28", "Jas 2:24"]),
+        ("man WITHIN 2 words justified", &["Ro 3:28", "Jas 2:24"]),
+        (r#""a man" NEAR/1 justif*"#, &["Ro 3:28", "Jas 2:24"]),
+        (r#""a man" NEAR/0 justif*"#, &[]),
+        ("(faith OR works) NEAR/1 man", &["Jas 2:24"]),
     ];
     for (q, want) in table {
         assert_eq!(search(&c, q), *want, "query {q:?}");
@@ -172,6 +181,11 @@ fn fuzzed_queries_are_always_valid_fts5() {
         "NOT",
         "NEAR",
         "NEAR(",
+        "NEAR/2",
+        "NEAR/0",
+        "WITHIN",
+        "3",
+        "words",
         "strong:",
         "lemma:",
         "text:",

@@ -12,15 +12,29 @@ fn lexicon(t: &str) -> Vec<String> {
     }
 }
 
-/// A Search index's Morphology codes and their tokens.
+/// A Search index's Morphology codes and their tokens, and its words.
 struct Codes(&'static [(&'static str, &'static str)]);
 
-impl MorphVocabulary for Codes {
-    fn tokens(&self, criteria: &MorphCriteria) -> Vec<String> {
+/// The words of the test index, for stemming.
+const WORDS: &[&str] = &[
+    "faith", "live", "lived", "liveth", "love", "loved", "lovest", "loveth", "loving", "work",
+    "works", "worketh",
+];
+
+impl IndexVocabulary for Codes {
+    fn morph_tokens(&self, criteria: &MorphCriteria) -> Vec<String> {
         self.0
             .iter()
             .filter(|(_, code)| criteria.matches_code(code))
             .map(|(t, _)| (*t).to_string())
+            .collect()
+    }
+
+    fn words_with_stem(&self, stem: &str) -> Vec<String> {
+        WORDS
+            .iter()
+            .filter(|w| crate::stem::stem(w) == stem)
+            .map(|w| (*w).to_string())
             .collect()
     }
 }
@@ -36,7 +50,11 @@ const CODES: Codes = Codes(&[
 fn expanded(c: Compiled) -> String {
     match c {
         Compiled::Match(s) => s,
-        Compiled::Morph(m) => expanded(m.expand(&CODES)),
+        Compiled::PerIndex(q) => match q.plan(&CODES) {
+            Plan::Match(s) => s,
+            Plan::Nothing => "<nothing>".into(),
+            p => format!("{p:?}"),
+        },
         Compiled::Nothing => "<nothing>".into(),
     }
 }
@@ -174,7 +192,8 @@ pub(crate) fn only_safe_syntax(expr: &str) -> Result<(), String> {
     let mut depth = 0i32;
     while let Some(c) = chars.next() {
         match c {
-            ' ' | ':' | '*' => {}
+            ' ' | ':' | '*' | ',' => {}
+            c if c.is_ascii_digit() => {}
             '(' => depth += 1,
             ')' => {
                 depth -= 1;
@@ -201,8 +220,10 @@ pub(crate) fn only_safe_syntax(expr: &str) -> Result<(), String> {
                     word.push(n);
                     chars.next();
                 }
-                if !["AND", "OR", "NOT", "text", "strong", "lemma", "morph"]
-                    .contains(&word.as_str())
+                if ![
+                    "AND", "OR", "NOT", "NEAR", "text", "strong", "lemma", "morph",
+                ]
+                .contains(&word.as_str())
                 {
                     return Err(format!("bare word {word:?}"));
                 }
@@ -214,6 +235,22 @@ pub(crate) fn only_safe_syntax(expr: &str) -> Result<(), String> {
         return Err("unbalanced (".into());
     }
     Ok(())
+}
+
+/// Every MATCH expression in a plan.
+pub(crate) fn plan_matches(plan: &Plan) -> Vec<String> {
+    match plan {
+        Plan::Match(s) => vec![s.clone()],
+        Plan::Nothing => Vec::new(),
+        Plan::All { all, not } => all.iter().chain(not).flat_map(plan_matches).collect(),
+        Plan::Any(any) => any.iter().flat_map(plan_matches).collect(),
+        Plan::Before { candidates, .. } => vec![candidates.clone()],
+        Plan::Within { left, right, .. } => {
+            let mut out = plan_matches(left);
+            out.extend(plan_matches(right));
+            out
+        }
+    }
 }
 
 /// Random queries from pieces that are syntax in FTS5 or in our grammar.
@@ -243,6 +280,15 @@ pub(crate) fn random_queries(n: usize, seed: u64) -> Vec<String> {
         "NOT",
         "NEAR",
         "NEAR(",
+        "NEAR/5",
+        "NEAR/",
+        "BEFORE/3",
+        "BEFORE/0",
+        "WITHIN",
+        "2",
+        "verses",
+        "words",
+        "/",
         "or",
         "strong:",
         "lemma:",
@@ -312,11 +358,11 @@ fn fuzzed_input_never_panics_or_emits_unescaped_syntax() {
                     panic!("{q:?} -> {expr:?}: {why}");
                 }
             }
-            Ok(Compiled::Morph(m)) => {
-                if let Compiled::Match(expr) = m.expand(&CODES)
-                    && let Err(why) = only_safe_syntax(&expr)
-                {
-                    panic!("{q:?} -> {expr:?}: {why}");
+            Ok(Compiled::PerIndex(m)) => {
+                for expr in plan_matches(&m.plan(&CODES)) {
+                    if let Err(why) = only_safe_syntax(&expr) {
+                        panic!("{q:?} -> {expr:?}: {why}");
+                    }
                 }
             }
             Ok(Compiled::Nothing) => {}
@@ -502,4 +548,225 @@ fn morphology_errors_are_positioned() {
     let e = compile_notes(&parse("love @verb").unwrap()).unwrap_err();
     assert_eq!(e.kind, QueryErrorKind::MorphInNotes);
     assert_eq!(e.span, 5..10);
+}
+
+fn plan(q: &str) -> Plan {
+    match to_fts5(q, &lexicon).unwrap_or_else(|e| panic!("{q}: {e}")) {
+        Compiled::PerIndex(q) => q.plan(&CODES),
+        Compiled::Match(s) => Plan::Match(s),
+        Compiled::Nothing => Plan::Nothing,
+    }
+}
+
+fn pattern(words: &[&str], prefix: bool) -> Pattern {
+    Pattern {
+        words: words.iter().map(|w| (*w).to_string()).collect(),
+        prefix,
+    }
+}
+
+#[test]
+fn near_and_within_words_compile_to_fts5_near() {
+    let table: &[(&str, &str)] = &[
+        ("faith NEAR/5 works", r#"text : NEAR("faith" "works", 5)"#),
+        (
+            "faith WITHIN 5 words works",
+            r#"text : NEAR("faith" "works", 5)"#,
+        ),
+        (
+            "faith WITHIN 1 word works",
+            r#"text : NEAR("faith" "works", 1)"#,
+        ),
+        (
+            r#""by faith" NEAR/3 work*"#,
+            r#"text : NEAR("by faith" "work" *, 3)"#,
+        ),
+        (
+            "(faith OR hope) NEAR/2 love",
+            r#"text : NEAR("faith" "love", 2) OR text : NEAR("hope" "love", 2)"#,
+        ),
+        // Tighter than AND and OR.
+        (
+            "grace faith NEAR/5 works",
+            r#"text : "grace" AND text : NEAR("faith" "works", 5)"#,
+        ),
+        (
+            "grace OR faith NEAR/5 works",
+            r#"text : "grace" OR text : NEAR("faith" "works", 5)"#,
+        ),
+        (
+            "faith NEAR/5 works -dead",
+            r#"text : NEAR("faith" "works", 5) NOT text : "dead""#,
+        ),
+        // Operators only in these forms; otherwise words. Dangling operators go.
+        ("NEAR works", r#"text : "near" AND text : "works""#),
+        (
+            "faith near/5 works",
+            r#"text : "faith" AND text : "near 5" AND text : "works""#,
+        ),
+        ("faith NEAR/5", r#"text : "faith""#),
+        ("NEAR/5 works", r#"text : "works""#),
+        (
+            "faith NEAR/5 OR works",
+            r#"text : "faith" OR text : "works""#,
+        ),
+        (
+            "faith WITHIN works",
+            r#"text : "faith" AND text : "within" AND text : "works""#,
+        ),
+        (
+            "faith WITHIN 2 chapters works",
+            r#"text : "faith" AND text : "within" AND text : "2" AND text : "chapters" AND text : "works""#,
+        ),
+    ];
+    for (q, want) in table {
+        assert_eq!(fts(q), *want, "query {q:?}");
+    }
+}
+
+#[test]
+fn before_is_planned_as_near_candidates_checked_for_order() {
+    assert_eq!(
+        plan("faith BEFORE/3 works"),
+        Plan::Before {
+            candidates: r#"text : NEAR("faith" "works", 3)"#.into(),
+            first: vec![pattern(&["faith"], false)],
+            second: vec![pattern(&["works"], false)],
+            words: 3,
+        }
+    );
+    assert_eq!(
+        plan(r#"grace "by faith" BEFORE/0 work*"#),
+        Plan::All {
+            all: vec![
+                Plan::Match(r#"text : "grace""#.into()),
+                Plan::Before {
+                    candidates: r#"text : NEAR("by faith" "work" *, 0)"#.into(),
+                    first: vec![pattern(&["by", "faith"], false)],
+                    second: vec![pattern(&["work"], true)],
+                    words: 0,
+                },
+            ],
+            not: vec![],
+        }
+    );
+}
+
+#[test]
+fn within_verses_is_planned_as_a_pass_over_neighbouring_documents() {
+    let within = |left: &str, right: &str, documents| Plan::Within {
+        left: Box::new(Plan::Match(left.into())),
+        right: Box::new(Plan::Match(right.into())),
+        documents,
+    };
+    let want = within(r#"text : "faith""#, r#"text : "works""#, 2);
+    assert_eq!(plan("faith WITHIN 2 verses works"), want);
+    assert_eq!(plan("faith WITHIN 2 verse works"), want);
+    assert_eq!(plan("faith WITHIN 2 paragraphs works"), want);
+    assert_eq!(plan("faith WITHIN 2 Verses works"), want);
+    // 0 is the same Verse, like 1.
+    assert_eq!(
+        plan("faith WITHIN 0 verses works"),
+        within(r#"text : "faith""#, r#"text : "works""#, 1)
+    );
+    // Any query on either side, in parentheses.
+    assert_eq!(
+        plan("(faith -dead) WITHIN 3 verses G2041"),
+        within(
+            r#"text : "faith" NOT text : "dead""#,
+            r#"strong : "g2041""#,
+            3
+        )
+    );
+    // Combined with other terms.
+    assert_eq!(
+        plan("grace (faith WITHIN 2 verses works) -law"),
+        Plan::All {
+            all: vec![
+                Plan::Match(r#"text : "grace""#.into()),
+                within(r#"text : "faith""#, r#"text : "works""#, 2),
+            ],
+            not: vec![Plan::Match(r#"text : "law""#.into())],
+        }
+    );
+    assert_eq!(
+        plan("hope OR faith WITHIN 2 verses works"),
+        Plan::Any(vec![
+            Plan::Match(r#"text : "hope""#.into()),
+            within(r#"text : "faith""#, r#"text : "works""#, 2),
+        ])
+    );
+    // A side that matches nothing makes the whole of it match nothing.
+    assert_eq!(plan("lemma:zzz WITHIN 2 verses works"), Plan::Nothing);
+}
+
+#[test]
+fn proximity_errors_are_positioned() {
+    let err = |q: &str| to_fts5(q, &NoLexicon).unwrap_err();
+    let e = err("G26 NEAR/3 love");
+    assert_eq!(e.kind, QueryErrorKind::ProximityOperand);
+    assert_eq!(e.span, 0..3);
+    let e = err("love BEFORE/3 (faith hope)");
+    assert_eq!(e.kind, QueryErrorKind::ProximityOperand);
+    let e = err("love NEAR/3 -faith");
+    assert_eq!(e.kind, QueryErrorKind::ProximityOperand);
+    assert_eq!(e.span, 12..18);
+    let e = err("-faith WITHIN 2 verses works");
+    assert_eq!(e.kind, QueryErrorKind::OnlyExcluded);
+    // Notes: NEAR works; BEFORE and WITHIN … verses do not.
+    let notes = |q: &str| compile_notes(&parse(q).unwrap());
+    assert_eq!(
+        notes("faith NEAR/2 works"),
+        Ok(Compiled::Match(r#"body : NEAR("faith" "works", 2)"#.into()))
+    );
+    for q in [
+        "faith BEFORE/2 works",
+        "grace (faith WITHIN 2 verses works)",
+    ] {
+        let e = notes(q).unwrap_err();
+        assert_eq!(e.kind, QueryErrorKind::ProximityInNotes, "{q}");
+    }
+    assert!(
+        notes("faith BEFORE/2 works")
+            .unwrap_err()
+            .to_string()
+            .contains("not Notes")
+    );
+}
+
+#[test]
+fn word_forms_match_every_word_of_the_stem_in_the_index() {
+    let forms = |q: &str| {
+        let parsed = parse(q).unwrap().with_word_forms();
+        expanded(compile(&parsed, &lexicon).unwrap())
+    };
+    let love = r#"text : "love" OR text : "loved" OR text : "lovest" OR text : "loveth" OR text : "loving""#;
+    assert_eq!(forms("love"), love);
+    assert_eq!(forms("loveth"), love);
+    assert_eq!(forms("Loving"), love);
+    // Off by default.
+    assert_eq!(fts("love"), r#"text : "love""#);
+    // Quoted words, prefixes, Strong's numbers and Lemmas are exact.
+    assert_eq!(forms(r#""love""#), r#"text : "love""#);
+    assert_eq!(forms("lov*"), r#"text : "lov" *"#);
+    assert_eq!(forms("G26"), r#"strong : "g26""#);
+    assert_eq!(forms("lemma:agape"), r#"lemma : "αγαπη""#);
+    // Inside other forms.
+    assert_eq!(
+        forms("faith works"),
+        r#"text : "faith" AND (text : "work" OR text : "works" OR text : "worketh")"#
+    );
+    assert_eq!(
+        forms("faith NEAR/3 works"),
+        r#"text : NEAR("faith" "work", 3) OR text : NEAR("faith" "works", 3) OR text : NEAR("faith" "worketh", 3)"#
+    );
+    // A word with no forms in this index matches nothing there.
+    assert_eq!(forms("grace"), "<nothing>");
+    assert_eq!(forms("grace OR love"), format!("({love})"));
+    // Notes keep the word as written.
+    let parsed = parse("loveth").unwrap().with_word_forms();
+    assert_eq!(
+        compile_notes(&parsed),
+        Ok(Compiled::Match(r#"body : "loveth""#.into()))
+    );
 }

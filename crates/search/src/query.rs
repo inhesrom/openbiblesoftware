@@ -10,6 +10,15 @@
 //! | `lemma:ἀγάπη`, `lemma:agape` | Lemma, in original script or transliteration |
 //! | `@verb aorist imperative`, `morph:genitive` | Morphology criteria that one Tagged word meets (#145) |
 //! | `strong:G26 @noun genitive`, `lemma:ἀγαπάω @verb aorist` | The same word has that Strong's number or Lemma too |
+//! | `faith NEAR/5 works`, `faith WITHIN 5 words works` | Proximity: at most 5 words between them, either order (#180) |
+//! | `faith BEFORE/3 works` | Ordered proximity: `faith` first, at most 3 words between |
+//! | `faith WITHIN 2 verses works` | Across documents: both in a run of at most 2 neighbouring Verses (paragraphs outside Bibles) |
+//!
+//! Proximity operators bind tighter than `AND` and `OR` and join two terms (or parenthesized
+//! groups): `NEAR/n` and `BEFORE/n` words and phrases in one Verse or paragraph, `WITHIN n
+//! verses` any two queries. `NEAR`, `BEFORE` and `WITHIN` are operators only in these forms;
+//! anywhere else they are words. With Word forms on ([`Query::with_word_forms`]), each bare
+//! English word also matches the other words of its stem ([`crate::stem`]).
 //!
 //! [`parse`] is lenient: unclosed quotes and parentheses are closed, stray `)` and dangling
 //! operators are ignored. Words go through the shared normalizer, so search is case- and
@@ -21,7 +30,10 @@
 //! it while they name criteria; they all hold for one morpheme part, and a Strong's number or
 //! Lemma directly before the `@` (no `AND` or parenthesis between them) is that part's too.
 //! Which codes meet them depends on the Search index, so such a query compiles to
-//! [`Compiled::Morph`], which each index fills in from its own codes ([`MorphQuery::expand`]).
+//! [`Compiled::PerIndex`], which each index fills in from its own codes ([`IndexQuery::plan`]).
+//! So do stemmed words (from each index's own words), `BEFORE/n` (checked on word positions
+//! after an FTS5 `NEAR` finds the candidates) and `WITHIN n verses` (a second pass over the
+//! neighbouring documents of each side's hits): a [`Plan`] says how one index answers them.
 
 use std::fmt;
 use std::ops::Range;
@@ -32,6 +44,7 @@ use obs_model::tokenize;
 use obs_scripture::{StrongsLanguage, StrongsNumber};
 
 use crate::morph::{MorphCriteria, MorphCriterion};
+use crate::stem::stem;
 
 /// Which indexed column a term searches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +104,30 @@ pub enum Query {
         criteria: MorphCriteria,
         span: Range<usize>,
     },
+    /// A word with Word forms on: every word whose [`stem`](crate::stem::stem) is `stem`.
+    Stem {
+        word: String,
+        stem: String,
+        span: Range<usize>,
+    },
+    /// Two words or phrases (or groups of them) in one document with at most `words` words
+    /// between them; `left` first when `ordered` (`BEFORE/n`), either order otherwise
+    /// (`NEAR/n`, `WITHIN n words`).
+    Near {
+        left: Box<Query>,
+        right: Box<Query>,
+        words: u32,
+        ordered: bool,
+        span: Range<usize>,
+    },
+    /// Two queries matched in a run of at most `documents` neighbouring documents (Verses in
+    /// a Bible, paragraphs elsewhere): `WITHIN n verses`.
+    Within {
+        left: Box<Query>,
+        right: Box<Query>,
+        documents: u32,
+        span: Range<usize>,
+    },
     And(Vec<Query>),
     Or(Vec<Query>),
     Not {
@@ -108,6 +145,9 @@ impl Query {
             | Query::Strong { span, .. }
             | Query::Lemma { span, .. }
             | Query::Morph { span, .. }
+            | Query::Stem { span, .. }
+            | Query::Near { span, .. }
+            | Query::Within { span, .. }
             | Query::Not { span, .. } => span.clone(),
             Query::And(q) | Query::Or(q) => {
                 let start = q.first().map_or(0, |q| q.span().start);
@@ -116,6 +156,60 @@ impl Query {
             }
         }
     }
+
+    /// The query with Word forms on (#180): each bare English word (not a prefix, phrase,
+    /// Strong's number or Lemma) also matches the other words of its stem, so "love" finds
+    /// "loved", "loving" and "loveth".
+    pub fn with_word_forms(self) -> Query {
+        let boxed = |q: Box<Query>| Box::new(q.with_word_forms());
+        match self {
+            Query::Word {
+                word,
+                prefix: false,
+                span,
+            } if stemmable(&word) => Query::Stem {
+                stem: stem(&word),
+                word,
+                span,
+            },
+            Query::Near {
+                left,
+                right,
+                words,
+                ordered,
+                span,
+            } => Query::Near {
+                left: boxed(left),
+                right: boxed(right),
+                words,
+                ordered,
+                span,
+            },
+            Query::Within {
+                left,
+                right,
+                documents,
+                span,
+            } => Query::Within {
+                left: boxed(left),
+                right: boxed(right),
+                documents,
+                span,
+            },
+            Query::And(all) => Query::And(all.into_iter().map(Query::with_word_forms).collect()),
+            Query::Or(all) => Query::Or(all.into_iter().map(Query::with_word_forms).collect()),
+            Query::Not { query, span } => Query::Not {
+                query: boxed(query),
+                span,
+            },
+            q => q,
+        }
+    }
+}
+
+/// Whether stemming can change a word: English words of three letters or more.
+fn stemmable(word: &str) -> bool {
+    word.len() >= 3 && word.bytes().all(|b| b.is_ascii_lowercase())
 }
 
 /// What is wrong with a query.
@@ -139,6 +233,10 @@ pub enum QueryErrorKind {
     UnknownMorph(String),
     /// Morphology criteria in a Notes search: Notes have no Tagged words.
     MorphInNotes,
+    /// A `NEAR/n` or `BEFORE/n` side that is not a word, phrase or group of them.
+    ProximityOperand,
+    /// `BEFORE/n` or `WITHIN n verses` in a Notes search.
+    ProximityInNotes,
 }
 
 impl fmt::Display for QueryErrorKind {
@@ -174,6 +272,14 @@ impl fmt::Display for QueryErrorKind {
                     "Morphology (@…) searches the Tagged words of Bibles, not Notes"
                 )
             }
+            QueryErrorKind::ProximityOperand => write!(
+                f,
+                "NEAR/n and BEFORE/n join words or phrases (use WITHIN n verses for anything else)"
+            ),
+            QueryErrorKind::ProximityInNotes => write!(
+                f,
+                "BEFORE/n and WITHIN n verses search Bibles and other Resources, not Notes (try NEAR/n)"
+            ),
         }
     }
 }
@@ -314,6 +420,45 @@ fn is_op(l: &Lex, op: &str) -> bool {
     matches!(l, Lex::Raw(r) if r == op)
 }
 
+/// A proximity operator (#180).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Proximity {
+    /// `NEAR/n`, `WITHIN n words` (unordered) or `BEFORE/n` (ordered).
+    Words { words: u32, ordered: bool },
+    /// `WITHIN n verses` or `WITHIN n paragraphs`.
+    Documents(u32),
+}
+
+impl Proximity {
+    fn join(self, left: Query, right: Query) -> Query {
+        let span = left.span().start..right.span().end;
+        let (left, right) = (Box::new(left), Box::new(right));
+        match self {
+            Proximity::Words { words, ordered } => Query::Near {
+                left,
+                right,
+                words,
+                ordered,
+                span,
+            },
+            Proximity::Documents(documents) => Query::Within {
+                left,
+                right,
+                documents,
+                span,
+            },
+        }
+    }
+}
+
+/// `n` of `NEAR/n` and `WITHIN n …`: up to four digits.
+fn count(s: &str) -> Option<u32> {
+    if s.is_empty() || s.len() > 4 || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    s.parse().ok()
+}
+
 impl Parser {
     fn peek(&self) -> Option<&Lex> {
         self.toks.get(self.pos).map(|(l, _)| l)
@@ -323,6 +468,68 @@ impl Parser {
         let t = self.toks.get(self.pos).cloned();
         self.pos += 1;
         t
+    }
+
+    /// The proximity operator at token `i`, and how many tokens it takes.
+    fn proximity_op(&self, i: usize) -> Option<(Proximity, usize)> {
+        let raw = |i: usize| match self.toks.get(i) {
+            Some((Lex::Raw(r), _)) => Some(r.as_str()),
+            _ => None,
+        };
+        let first = raw(i)?;
+        if let Some(n) = first.strip_prefix("NEAR/").and_then(count) {
+            let op = Proximity::Words {
+                words: n,
+                ordered: false,
+            };
+            return Some((op, 1));
+        }
+        if let Some(n) = first.strip_prefix("BEFORE/").and_then(count) {
+            let op = Proximity::Words {
+                words: n,
+                ordered: true,
+            };
+            return Some((op, 1));
+        }
+        if first != "WITHIN" {
+            return None;
+        }
+        let n = count(raw(i + 1)?)?;
+        let op = match raw(i + 2)?.to_lowercase().as_str() {
+            "word" | "words" => Proximity::Words {
+                words: n,
+                ordered: false,
+            },
+            "verse" | "verses" | "paragraph" | "paragraphs" => Proximity::Documents(n.max(1)),
+            _ => return None,
+        };
+        Some((op, 3))
+    }
+
+    /// Whether the token at the cursor can start a term (not `)`, `OR`, `AND` or a
+    /// proximity operator).
+    fn term_follows(&self) -> bool {
+        self.peek()
+            .is_some_and(|l| !matches!(l, Lex::Close) && !is_op(l, "OR") && !is_op(l, "AND"))
+            && self.proximity_op(self.pos).is_none()
+    }
+
+    /// proximity := unary (proximity-operator unary)*, binding tighter than AND and OR.
+    fn proximity(&mut self, depth: usize) -> Result<Option<Query>, QueryError> {
+        let mut left = self.unary(depth)?;
+        while let Some((op, len)) = self.proximity_op(self.pos) {
+            self.pos += len;
+            // A dangling operator (`faith NEAR/5`) is ignored.
+            if !self.term_follows() {
+                continue;
+            }
+            let right = self.unary(depth)?;
+            left = match (left, right) {
+                (Some(l), Some(r)) => Some(op.join(l, r)),
+                (l, r) => l.or(r),
+            };
+        }
+        Ok(left)
     }
 
     /// or := and ("OR" and)*
@@ -369,11 +576,17 @@ impl Parser {
                 adjacent = false;
                 continue;
             }
+            // A proximity operator with nothing before it (`NEAR/5 works`) is ignored.
+            if let Some((_, len)) = self.proximity_op(self.pos) {
+                self.pos += len;
+                adjacent = false;
+                continue;
+            }
             // Only a term written bare (no parenthesis, `NOT` or `-` before it) can take or
             // describe an `@`: `NOT NOT (@aorist)` cancels to `@aorist` but keeps its group.
             let bare = !matches!(l, Lex::Open | Lex::Minus) && !is_op(l, "NOT");
             let was_adjacent = std::mem::replace(&mut adjacent, false);
-            match self.unary(depth)? {
+            match self.proximity(depth)? {
                 // `a (b c)` is `a b c`.
                 Some(Query::And(inner)) => all.extend(inner),
                 Some(q) => {
@@ -409,10 +622,7 @@ impl Parser {
                 return Ok(None);
             };
             // A dangling NOT (`faith NOT`, `NOT OR`) is ignored.
-            let next_ok = self
-                .peek()
-                .is_some_and(|l| !matches!(l, Lex::Close) && !is_op(l, "OR") && !is_op(l, "AND"));
-            if !next_ok {
+            if !self.term_follows() {
                 return Ok(None);
             }
             return Ok(self.unary(depth)?.map(|q| {
@@ -444,7 +654,15 @@ impl Parser {
                 Ok(inner)
             }
             Lex::Close | Lex::Minus => Ok(None),
-            Lex::Quoted(text, prefix) => Ok(words(&text, prefix, span)),
+            // Quoted words are exact: a phrase, even of one word, is never stemmed.
+            Lex::Quoted(text, prefix) => Ok(match words(&text, prefix, span) {
+                Some(Query::Word { word, prefix, span }) => Some(Query::Phrase {
+                    words: vec![word],
+                    prefix,
+                    span,
+                }),
+                q => q,
+            }),
             Lex::Raw(raw) if raw.starts_with('@') => self.morph(&raw[1..], span),
             Lex::Raw(raw) => Ok(raw_term(&raw, span)),
             Lex::Field(name) => self.field(&name, span),
@@ -705,18 +923,26 @@ impl<F: Fn(&str) -> Vec<String>> LemmaLookup for F {
     }
 }
 
-/// Finds the Morphology codes of one Search index that meet some criteria.
-pub trait MorphVocabulary {
+/// What one Search index holds that a query is filled in from: its Morphology codes and its
+/// words.
+pub trait IndexVocabulary {
     /// The index's tokens (in its `morph` column) for the codes that meet `criteria`.
-    fn tokens(&self, criteria: &MorphCriteria) -> Vec<String>;
+    fn morph_tokens(&self, criteria: &MorphCriteria) -> Vec<String>;
+    /// The index's words (in its `text` column) whose [`stem`](crate::stem::stem) is `stem`.
+    fn words_with_stem(&self, stem: &str) -> Vec<String>;
 }
 
-/// Stands in for every index's codes, to check a query for errors before it is searched.
-struct AnyCode;
+/// Stands in for every index's codes and words, to check a query for errors before it is
+/// searched.
+struct AnyVocabulary;
 
-impl MorphVocabulary for AnyCode {
-    fn tokens(&self, _: &MorphCriteria) -> Vec<String> {
+impl IndexVocabulary for AnyVocabulary {
+    fn morph_tokens(&self, _: &MorphCriteria) -> Vec<String> {
         vec!["morph".into()]
+    }
+
+    fn words_with_stem(&self, stem: &str) -> Vec<String> {
+        vec![stem.to_string()]
     }
 }
 
@@ -725,24 +951,25 @@ impl MorphVocabulary for AnyCode {
 pub enum Compiled {
     /// An FTS5 MATCH expression.
     Match(String),
-    /// A query with Morphology criteria: each Search index makes its MATCH expression from
-    /// its own codes ([`MorphQuery::expand`]).
-    Morph(MorphQuery),
+    /// A query that each Search index fills in from its own vocabulary, or that needs more
+    /// than one MATCH: Morphology criteria, stemmed words, `BEFORE/n`, `WITHIN n verses`
+    /// ([`IndexQuery::plan`]).
+    PerIndex(IndexQuery),
     /// The query cannot match anything (e.g. an unknown transliteration); skip the search.
     Nothing,
 }
 
-/// A query with Morphology criteria, its transliterated Lemmas already looked up.
+/// A query for [`Compiled::PerIndex`], its transliterated Lemmas already looked up.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MorphQuery {
+pub struct IndexQuery {
     query: Query,
     /// Transliteration (normalized) → the Lemmas the Lexicons gave for it.
     lemmas: Vec<(String, Vec<String>)>,
 }
 
-impl MorphQuery {
-    /// The MATCH expression for one Search index, given its codes.
-    pub fn expand(&self, vocabulary: &dyn MorphVocabulary) -> Compiled {
+impl IndexQuery {
+    /// How one Search index answers the query, given its codes and words.
+    pub fn plan(&self, vocabulary: &dyn IndexVocabulary) -> Plan {
         let lookup = |translit: &str| {
             self.lemmas
                 .iter()
@@ -750,11 +977,49 @@ impl MorphQuery {
                 .map(|(_, l)| l.clone())
                 .unwrap_or_default()
         };
-        match compile_part(&self.query, &lookup, vocabulary, Target::Index) {
-            Ok(Part::Atom(s) | Part::Group(s)) => Compiled::Match(s),
-            Ok(Part::Nothing) | Err(_) => Compiled::Nothing,
-        }
+        plan_part(&self.query, &lookup, vocabulary).unwrap_or(Plan::Nothing)
     }
+}
+
+/// How one Search index answers a query: FTS5 MATCH expressions, and how their documents
+/// combine where one expression cannot say it (#180).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Plan {
+    /// The documents an FTS5 MATCH expression finds.
+    Match(String),
+    Nothing,
+    /// Documents found by every one of `all` and by none of `not`.
+    All {
+        all: Vec<Plan>,
+        not: Vec<Plan>,
+    },
+    /// Documents found by any of them.
+    Any(Vec<Plan>),
+    /// `BEFORE/n`: the documents `candidates` finds (the same words `NEAR` each other) in
+    /// which an occurrence of `first` ends at most `words` words before one of `second`
+    /// starts, in the `text` field.
+    Before {
+        candidates: String,
+        first: Vec<Pattern>,
+        second: Vec<Pattern>,
+        words: u32,
+    },
+    /// `WITHIN n verses`: the documents `left` or `right` finds that have a document the
+    /// other finds at most `documents - 1` documents away (itself included), in the same
+    /// Bible book for Verses, the same text unit for paragraphs. So a run of at most
+    /// `documents` neighbouring documents holds both.
+    Within {
+        left: Box<Plan>,
+        right: Box<Plan>,
+        documents: u32,
+    },
+}
+
+/// Words in a row in the `text` field; the last one a prefix when `prefix`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pattern {
+    pub words: Vec<String>,
+    pub prefix: bool,
 }
 
 /// A [`LemmaLookup`] that remembers what it was asked and answered.
@@ -776,13 +1041,30 @@ impl LemmaLookup for Recording<'_> {
     }
 }
 
-fn has_morph(q: &Query) -> bool {
-    match q {
-        Query::Morph { .. } => true,
-        Query::And(all) | Query::Or(all) => all.iter().any(has_morph),
-        Query::Not { query, .. } => has_morph(query),
+/// Whether any node of `q` satisfies `f`.
+fn any_node(q: &Query, f: &dyn Fn(&Query) -> bool) -> bool {
+    f(q) || match q {
+        Query::And(all) | Query::Or(all) => all.iter().any(|q| any_node(q, f)),
+        Query::Not { query, .. } => any_node(query, f),
+        Query::Near { left, right, .. } | Query::Within { left, right, .. } => {
+            any_node(left, f) || any_node(right, f)
+        }
         _ => false,
     }
+}
+
+/// Whether one MATCH expression cannot answer `q`: it has `BEFORE/n` or `WITHIN n verses`.
+fn needs_plan(q: &Query) -> bool {
+    any_node(q, &|q| {
+        matches!(q, Query::Near { ordered: true, .. } | Query::Within { .. })
+    })
+}
+
+/// Whether each index must fill `q` in ([`Compiled::PerIndex`]).
+fn needs_index(q: &Query) -> bool {
+    any_node(q, &|q| {
+        matches!(q, Query::Morph { .. } | Query::Stem { .. })
+    }) || needs_plan(q)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -882,7 +1164,7 @@ fn morph_part(
     lemma: Option<&str>,
     criteria: &MorphCriteria,
     lookup: &dyn LemmaLookup,
-    vocabulary: &dyn MorphVocabulary,
+    vocabulary: &dyn IndexVocabulary,
 ) -> Part {
     let lemmas: Vec<Vec<String>> = match lemma {
         Some(text) => {
@@ -903,7 +1185,7 @@ fn morph_part(
         }
     }
     let mut alts = Vec::new();
-    for token in vocabulary.tokens(criteria) {
+    for token in vocabulary.morph_tokens(criteria) {
         for lemma in &lemmas {
             let mut words = head.clone();
             words.push(token.clone());
@@ -921,7 +1203,7 @@ fn morph_part(
 fn compile_part(
     q: &Query,
     lookup: &dyn LemmaLookup,
-    vocabulary: &dyn MorphVocabulary,
+    vocabulary: &dyn IndexVocabulary,
     target: Target,
 ) -> Result<Part, QueryError> {
     match q {
@@ -969,6 +1251,38 @@ fn compile_part(
             lookup,
             vocabulary,
         )),
+        // A Note has no other words to stem into: the word as written.
+        Query::Stem { word, .. } if target == Target::Notes => {
+            Ok(term(target, Field::Text, std::slice::from_ref(word), false))
+        }
+        Query::Stem { stem, .. } => Ok(any_of(
+            vocabulary
+                .words_with_stem(stem)
+                .iter()
+                .filter_map(|w| term(target, Field::Text, std::slice::from_ref(w), false).wrapped())
+                .collect(),
+        )),
+        Query::Near {
+            ordered: true,
+            span,
+            ..
+        }
+        | Query::Within { span, .. }
+            if target == Target::Notes =>
+        {
+            Err(error(QueryErrorKind::ProximityInNotes, span.clone()))
+        }
+        // Unordered; for `BEFORE/n` these are the candidates [`Plan::Before`] checks.
+        Query::Near {
+            left, right, words, ..
+        } => Ok(near_part(
+            target,
+            &patterns(left, vocabulary)?,
+            &patterns(right, vocabulary)?,
+            *words,
+        )),
+        // Never one MATCH expression: [`plan_part`] answers it.
+        Query::Within { .. } => Ok(Part::Nothing),
         Query::Not { span, .. } => Err(error(QueryErrorKind::OnlyExcluded, span.clone())),
         Query::Or(alts) => {
             let mut parts = Vec::new();
@@ -1030,33 +1344,208 @@ fn compile_part(
     }
 }
 
-/// Compile a parsed query to an FTS5 MATCH expression, or (with Morphology criteria) to a
-/// [`MorphQuery`] that each index expands. Errors show either way.
+/// Alternatives joined with `OR`.
+fn any_of(alts: Vec<String>) -> Part {
+    match alts.len() {
+        0 => Part::Nothing,
+        1 => alts.into_iter().next().map_or(Part::Nothing, Part::Atom),
+        _ => Part::Group(alts.join(" OR ")),
+    }
+}
+
+/// The words or phrases one side of `NEAR/n` or `BEFORE/n` means: a word (each of its forms
+/// when stemmed), a phrase, or a group of alternatives of them.
+fn patterns(q: &Query, vocabulary: &dyn IndexVocabulary) -> Result<Vec<Pattern>, QueryError> {
+    match q {
+        Query::Word { word, prefix, .. } => Ok(vec![Pattern {
+            words: vec![word.clone()],
+            prefix: *prefix,
+        }]),
+        Query::Stem { stem, .. } => Ok(vocabulary
+            .words_with_stem(stem)
+            .into_iter()
+            .map(|w| Pattern {
+                words: vec![w],
+                prefix: false,
+            })
+            .collect()),
+        Query::Phrase { words, prefix, .. } => Ok(vec![Pattern {
+            words: words.clone(),
+            prefix: *prefix,
+        }]),
+        Query::Or(alts) => {
+            let mut out = Vec::new();
+            for a in alts {
+                out.extend(patterns(a, vocabulary)?);
+            }
+            Ok(out)
+        }
+        q => Err(error(QueryErrorKind::ProximityOperand, q.span())),
+    }
+}
+
+/// An FTS5 phrase for a [`Pattern`].
+fn fts_phrase(p: &Pattern) -> String {
+    let mut s = quote(&p.words.join(" "));
+    if p.prefix {
+        s.push_str(" *");
+    }
+    s
+}
+
+/// FTS5 `NEAR` groups: some pattern of `left` and some of `right` at most `words` words
+/// apart, in either order.
+fn near_part(target: Target, left: &[Pattern], right: &[Pattern], words: u32) -> Part {
+    let column = target.column(Field::Text);
+    let mut groups = Vec::new();
+    for l in left {
+        for r in right {
+            groups.push(format!(
+                "{column} : NEAR({} {}, {words})",
+                fts_phrase(l),
+                fts_phrase(r)
+            ));
+        }
+    }
+    any_of(groups)
+}
+
+/// How a Search index answers `q`: one MATCH expression where FTS5 can say it all, else
+/// MATCH expressions combined by a [`Plan`].
+fn plan_part(
+    q: &Query,
+    lookup: &dyn LemmaLookup,
+    vocabulary: &dyn IndexVocabulary,
+) -> Result<Plan, QueryError> {
+    let one_match = |q: &Query| -> Result<Plan, QueryError> {
+        Ok(match compile_part(q, lookup, vocabulary, Target::Index)? {
+            Part::Atom(s) | Part::Group(s) => Plan::Match(s),
+            Part::Nothing => Plan::Nothing,
+        })
+    };
+    if !needs_plan(q) {
+        return one_match(q);
+    }
+    match q {
+        Query::Near {
+            left, right, words, ..
+        } => {
+            let first = patterns(left, vocabulary)?;
+            let second = patterns(right, vocabulary)?;
+            Ok(match near_part(Target::Index, &first, &second, *words) {
+                Part::Atom(candidates) | Part::Group(candidates) => Plan::Before {
+                    candidates,
+                    first,
+                    second,
+                    words: *words,
+                },
+                Part::Nothing => Plan::Nothing,
+            })
+        }
+        Query::Within {
+            left,
+            right,
+            documents,
+            ..
+        } => {
+            let left = plan_part(left, lookup, vocabulary)?;
+            let right = plan_part(right, lookup, vocabulary)?;
+            Ok(if left == Plan::Nothing || right == Plan::Nothing {
+                Plan::Nothing
+            } else {
+                Plan::Within {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    documents: *documents,
+                }
+            })
+        }
+        Query::Or(alts) => {
+            let mut any = Vec::new();
+            for a in alts {
+                if let Query::Not { span, .. } = a {
+                    return Err(error(QueryErrorKind::ExcludedAlternative, span.clone()));
+                }
+                match plan_part(a, lookup, vocabulary)? {
+                    Plan::Nothing => {}
+                    p => any.push(p),
+                }
+            }
+            Ok(match any.len() {
+                0 => Plan::Nothing,
+                1 => any.pop().unwrap_or(Plan::Nothing),
+                _ => Plan::Any(any),
+            })
+        }
+        Query::And(all) => {
+            let mut simple = Vec::new();
+            let mut planned = Vec::new();
+            let mut not = Vec::new();
+            for a in all {
+                match a {
+                    Query::Not { query, .. } => match plan_part(query, lookup, vocabulary)? {
+                        Plan::Nothing => {}
+                        p => not.push(p),
+                    },
+                    a if needs_plan(a) => planned.push(plan_part(a, lookup, vocabulary)?),
+                    a => simple.push(a.clone()),
+                }
+            }
+            if simple.is_empty() && planned.is_empty() {
+                return Err(error(QueryErrorKind::OnlyExcluded, q.span()));
+            }
+            // The terms FTS5 can match together go first, as one expression.
+            let mut must = Vec::new();
+            match simple.len() {
+                0 => {}
+                1 => must.push(one_match(&simple[0])?),
+                _ => must.push(one_match(&Query::And(simple))?),
+            }
+            must.extend(planned);
+            if must.contains(&Plan::Nothing) {
+                return Ok(Plan::Nothing);
+            }
+            if must.len() == 1 && not.is_empty() {
+                return Ok(must.pop().unwrap_or(Plan::Nothing));
+            }
+            Ok(Plan::All { all: must, not })
+        }
+        Query::Not { span, .. } => Err(error(QueryErrorKind::OnlyExcluded, span.clone())),
+        q => one_match(q),
+    }
+}
+
+/// Compile a parsed query to an FTS5 MATCH expression, or to an [`IndexQuery`] that each
+/// index plans (Morphology criteria, stemmed words, `BEFORE/n`, `WITHIN n verses`). Errors
+/// show either way.
 pub fn compile(q: &Query, lemmas: &dyn LemmaLookup) -> Result<Compiled, QueryError> {
-    if has_morph(q) {
+    if needs_index(q) {
         let recording = Recording {
             inner: lemmas,
             seen: RefCell::new(Vec::new()),
         };
-        compile_part(q, &recording, &AnyCode, Target::Index)?;
-        return Ok(Compiled::Morph(MorphQuery {
+        plan_part(q, &recording, &AnyVocabulary)?;
+        return Ok(Compiled::PerIndex(IndexQuery {
             query: q.clone(),
             lemmas: recording.seen.into_inner(),
         }));
     }
-    Ok(match compile_part(q, lemmas, &AnyCode, Target::Index)? {
-        Part::Atom(s) | Part::Group(s) => Compiled::Match(s),
-        Part::Nothing => Compiled::Nothing,
-    })
+    Ok(
+        match compile_part(q, lemmas, &AnyVocabulary, Target::Index)? {
+            Part::Atom(s) | Part::Group(s) => Compiled::Match(s),
+            Part::Nothing => Compiled::Nothing,
+        },
+    )
 }
 
 /// Compile a parsed query for the Notes index (#16: one grammar for Bible, Library and
 /// Notes). Note bodies have one column, `body`, of normalized words: words, phrases,
 /// prefixes and boolean operators work as everywhere; a Strong's number or a Lemma matches
-/// itself written in the Note.
+/// itself written in the Note, and so does a stemmed word. `NEAR/n` works too; `BEFORE/n`
+/// and `WITHIN n verses` are an error (Notes are not Verses or paragraphs in a row).
 pub fn compile_notes(q: &Query) -> Result<Compiled, QueryError> {
     Ok(
-        match compile_part(q, &NoLexicon, &AnyCode, Target::Notes)? {
+        match compile_part(q, &NoLexicon, &AnyVocabulary, Target::Notes)? {
             Part::Atom(s) | Part::Group(s) => Compiled::Match(s),
             Part::Nothing => Compiled::Nothing,
         },
