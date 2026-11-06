@@ -421,7 +421,21 @@ fn morphology_criteria_compile_to_one_part_phrases() {
             "(love G26) @genitive",
             r#"text : "love" AND strong : "g26" AND morph : "morph3""#,
         ),
+        ("G26 (@genitive)", r#"strong : "g26" AND morph : "morph3""#),
+        (
+            "G26 ((@genitive))",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        (
+            "lemma:agape (@genitive)",
+            r#"lemma : "αγαπη" AND morph : "morph3""#,
+        ),
+        (
+            "(G26) (@genitive)",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
         ("(G26 @genitive)", r#"morph : "g26 morph3""#),
+        ("((G26 @genitive))", r#"morph : "g26 morph3""#),
         (
             "@verb @noun",
             r#"(morph : "morph1" OR morph : "morph2" OR morph : "morph4" OR morph : "morph5") AND morph : "morph3""#,

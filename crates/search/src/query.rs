@@ -376,7 +376,9 @@ impl Parser {
                 Some(Query::And(inner)) => all.extend(inner),
                 Some(q) => {
                     adjacent = !group && matches!(q, Query::Strong { .. } | Query::Lemma { .. });
-                    let q = if was_adjacent {
+                    // A parenthesis is a boundary on either side: `G25 (@aorist)` is G25
+                    // and some aorist word in the Verse.
+                    let q = if was_adjacent && !group {
                         attach_morph(&mut all, q)
                     } else {
                         Some(q)

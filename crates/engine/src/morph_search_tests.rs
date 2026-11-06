@@ -210,7 +210,7 @@ fn analysis_lists_the_imperatives_found() {
     cleanup(s, root);
 }
 
-/// The real Starter TAGNT, when this machine has it: every Verse of Romans with an aorist
+/// The real Starter TAGNT: every Verse of Romans with an aorist
 /// imperative, found by reading the codes directly (Robinson `V-` + `A` or `2A` tense +
 /// `M` mood), is what `@aorist imperative` finds, within the #19 budget. Run with
 /// `cargo test --release -p obs-engine real_starter_tagnt -- --ignored --nocapture`.
@@ -221,11 +221,15 @@ fn real_starter_tagnt_aorist_imperatives_in_romans() {
     use obs_scripture::Book;
     use obs_store::ResourceStore;
 
-    let Some(dir) = default_library_dir().filter(|d| d.join("tagnt.obr").is_file()) else {
-        eprintln!("no Starter library: skipped");
-        return;
-    };
+    // Run only on request (`--ignored`), so a missing library is a failure, not a pass.
+    let dir = default_library_dir().unwrap_or_default();
     let path = dir.join("tagnt.obr");
+    assert!(
+        path.is_file(),
+        "{} not found: put the Starter library in the app's data folder (or point \
+         $OBS_LIBRARY at it), then rerun",
+        path.display()
+    );
     // Expected, without the Morphology decoder or the index.
     let resource = obs_store::ObrReader::open(&path).unwrap().load().unwrap();
     let mut expected: Vec<(u16, u16)> = Vec::new();

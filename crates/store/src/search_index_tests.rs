@@ -253,6 +253,13 @@ fn morphology_criteria_match_inside_one_word() {
         ("G25 AND @aorist imperative", &[1, 2]),
         ("@aorist imperative AND G25", &[1, 2]),
         ("lemma:ἀγαπάω AND @aorist imperative", &[1, 2]),
+        // So does a parenthesis, however deep.
+        ("G25 (@aorist imperative)", &[1, 2]),
+        ("G25 ((@aorist imperative))", &[1, 2]),
+        ("strong:G25 (@aorist imperative)", &[1, 2]),
+        ("lemma:ἀγαπάω (@aorist imperative)", &[1, 2]),
+        ("(G25) @aorist imperative", &[1, 2]),
+        ("(G25 @aorist imperative)", &[1]),
         ("lemma:ἀγαπάω @aorist imperative", &[1]),
         ("lemma:ἀγαπάω @imperative", &[0, 1]),
         ("G25 @indicative", &[2]),
