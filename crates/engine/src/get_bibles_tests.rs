@@ -304,6 +304,7 @@ fn without_an_app_transport_nothing_reaches_the_network() {
 fn ready(name: &str, mode: JobMode) -> (Session, Arc<MockRepos>, PathBuf) {
     let (mut s, repos, root) = session(name);
     refresh(&mut s);
+    let inline = matches!(mode, JobMode::Inline);
     let mut s2 = Session::new(mode);
     s2.set_fetch(repos.clone());
     s2.get_bibles
@@ -312,6 +313,10 @@ fn ready(name: &str, mode: JobMode) -> (Session, Arc<MockRepos>, PathBuf) {
     std::fs::create_dir_all(root.join("library")).unwrap();
     s2.library.scan(&root.join("library"));
     drop(s);
+    // Checked in this Session too, as after the Tab's first refresh.
+    if inline {
+        refresh(&mut s2);
+    }
     (s2, repos, root)
 }
 
@@ -847,6 +852,668 @@ fn get_bibles_opens_the_tab_filtered_to_bibles_and_get_resources_to_all_or_a_typ
         })
         .collect();
     assert!(ids.contains(&"library.get_resources") && ids.contains(&"library.get_bibles"));
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+// ---- Updates and removing SWORD copies (#136) -------------------------------------------
+
+/// [`ready`] with a User database, so Annotations can be made and re-anchored.
+fn ready_with_user(name: &str) -> (Session, Arc<MockRepos>, PathBuf) {
+    let (mut s, repos, root) = ready(name, JobMode::Inline);
+    let (store, _) = obs_store::UserStore::open(&root.join("user.db")).unwrap();
+    s.attach_user(Box::new(store));
+    (s, repos, root)
+}
+
+fn listing_of(s: &Session, module: &str) -> ResourceListing {
+    s.get_bibles.catalog().unwrap().get(module).unwrap().clone()
+}
+
+/// The unit of Resource `id` (as in the library now) holding `quote`, and where it starts.
+fn find_text(s: &Session, id: &str, quote: &str) -> (String, usize) {
+    use obs_store::ResourceStore;
+    let reader = obs_store::ObrReader::open(&s.library.get(id).unwrap().path).unwrap();
+    for unit in reader.unit_ids().unwrap() {
+        let text = reader.unit(&unit).unwrap().unwrap().text;
+        if let Some(at) = text.find(quote) {
+            return (unit.as_str().to_string(), at);
+        }
+    }
+    panic!("{quote:?} not in {id}");
+}
+
+/// Run queued jobs (downloads, imports, re-anchoring) until nothing is left.
+fn settle(s: &mut Session) {
+    for _ in 0..20 {
+        s.jobs().pump(16);
+        let _ = s.poll_imports();
+        if !s.imports.is_running() && !s.reanchoring.is_busy() {
+            return;
+        }
+    }
+    panic!("background work did not finish");
+}
+
+fn sword_version(dir: &std::path::Path, module: &str) -> Option<String> {
+    obs_formats::SwordSource::open(dir)
+        .unwrap()
+        .modules()
+        .into_iter()
+        .find(|m| m.name == module)
+        .and_then(|m| m.version)
+}
+
+/// The GBF test Bible's John 1:1 opens with this; the update below inserts a word into it,
+/// so text after it in the unit moves.
+const JOHN_1_1: &str = "In<WG1722> the beginning";
+const JOHN_1_1_FIXED: &str = "In<WG1722> the very beginning";
+
+#[test]
+fn bumping_a_module_version_shows_update_available_and_updating_keeps_its_notes_reanchored() {
+    let (mut s, repos, root) = ready_with_user("update");
+    let id = download(&mut s, "ObsKjvGbf");
+    let other = download(&mut s, "ObsKjvOsis");
+    let gbf = listing_of(&s, "ObsKjvGbf");
+    let origin = s.imports.report(&id).unwrap().origin.clone().unwrap();
+    assert_eq!(
+        origin.version.as_deref(),
+        Some("1.0"),
+        "imported version kept"
+    );
+    assert_eq!(
+        s.listing_status(&gbf),
+        ListingStatus::Installed {
+            resource_id: id.clone()
+        }
+    );
+    assert!(s.resource_updates().up_to_date());
+    // The user ranks it first among Bibles and writes a Note on John 1:4.
+    s.run("library.move", &json!({"id": id, "to": 0})).unwrap();
+    let (unit, at) = find_text(&s, &id, "the light of men");
+    let note = s
+        .run(
+            "annotation.note",
+            &json!({"resource": id, "start_unit": unit, "start": at,
+                    "end": at + "the light of men".len(), "body": "Life is light"}),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let open_tabs = s.workspace.tabs().count();
+
+    // CrossWire publishes 1.1 with a word added before the Note's text. Nothing changes
+    // until the catalog is fetched again; then the row and the summary offer the update.
+    repos.publish(
+        "crosswire",
+        "obskjvgbf.conf",
+        "1.1",
+        Some((JOHN_1_1, JOHN_1_1_FIXED)),
+    );
+    assert!(s.resource_updates().updates.is_empty());
+    refresh(&mut s);
+    let gbf = listing_of(&s, "ObsKjvGbf");
+    assert_eq!(
+        s.listing_status(&gbf),
+        ListingStatus::UpdateAvailable {
+            resource_id: id.clone(),
+            installed: "1.0".into(),
+            available: "1.1".into(),
+        }
+    );
+    let summary = s.resource_updates();
+    assert_eq!(
+        summary.updates,
+        [ResourceUpdate {
+            resource_id: id.clone(),
+            module: "ObsKjvGbf".into(),
+            repo: "CrossWire".into(),
+            installed: "1.0".into(),
+            available: "1.1".into(),
+        }]
+    );
+    assert!(!summary.up_to_date());
+    let list = s.run("getbibles.list", &json!({"query": "gbf"})).unwrap();
+    assert_eq!(list["all"][0]["update"]["available"], "1.1");
+    assert_eq!(list["updates"]["available"][0]["id"], id.as_str());
+    // A second Download is still refused: the update is the way in.
+    assert!(
+        s.run("getbibles.download", &json!({"module": "ObsKjvGbf"}))
+            .is_err()
+    );
+
+    // One click updates it in place: no new Resource, no report Tab.
+    let out = s
+        .run("getbibles.update", &json!({"module": "ObsKjvGbf"}))
+        .unwrap();
+    assert_eq!(out["id"], id.as_str());
+    assert!(s.imports.is_update(&id));
+    // While it is downloading, the other download being current says nothing about this
+    // one: it is updating, not up to date and not offered again.
+    let summary = s.resource_updates();
+    assert_eq!(summary.updating, std::slice::from_ref(&id));
+    assert!(summary.updates.is_empty());
+    assert_eq!(summary.downloaded, 2);
+    assert!(!summary.up_to_date());
+    let list = s.run("getbibles.list", &json!({"query": "gbf"})).unwrap();
+    assert_eq!(list["updates"]["updating"][0], id.as_str());
+    assert_eq!(list["updates"]["up_to_date"], false);
+    assert!(matches!(
+        s.listing_status(&gbf),
+        ListingStatus::InProgress { .. }
+    ));
+    assert_eq!(s.workspace.tabs().count(), open_tabs);
+    s.workspace.take_effects();
+    settle(&mut s);
+    let effects = s.workspace.take_effects();
+    assert!(
+        effects.contains(&Effect::Replaced(id.clone())),
+        "{effects:?}"
+    );
+
+    // The same Resource, now its next Resource revision, in the same place.
+    let entry = s.library.get(&id).unwrap();
+    assert_eq!(entry.manifest.revision, 2);
+    assert_eq!(
+        s.library.position_in_type(&id),
+        Some(0),
+        "Preferred order kept"
+    );
+    assert_eq!(s.library.position_in_type(&other), Some(1));
+    let mut files = obr_files(&root.join("library"));
+    files.sort();
+    assert_eq!(files, [format!("{id}.obr"), format!("{other}.obr")]);
+    let (_, fixed_at) = find_text(&s, &id, "the very beginning");
+    assert!(fixed_at > 0, "the new text is in the library");
+    assert_eq!(
+        sword_version(&root.join("sword"), "ObsKjvGbf").as_deref(),
+        Some("1.1")
+    );
+    assert_eq!(
+        s.imports
+            .report(&id)
+            .unwrap()
+            .origin
+            .as_ref()
+            .unwrap()
+            .version
+            .as_deref(),
+        Some("1.1")
+    );
+    assert_eq!(
+        s.listing_status(&gbf),
+        ListingStatus::Installed {
+            resource_id: id.clone()
+        }
+    );
+    assert!(s.resource_updates().up_to_date());
+
+    // The Note is kept and re-anchored onto its words in the new text.
+    let report = s.reanchoring.report(&id).unwrap();
+    assert_eq!(report.moved, 1, "{report:?}");
+    let a = s.annotation(&note).unwrap();
+    assert!(!a.is_orphaned());
+    let range = a.anchor.unwrap().text_range().cloned().unwrap();
+    let (unit, at) = find_text(&s, &id, "the light of men");
+    assert_eq!(range.unit.as_str(), unit);
+    assert_eq!(range.start as usize, at);
+    assert_eq!(range.end as usize, at + "the light of men".len());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn update_all_updates_every_downloaded_resource_with_a_newer_version() {
+    let (mut s, repos, root) = ready("update-all", JobMode::Inline);
+    let bible = download(&mut s, "ObsKjvGbf");
+    let notes = download(&mut s, "ObsNotes");
+    let topics = download(&mut s, "ObsTopics");
+    repos.publish(
+        "crosswire",
+        "obskjvgbf.conf",
+        "1.1",
+        Some((JOHN_1_1, JOHN_1_1_FIXED)),
+    );
+    repos.publish("crosswire", "obsnotes.conf", "2.0", None);
+    refresh(&mut s);
+    let updates: Vec<String> = s
+        .resource_updates()
+        .updates
+        .into_iter()
+        .map(|u| u.resource_id)
+        .collect();
+    assert_eq!(updates, [bible.clone(), notes.clone()]);
+    let out = s.run("getbibles.update_all", &json!({})).unwrap();
+    assert_eq!(out["started"], json!([bible, notes]));
+    settle(&mut s);
+    assert!(s.resource_updates().up_to_date());
+    assert_eq!(s.library.get(&bible).unwrap().manifest.revision, 2);
+    assert_eq!(s.library.get(&notes).unwrap().manifest.revision, 2);
+    assert_eq!(s.library.get(&topics).unwrap().manifest.revision, 1);
+    // Nothing left to update.
+    let out = s.run("getbibles.update_all", &json!({})).unwrap();
+    assert_eq!(out["started"], json!([]));
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_failed_update_keeps_the_revision_in_the_library() {
+    let (mut s, repos, root) = ready("update-fails", JobMode::Inline);
+    let id = download(&mut s, "ObsKjvGbf");
+    let before = s.library.get(&id).unwrap().manifest.clone();
+    repos.publish(
+        "crosswire",
+        "obskjvgbf.conf",
+        "1.1",
+        Some((JOHN_1_1, JOHN_1_1_FIXED)),
+    );
+    refresh(&mut s);
+    repos.set_offline(true);
+    s.run("getbibles.update", &json!({"module": "ObsKjvGbf"}))
+        .unwrap();
+    s.workspace.take_effects();
+    settle(&mut s);
+    let effects = s.workspace.take_effects();
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::Message(m) if m.starts_with("Could not update "))),
+        "{effects:?}"
+    );
+    assert_eq!(s.library.get(&id).unwrap().manifest, before);
+    assert_eq!(obr_files(&root.join("library")), [format!("{id}.obr")]);
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Complete);
+    assert!(matches!(
+        s.listing_status(&listing_of(&s, "ObsKjvGbf")),
+        ListingStatus::UpdateAvailable { .. }
+    ));
+    // Back online, the update goes through.
+    repos.set_offline(false);
+    s.run("getbibles.update", &json!({"module": "ObsKjvGbf"}))
+        .unwrap();
+    settle(&mut s);
+    assert_eq!(s.library.get(&id).unwrap().manifest.revision, 2);
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// The Import indexer, then the staged revision goes missing: the commit after the Index
+/// phase fails.
+#[derive(Debug)]
+struct StagedFileLost(CacheIndexer);
+
+impl ImportIndexer for StagedFileLost {
+    fn build(
+        &self,
+        resource: &obs_model::Resource,
+        path: &std::path::Path,
+        ctx: &JobContext,
+    ) -> Result<ImportIndexStatus, String> {
+        let built = self.0.build(resource, path, ctx);
+        let mut staged = path.as_os_str().to_owned();
+        staged.push(".update");
+        std::fs::remove_file(staged).unwrap();
+        built
+    }
+}
+
+#[test]
+fn an_update_failing_after_its_index_phase_keeps_the_old_revision_searchable() {
+    let (mut s, repos, root) = ready("update-commit-fails", JobMode::Inline);
+    let cache_dir = root.join("search");
+    s.set_search_cache_dir(cache_dir.clone());
+    let id = download(&mut s, "ObsKjvGbf");
+    settle(&mut s);
+    let caches = || -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(&cache_dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with(&id))
+            .collect();
+        names.sort();
+        names
+    };
+    let before = caches();
+    assert_eq!(before.len(), 1, "{before:?}");
+    assert_eq!(s.search.status(&id), Some(&IndexStatus::Ready));
+
+    repos.publish(
+        "crosswire",
+        "obskjvgbf.conf",
+        "1.1",
+        Some((JOHN_1_1, JOHN_1_1_FIXED)),
+    );
+    refresh(&mut s);
+    let indexer = CacheIndexer {
+        dir: cache_dir.clone(),
+        version: INDEX_VERSION,
+    };
+    s.imports
+        .set_indexer(Arc::new(StagedFileLost(indexer.clone())));
+    s.run("getbibles.update", &json!({"module": "ObsKjvGbf"}))
+        .unwrap();
+    s.workspace.take_effects();
+    settle(&mut s);
+    assert!(
+        s.workspace
+            .take_effects()
+            .iter()
+            .any(|e| matches!(e, Effect::Message(m) if m.starts_with("Could not update "))),
+    );
+    assert_eq!(s.library.get(&id).unwrap().manifest.revision, 1);
+    // The old revision's cache was not removed with the update: it still searches, with no
+    // rebuild.
+    assert!(caches().contains(&before[0]), "{:?}", caches());
+    let hits = s
+        .search(&SearchRequest {
+            query: "beginning".into(),
+            resources: vec![id.clone()],
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(
+        hits.indexing.is_empty() && hits.stale.is_empty(),
+        "{hits:?}"
+    );
+    assert!(hits.total() > 0);
+    assert_eq!(s.search.status(&id), Some(&IndexStatus::Ready));
+
+    // Once an update is in, only the new revision's cache is left.
+    s.imports.set_indexer(Arc::new(indexer));
+    s.run("getbibles.update", &json!({"module": "ObsKjvGbf"}))
+        .unwrap();
+    settle(&mut s);
+    assert_eq!(s.library.get(&id).unwrap().manifest.revision, 2);
+    let after = caches();
+    assert_eq!(after.len(), 1, "{after:?}");
+    assert_ne!(after, before);
+    assert_eq!(s.search.status(&id), Some(&IndexStatus::Ready));
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn an_update_replaces_the_resource_file_the_library_read_whatever_it_is_named() {
+    let (mut s, repos, root) = ready("update-renamed", JobMode::Inline);
+    let library = root.join("library");
+    let id = download(&mut s, "ObsKjvGbf");
+    // The user renames the file; another Resource now sits under the downloaded one's
+    // id-named file. The library ties neither file name to an id.
+    std::fs::rename(library.join(format!("{id}.obr")), library.join("zzz.obr")).unwrap();
+    let mut unrelated = obs_store::sample_resource();
+    unrelated.manifest.resource_id = "unrelated".into();
+    obs_store::write_obr(&unrelated, &library.join(format!("{id}.obr"))).unwrap();
+    assert!(s.library.scan(&library).is_empty());
+    assert_eq!(s.library.get(&id).unwrap().path, library.join("zzz.obr"));
+
+    repos.publish(
+        "crosswire",
+        "obskjvgbf.conf",
+        "1.1",
+        Some((JOHN_1_1, JOHN_1_1_FIXED)),
+    );
+    refresh(&mut s);
+    s.run("getbibles.update", &json!({"module": "ObsKjvGbf"}))
+        .unwrap();
+    settle(&mut s);
+    let entry = s.library.get(&id).unwrap();
+    assert_eq!(entry.manifest.revision, 2);
+    assert_eq!(
+        entry.path,
+        library.join("zzz.obr"),
+        "the same file, updated"
+    );
+    let mut files = obr_files(&library);
+    files.sort();
+    assert_eq!(files, [format!("{id}.obr"), "zzz.obr".to_string()]);
+    assert_eq!(
+        s.library.get("unrelated").unwrap().manifest,
+        unrelated.manifest,
+        "the other Resource is untouched"
+    );
+
+    // After a restart the library still has the new revision, not the one before it.
+    let mut restarted = Library::default();
+    assert!(restarted.scan(&library).is_empty());
+    assert_eq!(restarted.get(&id).unwrap().manifest.revision, 2);
+    assert_eq!(restarted.get("unrelated").unwrap().manifest.revision, 1);
+    assert_eq!(
+        s.listing_status(&listing_of(&s, "ObsKjvGbf")),
+        ListingStatus::Installed {
+            resource_id: id.clone()
+        }
+    );
+
+    // Remove deletes that file and leaves the other Resource's.
+    s.run("library.remove", &json!({"id": id, "confirm": true}))
+        .unwrap();
+    settle(&mut s);
+    assert_eq!(obr_files(&library), [format!("{id}.obr")]);
+    let mut restarted = Library::default();
+    assert!(restarted.scan(&library).is_empty());
+    assert!(restarted.get(&id).is_none());
+    assert!(restarted.get("unrelated").is_some());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn after_a_restart_offline_the_saved_catalog_makes_no_up_to_date_claim() {
+    let (mut s, repos, root) = ready_with_user("update-restart");
+    let id = download(&mut s, "ObsKjvGbf");
+    refresh(&mut s);
+    assert!(s.resource_updates().up_to_date());
+    drop(s);
+
+    // Next app start, soon after and with no network. The saved catalog is fresh, so no
+    // refresh runs, and it still shows no update (CrossWire has one it cannot see): the Tab
+    // must say when updates were last checked, not that the downloads are up to date.
+    repos.publish("crosswire", "obskjvgbf.conf", "1.1", None);
+    repos.set_offline(true);
+    let mut s = Session::new(JobMode::Inline);
+    s.set_fetch(repos.clone());
+    s.get_bibles
+        .set_cache_path(root.join("cache/sword-catalog.json"));
+    s.get_bibles.set_sword_dir(root.join("sword"));
+    s.library.scan(&root.join("library"));
+    let (store, _) = obs_store::UserStore::open(&root.join("user.db")).unwrap();
+    s.attach_user(Box::new(store));
+    let at = s.get_bibles.catalog().unwrap().fetched_at;
+    assert!(
+        !s.get_bibles.needs_refresh(at + 60),
+        "fresh cache: nothing fetched"
+    );
+    let summary = s.resource_updates();
+    assert_eq!(summary.downloaded, 1, "the download is restored");
+    assert_eq!(summary.check, UpdateCheck::Saved { at });
+    assert!(summary.updates.is_empty() && summary.unchecked.is_empty());
+    assert!(!summary.up_to_date());
+    let list = s.run("getbibles.list", &json!({})).unwrap();
+    assert_eq!(list["updates"]["up_to_date"], false);
+    assert!(list["updates"]["checked_at"].is_null());
+
+    // Back online, a refresh in this Session checks them and finds the update.
+    repos.set_offline(false);
+    refresh(&mut s);
+    let summary = s.resource_updates();
+    assert!(matches!(summary.check, UpdateCheck::Checked { .. }));
+    assert_eq!(summary.updates.len(), 1);
+    assert_eq!(summary.updates[0].resource_id, id);
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn offline_the_tab_makes_no_up_to_date_claim() {
+    let (mut s, repos, root) = ready("update-offline", JobMode::Inline);
+    // Nothing downloaded: nothing to claim.
+    assert!(!s.resource_updates().up_to_date());
+    let id = download(&mut s, "ObsKjvGbf");
+    let checked = s.resource_updates();
+    assert!(matches!(checked.check, UpdateCheck::Checked { .. }));
+    assert!(checked.up_to_date());
+
+    // Offline: a refresh fails, and the Tab can no longer say "up to date", even though
+    // the saved catalog shows no update (CrossWire has one it cannot see).
+    repos.publish("crosswire", "obskjvgbf.conf", "1.1", None);
+    repos.set_offline(true);
+    refresh(&mut s);
+    let summary = s.resource_updates();
+    assert!(matches!(summary.check, UpdateCheck::Offline(_)));
+    assert!(summary.updates.is_empty());
+    assert!(!summary.up_to_date());
+    let list = s.run("getbibles.list", &json!({})).unwrap();
+    assert_eq!(list["updates"]["up_to_date"], false);
+    assert!(list["updates"]["checked_at"].is_null());
+
+    // While a check runs, nothing is claimed either.
+    repos.set_offline(false);
+    s.refresh_resource_catalog();
+    assert_eq!(s.resource_updates().check, UpdateCheck::Checking);
+    assert!(!s.resource_updates().up_to_date());
+    s.jobs().pump(1);
+    s.poll_imports();
+    assert_eq!(s.resource_updates().updates.len(), 1);
+
+    // A repository that does not answer leaves its Resources unchecked: no claim for them.
+    std::fs::rename(root.join("repos/crosswire"), root.join("repos/gone")).unwrap();
+    refresh(&mut s);
+    let summary = s.resource_updates();
+    assert!(matches!(summary.check, UpdateCheck::Checked { .. }));
+    assert_eq!(summary.unchecked, [id]);
+    assert!(!summary.up_to_date());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_download_from_before_updates_gets_its_version_from_its_sword_copy() {
+    let (mut s, repos, root) = ready("update-legacy", JobMode::Inline);
+    let id = download(&mut s, "ObsKjvGbf");
+    // As saved by v0.1: no version on the origin.
+    s.imports
+        .reports
+        .get_mut(&id)
+        .unwrap()
+        .origin
+        .as_mut()
+        .unwrap()
+        .version = None;
+    assert_eq!(s.resource_updates().unchecked, std::slice::from_ref(&id));
+    repos.publish("crosswire", "obskjvgbf.conf", "1.1", None);
+    refresh(&mut s);
+    assert_eq!(
+        s.imports
+            .report(&id)
+            .unwrap()
+            .origin
+            .as_ref()
+            .unwrap()
+            .version
+            .as_deref(),
+        Some("1.0")
+    );
+    assert_eq!(s.resource_updates().updates.len(), 1);
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn removing_a_resource_while_it_is_updating_is_refused_and_deletes_nothing() {
+    let (mut s, repos, root) = ready("remove-updating", JobMode::Inline);
+    let id = download(&mut s, "ObsKjvGbf");
+    repos.publish(
+        "crosswire",
+        "obskjvgbf.conf",
+        "1.1",
+        Some((JOHN_1_1, JOHN_1_1_FIXED)),
+    );
+    refresh(&mut s);
+    s.run("getbibles.update", &json!({"module": "ObsKjvGbf"}))
+        .unwrap();
+    assert!(s.imports.job_of(&id).is_some(), "the update is queued");
+    // Neither the question nor the confirmed Remove go through while it runs.
+    for confirm in [false, true] {
+        let err = s
+            .run("library.remove", &json!({"id": id, "confirm": confirm}))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("is being updated"), "{err}");
+    }
+    assert!(s.library.get(&id).is_some());
+    assert!(
+        !s.workspace
+            .take_effects()
+            .iter()
+            .any(|e| matches!(e, Effect::ConfirmRemove { .. } | Effect::Removed(_)))
+    );
+    settle(&mut s);
+    assert!(!s.imports.is_running(), "no Import left tracked");
+    assert_eq!(s.library.get(&id).unwrap().manifest.revision, 2);
+    // Once the update is in, Remove deletes the new revision and its SWORD copy for good.
+    s.run("library.remove", &json!({"id": id, "confirm": true}))
+        .unwrap();
+    settle(&mut s);
+    assert!(obr_files(&root.join("library")).is_empty());
+    assert!(sword_modules(&root.join("sword")).is_empty());
+    s.library.scan(&root.join("library"));
+    assert!(s.library.get(&id).is_none());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn removing_a_downloaded_resource_frees_its_sword_folder_and_search_index() {
+    let (mut s, _repos, root) = ready("remove", JobMode::Inline);
+    s.set_search_cache_dir(root.join("search"));
+    let fetch = |s: &mut Session, module: &str| {
+        let out = s
+            .run("getbibles.download", &json!({"module": module}))
+            .unwrap();
+        settle(s);
+        out["id"].as_str().unwrap().to_string()
+    };
+    let id = fetch(&mut s, "ObsKjvGbf");
+    let kept = fetch(&mut s, "ObsKjvOsis");
+    let data = root.join("sword/modules/texts/rawtext/obskjvgbf");
+    assert!(data.is_dir());
+    let caches = |id: &str| -> usize {
+        std::fs::read_dir(root.join("search"))
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with(id))
+            .count()
+    };
+    assert!(caches(&id) > 0, "the Import built its Search index");
+
+    // Remove asks first, and says the SWORD copy goes too.
+    let ask = s.run("library.remove", &json!({"id": id})).unwrap();
+    let message = ask["confirm"].as_str().unwrap();
+    assert!(
+        message.contains("So is the SWORD module ObsKjvGbf"),
+        "{message}"
+    );
+    assert!(data.is_dir(), "nothing deleted before the user confirms");
+    let out = s
+        .run("library.remove", &json!({"id": id, "confirm": true}))
+        .unwrap();
+    assert_eq!(out["deleted_sword_module"], "ObsKjvGbf");
+    assert!(!data.exists());
+    assert_eq!(sword_modules(&root.join("sword")), ["ObsKjvOsis"]);
+    assert_eq!(obr_files(&root.join("library")), [format!("{kept}.obr")]);
+    assert_eq!(caches(&id), 0);
+    assert!(caches(&kept) > 0);
+    // The row offers Download again, and a new download works.
+    assert_eq!(
+        s.listing_status(&listing_of(&s, "ObsKjvGbf")),
+        ListingStatus::Available
+    );
+    assert_eq!(fetch(&mut s, "ObsKjvGbf"), id);
+    assert!(data.is_dir());
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }

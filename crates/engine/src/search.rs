@@ -217,7 +217,8 @@ pub(crate) fn remove_prebuilt_search_indexes(obr: &Path, resource_id: &str) {
 
 /// The Import indexer (#47's seam): builds the new Resource's cache in the cache directory
 /// during the Import's Index phase, with real progress, and stops when the Import is
-/// cancelled.
+/// cancelled. Older caches of the Resource stay until the Import is in the library
+/// ([`Session::remove_older_search_indexes`]), so a failed update still searches.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone)]
 pub struct CacheIndexer {
@@ -233,7 +234,12 @@ impl crate::ImportIndexer for CacheIndexer {
         _: &Path,
         ctx: &crate::JobContext,
     ) -> Result<crate::ImportIndexStatus, String> {
-        build_cache(resource, self.version, &self.dir, ctx).map(|_| crate::ImportIndexStatus::Built)
+        obs_store::write_search_index(resource, self.version, &self.dir, &mut |done, total| {
+            ctx.progress(done, total);
+            !ctx.is_cancelled()
+        })
+        .map(|_| crate::ImportIndexStatus::Built)
+        .map_err(|e| e.to_string())
     }
 }
 
@@ -388,6 +394,18 @@ impl Session {
         }
         self.search.set_indexing(resource_id);
         self.start_next_index_build();
+    }
+
+    /// Delete a Resource's caches in the cache directory other than the one for its revision
+    /// in the library: once an Import is in, the caches of the revision before it.
+    pub(crate) fn remove_older_search_indexes(&self, resource_id: &str) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let (Some(dir), Some(entry)) = (&self.search.cache_dir, self.library.get(resource_id)) {
+            let keep = obs_store::IndexKey::new(&entry.manifest, self.search.version).file_name();
+            obs_store::remove_search_indexes(dir, resource_id, Some(&keep));
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = resource_id;
     }
 
     /// Stop tracking a Resource's index and delete its caches from the cache directory

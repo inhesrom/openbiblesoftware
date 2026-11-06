@@ -81,12 +81,21 @@ pub struct ImportRecord {
 pub struct RepoOrigin {
     pub repo: String,
     pub module: String,
+    /// The module's conf `Version` when it was imported (empty when the conf has none), so
+    /// Get Resources can tell when its repository offers a newer one (#136). `None` for a
+    /// download made before #136 until its SWORD copy is read
+    /// ([`Session::fill_installed_versions`]).
+    #[serde(default)]
+    pub version: Option<String>,
 }
 
 #[derive(Debug)]
 pub struct Imports {
     pub(crate) reports: BTreeMap<String, ImportRecord>,
     active: BTreeMap<JobId, String>,
+    /// Resources being replaced by a new Resource revision (an update, #136), with the
+    /// record of the revision in the library: put back if the update fails.
+    replacing: BTreeMap<String, ImportRecord>,
     indexer: Arc<dyn ImportIndexer>,
 }
 
@@ -95,6 +104,7 @@ impl Default for Imports {
         Self {
             reports: BTreeMap::new(),
             active: BTreeMap::new(),
+            replacing: BTreeMap::new(),
             indexer: Arc::new(DeferredIndexer),
         }
     }
@@ -120,6 +130,14 @@ impl Imports {
             .iter()
             .find_map(|(job, r)| (r == id).then_some(*job))
     }
+    /// Whether the running Import of `id` is an update to a new Resource revision.
+    pub fn is_update(&self, id: &str) -> bool {
+        self.replacing.contains_key(id)
+    }
+    /// The record of the revision in the library that the running update of `id` replaces.
+    pub(crate) fn replaced(&self, id: &str) -> Option<&ImportRecord> {
+        self.replacing.get(id)
+    }
 }
 
 fn pref(id: &str) -> String {
@@ -139,6 +157,23 @@ impl Session {
                 && record.resource_id == *id
             {
                 self.imports.reports.insert(id.clone(), record);
+            }
+        }
+        self.fill_installed_versions();
+    }
+
+    /// Save the latest Import record of `id` in the User database.
+    pub(crate) fn save_import_record(&mut self, id: &str) {
+        if let Some(user) = &self.user
+            && let Some(record) = self.imports.reports.get(id)
+        {
+            let result = serde_json::to_string(record)
+                .map_err(|e| e.to_string())
+                .and_then(|json| user.set_preference(&pref(id), &json));
+            if let Err(e) = result {
+                self.workspace.push_effect(Effect::Message(format!(
+                    "Could not save the Import report: {e}"
+                )));
             }
         }
     }
@@ -188,8 +223,14 @@ impl Session {
                         record.phase = ImportPhase::Complete;
                         record.report = Some(out.report);
                         record.index = out.index;
+                        if let Some(origin) = record.origin.as_mut() {
+                            origin.version = out.version;
+                        }
                         let replaced = self.library.get(&id).is_some();
                         self.library.add(out.entry);
+                        self.remove_older_search_indexes(&id);
+                        // An update is in: nothing to put back.
+                        self.imports.replacing.remove(&id);
                         if replaced {
                             self.workspace.push_effect(Effect::Replaced(id.clone()));
                         }
@@ -199,18 +240,7 @@ impl Session {
                                 "Could not save the Preferred order: {e}"
                             )));
                         }
-                        if let Some(user) = &self.user
-                            && let Some(record) = self.imports.reports.get(&id)
-                        {
-                            let result = serde_json::to_string(record)
-                                .map_err(|e| e.to_string())
-                                .and_then(|json| user.set_preference(&pref(&id), &json));
-                            if let Err(e) = result {
-                                self.workspace.push_effect(Effect::Message(format!(
-                                    "Could not save the Import report: {e}"
-                                )));
-                            }
-                        }
+                        self.save_import_record(&id);
                     }
                 }
                 JobEventKind::Failed(error) => {
@@ -222,6 +252,17 @@ impl Session {
                     record.error = Some("Import cancelled".into());
                 }
                 _ => {}
+            }
+            // A failed update leaves the revision in the library as it was.
+            if terminal
+                && let Some(before) = self.imports.replacing.remove(&id)
+                && let Some(failed) = self.imports.reports.insert(id.clone(), before)
+                && failed.phase == ImportPhase::Failed
+            {
+                let name = self.library.abbreviation_of(&id).unwrap_or(&id).to_string();
+                let why = failed.error.unwrap_or_default();
+                self.workspace
+                    .push_effect(Effect::Message(format!("Could not update {name}: {why}")));
             }
             if terminal {
                 self.imports.active.remove(&event.id);
@@ -241,6 +282,8 @@ struct Imported {
     entry: LibraryEntry,
     report: ImportReport,
     index: ImportIndexStatus,
+    /// A downloaded module's conf `Version` (empty when it has none).
+    version: Option<String>,
 }
 
 const SOURCE: ParamSpec = ParamSpec {
@@ -458,12 +501,80 @@ impl Session {
             }
             n += 1;
         };
+        let job = self.submit_import(source, &dir, &id, None);
+        let tab = self.workspace.open(
+            TabKind::ImportReport(id.clone()),
+            "Import report".into(),
+            OpenRequest::default(),
+        );
+        Ok((id, tab.0, job))
+    }
+
+    /// Download a newer version of the module a Resource was downloaded from and import it
+    /// as the next Resource revision of that Resource (#136): same id, the same `.obr` file
+    /// (whatever it is named; the library does not tie file names to ids) and place in the
+    /// Preferred order, and its Annotations are re-anchored once it is in. The row on Get
+    /// Resources shows the progress; no Import report Tab opens. If it fails, the revision
+    /// in the library stays as it was.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn start_update(
+        &mut self,
+        resource_id: &str,
+        repo: crate::get_bibles::RepoRef,
+        sword_dir: std::path::PathBuf,
+    ) -> Result<JobId, String> {
+        let entry = self
+            .library
+            .get(resource_id)
+            .ok_or_else(|| format!("{resource_id} is not in the library"))?;
+        let path = entry.path.clone();
+        let dir = path
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or("No library directory")?;
+        let revision = Revision {
+            number: entry.manifest.revision.saturating_add(1),
+            path,
+        };
+        let record = self
+            .imports
+            .report(resource_id)
+            .cloned()
+            .ok_or_else(|| format!("{resource_id} was not downloaded"))?;
+        let module = record
+            .origin
+            .as_ref()
+            .map(|o| o.module.clone())
+            .ok_or_else(|| format!("{resource_id} was not downloaded"))?;
+        let source = ImportSource::Repository {
+            repo,
+            module,
+            sword_dir,
+        };
+        self.imports
+            .replacing
+            .insert(resource_id.to_string(), record);
+        Ok(self.submit_import(source, &dir, resource_id, Some(revision)))
+    }
+
+    /// Record a running Import of `source` as Resource `id` and queue its job. `revision`:
+    /// write it as that Resource revision of `id`, replacing its `.obr` in the library.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn submit_import(
+        &mut self,
+        source: ImportSource,
+        dir: &Path,
+        id: &str,
+        revision: Option<Revision>,
+    ) -> JobId {
+        let id = id.to_string();
         let (phase, origin) = match &source {
             ImportSource::Repository { repo, module, .. } => (
                 ImportPhase::Download,
                 Some(RepoOrigin {
                     repo: repo.name.clone(),
                     module: module.clone(),
+                    version: None,
                 }),
             ),
             _ => (ImportPhase::Parse, None),
@@ -482,18 +593,37 @@ impl Session {
         let indexer = Arc::clone(&self.imports.indexer);
         let fetch = self.fetch();
         let worker_id = id.clone();
+        let dir = dir.to_path_buf();
         let job = self.jobs().submit_fn("Import", move |ctx| {
-            import_source(&source, &dir, &worker_id, indexer.as_ref(), fetch, ctx)
+            let to = Target {
+                dir: &dir,
+                id: &worker_id,
+                revision,
+            };
+            import_source(&source, &to, indexer.as_ref(), fetch, ctx)
         });
         self.imports.active.insert(job, id.clone());
-        self.imports.reports.insert(id.clone(), record);
-        let tab = self.workspace.open(
-            TabKind::ImportReport(id.clone()),
-            "Import report".into(),
-            OpenRequest::default(),
-        );
-        Ok((id, tab.0, job))
+        self.imports.reports.insert(id, record);
+        job
     }
+}
+
+/// Where an Import writes: Resource `id` in library folder `dir`, as a new Resource, or
+/// (`revision`) as that Resource revision of the Resource already there.
+#[cfg(not(target_arch = "wasm32"))]
+struct Target<'a> {
+    dir: &'a Path,
+    id: &'a str,
+    revision: Option<Revision>,
+}
+
+/// A Resource revision replacing the `.obr` file at `path`: the file the library read the
+/// Resource from, which need not be named after its id.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone)]
+struct Revision {
+    number: u32,
+    path: std::path::PathBuf,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -642,15 +772,16 @@ fn download(
 #[cfg(not(target_arch = "wasm32"))]
 fn import_source(
     source: &ImportSource,
-    dir: &Path,
-    id: &str,
+    to: &Target<'_>,
     indexer: &dyn ImportIndexer,
     fetch: Arc<dyn obs_formats::sword_repo::Fetch>,
     ctx: &JobContext,
 ) -> Result<Imported, String> {
+    let (dir, id) = (to.dir, to.id);
     let mut made = Made::default();
+    let mut version = None;
     let run = || -> Result<Imported, Box<dyn std::error::Error>> {
-        let (resource, report) = match source {
+        let (mut resource, report) = match source {
             ImportSource::Usfm(path) => {
                 ctx.phase("Parse");
                 parse_usfm(path, id, ctx)?
@@ -681,6 +812,14 @@ fn import_source(
                     return Err(cancelled());
                 }
                 ctx.phase("Parse");
+                version = obs_formats::SwordSource::open(sword_dir)
+                    .ok()
+                    .and_then(|s| {
+                        s.modules()
+                            .into_iter()
+                            .find(|m| m.name.eq_ignore_ascii_case(module))
+                    })
+                    .map(|m| m.version.unwrap_or_default());
                 parse_sword(sword_dir, Some(module), id)?
             }
         };
@@ -688,21 +827,37 @@ fn import_source(
             return Err(cancelled());
         }
         std::fs::create_dir_all(dir)?;
-        let out = dir.join(format!("{id}.obr"));
-        // Reserve filename, including files not scanned (or written by another app instance).
-        let reservation = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&out)?;
-        drop(reservation);
-        made.obr = Some(out.clone());
-        obs_store::write_obr(&resource, &out)?;
+        // A new Resource revision is written beside the file in the library (a name the
+        // library scan skips) and replaces that exact file in one rename once indexed, so the
+        // revision before it stays whole if the update fails or is cancelled.
+        let (out, written) = if let Some(revision) = &to.revision {
+            resource.manifest.revision = revision.number;
+            let mut staged = revision.path.clone().into_os_string();
+            staged.push(".update");
+            (revision.path.clone(), std::path::PathBuf::from(staged))
+        } else {
+            let out = dir.join(format!("{id}.obr"));
+            // Reserve filename, including files not scanned (or written by another app
+            // instance).
+            let reservation = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&out)?;
+            drop(reservation);
+            (out.clone(), out)
+        };
+        made.obr = Some(written.clone());
+        obs_store::write_obr(&resource, &written)?;
         ctx.phase("Index");
         let index = indexer
             .build(&resource, &out, ctx)
             .unwrap_or_else(ImportIndexStatus::Failed);
         if ctx.is_cancelled() {
             return Err(cancelled());
+        }
+        if written != out {
+            std::fs::rename(&written, &out)?;
+            made.obr = None;
         }
         Ok(Imported {
             entry: LibraryEntry {
@@ -711,6 +866,7 @@ fn import_source(
             },
             report,
             index,
+            version: version.take(),
         })
     };
     match run() {

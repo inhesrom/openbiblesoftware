@@ -14,7 +14,7 @@ use sword_modules::install::{DefaultTransport, DirEntry, Transport};
 pub use sword_modules::ModuleKind;
 pub use sword_modules::install::{
     Catalog, Installer, MASTER_REPO_LIST_URL, ModuleStatus, Protocol, RemoteModule, Repository,
-    Source, parse_master_repo_list, uninstall,
+    Source, compare_versions, parse_master_repo_list, uninstall,
 };
 
 /// Why a fetch failed.

@@ -59,6 +59,8 @@ pub struct SwordModuleInfo {
     pub description: Option<String>,
     /// `None` for kinds v0.1 does not import (general books, devotionals).
     pub resource_type: Option<ResourceType>,
+    /// The conf's `Version`, as published.
+    pub version: Option<String>,
 }
 
 impl SwordSource {
@@ -107,6 +109,7 @@ impl SwordSource {
                 name: c.name().to_string(),
                 description: c.description().map(str::to_string),
                 resource_type: resource_type(c).ok(),
+                version: c.version().map(str::to_string),
             })
             .collect()
     }

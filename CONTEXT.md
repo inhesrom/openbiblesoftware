@@ -133,6 +133,14 @@ _Avoid_: Install, Download
 The Tab that lists the Bibles, Lexicons, Commentaries and Dictionaries offered by online SWORD repositories, Featured ones first, each one click from download and Import. "Get Bibles" is the same Tab filtered to Bibles.
 _Avoid_: Store, Shop, Module manager, Install (for the whole flow)
 
+**Update available**:
+What Get Resources shows on a downloaded Resource when its SWORD repository now offers a newer `Version` of the module it was downloaded as; the Library menu counts them. Update (one Resource) or Update all downloads it and imports it as the Resource's next Resource revision. Updates are checked when the catalog is fetched, and nothing is downloaded until the user clicks. When the repositories cannot be reached, or only a catalog saved by an earlier run of the app is known, the Tab says updates could not be checked or when they last were, never that the Resources are up to date. Starter library Resources are updated with the Starter library, not here.
+_Avoid_: Upgrade, New version (as the name of the offer)
+
+**SWORD copy**:
+The SWORD module files a downloaded Resource was imported from, kept in the app's own SWORD folder. Updating a Resource replaces its SWORD copy; removing the Resource deletes it.
+_Avoid_: Module cache, Download folder
+
 **Import report**:
 The summary shown after an Import: what was brought in, which markup was dropped, how many Unmapped and Absent verses the Bible has, and any licence information that was missing.
 _Avoid_: Import log, Conversion warnings
@@ -146,7 +154,7 @@ What a search runs over: a Passage list and a set of Resources (or Notebooks for
 _Avoid_: Filter, Range (for the scope)
 
 **Resource revision**:
-A corrected release of the same Resource, such as a typo fix in a Bible. It replaces the earlier revision and keeps the Resource's identity, so its Preferred order and Annotations carry over. A different edition is a different Resource, not a revision.
+A corrected release of the same Resource, such as a typo fix in a Bible. It replaces the earlier revision and keeps the Resource's identity, so its Preferred order and Annotations carry over. A downloaded Resource gets one through Update available. A different edition is a different Resource, not a revision.
 _Avoid_: Update, Version (for a correction)
 
 **Attribution**:

@@ -433,6 +433,21 @@ pub fn build_search_index(
     dir: &Path,
     progress: &mut dyn FnMut(u64, u64) -> bool,
 ) -> Result<PathBuf, StoreError> {
+    let path = write_search_index(resource, version, dir, progress)?;
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
+    remove_search_indexes(dir, &resource.manifest.resource_id, name.as_deref());
+    Ok(path)
+}
+
+/// [`build_search_index`] that keeps the Resource's older caches in `dir`: a Resource
+/// revision being imported is not in the library yet, and the revision before it searches
+/// through its own cache until the new one is (#136). The caller removes them after.
+pub fn write_search_index(
+    resource: &Resource,
+    version: u32,
+    dir: &Path,
+    progress: &mut dyn FnMut(u64, u64) -> bool,
+) -> Result<PathBuf, StoreError> {
     let key = IndexKey::new(&resource.manifest, version);
     std::fs::create_dir_all(dir)?;
     let name = key.file_name();
@@ -457,7 +472,6 @@ pub fn build_search_index(
             return Err(e.into());
         }
     }
-    remove_search_indexes(dir, &key.resource_id, Some(&name));
     Ok(path)
 }
 

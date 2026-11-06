@@ -867,8 +867,14 @@ impl Shell {
                 w.inactive.bg_stroke = Stroke::NONE;
                 w.inactive.weak_bg_fill = Color32::TRANSPARENT;
                 w.hovered.bg_stroke = Stroke::NONE;
+                // The Library menu counts the downloaded Resources with an update (#136).
+                let updates = self.st.session.resource_updates().updates.len();
                 for menu in MENUS {
-                    ui.menu_button(menu.title, |ui| {
+                    let title = match menu.title {
+                        "Library" if updates > 0 => format!("Library ({updates})"),
+                        t => t.to_string(),
+                    };
+                    ui.menu_button(title, |ui| {
                         for item in menu.items {
                             self.menu_item(ui, *item);
                         }
@@ -906,6 +912,13 @@ impl Shell {
                     "view.red_letter" if self.st.session.text.red_letter => "✓ Red letter".into(),
                     "view.highlights" if self.st.session.appearance.show_highlights => {
                         format!("✓ {}", spec.label)
+                    }
+                    "library.get_resources" => {
+                        match self.st.session.resource_updates().updates.len() {
+                            0 => spec.label.to_string(),
+                            1 => format!("{} (1 update)", spec.label),
+                            n => format!("{} ({n} updates)", spec.label),
+                        }
                     }
                     _ => spec.label.to_string(),
                 };
