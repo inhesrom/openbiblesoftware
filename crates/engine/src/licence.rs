@@ -2,7 +2,8 @@
 //! licence filter. SWORD confs give `DistributionLicense` as free text ("Creative Commons:
 //! by-nc-nd", "Copyrighted; Permission to distribute granted to CrossWire"); the Open
 //! catalogue and the Library give SPDX ids (`CC-BY-SA-4.0`, `LicenseRef-PublicDomain`). Both
-//! map to one [`LicenceClass`]. A value the rules do not recognise is
+//! map to one [`LicenceClass`] through two allowlists of whole values seen in the live
+//! catalogs; free text is never read for its meaning. Any other value is
 //! [`LicenceClass::Unclear`], which is never shown as free.
 
 use serde::{Deserialize, Serialize};
@@ -16,7 +17,7 @@ pub enum LicenceClass {
     /// Free to use, but sharing is limited: permission to distribute granted to a
     /// repository, non-commercial, or no derivatives.
     PersonalUse,
-    /// No licence, or one the rules do not recognise.
+    /// No licence, or a value on neither allowlist.
     Unclear,
 }
 
@@ -31,279 +32,88 @@ impl LicenceClass {
     }
 }
 
-/// Words that turn a licence statement around or qualify it: "Not Public Domain", "no
-/// longer under CC BY", "Public Domain except the notes".
-const NEGATIONS: &[&str] = &[
-    "not",
-    "no",
-    "never",
-    "nor",
-    "neither",
-    "without",
-    "cannot",
-    "isn",
-    "aren",
-    "wasn",
-    "doesn",
-    "except",
-    "excepting",
-    "excluding",
-    "unless",
-    "but",
-    "revoked",
-    "withdrawn",
+/// Every published licence value that is Free to share, normalized ([`normalized`]): the
+/// `DistributionLicense` values seen in the live catalogs of the repositories on CrossWire's
+/// master list (2026-11-06; 2,411 confs, 60 distinct values) that grant Public Domain, CC0,
+/// CC BY, CC BY-SA or GPL, and the SPDX ids the Starter library and the Open catalogue use.
+/// A value is matched whole, never by a part of it.
+const FREE_TO_SHARE: &[&str] = &[
+    "public domain",
+    "public domain.",
+    "creative commons: by-sa",
+    "creative commons: by-sa 4.0",
+    "creative commons: by",
+    "creative commons: by 4.0",
+    "creative commons: cc0",
+    "creative commons attribution 3.0 brazil",
+    "gpl",
+    "this work is made available under the creative commons attribution-share alike 4.0 \
+     international license (cc by-sa).",
+    "cc by 4.0 (credit to \"step bible\" linked to www.stepbible.org. report errors to \
+     stepbible@gmail.com)",
+    "<a href='https://creativecommons.org/licenses/by-sa/4.0/'>cc by-sa 4.0</a>",
+    "licenseref-publicdomain",
+    "cc0-1.0",
+    "cc-by-4.0",
+    "cc-by-sa-4.0",
 ];
 
-/// The words after "no" in a Creative Commons no-derivatives restriction ("No Derivatives",
-/// "No Derivative Works", "No-Derivs"): that "no" is the restriction's name, not a negation.
-const DERIVATIVE_WORDS: &[&str] = &["derivative", "derivatives", "derivs"];
-
-/// One-word spellings of the no-derivatives restriction ("Attribution-NoDerivs 3.0").
-const NO_DERIVATIVES_WORDS: &[&str] = &[
-    "noderivs",
-    "noderivatives",
-    "noderivative",
-    "noderivativeworks",
+/// Every published licence value that is Free for personal use, normalized: the live
+/// `DistributionLicense` values (see [`FREE_TO_SHARE`]) that grant use with a limit on
+/// sharing (permission to distribute granted to a repository, non-commercial, or no
+/// derivatives), and the SPDX ids of those Creative Commons licences.
+const PERSONAL_USE: &[&str] = &[
+    "creative commons: by-nc-nd",
+    "creative commons: by-nc-nd 4.0",
+    "creative commons: by-nc-sa",
+    "creative commons: by-nc-sa 4.0",
+    "creative commons: by-nd",
+    "creative commons: by-nd 3.0",
+    "copyrighted; permission to distribute granted to ebible.org",
+    "copyrighted; permission to distribute granted to crosswire",
+    "copyrighted; permission to distribute granted to stepbible",
+    "copyrighted; permission to distribute granted to tyndale house, cambridge, uk",
+    "copyrighted. permission to distribute granted to crosswire bible society",
+    "copyrighted. distribution permitted to crosswire bible society",
+    "copyrighted kitab company - kş; permission to distribute granted to crosswire",
+    "copyright 2007 united bible societies; permission to distribute granted to crosswire",
+    "copyrighted; freely distributable",
+    "copyrighted; free non-commercial distribution",
+    "copyrighted; permission granted to distribute non-commercially in sword format",
+    "copyrighted. noncommercial distribution granted to crosswire. no other distribution \
+     permitted.",
+    "with permission of the international bible society free for non commercial use only",
+    "for non-commercial use only. distribution rights granted to crosswire by ibs (contact for \
+     ibs: graham sopp). non-commercial redistribution of this unchanged module is allowed.",
+    "creative commons attribution-noncommercial-sharealike 4.0 international license - paul \
+     haenze - maps@hopeandfuture.pl",
+    "licencja creative commons \"uznanie autorstwa-użycie niekomercyjne-na tych samych \
+     warunkach 4.0 międzynarodowe\" (cc by-nc-sa 4.0) - paul haenze - maps@hopeandfuture.pl",
+    "cc-by-nc-nd-4.0",
+    "cc-by-nc-sa-4.0",
+    "cc-by-nd-4.0",
 ];
 
-/// Whether `words` spell out the Creative Commons no-derivatives restriction (not its "ND"
-/// abbreviation, which is one only inside a Creative Commons licence).
-fn names_no_derivatives<S: AsRef<str>>(words: &[S]) -> bool {
-    words.iter().enumerate().any(|(i, w)| {
-        let w = w.as_ref();
-        NO_DERIVATIVES_WORDS.contains(&w)
-            || (w == "no"
-                && words
-                    .get(i + 1)
-                    .is_some_and(|next| DERIVATIVE_WORDS.contains(&next.as_ref())))
-    })
+/// A licence value as the allowlists hold it: lowercased, with each run of whitespace one
+/// space and none at either end. Nothing else is changed, so any other difference (another
+/// word, a sentence more, a different hyphen) makes it a different value.
+fn normalized(licence: &str) -> String {
+    licence
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
-/// `words` without the "no" of each no-derivatives restriction name.
-fn without_restriction_names(words: &[String]) -> Vec<&str> {
-    words
-        .iter()
-        .enumerate()
-        .filter(|(i, w)| {
-            !(w.as_str() == "no"
-                && words
-                    .get(i + 1)
-                    .is_some_and(|next| DERIVATIVE_WORDS.contains(&next.as_str())))
-        })
-        .map(|(_, w)| w.as_str())
-        .collect()
-}
-
-/// Words that forbid outright: "Redistribution prohibited".
-const PROHIBITIONS: &[&str] = &["prohibited", "forbidden", "disallowed", "restricted"];
-
-/// Words of passing a Resource on: "no redistribution", "may not share".
-const SHARING_WORDS: &[&str] = &["share", "shared", "shares", "sharing"];
-
-/// Word stems of passing a Resource on: distribute, redistribution, reproduce, republish.
-const SHARING_STEMS: &[&str] = &["distribut", "redistribut", "reproduc", "republish"];
-
-/// Words after a negation that make it a freedom, not a denial: "no restrictions",
-/// "without limitation".
-const FREEDOM_WORDS: &[&str] = &["restriction", "restrictions", "limitation", "limitations"];
-
-/// Whether a clause of `text` denies passing the Resource on: a sharing word beside a
-/// negation or prohibition ("no redistribution", "you may not share it", "distribution
-/// prohibited"). The "no" of a no-derivatives name and a negation followed by "restrictions"
-/// ("no restrictions on distribution") are not denials.
-pub(crate) fn denies_sharing(text: &str) -> bool {
-    clauses(text).into_iter().any(|clause| {
-        let clause_words = words(clause);
-        let kept = without_restriction_names(&clause_words);
-        let sharing = kept
-            .iter()
-            .any(|w| SHARING_WORDS.contains(w) || SHARING_STEMS.iter().any(|s| w.starts_with(s)));
-        let denial = kept.iter().enumerate().any(|(i, w)| {
-            PROHIBITIONS.contains(w)
-                || (NEGATIONS.contains(w)
-                    && !kept.get(i + 1).is_some_and(|n| FREEDOM_WORDS.contains(n)))
-        });
-        sharing && denial
-    })
-}
-
-/// Words that speak of a licence or of it applying: "This licence does not apply to this
-/// edition", "not covered by the above". "Licensor" is not one: eBible's CC BY-SA notice
-/// says "the original licensor is not necessarily endorsing your changes".
-const LICENCE_SCOPE_WORDS: &[&str] = &[
-    "licence",
-    "licences",
-    "license",
-    "licenses",
-    "licensed",
-    "apply",
-    "applies",
-    "applied",
-    "applicable",
-    "cover",
-    "covers",
-    "covered",
-    "govern",
-    "governs",
-    "governed",
-];
-
-/// Words that cancel a licence without a negation: "This licence is void".
-const CANCELLATIONS: &[&str] = &["void", "invalid"];
-
-/// Whether a clause of `text` takes a licence away, wherever the licence itself is named:
-/// a licence or applicability word beside a negation or cancellation ("This licence does not
-/// apply to this edition", "The above licence is void"). A licence named in one sentence and
-/// excluded in the next is not a grant. The "no" of a no-derivatives name and a negation
-/// followed by "restrictions" ("licensed without restriction") are not exclusions; neither
-/// is "not copyrighted", which names no licence.
-pub(crate) fn excludes_licence(text: &str) -> bool {
-    clauses(text).into_iter().any(|clause| {
-        let clause_words = words(clause);
-        let kept = without_restriction_names(&clause_words);
-        let scope = kept.iter().any(|w| LICENCE_SCOPE_WORDS.contains(w));
-        let exclusion = kept.iter().enumerate().any(|(i, w)| {
-            CANCELLATIONS.contains(w)
-                || (NEGATIONS.contains(w)
-                    && !kept.get(i + 1).is_some_and(|n| FREEDOM_WORDS.contains(n)))
-        });
-        scope && exclusion
-    })
-}
-
-/// Whether `l` (lowercased) names a non-commercial or no-derivatives restriction: "NC",
-/// "non-commercial", "NoDerivs", "No Derivative Works", or "ND" inside a Creative Commons
-/// licence ("CC BY-ND 4.0").
-pub(crate) fn names_sharing_restriction(l: &str) -> bool {
-    let words: Vec<&str> = l
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .collect();
-    let word = |w: &str| words.contains(&w);
-    let non_commercial = word("nc")
-        || [
-            "non-commercial",
-            "noncommercial",
-            "non commercial",
-            "niekomercyjne",
-        ]
-        .iter()
-        .any(|p| l.contains(p));
-    // "ND" alone is a no-derivatives clause only inside a Creative Commons licence; the
-    // spelled-out names ("NoDerivs", "No Derivative Works") are one wherever they stand.
-    let no_derivatives = (names_creative_commons(l) && word("nd")) || names_no_derivatives(&words);
-    non_commercial || no_derivatives
-}
-
-/// Whether `l` (lowercased) names a Creative Commons licence.
-fn names_creative_commons(l: &str) -> bool {
-    l.contains("creative commons")
-        || l.split(|c: char| !c.is_alphanumeric())
-            .any(|w| ["creativecommons", "cc", "cc0"].contains(&w))
-}
-
-/// The words of `text`, lowercased: runs of letters and digits.
-pub(crate) fn words(text: &str) -> Vec<String> {
-    text.to_lowercase()
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .map(str::to_string)
-        .collect()
-}
-
-/// Whether one of `words` negates or qualifies a licence statement.
-pub(crate) fn has_negation<S: AsRef<str>>(words: &[S]) -> bool {
-    words.iter().any(|w| NEGATIONS.contains(&w.as_ref()))
-}
-
-/// `text` cut into clauses at `;`, line breaks and full stops (a `.` followed by a space or
-/// the end, so "4.0" and "ebible.org" stay whole). A `?` or `!` does not end one, so
-/// "Public Domain? No." stays one clause.
-pub(crate) fn clauses(text: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut start = 0;
-    let mut chars = text.char_indices().peekable();
-    while let Some((i, c)) = chars.next() {
-        let next_is_space = chars.peek().is_none_or(|(_, n)| n.is_whitespace());
-        let end = matches!(c, ';' | '\n') || (c == '.' && next_is_space);
-        if end {
-            out.push(&text[start..i]);
-            start = i + c.len_utf8();
-        }
-    }
-    out.push(&text[start..]);
-    out
-}
-
-/// The class of a licence as published: a conf's `DistributionLicense` or an SPDX id.
-/// Restrictions win: a non-commercial or no-derivatives clause is never Free to share. A
-/// clause that names a licence and also negates or qualifies it ("Not Public Domain",
-/// "CC BY except the notes"), or a free licence beside "all rights reserved", is not a
-/// form the rules know, so it is Unclear. So is a free licence beside a statement that
-/// denies passing it on ("Public Domain; no redistribution"), and any licence beside a
-/// sentence that excludes a licence ("CC BY-SA 4.0. This licence does not apply to this
-/// edition.").
+/// The class of a licence as published: a conf's `DistributionLicense` or an SPDX id. Only
+/// a value on one of the allowlists ([`FREE_TO_SHARE`], [`PERSONAL_USE`]), matched whole
+/// after [`normalized`], has a class; every other value, including an allowlisted one with
+/// anything added ("Public Domain; no redistribution"), is Unclear and never shown as free.
 pub fn licence_class(licence: &str) -> LicenceClass {
-    let l = licence.to_lowercase();
-    let negated_grant = clauses(&l).into_iter().any(|clause| {
-        let clause_words = words(clause);
-        let kept = without_restriction_names(&clause_words);
-        has_negation(&kept) && class_ignoring_negation(&kept.join(" ")) != LicenceClass::Unclear
-    });
-    if negated_grant || excludes_licence(&l) {
-        return LicenceClass::Unclear;
-    }
-    if l.contains("all rights reserved") && class_names_free_licence(&l) {
-        return LicenceClass::Unclear;
-    }
-    match class_ignoring_negation(&l) {
-        LicenceClass::FreeToShare if denies_sharing(&l) => LicenceClass::Unclear,
-        class => class,
-    }
-}
-
-/// Whether `l` (lowercased) names Public Domain, a Creative Commons licence or the GPL.
-fn class_names_free_licence(l: &str) -> bool {
-    let words = words(l);
-    let word = |w: &str| words.iter().any(|x| x == w);
-    l.contains("public domain")
-        || l.contains("creative commons")
-        || ["publicdomain", "creativecommons", "cc", "cc0", "gpl"]
-            .iter()
-            .any(|w| word(w))
-}
-
-/// The class of `l` (lowercased) read from its licence names alone.
-fn class_ignoring_negation(l: &str) -> LicenceClass {
-    let words: Vec<&str> = l
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .collect();
-    let word = |w: &str| words.contains(&w);
-    let phrase = |p: &str| l.contains(p);
-    if names_sharing_restriction(l) {
-        return LicenceClass::PersonalUse;
-    }
-    let creative_commons = names_creative_commons(l);
-    let public_domain = phrase("public domain") || word("publicdomain") || word("cc0");
-    let cc_by = creative_commons
-        && ["by", "sa", "attribution", "atribuição"]
-            .iter()
-            .any(|w| word(w));
-    let gpl = word("gpl") || phrase("general public license");
-    if public_domain || cc_by || gpl {
-        return LicenceClass::FreeToShare;
-    }
-    let permission = [
-        "permission to distribute",
-        "permission granted to distribute",
-        "distribution permitted to",
-        "distribution rights granted",
-        "freely distributable",
-    ]
-    .iter()
-    .any(|p| phrase(p));
-    if permission {
+    let l = normalized(licence);
+    if FREE_TO_SHARE.contains(&l.as_str()) {
+        LicenceClass::FreeToShare
+    } else if PERSONAL_USE.contains(&l.as_str()) {
         LicenceClass::PersonalUse
     } else {
         LicenceClass::Unclear
@@ -382,7 +192,7 @@ mod tests {
     /// Every distinct `DistributionLicense` in the live catalogs of the repositories on
     /// CrossWire's master list (CrossWire, Beta, Attic, Wycliffe, Bible.org, Xiphos, eBible.org,
     /// Deutsche Bibelgesellschaft, Lockman, IBT, STEP Bible), read on 2026-11-06, with its
-    /// class. Long values are cut after the part that decides.
+    /// class. Values are exact; only two long Unclear ones are cut.
     const LIVE_VALUES: &[(&str, LicenceClass)] = &[
         ("Creative Commons: by-nc-nd", PersonalUse),
         ("Public Domain", FreeToShare),
@@ -399,6 +209,7 @@ mod tests {
         ("Copyrighted; Free non-commercial distribution", PersonalUse),
         ("Creative Commons: by-nd", PersonalUse),
         ("Creative Commons: BY-SA 4.0", FreeToShare),
+        ("", Unclear),
         ("Copyrighted", Unclear),
         ("GPL", FreeToShare),
         ("Copyrighted; Freely distributable", PersonalUse),
@@ -409,13 +220,13 @@ mod tests {
             PersonalUse,
         ),
         ("Creative Commons: CC0", FreeToShare),
-        ("Unrestricted", Unclear),
         ("See README file", Unclear),
         ("Public domain.", FreeToShare),
-        ("", Unclear),
+        ("Unrestricted", Unclear),
         ("См. файл", Unclear),
         (
-            "© Қазақша аудармасы және көркемделуі «Жаңа өмір» баспасы, Стамбул, 1993",
+            "© Қазақша аудармасы және көркемделуі «Жаңа өмір» баспасы, Стамбул, 1993, 1996, \
+             2000, 2010.",
             Unclear,
         ),
         ("none", Unclear),
@@ -423,10 +234,7 @@ mod tests {
         ("GFDL", Unclear),
         (
             "FROM www.kretzmannproject.org: \\par\\parThe Popular Commentary is in the public \
-             domain. The original volumes were not copyrighted. [...] We give full permission to \
-             replicate and distribute the text in any form whatsoever, printed or electronic, so \
-             long as the content itself is not altered, other than to correct scanning errors, \
-             fix formatting, change fonts, etc.",
+             domain. The original volumes were not copyrighted.",
             Unclear,
         ),
         ("Creative Commons: by-nd 3.0", PersonalUse),
@@ -436,10 +244,7 @@ mod tests {
             "Copyrighted; Permission to distribute granted to STEPBible",
             PersonalUse,
         ),
-        (
-            " Licença Creative Commons Atribuição 3.0 Brasil",
-            FreeToShare,
-        ),
+        ("Copyrighted.", Unclear),
         ("о. Леонид Лутковский, 1991", Unclear),
         ("Библейская Лига, 1996", Unclear),
         ("public domain", FreeToShare),
@@ -448,7 +253,7 @@ mod tests {
             PersonalUse,
         ),
         (
-            "With Permission of the International Bible Society free for non commercial use only",
+            "With Permission of the International Bible Society free for non commercial use only ",
             PersonalUse,
         ),
         ("Varies.  See hymn description.", Unclear),
@@ -463,29 +268,39 @@ mod tests {
             FreeToShare,
         ),
         ("RBC Ministries, 2000", Unclear),
+        ("Public domain", FreeToShare),
         ("Permission de l’utiliser par Jim WANDERSCHEID.", Unclear),
         (
             "Licencja Creative Commons \"Uznanie autorstwa-Użycie niekomercyjne-Na tych samych \
-             warunkach 4.0 Międzynarodowe\" (CC BY-NC-SA 4.0)",
+             warunkach 4.0 Międzynarodowe\" (CC BY-NC-SA 4.0) - Paul Haenze - \
+             maps@hopeandfuture.pl",
             PersonalUse,
         ),
         ("Hanssler-Verlag, 1998", Unclear),
         ("Gospel Literature Services, 1995", Unclear),
+        // Names neither the GNU GPL nor a version.
         (
             "General public license for distribution for any purpose",
-            FreeToShare,
+            Unclear,
         ),
         (
-            "For Non-commercial use only. Distribution rights granted to Crosswire by IBS",
+            "For Non-commercial use only. Distribution rights granted to Crosswire by IBS \
+             (Contact for IBS: Graham Sopp). Non-commercial redistribution of this unchanged \
+             module is allowed.",
             PersonalUse,
         ),
         ("Creative Commons: by", FreeToShare),
         (
-            "Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License",
+            "Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License - \
+             Paul Haenze - maps@hopeandfuture.pl",
             PersonalUse,
         ),
         (
             "Copyrighted; Permission to distribute granted to Tyndale House, Cambridge, UK",
+            PersonalUse,
+        ),
+        (
+            "Copyrighted; Permission to distribute granted to CrossWire ",
             PersonalUse,
         ),
         (
@@ -497,7 +312,6 @@ mod tests {
             "Copyrighted. Distribution permitted to CrossWire Bible Society",
             PersonalUse,
         ),
-        ("Copyrighted.", Unclear),
         ("Copyrighted see http://www.bible.org/copyright", Unclear),
         (
             "Copyrighted Kitab Company - KŞ; Permission to distribute granted to CrossWire",
@@ -532,6 +346,29 @@ mod tests {
         }
     }
 
+    /// The allowlists are the whole rule: each entry is stored normalized, is on one list
+    /// only, and classifies as its list; every entry is a live value or an SPDX id.
+    #[test]
+    fn the_allowlists_classify_exactly_their_entries() {
+        for (list, class) in [(FREE_TO_SHARE, FreeToShare), (PERSONAL_USE, PersonalUse)] {
+            for entry in list {
+                assert_eq!(normalized(entry), *entry, "{entry:?} is not normalized");
+                assert_eq!(licence_class(entry), class, "{entry:?}");
+                let live = LIVE_VALUES
+                    .iter()
+                    .any(|(v, c)| normalized(v) == *entry && *c == class);
+                let spdx = !entry.contains(' ') && entry.contains('-');
+                assert!(
+                    live || spdx,
+                    "{entry:?} is neither a live value nor an SPDX id"
+                );
+            }
+        }
+        for entry in FREE_TO_SHARE {
+            assert!(!PERSONAL_USE.contains(entry), "{entry:?} is on both lists");
+        }
+    }
+
     #[test]
     fn spdx_ids_classify_like_the_conf_values() {
         for (spdx, class) in [
@@ -539,40 +376,49 @@ mod tests {
             ("CC0-1.0", FreeToShare),
             ("CC-BY-4.0", FreeToShare),
             ("CC-BY-SA-4.0", FreeToShare),
-            ("GPL-3.0-or-later", FreeToShare),
-            ("CC-BY-NC-4.0", PersonalUse),
-            ("CC-BY-ND-4.0", PersonalUse),
+            ("CC-BY-NC-ND-4.0", PersonalUse),
             ("CC-BY-NC-SA-4.0", PersonalUse),
+            ("CC-BY-ND-4.0", PersonalUse),
             ("LicenseRef-unknown", Unclear),
             ("MIT", Unclear),
+            ("CC-BY-SA-4.0 OR LicenseRef-Proprietary", Unclear),
         ] {
             assert_eq!(licence_class(spdx), class, "{spdx}");
         }
     }
 
-    /// #134: unknown values are Unclear and never shown as free; "by" outside a Creative
-    /// Commons licence is just a word.
+    /// Only case and whitespace are normalized: an allowlisted value in other capitals or
+    /// with other spacing keeps its class.
     #[test]
-    fn unknown_values_are_unclear_and_never_free() {
+    fn case_and_whitespace_do_not_change_the_class() {
         for value in [
+            "PUBLIC DOMAIN",
+            "  Public   Domain\n",
+            "Public\u{a0}Domain",
+            "creative commons:  BY-SA",
+        ] {
+            assert!(
+                LicenceFilter::FreeToShare.accepts(licence_class(value)),
+                "{value:?}"
+            );
+        }
+    }
+
+    /// #134 reviews: every value that an earlier, free-text reading of licences let through
+    /// or had to special-case is Unclear: negations, qualifications, restrictions however
+    /// they are spelled, denials of sharing, exclusions in another sentence, and other
+    /// separators. None passes either licence filter.
+    #[test]
+    fn values_off_the_allowlists_are_unclear_and_never_free() {
+        for value in [
+            // Unknown values.
             "Ask the publisher",
             "Copyright reserved by the translators",
             "Distributed by the Society",
             "All rights reserved",
             "Creative Commons",
-        ] {
-            assert_eq!(licence_class(value), Unclear, "{value}");
-            assert!(!LicenceFilter::FreeToShare.accepts(licence_class(value)));
-            assert!(!LicenceFilter::PersonalUse.accepts(licence_class(value)));
-            assert!(LicenceFilter::All.accepts(licence_class(value)));
-        }
-    }
-
-    /// #134 review: a licence name inside a statement that negates or qualifies it is not a
-    /// grant. The rules fail closed: such values are Unclear and pass neither licence filter.
-    #[test]
-    fn negated_or_qualified_licences_are_unclear() {
-        for value in [
+            "Free",
+            // Negated or qualified grants.
             "Not Public Domain; all rights reserved",
             "Not Public Domain",
             "This text is not in the public domain.",
@@ -581,7 +427,9 @@ mod tests {
             "Public Domain, except the notes",
             "Public domain, but the notes are copyrighted",
             "Public Domain. All rights reserved.",
+            "Public Domain. All  rights\u{a0}reserved.",
             "Creative Commons: BY-SA 4.0; all rights reserved",
+            "Creative Commons: BY-SA 4.0; all\u{2011}rights reserved",
             "Not licensed under Creative Commons: by-sa",
             "Not under the GPL",
             "GPL licence revoked",
@@ -589,71 +437,27 @@ mod tests {
             "Copyrighted; permission to distribute granted to CrossWire was withdrawn",
             "Not for non-commercial use under CC BY-NC",
             "Copyrighted; distribution not permitted to CrossWire",
-        ] {
-            assert_eq!(licence_class(value), Unclear, "{value}");
-            assert!(!LicenceFilter::FreeToShare.accepts(licence_class(value)));
-            assert!(!LicenceFilter::PersonalUse.accepts(licence_class(value)));
-        }
-        // A restriction stated beside its grant, or a negation outside the licence's own
-        // clause, keeps the grant's class.
-        for (value, class) in [
-            (
-                "Creative Commons Attribution No Derivatives 4.0",
-                PersonalUse,
-            ),
-            ("Creative Commons BY-ND; no derivative works", PersonalUse),
-            (
-                "Copyrighted; all rights reserved; permission to distribute granted to CrossWire",
-                PersonalUse,
-            ),
-            (
-                "This Bible is in the Public Domain. It is not copyrighted.",
-                FreeToShare,
-            ),
-        ] {
-            assert_eq!(licence_class(value), class, "{value}");
-        }
-    }
-
-    /// #134 review: every published spelling of the no-derivatives restriction makes a
-    /// licence Free for personal use, never Free to share, even beside "Attribution".
-    #[test]
-    fn no_derivatives_spellings_are_personal_use() {
-        for value in [
+            "This Bible is in the Public Domain. It is not copyrighted.",
+            // No-derivatives and non-commercial licences, however written.
             "Creative Commons Attribution-NoDerivs 3.0 Unported",
             "Creative Commons Attribution No Derivative Works 2.0",
             "Creative Commons Attribution-NoDerivatives 4.0 International",
-            "Creative Commons Attribution-No Derivative Works 3.0",
             "Creative Commons Attribution-No-Derivs 2.5",
-            "Creative Commons Attribution No Derivatives 4.0",
             "Creative Commons Attribution-NoDerivativeWorks 2.0",
             "CC BY-ND 4.0",
             "Attribution-NoDerivs",
             "Public Domain; no derivative works",
-        ] {
-            assert_eq!(licence_class(value), PersonalUse, "{value}");
-            assert!(
-                !LicenceFilter::FreeToShare.accepts(licence_class(value)),
-                "{value}"
-            );
-            assert!(
-                LicenceFilter::PersonalUse.accepts(licence_class(value)),
-                "{value}"
-            );
-        }
-        // "Derivative" without the restriction's "no" is not one.
-        assert_eq!(
-            licence_class("Creative Commons Attribution 4.0; derivative works welcome"),
-            FreeToShare
-        );
-    }
-
-    /// #134 review: a free licence beside a statement, in any clause, that denies passing it
-    /// on contradicts itself, so it is Unclear and passes neither licence filter. A restricted
-    /// licence stays Free for personal use, and "no restrictions" is not a denial.
-    #[test]
-    fn a_free_licence_that_denies_redistribution_is_unclear() {
-        for value in [
+            "Creative Commons BY-ND; no derivative works",
+            "Creative Commons Attribution Non\u{2011}Commercial 4.0",
+            "Creative Commons Attribution Non  Commercial 4.0",
+            "Creative Commons Attribution Non\u{a0}Commercial 4.0",
+            "Creative Commons Attribution-NonCommercial 4.0",
+            "CC BY\u{2011}NC 4.0",
+            "Creative Commons: by\u{2011}sa",
+            "Creative Commons Attribution 4.0, commercial use prohibited",
+            "Public Domain. Not for commercial use.",
+            "Public Domain.\nFor non\u{2011}commercial use only.",
+            // Denials of sharing.
             "Public Domain; no redistribution",
             "Public Domain. Redistribution prohibited.",
             "Public Domain; you may not share it",
@@ -662,56 +466,8 @@ mod tests {
             "CC0-1.0; distribution forbidden",
             "GPL\nReproduction restricted to the publisher",
             "Creative Commons Attribution 4.0; sharing is not permitted",
-        ] {
-            assert_eq!(licence_class(value), Unclear, "{value}");
-            assert!(!LicenceFilter::FreeToShare.accepts(licence_class(value)));
-            assert!(!LicenceFilter::PersonalUse.accepts(licence_class(value)));
-        }
-        for (value, class) in [
-            (
-                "Creative Commons: BY-NC 4.0; no redistribution",
-                PersonalUse,
-            ),
-            (
-                "Public Domain; no restrictions on distribution",
-                FreeToShare,
-            ),
-            ("Public Domain; distribute without restriction", FreeToShare),
-            (
-                "Creative Commons Attribution-NoDerivs 3.0; share freely",
-                PersonalUse,
-            ),
-        ] {
-            assert_eq!(licence_class(value), class, "{value}");
-        }
-    }
-
-    #[test]
-    fn sharing_restrictions_are_named_by_words() {
-        for l in [
-            "this edition is cc by-nd 4.0",
-            "cc by-nc 4.0",
-            "creative commons attribution-noderivs",
-            "free for non-commercial use",
-        ] {
-            assert!(names_sharing_restriction(l), "{l}");
-        }
-        for l in [
-            "creative commons attribution share-alike license 4.0",
-            "public domain. nd is a postal code",
-            "public domain",
-        ] {
-            assert!(!names_sharing_restriction(l), "{l}");
-        }
-    }
-
-    /// #134 review: a licence named in one sentence and excluded in another ("This licence
-    /// does not apply to this edition.") is not a grant: Unclear, hidden by both filters.
-    /// "Not copyrighted", "licensed without restriction" and a licence that is only
-    /// mentioned stay as they were.
-    #[test]
-    fn a_licence_excluded_in_another_sentence_is_unclear() {
-        for value in [
+            "Public Domain; no restrictions on distribution",
+            // Licences excluded in another sentence.
             "Creative Commons Attribution Share-Alike license 4.0. This licence does not apply \
              to this edition.",
             "Public Domain. That licence doesn't apply here.",
@@ -720,37 +476,17 @@ mod tests {
             "CC0-1.0. Not licensed for this edition.",
             "Copyrighted; Permission to distribute granted to CrossWire. The licence does not \
              apply to the notes.",
+            // A live value with anything added.
+            "Public Domain..",
+            "Creative Commons: by-sa 4.0 (except the notes)",
+            "Creative Commons: by-nc-nd; no redistribution",
         ] {
-            assert_eq!(licence_class(value), Unclear, "{value}");
-            assert!(!LicenceFilter::FreeToShare.accepts(licence_class(value)));
-            assert!(!LicenceFilter::PersonalUse.accepts(licence_class(value)));
+            let class = licence_class(value);
+            assert_eq!(class, Unclear, "{value:?}");
+            assert!(!LicenceFilter::FreeToShare.accepts(class), "{value:?}");
+            assert!(!LicenceFilter::PersonalUse.accepts(class), "{value:?}");
+            assert!(LicenceFilter::All.accepts(class), "{value:?}");
         }
-        for (value, class) in [
-            (
-                "This Bible is in the Public Domain. It is not copyrighted.",
-                FreeToShare,
-            ),
-            ("Public Domain. Licensed without restriction.", FreeToShare),
-            (
-                "Creative Commons Attribution Share-Alike license 4.0. The original licensor is \
-                 not necessarily endorsing your changes.",
-                FreeToShare,
-            ),
-            (
-                "Creative Commons Attribution-NoDerivs 3.0. This license applies to the text.",
-                PersonalUse,
-            ),
-        ] {
-            assert_eq!(licence_class(value), class, "{value}");
-        }
-    }
-
-    #[test]
-    fn clauses_end_at_sentence_ends_only() {
-        assert_eq!(
-            clauses("CC BY 4.0 see www.example.org. Not PD; ok"),
-            ["CC BY 4.0 see www.example.org", " Not PD", " ok"]
-        );
     }
 
     #[test]

@@ -5,8 +5,10 @@
 //! style of the Starter library lock (`starter/sources.toml`).
 //!
 //! A download is checked before it is imported: against its pinned sha256 when the publisher's
-//! files are stable, and always against the licence notice inside it when the entry names one
-//! (eBible.org regenerates its zips, so its entries are checked that way instead). The
+//! files are stable, and always against the pinned sha256 of the licence notice inside it when
+//! the entry names one (eBible.org regenerates its zips, so its entries are checked that way
+//! instead). The notice is never read for its meaning: it must be the very notice the entry's
+//! evidence quotes, or the download is refused. The
 //! entries are compiled in, so the Open catalogue lists offline; only Download needs the
 //! network, through the app's transport ([`crate::Session::set_fetch`]).
 
@@ -46,11 +48,13 @@ pub struct OpenSource {
     /// Lowercase hex sha256 of `url`, when the publisher's files are stable.
     #[serde(default)]
     pub sha256: Option<String>,
-    /// A file inside the download that must still contain `licence_phrase`.
+    /// A file inside the download holding its licence notice.
     #[serde(default)]
     pub licence_file: Option<String>,
+    /// Lowercase hex sha256 of the notice in `licence_file` read as text ([`notice_text`]),
+    /// which the evidence file quotes.
     #[serde(default)]
-    pub licence_phrase: Option<String>,
+    pub licence_notice_sha256: Option<String>,
     pub title: String,
     pub abbreviation: String,
     /// BCP 47.
@@ -62,6 +66,7 @@ pub struct OpenSource {
     pub licence: String,
     /// SPDX expression, written to the Resource's manifest.
     pub spdx: String,
+    /// Declared here, with the evidence; it must be what `spdx` classifies as.
     pub licence_class: LicenceClass,
     pub attribution: String,
     /// "Changes we made", shown in the Resource's About view.
@@ -143,6 +148,7 @@ impl OpenSource {
             refused: None,
             source: ListingSource::Open,
             evidence_url: Some(self.evidence_url.clone()),
+            declared_licence_class: Some(self.licence_class),
         }
     }
 
@@ -179,12 +185,6 @@ impl OpenSource {
                 self.licence_class, self.spdx
             ));
         }
-        if licence_class(&self.licence) != self.licence_class {
-            bad(format!(
-                "licence {:?} does not read as {:?}",
-                self.licence, self.licence_class
-            ));
-        }
         if self.licence_class != LicenceClass::FreeToShare {
             bad("only Free to share works are listed".into());
         }
@@ -197,18 +197,22 @@ impl OpenSource {
         if !self.evidence.starts_with("open-evidence/") || !self.evidence.ends_with(".md") {
             bad("evidence must be a file in open-evidence/".into());
         }
-        match &self.sha256 {
-            Some(sha) if sha.len() != 64 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) => {
-                bad("sha256 must be 64 hex digits".into());
+        let is_sha256 = |sha: &str| sha.len() == 64 && sha.bytes().all(|b| b.is_ascii_hexdigit());
+        for (name, sha) in [
+            ("sha256", &self.sha256),
+            ("licence_notice_sha256", &self.licence_notice_sha256),
+        ] {
+            if sha.as_deref().is_some_and(|s| !is_sha256(s)) {
+                bad(format!("{name} must be 64 hex digits"));
             }
-            Some(_) => {}
-            None if self.licence_file.is_none() || self.licence_phrase.is_none() => {
-                bad("an unpinned download needs licence_file and licence_phrase".into());
-            }
-            None => {}
         }
-        if self.licence_file.is_some() != self.licence_phrase.is_some() {
-            bad("licence_file and licence_phrase go together".into());
+        if self.sha256.is_none()
+            && (self.licence_file.is_none() || self.licence_notice_sha256.is_none())
+        {
+            bad("an unpinned download needs licence_file and licence_notice_sha256".into());
+        }
+        if self.licence_file.is_some() != self.licence_notice_sha256.is_some() {
+            bad("licence_file and licence_notice_sha256 go together".into());
         }
         if self.attribution.trim().is_empty() || self.changes.trim().is_empty() {
             bad("attribution and changes are required".into());
@@ -216,8 +220,8 @@ impl OpenSource {
         out
     }
 
-    /// Check a download: its sha256 when pinned, and the licence notice inside it when the
-    /// entry names one. Returns the download's sha256.
+    /// Check a download: its sha256 when pinned, and the sha256 of the licence notice inside
+    /// it when the entry names one. Any difference refuses it. Returns the download's sha256.
     pub fn check_download(&self, bytes: &[u8]) -> Result<String, String> {
         let got = crate::starter::sha256_hex(bytes);
         if let Some(want) = &self.sha256
@@ -228,22 +232,17 @@ impl OpenSource {
                 self.url
             ));
         }
-        if let (Some(file), Some(phrase)) = (&self.licence_file, &self.licence_phrase) {
+        if let (Some(file), Some(want)) = (&self.licence_file, &self.licence_notice_sha256) {
             let notice = obs_formats::zip_text_file(bytes, file)
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| {
                     format!("the download has no licence notice ({file}); not imported")
                 })?;
-            let notice = plain_text(&notice).to_lowercase();
-            if !notice.contains(&phrase.to_lowercase()) {
+            let got = crate::starter::sha256_hex(notice_text(&notice).as_bytes());
+            if !want.eq_ignore_ascii_case(&got) {
                 return Err(format!(
-                    "the licence notice in the download ({file}) no longer says \"{phrase}\"; \
-                     not imported"
-                ));
-            }
-            if let Some(why) = notice_restriction(&notice, phrase) {
-                return Err(format!(
-                    "the licence notice in the download ({file}) {why}; not imported"
+                    "the licence notice in the download ({file}) is not the one its evidence \
+                     quotes (sha256 {got}, expected {want}); not imported"
                 ));
             }
         }
@@ -312,66 +311,17 @@ impl OpenSource {
     }
 }
 
-/// Statements that take away or restrict a free licence wherever they stand in a notice.
-/// Non-commercial and no-derivatives licences are found by words
-/// ([`crate::licence::names_sharing_restriction`]), denials of sharing by clause
-/// ([`crate::licence::denies_sharing`]).
-const RESTRICTIVE_NOTICE: &[&str] = &[
-    "all rights reserved",
-    "not public domain",
-    "may not be",
-    "must not be",
-    "not permitted",
-    "prohibited",
-];
+/// Where eBible's build stamp starts in `copr.htm` ("HTML generated with Haiola by eBible.org
+/// 30 Oct 2026 from source files dated …"). It is re-dated on every build, so the notice
+/// ends before it.
+const EBIBLE_BUILD_STAMP: &str = "<div class=\"fine\">";
 
-/// Words read on each side of the expected phrase, within its clause, for a negation:
-/// "is no longer in the Public Domain", "Public Domain status revoked".
-const NOTICE_WINDOW_BEFORE: usize = 5;
-const NOTICE_WINDOW_AFTER: usize = 3;
-
-/// Why a licence notice (plain text, lowercased) that contains `phrase` still does not grant
-/// it: a restrictive statement, a non-commercial or no-derivatives licence ("This edition is
-/// CC BY-ND 4.0"), a denial of sharing or an exclusion of a licence ("This licence does not
-/// apply to this edition.") anywhere, or a negation next to the phrase. eBible's notices say
-/// "not copyrighted" or "no copyright restrictions" in other sentences, so only the phrase's
-/// own neighbourhood is read for other negations.
-fn notice_restriction(notice: &str, phrase: &str) -> Option<String> {
-    use crate::licence::{
-        clauses, denies_sharing, excludes_licence, has_negation, names_sharing_restriction, words,
-    };
-    if let Some(r) = RESTRICTIVE_NOTICE.iter().find(|r| notice.contains(*r)) {
-        return Some(format!("says \"{r}\""));
-    }
-    if names_sharing_restriction(notice) {
-        return Some("names a non-commercial or no-derivatives licence".into());
-    }
-    if denies_sharing(notice) {
-        return Some("denies sharing the text".into());
-    }
-    if excludes_licence(notice) {
-        return Some("says a licence does not apply".into());
-    }
-    let phrase = phrase.to_lowercase();
-    for (at, _) in notice.match_indices(&phrase) {
-        let before = words(clauses(&notice[..at]).last().copied().unwrap_or_default());
-        let after = words(clauses(&notice[at + phrase.len()..])[0]);
-        let near: Vec<&String> = before
-            .iter()
-            .skip(before.len().saturating_sub(NOTICE_WINDOW_BEFORE))
-            .chain(after.iter().take(NOTICE_WINDOW_AFTER))
-            .collect();
-        if has_negation(&near) {
-            return Some(format!(
-                "qualifies \"{phrase}\" (\"{}\")",
-                near.iter()
-                    .map(|w| w.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ));
-        }
-    }
-    None
+/// The licence notice in an HTML licence file, as text: its `<body>` up to eBible's build
+/// stamp, read by [`plain_text`]. The whole file is used when either mark is missing.
+pub(crate) fn notice_text(html: &str) -> String {
+    let body = html.find("<body").map_or(html, |at| &html[at..]);
+    let body = body.find(EBIBLE_BUILD_STAMP).map_or(body, |at| &body[..at]);
+    plain_text(body)
 }
 
 /// HTML reduced to its words, for the licence notice check: tags dropped, entities
@@ -404,6 +354,15 @@ mod tests {
 
     fn data_dir() -> std::path::PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("data")
+    }
+
+    /// The notice an evidence file quotes: the one line of its `text` block after
+    /// "## Pinned notice".
+    fn quoted_notice(evidence: &str) -> Option<&str> {
+        let (_, rest) = evidence.split_once("## Pinned notice")?;
+        let (_, block) = rest.split_once("```text\n")?;
+        let (notice, _) = block.split_once("\n```")?;
+        Some(notice)
     }
 
     #[test]
@@ -447,8 +406,21 @@ mod tests {
             assert!(text.contains(&s.evidence_url), "{}: evidence_url", s.id);
             assert!(text.contains(&s.url), "{}: url", s.id);
             assert!(text.contains(&s.spdx), "{}: spdx", s.id);
-            if let Some(phrase) = &s.licence_phrase {
-                assert!(text.contains(phrase.as_str()), "{}: licence phrase", s.id);
+            if let Some(sha) = &s.licence_notice_sha256 {
+                // The evidence quotes the pinned notice whole, as `notice_text` reads it.
+                let quoted = quoted_notice(&text)
+                    .unwrap_or_else(|| panic!("{}: evidence quotes no notice", s.id));
+                assert_eq!(
+                    &crate::starter::sha256_hex(quoted.as_bytes()),
+                    sha,
+                    "{}: the quoted notice is not the pinned one",
+                    s.id
+                );
+                assert!(
+                    text.contains(sha.as_str()),
+                    "{}: licence_notice_sha256",
+                    s.id
+                );
             }
             if let Some(sha) = &s.sha256 {
                 assert!(text.contains(sha.as_str()), "{}: sha256", s.id);
@@ -504,7 +476,7 @@ mod tests {
         );
         let mut unpinned = open_sources()[0].clone();
         unpinned.sha256 = None;
-        unpinned.licence_phrase = None;
+        unpinned.licence_notice_sha256 = None;
         assert!(
             unpinned
                 .problems()
@@ -515,129 +487,20 @@ mod tests {
         );
     }
 
-    /// #134 review: the notices in eBible's live zips (2026-11-06; cut to the parts around
-    /// the phrase and their other negations) pass, though they say "not copyrighted" and
-    /// "no copyright restrictions" elsewhere.
+    /// eBible re-dates its build stamp on every build; the notice before it is what is
+    /// pinned, so the same notice built on another day has the same sha256.
     #[test]
-    fn the_live_ebible_notices_grant_their_phrase() {
-        for (notice, phrase) in [
-            (
-                "<h1>Young's Literal Translation</h1><p>Young's Literal Translation of the Holy \
-                 Bible<br/>Public Domain</p><p>Language: ENGLISH</p><p>This public domain \
-                 Bible translation is brought to you courtesy of eBible.org.</p>",
-                "Public Domain",
-            ),
-            (
-                "<p>The Geneva Bible in Old English of 1599<br/>Public Domain</p><p>Language: \
-                 English</p><p>This digital copy is freely available world-wide, with no \
-                 copyright restrictions, courtesy of eBible.org and many others. Note that the \
-                 spelling used is the original spelling, which is not modern English.</p>",
-                "Public Domain",
-            ),
-            (
-                "<p>Contributor: Public Domain</p><p>Cette Bible est dans le domaine public. Il \
-                 n'est pas protégé par copyright. This Bible is in the Public Domain. It is not \
-                 copyrighted.</p>",
-                "Public Domain",
-            ),
-            (
-                "<p>This translation is made available to you under the terms of the \
-                 <a href='https://creativecommons.org/licenses/by-sa/4.0/'>Creative Commons \
-                 Attribution Share-Alike license 4.0.</a></p><p>If you make any changes to the \
-                 text, you must indicate that you did so in a way that makes it clear that the \
-                 original licensor is not necessarily endorsing your changes.</p>",
-                "Creative Commons Attribution Share-Alike license 4.0",
-            ),
-            (
-                // LSV's sharing terms, which say "redistribute" beside "not" in other
-                // sentences.
-                "<p>... free to read, distribute, and translate from.</p><p>This translation is \
-                 made available to you under the terms of the <a \
-                 href='http://creativecommons.org/licenses/by-sa/4.0/'>Creative Commons \
-                 Attribution Share-Alike license 4.0.</a></p><p>You have permission to share and \
-                 redistribute this Bible translation in any format and to make reasonable \
-                 revisions and adaptations of this translation, provided that:</p><ul><li>You \
-                 include the above copyright and source information.</li><li>If you make any \
-                 changes to the text, you must indicate that you did so in a way that makes it \
-                 clear that the original licensor is not necessarily endorsing your \
-                 changes.</li><li>If you redistribute this text, you must distribute your \
-                 contributions under the same license as the original.</li></ul><p>Pictures \
-                 included with Scriptures and other documents on this site are licensed just \
-                 for use with those Scriptures and documents.\nFor other uses, please contact the \
-                 respective copyright owners.</p>",
-                "Creative Commons Attribution Share-Alike license 4.0",
-            ),
-        ] {
-            let text = plain_text(notice).to_lowercase();
-            assert!(text.contains(&phrase.to_lowercase()), "{notice}");
-            assert_eq!(notice_restriction(&text, phrase), None, "{notice}");
-        }
-    }
-
-    /// #134 review: a notice that keeps the expected phrase but takes the grant back is
-    /// refused.
-    #[test]
-    fn a_notice_that_keeps_the_phrase_but_revokes_it_is_refused() {
-        for notice in [
-            "<p>Not Public Domain. All rights reserved.</p>",
-            "<p>Not Public Domain</p>",
-            "<p>This Bible is no longer in the Public Domain.</p>",
-            "<p>Public Domain status revoked.</p>",
-            "<p>Public Domain, except the notes.</p>",
-            "<p>Public Domain</p><p>Copyright 2030. All rights reserved.</p>",
-            "<p>Public Domain</p><p>Free for non-commercial use.</p>",
-            "<p>Public Domain</p><p>This text may not be redistributed.</p>",
-            // #134 review: abbreviated and spelled-out restrictive licences, and denials.
-            "<p>Public Domain.</p><p>This edition is CC BY-ND 4.0.</p>",
-            "<p>Public Domain.</p><p>This edition is CC BY-NC 4.0.</p>",
-            "<p>Public Domain</p><p>Creative Commons Attribution-NoDerivs 3.0</p>",
-            "<p>Public Domain</p><p>Creative Commons Attribution-NonCommercial 4.0</p>",
-            "<p>Public Domain</p><p>No redistribution.</p>",
-            "<p>Public Domain</p><p>Please do not share this file.</p>",
-        ] {
-            let text = plain_text(notice).to_lowercase();
-            assert!(
-                notice_restriction(&text, "Public Domain").is_some(),
-                "{notice}"
-            );
-        }
-        // The live LSV notice with a no-derivatives sentence added keeps its phrase but is
-        // refused, so nothing is imported under the catalogue's CC-BY-SA-4.0.
-        let lsv = "<p>Creative Commons Attribution Share-Alike license 4.0.</p>\
-                   <p>This edition is CC BY-ND 4.0.</p>";
-        let text = plain_text(lsv).to_lowercase();
-        let phrase = "Creative Commons Attribution Share-Alike license 4.0";
-        assert!(text.contains(&phrase.to_lowercase()));
-        assert_eq!(
-            notice_restriction(&text, phrase).as_deref(),
-            Some("names a non-commercial or no-derivatives licence")
-        );
-    }
-
-    /// #134 review: a notice that keeps the expected phrase but excludes the licence in
-    /// another sentence is refused, so nothing is imported under the catalogue's licence.
-    #[test]
-    fn a_notice_that_excludes_its_licence_in_another_sentence_is_refused() {
-        let phrase = "Creative Commons Attribution Share-Alike license 4.0";
-        for notice in [
-            "<p>Creative Commons Attribution Share-Alike license 4.0. This licence does not \
-             apply to this edition.</p>",
-            "<p>Creative Commons Attribution Share-Alike license 4.0.</p><p>This edition is not \
-             covered by that license.</p>",
-            "<p>Creative Commons Attribution Share-Alike license 4.0.</p><p>The above licence is \
-             void.</p>",
-        ] {
-            let text = plain_text(notice).to_lowercase();
-            assert!(text.contains(&phrase.to_lowercase()), "{notice}");
-            assert_eq!(
-                notice_restriction(&text, phrase).as_deref(),
-                Some("says a licence does not apply"),
-                "{notice}"
-            );
-        }
-        let text = plain_text("<p>Public Domain.</p><p>That licence doesn't apply here.</p>")
-            .to_lowercase();
-        assert!(notice_restriction(&text, "Public Domain").is_some());
+    fn the_notice_ends_before_ebibles_build_stamp() {
+        let built = |day: &str| {
+            format!(
+                "<html><head><title>YLT</title></head><body><p>Public Domain</p>\
+                 <div class=\"fine\">HTML generated by eBible.org {day} 2026</div></body></html>"
+            )
+        };
+        assert_eq!(notice_text(&built("30 Oct")), "Public Domain");
+        assert_eq!(notice_text(&built("30 Oct")), notice_text(&built("2 Dec")));
+        // Without the marks the whole file is the notice.
+        assert_eq!(notice_text("<p>Public Domain</p>"), "Public Domain");
     }
 
     #[test]

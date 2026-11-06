@@ -44,12 +44,15 @@ enum Action {
 /// The colour is the licence class (#134): Free to share, Free for personal use, or unclear.
 pub(super) fn licence_badge(licence: Option<&str>) -> (&'static str, Color32) {
     let class = licence.map_or(LicenceClass::Unclear, licence_class);
-    let colour = match class {
+    (licence_badge_text(licence), licence_class_colour(class))
+}
+
+fn licence_class_colour(class: LicenceClass) -> Color32 {
+    match class {
         LicenceClass::FreeToShare => theme::c().verdigris,
         LicenceClass::PersonalUse => theme::c().warn,
         LicenceClass::Unclear => theme::c().muted,
-    };
-    (licence_badge_text(licence), colour)
+    }
 }
 
 fn licence_badge_text(licence: Option<&str>) -> &'static str {
@@ -505,7 +508,9 @@ fn listing_row(
                 egui::Label::new(RichText::new(&b.title).strong().color(theme::c().ink)).truncate(),
             );
             ui.horizontal(|ui| {
-                let (badge, colour) = licence_badge(b.licence.as_deref());
+                // An Open catalogue row's class is declared by its entry, not read from text.
+                let badge = licence_badge_text(b.licence.as_deref());
+                let colour = licence_class_colour(b.licence_class());
                 ui.label(RichText::new(badge).small().strong().color(colour))
                     .on_hover_text(format!(
                         "{}: {}",

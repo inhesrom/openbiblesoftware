@@ -60,22 +60,19 @@ fn download_open(s: &mut Session, id: &str) -> String {
 #[test]
 fn free_to_share_hides_every_resource_whose_licence_is_not_free() {
     let (mut s, _repos, root) = session("free-to-share", MOCK_OPEN_NOTICE);
-    // Every mock SWORD module states a licence; one more Open row gives an Unclear one.
+    // Every mock SWORD module states a licence. An Open row's class is the one its entry
+    // declares, whatever its licence text says: two more rows declare the other classes.
     let mut sources = s.get_bibles.open_sources().to_vec();
     let mut unclear = sources[0].clone();
     unclear.id = "unclear-excerpt".into();
-    unclear.licence = "Copyrighted".into();
+    unclear.licence = "Public Domain".into();
+    unclear.licence_class = LicenceClass::Unclear;
     sources.push(unclear);
-    // A spelled-out no-derivatives licence beside "Attribution" is not free (#134 review).
     let mut no_derivs = sources[0].clone();
     no_derivs.id = "noderivs-excerpt".into();
     no_derivs.licence = "Creative Commons Attribution-NoDerivs 3.0 Unported".into();
+    no_derivs.licence_class = LicenceClass::PersonalUse;
     sources.push(no_derivs);
-    // A free licence that denies redistribution in another clause is Unclear (#134 review).
-    let mut no_redistribution = sources[0].clone();
-    no_redistribution.id = "no-redistribution-excerpt".into();
-    no_redistribution.licence = "Public Domain; no redistribution".into();
-    sources.push(no_redistribution);
     s.get_bibles.set_open_catalogue(sources);
     let gb = &s.get_bibles;
     let every: Vec<&ResourceListing> = gb
@@ -102,7 +99,7 @@ fn free_to_share_hides_every_resource_whose_licence_is_not_free() {
         .filter(|b| b.licence_class() == LicenceClass::Unclear)
         .map(|b| b.module.as_str())
         .collect();
-    assert_eq!(unclear, ["unclear-excerpt", "no-redistribution-excerpt"]);
+    assert_eq!(unclear, ["unclear-excerpt"]);
 
     for filter in ResourceFilter::CHOICES {
         let shown: Vec<&ResourceListing> = gb
@@ -127,11 +124,7 @@ fn free_to_share_hides_every_resource_whose_licence_is_not_free() {
     let personal = gb.all_listings("", None, ResourceFilter::All, LicenceFilter::PersonalUse);
     assert!(personal.iter().any(|b| b.module == "NASB1995"));
     assert!(personal.iter().any(|b| b.module == "noderivs-excerpt"));
-    assert!(
-        !personal
-            .iter()
-            .any(|b| b.module == "no-redistribution-excerpt")
-    );
+    assert!(!personal.iter().any(|b| b.module == "unclear-excerpt"));
     assert!(
         personal
             .iter()
@@ -293,8 +286,8 @@ fn an_ebible_usfm_bible_downloads_and_imports_from_the_open_catalogue() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
-/// eBible regenerates its zips, so its entries are not pinned: the licence notice inside the
-/// download is checked instead, and a changed notice stops the Import.
+/// eBible regenerates its zips, so its entries are not pinned: the sha256 of the licence notice
+/// inside the download is checked instead, and a changed notice stops the Import.
 #[test]
 fn a_download_whose_licence_notice_changed_is_refused() {
     let (mut s, _repos, root) = session(
@@ -306,7 +299,7 @@ fn a_download_whose_licence_notice_changed_is_refused() {
     assert_eq!(record.phase, ImportPhase::Failed);
     let error = record.error.clone().unwrap();
     assert!(
-        error.contains("no longer says \"Public Domain\""),
+        error.contains("is not the one its evidence quotes"),
         "{error}"
     );
     assert!(s.library.get(&id).is_none());
@@ -329,61 +322,57 @@ fn a_download_whose_licence_notice_changed_is_refused() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
-/// #134 review: a notice that still contains the expected phrase but revokes the grant is
-/// refused too, and nothing is imported under a Public Domain licence.
+/// #134 reviews: the notice is never read for its meaning, so no wording gets a download
+/// through. Every notice that differs from the pinned one is refused before the Import
+/// writes the catalogue's free licence into a manifest, and nothing reaches the Library:
+/// negations, restrictions however they are spelled or separated, denials of sharing, and
+/// licences excluded in another sentence alike.
 #[test]
-fn a_download_whose_notice_negates_its_phrase_is_refused() {
-    let (mut s, _repos, root) = session(
-        "negated",
-        "<html><p>Not Public Domain. All rights reserved.</p></html>",
-    );
-    let id = download_open(&mut s, "web-excerpt");
-    let record = s.imports.report(&id).unwrap();
-    assert_eq!(record.phase, ImportPhase::Failed);
-    let error = record.error.clone().unwrap();
-    assert!(error.contains("not imported"), "{error}");
-    assert!(!error.contains("no longer says"), "{error}");
-    assert!(s.library.get(&id).is_none());
-    assert!(!root.join(format!("library/{id}.obr")).exists());
-    drop(s);
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-/// #134 review: a notice that keeps the phrase but names a restrictive licence by its
-/// abbreviation or spelled out, or denies redistribution, is refused before the Import
-/// writes the catalogue's free licence into the manifest.
-#[test]
-fn a_download_whose_notice_names_a_restrictive_licence_is_refused() {
+fn a_download_whose_notice_differs_from_the_pinned_one_is_refused() {
+    let with = |extra: &str| MOCK_OPEN_NOTICE.replace("</body>", &format!("{extra}</body>"));
     for (name, notice) in [
         (
-            "by-nd",
-            "<p>Public Domain.</p><p>This edition is CC BY-ND 4.0.</p>",
+            "negated",
+            "<html><body><p>Not Public Domain. All rights reserved.</p></body></html>".into(),
         ),
-        (
-            "by-nc",
-            "<p>Public Domain.</p><p>This edition is CC BY-NC 4.0.</p>",
-        ),
+        ("by-nd", with("<p>This edition is CC BY-ND 4.0.</p>")),
+        ("by-nc", with("<p>This edition is CC BY-NC 4.0.</p>")),
         (
             "noderivs",
-            "<p>Public Domain</p><p>Creative Commons Attribution-NoDerivs 3.0</p>",
+            with("<p>Creative Commons Attribution-NoDerivs 3.0</p>"),
         ),
-        (
-            "no-redistribution",
-            "<p>Public Domain; no redistribution.</p>",
-        ),
-        // A licence excluded in the next sentence.
+        ("no-redistribution", with("<p>No redistribution.</p>")),
         (
             "excluded",
-            "<p>Public Domain. This licence does not apply to this edition.</p>",
+            with("<p>This licence does not apply to this edition.</p>"),
+        ),
+        (
+            "nc-nb-hyphen",
+            with("<p>For non\u{2011}commercial use only.</p>"),
+        ),
+        (
+            "nc-two-spaces",
+            with("<p>Creative Commons Attribution Non  Commercial 4.0</p>"),
+        ),
+        ("not-commercial", with("<p>Not for commercial use.</p>")),
+        ("all-rights-nbsp", with("<p>All\u{a0}rights reserved.</p>")),
+        // Only a word's case changed.
+        (
+            "case",
+            MOCK_OPEN_NOTICE.replace("Public Domain", "PUBLIC DOMAIN"),
         ),
     ] {
-        let (mut s, _repos, root) = session(&format!("restrictive-{name}"), notice);
+        let (mut s, _repos, root) = session(&format!("differs-{name}"), &notice);
         let id = download_open(&mut s, "web-excerpt");
         let record = s.imports.report(&id).unwrap();
         assert_eq!(record.phase, ImportPhase::Failed, "{notice}");
         let error = record.error.clone().unwrap();
-        assert!(error.contains("not imported"), "{notice}: {error}");
+        assert!(
+            error.contains("is not the one its evidence quotes"),
+            "{notice}: {error}"
+        );
         assert!(s.library.get(&id).is_none(), "{notice}");
+        assert!(s.library.entries().is_empty(), "{notice}");
         assert!(!root.join(format!("library/{id}.obr")).exists(), "{notice}");
         drop(s);
         std::fs::remove_dir_all(root).unwrap();

@@ -16,8 +16,9 @@ licence files, and Internet Archive captures.
 
 Read from each repository's `mods.d.tar.gz` (CrossWire, CrossWire Beta, CrossWire Attic,
 CrossWire Wycliffe, Bible.org, Xiphos, eBible.org, Deutsche Bibelgesellschaft, Lockman, IBT and
-STEP Bible): **2,411 confs**, 2,374 of them with a `DistributionLicense`, in **66 distinct
-values**. The ten most common values:
+STEP Bible): **2,411 confs**, 2,361 of them with a non-empty `DistributionLicense` as Get
+Resources reads it (the conf's `DistributionLicense` key, trimmed), in **60 distinct values**
+(66 counting differences of case and spacing). The ten most common values:
 
 | Count | Value | Class |
 |---:|---|---|
@@ -32,46 +33,36 @@ values**. The ten most common values:
 | 38 | `Copyrighted` / `Copyrighted.` | Unclear |
 | 15 | `GPL` | Free to share |
 
-Every one of the 66 values is listed with its class in
+Every one of the 60 values is listed with its class in
 `crates/engine/src/licence.rs` (`LIVE_VALUES`, test `every_live_distribution_license_has_its_class`).
-The rules:
 
-- **Restrictions win.** Any non-commercial wording (`nc`, "non-commercial", "noncommercial",
-  "non commercial", Polish "niekomercyjne") or a Creative Commons `nd` makes the work **Free for
-  personal use**, whatever else the value says.
-- **Free to share:** Public Domain (including SPDX `LicenseRef-PublicDomain`), CC0, a Creative
-  Commons licence with `by`/`sa`/"Attribution"/"Atribuição", or GPL ("General public license").
-- **Free for personal use:** "permission to distribute", "distribution permitted to",
-  "distribution rights granted", "freely distributable".
-- **Negated or qualified grants are Unclear (fail closed).** A clause (cut at `;`, line breaks
-  and full stops) that names a licence and also says "not", "no", "never", "without",
-  "except", "unless", "but", "revoked" or the like ("Not Public Domain", "Public Domain, except
-  the notes", "no permission to distribute") makes the whole value Unclear, as does a free
-  licence beside "all rights reserved". CC's own "No Derivatives" is not a negation. Of the
-  66 live values only "No other distribution permitted" carries such a word, in a clause that
-  grants nothing, so no live value changes class by this rule.
-- **A free licence that denies sharing is Unclear.** If any clause pairs a sharing word
-  (distribute, redistribution, share, reproduce, republish) with a negation or "prohibited",
-  "forbidden", "restricted" ("Public Domain; no redistribution"), a value that would be Free to
-  share is Unclear; "no restrictions" / "without restriction" is not a denial. One live value
-  changes class: the Kretzmann Popular Commentary's licence says it is public domain, then gives
-  "full permission to replicate and distribute the text ... so long as the content itself is not
-  altered", a no-changes condition the Free to share list does not allow.
-- **A licence excluded in any sentence is Unclear.** If any clause pairs a licence or
-  applicability word (licence, license, licensed, apply, applies, applicable, cover(ed),
-  govern(ed)) with a negation or "void" / "invalid" ("CC BY-SA 4.0. This licence does not apply
-  to this edition."), the value is Unclear whatever it names. "Not copyrighted" names no licence
-  and "licensor" is not a licence word, so eBible's notices are unaffected. No live value
-  changes class (715 / 1,453 / 80 re-run after this rule).
-- **Unclear:** everything else. That includes "Copyrighted" with nothing more, publisher names
-  with a year, "See README file", "Unrestricted", GFDL, and an empty value. Unclear is never
-  shown as free.
+**The rule is two allowlists, and nothing else** (re-designed after five review rounds of
+#134, each of which found a new way past a free-text reading: negations, exclusions in another
+sentence, abbreviations, other hyphens and spaces):
+
+- **Free to share** (`FREE_TO_SHARE`): the live values that grant Public Domain, CC0, CC BY,
+  CC BY-SA or GPL, each written out whole ("Public Domain", "Creative Commons: by-sa", "GPL",
+  STEP's "CC BY 4.0 (Credit to …)", …), and the SPDX ids the Starter library and the Open
+  catalogue use (`LicenseRef-PublicDomain`, `CC0-1.0`, `CC-BY-4.0`, `CC-BY-SA-4.0`).
+- **Free for personal use** (`PERSONAL_USE`): the live values that grant use with a limit on
+  sharing (permission to distribute granted to a repository, non-commercial, no derivatives),
+  written out whole, and the SPDX ids of those Creative Commons licences.
+- A value is compared **whole**, after lowercasing and collapsing runs of whitespace only.
+  Anything else, including an allowlisted value with a word added ("Public Domain; no
+  redistribution", "Not Public Domain") or another hyphen ("Creative Commons: by‑sa" with
+  U+2011), is **Unclear**, and Unclear is never shown as free. A new live value stays Unclear
+  until a person adds it to a list, with a `LIVE_VALUES` row.
+- One live value changed class with the allowlists: "General public license for distribution
+  for any purpose" names neither the GNU GPL nor a version, so it is Unclear (it was Free to
+  share under the old word rules). The Kretzmann Popular Commentary's value, which says
+  public domain and then forbids altering the text, stays Unclear.
 
 Run against the live catalog as Get Resources builds it (2,248 listings after dropping duplicates,
-locked modules and general books; `live_free_to_share_over_the_live_catalog_keeps_only_free_rows`):
-**715 Free to share, 1,453 Free for personal use, 80 Unclear** (re-run 2026-11-06 after the
-sharing-denial rule; 716 / 1,453 / 79 before it). 32 of the Unclear rows have no
-`DistributionLicense` at all, and 29 say only "Copyrighted".
+locked modules and general books; the eleven `mods.d.tar.gz` re-read 2026-11-06 and listed by
+`getbibles.refresh` from local copies): **714 Free to share, 1,453 Free for personal use, 81
+Unclear** with the allowlists (715 / 1,453 / 80 under the old word rules; the one difference is
+"General public license …" above). 32 of the Unclear rows have no `DistributionLicense` at all,
+and 27 say only "Copyrighted".
 
 Two classes are left Unclear on purpose and would need a person to decide: "Unrestricted" (3
 Xiphos modules) and GFDL (2). The ticket's Free to share list is PD, CC0, CC BY, CC BY-SA and GPL,
@@ -159,11 +150,11 @@ page. All 11 downloaded, passed the check and imported on 2026-11-06
 **Why eBible entries are not pinned.** Every file in each zip is dated 2026-10-30, even
 `engylt`, whose text dates from 2019. eBible rebuilds every zip on each run, so the sha256
 drifts while the text does not. The ticket asks for downloads from the publisher's own URL
-(not an Internet Archive copy, as the Starter library uses), so the pin is replaced by a check
-that the licence notice inside the download still says what the evidence quotes, and does
-not take it back: a notice with "all rights reserved", "non-commercial", "no derivatives",
-"may not be", "not permitted" or "prohibited" anywhere, a sentence that excludes a licence
-("This licence does not apply to this edition."), or a negation within five words before
-or three after the phrase ("Not Public Domain", "no longer in the Public Domain"), is refused.
-The 11 live `copr.htm` notices pass, though Geneva says "no copyright restrictions" and Segond
-"It is not copyrighted" in other sentences.
+(not an Internet Archive copy, as the Starter library uses), so the zip's pin is replaced by a
+pin of the licence notice inside it. `copr.htm` is read as text from `<body>` up to eBible's
+build stamp (`<div class="fine">`, "HTML generated … 30 Oct 2026 from source files dated …",
+the only part re-dated on every build), and its sha256 must equal the entry's
+`licence_notice_sha256`. Each evidence file quotes that notice whole under "Pinned notice", and
+a test checks the quote hashes to the pin. The notice is never read for its meaning: any change
+at all, even one letter's case, refuses the download, and the entry must be reviewed and
+re-pinned. The 11 live notices were read and pinned on 2026-11-06.

@@ -134,11 +134,11 @@ The Tab that lists the Bibles, Lexicons, Commentaries and Dictionaries offered b
 _Avoid_: Store, Shop, Module manager, Install (for the whole flow)
 
 **Open catalogue**:
-The curated list of openly licensed Resources that are not SWORD modules, such as eBible.org's USFM Bibles. Get Resources lists them, and Download fetches each one from its publisher's own URL and imports it with our own importer. Each entry has its licence, Attribution and archived licence evidence. A download is checked first, against a pinned sha256 or against the licence notice inside it.
+The curated list of openly licensed Resources that are not SWORD modules, such as eBible.org's USFM Bibles. Get Resources lists them, and Download fetches each one from its publisher's own URL and imports it with our own importer. Each entry has its licence, Attribution and archived licence evidence. A download is checked first, against a pinned sha256 or against the pinned sha256 of the licence notice inside it, which the evidence quotes.
 _Avoid_: Store, Mirror, Extra repository
 
 **Licence class**:
-What a Resource's licence lets the user do. There are three. **Free to share**: Public Domain, CC0, CC BY, CC BY-SA or GPL. **Free for personal use**: permission to distribute granted to a repository, non-commercial, or no derivatives. **Unclear**: no licence, one the rules do not recognise, one that negates or qualifies its own grant ("Not Public Domain", "Public Domain, except the notes"), a free licence beside a statement that denies sharing ("Public Domain; no redistribution"), or a licence beside a sentence that excludes it ("CC BY-SA 4.0. This licence does not apply to this edition."). Unclear is never shown as free. SWORD's free-text `DistributionLicense` and SPDX ids both map to a Licence class.
+What a Resource's licence lets the user do. There are three. **Free to share**: Public Domain, CC0, CC BY, CC BY-SA or GPL. **Free for personal use**: permission to distribute granted to a repository, non-commercial, or no derivatives. **Unclear**: no licence, or any value not on the two allowlists. A SWORD `DistributionLicense` or SPDX id has a Licence class only if it is, whole, one of the values seen in the live catalogs (or an SPDX id) that the allowlists name; case and spacing aside, nothing else is read, so "Public Domain; no redistribution" or "Not Public Domain" is Unclear. Unclear is never shown as free. An Open catalogue entry declares its Licence class beside its licence evidence.
 _Avoid_: Licence type, Free/Non-free, Open (unqualified, for the class)
 
 **Update available**:

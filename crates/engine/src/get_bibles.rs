@@ -280,6 +280,10 @@ pub struct ResourceListing {
     /// An Open catalogue entry's archived licence evidence.
     #[serde(default)]
     pub evidence_url: Option<String>,
+    /// An Open catalogue entry's licence class, as the entry declares it beside its evidence.
+    /// A SWORD module has none: its class comes from its `DistributionLicense`.
+    #[serde(default)]
+    pub declared_licence_class: Option<LicenceClass>,
 }
 
 impl ResourceListing {
@@ -328,14 +332,18 @@ impl ResourceListing {
             refused: obs_formats::sword_import_type(conf).err(),
             source: ListingSource::Sword,
             evidence_url: None,
+            declared_licence_class: None,
         })
     }
 
-    /// What its licence lets the user do (#134). No licence is Unclear.
+    /// What its licence lets the user do (#134): an Open catalogue entry's declared class,
+    /// else the class of its `DistributionLicense`. No licence is Unclear.
     pub fn licence_class(&self) -> LicenceClass {
-        self.licence
-            .as_deref()
-            .map_or(LicenceClass::Unclear, licence_class)
+        self.declared_licence_class.unwrap_or_else(|| {
+            self.licence
+                .as_deref()
+                .map_or(LicenceClass::Unclear, licence_class)
+        })
     }
 
     /// From the Open catalogue (#134) rather than a SWORD repository.

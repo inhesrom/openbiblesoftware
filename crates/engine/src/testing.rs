@@ -1992,7 +1992,8 @@ pub const MOCK_OPEN_NOTICE: &str =
 
 /// A mock Open catalogue (#134): one entry, `web-excerpt`, an eBible-style USFM zip at a
 /// `file://` URL under `root`, built from the open-text WEB test excerpt with `notice` as its
-/// `copr.htm`. Its other fields are the compiled-in catalogue's first entry's.
+/// `copr.htm`, and pinned to [`MOCK_OPEN_NOTICE`]. Its other fields are the compiled-in
+/// catalogue's first entry's.
 pub fn mock_open_catalogue(root: &Path, notice: &str) -> Vec<crate::open_catalogue::OpenSource> {
     let usfm = Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/usfm/web");
     let mut files: Vec<(String, String)> = std::fs::read_dir(&usfm)
@@ -2017,6 +2018,9 @@ pub fn mock_open_catalogue(root: &Path, notice: &str) -> Vec<crate::open_catalog
     source.publisher = "eBible.org".into();
     source.sha256 = None;
     source.licence_file = Some("copr.htm".into());
-    source.licence_phrase = Some("Public Domain".into());
+    // Pinned to MOCK_OPEN_NOTICE, so any other `notice` is refused.
+    source.licence_notice_sha256 = Some(crate::starter::sha256_hex(
+        crate::open_catalogue::notice_text(MOCK_OPEN_NOTICE).as_bytes(),
+    ));
     vec![source]
 }
