@@ -149,10 +149,64 @@ struct Shared {
     /// Set only while holding `queue`; see [`JobQueue`]'s `Drop`.
     shutdown: AtomicBool,
     cancels: Mutex<Vec<(JobId, Arc<AtomicBool>)>>,
-    /// Tests stall an idle worker here, between its `shutdown` check and its wait, the way a
-    /// starved CI runner can (#123).
+    /// Tests hold an idle worker between its `shutdown` check and its wait, the way a starved
+    /// CI runner can (#123).
     #[cfg(test)]
-    pause_before_wait: Duration,
+    idle_gate: Option<Arc<IdleGate>>,
+}
+
+/// A test-only pause for the first idle worker to reach it, between its `shutdown` check and
+/// its wait (still holding the queue lock), until the test releases it. `Drop` reports when
+/// its wake-up has been sent, so a test can release the worker only after that (#123).
+#[cfg(test)]
+#[derive(Default)]
+struct IdleGate {
+    state: Mutex<IdleGateState>,
+    changed: Condvar,
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct IdleGateState {
+    /// A worker is held in the gap.
+    held: bool,
+    /// `Drop` has sent its wake-up (`notify_all`).
+    woken: bool,
+    /// The held worker may go on to its wait; the gate holds no one after this.
+    released: bool,
+}
+
+#[cfg(test)]
+impl IdleGate {
+    fn hold(&self) {
+        let mut s = lock(&self.state);
+        if s.released {
+            return;
+        }
+        s.held = true;
+        self.changed.notify_all();
+        while !s.released {
+            s = self
+                .changed
+                .wait(s)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+        }
+    }
+
+    fn update(&self, f: impl FnOnce(&mut IdleGateState)) {
+        f(&mut lock(&self.state));
+        self.changed.notify_all();
+    }
+
+    /// Wait up to `timeout` for `done`; whether it came.
+    fn wait_for(&self, timeout: Duration, done: impl Fn(&IdleGateState) -> bool) -> bool {
+        let s = lock(&self.state);
+        let (s, _) = self
+            .changed
+            .wait_timeout_while(s, timeout, |s| !done(s))
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        done(&s)
+    }
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -352,7 +406,9 @@ fn worker(shared: &Shared, events: &Sender<JobEvent>) {
                     break q;
                 }
                 #[cfg(test)]
-                std::thread::sleep(shared.pause_before_wait);
+                if let Some(gate) = &shared.idle_gate {
+                    gate.hold();
+                }
                 queue = shared
                     .ready
                     .wait(queue)
@@ -386,6 +442,10 @@ impl Drop for JobQueue {
             flag.store(true, Ordering::Relaxed);
         }
         self.shared.ready.notify_all();
+        #[cfg(test)]
+        if let Some(gate) = &self.shared.idle_gate {
+            gate.update(|s| s.woken = true);
+        }
         for w in self.workers.drain(..) {
             let _ = w.join();
         }
@@ -439,30 +499,67 @@ mod tests {
         }
     }
 
-    /// Events for `id` until its terminal event, which must come within `WAIT` overall: a job
-    /// that keeps reporting progress but never ends fails the test instead of hanging it.
-    fn events_until_done(q: &JobQueue, id: JobId) -> Vec<JobEventKind> {
-        let deadline = Instant::now() + WAIT;
+    /// The next event, if one comes before `deadline`. Once it has passed there is none, even
+    /// with events still buffered: `wait_event(Duration::ZERO)` would still return those.
+    fn event_before(q: &JobQueue, deadline: Instant) -> Option<JobEvent> {
+        let left = deadline.checked_duration_since(Instant::now())?;
+        if left.is_zero() {
+            return None;
+        }
+        q.wait_event(left)
+    }
+
+    /// Events for `id` until its terminal event, if that comes before `deadline`; else the
+    /// events seen by then.
+    fn events_before(
+        q: &JobQueue,
+        id: JobId,
+        deadline: Instant,
+    ) -> Result<Vec<JobEventKind>, Vec<JobEventKind>> {
         let mut out = Vec::new();
-        while let Some(e) = q.wait_event(deadline.saturating_duration_since(Instant::now())) {
+        while let Some(e) = event_before(q, deadline) {
             if e.id != id {
                 continue;
             }
             let terminal = e.kind.is_terminal();
             out.push(e.kind);
             if terminal {
-                return out;
+                return Ok(out);
             }
         }
-        let progress = out
-            .iter()
-            .filter(|k| matches!(k, JobEventKind::Progress { .. }))
-            .count();
-        let others: Vec<_> = out
-            .iter()
-            .filter(|k| !matches!(k, JobEventKind::Progress { .. }))
-            .collect();
-        panic!("job {id:?} did not finish within {WAIT:?}; got {progress} Progress and {others:?}");
+        Err(out)
+    }
+
+    /// Events for `id` until its terminal event, which must come within `WAIT` overall: a job
+    /// that keeps reporting progress but never ends fails the test instead of hanging it.
+    fn events_until_done(q: &JobQueue, id: JobId) -> Vec<JobEventKind> {
+        events_before(q, id, Instant::now() + WAIT).unwrap_or_else(|out| {
+            let progress = out
+                .iter()
+                .filter(|k| matches!(k, JobEventKind::Progress { .. }))
+                .count();
+            let others: Vec<_> = out
+                .iter()
+                .filter(|k| !matches!(k, JobEventKind::Progress { .. }))
+                .collect();
+            panic!(
+                "job {id:?} did not finish within {WAIT:?}; got {progress} Progress and {others:?}"
+            )
+        })
+    }
+
+    /// #123: the overall deadline holds even when events keep coming. With the job's events
+    /// (its terminal one too) already buffered, a deadline that has passed yields none of them.
+    #[test]
+    fn events_before_a_passed_deadline_are_not_taken() {
+        let q = JobQueue::inline();
+        let id = q.submit_fn("quick", |_| Ok(1u8));
+        q.pump(10);
+        let passed = Instant::now();
+        assert!(matches!(events_before(&q, id, passed), Err(out) if out.is_empty()));
+        // The events were left buffered.
+        let events = events_before(&q, id, Instant::now() + WAIT).expect("buffered");
+        assert!(matches!(events.last(), Some(JobEventKind::Finished(_))));
     }
 
     /// Drop `q` and fail if that takes longer than `WAIT` (a worker that never wakes).
@@ -524,24 +621,40 @@ mod tests {
         drop_within_wait(q);
     }
 
-    /// #123: the worker that ran the job goes idle as the test drops the queue. If the drop's
-    /// wake-up lands between the worker's `shutdown` check and its wait, the worker must still
-    /// stop. The pause holds every idle worker in that gap.
+    /// #123: dropping the queue while an idle worker is between its `shutdown` check and its
+    /// wait (as a starved runner can leave it, e.g. right after a job) must still stop it. The
+    /// gate holds the worker there until `Drop` has sent its wake-up, or, when `Drop` is
+    /// rightly blocked on the queue lock the worker holds, for `BLOCKED`. Set without the
+    /// lock, `shutdown` and the wake-up land in the gap, the wake-up is lost, and the drop
+    /// hangs.
     #[test]
     fn dropping_the_queue_wakes_a_worker_stalled_before_its_wait() {
+        const BLOCKED: Duration = Duration::from_millis(500);
+        let gate = Arc::new(IdleGate::default());
         let q = JobQueue::with_shared(
-            2,
+            1,
             Shared {
-                pause_before_wait: Duration::from_millis(50),
+                idle_gate: Some(Arc::clone(&gate)),
                 ..Shared::default()
             },
         );
-        let id = q.submit_fn("quick", |_| Ok(1u8));
-        assert!(matches!(
-            events_until_done(&q, id).last(),
-            Some(JobEventKind::Finished(_))
-        ));
-        drop_within_wait(q);
+        assert!(
+            gate.wait_for(WAIT, |s| s.held),
+            "the idle worker never reached its wait"
+        );
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            drop(q);
+            let _ = tx.send(());
+        });
+        let woken = gate.wait_for(BLOCKED, |s| s.woken);
+        assert!(
+            !woken,
+            "Drop sent its wake-up while a worker held the queue lock"
+        );
+        gate.update(|s| s.released = true);
+        rx.recv_timeout(WAIT)
+            .expect("dropping the JobQueue hung: a worker was never woken to shut down");
     }
 
     #[test]
