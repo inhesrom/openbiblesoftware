@@ -16,7 +16,9 @@
 //!   with it off.
 //! - **Bible references in Note bodies** are found when shown ([`body_references`]), read in
 //!   the Standard versification (ADR 0002, #17 rule 7); clicking one runs
-//!   `notes.show_passage`.
+//!   `notes.show_passage`. A Note's text carries Note formatting (#186, ADR 0010):
+//!   [`note_body`] gives its lines as shown, each with the references in its text, and
+//!   [`link_passages`] reads a link's target as a Bible reference.
 //! - **Notes search** reads the #16 query grammar against `notes_fts` (one `body` column of
 //!   normalized words), newest change first, within the Search Tab's Notebook filter and
 //!   optional Passage list. It runs synchronously: the index is written in the same
@@ -26,8 +28,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::sync::Arc;
 
-use obs_model::ResourceType;
-use obs_scripture::{Book, Passage, PassageList, RefStyle, Standard, Verse, format_passage};
+use obs_model::{NoteLine, NoteMarkKind, ResourceType, note_plain_text, parse_note_text};
+use obs_scripture::{
+    Book, Passage, PassageList, RefStyle, Standard, Verse, format_passage, parse_reference,
+};
 use obs_search::{Compiled, Highlighter, NoLexicon};
 use serde_json::{Value, json};
 
@@ -152,6 +156,40 @@ impl NotesResults {
 /// versification, in text order.
 pub fn body_references(body: &str) -> Vec<(Range<usize>, PassageList)> {
     obs_formats::scripture_references(body)
+}
+
+/// One line of a Note as shown, with the Bible references in its text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoteBodyLine {
+    pub line: NoteLine,
+    /// Bible references found in the line's shown text (byte ranges into it), outside its
+    /// links: a link goes where its target says.
+    pub references: Vec<(Range<usize>, PassageList)>,
+}
+
+/// A Note's lines as shown (Note formatting, #186), each with its Bible references.
+pub fn note_body(body: &str) -> Vec<NoteBodyLine> {
+    parse_note_text(body)
+        .into_iter()
+        .map(|line| {
+            let links: Vec<Range<usize>> = line
+                .marks
+                .iter()
+                .filter(|m| matches!(m.kind, NoteMarkKind::Link(_)))
+                .map(|m| m.range.clone())
+                .collect();
+            let references = body_references(&line.text)
+                .into_iter()
+                .filter(|(r, _)| !links.iter().any(|l| l.start < r.end && r.start < l.end))
+                .collect();
+            NoteBodyLine { line, references }
+        })
+        .collect()
+}
+
+/// A link target that is a Bible reference (Standard versification), such as `Rom 5:8`.
+pub fn link_passages(target: &str) -> Option<PassageList> {
+    parse_reference(target.trim(), &Standard, None).ok()
 }
 
 /// A Bible's own reference as `native_ref` stores it (`Esth.10.4`, `Esth.10.4-Esth.10.6`).
@@ -343,7 +381,7 @@ impl Session {
                 }
                 let hay = format!(
                     "{}\n{}\n{}\n{}",
-                    c.annotation.body(),
+                    note_plain_text(c.annotation.body()),
                     c.quote.as_deref().unwrap_or_default(),
                     c.reference,
                     c.notebook
@@ -613,7 +651,8 @@ impl Session {
             .filter(|a| notebook.as_deref().is_none_or(|n| a.notebook_id == n))
             .filter(|a| in_scope(&scope, a))
             .map(|a| {
-                let text = collapse(a.body());
+                // The words the Note shows, its formatting's markup left out.
+                let text = collapse(&note_plain_text(a.body()));
                 let highlights = highlighter.ranges(&text, Vec::new());
                 NoteHit {
                     id: a.id.clone(),

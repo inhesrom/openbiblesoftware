@@ -9,9 +9,10 @@ managing every Annotation (#18 rule 7). The Search Tool's Notes mode searches No
 |---|---|---|
 | `obs-search` | `compile_notes` | The #16 query grammar compiled for `notes_fts` (one `body` column). A Strong's number or Lemma matches itself as written in a Note. |
 | `obs-formats` | `scripture_references` | Bible references in typed text, with byte ranges (Note bodies). English words that are also book spellings need a period. |
-| `obs-layout` | `styled_snippet_paragraph` | An inline snippet with some byte ranges in their own colour role (references as links). |
+| `obs-model` | `parse_note_text`, `escape_note_text`, `note_plain_text` | Note formatting (#186): a Note's text as shown, line by line, with its marks; plain text escaped to show as typed. |
+| `obs-layout` | `styled_snippet_paragraph`, `formatted_snippet_paragraph` | An inline snippet with some byte ranges in their own colour role (references as links), or bold, italic and at a heading's scale. |
 | `obs-engine` | `notes.rs` | Cards, following anchors, Show in text, Notes search; commands `notes.notebook`, `notes.order`, `notes.open`, `notes.follow`, `notes.show_passage`, `search.notebook`. |
-| `obs-ui-egui` | `shell/notes_tab.rs`, `shell/search_tab.rs` | The Notebook column, the virtualized card list, the delete dialog, and the Notes results. |
+| `obs-ui-egui` | `shell/notes_tab.rs`, `shell/note_editor.rs`, `shell/search_tab.rs` | The Notebook column, the virtualized card list, the Note editor, the delete dialog, and the Notes results. |
 
 ## The Notebook column
 
@@ -105,6 +106,59 @@ annotation its warning.
   `Amos`) always are. Names that are also books (`Mark 4:30`, `John 3:16`) still link.
 - **Card menu** (… and right-click): Go to text, Go to text in a new Tab, Move to Notebook,
   Highlight style, Delete. All undoable.
+
+## Note formatting (#186)
+
+A Note's text is a line-based Markdown subset, stored as typed in `annotations.body`
+([ADR 0010](../adr/0010-note-text-is-a-line-based-markdown-subset.md)). `obs_model::parse_note_text`
+reads it; everything else goes through it.
+
+| Typed | Shown |
+|---|---|
+| `# `, `## `, `### ` (to `###### `) at a line's start | A heading: bold, larger (×1.35, ×1.2, ×1.08), in the heading colour |
+| `- `, `* ` or `+ ` | A bulleted item (•, then ○ and – for nested items) |
+| `1. ` or `1) ` | A numbered item, with the number typed |
+| two more spaces before the marker, under an item | One level deeper (18 px), at most one level below the item above |
+| `>` or `> ` | A block-quote line, beside a rule |
+| `**bold**`, `__bold__` | Bold (the reading font's bold face) |
+| `*italic*`, `_italic_` | Italic; CommonMark's flanking rules, so `snake_case` and `2 * 3` stay as typed |
+| `[text](Rom 5:8)`, `[text](<Rom 5>)` | A link to the Passage: hover previews it, click shows it, as for a reference |
+| `[text](https://…)` | A link to the web address: hover shows it, click opens the browser |
+| `\` before ASCII punctuation | The character itself; a `\` ending a line is CommonMark's hard break and shows nothing |
+
+Every line break is a line break where the Note is shown, and a blank line is a gap
+(`0.8 ×` the text size), as for plain Notes before. Bible references in a line's shown text
+are links wherever they are (bold, in a list item, in a heading), except inside a link, whose
+target decides where it goes (`notes::note_body`). Each line is laid out by the pipeline with
+`obs_layout::formatted_snippet_paragraph` (bold, italic and link-colour byte ranges, which may
+overlap, at a heading's scale); a plain line is laid out exactly as before (`a_plain_formatted_snippet_is_the_styled_snippet_it_replaces`).
+
+- **Old Notes**: User database migration 9 → 10 escapes, in each Note written before, any
+  line that would now read as formatting (`# not a heading` becomes `\# not a heading`), so
+  every old Note shows exactly as it did; Notes that read as plain text are untouched.
+- **Search and the filter field** read the text a Note shows (`note_plain_text`): `notes_fts`
+  indexes it, so `**grace** alone` is found by the phrase `"grace alone"`, and link targets are
+  not words of the Note. Notes search snippets show no markup.
+- **The marker preview** in the text shows the lines as shown, a heading strong, items after
+  their bullet or number.
+
+### The Note editor (`shell/note_editor.rs`)
+
+Used by the cards and by the popup Note editor. Above the field a toolbar: **B**, *I*, **H**
+(cycles `#`, `##`, `###`, text), •, 1., “” and 🔗 (inserts `[selection]()` with the cursor in the
+parentheses). Ctrl+B and Ctrl+I (Cmd on macOS) bold and italicise the selection, or take it
+off when it is already so. Typing `- `, `1. ` or `> ` at a line's start starts a list or quote;
+Enter at the end of an item continues it (with the next number) and Enter in an empty item
+ends it. List, quote and heading changes apply to every line the selection touches.
+
+The field shows the Markdown as typed, coloured: headings in the display face and larger,
+bold text strong, italics slanted, markup dimmed, links and Bible references in the link colour
+and underlined. Each toolbar or shortcut change is one step of the field's own undo (Ctrl+Z,
+Ctrl+Shift+Z), and pressing the toolbar does not end the card's editing pass (the field gets
+the keys back). The saves of an editing pass are still one `annotation.edit` undo step.
+
+Exports keep the formatting: see [copy-export.md](copy-export.md) and `notes_export.rs`
+(`note_markdown`, `note_html`).
 
 ## Following a card (#18 rule 10)
 

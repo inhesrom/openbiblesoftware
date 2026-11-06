@@ -87,6 +87,16 @@ Attribution of each quoted Resource that requires one.
   block markers at a line start (`-`, `+`, `=`, `1.`) are escaped, lines end in a hard line
   break, leading spaces are written `&#32;`, and a blank line stays a paragraph break.
   Trailing spaces on a line are dropped.
+- A Note's Note formatting (#186) is kept as CommonMark (`note_markdown`): its headings two
+  levels down (`#` → `###`, under the Annotation's `##`), `- ` and `1. ` list items (nested by
+  their parent's content column), `> ` quote lines, `**bold**`, `*italic*` and
+  `[text](target)` links (`<…>` around a target with spaces, such as a Bible reference). A
+  blank line goes between a list or quote and text next to it, which CommonMark would
+  otherwise join. HTML (`note_html`) has `<h3>`…, nested `<ul>`/`<ol start>`,
+  `<blockquote>`, `<strong>`, `<em>` and `<a href>` for web links; a link to a Bible
+  reference is its text followed by the reference in parentheses when they differ.
+  `notes_export_tests::exporting_a_formatted_note_keeps_its_formatting_as_markdown_and_html`
+  reads the Markdown with a CommonMark parser (pulldown-cmark, a dev-dependency) to check.
 - A Notebook lists in Bible order; a Notes search result keeps its order (newest change
   first) and is titled `Notes matching “…”`.
 

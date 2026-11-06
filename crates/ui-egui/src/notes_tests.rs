@@ -1016,3 +1016,337 @@ fn new_notebook_creates_one_from_the_name_typed() {
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A Note with Note formatting (#186): a heading, a nested list, bold and italic text and a
+/// Bible reference.
+const STUDY: &str = "## Justified by faith\n- peace with God\n- access by **grace**\n  - *rejoice* in hope\nGod commendeth his love: Rom 5:8.";
+
+/// A KJV with Romans 5:8, opened in a Tab of its own (the most recent Bible Tab).
+fn open_romans(h: &mut Harness, dir: &Path) -> TabId {
+    use obs_engine::testing::bibles::{bible, v};
+    let r = bible(
+        "kjv-rom",
+        "KJV",
+        &[
+            (
+                v(Book::Romans, 5, 1),
+                "Therefore being justified by faith, we have peace with God through our Lord Jesus Christ:",
+            ),
+            (
+                v(Book::Romans, 5, 8),
+                "But God commendeth his love toward us, in that, while we were yet sinners, Christ died for us.",
+            ),
+        ],
+        None,
+        &[],
+    );
+    let path = dir.join("kjv-rom.obr");
+    obs_store::write_obr(&r, &path).unwrap();
+    h.shell.st.session.library.add_file(&path).unwrap();
+    // The ★ Bible, which previews references.
+    h.shell
+        .run("library.move", &json!({ "id": "kjv-rom", "to": 0 }))
+        .unwrap();
+    let out = h
+        .shell
+        .run("resource.open", &json!({ "id": "kjv-rom", "split": true }))
+        .unwrap();
+    settle_all(h);
+    TabId(out["tab"].as_u64().unwrap())
+}
+
+/// The faces and colour roles a drawn line's `part` was laid out in.
+fn styles_of(line: &crate::shell::notes_tab::DrawnLine, part: &str) -> Vec<obs_layout::RunStyle> {
+    let at = line.laid.text.find(part).unwrap();
+    let range = at..at + part.len();
+    line.laid
+        .lines
+        .iter()
+        .flat_map(|l| &l.items)
+        .filter(|i| i.bytes.start < range.end && range.start < i.bytes.end)
+        .map(|i| i.style)
+        .collect()
+}
+
+fn drawn_line<'a>(h: &'a Harness, text: &str) -> &'a crate::shell::notes_tab::DrawnLine {
+    h.shell
+        .st
+        .notes_ui
+        .drawn_lines
+        .iter()
+        .find(|l| l.laid.text == text)
+        .unwrap_or_else(|| {
+            let drawn: Vec<&str> = (h.shell.st.notes_ui.drawn_lines.iter())
+                .map(|l| l.laid.text.as_str())
+                .collect();
+            panic!("{text:?} not drawn: {drawn:?}")
+        })
+}
+
+/// Acceptance (#186): a Note with a heading, a list and "Rom 5:8" is drawn formatted;
+/// hovering the reference previews the verse and clicking it goes there.
+#[test]
+fn a_formatted_note_renders_its_heading_list_and_a_live_reference() {
+    use obs_fonts::FaceId;
+    use obs_model::NoteLineKind;
+    let dir = folder("formatted");
+    let mut h = launch(&dir);
+    let kjv = open_romans(&mut h, &dir);
+    // Room for the Notes Tool beside the KJV.
+    let tb = h.tab_id("TB");
+    h.shell.run("tab.close", &json!({ "tab": tb.0 }));
+    settle_all(&mut h);
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Rom 5:8", "body": STUDY }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    open_notes(&mut h);
+    let size = h.shell.st.session.text.size;
+    let body = card_body(&h, &id);
+
+    // The heading: no markup shown, bold, larger, in the heading colour.
+    let heading = drawn_line(&h, "Justified by faith");
+    assert_eq!(heading.kind, NoteLineKind::Heading(2));
+    for s in styles_of(heading, "Justified by faith") {
+        assert_eq!(s.face, FaceId::Bold);
+        assert_eq!(s.role, obs_layout::ColorRole::Accent);
+        assert!(s.size > size * 1.1, "{s:?}");
+    }
+    // The list: each item after its bullet, the nested one further in.
+    let first = drawn_line(&h, "peace with God");
+    let second = drawn_line(&h, "access by grace");
+    let nested = drawn_line(&h, "rejoice in hope");
+    assert_eq!(first.marker.as_deref(), Some("•"));
+    assert_eq!(nested.marker.as_deref(), Some("○"));
+    assert!(first.text_rect.left() > body.left() + 10.0);
+    assert_eq!(first.text_rect.left(), second.text_rect.left());
+    assert!(nested.text_rect.left() > first.text_rect.left() + 10.0);
+    assert!(first.text_rect.top() > heading.text_rect.bottom() - 1.0);
+    // Bold and italic text.
+    for s in styles_of(second, "grace") {
+        assert_eq!(s.face, FaceId::Bold);
+    }
+    for s in styles_of(second, "access by") {
+        assert_eq!(s.face, FaceId::Regular);
+    }
+    for s in styles_of(nested, "rejoice") {
+        assert_eq!(s.face, FaceId::Italic);
+    }
+    // The reference, as a link.
+    let text = drawn_line(&h, "God commendeth his love: Rom 5:8.");
+    assert_eq!(text.text_rect.left(), body.left());
+    for s in styles_of(text, "Rom 5:8") {
+        assert_eq!(s.role, obs_layout::ColorRole::Link);
+    }
+    preview(&h, "notes-formatted-card-kittest");
+
+    // Hovering it previews the verse from the KJV.
+    let at = text.laid.text.find("Rom 5:8").unwrap();
+    let rects = crate::compare_view::range_rects(&text.laid, &(at..at + "Rom 5:8".len()));
+    let [x0, y0, x1, y1] = rects[0];
+    let on = text.text_rect.min + vec2((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    hover(&mut h, on);
+    settle_notes(&mut h);
+    hover(&mut h, on + vec2(0.5, 0.0));
+    assert!(h.find("Rom 5:8").is_some(), "{:?}", h.texts());
+    assert!(h.find("★ KJV").is_some(), "{:?}", h.texts());
+    preview(&h, "notes-formatted-reference-popup-kittest");
+    // Clicking it goes there in the most recent Bible Tab, and is not an edit.
+    let at_now = |h: &Harness| {
+        h.shell
+            .st
+            .session
+            .workspace
+            .tab(kjv)
+            .unwrap()
+            .history
+            .current()
+    };
+    assert_eq!(at_now(&h), Some(Verse::new(Book::Romans, 5, 1)));
+    h.click(on);
+    h.frames(2);
+    assert_eq!(at_now(&h), Some(Verse::new(Book::Romans, 5, 8)));
+    assert!(h.shell.st.notes_ui.editing.is_none());
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Acceptance (#186): a Note written as plain text before Note formatting looks the same
+/// after the v10 migration: every line is drawn as plain text at the left, in the body face,
+/// with the markup characters it holds shown as typed, and blank lines as gaps.
+#[test]
+fn an_old_plain_text_note_looks_the_same_after_the_migration() {
+    use obs_fonts::FaceId;
+    let dir = folder("plain");
+    let mut h = launch(&dir);
+    let plain = "# not a heading\n- nor a list\n\n1. nor this, see Gen 32:24\n*stars* and a_b > c";
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Gen 32:24", "body": obs_model::escape_note_text(plain) }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    open_notes(&mut h);
+    let body = card_body(&h, &id);
+    let lines = &h.shell.st.notes_ui.drawn_lines;
+    let drawn: Vec<&str> = lines.iter().map(|l| l.laid.text.as_str()).collect();
+    assert_eq!(
+        drawn,
+        plain
+            .split('\n')
+            .filter(|l| !l.is_empty())
+            .collect::<Vec<_>>()
+    );
+    let size = h.shell.st.session.text.size;
+    for l in lines {
+        assert_eq!(l.kind, obs_model::NoteLineKind::Text);
+        assert!(l.marker.is_none());
+        assert_eq!(l.text_rect.left(), body.left());
+        for item in l.laid.lines.iter().flat_map(|x| &x.items) {
+            assert_eq!(item.style.face, FaceId::Regular, "{:?}", l.laid.text);
+            assert_eq!(item.style.size, size);
+        }
+    }
+    // The blank line is the same gap as before: 0.8 of the text size between two lines.
+    let gap = lines[2].text_rect.top() - lines[1].text_rect.bottom();
+    let spacing = h.ctx.global_style().spacing.item_spacing.y;
+    assert!((gap - (size * 0.8 + spacing)).abs() < 0.5, "{gap}");
+    // And lines next to each other the usual spacing apart.
+    let next = lines[1].text_rect.top() - lines[0].text_rect.bottom();
+    assert!((next - spacing).abs() < 0.5, "{next}");
+    // Each line is laid out exactly as plain Note text always was: references as links.
+    let reference = drawn_line(&h, "1. nor this, see Gen 32:24");
+    for s in styles_of(reference, "Gen 32:24") {
+        assert_eq!(s.role, obs_layout::ColorRole::Link);
+    }
+    preview(&h, "notes-plain-after-migration-kittest");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The Note editor (#186): Ctrl+B and the toolbar format the text, Enter continues a list,
+/// the field's own undo takes each change back, the keys stay in the field, and the saves of
+/// the editing pass are one Annotation edit that Edit → Undo takes back.
+#[test]
+fn the_note_editor_formats_with_shortcuts_and_its_toolbar_and_undoes() {
+    let dir = folder("editor");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    h.shell.run("tab.close", &json!({ "tab": tb.0 }));
+    settle_all(&mut h);
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Gen 32:24", "body": "wrestled until dawn" }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    open_notes(&mut h);
+    let body = card_body(&h, &id);
+    h.click(body.center());
+    assert!(h.ctx.text_edit_focused());
+    let text = |h: &Harness| {
+        h.shell
+            .st
+            .notes_ui
+            .editing
+            .as_ref()
+            .map(|e| e.text.clone())
+            .unwrap_or_default()
+    };
+    // Ctrl+B on the whole text.
+    press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+    press_key(&mut h, egui::Key::B, Modifiers::COMMAND);
+    h.frame();
+    assert_eq!(text(&h), "**wrestled until dawn**");
+    // The field's undo takes it back, and redo puts it again.
+    press_key(&mut h, egui::Key::Z, Modifiers::COMMAND);
+    h.frame();
+    assert_eq!(text(&h), "wrestled until dawn");
+    press_key(&mut h, egui::Key::Z, Modifiers::COMMAND | Modifiers::SHIFT);
+    h.frame();
+    assert_eq!(text(&h), "**wrestled until dawn**");
+    // The toolbar's bulleted list: the editor keeps the keys and stays open.
+    h.click_text("•");
+    assert_eq!(text(&h), "- **wrestled until dawn**");
+    assert!(h.shell.st.notes_ui.editing.is_some(), "still editing");
+    assert!(h.ctx.text_edit_focused(), "the field kept the keys");
+    // Enter at the end continues the list.
+    press_key(&mut h, egui::Key::End, Modifiers::COMMAND);
+    press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    h.events.push(Event::Text("blessed at Peniel".into()));
+    h.frame();
+    assert_eq!(text(&h), "- **wrestled until dawn**\n- blessed at Peniel");
+    h.events.push(Event::Text(", cf. Gen 32:30".into()));
+    h.frame();
+    assert_eq!(
+        text(&h),
+        "- **wrestled until dawn**\n- blessed at Peniel, cf. Gen 32:30"
+    );
+    preview(&h, "notes-editor-kittest");
+    // Ctrl+Enter ends editing: saved.
+    press_key(&mut h, egui::Key::Enter, Modifiers::COMMAND);
+    h.frames(2);
+    assert!(h.shell.st.notes_ui.editing.is_none());
+    let saved = |h: &Harness| {
+        h.shell
+            .st
+            .session
+            .annotation(&id)
+            .unwrap()
+            .body()
+            .to_string()
+    };
+    assert_eq!(
+        saved(&h),
+        "- **wrestled until dawn**\n- blessed at Peniel, cf. Gen 32:30"
+    );
+    // Edit → Undo takes the whole pass back as one Annotation edit; Redo puts it again.
+    h.shell.run("edit.undo", &json!({})).unwrap();
+    assert_eq!(saved(&h), "wrestled until dawn");
+    h.shell.run("edit.redo", &json!({})).unwrap();
+    assert_eq!(
+        saved(&h),
+        "- **wrestled until dawn**\n- blessed at Peniel, cf. Gen 32:30"
+    );
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn the_note_editor_symbols_are_in_the_chrome_fonts_and_bullets_in_the_reading_font() {
+    let h = Harness::new();
+    h.ctx.fonts_mut(|f| {
+        let missing: Vec<&str> = ["•", "“”", "🔗"]
+            .into_iter()
+            .filter(|s| !f.has_glyphs(&egui::FontId::proportional(14.0), s))
+            .collect();
+        assert!(missing.is_empty(), "{missing:?}");
+    });
+    let face = obs_fonts::face(obs_fonts::FaceId::Regular).unwrap();
+    for c in ['•', '○', '–'] {
+        assert!(face.covers(c), "{c}");
+    }
+}
+
+/// Visual evidence for `docs/previews/<name>.png` when `UPDATE_PREVIEWS` is set.
+fn preview(h: &Harness, name: &str) {
+    if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+        std::fs::create_dir_all(&dir).unwrap();
+        h.screenshot(&dir.join(format!("{name}.ppm")));
+    }
+}

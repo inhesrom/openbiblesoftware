@@ -573,10 +573,6 @@ impl State {
             .get(&a.notebook_id)
             .cloned()
             .unwrap_or_default();
-        let mut body: String = a.body().chars().take(600).collect();
-        if a.body().chars().count() > 600 {
-            body.push('…');
-        }
         egui::Tooltip::always_open(
             ui.ctx().clone(),
             ui.layer_id(),
@@ -590,7 +586,7 @@ impl State {
                     .small()
                     .color(theme::c().muted),
             );
-            ui.label(body);
+            note_preview_lines(ui, a.body());
             ui.label(
                 RichText::new("Click to open it in Notes")
                     .small()
@@ -653,15 +649,8 @@ impl State {
                                 .color(theme::c().muted),
                         );
                     }
-                    let r = ui
-                        .add(
-                            egui::TextEdit::multiline(&mut ed.body)
-                                .id(editor_body_id())
-                                .hint_text("Write a note…")
-                                .desired_rows(5)
-                                .desired_width(f32::INFINITY),
-                        )
-                        .accessible_name("Note");
+                    let r = super::note_editor::note_editor(ui, editor_body_id(), &mut ed.body, 5)
+                        .response;
                     if !ed.focused_once {
                         r.request_focus();
                         ed.focused_once = r.has_focus();
@@ -727,6 +716,42 @@ impl State {
             }
         } else if save {
             self.save_note();
+        }
+    }
+}
+
+/// A Note's text in its marker's preview: its first 600 characters as shown, a heading
+/// strong, a list item after its bullet or number, a quote line in quotation marks (#186).
+fn note_preview_lines(ui: &mut Ui, body: &str) {
+    let mut left = 600usize;
+    for line in obs_model::parse_note_text(body) {
+        if left == 0 {
+            ui.label("…");
+            break;
+        }
+        let mut text: String = line.text.chars().take(left).collect();
+        left = left.saturating_sub(line.text.chars().count());
+        if left == 0 && text.chars().count() < line.text.chars().count() {
+            text.push('…');
+        }
+        let indent = |level: u8| "    ".repeat(usize::from(level));
+        match line.kind {
+            obs_model::NoteLineKind::Blank => ui.add_space(4.0),
+            obs_model::NoteLineKind::Heading(_) => {
+                ui.label(RichText::new(text).strong());
+            }
+            obs_model::NoteLineKind::Bullet { level } => {
+                ui.label(format!("{}• {text}", indent(level)));
+            }
+            obs_model::NoteLineKind::Numbered { level, number } => {
+                ui.label(format!("{}{number}. {text}", indent(level)));
+            }
+            obs_model::NoteLineKind::Quote => {
+                ui.label(format!("“{text}”"));
+            }
+            obs_model::NoteLineKind::Text => {
+                ui.label(text);
+            }
         }
     }
 }

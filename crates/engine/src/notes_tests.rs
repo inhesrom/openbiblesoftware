@@ -613,3 +613,82 @@ fn bible_references_in_bodies_are_standard_passages() {
         ]
     );
 }
+
+/// Note formatting (#186): Notes search and the card filter read the words a Note shows, so
+/// markup never splits or hides a word, and a hit's snippet shows no markup.
+#[test]
+fn notes_search_finds_words_inside_formatted_text() {
+    let f = Fixture::new("formatted");
+    let mut s = f.session();
+    let id = note(
+        &mut s,
+        "Rom 5:1",
+        "## Justified\n- by **grace** alone\n> *peace* with [God](Rom 5:1)",
+        None,
+    );
+    let plain = note(&mut s, "Rom 5:2", "access by faith", None);
+    for word in ["justified", "grace", "peace", "god"] {
+        let (_, hits) = notes_search(&mut s, json!({ "text": word }));
+        assert_eq!(hits, std::slice::from_ref(&id), "{word}");
+    }
+    // A phrase across the markup.
+    let (tab, hits) = notes_search(&mut s, json!({ "text": "\"grace alone\"" }));
+    assert_eq!(hits, std::slice::from_ref(&id));
+    let snippet = &s.search_tab(tab).unwrap().notes.as_ref().unwrap().hits[0].snippet;
+    assert_eq!(snippet.text, "Justified by grace alone peace with God");
+    assert_eq!(&snippet.text[snippet.highlights[0].clone()], "grace alone");
+    // The link's target is not one of the Note's words.
+    let (_, hits) = notes_search(&mut s, json!({ "text": "rom" }));
+    assert!(hits.is_empty(), "{hits:?}");
+    // The card filter reads the shown text too.
+    assert_eq!(card_ids(&s, "grace alone"), std::slice::from_ref(&id));
+    assert_eq!(card_ids(&s, "faith"), [plain]);
+}
+
+/// A formatted Note's references are found in the text it shows; a link's text is not a
+/// reference (its target says where it goes) and a link target can be a Bible reference.
+#[test]
+fn references_in_formatted_text_are_found_outside_links() {
+    let lines = note_body("## Peace, Rom 5:1\n- **Jn 3:16** and [this](Gen 1:1) or Mt 5:3");
+    let refs = |i: usize| -> Vec<String> {
+        lines[i]
+            .references
+            .iter()
+            .map(|(r, _)| lines[i].line.text[r.clone()].to_string())
+            .collect()
+    };
+    assert_eq!(lines[0].line.text, "Peace, Rom 5:1");
+    assert_eq!(refs(0), ["Rom 5:1"]);
+    assert_eq!(refs(1), ["Jn 3:16", "Mt 5:3"]);
+    let genesis = link_passages("Gen 1:1").unwrap();
+    assert_eq!(genesis.passages(), [Passage::verse(v(Book::Genesis, 1, 1))]);
+    assert!(link_passages("https://example.org").is_none());
+}
+
+/// Undo and redo treat an edit to a formatted Note as one Annotation edit, formatting and all.
+#[test]
+fn formatting_a_note_is_one_annotation_edit_that_undoes() {
+    let f = Fixture::new("format-undo");
+    let mut s = f.session();
+    let id = note(&mut s, "Rom 5:8", "God commendeth his love", None);
+    for (i, body) in [
+        "God commendeth **his love**",
+        "# Love\nGod commendeth **his love**",
+    ]
+    .iter()
+    .enumerate()
+    {
+        s.run(
+            "annotation.edit",
+            &json!({ "id": id, "body": body, "continue": i > 0 }),
+        )
+        .unwrap();
+    }
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert_eq!(s.annotation(&id).unwrap().body(), "God commendeth his love");
+    s.run("edit.redo", &Value::Null).unwrap();
+    assert_eq!(
+        s.annotation(&id).unwrap().body(),
+        "# Love\nGod commendeth **his love**"
+    );
+}

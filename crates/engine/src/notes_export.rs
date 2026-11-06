@@ -13,9 +13,13 @@
 //! write failed), is left out with a note saying why, so no quote goes out without the
 //! credit it may need.
 //!
-//! The Markdown keeps a Note's text as typed: CommonMark's special characters are
-//! backslash-escaped, lines end in a hard line break and leading spaces are written as
-//! character references, so a Markdown reader shows (and a parser reads back) the same text.
+//! The Markdown keeps a Note's text as shown, Note formatting included (#186): headings
+//! (two levels down, under the Annotation's own), bulleted and numbered lists, block quotes,
+//! bold, italic and links are written as CommonMark; the rest of the text has CommonMark's
+//! special characters backslash-escaped, lines end in a hard line break and leading spaces
+//! are written as character references, so a Markdown reader shows (and a parser reads back)
+//! the same text. A blank line separates a list or quote from text next to it, which
+//! CommonMark would otherwise run together. The HTML has the same structure.
 
 use std::collections::BTreeMap;
 
@@ -25,7 +29,11 @@ use serde_json::{Value, json};
 
 use crate::annotations::{Anchor, Content, TextRange};
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params};
-use crate::copy_verses::{html_document, html_escape, markdown_escape, markdown_escape_line_start};
+use obs_model::{NoteLine, NoteLineKind, NoteMark, NoteMarkKind, parse_note_text};
+
+use crate::copy_verses::{
+    html_document, html_escape, markdown_escape, markdown_escape_line_start, markdown_escape_part,
+};
 use crate::notes::{Card, NotesFilter};
 use crate::session::Session;
 use crate::workspace::TabId;
@@ -119,6 +127,268 @@ fn html_lines(text: &str) -> String {
         .join("\n")
 }
 
+/// How far a Note's headings move down in an export: its `#` sits under the Annotation's `##`.
+const HEADING_SHIFT: u8 = 2;
+
+/// Marks of a line as open and close events, outermost first at each start.
+fn sorted_marks(line: &NoteLine) -> Vec<&NoteMark> {
+    let mut marks: Vec<&NoteMark> = line.marks.iter().collect();
+    marks.sort_by_key(|m| (m.range.start, std::cmp::Reverse(m.range.end)));
+    marks
+}
+
+/// Write a line's shown text with its marks: `text` writes a span of plain text, `open` and
+/// `close` a mark's ends.
+fn write_inline(
+    line: &NoteLine,
+    text: &dyn Fn(std::ops::Range<usize>) -> String,
+    open: &dyn Fn(&NoteMark) -> String,
+    close: &dyn Fn(&NoteMark) -> String,
+) -> String {
+    let mut out = String::new();
+    let mut stack: Vec<&NoteMark> = Vec::new();
+    let mut at = 0;
+    let close_to = |out: &mut String, stack: &mut Vec<&NoteMark>, at: &mut usize, upto| {
+        while let Some(top) = stack.last().copied().filter(|t| t.range.end <= upto) {
+            out.push_str(&text(*at..top.range.end));
+            *at = top.range.end;
+            out.push_str(&close(top));
+            stack.pop();
+        }
+    };
+    for m in sorted_marks(line) {
+        close_to(&mut out, &mut stack, &mut at, m.range.start);
+        out.push_str(&text(at..m.range.start));
+        at = m.range.start;
+        out.push_str(&open(m));
+        stack.push(m);
+    }
+    close_to(&mut out, &mut stack, &mut at, usize::MAX);
+    out.push_str(&text(at..line.text.len()));
+    out
+}
+
+/// A link target as a CommonMark destination: `<…>` around one with spaces or parentheses.
+fn markdown_target(target: &str) -> String {
+    if target.contains([' ', '(', ')']) {
+        format!("<{}>", target.replace(['<', '>'], ""))
+    } else {
+        target.to_string()
+    }
+}
+
+fn inline_markdown(line: &NoteLine) -> String {
+    let text = line.text.trim_end();
+    write_inline(
+        line,
+        &|r| markdown_escape_part(text, r.start.min(text.len())..r.end.min(text.len())),
+        &|m| match m.kind {
+            NoteMarkKind::Bold => "**".into(),
+            NoteMarkKind::Italic => "*".into(),
+            NoteMarkKind::Link(_) => "[".into(),
+        },
+        &|m| match &m.kind {
+            NoteMarkKind::Bold => "**".into(),
+            NoteMarkKind::Italic => "*".into(),
+            NoteMarkKind::Link(t) => format!("]({})", markdown_target(t)),
+        },
+    )
+}
+
+/// What kind of Markdown block a line belongs to; a change of kind between two lines needs a
+/// blank line, except next to a heading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Group {
+    Text,
+    Blank,
+    Heading,
+    List,
+    Quote,
+}
+
+fn group(kind: NoteLineKind) -> Group {
+    match kind {
+        NoteLineKind::Text => Group::Text,
+        NoteLineKind::Blank => Group::Blank,
+        NoteLineKind::Heading(_) => Group::Heading,
+        NoteLineKind::Bullet { .. } | NoteLineKind::Numbered { .. } => Group::List,
+        NoteLineKind::Quote => Group::Quote,
+    }
+}
+
+/// A Note's text as Markdown (see the module docs).
+pub fn note_markdown(body: &str) -> String {
+    let lines = parse_note_text(body);
+    let mut out: Vec<String> = Vec::new();
+    // The content column of the last list item at each level, for nesting.
+    let mut columns: Vec<usize> = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let g = group(line.kind);
+        if let Some(prev) = i.checked_sub(1).map(|p| group(lines[p].kind))
+            && prev != g
+            && ![prev, g]
+                .iter()
+                .any(|x| matches!(x, Group::Blank | Group::Heading))
+        {
+            out.push(String::new());
+        }
+        let next = lines.get(i + 1).map(|n| group(n.kind));
+        let content = markdown_escape_line_start(&inline_markdown(line));
+        let written = match line.kind {
+            NoteLineKind::Blank => String::new(),
+            NoteLineKind::Text => {
+                let body = content.trim_start_matches([' ', '\t']);
+                let lead: String = content[..content.len() - body.len()]
+                    .chars()
+                    .map(|c| if c == '\t' { "&#9;" } else { "&#32;" })
+                    .collect();
+                let mut text = format!("{lead}{body}");
+                if next == Some(Group::Text) {
+                    text.push('\\');
+                }
+                text
+            }
+            NoteLineKind::Heading(level) => {
+                let hashes = "#".repeat(usize::from((level + HEADING_SHIFT).min(6)));
+                format!("{hashes} {content}")
+            }
+            NoteLineKind::Quote => {
+                let mut text = format!("> {content}");
+                if next == Some(Group::Quote) {
+                    text.push('\\');
+                }
+                text
+            }
+            NoteLineKind::Bullet { level } | NoteLineKind::Numbered { level, .. } => {
+                let level = usize::from(level).min(columns.len());
+                columns.truncate(level);
+                let indent = columns.last().copied().unwrap_or(0);
+                let marker = match line.kind {
+                    NoteLineKind::Numbered { number, .. } => format!("{number}. "),
+                    _ => "- ".to_string(),
+                };
+                columns.push(indent + marker.len());
+                format!("{}{marker}{content}", " ".repeat(indent))
+            }
+        };
+        if g != Group::List {
+            columns.clear();
+        }
+        out.push(written.trim_end_matches(' ').to_string());
+    }
+    while out.last().is_some_and(String::is_empty) {
+        out.pop();
+    }
+    while out.first().is_some_and(String::is_empty) {
+        out.remove(0);
+    }
+    out.join("\n")
+}
+
+fn inline_html(line: &NoteLine) -> String {
+    let url = |t: &str| {
+        ["https://", "http://", "mailto:"]
+            .iter()
+            .any(|p| t.starts_with(p))
+    };
+    write_inline(
+        line,
+        &|r| html_escape(&line.text[r]),
+        &|m| match &m.kind {
+            NoteMarkKind::Bold => "<strong>".into(),
+            NoteMarkKind::Italic => "<em>".into(),
+            NoteMarkKind::Link(t) if url(t) => format!("<a href=\"{}\">", html_escape(t)),
+            NoteMarkKind::Link(_) => String::new(),
+        },
+        &|m| match &m.kind {
+            NoteMarkKind::Bold => "</strong>".into(),
+            NoteMarkKind::Italic => "</em>".into(),
+            NoteMarkKind::Link(t) if url(t) => "</a>".into(),
+            // A Bible reference: its text, then where it points when that is not the same.
+            NoteMarkKind::Link(t) if line.text[m.range.clone()].trim() == t.trim() => String::new(),
+            NoteMarkKind::Link(t) => format!(" ({})", html_escape(t)),
+        },
+    )
+}
+
+/// A Note's text as HTML: paragraphs (`<br>` between lines), headings two levels down,
+/// nested `<ul>`/`<ol>` lists and block quotes.
+pub fn note_html(body: &str) -> String {
+    let lines = parse_note_text(body);
+    let mut out: Vec<String> = Vec::new();
+    // Text or quote lines waiting for their paragraph.
+    let mut para: Vec<String> = Vec::new();
+    let mut para_quote = false;
+    // Open lists: whether each is numbered.
+    let mut lists: Vec<bool> = Vec::new();
+    let flush = |out: &mut Vec<String>, para: &mut Vec<String>, quote: bool| {
+        if para.is_empty() {
+            return;
+        }
+        // Its direction from its first letter: a Hebrew paragraph reads right to left.
+        let p = format!("<p dir=\"auto\">{}</p>", para.join("<br>\n"));
+        out.push(if quote {
+            format!("<blockquote>{p}</blockquote>")
+        } else {
+            p
+        });
+        para.clear();
+    };
+    let close_lists = |out: &mut Vec<String>, lists: &mut Vec<bool>, keep: usize| {
+        while lists.len() > keep {
+            let numbered = lists.pop().unwrap_or(false);
+            out.push(if numbered { "</li></ol>" } else { "</li></ul>" }.into());
+        }
+    };
+    for line in &lines {
+        let quote = line.kind == NoteLineKind::Quote;
+        if !matches!(line.kind, NoteLineKind::Text | NoteLineKind::Quote) || quote != para_quote {
+            flush(&mut out, &mut para, para_quote);
+        }
+        if line.kind.list_level().is_none() {
+            close_lists(&mut out, &mut lists, 0);
+        }
+        match line.kind {
+            NoteLineKind::Blank => {}
+            NoteLineKind::Text | NoteLineKind::Quote => {
+                para_quote = quote;
+                para.push(inline_html(line));
+            }
+            NoteLineKind::Heading(level) => {
+                let n = (level + HEADING_SHIFT).min(6);
+                out.push(format!("<h{n}>{}</h{n}>", inline_html(line)));
+            }
+            NoteLineKind::Bullet { level } | NoteLineKind::Numbered { level, .. } => {
+                let numbered = matches!(line.kind, NoteLineKind::Numbered { .. });
+                let level = usize::from(level).min(lists.len());
+                close_lists(&mut out, &mut lists, level + 1);
+                let item = format!("<li>{}", inline_html(line));
+                match lists.get(level) {
+                    Some(&n) if n == numbered => out.push(format!("</li>\n{item}")),
+                    other => {
+                        // Another kind of list at this level: the old one ends here.
+                        if other.is_some() {
+                            close_lists(&mut out, &mut lists, level);
+                        }
+                        let open = match line.kind {
+                            NoteLineKind::Numbered { number: 1, .. } => "<ol>".to_string(),
+                            NoteLineKind::Numbered { number, .. } => {
+                                format!("<ol start=\"{number}\">")
+                            }
+                            _ => "<ul>".to_string(),
+                        };
+                        out.push(format!("{open}\n{item}"));
+                        lists.push(numbered);
+                    }
+                }
+            }
+        }
+    }
+    flush(&mut out, &mut para, para_quote);
+    close_lists(&mut out, &mut lists, 0);
+    out.join("\n")
+}
+
 /// Why a Text range's quote was left out of the export (see [`Session::notes_export`]).
 fn withheld_quote(card: &Card) -> Option<&str> {
     card.missing.as_deref().filter(|_| card.quote.is_none())
@@ -177,10 +447,7 @@ impl NotesExport {
             match highlight_label(&card.annotation.content) {
                 Some(label) => out.push_str(&format!("\n*{label}*\n")),
                 None if !card.annotation.body().trim().is_empty() => {
-                    out.push_str(&format!(
-                        "\n{}\n",
-                        markdown_lines(card.annotation.body(), "")
-                    ));
+                    out.push_str(&format!("\n{}\n", note_markdown(card.annotation.body())));
                 }
                 None => {}
             }
@@ -206,7 +473,7 @@ impl NotesExport {
             }
             match highlight_label(&card.annotation.content) {
                 Some(label) => out.push(format!("<p><em>{label}</em></p>")),
-                None => out.push(html_lines(card.annotation.body())),
+                None => out.push(note_html(card.annotation.body())),
             }
         }
         if !self.attributions.is_empty() {

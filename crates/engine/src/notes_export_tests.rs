@@ -1,6 +1,7 @@
 //! Export Notes (#154): a Notebook exported to a Markdown file reads back with every
 //! Annotation's Passage, quoted text and Note text; HTML and print pages; a Notes search
-//! result; the Attribution of a quoted Resource whose licence asks for it.
+//! result; the Attribution of a quoted Resource whose licence asks for it. Note formatting
+//! (#186) is kept: as CommonMark in Markdown, as elements in HTML.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -142,6 +143,8 @@ fn passage(text: &str) -> Option<PassageList> {
     Some(parse_reference(text, &Standard, None).unwrap())
 }
 
+/// Plain text that would read as formatting: a Note written before Note formatting existed,
+/// stored as the v10 migration leaves it (`escape_note_text`).
 const AWKWARD: &str = "Love fulfils the law.\n# not a heading\n1. not a list\n- nor this\n  indented *stars* & &amp; [link](x) <b>bold</b> a_b `code`\n\nSecond paragraph, see Mt 22:39.\n---\n> not a quote";
 
 #[test]
@@ -164,7 +167,7 @@ fn exporting_a_notebook_writes_markdown_that_round_trips_passages_and_note_text(
                 "kjv",
                 "ROM",
                 "Love worketh no ill to his neighbour",
-                json!({ "body": AWKWARD, "notebook": sermon }),
+                json!({ "body": obs_model::escape_note_text(AWKWARD), "notebook": sermon }),
             ),
         )
         .unwrap(),
@@ -255,6 +258,106 @@ fn exporting_a_notebook_writes_markdown_that_round_trips_passages_and_note_text(
             "{line}"
         );
     }
+    // And as a CommonMark reader shows the Note: no formatting at all.
+    let start = markdown.find("## Romans 13:10").unwrap();
+    let end = start + markdown[start..].find("\n## No anchor").unwrap();
+    let html = commonmark_html(&markdown[start..end]);
+    for tag in ["<h3", "<li", "<ol", "<ul", "<em>", "<strong>", "<a ", "<hr"] {
+        assert!(!html.contains(tag), "{tag} in {html}");
+    }
+    assert!(html.contains("# not a heading<br />"), "{html}");
+}
+
+/// Markdown as a CommonMark reader turns it into HTML.
+fn commonmark_html(markdown: &str) -> String {
+    let mut html = String::new();
+    pulldown_cmark::html::push_html(&mut html, pulldown_cmark::Parser::new(markdown));
+    html
+}
+
+/// A Note with every kind of Note formatting (#186), and a Bible reference in its text.
+const FORMATTED: &str = "# Justified\nBy **grace** through *faith*, cf. Rom 5:8.\n- peace with God\n  - access by _faith_\n1. tribulation\n2. patience\n> hope maketh not ashamed\n> for the love of God\nSee [the chapter](<Rom 5>) and [notes](https://example.org/rom5).";
+
+#[test]
+fn exporting_a_formatted_note_keeps_its_formatting_as_markdown_and_html() {
+    let f = Fixture::new("formatted");
+    let mut s = f.session();
+    s.run(
+        "annotation.note",
+        &json!({ "passage": "Rom 5:1", "body": FORMATTED }),
+    )
+    .unwrap();
+    let markdown = s
+        .run(
+            "notes.export",
+            &json!({ "format": "markdown", "notebook": "all" }),
+        )
+        .unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // The Note's headings sit under the Annotation's own; a blank line keeps a list or quote
+    // from running into the text after it.
+    let note = "### Justified\n\
+                By **grace** through *faith*, cf. Rom 5:8.\n\
+                \n\
+                - peace with God\n  - access by *faith*\n1. tribulation\n2. patience\n\
+                \n\
+                > hope maketh not ashamed\\\n> for the love of God\n\
+                \n\
+                See [the chapter](<Rom 5>) and [notes](https://example.org/rom5).";
+    assert_eq!(
+        markdown,
+        format!("# All Notebooks\n\n## Romans 5:1\n\n{note}\n"),
+        "{markdown}"
+    );
+    // Read back by the app, it is the same formatting, its headings two levels down.
+    let shown = |body: &str, shift: u8| {
+        obs_model::parse_note_text(body)
+            .into_iter()
+            .filter(|l| l.kind != obs_model::NoteLineKind::Blank)
+            .map(|l| {
+                let kind = match l.kind {
+                    obs_model::NoteLineKind::Heading(n) => {
+                        obs_model::NoteLineKind::Heading(n + shift)
+                    }
+                    k => k,
+                };
+                (kind, l.text, l.marks)
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(shown(note, 0), shown(FORMATTED, 2));
+    // A CommonMark reader shows the same structure.
+    let html = commonmark_html(&markdown);
+    for part in [
+        "<h3>Justified</h3>",
+        "<p>By <strong>grace</strong> through <em>faith</em>, cf. Rom 5:8.</p>",
+        "<ul>\n<li>peace with God\n<ul>\n<li>access by <em>faith</em></li>\n</ul>\n</li>\n</ul>",
+        "<ol>\n<li>tribulation</li>\n<li>patience</li>\n</ol>",
+        "<blockquote>\n<p>hope maketh not ashamed<br />\nfor the love of God</p>\n</blockquote>",
+        "<a href=\"Rom%205\">the chapter</a>",
+        "<a href=\"https://example.org/rom5\">notes</a>",
+    ] {
+        assert!(html.contains(part), "{part}\nin\n{html}");
+    }
+
+    let html = s
+        .run(
+            "notes.export",
+            &json!({ "format": "html", "notebook": "all" }),
+        )
+        .unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let note_html = "<h3>Justified</h3>\n\
+        <p dir=\"auto\">By <strong>grace</strong> through <em>faith</em>, cf. Rom 5:8.</p>\n\
+        <ul>\n<li>peace with God\n<ul>\n<li>access by <em>faith</em>\n</li></ul>\n</li></ul>\n\
+        <ol>\n<li>tribulation\n</li>\n<li>patience\n</li></ol>\n\
+        <blockquote><p dir=\"auto\">hope maketh not ashamed<br>\nfor the love of God</p></blockquote>\n\
+        <p dir=\"auto\">See the chapter (Rom 5) and <a href=\"https://example.org/rom5\">notes</a>.</p>";
+    assert!(html.contains(note_html), "{html}");
 }
 
 #[test]

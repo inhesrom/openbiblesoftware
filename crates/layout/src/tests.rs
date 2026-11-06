@@ -638,6 +638,89 @@ fn styled_snippets_colour_their_ranges_and_keep_positions() {
     );
 }
 
+/// Note formatting (#186): bold and italic ranges take the bold and italic faces, a reference
+/// inside bold text is bold and in the link colour, and a heading's scale sizes every run.
+#[test]
+fn formatted_snippets_take_bold_italic_and_link_styles_where_they_overlap() {
+    let s = TextSettings::default();
+    let text = "By grace see Rom 5:8 now";
+    let bold = find(text, "grace see Rom 5:8");
+    let reference = find(text, "Rom 5:8");
+    let italic = find(text, "now");
+    let style =
+        |bold: bool, italic: bool, role: Option<ColorRole>| SnippetStyle { bold, italic, role };
+    let para = formatted_snippet_paragraph(
+        text,
+        ColorRole::Ink,
+        &[
+            (bold.clone(), style(true, false, None)),
+            (
+                reference.clone(),
+                style(false, false, Some(ColorRole::Link)),
+            ),
+            (italic.clone(), style(false, true, None)),
+            (text.len()..text.len() + 9, style(true, true, None)),
+        ],
+        1.25,
+        &s,
+    );
+    let joined: String = para.runs.iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(joined, text);
+    for r in &para.runs {
+        let RunSource::Text { unit_start } = r.source else {
+            panic!("{:?}", r.source)
+        };
+        let want_face = if bold.contains(&unit_start) {
+            FaceId::Bold
+        } else if italic.contains(&unit_start) {
+            FaceId::Italic
+        } else {
+            FaceId::Regular
+        };
+        assert_eq!(r.style.face, want_face, "{:?}", r.text);
+        let want_role = if reference.contains(&unit_start) {
+            ColorRole::Link
+        } else {
+            ColorRole::Ink
+        };
+        assert_eq!(r.style.role, want_role, "{:?}", r.text);
+        assert_eq!(r.style.size, s.size * 1.25);
+    }
+    let laid = layout(&para, 400.0, ShapeCache::shared());
+    assert_eq!(laid.text, text);
+}
+
+/// A plain line of a Note (#186) is laid out exactly as Note text was before formatting: the
+/// formatted paragraph with only its references as links is the styled one.
+#[test]
+fn a_plain_formatted_snippet_is_the_styled_snippet_it_replaces() {
+    let s = TextSettings::default();
+    let text = "  indented *stars* & see Gen 32:24 and Rom 5:8.";
+    let refs = [find(text, "Gen 32:24"), find(text, "Rom 5:8")];
+    let styled: Vec<(std::ops::Range<usize>, ColorRole)> =
+        refs.iter().map(|r| (r.clone(), ColorRole::Link)).collect();
+    let formatted: Vec<(std::ops::Range<usize>, SnippetStyle)> = refs
+        .iter()
+        .map(|r| {
+            (
+                r.clone(),
+                SnippetStyle {
+                    role: Some(ColorRole::Link),
+                    ..SnippetStyle::default()
+                },
+            )
+        })
+        .collect();
+    assert_eq!(
+        formatted_snippet_paragraph(text, ColorRole::Ink, &formatted, 1.0, &s),
+        styled_snippet_paragraph(text, ColorRole::Ink, &styled, false, &s)
+    );
+    assert_eq!(
+        formatted_snippet_paragraph(text, ColorRole::Ink, &[], 1.0, &s),
+        snippet_paragraph(text, ColorRole::Ink, false, &s)
+    );
+}
+
 #[test]
 fn a_line_reads_right_to_left_when_its_first_strong_character_does() {
     for rtl in ["בְּרֵאשִׁית", "1 בְּרֵאשִׁית Gen", "**1** בְּרֵאשִׁית", "“בְּרֵאשִׁית"]

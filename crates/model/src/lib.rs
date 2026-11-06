@@ -1,5 +1,6 @@
 //! Resource manifest, text units, the standoff span vocabulary, Keys, `ResourceBuilder`, and
-//! the shared text normalizer and transliteration.
+//! the shared text normalizer, transliteration, and Note formatting (the Markdown subset Note
+//! text is written in).
 //!
 //! Layer L1. No SQLite and no UI here: the `.obr` writer in `obs-store` turns a [`Resource`]
 //! into a file (ADR 0003). Must compile for `wasm32-unknown-unknown`.
@@ -27,6 +28,7 @@ mod key;
 mod manifest;
 pub mod morph;
 mod normalize;
+mod note_text;
 mod renderings;
 mod translit;
 mod unit;
@@ -43,6 +45,10 @@ pub use manifest::{
 };
 pub use morph::{GrammarTerm, Morph, MorphError, MorphLanguage, MorphPart, PartOfSpeech, TermKind};
 pub use normalize::{FindFolded, NORMALIZER_VERSION, Token, fold_for_find, normalize, tokenize};
+pub use note_text::{
+    NoteLine, NoteLineKind, NoteMark, NoteMarkKind, escape_note_text, note_plain_text,
+    parse_note_text,
+};
 pub use renderings::{Rendering, RenderingIndex, StrongsTotal, rendering_key};
 pub use translit::{
     LemmaTransliteration, TRANSLITERATION_VERSION, transliterate, transliteration_index,

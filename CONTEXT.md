@@ -430,8 +430,12 @@ Something the user attaches to the text: a Note or a Highlight.
 _Avoid_: Markup, Mark
 
 **Note**:
-An Annotation holding the user's own text. It has either one Anchor or none.
+An Annotation holding the user's own text, which may carry Note formatting. It has either one Anchor or none.
 _Avoid_: Comment, Memo
+
+**Note formatting**:
+What a Note's text can carry besides words: headings, bulleted and numbered lists, block quotes, bold, italic, and links to a Bible reference or a web address. It is typed as a small Markdown subset (`# `, `- `, `1. `, `> `, `**bold**`, `*italic*`, `[text](Rom 5:8)`) or with the Note editor's toolbar and Ctrl+B / Ctrl+I, and a line break typed is always a line break shown. Bible references in a Note's text are live links whether or not they are formatted. Notes written before it existed show exactly as they did.
+_Avoid_: Rich text, Markdown (in user-facing text), Styling
 
 **Highlight**:
 An Annotation that shows a span of text in a Highlight style. It has exactly one Anchor.
@@ -470,7 +474,7 @@ The Notes Tool's list of Orphaned annotations, where each can be re-attached to 
 _Avoid_: Broken links, Errors
 
 **Notes export**:
-A Markdown or HTML file made from a Notebook (or all of them) or from the Notes a Notes search found: each Annotation under its Passage, with its quoted text and the Note's text. It can also be printed. It is a copy for reading or sharing, not a backup: the app does not read it back.
+A Markdown or HTML file made from a Notebook (or all of them) or from the Notes a Notes search found: each Annotation under its Passage, with its quoted text and the Note's text, its Note formatting kept. It can also be printed. It is a copy for reading or sharing, not a backup: the app does not read it back.
 _Avoid_: Backup, Report, Notes dump
 
 **User database**:
