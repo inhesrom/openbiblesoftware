@@ -46,14 +46,14 @@ control has the keyboard and then checks that a ring in the focus colour is draw
 | Empty states (#135) | Ctrl+L `G26` (empty Library) | Tab to *Get Lexicons…*, Enter | Ctrl+W |
 | Fonts (#138) | Ctrl+L `fonts` | Tab to *Latin text font*, Space opens the list | Esc, Esc |
 | Command box (#139) | Ctrl+L | `gen 1:3`, Enter | Esc |
-| Toolbar pane (#140) | Alt+T | `history`, Enter | Ctrl+W |
+| Toolbar pane (#140), History (#155) | Alt+T `history`, Enter | Tab to the *Genesis 1:2 · KJV* Visit, Enter (the Bible goes back there) | Ctrl+W |
 | Customize toolbar (#141) | Ctrl+L `customize toolbar` | Tab to *Labels only*, Space | Esc |
 | Right-click menu (#142) | Shift+F10 | Tab to *Verse: Gen 1:1*, *Passage Guide*, Enter | Esc / Ctrl+W |
 | Interlinear lines (#143) | Alt+L `tagnt`, Enter | Tab to *Interlinear*, Space | Ctrl+W |
 | Exegetical Guide (#144) | Ctrl+L `eg Lk 1:30` | Tab to a word, Enter (Word Study) | Ctrl+W |
 | Search views (#146) | Ctrl+Shift+F | query, Enter; Tab to *Grid*, Enter | Ctrl+W |
 | Reading plans (#147) | Ctrl+L `reading plans` | Tab to *Start plan*, Enter | Ctrl+W |
-| Factbook (#149) | Alt+G | Tab to the Factbook box, `John`, Enter | Ctrl+W |
+| Factbook (#149) | Alt+G, Tab to the Factbook box, `Abraham`, Enter | Tab to the *Terah* link, Enter (his Factbook) | Ctrl+W |
 | Parallel resources (#151) | Ctrl+] | Tab to *Previous of your Bibles*, Enter | — |
 | Collections (#153) | Tab to *New Collection…*, Enter | *Name*, *Rules*, Tab to *Save*, Enter | Esc |
 | Copy verses (#154) | Ctrl+L `copy verses` | Tab to *Copy plain text*, Enter | Esc |
@@ -89,7 +89,7 @@ text on every Link set chip and badge, and the Grid view's heat cells at every h
 | Word Study's disclosure arrow was a second Tab stop with no name for the entry title's action | Mouse only; the title is the stop |
 | Ambiguous names: *…*, *+*, *▶*, *◀*, *A*, *Open* ×10, *Download* ×n | *Tab menu*, *Open a Tab in this Panel*, *Next/Previous of your Bibles*, *Link set A*, *Open KJV (test)*, *Download …*; menu targets read *Verse: Gen 1:1* |
 | Shift+F10 opened nothing without the pointer over the text and no selection, so the menu had no keyboard-only route | It selects the Verse at the top of the view and acts on that; moving onto a target with Tab chooses it, as hovering does, and a pointer resting on another target does not take it back until it moves (arrow keys also move between the columns) |
-| Fonts, Copy verses and Customize toolbar could only be closed with the mouse or by tabbing to their × | Esc closes them (after first closing a drop-down inside), one at a time: the window with the keyboard, or with the keyboard in none, the one in front |
+| Fonts, Copy verses and Customize toolbar could only be closed with the mouse or by tabbing to their × | Esc closes them (after first closing a drop-down inside), one at a time: the window with the keyboard, or with the keyboard in the Panels or none, the one in front; none while the keyboard is in another overlay. Esc in the Note editor saves it and closes nothing behind it |
 | Hints and shortcuts (egui's faded ink) were 4.16:1 on fields | `weak_text_color` is the theme's muted ink |
 | Light: muted on the selection 4.37:1, verdigris on the selection 4.13:1, the ★ (gilt) 2.66:1 | Light muted, verdigris and gilt darkened |
 | Dark: lapis on the selection 3.35:1 and on hover 3.95:1, muted on hover 4.45:1, verdigris on hover 4.19:1 | Dark selection deepened; lapis, muted and verdigris lightened |

@@ -637,16 +637,33 @@ fn keyboard_only_command_box() {
     assert_ne!(focused(&h).map(|f| f.0).as_deref(), Some("Command box"));
 }
 
-/// A toolbar pane (#140): Alt+T, filter, Enter opens the Tool; Ctrl+W closes it.
+/// A toolbar pane (#140) and History (#155): after reading Gen 1:2 then Gen 1:3, Alt+T,
+/// filter, Enter opens History; its Gen 1:2 Visit, Enter, takes the Bible back there; Ctrl+W
+/// closes History.
 #[test]
-fn keyboard_only_toolbar_pane() {
+fn keyboard_only_toolbar_pane_and_history() {
     let (mut h, _lab) = keyboard_harness("kb-toolbar-pane");
+    let kjv = h.tab_id("KJV");
+    command(&mut h, "gen 1:2");
+    command(&mut h, "gen 1:3");
+    let genesis_1 = |v| obs_scripture::Verse::new(obs_scripture::Book::Genesis, 1, v);
+    assert_eq!(location(&mut h, kjv), Some(genesis_1(3)));
     key(&mut h, Key::T, Modifiers::ALT);
     assert_eq!(h.shell.st.toolbar.open, Some(Launcher::Tools));
     type_text(&mut h, "history");
     key(&mut h, Key::Enter, Modifiers::NONE);
     settle(&mut h);
     assert_eq!(h.shell.st.toolbar.open, None);
+    assert_eq!(focused_kind(&h), Some(TabKind::Tool(Tool::History)));
+    tab_to(&mut h, "Genesis 1:2 · KJV");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle_all(&mut h);
+    assert_eq!(
+        location(&mut h, kjv),
+        Some(genesis_1(2)),
+        "the Visit went nowhere"
+    );
+    command(&mut h, "history");
     close_tab(&mut h, &TabKind::Tool(Tool::History));
 }
 
@@ -756,17 +773,38 @@ fn keyboard_only_reading_plans() {
     close_tab(&mut h, &TabKind::Tool(Tool::ReadingPlans));
 }
 
-/// The Factbook (#149): from the Guides pane, a name, Enter; then a card's link.
+/// The Factbook (#149): from the Guides pane, a name, Enter; then the Summary's link to his
+/// father opens the father's Factbook in the same Tab.
 #[test]
 fn keyboard_only_factbook() {
     let (mut h, _lab) = keyboard_harness("kb-factbook");
     key(&mut h, Key::G, Modifiers::ALT);
     assert_eq!(h.shell.st.toolbar.open, Some(Launcher::Guides));
     tab_to(&mut h, "Factbook: A person or place, e.g. Abraham");
-    type_text(&mut h, "John");
+    type_text(&mut h, "Abraham");
     key(&mut h, Key::Enter, Modifiers::NONE);
     settle(&mut h);
     assert_eq!(focused_kind(&h), Some(TabKind::Guide(Guide::Factbook)));
+    let entry = |h: &Harness| {
+        let ws = &h.shell.session().workspace;
+        ws.tab(ws.focused().unwrap())
+            .unwrap()
+            .entry_history
+            .current()
+    };
+    assert_eq!(
+        entry(&h),
+        Some(obs_model::Key::Headword("Abraham@Gen.11.26-1Pe".into()))
+    );
+    tab_to(&mut h, "Terah");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    assert_eq!(focused_kind(&h), Some(TabKind::Guide(Guide::Factbook)));
+    assert_eq!(
+        entry(&h),
+        Some(obs_model::Key::Headword("Terah@Gen.11.24-Luk".into())),
+        "the link went nowhere"
+    );
     close_tab(&mut h, &TabKind::Guide(Guide::Factbook));
 }
 
@@ -840,6 +878,39 @@ fn escape_closes_the_window_with_the_keyboard_not_the_one_behind() {
     assert!(h.shell.st.copy_ui.open, "Esc closed the window behind");
     key(&mut h, Key::Escape, Modifiers::NONE);
     assert!(!h.shell.st.copy_ui.open);
+}
+
+/// Esc in the Note editor (#182) saves and closes it, and nothing else: Fonts, open behind
+/// it, stays open for the next Esc.
+#[test]
+fn escape_in_the_note_editor_leaves_the_window_behind_open() {
+    let (mut h, _lab) = keyboard_harness("kb-note-over-fonts");
+    command(&mut h, "fonts");
+    assert!(h.shell.st.fonts_ui.open);
+    assert_eq!(focused_resource(&h).as_deref(), Some("kjv-strongs"));
+    key(&mut h, Key::F10, Modifiers::SHIFT);
+    assert!(egui::Popup::is_any_open(&h.ctx), "Shift+F10 opened no menu");
+    tab_to(&mut h, "Verse: Gen 1:1");
+    tab_to(&mut h, "✏ Add Note on verse");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert!(h.shell.st.note_editor.is_some(), "no Note editor");
+    type_text(&mut h, "Light first");
+    key(&mut h, Key::Escape, Modifiers::NONE);
+    assert!(
+        h.shell.st.note_editor.is_none(),
+        "Esc left the Note editor open"
+    );
+    assert!(
+        h.shell.st.fonts_ui.open,
+        "Esc closed Fonts, behind the Note editor"
+    );
+    let notes = h.shell.st.session.annotations(None).unwrap();
+    assert!(
+        notes.iter().any(|n| n.body() == "Light first"),
+        "Esc did not save the Note"
+    );
+    key(&mut h, Key::Escape, Modifiers::NONE);
+    assert!(!h.shell.st.fonts_ui.open, "the next Esc left Fonts open");
 }
 
 /// Favorites and History (#155): Ctrl+D, then the Favorites Tool opens the Favorite.

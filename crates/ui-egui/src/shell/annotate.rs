@@ -599,7 +599,8 @@ impl State {
         });
     }
 
-    /// The popup Note editor, if open. Saves on a click outside it, Esc, or Ctrl+Enter.
+    /// The popup Note editor, if open. Saves on a click outside it, Esc, or Ctrl+Enter. The
+    /// Esc it saves on is its own: no window behind it closes too (#182).
     pub(super) fn note_editor_ui(&mut self, ctx: &egui::Context) {
         let Some(ed) = self.note_editor.as_mut() else {
             return;
@@ -611,7 +612,9 @@ impl State {
                     .interact_pos()
                     .is_some_and(|p| ed.rect.is_some_and(|r| !r.contains(p)));
             let submit = i.consume_key(Modifiers::COMMAND, Key::Enter);
-            (outside, i.key_pressed(Key::Escape), submit)
+            let modifiers = i.modifiers;
+            let escape = !popup_open && i.consume_key(modifiers, Key::Escape);
+            (outside, escape, submit)
         });
         if submit || (!popup_open && (pressed_outside || escape)) {
             self.save_note();

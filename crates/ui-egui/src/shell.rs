@@ -2907,8 +2907,9 @@ pub(crate) const FOCUS_RING_WIDTH: f32 = 2.0;
 
 /// Call before drawing a window that Esc closes; the closure, called after with the layer the
 /// window was drawn on, says whether Esc closes it now (#182). Esc closes one window: the one
-/// with the keyboard, or with the keyboard in none, the one last brought to the front; never
-/// while a menu or drop-down was open when the frame began (Esc closes that first).
+/// with the keyboard, or with the keyboard in the Panels or nowhere, the one last brought to
+/// the front; none while the keyboard is in another overlay (the Note editor, a toolbar pane)
+/// or a menu or drop-down was open when the frame began (Esc closes that first).
 fn escape_closes_window(ctx: &egui::Context) -> impl FnOnce(Option<egui::LayerId>) -> bool + '_ {
     let popup = egui::Popup::is_any_open(ctx);
     move |layer| {
@@ -2920,8 +2921,8 @@ fn escape_closes_window(ctx: &egui::Context) -> impl FnOnce(Option<egui::LayerId
             return false;
         }
         let ours = match keyboard {
-            // The keyboard is in a window (or a pane) of its own: Esc is for that one.
-            Some(l) if l.order == egui::Order::Middle => l == layer,
+            // The keyboard is in a window or overlay of its own: Esc is for that one.
+            Some(l) if l.order != egui::Order::Background => l == layer,
             _ => front == layer,
         };
         ours && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
