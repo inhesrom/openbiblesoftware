@@ -23,7 +23,8 @@ pub struct TabId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PanelId(pub u64);
 
-/// The Tools of v0.1 plus Cross-references, Favorites and History (#155).
+/// The Tools of v0.1 plus Cross-references, Favorites and History (#155) and Reading plans
+/// (#147).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Tool {
     Search,
@@ -33,6 +34,7 @@ pub enum Tool {
     CrossReferences,
     Favorites,
     History,
+    ReadingPlans,
 }
 
 /// The Guides.
@@ -54,6 +56,7 @@ impl Tool {
             Tool::CrossReferences => "Cross-references",
             Tool::Favorites => "Favorites",
             Tool::History => "History",
+            Tool::ReadingPlans => "Reading plans",
         }
     }
 }
@@ -137,7 +140,13 @@ impl TabKind {
                 | TabKind::GetBibles
                 | TabKind::StarterLibrary
                 | TabKind::Credits
-                | TabKind::Tool(Tool::Notes | Tool::WordInfo | Tool::Favorites | Tool::History)
+                | TabKind::Tool(
+                    Tool::Notes
+                        | Tool::WordInfo
+                        | Tool::Favorites
+                        | Tool::History
+                        | Tool::ReadingPlans
+                )
         )
     }
 
@@ -160,7 +169,8 @@ impl TabKind {
             | TabKind::ImportReport(_)
             | TabKind::GetBibles
             | TabKind::StarterLibrary
-            | TabKind::Credits => HeaderBox::Keyless,
+            | TabKind::Credits
+            | TabKind::Tool(Tool::ReadingPlans) => HeaderBox::Keyless,
             _ => HeaderBox::Reference,
         }
     }
@@ -176,7 +186,7 @@ impl TabKind {
                 | TabKind::StarterLibrary
                 | TabKind::Credits
                 | TabKind::Guide(Guide::Factbook)
-                | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History)
+                | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History | Tool::ReadingPlans)
         )
     }
 

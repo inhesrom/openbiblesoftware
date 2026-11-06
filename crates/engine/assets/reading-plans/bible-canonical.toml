@@ -1,0 +1,11 @@
+# Bible in a year, in canonical order: Genesis to Revelation, divided into Readings of about
+# equal length (whole chapters, by verse count). Written for this project.
+#
+# A template with `tracks` divides each track's Passages, in order, into one Reading per
+# reading day; a template with `readings` gives each day's Readings itself.
+
+id = "bible-canonical"
+name = "Bible in a year (canonical)"
+about = "Genesis to Revelation in order, about the same amount each day."
+days = 365
+tracks = [["Gen-Rev"]]

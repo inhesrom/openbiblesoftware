@@ -35,11 +35,17 @@ pub const PUBLISHED_CHANGES: &str =
 const OPENBIBLE_XREFS: &str = "openbible-xrefs";
 
 /// What each piece of data built into the app is for, by `ATTRIBUTION.toml` path prefix.
-const EMBEDDED_USE: &[(&str, &str)] = &[(
-    "crates/formats/assets/tvtms/",
-    "Built into the app: maps each Bible's verse numbering to the Standard versification \
-     when the Bible is imported.",
-)];
+const EMBEDDED_USE: &[(&str, &str)] = &[
+    (
+        "crates/formats/assets/tvtms/",
+        "Built into the app: maps each Bible's verse numbering to the Standard versification \
+         when the Bible is imported.",
+    ),
+    (
+        "crates/engine/assets/reading-plans/",
+        "Built into the app: the templates Tools → Reading plans makes plans from.",
+    ),
+];
 
 /// One credited work.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

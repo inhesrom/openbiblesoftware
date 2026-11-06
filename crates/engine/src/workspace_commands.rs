@@ -74,6 +74,7 @@ pub const MENUS: &[Menu] = &[
             C("tool.cross_references"),
             C("tool.favorites"),
             C("tool.history"),
+            C("tool.reading_plans"),
         ],
     },
     Menu {
@@ -421,6 +422,9 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     }),
     open_cmd("tool.history", "History", None, |s, p| {
         open(s, p, TabKind::Tool(Tool::History))
+    }),
+    open_cmd("tool.reading_plans", "Reading plans", None, |s, p| {
+        open(s, p, TabKind::Tool(Tool::ReadingPlans))
     }),
     // Word Info (#50): the pinned panel follows hover again on Esc or the header's 📌; Copy
     // hands the UI the card text; Word Study › opens the shown word's Strong's number in a

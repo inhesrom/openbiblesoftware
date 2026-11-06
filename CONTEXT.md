@@ -188,7 +188,7 @@ One open thing in a Panel: a Resource, a Guide, or a Tool.
 _Avoid_: View, Document
 
 **Tool**:
-A Tab that is neither a Resource nor a Guide. In v0.1 the Tools are Text Comparison, Word Info, Search, and Notes; Cross-references, Favorites and History came later.
+A Tab that is neither a Resource nor a Guide. In v0.1 the Tools are Text Comparison, Word Info, Search, and Notes; Cross-references, Favorites, History and Reading plans came later.
 _Avoid_: Utility, Widget
 
 **Word Info**:
@@ -258,6 +258,28 @@ _Avoid_: UI font, System font, Chrome font
 **Bundled font**:
 A font shipped inside the app: Gentium Plus for Latin and Greek, Ezra SIL for Hebrew. It is the default Reading font and the fallback when a chosen font is missing or lacks a character.
 _Avoid_: Default font, Built-in font
+
+### Reading plans
+
+**Reading plan**:
+A schedule for reading Scripture day by day, made from a Reading plan template with a start day, a Bible to read in and the days of the week to read on. Each of its Readings is due on a day and is ticked off when read. It lives in the User database, works offline and needs no account; Tools → Reading plans lists and makes them.
+_Avoid_: Devotional, Program, Schedule (as its name)
+
+**Reading plan template**:
+What a Reading plan reads and over how many days: Bible in a year (canonical, chronological or M'Cheyne), New Testament in 90 days, Psalms and Proverbs monthly, or a custom template of chosen books over N days. The built-in ones are open data files; with fewer days of the week chosen, the same Passages fit into the same span.
+_Avoid_: Preset, Plan type
+
+**Reading**:
+The Passages of a Reading plan due on one day and ticked off together. A day may have several (M'Cheyne has four, Psalms and Proverbs two).
+_Avoid_: Portion, Assignment, Lesson
+
+**Today's reading**:
+The toolbar button showing the Readings due today in the first Reading plan with any, and opening the first unread one in the plan's Bible with one click.
+_Avoid_: Daily verse, Devotion
+
+**Behind**:
+A Reading plan is behind by N days when N of its reading days before today still have an unread Reading. **Catch up** moves the unread Readings on, keeping their spacing, so the first is read today and the plan ends later; **Reschedule** keeps the plan's last day and spreads the unread Readings over the reading days from today to it.
+_Avoid_: Overdue (as the state's name), Late, Reset
 
 ### Guides
 
@@ -336,5 +358,5 @@ The Notes Tool's list of Orphaned annotations, where each can be re-attached to 
 _Avoid_: Broken links, Errors
 
 **User database**:
-The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, the Command box's recent entries and preferences. Resources and Search indexes are never part of it.
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Command box's recent entries and preferences. Resources and Search indexes are never part of it.
 _Avoid_: Profile, User library, Settings file

@@ -3076,6 +3076,9 @@ mod fonts;
 #[path = "favorites_tests.rs"]
 mod favorites;
 
+#[path = "reading_plans_tests.rs"]
+mod reading_plans;
+
 #[path = "context_menu_tests.rs"]
 mod context_menu;
 

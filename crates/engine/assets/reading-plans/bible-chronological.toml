@@ -1,0 +1,42 @@
+# Bible in a year, in chronological order: our own arrangement of the books and chapters in
+# the order of the events they tell or the time they were written, following placements found
+# in standard Bible handbooks (Job among the patriarchs, Chronicles beside Samuel and Kings,
+# the prophets in the reigns they name, the letters in Acts' journeys). Written for this
+# project; no published chronological plan was copied (see
+# docs/research/reading-plan-templates.md). Every chapter appears exactly once.
+
+id = "bible-chronological"
+name = "Bible in a year (chronological)"
+about = "The whole Bible in the order things happened: Job among the patriarchs, Chronicles beside Kings, the prophets in their kings' reigns, the letters in Acts."
+days = 365
+tracks = [[
+    # Beginnings and the patriarchs
+    "Gen 1-11", "Job", "Gen 12-50",
+    # Exodus and the wilderness
+    "Exod", "Lev", "Num", "Deut", "Ps 90",
+    # The land and the judges
+    "Josh", "Judg", "Ruth",
+    # Saul and David
+    "1 Chr 1-9", "1 Sam", "1 Chr 10", "Ps 1-41", "2 Sam 1-4", "1 Chr 11-12", "2 Sam 5-10",
+    "1 Chr 13-21", "2 Sam 11-12", "Ps 51", "2 Sam 13-24", "Ps 42-50", "Ps 52-72",
+    "1 Chr 22-29",
+    # Solomon
+    "1 Kgs 1-4", "2 Chr 1", "1 Kgs 5-8", "2 Chr 2-7", "Ps 73-89", "1 Kgs 9-11", "2 Chr 8-9",
+    "Song", "Prov", "Eccl",
+    # The divided kingdom
+    "1 Kgs 12-14", "2 Chr 10-12", "1 Kgs 15-16", "2 Chr 13-16", "1 Kgs 17-22", "2 Chr 17-20",
+    "2 Kgs 1-8", "2 Chr 21", "Obad", "Joel", "2 Kgs 9-13", "2 Chr 22-24", "2 Kgs 14",
+    "2 Chr 25", "Jonah", "2 Kgs 15", "2 Chr 26-27", "Amos", "Hos", "2 Kgs 16-17", "2 Chr 28",
+    "Mic", "Isa 1-39", "2 Kgs 18-20", "2 Chr 29-32", "Isa 40-66", "Ps 91-106",
+    # Judah alone, to the exile
+    "Nah", "2 Kgs 21", "2 Chr 33", "Zeph", "2 Kgs 22-23", "2 Chr 34-35", "Hab", "Jer",
+    "2 Kgs 24-25", "2 Chr 36", "Lam", "Ezek", "Dan",
+    # The return
+    "Ezra 1-6", "Hag", "Zech", "Esth", "Ezra 7-10", "Neh", "Mal", "Ps 107-150",
+    # Jesus
+    "Luke 1-2", "Matt 1-2", "Mark", "Matt 3-28", "Luke 3-24", "John",
+    # The church and its letters
+    "Acts 1-14", "Jas", "Gal", "Acts 15-17", "1 Thess", "2 Thess", "Acts 18-19", "1 Cor",
+    "2 Cor", "Rom", "Acts 20-28", "Eph", "Phil", "Col", "Phlm", "1 Tim", "Titus", "1 Pet",
+    "2 Tim", "2 Pet", "Heb", "Jude", "1 John", "2 John", "3 John", "Rev",
+]]

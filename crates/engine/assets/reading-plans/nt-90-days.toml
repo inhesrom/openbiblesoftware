@@ -1,0 +1,8 @@
+# The New Testament in 90 days, Matthew to Revelation, divided into Readings of about equal
+# length (whole chapters, by verse count). Written for this project.
+
+id = "nt-90-days"
+name = "New Testament in 90 days"
+about = "Matthew to Revelation in order, about the same amount each day."
+days = 90
+tracks = [["Matt-Rev"]]

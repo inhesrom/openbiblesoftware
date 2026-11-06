@@ -57,6 +57,9 @@ pub mod notes;
 mod notes_tests;
 pub mod people_places;
 pub mod persist;
+pub mod reading_plans;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod reading_plans_tests;
 pub mod reanchor;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod reanchor_tests;
@@ -131,6 +134,9 @@ pub use link::LINK_SETS;
 pub use notes::{Card, CardOrder, NoteHit, NotesFilter, NotesResults, NotesTool, body_references};
 pub use people_places::{ArticleLink, Fact, PersonOrPlace};
 pub use persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, UserData, WorkspaceSnapshot};
+pub use reading_plans::{
+    PlanDate, PlanTemplate, Reading, ReadingPlan, ReadingPlans, WEEKDAY_NAMES, Weekdays,
+};
 pub use reanchor::{Outcome, Plan, Planned, ReanchorReport, Reanchoring};
 #[cfg(not(target_arch = "wasm32"))]
 pub use search::CacheIndexer;
