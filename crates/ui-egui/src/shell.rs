@@ -45,6 +45,8 @@ mod reading_plans_tab;
 pub(crate) mod references;
 mod search_tab;
 mod starter_tab;
+mod toolbar;
+mod toolbar_look;
 mod word_info_tab;
 mod word_sections_view;
 mod word_study_tab;
@@ -159,6 +161,8 @@ pub(crate) struct State {
     pub(crate) palette: Palette,
     /// The toolbar's Command box (#139).
     pub(crate) command_box: command_box::CommandBoxUi,
+    /// The toolbar's Launchers and their panes (#140).
+    pub(crate) toolbar: toolbar::ToolbarUi,
     now: f64,
     /// Ctrl/Cmd is held: opening something splits off a new Panel.
     split_held: bool,
@@ -218,6 +222,7 @@ impl Shell {
                 last_save: 0.0,
                 palette: Palette::PAPER,
                 command_box: command_box::CommandBoxUi::default(),
+                toolbar: toolbar::ToolbarUi::default(),
                 now: 0.0,
                 split_held: false,
                 panels: std::collections::HashMap::new(),
@@ -406,7 +411,11 @@ impl Shell {
                 } => self.st.confirm = Some((resource_id, title, message)),
                 Effect::PickImport => self.st.pick_import = true,
                 Effect::ShowFonts => self.st.fonts_ui.open = true,
-                Effect::FocusCommandBox => self.st.command_box.focus = true,
+                Effect::FocusCommandBox => {
+                    self.st.toolbar.close();
+                    self.st.command_box.focus = true;
+                }
+                Effect::OpenLauncher(which) => self.st.toolbar.toggle(which),
                 Effect::ShowCopyVerses { passages, bibles } => {
                     self.st.open_copy_verses(passages, bibles);
                 }
@@ -912,6 +921,8 @@ impl Shell {
         self.apply_effects();
     }
 
+    /// The toolbar: the app's name, the Launchers (#140), the View and Help menus, and the
+    /// Command box on the right.
     fn menu_bar(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.label(
@@ -919,20 +930,21 @@ impl Shell {
                     .font(theme::display(19.0))
                     .color(theme::c().ink),
             );
-            ui.add_space(6.0);
+            ui.add_space(10.0);
+            ui.spacing_mut().item_spacing.x = 4.0;
+            self.launchers(ui);
+            ui.add_space(8.0);
             ui.scope(|ui| {
                 let w = &mut ui.visuals_mut().widgets;
                 w.inactive.bg_stroke = Stroke::NONE;
                 w.inactive.weak_bg_fill = Color32::TRANSPARENT;
                 w.hovered.bg_stroke = Stroke::NONE;
-                // The Library menu counts the downloaded Resources with an update (#136).
-                let updates = self.st.session.resource_updates().updates.len();
-                for menu in MENUS {
-                    let title = match menu.title {
-                        "Library" if updates > 0 => format!("Library ({updates})"),
-                        t => t.to_string(),
-                    };
-                    ui.menu_button(title, |ui| {
+                let launched: Vec<&str> = obs_engine::Launcher::ALL
+                    .iter()
+                    .map(|l| l.title())
+                    .collect();
+                for menu in MENUS.iter().filter(|m| !launched.contains(&m.title)) {
+                    ui.menu_button(menu.title, |ui| {
                         for item in menu.items {
                             self.menu_item(ui, *item);
                         }
@@ -948,6 +960,7 @@ impl Shell {
                 }
             });
         });
+        self.launcher_pane(ui);
     }
 
     fn menu_item(&mut self, ui: &mut Ui, item: MenuItem) {
@@ -1031,102 +1044,8 @@ impl Shell {
                     self.run("notebook.show_in_text", &json!({ "id": id, "show": show }));
                 }
             }
-            MenuItem::Favorites => {
-                let favorites: Vec<(i64, String, String)> = self
-                    .st
-                    .session
-                    .favorites()
-                    .iter()
-                    .map(|f| (f.id, f.folder.clone(), f.label.clone()))
-                    .collect();
-                let mut picked = None;
-                ui.menu_button("Favorites", |ui| {
-                    if favorites.is_empty() {
-                        ui.label(RichText::new("No Favorites yet").color(theme::c().muted));
-                    }
-                    let mut folder: Option<&str> = None;
-                    for (i, (id, f, label)) in favorites.iter().enumerate() {
-                        if !f.is_empty() {
-                            if folder != Some(f.as_str()) {
-                                folder = Some(f.as_str());
-                                ui.menu_button(f, |ui| {
-                                    for (id, _, label) in
-                                        favorites[i..].iter().take_while(|(_, g, _)| g == f)
-                                    {
-                                        if ui.button(label).clicked() {
-                                            picked = Some(*id);
-                                        }
-                                    }
-                                });
-                            }
-                            continue;
-                        }
-                        if ui.button(label).clicked() {
-                            picked = Some(*id);
-                        }
-                    }
-                });
-                if let Some(id) = picked {
-                    let split = ui.input(|i| i.modifiers.command);
-                    self.run("favorite.open", &json!({ "id": id, "split": split }));
-                    ui.close();
-                }
-            }
-            MenuItem::Layouts => {
-                let names = self
-                    .st
-                    .session
-                    .user
-                    .as_ref()
-                    .and_then(|u| u.layouts().ok())
-                    .unwrap_or_default();
-                if names.is_empty() {
-                    ui.label(RichText::new("No saved layouts").color(theme::c().muted));
-                }
-                for name in names {
-                    let mut run: Option<&'static str> = None;
-                    ui.menu_button(&name, |ui| {
-                        for id in ["layout.restore", "layout.rename", "layout.delete"] {
-                            let label = self.st.session.commands().get(id).map_or(id, |c| c.label);
-                            let label = label.replace(" layout", "");
-                            if ui.button(label).clicked() {
-                                run = Some(id);
-                                ui.close();
-                            }
-                        }
-                    });
-                    if let Some(id) = run {
-                        self.run(id, &json!({ "name": name }));
-                        ui.close();
-                    }
-                }
-            }
-            MenuItem::Resources => {
-                let entries: Vec<(String, String, ResourceType)> = self
-                    .st
-                    .session
-                    .library
-                    .entries()
-                    .iter()
-                    .map(|e| {
-                        (
-                            e.manifest.resource_id.clone(),
-                            format!("{} — {}", e.manifest.abbreviation, e.manifest.title),
-                            e.manifest.resource_type,
-                        )
-                    })
-                    .collect();
-                if entries.is_empty() {
-                    ui.label(RichText::new("No Resources yet").color(theme::c().muted));
-                }
-                for (id, label, _) in entries {
-                    if ui.button(label).clicked() {
-                        let split = ui.input(|i| i.modifiers.command);
-                        self.run("resource.open", &json!({ "id": id, "split": split }));
-                        ui.close();
-                    }
-                }
-            }
+            // The Library and Layouts menus are the Library and Layouts Launchers' panes now.
+            MenuItem::Favorites | MenuItem::Layouts | MenuItem::Resources => {}
         }
     }
 }

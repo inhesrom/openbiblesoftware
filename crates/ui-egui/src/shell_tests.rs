@@ -463,6 +463,15 @@ fn collect(shape: &Shape, out: &mut Vec<(Rect, String)>) {
     }
 }
 
+/// The count drawn on the Library launcher, if any.
+fn library_badge(h: &Harness) -> Option<String> {
+    let button = h.shell.st.toolbar.buttons[&obs_engine::Launcher::Library];
+    h.shapes
+        .iter()
+        .find(|(r, t)| t != "Library" && button.contains(r.center()))
+        .map(|(_, t)| t.clone())
+}
+
 #[test]
 fn default_layout_has_a_bible_and_a_tools_panel() {
     let h = Harness::new();
@@ -1058,7 +1067,7 @@ fn quit_and_relaunch_restores_panels_tabs_locations_and_link_sets() {
 }
 
 #[test]
-fn a_layout_round_trips_and_can_be_renamed_and_deleted_from_the_menu() {
+fn a_layout_round_trips_and_can_be_renamed_and_deleted_from_the_layouts_launcher() {
     let db = temp_db("layouts");
     let mut h = Harness::launch(Some(&db));
     let tb = h.tab_id("TB");
@@ -1085,16 +1094,16 @@ fn a_layout_round_trips_and_can_be_renamed_and_deleted_from_the_menu() {
     );
     h.frames(3);
     assert_ne!(workspace_state(&mut h), saved);
+    // One click on its card loads it.
     h.open_menu("Layouts");
     h.click_text("Two Bibles");
-    h.click_text("Restore");
     h.frames(3);
     assert_eq!(workspace_state(&mut h), saved);
     assert_eq!(loc_of(&mut h, "TB"), Some(ge(31, 20)));
-    // Rename through the prompt.
+    assert!(h.shell.st.toolbar.open.is_none(), "loading closes the pane");
+    // Rename in place: the picked card's Rename edits its name; Enter keeps it.
     h.open_menu("Layouts");
-    h.click_text("Two Bibles");
-    h.click_text("Rename…");
+    h.click_text("Rename");
     for _ in 0.."Two Bibles".len() {
         h.events.push(Event::Key {
             key: egui::Key::Backspace,
@@ -1106,12 +1115,21 @@ fn a_layout_round_trips_and_can_be_renamed_and_deleted_from_the_menu() {
     }
     h.events.push(Event::Text("Genesis study".into()));
     h.frame();
-    h.click_text("Save");
+    h.events.push(Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    });
+    h.frames(2);
     let user = h.shell.st.session.user.as_ref().unwrap();
     assert_eq!(user.layouts().unwrap(), ["Genesis study"]);
-    // Delete.
-    h.open_menu("Layouts");
-    h.click_text("Genesis study");
+    assert!(
+        h.find("Genesis study").is_some(),
+        "the pane stays open, renamed"
+    );
+    // Delete in place.
     h.click_text("Delete");
     let user = h.shell.st.session.user.as_ref().unwrap();
     assert!(user.layouts().unwrap().is_empty());
@@ -3093,6 +3111,9 @@ mod command_box;
 #[path = "copy_export_tests.rs"]
 mod copy_export;
 
+#[path = "toolbar_tests.rs"]
+mod toolbar;
+
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {
     use std::path::PathBuf;
@@ -3814,14 +3835,15 @@ mod get_bibles {
         }
         preview(&h, "get-resources-update-available");
 
-        // The Library menu counts it, and so does Get Resources… inside it.
-        h.open_menu("Library (1)");
+        // The Library launcher counts it, and so does Get Resources… in its pane.
+        assert_eq!(library_badge(&h), Some("1".to_string()));
+        h.open_menu("Library");
         assert!(
             h.find("Get Resources… (1 update)").is_some(),
             "{:?}",
             h.texts()
         );
-        h.open_menu("Library (1)");
+        h.open_menu("Library");
 
         // Update all: the same Resource, its next revision, read again in its open Tab.
         h.click_text("Update all");
@@ -3848,7 +3870,7 @@ mod get_bibles {
             "{:?}",
             h.texts()
         );
-        assert!(h.find("Library").is_some() && h.find("Library (1)").is_none());
+        assert!(h.find("Library").is_some() && library_badge(&h).is_none());
         preview(&h, "get-resources-updated");
         drop(h);
         std::fs::remove_dir_all(root).unwrap();
