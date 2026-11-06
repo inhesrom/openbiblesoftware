@@ -16,6 +16,9 @@ sections are engine data computed on the job queue, the Guide arrangement is per
   loaded once per library (ids, revisions, hashes, paths) by `DirectoryCache`, shared by the
   Session and the section jobs. `Session::people_directory()` never waits: Loading starts a
   job, `poll_imports` (chaining `poll_factbooks`) finishes it. TIPNR: 4,135 entities in ~20 ms.
+  While it loads (`Factbooks::is_busy`) the shell keeps frames coming and, without worker
+  threads, steps the job itself, like Guide sections: a chooser or Word Info link needs no
+  other job running.
 - **Telling people apart** (`PeopleDirectory::distinction`), structured fields only: a named
   parent (`son of Zebedee`, `daughter of …`), else a named child (`father of Peter`), spouse,
   sibling or forebear, else the region; places use their region. TIPNR writes unnamed
@@ -40,7 +43,11 @@ sections are engine data computed on the job queue, the Guide arrangement is per
 - **Ways in.** `guide.factbook {entity | name | strongs, new_tab?, panel?, split?}`; the
   Guides menu; a People & places row's name in the Passage Guide; Word Info's `Factbook: …`
   button when the word's Strong's number names people or places (the exact extended number,
-  else every entity under the base number: the KJV's G2491 opens the John chooser).
+  else every entity under the base number: the KJV's G2491 opens the John chooser). Every
+  number of an entity counts: TIPNR's unified number (`Entity::strongs`, Abraham `H85`) and
+  the Total line's other dStrongs (`Entity::other_strongs`: Abram `H87`, Greek `G11`), stored
+  in the `.obr` `entity_strongs` table (older files have none). Entities whose unified number
+  it is come first.
   Favorites and History label a Factbook `John (son of Zebedee) · Factbook`.
 
 ## Starter library: Hitchcock's Bible Names
@@ -60,6 +67,8 @@ sections are engine data computed on the job queue, the Guide arrangement is per
 - Engine `factbook_tests`: Abraham from the Passage Guide row (family, meaning, Key Passages,
   articles, History label); the John chooser; Word Info Strong's numbers; Related both ways
   and named together; neighbouring Verses; meanings; empty library and reload.
-- UI `shell::tests::guide::abram_opens_his_factbook_and_the_john_chooser_lists_the_johns`.
+- UI `shell::tests::guide::abram_opens_his_factbook_and_the_john_chooser_lists_the_johns`,
+  `a_cold_factbook_chooser_loads_the_directory_by_itself`, and
+  `shell::tests::word_info::word_info_on_abram_offers_abrahams_factbook_from_a_cold_start`.
 - Real Starter library (manual): `OBS_LIBRARY=dist/starter cargo test -p obs-engine
   starter_library_abraham_factbook -- --ignored --nocapture`.
