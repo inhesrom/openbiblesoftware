@@ -3,7 +3,7 @@ name: Starter library
 # Builds the Starter library with `cargo xtask starter`, twice, and fails unless both builds
 # are byte-identical. The outputs are uploaded as the `starter-library` workflow artifact: on
 # pull requests that touch the lock or the pipeline, so the build report can be reviewed with
-# the change, and when the `release` workflow calls this one on a `v*` tag (or a dry run),
+# the change, and when the `release` workflow calls this one on a pushed `v*` tag (or a dry run),
 # which packs that artifact into the Release archives and publishes it (docs/dev/releasing.md).
 
 on:
@@ -22,8 +22,9 @@ on:
 
 concurrency:
   # `github.workflow` is the caller's name when `release` calls this workflow, so the two runs
-  # of one pull request do not cancel each other.
-  group: starter-${{ github.workflow }}-${{ github.ref }}
+  # of one pull request do not cancel each other; the event keeps a dry run dispatched on a tag
+  # from cancelling that tag's release.
+  group: starter-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:

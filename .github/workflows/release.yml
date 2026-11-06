@@ -2,10 +2,11 @@ name: Release
 
 # Builds the app on Linux, macOS and Windows, packs each build with the Starter library into a
 # Release archive (`cargo xtask release-archive`), launches the unpacked Linux archive on an
-# empty data folder (`cargo xtask release-smoke`), and on a `v*` tag publishes the archives,
-# every Starter `.obr`, `starter-manifest.json` and the `CHANGES-*.md` records to the GitHub
-# release. A `workflow_dispatch` run, or a pull request that changes this pipeline, is a dry
-# run: everything except publishing, with the assets as workflow artifacts.
+# empty data folder (`cargo xtask release-smoke`), and on a pushed `v*` tag publishes the
+# archives, every Starter `.obr`, `starter-manifest.json` and the `CHANGES-*.md` records to the
+# GitHub release. A `workflow_dispatch` run (even on a `v*` tag), or a pull request that changes
+# this pipeline, is a dry run: everything except publishing, with the assets as workflow
+# artifacts. Only the `push` event publishes, so a dry run can never overwrite release assets.
 # See docs/dev/releasing.md.
 #
 # TODO(#1): signing, macOS notarization and installers (msi/dmg/AppImage) wait for the
@@ -22,9 +23,10 @@ on:
       - "xtask/src/release.rs"
 
 concurrency:
-  group: release-${{ github.ref }}
-  # Never cancel a release half-published.
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  # Keyed by event too, so a dry run dispatched on a tag never cancels or queues behind the
+  # publishing run of that tag. Never cancel a release half-published.
+  group: release-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) }}
 
 permissions:
   contents: read
@@ -87,7 +89,8 @@ jobs:
           path: target/apps
       - name: Version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          # Only a pushed tag names the archives after the tag; dry runs (dispatch, PR) never do.
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/v* ]]; then
             version="$GITHUB_REF_NAME"
           else
             version="dev-${GITHUB_SHA::7}"
@@ -127,7 +130,9 @@ jobs:
 
   publish:
     name: Publish the release
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Publish only for a pushed tag: a workflow_dispatch on a `v*` tag must stay a dry run,
+    # because `gh release upload --clobber` below would replace published assets.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: package
     runs-on: ubuntu-latest
     permissions:

@@ -40,7 +40,7 @@ openbible-<tag>-<target>/
 | `starter` | ubuntu-latest | Calls [`starter.yml`](../../.github/workflows/starter.yml) (`workflow_call`): `cargo xtask starter --check-determinism`, diffed against the previous release's manifest, uploaded as the `starter-library` artifact. The Starter library is built once and reused, never rebuilt per platform. |
 | `build` | ubuntu, macos, windows | `cargo build --release --locked -p openbible`, uploaded as `app-<target>`. Runs alongside `starter`. |
 | `package` | ubuntu-latest | Downloads `starter-library` and the three `app-*` artifacts; `cargo xtask release-archive` for each target; `xvfb-run cargo xtask release-smoke` on the Linux archive; copies the Starter assets beside the archives, writes `SHA256SUMS`, and uploads them all as the `release-assets` artifact (plus `release-smoke-screenshot`). |
-| `publish` | ubuntu-latest | Only for `refs/tags/v*`. Downloads `release-assets` and creates the GitHub release (`--verify-tag`), or uploads with `--clobber` if the release already exists. The only job with `contents: write`. |
+| `publish` | ubuntu-latest | Only for a pushed `refs/tags/v*` (`github.event_name == 'push'`); a `workflow_dispatch` on a tag stays a dry run. Downloads `release-assets` and creates the GitHub release (`--verify-tag`), or uploads with `--clobber` if the release already exists. The only job with `contents: write`. |
 
 The `starter` workflow no longer runs on tags or publishes anything itself: it still runs on pull requests that touch the lock or the pipeline, and the `release` workflow calls it.
 
@@ -57,7 +57,7 @@ cargo xtask release-smoke dist/release/openbible-dev-local.tar.gz --shot /tmp/fi
 
 ## Dry runs
 
-**Actions → Release → Run workflow** (`gh workflow run release.yml --ref <branch>`) runs everything except `publish`; the archives are named `openbible-dev-<sha7>-<target>` and land in the run's `release-assets` artifact with the Starter assets. Pull requests that change `release.yml`, `starter.yml` or `xtask/src/release.rs` run the same dry run.
+**Actions → Release → Run workflow** (`gh workflow run release.yml --ref <branch>`) runs everything except `publish`, even when `--ref` is a `v*` tag (only the `push` event publishes); the archives are named `openbible-dev-<sha7>-<target>` and land in the run's `release-assets` artifact with the Starter assets. Pull requests that change `release.yml`, `starter.yml` or `xtask/src/release.rs` run the same dry run.
 
 ## Cutting a release
 
