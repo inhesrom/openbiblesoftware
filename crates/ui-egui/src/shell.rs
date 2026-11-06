@@ -47,6 +47,7 @@ mod guide_tab;
 mod guide_words;
 mod home_tab;
 mod import_tab;
+mod keys_tab;
 mod library_tab;
 mod missing_resource;
 mod notes_tab;
@@ -231,6 +232,8 @@ pub(crate) struct State {
     rich_clipboard: Option<Arc<dyn crate::RichClipboard>>,
     /// Each Resource's Contents, built on a worker the first time its pane opens (#176).
     contents: contents_pane::ContentsCache,
+    /// The Keyboard shortcuts Tab's key being recorded and conflict being resolved (#177).
+    keys_ui: keys_tab::KeysUi,
 }
 
 /// The app window's content: menus, Command box and the docked Workspace.
@@ -288,6 +291,7 @@ impl Shell {
                 export_ui: export::ExportUi::default(),
                 rich_clipboard: None,
                 contents: Default::default(),
+                keys_ui: Default::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -824,6 +828,7 @@ impl Shell {
         if let Some(after) = self.background_repaint() {
             ui.ctx().request_repaint_after(after);
         }
+        self.st.keys_ui.begin_frame();
         self.shortcuts(ui, None);
         self.st.toolbar.begin_frame();
         let menus = egui::Panel::top("menus")
@@ -904,16 +909,20 @@ impl Shell {
         if gained {
             self.focus_here(focused);
         }
+        // A key being recorded in the Keyboard shortcuts Tab (#177) runs nothing.
+        if self.st.keys_ui.is_recording() {
+            return;
+        }
         // Keys a text field uses itself (Ctrl+Z, Esc …) are left to it while it has focus.
         let typing = ui.ctx().text_edit_focused();
         let all = bindings(&self.st.session);
-        let bound: Vec<(&obs_engine::CommandSpec, egui::KeyboardShortcut)> = self
-            .st
-            .session
+        let session = &self.st.session;
+        let bound: Vec<(&obs_engine::CommandSpec, egui::KeyboardShortcut)> = session
             .commands()
             .iter()
-            .filter(|spec| !(typing && spec.shortcut.is_some_and(annotate::yields_to_text_fields)))
-            .filter_map(|spec| Some((spec, spec.shortcut.and_then(parse_shortcut)?)))
+            .filter_map(|spec| Some((spec, session.shortcut(spec.id)?)))
+            .filter(|(_, key)| !(typing && annotate::yields_to_text_fields(key)))
+            .filter_map(|(spec, key)| Some((spec, parse_shortcut(key)?)))
             .flat_map(|(spec, sc)| pressed_as(sc).map(move |sc| (spec, sc)))
             .collect();
         let mut run: Vec<(&'static str, Value)> = Vec::new();
@@ -1038,7 +1047,7 @@ impl Shell {
                     _ => spec.label.to_string(),
                 };
                 let mut b = egui::Button::new(label);
-                if let Some(sc) = spec.shortcut {
+                if let Some(sc) = self.st.session.shortcut(id) {
                     b = b.shortcut_text(sc);
                 }
                 let enabled = self.st.session.is_enabled(id);
@@ -1337,13 +1346,22 @@ fn build_node(
     }
 }
 
-/// Every key binding in the app: the commands' and the annotation keys.
+/// Every key binding in the app as the user has them (#177): the commands' and the Selection
+/// keys.
 pub(crate) fn bindings(session: &obs_engine::Session) -> Vec<egui::KeyboardShortcut> {
     (session.commands().iter())
-        .filter_map(|spec| spec.shortcut.and_then(parse_shortcut))
+        .filter_map(|spec| session.shortcut(spec.id).and_then(parse_shortcut))
         .flat_map(pressed_as)
-        .chain(annotate::shortcuts())
+        .chain(annotate::shortcuts(session))
         .collect()
+}
+
+/// `text (key)` with the key `id` has now (#177), or `text` alone when it has none.
+pub(crate) fn with_key(session: &obs_engine::Session, text: &str, id: &str) -> String {
+    match session.shortcut(id) {
+        Some(key) => format!("{text} ({key})"),
+        None => text.to_string(),
+    }
 }
 
 /// The key reports that press `sc`: itself, and for `+` also `=`. On US, UK and AZERTY
@@ -1757,6 +1775,7 @@ impl State {
             TabKind::StarterLibrary => self.starter_body(&mut body),
             TabKind::Credits => self.credits_body(&mut body, tab),
             TabKind::Home => self.home_body(&mut body, tab),
+            TabKind::KeyboardShortcuts => self.keys_body(&mut body, tab),
             TabKind::Guide(
                 g @ (obs_engine::Guide::PassageGuide | obs_engine::Guide::ExegeticalGuide),
             ) => self.passage_keyed_guide_body(&mut body, tab, g),
@@ -2378,7 +2397,11 @@ impl State {
         let next = ui
             .add_enabled(others, arrow("▶"))
             .accessible_name(format!("Next of your {what}"))
-            .on_hover_text(format!("Next of your {what} (Ctrl+])"))
+            .on_hover_text(with_key(
+                &self.session,
+                &format!("Next of your {what}"),
+                "tab.parallel_next",
+            ))
             .on_disabled_hover_text(format!("There are no other {what} in the library"));
         if next.clicked() {
             run = Some(("tab.parallel_next", json!({ "tab": tab.0 })));
@@ -2407,7 +2430,11 @@ impl State {
         let previous = ui
             .add_enabled(others, arrow("◀"))
             .accessible_name(format!("Previous of your {what}"))
-            .on_hover_text(format!("Previous of your {what} (Ctrl+[)"))
+            .on_hover_text(with_key(
+                &self.session,
+                &format!("Previous of your {what}"),
+                "tab.parallel_previous",
+            ))
             .on_disabled_hover_text(format!("There are no other {what} in the library"));
         if previous.clicked() {
             run = Some(("tab.parallel_previous", json!({ "tab": tab.0 })));
@@ -2587,10 +2614,20 @@ impl State {
             .workspace
             .tab(tab)
             .is_some_and(|t| t.kind.has_find_bar());
+        let find_key = self
+            .session
+            .shortcut("tab.find")
+            .unwrap_or_default()
+            .to_string();
+        let close_key = self
+            .session
+            .shortcut("tab.close")
+            .unwrap_or_default()
+            .to_string();
         ui.menu_button(RichText::new("…").color(theme::c().muted), |ui| {
             if findable
                 && ui
-                    .add(egui::Button::new("Find…").shortcut_text("Ctrl+F"))
+                    .add(egui::Button::new("Find…").shortcut_text(find_key))
                     .clicked()
             {
                 self.session.workspace.user_focused(tab);
@@ -2613,7 +2650,7 @@ impl State {
             self.favorite_folder_menu(ui, tab);
             self.window_menu(ui, tab);
             if ui
-                .add(egui::Button::new("Close Tab").shortcut_text("Ctrl+W"))
+                .add(egui::Button::new("Close Tab").shortcut_text(close_key))
                 .clicked()
             {
                 self.run("tab.close", &json!({ "tab": tab.0 }));

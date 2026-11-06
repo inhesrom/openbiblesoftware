@@ -68,6 +68,7 @@ fn every_tab_kind() -> Vec<TabKind> {
         TabKind::StarterLibrary,
         TabKind::Credits,
         TabKind::Home,
+        TabKind::KeyboardShortcuts,
         TabKind::Guide(Guide::PassageGuide),
         TabKind::Tool(Tool::Search),
     ] {
@@ -94,7 +95,8 @@ fn every_tab_kind() -> Vec<TabKind> {
             | TabKind::GetBibles
             | TabKind::StarterLibrary
             | TabKind::Credits
-            | TabKind::Home => kinds.push(kind),
+            | TabKind::Home
+            | TabKind::KeyboardShortcuts => kinds.push(kind),
         }
     }
     kinds
@@ -136,6 +138,7 @@ fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
                 .run("reading_plan.create", &json!({ "template": "nt-90-days" }));
             ("home.open", split)
         }
+        TabKind::KeyboardShortcuts => ("help.keyboard_shortcuts", split),
         TabKind::Guide(Guide::PassageGuide) => (
             "guide.passage_guide",
             json!({ "passage": "Jn 3:16", "split": true }),
@@ -934,6 +937,27 @@ fn keyboard_only_copy_verses() {
     );
     key(&mut h, Key::Escape, Modifiers::NONE);
     assert!(!h.shell.st.copy_ui.open);
+}
+
+/// Keyboard shortcuts (#177): filter to Larger text, record Ctrl+Up for it, Reset, close.
+#[test]
+fn keyboard_only_keyboard_shortcuts() {
+    let (mut h, _lab) = keyboard_harness("kb-keys");
+    command(&mut h, "keyboard shortcuts");
+    assert_eq!(focused_kind(&h), Some(TabKind::KeyboardShortcuts));
+    tab_to(&mut h, "Filter");
+    type_text(&mut h, "larger");
+    tab_to(&mut h, "Larger text shortcut: Ctrl+Plus");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert!(h.shell.st.keys_ui.is_recording());
+    key(&mut h, Key::ArrowUp, CTRL);
+    let session = h.shell.session();
+    assert_eq!(session.shortcut("view.text_larger"), Some("Ctrl+Up"));
+    tab_to(&mut h, "Reset the Larger text shortcut");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    let session = h.shell.session();
+    assert_eq!(session.shortcut("view.text_larger"), Some("Ctrl+Plus"));
+    close_tab(&mut h, &TabKind::KeyboardShortcuts);
 }
 
 /// Esc closes one window (#182): with Fonts open behind Copy verses, the one with the

@@ -266,6 +266,41 @@ fn keys_that_need_shift_on_some_layouts_still_work_and_ctrl_shift_z_never_undoes
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A Selection key rebound in Help → Keyboard shortcuts (#177) works at once, its old key no
+/// longer does, and the selection toolbar's tooltip names the new key.
+#[test]
+fn a_rebound_selection_key_highlights_and_its_old_key_does_not() {
+    let dir = folder("rebound");
+    let mut h = launch(&dir);
+    h.shell.run(
+        "keys.set",
+        &json!({ "command": "selection.highlight_green", "key": "F7" }),
+    );
+    let tb = h.tab_id("TB");
+    let (_, _, _, r) = word_in_view(&h, tb, 200.0);
+    double_click(&mut h, r.center());
+    // The swatch's tooltip names the new key.
+    let keys = crate::shell::annotate::SelectionKeyText::of(&h.shell.st.session);
+    assert_eq!(keys.style(HighlightStyle::Green), "F7");
+    assert_eq!(keys.note(), "Ctrl+Shift+N");
+    press_key(&mut h, egui::Key::Num2, Modifiers::COMMAND);
+    h.frame();
+    assert!(h.shell.st.session.annotations(None).unwrap().is_empty());
+    assert!(h.shell.st.has_selection(tb));
+    press_key(&mut h, egui::Key::F7, Modifiers::NONE);
+    h.frame();
+    let stored = h.shell.st.session.annotations(None).unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(
+        stored[0].content,
+        Content::Highlight {
+            style: HighlightStyle::Green
+        }
+    );
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn toolbar_swatches_and_right_click_apply_styles_and_the_newest_is_drawn_on_top() {
     let dir = folder("toolbar");

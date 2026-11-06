@@ -114,8 +114,9 @@ or deleted).
   toolbar above it: 5 style swatches, ✏ Note, Copy and Search this (disabled until #59).
   Right-click shows the same actions as a menu (on the selection under the pointer, else on
   the clicked word). Keys: Ctrl+1…5 (styles, in `HighlightStyle::ALL` order), Ctrl+Shift+N
-  (Note), Ctrl+Z / Ctrl+Shift+Z (undo, redo). A Highlight clears the selection so its colour
-  shows at once.
+  (Note), Ctrl+Z / Ctrl+Shift+Z (undo, redo). The style and Note keys are the Selection
+  keys; these are their defaults, which Help → Keyboard shortcuts changes (#177,
+  `keyboard-shortcuts.md`). A Highlight clears the selection so its colour shows at once.
 - **Keys and text fields.** The Shell runs command shortcuts before widgets see the key, so
   while a text field has focus (`egui::Context::text_edit_focused`) it skips the keys text
   fields use themselves (Ctrl+Z, Ctrl+Shift+Z, Esc, Alt+←/→) and the annotation keys.

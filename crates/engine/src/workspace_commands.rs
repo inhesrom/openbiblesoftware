@@ -137,7 +137,12 @@ pub const MENUS: &[Menu] = &[
     },
     Menu {
         title: "Help",
-        items: &[C("help.about"), C("help.credits"), C("app.commands")],
+        items: &[
+            C("help.about"),
+            C("help.credits"),
+            C("help.keyboard_shortcuts"),
+            C("app.commands"),
+        ],
     },
 ];
 
@@ -655,6 +660,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     open_cmd("help.credits", "Credits", None, |s, p| {
         open(s, p, TabKind::Credits)
     }),
+    open_cmd(
+        "help.keyboard_shortcuts",
+        "Keyboard shortcuts",
+        None,
+        |s, p| open(s, p, TabKind::KeyboardShortcuts),
+    ),
     CommandSpec {
         id: "tab.go",
         label: "Go to Key",
@@ -857,6 +868,7 @@ pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
         TabKind::StarterLibrary => "Starter library".into(),
         TabKind::Credits => "Credits".into(),
         TabKind::Home => "Home".into(),
+        TabKind::KeyboardShortcuts => "Keyboard shortcuts".into(),
         TabKind::Resource(id) => s
             .library
             .get(id)

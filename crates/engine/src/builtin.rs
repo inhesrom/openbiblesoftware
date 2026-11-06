@@ -127,6 +127,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::interlinear::COMMANDS)
         .chain(crate::contents::COMMANDS)
         .chain(crate::toolbar_settings::COMMANDS)
+        .chain(crate::key_bindings::COMMANDS)
     {
         // Ids in COMMANDS are unique (checked by a test), so registration cannot fail.
         let _ = r.register(*spec);
@@ -153,7 +154,8 @@ fn list_commands(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> 
             json!({
                 "id": c.id,
                 "label": c.label,
-                "shortcut": c.shortcut,
+                "shortcut": s.shortcut(c.id),
+                "default_shortcut": c.shortcut,
                 "params": c.params.iter().map(|p| json!({
                     "name": p.name,
                     "kind": p.kind.name(),

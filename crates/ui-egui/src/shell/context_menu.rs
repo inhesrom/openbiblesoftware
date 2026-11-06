@@ -28,7 +28,7 @@ use obs_scripture::{
 use serde_json::json;
 
 use super::State;
-use super::annotate::{Annotate, menu_label, style_shortcut};
+use super::annotate::{Annotate, SelectionKeyText, menu_label};
 use super::references::TargetKey;
 use crate::compare_view::ComparisonContext;
 use crate::doc::ReadingDoc;
@@ -260,6 +260,7 @@ fn menu_ui(
     m: &mut MenuTargets,
     palette: &Palette,
     can_annotate: bool,
+    keys: &SelectionKeyText,
 ) -> Option<MenuAction> {
     let mut picked = None;
     ui.horizontal_top(|ui| {
@@ -282,7 +283,7 @@ fn menu_ui(
         ui.separator();
         ui.vertical(|ui| {
             ui.set_min_width(190.0);
-            picked = actions_ui(ui, m, palette, can_annotate);
+            picked = actions_ui(ui, m, palette, can_annotate, keys);
         });
     });
     if picked.is_some() {
@@ -297,6 +298,7 @@ fn actions_ui(
     m: &MenuTargets,
     palette: &Palette,
     can_annotate: bool,
+    keys: &SelectionKeyText,
 ) -> Option<MenuAction> {
     let mut picked = None;
     let mut item = |ui: &mut Ui, enabled: bool, button: egui::Button<'_>, action, hint: &str| {
@@ -318,7 +320,7 @@ fn actions_ui(
                     ui,
                     can_annotate,
                     egui::Button::new(menu_label(ui, style, palette))
-                        .shortcut_text(style_shortcut(style)),
+                        .shortcut_text(keys.style(style)),
                     MenuAction::Annotate(Annotate::Highlight(style)),
                     no_db,
                 );
@@ -327,7 +329,7 @@ fn actions_ui(
             item(
                 ui,
                 can_annotate,
-                egui::Button::new("✏ Note…").shortcut_text("Ctrl+Shift+N"),
+                egui::Button::new("✏ Note…").shortcut_text(keys.note()),
                 MenuAction::Annotate(Annotate::Note),
                 no_db,
             );
@@ -636,6 +638,7 @@ impl State {
         let menu = &mut menu.filter(|m| !m.targets().is_empty());
         let palette = self.palette;
         let can_annotate = self.session.is_enabled("annotation.highlight");
+        let keys = SelectionKeyText::of(&self.session);
         let mut picked = None;
         let mut popup = egui::Popup::context_menu(response);
         if menu.is_none() {
@@ -648,7 +651,7 @@ impl State {
         }
         popup.show(|ui| {
             if let Some(m) = menu.as_mut() {
-                picked = menu_ui(ui, m, &palette, can_annotate);
+                picked = menu_ui(ui, m, &palette, can_annotate, &keys);
             }
         });
         let new_tab = ui.input(|i| i.modifiers.command);
