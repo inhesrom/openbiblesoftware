@@ -189,10 +189,19 @@ impl Annotation {
         }
     }
 
-    /// Whether it breaks a rule of the model (a Highlight without an Anchor).
+    /// Whether it breaks a rule of the model: a Highlight without an Anchor, or a Text range
+    /// that covers no text (the User database's CHECK refuses one too).
     pub fn problem(&self) -> Option<&'static str> {
-        match (&self.content, &self.anchor) {
-            (Content::Highlight { .. }, None) => Some("a Highlight needs an Anchor"),
+        if matches!(
+            (&self.content, &self.anchor),
+            (Content::Highlight { .. }, None)
+        ) {
+            return Some("a Highlight needs an Anchor");
+        }
+        match self.anchor.as_ref().and_then(Anchor::text_range) {
+            Some(r) if r.end <= r.start || r.quote.is_empty() => {
+                Some("a Text range must cover some text")
+            }
             _ => None,
         }
     }

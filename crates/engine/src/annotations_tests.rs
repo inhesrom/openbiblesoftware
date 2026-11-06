@@ -369,14 +369,29 @@ fn an_unmapped_verse_selection_gets_a_text_range_anchor_with_its_own_reference()
         panic!("{:?}", made[0].anchor);
     };
     assert_eq!(range.native_ref, None);
-    // Across mapped and Unmapped verses, the mapped ones give the Passage.
+    // Across mapped and Unmapped verses (a mixed selection, docs/dev/annotations.md), the
+    // mapped ones give the Passage; the origin Text range keeps the whole selection,
+    // Unmapped words included, without a Bible reference of its own.
     let start = f.at("test-lxx", "EST", "the Jews.", false);
     let end = f.at("test-lxx", "EST", "Mardocheus", true);
     let made = highlight(&mut s, sel("test-lxx", "EST", start, "EST", end));
-    assert_eq!(
-        made[0].anchor.as_ref().unwrap().passage(),
-        Some(Passage::verse(std_verse(Book::Esther, 10, 3)))
+    let Some(Anchor::Passage {
+        passage,
+        origin: Some(origin),
+    }) = &made[0].anchor
+    else {
+        panic!("{:?}", made[0].anchor);
+    };
+    assert_eq!(*passage, Passage::verse(std_verse(Book::Esther, 10, 3)));
+    assert_eq!((origin.start as usize, origin.end as usize), (start, end));
+    assert!(
+        origin.quote.ends_with("Then Mardocheus"),
+        "{}",
+        origin.quote
     );
+    assert_eq!(origin.native_ref, None);
+    assert!(!origin.whole_verses);
+    assert_captured(&f, origin);
     drop(s);
 }
 
@@ -747,6 +762,40 @@ fn undo_refuses_rows_that_changed_underneath_and_clears_the_history() {
     assert_eq!(s.annotation(&id).unwrap(), after);
     assert!(!s.is_enabled("edit.undo"));
     assert!(!s.is_enabled("edit.redo"));
+    drop(s);
+}
+
+/// A failed undo or redo that may pass (a busy or full disk, #115) keeps its step to try
+/// again; only a Conflict or Rejected list clears the history (above).
+#[test]
+fn a_transient_write_error_keeps_the_undo_and_redo_steps() {
+    use std::sync::atomic::Ordering;
+    let f = Fixture::new("transient");
+    let mut s = Session::new(JobMode::Inline);
+    assert!(s.library.scan(&f.root.join("library")).is_empty());
+    let (store, _) = obs_store::UserStore::open(&f.root.join("user.db")).unwrap();
+    let (store, failures) = crate::testing::WritesFail::changes(store);
+    s.attach_user(Box::new(store));
+    let out = s.run("annotation.note", &json!({ "body": "one" })).unwrap();
+    let note = s.annotation(out["id"].as_str().unwrap()).unwrap();
+
+    failures.store(1, Ordering::SeqCst);
+    let err = s.run("edit.undo", &Value::Null).unwrap_err();
+    assert!(err.to_string().contains("disk is full"), "{err}");
+    assert_eq!(s.annotation(&note.id).unwrap(), note);
+    assert_eq!(s.undo_history().undo_label(), Some("Note"));
+    assert!(s.is_enabled("edit.undo"));
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert!(s.annotation(&note.id).is_err());
+
+    failures.store(1, Ordering::SeqCst);
+    let err = s.run("edit.redo", &Value::Null).unwrap_err();
+    assert!(err.to_string().contains("disk is full"), "{err}");
+    assert_eq!(s.undo_history().redo_label(), Some("Note"));
+    assert!(s.is_enabled("edit.redo"));
+    s.run("edit.redo", &Value::Null).unwrap();
+    assert_eq!(s.annotation(&note.id).unwrap(), note);
+    assert_eq!(s.undo_history().undo_label(), Some("Note"));
     drop(s);
 }
 

@@ -1815,9 +1815,10 @@ pub fn tagnt_grace() -> obs_model::Resource {
     r
 }
 
-/// A User database whose preference writes, or its next few History Visit writes, fail
-/// ("disk full"); everything else is the real `store`. For checking that a failed save is
-/// reported, not hidden, and that History keeps what it could not write.
+/// A User database whose preference writes, its next few History Visit writes, or its next
+/// few annotation change lists fail ("disk full"); everything else is the real `store`. For
+/// checking that a failed save is reported, not hidden, that History keeps what it could not
+/// write, and that undo keeps a step it could not write.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug)]
 pub struct WritesFail {
@@ -1826,6 +1827,9 @@ pub struct WritesFail {
     pub preferences: bool,
     /// How many Visit writes still fail before they work again.
     pub visits: std::cell::Cell<u32>,
+    /// How many annotation change lists still fail before they work again; shared, so a
+    /// test can set it after the Session owns the store.
+    pub changes: std::sync::Arc<std::sync::atomic::AtomicU32>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1836,6 +1840,7 @@ impl WritesFail {
             store,
             preferences: true,
             visits: std::cell::Cell::new(0),
+            changes: std::sync::Arc::default(),
         }
     }
 
@@ -1845,7 +1850,22 @@ impl WritesFail {
             store,
             preferences: false,
             visits: std::cell::Cell::new(failures),
+            changes: std::sync::Arc::default(),
         }
+    }
+
+    /// Every write works until the returned count of annotation change lists to fail is set.
+    pub fn changes(
+        store: obs_store::UserStore,
+    ) -> (Self, std::sync::Arc<std::sync::atomic::AtomicU32>) {
+        let s = Self {
+            store,
+            preferences: false,
+            visits: std::cell::Cell::new(0),
+            changes: std::sync::Arc::default(),
+        };
+        let failures = std::sync::Arc::clone(&s.changes);
+        (s, failures)
     }
 }
 
@@ -1962,7 +1982,15 @@ impl crate::UserData for WritesFail {
     fn search_notes(&self, fts_query: &str) -> Result<Vec<String>, String> {
         crate::UserData::search_notes(&self.store, fts_query)
     }
-    fn apply_changes(&self, changes: &[obs_store::Change]) -> Result<(), String> {
+    fn apply_changes(&self, changes: &[obs_store::Change]) -> Result<(), obs_store::StoreError> {
+        use std::sync::atomic::Ordering;
+        let failures = self.changes.load(Ordering::SeqCst);
+        if failures > 0 {
+            self.changes.store(failures - 1, Ordering::SeqCst);
+            return Err(obs_store::StoreError::Sqlite(
+                "database or disk is full".into(),
+            ));
+        }
         crate::UserData::apply_changes(&self.store, changes)
     }
     fn annotation_dump(&self) -> Result<String, String> {

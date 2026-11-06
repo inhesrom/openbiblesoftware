@@ -25,8 +25,11 @@ sha2.workspace = true
 toml = "1"
 
 [features]
-# Mock SWORD repositories for tests in this and dependent crates.
-test-support = []
+# Mock SWORD repositories and the User database dump, for tests in this and dependent crates.
+test-support = ["obs-store/test-support"]
+
+[dev-dependencies]
+obs-store = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true
