@@ -3,7 +3,8 @@
 //! pane's selection:
 //!
 //! - releasing a selection shows a floating **selection toolbar** (5 style swatches, Note,
-//!   Copy, Search this); right-click offers the same actions; Ctrl+1…5 and Ctrl+Shift+N are
+//!   Copy, Search this); the right-click menu's Selection target offers the same actions
+//!   (`context_menu.rs`, #142); Ctrl+1…5 and Ctrl+Shift+N are
 //!   their keys, and Ctrl+Z / Ctrl+Shift+Z undo and redo. None of these keys fire while a
 //!   text field has focus: there they belong to the field.
 //! - Note opens a **popup editor** anchored at the selection with a Notebook picker; it saves
@@ -19,6 +20,7 @@ use std::sync::Arc;
 
 use egui::{Key, Modifiers, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
 use obs_engine::{Annotation, HighlightStyle, Session, TabId};
+use obs_model::ResourceType;
 use serde_json::{Value, json};
 
 use super::{State, bindings, consume_key, extra_held};
@@ -62,6 +64,8 @@ pub(super) enum Annotate {
     Highlight(HighlightStyle),
     Note,
     Copy,
+    /// Search for the selected text (#59, #142).
+    Search,
 }
 
 /// Annotations shown in text as loaded from the User database, and each Resource's [`Mark`]s,
@@ -169,7 +173,7 @@ fn style_name(style: HighlightStyle) -> &'static str {
         .map_or("", |i| HIGHLIGHT_STYLES[i])
 }
 
-fn style_shortcut(style: HighlightStyle) -> String {
+pub(super) fn style_shortcut(style: HighlightStyle) -> String {
     let n = HighlightStyle::ALL
         .iter()
         .position(|s| *s == style)
@@ -242,8 +246,13 @@ fn toolbar_row(ui: &mut Ui, palette: &Palette, can_annotate: bool) -> Option<Ann
         {
             picked = Some(Annotate::Copy);
         }
-        ui.add_enabled(false, egui::Button::new("🔎 Search this"))
-            .on_disabled_hover_text(super::not_yet("word_info.search"));
+        if ui
+            .button("🔎 Search this")
+            .on_hover_text("Search for the selected words")
+            .clicked()
+        {
+            picked = Some(Annotate::Search);
+        }
     });
     picked
 }
@@ -267,48 +276,6 @@ pub(super) fn menu_label(
     }
     job.append(style_name(style), 6.0, name);
     job
-}
-
-/// The right-click menu: the toolbar's actions, one per line with their keys. `enabled`: there
-/// is a selection; `can_annotate`: there is a User database to keep Annotations in.
-fn context_menu_items(
-    ui: &mut Ui,
-    palette: &Palette,
-    enabled: bool,
-    can_annotate: bool,
-) -> Option<Annotate> {
-    let mut picked = None;
-    for style in HighlightStyle::ALL {
-        let r = ui.add_enabled(
-            enabled && can_annotate,
-            egui::Button::new(menu_label(ui, style, palette)).shortcut_text(style_shortcut(style)),
-        );
-        if r.clicked() {
-            picked = Some(Annotate::Highlight(style));
-        }
-    }
-    ui.separator();
-    if ui
-        .add_enabled(
-            enabled && can_annotate,
-            egui::Button::new("✏ Note…").shortcut_text("Ctrl+Shift+N"),
-        )
-        .clicked()
-    {
-        picked = Some(Annotate::Note);
-    }
-    if ui
-        .add_enabled(enabled, egui::Button::new("Copy").shortcut_text("Ctrl+C"))
-        .clicked()
-    {
-        picked = Some(Annotate::Copy);
-    }
-    ui.add_enabled(false, egui::Button::new("🔎 Search this"))
-        .on_disabled_hover_text(super::not_yet("word_info.search"));
-    if picked.is_some() {
-        ui.close();
-    }
-    picked
 }
 
 impl State {
@@ -393,26 +360,13 @@ impl State {
                     view.selection = None;
                 }
             }
+            Annotate::Search => {
+                let text = selected_text(&doc, &sel);
+                let new_tab = ctx.input(|i| i.modifiers.command);
+                let (id, ty) = (&doc.manifest.resource_id, doc.manifest.resource_type);
+                self.search_text(&text, id, ty, new_tab);
+            }
             Annotate::Note => {
-                self.save_note();
-                // The open Note did not save: keep it (and its error) rather than lose its text.
-                if self.note_editor.is_some() {
-                    return;
-                }
-                let notebooks: Vec<(String, String)> = self
-                    .session
-                    .notebooks()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|n| (n.id, n.name))
-                    .collect();
-                let notebook = match self.session.last_notebook() {
-                    Ok(n) => n.id,
-                    Err(e) => {
-                        self.toast(e);
-                        return;
-                    }
-                };
                 let copied = copy_text(&doc, &sel);
                 let label = copied.lines().last().unwrap_or_default().to_string();
                 let mut quote: String = selected_text(&doc, &sel)
@@ -422,23 +376,80 @@ impl State {
                 if quote.chars().count() > 90 {
                     quote = quote.chars().take(89).collect::<String>() + "…";
                 }
-                // Focus now, so keys typed on the very next frame land in the editor.
-                ctx.memory_mut(|m| m.request_focus(editor_body_id()));
-                self.note_editor = Some(NoteEditor {
-                    tab,
-                    target,
-                    label,
-                    quote,
-                    body: String::new(),
-                    notebook,
-                    notebooks,
-                    at,
-                    rect: None,
-                    focused_once: false,
-                    error: None,
-                });
+                self.open_note_editor(ctx, tab, target, label, quote, at);
             }
         }
+    }
+
+    /// Open the popup Note editor at `at` for a Note on `target` (`annotation.note` params: a
+    /// selection, or a `passage`). `label` says where the Note goes, `quote` what it is on.
+    pub(super) fn open_note_editor(
+        &mut self,
+        ctx: &egui::Context,
+        tab: TabId,
+        target: Value,
+        label: String,
+        quote: String,
+        at: Rect,
+    ) {
+        self.save_note();
+        // The open Note did not save: keep it (and its error) rather than lose its text.
+        if self.note_editor.is_some() {
+            return;
+        }
+        let notebooks: Vec<(String, String)> = self
+            .session
+            .notebooks()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|n| (n.id, n.name))
+            .collect();
+        let notebook = match self.session.last_notebook() {
+            Ok(n) => n.id,
+            Err(e) => {
+                self.toast(e);
+                return;
+            }
+        };
+        // Focus now, so keys typed on the very next frame land in the editor.
+        ctx.memory_mut(|m| m.request_focus(editor_body_id()));
+        self.note_editor = Some(NoteEditor {
+            tab,
+            target,
+            label,
+            quote,
+            body: String::new(),
+            notebook,
+            notebooks,
+            at,
+            rect: None,
+            focused_once: false,
+            error: None,
+        });
+    }
+
+    /// Search for selected text (#142), always quoted so it is searched literally: a
+    /// selected `OR`, `AND`, `NOT`, `G25`, `-word` or `word*` is the text, not query syntax.
+    /// In a Bible, Bible search in that Bible; elsewhere, Library search in that Resource.
+    /// In the most recent Search Tab, or a new one with `new_tab` (Ctrl/Cmd held).
+    pub(super) fn search_text(
+        &mut self,
+        text: &str,
+        resource: &str,
+        ty: ResourceType,
+        new_tab: bool,
+    ) {
+        let words: Vec<&str> = text.split_whitespace().collect();
+        if words.is_empty() {
+            return;
+        }
+        let query = format!("\"{}\"", words.join(" ").replace('"', ""));
+        let params = if ty == ResourceType::Bible {
+            json!({ "text": query, "mode": "bible", "bibles": resource, "split": new_tab })
+        } else {
+            json!({ "text": query, "mode": "library", "resources": resource, "split": new_tab })
+        };
+        self.run("search.run", &params);
     }
 
     /// Save the open Note editor's Note (nothing is saved when it is empty) and close it,
@@ -468,8 +479,8 @@ impl State {
         }
     }
 
-    /// After a reading pane drew: the selection toolbar, the right-click menu, the Note
-    /// preview, and where the Note editor anchors.
+    /// After a reading pane drew: the selection toolbar, the Note preview, where the Note
+    /// editor anchors, and the right-click menu (#142).
     pub(super) fn after_reading_pane(&mut self, ui: &mut Ui, tab: TabId, out: &PaneOutput) {
         let focused = self.session.workspace.focused() == Some(tab);
         let selected = self.has_selection(tab);
@@ -523,13 +534,6 @@ impl State {
                         });
                 });
         }
-        if let Some(r) = &out.response {
-            r.context_menu(|ui| {
-                if let Some(a) = context_menu_items(ui, &palette, selected, can_annotate) {
-                    picked = Some((a, out.selection_rect));
-                }
-            });
-        }
         if let Some((id, marker)) = &out.hovered_note {
             self.note_preview(ui, id, *marker);
         }
@@ -540,6 +544,7 @@ impl State {
         if let Some((action, at)) = picked {
             self.annotate(ui.ctx(), tab, action, at);
         }
+        self.reading_menu(ui, tab, out, focused);
     }
 
     /// Hovering a Note marker previews the Note.

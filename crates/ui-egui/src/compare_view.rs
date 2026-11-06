@@ -298,10 +298,33 @@ pub fn paint_star(
 }
 
 /// What happened in the comparison pane this frame.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct ComparisonOutput {
     /// The user scrolled the view.
     pub user_moved: bool,
+    /// The pane's own response (for its right-click menu).
+    pub response: Option<egui::Response>,
+    /// The Verse block right-clicked this frame (#142).
+    pub context: Option<ComparisonContext>,
+}
+
+/// A right-click on a Verse block: its Standard Verse and, on a row with text, that row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComparisonContext {
+    pub verse: Verse,
+    pub row: Option<ComparisonRow>,
+}
+
+/// One Bible's text in a Verse block, as Copy with reference copies it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComparisonRow {
+    /// The Bible's resource id and abbreviation.
+    pub bible: String,
+    pub abbreviation: String,
+    /// Its own Verses in the block (its numbering may differ from the block's Standard
+    /// Verse), with the last verse number each covers.
+    pub natives: Vec<(Verse, u16)>,
+    pub text: String,
 }
 
 /// Highlight rectangles `[x0, y0, x1, y1]` of the clusters of `laid` whose text bytes fall in
@@ -371,6 +394,10 @@ pub fn comparison_pane(
     }
     view.viewport_height = rect.height();
     let response = ui.allocate_rect(rect, Sense::click_and_drag());
+    let context_at = response
+        .secondary_clicked()
+        .then(|| response.interact_pointer_pos())
+        .flatten();
     let painter = ui.painter_at(rect);
     let accessible = ui
         .ctx()
@@ -409,6 +436,7 @@ pub fn comparison_pane(
     out.user_moved = (view.position().0 - before).abs() > 0.01;
 
     if view.blocks.is_empty() {
+        out.response = Some(response);
         painter.text(
             rect.center(),
             Align2::CENTER_CENTER,
@@ -448,6 +476,7 @@ pub fn comparison_pane(
             palette.verse_number,
         );
         let mut measured = true;
+        let mut row_context = None;
         for (row, c) in block.cells.iter().enumerate() {
             let rtl = view.rtl(row);
             let mut height = view.line_height();
@@ -569,6 +598,19 @@ pub fn comparison_pane(
                 }
             }
             height = height.max(label_h);
+            if let Some(p) = context_at
+                && (row_y..row_y + height + ROW_GAP).contains(&p.y)
+                && let Cell::Text { natives, text } = &c.cell
+                && !text.is_empty()
+                && let Some(bible) = view.docs.get(row)
+            {
+                row_context = Some(ComparisonRow {
+                    bible: bible.id.clone(),
+                    abbreviation: bible.abbreviation.clone(),
+                    natives: natives.clone(),
+                    text: text.clone(),
+                });
+            }
             if accessible && (accessible_laid.is_some() || !accessible_text.is_empty()) {
                 crate::a11y::publish_comparison_row(
                     ui,
@@ -583,6 +625,14 @@ pub fn comparison_pane(
             row_y += height + ROW_GAP;
         }
         let height = row_y - y + BLOCK_GAP;
+        if let Some(p) = context_at
+            && (y..y + height).contains(&p.y)
+        {
+            out.context = Some(ComparisonContext {
+                verse: block.verse,
+                row: row_context,
+            });
+        }
         if measured {
             view.heights.set(i, height);
         }
@@ -633,6 +683,7 @@ pub fn comparison_pane(
             palette.verse_number.gamma_multiply(0.5),
         );
     }
+    out.response = Some(response);
     out
 }
 

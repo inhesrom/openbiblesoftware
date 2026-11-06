@@ -25,6 +25,7 @@ use crate::view::ReadingView;
 use crate::workers::SnippetCache;
 
 mod annotate;
+mod context_menu;
 mod credits_tab;
 mod favorites_tab;
 mod fonts_window;
@@ -85,6 +86,8 @@ struct TabUi {
     toolbar: bool,
     /// Where the selection was drawn last frame, in screen points.
     selection_rect: Option<egui::Rect>,
+    /// What the right-click menu offers while it is open (#142).
+    menu: Option<context_menu::MenuTargets>,
     /// Passage Guide sections showing all their rows (Key words, People & places).
     guide_expanded: std::collections::BTreeSet<obs_engine::GuideSection>,
     /// Word Study: Lexicon entries expanded (true) or collapsed by the user, by entry id, for
@@ -1501,6 +1504,7 @@ impl State {
             view.synced = Some(v);
             self.session.workspace.user_scrolled(tab, v);
         }
+        self.comparison_menu(ui, tab, out.response.as_ref(), out.context.as_ref());
     }
 
     /// The chips under a Text Comparison header: one per Bible (☆ makes it the ★ base, ×

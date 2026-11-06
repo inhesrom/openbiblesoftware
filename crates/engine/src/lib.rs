@@ -43,6 +43,9 @@ pub mod library_search;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod library_search_tests;
 pub mod link;
+mod lookups;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod lookups_tests;
 pub mod notes;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod notes_tests;

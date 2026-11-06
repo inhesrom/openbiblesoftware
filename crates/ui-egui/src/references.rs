@@ -18,6 +18,8 @@ struct Queries<T, K = Passage> {
     jobs: JobQueue,
     pending: BTreeMap<JobId, K>,
     ready: HashMap<K, Result<Arc<T>, String>>,
+    /// An inline queue runs nothing while held (tests: a query still pending).
+    held: bool,
 }
 
 impl<T: Send + 'static, K> Default for Queries<T, K> {
@@ -30,6 +32,7 @@ impl<T: Send + 'static, K> Default for Queries<T, K> {
             },
             pending: BTreeMap::new(),
             ready: HashMap::new(),
+            held: false,
         }
     }
 }
@@ -48,7 +51,7 @@ impl<T: Send + 'static, K: Clone + Eq + Hash + Send + 'static> Queries<T, K> {
         passage: K,
         query: impl FnOnce(K) -> Result<T, String> + Send + 'static,
     ) -> Option<Result<Arc<T>, String>> {
-        if !self.jobs.is_threaded() {
+        if !self.jobs.is_threaded() && !self.held {
             self.jobs.pump(1);
         }
         for event in self.jobs.drain_events() {
@@ -117,6 +120,16 @@ impl TargetKey {
     }
 }
 
+impl std::fmt::Debug for TargetKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TargetKey")
+            .field("doc", &Weak::as_ptr(&self.doc))
+            .field("unit", &self.unit)
+            .field("span", &self.span)
+            .finish()
+    }
+}
+
 impl PartialEq for TargetKey {
     fn eq(&self, other: &Self) -> bool {
         Weak::ptr_eq(&self.doc, &other.doc) && self.unit == other.unit && self.span == other.span
@@ -141,6 +154,20 @@ pub(crate) struct TargetCache {
 }
 
 impl TargetCache {
+    /// Tests: a cache whose worker runs nothing until [`TargetCache::release`].
+    #[cfg(test)]
+    pub(crate) fn held() -> Self {
+        let mut cache = Self::default();
+        cache.queries.jobs = JobQueue::inline();
+        cache.queries.held = true;
+        cache
+    }
+
+    #[cfg(test)]
+    pub(crate) fn release(&mut self) {
+        self.queries.held = false;
+    }
+
     pub(crate) fn get(&mut self, key: TargetKey) -> Option<Result<Arc<Targets>, String>> {
         self.queries.get_key(key, |key| {
             let doc = key.doc.upgrade().ok_or("The Resource was closed")?;

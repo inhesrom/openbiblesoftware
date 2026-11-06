@@ -37,6 +37,8 @@ struct Harness {
     last_shapes: Vec<egui::epaint::ClippedShape>,
     /// URLs the app asked the platform to open (hyperlinks clicked), oldest first.
     opened: Vec<String>,
+    /// Text the app put on the clipboard, oldest first.
+    copied: Vec<String>,
 }
 
 fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
@@ -139,6 +141,7 @@ impl Harness {
             textures: std::collections::HashMap::new(),
             last_shapes: Vec::new(),
             opened: Vec::new(),
+            copied: Vec::new(),
         };
         h.frames(3);
         h
@@ -179,8 +182,10 @@ impl Harness {
         out.textures_delta.clear();
         self.last_shapes = out.shapes.clone();
         for c in &out.platform_output.commands {
-            if let egui::OutputCommand::OpenUrl(u) = c {
-                self.opened.push(u.url.clone());
+            match c {
+                egui::OutputCommand::OpenUrl(u) => self.opened.push(u.url.clone()),
+                egui::OutputCommand::CopyText(t) => self.copied.push(t.clone()),
+                _ => {}
             }
         }
         if let Some(t) = out.platform_output.accesskit_update.take() {
@@ -3064,6 +3069,9 @@ mod fonts;
 
 #[path = "favorites_tests.rs"]
 mod favorites;
+
+#[path = "context_menu_tests.rs"]
+mod context_menu;
 
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {
