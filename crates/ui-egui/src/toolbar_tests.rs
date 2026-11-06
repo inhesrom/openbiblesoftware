@@ -410,6 +410,47 @@ fn layout_cards_load_rename_and_delete_from_the_keyboard() {
     assert_eq!(open(&h), None);
 }
 
+/// `event`, then Delete, in one frame: the filter takes the text before Delete can mean
+/// "delete the picked Layout".
+fn event_then_delete(h: &mut Harness, event: Event) {
+    h.events.push(event);
+    let delete = |pressed| Event::Key {
+        key: Key::Delete,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    h.events.push(delete(true));
+    h.frame();
+    h.events.push(delete(false));
+    h.frames(2);
+}
+
+#[test]
+fn typing_or_pasting_then_delete_in_one_frame_keeps_the_picked_saved_layout() {
+    let mut h = layouts_harness("toolbar-paste-delete");
+    let saved = |h: &Harness| {
+        let user = h.shell.st.session.user.as_ref().unwrap();
+        user.layouts().unwrap()
+    };
+    for event in [Event::Paste("Two".into()), Event::Text("Two".into())] {
+        // The saved Layout is picked and the filter is empty.
+        key(&mut h, Key::Y, Modifiers::ALT);
+        assert_eq!(open(&h), Some(Launcher::Layouts));
+        assert_eq!(h.shell.st.toolbar.selected, 0);
+        assert!(h.shell.st.toolbar.query.is_empty());
+        event_then_delete(&mut h, event.clone());
+        assert_eq!(saved(&h), ["Two Bibles"], "{event:?} then Delete");
+        assert_eq!(
+            h.shell.st.toolbar.query, "Two",
+            "{event:?} went to the filter"
+        );
+        key(&mut h, Key::Escape, Modifiers::NONE);
+        assert_eq!(open(&h), None);
+    }
+}
+
 #[test]
 fn typing_and_enter_in_one_frame_run_the_row_for_what_was_typed() {
     let mut h = layouts_harness("toolbar-one-frame");

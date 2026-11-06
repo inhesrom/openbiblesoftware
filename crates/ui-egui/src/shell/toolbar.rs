@@ -726,8 +726,14 @@ impl Shell {
                     if inp.consume_key(Modifiers::NONE, Key::F2) {
                         self.st.toolbar.renaming = Some((name.clone(), name.clone()));
                     }
-                    // Delete edits the filter while it has text, typed this frame too.
-                    let typing = inp.events.iter().any(|e| matches!(e, egui::Event::Text(_)));
+                    // Delete edits the filter while it has text, typed, pasted or composed
+                    // (IME) this frame too.
+                    let typing = inp.events.iter().any(|e| {
+                        matches!(
+                            e,
+                            egui::Event::Text(_) | egui::Event::Paste(_) | egui::Event::Ime(_)
+                        )
+                    });
                     if needle.is_empty() && !typing && inp.consume_key(Modifiers::NONE, Key::Delete)
                     {
                         action = Some(Action::Delete(name.clone()));
