@@ -7,6 +7,7 @@ use egui::{
 };
 use obs_render::GlyphAtlas;
 
+use crate::find::Found;
 use crate::marks::{Mark, MarkKind};
 use crate::palette::Palette;
 use crate::selection::{DocPos, Granularity, Selection, range_rects, selection_rects};
@@ -129,7 +130,8 @@ pub struct PaneOutput {
 /// Draw the reading pane into all the space `ui` has, and handle its input. `flash` marks a
 /// verse or a Text range (after a jump) with a colour whose alpha fades it out. `marks` are
 /// the Highlights and Notes to draw, oldest first: Highlight backgrounds under the glyphs
-/// (newest on top), the red underline and Note markers over them.
+/// (newest on top), the red underline and Note markers over them. `found` are the Find bar's
+/// matches (#175), drawn over the Highlights and under the selection.
 pub fn reading_pane(
     ui: &mut Ui,
     view: &mut ReadingView,
@@ -137,6 +139,7 @@ pub fn reading_pane(
     palette: &Palette,
     flash: Option<(Flash, Color32)>,
     marks: &[Mark],
+    found: Found<'_>,
 ) -> PaneOutput {
     let mut out = PaneOutput::default();
     let rect = ui.available_rect_before_wrap();
@@ -277,6 +280,27 @@ pub fn reading_pane(
         {
             for r in rects {
                 painter.rect_filled(to_screen(text_band(*r, size)), 1.5, fill);
+            }
+        }
+    }
+    // Find matches (#175): only those reaching into the blocks laid out in view are looked at,
+    // however many the Resource has.
+    if !found.matches.is_empty() {
+        let mut shown: Vec<usize> = Vec::new();
+        for b in frame.blocks.iter().filter(|b| b.laid.is_some()) {
+            let block = &view.doc.blocks[b.index];
+            shown.extend(found.within(block.unit, 0, block.source.range.clone()));
+        }
+        shown.sort_unstable();
+        shown.dedup();
+        let ranges: Vec<(DocPos, DocPos)> = shown
+            .iter()
+            .map(|&k| (found.matches[k].start(), found.matches[k].end()))
+            .collect();
+        for (k, rects) in shown.iter().zip(range_rects(view, &ranges, rect.height())) {
+            for r in rects {
+                let r = to_screen(text_band(r, size));
+                paint_find_match(&painter, r, found.current == Some(*k), palette);
             }
         }
     }
@@ -487,6 +511,22 @@ pub fn reading_pane(
     }
     out.response = Some(response);
     out
+}
+
+/// One Find match (#175): the current one in the search-hit overlay with an outline, the
+/// others in the paler find-match overlay. Neither is a Highlight style.
+pub(crate) fn paint_find_match(painter: &egui::Painter, r: Rect, current: bool, palette: &Palette) {
+    if current {
+        painter.rect_filled(r, 2.0, palette.search_hit);
+        painter.rect_stroke(
+            r,
+            2.0,
+            egui::Stroke::new(1.5, palette.find_current),
+            egui::StrokeKind::Outside,
+        );
+    } else {
+        painter.rect_filled(r, 2.0, palette.find_match);
+    }
 }
 
 /// The part of a line rectangle `[x0, y0, x1, y1]` that text of `size` occupies: a band

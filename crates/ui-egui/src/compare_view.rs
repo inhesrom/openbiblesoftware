@@ -12,6 +12,7 @@ use obs_model::Direction;
 use obs_scripture::{Verse, VerseMap};
 
 use crate::doc::ReadingDoc;
+use crate::find::Found;
 use crate::heights::HeightIndex;
 use crate::palette::Palette;
 use crate::pane::AtlasTexture;
@@ -127,6 +128,8 @@ pub struct ComparisonView {
     /// The location last taken from or reported to the engine.
     pub synced: Option<Verse>,
     snippets: SnippetCache,
+    /// Bumped whenever the Verse blocks are made again (a Find bar searches them anew, #175).
+    generation: u64,
 }
 
 impl ComparisonView {
@@ -142,6 +145,7 @@ impl ComparisonView {
             anchor: (0, 0.0),
             synced: None,
             snippets: SnippetCache::default(),
+            generation: 0,
         }
     }
 
@@ -173,6 +177,7 @@ impl ComparisonView {
             .and_then(|i| docs.get(i))
             .is_some_and(|d| d.doc.is_ok());
         self.blocks = verse_blocks(&key.extent, &bibles, base, differences && base_available);
+        self.generation += 1;
         self.docs = docs;
         self.key = Some(key);
         self.reset_heights();
@@ -233,6 +238,46 @@ impl ComparisonView {
     pub fn jump_to(&mut self, verse: Verse) {
         let i = self.blocks.partition_point(|b| b.verse <= verse);
         self.anchor = (i.saturating_sub(1), 0.0);
+    }
+
+    /// Which version of its Verse blocks it shows: it changes whenever they are made again.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// The text of every row with text, as (Verse block, row, text), for its Find bar.
+    pub(crate) fn find_rows(&self) -> Vec<(usize, usize, String)> {
+        let mut rows = Vec::new();
+        for (b, block) in self.blocks.iter().enumerate() {
+            for (r, c) in block.cells.iter().enumerate() {
+                if let Cell::Text { text, .. } = &c.cell
+                    && !text.is_empty()
+                {
+                    rows.push((b, r, text.clone()));
+                }
+            }
+        }
+        rows
+    }
+
+    /// The Verse block at the top of the view.
+    pub fn top_block(&self) -> usize {
+        self.anchor.0
+    }
+
+    /// Bring Verse block `i` to the top of the view unless its top already shows in the
+    /// upper three quarters of it (a Find match, #175). True when the view moved.
+    pub fn reveal_block(&mut self, i: usize) -> bool {
+        if i >= self.blocks.len() {
+            return false;
+        }
+        let top = self.heights.offset(i)
+            - (self.heights.offset(self.anchor.0) + f64::from(self.anchor.1));
+        if top >= 0.0 && top < f64::from(self.viewport_height) * 0.75 {
+            return false;
+        }
+        self.anchor = (i, 0.0);
+        true
     }
 
     /// The Standard Verse whose block is at the top of the view.
@@ -398,6 +443,7 @@ pub fn comparison_pane(
     view: &mut ComparisonView,
     atlas: &mut AtlasTexture,
     palette: &Palette,
+    found: Found<'_>,
 ) -> ComparisonOutput {
     // Navigation can leave only Absent rows (or no Bibles), so `get` may never run.
     view.snippets.drain();
@@ -470,6 +516,8 @@ pub fn comparison_pane(
     let tint = palette.search_hit.gamma_multiply(0.75);
     let mut quads = Vec::new();
     let mut tints: Vec<Rect> = Vec::new();
+    // Find matches (#175): their rectangles, and whether each is the current one.
+    let mut matches: Vec<(Rect, bool)> = Vec::new();
     let mut carets: Vec<[f32; 3]> = Vec::new();
     let (first, offset) = view.anchor;
     let mut y = rect.top() - offset;
@@ -565,6 +613,20 @@ pub fn comparison_pane(
                                         if let Some([x, t, b]) = caret_at(&laid, m) {
                                             carets.push([text_left + x, row_y + t, row_y + b]);
                                         }
+                                    }
+                                }
+                                for k in found.within(i, row, 0..text.len()) {
+                                    let current = found.current == Some(k);
+                                    for [x0, y0, x1, y1] in
+                                        range_rects(&laid, &found.matches[k].range)
+                                    {
+                                        matches.push((
+                                            Rect::from_min_max(
+                                                pos2(text_left + x0, row_y + y0),
+                                                pos2(text_left + x1, row_y + y1),
+                                            ),
+                                            current,
+                                        ));
                                     }
                                 }
                                 quads.extend(atlas.atlas.quads(&laid, [text_left, row_y], ppp));
@@ -663,6 +725,9 @@ pub fn comparison_pane(
     }
     for r in tints {
         painter.rect_filled(r, 2.0, tint);
+    }
+    for (r, current) in matches {
+        crate::pane::paint_find_match(&painter, r, current, palette);
     }
     let texture = atlas.sync(ui.ctx());
     let mut mesh = Mesh::with_texture(texture);
@@ -786,7 +851,7 @@ mod tests {
                     ..Default::default()
                 },
                 |ui| {
-                    comparison_pane(ui, &mut view, &mut atlas, &palette);
+                    comparison_pane(ui, &mut view, &mut atlas, &palette, Found::default());
                 },
             );
             output.textures_delta.clear();
@@ -831,7 +896,7 @@ mod tests {
                 let rect = Rect::from_min_size(pos2(10.0, 10.0), vec2(550.0, height));
                 let mut body = ui.new_child(egui::UiBuilder::new().max_rect(rect));
                 body.set_clip_rect(rect);
-                comparison_pane(&mut body, view, atlas, &Palette::PAPER);
+                comparison_pane(&mut body, view, atlas, &Palette::PAPER, Found::default());
             },
         );
         output.textures_delta.clear();

@@ -3159,6 +3159,8 @@ mod parallel_resources;
 mod collections;
 #[path = "command_box_tests.rs"]
 mod command_box;
+#[path = "find_tests.rs"]
+mod find_bar;
 #[path = "copy_export_tests.rs"]
 mod copy_export;
 

@@ -31,6 +31,10 @@ pub struct Palette {
     pub selection: Color32,
     pub hover: Color32,
     pub search_hit: Color32,
+    /// Find in Resource (#175): every match of the Find bar; the current one is drawn in
+    /// `search_hit` with a `find_current` outline.
+    pub find_match: Color32,
+    pub find_current: Color32,
     /// The jump flash at full strength (it fades out).
     pub flash: Color32,
 }
@@ -66,6 +70,8 @@ impl Palette {
         selection: rgb(211, 224, 244),
         hover: rgb(226, 235, 247),
         search_hit: rgb(255, 214, 120),
+        find_match: rgb(255, 234, 186),
+        find_current: rgb(176, 98, 0),
         flash: rgb(240, 214, 150),
     };
 
@@ -95,6 +101,8 @@ impl Palette {
         selection: rgb(214, 208, 222),
         hover: rgb(232, 222, 200),
         search_hit: rgb(250, 204, 110),
+        find_match: rgb(248, 224, 172),
+        find_current: rgb(160, 88, 8),
         flash: rgb(232, 206, 144),
     };
 
@@ -125,6 +133,8 @@ impl Palette {
         selection: rgb(36, 56, 88),
         hover: rgb(36, 42, 52),
         search_hit: rgb(80, 62, 16),
+        find_match: rgb(56, 46, 18),
+        find_current: rgb(240, 182, 84),
         flash: rgb(72, 60, 26),
     };
 
@@ -182,6 +192,7 @@ impl Palette {
             ("selection", self.selection),
             ("hover", self.hover),
             ("search hit", self.search_hit),
+            ("find match", self.find_match),
             ("jump flash", self.flash),
         ]);
         v

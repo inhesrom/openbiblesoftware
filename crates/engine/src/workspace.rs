@@ -179,6 +179,11 @@ impl TabKind {
         }
     }
 
+    /// Whether it has a Find bar (Ctrl+F, #175): a Resource or Text Comparison Tab.
+    pub fn has_find_bar(&self) -> bool {
+        matches!(self, TabKind::Resource(_) | TabKind::Tool(Tool::TextComparison))
+    }
+
     /// Whether the header has a link chip.
     pub fn has_link_chip(&self) -> bool {
         !matches!(
@@ -609,6 +614,17 @@ pub enum Effect {
     },
     /// Close a floating window, its Panels moving to the right of the main window (#152).
     DockWindow(WindowId),
+    /// Open a Resource or Text Comparison Tab's Find bar and put the keyboard in it (Ctrl+F,
+    /// #175), with `text` to find when given.
+    Find {
+        tab: TabId,
+        text: Option<String>,
+    },
+    /// Move a Tab's Find bar to its next match (or previous, without `forward`).
+    FindStep {
+        tab: TabId,
+        forward: bool,
+    },
 }
 
 /// How the caller asked for a Tab to be opened.

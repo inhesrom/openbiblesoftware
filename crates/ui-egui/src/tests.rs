@@ -643,8 +643,13 @@ fn every_ink_on_every_highlight_meets_wcag_aa_in_every_tone() {
         // The red underline is a mark, not text: WCAG's 3:1 for graphics, against the page.
         let u = contrast(p.underline, p.page);
         assert!(u >= 3.0, "{name}: underline {u:.2}:1");
+        // So is the current Find match's outline (#175), against the page and its fill.
+        for (what, bg) in [("page", p.page), ("search hit", p.search_hit)] {
+            let o = contrast(p.find_current, bg);
+            assert!(o >= 3.0, "{name}: find outline on {what} {o:.2}:1");
+        }
     }
-    assert_eq!(pairs, 3 * 9 * 7);
+    assert_eq!(pairs, 3 * 10 * 7);
     eprintln!("lowest contrast {:.2}:1 ({})", worst.0, worst.1);
     // The formula itself: black on white is 21:1, a colour on itself 1:1.
     assert!((contrast(egui::Color32::BLACK, egui::Color32::WHITE) - 21.0).abs() < 0.01);
