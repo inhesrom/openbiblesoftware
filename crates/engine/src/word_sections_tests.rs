@@ -319,8 +319,9 @@ fn an_extended_number_counts_in_the_hebrew_bible_with_its_forms() {
     assert!(forms(&mut s, "G5485").forms.is_empty());
     assert_eq!(
         GuideSection::Forms.empty_hint(&s.library, &s.guides.indexes()),
-        "None in your library. Add a Hebrew or Greek Bible with Morphology (TAHOT, TAGNT) \
-         to see this word's forms."
+        "None in your library. Add a Hebrew or Greek Bible with Morphology to see this \
+         word's forms: TAHOT and TAGNT come with the Starter library, and more are in \
+         Get Resources › Hebrew & Greek."
     );
     assert!(occurrences(&mut s, "G9999").verses.is_empty());
     drop(s);

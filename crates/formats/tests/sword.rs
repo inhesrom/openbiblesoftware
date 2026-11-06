@@ -259,6 +259,86 @@ fn public_domain_osis_bible_imports_with_sensible_dropped_markup() {
     check_golden("kjv-osis", &snapshot(&r, &report));
 }
 
+/// One Tagged word part: Strong's number, Morphology code, Lemma.
+type Part = (String, String, String);
+
+/// The Tagged words of one Bible book: written text, then its parts.
+fn tagged_words(r: &Resource, book: Book) -> Vec<(String, Vec<Part>)> {
+    let u = r.unit(&UnitId::book(book)).unwrap();
+    u.spans
+        .iter()
+        .filter_map(|s| match &s.kind {
+            SpanKind::TaggedWord { parts } => Some((
+                u.text[s.range()].to_string(),
+                parts
+                    .iter()
+                    .map(|p| {
+                        (
+                            p.strongs.to_string(),
+                            p.morph.clone().unwrap_or_default(),
+                            p.lemma.clone().unwrap_or_default(),
+                        )
+                    })
+                    .collect(),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+/// #133: an original-language SWORD Bible tagged as CrossWire's Byz, WHNU and MorphGNT are
+/// (`robinson:` codes, Strong's tense-voice-mood numbers after verbs, `strongsMorph:`, a
+/// written lemma) and one tagged as OSHB is (`oshm:` codes) import as Tagged words whose
+/// Morphology codes the expander reads.
+#[test]
+fn original_language_bibles_import_robinson_and_oshm_tagging_as_tagged_words() {
+    let (r, report) = import("ObsGreekNt");
+    assert_eq!(r.manifest.language, "grc");
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    let jhn = tagged_words(&r, Book::John);
+    let loved = jhn.iter().find(|(w, _)| w == "ἠγάπησεν").unwrap();
+    assert_eq!(
+        loved.1,
+        [("G25".into(), "V-AAI-3S".into(), String::new())],
+        "the tense-voice-mood number G5656 is not a word"
+    );
+    let rom = tagged_words(&r, Book::Romans);
+    let love = rom.iter().find(|(w, _)| w == "ἀγάπην").unwrap();
+    assert_eq!(love.1, [("G26".into(), "N-ASF".into(), "ἀγάπη".into())]);
+    let commends = rom.iter().find(|(w, _)| w == "συνίστησιν").unwrap();
+    assert_eq!(commends.1[0].1, "V-PAI-3S", "strongsMorph: is skipped");
+    for (word, parts) in jhn.iter().chain(&rom) {
+        for (_, code, _) in parts {
+            let m = obs_model::morph::parse(code).unwrap_or_else(|e| panic!("{word}: {e}"));
+            assert_eq!(m.language, obs_model::MorphLanguage::Greek);
+        }
+    }
+    assert_eq!(report.tagged_words, 42);
+    check_golden("greek-nt-osis", &snapshot(&r, &report));
+
+    let (r, report) = import("ObsHebrewOt");
+    assert_eq!(r.manifest.language, "hbo");
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    let genesis = tagged_words(&r, Book::Genesis);
+    let created = genesis.iter().find(|(w, _)| w == "בָּרָ֣א").unwrap();
+    assert_eq!(
+        created.1,
+        [("H1254".into(), "HVqp3ms".into(), String::new())]
+    );
+    let these = genesis.iter().find(|(w, _)| w == "אֵ֣לֶּה").unwrap();
+    assert_eq!(
+        obs_model::morph::parse(&these.1[0].1).unwrap().short(),
+        "demonstrative pronoun, com. pl."
+    );
+    for (word, parts) in &genesis {
+        for (_, code, _) in parts {
+            let m = obs_model::morph::parse(code).unwrap_or_else(|e| panic!("{word}: {e}"));
+            assert_eq!(m.language, obs_model::MorphLanguage::Hebrew);
+        }
+    }
+    check_golden("hebrew-ot-osis", &snapshot(&r, &report));
+}
+
 #[test]
 fn gbf_bible_with_linked_verses() {
     let (r, report) = import("ObsKjvGbf");
@@ -411,7 +491,7 @@ fn modules_are_listed_and_unknown_ones_named() {
         .into_iter()
         .map(|m| (m.name, m.resource_type))
         .collect();
-    assert_eq!(listed.len(), 9);
+    assert_eq!(listed.len(), 11);
     assert!(listed.contains(&("ObsNotes".into(), Some(ResourceType::Commentary))));
     assert_eq!(source.default_module(), None);
     let one = SwordSource::open(&root().join("mods.d/obsnotes.conf")).unwrap();

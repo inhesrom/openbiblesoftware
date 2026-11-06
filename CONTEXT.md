@@ -141,6 +141,10 @@ _Avoid_: Upgrade, New version (as the name of the offer)
 The SWORD module files a downloaded Resource was imported from, kept in the app's own SWORD folder. Updating a Resource replaces its SWORD copy; removing the Resource deletes it.
 _Avoid_: Module cache, Download folder
 
+**Hebrew & Greek**:
+The Get Resources filter, and its Featured group, for Bibles in Hebrew, Aramaic or Greek. Each row shows before download whether the Bible is tagged with Strong's numbers and Morphology, which Word Info, Word Study and Key words need. It filters Bibles by language; it is not a Resource type.
+_Avoid_: Originals, Original-language texts (as a type)
+
 **Import report**:
 The summary shown after an Import: what was brought in, which markup was dropped, how many Unmapped and Absent verses the Bible has, and any licence information that was missing.
 _Avoid_: Import log, Conversion warnings

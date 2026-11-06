@@ -25,6 +25,7 @@ eframe = { workspace = true, features = ["wayland", "x11", "accesskit", "links"]
 obs-engine.workspace = true
 obs-fonts.workspace = true
 obs-model.workspace = true
+obs-store.workspace = true
 
 [lints]
 workspace = true

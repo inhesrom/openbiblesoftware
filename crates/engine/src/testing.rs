@@ -52,7 +52,8 @@ fn copy_dir(from: &Path, to: &Path) {
 ///   the Lexicon `StrongsGreek` (the open test Greek lexicon under the Featured name, with
 ///   G26); the Commentary `ObsNotes` (KJV numbering, John 3:16); the Dictionary `ObsTopics`;
 ///   and two Commentaries Import refuses: `ObsHebrewNotes` (MT numbering) and `ObsLinks`
-///   (`HREFCom`).
+///   (`HREFCom`); and the Hebrew & Greek Bibles `OSHB` and `MorphGNT` (the tagged test
+///   excerpts `ObsHebrewOt` and `ObsGreekNt` under the Featured names, #133).
 /// - "eBible.org": a second `ObsKjvOsis` and `ObsGreekBible` (`Lang=grc`).
 /// - "Broken": a directory that does not exist.
 #[derive(Debug)]
@@ -116,6 +117,32 @@ impl MockRepos {
                             ("Description", "Strong's Greek Bible Dictionary"),
                             ("DistributionLicense", "Public Domain"),
                             ("InstallSize", "863426"),
+                        ],
+                    ),
+                ),
+                (
+                    "oshb.conf",
+                    conf_variant(
+                        "obshebrewot.conf",
+                        "OSHB",
+                        &[
+                            ("Description", "Open Scriptures Hebrew Bible"),
+                            ("DistributionLicense", "Creative Commons: BY 4.0"),
+                            ("InstallSize", "3279140"),
+                        ],
+                    ),
+                ),
+                (
+                    "morphgnt.conf",
+                    conf_variant(
+                        "obsgreeknt.conf",
+                        "MorphGNT",
+                        &[
+                            (
+                                "Description",
+                                "Morphologically Parsed Greek New Testament based on the SBLGNT",
+                            ),
+                            ("InstallSize", "1388384"),
                         ],
                     ),
                 ),

@@ -3150,11 +3150,11 @@ mod get_bibles {
         let (mut h, repos, root) = setup("flow");
         open_get_bibles(&mut h);
         assert!(h.find("FEATURED BIBLES · 1").is_some(), "{:?}", h.texts());
-        assert!(h.find("ALL BIBLES · 5").is_some(), "{:?}", h.texts());
+        assert!(h.find("ALL BIBLES · 7").is_some(), "{:?}", h.texts());
         // NASB 1995 heads Featured, with the conf's licence and InstallSize.
         let nasb = first(&h, NASB);
         let featured = h.find("FEATURED BIBLES · 1").unwrap();
-        let all = h.find("ALL BIBLES · 5").unwrap();
+        let all = h.find("ALL BIBLES · 7").unwrap();
         assert!(featured.top() < nasb.top() && nasb.top() < all.top());
         assert!(h.find("Copyrighted").is_some());
         assert!(
@@ -3225,7 +3225,7 @@ mod get_bibles {
         open_get_bibles(&mut h);
         h.shell.st.get_bibles_ui.language = Some("grc".into());
         h.frames(2);
-        assert!(h.find("ALL BIBLES · 1").is_some(), "{:?}", h.texts());
+        assert!(h.find("ALL BIBLES · 2").is_some(), "{:?}", h.texts());
         assert!(h.find("Greek test Bible").is_some());
         assert!(h.find(NASB).is_some(), "Featured is not filtered");
         h.shell.st.get_bibles_ui.language = None;
@@ -3446,8 +3446,19 @@ mod get_bibles {
         assert!(h.find("FEATURED BIBLES · 1").is_some(), "{:?}", h.texts());
         assert!(h.find("FEATURED LEXICONS · 1").is_some(), "{:?}", h.texts());
         assert!(h.find("FEATURED COMMENTARIES · 0").is_none());
-        assert!(h.find("ALL RESOURCES · 10").is_some(), "{:?}", h.texts());
-        for t in ["Bibles", "Lexicons", "Commentaries", "Dictionaries", "All"] {
+        assert!(
+            h.find("FEATURED HEBREW & GREEK · 2").is_some(),
+            "{:?}",
+            h.texts()
+        );
+        for t in [
+            "Bibles",
+            "Hebrew & Greek",
+            "Lexicons",
+            "Commentaries",
+            "Dictionaries",
+            "All",
+        ] {
             assert!(h.find(t).is_some(), "type filter {t:?}: {:?}", h.texts());
         }
         assert!(
@@ -3541,7 +3552,14 @@ mod get_bibles {
         open_get_resources(&mut h);
         h.shell.st.get_bibles_ui.query = "greek".into();
         h.frames(2);
-        assert!(h.find("ALL RESOURCES · 2").is_some(), "{:?}", h.texts());
+        // With All, the Featured sections push "All Resources" below the fold.
+        let catalog = h.shell.st.session.get_bibles.catalog().unwrap();
+        assert_eq!(
+            catalog
+                .all("greek", None, obs_engine::get_bibles::ResourceFilter::All)
+                .len(),
+            3
+        );
         h.click_text("Lexicons");
         h.frames(2);
         assert!(h.find("ALL LEXICONS · 1").is_some(), "{:?}", h.texts());
@@ -3554,7 +3572,7 @@ mod get_bibles {
         );
         h.click_text("Bibles");
         h.frames(2);
-        assert!(h.find("ALL BIBLES · 1").is_some(), "{:?}", h.texts());
+        assert!(h.find("ALL BIBLES · 2").is_some(), "{:?}", h.texts());
         assert!(h.find("Greek test Bible").is_some());
         drop(h);
         std::fs::remove_dir_all(root).unwrap();
@@ -3592,6 +3610,83 @@ mod get_bibles {
             assert!(h.find(header).is_some(), "{filter}: {:?}", h.texts());
             assert!(h.find(title).is_some(), "{filter}: {:?}", h.texts());
         }
+        drop(h);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    const MORPHGNT: &str = "Morphologically Parsed Greek New Testament based on the SBLGNT";
+    const OSHB: &str = "Open Scriptures Hebrew Bible";
+
+    /// #133: the Hebrew & Greek filter lists the Featured original-language Bibles with their
+    /// Strong's and Morphology badges, then every Hebrew, Aramaic and Greek Bible; one click
+    /// downloads a tagged Greek NT.
+    #[test]
+    fn the_hebrew_and_greek_filter_shows_tag_badges_and_downloads_a_tagged_greek_nt_in_one_click() {
+        let (mut h, _repos, root) = setup("hebrew-greek");
+        open_get_resources(&mut h);
+        h.click_text("Hebrew & Greek");
+        h.frames(2);
+        assert_eq!(
+            h.shell.st.session.get_bibles.filter(),
+            obs_engine::get_bibles::ResourceFilter::HebrewAndGreek
+        );
+        assert!(
+            h.find("FEATURED HEBREW & GREEK · 2").is_some(),
+            "{:?}",
+            h.texts()
+        );
+        assert!(
+            h.find("ALL HEBREW & GREEK · 3").is_some(),
+            "{:?}",
+            h.texts()
+        );
+        assert!(h.find(NASB).is_none(), "English Bibles filtered out");
+        assert!(h.find(STRONGS).is_none(), "Lexicons filtered out");
+        // Featured order: Hebrew first. Each tagged row has both badges.
+        assert!(first(&h, OSHB).top() < first(&h, MORPHGNT).top());
+        for title in [OSHB, MORPHGNT] {
+            row_button(&h, title, "Strong's");
+            row_button(&h, title, "Morphology");
+        }
+        // The untagged-by-Morphology test Bible has the Strong's badge only.
+        row_button(&h, "Greek test Bible", "Strong's");
+        assert!(
+            h.find("Used by Word Info and Word Study › Occurrences and Forms · Creative Commons: BY 4.0")
+                .is_some(),
+            "{:?}",
+            h.texts()
+        );
+        // The badge says what it is for.
+        let badge = row_button(&h, MORPHGNT, "Morphology");
+        h.events.push(Event::PointerMoved(badge));
+        h.frames(60);
+        assert!(
+            h.texts()
+                .iter()
+                .any(|t| t.contains("Word Study › Forms fills in")),
+            "{:?}",
+            h.texts()
+        );
+        h.events.push(Event::PointerMoved(pos2(5.0, 5.0)));
+        h.frames(2);
+        preview(&h, "get-resources-hebrew-greek");
+
+        let at = row_button(&h, MORPHGNT, "Download");
+        h.click(at);
+        settle(&mut h);
+        let record = h
+            .shell
+            .st
+            .session
+            .imports
+            .report("morphgnt-1")
+            .unwrap()
+            .clone();
+        assert_eq!(record.phase, ImportPhase::Complete, "{:?}", record.error);
+        assert!(record.report.unwrap().tagged_words > 0);
+        let tab = h.tab_at("Get Resources");
+        h.click(tab);
+        assert!(h.find("Installed").is_some(), "{:?}", h.texts());
         drop(h);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -3823,7 +3918,31 @@ mod get_bibles {
             h.texts()
         );
         assert!(!says_up_to_date(&h), "{:?}", h.texts());
-        assert!(h.find("Installed").is_some());
+        // The offline banner and the Featured Hebrew & Greek group (#133) push the row down:
+        // scroll the list to it.
+        let over = h
+            .panels()
+            .into_iter()
+            .find(|(_, t)| t.iter().any(|t| t == "Get Resources"))
+            .unwrap()
+            .0
+            .center();
+        h.events.push(Event::PointerMoved(over));
+        for _ in 0..40 {
+            if h.find("Installed").is_some() {
+                break;
+            }
+            h.events.push(Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(0.0, -40.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers: Modifiers::NONE,
+            });
+            h.frame();
+        }
+        h.frames(2);
+        assert!(h.find("Installed").is_some(), "{:?}", h.texts());
         preview(&h, "get-resources-updates-offline");
         drop(h);
         std::fs::remove_dir_all(root).unwrap();

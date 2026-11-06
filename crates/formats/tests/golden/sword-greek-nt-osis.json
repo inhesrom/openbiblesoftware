@@ -1,0 +1,634 @@
+{
+  "content_hash": "sha256:c3a5bf43feeffdf7fa7210dda04b608267f37b4d568a3adff8393f47278fce2e",
+  "keys": [],
+  "manifest": {
+    "abbreviation": "OBS-GNT",
+    "attribution": "Licence: Public Domain\nText source: Byzantine Greek text (public domain); tagging written for the Open Bible Software tests in the shapes CrossWire's Byz, WHNU and MorphGNT use\nImported from the SWORD module ObsGreekNt.",
+    "key_schemes": [
+      "passage"
+    ],
+    "language": "grc",
+    "license": "LicenseRef-PD",
+    "resource_id": "obsgreeknt",
+    "resource_type": "bible",
+    "source_file": "ObsGreekNt",
+    "source_format": "sword",
+    "source_url": null,
+    "title": "Open Bible test Greek New Testament (tagged excerpt)"
+  },
+  "report": {
+    "books": [
+      [
+        "JHN",
+        1,
+        1
+      ],
+      [
+        "ROM",
+        1,
+        1
+      ],
+      [
+        "1JN",
+        1,
+        1
+      ]
+    ],
+    "dropped_markup": {},
+    "entries": 0,
+    "license_missing": false,
+    "notes": 0,
+    "source_format": "sword (OSIS)",
+    "tagged_words": 42,
+    "verse_map": {
+      "absent": 1414,
+      "unmapped": 0
+    },
+    "verses": 3,
+    "versification_hint": "KJV",
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "JHN",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..286",
+          "chapter": 3,
+          "kind": "chapter",
+          "text": "Οὕτως γὰρ ἠγάπησεν ὁ θεὸς τὸν κόσμον, ὥστε τὸν υἱὸν αὐτοῦ τὸν μονογενῆ ἔδωκεν, ἵνα πᾶς ὁ πιστεύων εἰς αὐτὸν μὴ ἀπόληται, ἀλλ᾽ ἔχῃ ζωὴν αἰώνιον."
+        },
+        {
+          "at": "0..286",
+          "kind": "para",
+          "style": "prose",
+          "text": "Οὕτως γὰρ ἠγάπησεν ὁ θεὸς τὸν κόσμον, ὥστε τὸν υἱὸν αὐτοῦ τὸν μονογενῆ ἔδωκεν, ἵνα πᾶς ὁ πιστεύων εἰς αὐτὸν μὴ ἀπόληται, ἀλλ᾽ ἔχῃ ζωὴν αἰώνιον."
+        },
+        {
+          "at": "0..286",
+          "kind": "verse",
+          "last": 16,
+          "text": "Οὕτως γὰρ ἠγάπησεν ὁ θεὸς τὸν κόσμον, ὥστε τὸν υἱὸν αὐτοῦ τὸν μονογενῆ ἔδωκεν, ἵνα πᾶς ὁ πιστεύων εἰς αὐτὸν μὴ ἀπόληται, ἀλλ᾽ ἔχῃ ζωὴν αἰώνιον.",
+          "verse": {
+            "book": "JHN",
+            "chapter": 3,
+            "verse": 16
+          }
+        },
+        {
+          "at": "0..11",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "ADV",
+              "strongs": "G3779"
+            }
+          ],
+          "text": "Οὕτως"
+        },
+        {
+          "at": "12..19",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "CONJ",
+              "strongs": "G1063"
+            }
+          ],
+          "text": "γὰρ"
+        },
+        {
+          "at": "20..37",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "V-AAI-3S",
+              "strongs": "G25"
+            }
+          ],
+          "text": "ἠγάπησεν"
+        },
+        {
+          "at": "38..41",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "T-NSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "ὁ"
+        },
+        {
+          "at": "42..51",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "N-NSM",
+              "strongs": "G2316"
+            }
+          ],
+          "text": "θεὸς"
+        },
+        {
+          "at": "52..59",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "T-ASM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τὸν"
+        },
+        {
+          "at": "60..72",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "N-ASM",
+              "strongs": "G2889"
+            }
+          ],
+          "text": "κόσμον"
+        },
+        {
+          "at": "74..83",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "CONJ",
+              "strongs": "G5620"
+            }
+          ],
+          "text": "ὥστε"
+        },
+        {
+          "at": "84..91",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "T-ASM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τὸν"
+        },
+        {
+          "at": "92..102",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "N-ASM",
+              "strongs": "G5207"
+            }
+          ],
+          "text": "υἱὸν"
+        },
+        {
+          "at": "103..115",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "P-GSM",
+              "strongs": "G846"
+            }
+          ],
+          "text": "αὐτοῦ"
+        },
+        {
+          "at": "116..123",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "T-ASM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τὸν"
+        },
+        {
+          "at": "124..141",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "A-ASM",
+              "strongs": "G3439"
+            }
+          ],
+          "text": "μονογενῆ"
+        },
+        {
+          "at": "142..155",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "V-AAI-3S",
+              "strongs": "G1325"
+            }
+          ],
+          "text": "ἔδωκεν"
+        },
+        {
+          "at": "157..164",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "CONJ",
+              "strongs": "G2443"
+            }
+          ],
+          "text": "ἵνα"
+        },
+        {
+          "at": "165..172",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "A-NSM",
+              "strongs": "G3956"
+            }
+          ],
+          "text": "πᾶς"
+        },
+        {
+          "at": "173..176",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "T-NSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "ὁ"
+        },
+        {
+          "at": "177..193",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "V-PAP-NSM",
+              "strongs": "G4100"
+            }
+          ],
+          "text": "πιστεύων"
+        },
+        {
+          "at": "194..201",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "PREP",
+              "strongs": "G1519"
+            }
+          ],
+          "text": "εἰς"
+        },
+        {
+          "at": "202..214",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "P-ASM",
+              "strongs": "G846"
+            }
+          ],
+          "text": "αὐτὸν"
+        },
+        {
+          "at": "215..220",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "PRT-N",
+              "strongs": "G3361"
+            }
+          ],
+          "text": "μὴ"
+        },
+        {
+          "at": "221..238",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "V-2AMS-3S",
+              "strongs": "G622"
+            }
+          ],
+          "text": "ἀπόληται"
+        },
+        {
+          "at": "240..250",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "CONJ",
+              "strongs": "G235"
+            }
+          ],
+          "text": "ἀλλ᾽"
+        },
+        {
+          "at": "251..259",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "V-PAS-3S",
+              "strongs": "G2192"
+            }
+          ],
+          "text": "ἔχῃ"
+        },
+        {
+          "at": "260..269",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "N-ASF",
+              "strongs": "G2222"
+            }
+          ],
+          "text": "ζωὴν"
+        },
+        {
+          "at": "270..285",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "A-ASF",
+              "strongs": "G166"
+            }
+          ],
+          "text": "αἰώνιον"
+        }
+      ],
+      "text": "Οὕτως γὰρ ἠγάπησεν ὁ θεὸς τὸν κόσμον, ὥστε τὸν υἱὸν αὐτοῦ τὸν μονογενῆ ἔδωκεν, ἵνα πᾶς ὁ πιστεύων εἰς αὐτὸν μὴ ἀπόληται, ἀλλ᾽ ἔχῃ ζωὴν αἰώνιον.",
+      "title": "John"
+    },
+    {
+      "id": "ROM",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..213",
+          "chapter": 5,
+          "kind": "chapter",
+          "text": "συνίστησιν δὲ τὴν ἑαυτοῦ ἀγάπην εἰς ἡμᾶς ὁ θεός, ὅτι ἔτι ἁμαρτωλῶν ὄντων ἡμῶν Χριστὸς ὑπὲρ ἡμῶν ἀπέθανεν."
+        },
+        {
+          "at": "0..213",
+          "kind": "para",
+          "style": "prose",
+          "text": "συνίστησιν δὲ τὴν ἑαυτοῦ ἀγάπην εἰς ἡμᾶς ὁ θεός, ὅτι ἔτι ἁμαρτωλῶν ὄντων ἡμῶν Χριστὸς ὑπὲρ ἡμῶν ἀπέθανεν."
+        },
+        {
+          "at": "0..213",
+          "kind": "verse",
+          "last": 8,
+          "text": "συνίστησιν δὲ τὴν ἑαυτοῦ ἀγάπην εἰς ἡμᾶς ὁ θεός, ὅτι ἔτι ἁμαρτωλῶν ὄντων ἡμῶν Χριστὸς ὑπὲρ ἡμῶν ἀπέθανεν.",
+          "verse": {
+            "book": "ROM",
+            "chapter": 5,
+            "verse": 8
+          }
+        },
+        {
+          "at": "0..20",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "lemma": "συνίστημι",
+              "morph": "V-PAI-3S",
+              "strongs": "G4921"
+            }
+          ],
+          "text": "συνίστησιν"
+        },
+        {
+          "at": "21..26",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "lemma": "δέ",
+              "morph": "CONJ",
+              "strongs": "G1161"
+            }
+          ],
+          "text": "δὲ"
+        },
+        {
+          "at": "27..34",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "lemma": "ὁ",
+              "morph": "T-ASF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τὴν"
+        },
+        {
+          "at": "35..49",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "lemma": "ἑαυτοῦ",
+              "morph": "F-3GSM",
+              "strongs": "G1438"
+            }
+          ],
+          "text": "ἑαυτοῦ"
+        },
+        {
+          "at": "50..63",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "lemma": "ἀγάπη",
+              "morph": "N-ASF",
+              "strongs": "G26"
+            }
+          ],
+          "text": "ἀγάπην"
+        },
+        {
+          "at": "64..71",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "lemma": "εἰς",
+              "morph": "PREP",
+              "strongs": "G1519"
+            }
+          ],
+          "text": "εἰς"
+        },
+        {
+          "at": "72..82",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "lemma": "ἐγώ",
+              "morph": "P-1AP",
+              "strongs": "G2248"
+            }
+          ],
+          "text": "ἡμᾶς"
+        },
+        {
+          "at": "83..86",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "lemma": "ὁ",
+              "morph": "T-NSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "ὁ"
+        },
+        {
+          "at": "87..95",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "lemma": "θεός",
+              "morph": "N-NSM",
+              "strongs": "G2316"
+            }
+          ],
+          "text": "θεός"
+        }
+      ],
+      "text": "συνίστησιν δὲ τὴν ἑαυτοῦ ἀγάπην εἰς ἡμᾶς ὁ θεός, ὅτι ἔτι ἁμαρτωλῶν ὄντων ἡμῶν Χριστὸς ὑπὲρ ἡμῶν ἀπέθανεν.",
+      "title": "Romans"
+    },
+    {
+      "id": "1JN",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..266",
+          "chapter": 4,
+          "kind": "chapter",
+          "text": "ἐν τούτῳ ἐφανερώθη ἡ ἀγάπη τοῦ θεοῦ ἐν ἡμῖν, ὅτι τὸν υἱὸν αὐτοῦ τὸν μονογενῆ ἀπέσταλκεν ὁ θεὸς εἰς τὸν κόσμον, ἵνα ζήσωμεν δι᾽ αὐτοῦ."
+        },
+        {
+          "at": "0..266",
+          "kind": "para",
+          "style": "prose",
+          "text": "ἐν τούτῳ ἐφανερώθη ἡ ἀγάπη τοῦ θεοῦ ἐν ἡμῖν, ὅτι τὸν υἱὸν αὐτοῦ τὸν μονογενῆ ἀπέσταλκεν ὁ θεὸς εἰς τὸν κόσμον, ἵνα ζήσωμεν δι᾽ αὐτοῦ."
+        },
+        {
+          "at": "0..266",
+          "kind": "verse",
+          "last": 9,
+          "text": "ἐν τούτῳ ἐφανερώθη ἡ ἀγάπη τοῦ θεοῦ ἐν ἡμῖν, ὅτι τὸν υἱὸν αὐτοῦ τὸν μονογενῆ ἀπέσταλκεν ὁ θεὸς εἰς τὸν κόσμον, ἵνα ζήσωμεν δι᾽ αὐτοῦ.",
+          "verse": {
+            "book": "1JN",
+            "chapter": 4,
+            "verse": 9
+          }
+        },
+        {
+          "at": "0..5",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "PREP",
+              "strongs": "G1722"
+            }
+          ],
+          "text": "ἐν"
+        },
+        {
+          "at": "6..17",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "D-DSN",
+              "strongs": "G5129"
+            }
+          ],
+          "text": "τούτῳ"
+        },
+        {
+          "at": "18..37",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "V-API-3S",
+              "strongs": "G5319"
+            }
+          ],
+          "text": "ἐφανερώθη"
+        },
+        {
+          "at": "38..41",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "T-NSF",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "ἡ"
+        },
+        {
+          "at": "42..53",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "N-NSF",
+              "strongs": "G26"
+            }
+          ],
+          "text": "ἀγάπη"
+        },
+        {
+          "at": "54..61",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "T-GSM",
+              "strongs": "G3588"
+            }
+          ],
+          "text": "τοῦ"
+        },
+        {
+          "at": "62..71",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "N-GSM",
+              "strongs": "G2316"
+            }
+          ],
+          "text": "θεοῦ"
+        }
+      ],
+      "text": "ἐν τούτῳ ἐφανερώθη ἡ ἀγάπη τοῦ θεοῦ ἐν ἡμῖν, ὅτι τὸν υἱὸν αὐτοῦ τὸν μονογενῆ ἀπέσταλκεν ὁ θεὸς εἰς τὸν κόσμον, ἵνα ζήσωμεν δι᾽ αὐτοῦ.",
+      "title": "1 John"
+    }
+  ],
+  "verses": [
+    {
+      "last": 16,
+      "text": "Οὕτως γὰρ ἠγάπησεν ὁ θεὸς τὸν κόσμον, ὥστε τὸν υἱὸν αὐτοῦ τὸν μονογενῆ ἔδωκεν, ἵνα πᾶς ὁ πιστεύων εἰς αὐτὸν μὴ ἀπόληται, ἀλλ᾽ ἔχῃ ζωὴν αἰώνιον.",
+      "verse": "John 3:16"
+    },
+    {
+      "last": 8,
+      "text": "συνίστησιν δὲ τὴν ἑαυτοῦ ἀγάπην εἰς ἡμᾶς ὁ θεός, ὅτι ἔτι ἁμαρτωλῶν ὄντων ἡμῶν Χριστὸς ὑπὲρ ἡμῶν ἀπέθανεν.",
+      "verse": "Rom 5:8"
+    },
+    {
+      "last": 9,
+      "text": "ἐν τούτῳ ἐφανερώθη ἡ ἀγάπη τοῦ θεοῦ ἐν ἡμῖν, ὅτι τὸν υἱὸν αὐτοῦ τὸν μονογενῆ ἀπέσταλκεν ὁ θεὸς εἰς τὸν κόσμον, ἵνα ζήσωμεν δι᾽ αὐτοῦ.",
+      "verse": "1 Jn 4:9"
+    }
+  ]
+}
