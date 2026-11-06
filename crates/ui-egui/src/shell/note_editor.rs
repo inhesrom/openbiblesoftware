@@ -3,7 +3,8 @@
 //!
 //! - **Toolbar** above the field: **B**old, *I*talic, Heading, bulleted list, numbered list,
 //!   block quote and link. Each acts on the selection (or the lines it touches) and keeps the
-//!   keys in the field; pressing one does not end the editing pass.
+//!   keys in the field; pressing one does not end the editing pass. Bold and italic mark each
+//!   selected line on its own, since they end with their line.
 //! - **Shortcuts**: Ctrl+B and Ctrl+I (Cmd on macOS). Typing `- `, `1. ` or `> ` at the start
 //!   of a line starts a list or quote; Enter in an item continues it (the next number), and
 //!   Enter in an empty item ends it.
@@ -264,42 +265,96 @@ pub(super) fn apply_format(text: &str, sel: Range<usize>, f: Format) -> (String,
     }
 }
 
-/// Put `mark` around the selection (its outer spaces left outside), or take it away when it
-/// is already there. With nothing selected the marks go in with the cursor between them.
+/// Put `mark` around the selected part of each line the selection touches (past the line's
+/// heading, list or quote marker, its outer spaces left outside: a Note's bold and italics end
+/// with their line), or take it away when every part already has it. With nothing selected the
+/// marks go in with the cursor between them.
 fn wrap(text: &str, sel: Range<usize>, mark: &str) -> (String, Range<usize>) {
     let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
-    let chosen = &text[a..b];
-    let inner_a = a + (chosen.len() - chosen.trim_start().len());
-    let inner_b = b - (chosen.len() - chosen.trim_end().len());
-    let (a, b) = if inner_a < inner_b {
-        (inner_a, inner_b)
-    } else {
-        (a, b)
-    };
     let n = mark.len();
-    let marked = |at: usize, before: bool| {
-        let s = if before {
-            text.get(at.saturating_sub(n)..at)
-        } else {
-            text.get(at..at + n)
-        };
-        // A single `*` must not be one of a bold `**`.
-        let beyond = if before {
-            at.checked_sub(n + 1).and_then(|i| text.get(i..i + 1))
-        } else {
-            text.get(at + n..at + n + 1)
-        };
-        s == Some(mark) && (n == 2 || beyond != Some("*") || at < n)
+    let star = mark.as_bytes()[0];
+    // Whether a run of `run` marks is the edge of a bold (two or more) or an italic (one or
+    // three: the outer one of a bold italic).
+    let opens = |run: usize| if n == 2 { run >= 2 } else { run % 2 == 1 };
+    let run_before = |at: usize| {
+        text.as_bytes()[..at]
+            .iter()
+            .rev()
+            .take_while(|c| **c == star)
+            .count()
     };
-    let chars = |s: &str| s.chars().count();
-    if b > a && marked(a, true) && marked(b, false) {
-        let new = format!("{}{}{}", &text[..a - n], &text[a..b], &text[b + n..]);
-        let start = chars(&text[..a - n]);
-        return (new, start..start + chars(&text[a..b]));
+    let run_after = |at: usize| {
+        text.as_bytes()[at..]
+            .iter()
+            .take_while(|c| **c == star)
+            .count()
+    };
+    let has_mark =
+        |p: &Range<usize>| p.end > p.start && opens(run_before(p.start)) && opens(run_after(p.end));
+    let mut parts: Vec<Range<usize>> = Vec::new();
+    if a < b {
+        for line in obs_model::parse_note_text(text) {
+            let (s, e) = (a.max(line.content), b.min(line.source.end));
+            if s >= e {
+                continue;
+            }
+            let part = &text[s..e];
+            let (s, e) = (
+                s + (part.len() - part.trim_start().len()),
+                e - (part.len() - part.trim_end().len()),
+            );
+            if s >= e {
+                continue;
+            }
+            // Marks selected with what they mark (as after the last press): the part is what
+            // is inside them.
+            let inner = s + if opens(run_after(s).min(e - s)) { n } else { 0 }
+                ..e - if opens(run_before(e).min(e - s)) {
+                    n
+                } else {
+                    0
+                };
+            parts.push(if inner != (s..e) && has_mark(&inner) {
+                inner
+            } else {
+                s..e
+            });
+        }
     }
-    let new = format!("{}{mark}{}{mark}{}", &text[..a], &text[a..b], &text[b..]);
-    let start = chars(&text[..a]) + chars(mark);
-    (new, start..start + chars(&text[a..b]))
+    if parts.is_empty() {
+        parts.push(b..b);
+    }
+    let remove = parts.iter().all(has_mark);
+    let mut new = String::with_capacity(text.len() + parts.len() * 2 * n);
+    let mut at = 0;
+    // Where the first and the last part are in `new`.
+    let mut first = None;
+    let mut last = 0;
+    for p in &parts {
+        // A part that already has the marks keeps them when others get them.
+        let add = !remove && !has_mark(p);
+        if remove {
+            new.push_str(&text[at..p.start - n]);
+            at = p.end + n;
+        } else {
+            new.push_str(&text[at..p.start]);
+            at = p.end;
+        }
+        if add {
+            new.push_str(mark);
+        }
+        first.get_or_insert(new.len());
+        new.push_str(&text[p.clone()]);
+        last = new.len();
+        if add {
+            new.push_str(mark);
+        }
+    }
+    new.push_str(&text[at..]);
+    let chars = |s: &str| s.chars().count();
+    let start = chars(&new[..first.unwrap_or(0)]);
+    let end = chars(&new[..last]);
+    (new, start..end)
 }
 
 /// `[selection](…)` with the cursor where the target goes; `[](…)` with it in the brackets.
@@ -326,52 +381,112 @@ fn touched_lines(text: &str, a: usize, b: usize) -> Vec<Range<usize>> {
     out
 }
 
-/// Heading, list or quote: on every line the selection touches.
+/// Heading, list or quote: on every line the selection touches, each read in its place in
+/// the Note (a nested item is one under the item above it).
 fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize>) {
     let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
-    let lines = touched_lines(text, a, b);
-    let parsed: Vec<(NoteLineKind, usize)> = lines
-        .iter()
-        .map(|r| {
-            obs_model::parse_note_text(&text[r.clone()])
-                .first()
-                .map_or((NoteLineKind::Text, 0), |l| (l.kind, l.content))
-        })
-        .collect();
-    let all = |p: fn(NoteLineKind) -> bool| parsed.iter().all(|(k, _)| p(*k));
+    let lines = obs_model::parse_note_text(text);
+    let touched = touched_lines(text, a, b);
+    let first = text[..touched[0].start].matches('\n').count();
+    let chosen = &lines[first..first + touched.len()];
+    let all = |p: fn(NoteLineKind) -> bool| chosen.iter().all(|l| p(l.kind));
     let remove = match f {
         Format::Bullet => all(|k| matches!(k, NoteLineKind::Bullet { .. })),
         Format::Numbered => all(|k| matches!(k, NoteLineKind::Numbered { .. })),
         Format::Quote => all(|k| k == NoteLineKind::Quote),
         _ => false,
     };
-    let first = lines.first().map_or(0, |r| r.start);
-    let last = lines.last().map_or(text.len(), |r| r.end);
+    // The number the next numbered item at each level gets, and the shallowest level seen.
+    let mut numbers: Vec<u32> = Vec::new();
+    let mut shallowest: Option<u8> = None;
+    // A selection's first item at a level follows on from a numbered item just above it.
+    let number_above = |level: u8| {
+        for l in lines[..first].iter().rev() {
+            match l.kind {
+                NoteLineKind::Numbered { level: at, number } if at == level => {
+                    return number.saturating_add(1);
+                }
+                k if k.list_level().is_some_and(|at| at > level) => continue,
+                _ => return 1,
+            }
+        }
+        1
+    };
     let mut out: Vec<String> = Vec::new();
-    for (i, (r, (kind, content))) in lines.iter().zip(&parsed).enumerate() {
-        let line = &text[r.clone()];
-        let lead = if kind.list_level().is_some() {
-            line.len() - line.trim_start_matches(' ').len()
-        } else {
-            0
+    for l in chosen {
+        let line = &text[l.source.clone()];
+        let level = l.kind.list_level();
+        let lead = match level {
+            Some(_) => &line[..line.len() - line.trim_start_matches([' ', '\t']).len()],
+            None => "",
         };
-        let rest = &line[*content..];
+        let rest = &text[l.content..l.source.end];
+        // Text's leading spaces are its own; a marker goes before what it says.
+        let rest = match l.kind {
+            NoteLineKind::Text if !remove => rest.trim_start(),
+            _ => rest,
+        };
         let marker = match f {
             _ if remove => String::new(),
-            Format::Heading => match kind {
-                NoteLineKind::Heading(n) if *n < 3 => "#".repeat(usize::from(*n) + 1) + " ",
+            Format::Heading => match l.kind {
+                NoteLineKind::Heading(n) if n < 3 => "#".repeat(usize::from(n) + 1) + " ",
                 NoteLineKind::Heading(_) => String::new(),
                 _ => "# ".into(),
             },
-            Format::Bullet => format!("{}- ", &line[..lead]),
-            Format::Numbered => format!("{}{}. ", &line[..lead], i + 1),
+            Format::Bullet => format!("{lead}- "),
+            Format::Numbered => {
+                let level = level.unwrap_or(0);
+                let at = usize::from(level);
+                numbers.truncate(at + 1);
+                if numbers.len() <= at {
+                    let start = if shallowest.is_none_or(|s| level <= s) {
+                        number_above(level)
+                    } else {
+                        1
+                    };
+                    numbers.resize(at, 1);
+                    numbers.push(start);
+                }
+                shallowest = Some(shallowest.map_or(level, |s| s.min(level)));
+                let n = numbers[at];
+                numbers[at] = n.saturating_add(1);
+                format!("{lead}{n}. ")
+            }
             _ => "> ".into(),
         };
         out.push(format!("{marker}{rest}"));
     }
     let replaced = out.join("\n");
-    let new = format!("{}{replaced}{}", &text[..first], &text[last..]);
-    let start = text[..first].chars().count();
+    // Items nested under the last line when it stops being a list item: without an item above
+    // they would read as text, so they move out, the first to the top level.
+    let still_list = !remove && matches!(f, Format::Bullet | Format::Numbered);
+    let after = first + touched.len();
+    let mut moved: Vec<String> = Vec::new();
+    if !still_list
+        && let Some(depth) = lines
+            .get(after)
+            .and_then(|l| l.kind.list_level())
+            .filter(|d| *d > 0)
+    {
+        for l in &lines[after..] {
+            match l.kind.list_level() {
+                Some(level) if level > 0 => {
+                    let line = &text[l.source.clone()];
+                    let indent = " ".repeat(2 * usize::from(level - level.min(depth)));
+                    moved.push(format!("{indent}{}", line.trim_start_matches([' ', '\t'])));
+                }
+                _ => break,
+            }
+        }
+    }
+    let from = touched[0].start;
+    let to = match moved.len() {
+        0 => touched[touched.len() - 1].end,
+        k => lines[after + k - 1].source.end,
+    };
+    let tail = moved.iter().map(|m| format!("\n{m}")).collect::<String>();
+    let new = format!("{}{replaced}{tail}{}", &text[..from], &text[to..]);
+    let start = text[..from].chars().count();
     (new, start..start + replaced.chars().count())
 }
 
@@ -531,6 +646,103 @@ mod tests {
             t = apply_format(&t, 0..0, Format::Heading).0;
             assert_eq!(t, want);
         }
+    }
+
+    #[test]
+    fn bold_and_italic_mark_each_line_of_a_selection_past_its_marker() {
+        // A Note's bold ends with its line, so each line gets its own marks.
+        let (new, sel) = applied("faith\nhope", "faith\nhope", Format::Bold);
+        assert_eq!(
+            (new.as_str(), sel.as_str()),
+            ("**faith**\n**hope**", "faith**\n**hope")
+        );
+        let lines = obs_model::parse_note_text(&new);
+        assert!(lines.iter().all(|l| l.marks.len() == 1
+            && l.marks[0].kind == NoteMarkKind::Bold
+            && l.marks[0].range == (0..l.text.len())));
+        let (new, _) = applied(&new, "faith**\n**hope", Format::Bold);
+        assert_eq!(new, "faith\nhope");
+        // Past each line's list, heading or quote marker; blank lines are left alone.
+        let text = "## Grace\n- faith\n  1. hope\n\n> love";
+        let (new, _) = applied(text, text, Format::Italic);
+        assert_eq!(new, "## *Grace*\n- *faith*\n  1. *hope*\n\n> *love*");
+        for l in obs_model::parse_note_text(&new) {
+            assert!(
+                l.kind == NoteLineKind::Blank
+                    || l.marks
+                        .iter()
+                        .any(|m| m.kind == NoteMarkKind::Italic && m.range == (0..l.text.len())),
+                "{l:?}"
+            );
+        }
+        let (back, _) = applied(&new, &new, Format::Italic);
+        assert_eq!(back, text);
+        // A line already bold keeps its marks while the others get theirs.
+        let (new, _) = applied("**faith**\nhope", "**faith**\nhope", Format::Bold);
+        assert_eq!(new, "**faith**\n**hope**");
+        let (new, _) = applied(&new, "**faith**\n**hope**", Format::Bold);
+        assert_eq!(new, "faith\nhope");
+        // Italic over bold-italic takes only the italic away.
+        let (new, _) = applied("***faith***", "***faith***", Format::Italic);
+        assert_eq!(new, "**faith**");
+    }
+
+    #[test]
+    fn line_formats_read_nested_items_in_their_place() {
+        // Both items bulleted: the bullet comes off both, the nested one included.
+        let (new, _) = applied("- a\n  - b", "a\n  - b", Format::Bullet);
+        assert_eq!(new, "a\nb");
+        // Numbered: each level numbers from 1, the nesting kept.
+        let (new, _) = applied(
+            "- a\n  - b\n  - c\n- d",
+            "a\n  - b\n  - c\n- d",
+            Format::Numbered,
+        );
+        assert_eq!(new, "1. a\n  1. b\n  2. c\n2. d");
+        let kinds: Vec<_> = obs_model::parse_note_text(&new)
+            .iter()
+            .map(|l| l.kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                NoteLineKind::Numbered {
+                    level: 0,
+                    number: 1
+                },
+                NoteLineKind::Numbered {
+                    level: 1,
+                    number: 1
+                },
+                NoteLineKind::Numbered {
+                    level: 1,
+                    number: 2
+                },
+                NoteLineKind::Numbered {
+                    level: 0,
+                    number: 2
+                },
+            ]
+        );
+        let (back, _) = applied(&new, &new, Format::Numbered);
+        assert_eq!(back, "a\nb\nc\nd");
+        // A line numbered under a numbered list follows on from its number.
+        let (new, _) = applied("1. x\n   - y\nz", "z", Format::Numbered);
+        assert_eq!(new, "1. x\n   - y\n2. z");
+        // A parent that stops being an item: its nested items move out, not to text.
+        let text = "- a\n  - b\n    - c\n  - d\n- e";
+        let (new, _) = applied(text, "a", Format::Bullet);
+        assert_eq!(new, "a\n- b\n  - c\n- d\n- e");
+        let (new, _) = applied("- a\n  - b", "a", Format::Quote);
+        assert_eq!(new, "> a\n- b");
+        let levels: Vec<_> = obs_model::parse_note_text(&new)
+            .iter()
+            .map(|l| l.kind)
+            .collect();
+        assert_eq!(
+            levels,
+            [NoteLineKind::Quote, NoteLineKind::Bullet { level: 0 }]
+        );
     }
 
     #[test]

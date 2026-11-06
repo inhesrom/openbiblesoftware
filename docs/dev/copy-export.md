@@ -97,6 +97,12 @@ Attribution of each quoted Resource that requires one.
   reference is its text followed by the reference in parentheses when they differ.
   `notes_export_tests::exporting_a_formatted_note_keeps_its_formatting_as_markdown_and_html`
   reads the Markdown with a CommonMark parser (pulldown-cmark, a dev-dependency) to check.
+- A numbered item keeps the number typed, as the card shows it (`1. first` / `5. fifth` is
+  1, 5). CommonMark numbers a list on from its first item, so where a number does not follow
+  on the Markdown switches the delimiter (`5) fifth`), which starts a new list at that number;
+  a nested list starting at another number than 1 gets a blank line before it, since it may
+  not interrupt its parent's text. HTML gives such an item `<li value>`.
+  `notes_export_tests::exported_numbered_items_keep_the_numbers_typed`.
 - A Notebook lists in Bible order; a Notes search result keeps its order (newest change
   first) and is titled `Notes matching “…”`.
 

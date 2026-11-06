@@ -361,6 +361,93 @@ fn exporting_a_formatted_note_keeps_its_formatting_as_markdown_and_html() {
 }
 
 #[test]
+fn exported_numbered_items_keep_the_numbers_typed() {
+    use crate::notes_export::{note_html, note_markdown};
+    // Each Note, the numbers it shows in order, and the Markdown and HTML lists written.
+    let cases: [(&str, &[&str], &str, &str); 5] = [
+        (
+            "1. first\n5. fifth\n6. sixth",
+            &["1", "5", "6"],
+            "1. first\n5) fifth\n6) sixth",
+            "<ol>\n<li>first\n</li>\n<li value=\"5\">fifth\n</li>\n<li>sixth\n</li></ol>",
+        ),
+        (
+            "3. three\n3. three again\n1. one",
+            &["3", "3", "1"],
+            "3. three\n3) three again\n1. one",
+            "<ol start=\"3\">\n<li>three\n</li>\n<li value=\"3\">three again\n</li>\n<li value=\"1\">one\n</li></ol>",
+        ),
+        // After a blank line CommonMark would go on numbering the list above.
+        (
+            "1. one\n\n1. one again",
+            &["1", "1"],
+            "1. one\n\n1) one again",
+            "<ol>\n<li>one\n</li></ol>\n<ol>\n<li>one again\n</li></ol>",
+        ),
+        // A nested list that starts at 4, and a parent numbered on.
+        (
+            "1. a\n   4. d\n   9. i\n2. b",
+            &["1", "4", "9", "2"],
+            "1. a\n\n   4. d\n   9) i\n2. b",
+            "<ol>\n<li>a\n<ol start=\"4\">\n<li>d\n</li>\n<li value=\"9\">i\n</li></ol>\n</li>\n<li>b\n</li></ol>",
+        ),
+        (
+            "- a\n  7. g\n  8. h",
+            &["7", "8"],
+            "- a\n\n  7. g\n  8. h",
+            "<ul>\n<li>a\n<ol start=\"7\">\n<li>g\n</li>\n<li>h\n</li></ol>\n</li></ul>",
+        ),
+    ];
+    // The numbers an HTML reader shows, in order (items of a `<ul>` outside any `<ol>` aside).
+    let numbers = |html: &str| {
+        let mut shown = Vec::new();
+        // The next number of each open `<ol>`.
+        let mut open: Vec<u32> = Vec::new();
+        let mut rest = html;
+        while let Some(at) = rest.find('<') {
+            rest = &rest[at + 1..];
+            let tag = &rest[..rest.find('>').unwrap()];
+            if let Some(attrs) = tag.strip_prefix("ol") {
+                let start = attrs.split('"').nth(1).map_or(1, |n| n.parse().unwrap());
+                open.push(start);
+            } else if tag == "/ol" {
+                open.pop();
+            } else if (tag == "li" || tag.starts_with("li "))
+                && let Some(n) = open.last_mut()
+            {
+                if let Some(v) = tag.split('"').nth(1) {
+                    *n = v.parse().unwrap();
+                }
+                shown.push(n.to_string());
+                *n += 1;
+            }
+        }
+        shown
+    };
+    let typed = |b: &str| {
+        obs_model::parse_note_text(b)
+            .into_iter()
+            .filter_map(|l| match l.kind {
+                obs_model::NoteLineKind::Numbered { level, number } => Some((level, number)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    for (body, want, markdown, html) in cases {
+        assert_eq!(note_markdown(body), markdown, "{body}");
+        assert_eq!(note_html(body), html, "{body}");
+        assert_eq!(numbers(html), want, "{body}: our HTML");
+        let read = commonmark_html(markdown);
+        assert_eq!(numbers(&read), want, "{body}: CommonMark\n{read}");
+        // The app reads the Markdown back as the numbers typed, but for a nested list put
+        // after a blank line, which a Note reads as the end of the list.
+        if !markdown.contains("\n\n ") {
+            assert_eq!(typed(markdown), typed(body), "{body}");
+        }
+    }
+}
+
+#[test]
 fn html_and_print_exports_are_pages_with_each_passage_quote_and_note() {
     let f = Fixture::new("html");
     let mut s = f.session();

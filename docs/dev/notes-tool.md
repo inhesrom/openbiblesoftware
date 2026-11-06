@@ -147,9 +147,13 @@ overlap, at a heading's scale); a plain line is laid out exactly as before (`a_p
 Used by the cards and by the popup Note editor. Above the field a toolbar: **B**, *I*, **H**
 (cycles `#`, `##`, `###`, text), •, 1., “” and 🔗 (inserts `[selection]()` with the cursor in the
 parentheses). Ctrl+B and Ctrl+I (Cmd on macOS) bold and italicise the selection, or take it
-off when it is already so. Typing `- `, `1. ` or `> ` at a line's start starts a list or quote;
-Enter at the end of an item continues it (with the next number) and Enter in an empty item
-ends it. List, quote and heading changes apply to every line the selection touches.
+off when it is already so; as a Note's bold and italics end with their line, each selected
+line gets its own marks, after its heading, list or quote marker. Typing `- `, `1. ` or `> `
+at a line's start starts a list or quote; Enter at the end of an item continues it (with the
+next number) and Enter in an empty item ends it. List, quote and heading changes apply to
+every line the selection touches, each read in its place in the Note: numbering goes per
+nesting level (on from a numbered item just above), and the nested items of a line that stops
+being an item move out a level rather than turn into text.
 
 The field shows the Markdown as typed, coloured: headings in the display face and larger,
 bold text strong, italics slanted, markup dimmed, links and Bible references in the link colour

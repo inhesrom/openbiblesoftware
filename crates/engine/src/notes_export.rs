@@ -19,7 +19,10 @@
 //! special characters backslash-escaped, lines end in a hard line break and leading spaces
 //! are written as character references, so a Markdown reader shows (and a parser reads back)
 //! the same text. A blank line separates a list or quote from text next to it, which
-//! CommonMark would otherwise run together. The HTML has the same structure.
+//! CommonMark would otherwise run together. A numbered item keeps the number typed: where it
+//! does not follow on from the item above, the Markdown starts a new list there (CommonMark
+//! numbers a list on from its first item) and the HTML gives the item its `value`. The HTML
+//! has the same structure.
 
 use std::collections::BTreeMap;
 
@@ -220,8 +223,9 @@ fn group(kind: NoteLineKind) -> Group {
 pub fn note_markdown(body: &str) -> String {
     let lines = parse_note_text(body);
     let mut out: Vec<String> = Vec::new();
-    // The content column of the last list item at each level, for nesting.
-    let mut columns: Vec<usize> = Vec::new();
+    // The last list item at each level: its content column, for nesting, and if numbered
+    // the number that follows on from it and the delimiter written.
+    let mut levels: Vec<(usize, Option<(u32, char)>)> = Vec::new();
     for (i, line) in lines.iter().enumerate() {
         let g = group(line.kind);
         if let Some(prev) = i.checked_sub(1).map(|p| group(lines[p].kind))
@@ -260,19 +264,41 @@ pub fn note_markdown(body: &str) -> String {
                 text
             }
             NoteLineKind::Bullet { level } | NoteLineKind::Numbered { level, .. } => {
-                let level = usize::from(level).min(columns.len());
-                columns.truncate(level);
-                let indent = columns.last().copied().unwrap_or(0);
-                let marker = match line.kind {
-                    NoteLineKind::Numbered { number, .. } => format!("{number}. "),
-                    _ => "- ".to_string(),
+                let level = usize::from(level).min(levels.len());
+                let before = levels.get(level).copied();
+                levels.truncate(level);
+                let indent = levels.last().map_or(0, |l| l.0);
+                let (marker, numbered) = match line.kind {
+                    NoteLineKind::Numbered { number, .. } => {
+                        // CommonMark numbers a list's items on from its first, so a number
+                        // that does not follow on starts a new list (at that number), which
+                        // a change of delimiter does.
+                        let delim = match before {
+                            Some((_, Some((next, d)))) if next == number => d,
+                            Some((_, Some((_, '.')))) => ')',
+                            _ => '.',
+                        };
+                        // Nor may a list that starts at another number than 1 interrupt
+                        // the text of the item above: a blank line ends that text first.
+                        if level > 0 && before.is_none() && number != 1 {
+                            out.push(String::new());
+                        }
+                        (
+                            format!("{number}{delim} "),
+                            Some((number.saturating_add(1), delim)),
+                        )
+                    }
+                    _ => ("- ".to_string(), None),
                 };
-                columns.push(indent + marker.len());
+                levels.push((indent + marker.len(), numbered));
                 format!("{}{marker}{content}", " ".repeat(indent))
             }
         };
-        if g != Group::List {
-            columns.clear();
+        match g {
+            Group::List => {}
+            // A blank line does not end a CommonMark list: the next item may follow on.
+            Group::Blank => levels.truncate(1),
+            _ => levels.clear(),
         }
         out.push(written.trim_end_matches(' ').to_string());
     }
@@ -319,8 +345,8 @@ pub fn note_html(body: &str) -> String {
     // Text or quote lines waiting for their paragraph.
     let mut para: Vec<String> = Vec::new();
     let mut para_quote = false;
-    // Open lists: whether each is numbered.
-    let mut lists: Vec<bool> = Vec::new();
+    // Open lists: whether each is numbered, and the number that follows on in it.
+    let mut lists: Vec<(bool, u32)> = Vec::new();
     let flush = |out: &mut Vec<String>, para: &mut Vec<String>, quote: bool| {
         if para.is_empty() {
             return;
@@ -334,9 +360,9 @@ pub fn note_html(body: &str) -> String {
         });
         para.clear();
     };
-    let close_lists = |out: &mut Vec<String>, lists: &mut Vec<bool>, keep: usize| {
+    let close_lists = |out: &mut Vec<String>, lists: &mut Vec<(bool, u32)>, keep: usize| {
         while lists.len() > keep {
-            let numbered = lists.pop().unwrap_or(false);
+            let numbered = lists.pop().is_some_and(|l| l.0);
             out.push(if numbered { "</li></ol>" } else { "</li></ul>" }.into());
         }
     };
@@ -359,26 +385,37 @@ pub fn note_html(body: &str) -> String {
                 out.push(format!("<h{n}>{}</h{n}>", inline_html(line)));
             }
             NoteLineKind::Bullet { level } | NoteLineKind::Numbered { level, .. } => {
-                let numbered = matches!(line.kind, NoteLineKind::Numbered { .. });
+                let number = match line.kind {
+                    NoteLineKind::Numbered { number, .. } => Some(number),
+                    _ => None,
+                };
+                let numbered = number.is_some();
                 let level = usize::from(level).min(lists.len());
                 close_lists(&mut out, &mut lists, level + 1);
-                let item = format!("<li>{}", inline_html(line));
-                match lists.get(level) {
-                    Some(&n) if n == numbered => out.push(format!("</li>\n{item}")),
+                let item = |value: Option<u32>| match value {
+                    Some(n) => format!("<li value=\"{n}\">{}", inline_html(line)),
+                    None => format!("<li>{}", inline_html(line)),
+                };
+                let next = number.map_or(0, |n| n.saturating_add(1));
+                match lists.get_mut(level) {
+                    Some(open) if open.0 == numbered => {
+                        // An item numbered as typed, not on from the one above.
+                        let value = number.filter(|n| *n != open.1);
+                        open.1 = next;
+                        out.push(format!("</li>\n{}", item(value)));
+                    }
                     other => {
                         // Another kind of list at this level: the old one ends here.
                         if other.is_some() {
                             close_lists(&mut out, &mut lists, level);
                         }
-                        let open = match line.kind {
-                            NoteLineKind::Numbered { number: 1, .. } => "<ol>".to_string(),
-                            NoteLineKind::Numbered { number, .. } => {
-                                format!("<ol start=\"{number}\">")
-                            }
-                            _ => "<ul>".to_string(),
+                        let open = match number {
+                            Some(1) => "<ol>".to_string(),
+                            Some(n) => format!("<ol start=\"{n}\">"),
+                            None => "<ul>".to_string(),
                         };
-                        out.push(format!("{open}\n{item}"));
-                        lists.push(numbered);
+                        out.push(format!("{open}\n{}", item(None)));
+                        lists.push((numbered, next));
                     }
                 }
             }
