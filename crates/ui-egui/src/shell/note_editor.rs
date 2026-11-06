@@ -6,10 +6,11 @@
 //!   keys in the field; pressing one does not end the editing pass. Bold and italic mark each
 //!   selected line on its own (empty lines skipped), since a span cannot run over a blank line
 //!   or a list item's marker; the link button is off while the selection spans lines. What is
-//!   bold, italic, a list item or a quote is read from the Note's CommonMark parse
+//!   bold, italic, a heading, a list item or a quote is read from the Note's CommonMark parse
 //!   ([`obs_model::parse_note_text`], the one Markdown reader), never by scanning for markers
-//!   here: Bold/Italic take off the delimiters of the span the parse found, and Enter
-//!   continues the item the parse found. A nested item is written under its parent's
+//!   here: Bold/Italic take off the delimiters of the span the parse found, a heading is
+//!   rewritten whole from its source and inline content as parsed (any ATX or setext form),
+//!   and Enter continues the item the parse found. A nested item is written under its parent's
 //!   text, as CommonMark nests it. A link target goes between `<` and `>`.
 //! - **Shortcuts**: Ctrl+B and Ctrl+I (Cmd on macOS). Typing `- `, `1. ` or `> ` at the start
 //!   of a line starts a list or quote; Enter in an item continues it (the next number), and
@@ -414,24 +415,23 @@ fn touched_lines(text: &str, a: usize, b: usize) -> Vec<Range<usize>> {
 }
 
 /// Heading, list or quote: on every line the selection touches, each read in its place in
-/// the Note (a nested item is one under the item above it). A heading changes as a whole:
-/// a setext heading (text over a `===` or `---` underline) touched anywhere has each of its
-/// lines written with `#` markers and its underline dropped, so the shown text stays the same.
+/// the Note (a nested item is one under the item above it). A heading touched anywhere is
+/// rewritten as a whole, from the parse: its whole source (`#` markers, closing `#`s, a
+/// setext heading's `===` or `---` underline) is replaced by its inline content, each line
+/// of it with the new marker, so the shown text stays the same.
 fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize>) {
     let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
     let lines = obs_model::parse_note_text(text);
     let touched = touched_lines(text, a, b);
     let mut first = text[..touched[0].start].matches('\n').count();
     let mut last = first + touched.len() - 1;
-    if f == Format::Heading {
-        let same =
-            |i: usize, j: usize| lines[i].heading.is_some() && lines[i].heading == lines[j].heading;
-        while first > 0 && same(first - 1, first) {
-            first -= 1;
-        }
-        while last + 1 < lines.len() && same(last + 1, last) {
-            last += 1;
-        }
+    let same =
+        |i: usize, j: usize| lines[i].heading.is_some() && lines[i].heading == lines[j].heading;
+    while first > 0 && same(first - 1, first) {
+        first -= 1;
+    }
+    while last + 1 < lines.len() && same(last + 1, last) {
+        last += 1;
     }
     let chosen = &lines[first..=last];
     let all = |p: fn(NoteLineKind) -> bool| chosen.iter().all(|l| p(l.kind));
@@ -463,14 +463,13 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
     let mut cols = parent_columns(text, &lines[..first]);
     let mut out: Vec<String> = Vec::new();
     for l in chosen {
-        // A setext heading's underline: its lines get `#` markers instead.
-        if f == Format::Heading
-            && l.heading.is_some()
-            && !matches!(l.kind, NoteLineKind::Heading(_))
-        {
-            continue;
-        }
-        let rest = &text[l.content..l.source.end];
+        let rest = match &l.heading {
+            // A setext heading's underline: its lines get the new markers instead.
+            Some(_) if !matches!(l.kind, NoteLineKind::Heading(_)) => continue,
+            // This line's part of the heading's content.
+            Some(h) => &text[l.content..l.source.end.min(h.content.end).max(l.content)],
+            None => &text[l.content..l.source.end],
+        };
         // Text's leading spaces are its own; a marker goes before what it says.
         let rest = match l.kind {
             NoteLineKind::Text if !remove => rest.trim_start(),
@@ -504,6 +503,13 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
                 format!("{n}. ")
             }
             _ => "> ".into(),
+        };
+        let rest = if f == Format::Heading && !marker.is_empty() {
+            shown_hashes_escaped(rest)
+        } else if l.heading.is_some() {
+            block_start_escaped(rest)
+        } else {
+            rest.to_string()
         };
         if matches!(f, Format::Bullet | Format::Numbered) && !remove {
             let indent = level.checked_sub(1).map_or(0, |p| cols[p]);
@@ -548,10 +554,53 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
         0 => lines[last].source.end,
         k => lines[after + k - 1].source.end,
     };
-    let tail = moved.iter().map(|m| format!("\n{m}")).collect::<String>();
+    let mut tail = moved.iter().map(|m| format!("\n{m}")).collect::<String>();
+    let new = format!("{}{replaced}{tail}{}", &text[..from], &text[to..]);
+    // A line that is text now, over a `---` or `===` line, would make a setext heading of
+    // it: a gap keeps them apart.
+    let written = obs_model::parse_note_text(&new);
+    let at = first + out.len() - 1;
+    let setext = written[at].heading.is_some()
+        && written
+            .get(at + 1)
+            .is_some_and(|l| l.heading == written[at].heading);
+    if moved.is_empty() && setext {
+        tail.push('\n');
+    }
     let new = format!("{}{replaced}{tail}{}", &text[..from], &text[to..]);
     let start = text[..from].chars().count();
     (new, start..start + replaced.chars().count())
+}
+
+/// `rest`, shown text, made an ATX heading's content: `#`s ending it after a space (or
+/// all of it) would read as the heading's closing markup, so the first is escaped and they
+/// stay shown.
+fn shown_hashes_escaped(rest: &str) -> String {
+    let trimmed = rest.trim_end_matches([' ', '\t']);
+    let before = trimmed.trim_end_matches('#');
+    if before.len() < trimmed.len() && (before.is_empty() || before.ends_with([' ', '\t'])) {
+        format!("{before}\\{}", &rest[before.len()..])
+    } else {
+        rest.to_string()
+    }
+}
+
+/// `rest`, a heading's content, written where a line starts (as text, or after a list or
+/// quote marker): escaped where it would start a block of its own there (`- `, `1. `, `>`,
+/// a rule, a setext underline), so it shows as it did.
+fn block_start_escaped(rest: &str) -> String {
+    let alone = &obs_model::parse_note_text(rest)[0];
+    let underline = rest.trim_end().bytes().all(|c| c == b'=');
+    if rest.is_empty() || (alone.kind == NoteLineKind::Text && !underline) {
+        return rest.to_string();
+    }
+    // A numbered item's `.` or `)`; anything else's first character.
+    let at = rest.bytes().take_while(u8::is_ascii_digit).count();
+    if rest[at..].starts_with(|c: char| c.is_ascii_punctuation()) {
+        format!("{}\\{}", &rest[..at], &rest[at..])
+    } else {
+        rest.to_string()
+    }
 }
 
 /// The content columns of the list items the line after `above` would be nested under,
@@ -786,6 +835,130 @@ mod tests {
         // An ATX heading followed by a rule keeps the rule.
         let (new, _) = apply_format("# Grace\n---", 0..0, Format::Heading);
         assert_eq!(new, "## Grace\n---");
+    }
+
+    /// The non-empty text each line of `t` shows, and the levels of its headings.
+    fn shown_and_levels(t: &str) -> (Vec<String>, Vec<u8>) {
+        let lines = obs_model::parse_note_text(t);
+        let shown = lines
+            .iter()
+            .filter(|l| !l.text.is_empty())
+            .map(|l| l.text.clone())
+            .collect();
+        let levels = lines
+            .iter()
+            .filter_map(|l| match l.kind {
+                NoteLineKind::Heading(n) => Some(n),
+                _ => None,
+            })
+            .collect();
+        (shown, levels)
+    }
+
+    /// Caret at the start, in the middle, at the end; the whole text selected.
+    fn every_selection(t: &str) -> [Range<usize>; 4] {
+        let n = t.chars().count();
+        [0..0, n / 2..n / 2, n..n, 0..n]
+    }
+
+    #[test]
+    fn heading_rewrites_every_commonmark_heading_form_from_its_parse() {
+        // (Note, after Heading, the level of each of its headings after: none for text)
+        let cases: &[(&str, &str, &[u8])] = &[
+            ("# Grace", "## Grace", &[2]),
+            ("## Grace", "### Grace", &[3]),
+            ("### Grace", "Grace", &[]),
+            ("#### Grace", "Grace", &[]),
+            ("##### Grace", "Grace", &[]),
+            ("###### Grace", "Grace", &[]),
+            // Closing `#`s and trailing spaces are the heading's markup.
+            ("### Grace ###", "Grace", &[]),
+            ("# Grace #####", "## Grace", &[2]),
+            ("## Grace ##   ", "### Grace", &[3]),
+            ("# Grace   ", "## Grace", &[2]),
+            ("# **Grace** #", "## **Grace**", &[2]),
+            // Up to three leading spaces.
+            ("   # Grace", "## Grace", &[2]),
+            ("  ### Grace ###", "Grace", &[]),
+            // Setext, over one line or more: each line gets the marker, the underline goes.
+            ("Grace\n===", "## Grace", &[2]),
+            ("Grace\n---", "### Grace", &[3]),
+            ("   Grace\n  ===", "## Grace", &[2]),
+            ("by grace\nalone\n===", "## by grace\n## alone", &[2, 2]),
+            (
+                "by *grace*\n  alone\n---",
+                "### by *grace*\n### alone",
+                &[3, 3],
+            ),
+            // Escaped `#`s stay text; `#`s shown as text are escaped where they would close.
+            ("# Grace \\#", "## Grace \\#", &[2]),
+            ("# \\# Grace", "## \\# Grace", &[2]),
+            ("# C#", "## C#", &[2]),
+            ("Grace #\n===", "## Grace \\#", &[2]),
+            // Back to text, what would start a block is escaped.
+            ("### \\# Grace", "\\# Grace", &[]),
+            ("### 1. Grace", "1\\. Grace", &[]),
+            ("### - Grace", "\\- Grace", &[]),
+            ("### > Grace", "\\> Grace", &[]),
+            ("### ===", "\\===", &[]),
+            // A rule or `===` after a heading made text stays apart from it.
+            ("### Grace\n---", "Grace\n\n---", &[]),
+            ("### Grace\n===", "Grace\n\n===", &[]),
+            ("intro\n### Grace\n---", "intro\nGrace\n\n---", &[]),
+            // Empty headings.
+            ("#", "## ", &[2]),
+            ("# #", "## ", &[2]),
+            ("### ###", "", &[]),
+        ];
+        for &(text, want, levels) in cases {
+            let lines = obs_model::parse_note_text(text);
+            let at = text
+                .find(['#', 'G', 'b'])
+                .map_or(0, |b| text[..b].chars().count());
+            for sel in every_selection(text)
+                .into_iter()
+                .chain(std::iter::once(at..at))
+                // On the heading only: the lines around it are not changed here.
+                .filter(|s| {
+                    let line = |c: usize| text.chars().take(c).filter(|&c| c == '\n').count();
+                    (line(s.start)..=line(s.end)).all(|i| lines[i].heading.is_some())
+                })
+            {
+                let (new, r) = apply_format(text, sel.clone(), Format::Heading);
+                assert_eq!(new, want, "{text:?} at {sel:?}");
+                let (shown, now) = shown_and_levels(&new);
+                assert_eq!(shown, shown_and_levels(text).0, "{text:?}");
+                assert_eq!(now, levels, "{text:?}");
+                assert!(r.end <= new.chars().count());
+            }
+        }
+    }
+
+    #[test]
+    fn list_and_quote_on_a_heading_take_its_content_from_the_parse() {
+        let cases = [
+            ("### Grace ###", Format::Bullet, "- Grace"),
+            ("## *Grace* ##", Format::Numbered, "1. *Grace*"),
+            ("## *Grace* ##", Format::Quote, "> *Grace*"),
+            ("Grace\n===", Format::Bullet, "- Grace"),
+            ("by grace\nalone\n===", Format::Quote, "> by grace\n> alone"),
+            (
+                "by grace\nalone\n---",
+                Format::Bullet,
+                "- by grace\n- alone",
+            ),
+            ("### 1. Grace", Format::Bullet, "- 1\\. Grace"),
+            ("# > Grace", Format::Quote, "> \\> Grace"),
+        ];
+        for (text, f, want) in cases {
+            for sel in every_selection(text) {
+                let (new, _) = apply_format(text, sel.clone(), f);
+                assert_eq!(new, want, "{text:?} {f:?} at {sel:?}");
+                let (shown, levels) = shown_and_levels(&new);
+                assert_eq!(shown, shown_and_levels(text).0, "{text:?} {f:?}");
+                assert!(levels.is_empty(), "{text:?} {f:?}");
+            }
+        }
     }
 
     #[test]

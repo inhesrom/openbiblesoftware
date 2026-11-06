@@ -80,7 +80,7 @@ fn each_line_of_a_heading_knows_the_heading_underline_included() {
             (NoteLineKind::Blank, ""),
         ]
     );
-    let heading = |i: usize| lines[i].heading.clone().map(|h| body[h].trim_end());
+    let heading = |i: usize| lines[i].heading.clone().map(|h| body[h.source].trim_end());
     assert_eq!(heading(0), Some("# One"));
     for i in 1..=3 {
         assert_eq!(heading(i), Some("Grace\nalone\n==="));
@@ -88,6 +88,33 @@ fn each_line_of_a_heading_knows_the_heading_underline_included() {
     assert_eq!(heading(4), Some("Text\n---"));
     assert_eq!(heading(5), Some("Text\n---"));
     assert_eq!((heading(6), heading(7)), (None, None));
+    let content = |i: usize| lines[i].heading.clone().map(|h| &body[h.content]);
+    assert_eq!(content(0), Some("One"));
+    assert_eq!(content(3), Some("Grace\nalone"));
+    assert_eq!(content(5), Some("Text"));
+}
+
+#[test]
+fn a_headings_content_is_its_inlines_without_its_own_markup() {
+    // (body, the content's source)
+    for (body, want) in [
+        ("### Grace ###", "Grace"),
+        ("# Grace #####  ", "Grace"),
+        ("   ## *Grace* ##", "*Grace*"),
+        ("# Grace \\#", "Grace \\#"),
+        ("# \\# Grace", "\\# Grace"),
+        ("# C#", "C#"),
+        ("## [Rom 5:8](<Rom 5:8>) `x` ##", "[Rom 5:8](<Rom 5:8>) `x`"),
+        ("Grace #\n===", "Grace #"),
+        ("  by **grace**\n  alone\n---", "by **grace**\n  alone"),
+        ("### ###", ""),
+        ("#", ""),
+    ] {
+        let lines = parse_note_text(body);
+        let h = lines[0].heading.clone().expect(body);
+        assert_eq!(&body[h.content.clone()], want, "{body:?}");
+        assert!(h.source.start <= h.content.start && h.content.end <= h.source.end);
+    }
 }
 
 #[test]

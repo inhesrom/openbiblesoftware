@@ -67,6 +67,18 @@ pub struct NoteMark {
     pub source: Range<usize>,
 }
 
+/// A heading in the body, as the parser read it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NoteHeading {
+    /// The whole heading: its `#` markers and closing `#`s, or for a setext heading its
+    /// underline (a line of `=` or `-`, itself shown as a gap).
+    pub source: Range<usize>,
+    /// Its inline content, markup inside it included (`**`, `\` escapes) but none of the
+    /// heading's own: from the start of its first inline to the end of its last. Empty, at
+    /// the end of `source`, for a heading with no text.
+    pub content: Range<usize>,
+}
+
 /// One line of a Note, as shown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteLine {
@@ -79,9 +91,8 @@ pub struct NoteLine {
     pub source: Range<usize>,
     /// Where its content starts in the body, after its heading, list or quote marker.
     pub content: usize,
-    /// The heading this line is part of, as the parser read it in the body: for a setext
-    /// heading its underline too (a line of `=` or `-`, itself shown as a gap).
-    pub heading: Option<Range<usize>>,
+    /// The heading this line is part of, as the parser read it.
+    pub heading: Option<NoteHeading>,
     /// For each byte of `text`, its byte in the body.
     offsets: Vec<usize>,
 }
@@ -173,8 +184,8 @@ struct Builder<'a> {
     first_inline: Vec<Option<usize>>,
     /// The level of the heading being read.
     heading: Option<u8>,
-    /// Every heading's source in the body.
-    headings: Vec<Range<usize>>,
+    /// Every heading in the body; its content grows as its inlines are read.
+    headings: Vec<NoteHeading>,
     quote_depth: usize,
     quotes: Vec<Range<usize>>,
     /// Open lists, innermost last: the number the next item gets if numbered.
@@ -197,10 +208,20 @@ impl Builder<'_> {
         self.kind_set[i] = true;
     }
 
-    fn inline_at(&mut self, at: usize) {
-        let i = self.line_of(at);
+    /// An inline read from body bytes `r` (from `r.start` on its line).
+    fn inline_at(&mut self, r: Range<usize>) {
+        let i = self.line_of(r.start);
         let first = &mut self.first_inline[i];
-        *first = Some(first.map_or(at, |f| f.min(at)));
+        *first = Some(first.map_or(r.start, |f| f.min(r.start)));
+        if self.heading.is_some()
+            && let Some(h) = self.headings.last_mut()
+        {
+            h.content = if h.content.is_empty() {
+                r
+            } else {
+                h.content.start.min(r.start)..h.content.end.max(r.end)
+            };
+        }
     }
 
     fn event(&mut self, event: Event<'_>, r: Range<usize>) {
@@ -212,11 +233,11 @@ impl Builder<'_> {
                 let escaped = r.start > 0
                     && self.body.as_bytes()[r.start - 1] == b'\\'
                     && t.starts_with(|c: char| c.is_ascii_punctuation());
-                self.inline_at(r.start - usize::from(escaped));
+                self.inline_at(r.start - usize::from(escaped)..r.end);
                 self.text(&t, r, false);
             }
             Event::Code(t) => {
-                self.inline_at(r.start);
+                self.inline_at(r.clone());
                 self.text(&t, r, true);
             }
             _ => {}
@@ -228,7 +249,10 @@ impl Builder<'_> {
             Tag::Heading { level, .. } => {
                 let n = level as u8;
                 self.heading = Some(n);
-                self.headings.push(r.clone());
+                self.headings.push(NoteHeading {
+                    content: r.end..r.end,
+                    source: r.clone(),
+                });
                 self.set_kind(r.start, NoteLineKind::Heading(n));
             }
             Tag::BlockQuote(_) => {
@@ -250,7 +274,7 @@ impl Builder<'_> {
                 self.set_kind(r.start, kind);
             }
             Tag::Emphasis | Tag::Strong | Tag::Link { .. } => {
-                self.inline_at(r.start);
+                self.inline_at(r.clone());
                 let kind = match tag {
                     Tag::Emphasis => NoteMarkKind::Italic,
                     Tag::Strong => NoteMarkKind::Bold,
@@ -261,7 +285,7 @@ impl Builder<'_> {
                 let at = self.lines[line].text.len();
                 self.open.push((kind, r, line, at));
             }
-            Tag::Image { .. } => self.inline_at(r.start),
+            Tag::Image { .. } => self.inline_at(r),
             _ => {}
         }
     }
@@ -364,7 +388,7 @@ impl Builder<'_> {
             line.heading = self
                 .headings
                 .iter()
-                .find(|h| h.start <= line.source.end && line.source.start < h.end)
+                .find(|h| h.source.start <= line.source.end && line.source.start < h.source.end)
                 .cloned();
             line.marks
                 .sort_by_key(|m| (m.range.start, std::cmp::Reverse(m.range.end)));
