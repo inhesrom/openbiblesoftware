@@ -239,15 +239,18 @@ fn ranges_rects(
             for item in &line.items {
                 let mut runs: Vec<Option<[f32; 4]>> = vec![None; active.len()];
                 for (bytes, x0, x1) in item.clusters() {
-                    let byte = match laid.to_unit(bytes.start) {
-                        Some(UnitPos::Text(b)) => b,
-                        Some(UnitPos::Object { anchor, .. }) if objects => anchor,
+                    // A text cluster covers unit bytes `[b, b + len)`: a ligature ("fi") is one
+                    // cluster of several letters, marked when a range reaches into any of them.
+                    // An inline object is marked when its anchor is in the range.
+                    let (first, past) = match laid.to_unit(bytes.start) {
+                        Some(UnitPos::Text(b)) => (b, b + bytes.len()),
+                        Some(UnitPos::Object { anchor, .. }) if objects => (anchor, anchor + 1),
                         _ => continue,
                     };
-                    let p = DocPos { unit, byte };
+                    let (p, q) = (DocPos { unit, byte: first }, DocPos { unit, byte: past });
                     for (k, &i) in active.iter().enumerate() {
                         let (start, end) = ranges[i];
-                        let inside = start <= p && p < end;
+                        let inside = p < end && start < q;
                         let run = &mut runs[k];
                         match (run.as_mut(), inside) {
                             (Some(r), true)

@@ -435,15 +435,20 @@ pub struct ComparisonRow {
     pub text: String,
 }
 
-/// Highlight rectangles `[x0, y0, x1, y1]` of the clusters of `laid` whose text bytes fall in
-/// `range`, merged along each line.
+/// Highlight rectangles `[x0, y0, x1, y1]` of the clusters of `laid` whose text bytes reach
+/// into `range` (all of a ligature when the range starts or ends inside it), merged along
+/// each line.
 pub fn range_rects(laid: &LaidBlock, range: &Range<usize>) -> Vec<[f32; 4]> {
     let mut out = Vec::new();
+    if range.is_empty() {
+        return out;
+    }
     for line in &laid.lines {
         for item in &line.items {
             let mut run: Option<[f32; 4]> = None;
             for (bytes, x0, x1) in item.clusters() {
-                let inside = matches!(laid.to_unit(bytes.start), Some(UnitPos::Text(b)) if range.contains(&b));
+                let inside = matches!(laid.to_unit(bytes.start),
+                    Some(UnitPos::Text(b)) if b < range.end && range.start < b + bytes.len());
                 match (&mut run, inside) {
                     (Some(r), true) if (r[2] - x0).abs() < 0.5 || (r[0] - x1).abs() < 0.5 => {
                         r[0] = r[0].min(x0);
@@ -1133,6 +1138,34 @@ mod tests {
         );
         let bounds = run.bounds().unwrap();
         assert!(bounds.y0 >= 10.0 && bounds.y1 <= 130.0, "{bounds:?}");
+    }
+
+    /// A Find match (#175) or a changed range starting or ending inside a ligature marks the
+    /// whole ligature: the shaper gives "fi" one cluster, so testing only its first byte
+    /// would draw nothing for an "i" counted in the Find bar.
+    #[test]
+    fn a_range_inside_a_ligature_marks_the_ligature() {
+        let text = "the first fish";
+        let laid = laid(text, false, 400.0);
+        let fi = text.find("fi").unwrap();
+        let ligature = laid
+            .lines
+            .iter()
+            .flat_map(|l| &l.items)
+            .flat_map(obs_layout::LaidItem::clusters)
+            .find(|(bytes, _, _)| bytes.start == fi)
+            .unwrap();
+        assert_eq!(ligature.0, fi..fi + 2, "the body font forms an fi ligature");
+        let [[x0, _, x1, _]] = range_rects(&laid, &(fi + 1..fi + 2))[..] else {
+            panic!("the \"i\" of \"first\" is marked");
+        };
+        assert!((x0 - ligature.1).abs() < 0.5 && (x1 - ligature.2).abs() < 0.5);
+        // "irst": the ligature and the letters after it, one rectangle.
+        let [[x0, _, x1, _]] = range_rects(&laid, &(fi + 1..fi + 5))[..] else {
+            panic!("one rectangle over \"irst\"");
+        };
+        assert!((x0 - ligature.1).abs() < 0.5 && x1 > ligature.2);
+        assert!(range_rects(&laid, &(fi + 1..fi + 1)).is_empty());
     }
 
     #[test]

@@ -946,3 +946,32 @@ fn a_hit_at_a_verse_start_covers_its_letters_not_the_verse_number() {
     assert_eq!(glyphs, 4, "{rects:?}");
     assert!(find_rects(&h).iter().all(|(_, g)| *g == 4));
 }
+
+/// A match starting inside a ligature (the "i" of the "fi" in "first") is drawn: the
+/// rectangle covers the whole ligature cluster, not nothing.
+#[test]
+fn a_hit_starting_inside_a_ligature_is_drawn() {
+    let mut h = Harness::new();
+    let verses = [(
+        1,
+        1,
+        "In the beginning was the Word, and the first of his works.",
+    )]
+    .map(|(c, v, t)| (c, v, t.to_string()));
+    let tab = open(
+        &mut h,
+        english_bible("lig-john", "Ligature John", "LIGJ", Book::John, &verses),
+    );
+    key(&mut h, Key::F, CTRL);
+    type_text(&mut h, "irst");
+    settle(&mut h, tab);
+    assert_eq!(found_texts(&h, tab), ["irst"]);
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert_eq!(current(&h, tab), Some(0));
+    let rects = filled(&h, h.shell.st.palette.search_hit);
+    // "fi" is one glyph: the ligature, then "r", "s", "t".
+    let [r] = rects[..] else {
+        panic!("one rectangle over “irst”: {rects:?}");
+    };
+    assert_eq!(glyphs_in(&h, r), 4, "{r:?}");
+}
