@@ -193,6 +193,15 @@ fn greek_1_john_4() -> Arc<ReadingDoc> {
     Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
 }
 
+/// Visual evidence for `docs/previews/find-<name>-kittest.png` when `UPDATE_PREVIEWS` is set.
+fn preview(h: &Harness, name: &str) {
+    if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+        std::fs::create_dir_all(&dir).unwrap();
+        h.screenshot(&dir.join(format!("find-{name}-kittest.ppm")));
+    }
+}
+
 fn key(h: &mut Harness, key: Key, modifiers: Modifiers) {
     h.modifiers = modifiers;
     h.events.push(Event::Key {
@@ -323,6 +332,7 @@ fn ctrl_f_love_in_kjv_john_counts_every_hit_enter_steps_through_all_in_order_and
     assert!(h.find(&format!("1 of {n}")).is_some(), "{:?}", h.texts());
     let palette = h.shell.st.palette;
     assert!(!filled(&h, palette.find_match).is_empty(), "other hits are drawn");
+    preview(&h, "kjv-john-love");
 
     // Enter goes through every hit in order, each scrolled into view and drawn as current
     // (over the four letters of "love"), then wraps to the first.
@@ -353,9 +363,10 @@ fn ctrl_f_love_in_kjv_john_counts_every_hit_enter_steps_through_all_in_order_and
     // Shift+Enter and ▲ go back; ▼ forward.
     key(&mut h, Key::Enter, Modifiers::SHIFT);
     assert_eq!(current(&h, tab), Some(n - 1));
-    h.click_text("▲");
+    let [up, down] = bar(&h, tab).unwrap().arrows.unwrap();
+    h.click(up.center());
     assert_eq!(current(&h, tab), Some(n - 2));
-    h.click_text("▼");
+    h.click(down.center());
     assert_eq!(current(&h, tab), Some(n - 1));
 
     // Esc closes the bar and clears every highlight.
@@ -413,6 +424,7 @@ fn ignore_diacritics_finds_greek_and_hebrew_typed_without_accents_or_points() {
     type_text(&mut h, "agape");
     settle(&mut h, tab);
     assert_eq!(found_texts(&h, tab), ["ἀγάπη", "ἀγάπη"]);
+    preview(&h, "greek-agape");
     key(&mut h, Key::F, CTRL);
     type_text(&mut h, "θεος");
     settle(&mut h, tab);
@@ -453,6 +465,7 @@ fn ignore_diacritics_finds_greek_and_hebrew_typed_without_accents_or_points() {
         .collect();
     assert_eq!(rects.len(), 1);
     assert!(glyphs_in(&h, rects[0]) >= 4, "over אֱלֹהִ֑ים");
+    preview(&h, "hebrew-elohim");
 }
 
 /// Every Find rectangle drawn last frame, with how many glyphs are inside each.
@@ -476,6 +489,7 @@ fn highlights_stay_on_their_words_after_a_text_size_change() {
     for _ in 0..3 {
         key(&mut h, Key::Enter, Modifiers::NONE);
     }
+    preview(&h, "default-text");
     let before = find_rects(&h);
     assert!(before.len() >= 3, "{before:?}");
     // Each covers exactly the four letters of "love".
@@ -493,6 +507,7 @@ fn highlights_stay_on_their_words_after_a_text_size_change() {
     let height = |v: &[(Rect, usize)]| v.iter().map(|(r, _)| r.height()).fold(0.0, f32::max);
     assert!(height(&after) > height(&before));
     assert_eq!(current(&h, tab), was);
+    preview(&h, "larger-text");
     assert_eq!(filled(&h, h.shell.st.palette.search_hit).len(), 1);
 }
 
@@ -525,6 +540,7 @@ fn text_comparison_rows_are_found_and_stepped_through() {
     assert!(found.matches.windows(2).all(|w| {
         (w[0].unit, w[0].row, w[0].range.start) < (w[1].unit, w[1].row, w[1].range.start)
     }));
+    preview(&h, "text-comparison");
     for k in 1..=expected {
         key(&mut h, Key::Enter, Modifiers::NONE);
         assert_eq!(current(&h, cmp), Some(k % expected));

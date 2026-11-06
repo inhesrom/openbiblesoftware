@@ -135,6 +135,8 @@ pub(crate) struct FindBar {
     pub(crate) focus: bool,
     /// Step to the next (true) or previous match when the pane next draws.
     pub(crate) step: Option<bool>,
+    /// Where ▲ and ▼ were drawn last frame.
+    pub(crate) arrows: Option<[egui::Rect; 2]>,
 }
 
 impl FindBar {

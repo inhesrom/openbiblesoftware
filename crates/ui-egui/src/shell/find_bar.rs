@@ -4,7 +4,7 @@
 //! scrolling to each; Esc (or ×) closes the bar and clears them. Alt+Enter ("Search all
 //! Resources") hands what is typed to the Search Tool.
 
-use egui::{Key, Modifiers, RichText, Ui, vec2};
+use egui::{Key, Modifiers, RichText, Ui, pos2, vec2};
 use obs_engine::TabId;
 use obs_model::ResourceType;
 use serde_json::{Value, json};
@@ -40,6 +40,32 @@ pub(crate) fn status_text(status: FindStatus) -> String {
 /// The field's widget id in Tab `tab`.
 pub(crate) fn field_id(tab: TabId) -> egui::Id {
     egui::Id::unique(("find-field", tab.0))
+}
+
+/// ▲ or ▼, painted (the interface font has no such triangles), named for screen readers.
+fn arrow_button(ui: &mut Ui, up: bool, enabled: bool, what: &str) -> egui::Response {
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, r) = ui.allocate_exact_size(vec2(22.0, 22.0), sense);
+    let c = theme::c();
+    if r.hovered() && enabled {
+        ui.painter().rect_filled(rect, 4.0, c.hover);
+    }
+    let color = if enabled { c.ink } else { c.muted };
+    let (x, y, s) = (rect.center().x, rect.center().y, 4.5);
+    let points = if up {
+        vec![pos2(x - s, y + s * 0.6), pos2(x + s, y + s * 0.6), pos2(x, y - s * 0.7)]
+    } else {
+        vec![pos2(x - s, y - s * 0.6), pos2(x + s, y - s * 0.6), pos2(x, y + s * 0.7)]
+    };
+    ui.painter()
+        .add(egui::Shape::convex_polygon(points, color, egui::Stroke::NONE));
+    let label = what.split(" (").next().unwrap_or(what).to_string();
+    r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, &label));
+    r.on_hover_text(what)
 }
 
 impl State {
@@ -130,19 +156,21 @@ impl State {
                 egui::Label::new(RichText::new(count).small().color(theme::c().muted)),
             );
             let any = matches!(status, FindStatus::Found { total, .. } if total > 0);
-            if ui
-                .add_enabled(any, egui::Button::new("▲").small())
-                .on_hover_text("Previous match (Shift+Enter)")
-                .clicked()
-            {
+            let previous = arrow_button(ui, true, any, "Previous match (Shift+Enter)");
+            let next = arrow_button(ui, false, any, "Next match (Enter)");
+            bar.arrows = Some([previous.rect, next.rect]);
+            if previous.clicked() {
                 bar.step = Some(false);
             }
+            if next.clicked() {
+                bar.step = Some(true);
+            }
             if ui
-                .add_enabled(any, egui::Button::new("▼").small())
-                .on_hover_text("Next match (Enter)")
+                .add(egui::Button::new(RichText::new("×").small()).frame(false))
+                .on_hover_text("Close (Esc)")
                 .clicked()
             {
-                bar.step = Some(true);
+                close = true;
             }
             let o = &mut bar.options;
             for (on, label, what) in [
@@ -171,13 +199,6 @@ impl State {
                 .clicked()
             {
                 search_all = true;
-            }
-            if ui
-                .add(egui::Button::new(RichText::new("×").small()).frame(false))
-                .on_hover_text("Close (Esc)")
-                .clicked()
-            {
-                close = true;
             }
         });
         let text = bar.text.trim().to_string();
