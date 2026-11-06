@@ -184,10 +184,7 @@ pub fn release_archive(spec: &ArchiveSpec) -> Result<PathBuf> {
         if !e.file_type().is_file() {
             continue;
         }
-        let rel = e
-            .path()
-            .strip_prefix(&spec.starter)
-            .expect("walkdir yields paths under its root");
+        let rel = e.path().strip_prefix(&spec.starter)?;
         let rel: Vec<String> = rel
             .components()
             .map(|c| c.as_os_str().to_string_lossy().into_owned())
@@ -477,7 +474,7 @@ pub fn check_library(bundle: &Path, library: &Path) -> Result<String> {
             item.file_sha256
         );
         for cache in obs_store::search_index_files(&bundle.join("search"), id) {
-            let name = cache.file_name().expect("a cache file has a name");
+            let name = cache.file_name().unwrap_or_default();
             ensure!(
                 library.join("search").join(name).is_file(),
                 "the prebuilt Search index cache {} of {id} was not put in the Library",
