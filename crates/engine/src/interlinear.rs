@@ -141,11 +141,16 @@ impl InterlinearLines {
         *self == Self::default()
     }
 
-    /// Whether `line` is picked (shown when the lines are on).
+    /// Whether `line` is picked (shown when the lines are on). A choice made for the other
+    /// kind of Bible that names none of this kind's lines (only Lemma, then the Tab switched to
+    /// a Hebrew or Greek Bible) reads as this kind's default lines, so the lines never go
+    /// empty; the saved choice is kept for switching back.
     pub fn is_chosen(&self, kind: InterlinearKind, line: InterlinearLine) -> bool {
         match &self.chosen {
-            Some(chosen) => chosen.contains(&line),
-            None => kind.default_lines().contains(&line),
+            Some(chosen) if chosen.iter().any(|l| kind.lines().contains(l)) => {
+                chosen.contains(&line)
+            }
+            _ => kind.default_lines().contains(&line),
         }
     }
 

@@ -265,3 +265,62 @@ fn tab_interlinear_needs_a_bible_tab() {
     let tab = TabId(out["tab"].as_u64().unwrap());
     assert!(s.run("tab.interlinear", &json!({ "tab": tab.0 })).is_err());
 }
+
+#[test]
+fn a_lemma_only_choice_reads_as_the_hebrew_or_greek_defaults() {
+    let mut lines = InterlinearLines {
+        on: true,
+        ..Default::default()
+    };
+    let reverse = InterlinearKind::Reverse;
+    let interlinear = InterlinearKind::Interlinear;
+    lines.set_line(reverse, Lemma, true);
+    lines.set_line(reverse, Transliteration, false);
+    lines.set_line(reverse, Strongs, false);
+    assert_eq!(lines.shown(reverse), [Lemma]);
+    // A Hebrew or Greek Bible has no Lemma line: its defaults show instead of nothing.
+    assert_eq!(lines.shown(interlinear), [Gloss, Transliteration]);
+    assert!(lines.is_chosen(interlinear, Gloss), "the picker agrees");
+    assert!(!lines.is_chosen(interlinear, Morphology));
+    // Back in the English Bible the user's own choice still holds.
+    assert_eq!(lines.shown(reverse), [Lemma]);
+    // Picking a line there starts from what it shows.
+    lines.set_line(interlinear, Morphology, true);
+    assert_eq!(
+        lines.shown(interlinear),
+        [Gloss, Transliteration, Morphology]
+    );
+}
+
+/// The reviewer's case: Lemma alone in KJV, then the same Tab switched to TAHOT.
+#[test]
+fn switching_a_tab_to_a_hebrew_bible_keeps_its_lines_showing() {
+    let (mut s, _t) = launch("switch-kind");
+    let tab = open(&mut s, "kjv", false);
+    s.run("tab.interlinear", &json!({ "tab": tab.0 })).unwrap();
+    for line in ["transliteration", "strongs"] {
+        s.run(
+            "tab.interlinear",
+            &json!({ "tab": tab.0, "line": line, "shown": false }),
+        )
+        .unwrap();
+    }
+    assert_eq!(lines(&s, tab).shown(InterlinearKind::Reverse), [Lemma]);
+    s.run("tab.parallel", &json!({ "tab": tab.0, "id": "tahot" }))
+        .unwrap();
+    assert_eq!(
+        crate::interlinear::tab_kind(&s, tab),
+        Some(InterlinearKind::Interlinear)
+    );
+    assert_eq!(
+        lines(&s, tab).shown(InterlinearKind::Interlinear),
+        [Gloss, Transliteration]
+    );
+    // Turning them off and on again still shows them.
+    s.run("tab.interlinear", &json!({ "tab": tab.0 })).unwrap();
+    let out = s.run("tab.interlinear", &json!({ "tab": tab.0 })).unwrap();
+    assert_eq!(
+        out,
+        json!({ "on": true, "lines": ["gloss", "transliteration"] })
+    );
+}

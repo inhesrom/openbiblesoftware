@@ -71,7 +71,9 @@ Cells are drawn in `ColorRole::Interlinear` (the Note-marker tone of the palette
 `Tab::interlinear: InterlinearLines { on, chosen }` is kept per Tab, saved in Layouts and the
 Last session (`TabSnapshot::interlinear`, left out while it is the default). The command
 `tab.interlinear {tab, on?, line?, shown?}` toggles the lines, or picks (`shown: true`) or drops
-a line; the last line picked cannot be dropped. Turning lines on or off, or picking one, lays
+a line; the last line picked cannot be dropped. The choice is kept when the Tab switches to
+another Bible (`tab.parallel`); a choice naming none of the new kind's lines (Lemma alone, then a
+Hebrew or Greek Bible) reads as that kind's default lines, so the lines never go empty. Turning lines on or off, or picking one, lays
 the Tab's text out again and keeps its Current location (`ReadingView::set_interlinear`).
 
 ## Performance (#19)
