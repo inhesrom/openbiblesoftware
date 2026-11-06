@@ -5,12 +5,14 @@
 //! Verse list, or paragraphs grouped by Resource). ↑/↓ move through the results and Enter
 //! opens one; Ctrl/Cmd-click opens it in a new Tab. Notes mode (#64) has a Notebook filter
 //! beside the Scope field and lists the Notes found, newest change first; opening one shows
-//! it in the Notes Tool.
+//! it in the Notes Tool. Bible mode also has the Morphology chooser (#145): a menu for each
+//! kind of grammar (part of speech, tense, voice, mood …) that writes `@verb aorist
+//! imperative` into the query box.
 
 use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, pos2, vec2};
 use obs_engine::bible_search::{ErrorField, InlineError, PAGE_ROWS, SearchMode, scope_presets};
 use obs_engine::library_search::{LIBRARY_TYPES, type_id, type_plural};
-use obs_engine::{ResultsView, SearchTab, TabId};
+use obs_engine::{MorphCategory, MorphCriteria, ResultsView, SearchTab, TabId};
 use obs_layout::ColorRole;
 use obs_model::ResourceType;
 use serde_json::{Value, json};
@@ -26,6 +28,100 @@ pub(super) struct Fields {
     query: String,
     scope: String,
     seen: Option<(String, String)>,
+    /// The Morphology chooser: shown, and what is chosen in it.
+    morph_open: bool,
+    morph: MorphCriteria,
+}
+
+/// `query` with the chooser's `@…` added at the end, so that it describes the word typed
+/// last when that is a Strong's number or Lemma.
+fn with_morphology(query: &str, morph: &str) -> String {
+    let typed = query.trim_end();
+    if typed.is_empty() {
+        morph.to_string()
+    } else {
+        format!("{typed} {morph}")
+    }
+}
+
+/// The Morphology chooser (#145): a menu of plain-English values for each kind of grammar,
+/// the query text they make, and buttons to add it to the query (and search).
+fn morphology_chooser(ui: &mut Ui, tab: TabId, morph: &mut MorphCriteria) -> Option<bool> {
+    let mut add = None;
+    egui::Frame::new()
+        .fill(theme::c().field)
+        .stroke(Stroke::new(1.0, theme::c().rule))
+        .corner_radius(6.0)
+        .inner_margin(egui::Margin::symmetric(8, 6))
+        .show(ui, |ui| {
+            ui.label(
+                RichText::new("Morphology: one word with all of these")
+                    .small()
+                    .color(theme::c().muted),
+            );
+            // As many label and menu pairs to a row as fit.
+            let per_row =
+                ((ui.available_width() / 190.0) as usize).clamp(1, MorphCategory::ALL.len());
+            egui::Grid::new(("search-morph-grid", tab))
+                .num_columns(per_row * 2)
+                .spacing(vec2(6.0, 4.0))
+                .show(ui, |ui| {
+                    for (i, &category) in MorphCategory::ALL.iter().enumerate() {
+                        let current = morph.get(category);
+                        ui.label(
+                            RichText::new(category.label())
+                                .small()
+                                .color(theme::c().muted),
+                        );
+                        egui::ComboBox::from_id_salt(("search-morph", tab, category))
+                            .selected_text(current.unwrap_or("Any"))
+                            .width(110.0)
+                            .height(320.0)
+                            .show_ui(ui, |ui| {
+                                if ui.selectable_label(current.is_none(), "Any").clicked() {
+                                    morph.set(category, None);
+                                }
+                                for &value in category.values() {
+                                    if ui.selectable_label(current == Some(value), value).clicked()
+                                    {
+                                        morph.set(category, Some(value));
+                                    }
+                                }
+                            });
+                        if (i + 1) % per_row == 0 {
+                            ui.end_row();
+                        }
+                    }
+                });
+            let text = morph.query_text();
+            let chosen = !text.is_empty();
+            if chosen {
+                ui.label(RichText::new(&text).monospace());
+            } else {
+                ui.label(
+                    RichText::new("Choose a part of speech, tense, case …").color(theme::c().muted),
+                );
+            }
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .add_enabled(chosen, egui::Button::new("Add to query"))
+                    .on_hover_text("Describes the Strong's number or Lemma typed just before it")
+                    .clicked()
+                {
+                    add = Some(false);
+                }
+                if ui
+                    .add_enabled(chosen, egui::Button::new("Add and search"))
+                    .clicked()
+                {
+                    add = Some(true);
+                }
+                if ui.add_enabled(chosen, egui::Button::new("Clear")).clicked() {
+                    *morph = MorphCriteria::default();
+                }
+            });
+        });
+    add
 }
 
 /// An inline error under its field, the offending part quoted.
@@ -50,7 +146,9 @@ fn error_line(ui: &mut Ui, error: Option<&InlineError>, field: ErrorField, text:
 /// What the empty query box says.
 pub(super) fn query_hint(mode: SearchMode) -> &'static str {
     match mode {
-        SearchMode::Bible => "Words, \"a phrase\", OR, -word, lov*, strong:H1254, lemma:",
+        SearchMode::Bible => {
+            "Words, \"a phrase\", OR, -word, lov*, strong:H1254, lemma:, @verb aorist"
+        }
         SearchMode::Library => {
             "Commentaries, Lexicons, Dictionaries: words, \"a phrase\", OR, lov*"
         }
@@ -76,6 +174,8 @@ impl State {
         let mut run: Vec<(&'static str, Value)> = Vec::new();
         let mut query = std::mem::take(&mut t.search_fields.query);
         let mut scope = std::mem::take(&mut t.search_fields.scope);
+        let mut morph = std::mem::take(&mut t.search_fields.morph);
+        let mut morph_open = t.search_fields.morph_open;
         let recent = self.session.recent_searches(st.mode);
         let bibles = st.bibles(&self.session.library);
         if st.mode == SearchMode::Bible {
@@ -117,10 +217,21 @@ impl State {
             .inner_margin(egui::Margin::symmetric(10, 6))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
+                let bible_mode = st.mode == SearchMode::Bible;
                 ui.horizontal(|ui| {
                     for m in SearchMode::ALL {
                         if ui.selectable_label(st.mode == m, m.label()).clicked() && st.mode != m {
                             run.push(("search.mode", json!({ "tab": tab.0, "value": m.id() })));
+                        }
+                    }
+                    if bible_mode {
+                        ui.add_space(12.0);
+                        if ui
+                            .selectable_label(morph_open, "Morphology…")
+                            .on_hover_text("Choose grammar in plain English: @verb aorist")
+                            .clicked()
+                        {
+                            morph_open = !morph_open;
                         }
                     }
                 });
@@ -129,7 +240,7 @@ impl State {
                         egui::TextEdit::singleline(&mut query)
                             .id_salt(("search-query", tab))
                             .hint_text(query_hint(st.mode))
-                            .desired_width((ui.available_width() - 120.0).max(120.0))
+                            .desired_width((ui.available_width() - 150.0).max(120.0))
                             .margin(egui::Margin::symmetric(8, 4)),
                     );
                     let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -156,6 +267,18 @@ impl State {
                     });
                 });
                 error_line(ui, error.as_ref(), ErrorField::Query, &query);
+                if bible_mode
+                    && morph_open
+                    && let Some(and_search) = morphology_chooser(ui, tab, &mut morph)
+                {
+                    query = with_morphology(&query, &morph.query_text());
+                    if and_search {
+                        run.push((
+                            "search.run",
+                            json!({ "tab": tab.0, "text": query.clone(), "scope": scope.clone() }),
+                        ));
+                    }
+                }
                 if st.mode == SearchMode::Library {
                     self.resource_picker(ui, tab, &st, &mut run);
                     error_line(ui, error.as_ref(), ErrorField::Resources, "");
@@ -276,6 +399,8 @@ impl State {
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.search_fields.query = query;
             t.search_fields.scope = scope;
+            t.search_fields.morph = morph;
+            t.search_fields.morph_open = morph_open;
         }
         if st.mode == SearchMode::Notes {
             self.notes_results(ui, tab, &st);

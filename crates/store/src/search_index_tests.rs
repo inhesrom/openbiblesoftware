@@ -185,6 +185,101 @@ fn tagged_words_index_extended_and_base_strongs() {
     assert!(docs(&index, "H1254B").is_empty());
 }
 
+/// A three-Verse Greek Bible whose words carry Morphology codes (#145).
+fn greek_with_morphology() -> Resource {
+    let mut m = Manifest::new("grc", "Greek", "GRC", ResourceType::Bible, "grc");
+    m.key_schemes = vec![KeyScheme::Passage];
+    m.license = "LicenseRef-PD".into();
+    let mut b = ResourceBuilder::new(m);
+    let john = UnitId::book(Book::John);
+    // (word, Strong's, Lemma, code), one Verse per row.
+    let verses: &[&[(&str, &str, &str, &str)]] = &[
+        &[
+            ("ἀγαπᾶτε", "G25", "ἀγαπάω", "V-PAM-2P"),
+            ("ἀλλήλους", "G240", "ἀλλήλων", "C-APM"),
+        ],
+        &[("ἀγαπήσατε", "G25", "ἀγαπάω", "V-AAM-2P")],
+        &[
+            ("ἔλθετε", "G2064G", "ἔρχομαι", "V-2AAM-2P"),
+            ("ἀγαπᾷ", "G25", "ἀγαπάω", "V-PAI-3S"),
+        ],
+    ];
+    let mut text = String::new();
+    let mut spans = Vec::new();
+    let mut ranges = Vec::new();
+    for words in verses {
+        let start = text.len();
+        for (word, strongs, lemma, code) in *words {
+            if text.len() > start {
+                text.push(' ');
+            }
+            let at = text.len();
+            text.push_str(word);
+            let mut part = MorphemePart::new(strongs.parse().unwrap());
+            part.lemma = Some((*lemma).into());
+            part.morph = Some((*code).into());
+            spans.push((at..text.len(), part));
+        }
+        ranges.push(start..text.len());
+        text.push(' ');
+    }
+    b.add_unit(john.clone(), UnitKind::BibleBook, None, text);
+    for (range, part) in spans {
+        b.add_span(&john, range, SpanKind::TaggedWord { parts: vec![part] });
+    }
+    for (i, range) in ranges.into_iter().enumerate() {
+        let verse = 34 + i as u16;
+        b.add_verse(&john, range, Verse::new(Book::John, 13, verse), verse);
+    }
+    b.build().unwrap()
+}
+
+/// Morphology criteria hold for one word: a Strong's number, Lemma or other criterion of
+/// another word in the Verse does not count (#145).
+#[test]
+fn morphology_criteria_match_inside_one_word() {
+    let dir = TempDir::new("morph");
+    let r = greek_with_morphology();
+    let index = SqliteSearchIndex::open(&build(&r, 2, &dir.0), None).unwrap();
+    let table: &[(&str, &[i64])] = &[
+        ("@imperative", &[0, 1, 2]),
+        ("@aorist imperative", &[1, 2]),
+        ("@verb aorist imperative second plural", &[1, 2]),
+        ("@aorist indicative", &[]),
+        // The aorist imperative of Verse 2 is ἔρχομαι, not ἀγαπάω.
+        ("strong:G25 @aorist imperative", &[1]),
+        ("lemma:ἀγαπάω @aorist imperative", &[1]),
+        ("lemma:ἀγαπάω @imperative", &[0, 1]),
+        ("G25 @indicative", &[2]),
+        // An extended number: its base form or itself.
+        ("strong:G2064 @aorist", &[2]),
+        ("G2064G @aorist", &[2]),
+        ("G2064H @aorist", &[]),
+        // Alongside words and NOT.
+        ("@imperative -@indicative", &[0, 1]),
+        ("ἀλληλουσ @present imperative", &[0]),
+        ("@pronoun accusative", &[0]),
+        ("G240 @imperative", &[]),
+    ];
+    for (q, want) in table {
+        assert_eq!(docs(&index, q), *want, "{q}");
+    }
+}
+
+/// A cache from before the `morph` field (still searched while it is rebuilt) finds nothing
+/// for Morphology criteria, and everything else as before.
+#[test]
+fn a_cache_without_morphology_finds_no_morphology() {
+    let dir = TempDir::new("no-morph");
+    let path = build(&greek_with_morphology(), 2, &dir.0);
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch("DROP TABLE morph_codes").unwrap();
+    drop(conn);
+    let index = SqliteSearchIndex::open(&path, None).unwrap();
+    assert!(docs(&index, "@imperative").is_empty());
+    assert_eq!(docs(&index, "G25"), [0, 1, 2]);
+}
+
 #[test]
 fn other_resources_index_paragraphs_with_the_unit_key_and_title() {
     let dir = TempDir::new("dict");

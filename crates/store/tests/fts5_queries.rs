@@ -106,7 +106,8 @@ fn lexicon(t: &str) -> Vec<String> {
 fn search(c: &Connection, q: &str) -> Vec<&'static str> {
     let expr = match to_fts5(q, &lexicon).unwrap_or_else(|e| panic!("{q}: {e}")) {
         Compiled::Match(e) => e,
-        Compiled::Nothing => return Vec::new(),
+        // This table has no `morph` column; Morphology is tested on real caches.
+        Compiled::Morph(_) | Compiled::Nothing => return Vec::new(),
     };
     let mut stmt = c
         .prepare("SELECT rowid FROM idx WHERE idx MATCH ?1 ORDER BY rowid")

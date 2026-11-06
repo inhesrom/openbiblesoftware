@@ -177,6 +177,14 @@ _Avoid_: Index (unqualified), Search database
 What a search runs over: a Passage list and a set of Resources (or Notebooks for notes). A Library search's Resources can be whole Resource types, Collections and single Resources. It is chosen beside the query, not written inside it.
 _Avoid_: Filter, Range (for the scope)
 
+**Morphology criteria**:
+The grammar one Tagged word must have for a Bible search to find it, named in plain English after `@` in the query (`@verb aorist imperative`): a part of speech, tense, voice, mood, case, number, gender, person, stem or state. They all hold for the same word, and a Strong's number or Lemma typed just before the `@` is that word's too (`strong:G26 @noun genitive`).
+_Avoid_: Morph codes, Parsing (for the query), Morph search syntax
+
+**Morphology chooser**:
+The panel under Bible mode's query box (its **Morphology…** button) with a menu for each kind of grammar; it writes the Morphology criteria chosen into the query, so nobody has to learn the words or the codes. What it writes and the same criteria typed are one query.
+_Avoid_: Morph builder, Parsing picker
+
 **Results view**:
 How a Bible search's results are shown, switched above them: Verses (the Verse list), Grid (a heat map of matching Verses by Bible book × Bible), Chart (bars of matching Verses by Bible book, or by chapter within one book) or Analysis (a table with one row per matched word: Reference, Bible, the word, its Lemma, Morphology and context, sortable by any column and exported as CSV).
 _Avoid_: Mode (the Search Tool's Bible / Library / Notes switch), Report

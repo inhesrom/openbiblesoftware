@@ -5,15 +5,17 @@
 
 pub mod highlight;
 pub mod index;
+pub mod morph;
 pub mod query;
 
 pub use highlight::Highlighter;
 pub use index::{
     DocumentKind, HitOrder, INDEX_VERSION, SearchError, SearchHit, SearchIndex, SearchOptions,
 };
+pub use morph::{MorphCategory, MorphCriteria, MorphCriterion};
 pub use query::{
-    Compiled, Field, LemmaLookup, NoLexicon, Query, QueryError, QueryErrorKind, compile,
-    compile_notes, parse, to_fts5,
+    Compiled, Field, LemmaLookup, MorphQuery, MorphVocabulary, NoLexicon, Query, QueryError,
+    QueryErrorKind, compile, compile_notes, parse, to_fts5,
 };
 
 #[cfg(test)]
