@@ -18,7 +18,9 @@
 //!   a Note's body edits it in place: it saves as you type (one undo step per editing pass),
 //!   and when focus leaves it, on Esc or Ctrl+Enter. Bible references in a body are links
 //!   with the reference popup (clicking one runs `notes.show_passage`); they are found once
-//!   per body, not every frame. The list is virtualized (only cards in view are drawn and
+//!   per body, not every frame. A save the database refuses (#129) keeps the editor open with
+//!   the text and the error, tries again a moment later, and offers Discard changes; only a
+//!   Note deleted underneath ends the editing pass. The list is virtualized (only cards in view are drawn and
 //!   measured) and quotes and bodies are drawn by the text pipeline.
 //! - **While a card is edited** the list keeps its order and members, so a save (which moves
 //!   the card in Last modified order, or out of the filter) cannot pull the editor out of
@@ -64,6 +66,9 @@ pub(super) struct CardEdit {
     saved_once: bool,
     changed_at: f64,
     focus: bool,
+    /// Why the last save failed (the database refused the write). The editor stays open with
+    /// the text and this message; the save is tried again a moment later.
+    pub(super) error: Option<String>,
 }
 
 /// The Delete Notebook dialog.
@@ -80,6 +85,8 @@ pub(super) struct DeleteNotebook {
 #[cfg_attr(not(test), allow(dead_code))]
 pub(super) struct DrawnCard {
     pub(super) id: String,
+    /// The whole card.
+    pub(super) rect: Rect,
     /// A Note's body (or its editor).
     pub(super) body: Option<Rect>,
 }
@@ -399,6 +406,10 @@ impl State {
             return;
         }
         self.save_card_edit(true);
+        // The card being edited did not save: keep it (and its error) rather than lose its text.
+        if self.notes_ui.editing.is_some() {
+            return;
+        }
         self.notes_ui.editing = Some(CardEdit {
             id: id.to_string(),
             text: body.to_string(),
@@ -406,10 +417,13 @@ impl State {
             saved_once: false,
             changed_at: self.now,
             focus: true,
+            error: None,
         });
     }
 
-    /// Save the card being edited if its text changed; `finished` ends the editing pass.
+    /// Save the card being edited if its text changed; `finished` ends the editing pass. A save
+    /// the database refuses keeps the editor open, with its text and the error, whatever
+    /// `finished` says.
     pub(super) fn save_card_edit(&mut self, finished: bool) {
         let Some(mut ed) = self.notes_ui.editing.take() else {
             return;
@@ -420,10 +434,22 @@ impl State {
                 Ok(_) => {
                     ed.saved = ed.text.clone();
                     ed.saved_once = true;
+                    ed.error = None;
                 }
-                Err(e) => {
+                Err(e) if self.card_gone(&ed.id) => {
                     // Gone underneath (an undo removed it): nothing left to save into.
                     self.toast(e.to_string());
+                    return;
+                }
+                Err(e) => {
+                    // Toasted once, since the card (and its message) may be covered.
+                    if ed.error.is_none() {
+                        self.toast(format!("The Note was not saved: {e}"));
+                    }
+                    ed.error = Some(e.to_string());
+                    // Try again a moment from now, not every frame.
+                    ed.changed_at = self.now;
+                    self.notes_ui.editing = Some(ed);
                     return;
                 }
             }
@@ -441,11 +467,42 @@ impl State {
         if self.notes_ui.editing.is_none() {
             return;
         }
-        if !shown {
-            self.save_card_edit(true);
-            return;
+        // A save that failed is retried on the autosave's clock even while the Tab is hidden.
+        let failed = self
+            .notes_ui
+            .editing
+            .as_ref()
+            .is_some_and(|e| e.error.is_some());
+        if shown || failed {
+            self.autosave_card(ctx);
         }
-        self.autosave_card(ctx);
+        // Covered, with nothing left unsaved (or a retry just went through): end the pass.
+        let unsaved = self
+            .notes_ui
+            .editing
+            .as_ref()
+            .is_some_and(|e| e.error.is_some());
+        if !shown && !unsaved {
+            self.save_card_edit(true);
+        }
+        // A try that just failed left the card unsaved: ask for the frame of the next one,
+        // since a covered Tab and an idle window would otherwise never draw it.
+        if let Some(ed) = &self.notes_ui.editing
+            && ed.error.is_some()
+            && ed.text != ed.saved
+        {
+            let wait = (AUTOSAVE_SECS - (self.now - ed.changed_at)).max(0.0);
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(wait));
+        }
+    }
+
+    /// The Note being edited no longer exists (an undo removed it, or the User database
+    /// closed), as opposed to the database refusing the write.
+    fn card_gone(&self, id: &str) -> bool {
+        self.session
+            .user
+            .as_deref()
+            .is_none_or(|u| matches!(u.annotation(id), Ok(None)))
     }
 
     /// Save as the user types: a moment after the last keystroke.
@@ -852,6 +909,7 @@ impl State {
             .context_menu(|ui| self.card_menu(ui, card, run));
         self.notes_ui.drawn.push(DrawnCard {
             id: a.id.clone(),
+            rect: frame.response.rect,
             body: body_rect,
         });
     }
@@ -942,7 +1000,21 @@ impl State {
                 .small()
                 .color(theme::c().muted),
             );
-            if finished {
+            let mut discard = false;
+            if let Some(e) = &ed.error {
+                ui.label(
+                    RichText::new(format!("Not saved: {e}. Trying again…"))
+                        .small()
+                        .color(theme::c().warn),
+                );
+                discard = ui
+                    .button("Discard changes")
+                    .on_hover_text("Put back the text last saved")
+                    .clicked();
+            }
+            if discard {
+                self.notes_ui.editing = None;
+            } else if finished {
                 self.save_card_edit(true);
             }
             return r.rect;
