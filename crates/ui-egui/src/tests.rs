@@ -462,6 +462,8 @@ fn bench_runs_and_reports_every_scenario() {
     assert_eq!(report.scenarios[0].frames, 20);
     assert!(report.blocks > 1000);
     assert!(report.text_gpu_mib > 0.0);
+    // Every pane draws a Find bar's matches (#175).
+    assert!(report.find_matches > 10_000, "{}", report.find_matches);
 }
 
 #[test]

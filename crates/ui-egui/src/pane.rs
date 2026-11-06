@@ -10,7 +10,9 @@ use obs_render::GlyphAtlas;
 use crate::find::Found;
 use crate::marks::{Mark, MarkKind};
 use crate::palette::Palette;
-use crate::selection::{DocPos, Granularity, Selection, range_rects, selection_rects};
+use crate::selection::{
+    DocPos, Granularity, Selection, range_rects, selection_rects, text_range_rects,
+};
 use crate::view::{MARGIN, ReadingView, SYNC_BUDGET};
 use obs_layout::{InlineObject, UnitPos};
 use obs_scripture::Verse;
@@ -283,25 +285,11 @@ pub fn reading_pane(
             }
         }
     }
-    // Find matches (#175): only those reaching into the blocks laid out in view are looked at,
-    // however many the Resource has.
-    if !found.matches.is_empty() {
-        let mut shown: Vec<usize> = Vec::new();
-        for b in frame.blocks.iter().filter(|b| b.laid.is_some()) {
-            let block = &view.doc.blocks[b.index];
-            shown.extend(found.within(block.unit, 0, block.source.range.clone()));
-        }
-        shown.sort_unstable();
-        shown.dedup();
-        let ranges: Vec<(DocPos, DocPos)> = shown
-            .iter()
-            .map(|&k| (found.matches[k].start(), found.matches[k].end()))
-            .collect();
-        for (k, rects) in shown.iter().zip(range_rects(view, &ranges, rect.height())) {
-            for r in rects {
-                let r = to_screen(text_band(r, size));
-                paint_find_match(&painter, r, found.current == Some(*k), palette);
-            }
+    // Find matches (#175), over the Highlights and under the selection.
+    for (k, rects) in found_rects(view, found, rect.height()) {
+        for r in rects {
+            let r = to_screen(text_band(r, size));
+            paint_find_match(&painter, r, found.current == Some(k), palette);
         }
     }
     if let Some(sel) = view.selection {
@@ -511,6 +499,34 @@ pub fn reading_pane(
     }
     out.response = Some(response);
     out
+}
+
+/// The Find matches (#175) in the blocks laid out in a viewport `height` tall, by index, with
+/// their rectangles (letters only: never a verse number before them). Only the matches reaching into those
+/// blocks are looked at, however many the Resource has.
+pub fn found_rects(
+    view: &ReadingView,
+    found: Found<'_>,
+    height: f32,
+) -> Vec<(usize, Vec<[f32; 4]>)> {
+    if found.matches.is_empty() {
+        return Vec::new();
+    }
+    let mut shown: Vec<usize> = Vec::new();
+    for (index, _, _) in view.laid_in_view(height) {
+        let block = &view.doc.blocks[index];
+        shown.extend(found.within(block.unit, 0, block.source.range.clone()));
+    }
+    shown.sort_unstable();
+    shown.dedup();
+    let ranges: Vec<(DocPos, DocPos)> = shown
+        .iter()
+        .map(|&k| (found.matches[k].start(), found.matches[k].end()))
+        .collect();
+    shown
+        .into_iter()
+        .zip(text_range_rects(view, &ranges, height))
+        .collect()
 }
 
 /// One Find match (#175): the current one in the search-hit overlay with an outline, the

@@ -91,6 +91,10 @@ pub struct BenchReport {
     /// Glyph atlas as uploaded (RGBA), MiB.
     pub text_gpu_mib: f64,
     pub shape_cache_hit_rate: f64,
+    /// Find in Resource (#175): matches of "the" in the whole document, which every frame
+    /// draws over each pane, and how long finding them took on one thread.
+    pub find_matches: usize,
+    pub find_ms: f64,
 }
 
 #[derive(Default)]
@@ -136,6 +140,8 @@ struct Bench {
     reference_targets: TargetCache,
     reference_doc: Arc<ReadingDoc>,
     reference_frame: usize,
+    /// Every pane's Find bar has these matches (#175); a frame draws those in view.
+    found: Vec<crate::FindMatch>,
     interval: Duration,
     budget: Duration,
 }
@@ -164,6 +170,11 @@ impl Bench {
                     std::hint::black_box(self.atlas.quads(l, [x, b.top], self.cfg.scale));
                 }
             }
+            let found = crate::Found {
+                matches: &self.found,
+                current: Some(k),
+            };
+            std::hint::black_box(crate::pane::found_rects(v, found, self.cfg.viewport.1));
         }
         // Real native-target translation: a whole-Bible Passage against >31k map entries.
         // Switch spans periodically to include cold submission as well as cached hover polls.
@@ -240,6 +251,27 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
             v.jump_to(bv.verse);
         }
     }
+    // Find "the" in the whole document, as a Find bar's worker does.
+    let find_start = Instant::now();
+    let found: Vec<crate::FindMatch> = obs_search::Finder::new("the", Default::default())
+        .map(|finder| {
+            doc.units
+                .iter()
+                .enumerate()
+                .flat_map(|(unit, u)| {
+                    finder
+                        .find(&u.text)
+                        .into_iter()
+                        .map(move |range| crate::FindMatch {
+                            unit,
+                            row: 0,
+                            range,
+                        })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let find_ms = find_start.elapsed().as_secs_f64() * 1000.0;
     let mut bench = Bench {
         cfg: cfg.clone(),
         views,
@@ -248,6 +280,7 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         reference_targets: TargetCache::default(),
         reference_doc: large_reference_doc(),
         reference_frame: 0,
+        found,
         interval,
         budget: SYNC_BUDGET,
     };
@@ -360,6 +393,8 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         jump_all_settle_frames_max: all_max,
         text_gpu_mib: (bench.atlas.bytes() * 4) as f64 / (1024.0 * 1024.0),
         shape_cache_hit_rate: obs_fonts::ShapeCache::shared().stats().hit_rate(),
+        find_matches: bench.found.len(),
+        find_ms,
     }
 }
 

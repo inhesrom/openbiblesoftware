@@ -2404,7 +2404,21 @@ impl State {
             Some(TabKind::Guide(g)) if !g.sections().is_empty() => Some(*g),
             _ => None,
         };
+        let findable = self
+            .session
+            .workspace
+            .tab(tab)
+            .is_some_and(|t| t.kind.has_find_bar());
         ui.menu_button(RichText::new("…").color(theme::c().muted), |ui| {
+            if findable
+                && ui
+                    .add(egui::Button::new("Find…").shortcut_text("Ctrl+F"))
+                    .clicked()
+            {
+                self.session.workspace.user_focused(tab);
+                self.run("tab.find", &json!({ "tab": tab.0 }));
+                ui.close();
+            }
             if library && ui.button("Import…").clicked() {
                 self.run("library.import", &json!({}));
                 ui.close();

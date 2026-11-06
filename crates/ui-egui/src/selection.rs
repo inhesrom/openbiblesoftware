@@ -189,6 +189,26 @@ pub fn range_rects(
     ranges: &[(DocPos, DocPos)],
     height: f32,
 ) -> Vec<Vec<[f32; 4]>> {
+    ranges_rects(view, ranges, height, true)
+}
+
+/// [`range_rects`] over the text's own glyphs only: inline objects anchored in a range (a
+/// verse number at a Verse's first byte) are left out, as a Find match (#175) covers only the
+/// letters it matched.
+pub(crate) fn text_range_rects(
+    view: &ReadingView,
+    ranges: &[(DocPos, DocPos)],
+    height: f32,
+) -> Vec<Vec<[f32; 4]>> {
+    ranges_rects(view, ranges, height, false)
+}
+
+fn ranges_rects(
+    view: &ReadingView,
+    ranges: &[(DocPos, DocPos)],
+    height: f32,
+    objects: bool,
+) -> Vec<Vec<[f32; 4]>> {
     let doc = &view.doc;
     let mut out: Vec<Vec<[f32; 4]>> = vec![Vec::new(); ranges.len()];
     if ranges.iter().all(|(a, b)| a >= b) {
@@ -221,8 +241,8 @@ pub fn range_rects(
                 for (bytes, x0, x1) in item.clusters() {
                     let byte = match laid.to_unit(bytes.start) {
                         Some(UnitPos::Text(b)) => b,
-                        Some(UnitPos::Object { anchor, .. }) => anchor,
-                        None => continue,
+                        Some(UnitPos::Object { anchor, .. }) if objects => anchor,
+                        _ => continue,
                     };
                     let p = DocPos { unit, byte };
                     for (k, &i) in active.iter().enumerate() {

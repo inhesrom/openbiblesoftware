@@ -86,21 +86,9 @@ const FILLER: &[&str] = &[
 /// The Gospel of John, every chapter at its KJV length, one paragraph per five verses: the
 /// verses of [`JOHN_LOVE`] in their KJV words, the others filler without "love".
 fn kjv_john() -> Arc<ReadingDoc> {
-    let mut m = Manifest::new("kjv-john", "KJV John", "KJVJ", ResourceType::Bible, "en");
-    m.key_schemes = vec![KeyScheme::Passage];
-    m.license = "LicenseRef-PD".into();
-    let mut b = ResourceBuilder::new(m);
-    let john = UnitId::book(Book::John);
-    let mut t = TextAccumulator::new();
     let mut verses = Vec::new();
-    let mut paras = Vec::new();
     for chapter in 1..=21u16 {
-        let last = Standard.last_verse(Book::John, chapter).unwrap();
-        let mut para_start = t.pos();
-        for v in 1..=last {
-            if t.pos() > para_start {
-                t.push(" ");
-            }
+        for v in 1..=Standard.last_verse(Book::John, chapter).unwrap() {
             let text = JOHN_LOVE
                 .iter()
                 .find(|(c, n, _)| (*c, *n) == (chapter, v))
@@ -114,32 +102,60 @@ fn kjv_john() -> Arc<ReadingDoc> {
                     },
                     |(_, _, text)| (*text).to_string(),
                 );
-            let r = t.push(&text);
-            verses.push((r.clone(), Verse::new(Book::John, chapter, v)));
-            if v % 5 == 0 || v == last {
-                paras.push(para_start..r.end);
-                t.push("\n");
-                para_start = t.pos();
-            }
+            verses.push((chapter, v, text));
+        }
+    }
+    english_bible("kjv-john", "KJV John", "KJVJ", Book::John, &verses)
+}
+
+/// An English Bible of one book's `verses` (chapter, verse, text), one paragraph per five
+/// verses and at each chapter's end.
+fn english_bible(
+    id: &str,
+    title: &str,
+    abbrev: &str,
+    book: Book,
+    verses: &[(u16, u16, String)],
+) -> Arc<ReadingDoc> {
+    let mut m = Manifest::new(id, title, abbrev, ResourceType::Bible, "en");
+    m.key_schemes = vec![KeyScheme::Passage];
+    m.license = "LicenseRef-PD".into();
+    let mut b = ResourceBuilder::new(m);
+    let unit = UnitId::book(book);
+    let mut t = TextAccumulator::new();
+    let mut spans = Vec::new();
+    let mut paras = Vec::new();
+    let mut para_start = t.pos();
+    for (k, (chapter, v, text)) in verses.iter().enumerate() {
+        if t.pos() > para_start {
+            t.push(" ");
+        }
+        let r = t.push(text);
+        spans.push((r.clone(), Verse::new(book, *chapter, *v)));
+        let chapter_ends = verses.get(k + 1).is_none_or(|(c, _, _)| c != chapter);
+        if v % 5 == 0 || chapter_ends {
+            paras.push(para_start..r.end);
+            t.push("\n");
+            para_start = t.pos();
         }
     }
     b.add_unit(
-        john.clone(),
+        unit.clone(),
         UnitKind::BibleBook,
-        Some("John".into()),
+        Some(book.name().into()),
         t.into_string(),
     );
     for p in paras {
         b.add_span(
-            &john,
+            &unit,
             p,
             SpanKind::Para {
                 style: ParaStyle::Prose,
             },
         );
     }
-    for (r, v) in verses {
-        b.add_verse(&john, r, v, v.verse);
+    for (r, v) in spans {
+        b.add_verse(&unit, r, v, v.verse);
     }
     Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
 }
@@ -568,4 +584,117 @@ fn ctrl_f_with_a_selection_finds_the_selected_words() {
     assert_eq!(bar(&h, tab).unwrap().text, "everlasting life");
     settle(&mut h, tab);
     assert_eq!(found_texts(&h, tab), ["everlasting life"]);
+}
+
+#[test]
+fn the_tab_menu_offers_find_with_its_shortcut() {
+    let mut h = Harness::new();
+    let tab = open(&mut h, kjv_john());
+    let pane = {
+        let tiles = &h.shell.tree.tiles;
+        tiles.rect(tiles.find_pane(&tab).unwrap()).unwrap()
+    };
+    let dots = h
+        .shapes
+        .iter()
+        .rev()
+        .find(|(r, t)| t == "…" && pane.contains(r.center()))
+        .map(|(r, _)| r.center())
+        .expect("the Tab's ⋯ menu");
+    h.click(dots);
+    assert!(h.find("Ctrl+F").is_some(), "{:?}", h.texts());
+    h.click_text("Find…");
+    assert!(bar(&h, tab).is_some());
+    assert!(h.ctx.memory(|m| m.has_focus(field_id(tab))));
+}
+
+/// The acceptance run on the real KJV (with Strong's) of the Starter library, which CI does
+/// not have: `OBS_KJV_OBR=path/to/kjv-strongs.obr cargo test -p obs-ui-egui real_kjv --
+/// --ignored --nocapture`.
+#[test]
+#[ignore = "needs the real KJV: OBS_KJV_OBR=path/to/kjv-strongs.obr"]
+fn real_kjv_john_love_counts_and_enter_visits_every_hit_in_order() {
+    let path = std::env::var("OBS_KJV_OBR").expect("OBS_KJV_OBR");
+    let doc = Arc::new(ReadingDoc::open(std::path::Path::new(&path)).unwrap());
+    let john = doc
+        .units
+        .iter()
+        .position(|u| u.id == UnitId::book(Book::John))
+        .expect("John");
+    let expected: usize = doc
+        .units
+        .iter()
+        .map(|u| u.text.to_lowercase().matches("love").count())
+        .sum();
+    let in_john = doc.units[john].text.to_lowercase().matches("love").count();
+    let mut h = Harness::new();
+    let tab = open(&mut h, doc);
+    h.shell
+        .run("tab.go", &json!({ "tab": tab.0, "text": "John 1:1" }));
+    h.frames(3);
+    key(&mut h, Key::F, CTRL);
+    type_text(&mut h, "love");
+    settle(&mut h, tab);
+    let matches = bar(&h, tab).unwrap().found().matches.to_vec();
+    assert_eq!(matches.len(), expected);
+    let first = current(&h, tab).unwrap();
+    assert_eq!(matches[first].unit, john, "the first hit from John 1:1 is in John");
+    assert!(first == 0 || matches[first - 1].unit < john);
+    let n = matches.len();
+    assert!(h.find(&format!("{} of {n}", first + 1)).is_some(), "{:?}", h.texts());
+    eprintln!("KJV: {n} hits of “love”, {in_john} in John; John's first is {} of {n}", first + 1);
+    let started = std::time::Instant::now();
+    for k in 1..=n {
+        key(&mut h, Key::Enter, Modifiers::NONE);
+        assert_eq!(current(&h, tab), Some((first + k) % n), "Enter #{k}");
+        // One rectangle per run of the line it is in: a hit can straddle two (a word of
+        // Jesus in red, a Tagged word's edge).
+        let now = filled(&h, h.shell.st.palette.search_hit);
+        let glyphs: usize = now.iter().map(|r| glyphs_in(&h, *r)).sum();
+        let m = &matches[(first + k) % n];
+        let unit = &h.shell.st.tabs[&tab].view.as_ref().unwrap().doc.units[m.unit];
+        let context = (m.unit, m.range.clone(), &unit.text[m.range.clone()]);
+        assert!(!now.is_empty(), "Enter #{k}: the current hit is drawn ({context:?})");
+        assert_eq!(glyphs, 4, "Enter #{k}: over “love” ({context:?}, {now:?})");
+    }
+    eprintln!("Enter visited all {n} hits in order in {:?}", started.elapsed());
+    key(&mut h, Key::Escape, Modifiers::NONE);
+    assert!(bar(&h, tab).is_none());
+    assert!(filled(&h, h.shell.st.palette.find_match).is_empty());
+}
+
+#[test]
+fn a_hit_at_a_verse_start_covers_its_letters_not_the_verse_number() {
+    let mut h = Harness::new();
+    let verses = [
+        (
+            13,
+            9,
+            "For this, Thou shalt not commit adultery, Thou shalt not kill, Thou shalt not \
+             steal, Thou shalt not bear false witness, Thou shalt not covet; and if there be \
+             any other commandment, it is briefly comprehended in this saying, namely, Thou \
+             shalt love thy neighbour as thyself.",
+        ),
+        (
+            13,
+            10,
+            "Love worketh no ill to his neighbour: therefore love is the fulfilling of the law.",
+        ),
+    ]
+    .map(|(c, v, t)| (c, v, t.to_string()));
+    let tab = open(
+        &mut h,
+        english_bible("kjv-rom", "KJV Romans", "KJVR", Book::Romans, &verses),
+    );
+    key(&mut h, Key::F, CTRL);
+    type_text(&mut h, "love");
+    settle(&mut h, tab);
+    assert_eq!(found_texts(&h, tab), ["love", "Love", "love"]);
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert_eq!(current(&h, tab), Some(1));
+    // "10" is drawn just before "Love", but only the four letters are marked.
+    let rects = filled(&h, h.shell.st.palette.search_hit);
+    let glyphs: usize = rects.iter().map(|r| glyphs_in(&h, *r)).sum();
+    assert_eq!(glyphs, 4, "{rects:?}");
+    assert!(find_rects(&h).iter().all(|(_, g)| *g == 4));
 }
