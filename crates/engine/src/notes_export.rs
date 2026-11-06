@@ -5,7 +5,10 @@
 //! reads back as a Bible reference in the Standard versification), then its quoted text as a
 //! block quote, then the Note's text (or which Highlight style it is). Notebook exports
 //! list in Bible order; a search result keeps its order (newest change first). After them
-//! comes the Attribution of each quoted Resource whose licence asks for credit.
+//! comes the Attribution of each quoted Resource whose licence asks for credit. A Resource
+//! removed from the library leaves that credit in the User database for the quotes its kept
+//! Annotations hold; a quote whose Resource's licence is unknown (its file went missing) is
+//! left out with a note saying to import it again, so no quote goes out without its credit.
 //!
 //! The Markdown keeps a Note's text as typed: CommonMark's special characters are
 //! backslash-escaped, lines end in a hard line break and leading spaces are written as
@@ -110,6 +113,11 @@ fn html_lines(text: &str) -> String {
         .join("\n")
 }
 
+/// Why a Text range's quote was left out of the export (see [`Session::notes_export`]).
+fn withheld_quote(card: &Card) -> Option<&str> {
+    card.missing.as_deref().filter(|_| card.quote.is_none())
+}
+
 /// What a Highlight says in place of a Note's text.
 fn highlight_label(content: &Content) -> Option<String> {
     match content {
@@ -157,6 +165,8 @@ impl NotesExport {
             out.push_str(&format!("\n## {}\n", markdown_escape(&card.reference)));
             if let Some(quote) = card.quote.as_deref().filter(|q| !q.is_empty()) {
                 out.push_str(&format!("\n{}\n", markdown_lines(quote, "> ")));
+            } else if let Some(left_out) = withheld_quote(card) {
+                out.push_str(&format!("\n*{}*\n", markdown_escape(left_out)));
             }
             match highlight_label(&card.annotation.content) {
                 Some(label) => out.push_str(&format!("\n*{label}*\n")),
@@ -185,6 +195,8 @@ impl NotesExport {
             out.push(format!("<h2>{}</h2>", html_escape(&card.reference)));
             if let Some(quote) = card.quote.as_deref().filter(|q| !q.is_empty()) {
                 out.push(format!("<blockquote>{}</blockquote>", html_lines(quote)));
+            } else if let Some(left_out) = withheld_quote(card) {
+                out.push(format!("<p><em>{}</em></p>", html_escape(left_out)));
             }
             match highlight_label(&card.annotation.content) {
                 Some(label) => out.push(format!("<p><em>{label}</em></p>")),
@@ -247,21 +259,34 @@ impl Session {
                 (format!("Notes matching “{}”", st.query.trim()), cards)
             }
         };
+        let mut cards = cards;
         let mut attributions: Vec<String> = Vec::new();
-        for card in &cards {
-            let quoted = card
+        for card in &mut cards {
+            let Some(range) = card
                 .annotation
                 .anchor
                 .as_ref()
                 .and_then(Anchor::text_range)
-                .filter(|_| card.quote.is_some());
-            if let Some(range) = quoted
-                && let Some(entry) = self.library.get(&range.resource_id)
-                && entry.manifest.requires_attribution()
-            {
-                let text = entry.manifest.attribution.trim().to_string();
-                if !attributions.contains(&text) {
-                    attributions.push(text);
+                .filter(|_| card.quote.is_some())
+            else {
+                continue;
+            };
+            match self.quoted_resource_credit(&range.resource_id) {
+                Some(Some(text)) => {
+                    if !attributions.contains(&text) {
+                        attributions.push(text);
+                    }
+                }
+                Some(None) => {}
+                // Without its licence the quote could go out without the credit it asks for.
+                None => {
+                    let name = range.resource_id.clone();
+                    card.quote = None;
+                    card.missing = Some(format!(
+                        "Quoted text left out: {name} is not in the library, so the \
+                         Attribution its licence may require is unknown. Import it again to \
+                         export the quote."
+                    ));
                 }
             }
         }
@@ -271,6 +296,51 @@ impl Session {
             attributions,
         })
     }
+
+    /// The credit a quote from Resource `resource_id` must carry: `Some(Some(text))` its
+    /// Attribution, `Some(None)` none needed, `None` unknown (it left the library without its
+    /// licence being kept).
+    fn quoted_resource_credit(&self, resource_id: &str) -> Option<Option<String>> {
+        if let Some(entry) = self.library.get(resource_id) {
+            return Some(
+                entry
+                    .manifest
+                    .requires_attribution()
+                    .then(|| entry.manifest.attribution.trim().to_string()),
+            );
+        }
+        let kept = self
+            .user
+            .as_ref()?
+            .preference(&removed_attribution_key(resource_id))
+            .ok()??;
+        Some(Some(kept.trim().to_string()).filter(|t| !t.is_empty()))
+    }
+
+    /// Keep the credit Resource `entry` asks for in the User database as it is removed, so
+    /// the quotes its kept Annotations hold still export with it (#154).
+    pub(crate) fn keep_removed_attribution(
+        &self,
+        entry: &crate::library::LibraryEntry,
+    ) -> Result<(), String> {
+        let Some(user) = &self.user else {
+            return Ok(());
+        };
+        let credit = if entry.manifest.requires_attribution() {
+            entry.manifest.attribution.trim()
+        } else {
+            ""
+        };
+        user.set_preference(
+            &removed_attribution_key(&entry.manifest.resource_id),
+            credit,
+        )
+    }
+}
+
+/// The preference holding a removed Resource's Attribution (empty: its licence needs none).
+fn removed_attribution_key(resource_id: &str) -> String {
+    format!("removed-attribution/{resource_id}")
 }
 
 // ------------------------------------------------------------------------------ commands

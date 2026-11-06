@@ -243,6 +243,16 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     {
         return Err(failed(CMD, format!("{}: {e}", entry.path.display())));
     }
+    // Its Annotations are kept, quotes included: keep the credit its licence asks for so
+    // exporting them still carries it (#154).
+    if annotations > 0
+        && let Err(e) = s.keep_removed_attribution(&entry)
+    {
+        s.workspace.push_effect(Effect::Message(format!(
+            "Could not keep the Attribution of {}; Notes exports will leave out its quotes: {e}",
+            entry.manifest.abbreviation
+        )));
+    }
     if in_dir {
         // Its prebuilt Search index caches (the Starter library ships them) go with it.
         crate::search::remove_prebuilt_search_indexes(&entry.path, &id);

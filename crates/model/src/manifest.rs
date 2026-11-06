@@ -225,20 +225,23 @@ impl<'a> SpdxParser<'a> {
                 (self.next()? == ")").then_some(inner)?
             }
             ")" => return None,
-            _ if ["AND", "OR", "WITH"]
-                .iter()
-                .any(|op| token.eq_ignore_ascii_case(op)) =>
-            {
-                return None;
-            }
+            _ if is_spdx_operator(token) => return None,
             _ => NO_ATTRIBUTION_LICENSES.contains(&token.trim_end_matches('+')),
         };
         if self.peek().is_some_and(|t| t.eq_ignore_ascii_case("WITH")) {
             self.at += 1;
-            self.next().filter(|t| *t != "(" && *t != ")")?;
+            self.next()
+                .filter(|t| *t != "(" && *t != ")" && !is_spdx_operator(t))?;
         }
         Some(optional)
     }
+}
+
+/// `AND`, `OR` and `WITH` (any case): never a licence or exception identifier.
+fn is_spdx_operator(token: &str) -> bool {
+    ["AND", "OR", "WITH"]
+        .iter()
+        .any(|op| token.eq_ignore_ascii_case(op))
 }
 
 /// Whether an SPDX expression names a Creative Commons Attribution licence (`CC-BY-4.0`,
@@ -343,6 +346,12 @@ mod tests {
             ("(CC0-1.0 OR", true),
             ("CC0-1.0)", true),
             ("", true),
+            // An operator is not an exception identifier.
+            ("CC0-1.0 WITH OR", true),
+            ("CC0-1.0 WITH and", true),
+            ("CC0-1.0 WITH WITH", true),
+            ("CC0-1.0 WITH", true),
+            ("CC0-1.0 WITH LLVM-exception", false),
         ] {
             m.license = license.into();
             assert_eq!(m.requires_attribution(), required, "{license}");

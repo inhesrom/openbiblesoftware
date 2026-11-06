@@ -364,3 +364,80 @@ fn quoting_a_resource_whose_licence_requires_it_appends_its_attribution() {
         .to_string();
     assert!(html.contains("<hr>\n<p><small>WEB test text, licensed CC BY 4.0.</small></p>"));
 }
+
+/// Markdown, HTML and print exports of every Notebook.
+fn every_export(s: &mut Session) -> [String; 3] {
+    ["markdown", "html", "print"].map(|format| {
+        s.run(
+            "notes.export",
+            &json!({ "format": format, "notebook": "all" }),
+        )
+        .unwrap()["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    })
+}
+
+#[test]
+fn removing_a_quoted_resource_keeps_its_attribution_in_exports_after_a_restart() {
+    let f = Fixture::new("removed-attribution");
+    {
+        let mut s = f.session();
+        for (resource, text) in [("web", "Love doesn"), ("kjv", "Love worketh")] {
+            s.run(
+                "annotation.note",
+                &selection(resource, "ROM", text, json!({ "body": "Kept." })),
+            )
+            .unwrap();
+        }
+        for id in ["web", "kjv"] {
+            s.run("library.remove", &json!({ "id": id, "confirm": true }))
+                .unwrap();
+            assert!(s.library.get(id).is_none());
+        }
+    }
+    // A restart: the Attribution comes from the User database, not the library.
+    let mut s = f.session();
+    let [markdown, html, print] = every_export(&mut s);
+    assert!(markdown.contains("\n> Love doesn"), "{markdown}");
+    assert!(markdown.contains("\n> Love worketh"), "{markdown}");
+    assert!(
+        markdown.ends_with("\n---\n\nWEB test text, licensed CC BY 4.0.\n"),
+        "{markdown}"
+    );
+    for page in [html, print] {
+        assert!(page.contains("<blockquote><p>Love doesn"), "{page}");
+        assert!(
+            page.contains("<hr>\n<p><small>WEB test text, licensed CC BY 4.0.</small></p>"),
+            "{page}"
+        );
+        // KJV is public domain: no credit, before or after removal.
+        assert_eq!(page.matches("<small>").count(), 1, "{page}");
+    }
+}
+
+#[test]
+fn a_quote_whose_resource_went_missing_is_left_out_of_exports() {
+    let f = Fixture::new("missing-licence");
+    {
+        let mut s = f.session();
+        s.run(
+            "annotation.note",
+            &selection("web", "ROM", "Love doesn", json!({ "body": "Still mine." })),
+        )
+        .unwrap();
+        // Its file goes away outside the app: its licence is unknown from now on.
+        std::fs::remove_file(&s.library.get("web").unwrap().path).unwrap();
+    }
+    let mut s = f.session();
+    assert!(s.library.get("web").is_none());
+    let left_out = "Quoted text left out: web is not in the library, so the Attribution its \
+                    licence may require is unknown. Import it again to export the quote.";
+    for page in every_export(&mut s) {
+        assert!(!page.contains("Love doesn"), "{page}");
+        assert!(page.contains("Still mine."), "{page}");
+        assert!(!page.contains("CC BY"), "{page}");
+        assert!(page.contains(left_out), "{page}");
+    }
+}
