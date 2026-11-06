@@ -368,7 +368,8 @@ fn section_label(p: Passage, level: Level, unit: &UnitId) -> String {
 /// Go to a Contents line's target in Tab `tab`, as a jump: it is a step in the Tab's
 /// Back/Forward history and a Visit, and its Link set follows. A section or entry that the
 /// Key alone would not reach (a book introduction starting where its first section does)
-/// is reached by its unit, which its history stop keeps for Back and Forward.
+/// is reached by its unit, like a search hit; Back and Forward return to the unit a history
+/// entry's view showed ([`crate::Effect::ShowUnit`]).
 pub fn go(ws: &mut Workspace, tab: TabId, target: &ContentsTarget) {
     match target {
         ContentsTarget::Verse(v) => ws.navigate(tab, *v),
@@ -388,7 +389,7 @@ pub fn go(ws: &mut Workspace, tab: TabId, target: &ContentsTarget) {
                 k if reached == Some(true) => ws.navigate_entry(tab, k.clone()),
                 k => {
                     let at = entry.range.map_or(0, |(start, _)| start);
-                    ws.navigate_unit(tab, entry.unit.clone(), at, k.clone());
+                    ws.navigate_text(tab, entry.unit.clone(), at..at, Some(k.clone()));
                 }
             }
         }

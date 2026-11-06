@@ -411,29 +411,33 @@ fn clicking_a_line_jumps_the_tab_and_its_link_set_like_any_jump() {
         s.workspace.tab(commentary).unwrap().history.current(),
         Some(ge13)
     );
-    assert_eq!(s.workspace.tab(commentary).unwrap().history.unit(), None);
     assert!(s.workspace.take_effects().contains(&Effect::Navigate {
         tab: commentary,
         verse: ge13
     }));
 }
 
-/// The unit a Commentary's book introduction was reached by, as Back and Forward go to it.
-fn returned_to_unit(s: &mut Session, tab: TabId, unit: &str) -> bool {
-    let effects = s.workspace.take_effects();
-    let stop = s.workspace.tab(tab).unwrap().history.unit().cloned();
-    stop.is_some_and(|stop| stop.unit.as_str() == unit)
-        && effects.iter().any(|e| {
-            matches!(e, Effect::NavigateText { tab: t, unit: u, key, .. }
-                if *t == tab
-                    && u.as_str() == unit
-                    && *key == Some(Key::Passage(Passage::verse(v(Book::Genesis, 1, 1)))))
-        })
+/// The unit Back or Forward told the UI to show ([`Effect::ShowUnit`]) in `tab`.
+fn shown_unit(effects: &[Effect], tab: TabId) -> Option<&str> {
+    effects.iter().find_map(|e| match e {
+        Effect::ShowUnit { tab: t, unit } if *t == tab => Some(unit.as_str()),
+        _ => None,
+    })
 }
 
+/// Each history entry snapshots the unit the UI reported its view showing as the entry is
+/// pushed; Back and Forward hand it back. No unit is kept with the current location, so
+/// scrolling, following the Link set or switching Resources leaves nothing to go stale.
 #[test]
-fn back_and_forward_return_to_an_introduction_reached_by_its_unit() {
+fn history_entries_snapshot_the_unit_the_view_showed() {
     let mut s = Session::new(JobMode::Inline);
+    let bible = open(
+        &mut s,
+        "bible",
+        ResourceType::Bible,
+        vec![KeyScheme::Passage],
+        None,
+    );
     let (nav, volumes) = mhc();
     let commentary = open(
         &mut s,
@@ -443,85 +447,147 @@ fn back_and_forward_return_to_an_introduction_reached_by_its_unit() {
         Some(nav.clone()),
     );
     let c = Contents::commentary(&nav, &volumes);
+    // The UI reports the unit at the top of the view each time it moves it.
+    let shows = |s: &mut Session, unit: &str| {
+        s.workspace
+            .view_shows(commentary, Some(UnitId::new(unit).unwrap()));
+    };
     let go_to = |s: &mut Session, unit: &str| {
         let line = c.at_unit(&UnitId::new(unit).unwrap()).unwrap();
         let target = c.node(line).target.clone().unwrap();
         contents::go(&mut s.workspace, commentary, &target);
+        shows(s, unit);
+    };
+    // Back or Forward: the unit handed back, then shown.
+    let step = |s: &mut Session, command: &str| {
+        s.workspace.take_effects();
+        s.run(command, &json!({"tab": commentary.0})).unwrap();
+        let unit = shown_unit(&s.workspace.take_effects(), commentary).map(String::from);
+        shows(s, unit.as_deref().unwrap());
+        unit
     };
     let history = |s: &Session| s.workspace.tab(commentary).unwrap().history.clone();
     const BOOK_INTRO: &str = "Gen.1.1-Gen.50.26.book-intro";
     const CHAPTER_INTRO: &str = "Gen.1.1-Gen.1.31.chapter-intro";
+    const SECTION: &str = "Gen.1.1-Gen.1.2";
+    const LATER: &str = "Gen.2.4-Gen.2.4";
     let ge11 = v(Book::Genesis, 1, 1);
 
     go_to(&mut s, "Gen.2.1-Gen.2.3");
     go_to(&mut s, BOOK_INTRO);
-    // The section sharing Gen 1:1 and the chapter introduction: each a step of its own,
-    // though all three start at Gen 1:1.
-    go_to(&mut s, "Gen.1.1-Gen.1.2");
-    assert_eq!(history(&s).current(), Some(ge11));
-    assert_eq!(history(&s).unit(), None);
+    // The section and the chapter introduction at Gen 1:1 too: each a step of its own.
+    go_to(&mut s, SECTION);
     go_to(&mut s, CHAPTER_INTRO);
-    go_to(&mut s, BOOK_INTRO);
-    s.workspace.take_effects();
-
-    // Back: the chapter introduction, the section, the book introduction, Genesis 2.
-    s.run("tab.back", &json!({"tab": commentary.0})).unwrap();
-    assert!(returned_to_unit(&mut s, commentary, CHAPTER_INTRO));
-    s.run("tab.back", &json!({"tab": commentary.0})).unwrap();
     assert_eq!(history(&s).current(), Some(ge11));
-    assert_eq!(history(&s).unit(), None);
-    assert!(s.workspace.take_effects().contains(&Effect::Navigate {
-        tab: commentary,
-        verse: ge11
-    }));
-    s.run("tab.back", &json!({"tab": commentary.0})).unwrap();
-    assert!(returned_to_unit(&mut s, commentary, BOOK_INTRO));
-    s.run("tab.back", &json!({"tab": commentary.0})).unwrap();
-    assert_eq!(history(&s).current(), Some(v(Book::Genesis, 2, 1)));
-    assert!(!history(&s).can_go_back());
-
-    // Forward retraces them.
-    s.workspace.take_effects();
-    s.run("tab.forward", &json!({"tab": commentary.0})).unwrap();
-    assert!(returned_to_unit(&mut s, commentary, BOOK_INTRO));
-    s.run("tab.forward", &json!({"tab": commentary.0})).unwrap();
-    assert_eq!(history(&s).unit(), None);
-    s.run("tab.forward", &json!({"tab": commentary.0})).unwrap();
-    assert!(returned_to_unit(&mut s, commentary, CHAPTER_INTRO));
-    s.run("tab.forward", &json!({"tab": commentary.0})).unwrap();
-    assert!(returned_to_unit(&mut s, commentary, BOOK_INTRO));
+    // The Verse alone shows the section: from the chapter introduction, a step to it.
+    s.workspace.navigate(commentary, ge11);
+    shows(&mut s, SECTION);
+    // Already there: no step.
+    s.workspace.navigate(commentary, ge11);
+    for (command, unit) in [
+        ("tab.back", CHAPTER_INTRO),
+        ("tab.back", SECTION),
+        ("tab.back", BOOK_INTRO),
+        ("tab.back", "Gen.2.1-Gen.2.3"),
+        ("tab.forward", BOOK_INTRO),
+        ("tab.forward", SECTION),
+        ("tab.forward", CHAPTER_INTRO),
+        ("tab.forward", SECTION),
+    ] {
+        assert_eq!(step(&mut s, command).as_deref(), Some(unit), "{command}");
+    }
     assert!(!history(&s).can_go_forward());
 
-    // Scrolling on to another Verse leaves the introduction: Back from a later jump goes to
-    // that Verse, not the introduction.
-    s.workspace
-        .user_scrolled(commentary, v(Book::Genesis, 1, 3));
-    assert_eq!(history(&s).unit(), None);
-    go_to(&mut s, "Gen.2.4-Gen.2.4");
-    s.workspace.take_effects();
-    s.run("tab.back", &json!({"tab": commentary.0})).unwrap();
-    assert_eq!(history(&s).current(), Some(v(Book::Genesis, 1, 3)));
-    assert_eq!(history(&s).unit(), None);
-
-    // Scrolling from the introduction into the section sharing its first Verse leaves the
-    // introduction though the Verse is unchanged: Back from a later jump goes to the section.
-    let section = UnitId::new("Gen.1.1-Gen.1.2").unwrap();
+    // Scrolled from the introduction into the section sharing its Verse: Back from a later
+    // jump returns to the section.
     go_to(&mut s, BOOK_INTRO);
-    s.workspace
-        .user_scrolled_into(commentary, &UnitId::new(BOOK_INTRO).unwrap());
-    assert!(history(&s).unit().is_some(), "still in the introduction");
-    s.workspace.user_scrolled_into(commentary, &section);
+    shows(&mut s, SECTION);
+    go_to(&mut s, LATER);
+    assert_eq!(step(&mut s, "tab.back").as_deref(), Some(SECTION));
     assert_eq!(history(&s).current(), Some(ge11));
-    assert_eq!(history(&s).unit(), None);
-    go_to(&mut s, "Gen.2.4-Gen.2.4");
+
+    // The linked Bible goes to Gen 1:1 and the Commentary follows to its section there.
+    go_to(&mut s, BOOK_INTRO);
+    contents::go(&mut s.workspace, bible, &ContentsTarget::Verse(ge11));
+    assert!(s.workspace.take_effects().iter().any(|e| matches!(
+        e,
+        Effect::Follow { tab, verse, .. } if *tab == commentary && *verse == ge11
+    )));
+    shows(&mut s, SECTION);
+    go_to(&mut s, LATER);
+    assert_eq!(step(&mut s, "tab.back").as_deref(), Some(SECTION));
+
+    // Switched to a parallel Commentary from the introduction: Back switches back and hands
+    // the introduction to the UI with the switch.
+    go_to(&mut s, BOOK_INTRO);
+    assert!(s.workspace.switch_resource(commentary, "jfb".into()));
     s.workspace.take_effects();
+    s.workspace.view_shows(commentary, None);
     s.run("tab.back", &json!({"tab": commentary.0})).unwrap();
+    let effects = s.workspace.take_effects();
+    assert!(effects.contains(&Effect::Switched(commentary)));
+    assert_eq!(shown_unit(&effects, commentary), Some(BOOK_INTRO));
     assert_eq!(history(&s).current(), Some(ge11));
-    assert_eq!(history(&s).unit(), None);
-    assert!(s.workspace.take_effects().contains(&Effect::Navigate {
-        tab: commentary,
-        verse: ge11
+}
+
+#[test]
+fn back_returns_to_a_second_entry_of_the_same_headword() {
+    let mut s = Session::new(JobMode::Inline);
+    let abel = Key::Headword("Abel".into());
+    let nav = ResourceNavigation::new(vec![
+        entry(abel.clone(), "Abel-1", false),
+        entry(abel.clone(), "Abel-2", false),
+        entry(Key::Headword("Aaron".into()), "Aaron", false),
+    ]);
+    let tab = open(
+        &mut s,
+        "smith",
+        ResourceType::Dictionary,
+        vec![KeyScheme::Headword],
+        Some(nav.clone()),
+    );
+    let c = Contents::entries(
+        &[
+            unit("Aaron", "Aaron"),
+            unit("Abel-1", "Abel"),
+            unit("Abel-2", "Abel"),
+        ],
+        &nav,
+    );
+    let shows = |s: &mut Session, unit: &str| {
+        s.workspace
+            .view_shows(tab, Some(UnitId::new(unit).unwrap()));
+    };
+    let go_to = |s: &mut Session, unit: &str| {
+        let line = c.at_unit(&UnitId::new(unit).unwrap()).unwrap();
+        contents::go(&mut s.workspace, tab, &c.node(line).target.clone().unwrap());
+        shows(s, unit);
+    };
+    go_to(&mut s, "Aaron");
+    go_to(&mut s, "Abel-2");
+    // The same headword, another unit: a step of its own.
+    go_to(&mut s, "Abel-1");
+    s.workspace.take_effects();
+    s.run("tab.back", &json!({"tab": tab.0})).unwrap();
+    let effects = s.workspace.take_effects();
+    assert!(effects.contains(&Effect::NavigateEntry {
+        tab,
+        key: abel.clone()
     }));
+    assert_eq!(shown_unit(&effects, tab), Some("Abel-2"));
+    shows(&mut s, "Abel-2");
+
+    // Scrolled from the second entry into the first: Back from a later jump goes there.
+    shows(&mut s, "Abel-1");
+    go_to(&mut s, "Aaron");
+    s.workspace.take_effects();
+    s.run("tab.back", &json!({"tab": tab.0})).unwrap();
+    let effects = s.workspace.take_effects();
+    assert_eq!(
+        s.workspace.tab(tab).unwrap().entry_history.current(),
+        Some(abel)
+    );
+    assert_eq!(shown_unit(&effects, tab), Some("Abel-1"));
 }
 
 #[test]
@@ -691,148 +757,4 @@ fn real_starter_contents_of_kjv_mhc_and_easton() {
     );
     assert_eq!(easton.node(found[0]).label, "Abraham");
     assert!(took < std::time::Duration::from_millis(16), "{took:?}");
-}
-
-#[test]
-fn back_returns_to_a_second_entry_of_the_same_headword_by_its_unit() {
-    let mut s = Session::new(JobMode::Inline);
-    let abel = Key::Headword("Abel".into());
-    let nav = ResourceNavigation::new(vec![
-        entry(abel.clone(), "Abel-1", false),
-        entry(abel.clone(), "Abel-2", false),
-        entry(Key::Headword("Aaron".into()), "Aaron", false),
-    ]);
-    let tab = open(
-        &mut s,
-        "smith",
-        ResourceType::Dictionary,
-        vec![KeyScheme::Headword],
-        Some(nav.clone()),
-    );
-    let c = Contents::entries(
-        &[
-            unit("Aaron", "Aaron"),
-            unit("Abel-1", "Abel"),
-            unit("Abel-2", "Abel"),
-        ],
-        &nav,
-    );
-    let go_to = |s: &mut Session, unit: &str| {
-        let line = c.at_unit(&UnitId::new(unit).unwrap()).unwrap();
-        contents::go(&mut s.workspace, tab, &c.node(line).target.clone().unwrap());
-    };
-    go_to(&mut s, "Aaron");
-    go_to(&mut s, "Abel-2");
-    go_to(&mut s, "Abel-1");
-    s.workspace.take_effects();
-    let history = |s: &Session| s.workspace.tab(tab).unwrap().entry_history.clone();
-    assert_eq!(history(&s).current(), Some(abel.clone()));
-    assert_eq!(history(&s).unit(), None);
-
-    // The same headword, another unit: a step of its own, and Back goes to that unit.
-    s.run("tab.back", &json!({"tab": tab.0})).unwrap();
-    assert_eq!(
-        history(&s)
-            .unit()
-            .map(|stop| stop.unit.as_str().to_string()),
-        Some("Abel-2".to_string())
-    );
-    assert!(s.workspace.take_effects().iter().any(|e| matches!(
-        e,
-        Effect::NavigateText { tab: t, unit, key, .. }
-            if *t == tab && unit.as_str() == "Abel-2" && *key == Some(abel.clone())
-    )));
-    s.run("tab.back", &json!({"tab": tab.0})).unwrap();
-    assert_eq!(history(&s).current(), Some(Key::Headword("Aaron".into())));
-    assert!(s.workspace.take_effects().contains(&Effect::NavigateEntry {
-        tab,
-        key: Key::Headword("Aaron".into())
-    }));
-
-    // Scrolling from the second entry into the first leaves it though the headword is
-    // unchanged: Back from a later jump goes to the headword, not the second entry.
-    go_to(&mut s, "Abel-2");
-    s.workspace.user_scrolled_entry(tab, abel.clone());
-    s.workspace
-        .user_scrolled_into(tab, &UnitId::new("Abel-2").unwrap());
-    assert!(history(&s).unit().is_some(), "still in the second entry");
-    s.workspace.user_scrolled_entry(tab, abel.clone());
-    s.workspace
-        .user_scrolled_into(tab, &UnitId::new("Abel-1").unwrap());
-    assert_eq!(history(&s).current(), Some(abel.clone()));
-    assert_eq!(history(&s).unit(), None);
-    go_to(&mut s, "Aaron");
-    s.workspace.take_effects();
-    s.run("tab.back", &json!({"tab": tab.0})).unwrap();
-    assert_eq!(history(&s).current(), Some(abel.clone()));
-    assert_eq!(history(&s).unit(), None);
-    let effects = s.workspace.take_effects();
-    assert!(effects.contains(&Effect::NavigateEntry {
-        tab,
-        key: abel.clone()
-    }));
-    assert!(
-        !effects
-            .iter()
-            .any(|e| matches!(e, Effect::NavigateText { .. }))
-    );
-}
-
-#[test]
-fn following_the_link_set_to_the_same_verse_leaves_an_introduction() {
-    let mut s = Session::new(JobMode::Inline);
-    let bible = open(
-        &mut s,
-        "bible",
-        ResourceType::Bible,
-        vec![KeyScheme::Passage],
-        None,
-    );
-    let (nav, volumes) = mhc();
-    let commentary = open(
-        &mut s,
-        "mhc",
-        ResourceType::Commentary,
-        vec![KeyScheme::Passage],
-        Some(nav.clone()),
-    );
-    let c = Contents::commentary(&nav, &volumes);
-    let go_to = |s: &mut Session, unit: &str| {
-        let line = c.at_unit(&UnitId::new(unit).unwrap()).unwrap();
-        let target = c.node(line).target.clone().unwrap();
-        contents::go(&mut s.workspace, commentary, &target);
-    };
-    let history = |s: &Session| s.workspace.tab(commentary).unwrap().history.clone();
-    let ge11 = v(Book::Genesis, 1, 1);
-
-    go_to(&mut s, "Gen.1.1-Gen.50.26.book-intro");
-    assert!(history(&s).unit().is_some());
-    s.workspace.take_effects();
-
-    // The linked Bible jumps to Gen 1:1, where the Commentary already is: the Commentary
-    // follows to its section there, leaving the introduction.
-    contents::go(&mut s.workspace, bible, &ContentsTarget::Verse(ge11));
-    assert!(s.workspace.take_effects().iter().any(|e| matches!(
-        e,
-        Effect::Follow { tab, verse, .. } if *tab == commentary && *verse == ge11
-    )));
-    assert_eq!(history(&s).current(), Some(ge11));
-    assert_eq!(history(&s).unit(), None);
-
-    // Back from a later jump goes to the section at Gen 1:1, not the introduction.
-    go_to(&mut s, "Gen.2.4-Gen.2.4");
-    s.workspace.take_effects();
-    s.run("tab.back", &json!({"tab": commentary.0})).unwrap();
-    assert_eq!(history(&s).current(), Some(ge11));
-    assert_eq!(history(&s).unit(), None);
-    let effects = s.workspace.take_effects();
-    assert!(effects.contains(&Effect::Navigate {
-        tab: commentary,
-        verse: ge11
-    }));
-    assert!(
-        !effects
-            .iter()
-            .any(|e| matches!(e, Effect::NavigateText { .. }))
-    );
 }

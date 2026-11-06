@@ -81,6 +81,11 @@ fn painted_highlight(h: &Harness, tab: TabId, label: &str) -> bool {
 fn open_resource(h: &mut Harness, resource: Resource) -> TabId {
     let id = resource.manifest.resource_id.clone();
     add_doc(&mut h.shell, Arc::new(ReadingDoc::from_resource(resource)));
+    open_tab(h, &id)
+}
+
+/// Open a Tab on a Resource already in the library, in a Panel of its own.
+fn open_tab(h: &mut Harness, id: &str) -> TabId {
     let tab = h
         .shell
         .run("resource.open", &json!({ "id": id, "split": true }))
@@ -353,68 +358,253 @@ fn a_commentarys_contents_has_volumes_books_chapters_and_sections_and_clicks_jum
     assert_eq!(highlighted(&mut h, tc).as_deref(), Some("Verses 50–54"));
 }
 
-#[test]
-fn back_and_forward_return_to_the_book_introduction_and_the_section_sharing_its_start() {
-    let mut h = Harness::new();
-    let tb = h.tab_id("TB");
-    h.shell
-        .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:51" }));
-    let tc = open_resource(&mut h, commentary());
-    h.shell
-        .run("tab.contents", &json!({ "tab": tc.0, "on": true }))
-        .unwrap();
-    settle_all(&mut h);
-    assert_eq!(shown_unit(&mut h, tc), "Gen.31.50-Gen.31.54");
-    const INTRO: &str = "Gen.1.1-Gen.50.26.book-intro";
-    const FIRST: &str = "Gen.1.1-Gen.1.2";
-
-    click_in(&mut h, tc, "Introduction");
-    settle_all(&mut h);
-    assert_eq!(shown_unit(&mut h, tc), INTRO);
-    // Chapter 1 goes to its first section, which starts at Gen 1:1 like the introduction:
-    // still a step of its own.
-    click_in(&mut h, tc, "Chapter 1");
-    settle_all(&mut h);
-    assert_eq!(shown_unit(&mut h, tc), FIRST);
-    h.frame();
-    assert_eq!(highlighted(&mut h, tc).as_deref(), Some("Verses 1–2"));
-
-    let step = |h: &mut Harness, command: &str, unit: &str, line: &str| {
-        h.shell.run(command, &json!({ "tab": tc.0 })).unwrap();
-        settle_all(h);
-        assert_eq!(shown_unit(h, tc), unit, "{command}");
-        h.frame();
-        assert_eq!(highlighted(h, tc).as_deref(), Some(line), "{command}");
-    };
-    step(&mut h, "tab.back", INTRO, "Introduction");
-    step(&mut h, "tab.forward", FIRST, "Verses 1–2");
-    step(&mut h, "tab.back", INTRO, "Introduction");
-    step(&mut h, "tab.back", "Gen.31.50-Gen.31.54", "Verses 50–54");
-    step(&mut h, "tab.forward", INTRO, "Introduction");
-
-    // Scrolled from the introduction into the section sharing its first Verse, the Tab has
-    // left the introduction: Back from a later jump returns to the section.
-    let over = view_point(&h, tc);
-    h.events.push(Event::PointerMoved(over));
-    let mut steps = 0;
-    while shown_unit(&mut h, tc) != FIRST {
-        h.events.push(Event::MouseWheel {
-            unit: egui::MouseWheelUnit::Point,
-            delta: vec2(0.0, -8.0),
-            phase: egui::TouchPhase::Move,
-            source: egui::MouseWheelSource::Wheel,
-            modifiers: Modifiers::NONE,
-        });
-        h.frame();
-        steps += 1;
-        assert!(steps < 200, "stuck in {}", shown_unit(&mut h, tc));
+/// A second Commentary, parallel to [`commentary`], with no book introductions.
+fn other_commentary() -> Resource {
+    let mut m = Manifest::new(
+        "test-jfb",
+        "Test Commentary Without Introductions",
+        "TJF",
+        ResourceType::Commentary,
+        "en",
+    );
+    m.key_schemes = vec![KeyScheme::Passage];
+    m.license = "CC0-1.0".into();
+    let mut b = ResourceBuilder::new(m);
+    for (id, start, end) in [
+        ("Gen.1.1-Gen.1.5", ge(1, 1), ge(1, 5)),
+        ("Gen.31.50-Gen.31.55", ge(31, 50), ge(31, 55)),
+    ] {
+        let unit = UnitId::new(id).unwrap();
+        let passage = Passage::new(start, end).unwrap();
+        let text = "Other commentary prose. ".repeat(60);
+        prose(
+            &mut b,
+            &unit,
+            UnitKind::Section,
+            &passage.to_string(),
+            &text,
+        );
+        b.add_key(Key::Passage(passage), &unit, None, false);
     }
-    h.frame();
-    assert_eq!(location(&mut h, tc), Some(ge(1, 1)));
-    click_in(&mut h, tc, "Chapter 32");
-    settle_all(&mut h);
-    assert_eq!(shown_unit(&mut h, tc), "Gen.32.5-Gen.32.9");
-    step(&mut h, "tab.back", FIRST, "Verses 1–2");
+    b.build().unwrap()
+}
+
+/// A Dictionary with two entries under the headword Abel, and a parallel one with one.
+fn abel_dictionaries() -> (Resource, Resource) {
+    let dictionary = |id: &str, units: &[&str]| {
+        let mut m = Manifest::new(id, id, id, ResourceType::Dictionary, "en");
+        m.key_schemes = vec![KeyScheme::Headword];
+        m.license = "CC0-1.0".into();
+        let mut b = ResourceBuilder::new(m);
+        for (unit, headword) in units.iter().map(|u| (*u, u.trim_end_matches("-2"))) {
+            let unit = UnitId::new(unit).unwrap();
+            let text = format!("{headword}. {}", "An entry of the dictionary. ".repeat(30));
+            prose(&mut b, &unit, UnitKind::Entry, headword, &text);
+            b.add_key(Key::Headword(headword.into()), &unit, None, false);
+        }
+        b.build().unwrap()
+    };
+    (
+        dictionary("test-two-abels", &["Aaron", "Abel", "Abel-2", "Adam"]),
+        dictionary("test-one-abel", &["Aaron", "Abel", "Adam"]),
+    )
+}
+
+/// One user action in a history scenario.
+#[derive(Debug, Clone, Copy)]
+enum Step {
+    /// Click a line of the Tab's Contents pane.
+    Click(&'static str),
+    /// Go to the Contents line of a unit (two entries under one headword share a label).
+    Line(&'static str),
+    /// Turn the mouse wheel over the text (points, up positive) until this unit is at the top.
+    Wheel(f32, &'static str),
+    /// Another Tab in the Link set goes to a reference; the Tab follows.
+    Linked(&'static str),
+    /// Switch the Tab to a parallel resource (its header's selector).
+    Switch(&'static str),
+    Back,
+    Forward,
+}
+
+const INTRO: &str = "Gen.1.1-Gen.50.26.book-intro";
+const FIRST: &str = "Gen.1.1-Gen.1.2";
+const GEN_31: &str = "Gen.31.50-Gen.31.54";
+const GEN_32: &str = "Gen.32.5-Gen.32.9";
+const OTHER: &str = "Gen.1.1-Gen.1.5";
+
+/// Back and Forward go to the text unit each history entry's view showed, though a location
+/// alone may show another unit: every way of reaching, leaving or switching away from a unit
+/// that review found (#176). After each step: the unit at the top of the Tab's view and, where
+/// given, its highlighted Contents line. Commentary scenarios start at Gen 31:50; Dictionary
+/// ones at Aaron.
+#[test]
+fn back_and_forward_return_to_the_unit_each_history_entry_showed() {
+    use Step::*;
+    type Expect = (Step, &'static str, Option<&'static str>);
+    let scenarios: &[(&str, bool, &[Expect])] = &[
+        (
+            "an introduction and the section sharing its first Verse",
+            false,
+            &[
+                (Click("Introduction"), INTRO, Some("Introduction")),
+                (Click("Chapter 1"), FIRST, Some("Verses 1–2")),
+                (Back, INTRO, Some("Introduction")),
+                (Forward, FIRST, Some("Verses 1–2")),
+                (Back, INTRO, Some("Introduction")),
+                (Back, GEN_31, Some("Verses 50–54")),
+                (Forward, INTRO, Some("Introduction")),
+            ],
+        ),
+        (
+            "scrolled from the introduction into the section at the same Verse",
+            false,
+            &[
+                (Click("Introduction"), INTRO, Some("Introduction")),
+                (Wheel(-8.0, FIRST), FIRST, Some("Verses 1–2")),
+                (Click("Chapter 32"), GEN_32, Some("Verses 5–9")),
+                (Back, FIRST, Some("Verses 1–2")),
+                (Back, GEN_31, Some("Verses 50–54")),
+                (Forward, FIRST, Some("Verses 1–2")),
+            ],
+        ),
+        (
+            "the Link set moved to the Verse the introduction starts at",
+            false,
+            &[
+                (Click("Introduction"), INTRO, Some("Introduction")),
+                (Linked("Gen 1:1"), FIRST, Some("Verses 1–2")),
+                (Click("Chapter 32"), GEN_32, Some("Verses 5–9")),
+                (Back, FIRST, Some("Verses 1–2")),
+            ],
+        ),
+        (
+            "switched to a parallel Commentary and back",
+            false,
+            &[
+                (Click("Introduction"), INTRO, Some("Introduction")),
+                (Switch("test-jfb"), OTHER, None),
+                // Switched back, the Commentary goes to the same Verse: its section there.
+                (Switch("test-mhc"), FIRST, Some("Verses 1–2")),
+                (Back, OTHER, None),
+                (Back, INTRO, Some("Introduction")),
+                (Forward, OTHER, None),
+                (Forward, FIRST, Some("Verses 1–2")),
+                (Back, OTHER, None),
+                (Back, INTRO, Some("Introduction")),
+                (Back, GEN_31, Some("Verses 50–54")),
+            ],
+        ),
+        (
+            "scrolled from a second entry into the first under the same headword",
+            true,
+            &[
+                (Line("Abel-2"), "Abel-2", None),
+                (Wheel(8.0, "Abel"), "Abel", None),
+                (Click("Aaron"), "Aaron", Some("Aaron")),
+                (Back, "Abel", None),
+                (Back, "Aaron", Some("Aaron")),
+                (Forward, "Abel", None),
+            ],
+        ),
+        (
+            "switched to a parallel Dictionary and back",
+            true,
+            &[
+                (Line("Abel-2"), "Abel-2", None),
+                (Switch("test-one-abel"), "Abel", None),
+                // Switched back, the Dictionary shows the entry the headword alone reaches.
+                (Switch("test-two-abels"), "Abel", None),
+                (Back, "Abel", None),
+                (Back, "Abel-2", None),
+                (Forward, "Abel", None),
+                (Forward, "Abel", None),
+                (Back, "Abel", None),
+                (Back, "Abel-2", None),
+            ],
+        ),
+    ];
+    for &(name, dictionary, steps) in scenarios {
+        let mut h = Harness::new();
+        let tb = h.tab_id("TB");
+        let tab = if dictionary {
+            let (two, one) = abel_dictionaries();
+            add_doc(&mut h.shell, Arc::new(ReadingDoc::from_resource(one)));
+            open_resource(&mut h, two)
+        } else {
+            h.shell
+                .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:51" }));
+            let other = other_commentary();
+            add_doc(&mut h.shell, Arc::new(ReadingDoc::from_resource(other)));
+            open_resource(&mut h, commentary())
+        };
+        h.shell
+            .run("tab.contents", &json!({ "tab": tab.0, "on": true }))
+            .unwrap();
+        settle_all(&mut h);
+        let start = if dictionary { "Aaron" } else { GEN_31 };
+        assert_eq!(shown_unit(&mut h, tab), start, "{name}");
+        for (n, &(step, unit, line)) in steps.iter().enumerate() {
+            let at = format!("{name}, step {n}: {step:?}");
+            match step {
+                Click(label) => click_in(&mut h, tab, label),
+                Line(unit) => {
+                    let doc = Arc::clone(&h.shell.st.tabs[&tab].view.as_ref().unwrap().doc);
+                    let contents = h.shell.st.contents.get(&doc, false).unwrap();
+                    let line = contents.at_unit(&UnitId::new(unit).unwrap()).unwrap();
+                    let target = contents.node(line).target.clone().unwrap();
+                    obs_engine::contents::go(&mut h.shell.st.session.workspace, tab, &target);
+                    h.shell.apply_effects();
+                }
+                Wheel(dy, until) => {
+                    let over = view_point(&h, tab);
+                    h.events.push(Event::PointerMoved(over));
+                    let mut turns = 0;
+                    while shown_unit(&mut h, tab) != until {
+                        h.events.push(Event::MouseWheel {
+                            unit: egui::MouseWheelUnit::Point,
+                            delta: vec2(0.0, dy),
+                            phase: egui::TouchPhase::Move,
+                            source: egui::MouseWheelSource::Wheel,
+                            modifiers: Modifiers::NONE,
+                        });
+                        h.frame();
+                        turns += 1;
+                        assert!(turns < 200, "{at}: stuck in {}", shown_unit(&mut h, tab));
+                    }
+                }
+                Linked(text) => {
+                    // The other Commentary, opened beside it, joins the Tab's Link set.
+                    let other = open_tab(&mut h, "test-jfb");
+                    let set = |h: &Harness, t| h.shell.session().workspace.tab(t).unwrap().link;
+                    assert_eq!(set(&h, other), set(&h, tab), "{at}");
+                    h.shell
+                        .run("tab.go", &json!({ "tab": other.0, "text": text }))
+                        .unwrap();
+                }
+                Switch(id) => {
+                    h.shell
+                        .run("tab.parallel", &json!({ "tab": tab.0, "id": id }))
+                        .unwrap();
+                }
+                Back => {
+                    h.shell.run("tab.back", &json!({ "tab": tab.0 })).unwrap();
+                }
+                Forward => {
+                    h.shell
+                        .run("tab.forward", &json!({ "tab": tab.0 }))
+                        .unwrap();
+                }
+            }
+            settle_all(&mut h);
+            assert_eq!(shown_unit(&mut h, tab), unit, "{at}");
+            if let Some(line) = line {
+                h.frame();
+                assert_eq!(highlighted(&mut h, tab).as_deref(), Some(line), "{at}");
+                assert!(painted_highlight(&h, tab, line), "{at}");
+            }
+        }
+    }
 }
 
 #[test]

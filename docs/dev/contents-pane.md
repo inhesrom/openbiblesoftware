@@ -25,13 +25,20 @@ without moving the Tab.
 - `contents::go(workspace, tab, target)` is the jump: a chapter is `Workspace::navigate` to its
   first Verse; a section or entry is `navigate` / `navigate_entry` by its Key. When that Key would
   land on another unit (MHC's book introduction starts at Gen 1:1, where the narrower Gen 1:1-2
-  section wins; two Dictionary entries share a headword) it is `Workspace::navigate_unit` to the
-  unit itself. Every one is a Back/Forward step and a Visit, and the Link set follows.
-- A history stop reached by its unit keeps it (`History::unit`, a `UnitStop`): Back and Forward
-  emit `Effect::NavigateText` to that unit instead of `Navigate` to its Verse, and going between
-  the introduction and the section sharing its first Verse is a step of its own. Scrolling on to
-  another Verse drops the unit, and so does scrolling so another unit is at the top of the view
-  even where the Verse is unchanged (the shell reports it with `Workspace::user_scrolled_into`).
+  section wins; two Dictionary entries share a headword) it is `Workspace::navigate_text` to the
+  unit itself, as for a search hit. Every one is a Back/Forward step and a Visit, and the Link
+  set follows.
+- Back/Forward entries are immutable snapshots of (Resource, location, unit): as an entry is
+  pushed it records the unit the view showed there. Nothing about units is kept with the
+  current location; the shell reports the unit at the top of each live view
+  (`Workspace::view_shows`, after every frame and every applied effect; none for a Bible, whose
+  Verse alone always shows its unit) into `Tab::view_unit`, which pushes read. A jump to the
+  same location is a step only when it shows another unit (the introduction, then the section
+  sharing its first Verse). Back and Forward go to the entry's location as before and then emit
+  `Effect::ShowUnit`; the shell goes to that unit when the location alone shows another and the
+  unit still exists in that Resource (where the Tab was parked in it, after a switch between
+  parallel resources, else its start). So scrolling, following the Link set and switching
+  Resources need no rules for dropping a stale unit.
 - `tab.contents {tab, on?}` shows, hides or toggles the pane of a Resource Tab; other Tabs are
   refused. The state is `Tab::contents`, kept in Layouts and the Last session as an optional
   `TabSnapshot.contents` (absent when off, so older snapshots read unchanged).
