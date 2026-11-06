@@ -495,14 +495,12 @@ impl State {
         // The search row.
         let mut zoom: Option<f64> = None;
         ui.horizontal(|ui| {
-            let edit = ui.add(
+            ui.add(
                 egui::TextEdit::singleline(&mut state.query)
                     .hint_text("Find a place…")
                     .desired_width(180.0),
-            );
-            edit.widget_info(|| {
-                egui::WidgetInfo::text_edit(true, "", &state.query, "Find a place on the map")
-            });
+            )
+            .accessible_name("Find a place on the map");
             if ui.small_button("−").on_hover_text("Zoom out").clicked() {
                 zoom = Some(0.5);
             }

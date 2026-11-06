@@ -82,6 +82,7 @@ fn every_tab_kind() -> Vec<TabKind> {
                     Tool::Favorites,
                     Tool::History,
                     Tool::ReadingPlans,
+                    Tool::Atlas,
                 ]
                 .map(TabKind::Tool),
             ),
@@ -176,6 +177,9 @@ fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
             h.shell
                 .run("reading_plan.create", &json!({ "template": "nt-90-days" }));
             ("tool.reading_plans", split)
+        }
+        TabKind::Tool(Tool::Atlas) => {
+            ("tool.atlas", json!({ "passage": "Acts 13", "split": true }))
         }
     };
     h.shell.run(id, &params);
