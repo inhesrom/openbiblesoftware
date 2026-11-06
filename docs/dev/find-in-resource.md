@@ -38,10 +38,11 @@ words in that one Resource; the Search Tool finds them across the library.
 - Matches are substrings ("love" finds loved, loveth); **Whole word** requires no letter,
   digit or mark on either side.
 - A match never splits a letter from its marks: both ends fall on cluster boundaries.
-- With Ignore diacritics on, a query in Latin letters also finds Greek and Hebrew words by
-  their transliteration in the shared scheme (`transliteration_key`): "agape" finds ἀγάπη,
-  "bara" finds בָּרָא. These matches are always whole words (as a prefix "the" would find
-  every θεός).
+- With Ignore diacritics on and Match case off, a query in Latin letters also finds Greek and
+  Hebrew words by their transliteration in the shared scheme (`transliteration_key`):
+  "agape" finds ἀγάπη, "bara" finds בָּרָא. These matches are always whole words (as a
+  prefix "the" would find every θεός). Transliteration keys are case-folded and Hebrew has
+  no case, so Match case turns transliteration matching off ("AGAPE" does not find ἀγάπη).
 
 ## Drawing
 

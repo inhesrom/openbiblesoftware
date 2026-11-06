@@ -6,10 +6,12 @@
 //! diacritics, on by default) and case folded (unless Match case). So "αγαπη" finds ἀγάπη and
 //! "בראשית" finds בְּרֵאשִׁ֖ית. Matches are substrings unless Whole word is on.
 //!
-//! With Ignore diacritics on, a query in Latin letters also finds Greek and Hebrew words by
-//! their transliteration in the shared scheme ([`obs_model::transliteration_key`]): "agape"
-//! finds ἀγάπη. Such a match is always of whole words: a transliteration cannot be mapped
-//! back letter by letter, and as a prefix "the" would find every θεός.
+//! With Ignore diacritics on and Match case off, a query in Latin letters also finds Greek and
+//! Hebrew words by their transliteration in the shared scheme
+//! ([`obs_model::transliteration_key`]): "agape" finds ἀγάπη. Such a match is always of whole
+//! words: a transliteration cannot be mapped back letter by letter, and as a prefix "the"
+//! would find every θεός. Transliteration keys are case-folded (and Hebrew has no case), so
+//! under Match case there is no transliteration match: "AGAPE" must not find ἀγάπη.
 
 use std::ops::Range;
 
@@ -64,6 +66,7 @@ impl Finder {
             return None;
         }
         let transliterated = (options.ignore_diacritics
+            && !options.match_case
             && !query.chars().any(is_original_script)
             && query.chars().any(char::is_alphabetic))
         .then(|| tokenize(query).into_iter().map(|t| t.text).collect())

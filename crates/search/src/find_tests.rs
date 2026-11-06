@@ -89,8 +89,17 @@ fn latin_letters_find_greek_and_hebrew_by_transliteration() {
     assert!(find("the", d, greek).is_empty());
     // Not with diacritics respected.
     assert!(find("agape", opts(false, false, false), greek).is_empty());
+    // Not under Match case: transliteration keys are case-folded, so "AGAPE" (or even
+    // "agape") would otherwise ignore the case the user asked for.
+    assert!(find("AGAPE", opts(true, false, true), greek).is_empty());
+    assert!(find("agape", opts(true, false, true), greek).is_empty());
+    assert!(find("AGAPE", opts(true, true, true), greek).is_empty());
     let hebrew = "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים";
     assert_eq!(find("bara", d, hebrew), ["בָּרָ֣א"]);
+    assert!(find("bara", opts(true, false, true), hebrew).is_empty());
+    // Match case still finds the Greek itself, case-sensitively.
+    assert_eq!(find("ἀγάπη", opts(true, true, true), greek), ["ἀγάπη"]);
+    assert!(find("ἈΓΆΠΗ", opts(true, false, true), greek).is_empty());
     // English text is unaffected.
     assert_eq!(find("agape", d, "agape feast"), ["agape"]);
 }

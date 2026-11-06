@@ -87,6 +87,9 @@ impl FindSource {
             }
             FindSource::Rows(rows) => {
                 for (unit, row, text) in rows {
+                    if cancel.load(Ordering::Relaxed) {
+                        break;
+                    }
                     out.extend(finder.find(text).into_iter().map(|range| FindMatch {
                         unit: *unit,
                         row: *row,
@@ -308,5 +311,21 @@ impl FindBar {
         };
         self.current = Some(i);
         view.reveal_match(self.matches[i].unit)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_superseded_comparison_search_stops_at_the_next_row() {
+        let finder = Finder::new("love", FindOptions::default()).unwrap();
+        let rows = FindSource::Rows(vec![
+            (0, 0, "God so loved the world".into()),
+            (0, 1, "love is patient".into()),
+        ]);
+        assert_eq!(rows.find(&finder, &AtomicBool::new(false)).len(), 2);
+        assert!(rows.find(&finder, &AtomicBool::new(true)).is_empty());
     }
 }
