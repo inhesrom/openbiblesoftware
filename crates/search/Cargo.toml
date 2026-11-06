@@ -11,6 +11,7 @@ publish.workspace = true
 [dependencies]
 obs-scripture.workspace = true
 obs-model.workspace = true
+unicode-normalization.workspace = true
 
 [lints]
 workspace = true

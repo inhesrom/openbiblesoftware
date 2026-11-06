@@ -39,7 +39,7 @@ pub use manifest::{
     attribution_optional, cc_by_license_url, changes_record_file, is_cc_by, is_valid_resource_id,
 };
 pub use morph::{GrammarTerm, Morph, MorphError, MorphLanguage, MorphPart, PartOfSpeech, TermKind};
-pub use normalize::{NORMALIZER_VERSION, Token, normalize, tokenize};
+pub use normalize::{FindFolded, NORMALIZER_VERSION, Token, fold_for_find, normalize, tokenize};
 pub use renderings::{Rendering, RenderingIndex, StrongsTotal, rendering_key};
 pub use translit::{
     LemmaTransliteration, TRANSLITERATION_VERSION, transliterate, transliteration_index,

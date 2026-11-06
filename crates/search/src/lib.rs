@@ -3,11 +3,13 @@
 //! Layer L2. This crate must stay free of UI dependencies and compile for
 //! `wasm32-unknown-unknown` (checked by `cargo xtask layers` and `cargo xtask wasm`).
 
+pub mod find;
 pub mod highlight;
 pub mod index;
 pub mod morph;
 pub mod query;
 
+pub use find::{FindOptions, Finder};
 pub use highlight::Highlighter;
 pub use index::{
     DocumentKind, HitOrder, INDEX_VERSION, SearchError, SearchHit, SearchIndex, SearchOptions,
@@ -18,6 +20,8 @@ pub use query::{
     QueryErrorKind, compile, compile_notes, parse, to_fts5,
 };
 
+#[cfg(test)]
+mod find_tests;
 #[cfg(test)]
 mod highlight_tests;
 #[cfg(test)]
