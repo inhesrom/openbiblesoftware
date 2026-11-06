@@ -371,6 +371,11 @@ fn a_download_whose_notice_names_a_restrictive_licence_is_refused() {
             "no-redistribution",
             "<p>Public Domain; no redistribution.</p>",
         ),
+        // A licence excluded in the next sentence.
+        (
+            "excluded",
+            "<p>Public Domain. This licence does not apply to this edition.</p>",
+        ),
     ] {
         let (mut s, _repos, root) = session(&format!("restrictive-{name}"), notice);
         let id = download_open(&mut s, "web-excerpt");

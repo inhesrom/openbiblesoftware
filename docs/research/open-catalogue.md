@@ -57,6 +57,12 @@ The rules:
   changes class: the Kretzmann Popular Commentary's licence says it is public domain, then gives
   "full permission to replicate and distribute the text ... so long as the content itself is not
   altered", a no-changes condition the Free to share list does not allow.
+- **A licence excluded in any sentence is Unclear.** If any clause pairs a licence or
+  applicability word (licence, license, licensed, apply, applies, applicable, cover(ed),
+  govern(ed)) with a negation or "void" / "invalid" ("CC BY-SA 4.0. This licence does not apply
+  to this edition."), the value is Unclear whatever it names. "Not copyrighted" names no licence
+  and "licensor" is not a licence word, so eBible's notices are unaffected. No live value
+  changes class (715 / 1,453 / 80 re-run after this rule).
 - **Unclear:** everything else. That includes "Copyrighted" with nothing more, publisher names
   with a year, "See README file", "Unrestricted", GFDL, and an empty value. Unclear is never
   shown as free.
@@ -156,7 +162,8 @@ drifts while the text does not. The ticket asks for downloads from the publisher
 (not an Internet Archive copy, as the Starter library uses), so the pin is replaced by a check
 that the licence notice inside the download still says what the evidence quotes, and does
 not take it back: a notice with "all rights reserved", "non-commercial", "no derivatives",
-"may not be", "not permitted" or "prohibited" anywhere, or a negation within five words before
+"may not be", "not permitted" or "prohibited" anywhere, a sentence that excludes a licence
+("This licence does not apply to this edition."), or a negation within five words before
 or three after the phrase ("Not Public Domain", "no longer in the Public Domain"), is refused.
 The 11 live `copr.htm` notices pass, though Geneva says "no copyright restrictions" and Segond
 "It is not copyrighted" in other sentences.

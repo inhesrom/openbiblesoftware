@@ -127,6 +127,50 @@ pub(crate) fn denies_sharing(text: &str) -> bool {
     })
 }
 
+/// Words that speak of a licence or of it applying: "This licence does not apply to this
+/// edition", "not covered by the above". "Licensor" is not one: eBible's CC BY-SA notice
+/// says "the original licensor is not necessarily endorsing your changes".
+const LICENCE_SCOPE_WORDS: &[&str] = &[
+    "licence",
+    "licences",
+    "license",
+    "licenses",
+    "licensed",
+    "apply",
+    "applies",
+    "applied",
+    "applicable",
+    "cover",
+    "covers",
+    "covered",
+    "govern",
+    "governs",
+    "governed",
+];
+
+/// Words that cancel a licence without a negation: "This licence is void".
+const CANCELLATIONS: &[&str] = &["void", "invalid"];
+
+/// Whether a clause of `text` takes a licence away, wherever the licence itself is named:
+/// a licence or applicability word beside a negation or cancellation ("This licence does not
+/// apply to this edition", "The above licence is void"). A licence named in one sentence and
+/// excluded in the next is not a grant. The "no" of a no-derivatives name and a negation
+/// followed by "restrictions" ("licensed without restriction") are not exclusions; neither
+/// is "not copyrighted", which names no licence.
+pub(crate) fn excludes_licence(text: &str) -> bool {
+    clauses(text).into_iter().any(|clause| {
+        let clause_words = words(clause);
+        let kept = without_restriction_names(&clause_words);
+        let scope = kept.iter().any(|w| LICENCE_SCOPE_WORDS.contains(w));
+        let exclusion = kept.iter().enumerate().any(|(i, w)| {
+            CANCELLATIONS.contains(w)
+                || (NEGATIONS.contains(w)
+                    && !kept.get(i + 1).is_some_and(|n| FREEDOM_WORDS.contains(n)))
+        });
+        scope && exclusion
+    })
+}
+
 /// Whether `l` (lowercased) names a non-commercial or no-derivatives restriction: "NC",
 /// "non-commercial", "NoDerivs", "No Derivative Works", or "ND" inside a Creative Commons
 /// licence ("CC BY-ND 4.0").
@@ -196,7 +240,9 @@ pub(crate) fn clauses(text: &str) -> Vec<&str> {
 /// clause that names a licence and also negates or qualifies it ("Not Public Domain",
 /// "CC BY except the notes"), or a free licence beside "all rights reserved", is not a
 /// form the rules know, so it is Unclear. So is a free licence beside a statement that
-/// denies passing it on ("Public Domain; no redistribution").
+/// denies passing it on ("Public Domain; no redistribution"), and any licence beside a
+/// sentence that excludes a licence ("CC BY-SA 4.0. This licence does not apply to this
+/// edition.").
 pub fn licence_class(licence: &str) -> LicenceClass {
     let l = licence.to_lowercase();
     let negated_grant = clauses(&l).into_iter().any(|clause| {
@@ -204,7 +250,7 @@ pub fn licence_class(licence: &str) -> LicenceClass {
         let kept = without_restriction_names(&clause_words);
         has_negation(&kept) && class_ignoring_negation(&kept.join(" ")) != LicenceClass::Unclear
     });
-    if negated_grant {
+    if negated_grant || excludes_licence(&l) {
         return LicenceClass::Unclear;
     }
     if l.contains("all rights reserved") && class_names_free_licence(&l) {
@@ -656,6 +702,46 @@ mod tests {
             "public domain",
         ] {
             assert!(!names_sharing_restriction(l), "{l}");
+        }
+    }
+
+    /// #134 review: a licence named in one sentence and excluded in another ("This licence
+    /// does not apply to this edition.") is not a grant: Unclear, hidden by both filters.
+    /// "Not copyrighted", "licensed without restriction" and a licence that is only
+    /// mentioned stay as they were.
+    #[test]
+    fn a_licence_excluded_in_another_sentence_is_unclear() {
+        for value in [
+            "Creative Commons Attribution Share-Alike license 4.0. This licence does not apply \
+             to this edition.",
+            "Public Domain. That licence doesn't apply here.",
+            "CC BY 4.0\nThe above licence is void.",
+            "GPL; this edition is not covered by it",
+            "CC0-1.0. Not licensed for this edition.",
+            "Copyrighted; Permission to distribute granted to CrossWire. The licence does not \
+             apply to the notes.",
+        ] {
+            assert_eq!(licence_class(value), Unclear, "{value}");
+            assert!(!LicenceFilter::FreeToShare.accepts(licence_class(value)));
+            assert!(!LicenceFilter::PersonalUse.accepts(licence_class(value)));
+        }
+        for (value, class) in [
+            (
+                "This Bible is in the Public Domain. It is not copyrighted.",
+                FreeToShare,
+            ),
+            ("Public Domain. Licensed without restriction.", FreeToShare),
+            (
+                "Creative Commons Attribution Share-Alike license 4.0. The original licensor is \
+                 not necessarily endorsing your changes.",
+                FreeToShare,
+            ),
+            (
+                "Creative Commons Attribution-NoDerivs 3.0. This license applies to the text.",
+                PersonalUse,
+            ),
+        ] {
+            assert_eq!(licence_class(value), class, "{value}");
         }
     }
 

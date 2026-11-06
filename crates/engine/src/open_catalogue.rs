@@ -332,11 +332,14 @@ const NOTICE_WINDOW_AFTER: usize = 3;
 
 /// Why a licence notice (plain text, lowercased) that contains `phrase` still does not grant
 /// it: a restrictive statement, a non-commercial or no-derivatives licence ("This edition is
-/// CC BY-ND 4.0") or a denial of sharing anywhere, or a negation next to the phrase. eBible's
-/// notices say "not copyrighted" or "no copyright restrictions" in other sentences, so only
-/// the phrase's own neighbourhood is read for negations.
+/// CC BY-ND 4.0"), a denial of sharing or an exclusion of a licence ("This licence does not
+/// apply to this edition.") anywhere, or a negation next to the phrase. eBible's notices say
+/// "not copyrighted" or "no copyright restrictions" in other sentences, so only the phrase's
+/// own neighbourhood is read for other negations.
 fn notice_restriction(notice: &str, phrase: &str) -> Option<String> {
-    use crate::licence::{clauses, denies_sharing, has_negation, names_sharing_restriction, words};
+    use crate::licence::{
+        clauses, denies_sharing, excludes_licence, has_negation, names_sharing_restriction, words,
+    };
     if let Some(r) = RESTRICTIVE_NOTICE.iter().find(|r| notice.contains(*r)) {
         return Some(format!("says \"{r}\""));
     }
@@ -345,6 +348,9 @@ fn notice_restriction(notice: &str, phrase: &str) -> Option<String> {
     }
     if denies_sharing(notice) {
         return Some("denies sharing the text".into());
+    }
+    if excludes_licence(notice) {
+        return Some("says a licence does not apply".into());
     }
     let phrase = phrase.to_lowercase();
     for (at, _) in notice.match_indices(&phrase) {
@@ -606,6 +612,32 @@ mod tests {
             notice_restriction(&text, phrase).as_deref(),
             Some("names a non-commercial or no-derivatives licence")
         );
+    }
+
+    /// #134 review: a notice that keeps the expected phrase but excludes the licence in
+    /// another sentence is refused, so nothing is imported under the catalogue's licence.
+    #[test]
+    fn a_notice_that_excludes_its_licence_in_another_sentence_is_refused() {
+        let phrase = "Creative Commons Attribution Share-Alike license 4.0";
+        for notice in [
+            "<p>Creative Commons Attribution Share-Alike license 4.0. This licence does not \
+             apply to this edition.</p>",
+            "<p>Creative Commons Attribution Share-Alike license 4.0.</p><p>This edition is not \
+             covered by that license.</p>",
+            "<p>Creative Commons Attribution Share-Alike license 4.0.</p><p>The above licence is \
+             void.</p>",
+        ] {
+            let text = plain_text(notice).to_lowercase();
+            assert!(text.contains(&phrase.to_lowercase()), "{notice}");
+            assert_eq!(
+                notice_restriction(&text, phrase).as_deref(),
+                Some("says a licence does not apply"),
+                "{notice}"
+            );
+        }
+        let text = plain_text("<p>Public Domain.</p><p>That licence doesn't apply here.</p>")
+            .to_lowercase();
+        assert!(notice_restriction(&text, "Public Domain").is_some());
     }
 
     #[test]
