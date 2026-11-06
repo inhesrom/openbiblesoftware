@@ -5,16 +5,23 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::ops::Range;
 
-use obs_scripture::{Passage, Standard, Verse, VerseMap, Versification};
+use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, Versification};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::dataset::{CrossReference, Entity, Mention};
 use crate::key::{Key, KeyEntry};
-use crate::manifest::{FORMAT_VERSION, Manifest, ResourceType, is_valid_resource_id};
+use crate::manifest::{
+    FORMAT_VERSION, Manifest, OLDEST_FORMAT_VERSION, ResourceType, is_valid_resource_id,
+};
 use crate::renderings::RenderingIndex;
 use crate::translit::{LemmaTransliteration, transliteration_index};
 use crate::unit::{BibleVerse, Span, SpanKind, TextUnit, UnitId, UnitKind};
+
+/// Whether this build opens a `.obr` of format `version`.
+fn is_readable_format(version: u32) -> bool {
+    (OLDEST_FORMAT_VERSION..=FORMAT_VERSION).contains(&version)
+}
 
 /// A validated Resource: manifest (with content hash), text units with canonically ordered
 /// spans, the Bible verse list in document order, Keys, and the dataset records of a
@@ -46,6 +53,10 @@ pub struct Resource {
     /// A Bible's English rendering → Strong's index and Strong's totals (#20 rule 5), from its
     /// Tagged words; empty for other Resource types. Derived, so not part of the content hash.
     pub renderings: RenderingIndex,
+    /// A Commentary's volumes (#176): the volume title each Bible book's sections are printed
+    /// in, such as "Volume 1" for Genesis. Navigation metadata for the Contents pane, so not
+    /// part of the content hash; empty when the source names no volumes.
+    pub volumes: BTreeMap<Book, String>,
 }
 
 /// One problem found while validating a Resource.
@@ -139,7 +150,8 @@ impl fmt::Display for ValidationError {
             EmptyManifestField(name) => write!(f, "manifest field `{name}` is empty"),
             UnsupportedFormatVersion(v) => write!(
                 f,
-                "format_version {v} is not {FORMAT_VERSION}, the version this build writes"
+                "format_version {v} is not supported: this build writes {FORMAT_VERSION} and \
+                 reads {OLDEST_FORMAT_VERSION} to {FORMAT_VERSION}"
             ),
             DuplicateUnit(id) => write!(f, "text unit `{id}` is defined twice"),
             TextNotNfc(id) => write!(f, "text of unit `{id}` is not NFC-normalized"),
@@ -256,6 +268,7 @@ pub struct ResourceBuilder {
     cross_references: Vec<CrossReference>,
     entities: Vec<Entity>,
     mentions: Vec<Mention>,
+    volumes: BTreeMap<Book, String>,
 }
 
 fn offset(n: usize) -> u32 {
@@ -276,6 +289,7 @@ impl ResourceBuilder {
             cross_references: Vec::new(),
             entities: Vec::new(),
             mentions: Vec::new(),
+            volumes: BTreeMap::new(),
         }
     }
 
@@ -367,6 +381,12 @@ impl ResourceBuilder {
         });
     }
 
+    /// Record that `book`'s sections are printed in the volume titled `title` (#176). A book
+    /// is in one volume: recording it again replaces the title.
+    pub fn set_volume(&mut self, book: Book, title: impl Into<String>) {
+        self.volumes.insert(book, title.into());
+    }
+
     pub fn count_dropped(&mut self, marker: &str) {
         *self.dropped.entry(marker.to_string()).or_insert(0) += 1;
     }
@@ -383,6 +403,12 @@ impl ResourceBuilder {
     /// rendering indexes, and fill in the content hash.
     pub fn build(self) -> Result<Resource, ValidationErrors> {
         let mut errors = Vec::new();
+        // A new Resource is always in the version this build writes; validation alone also
+        // accepts the older versions it reads.
+        let version = self.manifest.format_version;
+        if version != FORMAT_VERSION && is_readable_format(version) {
+            errors.push(ValidationError::UnsupportedFormatVersion(version));
+        }
         let mut units = self.units;
         let index: HashMap<UnitId, usize> = units
             .iter()
@@ -431,6 +457,7 @@ impl ResourceBuilder {
             mentions,
             transliterations,
             renderings,
+            volumes: self.volumes,
         };
         if let Err(more) = resource.validate() {
             errors.extend(more.0);
@@ -560,7 +587,7 @@ impl Resource {
                 errors.push(ValidationError::EmptyManifestField(name));
             }
         }
-        if m.format_version != FORMAT_VERSION {
+        if !is_readable_format(m.format_version) {
             errors.push(ValidationError::UnsupportedFormatVersion(m.format_version));
         }
     }

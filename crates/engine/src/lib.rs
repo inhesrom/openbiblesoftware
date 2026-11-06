@@ -27,6 +27,9 @@ pub mod command_box;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod command_box_tests;
 pub mod compare;
+pub mod contents;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod contents_tests;
 pub mod copy_verses;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod copy_verses_tests;

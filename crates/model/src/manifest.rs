@@ -6,7 +6,12 @@ use serde::{Deserialize, Serialize};
 /// changes (new span kind, changed attrs, new dataset tables); the engine opens only versions
 /// it knows (ADR 0003). Version 2 added the Cross-reference and People & places tables.
 /// Version 3 compacts span kinds and attrs without changing their logical content.
-pub const FORMAT_VERSION: u32 = 3;
+/// Version 4 adds a Commentary's volumes (#176); a version 3 file still opens, with none.
+pub const FORMAT_VERSION: u32 = 4;
+
+/// The oldest format version this build still opens (ADR 0010): a newer version that only
+/// adds a table leaves older files readable, with that table read as empty.
+pub const OLDEST_FORMAT_VERSION: u32 = 3;
 
 /// The kind of a Resource. Language is a separate attribute, so a Hebrew original is a Bible.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

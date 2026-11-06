@@ -35,8 +35,9 @@ pub use builder::{Resource, ResourceBuilder, ValidationError, ValidationErrors};
 pub use dataset::{CrossReference, Entity, EntityKind, EntityRelation, Mention, Relation};
 pub use key::{Key, KeyEntry};
 pub use manifest::{
-    Direction, FORMAT_VERSION, KeyScheme, LICENSE_UNKNOWN, Manifest, Origin, ResourceType,
-    attribution_optional, cc_by_license_url, changes_record_file, is_cc_by, is_valid_resource_id,
+    Direction, FORMAT_VERSION, KeyScheme, LICENSE_UNKNOWN, Manifest, OLDEST_FORMAT_VERSION, Origin,
+    ResourceType, attribution_optional, cc_by_license_url, changes_record_file, is_cc_by,
+    is_valid_resource_id,
 };
 pub use morph::{GrammarTerm, Morph, MorphError, MorphLanguage, MorphPart, PartOfSpeech, TermKind};
 pub use normalize::{FindFolded, NORMALIZER_VERSION, Token, fold_for_find, normalize, tokenize};

@@ -29,6 +29,7 @@ use crate::workers::SnippetCache;
 mod annotate;
 mod collections_ui;
 mod command_box;
+mod contents_pane;
 mod context_menu;
 mod copy_window;
 mod credits_tab;
@@ -137,6 +138,8 @@ struct TabUi {
     header_controls: f32,
     /// A Resource or Text Comparison Tab's Find bar, while it is open (Ctrl+F, #175).
     find: Option<crate::find::FindBar>,
+    /// A Resource Tab's Contents pane: its filter, open lines and highlighted line (#176).
+    contents: contents_pane::ContentsUi,
 }
 
 /// A Resource Tab's location when it switched to a parallel resource (#151), in that
@@ -151,6 +154,15 @@ struct ParkedScroll {
 enum ParkedAt {
     Verse(Verse),
     Entry(Key),
+}
+
+impl ParkedAt {
+    fn verse(&self) -> Option<Verse> {
+        match self {
+            ParkedAt::Verse(v) => Some(*v),
+            ParkedAt::Entry(_) => None,
+        }
+    }
 }
 
 /// A Tab remembers at most this many parked scroll positions.
@@ -213,6 +225,8 @@ pub(crate) struct State {
     export_ui: export::ExportUi,
     /// The system clipboard for rich text (Copy verses), when the app has one.
     rich_clipboard: Option<Arc<dyn crate::RichClipboard>>,
+    /// Each Resource's Contents, built on a worker the first time its pane opens (#176).
+    contents: contents_pane::ContentsCache,
 }
 
 /// The app window's content: menus, Command box and the docked Workspace.
@@ -269,6 +283,7 @@ impl Shell {
                 collection_editor: None,
                 export_ui: export::ExportUi::default(),
                 rich_clipboard: None,
+                contents: Default::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -447,6 +462,7 @@ impl Shell {
                         }
                     }
                 }
+                Effect::ShowUnit { tab, unit } => self.st.show_unit(tab, &unit),
                 Effect::ResetLayout => self.reset_layout(),
                 Effect::Rebuild => self.rebuild(),
                 Effect::PromptLayoutName { rename } => {
@@ -543,6 +559,11 @@ impl Shell {
                     }
                 }
             }
+        }
+        // The views have moved: what each shows is where the next history entry is pushed from.
+        let tabs: Vec<TabId> = self.st.tabs.keys().copied().collect();
+        for tab in tabs {
+            self.st.report_view_unit(tab);
         }
         self.record_layout();
         // New Tabs are placed now: History records where they and jumped Tabs are (#155).
@@ -1403,7 +1424,11 @@ impl State {
                 && let Some(anchor) = view.text_anchor()
             {
                 let resource = view.doc.manifest.resource_id.clone();
-                parked.retain(|p| p.resource != resource || p.at != at);
+                // One place per unit at a location: a book introduction and the section
+                // sharing its first Verse are parked apart (#176).
+                parked.retain(|p| {
+                    p.resource != resource || p.at != at || p.anchor.unit != anchor.unit
+                });
                 parked.push(ParkedScroll {
                     resource,
                     at,
@@ -1420,6 +1445,61 @@ impl State {
             ..TabUi::default()
         };
         self.load(tab, ui_state, width);
+    }
+
+    /// Back or Forward returned to a history entry whose view showed `unit` (#176): where the
+    /// location alone shows another unit, go to `unit`, where the Tab was parked in it at
+    /// this location if it was, else to its start.
+    fn show_unit(&mut self, tab: TabId, unit: &obs_model::UnitId) {
+        let here = self.session.workspace.tab(tab).and_then(|t| {
+            if t.keeps_entries() {
+                t.entry_history.current().map(ParkedAt::Entry)
+            } else {
+                t.history.current().map(ParkedAt::Verse)
+            }
+        });
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        let Some(view) = t.view.as_mut() else {
+            return;
+        };
+        let Some(i) = view.doc.units.iter().position(|u| u.id == *unit) else {
+            return;
+        };
+        if view.top_unit() == Some(i) {
+            return;
+        }
+        let resource = &view.doc.manifest.resource_id;
+        let parked = t.parked.iter().find(|p| {
+            p.resource == *resource && here.as_ref() == Some(&p.at) && p.anchor.unit == i
+        });
+        let moved = match parked {
+            Some(p) => view.restore_text_anchor(p.anchor, p.at.verse()),
+            None => view.jump_to_text(i, 0),
+        };
+        if moved {
+            // The location's flash marks a place in the unit the view has left.
+            t.flash = None;
+        }
+    }
+
+    /// Report the text unit at the top of Resource Tab `tab`'s view to the Workspace, which
+    /// snapshots it into each history entry it pushes (#176). A Bible's location alone always
+    /// shows the unit it is in, so it reports none.
+    fn report_view_unit(&mut self, tab: TabId) {
+        let ws = &self.session.workspace;
+        if !matches!(ws.tab(tab).map(|t| &t.kind), Some(TabKind::Resource(_))) {
+            return;
+        }
+        let unit = self
+            .tabs
+            .get(&tab)
+            .and_then(|t| t.view.as_ref())
+            .filter(|v| v.doc.manifest.resource_type != ResourceType::Bible)
+            .and_then(|v| v.doc.units.get(v.top_unit()?))
+            .map(|u| u.id.clone());
+        self.session.workspace.view_shows(tab, unit);
     }
 
     /// Load a Tab's Resource, if it has one, into `ui_state`, laid out `width` wide if known.
@@ -1453,6 +1533,10 @@ impl State {
                     // otherwise start where the Link set is; unlinked, where another Bible is.
                     let arrived = self.session.workspace.arrival(tab);
                     let ws = &self.session.workspace;
+                    let entries = matches!(
+                        doc.manifest.resource_type,
+                        ResourceType::Lexicon | ResourceType::Dictionary
+                    );
                     let own = ws.tab(tab).and_then(|t| t.history.current());
                     let at = arrived
                         .or(own)
@@ -1482,10 +1566,7 @@ impl State {
                             }
                         }
                     }
-                    if matches!(
-                        doc.manifest.resource_type,
-                        ResourceType::Lexicon | ResourceType::Dictionary
-                    ) {
+                    if entries {
                         let ws = &self.session.workspace;
                         // Another Lexicon or Dictionary's Key (a parallel resource, #151) is
                         // looked up in this one.
@@ -1506,27 +1587,27 @@ impl State {
                     // to where it was there.
                     let ws = &self.session.workspace;
                     let here = ws.tab(tab).and_then(|t| {
-                        if matches!(
-                            doc.manifest.resource_type,
-                            ResourceType::Lexicon | ResourceType::Dictionary
-                        ) {
+                        if entries {
                             t.entry_history.current().map(ParkedAt::Entry)
                         } else {
                             t.history.current().map(ParkedAt::Verse)
                         }
                     });
+                    // Where the Tab was parked at this location counts only in the unit the
+                    // location alone shows (#176): another unit parked at the same Verse or Key
+                    // (a book introduction, the section sharing its start) is for Back or
+                    // Forward to a history entry that showed it ([`Effect::ShowUnit`]).
+                    let showing = (doc.manifest.resource_type != ResourceType::Bible)
+                        .then(|| view.top_unit())
+                        .flatten();
                     if arrived.is_none()
-                        && let Some(here) = here
-                        && let Some(p) = ui_state
-                            .parked
-                            .iter()
-                            .find(|p| p.resource == *id && p.at == here)
+                        && let Some(p) = ui_state.parked.iter().find(|p| {
+                            here.as_ref() == Some(&p.at)
+                                && p.resource == *id
+                                && showing.is_none_or(|i| p.anchor.unit == i)
+                        })
                     {
-                        let verse = match p.at {
-                            ParkedAt::Verse(v) => Some(v),
-                            ParkedAt::Entry(_) => None,
-                        };
-                        view.restore_text_anchor(p.anchor, verse);
+                        view.restore_text_anchor(p.anchor, p.at.verse());
                     }
                     ui_state.view = Some(view);
                 }
@@ -1658,7 +1739,35 @@ impl State {
         }
     }
 
+    /// A Resource Tab's text, with its Contents pane beside it when the pane is open (#176).
     fn reading_body(&mut self, ui: &mut Ui, tab: TabId) {
+        let open = self.session.workspace.tab(tab).is_some_and(|t| t.contents);
+        if !open {
+            self.reading_text(ui, tab);
+            return;
+        }
+        let rect = ui.max_rect();
+        let width = contents_pane::pane_width(rect.width());
+        let side = egui::Rect::from_min_max(rect.min, pos2(rect.left() + width, rect.bottom()));
+        let text = egui::Rect::from_min_max(pos2(side.right(), rect.top()), rect.max);
+        let mut body = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(text)
+                .id_salt(("reading", tab)),
+        );
+        body.set_clip_rect(text.intersect(ui.clip_rect()));
+        self.reading_text(&mut body, tab);
+        // Drawn after the text, so the highlight is where the text is now.
+        let mut pane = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(side)
+                .id_salt(("contents", tab)),
+        );
+        pane.set_clip_rect(side.intersect(ui.clip_rect()));
+        self.contents_pane(&mut pane, tab);
+    }
+
+    fn reading_text(&mut self, ui: &mut Ui, tab: TabId) {
         // The Tab switched Resources this frame (#151) and its view still shows the old one
         // until the switch is applied: the old view must not report its location.
         let stale = match (
@@ -1723,6 +1832,7 @@ impl State {
         if let Some(key) = entry {
             self.session.workspace.user_scrolled_entry(tab, key);
         }
+        self.report_view_unit(tab);
         if let Some(at) = at {
             let ws = &mut self.session.workspace;
             if user_moved {
@@ -2111,6 +2221,9 @@ impl State {
                     ui.add_space(4.0);
                     if kind.has_link_chip() {
                         self.link_chip(ui, tab);
+                    }
+                    if matches!(kind, TabKind::Resource(_)) {
+                        self.contents_button(ui, tab);
                     }
                     let header = self
                         .session

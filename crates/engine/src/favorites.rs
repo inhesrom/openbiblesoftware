@@ -427,10 +427,10 @@ impl Session {
             // jumps there so the Link set it joined follows (in its numbering, known only then).
             if let Some(t) = self.workspace.tab_mut(tab) {
                 if let Some(v) = location.verse {
-                    t.history.visit(v);
+                    t.visit(v, None);
                 }
                 if let Some(key) = &location.key {
-                    t.entry_history.visit(key.clone());
+                    t.visit_entry(key.clone(), None);
                 }
             }
             self.workspace.push_effect(Effect::NavigateOpened {

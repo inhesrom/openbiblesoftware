@@ -1928,7 +1928,7 @@ mod library {
         // while HNUM remains the mouse-selected row.
         let target = row_pos(&h, "HEB");
         let mut focused_row = false;
-        for _ in 0..32 {
+        for _ in 0..64 {
             key(&mut h, egui::Key::Tab);
             if h.ctx
                 .memory(|m| m.focused())
@@ -2708,6 +2708,9 @@ mod text_comparison {
 
 #[path = "resource_tabs_tests.rs"]
 mod resource_tabs;
+
+#[path = "contents_pane_tests.rs"]
+mod contents_pane;
 
 #[path = "annotation_tests.rs"]
 mod annotation;

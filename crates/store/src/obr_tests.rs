@@ -173,6 +173,16 @@ fn newer_and_older_formats_are_refused_with_typed_errors() {
         matches!(err, StoreError::OlderFormat { found: 0, .. }),
         "{err:?}"
     );
+
+    // Format 2 is older than the oldest this build reads.
+    set_user_version(&path, 2);
+    let err = ObrReader::open(&path).unwrap_err();
+    assert!(
+        matches!(err, StoreError::OlderFormat { found: 2, supported }
+            if supported == OLDEST_FORMAT_VERSION),
+        "{err:?}"
+    );
+    assert!(err.to_string().contains("import it again"));
 }
 
 #[test]
@@ -936,5 +946,105 @@ fn only_bibles_get_a_rendering_index() {
     assert_eq!(
         r.rendering_index().unwrap(),
         Some(RenderingIndex::default())
+    );
+}
+
+#[test]
+fn commentary_volumes_round_trip_outside_the_content_hash_and_older_files_have_none() {
+    use obs_model::{ResourceBuilder, ResourceType, UnitKind};
+    let dir = TempDir::new("volumes");
+    let path = dir.path("mhc.obr");
+    let build = |volumes: bool| {
+        let mut b = ResourceBuilder::new(dataset_manifest("mhc", ResourceType::Commentary));
+        let unit = UnitId::new("Gen.1.1-Gen.1.2").unwrap();
+        b.add_unit(
+            unit.clone(),
+            UnitKind::Section,
+            None,
+            "In the beginning.".into(),
+        );
+        b.add_key(
+            Key::Passage(
+                Passage::new(
+                    Verse::new(Book::Genesis, 1, 1),
+                    Verse::new(Book::Genesis, 1, 2),
+                )
+                .unwrap(),
+            ),
+            &unit,
+            None,
+            false,
+        );
+        if volumes {
+            b.set_volume(Book::Genesis, "Volume 1");
+            b.set_volume(Book::Matthew, "Volume 5");
+        }
+        b.build().unwrap()
+    };
+    let resource = build(true);
+    assert_eq!(
+        resource.manifest.content_hash,
+        build(false).manifest.content_hash
+    );
+    write_obr(&resource, &path).unwrap();
+    let reader = ObrReader::open(&path).unwrap();
+    assert_eq!(
+        reader.volumes().unwrap(),
+        BTreeMap::from([
+            (Book::Genesis, "Volume 1".to_string()),
+            (Book::Matthew, "Volume 5".to_string())
+        ])
+    );
+    assert_eq!(reader.load().unwrap(), resource);
+    assert_eq!(reader.manifest().format_version, FORMAT_VERSION);
+    drop(reader);
+
+    // A format 3 file, written before the table existed, still opens, with no volumes.
+    let mut format_3 = build(false);
+    format_3.manifest.format_version = 3;
+    format_3.manifest.content_hash = format_3.content_hash();
+    assert_ne!(
+        format_3.manifest.content_hash,
+        resource.manifest.content_hash
+    );
+    // Each file has its own path: Windows cannot replace a file a reader still has open.
+    let old_path = dir.path("mhc-format-3.obr");
+    write_obr(&format_3, &old_path).unwrap();
+    Connection::open(&old_path)
+        .unwrap()
+        .execute_batch("DROP TABLE volumes; VACUUM;")
+        .unwrap();
+    let reader = ObrReader::open(&old_path).unwrap();
+    assert_eq!(reader.manifest().format_version, 3);
+    assert!(reader.volumes().unwrap().is_empty());
+    assert_eq!(reader.load().unwrap(), format_3);
+    drop(reader);
+
+    // A format 4 file without the table is damaged.
+    let damaged = dir.path("mhc-no-volumes.obr");
+    write_obr(&resource, &damaged).unwrap();
+    Connection::open(&damaged)
+        .unwrap()
+        .execute_batch("DROP TABLE volumes;")
+        .unwrap();
+    let reader = ObrReader::open(&damaged).unwrap();
+    assert!(reader.volumes().is_err());
+}
+
+#[test]
+fn the_builder_writes_only_the_current_format_version() {
+    let mut b = obs_model::ResourceBuilder::new(dataset_manifest(
+        "old",
+        obs_model::ResourceType::Commentary,
+    ));
+    b.manifest_mut().format_version = OLDEST_FORMAT_VERSION;
+    let errors = b.build().unwrap_err();
+    assert!(
+        errors
+            .0
+            .contains(&obs_model::ValidationError::UnsupportedFormatVersion(
+                OLDEST_FORMAT_VERSION
+            )),
+        "{errors}"
     );
 }

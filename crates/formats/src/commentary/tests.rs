@@ -70,6 +70,11 @@ More text.
     assert!(unit.text.contains("First line\nSecond line"));
     assert_eq!(report.notes, 1);
     assert_eq!(r.keys.len(), 4);
+    // The page title's volume is kept for the Contents pane (#176).
+    assert_eq!(
+        r.volumes,
+        std::collections::BTreeMap::from([(Book::John, "Volume 5".to_string())])
+    );
     r.validate().unwrap();
 }
 

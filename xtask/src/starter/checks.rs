@@ -285,6 +285,7 @@ mod tests {
             mentions: vec![],
             transliterations: vec![],
             renderings: Default::default(),
+            volumes: Default::default(),
         }
     }
 

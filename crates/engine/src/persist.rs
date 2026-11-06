@@ -118,6 +118,9 @@ pub struct TabSnapshot {
         skip_serializing_if = "crate::interlinear::InterlinearLines::is_default"
     )]
     pub interlinear: crate::interlinear::InterlinearLines,
+    /// A Resource Tab shows its Contents pane (#176).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub contents: bool,
 }
 
 /// The Workspace as saved: Tabs, the arrangement of Panels, Link sets, focus and each Tab
@@ -379,6 +382,7 @@ impl Workspace {
                     entry_location: t.entry_history.current(),
                     link: t.link,
                     interlinear: t.interlinear.clone(),
+                    contents: t.contents,
                 })
                 .collect(),
             layout: self.arrangement.clone(),

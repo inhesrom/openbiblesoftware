@@ -124,6 +124,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::notes_export::COMMANDS)
         .chain(crate::toolbar::COMMANDS)
         .chain(crate::interlinear::COMMANDS)
+        .chain(crate::contents::COMMANDS)
         .chain(crate::toolbar_settings::COMMANDS)
     {
         // Ids in COMMANDS are unique (checked by a test), so registration cannot fail.

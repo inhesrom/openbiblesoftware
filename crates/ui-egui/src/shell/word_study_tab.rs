@@ -484,7 +484,7 @@ impl State {
         // Without moving the Link set: a base-number entry must not move the Word Study.
         let ws = &mut self.session.workspace;
         if let Some(t) = ws.tab_mut(tab) {
-            t.entry_history.visit(key.clone());
+            t.visit_entry(key.clone(), None);
         }
         ws.push_effect(Effect::NavigateEntry { tab, key });
         ws.focus(tab);
