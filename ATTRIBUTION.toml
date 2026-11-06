@@ -36,11 +36,19 @@ copyright = "Public domain"
 changes = "A few verses of Gen, Ps and Jn with OSIS and GBF markup written for the import tests; module files built from src/*.imp by crates/formats/tests/sword_fixture."
 
 [[asset]]
-path = "crates/formats/tests/assets/sword/**/obs{notes,greek,topics,hebrew,hebrewthml,hebrewnotes,aliases}*"
+path = "crates/formats/tests/assets/sword/**/obs{notes,greek,topics,hebrew,hebrewthml,hebrewnotes,aliases}{.*,/*}"
 name = "Synthetic SWORD commentary, lexicon and dictionary test modules"
 license = "CC0-1.0"
 source = "Written for this project"
 copyright = "Open Bible Software contributors, dedicated to the public domain"
+
+[[asset]]
+path = "crates/formats/tests/assets/sword/**/obs{greeknt,hebrewot}*"
+name = "Hebrew and Greek Bible test excerpts as tagged SWORD modules (Gen 1:1, 2:4; Jn 3:16, Rom 5:8, 1 Jn 4:9)"
+license = "LicenseRef-PD AND CC0-1.0"
+source = "Westminster Leningrad Codex and Byzantine Greek New Testament text (public domain); module confs and Strong's/Morphology tagging written for this project"
+copyright = "Text: public domain. Tagging and confs: Open Bible Software contributors, dedicated to the public domain"
+changes = "A few verses with OSIS <w> tagging written for the import tests in the shapes CrossWire's OSHB, Byz, WHNU and MorphGNT use (#133); module files built from src/*.imp by crates/formats/tests/sword_fixture."
 
 [[asset]]
 path = "crates/formats/tests/assets/usfm/synthetic/*"
@@ -138,9 +146,17 @@ copyright = "Copyright (c) 1997-2007 SIL International, Reserved Font Names \"SI
 changes = "None; font file copied unmodified with Licenses.txt and FONTLOG.txt."
 
 [[asset]]
-path = "crates/model/tests/assets/morph/*"
+path = "crates/model/tests/assets/morph/{codes,expansions}.tsv"
 name = "STEPBible morphology codes (from TAHOT and TAGNT) and their expansions (TEHMC, TEGMC), test data"
 license = "CC-BY-4.0"
 source = "https://github.com/STEPBible/STEPBible-Data"
 copyright = "STEP Bible, https://www.STEPBible.org; data created by STEPBible.org based on work at Tyndale House Cambridge"
 changes = "codes.tsv: only the distinct grammar codes of TAHOT (all four files) and TAGNT (both files). expansions.tsv: only each code and its first expansion line from TEHMC (all) and TEGMC (codes used in TAGNT), with the '(hence …)' notes removed."
+
+[[asset]]
+path = "crates/model/tests/assets/morph/sword-codes.tsv"
+name = "Distinct morphology codes of the tagged Hebrew and Greek SWORD modules on CrossWire (OSHB, TR, Byz, WHNU, Tisch, MorphGNT), test data"
+license = "CC-BY-4.0 AND LicenseRef-PD"
+source = "morph attributes of the CrossWire SWORD modules OSHB (https://github.com/openscriptures/morphhb) and TR, Byz, WHNU, Tisch, MorphGNT (https://crosswire.org/sword/modules/)"
+copyright = "OSHB morphology codes: Open Scriptures (CC BY 4.0). Robinson's Greek morphological codes: Maurice A. Robinson, public domain"
+changes = "Only each distinct code string, its scheme and the modules that use it; no Scripture text (#133)."

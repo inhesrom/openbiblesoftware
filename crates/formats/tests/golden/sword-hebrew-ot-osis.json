@@ -1,0 +1,309 @@
+{
+  "content_hash": "sha256:cdb1b1aa294e5c9d5e7df03fb1599a0217f2eb83fe71e67ded7ed3510baff07f",
+  "keys": [],
+  "manifest": {
+    "abbreviation": "OBS-HOT",
+    "attribution": "Licence: Public Domain\nText source: Westminster Leningrad Codex text (public domain); tagging written for the Open Bible Software tests in the shape CrossWire's OSHB uses\nImported from the SWORD module ObsHebrewOt.",
+    "key_schemes": [
+      "passage"
+    ],
+    "language": "hbo",
+    "license": "LicenseRef-PD",
+    "resource_id": "obshebrewot",
+    "resource_type": "bible",
+    "source_file": "ObsHebrewOt",
+    "source_format": "sword",
+    "source_url": null,
+    "title": "Open Bible test Hebrew Old Testament (tagged excerpt)"
+  },
+  "report": {
+    "books": [
+      [
+        "GEN",
+        2,
+        2
+      ]
+    ],
+    "dropped_markup": {
+      "<seg>": 2
+    },
+    "entries": 0,
+    "license_missing": false,
+    "notes": 0,
+    "source_format": "sword (OSIS)",
+    "tagged_words": 18,
+    "verse_map": {
+      "absent": 1531,
+      "unmapped": 0
+    },
+    "verses": 2,
+    "versification_hint": "KJV",
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "GEN",
+      "kind": "bible_book",
+      "spans": [
+        {
+          "at": "0..124",
+          "chapter": 1,
+          "kind": "chapter",
+          "text": "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃"
+        },
+        {
+          "at": "0..124",
+          "kind": "para",
+          "style": "prose",
+          "text": "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃"
+        },
+        {
+          "at": "0..124",
+          "kind": "verse",
+          "last": 1,
+          "text": "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃",
+          "verse": {
+            "book": "GEN",
+            "chapter": 1,
+            "verse": 1
+          }
+        },
+        {
+          "at": "0..24",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HR/Ncfsa",
+              "strongs": "H7225"
+            }
+          ],
+          "text": "בְּרֵאשִׁ֖ית"
+        },
+        {
+          "at": "25..39",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HVqp3ms",
+              "strongs": "H1254"
+            }
+          ],
+          "text": "בָּרָ֣א"
+        },
+        {
+          "at": "40..58",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HNcmpa",
+              "strongs": "H430"
+            }
+          ],
+          "text": "אֱלֹהִ֑ים"
+        },
+        {
+          "at": "59..67",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HTo",
+              "strongs": "H853"
+            }
+          ],
+          "text": "אֵ֥ת"
+        },
+        {
+          "at": "68..92",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HTd/Ncmpa",
+              "strongs": "H8064"
+            }
+          ],
+          "text": "הַשָּׁמַ֖יִם"
+        },
+        {
+          "at": "93..105",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HC/To",
+              "strongs": "H853"
+            }
+          ],
+          "text": "וְאֵ֥ת"
+        },
+        {
+          "at": "106..122",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HTd/Ncbsa",
+              "strongs": "H776"
+            }
+          ],
+          "text": "הָאָֽרֶץ"
+        },
+        {
+          "at": "125..343",
+          "chapter": 2,
+          "kind": "chapter",
+          "text": "אֵ֣לֶּה תוֹלְד֧וֹת הַשָּׁמַ֛יִם וְהָאָ֖רֶץ בְּהִבָּֽרְאָ֑ם בְּי֗וֹם עֲשׂ֛וֹת יְהוָ֥ה אֱלֹהִ֖ים אֶ֥רֶץ וְשָׁמָֽיִם׃"
+        },
+        {
+          "at": "125..343",
+          "kind": "para",
+          "style": "prose",
+          "text": "אֵ֣לֶּה תוֹלְד֧וֹת הַשָּׁמַ֛יִם וְהָאָ֖רֶץ בְּהִבָּֽרְאָ֑ם בְּי֗וֹם עֲשׂ֛וֹת יְהוָ֥ה אֱלֹהִ֖ים אֶ֥רֶץ וְשָׁמָֽיִם׃"
+        },
+        {
+          "at": "125..343",
+          "kind": "verse",
+          "last": 4,
+          "text": "אֵ֣לֶּה תוֹלְד֧וֹת הַשָּׁמַ֛יִם וְהָאָ֖רֶץ בְּהִבָּֽרְאָ֑ם בְּי֗וֹם עֲשׂ֛וֹת יְהוָ֥ה אֱלֹהִ֖ים אֶ֥רֶץ וְשָׁמָֽיִם׃",
+          "verse": {
+            "book": "GEN",
+            "chapter": 2,
+            "verse": 4
+          }
+        },
+        {
+          "at": "125..139",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HPdxcp",
+              "strongs": "H428"
+            }
+          ],
+          "text": "אֵ֣לֶּה"
+        },
+        {
+          "at": "140..160",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HNcfpc",
+              "strongs": "H8435"
+            }
+          ],
+          "text": "תוֹלְד֧וֹת"
+        },
+        {
+          "at": "161..185",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HTd/Ncmpa",
+              "strongs": "H8064"
+            }
+          ],
+          "text": "הַשָּׁמַ֛יִם"
+        },
+        {
+          "at": "186..206",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HC/Td/Ncbsa",
+              "strongs": "H776"
+            }
+          ],
+          "text": "וְהָאָ֖רֶץ"
+        },
+        {
+          "at": "207..237",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HR/Td/VNc",
+              "strongs": "H1254"
+            }
+          ],
+          "text": "בְּהִבָּֽרְאָ֑ם"
+        },
+        {
+          "at": "238..254",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HR/Ncmsc",
+              "strongs": "H3117"
+            }
+          ],
+          "text": "בְּי֗וֹם"
+        },
+        {
+          "at": "255..271",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HVqc",
+              "strongs": "H6213"
+            }
+          ],
+          "text": "עֲשׂ֛וֹת"
+        },
+        {
+          "at": "272..286",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HNp",
+              "strongs": "H3068"
+            }
+          ],
+          "text": "יְהוָ֥ה"
+        },
+        {
+          "at": "287..305",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HNcmpa",
+              "strongs": "H430"
+            }
+          ],
+          "text": "אֱלֹהִ֖ים"
+        },
+        {
+          "at": "306..318",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HNcbsa",
+              "strongs": "H776"
+            }
+          ],
+          "text": "אֶ֥רֶץ"
+        },
+        {
+          "at": "319..341",
+          "kind": "tagged_word",
+          "parts": [
+            {
+              "morph": "HC/Ncmpa",
+              "strongs": "H8064"
+            }
+          ],
+          "text": "וְשָׁמָֽיִם"
+        }
+      ],
+      "text": "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃\nאֵ֣לֶּה תוֹלְד֧וֹת הַשָּׁמַ֛יִם וְהָאָ֖רֶץ בְּהִבָּֽרְאָ֑ם בְּי֗וֹם עֲשׂ֛וֹת יְהוָ֥ה אֱלֹהִ֖ים אֶ֥רֶץ וְשָׁמָֽיִם׃",
+      "title": "Genesis"
+    }
+  ],
+  "verses": [
+    {
+      "last": 1,
+      "text": "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃",
+      "verse": "Gen 1:1"
+    },
+    {
+      "last": 4,
+      "text": "אֵ֣לֶּה תוֹלְד֧וֹת הַשָּׁמַ֛יִם וְהָאָ֖רֶץ בְּהִבָּֽרְאָ֑ם בְּי֗וֹם עֲשׂ֛וֹת יְהוָ֥ה אֱלֹהִ֖ים אֶ֥רֶץ וְשָׁמָֽיִם׃",
+      "verse": "Gen 2:4"
+    }
+  ]
+}

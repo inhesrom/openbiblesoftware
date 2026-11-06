@@ -443,3 +443,67 @@ fn word_info_previews() {
     h.frames(2);
     h.screenshot(&dir.join("word-info-pinned.ppm"));
 }
+
+/// A Resource imported from the SWORD test modules (`crates/formats/tests/assets/sword`).
+fn sword_doc(module: &str) -> Arc<ReadingDoc> {
+    let source = obs_formats::SwordSource::open(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/sword"),
+    )
+    .unwrap();
+    let (resource, _) =
+        obs_formats::import_sword(&source, module, &obs_formats::SwordOptions::default()).unwrap();
+    Arc::new(ReadingDoc::from_resource(resource))
+}
+
+/// Acceptance (#133): hovering a word in an imported SWORD Greek NT (tagged as CrossWire's
+/// Byz and MorphGNT are) shows its Lemma, plain-English Morphology and the Lexicon's Gloss.
+#[test]
+fn hovering_a_word_in_an_imported_sword_greek_nt_shows_lemma_morphology_and_gloss() {
+    let mut h = Harness::new();
+    let gnt = sword_doc("ObsGreekNt");
+    let gnt_id = gnt.manifest.resource_id.clone();
+    add_doc(&mut h.shell, gnt);
+    add_doc(&mut h.shell, sword_doc("ObsGreek"));
+    h.shell.run("resource.open", &json!({ "id": gnt_id }));
+    h.frames(4);
+    h.click(h.tab_at("Word Info"));
+    let tab = h.tab_id("OBS-GNT");
+
+    // John 3:16 ἠγάπησεν: `strong:G25 strong:G5656`, `robinson:V-AAI-3S`; no Lemma in the
+    // text, so the Lexicon's headword is the Lemma.
+    let spot = word_spot(&h, tab, "ἠγάπησεν");
+    h.events.push(Event::PointerMoved(spot));
+    h.frames(14);
+    let shown = h
+        .shell
+        .st
+        .session
+        .word_info
+        .shown
+        .clone()
+        .expect("shown after the dwell");
+    assert_eq!(shown.main.strongs.to_string(), "G25");
+    assert!(shown.parts.is_empty(), "G5656 is not a word: {shown:?}");
+    assert_eq!(
+        shown.main.morphology.as_deref(),
+        Some("aorist active indicative, 3rd sing.")
+    );
+    assert_eq!(shown.main.morph_code.as_deref(), Some("V-AAI-3S"));
+    assert!(shown.main.lemma.is_some(), "{shown:?}");
+    let gloss = shown.main.lexicon.as_ref().expect("a Lexicon gloss");
+    assert!(gloss.text.contains("to love"), "{gloss:?}");
+    assert_eq!(shown.reference, "John 3:16 (OBS-GNT)");
+    assert!(shown.transliteration.is_some());
+    for t in [
+        "G25",
+        "aorist active indicative, 3rd sing.",
+        "John 3:16 (OBS-GNT)",
+    ] {
+        assert!(h.find(t).is_some(), "{t:?} missing: {:?}", h.texts());
+    }
+    assert!(
+        h.texts().iter().any(|t| t.contains("to love")),
+        "{:?}",
+        h.texts()
+    );
+}

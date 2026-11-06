@@ -420,6 +420,8 @@ mod hebrew {
             'm' => Gender::Masculine,
             'f' => Gender::Feminine,
             'b' | 'c' => Gender::Common,
+            // OSHB's "not applicable" (demonstratives, `Nxxxa`).
+            'x' => return Ok(None),
             _ => return Err(format!("gender `{c}`")),
         }))
     }
@@ -429,6 +431,7 @@ mod hebrew {
             's' => Number::Singular,
             'p' => Number::Plural,
             'd' => Number::Dual,
+            'x' => return Ok(None),
             _ => return Err(format!("number `{c}`")),
         }))
     }
@@ -447,6 +450,7 @@ mod hebrew {
             '1' => Ok(Some(1)),
             '2' => Ok(Some(2)),
             '3' => Ok(Some(3)),
+            'x' => Ok(None),
             _ => Err(format!("person `{c}`")),
         }
     }
@@ -643,6 +647,8 @@ mod hebrew {
                     Some('c') => p.kind = Some("common"),
                     Some('g') => p.kind = Some("gentilic"),
                     Some('t') => p.kind = Some("title"),
+                    // OSHB's `Nxxxa` (the writing on the wall, Dan 5:25): type not given.
+                    Some('x') => {}
                     Some('p') => {
                         p.kind = Some("proper");
                         let note = match rest.get(1) {
@@ -699,7 +705,11 @@ mod hebrew {
                     Some(c) => return Err(format!("pronoun type `{c}`")),
                 });
                 let tail = rest.get(1..).unwrap_or(&[]);
-                if tail.first().is_some_and(char::is_ascii_digit) {
+                // Person first (OSHB writes `x` for a demonstrative's person: `Pdxms`).
+                if tail
+                    .first()
+                    .is_some_and(|c| c.is_ascii_digit() || *c == 'x')
+                {
                     png(&mut p, tail)?;
                 } else {
                     gns(&mut p, tail)?;
@@ -893,8 +903,13 @@ mod greek {
                 p.number = Some(number(n)?);
             }
             'N' => p.form = Some("infinitive"),
-            'P' => {
-                p.form = Some("participle");
+            'P' | 'R' => {
+                // Robinson's `R`: a participle used as an imperative (Tischendorf).
+                p.form = Some(if m == 'R' {
+                    "imperatival participle"
+                } else {
+                    "participle"
+                });
                 if rest.is_empty() {
                     return Err("participle without case".into());
                 }
@@ -1029,17 +1044,21 @@ mod greek {
             }
             "S" => {
                 // Person and the possessor's number, then the case, number, gender.
+                // Tischendorf leaves out the possessor's number (`S-1NSM`).
                 let t = if toks.is_empty() { "" } else { toks.remove(0) };
                 let c: Vec<char> = t.chars().collect();
-                if c.len() != 5 {
-                    return Err(format!("possessive `{t}`"));
+                p.person = Some(person(*c.first().unwrap_or(&' '))?);
+                match c.len() {
+                    5 => {
+                        p.extras.push(match number(c[1])? {
+                            Number::Singular => "one possessor",
+                            _ => "several possessors",
+                        });
+                        cng(&mut p, &t[2..])?;
+                    }
+                    4 => cng(&mut p, &t[1..])?,
+                    _ => return Err(format!("possessive `{t}`")),
                 }
-                p.person = Some(person(c[0])?);
-                p.extras.push(match number(c[1])? {
-                    Number::Singular => "one possessor",
-                    _ => "several possessors",
-                });
-                cng(&mut p, &t[2..])?;
             }
             _ => {}
         }

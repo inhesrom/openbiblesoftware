@@ -186,8 +186,9 @@ impl GuideSection {
                 "None in your library: no Bible with Strong's numbers has this word."
             }
             (GuideSection::Forms, false) => {
-                "None in your library. Add a Hebrew or Greek Bible with Morphology (TAHOT, TAGNT) \
-                 to see this word's forms."
+                "None in your library. Add a Hebrew or Greek Bible with Morphology to see this \
+                 word's forms: TAHOT and TAGNT come with the Starter library, and more are in \
+                 Get Resources › Hebrew & Greek."
             }
             (GuideSection::Forms, true) => {
                 "None in your library: no Hebrew or Greek Bible with Morphology has this word."

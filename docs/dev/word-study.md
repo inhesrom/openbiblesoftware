@@ -88,6 +88,11 @@ before #56 gains the three at their default places.
   the long reading are the tooltip. Clicking a form filters Occurrences (bars, count and
   Verses) to it; clicking it again, or Clear in Occurrences, shows every form. The filter is
   per Tab and resets when the Word Study moves to another number.
+  Besides TAHOT and TAGNT (Starter library), a tagged original downloaded from Get Resources
+  › Hebrew & Greek counts the same way (#133): SWORD Import keeps OSHB's `oshm:` and the
+  Robinson codes of MorphGNT, Tisch, TR, Byz and WHNU, and the expander reads every code they
+  use (`every_robinson_and_oshm_code_in_crosswire_originals_expands`). With none, the empty
+  state names both ways.
 - **Concordance**: each counting Bible's Tagged words are gathered once per revision into a
   `Concordance` (Strong's number → Verses and Morphology codes) by one SQL pass over its
   `tagged_word` spans (`ResourceStore::for_each_tagged_word_at`, new), and shared by later

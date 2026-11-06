@@ -1,16 +1,16 @@
-//! The Get Resources Tab (#91, #132): Featured Bibles, Lexicons, Commentaries and
-//! Dictionaries first, then every one from every repository on CrossWire's master list, each
-//! one click from the Library. A type filter sits beside the search and language filter.
-//! Downloaded Resources whose repository offers a newer version show Update available, with
-//! Update all above the list (#136).
+//! The Get Resources Tab (#91, #132, #133): Featured Bibles, Hebrew & Greek, Lexicons,
+//! Commentaries and Dictionaries first, then every one from every repository on CrossWire's
+//! master list, each one click from the Library. A filter row (the types and Hebrew & Greek)
+//! sits beside the search and language filter. Bible rows carry "Strong's" and "Morphology"
+//! tag badges. Downloaded Resources whose repository offers a newer version show Update
+//! available, with Update all above the list (#136).
 
 use egui::{Color32, RichText, Ui};
 use obs_engine::get_bibles::{
-    LISTED_TYPES, ListingStatus, ResourceListing, UpdateCheck, UpdatesSummary,
+    ListingStatus, ResourceFilter, ResourceListing, TAG_MORPHOLOGY, TAG_STRONGS, UpdateCheck,
+    UpdatesSummary,
 };
-use obs_engine::library_search::type_plural;
 use obs_engine::{ImportPhase, language_name};
-use obs_model::ResourceType;
 use serde_json::json;
 
 use super::State;
@@ -177,7 +177,7 @@ fn ago(then: u64) -> String {
 impl State {
     pub(super) fn get_bibles_body(&mut self, ui: &mut Ui) {
         let mut action: Option<Action> = None;
-        let mut new_type: Option<Option<ResourceType>> = None;
+        let mut new_filter: Option<ResourceFilter> = None;
         egui::Frame::new()
             .fill(theme::c().field)
             .inner_margin(egui::Margin::symmetric(14, 10))
@@ -236,13 +236,20 @@ impl State {
 
                 // Type filter, then search and language filter for the "All" list.
                 let filter = &mut self.get_bibles_ui;
-                let ty = gb.type_filter();
+                let shown_filter = gb.filter();
                 ui.horizontal_wrapped(|ui| {
-                    let types = LISTED_TYPES.into_iter().map(Some).chain([None]);
-                    for t in types {
-                        let label = t.map_or("All", type_plural);
-                        if ui.selectable_label(ty == t, label).clicked() && ty != t {
-                            new_type = Some(t);
+                    for f in ResourceFilter::CHOICES {
+                        let chip = ui.selectable_label(shown_filter == f, f.label());
+                        let chip = if f == ResourceFilter::HebrewAndGreek {
+                            chip.on_hover_text(
+                                "Bibles in Hebrew, Aramaic and Greek. Those marked Strong's and \
+                                 Morphology fill in Word Info and Word Study › Forms.",
+                            )
+                        } else {
+                            chip
+                        };
+                        if chip.clicked() && shown_filter != f {
+                            new_filter = Some(f);
                         }
                     }
                 });
@@ -266,7 +273,7 @@ impl State {
                         .height(400.0)
                         .show_ui(ui, |ui| {
                             ui.selectable_value(&mut filter.language, None, "All languages");
-                            for (code, n) in catalog.languages(ty) {
+                            for (code, n) in catalog.languages(shown_filter) {
                                 let label = format!("{} ({code}) · {n}", language_name(&code));
                                 ui.selectable_value(&mut filter.language, Some(code), label);
                             }
@@ -282,27 +289,18 @@ impl State {
                 });
                 ui.add_space(6.0);
 
-                // A Featured section per type shown; with All, empty ones are left out.
+                // The filter's Featured sections; with All, empty ones are left out.
                 let mut items: Vec<Item> = Vec::new();
-                for t in LISTED_TYPES
-                    .into_iter()
-                    .filter(|t| ty.is_none_or(|ty| ty == *t))
-                {
-                    let featured = catalog.featured(t);
-                    if ty.is_none() && featured.is_empty() {
-                        continue;
-                    }
-                    items.push(Item::Header(
-                        format!("Featured {}", type_plural(t)),
-                        featured.len(),
-                    ));
+                for (title, featured) in catalog.featured_sections(shown_filter) {
+                    items.push(Item::Header(title, featured.len()));
                     items.extend(featured.into_iter().map(Item::Listing));
                 }
-                let all = catalog.all(&filter.query, filter.language.as_deref(), ty);
-                items.push(Item::Header(
-                    format!("All {}", ty.map_or("Resources", type_plural)),
-                    all.len(),
-                ));
+                let all = catalog.all(&filter.query, filter.language.as_deref(), shown_filter);
+                let all_title = match shown_filter {
+                    ResourceFilter::All => "All Resources".to_string(),
+                    f => format!("All {}", f.label()),
+                };
+                items.push(Item::Header(all_title, all.len()));
                 if all.is_empty() {
                     items.push(Item::Empty(
                         "Nothing matches the search, type and language.",
@@ -326,7 +324,8 @@ impl State {
                                     }
                                     Item::Listing(b) => {
                                         let status = self.session.listing_status(b);
-                                        if let Some(a) = listing_row(ui, b, &status, ty.is_none()) {
+                                        let show_type = shown_filter == ResourceFilter::All;
+                                        if let Some(a) = listing_row(ui, b, &status, show_type) {
                                             action = Some(a);
                                         }
                                     }
@@ -335,12 +334,26 @@ impl State {
                         }
                     });
             });
-        if let Some(ty) = new_type {
-            self.session.get_bibles.set_type_filter(ty);
+        if let Some(f) = new_filter {
+            self.session.get_bibles.set_filter(f);
         }
         if let Some(Action::Run(command, params)) = action {
             self.run(command, &params);
         }
+    }
+}
+
+/// What a tag badge means, on hover.
+fn tag_hover(tag: &str) -> &'static str {
+    match tag {
+        TAG_STRONGS => {
+            "Tagged with Strong's numbers: Word Info, Word Study and Key words work with this Bible."
+        }
+        TAG_MORPHOLOGY => {
+            "Tagged with Morphology: Word Info shows each word's parsing in plain English, and \
+             Word Study › Forms fills in."
+        }
+        _ => "",
     }
 }
 
@@ -462,6 +475,10 @@ fn listing_row(
                             .as_deref()
                             .unwrap_or("No DistributionLicense in the conf"),
                     );
+                for tag in b.tags() {
+                    ui.label(RichText::new(tag).small().strong().color(theme::c().lapis))
+                        .on_hover_text(tag_hover(tag));
+                }
                 let mut facts = Vec::new();
                 if show_type {
                     facts.push(type_singular(b.kind).to_string());

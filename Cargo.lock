@@ -2625,6 +2625,7 @@ dependencies = [
  "obs-fonts",
  "obs-formats",
  "obs-model",
+ "obs-store",
  "obs-ui-egui",
  "serde_json",
  "ureq",

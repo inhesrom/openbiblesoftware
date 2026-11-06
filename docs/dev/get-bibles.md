@@ -1,4 +1,4 @@
-# Get Resources (#91, #132, #136)
+# Get Resources (#91, #132, #133, #136)
 
 **Library → Get Resources…** lists the Bibles, Lexicons, Commentaries and Dictionaries that SWORD repositories offer. One click on **Download** fetches a module from its own repository, runs SWORD Import, and puts the Resource in the Library. **Library → Get Bibles…** opens the same Tab with its type filter set to Bibles.
 
@@ -6,8 +6,9 @@ The code keeps its #91 names (`get_bibles` module, `TabKind::GetBibles`, `getbib
 
 What the Tab shows:
 
-- **Type filter** (Bibles · Lexicons · Commentaries · Dictionaries · All), next to the search and the language filter. All three filters apply together to the "All" list. `library.get_resources` takes `type` (`bibles`, `lexicons`, `commentaries`, `dictionaries`, `all`) so other features can open the Tab already filtered.
-- **Featured** sections, one per type. With All, a type that has no Featured module offered is left out.
+- **Filter row** (Bibles · Hebrew & Greek · Lexicons · Commentaries · Dictionaries · All), next to the search and the language filter. All three filters apply together to the "All" list. Hebrew & Greek is the Bibles in Hebrew, Aramaic or Greek (`ResourceFilter::HebrewAndGreek`); it is a language filter on Bibles, not a Resource type. `library.get_resources` takes `type` (`bibles`, `hebrew-greek`, `lexicons`, `commentaries`, `dictionaries`, `all`) so other features can open the Tab already filtered: the Word Study and Passage Guide empty states (#135) open it at `hebrew-greek`.
+- **Featured** sections, one per type, and the **Featured Hebrew & Greek** group after the Featured Bibles (shown with Bibles, Hebrew & Greek and All). With All, a section that has no Featured module offered is left out.
+- **Tag badges.** A Bible row shows **Strong's** when its conf has `Feature=StrongsNumbers` or a `GlobalOptionFilter` of `OSISStrongs`/`GBFStrongs`/`ThMLStrongs`, and **Morphology** for `OSISMorph`/`GBFMorph`/`ThMLMorph`. They say, before downloading, whether Word Info, Word Study › Forms and Key words will work with it.
 - **Type.** A SWORD Dictionary module whose conf has `Feature=GreekDef` or `HebrewDef` is listed as a Lexicon. General books and locked modules are not listed.
 - **Used by.** Each row says which feature the Resource feeds, for example "Used by Passage Guide › Commentaries".
 - **Not supported yet.** A module SWORD Import refuses from its conf alone (Commentary numbering other than KJV/KJVA, `HREFCom`, daily devotionals) is still listed. Its Download is disabled, and the reason shows on hover (`obs_formats::sword_import_type`).
@@ -39,7 +40,7 @@ What the Tab shows:
 
 | What | Where | Override |
 |---|---|---|
-| Featured Bibles (order, repository) | `crates/engine/data/featured-bibles.toml` | edit the file |
+| Featured Bibles and the Featured Hebrew & Greek group (`[[hebrew_greek]]`, checked against the live catalogs: [docs/research/original-language-catalog.md](../research/original-language-catalog.md)) | `crates/engine/data/featured-bibles.toml` | edit the file |
 | Featured Lexicons, Commentaries, Dictionaries | `crates/engine/data/featured-resources.toml` (checked against the live catalogs: [docs/research/get-resources-catalog.md](../research/get-resources-catalog.md)) | edit the file |
 | Catalog cache (opens offline) | `<data>/OpenBible/sword-catalog.json` | `OBS_SWORD_CATALOG` |
 | Downloaded SWORD modules | `<data>/OpenBible/sword/` | `OBS_SWORD_DIR` |
@@ -47,16 +48,17 @@ What the Tab shows:
 
 `<data>` is `~/.local/share` on Linux, `~/Library/Application Support` on macOS, and `%APPDATA%` on Windows.
 
-When a module is in several repositories, Get Resources shows it once, even when the copies are of different types (a SWORD folder holds one module of a name). It takes the repository a Featured list names, otherwise CrossWire, otherwise the first one listed. A catalog older than six hours is refreshed in the background when the Tab opens. So is a catalog cached by an older version of the app (`CATALOG_VERSION`; v0.1 caches list only Bibles), but it is still shown while that runs, and offline.
+When a module is in several repositories, Get Resources shows it once, even when the copies are of different types (a SWORD folder holds one module of a name). It takes the repository a Featured list names, otherwise CrossWire, otherwise the first one listed. A catalog older than six hours is refreshed in the background when the Tab opens. So is a catalog cached by an older version of the app (`CATALOG_VERSION`; v0.1 caches list only Bibles, and caches before #133 have no Morphology tags), but it is still shown while that runs, and offline.
 
 ## Tests
 
-- **Offline, in CI:** `crates/engine/src/get_bibles_tests.rs` and the `get_bibles` UI tests use `obs_engine::testing::MockRepos`, which builds `file://` repositories from the open-text SWORD fixtures (feature `test-support`). In the mock, "NASB1995" is the public-domain KJV excerpt under another name and "StrongsGreek" is the open test Greek lexicon. `MockRepos::publish` bumps a module's `Version` (and can edit a RawText module's text) to test updates. The mock also has a Commentary (`ObsNotes`), a Dictionary (`ObsTopics`) and two Commentaries that Import refuses (`ObsHebrewNotes`, MT numbering, and `ObsLinks`, `HREFCom`).
+- **Offline, in CI:** `crates/engine/src/get_bibles_tests.rs` and the `get_bibles` UI tests use `obs_engine::testing::MockRepos`, which builds `file://` repositories from the open-text SWORD fixtures (feature `test-support`). In the mock, "NASB1995" is the public-domain KJV excerpt under another name and "StrongsGreek" is the open test Greek lexicon. `MockRepos::publish` bumps a module's `Version` (and can edit a RawText module's text) to test updates. The mock also has a Commentary (`ObsNotes`), a Dictionary (`ObsTopics`), two Commentaries that Import refuses (`ObsHebrewNotes`, MT numbering, and `ObsLinks`, `HREFCom`), and the Hebrew & Greek Bibles "OSHB" and "MorphGNT" (the tagged test excerpts `ObsHebrewOt` and `ObsGreekNt`, written in the shapes the real modules use).
 - **Live, by hand only:** these tests need the network and download copyrighted modules, all into a temp folder that is deleted afterwards. CI never runs them.
 
   ```sh
   # HTTPS through the app's transport: catalog, NASB 1995 size and download, every Featured
-  # Bible, every Featured Lexicon/Commentary/Dictionary, and StrongsGreek → Word Study G26.
+  # Bible, every Featured Lexicon/Commentary/Dictionary, StrongsGreek → Word Study G26, and
+  # every Featured Hebrew & Greek Bible with its tags and Forms of G26 and H1254.
   cargo test -p openbible --release -- --ignored --nocapture --test-threads=1 live_
   # The Tab itself, clicked from Download to reading NASB 1995, then offline from the cache.
   # Uses the repositories' FTP sources; screenshots go to target/previews/ (never commit them).

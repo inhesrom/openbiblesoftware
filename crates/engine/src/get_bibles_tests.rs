@@ -45,6 +45,7 @@ fn listing(module: &str, repo: &str) -> ResourceListing {
         licence: None,
         version: None,
         strongs: false,
+        morphology: false,
         refused: None,
     }
 }
@@ -84,7 +85,9 @@ fn catalog_lists_bibles_of_every_repository_with_conf_licence_and_size() {
     assert_eq!(
         modules,
         [
+            "MorphGNT",
             "NASB1995",
+            "OSHB",
             "ObsGreekBible",
             "ObsHebrew",
             "ObsKjvGbf",
@@ -193,11 +196,11 @@ fn type_filter_search_and_language_filter_combine() {
     let catalog = s.get_bibles.catalog().unwrap();
     let bible = Some(ResourceType::Bible);
     let lexicon = Some(ResourceType::Lexicon);
-    assert_eq!(catalog.all("", None, bible).len(), 5);
-    assert_eq!(catalog.all("", None, None).len(), 10, "every listed type");
+    assert_eq!(catalog.all("", None, bible).len(), 7);
+    assert_eq!(catalog.all("", None, None).len(), 12, "every listed type");
     assert_eq!(
         modules(&catalog.all("", Some("grc"), bible)),
-        ["ObsGreekBible"]
+        ["ObsGreekBible", "MorphGNT"]
     );
     assert_eq!(
         modules(&catalog.all("nasb", None, bible)),
@@ -206,10 +209,10 @@ fn type_filter_search_and_language_filter_combine() {
     );
     assert!(catalog.all("nasb", Some("grc"), bible).is_empty());
 
-    // "greek" matches a Bible and a Lexicon; the type and language filters narrow it.
+    // "greek" matches Bibles and a Lexicon; the type and language filters narrow it.
     assert_eq!(
         modules(&catalog.all("greek", None, None)),
-        ["ObsGreekBible", "StrongsGreek"]
+        ["ObsGreekBible", "MorphGNT", "StrongsGreek"]
     );
     assert_eq!(
         modules(&catalog.all("greek", None, lexicon)),
@@ -217,7 +220,7 @@ fn type_filter_search_and_language_filter_combine() {
     );
     assert_eq!(
         modules(&catalog.all("greek", Some("grc"), None)),
-        ["ObsGreekBible"]
+        ["ObsGreekBible", "MorphGNT"]
     );
     assert!(catalog.all("greek", Some("grc"), lexicon).is_empty());
     assert!(catalog.all("strongs", None, bible).is_empty());
@@ -225,9 +228,10 @@ fn type_filter_search_and_language_filter_combine() {
     // The language list counts the chosen type.
     let langs = catalog.languages(bible);
     assert_eq!(langs[0], ("en".to_string(), 4));
-    assert!(langs.contains(&("grc".to_string(), 1)));
+    assert!(langs.contains(&("grc".to_string(), 2)));
     assert_eq!(catalog.languages(lexicon), [("en".to_string(), 1)]);
     assert_eq!(catalog.languages(None)[0], ("en".to_string(), 9));
+    assert!(catalog.languages(None).contains(&("hbo".to_string(), 1)));
 
     // The same through the command.
     let out = s
@@ -236,7 +240,7 @@ fn type_filter_search_and_language_filter_combine() {
             &json!({"query": "greek", "language": "grc"}),
         )
         .unwrap();
-    assert_eq!(out["all"].as_array().unwrap().len(), 1);
+    assert_eq!(out["all"].as_array().unwrap().len(), 2);
     assert_eq!(out["featured"][0]["module"], "NASB1995");
     let out = s
         .run(
@@ -576,7 +580,7 @@ fn featured_resources_data_file_lists_lexicons_commentaries_and_dictionaries() {
             .iter()
             .all(|f| f.repo == "CrossWire")
     );
-    assert_eq!(featured_all().len(), 13 + 3 + 5 + 5);
+    assert_eq!(featured_all().len(), 13 + 8 + 3 + 5 + 5);
     assert!(featured(ResourceType::CrossReferenceSet).is_empty());
 }
 
@@ -643,7 +647,11 @@ fn catalog_lists_lexicons_commentaries_and_dictionaries_with_what_they_are_used_
         .iter()
         .map(|r| r["module"].as_str().unwrap())
         .collect();
-    assert_eq!(featured, ["NASB1995", "StrongsGreek"], "Bibles first");
+    assert_eq!(
+        featured,
+        ["NASB1995", "OSHB", "MorphGNT", "StrongsGreek"],
+        "Bibles first, then Hebrew & Greek"
+    );
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -1514,6 +1522,224 @@ fn removing_a_downloaded_resource_frees_its_sword_folder_and_search_index() {
     );
     assert_eq!(fetch(&mut s, "ObsKjvGbf"), id);
     assert!(data.is_dir());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+// ---- Get Resources (#133): Hebrew & Greek --------------------------------------------------
+
+#[test]
+fn featured_hebrew_and_greek_data_file_lists_the_checked_original_language_bibles() {
+    // Checked against the live catalogs (docs/research/original-language-catalog.md): OSHB
+    // replaced OSMHB (now only in CrossWire Attic); the Septuagint is left out (licence).
+    let names: Vec<String> = featured_hebrew_greek()
+        .into_iter()
+        .map(|f| f.module)
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "OSHB", "WLC", "MorphGNT", "SBLGNT", "Tisch", "TR", "Byz", "WHNU"
+        ]
+    );
+    assert!(
+        featured_hebrew_greek()
+            .iter()
+            .all(|f| f.repo == "CrossWire")
+    );
+    assert!(!names.iter().any(|n| n == "LXX" || n == "OSMHB"));
+    // Not a Featured Bible: a group of its own.
+    assert!(
+        !featured(ResourceType::Bible)
+            .iter()
+            .any(|f| names.contains(&f.module))
+    );
+}
+
+#[test]
+fn catalog_tags_bibles_with_strongs_and_morphology_from_the_conf() {
+    let (mut s, _repos, root) = session("tags");
+    refresh(&mut s);
+    let catalog = s.get_bibles.catalog().unwrap();
+    let tags = |m: &str| catalog.get(m).unwrap().tags();
+    // GlobalOptionFilter=OSISStrongs and OSISMorph.
+    assert_eq!(tags("OSHB"), [TAG_STRONGS, TAG_MORPHOLOGY]);
+    assert_eq!(tags("MorphGNT"), ["Strong's", "Morphology"]);
+    // Feature=StrongsNumbers (with or without OSISStrongs): Strong's, no Morphology.
+    assert_eq!(tags("ObsKjvOsis"), [TAG_STRONGS]);
+    assert_eq!(tags("ObsGreekBible"), [TAG_STRONGS]);
+    assert_eq!(
+        catalog.get("ObsGreekBible").unwrap().used_by(),
+        Some("Used by Word Info and Word Study › Occurrences")
+    );
+    assert!(tags("ObsHebrew").is_empty());
+    // Only Bibles carry tags.
+    assert!(tags("StrongsGreek").is_empty());
+
+    let oshb = catalog.get("OSHB").unwrap();
+    assert_eq!(oshb.language, "hbo");
+    assert_eq!(oshb.licence.as_deref(), Some("Creative Commons: BY 4.0"));
+    assert_eq!(
+        oshb.used_by(),
+        Some("Used by Word Info and Word Study › Occurrences and Forms")
+    );
+    assert_eq!(
+        catalog.get("ObsKjvOsis").unwrap().used_by(),
+        Some("Used by Word Study › Translated as and Occurrences"),
+        "an English Bible with Strong's numbers is unchanged"
+    );
+
+    // Through the command, each row names its tags.
+    let out = s
+        .run("getbibles.list", &json!({"type": "hebrew-greek"}))
+        .unwrap();
+    let row = out["all"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["module"] == "MorphGNT")
+        .unwrap();
+    assert_eq!(row["tags"], json!(["Strong's", "Morphology"]));
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn the_hebrew_and_greek_filter_shows_its_featured_group_and_original_language_bibles() {
+    let (mut s, _repos, root) = ready("hebrew-greek", JobMode::Inline);
+    let catalog = s.get_bibles.catalog().unwrap();
+    let titles = |filter| -> Vec<(String, Vec<String>)> {
+        catalog
+            .featured_sections(filter)
+            .into_iter()
+            .map(|(t, rows)| (t, modules(&rows)))
+            .collect()
+    };
+    let group = (
+        "Featured Hebrew & Greek".to_string(),
+        vec!["OSHB".to_string(), "MorphGNT".to_string()],
+    );
+    assert_eq!(
+        titles(ResourceFilter::HebrewAndGreek),
+        std::slice::from_ref(&group)
+    );
+    assert_eq!(
+        titles(ResourceFilter::Type(ResourceType::Bible)),
+        [
+            ("Featured Bibles".to_string(), vec!["NASB1995".to_string()]),
+            group.clone()
+        ]
+    );
+    assert_eq!(
+        titles(ResourceFilter::All)[..2],
+        [
+            ("Featured Bibles".to_string(), vec!["NASB1995".to_string()]),
+            group
+        ]
+    );
+    assert!(
+        titles(ResourceFilter::Type(ResourceType::Lexicon))
+            .iter()
+            .all(|(t, _)| t == "Featured Lexicons")
+    );
+    // "All Hebrew & Greek": Bibles in Hebrew, Aramaic or Greek only (no Lexicons).
+    assert_eq!(
+        modules(&catalog.all("", None, ResourceFilter::HebrewAndGreek)),
+        ["ObsGreekBible", "MorphGNT", "OSHB"]
+    );
+    let langs: Vec<String> = catalog
+        .languages(ResourceFilter::HebrewAndGreek)
+        .into_iter()
+        .map(|(l, _)| l)
+        .collect();
+    assert_eq!(langs, ["grc", "hbo"]);
+    assert_eq!(ResourceFilter::HebrewAndGreek.label(), "Hebrew & Greek");
+    assert_eq!(
+        ResourceFilter::HebrewAndGreek.resource_type(),
+        Some(ResourceType::Bible)
+    );
+
+    // `library.get_resources` opens the Tab at Hebrew & Greek (the empty states' action).
+    s.run("library.get_resources", &json!({"type": "hebrew-greek"}))
+        .unwrap();
+    assert_eq!(s.get_bibles.filter(), ResourceFilter::HebrewAndGreek);
+    assert_eq!(s.get_bibles.type_filter(), Some(ResourceType::Bible));
+    let out = s
+        .run("getbibles.list", &json!({"type": "hebrew-greek"}))
+        .unwrap();
+    assert_eq!(
+        out["sections"],
+        json!([{"title": "Featured Hebrew & Greek", "modules": ["OSHB", "MorphGNT"]}])
+    );
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+fn forms_of(s: &mut Session, number: &str) -> Vec<(String, u32)> {
+    let key = obs_model::Key::StrongsNumber(number.parse().unwrap());
+    let data = section(s, &key, GuideSection::Forms);
+    let SectionData::Forms(f) = &*data else {
+        panic!("{data:?}")
+    };
+    f.forms.iter().map(|f| (f.label.clone(), f.count)).collect()
+}
+
+/// Acceptance (#133): from a fresh Library, a Morphology-tagged Greek NT and a Hebrew OT are
+/// one Download each from the Hebrew & Greek group, and Word Study › Forms fills in.
+#[test]
+fn from_a_fresh_library_a_tagged_greek_nt_and_hebrew_ot_download_and_forms_fill_in() {
+    let (mut s, _repos, root) = ready("originals", JobMode::Inline);
+    assert_eq!(s.library.entries().len(), 0, "a fresh Library");
+    assert!(forms_of(&mut s, "G26").is_empty());
+    assert!(
+        GuideSection::Forms
+            .empty_hint(&s.library, &s.guides.indexes())
+            .contains("Get Resources › Hebrew & Greek")
+    );
+
+    let group: Vec<String> = modules(
+        &s.get_bibles
+            .catalog()
+            .unwrap()
+            .featured_sections(ResourceFilter::HebrewAndGreek)[0]
+            .1,
+    );
+    for module in &group {
+        download(&mut s, module);
+    }
+    let gnt = s.library.get("morphgnt-1").unwrap();
+    assert_eq!(gnt.manifest.language, "grc");
+    let hot = s.library.get("oshb-1").unwrap();
+    assert_eq!(hot.manifest.language, "hbo");
+
+    // Greek: John 3:16 ἠγάπησεν (a tense-voice-mood number after it, skipped), Rom 5:8
+    // ἀγάπην, 1 John 4:9 ἀγάπη.
+    assert_eq!(
+        forms_of(&mut s, "G25"),
+        [("aorist active indicative, 3rd sing.".to_string(), 1)]
+    );
+    assert_eq!(
+        forms_of(&mut s, "G26"),
+        [
+            ("noun, acc. fem. sing.".to_string(), 1),
+            ("noun, nom. fem. sing.".to_string(), 1)
+        ]
+    );
+    assert!(forms_of(&mut s, "G5656").is_empty(), "not a word");
+    // Hebrew: Gen 1:1 בָּרָא and Gen 2:4 בְּהִבָּרְאָם.
+    let bara = forms_of(&mut s, "H1254");
+    assert_eq!(bara.len(), 2, "{bara:?}");
+    assert!(
+        bara.iter()
+            .any(|(l, n)| l == "Qal perfect, 3rd masc. sing." && *n == 1),
+        "{bara:?}"
+    );
+    assert!(
+        forms_of(&mut s, "H428")
+            .iter()
+            .any(|(l, _)| l == "demonstrative pronoun, com. pl."),
+        "OSHB's `x` (no person) reads"
+    );
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }

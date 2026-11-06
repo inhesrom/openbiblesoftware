@@ -1,4 +1,4 @@
-//! Live checks of Get Resources (#91, #132) against the real SWORD repositories. Ignored by default:
+//! Live checks of Get Resources (#91, #132, #133) against the real SWORD repositories. Ignored by default:
 //! they need the network and download copyrighted modules. Run them by hand:
 //!
 //! ```sh
@@ -13,7 +13,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use obs_engine::get_bibles::{ListingStatus, featured};
+use obs_engine::get_bibles::{ListingStatus, featured, featured_hebrew_greek};
 use obs_engine::{GuideSection, ImportPhase, JobMode, SectionData, SectionStatus, Session};
 use obs_model::ResourceType;
 use serde_json::json;
@@ -256,4 +256,101 @@ fn live_strongs_greek_downloads_in_one_click_and_word_study_on_g26_shows_its_ent
     );
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+/// #133: every Featured Hebrew & Greek Bible is offered by CrossWire, downloads and imports;
+/// the tagged ones import Tagged words whose Morphology codes the expander reads, and Word
+/// Study › Forms fills in from them.
+#[test]
+#[ignore = "network; downloads every Featured Hebrew & Greek Bible to a temp folder"]
+fn live_every_featured_hebrew_and_greek_bible_downloads_and_imports_with_its_tags() {
+    let root = temp("hebrew-greek");
+    let mut s = session(&root);
+    refresh(&mut s);
+    let mut failures = Vec::new();
+    for f in featured_hebrew_greek() {
+        let Some(listing) = s.get_bibles.catalog().unwrap().get(&f.module).cloned() else {
+            failures.push(format!("{}: not offered by any repository", f.module));
+            continue;
+        };
+        if listing.repo != f.repo || listing.kind != ResourceType::Bible {
+            failures.push(format!("{}: {listing:?}", f.module));
+            continue;
+        }
+        let started = std::time::Instant::now();
+        let id = match download(&mut s, &f.module) {
+            Ok(id) => id,
+            Err(e) => {
+                println!("FAIL {:<9} {e}", f.module);
+                failures.push(format!("{}: {e}", f.module));
+                continue;
+            }
+        };
+        let report = s.imports.report(&id).unwrap().report.clone().unwrap();
+        // Read every Tagged word's Morphology code back from the imported Resource.
+        let path = s.library.get(&id).unwrap().path.clone();
+        let reader = obs_store::ObrReader::open(&path).unwrap();
+        let mut codes = std::collections::BTreeSet::new();
+        obs_store::ResourceStore::for_each_tagged_word(&reader, &mut |parts| {
+            codes.extend(parts.iter().filter_map(|p| p.morph.clone()));
+        })
+        .unwrap();
+        let unread: Vec<&String> = codes
+            .iter()
+            .filter(|c| obs_model::morph::parse(c).is_err())
+            .collect();
+        println!(
+            "ok   {:<9} {:<4} tags {:<24} {:>6} verses {:>7} tagged words {:>5} codes \
+             ({} unread) {:>2} warnings {:>5.1}s  {}",
+            f.module,
+            listing.language,
+            format!("{:?}", listing.tags()),
+            report.verses,
+            report.tagged_words,
+            codes.len(),
+            unread.len(),
+            report.warnings.len(),
+            started.elapsed().as_secs_f64(),
+            listing.licence.as_deref().unwrap_or("-")
+        );
+        if listing.morphology && (report.tagged_words == 0 || !unread.is_empty()) {
+            failures.push(format!(
+                "{}: {} tagged words, unread codes {:?}",
+                f.module,
+                report.tagged_words,
+                unread.iter().take(10).collect::<Vec<_>>()
+            ));
+        }
+    }
+    for number in ["G26", "H1254"] {
+        let key = obs_model::Key::StrongsNumber(number.parse().unwrap());
+        let forms = loop {
+            match s.guide_section(&key, GuideSection::Forms) {
+                SectionStatus::Ready(d) => match &*d {
+                    SectionData::Forms(f) => break f.clone(),
+                    other => panic!("{other:?}"),
+                },
+                SectionStatus::Failed(e) => panic!("{e}"),
+                _ => {
+                    s.jobs().pump(4);
+                    s.poll_imports();
+                }
+            }
+        };
+        println!(
+            "Forms of {number} in {}: {:?}",
+            forms.bible_abbreviation,
+            forms
+                .forms
+                .iter()
+                .map(|f| (&f.label, f.count))
+                .collect::<Vec<_>>()
+        );
+        if forms.forms.is_empty() {
+            failures.push(format!("Forms of {number} empty"));
+        }
+    }
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+    assert!(failures.is_empty(), "{failures:#?}");
 }

@@ -285,12 +285,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         params: &[PANEL, SPLIT, crate::get_bibles::TYPE],
         enabled: always,
         run: |s, p| {
-            let ty = crate::get_bibles::type_filter_from_id(p.str("type").unwrap_or_default())
+            let filter = crate::get_bibles::type_filter_from_id(p.str("type").unwrap_or_default())
                 .map_err(|message| CommandError::Failed {
                     command: "library.get_resources",
                     message,
                 })?;
-            open_get_resources(s, p, ty)
+            open_get_resources(s, p, filter)
         },
     },
     CommandSpec {
@@ -299,7 +299,13 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         shortcut: None,
         params: OPEN,
         enabled: always,
-        run: |s, p| open_get_resources(s, p, Some(obs_model::ResourceType::Bible)),
+        run: |s, p| {
+            open_get_resources(
+                s,
+                p,
+                crate::get_bibles::ResourceFilter::Type(obs_model::ResourceType::Bible),
+            )
+        },
     },
     CommandSpec {
         id: "library.starter",
@@ -737,13 +743,13 @@ pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
     }
 }
 
-/// The Get Resources Tab with its type filter set to `ty` (All when `None`).
+/// The Get Resources Tab with its filter set.
 fn open_get_resources(
     s: &mut Session,
     p: Params<'_>,
-    ty: Option<obs_model::ResourceType>,
+    filter: crate::get_bibles::ResourceFilter,
 ) -> Result<Value, CommandError> {
-    s.get_bibles.set_type_filter(ty);
+    s.get_bibles.set_filter(filter);
     let out = open(s, p, TabKind::GetBibles)?;
     // A Layout saved before #132 still calls the Tab "Get Bibles".
     if let Some(tab) = out["tab"]

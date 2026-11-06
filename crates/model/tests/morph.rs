@@ -357,3 +357,63 @@ fn bad_codes_are_errors_not_panics() {
         }
     }
 }
+
+const SWORD_CODES: &str = include_str!("assets/morph/sword-codes.tsv");
+
+/// SWORD Import keeps a word's `morph="robinson:…"` or `morph="oshm:…"` code without its
+/// prefix (#133); every code the tagged originals on CrossWire use expands.
+#[test]
+fn every_robinson_and_oshm_code_in_crosswire_originals_expands() {
+    let mut n = 0;
+    let mut failures = Vec::new();
+    for r in rows(SWORD_CODES) {
+        let (scheme, code) = (r[0], r[1]);
+        match parse(code) {
+            Ok(m) => {
+                assert!(!m.short().is_empty() && !m.long().is_empty(), "{code}");
+                let greek = scheme == "robinson";
+                if (m.language == MorphLanguage::Greek) != greek {
+                    failures.push(format!("{scheme}:{code}: read as {:?}", m.language));
+                }
+                if m.pos().is_none() {
+                    failures.push(format!("{scheme}:{code}: no part of speech"));
+                }
+            }
+            Err(e) => failures.push(format!("{scheme}: {e} ({})", r[2])),
+        }
+        n += 1;
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {n} failed: {failures:#?}",
+        failures.len()
+    );
+    assert!(n > 4600, "{n}");
+}
+
+/// The OSHB and Tischendorf shapes STEPBible's own data never uses (#133).
+#[test]
+fn oshb_not_applicable_and_tischendorf_shapes_read_as_expected() {
+    let table: &[(&str, &str)] = &[
+        // OSHB writes `x` for "not applicable": a demonstrative has no person.
+        ("HPdxms", "demonstrative pronoun, masc. sing."),
+        ("HR/Pdxcp", "preposition + demonstrative pronoun, com. pl."),
+        ("ANxxxa", "noun, abs."),
+        // Tischendorf leaves out a possessive's possessor number, and has Robinson's
+        // imperatival participle (`R`).
+        ("S-1NSM", "possessive pronoun, 1st nom. masc. sing."),
+        (
+            "V-RPR-ASN",
+            "perfect passive imperatival participle, acc. neut. sing.",
+        ),
+    ];
+    for (code, want) in table {
+        assert_eq!(parse(code).unwrap().short(), *want, "{code}");
+    }
+    let m = parse("HPdxms").unwrap();
+    let p = m.main_part().unwrap();
+    assert_eq!(p.person, None);
+    assert_eq!(p.gender, Some(Gender::Masculine));
+    assert_eq!(m.language, MorphLanguage::Hebrew);
+    assert!(parse("HPdqms").is_err());
+}

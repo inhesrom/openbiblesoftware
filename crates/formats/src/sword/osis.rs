@@ -2,7 +2,7 @@
 //!
 //! | OSIS | span |
 //! |---|---|
-//! | `<w lemma="strong:G25" morph="robinson:V-AAI-3S">` | `tagged_word` (one part per Strong's number) |
+//! | `<w lemma="strong:G25" morph="robinson:V-AAI-3S">` (or `oshm:HVqp3ms`) | `tagged_word` (one part per Strong's number) |
 //! | `<q who="Jesus">` (container or `sID`/`eID`) | `woj` |
 //! | `<transChange>` `<divineName>` `<foreign>` | `added` `divine_name` `foreign` |
 //! | `<hi type="italic\|bold\|emphasis\|underline">` | `italic` `bold` `emphasis` |
@@ -18,7 +18,7 @@
 //! content too.
 
 use obs_model::{MorphemePart, NoteKind, ParaStyle, SpanKind};
-use obs_scripture::StrongsNumber;
+use obs_scripture::{StrongsLanguage, StrongsNumber};
 
 use super::writer::{Element, Writer};
 use super::xml::{Token, tokenize};
@@ -141,23 +141,52 @@ fn poetry(level: Option<&str>) -> ParaStyle {
     }
 }
 
-/// A `tagged_word` from `lemma="strong:H0853 strong:H01254"` and its parallel `morph`.
+/// Strong's Greek dictionary ends at G5624. Byz and other CrossWire Greek texts follow a
+/// verb's number with Strong's tense-voice-mood code (`strong:G1080 strong:G5656`), numbered
+/// from here up, which names a form, not a word.
+const GREEK_TVM_CODES: std::ops::RangeInclusive<u32> = 5625..=5999;
+
+/// A `tagged_word` from `lemma="strong:H0853 strong:H01254"` and its parallel `morph`
+/// (`robinson:V-AAI-3S`, `oshm:HC/Vqw3ms`: the scheme is dropped, the code kept). A lemma
+/// written out (`lemma.Strong:βίβλος`) becomes the Lemma. Strong's tense-voice-mood codes,
+/// `strongsMorph:` items and the empty placeholders `G`, `G0` are not words and are skipped.
 fn tagged_word(attrs: &[(&str, String)], w: &mut Writer) -> Option<SpanKind> {
     let lemma = Token::attr(attrs, "lemma")?;
     let morphs: Vec<String> = Token::attr(attrs, "morph")
         .unwrap_or_default()
         .split_whitespace()
+        .filter(|m| {
+            !m.split_once(':')
+                .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("strongsMorph"))
+        })
         .map(|m| m.split_once(':').map_or(m, |(_, code)| code).to_string())
         .collect();
     let mut parts = Vec::new();
+    let mut written_lemma = None;
     for item in lemma.split_whitespace() {
         let Some((scheme, value)) = item.split_once(':') else {
             continue;
         };
+        if scheme.to_ascii_lowercase().starts_with("lemma") {
+            if written_lemma.is_none() && !value.is_empty() {
+                written_lemma = Some(value.to_string());
+            }
+            continue;
+        }
         if !scheme.eq_ignore_ascii_case("strong") {
             continue;
         }
+        if value
+            .trim_start_matches(['G', 'g', 'H', 'h'])
+            .trim_start_matches('0')
+            .is_empty()
+        {
+            continue;
+        }
         match value.parse::<StrongsNumber>() {
+            Ok(n)
+                if n.language() == StrongsLanguage::Greek
+                    && GREEK_TVM_CODES.contains(&n.number()) => {}
             Ok(n) => {
                 let mut part = MorphemePart::new(n);
                 part.morph = morphs.get(parts.len()).cloned();
@@ -165,6 +194,9 @@ fn tagged_word(attrs: &[(&str, String)], w: &mut Writer) -> Option<SpanKind> {
             }
             Err(_) => w.warn(format!("bad Strong's number `{value}`")),
         }
+    }
+    if let (Some(l), [part]) = (written_lemma, parts.as_mut_slice()) {
+        part.lemma = Some(l);
     }
     (!parts.is_empty()).then_some(SpanKind::TaggedWord { parts })
 }
@@ -207,6 +239,90 @@ mod tests {
         assert!(unit.spans.iter().any(|(r, k)| *r == (21..21)
             && matches!(k, SpanKind::Xref { targets } if targets.to_string() == "Rom 5:8")));
         assert_eq!(w.dropped.get("<seg>"), Some(&1));
+    }
+
+    /// The tagging of the original-language texts on CrossWire's main repository, as read
+    /// from the live modules (#133): OSHB (`oshm:`), Byz (a tense-voice-mood number after the
+    /// verb's), WHNU (`strongsMorph:`), MorphGNT and Tisch (a written lemma).
+    fn words(osis: &str) -> (Vec<Vec<MorphemePart>>, Writer) {
+        let mut w = Writer::new();
+        w.set_book(Some(Book::Matthew));
+        w.start_chapter(1);
+        w.open_verse(Verse::new(Book::Matthew, 1, 2), 2);
+        feed(osis, &mut w);
+        let unit = w.finish_unit();
+        let words = unit
+            .spans
+            .iter()
+            .filter_map(|(_, k)| match k {
+                SpanKind::TaggedWord { parts } => Some(parts.clone()),
+                _ => None,
+            })
+            .collect();
+        (words, w)
+    }
+
+    fn summary(parts: &[MorphemePart]) -> Vec<(String, Option<&str>, Option<&str>)> {
+        parts
+            .iter()
+            .map(|p| {
+                (
+                    p.strongs.to_string(),
+                    p.morph.as_deref(),
+                    p.lemma.as_deref(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn crosswire_original_language_tagging_becomes_tagged_words() {
+        let (w, _) = words(
+            "<w lemma=\"strong:H03315\" morph=\"oshm:HC/Np\">וָיָֽפֶת</w> \
+             <w lemma=\"c/m\" morph=\"oshm:HC/R/Sp3mp\">וּמֵהֶ֣ם</w>",
+        );
+        assert_eq!(summary(&w[0]), vec![("H3315".into(), Some("HC/Np"), None)]);
+        assert_eq!(w.len(), 1, "a word with no Strong's number is not tagged");
+
+        let (w, writer) = words(
+            "<w lemma=\"strong:G1080 strong:G5656\" morph=\"robinson:V-AAI-3S\">εγεννησεν</w> \
+             <w lemma=\"strong:G strong:G2532\" morph=\"robinson:CONJ\">και</w> \
+             <w lemma=\"strong:G0 strong:G4826\" morph=\"robinson:N-PRI\">σιμεων</w> \
+             <w lemma=\"strong:G5627 strong:G\" morph=\"robinson:V-2AAI-3P\"></w>",
+        );
+        assert_eq!(
+            w.iter().map(|p| summary(p)).collect::<Vec<_>>(),
+            vec![
+                vec![("G1080".into(), Some("V-AAI-3S"), None)],
+                vec![("G2532".into(), Some("CONJ"), None)],
+                vec![("G4826".into(), Some("N-PRI"), None)],
+            ]
+        );
+        assert!(writer.warnings.is_empty(), "{:?}", writer.warnings);
+
+        let (w, _) = words(
+            "<w lemma=\"strong:G1080\" morph=\"robinson:V-AAI-3S strongsMorph:G5656\">εγεννησεν</w> \
+             <w lemma=\"strong:G3739 strong:G3739\" morph=\"robinson:R-DSM robinson:R-DSN\">ω</w> \
+             <w lemma=\"lemma.Strong:βίβλος strong:G0976\" morph=\"robinson:N-NSF\">Βίβλος</w> \
+             <w lemma=\"strong:G976 lemma.Strong:βίβλος lemma.ANLEX:βίβλος\" morph=\"robinson:N-NSF\">Βίβλος</w>",
+        );
+        assert_eq!(
+            summary(&w[0]),
+            vec![("G1080".into(), Some("V-AAI-3S"), None)]
+        );
+        assert_eq!(
+            summary(&w[1]),
+            vec![
+                ("G3739".into(), Some("R-DSM"), None),
+                ("G3739".into(), Some("R-DSN"), None)
+            ]
+        );
+        for word in &w[2..] {
+            assert_eq!(
+                summary(word),
+                vec![("G976".into(), Some("N-NSF"), Some("βίβλος"))]
+            );
+        }
     }
 
     #[test]

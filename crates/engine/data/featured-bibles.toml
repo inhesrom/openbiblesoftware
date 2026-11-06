@@ -55,3 +55,42 @@ repo = "CrossWire"
 [[bible]]
 module = "YLT"
 repo = "CrossWire"
+
+# Get Resources (#133): the Featured Hebrew & Greek group, top to bottom. Checked against the
+# live catalogs (docs/research/original-language-catalog.md): all are in CrossWire's main
+# repository. OSHB is the current Open Scriptures Hebrew Bible (OSMHB is its retired
+# predecessor, now only in CrossWire Attic). Left out: the Septuagint (LXX), whose CrossWire
+# licence is non-commercial over a copyrighted text and whose morphology uses Packard codes
+# the Morphology expander does not read; StatResGNT (Packard codes too).
+
+[[hebrew_greek]]
+module = "OSHB"
+repo = "CrossWire"
+
+[[hebrew_greek]]
+module = "WLC"
+repo = "CrossWire"
+
+[[hebrew_greek]]
+module = "MorphGNT"
+repo = "CrossWire"
+
+[[hebrew_greek]]
+module = "SBLGNT"
+repo = "CrossWire"
+
+[[hebrew_greek]]
+module = "Tisch"
+repo = "CrossWire"
+
+[[hebrew_greek]]
+module = "TR"
+repo = "CrossWire"
+
+[[hebrew_greek]]
+module = "Byz"
+repo = "CrossWire"
+
+[[hebrew_greek]]
+module = "WHNU"
+repo = "CrossWire"

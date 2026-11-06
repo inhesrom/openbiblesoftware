@@ -10,13 +10,16 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use obs_model::ResourceType;
+use obs_scripture::StrongsLanguage;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params};
+use crate::library_search::type_plural;
 use crate::{JobEvent, JobEventKind, JobId, Session};
 
-/// The Featured Bibles' data file: module + repository, in display order.
+/// The Featured Bibles' data file: module + repository, in display order, and the Featured
+/// Hebrew & Greek group.
 const FEATURED_BIBLES_TOML: &str = include_str!("../data/featured-bibles.toml");
 
 /// The Featured Lexicons, Commentaries and Dictionaries, one array per type.
@@ -31,8 +34,9 @@ pub const LISTED_TYPES: [ResourceType; 4] = [
 ];
 
 /// Bumped when the cached catalog's contents change meaning; an older cache is shown but
-/// refreshed at once. 2: Lexicons, Commentaries and Dictionaries (#132).
-pub const CATALOG_VERSION: u32 = 2;
+/// refreshed at once. 2: Lexicons, Commentaries and Dictionaries (#132). 3: Strong's and
+/// Morphology tags read from `GlobalOptionFilter` (#133).
+pub const CATALOG_VERSION: u32 = 3;
 
 /// Opening Get Bibles refreshes a catalog older than this (6 hours).
 pub const REFRESH_AFTER_SECS: u64 = 6 * 60 * 60;
@@ -51,6 +55,7 @@ pub struct FeaturedModule {
 #[serde(default)]
 struct FeaturedFile {
     bible: Vec<FeaturedModule>,
+    hebrew_greek: Vec<FeaturedModule>,
     lexicon: Vec<FeaturedModule>,
     commentary: Vec<FeaturedModule>,
     dictionary: Vec<FeaturedModule>,
@@ -75,22 +80,96 @@ pub fn featured(ty: ResourceType) -> Vec<FeaturedModule> {
     }
 }
 
-/// Every Featured list, Bibles first.
-pub fn featured_all() -> Vec<FeaturedModule> {
-    LISTED_TYPES.into_iter().flat_map(featured).collect()
+/// The Featured Hebrew & Greek group (#133): original-language Bibles, in display order.
+pub fn featured_hebrew_greek() -> Vec<FeaturedModule> {
+    toml::from_str::<FeaturedFile>(FEATURED_BIBLES_TOML)
+        .map(|f| f.hebrew_greek)
+        .unwrap_or_default()
 }
 
-/// A type filter's id in commands: `bibles`, `lexicons`, `commentaries`, `dictionaries`
-/// (singular too, any case); `all` or empty is no filter.
-pub fn type_filter_from_id(id: &str) -> Result<Option<ResourceType>, String> {
+/// Every Featured list, Bibles first, then Hebrew & Greek.
+pub fn featured_all() -> Vec<FeaturedModule> {
+    let mut all = featured(ResourceType::Bible);
+    all.extend(featured_hebrew_greek());
+    all.extend(LISTED_TYPES.into_iter().skip(1).flat_map(featured));
+    all
+}
+
+/// What the Get Resources Tab lists: every type, one Resource type, or Hebrew & Greek (the
+/// Bibles in Hebrew, Aramaic or Greek, #133). Hebrew & Greek is a language filter on Bibles,
+/// not a Resource type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ResourceFilter {
+    #[default]
+    All,
+    Type(ResourceType),
+    HebrewAndGreek,
+}
+
+impl ResourceFilter {
+    /// The filter row, in order.
+    pub const CHOICES: [ResourceFilter; 6] = [
+        ResourceFilter::Type(ResourceType::Bible),
+        ResourceFilter::HebrewAndGreek,
+        ResourceFilter::Type(ResourceType::Lexicon),
+        ResourceFilter::Type(ResourceType::Commentary),
+        ResourceFilter::Type(ResourceType::Dictionary),
+        ResourceFilter::All,
+    ];
+
+    /// The Resource type listed; `None` for All.
+    pub fn resource_type(self) -> Option<ResourceType> {
+        match self {
+            ResourceFilter::All => None,
+            ResourceFilter::Type(t) => Some(t),
+            ResourceFilter::HebrewAndGreek => Some(ResourceType::Bible),
+        }
+    }
+
+    /// Whether a listing passes the filter (type, and language for Hebrew & Greek).
+    pub fn accepts(self, listing: &ResourceListing) -> bool {
+        match self {
+            ResourceFilter::All => true,
+            ResourceFilter::Type(t) => listing.kind == t,
+            ResourceFilter::HebrewAndGreek => {
+                listing.kind == ResourceType::Bible && listing.is_hebrew_or_greek()
+            }
+        }
+    }
+
+    /// Shown on the filter row and in "All …".
+    pub fn label(self) -> &'static str {
+        match self {
+            ResourceFilter::All => "All",
+            ResourceFilter::Type(t) => crate::library_search::type_plural(t),
+            ResourceFilter::HebrewAndGreek => HEBREW_AND_GREEK,
+        }
+    }
+}
+
+impl From<Option<ResourceType>> for ResourceFilter {
+    fn from(ty: Option<ResourceType>) -> Self {
+        ty.map_or(ResourceFilter::All, ResourceFilter::Type)
+    }
+}
+
+/// The Hebrew & Greek filter's and Featured group's name.
+pub const HEBREW_AND_GREEK: &str = "Hebrew & Greek";
+
+/// A type filter's id in commands: `bibles`, `hebrew-greek`, `lexicons`, `commentaries`,
+/// `dictionaries` (singular too, any case); `all` or empty is no filter.
+pub fn type_filter_from_id(id: &str) -> Result<ResourceFilter, String> {
+    let ty = |t| Ok(ResourceFilter::Type(t));
     match id.trim().to_lowercase().as_str() {
-        "" | "all" => Ok(None),
-        "bible" | "bibles" => Ok(Some(ResourceType::Bible)),
-        "lexicon" | "lexicons" => Ok(Some(ResourceType::Lexicon)),
-        "commentary" | "commentaries" => Ok(Some(ResourceType::Commentary)),
-        "dictionary" | "dictionaries" => Ok(Some(ResourceType::Dictionary)),
+        "" | "all" => Ok(ResourceFilter::All),
+        "bible" | "bibles" => ty(ResourceType::Bible),
+        "hebrew-greek" | "hebrew & greek" | "originals" => Ok(ResourceFilter::HebrewAndGreek),
+        "lexicon" | "lexicons" => ty(ResourceType::Lexicon),
+        "commentary" | "commentaries" => ty(ResourceType::Commentary),
+        "dictionary" | "dictionaries" => ty(ResourceType::Dictionary),
         other => Err(format!(
-            "Unknown type {other:?}: use bibles, lexicons, commentaries, dictionaries or all"
+            "Unknown type {other:?}: use bibles, hebrew-greek, lexicons, commentaries, \
+             dictionaries or all"
         )),
     }
 }
@@ -153,9 +232,14 @@ pub struct ResourceListing {
     /// `DistributionLicense` from the conf, as published.
     pub licence: Option<String>,
     pub version: Option<String>,
-    /// A Bible tagged with Strong's numbers (`Feature=StrongsNumbers`).
+    /// A Bible tagged with Strong's numbers (`Feature=StrongsNumbers`, or a
+    /// `GlobalOptionFilter` of `OSISStrongs`, `GBFStrongs` or `ThMLStrongs`).
     #[serde(default)]
     pub strongs: bool,
+    /// A Bible tagged with Morphology (`GlobalOptionFilter` `OSISMorph`, `GBFMorph` or
+    /// `ThMLMorph`; OSIS `morph="robinson:…"` or `oshm:…`).
+    #[serde(default)]
+    pub morphology: bool,
     /// Why SWORD Import refuses the module today (Commentary numbering, `HREFCom`, …). The
     /// row is shown, but cannot be downloaded.
     #[serde(default)]
@@ -171,6 +255,12 @@ impl ResourceListing {
             return None;
         }
         let has = |f: &str| m.conf.features().iter().any(|x| x.eq_ignore_ascii_case(f));
+        let filters = m.conf.global_option_filters();
+        let filter = |names: &[&str]| {
+            filters
+                .iter()
+                .any(|x| names.iter().any(|n| x.trim().eq_ignore_ascii_case(n)))
+        };
         let kind = match m.conf.module_kind().ok()? {
             ModuleKind::Bible => ResourceType::Bible,
             ModuleKind::Commentary => ResourceType::Commentary,
@@ -195,7 +285,10 @@ impl ResourceListing {
             size: text("InstallSize").and_then(|s| s.parse().ok()),
             licence: text("DistributionLicense"),
             version: text("Version"),
-            strongs: kind == ResourceType::Bible && has("StrongsNumbers"),
+            strongs: kind == ResourceType::Bible
+                && (has("StrongsNumbers") || filter(&["OSISStrongs", "GBFStrongs", "ThMLStrongs"])),
+            morphology: kind == ResourceType::Bible
+                && filter(&["OSISMorph", "GBFMorph", "ThMLMorph"]),
             refused: obs_formats::sword_import_type(conf).err(),
         })
     }
@@ -203,6 +296,13 @@ impl ResourceListing {
     /// Which features the Resource feeds, for its row: "Used by Passage Guide › Commentaries".
     pub fn used_by(&self) -> Option<&'static str> {
         match self.kind {
+            ResourceType::Bible if self.strongs && self.is_hebrew_or_greek() => {
+                Some(if self.morphology {
+                    "Used by Word Info and Word Study › Occurrences and Forms"
+                } else {
+                    "Used by Word Info and Word Study › Occurrences"
+                })
+            }
             ResourceType::Bible if self.strongs => {
                 Some("Used by Word Study › Translated as and Occurrences")
             }
@@ -211,6 +311,25 @@ impl ResourceListing {
             ResourceType::Dictionary => Some("Used by Passage Guide › People & places"),
             _ => None,
         }
+    }
+
+    /// The tag badges on its row: "Strong's" and "Morphology", from the conf.
+    pub fn tags(&self) -> Vec<&'static str> {
+        let mut tags = Vec::new();
+        if self.strongs {
+            tags.push(TAG_STRONGS);
+        }
+        if self.morphology {
+            tags.push(TAG_MORPHOLOGY);
+        }
+        tags
+    }
+
+    /// In Hebrew, Aramaic or Greek, as Word Study counts original languages.
+    pub fn is_hebrew_or_greek(&self) -> bool {
+        [StrongsLanguage::Hebrew, StrongsLanguage::Greek]
+            .into_iter()
+            .any(|l| crate::key_words::is_original_language(&self.language, l))
     }
 
     /// Shown as the row's source: "from CrossWire".
@@ -227,6 +346,11 @@ impl ResourceListing {
                 .any(|f| f.to_lowercase().contains(&q))
     }
 }
+
+/// The tag badge of a Bible with Strong's numbers.
+pub const TAG_STRONGS: &str = "Strong's";
+/// The tag badge of a Bible with Morphology.
+pub const TAG_MORPHOLOGY: &str = "Morphology";
 
 /// The Bibles, Lexicons, Commentaries and Dictionaries of every repository on the master
 /// list, as last fetched.
@@ -277,21 +401,55 @@ impl ResourceCatalog {
             .collect()
     }
 
-    /// "All": every listing of type `ty` (any listed type when `None`) matching `query` and,
-    /// if given, `language`, by title. The three filters combine.
+    /// The Featured Hebrew & Greek rows, in data-file order; modules no repository offers
+    /// are left out.
+    pub fn featured_hebrew_greek(&self) -> Vec<&ResourceListing> {
+        featured_hebrew_greek()
+            .iter()
+            .filter_map(|f| self.get(&f.module))
+            .filter(|b| b.kind == ResourceType::Bible)
+            .collect()
+    }
+
+    /// The Featured sections a filter shows, titled ("Featured Bibles", "Featured Hebrew &
+    /// Greek"), in order. Bibles and All show Hebrew & Greek after the Featured Bibles. With
+    /// All, empty sections are left out.
+    pub fn featured_sections(
+        &self,
+        filter: ResourceFilter,
+    ) -> Vec<(String, Vec<&ResourceListing>)> {
+        let mut out = Vec::new();
+        for t in LISTED_TYPES {
+            if filter == ResourceFilter::All || filter == ResourceFilter::Type(t) {
+                out.push((format!("Featured {}", type_plural(t)), self.featured(t)));
+            }
+            if t == ResourceType::Bible && filter.resource_type().is_none_or(|ty| ty == t) {
+                out.push((
+                    format!("Featured {HEBREW_AND_GREEK}"),
+                    self.featured_hebrew_greek(),
+                ));
+            }
+        }
+        if filter == ResourceFilter::All {
+            out.retain(|(_, rows)| !rows.is_empty());
+        }
+        out
+    }
+
+    /// "All": every listing the filter accepts (any listed type for All) matching `query`
+    /// and, if given, `language`, by title. The three filters combine.
     pub fn all(
         &self,
         query: &str,
         language: Option<&str>,
-        ty: Option<ResourceType>,
+        filter: impl Into<ResourceFilter>,
     ) -> Vec<&ResourceListing> {
+        let filter = filter.into();
         let mut out: Vec<&ResourceListing> = self
             .listings
             .iter()
             .filter(|b| {
-                ty.is_none_or(|t| b.kind == t)
-                    && b.matches(query)
-                    && language.is_none_or(|l| b.language == l)
+                filter.accepts(b) && b.matches(query) && language.is_none_or(|l| b.language == l)
             })
             .collect();
         out.sort_by(|a, b| {
@@ -303,15 +461,12 @@ impl ResourceCatalog {
         out
     }
 
-    /// Language codes present among listings of type `ty` (all types when `None`), most
-    /// listings first, for the language filter.
-    pub fn languages(&self, ty: Option<ResourceType>) -> Vec<(String, usize)> {
+    /// Language codes present among the listings the filter accepts, most listings first,
+    /// for the language filter.
+    pub fn languages(&self, filter: impl Into<ResourceFilter>) -> Vec<(String, usize)> {
+        let filter = filter.into();
         let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
-        for b in self
-            .listings
-            .iter()
-            .filter(|b| ty.is_none_or(|t| b.kind == t))
-        {
+        for b in self.listings.iter().filter(|b| filter.accepts(b)) {
             *counts.entry(b.language.as_str()).or_default() += 1;
         }
         let mut out: Vec<(String, usize)> = counts
@@ -459,8 +614,8 @@ pub fn fetch_repos(
 #[derive(Debug, Default)]
 pub struct GetBibles {
     catalog: Option<ResourceCatalog>,
-    /// The Tab's type filter; `None` is All. Get Bibles… sets Bibles.
-    type_filter: Option<ResourceType>,
+    /// The Tab's filter. Get Bibles… sets Bibles.
+    filter: ResourceFilter,
     /// Why the last refresh failed (offline, repository down), while the cache is shown.
     offline: Option<String>,
     /// A refresh succeeded in this Session. A catalog loaded from the cache at startup was
@@ -476,12 +631,17 @@ impl GetBibles {
         self.catalog.as_ref()
     }
 
-    pub fn type_filter(&self) -> Option<ResourceType> {
-        self.type_filter
+    pub fn filter(&self) -> ResourceFilter {
+        self.filter
     }
 
-    pub fn set_type_filter(&mut self, ty: Option<ResourceType>) {
-        self.type_filter = ty;
+    pub fn set_filter(&mut self, filter: ResourceFilter) {
+        self.filter = filter;
+    }
+
+    /// The Resource type listed (Bible for Hebrew & Greek); `None` is All.
+    pub fn type_filter(&self) -> Option<ResourceType> {
+        self.filter.resource_type()
     }
 
     /// Set when the last refresh failed; the Tab shows the cached catalog with this message.
@@ -1028,7 +1188,7 @@ pub(crate) const TYPE: ParamSpec = ParamSpec {
     name: "type",
     kind: ParamKind::String,
     required: false,
-    help: "bibles, lexicons, commentaries, dictionaries or all",
+    help: "bibles, hebrew-greek, lexicons, commentaries, dictionaries or all",
 };
 
 pub(crate) const COMMANDS: &[CommandSpec] = &[
@@ -1148,9 +1308,10 @@ fn update_all(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
 }
 
 /// The listings, filtered by `query`, `language` and `type` (all types when not given).
-/// `featured` holds the Featured rows of the type, or of every type, Bibles first.
+/// `featured` holds the rows of the filter's Featured sections, in order (Bibles, then Hebrew
+/// & Greek, then the other types); `sections` names them.
 fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
-    let ty = type_filter_from_id(p.str("type").unwrap_or_default()).map_err(|message| {
+    let filter = type_filter_from_id(p.str("type").unwrap_or_default()).map_err(|message| {
         CommandError::Failed {
             command: "getbibles.list",
             message,
@@ -1187,22 +1348,28 @@ fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         json!({"module": b.module, "type": crate::library_search::type_id(b.kind),
                "repo": b.repo, "title": b.title, "abbreviation": b.abbreviation,
                "language": b.language, "size": b.size, "licence": b.licence,
-               "version": b.version, "used_by": b.used_by(), "refused": b.refused,
-               "update": update})
+               "version": b.version, "tags": b.tags(), "used_by": b.used_by(),
+               "refused": b.refused, "update": update})
     };
     let query = p.str("query").unwrap_or_default();
     let language = p.str("language").filter(|l| !l.is_empty());
-    let featured: Vec<Value> = LISTED_TYPES
-        .into_iter()
-        .filter(|t| ty.is_none_or(|ty| ty == *t))
-        .flat_map(|t| catalog.featured(t))
-        .map(row)
+    let sections = catalog.featured_sections(filter);
+    let featured: Vec<Value> = sections
+        .iter()
+        .flat_map(|(_, rows)| rows.iter().map(|b| row(b)))
+        .collect();
+    let section_rows: Vec<Value> = sections
+        .iter()
+        .map(|(title, rows)| {
+            json!({"title": title, "modules": rows.iter().map(|b| &b.module).collect::<Vec<_>>()})
+        })
         .collect();
     Ok(json!({
         "fetched_at": catalog.fetched_at,
         "offline": s.get_bibles.offline(),
         "updates": updates,
         "featured": featured,
-        "all": catalog.all(query, language, ty).into_iter().map(row).collect::<Vec<_>>(),
+        "sections": section_rows,
+        "all": catalog.all(query, language, filter).into_iter().map(row).collect::<Vec<_>>(),
     }))
 }
