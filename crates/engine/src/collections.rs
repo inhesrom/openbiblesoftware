@@ -190,7 +190,7 @@ impl Collection {
     /// Whether a Resource with these Resource tags is in the Collection: chosen by hand, or
     /// matched by its rules (each kind of rule by at least one of its rules).
     pub fn includes(&self, m: &Manifest, tags: &[String]) -> bool {
-        if self.resources.iter().any(|r| *r == m.resource_id) {
+        if self.resources.contains(&m.resource_id) {
             return true;
         }
         if self.rules.is_empty() {
