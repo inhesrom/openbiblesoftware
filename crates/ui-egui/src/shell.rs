@@ -803,10 +803,15 @@ impl Shell {
         let closing = ui.input(|i| i.viewport().close_requested());
         if closing {
             // A Note being written is saved, as if focus had left it. One that cannot be saved
-            // keeps the window open, showing why, until it is saved or discarded.
+            // (in the Note editor or on a Notes card) keeps the window open, showing why, until
+            // it is saved or discarded.
             self.st.save_note();
             self.st.save_card_edit(true);
-            if self.st.note_editor.is_some() {
+            if let Some(id) = self.st.notes_ui.editing.as_ref().map(|e| e.id.clone()) {
+                // Show the card that did not save, with its message and Discard changes.
+                self.st.run("notes.open", &json!({ "id": id }));
+            }
+            if self.st.note_editor.is_some() || self.st.notes_ui.editing.is_some() {
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::CancelClose);
             }

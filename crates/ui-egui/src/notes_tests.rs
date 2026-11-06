@@ -3,10 +3,11 @@
 
 use std::path::{Path, PathBuf};
 
-use obs_engine::TabId;
+use obs_engine::{HighlightStyle, TabId};
 use obs_scripture::{Book, Verse};
 use unicode_segmentation::UnicodeSegmentation;
 
+use super::annotation::{close_window, double_click};
 use super::*;
 
 fn folder(name: &str) -> PathBuf {
@@ -41,11 +42,10 @@ fn pane(h: &Harness) -> Rect {
     Rect::from_min_max(pos2(panel.left(), panel.top() + 70.0), panel.max)
 }
 
-/// A Note on the first long word of the third block in view in TB, made by the command the
-/// Note editor runs. Returns its id.
-fn note_in_view(h: &mut Harness, tb: TabId, body: &str) -> String {
+/// The first long word of the `nth` block in view in TB, as a selection's command params.
+fn word_in_view(h: &Harness, tb: TabId, nth: usize) -> serde_json::Value {
     let v = h.shell.st.tabs[&tb].view.as_ref().unwrap();
-    let (index, _, _) = v.laid_in_view(900.0)[2].clone();
+    let (index, _, _) = v.laid_in_view(900.0)[nth].clone();
     let block = &v.doc.blocks[index];
     let unit = &v.doc.units[block.unit];
     let range = block.source.range.clone();
@@ -54,13 +54,19 @@ fn note_in_view(h: &mut Harness, tb: TabId, body: &str) -> String {
         .find(|(_, w)| w.len() >= 5 && w.chars().all(char::is_alphabetic))
         .unwrap();
     let start = range.start + i;
-    let params = json!({
+    json!({
         "resource": v.doc.manifest.resource_id,
         "start_unit": unit.id.as_str(),
         "start": start,
         "end": start + w.len(),
-        "body": body,
-    });
+    })
+}
+
+/// A Note on the first long word of the third block in view in TB, made by the command the
+/// Note editor runs. Returns its id.
+fn note_in_view(h: &mut Harness, tb: TabId, body: &str) -> String {
+    let mut params = word_in_view(h, tb, 2);
+    params["body"] = json!(body);
     let out = h.shell.run("annotation.note", &params).unwrap();
     h.frames(2);
     out["id"].as_str().unwrap().to_string()
@@ -666,4 +672,294 @@ fn the_notes_symbols_are_in_the_chrome_fonts() {
             .collect();
         assert!(missing.is_empty(), "{missing:?}");
     });
+}
+
+/// Where a card was drawn.
+fn card_rect(h: &Harness, id: &str) -> Rect {
+    h.shell
+        .st
+        .notes_ui
+        .drawn
+        .iter()
+        .find(|c| c.id == id)
+        .map(|c| c.rect)
+        .unwrap_or_else(|| panic!("no card for {id}"))
+}
+
+/// The card being edited: its text and why it last failed to save.
+fn card_editor(h: &Harness) -> Option<(String, Option<String>)> {
+    let ed = h.shell.st.notes_ui.editing.as_ref()?;
+    Some((ed.text.clone(), ed.error.clone()))
+}
+
+/// When the database refuses a card's save (#129), the editor stays open with the typed text
+/// and the error, the save is tried again a moment later, and Discard changes puts back the
+/// text last saved. Closing the window then keeps it open, showing the card.
+#[test]
+fn a_card_whose_save_fails_keeps_its_text_and_shows_the_error() {
+    use std::sync::atomic::Ordering;
+    let dir = folder("write-fails");
+    let mut h = launch(&dir);
+    let (store, _) = obs_store::UserStore::open(&dir.join("failing.db")).unwrap();
+    let (store, failures) = obs_engine::testing::WritesFail::changes(store);
+    h.shell.st.session.attach_user(Box::new(store));
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Gen 31:49", "body": "The heap" }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let notes = open_notes(&mut h);
+    let saved = |h: &Harness| {
+        h.shell
+            .st
+            .session
+            .annotation(&id)
+            .unwrap()
+            .body()
+            .to_string()
+    };
+    let not_saved = |h: &Harness| {
+        h.texts()
+            .iter()
+            .any(|t| t.starts_with("Not saved:") && t.contains("disk is full"))
+    };
+
+    // The disk fills while the user types: clicking away cannot save.
+    failures.store(u32::MAX, Ordering::SeqCst);
+    retype(&mut h, &id, "Galeed, the heap of witness");
+    let p = pane(&h);
+    h.click(pos2(p.left() + 30.0, p.bottom() - 30.0));
+    let (text, error) = card_editor(&h).expect("the editor stays open");
+    assert_eq!(text, "Galeed, the heap of witness", "with the typed text");
+    let error = error.expect("and the error");
+    assert!(error.contains("disk is full"), "{error}");
+    assert!(not_saved(&h), "the card shows why: {:?}", h.texts());
+    assert!(h.find("Discard changes").is_some());
+    assert_eq!(saved(&h), "The heap");
+    // Not retried every frame.
+    let left = failures.load(Ordering::SeqCst);
+    h.frames(5);
+    assert_eq!(failures.load(Ordering::SeqCst), left);
+
+    // A moment later it is tried again; the disk has room now, so it saves.
+    failures.store(0, Ordering::SeqCst);
+    h.time += crate::shell::notes_tab::AUTOSAVE_SECS + 0.2;
+    h.frames(3);
+    assert_eq!(saved(&h), "Galeed, the heap of witness");
+    assert_eq!(card_editor(&h).and_then(|(_, e)| e), None);
+    assert!(!not_saved(&h), "{:?}", h.texts());
+
+    // Refused again: Discard changes puts back the text last saved.
+    failures.store(u32::MAX, Ordering::SeqCst);
+    retype(&mut h, &id, "Words to drop");
+    h.click(pos2(p.left() + 30.0, p.bottom() - 30.0));
+    assert!(not_saved(&h), "{:?}", h.texts());
+    h.click_text("Discard changes");
+    assert!(card_editor(&h).is_none());
+    assert_eq!(saved(&h), "Galeed, the heap of witness");
+    h.frames(2);
+    assert!(!not_saved(&h), "{:?}", h.texts());
+
+    // Another Tab covers the Notes Tab before the words can be saved: they are kept.
+    retype(&mut h, &id, "Unsaved at closing");
+    let search = TabId(
+        h.shell.run("tool.search", &json!({})).unwrap()["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    h.frames(2);
+    assert_eq!(h.shell.st.session.workspace.focused(), Some(search));
+    assert_eq!(
+        card_editor(&h).map(|(t, _)| t).as_deref(),
+        Some("Unsaved at closing")
+    );
+    // Closing the window keeps it open and shows the card that did not save.
+    assert!(close_window(&mut h), "the close is cancelled");
+    h.frames(2);
+    assert_eq!(h.shell.st.session.workspace.focused(), Some(notes));
+    assert!(not_saved(&h), "{:?}", h.texts());
+    // Once the disk has room, closing saves it and the window closes.
+    failures.store(0, Ordering::SeqCst);
+    assert!(!close_window(&mut h));
+    assert_eq!(saved(&h), "Unsaved at closing");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A Note deleted while its card is edited (an undo removed it) is let go: there is nothing
+/// left to save into.
+#[test]
+fn a_card_whose_note_is_gone_stops_editing() {
+    let dir = folder("gone");
+    let mut h = launch(&dir);
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Gen 31:49", "body": "The heap" }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    open_notes(&mut h);
+    retype(&mut h, &id, "Galeed");
+    h.shell.run("edit.undo", &json!({})).unwrap();
+    assert!(h.shell.st.session.annotation(&id).is_err());
+    h.time += crate::shell::notes_tab::AUTOSAVE_SECS + 0.2;
+    h.frames(3);
+    assert!(card_editor(&h).is_none());
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A Highlight card shows its style's swatch: the colour filled, or the underline drawn.
+#[test]
+fn a_highlight_card_shows_its_style_swatch() {
+    let dir = folder("swatch");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    let mut ids = Vec::new();
+    for (nth, style) in [(1, "green"), (2, "red_underline")] {
+        let mut params = word_in_view(&h, tb, nth);
+        params["style"] = json!(style);
+        let out = h.shell.run("annotation.highlight", &params).unwrap();
+        ids.push(out["ids"][0].as_str().unwrap().to_string());
+    }
+    open_notes(&mut h);
+    let palette = h.shell.st.palette;
+    let painted = |h: &Harness, id: &str, color: egui::Color32| -> Vec<Rect> {
+        let card = card_rect(h, id);
+        h.rects
+            .iter()
+            .filter(|(r, c)| *c == color && card.contains_rect(*r))
+            .map(|(r, _)| *r)
+            .collect()
+    };
+    let green = palette.highlight(HighlightStyle::Green).unwrap();
+    let swatch = painted(&h, &ids[0], green);
+    assert_eq!(swatch.len(), 1, "{swatch:?}");
+    assert!(
+        (swatch[0].size() - vec2(16.0, 16.0)).length() < 0.5,
+        "{swatch:?}"
+    );
+    assert!(painted(&h, &ids[0], palette.underline).is_empty());
+    // The underline style: an underline, no fill colour.
+    assert_eq!(painted(&h, &ids[1], palette.underline).len(), 1);
+    assert!(painted(&h, &ids[1], green).is_empty());
+
+    // Changing the style repaints the swatch.
+    h.shell
+        .run(
+            "annotation.style",
+            &json!({ "id": ids[0], "style": "pink" }),
+        )
+        .unwrap();
+    settle_notes(&mut h);
+    let pink = palette.highlight(HighlightStyle::Pink).unwrap();
+    assert_eq!(painted(&h, &ids[0], pink).len(), 1);
+    assert!(painted(&h, &ids[0], green).is_empty());
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+fn notebook_names(h: &Harness) -> Vec<String> {
+    (h.shell.st.session.notebooks().unwrap().into_iter())
+        .map(|n| n.name)
+        .collect()
+}
+
+fn type_text(h: &mut Harness, text: &str) {
+    h.events.push(Event::Text(text.into()));
+    h.frame();
+}
+
+/// A Notebook is renamed in its row: double-click (or Rename… on right-click), type, Enter.
+/// Esc leaves the name alone; undo puts the old name back.
+#[test]
+fn a_notebook_is_renamed_in_place() {
+    let dir = folder("rename");
+    let mut h = launch(&dir);
+    h.shell
+        .run("notebook.create", &json!({ "name": "Study" }))
+        .unwrap();
+    open_notes(&mut h);
+
+    let p = leftmost(&h, "Study");
+    double_click(&mut h, p);
+    assert!(
+        h.ctx.text_edit_focused(),
+        "the name is a field with the keys"
+    );
+    press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+    type_text(&mut h, "Genesis study");
+    press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    h.frames(2);
+    assert!(!h.ctx.text_edit_focused());
+    assert_eq!(notebook_names(&h), ["My Notebook", "Genesis study"]);
+    assert!(h.find("Genesis study").is_some(), "{:?}", h.texts());
+    assert!(h.find("Study").is_none());
+
+    // Rename… from the row's menu; Esc cancels.
+    let p = leftmost(&h, "Genesis study");
+    right_click(&mut h, p);
+    h.click_text("Rename…");
+    assert!(h.ctx.text_edit_focused());
+    press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+    type_text(&mut h, "Ignored");
+    press_key(&mut h, egui::Key::Escape, Modifiers::NONE);
+    h.frames(2);
+    assert_eq!(notebook_names(&h), ["My Notebook", "Genesis study"]);
+    assert!(h.find("Ignored").is_none(), "{:?}", h.texts());
+    assert!(h.find("Genesis study").is_some());
+
+    // One undo step brings the old name back.
+    press_key(&mut h, egui::Key::Z, Modifiers::COMMAND);
+    h.frames(2);
+    assert_eq!(notebook_names(&h), ["My Notebook", "Study"]);
+    assert!(h.find("Study").is_some(), "{:?}", h.texts());
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The “+ New notebook” button turns into a name field; Enter creates the Notebook. An empty
+/// name, or clicking away, creates nothing.
+#[test]
+fn new_notebook_creates_one_from_the_name_typed() {
+    let dir = folder("new-notebook");
+    let mut h = launch(&dir);
+    open_notes(&mut h);
+    assert_eq!(notebook_names(&h), ["My Notebook"]);
+
+    h.click_text("+ New notebook");
+    assert!(h.ctx.text_edit_focused(), "a name field with the keys");
+    assert!(h.find("+ New notebook").is_none());
+    type_text(&mut h, "Prophets");
+    press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    h.frames(2);
+    assert_eq!(notebook_names(&h), ["My Notebook", "Prophets"]);
+    assert!(h.find("Prophets").is_some(), "{:?}", h.texts());
+    assert!(h.find("+ New notebook").is_some(), "the button is back");
+
+    // Enter on an empty name creates nothing.
+    h.click_text("+ New notebook");
+    press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    h.frames(2);
+    assert_eq!(notebook_names(&h), ["My Notebook", "Prophets"]);
+    assert!(h.find("+ New notebook").is_some());
+
+    // Clicking away leaves the name unused.
+    h.click_text("+ New notebook");
+    type_text(&mut h, "Stray");
+    let p = pane(&h);
+    h.click(pos2(p.left() + 30.0, p.bottom() - 30.0));
+    assert_eq!(notebook_names(&h), ["My Notebook", "Prophets"]);
+    assert!(h.find("Stray").is_none());
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
 }

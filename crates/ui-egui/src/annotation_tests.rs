@@ -91,7 +91,7 @@ fn press_key(h: &mut Harness, key: egui::Key, modifiers: Modifiers) {
 }
 
 /// A frame in which the user closes the window: whether the app cancels the close.
-fn close_window(h: &mut Harness) -> bool {
+pub(super) fn close_window(h: &mut Harness) -> bool {
     let mut input = RawInput {
         screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1400.0, 900.0))),
         time: Some(h.time),
@@ -109,7 +109,7 @@ fn close_window(h: &mut Harness) -> bool {
         .is_some_and(|v| v.commands.contains(&egui::ViewportCommand::CancelClose))
 }
 
-fn double_click(h: &mut Harness, p: Pos2) {
+pub(super) fn double_click(h: &mut Harness, p: Pos2) {
     // Long after any earlier click, so this is not counted as a triple click.
     h.time += 1.0;
     h.events.push(Event::PointerMoved(p));
