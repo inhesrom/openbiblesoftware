@@ -223,9 +223,10 @@ impl State {
             })
             .collect();
         let mut open = true;
+        let escape = super::escape_closes_window(ctx);
         let mut acts: Vec<Act> = Vec::new();
         let max_height = ctx.content_rect().height() * 0.4;
-        egui::Window::new("Copy verses")
+        let window = egui::Window::new("Copy verses")
             .id(egui::Id::unique(WINDOW))
             .open(&mut open)
             .collapsible(false)
@@ -243,7 +244,8 @@ impl State {
                                 .id_salt("copy-passages")
                                 .hint_text("Jn 3:16-18; Rom 5:8")
                                 .desired_width(420.0),
-                        );
+                        )
+                        .accessible_name("Passages");
                         ui.end_row();
                         ui.label("Bibles");
                         ui.horizontal_wrapped(|ui| {
@@ -281,13 +283,16 @@ impl State {
                                             ));
                                         }
                                     }
-                                });
+                                })
+                                .response
+                                .accessible_name("Preset");
                             ui.add(
                                 egui::TextEdit::singleline(&mut self.copy_ui.preset_name)
                                     .id_salt("copy-preset-name")
                                     .hint_text("Preset name")
                                     .desired_width(130.0),
-                            );
+                            )
+                            .accessible_name("Preset name");
                             let name = self.copy_ui.preset_name.trim().to_string();
                             if ui
                                 .add_enabled(!name.is_empty(), egui::Button::new("Save preset"))
@@ -359,7 +364,7 @@ impl State {
                     }
                 });
             });
-        if !open {
+        if !open || escape(window.map(|r| r.response.layer_id)) {
             self.copy_ui.open = false;
         }
         for act in acts {

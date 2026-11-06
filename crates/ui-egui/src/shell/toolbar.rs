@@ -371,13 +371,15 @@ impl Shell {
         let tb = &mut self.st.toolbar;
         let before = tb.query.clone();
         let field_id = egui::Id::unique(id);
-        let resp = ui.add(
-            egui::TextEdit::singleline(&mut tb.query)
-                .id(field_id)
-                .hint_text(hint)
-                .desired_width(f32::INFINITY)
-                .margin(egui::Margin::symmetric(8, 5)),
-        );
+        let resp = ui
+            .add(
+                egui::TextEdit::singleline(&mut tb.query)
+                    .id(field_id)
+                    .hint_text(hint)
+                    .desired_width(f32::INFINITY)
+                    .margin(egui::Margin::symmetric(8, 5)),
+            )
+            .accessible_name(hint);
         if std::mem::take(&mut tb.focus) {
             resp.request_focus();
         }
@@ -676,13 +678,15 @@ impl Shell {
                             pos2(label_rect.right(), rect.top() + 5.0),
                             pos2(rect.right() - 8.0, rect.bottom() - 5.0),
                         );
-                        let edit = ui.put(
-                            field,
-                            egui::TextEdit::singleline(input)
-                                .id(egui::Id::unique(("guide-input", *id)))
-                                .hint_text(guide_hint(id))
-                                .margin(egui::Margin::symmetric(8, 4)),
-                        );
+                        let edit = ui
+                            .put(
+                                field,
+                                egui::TextEdit::singleline(input)
+                                    .id(egui::Id::unique(("guide-input", *id)))
+                                    .hint_text(guide_hint(id))
+                                    .margin(egui::Margin::symmetric(8, 4)),
+                            )
+                            .accessible_name(format!("{label}: {}", guide_hint(id)));
                         if selected && focus {
                             edit.request_focus();
                         }
@@ -884,12 +888,14 @@ impl Shell {
                         .filter(|(from, _)| *from == card.name && !card.builtin);
                     if let Some((_, text)) = editing {
                         let field = Rect::from_min_size(slot.min, vec2(slot.width(), 22.0));
-                        let edit = ui.put(
-                            field,
-                            egui::TextEdit::singleline(text)
-                                .id(egui::Id::unique("layout-rename"))
-                                .margin(egui::Margin::symmetric(4, 2)),
-                        );
+                        let edit = ui
+                            .put(
+                                field,
+                                egui::TextEdit::singleline(text)
+                                    .id(egui::Id::unique("layout-rename"))
+                                    .margin(egui::Margin::symmetric(4, 2)),
+                            )
+                            .accessible_name("Layout name");
                         if !edit.has_focus() && !edit.lost_focus() {
                             edit.request_focus();
                         }

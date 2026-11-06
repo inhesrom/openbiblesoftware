@@ -452,6 +452,46 @@ fn shift_f10_and_the_menu_key_open_the_menu_at_the_hovered_word_or_the_selection
 }
 
 #[test]
+fn the_target_the_keyboard_chose_stays_chosen_under_a_resting_pointer() {
+    use super::a11y_audit::{key, tab_to};
+    use crate::shell::context_menu::Target;
+    let mut h = Harness::new();
+    let _files = setup(&mut h, "keyboard-target");
+    h.ctx.enable_accesskit();
+    let kjv = open_at_john_3_16(&mut h, "kjv");
+    // A selection, and a menu on untagged text in it: Selection and Verse.
+    let loved = super::word_info::word_spot(&h, kjv, "loved");
+    let saved = super::word_info::word_spot(&h, kjv, "saved");
+    h.drag(loved, saved);
+    let might = super::word_info::word_spot(&h, kjv, "might");
+    right_click(&mut h, might);
+    assert!(menu_open(&h), "{:?}", h.texts());
+    let chosen = |h: &Harness| h.shell.st.tabs[&kjv].menu.as_ref().map(|m| m.chosen);
+    // The pointer rests on the Selection.
+    let texts = h.texts();
+    let selection = texts
+        .iter()
+        .position(|t| *t == "Selection")
+        .map(|i| texts[i + 1].to_string())
+        .unwrap();
+    hover(&mut h, &selection);
+    assert_eq!(chosen(&h), Some(Target::Selection));
+    // The keyboard moves onto the Verse, then on to its Passage Guide.
+    tab_to(&mut h, "Verse: John 3:17");
+    h.frames(3);
+    assert_eq!(
+        chosen(&h),
+        Some(Target::Verse),
+        "the resting pointer took it back"
+    );
+    tab_to(&mut h, "Passage Guide");
+    key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    settle_all(&mut h);
+    assert_eq!(focused_kind(&h), TabKind::Guide(Guide::PassageGuide));
+    drop(h);
+}
+
+#[test]
 fn text_comparison_and_search_rows_offer_their_verse() {
     let mut h = Harness::new();
     let _files = setup(&mut h, "rows");

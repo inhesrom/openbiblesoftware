@@ -228,9 +228,11 @@ impl State {
                             egui::TextEdit::singleline(&mut f.books)
                                 .hint_text("e.g. Rom-Gal; Jas")
                                 .desired_width(180.0),
-                        );
+                        )
+                        .accessible_name("Books");
                         ui.label("over");
-                        ui.add(egui::TextEdit::singleline(&mut f.days).desired_width(44.0));
+                        ui.add(egui::TextEdit::singleline(&mut f.days).desired_width(44.0))
+                            .accessible_name("Over how many days");
                         ui.label("days");
                     });
                 }
@@ -240,7 +242,8 @@ impl State {
                     egui::TextEdit::singleline(&mut f.start)
                         .hint_text("Today (or YYYY-MM-DD)")
                         .desired_width(180.0),
-                );
+                )
+                .accessible_name("Start");
                 ui.add_space(6.0);
                 heading(ui, "Bible");
                 let shown = f
@@ -256,7 +259,9 @@ impl State {
                         for (id, label) in &bibles {
                             ui.selectable_value(&mut f.bible, Some(id.clone()), label);
                         }
-                    });
+                    })
+                    .response
+                    .accessible_name("Bible");
                 ui.add_space(6.0);
                 heading(ui, "Read on");
                 ui.horizontal_wrapped(|ui| {

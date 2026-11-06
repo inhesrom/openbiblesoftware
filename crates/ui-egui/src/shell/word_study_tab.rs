@@ -318,7 +318,8 @@ impl State {
             let open = open_state.get(&id).copied().unwrap_or(i == 0);
             let toggled = ui
                 .horizontal(|ui| {
-                    let (rect, arrow) = ui.allocate_exact_size(vec2(14.0, 18.0), Sense::click());
+                    // Mouse only: the title is the entry's one keyboard stop and its name.
+                    let (rect, arrow) = ui.allocate_exact_size(vec2(14.0, 18.0), Sense::CLICK);
                     paint_disclosure(ui, rect, open);
                     ui.label(RichText::new(e.key.to_string()).color(theme::c().muted));
                     let title = ui.add(

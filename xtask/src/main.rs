@@ -19,6 +19,7 @@ tasks:
   ci       run every gate below, in order
   fmt      cargo fmt --check
   clippy   cargo clippy -D warnings on all targets
+  a11y     the accessibility audit (#182): names, keyboard and contrast of every surface
   test     cargo nextest (falls back to cargo test locally) plus doctests
   layers   enforce the crate layering rules (ADR 0005, #12)
   wasm     cargo check every non-app crate for wasm32-unknown-unknown
@@ -98,6 +99,7 @@ const GATES: &[(&str, Gate)] = &[
     ("assets", assets::run),
     ("licenses", licenses::gate),
     ("clippy", clippy),
+    ("a11y", a11y),
     ("test", test),
     ("wasm", wasm),
 ];
@@ -138,6 +140,25 @@ fn clippy(root: &Path) -> Result<()> {
             "--",
             "-D",
             "warnings",
+        ],
+    )
+}
+
+/// The accessibility audit (#182, `docs/dev/accessibility.md`): every Tab kind, toolbar pane,
+/// menu and window has named controls, works from the keyboard alone, and meets WCAG AA
+/// contrast in every theme × Page tone. Also part of `test`; run first, on its own, so a
+/// failure names the gate.
+fn a11y(root: &Path) -> Result<()> {
+    cargo(
+        root,
+        &[
+            "test",
+            "--locked",
+            "-p",
+            "obs-ui-egui",
+            "--lib",
+            "--",
+            "a11y_audit",
         ],
     )
 }

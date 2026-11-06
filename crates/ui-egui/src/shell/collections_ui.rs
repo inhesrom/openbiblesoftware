@@ -166,7 +166,8 @@ impl State {
                             egui::TextEdit::singleline(&mut ed.name)
                                 .hint_text("Older commentaries")
                                 .desired_width(320.0),
-                        );
+                        )
+                        .accessible_name("Name");
                         ui.end_row();
                         ui.label("Rules");
                         ui.add(
@@ -174,6 +175,7 @@ impl State {
                                 .hint_text("type:commentary language:en")
                                 .desired_width(320.0),
                         )
+                        .accessible_name("Rules")
                         .on_hover_text(
                             "type: (bible, commentary, lexicon, dictionary), language:, tag:, \
                              licence:, title: — each kind must match; several of one kind match \

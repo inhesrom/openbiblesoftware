@@ -144,7 +144,7 @@ pub(super) fn launcher_button(
     }
     let badge_text = (badge > 0).then(|| {
         ui.painter()
-            .layout_no_wrap(badge.to_string(), small_font(), Color32::WHITE)
+            .layout_no_wrap(badge.to_string(), small_font(), theme::text_on(lk.badge))
     });
     if !shows.label {
         if let Some(g) = badge_text {
@@ -156,7 +156,7 @@ pub(super) fn launcher_button(
             p.galley(
                 pos2(pill.left() + 4.0, pill.center().y - g.size().y / 2.0),
                 g,
-                Color32::WHITE,
+                theme::text_on(lk.badge),
             );
         }
         return resp;
@@ -180,7 +180,7 @@ pub(super) fn launcher_button(
         p.galley(
             pos2(pill.left() + 5.0, pill.center().y - g.size().y / 2.0),
             g,
-            Color32::WHITE,
+            theme::text_on(lk.badge),
         );
     }
     resp
@@ -456,6 +456,7 @@ pub(super) fn footer_link(ui: &mut Ui, text: &str, selected: bool) -> Response {
         .painter()
         .layout_no_wrap(text.to_string(), label_font(), lk.accent);
     let (rect, resp) = ui.allocate_exact_size(galley.size() + vec2(14.0, 10.0), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, text));
     row_background(ui, rect, selected, resp.hovered());
     ui.painter().galley(
         pos2(rect.left() + 7.0, rect.center().y - galley.size().y / 2.0),

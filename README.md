@@ -23,7 +23,7 @@ A crate may depend only on its own or lower layers. Everything below L6 compiles
 
 ```sh
 cargo run -p openbible   # desktop app
-cargo xtask ci           # every gate CI runs: fmt, layers, assets, clippy, test, wasm
+cargo xtask ci           # every gate CI runs: fmt, layers, assets, licenses, clippy, a11y, test, wasm
 cargo xtask help         # run a single gate
 ```
 

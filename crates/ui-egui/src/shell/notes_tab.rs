@@ -606,7 +606,8 @@ impl State {
                                 egui::TextEdit::singleline(text)
                                     .id_salt(("notebook-rename", id.as_str()))
                                     .desired_width(ui.available_width() - 8.0),
-                            );
+                            )
+.accessible_name("Notebook name");
                             if !*focused {
                                 r.request_focus();
                                 *focused = true;
@@ -666,7 +667,8 @@ impl State {
                                 .id_salt("notebook-new")
                                 .hint_text("Notebook name")
                                 .desired_width(ui.available_width()),
-                        );
+                        )
+.accessible_name("Notebook name");
                         if !*focused {
                             r.request_focus();
                             *focused = true;
@@ -878,7 +880,9 @@ impl State {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.menu_button(RichText::new("…").color(theme::c().muted), |ui| {
                             self.card_menu(ui, card, run);
-                        });
+                        })
+                        .response
+                        .accessible_name("Note menu");
                         ui.label(
                             RichText::new(&card.notebook)
                                 .small()
@@ -971,13 +975,15 @@ impl State {
             let Some(ed) = self.notes_ui.editing.as_mut() else {
                 return Rect::NOTHING;
             };
-            let r = ui.add(
-                egui::TextEdit::multiline(&mut ed.text)
-                    .id(egui::Id::unique(("notes-card-edit", a.id.as_str())))
-                    .hint_text("Write a note…")
-                    .desired_rows(3)
-                    .desired_width(f32::INFINITY),
-            );
+            let r = ui
+                .add(
+                    egui::TextEdit::multiline(&mut ed.text)
+                        .id(egui::Id::unique(("notes-card-edit", a.id.as_str())))
+                        .hint_text("Write a note…")
+                        .desired_rows(3)
+                        .desired_width(f32::INFINITY),
+                )
+                .accessible_name("Note");
             if ed.focus {
                 r.request_focus();
                 ed.focus = false;

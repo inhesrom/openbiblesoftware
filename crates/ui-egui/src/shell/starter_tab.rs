@@ -182,7 +182,11 @@ fn starter_row(
         let muted = |text: &str| RichText::new(text).small().color(theme::c().muted);
         match row.status {
             StarterStatus::InLibrary => {
-                if ui.button("Open").clicked() {
+                if ui
+                    .button("Open")
+                    .accessible_name(format!("Open {}", row.title))
+                    .clicked()
+                {
                     action = Some(("resource.open", id.clone()));
                 }
                 ui.label(muted("In Library"));

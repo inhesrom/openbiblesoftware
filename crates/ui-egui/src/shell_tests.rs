@@ -190,7 +190,8 @@ impl Harness {
         let mut viewports = egui::ViewportIdMap::default();
         viewports.insert(egui::ViewportId::ROOT, self.root_info.clone());
         if let Some(n) = &self.native {
-            n.borrow_mut().begin_frame(self.time, &mut viewports);
+            n.borrow_mut()
+                .begin_frame(self.time, self.os_theme, &mut viewports);
         }
         let input = RawInput {
             viewports,
@@ -3164,6 +3165,8 @@ mod copy_export;
 #[path = "find_tests.rs"]
 mod find_bar;
 
+#[path = "a11y_audit_tests.rs"]
+mod a11y_audit;
 #[path = "floating_windows_tests.rs"]
 mod floating_windows;
 #[path = "interlinear_tests.rs"]

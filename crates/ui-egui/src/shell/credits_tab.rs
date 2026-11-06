@@ -183,10 +183,15 @@ fn linked_text(ui: &mut Ui, text: &str) {
             .find(|(range, _)| range.contains(&at))
             .map(|(_, url)| *url)
     };
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, text));
     let hovered = response.hover_pos().and_then(url_at);
+    // From the keyboard (Enter or Space on the focused text) the first URL opens.
     let clicked = response
         .clicked()
-        .then(|| response.interact_pointer_pos().and_then(url_at))
+        .then(|| match response.interact_pointer_pos() {
+            Some(p) => url_at(p),
+            None => urls.first().map(|(_, url)| *url),
+        })
         .flatten();
     ui.painter().galley(pos, galley.clone(), ink);
     if let Some(url) = hovered {

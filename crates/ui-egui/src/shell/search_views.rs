@@ -137,8 +137,8 @@ impl State {
                                                 egui::StrokeKind::Inside,
                                             );
                                         }
-                                        let ink = if heat > 0.5 {
-                                            Color32::WHITE
+                                        let ink = if heat > 0.0 {
+                                            theme::text_on(heat_fill(heat))
                                         } else {
                                             theme::c().ink
                                         };
@@ -218,7 +218,9 @@ impl State {
                                     ));
                                 }
                             }
-                        });
+                        })
+                        .response
+                        .accessible_name("Chart chapters of");
                 });
             });
         let max = bars.iter().map(|b| b.count).max().unwrap_or(0).max(1);

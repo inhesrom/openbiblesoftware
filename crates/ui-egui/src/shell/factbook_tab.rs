@@ -268,8 +268,7 @@ impl State {
                 for p in list {
                     let short = format_passage(*p, &Standard, RefStyle::Short);
                     let local = in_book(*p);
-                    if ui
-                        .link(local)
+                    if super::unbroken_link(ui, local)
                         .on_hover_text(format!("Read {short} · Ctrl/Cmd-click opens a new Tab"))
                         .clicked()
                     {
@@ -459,7 +458,7 @@ fn entity_link(ui: &mut Ui, p: &EntityLink, new_tab: bool) -> Option<FactbookAct
             p.name
         )
     };
-    ui.link(text)
+    super::unbroken_link(ui, text)
         .on_hover_text(tip)
         .clicked()
         .then(|| FactbookAction::Entity(p.entity.clone(), new_tab))

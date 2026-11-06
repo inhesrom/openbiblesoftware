@@ -26,16 +26,18 @@ pub(super) struct NativeWindows {
     windows: HashMap<egui::ViewportId, NativeWindow>,
     root: egui::ViewportInfo,
     time: f64,
+    /// The operating system's appearance, the same in every window.
+    os_theme: Option<egui::Theme>,
     /// The scale factor a new window opens at (that of the screen the system opens it on).
     open_scale: Option<f32>,
 }
 
 /// One floating OS window.
-struct NativeWindow {
+pub(super) struct NativeWindow {
     /// Its place and scale, as the window system reports them.
     info: egui::ViewportInfo,
     /// Input typed or clicked in it since its last frame.
-    events: Vec<Event>,
+    pub(super) events: Vec<Event>,
     modifiers: Modifiers,
     /// How the app last asked for it to be made.
     builder: egui::ViewportBuilder,
@@ -43,6 +45,9 @@ struct NativeWindow {
     commands: Vec<egui::ViewportCommand>,
     /// The text it painted last frame.
     shapes: Vec<(Rect, String)>,
+    /// What it painted last frame, and its last AccessKit tree update (when AccessKit is on).
+    pub(super) last_shapes: Vec<egui::epaint::ClippedShape>,
+    pub(super) tree: Option<egui::accesskit::TreeUpdate>,
 }
 
 impl NativeWindow {
@@ -63,6 +68,8 @@ impl NativeWindow {
             builder: builder.clone(),
             commands: Vec::new(),
             shapes: Vec::new(),
+            last_shapes: Vec::new(),
+            tree: None,
         };
         w.place(at, size);
         w
@@ -102,9 +109,11 @@ impl NativeWindows {
     pub(super) fn begin_frame(
         &mut self,
         time: f64,
+        os_theme: egui::Theme,
         viewports: &mut egui::ViewportIdMap<egui::ViewportInfo>,
     ) {
         self.time = time;
+        self.os_theme = Some(os_theme);
         self.root = viewports[&egui::ViewportId::ROOT].clone();
         for (id, w) in &self.windows {
             viewports.insert(*id, w.info.clone());
@@ -132,6 +141,7 @@ impl NativeWindows {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
             time: Some(self.time),
             events,
+            system_theme: self.os_theme,
             ..Default::default()
         }
     }
@@ -146,6 +156,10 @@ impl NativeWindows {
         w.shapes.clear();
         for c in &out.shapes {
             collect(&c.shape, &mut w.shapes);
+        }
+        w.last_shapes = out.shapes;
+        if let Some(t) = out.platform_output.accesskit_update.take() {
+            w.tree = Some(t);
         }
     }
 
@@ -185,7 +199,7 @@ impl Harness {
     }
 
     /// A floating window's OS window.
-    fn window(&self, w: WindowId) -> RefMut<'_, NativeWindow> {
+    pub(super) fn window(&self, w: WindowId) -> RefMut<'_, NativeWindow> {
         let d = self.shell.floating.iter().find(|d| d.id == w).unwrap();
         let id = d.viewport_id();
         let native = self.native.as_ref().expect("native windows");
@@ -221,7 +235,7 @@ impl Harness {
     }
 
     /// A key pressed in a floating window.
-    fn key_in(&mut self, w: WindowId, key: egui::Key, modifiers: Modifiers) {
+    pub(super) fn key_in(&mut self, w: WindowId, key: egui::Key, modifiers: Modifiers) {
         self.window(w).events.push(key_event(key, modifiers));
         self.frames(2);
     }
