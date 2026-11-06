@@ -2,7 +2,7 @@
 
 #68 gave Resource text an AccessKit tree. This audit covers the chrome added since #131:
 toolbar Launchers and panes, the Command box, Get Resources, the Starter library, the Guides
-(Passage Guide, Word Study, Factbook, Exegetical Guide), interlinear lines, the Search views,
+(Passage Guide, Word Study, Factbook, Exegetical Guide, Topic Guide), interlinear lines, the Search views,
 Reading plans, Favorites and History, Collections, Copy verses, Fonts, Customize toolbar and the
 right-click menu. It checks three things, and all three run in `cargo xtask ci` (gate `a11y`, and again in
 `test`):
@@ -54,6 +54,7 @@ control has the keyboard and then checks that a ring in the focus colour is draw
 | Search views (#146) | Ctrl+Shift+F | query, Enter; Tab to *Grid*, Enter | Ctrl+W |
 | Reading plans (#147) | Ctrl+L `reading plans` | Tab to *Start plan*, Enter | Ctrl+W |
 | Factbook (#149) | Alt+G, Tab to the Factbook box, `Abraham`, Enter | Tab to the *Terah* link, Enter (his Factbook) | Ctrl+W |
+| Topic Guide (#148) | Ctrl+L `topic forgiveness` | Tab to *Topic Guide: Forgiveness*, Enter; Tab to *Search your library for “Forgiveness”*, Enter (Search) | Ctrl+W |
 | Parallel resources (#151) | Ctrl+] | Tab to *Previous of your Bibles*, Enter | — |
 | Collections (#153) | Tab to *New Collection…*, Enter | *Name*, *Rules*, Tab to *Save*, Enter | Esc |
 | Copy verses (#154) | Ctrl+L `copy verses` | Tab to *Copy plain text*, Enter | Esc |
@@ -85,7 +86,8 @@ text on every Link set chip and badge, and the Grid view's heat cells at every h
 | The Command box's suggestions, the panes' footer links, Credits' linked text were unnamed | Named, with roles (list option, link); a focused Credits text opens its first URL with Enter |
 | egui_tiles' Panel separators and tab-bar backgrounds were unnamed Tab stops with no focus | `shell/tile_handles.rs` names them (*Resize Panels*, a splitter; *Panel tab bar*); ←/→ (↑/↓) move a focused separator 24 points |
 | Many custom widgets (Guide headers, word links, Factbook cards, Layout cards, the reading pane) and egui buttons showed focus by colour alone, or not at all | One focus ring (2 pt, lapis) round whatever has the keyboard; text fields keep their own border |
-| A link wrapped across two rows (Import a file…) is two widgets in egui; the second had no name | It starts a new row when it does not fit |
+| A link wrapped across two rows (Import a file…; the Topic Guide's Passage and *see* links, e.g. *Matt 19:11*) is two widgets in egui; the second had no name | It starts a new row when it does not fit (`shell::unbroken_link`, also used for the Factbook's Passage and family links) |
+| Tab moved the keyboard to widgets scrolled out of sight without scrolling, so the focus ring was out of sight (the Topic Guide's Search button) | A widget the keyboard has just moved to is scrolled into view, through AccessKit's Scroll into view as a screen reader would ask |
 | Word Study's disclosure arrow was a second Tab stop with no name for the entry title's action | Mouse only; the title is the stop |
 | Ambiguous names: *…*, *+*, *▶*, *◀*, *A*, *Open* ×10, *Download* ×n | *Tab menu*, *Open a Tab in this Panel*, *Next/Previous of your Bibles*, *Link set A*, *Open KJV (test)*, *Download …*; menu targets read *Verse: Gen 1:1* |
 | Shift+F10 opened nothing without the pointer over the text and no selection, so the menu had no keyboard-only route | It selects the Verse at the top of the view and acts on that; moving onto a target with Tab chooses it, as hovering does, and a pointer resting on another target does not take it back until it moves (arrow keys also move between the columns) |

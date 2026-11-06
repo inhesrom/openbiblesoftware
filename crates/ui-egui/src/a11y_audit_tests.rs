@@ -71,15 +71,7 @@ fn every_tab_kind() -> Vec<TabKind> {
         TabKind::Tool(Tool::Search),
     ] {
         match &kind {
-            TabKind::Guide(_) => kinds.extend(
-                [
-                    Guide::PassageGuide,
-                    Guide::WordStudy,
-                    Guide::Factbook,
-                    Guide::ExegeticalGuide,
-                ]
-                .map(TabKind::Guide),
-            ),
+            TabKind::Guide(_) => kinds.extend(Guide::ALL.map(TabKind::Guide)),
             TabKind::Tool(_) => kinds.extend(
                 [
                     Tool::Search,
@@ -151,6 +143,10 @@ fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
             "guide.exegetical_guide",
             json!({ "passage": "Jn 3:16", "split": true }),
         ),
+        TabKind::Guide(Guide::TopicGuide) => (
+            "guide.topic_guide",
+            json!({ "topic": "Forgiveness", "split": true }),
+        ),
         TabKind::Tool(Tool::Search) => {
             h.shell.run("tool.search", &split);
             ("search.run", json!({ "text": "God" }))
@@ -187,9 +183,12 @@ fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
     settle_all(h);
 }
 
-/// A launch with the Starter library's Resources in the Library, and AccessKit on.
+/// A launch with the Starter library's Resources and a topical index in the Library, and
+/// AccessKit on.
 fn audit_harness(name: &str) -> (Harness, Lab) {
-    let (mut h, lab) = setup(name, &release_set());
+    let mut set = release_set();
+    set.push(obs_engine::testing::topical_index("nave"));
+    let (mut h, lab) = setup(name, &set);
     h.ctx.enable_accesskit();
     h.events.push(Event::PointerMoved(pos2(1395.0, 895.0)));
     settle(&mut h);
@@ -806,6 +805,38 @@ fn keyboard_only_factbook() {
         "the link went nowhere"
     );
     close_tab(&mut h, &TabKind::Guide(Guide::Factbook));
+}
+
+/// The Topic Guide (#148): Ctrl+L `topic forgiveness` lists the topics; Enter on one opens
+/// it; its Search button hands the topic to the Search Tool.
+#[test]
+fn keyboard_only_topic_guide() {
+    let (mut h, _lab) = keyboard_harness("kb-topic-guide");
+    command(&mut h, "topic forgiveness");
+    assert_eq!(focused_kind(&h), Some(TabKind::Guide(Guide::TopicGuide)));
+    tab_to(&mut h, "Topic Guide: Forgiveness");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    let ws = &h.shell.session().workspace;
+    assert_eq!(
+        ws.tab(ws.focused().unwrap())
+            .unwrap()
+            .entry_history
+            .current(),
+        Some(obs_model::Key::Headword("Forgiveness".into()))
+    );
+    tab_to(&mut h, "Search your library for “Forgiveness”");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    assert_eq!(focused_kind(&h), Some(TabKind::Tool(Tool::Search)));
+    let tab = h.shell.session().workspace.focused().unwrap();
+    assert_eq!(
+        h.shell.session().search_tab(tab).unwrap().query,
+        "Forgiveness",
+        "the Search button searched for something else"
+    );
+    command(&mut h, "topic guide");
+    close_tab(&mut h, &TabKind::Guide(Guide::TopicGuide));
 }
 
 /// Parallel resources (#151): Ctrl+] shows the next Bible in the same Tab; Ctrl+[ goes back.

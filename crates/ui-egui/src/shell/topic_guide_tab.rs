@@ -299,13 +299,15 @@ impl State {
                         ui.label(RichText::new("see").italics().color(theme::c().muted));
                         for target in &sub.see {
                             let topic = see_topic(target);
-                            if ui
-                                .link(obs_engine::topic_guide::display_topic(target))
-                                .on_hover_text(format!(
-                                    "Open the Topic Guide on {topic} · Ctrl/Cmd-click opens a new \
+                            if super::unbroken_link(
+                                ui,
+                                obs_engine::topic_guide::display_topic(target),
+                            )
+                            .on_hover_text(format!(
+                                "Open the Topic Guide on {topic} · Ctrl/Cmd-click opens a new \
                                      Tab"
-                                ))
-                                .clicked()
+                            ))
+                            .clicked()
                             {
                                 action = Some(TopicAction::Topic(topic, new_tab));
                             }
@@ -397,8 +399,7 @@ impl State {
 
     /// A Passage as a link: hover reads it, click moves the Link set there.
     fn passage_link(&mut self, ui: &mut Ui, p: Passage, new_tab: bool) -> Option<TopicAction> {
-        let r = ui
-            .link(format_passage(p, &Standard, RefStyle::Short))
+        let r = super::unbroken_link(ui, format_passage(p, &Standard, RefStyle::Short))
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         if r.hovered() {
             self.reference_popup(ui, &[vec![p].into()]);

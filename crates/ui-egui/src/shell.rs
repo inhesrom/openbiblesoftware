@@ -746,6 +746,7 @@ impl Shell {
         self.st.now = ui.input(|i| i.time);
         self.st.split_held = ui.input(|i| i.modifiers.command);
         self.note_main_window(ui.ctx());
+        scroll_focus_into_view(ui.ctx());
         // Poll, never wait: parsing, Resource writes, Search-index hooks and Guide sections
         // live on workers. Without worker threads (wasm), Guide sections and the People &
         // places directory step here, a job a frame.
@@ -2874,6 +2875,38 @@ impl egui_tiles::Behavior<TabId> for State {
     }
 }
 
+/// Scroll a widget the keyboard has just moved to into view (#182): egui's Tab moves to
+/// widgets scrolled out of sight without scrolling, which would leave the focus ring out of
+/// sight too. It asks as a screen reader does (AccessKit's Scroll into view), which the
+/// widget's own scroll area answers as the widget is drawn. Only when the keyboard has just
+/// moved, so scrolling away from it with the wheel stays put; and not for a widget over half
+/// the screen tall (a reading pane), which can never be wholly in view.
+fn scroll_focus_into_view(ctx: &egui::Context) {
+    let last_id = egui::Id::unique("focus-scrolled-into-view");
+    let focused = ctx.memory(egui::Memory::focused);
+    let last = ctx.data_mut(|d| {
+        let last = d.get_temp::<egui::Id>(last_id);
+        d.insert_temp(last_id, focused.unwrap_or(egui::Id::NULL));
+        last
+    });
+    let Some(id) = focused.filter(|&id| last != Some(id)) else {
+        return;
+    };
+    let Some(r) = ctx.read_response(id) else {
+        return;
+    };
+    if r.interact_rect == r.rect || r.rect.height() > ctx.content_rect().height() / 2.0 {
+        return;
+    }
+    let request = egui::accesskit::ActionRequest {
+        action: egui::accesskit::Action::ScrollIntoView,
+        target_tree: egui::accesskit::TreeId::ROOT,
+        target_node: id.accesskit_id(),
+        data: None,
+    };
+    ctx.input_mut(|i| i.events.push(egui::Event::AccessKitActionRequest(request)));
+}
+
 /// The ring round the widget that has the keyboard (#182). egui's own widgets show focus only
 /// by a change of colour, and those drawn with the painter not at all; one ring for all of them
 /// shows where Tab went. Text fields keep their own border and caret.
@@ -2899,6 +2932,17 @@ fn focus_ring(ctx: &egui::Context) {
         Stroke::new(FOCUS_RING_WIDTH, theme::c().lapis),
         egui::StrokeKind::Outside,
     );
+}
+
+/// A link that moves to the next row whole when it does not fit in a wrapping row: a link
+/// broken across two rows is two widgets in egui, and screen readers get no name for the
+/// second (#182).
+pub(crate) fn unbroken_link(ui: &mut Ui, text: impl Into<egui::WidgetText>) -> egui::Response {
+    let wrap = ui.style().wrap_mode;
+    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+    let r = ui.link(text);
+    ui.style_mut().wrap_mode = wrap;
+    r
 }
 
 /// The focus ring's layer, and its width in points.
