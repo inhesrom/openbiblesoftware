@@ -3,7 +3,7 @@
 #68 gave Resource text an AccessKit tree. This audit covers the chrome added since #131:
 toolbar Launchers and panes, the Command box, Get Resources, the Starter library, the Guides
 (Passage Guide, Word Study, Factbook, Exegetical Guide, Topic Guide), interlinear lines, the Search views,
-Reading plans, Home, Favorites and History, the Atlas (#150), Collections, Copy verses, Fonts, Customize toolbar and the
+Reading plans, Home, Favorites and History, the Atlas (#150), the Timeline (#185), Collections, Copy verses, Fonts, Customize toolbar and the
 right-click menu. It checks three things, and all three run in `cargo xtask ci` (gate `a11y`, and again in
 `test`):
 

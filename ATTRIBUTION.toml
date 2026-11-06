@@ -137,6 +137,14 @@ copyright = "OpenBible.info, https://www.openbible.info/geo/"
 changes = "Only 19 places kept (those Acts 13 names, Acco and Ptolemais, Zarephath, Eden, Arimathea, Abila, Abel-keramim) and the 32 modern locations they name; of each place only its id, name, TIPNR link, modern associations (name and score), spellings and Verses (Jerusalem's cut to a few), and of each location only its id, name, coordinates and their source's type."
 
 [[asset]]
+path = "crates/formats/tests/assets/theographic/*"
+name = "Theographic Bible Metadata (CSV/Events.csv, json/events.json, CSV/People.csv, commit 3f461f2), test excerpt"
+license = "CC-BY-SA-4.0"
+source = "https://github.com/robertrouse/theographic-bible-metadata"
+copyright = "Robert Rouse (Viz.Bible) and Theographic contributors"
+changes = "Only 25 events kept (the Eras' anchors, Abraham, Joshua, David, Solomon's reign and temple, Holy Week) and the 11 people they name most; events.json cut to each kept event's id, title, eventID, startDate, duration and rangeFlag; People.csv's dictText (Easton's dictionary text) emptied."
+
+[[asset]]
 path = "crates/formats/tests/assets/openbible/*"
 name = "OpenBible.info Bible cross references (cross_references.txt, 2026-10-19), test excerpt"
 license = "CC-BY-4.0"
@@ -150,7 +158,7 @@ name = "TIPNR: Translators Individualised Proper Names with all References, test
 license = "CC-BY-4.0"
 source = "https://github.com/STEPBible/STEPBible-Data/tree/master/Proper%20Nouns"
 copyright = "STEP Bible, https://www.STEPBible.org; data created by STEPBible.org based on work at Tyndale House Cambridge"
-changes = "Only the licence and field-description header, a few records and the end marker kept, as converter test fixtures (tipnr-excerpt.txt: 14 records; tipnr-acts-13-excerpt.txt: the 13 places of Acts 13, Acco and Zarephath, with their @Brief, @Short and @Article text replaced by \"(omitted from this fixture)\"); trailing tabs removed and line endings changed to LF."
+changes = "Only the licence and field-description header, a few records and the end marker kept, as converter test fixtures (tipnr-excerpt.txt: 14 records; tipnr-acts-13-excerpt.txt: the 13 places of Acts 13, Acco and Zarephath; tipnr-timeline-excerpt.txt: the 11 people and 3 places the Timeline fixtures name; the last two with their @Brief, @Short and @Article text replaced by \"(omitted from this fixture)\"); trailing tabs removed and line endings changed to LF."
 
 [[asset]]
 path = "crates/formats/tests/assets/verse_map/*"

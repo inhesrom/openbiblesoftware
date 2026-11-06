@@ -184,3 +184,9 @@ headword = "ABRAHAM"
 [[golden]]
 resource_id = "hitchcock"
 headword = "JOHN"
+
+# The temple's construction and Solomon's reign, told in 1 Kings 6 (#185): Events with their
+# dates and TIPNR's ids for the people and places they name.
+[[golden]]
+resource_id = "theographic"
+passage = "1 Kgs 6:1"

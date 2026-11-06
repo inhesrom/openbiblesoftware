@@ -526,6 +526,90 @@ fn entities_and_mentions_must_resolve() {
     }));
 }
 
+fn event(id: &str, start: i32, end: Option<i32>) -> crate::Event {
+    crate::Event {
+        id: id.into(),
+        title: id.into(),
+        kind: crate::EventKind::Event,
+        start: crate::HistoricalDate::year(start),
+        end: end.map(crate::HistoricalDate::year),
+        approximate: false,
+        part_of: None,
+        people: Vec::new(),
+        places: Vec::new(),
+        passages: vec![v(Book::FirstKings, 6, 1)],
+    }
+}
+
+/// Events (#185) live only in a People & places index, sort by id, count in the content hash
+/// and must be well formed.
+#[test]
+fn events_are_ordered_hashed_and_validated() {
+    let mut b = ResourceBuilder::new(dataset_manifest(ResourceType::PeopleAndPlaces));
+    let mut temple = event("event:162", -1011, Some(-1004));
+    temple.part_of = Some("event:161".into());
+    b.add_event(temple);
+    b.add_event(event("event:161", -1014, Some(-974)));
+    let r = b.build().unwrap();
+    let ids: Vec<&str> = r.events.iter().map(|e| e.id.as_str()).collect();
+    assert_eq!(ids, ["event:161", "event:162"]);
+    let empty = ResourceBuilder::new(dataset_manifest(ResourceType::PeopleAndPlaces))
+        .build()
+        .unwrap();
+    assert_ne!(r.manifest.content_hash, empty.manifest.content_hash);
+    assert_eq!(
+        crate::HistoricalDate::bc(1012),
+        crate::HistoricalDate::year(-1011)
+    );
+
+    let mut b = ResourceBuilder::new(manifest());
+    b.add_event(event("event:1", 0, None));
+    assert!(errors(b).contains(&ValidationError::DatasetInWrongType {
+        what: "event",
+        resource_type: ResourceType::Bible
+    }));
+
+    let mut b = ResourceBuilder::new(dataset_manifest(ResourceType::PeopleAndPlaces));
+    b.add_event(event("event:1", 0, Some(-5)));
+    b.add_event(event("event:1", 0, None));
+    let mut orphan = event("event:2", 0, None);
+    orphan.part_of = Some("event:9".into());
+    orphan.title = " ".into();
+    orphan.start.month = Some(13);
+    orphan.passages = vec![v(Book::Genesis, 1, 32)];
+    b.add_event(orphan);
+    let errs = errors(b);
+    let why = |id: &str| -> Vec<String> {
+        errs.iter()
+            .filter_map(|e| match e {
+                ValidationError::InvalidEvent { event, why } if event == id => Some(why.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    let one = why("event:1");
+    assert!(
+        one.iter().any(|w| w.contains("before it starts")),
+        "{one:?}"
+    );
+    assert!(one.iter().any(|w| w == "defined twice"), "{one:?}");
+    let two = why("event:2");
+    for expected in [
+        "empty title",
+        "not in the calendar",
+        "part of unknown event",
+    ] {
+        assert!(
+            two.iter().any(|w| w.contains(expected)),
+            "{expected}: {two:?}"
+        );
+    }
+    assert!(errs.contains(&ValidationError::NotStandardPassage {
+        what: "event",
+        passage: v(Book::Genesis, 1, 32)
+    }));
+}
+
 #[test]
 fn build_indexes_lemma_transliterations_outside_the_content_hash() {
     let lexicon = |lemma: Option<&str>| {

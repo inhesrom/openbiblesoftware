@@ -80,6 +80,7 @@ pub const MENUS: &[Menu] = &[
             C("tool.history"),
             C("tool.reading_plans"),
             C("tool.atlas"),
+            C("tool.timeline"),
             Separator,
             C("tool.copy_verses"),
         ],
@@ -469,6 +470,21 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         run: |s, p| {
             const ID: &str = "tool.atlas";
             let kind = TabKind::Tool(Tool::Atlas);
+            match open_at_passage(s, &p, kind.clone(), ID)? {
+                Some(out) => Ok(out),
+                None => open(s, p, kind),
+            }
+        },
+    },
+    CommandSpec {
+        id: "tool.timeline",
+        label: "Timeline",
+        shortcut: None,
+        params: AT_PASSAGE,
+        enabled: always,
+        run: |s, p| {
+            const ID: &str = "tool.timeline";
+            let kind = TabKind::Tool(Tool::Timeline);
             match open_at_passage(s, &p, kind.clone(), ID)? {
                 Some(out) => Ok(out),
                 None => open(s, p, kind),

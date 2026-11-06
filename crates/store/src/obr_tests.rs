@@ -501,6 +501,72 @@ fn place_locations_round_trip_and_older_files_read_none() {
     assert!(r.entity(&antioch.id).unwrap().unwrap().locations.is_empty());
 }
 
+/// An index's Events (#185) round-trip with their dates, people, places and Passages, and a
+/// file written before them still opens with none.
+#[test]
+fn events_round_trip_and_older_files_read_none() {
+    use obs_model::{Event, EventEntity, EventKind, HistoricalDate, ResourceBuilder, ResourceType};
+    let dir = TempDir::new("events");
+    let path = dir.path("events.obr");
+    let mut b = ResourceBuilder::new(dataset_manifest("events", ResourceType::PeopleAndPlaces));
+    let reign = Event {
+        id: "event:161".into(),
+        title: "Reign of Solomon".into(),
+        kind: EventKind::Event,
+        start: HistoricalDate::bc(1015),
+        end: Some(HistoricalDate::bc(975)),
+        approximate: false,
+        part_of: None,
+        people: vec![EventEntity {
+            entity: Some("Solomon@2Sa.5.14-Act".into()),
+            name: "Solomon".into(),
+        }],
+        places: vec![EventEntity {
+            entity: None,
+            name: "Jerusalem".into(),
+        }],
+        passages: vec![
+            Passage::new(
+                Verse::new(Book::FirstKings, 6, 1),
+                Verse::new(Book::FirstKings, 6, 38),
+            )
+            .unwrap(),
+            verse(Book::FirstKings, 11, 42),
+        ],
+    };
+    let feast = Event {
+        id: "event:431".into(),
+        title: "Feast of Dedication".into(),
+        kind: EventKind::Event,
+        start: HistoricalDate {
+            year: 29,
+            month: Some(12),
+            day: Some(17),
+        },
+        end: None,
+        approximate: true,
+        part_of: Some("event:161".into()),
+        people: Vec::new(),
+        places: Vec::new(),
+        passages: Vec::new(),
+    };
+    b.add_event(reign.clone());
+    b.add_event(feast.clone());
+    let resource = b.build().unwrap();
+    write_obr(&resource, &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    assert_eq!(r.events().unwrap(), [reign, feast]);
+    assert_eq!(r.load().unwrap(), resource);
+    drop(r);
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("DROP TABLE events; DROP TABLE event_passages;")
+            .unwrap();
+    }
+    let r = ObrReader::open(&path).unwrap();
+    assert!(r.events().unwrap().is_empty());
+}
+
 /// Tagged words read straight from the span table match a walk over every unit (#54).
 #[test]
 fn every_tagged_word_is_visited_like_the_generic_walk() {

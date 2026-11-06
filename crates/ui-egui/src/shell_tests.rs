@@ -3138,6 +3138,8 @@ mod guide;
 mod open_catalogue;
 #[path = "starter_library_tests.rs"]
 mod starter_library;
+#[path = "timeline_tests.rs"]
+mod timeline;
 #[path = "word_study_tests.rs"]
 mod word_study;
 

@@ -85,6 +85,7 @@ fn every_tab_kind() -> Vec<TabKind> {
                     Tool::History,
                     Tool::ReadingPlans,
                     Tool::Atlas,
+                    Tool::Timeline,
                 ]
                 .map(TabKind::Tool),
             ),
@@ -191,6 +192,10 @@ fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
         TabKind::Tool(Tool::Atlas) => {
             ("tool.atlas", json!({ "passage": "Acts 13", "split": true }))
         }
+        TabKind::Tool(Tool::Timeline) => (
+            "tool.timeline",
+            json!({ "passage": "1 Kings 6", "split": true }),
+        ),
     };
     h.shell.run(id, &params);
     settle(h);
@@ -202,6 +207,8 @@ fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
 fn audit_harness(name: &str) -> (Harness, Lab) {
     let mut set = release_set();
     set.push(obs_engine::testing::topical_index("nave"));
+    // Events, so the Timeline (#185) draws its axis rather than its empty state.
+    set.push(obs_engine::testing::theographic(None));
     let (mut h, lab) = setup(name, &set);
     h.ctx.enable_accesskit();
     h.events.push(Event::PointerMoved(pos2(1395.0, 895.0)));
