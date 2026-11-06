@@ -207,8 +207,10 @@ fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
 fn audit_harness(name: &str) -> (Harness, Lab) {
     let mut set = release_set();
     set.push(obs_engine::testing::topical_index("nave"));
-    // Events, so the Timeline (#185) draws its axis rather than its empty state.
-    set.push(obs_engine::testing::theographic(None));
+    // Events, so the Timeline (#185) draws its axis rather than its empty state, their people
+    // matched to the TIPNR above so Abraham's Lifespan opens his Factbook.
+    let tipnr = obs_engine::testing::tipnr();
+    set.push(obs_engine::testing::theographic(Some(&tipnr)));
     let (mut h, lab) = setup(name, &set);
     h.ctx.enable_accesskit();
     h.events.push(Event::PointerMoved(pos2(1395.0, 895.0)));
@@ -1097,6 +1099,92 @@ fn keyboard_only_panel_separator() {
         Some(super::super::tile_handles::SEPARATOR),
         "the arrow keys moved the focus away"
     );
+}
+
+/// The Timeline (#185): Tab reaches every entry on the axis. Enter on Fit shows the whole
+/// Timeline, on an Era fits the view to
+/// it, on an Event moves the Link set's Bible to its Passage, on a Lifespan opens the person's
+/// Factbook.
+#[test]
+fn keyboard_only_timeline() {
+    let (mut h, _lab) = keyboard_harness("kb-timeline");
+    let kjv = h.tab_id("KJV");
+    command(&mut h, "timeline");
+    assert_eq!(focused_kind(&h), Some(TabKind::Tool(Tool::Timeline)));
+    settle(&mut h);
+    let ws = &h.shell.session().workspace;
+    assert_eq!(
+        ws.tab(kjv).and_then(|t| t.history.current()),
+        Some(obs_scripture::Verse::new(
+            obs_scripture::Book::Genesis,
+            1,
+            1
+        ))
+    );
+    let axis = |h: &Harness| {
+        let nodes = nodes(h);
+        let node = (nodes.values())
+            .find(|n| n.role() == Role::Image && name_of(&nodes, n).starts_with("Timeline from"))
+            .expect("the Timeline's axis");
+        let b = node.bounds().unwrap();
+        (b.x1 - b.x0) as f32
+    };
+
+    // The Bible is at Genesis 1:1, so the axis shows the Creation; Fit shows it all.
+    tab_to(&mut h, "Fit");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    let patriarchs = "Era: Patriarchs, 1996–1635 BC";
+    tab_to(&mut h, patriarchs);
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    let (name, _, band) = focused(&h).unwrap();
+    assert_eq!(name, patriarchs, "Enter moved the keyboard off the Era");
+    assert!(
+        band.width() >= axis(&h) - 60.0,
+        "the view did not fit the Era: {band:?} on an axis {} wide",
+        axis(&h)
+    );
+
+    tab_to(&mut h, "Event: Birth of Abraham, 1996 BC");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle_all(&mut h);
+    // The Link set moved there: the Timeline with it, and the Bible to the nearest Verse it
+    // has (the test KJV ends at Genesis 1:3).
+    let ws = &h.shell.session().workspace;
+    let at = |t: obs_engine::TabId| ws.tab(t).and_then(|t| t.history.current());
+    let genesis = |c, v| {
+        Some(obs_scripture::Verse::new(
+            obs_scripture::Book::Genesis,
+            c,
+            v,
+        ))
+    };
+    let timeline = ws.focused().unwrap();
+    assert_eq!(
+        at(timeline),
+        genesis(11, 26),
+        "the Event's Passage did not open"
+    );
+    assert_eq!(
+        at(kjv),
+        genesis(1, 3),
+        "the Bible did not follow from Genesis 1:1"
+    );
+
+    tab_to(&mut h, "Lifespan: Abraham, 1996–1821 BC");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    assert_eq!(focused_kind(&h), Some(TabKind::Guide(Guide::Factbook)));
+    let ws = &h.shell.session().workspace;
+    assert_eq!(
+        ws.tab(ws.focused().unwrap())
+            .unwrap()
+            .entry_history
+            .current(),
+        Some(obs_model::Key::Headword("Abraham@Gen.11.26-1Pe".into()))
+    );
+    close_tab(&mut h, &TabKind::Guide(Guide::Factbook));
 }
 
 /// Press Tab in the floating OS window `w` until the widget named `name` has its keyboard, and

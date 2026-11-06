@@ -7,6 +7,8 @@
 //! marker and its label fit. What the Passage emphasises is drawn in full colour, the focus
 //! ringed in gilt; the rest is quieter. Drag pans, the wheel or a pinch zooms. A click on an
 //! Event opens its Passage, on a Lifespan its person's Factbook, on an Era fits the view to it.
+//! Each entry on the axis is a button of its own, so Tab reaches it and Enter opens it, and
+//! `Earlier`, `Later`, `−`, `+` and `Fit` move the view without a pointer.
 
 use std::sync::Arc;
 
@@ -43,6 +45,8 @@ const DIAMOND: f32 = 4.5;
 const GAP: f32 = 8.0;
 /// Most rows of Lifespans; the rest go to Events.
 const LIFESPAN_ROWS: usize = 3;
+/// How far `Earlier` and `Later` move the view: a third of the axis.
+const PAN_SHARE: f64 = 1.0 / 3.0;
 
 /// `a` blended `t` of the way towards `b`.
 fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
@@ -105,12 +109,28 @@ impl State {
             .unwrap_or_default();
         let mut refit = state.fitted != Some(shown);
         let mut zoom: Option<f64> = None;
+        // A pan by this share of the axis's width (positive: earlier years).
+        let mut pan: Option<f64> = None;
         let mut go: Option<(Passage, bool)> = None;
         let mut factbook: Option<(String, bool)> = None;
         let focus = emphasis.focus.map(|i| &timeline.entries[i]);
 
         // Controls and status.
         ui.horizontal(|ui| {
+            if ui
+                .small_button("Earlier")
+                .on_hover_text("Show earlier years")
+                .clicked()
+            {
+                pan = Some(PAN_SHARE);
+            }
+            if ui
+                .small_button("Later")
+                .on_hover_text("Show later years")
+                .clicked()
+            {
+                pan = Some(-PAN_SHARE);
+            }
             if ui.small_button("−").on_hover_text("Zoom out").clicked() {
                 zoom = Some(0.5);
             }
@@ -196,6 +216,10 @@ impl State {
         if let Some(factor) = zoom {
             state.moved = true;
             view.zoom_about(factor, width / 2.0, width, bounds);
+        }
+        if let Some(share) = pan {
+            state.moved = true;
+            view.pan(share * width, bounds);
         }
         let clicked = axis(ui, axis_rect, &mut view, &timeline, &emphasis, bounds);
         state.moved |= clicked.moved;
@@ -345,22 +369,23 @@ fn axis(
     emphasis: &Emphasis,
     bounds: (f64, f64),
 ) -> AxisInput {
-    let response = ui.allocate_rect(rect, Sense::click_and_drag());
+    // Drag only: the entries on it take clicks and the keyboard, `Earlier` and `Later` pan.
+    let response = ui.allocate_rect(rect, Sense::DRAG);
     let width = f64::from(rect.width());
     let before = *view;
     if response.dragged() {
         view.pan(f64::from(response.drag_delta().x), bounds);
     }
-    if response.hovered() {
+    // Over the axis or an entry on it (the entries are widgets on top of the axis).
+    let pointer = (ui.ctx().pointer_hover_pos()).filter(|_| ui.rect_contains_pointer(rect));
+    if let Some(p) = pointer {
         let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
         let factor = f64::from(pinch) * (f64::from(scroll.y) / 300.0).exp();
-        if let Some(p) = response.hover_pos() {
-            if (factor - 1.0).abs() > 1e-6 {
-                view.zoom_about(factor, f64::from(p.x - rect.min.x), width, bounds);
-            }
-            if scroll.x.abs() > 0.0 {
-                view.pan(f64::from(scroll.x), bounds);
-            }
+        if (factor - 1.0).abs() > 1e-6 {
+            view.zoom_about(factor, f64::from(p.x - rect.min.x), width, bounds);
+        }
+        if scroll.x.abs() > 0.0 {
+            view.pan(f64::from(scroll.x), bounds);
         }
     }
     let v = *view;
@@ -511,43 +536,64 @@ fn axis(
         hits.push((hit.intersect(rect), p.index));
     }
 
-    // Hover and click: the last-drawn entry under the pointer.
+    // Each entry is a button on top of the axis, in drawing order, so the last drawn under the
+    // pointer takes the click; Tab reaches each one and Enter or Space opens it, and a screen
+    // reader names it (#182).
     let mut input = AxisInput {
         moved: *view != before,
         ..AxisInput::default()
     };
-    let pointer = response
-        .hover_pos()
-        .or_else(|| response.interact_pointer_pos());
-    let under = pointer.and_then(|p| hits.iter().rev().find(|(r, _)| r.contains(p)));
-    if let Some(&(_, i)) = under {
+    for (hit, i) in hits {
+        if !hit.is_positive() {
+            continue;
+        }
         let e = &timeline.entries[i];
-        let mut text = format!("{}\n{}", e.title, e.dates);
-        let people: Vec<&str> = e.people.iter().map(|p| p.name.as_str()).collect();
-        if !people.is_empty() && e.kind == EventKind::Event {
-            text.push_str(&format!("\n{}", people.join(", ")));
-        }
-        if !e.passages.is_empty() {
-            let refs: Vec<String> = e
-                .passages
-                .iter()
-                .take(3)
-                .map(|p| format_passage(*p, &Standard, RefStyle::Short))
-                .collect();
-            text.push_str(&format!("\n{}", refs.join("; ")));
-        }
-        text.push_str(match e.kind {
-            EventKind::Event => "\nClick to open its Passage",
-            EventKind::Lifespan => "\nClick for their Factbook",
-            EventKind::Era => "\nClick to show the whole Era",
-        });
-        if response.clicked() {
+        // The same id every frame, so the keyboard stays on an entry as the view moves.
+        let id = ui.make_persistent_id(("timeline-entry", i));
+        let entry = ui.interact(hit, id, Sense::click());
+        entry.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, entry_name(e)));
+        if entry.clicked() {
             let new_tab = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
             input.entry = Some((i, new_tab));
         }
-        response.on_hover_text_at_pointer(text);
+        entry.on_hover_text_at_pointer(entry_tooltip(e));
     }
     input
+}
+
+/// An entry's accessible name: what it is, its title and its dates.
+fn entry_name(e: &TimelineEntry) -> String {
+    let kind = match e.kind {
+        EventKind::Era => "Era",
+        EventKind::Lifespan => "Lifespan",
+        EventKind::Event => "Event",
+    };
+    format!("{kind}: {}, {}", e.title, e.dates)
+}
+
+/// What hovering an entry says: title, dates, people (of an Event), Passages and what a click
+/// does.
+fn entry_tooltip(e: &TimelineEntry) -> String {
+    let mut text = format!("{}\n{}", e.title, e.dates);
+    let people: Vec<&str> = e.people.iter().map(|p| p.name.as_str()).collect();
+    if !people.is_empty() && e.kind == EventKind::Event {
+        text.push_str(&format!("\n{}", people.join(", ")));
+    }
+    if !e.passages.is_empty() {
+        let refs: Vec<String> = e
+            .passages
+            .iter()
+            .take(3)
+            .map(|p| format_passage(*p, &Standard, RefStyle::Short))
+            .collect();
+        text.push_str(&format!("\n{}", refs.join("; ")));
+    }
+    text.push_str(match e.kind {
+        EventKind::Event => "\nClick to open its Passage",
+        EventKind::Lifespan => "\nClick for their Factbook",
+        EventKind::Era => "\nClick to show the whole Era",
+    });
+    text
 }
 
 /// `text` on one line, cut short with "…" to fit `width`.
