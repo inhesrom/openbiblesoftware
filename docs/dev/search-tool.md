@@ -10,13 +10,14 @@ hits. The Search index caches they read are described in [search-index.md](searc
 
 | Layer | Piece | Role |
 |---|---|---|
-| `obs-search` | `Highlighter` | Hit highlighting in Rust (#16 rule 7). Surface terms are found by re-tokenizing the display text with the shared normalizer. `strong:`/`lemma:` terms mark the matching `tagged_word` spans. In a Hebrew word of several morphemes, only the matching morphemes are marked. |
+| `obs-search` | `Highlighter` | Hit highlighting in Rust (#16 rule 7). Surface terms are found by re-tokenizing the display text with the shared normalizer. `strong:`/`lemma:` terms mark the matching `tagged_word` spans, and `@…` terms the parts whose Morphology meets them. In a Hebrew word of several morphemes, only the matching morphemes are marked. |
+| `obs-search` | `morph` (`MorphCategory`, `MorphCriterion`, `MorphCriteria`) | Morphology criteria (#145): the plain-English values of each kind of grammar, the words a query may use for them, and whether a decoded code meets them. |
 | `obs-engine` | `bible_search` | Per-Tab state (`Tab::search`): mode, query, Scope, chosen Bibles, inline error, results, selection. Also Scope parsing and presets, the mapping from Standard scope to verse ordinals through each Verse map, the Verse list in Standard canonical order, snippet pages, recent queries, and opening hits. Commands: `search.run`, `search.mode`, `search.scope`, `search.bible`, `search.open`. |
 | `obs-engine` | `search_views` | Bible mode's Results views (#146): `ResultsView`, the Results filter (`ResultsFilter`, applied to a copy of the results), `HitGrid`, `chart_bars`, and the Analysis table (`SearchAnalysis`, made by a background job, sorted by `AnalysisSort`, written as CSV). Commands: `search.view`, `search.filter`, `search.chart`, `search.sort`, `search.export_csv` (and `search.open`'s `all`). |
 | `obs-engine` | `library_search` | Library mode on the same Tab state and jobs: the Resource picker's scope (`LibraryScope`), grouping by Resource, excerpts, and opening a hit at its paragraph. Commands: `search.resource`, `search.resource_type`, `search.collection` (and `search.run`'s `resources`). |
 | `obs-engine` | `Workspace::navigate_text`, `Effect::NavigateText` | A Resource Tab goes to a Key and scrolls a Text range to the top (a Library hit's paragraph). |
 | `obs-ui-egui` | `shell/search_views.rs` | The Verses / Grid / Chart / Analysis switch, the filter chip, the Grid and Chart (egui), the Analysis table (its words, Lemmas and Context through the text pipeline) and the CSV save dialog. |
-| `obs-ui-egui` | `shell/search_tab.rs`, `search_view.rs` | The Tab body: fields, pickers, summary line, and the virtualized results pane drawn by the inline-snippet mode, with the highlights painted under the glyphs. Also ↑/↓/Enter and clicks. |
+| `obs-ui-egui` | `shell/search_tab.rs`, `search_view.rs` | The Tab body: fields, pickers, the Morphology chooser, summary line, and the virtualized results pane drawn by the inline-snippet mode, with the highlights painted under the glyphs. Also ↑/↓/Enter and clicks. |
 | `obs-ui-egui` | `ReadingView::jump_to_text`, `pane::Flash::Text` | Scrolling a Resource Tab to a paragraph and flashing it. |
 
 ## A search, step by step
@@ -42,6 +43,64 @@ hits. The Search index caches they read are described in [search-index.md](searc
    its `.obr`, with headings left out and white space collapsed, plus its highlight ranges.
 5. The pane lays out only the rows in view, on the layout workers, and asks the engine for
    their snippet pages as the user scrolls.
+
+## Morphology criteria (#145)
+
+In Bible mode a query can ask for grammar in plain English. `@` (or `morph:`) starts
+**Morphology criteria** for one word, and takes the words after it while they name criteria:
+
+| Query | Finds Verses with |
+|---|---|
+| `@aorist imperative` | a word that is an aorist imperative |
+| `@verb qal perfect third masculine singular` | a Qal perfect 3ms verb |
+| `strong:G26 @noun genitive`, `G26 @gen` | G26 as a genitive noun (the Strong's number is the same word's) |
+| `lemma:ἀγαπάω @verb aorist`, `lemma:agapao @aorist` | ἀγαπάω in the aorist |
+| `"love one another" @imperative`, `@imperative -@aorist` | the phrase and an imperative; an imperative but no aorist |
+| `@genitive love` | a genitive and the word `love` (`love` names no criterion, so it ends them) |
+
+- **Values.** Part of speech (noun, adjective, verb, pronoun, article, preposition,
+  conjunction, adverb, particle, interjection, suffix); tense (present, imperfect, future,
+  aorist, perfect, pluperfect, consecutive perfect, consecutive imperfect, conjunctive
+  imperfect); voice (active, middle, passive, deponent); mood (indicative, subjunctive,
+  optative, imperative, jussive, cohortative, infinitive, participle); case; number
+  (singular, plural, dual); gender (masculine, feminine, neuter, common); person (first,
+  second, third); Hebrew and Aramaic stem (Qal, Niphal, Piel … Peal, Pael …); state
+  (absolute, construct, determined). A two-word value is written with `-` or as two words
+  (`consecutive-imperfect`). Short forms: `1st`, `sg`, `pl`, `masc`, `gen`, `acc`, `adj`,
+  `wayyiqtol`, `weqatal` and others. Case never matters.
+- **Meaning.** Every criterion holds for the same morpheme part, read through the same
+  decoder as Word Info. A Greek second aorist is an aorist; `middle` and `deponent` each
+  match `middle deponent`; `participle` and `infinitive` are moods here, as in Robinson's
+  codes. Two values of one kind (`@aorist present`) find nothing. A second `@` starts another
+  word. A word that names no criterion directly after `@` is an error (`“aorst” is not
+  Morphology …`), and Notes mode refuses `@` (Notes have no Tagged words).
+- **Strong's number or Lemma.** A `strong:`, bare `G26` or `lemma:` term directly before the
+  `@` belongs to that word: `strong:G26 @noun genitive` is one genitive G26, while
+  `G26 love @genitive` is G26, `love` and some genitive word anywhere in the Verse. An
+  explicit `AND`, a parenthesis or a `NOT`/`-` between them keeps them apart too:
+  `G26 AND @genitive`, `@genitive AND G26`, `(G26) @genitive`, `G26 (@genitive)` and
+  `G26 NOT NOT (@genitive)` all mean G26 and some genitive word in the Verse;
+  `(G26 @genitive)` is still one genitive G26.
+- **Highlights.** The words (or, in Hebrew, the morphemes) that meet the criteria; the
+  Analysis lists them with their Morphology in plain English.
+- **Morphology chooser.** The **Morphology…** button beside the Bible / Library / Notes switch shows a menu for each kind
+  of grammar (Any by default). The criteria chosen show as their query text. **Add to query**
+  adds it at the end of the query box, so after `G3936` it describes that word; **Add and
+  search** also runs the search. The chooser writes exactly the query typing would, so both
+  give the same results.
+
+With the real Starter TAGNT, `@aorist imperative` scoped to Romans finds 23 Verses, the same
+ones as reading every Romans code for a Robinson aorist imperative (`V-[2]A?M`); most are the
+greetings of Romans 16. The index answers in under 1 ms; `@verb` over the whole of TAGNT takes
+15 ms and over TAHOT 34 ms, `strong:G26 @noun genitive` and `lemma:ἀγαπάω @verb aorist` 1–2 ms
+(release build, cache open and compile included; #19 targets 100 ms for words and 250 ms for
+phrases). `real_starter_tagnt_aorist_imperatives_in_romans` checks this.
+
+Previews, from the real app and the Starter TAGNT: [`@aorist imperative` in Romans](../previews/search-morphology-romans-real.png)
+and [the chooser adding `@verb aorist imperative` after `strong:G3936`](../previews/search-morphology-chooser-real.png)
+(the app's `OBS_SCRIPT`, `OBS_INPUT` and `OBS_SHOT` automation). [The chooser over the test
+excerpt](../previews/search-morphology-chooser-kittest.png) comes from
+`UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui --lib morphology_chooser`.
 
 ## Outline read-ahead
 

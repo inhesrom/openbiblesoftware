@@ -230,7 +230,8 @@ fn index_builds_a_search_cache_and_search_times_a_query() {
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     assert_eq!(built.len(), 1, "{built:?}");
-    assert!(built[0].starts_with("kjv-sample.") && built[0].ends_with(".v1.obsidx"));
+    let version = format!(".v{}.obsidx", obs_search::INDEX_VERSION);
+    assert!(built[0].starts_with("kjv-sample.") && built[0].ends_with(&version));
 
     let (ok, out, err) = cli(&[
         "search",

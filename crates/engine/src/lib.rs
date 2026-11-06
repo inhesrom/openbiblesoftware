@@ -71,6 +71,8 @@ mod lookups_tests;
 pub mod missing_resource;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod missing_resource_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod morph_search_tests;
 pub mod notes;
 pub mod notes_export;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -181,6 +183,8 @@ pub use link::LINK_SETS;
 pub use missing_resource::{EmptyState, MissingResource, StarterOffer, Tagging};
 pub use notes::{Card, CardOrder, NoteHit, NotesFilter, NotesResults, NotesTool, body_references};
 pub use notes_export::{NotesExport, NotesFormat, NotesSource};
+/// The Morphology chooser's menus and choices (#145).
+pub use obs_search::{MorphCategory, MorphCriteria};
 pub use people_places::{ArticleLink, Fact, PersonOrPlace};
 pub use persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, UserData, WorkspaceSnapshot};
 pub use reading_plans::{

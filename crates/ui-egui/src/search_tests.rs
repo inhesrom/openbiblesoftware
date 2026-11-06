@@ -966,3 +966,101 @@ fn analysis_table_sorts_by_each_column_header_and_opens_a_row() {
     drop(h);
     drop(files);
 }
+
+/// Pick `value` in the Morphology chooser's `category` menu: its combo box is the first one
+/// right of the category's label.
+fn choose_morphology(h: &mut Harness, category: &str, value: &str) {
+    let label = lowest(h, category);
+    let combo = h
+        .shapes
+        .iter()
+        .filter(|(r, _)| (r.center().y - label.center().y).abs() < 6.0 && r.left() > label.right())
+        .map(|(r, _)| *r)
+        .min_by(|a, b| a.left().total_cmp(&b.left()))
+        .unwrap_or_else(|| panic!("no menu after {category:?}: {:?}", h.texts()));
+    h.click(combo.center());
+    h.click_text(value);
+}
+
+/// The Morphology chooser (#145) builds `@verb aorist imperative` from plain-English menus
+/// and searches it, finding what the same criteria typed find; added after a Strong's number
+/// it describes that word.
+#[test]
+fn the_morphology_chooser_builds_the_query_and_searches_it() {
+    let (mut h, files) = harness_of("morph-chooser", &[obs_engine::testing::tagnt_romans()]);
+    h.shell.run("tool.search", &json!({}));
+    h.frames(2);
+    let tab = search_tab(&h);
+    let others: Vec<TabId> = h
+        .shell
+        .st
+        .session
+        .workspace
+        .tabs()
+        .filter(|t| t.id != tab)
+        .map(|t| t.id)
+        .collect();
+    for t in others {
+        h.shell.run("tab.close", &json!({ "tab": t.0 }));
+    }
+    h.frames(3);
+    h.click_text("Morphology…");
+    assert!(h.find("Choose a part of speech, tense, case …").is_some());
+    for (category, value) in [
+        ("Part of speech", "verb"),
+        ("Tense", "aorist"),
+        ("Mood", "imperative"),
+    ] {
+        choose_morphology(&mut h, category, value);
+    }
+    assert!(
+        h.find("@verb aorist imperative").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    h.click_text("Add and search");
+    settle(&mut h);
+    draw_laid(&mut h);
+    preview(&h, "search-morphology-chooser-kittest");
+    let st = h.shell.st.session.search_tab(tab).unwrap().clone();
+    assert_eq!(st.query, "@verb aorist imperative");
+    let refs = |st: &obs_engine::SearchTab| {
+        let r = st.results.clone().expect("results");
+        r.rows
+            .iter()
+            .map(|row| r.row_reference(row))
+            .collect::<Vec<_>>()
+    };
+    let chosen = refs(&st);
+    assert_eq!(
+        chosen,
+        ["John 15:9", "Romans 6:13", "Romans 13:14", "Romans 16:16"]
+    );
+    assert!(h.find("4 verses · TAGNT 4").is_some(), "{:?}", h.texts());
+    // The same criteria typed another way.
+    h.shell.run(
+        "search.run",
+        &json!({ "tab": tab.0, "text": "@imperative aorist verb" }),
+    );
+    settle(&mut h);
+    assert_eq!(refs(h.shell.st.session.search_tab(tab).unwrap()), chosen);
+
+    // After a Strong's number, the chooser's criteria describe that word.
+    h.shell
+        .run("search.run", &json!({ "tab": tab.0, "text": "G3936" }));
+    settle(&mut h);
+    choose_morphology(&mut h, "Tense", "present");
+    h.click_text("Add to query");
+    assert!(
+        h.find("G3936 @verb present imperative").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    h.click_text("Search");
+    settle(&mut h);
+    let st = h.shell.st.session.search_tab(tab).unwrap();
+    assert_eq!(st.query, "G3936 @verb present imperative");
+    assert_eq!(refs(st), ["Romans 6:13"]);
+    drop(h);
+    drop(files);
+}

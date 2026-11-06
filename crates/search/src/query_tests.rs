@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use crate::morph::MorphCriteria;
 use crate::query::*;
 
 /// A Lexicon with two transliterations.
@@ -11,11 +12,37 @@ fn lexicon(t: &str) -> Vec<String> {
     }
 }
 
-fn fts(q: &str) -> String {
-    match to_fts5(q, &lexicon).unwrap_or_else(|e| panic!("{q}: {e}")) {
+/// A Search index's Morphology codes and their tokens.
+struct Codes(&'static [(&'static str, &'static str)]);
+
+impl MorphVocabulary for Codes {
+    fn tokens(&self, criteria: &MorphCriteria) -> Vec<String> {
+        self.0
+            .iter()
+            .filter(|(_, code)| criteria.matches_code(code))
+            .map(|(t, _)| (*t).to_string())
+            .collect()
+    }
+}
+
+const CODES: Codes = Codes(&[
+    ("morph1", "V-AAM-2P"),
+    ("morph2", "V-AAI-3S"),
+    ("morph3", "N-GSF"),
+    ("morph4", "V-2AAM-2S"),
+    ("morph5", "HVqp3ms"),
+]);
+
+fn expanded(c: Compiled) -> String {
+    match c {
         Compiled::Match(s) => s,
+        Compiled::Morph(m) => expanded(m.expand(&CODES)),
         Compiled::Nothing => "<nothing>".into(),
     }
+}
+
+fn fts(q: &str) -> String {
+    expanded(to_fts5(q, &lexicon).unwrap_or_else(|e| panic!("{q}: {e}")))
 }
 
 #[test]
@@ -174,7 +201,9 @@ pub(crate) fn only_safe_syntax(expr: &str) -> Result<(), String> {
                     word.push(n);
                     chars.next();
                 }
-                if !["AND", "OR", "NOT", "text", "strong", "lemma"].contains(&word.as_str()) {
+                if !["AND", "OR", "NOT", "text", "strong", "lemma", "morph"]
+                    .contains(&word.as_str())
+                {
                     return Err(format!("bare word {word:?}"));
                 }
             }
@@ -219,6 +248,15 @@ pub(crate) fn random_queries(n: usize, seed: u64) -> Vec<String> {
         "lemma:",
         "text:",
         "foo:",
+        "morph:",
+        "@",
+        "@verb",
+        "@aorist",
+        "aorist",
+        "imperative",
+        "consecutive",
+        "imperfect",
+        "@xyz",
         "G26",
         "H1254A",
         "g",
@@ -274,6 +312,13 @@ fn fuzzed_input_never_panics_or_emits_unescaped_syntax() {
                     panic!("{q:?} -> {expr:?}: {why}");
                 }
             }
+            Ok(Compiled::Morph(m)) => {
+                if let Compiled::Match(expr) = m.expand(&CODES)
+                    && let Err(why) = only_safe_syntax(&expr)
+                {
+                    panic!("{q:?} -> {expr:?}: {why}");
+                }
+            }
             Ok(Compiled::Nothing) => {}
             Err(e) => {
                 // Error spans lie inside the query, on char boundaries.
@@ -288,10 +333,7 @@ fn fuzzed_input_never_panics_or_emits_unescaped_syntax() {
 /// Notes search (#64) reads the same grammar against the Notes index's one `body` column.
 #[test]
 fn notes_queries_search_the_body_column() {
-    let notes = |q: &str| match compile_notes(&parse(q).unwrap()).unwrap() {
-        Compiled::Match(s) => s,
-        Compiled::Nothing => "<nothing>".into(),
-    };
+    let notes = |q: &str| expanded(compile_notes(&parse(q).unwrap()).unwrap());
     let table: &[(&str, &str)] = &[
         ("Laban heap", r#"body : "laban" AND body : "heap""#),
         (r#""a witness""#, r#"body : "a witness""#),
@@ -310,4 +352,154 @@ fn notes_queries_search_the_body_column() {
     }
     // The Search index form is unchanged.
     assert_eq!(fts("G5485"), r#"strong : "g5485""#);
+}
+
+/// Morphology criteria (#145): `@` takes the words after it while they name criteria, and a
+/// Strong's number or Lemma right before it is the same word's.
+#[test]
+fn morphology_criteria_compile_to_one_part_phrases() {
+    let table: &[(&str, &str)] = &[
+        // Every code that meets all the criteria, as a token of the `morph` column.
+        (
+            "@verb aorist imperative",
+            r#"morph : "morph1" OR morph : "morph4""#,
+        ),
+        // The same criteria in any order, or through `morph:`, are the same query.
+        (
+            "@imperative aorist",
+            r#"morph : "morph1" OR morph : "morph4""#,
+        ),
+        (
+            "morph:aorist imperative",
+            r#"morph : "morph1" OR morph : "morph4""#,
+        ),
+        (
+            r#"morph:"aorist imperative""#,
+            r#"morph : "morph1" OR morph : "morph4""#,
+        ),
+        // A Strong's number or Lemma before the `@` is in the same part, just before the
+        // code (an extended number is followed by its base form), the Lemma just after.
+        ("strong:G26 @noun genitive", r#"morph : "g26 morph3""#),
+        ("G26 @noun gen", r#"morph : "g26 morph3""#),
+        ("H1254A @qal", r#"morph : "h1254a h1254 morph5""#),
+        ("lemma:agape @genitive", r#"morph : "morph3 αγαπη""#),
+        (
+            "lemma:bara @qal",
+            r#"morph : "morph5 ברא" OR morph : "morph5 ברה""#,
+        ),
+        // Alongside words, phrases, OR and NOT.
+        (
+            r#""love one another" @imperative"#,
+            r#"text : "love one another" AND (morph : "morph1" OR morph : "morph4")"#,
+        ),
+        (
+            "love @aorist imperative -@indicative",
+            r#"(text : "love" AND (morph : "morph1" OR morph : "morph4")) NOT morph : "morph2""#,
+        ),
+        // A word that is not Morphology ends the criteria.
+        ("@genitive love", r#"morph : "morph3" AND text : "love""#),
+        // Not attached: a word before, or a new `@`.
+        (
+            "G26 love @genitive",
+            r#"strong : "g26" AND text : "love" AND morph : "morph3""#,
+        ),
+        // Nor across an explicit AND or a parenthesis: those join criteria of the Verse.
+        (
+            "G26 AND @genitive",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        (
+            "@genitive AND G26",
+            r#"morph : "morph3" AND strong : "g26""#,
+        ),
+        (
+            "lemma:agape AND @genitive",
+            r#"lemma : "αγαπη" AND morph : "morph3""#,
+        ),
+        ("(G26) @genitive", r#"strong : "g26" AND morph : "morph3""#),
+        (
+            "(love G26) @genitive",
+            r#"text : "love" AND strong : "g26" AND morph : "morph3""#,
+        ),
+        ("G26 (@genitive)", r#"strong : "g26" AND morph : "morph3""#),
+        (
+            "G26 ((@genitive))",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        (
+            "lemma:agape (@genitive)",
+            r#"lemma : "αγαπη" AND morph : "morph3""#,
+        ),
+        (
+            "(G26) (@genitive)",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        // A cancelled double negation keeps its parenthesis, and a NOT between them parts
+        // them too.
+        (
+            "G26 NOT NOT (@genitive)",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        (
+            "G26 --(@genitive)",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        (
+            "NOT NOT (G26) @genitive",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        (
+            "--(lemma:agape) @genitive",
+            r#"lemma : "αγαπη" AND morph : "morph3""#,
+        ),
+        (
+            "G26 NOT NOT @genitive",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        (
+            "NOT NOT G26 @genitive",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        ("--(G26 @genitive)", r#"morph : "g26 morph3""#),
+        ("(G26 @genitive)", r#"morph : "g26 morph3""#),
+        ("((G26 @genitive))", r#"morph : "g26 morph3""#),
+        (
+            "@verb @noun",
+            r#"(morph : "morph1" OR morph : "morph2" OR morph : "morph4" OR morph : "morph5") AND morph : "morph3""#,
+        ),
+        // Two-word values, as words or joined.
+        ("@consecutive imperfect", "<nothing>"),
+        ("@perfect third masc sg", r#"morph : "morph5""#),
+        // Criteria no code of this index meets.
+        ("@optative", "<nothing>"),
+        ("love OR @optative", r#"text : "love""#),
+        ("love -@optative", r#"text : "love""#),
+        ("lemma:zzz @noun", "<nothing>"),
+    ];
+    for (q, want) in table {
+        assert_eq!(fts(q), *want, "{q}");
+    }
+    let q = parse("strong:G26 @noun genitive love").unwrap();
+    let Query::And(parts) = q else { panic!() };
+    assert!(matches!(&parts[0], Query::Morph { strong: Some(_), span, .. } if *span == (0..25)));
+    let q = parse("@consecutive imperfect").unwrap();
+    assert!(matches!(q, Query::Morph { span, .. } if span == (0..22)));
+}
+
+#[test]
+fn morphology_errors_are_positioned() {
+    let err = |q: &str| to_fts5(q, &NoLexicon).unwrap_err();
+    let e = err("love @aorst");
+    assert_eq!(e.kind, QueryErrorKind::UnknownMorph("aorst".into()));
+    assert_eq!(e.span, 5..11);
+    assert_eq!(err("love @").kind, QueryErrorKind::EmptyMorph);
+    assert_eq!(err("love morph:").kind, QueryErrorKind::EmptyMorph);
+    assert_eq!(
+        err("@verb OR -@noun").kind,
+        QueryErrorKind::ExcludedAlternative
+    );
+    assert_eq!(err("-@noun").kind, QueryErrorKind::OnlyExcluded);
+    let e = compile_notes(&parse("love @verb").unwrap()).unwrap_err();
+    assert_eq!(e.kind, QueryErrorKind::MorphInNotes);
+    assert_eq!(e.span, 5..10);
 }

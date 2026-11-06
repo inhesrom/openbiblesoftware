@@ -1149,6 +1149,91 @@ pub fn tagnt_love() -> obs_model::Resource {
     r
 }
 
+/// Romans 6:13, 12:2, 13:14, 15:7 and 16:16 and John 15:9 as STEPBible's TAGNT tags them
+/// (CC BY), for Morphology search (#145). Aorist imperatives: παραστήσατε (6:13),
+/// ἐνδύσασθε (13:14), ἀσπάσασθε (16:16) and μείνατε (Jn 15:9). 6:13 also has a present
+/// imperative; 12:2 has only present imperatives; 15:7 has a present imperative and an
+/// aorist indicative, but no aorist imperative.
+pub fn tagnt_romans() -> obs_model::Resource {
+    use obs_scripture::{Book, Verse};
+    let rom = |c, v| Verse::new(Book::Romans, c, v);
+    let mut r = tagged_bible(
+        "tagnt-rom",
+        "Translators Amalgamated Greek NT (test)",
+        "TAGNT",
+        "grc",
+        &[
+            (
+                jn(15, 9),
+                "καθὼς{G2531|καθώς|CONJ|even_as} ἠγάπησέν{G25|ἀγαπάω|V-AAI-3S|has_loved} \
+                 με{G3165|ἐγώ|P-1AS|Me} ὁ{G3588|ὁ|T-NSM|the} πατήρ{G3962|πατήρ|N-NSM-T|Father}, \
+                 κἀγὼ{G1473||P-1NS|+G2532||CONJ|} ὑμᾶς{G4771|σύ|P-2AP|you} \
+                 ἠγάπησα{G25|ἀγαπάω|V-AAI-1S|loved}· μείνατε{G3306|μένω|V-AAM-2P|do_abide} \
+                 ἐν{G1722|ἐν|PREP|in} τῇ{G3588|ὁ|T-DSF|the} ἀγάπῃ{G26|ἀγάπη|N-DSF|love} \
+                 τῇ{G3588|ὁ|T-DSF|the} ἐμῇ{G1473|ἐμός|S-1SDSF|of_Mine}.",
+            ),
+            (
+                rom(6, 13),
+                "μηδὲ{G3366|μηδέ|CONJ-N|Neither} παριστάνετε{G3936|παρίστημι|V-PAM-2P|do_yield} \
+                 τὰ{G3588|ὁ|T-APN|the} μέλη{G3196|μέλος|N-APN|members} ὑμῶν{G4771|σύ|P-2GP|of_you} \
+                 ὅπλα{G3696|ὅπλον|N-APN|as_instruments} ἀδικίας{G93|ἀδικία|N-GSF|of_unrighteousness} \
+                 τῇ{G3588|ὁ|T-DSF|the} ἁμαρτίᾳ{G266|ἁμαρτία|N-DSF|to_sin}, ἀλλὰ{G235|ἀλλά|CONJ|but} \
+                 παραστήσατε{G3936|παρίστημι|V-2AAM-2P|do_yield} ἑαυτοὺς{G1438|ἑαυτοῦ|F-2APM|yourselves} \
+                 τῷ{G3588|ὁ|T-DSM|the} θεῷ{G2316|θεός|N-DSM-T|to_God} ὡσεὶ{G5616|ὡσεί|PREP|as} \
+                 ἐκ{G1537|ἐκ|PREP|out_from} νεκρῶν{G3498|νεκρός|A-GPM|the_dead} \
+                 ζῶντας{G2198|ζάω|V-PAP-APM|living} καὶ{G2532|καί|CONJ|and} τὰ{G3588|ὁ|T-APN|the} \
+                 μέλη{G3196|μέλος|N-APN|members} ὑμῶν{G4771|σύ|P-2GP|of_you} \
+                 ὅπλα{G3696|ὅπλον|N-APN|as_instruments} δικαιοσύνης{G1343|δικαιοσύνη|N-GSF|of_righteousness} \
+                 τῷ{G3588|ὁ|T-DSM|the} θεῷ{G2316|θεός|N-DSM-T|to_God}.",
+            ),
+            (
+                rom(12, 2),
+                "καὶ{G2532|καί|CONJ|And} μὴ{G3361|μή|PRT-N|not} \
+                 συσχηματίζεσθε{G4964|συσχηματίζω|V-PEM-2P|do_be_conformed} τῷ{G3588|ὁ|T-DSM|to_the} \
+                 αἰῶνι{G165G|αἰών|N-DSM|age} τούτῳ{G3778|οὗτος|D-DSM|this}, ἀλλὰ{G235|ἀλλά|CONJ|but} \
+                 μεταμορφοῦσθε{G3339|μεταμορφόω|V-PPM-2P|do_be_transformed} τῇ{G3588|ὁ|T-DSF|by_the} \
+                 ἀνακαινώσει{G342|ἀνακαίνωσις|N-DSF|renewing} τοῦ{G3588|ὁ|T-GSM|of_the} \
+                 νοὸς{G3563|νοῦς|N-GSM|mind} εἰς{G1519|εἰς|PREP|for} τὸ{G3588|ὁ|T-ASN|the} \
+                 δοκιμάζειν{G1381|δοκιμάζω|V-PAN|to_prove} ὑμᾶς{G4771|σύ|P-2AP|by_you} \
+                 τί{G5101|τίς|I-NSN|what_is} τὸ{G3588|ὁ|T-NSN|the} θέλημα{G2307|θέλημα|N-NSN|will} \
+                 τοῦ{G3588|ὁ|T-GSM|the} θεοῦ{G2316|θεός|N-GSM-T|of_God} τὸ{G3588|ὁ|T-NSN|the} \
+                 ἀγαθὸν{G18|ἀγαθός|A-NSN|good} καὶ{G2532|καί|CONJ|and} \
+                 εὐάρεστον{G2101|εὐάρεστος|A-NSN|well-pleasing} καὶ{G2532|καί|CONJ|and} \
+                 τέλειον{G5046|τέλειος|A-NSN|perfect}.",
+            ),
+            (
+                rom(13, 14),
+                "ἀλλ᾽{G235|ἀλλά|CONJ|But} ἐνδύσασθε{G1746|ἐνδύω|V-AMM-2P|do_put_on} \
+                 τὸν{G3588|ὁ|T-ASM|the} κύριον{G2962G|κύριος|N-ASM-T|Lord} \
+                 Ἰησοῦν{G2424G|Ἰησοῦς|N-ASM-P|Jesus} Χριστὸν{G5547|Χριστός|N-ASM-T|Christ} \
+                 καὶ{G2532|καί|CONJ|and} τῆς{G3588|ὁ|T-GSF|of_the} σαρκὸς{G4561|σάρξ|N-GSF|flesh} \
+                 πρόνοιαν{G4307|πρόνοια|N-ASF|provision} μὴ{G3361|μή|PRT-N|not} \
+                 ποιεῖσθε{G4160G|ποιέω|V-PMM-2P|do_make} εἰς{G1519|εἰς|PREP|for} \
+                 ἐπιθυμίας{G1939|ἐπιθυμία|N-APF|desires}.",
+            ),
+            (
+                rom(15, 7),
+                "διὸ{G1352|διό|CONJ|Therefore} προσλαμβάνεσθε{G4355|προσλαμβάνω|V-PMM-2P|do_receive} \
+                 ἀλλήλους{G240|ἀλλήλων|C-APM|one_another}, καθὼς{G2531|καθώς|CONJ|even_as} \
+                 καὶ{G2532|καί|CONJ|also} ὁ{G3588|ὁ|T-NSM|the} Χριστὸς{G5547|Χριστός|N-NSM-T|Christ} \
+                 προσελάβετο{G4355|προσλαμβάνω|V-2AMI-3S|received} ὑμᾶς{G4771|σύ|P-2AP|you} \
+                 εἰς{G1519|εἰς|PREP|to} δόξαν{G1391|δόξα|N-ASF|the_glory} τοῦ{G3588|ὁ|T-GSM|the} \
+                 θεοῦ{G2316|θεός|N-GSM-T|of_God}.",
+            ),
+            (
+                rom(16, 16),
+                "ἀσπάσασθε{G782|ἀσπάζομαι|V-ADM-2P|do_greet} ἀλλήλους{G240|ἀλλήλων|C-APM|one_another} \
+                 ἐν{G1722|ἐν|PREP|with} φιλήματι{G5370|φίλημα|N-DSN|a_kiss} \
+                 ἁγίῳ{G40G|ἅγιος|A-DSN|holy}. ἀσπάζονται{G782|ἀσπάζομαι|V-PNI-3P|Greet} \
+                 ὑμᾶς{G4771|σύ|P-2AP|you} αἱ{G3588|ὁ|T-NPF|the} ἐκκλησίαι{G1577|ἐκκλησία|N-NPF|churches} \
+                 πᾶσαι{G3956|πᾶς|A-NPF|all} τοῦ{G3588|ὁ|T-GSM|the} Χριστοῦ{G5547|Χριστός|N-GSM-T|of_Christ}.",
+            ),
+        ],
+    );
+    r.manifest.license = "CC-BY-4.0".into();
+    r
+}
+
 /// KJV Genesis 12:1 (public domain) with Strong's numbers.
 pub fn kjv_genesis_12() -> obs_model::Resource {
     tagged_bible(

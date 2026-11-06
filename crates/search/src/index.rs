@@ -9,7 +9,9 @@
 //!   paragraph, such as a heading), carrying the unit's Key and title.
 //!
 //! Fields (#16 rule 3): `text` (normalized surface words), `strong` (Strong's numbers of
-//! Tagged-word morpheme parts, extended and base forms) and `lemma` (normalized Lemmas).
+//! Tagged-word morpheme parts, extended and base forms), `lemma` (normalized Lemmas) and
+//! `morph` (each morpheme part's Strong's numbers, Morphology code token and Lemma in turn,
+//! for Morphology criteria, #145).
 
 use std::fmt;
 use std::ops::{Range, RangeInclusive};
@@ -21,7 +23,8 @@ use crate::query::Compiled;
 /// The version of the Search index: what a document is, its fields, the tokenizer and the
 /// normalizer. A cache built with another version is stale and is rebuilt in the background.
 /// Bump it whenever any of those change (including [`obs_model::NORMALIZER_VERSION`]).
-pub const INDEX_VERSION: u32 = 1;
+/// Version 2 added the `morph` field (#145).
+pub const INDEX_VERSION: u32 = 2;
 
 // A normalizer change must bump INDEX_VERSION too (and then this pin).
 const _: () = assert!(

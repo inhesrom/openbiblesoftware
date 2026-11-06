@@ -13,7 +13,13 @@
 //! | `meta` | `name` → `value`: `resource_id`, `content_hash`, `index_version`, `documents`, `document_kind` |
 //! | `units` | `ord`, `id`, `title` of every unit that has a document |
 //! | `docs` | one per document: `id` (the verse ordinal for a Bible), `unit` (→ `units.ord`), `start`, `end` (byte range in the unit), `key_scheme`, `key` |
-//! | `search` | FTS5 over `text`, `strong`, `lemma`; `detail=full` for phrases |
+//! | `morph_codes` | `token` → `code`: each Morphology code in the Resource and its token in the `morph` column |
+//! | `search` | FTS5 over `text`, `strong`, `lemma`, `morph`; `detail=full` for phrases |
+//!
+//! `morph` lists every morpheme part of the Tagged words in turn: its Strong's number (then
+//! the base form of an extended one), its code's token, then its Lemma's words. A phrase
+//! such as `"g26 morph3"` therefore finds one part with both (#145); which tokens a query's
+//! Morphology criteria mean is read from `morph_codes` ([`obs_search::MorphQuery::expand`]).
 //!
 //! `search` is an external-content table over `docs`: the indexed text lives in the Resource,
 //! and `docs` only locates each document there. The column values are never stored (`docs`
@@ -31,7 +37,8 @@ use obs_model::{
 };
 use obs_scripture::{Passage, Verse};
 use obs_search::{
-    Compiled, DocumentKind, HitOrder, SearchError, SearchHit, SearchIndex, SearchOptions,
+    Compiled, DocumentKind, HitOrder, MorphCriteria, MorphVocabulary, SearchError, SearchHit,
+    SearchIndex, SearchOptions,
 };
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
@@ -61,10 +68,12 @@ fn schema() -> String {
              key TEXT,
              text TEXT GENERATED ALWAYS AS (NULL) VIRTUAL,
              strong TEXT GENERATED ALWAYS AS (NULL) VIRTUAL,
-             lemma TEXT GENERATED ALWAYS AS (NULL) VIRTUAL
+             lemma TEXT GENERATED ALWAYS AS (NULL) VIRTUAL,
+             morph TEXT GENERATED ALWAYS AS (NULL) VIRTUAL
          );
+         CREATE TABLE morph_codes (token TEXT PRIMARY KEY, code TEXT NOT NULL) WITHOUT ROWID;
          CREATE VIRTUAL TABLE search USING fts5(
-             text, strong, lemma,
+             text, strong, lemma, morph,
              content = 'docs', content_rowid = 'id', detail = full,
              tokenize = \"{TOKENIZER}\"
          );"
@@ -198,6 +207,26 @@ struct Doc {
     text: String,
     strong: String,
     lemma: String,
+    morph: String,
+}
+
+/// The Morphology codes met while indexing, numbered in the order first met (so a build is
+/// deterministic). A code's token is `morph` and its number.
+#[derive(Default)]
+struct MorphCodes {
+    tokens: HashMap<String, String>,
+    in_order: Vec<(String, String)>,
+}
+
+impl MorphCodes {
+    fn token(&mut self, code: &str) -> &str {
+        if !self.tokens.contains_key(code) {
+            let token = format!("morph{}", self.in_order.len() + 1);
+            self.in_order.push((token.clone(), code.to_string()));
+            self.tokens.insert(code.to_string(), token);
+        }
+        self.tokens.get(code).map_or("", String::as_str)
+    }
 }
 
 /// Normalized words of `text[range]`, skipping `holes` (sorted, e.g. headings), appended to
@@ -258,10 +287,22 @@ impl<'a> UnitMarks<'a> {
         Self { tagged, headings }
     }
 
-    /// The `strong` and `lemma` fields of the Tagged words that start inside `range`.
-    fn fields(&self, range: std::ops::Range<usize>) -> (String, String) {
+    /// The `strong`, `lemma` and `morph` fields of the Tagged words that start inside
+    /// `range`.
+    fn fields(
+        &self,
+        range: std::ops::Range<usize>,
+        codes: &mut MorphCodes,
+    ) -> (String, String, String) {
         let mut strong = String::new();
         let mut lemma = String::new();
+        let mut morph = String::new();
+        let push = |out: &mut String, word: &str| {
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            out.push_str(word);
+        };
         let first = self.tagged.partition_point(|t| t.0 < range.start);
         for (s, _, parts) in &self.tagged[first..] {
             if *s >= range.end {
@@ -270,17 +311,20 @@ impl<'a> UnitMarks<'a> {
             for p in *parts {
                 let n = p.strongs;
                 for form in std::iter::once(n).chain(n.is_extended().then(|| n.base())) {
-                    if !strong.is_empty() {
-                        strong.push(' ');
-                    }
-                    strong.push_str(&form.to_string().to_lowercase());
+                    let form = form.to_string().to_lowercase();
+                    push(&mut strong, &form);
+                    push(&mut morph, &form);
+                }
+                if let Some(code) = p.morph.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+                    push(&mut morph, codes.token(code));
                 }
                 if let Some(l) = &p.lemma {
                     push_words(l, 0..l.len(), &[], &mut lemma);
+                    push_words(l, 0..l.len(), &[], &mut morph);
                 }
             }
         }
-        (strong, lemma)
+        (strong, lemma, morph)
     }
 }
 
@@ -340,6 +384,7 @@ fn paragraphs(unit: &TextUnit) -> Vec<(usize, usize)> {
 /// `r.units`. `emit` returns false to stop (cancelled).
 fn documents(
     r: &Resource,
+    codes: &mut MorphCodes,
     mut emit: impl FnMut(Doc, usize) -> Result<bool, StoreError>,
 ) -> Result<(DocumentKind, bool), StoreError> {
     let unit_index: HashMap<&UnitId, usize> = r
@@ -359,7 +404,7 @@ fn documents(
             let range = v.range();
             let mut text = String::new();
             push_words(&unit.text, range.clone(), &m.headings, &mut text);
-            let (strong, lemma) = m.fields(range);
+            let (strong, lemma, morph) = m.fields(range, codes);
             let last = Verse::new(v.verse.book, v.verse.chapter, v.last.max(v.verse.verse));
             let doc = Doc {
                 id: i64::try_from(ordinal).unwrap_or(i64::MAX),
@@ -370,6 +415,7 @@ fn documents(
                 text,
                 strong,
                 lemma,
+                morph,
             };
             if !emit(doc, ui)? {
                 return Ok((DocumentKind::Verse, false));
@@ -388,7 +434,7 @@ fn documents(
         for (s, e) in paragraphs(unit) {
             let mut text = String::new();
             push_words(&unit.text, s..e, &[], &mut text);
-            let (strong, lemma) = marks.fields(s..e);
+            let (strong, lemma, morph) = marks.fields(s..e, codes);
             if text.is_empty() && strong.is_empty() && lemma.is_empty() {
                 continue;
             }
@@ -402,6 +448,7 @@ fn documents(
                 text,
                 strong,
                 lemma,
+                morph,
             };
             id += 1;
             if !emit(doc, ui)? {
@@ -497,6 +544,7 @@ fn write_index(
     if !progress(0, total) {
         return Err(StoreError::Cancelled);
     }
+    let mut codes = MorphCodes::default();
     let (kind, count) = {
         let mut doc_stmt = tx
             .prepare(
@@ -505,7 +553,10 @@ fn write_index(
             )
             .map_err(sql)?;
         let mut fts_stmt = tx
-            .prepare("INSERT INTO search (rowid, text, strong, lemma) VALUES (?1, ?2, ?3, ?4)")
+            .prepare(
+                "INSERT INTO search (rowid, text, strong, lemma, morph)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )
             .map_err(sql)?;
         let mut unit_stmt = tx
             .prepare("INSERT OR IGNORE INTO units (ord, id, title) VALUES (?1, ?2, ?3)")
@@ -515,7 +566,7 @@ fn write_index(
         let mut count = 0u64;
         let mut units_done = 0u64;
         let is_bible = r.manifest.resource_type == ResourceType::Bible;
-        let (kind, finished) = documents(r, |doc, ui| {
+        let (kind, finished) = documents(r, &mut codes, |doc, ui| {
             if last_unit != Some(ui) {
                 if !is_bible {
                     units_done += 1;
@@ -537,7 +588,7 @@ fn write_index(
                 .execute(params![doc.id, doc.unit, doc.start, doc.end, scheme, text])
                 .map_err(sql)?;
             fts_stmt
-                .execute(params![doc.id, doc.text, doc.strong, doc.lemma])
+                .execute(params![doc.id, doc.text, doc.strong, doc.lemma, doc.morph])
                 .map_err(sql)?;
             count += 1;
             let done = if is_bible { count } else { units_done };
@@ -554,6 +605,13 @@ fn write_index(
         }
         (kind, count)
     };
+    for (token, code) in &codes.in_order {
+        tx.execute(
+            "INSERT INTO morph_codes (token, code) VALUES (?1, ?2)",
+            params![token, code],
+        )
+        .map_err(sql)?;
+    }
     for (name, value) in [
         ("resource_id", key.resource_id.clone()),
         ("content_hash", key.content_hash.clone()),
@@ -588,6 +646,50 @@ pub struct SqliteSearchIndex {
     key: IndexKey,
     kind: DocumentKind,
     documents: u64,
+    codes: IndexCodes,
+}
+
+/// An open index's Morphology codes, decoded once, with their tokens.
+#[derive(Debug, Default)]
+struct IndexCodes(Vec<(String, obs_model::Morph)>);
+
+impl MorphVocabulary for IndexCodes {
+    fn tokens(&self, criteria: &MorphCriteria) -> Vec<String> {
+        self.0
+            .iter()
+            .filter(|(_, m)| criteria.matches_morph(m))
+            .map(|(t, _)| t.clone())
+            .collect()
+    }
+}
+
+/// The codes of an index; none in a cache built before #145 (it has no `morph` column).
+fn read_codes(conn: &Connection) -> Result<IndexCodes, StoreError> {
+    let has_table: bool = conn
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'morph_codes')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(sql)?;
+    if !has_table {
+        return Ok(IndexCodes::default());
+    }
+    let mut stmt = conn
+        .prepare("SELECT token, code FROM morph_codes")
+        .map_err(sql)?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(sql)?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (token, code) = row.map_err(sql)?;
+        // A code the decoder cannot read meets no criteria.
+        if let Ok(m) = obs_model::morph::parse(&code) {
+            out.push((token, m));
+        }
+    }
+    Ok(IndexCodes(out))
 }
 
 impl SqliteSearchIndex {
@@ -649,11 +751,13 @@ impl SqliteSearchIndex {
         let kind = DocumentKind::from_name(&meta("document_kind")?)
             .ok_or_else(|| StoreError::Corrupt("unknown document kind".into()))?;
         let documents = number("documents")?;
+        let codes = read_codes(&conn)?;
         Ok(Self {
             conn,
             key,
             kind,
             documents,
+            codes,
         })
     }
 
@@ -684,8 +788,17 @@ impl SearchIndex for SqliteSearchIndex {
         query: &Compiled,
         options: &SearchOptions,
     ) -> Result<Vec<SearchHit>, SearchError> {
-        let Compiled::Match(expr) = query else {
-            return Ok(Vec::new());
+        let expanded;
+        let expr = match query {
+            Compiled::Match(expr) => expr,
+            Compiled::Morph(m) => {
+                expanded = m.expand(&self.codes);
+                let Compiled::Match(expr) = &expanded else {
+                    return Ok(Vec::new());
+                };
+                expr
+            }
+            Compiled::Nothing => return Ok(Vec::new()),
         };
         let relevance = options.order == HitOrder::Relevance;
         let mut q =

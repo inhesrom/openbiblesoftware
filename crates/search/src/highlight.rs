@@ -8,6 +8,9 @@
 //!   morphemes are highlighted: the stored text has no morpheme boundaries, so each prefix
 //!   part is taken to be one letter (with its points) and the root plus any suffix the rest
 //!   of the word.
+//! - **Morphology criteria** (`@verb aorist`, `strong:G26 @noun genitive`) highlight the
+//!   morpheme parts whose code meets them all, and that have the Strong's number or Lemma
+//!   the `@` was attached to.
 //!
 //! Excluded terms (`-works`, `NOT works`) are never highlighted.
 
@@ -16,6 +19,7 @@ use std::ops::Range;
 use obs_model::{MorphemePart, tokenize};
 use obs_scripture::StrongsNumber;
 
+use crate::morph::MorphCriteria;
 use crate::query::{LemmaLookup, Query, is_original_script};
 
 /// STEPBible numbers prefixes, suffixes and other grammatical morphemes from 9001 up.
@@ -29,6 +33,57 @@ pub struct Highlighter {
     strongs: Vec<StrongsNumber>,
     /// Lemmas as normalized words (transliterations already resolved).
     lemmas: Vec<Vec<String>>,
+    /// Morphology words (`strong:G26 @noun genitive`).
+    morph: Vec<MorphWord>,
+}
+
+/// One part that a `@…` term describes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MorphWord {
+    strong: Option<StrongsNumber>,
+    /// The Lemma's alternatives; `None` when no Lemma was given.
+    lemmas: Option<Vec<Vec<String>>>,
+    criteria: MorphCriteria,
+}
+
+impl MorphWord {
+    fn matches(&self, p: &MorphemePart) -> bool {
+        self.strong
+            .is_none_or(|q| q == p.strongs || q == p.strongs.base())
+            && self
+                .lemmas
+                .as_ref()
+                .is_none_or(|l| lemma_in(l, p.lemma.as_deref()))
+            && p.morph
+                .as_deref()
+                .is_some_and(|c| self.criteria.matches_code(c.trim()))
+    }
+}
+
+/// Whether `lemma` holds one of `lemmas` (normalized words).
+fn lemma_in(lemmas: &[Vec<String>], lemma: Option<&str>) -> bool {
+    let Some(lemma) = lemma else {
+        return false;
+    };
+    let words = words_of(lemma);
+    lemmas
+        .iter()
+        .any(|l| !l.is_empty() && words.windows(l.len()).any(|w| w == l.as_slice()))
+}
+
+/// The Lemmas a `lemma:` term means.
+fn resolve_lemma(text: &str, lookup: &dyn LemmaLookup) -> Vec<Vec<String>> {
+    let mut out = Vec::new();
+    if is_original_script(text) {
+        out.push(words_of(text));
+    } else {
+        let translit = words_of(text).join(" ");
+        for l in lookup.lemmas_for_transliteration(&translit) {
+            out.push(words_of(&l));
+        }
+    }
+    out.retain(|l| !l.is_empty());
+    out
 }
 
 fn words_of(s: &str) -> Vec<String> {
@@ -54,17 +109,17 @@ impl Highlighter {
             Query::Word { word, prefix, .. } => self.phrases.push((vec![word.clone()], *prefix)),
             Query::Phrase { words, prefix, .. } => self.phrases.push((words.clone(), *prefix)),
             Query::Strong { number, .. } => self.strongs.push(*number),
-            Query::Lemma { text, .. } => {
-                if is_original_script(text) {
-                    self.lemmas.push(words_of(text));
-                } else {
-                    let translit = words_of(text).join(" ");
-                    for l in lookup.lemmas_for_transliteration(&translit) {
-                        self.lemmas.push(words_of(&l));
-                    }
-                }
-                self.lemmas.retain(|l| !l.is_empty());
-            }
+            Query::Lemma { text, .. } => self.lemmas.extend(resolve_lemma(text, lookup)),
+            Query::Morph {
+                strong,
+                lemma,
+                criteria,
+                ..
+            } => self.morph.push(MorphWord {
+                strong: *strong,
+                lemmas: lemma.as_deref().map(|l| resolve_lemma(l, lookup)),
+                criteria: criteria.clone(),
+            }),
             Query::And(all) | Query::Or(all) => {
                 for a in all {
                     self.collect(a, lookup);
@@ -76,7 +131,10 @@ impl Highlighter {
 
     /// Whether nothing would ever be highlighted.
     pub fn is_empty(&self) -> bool {
-        self.phrases.is_empty() && self.strongs.is_empty() && self.lemmas.is_empty()
+        self.phrases.is_empty()
+            && self.strongs.is_empty()
+            && self.lemmas.is_empty()
+            && self.morph.is_empty()
     }
 
     /// Whether a query Strong's number matches a tagged one: an extended number matches
@@ -86,23 +144,18 @@ impl Highlighter {
     }
 
     fn lemma_matches(&self, lemma: Option<&str>) -> bool {
-        let Some(lemma) = lemma else {
-            return false;
-        };
-        if self.lemmas.is_empty() {
-            return false;
-        }
-        let words = words_of(lemma);
-        self.lemmas
-            .iter()
-            .any(|l| words.windows(l.len()).any(|w| w == l.as_slice()))
+        lemma_in(&self.lemmas, lemma)
     }
 
-    /// Which morpheme parts of a Tagged word match a `strong:` or `lemma:` term.
+    /// Which morpheme parts of a Tagged word match a `strong:`, `lemma:` or `@…` term.
     pub fn matching_parts(&self, parts: &[MorphemePart]) -> Vec<bool> {
         parts
             .iter()
-            .map(|p| self.strong_matches(p.strongs) || self.lemma_matches(p.lemma.as_deref()))
+            .map(|p| {
+                self.strong_matches(p.strongs)
+                    || self.lemma_matches(p.lemma.as_deref())
+                    || self.morph.iter().any(|m| m.matches(p))
+            })
             .collect()
     }
 
@@ -132,7 +185,7 @@ impl Highlighter {
                 }
             }
         }
-        if !self.strongs.is_empty() || !self.lemmas.is_empty() {
+        if !self.strongs.is_empty() || !self.lemmas.is_empty() || !self.morph.is_empty() {
             for (range, parts) in tagged {
                 let matched = self.matching_parts(parts);
                 if matched.iter().any(|m| *m) {

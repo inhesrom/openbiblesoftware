@@ -140,3 +140,48 @@ fn transliterated_lemmas_resolve_through_the_lexicon() {
 fn ranges_merge() {
     assert_eq!(merge(vec![5..8, 0..2, 1..3, 8..9, 4..4]), [0..3, 5..9]);
 }
+
+/// Morphology criteria (#145) highlight the parts whose code meets them all; with a Strong's
+/// number before the `@`, only that number's parts. In a Hebrew word, only the morpheme.
+#[test]
+fn morphology_terms_highlight_the_matching_word_or_morpheme() {
+    let coded = |strongs: &str, code: &str| {
+        let mut p = part(strongs, None);
+        p.morph = Some(code.into());
+        p
+    };
+    let text = "μηδὲ παριστάνετε ἀλλὰ παραστήσατε";
+    let at = |w: &str| {
+        let s = text.find(w).unwrap();
+        s..s + w.len()
+    };
+    let present = [coded("G3936", "V-PAM-2P")];
+    let aorist = [coded("G3936", "V-2AAM-2P")];
+    let neither = [coded("G3366", "CONJ-N")];
+    let tagged = || {
+        [
+            (at("μηδὲ"), &neither[..]),
+            (at("παριστάνετε"), &present[..]),
+            (at("παραστήσατε"), &aorist[..]),
+        ]
+    };
+    let ranges = |q: &str| hl(q).ranges(text, tagged());
+    assert_eq!(shown(text, &ranges("@aorist imperative")), ["παραστήσατε"]);
+    assert_eq!(
+        shown(text, &ranges("@imperative")),
+        ["παριστάνετε", "παραστήσατε"]
+    );
+    assert_eq!(
+        shown(text, &ranges("G3936 @present")),
+        ["παριστάνετε"],
+        "the number alone is not highlighted"
+    );
+    assert!(ranges("G26 @imperative").is_empty());
+    assert_eq!(ranges("@imperative -@conjunction").len(), 2);
+    // וַיִּבְרָא: the consecutive vav and the Qal verb.
+    let word = "וַיִּבְרָא";
+    let parts = [coded("H9001", "Hc"), coded("H1254A", "HVqw3ms")];
+    let h = hl("@wayyiqtol");
+    let r = h.ranges(word, [(0..word.len(), &parts[..])]);
+    assert_eq!(shown(word, &r), ["יִּבְרָא"]);
+}
