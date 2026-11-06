@@ -450,6 +450,9 @@ fn a_hebrew_bibles_preview_reads_right_to_left_through_the_text_pipeline() {
             hebrew_lines += 1;
         }
         assert!(hebrew_lines > 0, "{label}: a Hebrew line was laid out");
+        if format == obs_engine::CopyFormat::RichText {
+            preview(&h, "copy-verses-hebrew");
+        }
     }
     drop(h);
     let _ = std::fs::remove_dir_all(&dir);
