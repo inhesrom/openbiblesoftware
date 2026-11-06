@@ -83,6 +83,9 @@ mod starter_tests;
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub mod testing;
+pub mod toolbar;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod toolbar_tests;
 pub mod word_info;
 pub mod word_sections;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -160,6 +163,10 @@ pub use search::{
     default_search_cache_dir,
 };
 pub use session::{JobMode, Session};
+pub use toolbar::{
+    BUILTIN_LAYOUTS, Launcher, LayoutCard, LayoutThumbnail, LibraryLauncherRow,
+    LibraryLauncherSection,
+};
 pub use word_info::{LemmaCard, LexiconGloss, PartRole, ShownWord, WordInfo, WordPart};
 pub use word_sections::{
     FilteredOccurrences, Form, Forms, OCCURRENCE_ROWS, OccurrenceList, OccurrencePreview,

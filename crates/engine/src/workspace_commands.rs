@@ -41,7 +41,9 @@ pub enum MenuItem {
 
 use MenuItem::{Command as C, Layouts, Resources, Separator};
 
-/// The top menu bar (#18 rule 3). The Command box (#139) sits to the right of it.
+/// The top menu bar (#18 rule 3). The Command box (#139) sits to the right of it. Library,
+/// Guides, Tools and Layouts are drawn as toolbar Launchers (#140, [`crate::toolbar`]) whose
+/// panes offer these items.
 pub const MENUS: &[Menu] = &[
     Menu {
         title: "Library",

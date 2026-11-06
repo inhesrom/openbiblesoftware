@@ -209,7 +209,7 @@ fn written(p: Passage) -> String {
     format_passage(p, &Standard, RefStyle::Long)
 }
 
-fn type_name(t: ResourceType) -> &'static str {
+pub(crate) fn type_name(t: ResourceType) -> &'static str {
     match t {
         ResourceType::Bible => "Bible",
         ResourceType::Commentary => "Commentary",

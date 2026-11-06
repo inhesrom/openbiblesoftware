@@ -564,6 +564,8 @@ pub enum Effect {
         passages: Option<String>,
         bibles: Vec<String>,
     },
+    /// Drop down a toolbar Launcher (Alt+L, Alt+G, Alt+T, Alt+Y, #140).
+    OpenLauncher(crate::toolbar::Launcher),
 }
 
 /// How the caller asked for a Tab to be opened.
@@ -649,6 +651,25 @@ impl Workspace {
             .iter()
             .find(|(_, (tabs, _))| tabs.contains(&tab))
             .map(|(p, _)| *p)
+    }
+
+    /// A Panel's active Tab.
+    pub fn active_in(&self, panel: PanelId) -> Option<TabId> {
+        self.panels
+            .get(&panel)
+            .and_then(|(tabs, active)| active.or(tabs.first().copied()))
+    }
+
+    /// The id the next Tab opened will get.
+    pub fn next_tab_id(&self) -> u64 {
+        self.next_tab + 1
+    }
+
+    /// Every Tab, most recently active first.
+    pub fn by_activity(&self) -> Vec<TabId> {
+        let mut tabs: Vec<TabId> = self.tabs.keys().copied().collect();
+        tabs.sort_by_key(|t| std::cmp::Reverse((self.activity.get(t).copied().unwrap_or(0), *t)));
+        tabs
     }
 
     /// A fresh Panel id (for Panels the user makes by dragging a Tab out).
