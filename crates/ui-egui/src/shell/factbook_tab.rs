@@ -250,11 +250,7 @@ impl State {
                 );
                 for p in list {
                     let short = format_passage(*p, &Standard, RefStyle::Short);
-                    // `Gen 12:1` → `12:1` beside the book name.
-                    let local = short
-                        .split_once(' ')
-                        .map_or(short.as_str(), |(_, rest)| rest)
-                        .to_string();
+                    let local = in_book(*p);
                     if ui
                         .link(local)
                         .on_hover_text(format!("Read {short} · Ctrl/Cmd-click opens a new Tab"))
@@ -487,4 +483,30 @@ fn card_row(ui: &mut Ui, c: &EntityCard, why: Option<&str>) -> bool {
         );
     }
     r.clicked()
+}
+
+/// A Passage without its book, to sit beside the book name: `Gen 12:1` → `12:1`, `1 Sam
+/// 17:45` → `17:45`. A whole single-chapter book keeps its name.
+fn in_book(p: Passage) -> String {
+    let short = format_passage(p, &Standard, RefStyle::Short);
+    let book = p.start().book.abbrev();
+    short
+        .strip_prefix(book)
+        .and_then(|rest| rest.strip_prefix(' '))
+        .map_or_else(|| short.clone(), str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use obs_scripture::Verse;
+
+    use super::*;
+
+    #[test]
+    fn in_book_drops_the_whole_book_abbreviation() {
+        let at = |b, c, v| in_book(Passage::verse(Verse::new(b, c, v)));
+        assert_eq!(at(Book::Genesis, 12, 1), "12:1");
+        assert_eq!(at(Book::FirstSamuel, 17, 45), "17:45");
+        assert_eq!(at(Book::SongOfSongs, 1, 1), "1:1");
+    }
 }
