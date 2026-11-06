@@ -325,6 +325,35 @@ fn the_tools_pane_filters_as_you_type_and_runs_from_the_keyboard() {
     assert_eq!(open(&h), None);
 }
 
+/// The Tools pane shows the key the user has for each tool (#177), not its default.
+#[test]
+fn the_tools_pane_shows_a_rebound_or_cleared_key() {
+    let mut h = Harness::new();
+    let search = |h: &Harness| {
+        let pane = h.shell.st.toolbar.pane.expect("a pane is open");
+        let row = in_pane(h, "Search");
+        (h.shapes.iter())
+            .filter(|(r, t)| {
+                pane.contains(r.center()) && (r.center().y - row.y).abs() < 4.0 && t != "Search"
+            })
+            .map(|(_, t)| t.clone())
+            .collect::<Vec<_>>()
+    };
+    h.shell.run(
+        "keys.set",
+        &json!({ "command": "tool.search", "key": "Ctrl+Up" }),
+    );
+    key(&mut h, Key::T, Modifiers::ALT);
+    assert_eq!(search(&h), ["Ctrl+Up"], "{:?}", pane_texts(&h));
+    assert!(!pane_texts(&h).contains(&"Ctrl+Shift+F"));
+    key(&mut h, Key::T, Modifiers::ALT);
+    h.shell
+        .run("keys.clear", &json!({ "command": "tool.search" }));
+    key(&mut h, Key::T, Modifiers::ALT);
+    assert!(search(&h).is_empty(), "{:?}", pane_texts(&h));
+    assert!(!pane_texts(&h).contains(&"Ctrl+Shift+F"));
+}
+
 fn layouts_harness(name: &str) -> Harness {
     let db = temp_db(name);
     let mut h = Harness::launch(Some(&db));

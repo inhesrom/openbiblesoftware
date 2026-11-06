@@ -285,10 +285,12 @@ impl State {
             .map(|f| (f.id, f.label.clone()))
             .collect();
         if favorites.is_empty() {
-            muted(
-                ui,
-                "Star a place with the ☆ in a Tab's header (Ctrl+D) to keep it here.",
+            let star = super::with_key(
+                &self.session,
+                "Star a place with the ☆ in a Tab's header",
+                "favorite.add",
             );
+            muted(ui, &format!("{star} to keep it here."));
         }
         for (id, label) in &favorites {
             if place_row(ui, &format!("★ {label}")) {

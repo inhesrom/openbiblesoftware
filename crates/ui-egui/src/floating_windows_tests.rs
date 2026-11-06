@@ -212,7 +212,7 @@ impl Harness {
     }
 
     /// A click (or two, a double click) in a floating window, with that window's modifiers.
-    fn click_in(&mut self, w: WindowId, p: Pos2, clicks: usize) {
+    pub(super) fn click_in(&mut self, w: WindowId, p: Pos2, clicks: usize) {
         // Long after any earlier click, so a double click is not counted as a triple.
         self.time += 1.0;
         self.window(w).events.push(Event::PointerMoved(p));

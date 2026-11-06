@@ -539,7 +539,7 @@ fn default_layout_has_a_bible_and_a_tools_panel() {
         "Layouts",
         "View",
         "Help",
-        crate::shell::command_box::HINT,
+        &format!("{} (Ctrl+L)", crate::shell::command_box::HINT),
     ] {
         assert!(h.find(t).is_some(), "{t}");
     }

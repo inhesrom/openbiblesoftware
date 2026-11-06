@@ -342,3 +342,54 @@ fn every_row_fits_in_wide_and_narrow_panels() {
         preview(&h, &format!("keyboard-shortcuts-{width}"));
     }
 }
+
+/// Recording in the main window stops once the user goes on in a floating OS window (#152):
+/// a click there, or a key pressed there, and that window's keys run as usual.
+#[test]
+fn recording_stops_when_another_os_window_is_used() {
+    let mut h = Harness::new();
+    h.native_windows();
+    h.shell.run("resource.open", &json!({ "id": "heb-test" }));
+    let heb = h.tab_id("HEB");
+    h.shell.run("tab.float", &json!({ "tab": heb.0 }));
+    h.frames(3);
+    let w = h.shell.floating[0].id;
+    assert!(h.shell.floating[0].native, "an OS window of its own");
+    let tab = open_keys(&mut h, "larger");
+
+    // A click in the floating window, then a shortcut typed there.
+    click_in_tab(&mut h, tab, "Ctrl+Plus");
+    assert!(h.shell.st.keys_ui.is_recording());
+    h.click_in(w, pos2(200.0, 200.0), 1);
+    assert!(!h.shell.st.keys_ui.is_recording());
+    let size = text_size(&h);
+    h.key_in(w, Key::Equals, CTRL);
+    assert!(
+        text_size(&h) > size,
+        "Larger text ran in the floating window"
+    );
+    assert!(in_tab(&h, tab, "Press a key…").is_none());
+
+    // A shortcut typed there at once (the window took focus without a click).
+    click_in_tab(&mut h, tab, "Ctrl+Plus");
+    assert!(h.shell.st.keys_ui.is_recording());
+    let size = text_size(&h);
+    h.window(w).events.push(Event::WindowFocused(true));
+    h.key_in(w, Key::Equals, CTRL);
+    assert!(
+        text_size(&h) > size,
+        "Larger text ran in the floating window"
+    );
+    assert!(!h.shell.st.keys_ui.is_recording());
+    assert_eq!(
+        h.shell.st.session.shortcut("view.text_larger"),
+        Some("Ctrl+Plus")
+    );
+
+    // The main window losing focus stops recording too.
+    click_in_tab(&mut h, tab, "Ctrl+Plus");
+    assert!(h.shell.st.keys_ui.is_recording());
+    h.events.push(Event::WindowFocused(false));
+    h.frames(2);
+    assert!(!h.shell.st.keys_ui.is_recording());
+}

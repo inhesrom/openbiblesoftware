@@ -47,10 +47,14 @@ stored and rebound like commands.
 
 ## The UI side (`crates/ui-egui/src/shell/keys_tab.rs`)
 
-- While a key is being recorded, the Shell runs no shortcut and no Selection key
-  (`KeysUi::is_recording`), and the recorder takes every key event of the frame. Modifier
-  keys alone are ignored. Recording stops on Esc, on a click elsewhere, and when the Tab is
-  not drawn (another Tab chosen, the Tab closed).
+- While a key is being recorded, the Shell runs no shortcut and no Selection key in the OS
+  window it is recorded in (`KeysUi::is_recording_in`), and the recorder takes every key
+  event of the frame. Modifier keys alone are ignored. Recording stops on Esc, on a click
+  elsewhere, when the Tab is not drawn (another Tab chosen, the Tab closed), when its window
+  loses focus, and when another OS window (a floating window, #152) gains focus or gets a
+  click or key press; that window's keys then run as usual.
+- Every list of commands shows the user's key (`Session::shortcut`), never the default in the
+  command's spec: menus, the Tools pane, the Home button's tooltip, Find… and Close Tab.
 - A recorded key in use shows "Ctrl+F is already the key of “Find in Resource”." with
   **Swap keys** and **Cancel**; nothing is saved until one is chosen. When the other binding
   may not take the old key (`swap_refused`), the row says why and Swap keys is disabled.
@@ -65,7 +69,8 @@ stored and rebound like commands.
   reserved keys, one spelling per key, every binding listed once with no conflicting
   defaults, flagged conflicts).
 - UI: `keyboard_shortcuts_tests.rs` (the acceptance criteria with real key events and a
-  restart, and Swap keys never handing Esc away),
+  restart, Swap keys never handing Esc away, recording stopping when a floating OS window is
+  used), `toolbar_tests::the_tools_pane_shows_a_rebound_or_cleared_key`,
   `annotation_tests::a_rebound_selection_key_highlights_and_its_old_key_does_not` and
   `a_selection_key_on_ctrl_plus_also_runs_on_ctrl_equals`,
   and the accessibility audit (`keyboard_only_keyboard_shortcuts`, every Tab kind named).

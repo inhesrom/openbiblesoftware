@@ -37,6 +37,9 @@ struct Pending {
 pub(crate) struct KeysUi {
     /// The binding whose new key is being recorded: no other key runs meanwhile.
     recording: Option<&'static str>,
+    /// The OS window (egui viewport) the binding is being recorded in: input in another one,
+    /// or this one losing focus, stops recording.
+    recording_in: egui::ViewportId,
     pending: Option<Pending>,
     /// Why the last key pressed for a binding was refused.
     message: Option<(&'static str, String)>,
@@ -52,7 +55,34 @@ impl KeysUi {
         }
     }
 
+    /// Whether a key is being recorded in the OS window `ui` draws, so the keys typed there
+    /// run nothing else. Recording stops first if that window lost focus, or the user went on
+    /// in another window (focused it, clicked or pressed a key there): a key typed elsewhere
+    /// is not the key being recorded.
+    pub(super) fn is_recording_in(&mut self, ui: &Ui) -> bool {
+        if self.recording.is_none() {
+            return false;
+        }
+        let here = ui.ctx().viewport_id() == self.recording_in;
+        let left = ui.input(|i| {
+            let focus = |f: bool| i.events.contains(&egui::Event::WindowFocused(f));
+            if here {
+                focus(false)
+            } else {
+                focus(true)
+                    || i.pointer.any_pressed()
+                    || (i.events.iter())
+                        .any(|e| matches!(e, egui::Event::Key { pressed: true, .. }))
+            }
+        });
+        if left {
+            self.recording = None;
+        }
+        here && !left
+    }
+
     /// Whether a key is being recorded, so the keys typed run nothing else.
+    #[cfg(test)]
     pub(super) fn is_recording(&self) -> bool {
         self.recording.is_some()
     }
@@ -290,6 +320,7 @@ impl State {
         }
         if r.clicked() {
             self.keys_ui.recording = Some(b.id);
+            self.keys_ui.recording_in = ui.ctx().viewport_id();
             self.keys_ui.pending = None;
             self.keys_ui.message = None;
         }

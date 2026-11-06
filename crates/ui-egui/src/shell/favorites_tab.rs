@@ -105,11 +105,12 @@ impl State {
                     return;
                 }
                 if self.session.favorites().is_empty() {
-                    muted(
-                        ui,
-                        "No Favorites yet. Click the ☆ in a Tab's header (or press Ctrl+D) to \
-                         add the place it shows.",
+                    let star = super::with_key(
+                        &self.session,
+                        "No Favorites yet. Click the ☆ in a Tab's header",
+                        "favorite.add",
                     );
+                    muted(ui, &format!("{star} to add the place it shows."));
                     return;
                 }
                 let shown: Vec<(i64, String, String)> = self

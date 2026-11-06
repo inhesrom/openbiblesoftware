@@ -909,8 +909,8 @@ impl Shell {
         if gained {
             self.focus_here(focused);
         }
-        // A key being recorded in the Keyboard shortcuts Tab (#177) runs nothing.
-        if self.st.keys_ui.is_recording() {
+        // A key being recorded in the Keyboard shortcuts Tab (#177) runs nothing in its window.
+        if self.st.keys_ui.is_recording_in(ui) {
             return;
         }
         // Keys a text field uses itself (Ctrl+Z, Esc …) are left to it while it has focus.
