@@ -42,6 +42,10 @@ const EMBEDDED_USE: &[(&str, &str)] = &[
          when the Bible is imported.",
     ),
     (
+        "crates/engine/assets/atlas/",
+        "Built into the app: the Atlas's offline base map (land, lakes, coasts and rivers).",
+    ),
+    (
         "crates/engine/assets/reading-plans/",
         "Built into the app: the templates Tools → Reading plans makes plans from.",
     ),

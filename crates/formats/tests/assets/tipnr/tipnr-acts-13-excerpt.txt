@@ -1,0 +1,170 @@
+TIPNR - Translators Individualised Proper Names with all References = STEPBible.org CC BY 						>
+===========================================================
+Proper Nouns in the ESV (+ differences in KJV & NIV) with unique tag for each individual and location.    
+Lists all forms of the names with Hebrew/Greek and an exhaustive list of occurences
+Strong numbers are Disambiguated Strongs  - see the description at		www.TinyURL.com/STEP-Disambiguated				>
+Spreadsheet version at:	https://docs.google.com/spreadsheets/d/1ye5ujH_YutNfz1yYy7aiM_TBz3vMVACPpqKgNz0iH0Y/edit#gid=0
+JSON for People at 	https://drive.google.com/file/d/1cLAdAbwo_iFhzp-UwTL8IYCLW-M15rh9/view?usp=drive_link
+JSON for Places at 	https://drive.google.com/file/d/1sZAvzYfP5qG7TqmlJdMbxAytli3VUgkn/view?usp=drive_link
+JSON for Othes at 	https://drive.google.com/file/d/1QzCf-8Q4inZ8ukMpR_iuZW50_wkOyT1p/view?usp=drive_link
+–
+	==============================================================
+	Data created by www.STEPBible.org based on work at Tyndale House Cambridge (CC BY 4.0)
+	==============================================================
+	This licence allows you to:
+	* Include any part of this data in software or publications and send it to AI servers  without requesting permission 
+	* Download the data and reformat it for your application
+	* Send any proposed corrections to STEPBibleATGmail.com to be verified 
+	  (You MAY make changes yourself, but you should include a note of changes that can be viewed by those who use your new data)
+	* Refer others to STEPBible.github.io/STEPBible-Data as the source of the data. 
+	 Please do not post copies of this data file elsewhere, so that this remains the single up-to-date source"
+	* We'd love to hear about your project when you make it available. Email us at STEPBible@Gmail.com.
+	==============================================================
+–
+Geographical categories are defined at:		https://tinyurl.com/TIPNR-Geography
+Ambiguous passages are discussed at:		https://TinyURL.com/STEP-GenealogyDecisions
+– Decisions are based on maximum links, minimum anonymous individuals, and maximum coherence with the Hebrew text, in that order. 						>
+–
+FIELD DESCRIPTIONS=						>
+==============
+Alphabetical for the Unique name within the categories PERSON, PLACE, PLACE+PERSON, OTHER.
+Records are separated by "$" and sub-records are on separate lines that start with a space.
+(?) indicates  a decision based on an ambiguity e.g. Jahdai@1Ch.2.47(?) which may be discussed at	TinyURL.com/TIPNR-Decisions
+(d) is added to a 'parent' when a group or nation Descended from them, EG Canaan@Gen.9.18-1Ch(d) is the parent of the Amorites   
+(a) is added to a 'parent' who is an Ancestor of the person rather than their actual parent.  EG Mahol@1Ki.4.31=H4235 who is the ancestor of Zerah@Gen.38.30-Mat(a)  
+(f) indicates a founder of that place or group, eg  "Tekoa@2Sa.14.2-Amo(f)
+
+‖==================	‖==================	‖==================	‖==================	‖==================	‖==================	‖==================	‖==================	‖==================
+$==========PERSON(s)
+UnifiedName=uStrong	Description	Parents Male+Female	Siblings	Partners	Offspring	Tribe/Nation of father	#Summary description.	Type
+– Significance	UniqueName	dStrong«eStrong=Heb/Grk	Translated name (ESV,KJV,NIV if differs)	STEPBible link for first Refs	All Refs
+– Total	All names	Fewest names	All dStrongs	All refs (abbr as necessary)
+@Briefest= From Tribe
+@Brief= 
+@Short= 	& @Article= 
+‖==================	‖==================	‖==================	‖==================	‖==================	‖==================	‖==================	‖==================	‖==================
+$========== PLACE
+Acco@Jdg.1.31-Act=H5910	Ptolemais			https://www.google.com/maps/@32.927583,35.081555,14z	https://palopenmaps.org/view/9999/@32.927583,35.081555	>	#A location first mentioned at <ref="Jdg.1.31">Jdg.1.31</ref>) <br>referred to as <strong="H5910">Acco</strong> (עַכּוֹ), or <strong="G4424">Ptolemais</strong> (Πτολεμαΐς). 	Place
+– Named	Acco@Jdg.1.31-Act	H5910«H5910=עַכּוֹ	Acco =ESV; Accho =KJV; Akko =NIV	Jdg.1.31
+– Greek	Ptolemais|Acco@Jdg.1.31-Act	G4424«G4424=Πτολεμαΐς	Ptolemais	Act.21.7
+– Total	Acco or Ptolemais or Accho or Akko, Ptolemais	Acco	H5910, G4424	Jdg.1.31; Act.21.7	2
+@Briefest= 
+@Brief= (omitted from this fixture)
+@Short= (omitted from this fixture)
+@Article= (omitted from this fixture)
+@Ambiguity=
+$========== PLACE
+Antioch@Act.13.14-2Ti=G0490H	Antioch_2			https://www.google.com/maps/@38.31643056393041,31.17948683048973,14z	https://palopenmaps.org/view/9999/@38.31643056393041,31.17948683048973	>	#A location first mentioned at <ref="Act.13.14">Act.13.14</ref>) <br>only referred to as <strong="G0490H">Antioch</strong> (Ἀντιόχεια). 	Place
+– Named	Antioch@Act.13.14-2Ti	G0490H«G0490=Ἀντιόχεια	Antioch	Act.13.14; Act.14.19; Act.14.21; 2Ti.3.11
+– Total	Antioch	Antioch	G0490H	Act.13.14; 14.19,21; 2Ti.3.11	4
+@Briefest= 
+@Brief= (omitted from this fixture)
+@Short= (omitted from this fixture)
+@Article= (omitted from this fixture)
+@Ambiguity=
+$========== PLACE
+Antioch@Act.6.5-Gal=G0490G	Antioch_1			https://www.google.com/maps/@36.20233087051257,36.16238775165068,14z	https://palopenmaps.org/view/9999/@36.20233087051257,36.16238775165068	>	#A location first mentioned at <ref="Act.6.5">Act.6.5</ref>) <br>referred to as <strong="G0490G">Antioch</strong> (Ἀντιόχεια), or <strong="G0491">Antiochian</strong> (Ἀντιοχεύς). 	Place
+– Named	Antioch@Act.6.5-Gal	G0490G«G0490=Ἀντιόχεια	Antioch	Act.11.19; Act.11.20; Act.11.22; Act.11.26a; Act.11.26b; Act.11.27; Act.13.1; Act.14.26; Act.15.22; Act.15.23; Act.15.30; Act.15.35; Act.18.22; Gal.2.11
+– Group	Antioch@Act.6.5-Gal	G0491«G0491=Ἀντιοχεύς	Antiochian; Antioch =ESV,NIV,KJV	Act.6.5
+– Total	Antioch or Antiochian	Antioch	G0490G, G0491	Act.6.5; Act.11.19,20,22,26,27; 13.1; 14.26; 15.22,23,30,35; 18.22; Gal.2.11; 	15
+@Briefest= 
+@Brief= (omitted from this fixture)
+@Short= (omitted from this fixture)
+@Article= (omitted from this fixture)
+@Ambiguity=
+$========== PLACE
+Cyprus@Num.24.24-Act=H3794H	Cyprus	Kittim@Gen.10.4-1Ch		https://www.google.com/maps/@35.018306,33.207693,14z	https://palopenmaps.org/view/9999/@35.018306,33.207693	Cyprus	#A person from a location in Cyprus first mentioned at <ref="Num.24.24">Num.24.24</ref>) <br>referred to as Cyprus or Kittim  or <strong="H3794H">Kittim</strong>   (כִּתִּי), or <strong="H0473H">Elishah</strong> (אֱלִישָׁה), or <strong="G2953">Cyprus</strong> (Κύπριος), or <strong="G2954">Cyprus</strong> (Κύπρος). 	Place
+– Named	Cyprus@Num.24.24-Act	H3794H«H3794=כִּתִּי	Cyprus,Kittim =ESV; Chittim =KJV; Cyprus,western coastlands =NIV; 	Num.24.24; Isa.23.1; Isa.23.12; Jer.2.10; Ezk.27.6; Dan.11.30
+– Named	Elishah|Cyprus@Num.24.24-Act	H0473H«H0473=אֱלִישָׁה	Elishah	Ezk.27.7
+– Greek	Cyprus@Num.24.24-Act	G2953«G2953=Κύπριος	Cyprus	Act.4.36; Act.11.20; Act.21.16
+– Spelled	Cyprus@Num.24.24-Act	G2954«G2954=Κύπρος	Cyprus	Act.11.19; Act.13.4; Act.15.39; Act.21.3; Act.27.4
+– Total	Cyprus or Kittim or Chittim or Elishah	Cyprus, Kittim	H3794H, H0473H, G2953, G2954	Num.24.24; Isa.23.1,12; Jer.2.10; Ezk.27.6; Dan.11.30; Ezk.27.7; Act.4.36; 11.20; 21.16; 11.19; 13.4; 15.39; 21.3; 27.4	15
+@Briefest= In Cyprus
+@Brief= (omitted from this fixture)
+@Short= (omitted from this fixture)
+@Article= (omitted from this fixture)
+@Ambiguity=
+$========== PLACE
+Cyrene@Mat.27.32-Act=G2956	Cyrene			https://www.google.com/maps/@32.824979,21.858301,14z	https://palopenmaps.org/view/9999/@32.824979,21.858301	>	#A location first mentioned at <ref="Mat.27.32">Mat.27.32</ref>) <br>referred to as <strong="G2956">Cyrene or Cyrenian</strong> (Κυρηναῖος), or <strong="G2957">Cyrene</strong> (Κυρήνη). 	Place
+– Named	Cyrene@Mat.27.32-Act	G2956«G2956=Κυρηναῖος	Cyrene =ESV,NIV,KJV; Cyrenian =ESV,KJV; 	Mat.27.32; Mrk.15.21; Luk.23.26; Act.6.9; Act.11.20; Act.13.1
+– Named	Cyrene@Mat.27.32-Act	G2957«G2957=Κυρήνη	Cyrene	Act.2.10
+– Total	Cyrene or Cyrenian	Cyrene	G2956, G2957	Mat.27.32; Mrk.15.21; Luk.23.26; Act.11.20; 13.1; 6.9; 2.10	7
+@Briefest= 
+@Brief= (omitted from this fixture)
+@Short= (omitted from this fixture)
+@Article= (omitted from this fixture)
+@Ambiguity=
+$========== PLACE
+Iconium@Act.13.51-2Ti=G2430	Iconium			https://www.google.com/maps/@37.88353038890398,32.4942625657248,14z	https://palopenmaps.org/view/9999/@37.88353038890398,32.4942625657248	>	#A location first mentioned at <ref="Act.13.51">Act.13.51</ref>) <br>only referred to as <strong="G2430">Iconium</strong> (Ἰκόνιον). 	Place
+– Named	Iconium@Act.13.51-2Ti	G2430«G2430=Ἰκόνιον	Iconium	Act.13.51; Act.14.1; Act.14.19; Act.14.21; Act.16.2; 2Ti.3.11
+– Total	Iconium	Iconium	G2430	Act.13.51; 14.1,19,21; 16.2; 2Ti.3.11	6
+@Briefest= 
+@Brief= (omitted from this fixture)
+@Short= (omitted from this fixture)
+@Article= (omitted from this fixture)
+@Ambiguity=
+$========== PLACE
+Pamphylia@Act.2.10-=G3828	Pamphylia			https://www.google.com/maps/@37.00520811721595,30.90494591606115,14z	https://palopenmaps.org/view/9999/@37.00520811721595,30.90494591606115	>	#A location first mentioned at <ref="Act.2.10">Act.2.10</ref>) <br>only referred to as <strong="G3828">Pamphylia</strong> (Παμφυλία). 	Place
+– Named	Pamphylia@Act.2.10-	G3828«G3828=Παμφυλία	Pamphylia	Act.2.10; Act.13.13; Act.14.24; Act.15.38; Act.27.5
+– Total	Pamphylia	Pamphylia	G3828	Act.2.10; 13.13; 14.24; 15.38; 27.5	5
+@Briefest= 
+@Brief= (omitted from this fixture)
+@Short= (omitted from this fixture)
+@Article= (omitted from this fixture)
+@Ambiguity=
+$========== PLACE
+Paphos@Act.13.6-=G3974	Paphos			https://www.google.com/maps/@34.75410576175517,32.40016213313376,14z	https://palopenmaps.org/view/9999/@34.75410576175517,32.40016213313376	>	#A location first mentioned at <ref="Act.13.6">Act.13.6</ref>) <br>only referred to as <strong="G3974">Paphos</strong> (Πάφος). 	Place
+– Named	Paphos@Act.13.6-	G3974«G3974=Πάφος	Paphos	Act.13.6; Act.13.13
+– Total	Paphos	Paphos	G3974	Act.13.6; Act.13.13	2
+@Briefest= 
+@Brief= (omitted from this fixture)
+@Short= (omitted from this fixture)
+@Article= (omitted from this fixture)
+@Ambiguity=
+$========== PLACE
+Perga@Act.13.13-=G4011	Perga			https://www.google.com/maps/@37.00520811721595,30.90494591606115,14z	https://palopenmaps.org/view/9999/@37.00520811721595,30.90494591606115	>	#A location first mentioned at <ref="Act.13.13">Act.13.13</ref>) <br>only referred to as <strong="G4011">Perga</strong> (Πέργη). 	Place
+– Named	Perga@Act.13.13-	G4011«G4011=Πέργη	Perga	Act.13.13; Act.13.14; Act.14.25
+– Total	Perga	Perga	G4011	Act.13.13; Act.13.14; 14.25	3
+@Briefest= 
+@Brief= (omitted from this fixture)
+@Short= (omitted from this fixture)
+@Article= (omitted from this fixture)
+@Ambiguity=
+$========== PLACE
+Pisidia@Act.13.14-=G4099	Pisidia= near Antioch_2 (Antioch@Act.13.14-2Ti=G0490H)			https://www.google.com/maps/@38.31643056393041,31.17948683048973,14z	https://palopenmaps.org/view/9999/@38.31643056393041,31.17948683048973	>	#A location near <strong="G0490H">Antioch</strong> first mentioned at <ref="Act.13.14">Act.13.14</ref>) <br>only referred to as <strong="G4099">Pisidia</strong> (Πισιδία). 	Place
+– Named	Pisidia@Act.13.14-	G4099«G4099=Πισιδία	Pisidia	Act.13.14; Act.14.24
+– Total	Pisidia	Pisidia	G4099	Act.13.14; 14.24	2
+@Briefest= 
+@Brief= (omitted from this fixture)
+@Short= (omitted from this fixture)
+@Article= (omitted from this fixture)
+@Ambiguity=
+$========== PLACE
+Salamis@Act.13.5=G4529	Salamis			https://www.google.com/maps/@35.17724606944397,33.90755212865949,14z	https://palopenmaps.org/view/9999/@35.17724606944397,33.90755212865949	>	#A location only mentioned at <ref="Act.13.5">Act.13.5</ref>) <br>only referred to as <strong="G4529">Salamis</strong> (Σαλαμίς). 	Place
+– Named	Salamis@Act.13.5	G4529«G4529=Σαλαμίς	Salamis	Act.13.5
+– Total	Salamis	Salamis	G4529	Act.13.5; 	1
+@Briefest= 
+@Brief= (omitted from this fixture)
+@Short= (omitted from this fixture)
+@Article= (omitted from this fixture)
+@Ambiguity=
+$========== PLACE
+Seleucia@Act.13.4=G4581	Seleucia			https://www.google.com/maps/@36.11101750333098,35.92680788324002,14z	https://palopenmaps.org/view/9999/@36.11101750333098,35.92680788324002	>	#A location only mentioned at <ref="Act.13.4">Act.13.4</ref>) <br>only referred to as <strong="G4581">Seleucia</strong> (Σελεύκεια). 	Place
+– Named	Seleucia@Act.13.4	G4581«G4581=Σελεύκεια	Seleucia	Act.13.4
+– Total	Seleucia	Seleucia	G4581	Act.13.4; 	1
+@Briefest= 
+@Brief= (omitted from this fixture)
+@Short= (omitted from this fixture)
+@Article= (omitted from this fixture)
+@Ambiguity=
+$========== PLACE
+Zarephath@1Ki.17.9-Luk=H6886	Zarephath			https://www.google.com/maps/@33.4333,35.3,14z	https://palopenmaps.org/view/9999/@33.4333,35.3	>	#A location first mentioned at <ref="1Ki.17.9">1Ki.17.9</ref>) <br>referred to as <strong="H6886">Zarephath</strong> (צָֽרְפַת), or <strong="G4558">Zarephath</strong> (Σάρεπτα). 	Place
+– Named	Zarephath@1Ki.17.9-Luk	H6886«H6886=צָֽרְפַת	Zarephath	1Ki.17.9; 1Ki.17.10; Oba.1.20
+– Greek	Zarephath@1Ki.17.9-Luk	G4558«G4558=Σάρεπτα	Zarephath =ESV,NIV; Sarepta =KJV	Luk.4.26
+– Total	Zarephath or Sarepta	Zarephath	H6886, G4558	1Ki.17.9; 1Ki.17.10; Oba.1.20; Luk.4.26	4
+@Briefest= 
+@Brief= (omitted from this fixture)
+@Short= (omitted from this fixture)
+@Article= (omitted from this fixture)
+@Ambiguity=
+$

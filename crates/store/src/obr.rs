@@ -17,6 +17,7 @@
 //! | `entities` | People & places: `ord`, `id`, `name`, `kind`, `strongs`, `region`, `other_names` (JSON), `relations` (JSON) |
 //! | `mentions` | `entity` (→ `entities.ord`), Standard `start`, `end` (verse numbers) |
 //! | `entity_strongs` | An entity's other Strong's numbers: `entity` (→ `entities.ord`), `seq`, `strongs` |
+//! | `entity_locations` | A place's Place locations: `entity` (→ `entities.ord`), `seq`, `name`, `lon_e6`, `lat_e6`, `score` |
 //!
 //! Dataset Verses are stored as verse numbers `BBCCCVVV` (book 1-66, chapter, verse), so a
 //! Passage overlap is an integer range query.
@@ -31,7 +32,8 @@
 //! derives it from the text.
 //!
 //! `entity_strongs` arrived after format 3 was first shipped (#149). A file without it still
-//! opens; its entities read with no other Strong's numbers.
+//! opens; its entities read with no other Strong's numbers. Likewise `entity_locations` (#150):
+//! without it, places read with no Place locations.
 //!
 //! | `volumes` | A Commentary's volumes (#176): `book` (USFM code) → `title` of the volume its sections are printed in |
 //!
@@ -55,8 +57,8 @@ use std::path::{Path, PathBuf};
 use obs_model::{
     BibleVerse, CrossReference, Direction, Entity, EntityKind, EntityRelation, FORMAT_VERSION, Key,
     KeyEntry, KeyScheme, LemmaTransliteration, Manifest, Mention, OLDEST_FORMAT_VERSION, Origin,
-    PartOfSpeech, Rendering, RenderingIndex, Resource, ResourceType, Span, StrongsTotal, TextUnit,
-    UnitId, UnitKind,
+    PartOfSpeech, PlaceLocation, Rendering, RenderingIndex, Resource, ResourceType, Span,
+    StrongsTotal, TextUnit, UnitId, UnitKind,
 };
 use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, VerseMapEntry};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
@@ -181,6 +183,15 @@ CREATE TABLE entity_strongs (
     entity INTEGER NOT NULL,
     seq INTEGER NOT NULL,
     strongs TEXT NOT NULL,
+    PRIMARY KEY (entity, seq)
+) WITHOUT ROWID;
+CREATE TABLE entity_locations (
+    entity INTEGER NOT NULL,
+    seq INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    lon_e6 INTEGER NOT NULL,
+    lat_e6 INTEGER NOT NULL,
+    score INTEGER NOT NULL,
     PRIMARY KEY (entity, seq)
 ) WITHOUT ROWID;
 CREATE TABLE transliterations (
@@ -450,6 +461,21 @@ fn insert_datasets(tx: &rusqlite::Transaction<'_>, r: &Resource) -> Result<(), S
                 .map_err(sql)?;
         }
     }
+    let mut location_stmt = tx
+        .prepare(
+            "INSERT INTO entity_locations (entity, seq, name, lon_e6, lat_e6, score)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        )
+        .map_err(sql)?;
+    for (ord, e) in r.entities.iter().enumerate() {
+        for (seq, l) in e.locations.iter().enumerate() {
+            location_stmt
+                .execute(params![
+                    ord as i64, seq as i64, l.name, l.lon_e6, l.lat_e6, l.score
+                ])
+                .map_err(sql)?;
+        }
+    }
     let mut mention_stmt = tx
         .prepare("INSERT INTO mentions (entity, start, end) VALUES (?1, ?2, ?3)")
         .map_err(sql)?;
@@ -648,10 +674,16 @@ impl ObrReader {
             .map_err(sql)?;
         let rows = rows.collect::<Result<Vec<_>, _>>().map_err(sql)?;
         let has_other_strongs = self.has_table("entity_strongs")?;
+        let has_locations = self.has_table("entity_locations")?;
         let mut out = Vec::new();
         for (id, name, kind, strongs, region, other_names, relations, ord) in rows {
             let other_strongs = if has_other_strongs {
                 self.entity_strongs(ord)?
+            } else {
+                Vec::new()
+            };
+            let locations = if has_locations {
+                self.entity_locations(ord)?
             } else {
                 Vec::new()
             };
@@ -669,6 +701,7 @@ impl ObrReader {
                 region,
                 other_names: json_from::<Vec<String>>("entity names", &other_names)?,
                 relations: json_from::<Vec<EntityRelation>>("entity relations", &relations)?,
+                locations,
             });
         }
         Ok(out)
@@ -724,6 +757,42 @@ impl ObrReader {
                 s.parse()
                     .map_err(|_| corrupt(format!("bad Strong's `{s}`")))?,
             );
+        }
+        Ok(out)
+    }
+
+    /// The Place locations of the entity with ordinal `ord`.
+    fn entity_locations(&self, ord: i64) -> Result<Vec<PlaceLocation>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT name, lon_e6, lat_e6, score FROM entity_locations WHERE entity = ?1
+                 ORDER BY seq",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map([ord], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
+            })
+            .map_err(sql)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (name, lon, lat, score) = row.map_err(sql)?;
+            let degrees = |v: i64, what: &str| {
+                i32::try_from(v).map_err(|_| corrupt(format!("{what} {v} out of range")))
+            };
+            out.push(PlaceLocation {
+                name,
+                lon_e6: degrees(lon, "longitude")?,
+                lat_e6: degrees(lat, "latitude")?,
+                score: u16::try_from(score)
+                    .map_err(|_| corrupt(format!("location score {score} out of range")))?,
+            });
         }
         Ok(out)
     }

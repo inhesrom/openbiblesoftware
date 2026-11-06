@@ -327,6 +327,7 @@ fn entity(
         other_names,
         region,
         relations,
+        locations: Vec::new(),
     })
 }
 

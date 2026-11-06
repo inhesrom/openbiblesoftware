@@ -1,6 +1,7 @@
 //! Repository automation. Run `cargo xtask help`.
 
 mod assets;
+mod atlas_basemap;
 mod bench;
 mod layers;
 mod licenses;
@@ -38,7 +39,8 @@ releases (docs/dev/releasing.md):
   release-smoke    launch an unpacked Release archive, check its Starter library got in (`--help`)
 
 maintenance:
-  tvtms <TVTMS.txt>   regenerate the embedded STEPBible TVTMS rules";
+  tvtms <TVTMS.txt>   regenerate the embedded STEPBible TVTMS rules
+  atlas-basemap       regenerate the Atlas's built-in base map from Natural Earth (`--help`)";
 
 fn main() {
     if let Err(err) = run() {
@@ -75,6 +77,10 @@ fn run() -> Result<()> {
         "licenses" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             licenses::run(&root, &rest)
+        }
+        "atlas-basemap" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            atlas_basemap::run(&root, &rest)
         }
         "tvtms" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();

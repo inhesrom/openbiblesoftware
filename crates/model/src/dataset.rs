@@ -80,6 +80,43 @@ pub struct Entity {
     pub region: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<EntityRelation>,
+    /// A place's Place locations, most confident first (#150): where modern scholarship
+    /// puts it. Empty for people, and for places an index does not locate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub locations: Vec<PlaceLocation>,
+}
+
+/// One modern location a place has been identified with, and how confident that
+/// identification is (OpenBible.info's geocoding, #150).
+///
+/// Coordinates are whole millionths of a degree, so the record stays exact, hashable and
+/// ordered.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct PlaceLocation {
+    /// The modern location's name, e.g. `Antioch in Pisidia` or `Konya`.
+    pub name: String,
+    /// Longitude in millionths of a degree (east positive).
+    pub lon_e6: i32,
+    /// Latitude in millionths of a degree (north positive).
+    pub lat_e6: i32,
+    /// Confidence in the identification, 0 to [`PlaceLocation::MAX_SCORE`] (OpenBible.info's
+    /// score; 500 and above is a high-confidence identification).
+    pub score: u16,
+}
+
+impl PlaceLocation {
+    /// The highest [`PlaceLocation::score`].
+    pub const MAX_SCORE: u16 = 1000;
+
+    /// Longitude in degrees.
+    pub fn lon(&self) -> f64 {
+        f64::from(self.lon_e6) / 1e6
+    }
+
+    /// Latitude in degrees.
+    pub fn lat(&self) -> f64 {
+        f64::from(self.lat_e6) / 1e6
+    }
 }
 
 /// A Passage (Standard versification) that mentions an entity.

@@ -123,6 +123,7 @@ pub const IMPORTERS: &[&str] = &[
     "easton-zld",
     "smith-rawld",
     "sword-zip",
+    "openbible-geocoding",
 ];
 
 /// Hosts whose site terms restrict republishing (#20 decision 3).

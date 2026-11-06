@@ -358,6 +358,7 @@ fn people_and_places_round_trip_and_answer_by_passage() {
             entity: "Terah@Gen.11.24-Luk".into(),
             uncertain: false,
         }],
+        locations: Vec::new(),
     };
     let terah = Entity {
         id: "Terah@Gen.11.24-Luk".into(),
@@ -368,6 +369,7 @@ fn people_and_places_round_trip_and_answer_by_passage() {
         other_names: Vec::new(),
         region: Some("Mesopotamia".into()),
         relations: Vec::new(),
+        locations: Vec::new(),
     };
     b.add_entity(abraham.clone());
     b.add_entity(terah);
@@ -446,6 +448,57 @@ fn people_and_places_round_trip_and_answer_by_passage() {
     let old = r.entity(&abraham.id).unwrap().unwrap();
     assert!(old.other_strongs.is_empty());
     assert_eq!(old.strongs, abraham.strongs);
+}
+
+/// A place's Place locations (#150) round-trip in order, and a file written before them
+/// still opens with none.
+#[test]
+fn place_locations_round_trip_and_older_files_read_none() {
+    use obs_model::{Entity, EntityKind, PlaceLocation, ResourceBuilder, ResourceType};
+    let dir = TempDir::new("places");
+    let path = dir.path("places.obr");
+    let mut b = ResourceBuilder::new(dataset_manifest("places", ResourceType::PeopleAndPlaces));
+    let antioch = Entity {
+        id: "Antioch@Act.13.14-2Ti".into(),
+        name: "Antioch".into(),
+        kind: EntityKind::Place,
+        strongs: None,
+        other_strongs: Vec::new(),
+        other_names: Vec::new(),
+        region: None,
+        relations: Vec::new(),
+        locations: vec![
+            PlaceLocation {
+                name: "Antioch in Pisidia".into(),
+                lon_e6: 31_189_167,
+                lat_e6: 38_306_111,
+                score: 1000,
+            },
+            PlaceLocation {
+                name: "Somewhere west".into(),
+                lon_e6: -6_944_167,
+                lat_e6: 37_271_944,
+                score: 12,
+            },
+        ],
+    };
+    b.add_entity(antioch.clone());
+    b.add_mention(&antioch.id, verse(Book::Acts, 13, 14));
+    let resource = b.build().unwrap();
+    write_obr(&resource, &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    assert_eq!(r.load().unwrap(), resource);
+    let read = r.entity(&antioch.id).unwrap().unwrap();
+    assert_eq!(read.locations, antioch.locations);
+    assert!((read.locations[0].lon() - 31.189167).abs() < 1e-9);
+    assert!((read.locations[1].lon() + 6.944167).abs() < 1e-9);
+    drop(r);
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("DROP TABLE entity_locations;").unwrap();
+    }
+    let r = ObrReader::open(&path).unwrap();
+    assert!(r.entity(&antioch.id).unwrap().unwrap().locations.is_empty());
 }
 
 /// Tagged words read straight from the span table match a walk over every unit (#54).

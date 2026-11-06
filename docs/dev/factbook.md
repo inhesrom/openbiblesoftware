@@ -35,7 +35,8 @@ sections are engine data computed on the job queue, the Guide arrangement is per
   `key_passages` (every mention, neighbouring Verses joined, Bible order), `dictionary_articles`
   (each Dictionary's article in Preferred order, through the #54 alias cache, with ~600
   characters of it), `related` (the entity's other links, the entities whose records link to
-  it, then up to 10 named in the same Verses). Map is the Atlas's (#150).
+  it, then up to 10 named in the same Verses), `map` (#150, between Summary and Key Passages:
+  a place's Place locations, or the places a person lived in; see [atlas.md](atlas.md)).
 - **Name meaning.** The first Dictionary in `factbook::NAME_MEANING_DICTIONARIES`
   (`hitchcock`) with an article on the entity, through the alias cache; the headword is
   dropped, and two senses of one name are joined with ` · `. That Dictionary is left out of

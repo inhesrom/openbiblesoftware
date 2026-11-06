@@ -288,6 +288,7 @@ fn the_real_lock_passes_the_provenance_gate() {
             "easton",
             "smith",
             "hitchcock",
+            "openbible-geo",
         ]
     );
     // STEPBible splits TAHOT over four files and TAGNT over two.
@@ -300,6 +301,8 @@ fn the_real_lock_passes_the_provenance_gate() {
     };
     assert_eq!(files("tahot"), Some(4));
     assert_eq!(files("tagnt"), Some(2));
+    // The geocoding reads `ancient.jsonl`, `modern.jsonl` and TIPNR (to match places).
+    assert_eq!(files("openbible-geo"), Some(3));
 }
 
 /// Zip the OpenBible.info excerpt as the publisher does; write the TIPNR excerpt as-is.
@@ -1502,6 +1505,23 @@ fn alias_caches_are_prebuilt_per_pair_with_overrides_checked() {
         err.contains("Nobody@Gen.1.1") && err.contains("Patriarchs"),
         "{err}"
     );
+    // A second People & places index (the geocoding, #150) need not have the entities the
+    // overrides name: only an entity no index has is a problem.
+    let geo = obs_formats::import_openbible_geocoding(
+        &std::fs::read_to_string(assets.join("assets/openbible-geo/ancient-excerpt.jsonl"))
+            .unwrap(),
+        &std::fs::read_to_string(assets.join("assets/openbible-geo/modern-excerpt.jsonl")).unwrap(),
+        None,
+        &DatasetOptions {
+            resource_id: "openbible-geo".into(),
+            title: "OpenBible Geo".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .0;
+    let both = write_alias_caches(&[&tipnr, &geo, &easton], &dir.join("both"), &overrides).unwrap();
+    assert_eq!(both.len(), 2);
     // The committed overrides parse (the full Starter build applies them).
     Overrides::parse(obs_engine::aliases::STARTER_OVERRIDES).unwrap();
     let _ = std::fs::remove_dir_all(&dir);

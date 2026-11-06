@@ -186,6 +186,8 @@ pub(super) struct References {
     preview_text: Arc<std::sync::Mutex<cross_references::BiblePreviewCache>>,
     library_key: Vec<(String, u32, String, std::path::PathBuf)>,
     pub pending_navigation: BTreeMap<TabId, Verse>,
+    /// The Atlas's places, per Passage (#150).
+    places: Queries<Vec<obs_engine::MapPlace>>,
 }
 
 impl References {
@@ -206,7 +208,21 @@ impl References {
             self.library_key = key;
             self.groups.clear();
             self.previews.clear();
+            self.places.clear();
         }
+    }
+
+    /// The places the library's People & places indexes list in `passage`, with their
+    /// locations (the Atlas, #150); `None` while the query runs on a worker.
+    pub(super) fn places(
+        &mut self,
+        library: &Library,
+        directory: Arc<obs_engine::factbook::DirectoryCache>,
+        passage: Passage,
+    ) -> Option<Result<Arc<Vec<obs_engine::MapPlace>>, String>> {
+        self.places.get(library, passage, move |library, passage| {
+            obs_engine::atlas::passage_places(library, &directory, passage)
+        })
     }
 }
 

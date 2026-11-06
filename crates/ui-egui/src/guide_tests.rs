@@ -818,9 +818,14 @@ fn abram_opens_his_factbook_and_the_john_chooser_lists_the_johns() {
     assert!(find_in(&h, factbook, "Married to").is_some());
     assert!(find_in(&h, factbook, "Abram").is_some(), "Also called");
     let titles = headers(&h, factbook);
+    // Map (#150) sits under the Summary.
     assert_eq!(
-        titles[..2],
-        ["Summary".to_string(), "Key Passages".to_string()],
+        titles[..3],
+        [
+            "Summary".to_string(),
+            "Map".to_string(),
+            "Key Passages".to_string()
+        ],
         "{titles:?}"
     );
     if std::env::var_os("UPDATE_PREVIEWS").is_some() {

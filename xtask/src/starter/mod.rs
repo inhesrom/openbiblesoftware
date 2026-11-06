@@ -43,9 +43,11 @@ use obs_formats::{
 use obs_model::{Origin, Resource, UnitId};
 use obs_store::write_obr;
 
+pub use fetch::fetch_file;
 use fetch::{fetch, sha256_hex};
 use goldens::{GoldenList, Status};
 use ids::{IdDiff, MANIFEST_FORMAT, ReleaseManifest, ReleaseResource};
+pub use lock::PinnedFile;
 use lock::{IdChanges, Lock, Source};
 
 pub const MANIFEST_FILE: &str = "starter-manifest.json";
@@ -378,7 +380,27 @@ pub fn write_alias_caches(
             .filter(move |r| r.manifest.resource_type == ty)
     };
     let mut written = Vec::new();
-    let mut problems = Vec::new();
+    // An override names a TIPNR entity; another index (the geocoding, #150) need not have it,
+    // so only an entity no index has is a problem.
+    let entities: BTreeSet<&str> = of(ResourceType::PeopleAndPlaces)
+        .flat_map(|r| r.entities.iter().map(|e| e.id.as_str()))
+        .collect();
+    let dictionaries: BTreeSet<&str> = of(ResourceType::Dictionary)
+        .map(|r| r.manifest.resource_id.as_str())
+        .collect();
+    let mut problems: BTreeSet<String> = overrides
+        .entries
+        .iter()
+        .filter(|o| {
+            dictionaries.contains(o.dictionary.as_str()) && !entities.contains(o.entity.as_str())
+        })
+        .map(|o| {
+            format!(
+                "{}: no entity `{}` in any People & places index",
+                o.dictionary, o.entity
+            )
+        })
+        .collect();
     for index in of(ResourceType::PeopleAndPlaces) {
         for dictionary in of(ResourceType::Dictionary) {
             let headwords: Vec<obs_model::KeyEntry> = dictionary
@@ -394,7 +416,7 @@ pub fn write_alias_caches(
                 &headwords,
                 overrides,
             );
-            problems.extend(found);
+            problems.extend(found.into_iter().filter(|p| !p.contains(": no entity `")));
             let path = obs_engine::aliases::write_table(dir, &table)
                 .with_context(|| format!("cannot write an alias cache in {}", dir.display()))?;
             written.push(path);
@@ -404,7 +426,7 @@ pub fn write_alias_caches(
         bail!(
             "starter/aliases.toml has {} override(s) the Starter Resources cannot satisfy:\n{}",
             problems.len(),
-            list_failures(&problems)
+            list_failures(&problems.into_iter().collect::<Vec<_>>())
         );
     }
     Ok(written)
@@ -509,6 +531,8 @@ fn import(source: &Source, files: &[Vec<u8>]) -> Result<(Resource, ImportReport)
     let extras = match source.importer.as_str() {
         "oshb-bdb" => 1,
         "tahot" | "tagnt" => source.extra_files.len(),
+        // `modern.jsonl`, then TIPNR (to match places to its ids).
+        "openbible-geocoding" => 2,
         _ => 0,
     };
     if files.len() != 1 + extras {
@@ -529,6 +553,7 @@ fn import(source: &Source, files: &[Vec<u8>]) -> Result<(Resource, ImportReport)
         "openbible-cross-references" => return import_openbible_zip(source, &files[0]),
         "tipnr" => return import_tipnr_text(source, &files[0]),
         "sword-zip" => return import_sword_zip(source, &files[0]),
+        "openbible-geocoding" => return import_openbible_geo(source, files),
         "wikisource-mhc" | "jfb-html" | "easton-zld" | "smith-rawld" => {
             return study::import(source, &files[0]);
         }
@@ -738,6 +763,24 @@ fn unpack_and_import_sword(
 fn import_tipnr_text(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportReport)> {
     let text = std::str::from_utf8(bytes).context("the TIPNR file is not UTF-8 text")?;
     import_tipnr(text, &dataset_options(source)).map_err(|e| anyhow!("{e}"))
+}
+
+/// OpenBible.info's `ancient.jsonl` and `modern.jsonl` → a People & places index with Place
+/// locations (#150), its places matched to the TIPNR file given third.
+fn import_openbible_geo(source: &Source, files: &[Vec<u8>]) -> Result<(Resource, ImportReport)> {
+    let text = |i: usize, what: &str| {
+        std::str::from_utf8(&files[i]).with_context(|| format!("{what} is not UTF-8 text"))
+    };
+    let tipnr = import_tipnr(text(2, "the TIPNR file")?, &dataset_options(source))
+        .map_err(|e| anyhow!("TIPNR (for matching places): {e}"))?
+        .0;
+    obs_formats::import_openbible_geocoding(
+        text(0, "ancient.jsonl")?,
+        text(1, "modern.jsonl")?,
+        Some(&tipnr),
+        &dataset_options(source),
+    )
+    .map_err(|e| anyhow!("{e}"))
 }
 
 /// Remove the outputs of an earlier build (only files this task writes).

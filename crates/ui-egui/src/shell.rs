@@ -27,6 +27,7 @@ use crate::view::ReadingView;
 use crate::workers::SnippetCache;
 
 mod annotate;
+mod atlas_tab;
 mod collections_ui;
 mod command_box;
 mod contents_pane;
@@ -140,6 +141,8 @@ struct TabUi {
     find: Option<crate::find::FindBar>,
     /// A Resource Tab's Contents pane: its filter, open lines and highlighted line (#176).
     contents: contents_pane::ContentsUi,
+    /// An Atlas Tab's map: view, search and the place picked (#150).
+    map: Option<atlas_tab::MapUi>,
 }
 
 /// A Resource Tab's location when it switched to a parallel resource (#151), in that
@@ -1736,6 +1739,7 @@ impl State {
             TabKind::Tool(Tool::Favorites) => self.favorites_body(&mut body, tab),
             TabKind::Tool(Tool::History) => self.history_body(&mut body, tab),
             TabKind::Tool(Tool::ReadingPlans) => self.reading_plans_body(&mut body, tab),
+            TabKind::Tool(Tool::Atlas) => self.atlas_body(&mut body, tab),
         }
     }
 
@@ -2901,6 +2905,7 @@ impl egui_tiles::Behavior<TabId> for State {
                 "tool.notes",
                 "tool.word_info",
                 "tool.cross_references",
+                "tool.atlas",
                 "tool.favorites",
                 "tool.history",
             ] {

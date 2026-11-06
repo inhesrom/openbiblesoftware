@@ -681,6 +681,7 @@ mod tests {
             other_names: others.iter().map(|s| s.to_string()).collect(),
             region: None,
             relations: Vec::new(),
+            locations: Vec::new(),
         }
     }
 

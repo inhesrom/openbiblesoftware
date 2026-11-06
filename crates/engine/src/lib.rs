@@ -15,6 +15,10 @@
 pub mod aliases;
 pub mod annotations;
 pub mod appearance;
+pub mod atlas;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod atlas_tests;
+pub mod base_map;
 pub mod bible_search;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod bible_search_tests;
@@ -139,6 +143,8 @@ pub use annotations::{
 pub use appearance::{
     Appearance, FontChoice, FontChoices, FontSlot, InterfaceSize, PageTone, Theme,
 };
+pub use atlas::{Confidence, MapPlace, PlacePoint};
+pub use base_map::{BaseMap, GeoBounds, MapView};
 pub use bible_search::{
     BibleOutline, BibleResults, ErrorField, InlineError, RowHit, Scope, ScopePreset, SearchMode,
     SearchRequestFields, SearchTab, SearchedBible, Snippet, VerseRow, parse_scope, scope_presets,

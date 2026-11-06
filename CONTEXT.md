@@ -107,7 +107,15 @@ _Avoid_: Topical Bible (as the kind), Concordance, Topic list
 A Resource made of Cross-references.
 
 **People & places index**:
-A Resource that identifies people and places and lists the Passages that mention them.
+A Resource that identifies people and places and lists the Passages that mention them. Its places may carry Place locations (the Starter library's OpenBible.info geocoding does, under TIPNR's ids, so the two indexes describe one place, not two).
+
+**Place location**:
+A modern location a place of the Bible has been identified with, with its coordinates and the Confidence of that identification. A place may have several (Eden has many tentative ones) or none (its site is unknown); the most confident is where the Atlas draws it.
+_Avoid_: Coordinates, Geocode, Site (for the record)
+
+**Confidence**:
+How sure scholarship is that a place was at a Place location, from the geocoding's score: High (500 and above, as its own notes put it), Medium (100 to 499) or Low (below 100). The Atlas's markers show it (filled, half-filled, hollow) and its lists name it.
+_Avoid_: Certainty, Accuracy, Probability
 
 **Key**:
 One value that a Resource is organized by and can be opened at, such as a Passage, "G5485", or "Abraham".
@@ -252,7 +260,7 @@ One open thing in a Panel: a Resource, a Guide, or a Tool.
 _Avoid_: View, Document
 
 **Tool**:
-A Tab that is neither a Resource nor a Guide. In v0.1 the Tools are Text Comparison, Word Info, Search, and Notes; Cross-references, Favorites, History and Reading plans came later.
+A Tab that is neither a Resource nor a Guide. In v0.1 the Tools are Text Comparison, Word Info, Search, and Notes; Cross-references, Favorites, History, Reading plans and the Atlas came later.
 _Avoid_: Utility, Widget
 
 **Word Info**:
@@ -262,6 +270,10 @@ _Avoid_: Info panel, Information tool
 **Text Comparison**:
 The Tool that shows one Passage in several Bibles as Verse-aligned rows. It can optionally mark the wording that differs from a base Bible.
 _Avoid_: Compare, Diff view
+
+**Atlas**:
+The Tool that maps the places a Passage names, on a base map built into the app (no tiles, no network). It follows its Link set; a single Verse widens to its chapter, so a Bible at Acts 13:14 maps all of Acts 13. Each place is drawn at its most confident Place location, labelled, and listed beside the map with its Confidence and the Verses that name it; a place no index locates is listed as not on the map. Drag pans, the wheel zooms, Find a place… finds any located place, and clicking a place opens its Factbook.
+_Avoid_: Map view, Bible map, Atlas Resource
 
 **Current location**:
 The Key that a Tab is showing right now.
@@ -400,7 +412,7 @@ The Guide whose Key is a Strong's number. Its sections in v0.1 are Lexicon entri
 _Avoid_: Bible Word Study, Lexical study
 
 **Factbook**:
-The Guide whose Key is one person, people group or place of a People & places index. Its header names it and tells it from others of the same name by its family or region ("John, son of Zebedee"); its sections are Summary (other names, the Name meaning and family), Key Passages (every Passage that mentions it), Dictionary articles, and Related people and places. Typing a name that several share shows a chooser listing each of them. It is never in a Link set.
+The Guide whose Key is one person, people group or place of a People & places index. Its header names it and tells it from others of the same name by its family or region ("John, son of Zebedee"); its sections are Summary (other names, the Name meaning and family), Map (a place at each of its Place locations with their Confidence; for a person, the places they lived in), Key Passages (every Passage that mentions it), Dictionary articles, and Related people and places. Typing a name that several share shows a chooser listing each of them. It is never in a Link set.
 _Avoid_: Encyclopedia, Profile, Person page
 
 **Topic Guide**:
