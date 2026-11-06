@@ -197,6 +197,14 @@ _Avoid_: Filter, Range (for the scope)
 The grammar one Tagged word must have for a Bible search to find it, named in plain English after `@` in the query (`@verb aorist imperative`): a part of speech, tense, voice, mood, case, number, gender, person, stem or state. They all hold for the same word, and a Strong's number or Lemma typed just before the `@`, with no `AND` between, is that word's too (`strong:G26 @noun genitive`).
 _Avoid_: Morph codes, Parsing (for the query), Morph search syntax
 
+**Proximity search**:
+A search for two terms close to each other, written between them in the query: `NEAR/5` (at most five words apart, either order), `BEFORE/3` (the first at most three words before the second) and `WITHIN 5 words`, all inside one Verse or paragraph; and `WITHIN 2 verses` (`WITHIN 2 paragraphs` outside Bibles), where both sides are found in a run of at most two neighbouring Verses of one Bible book (or paragraphs of one Dictionary article or Commentary section). A cross-Verse search lists every Verse that takes part, each in its own row, with both sides highlighted. Notes searches refuse `BEFORE` and `WITHIN … verses`.
+_Avoid_: Near search, Distance search, Span search
+
+**Word forms**:
+The Search Tool's toggle beside the query (off by default, kept in the User database) that makes each English word in Bible and Library searches also find the other words of its stem, the archaic ones included: "love" finds "loved", "loving", "loveth" and "lovest". A "quoted" word, a prefix (`lov*`), a Strong's number and a Lemma stay exact; Greek and Hebrew words are searched by `lemma:` instead.
+_Avoid_: Stemming (in the UI), Fuzzy search, Inflections
+
 **Morphology chooser**:
 The panel under Bible mode's query box (its **Morphology…** button) with a menu for each kind of grammar; it writes the Morphology criteria chosen into the query, so nobody has to learn the words or the codes. What it writes and the same criteria typed are one query.
 _Avoid_: Morph builder, Parsing picker

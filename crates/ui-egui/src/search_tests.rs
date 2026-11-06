@@ -1064,3 +1064,71 @@ fn the_morphology_chooser_builds_the_query_and_searches_it() {
     drop(h);
     drop(files);
 }
+
+/// Word forms (#180): the toggle beside the query, off by default, reruns the search with
+/// every form of its English words, highlighted ("work" → "worketh").
+#[test]
+fn the_word_forms_toggle_reruns_the_search_with_every_form() {
+    let (mut h, files) = harness("word-forms", 3);
+    type_query(&mut h, "work");
+    settle(&mut h);
+    let tab = search_tab(&h);
+    assert!(!h.shell.st.session.search_word_forms());
+    assert!(h.find("0 verses · KJV 0").is_some(), "{:?}", h.texts());
+    h.click_text(super::super::search_tab::WORD_FORMS);
+    h.frames(2);
+    settle(&mut h);
+    assert!(h.shell.st.session.search_word_forms());
+    let r = h
+        .shell
+        .st
+        .session
+        .search_tab(tab)
+        .unwrap()
+        .results
+        .clone()
+        .unwrap();
+    assert_eq!(r.rows.len(), 1);
+    for text in ["1 verse · KJV 1", "Romans 13:10"] {
+        assert!(
+            h.find(text).is_some(),
+            "{text:?} not drawn: {:?}",
+            h.texts()
+        );
+    }
+    let snippet = h
+        .shell
+        .st
+        .session
+        .search_tab(tab)
+        .unwrap()
+        .snippet(0, 0)
+        .unwrap()
+        .clone();
+    let marked: Vec<&str> = snippet
+        .highlights
+        .iter()
+        .map(|r| &snippet.text[r.clone()])
+        .collect();
+    assert_eq!(marked, ["worketh"]);
+    assert!(!rects_of(&h, h.shell.st.palette.search_hit).is_empty());
+    preview(&h, "search-word-forms");
+    // A proximity search with it on: "worketh no ill to his neighbour".
+    h.shell.run(
+        "search.run",
+        &json!({ "tab": tab.0, "text": "work NEAR/5 neighbour" }),
+    );
+    settle(&mut h);
+    assert!(h.find("Romans 13:10").is_some(), "{:?}", h.texts());
+    // Off again: back to the word as typed.
+    h.shell
+        .run("search.run", &json!({ "tab": tab.0, "text": "work" }));
+    settle(&mut h);
+    h.click_text(super::super::search_tab::WORD_FORMS);
+    h.frames(2);
+    settle(&mut h);
+    assert!(!h.shell.st.session.search_word_forms());
+    assert!(h.find("0 verses · KJV 0").is_some(), "{:?}", h.texts());
+    drop(h);
+    drop(files);
+}

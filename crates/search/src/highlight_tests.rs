@@ -185,3 +185,33 @@ fn morphology_terms_highlight_the_matching_word_or_morpheme() {
     let r = h.ranges(word, [(0..word.len(), &parts[..])]);
     assert_eq!(shown(word, &r), ["יִּבְרָא"]);
 }
+
+/// Word forms (#180): every word of the stem is marked; quoted words only as written.
+#[test]
+fn word_forms_mark_every_word_of_the_stem() {
+    let text = "He that loveth not knoweth not God; for God is love. Beloved, if God so loved us.";
+    let forms = |q: &str| Highlighter::new(&parse(q).unwrap().with_word_forms(), &NoLexicon);
+    assert_eq!(
+        shown(text, &forms("love").ranges(text, [])),
+        ["loveth", "love", "loved"]
+    );
+    assert_eq!(shown(text, &forms("\"love\"").ranges(text, [])), ["love"]);
+    assert_eq!(shown(text, &hl("love").ranges(text, [])), ["love"]);
+}
+
+/// Proximity (#180): both sides are marked, wherever they are in the hit.
+#[test]
+fn proximity_marks_both_sides() {
+    let text = "Even so faith, if it hath not works, is dead, being alone.";
+    for q in [
+        "faith NEAR/5 works",
+        "faith BEFORE/5 works",
+        "faith WITHIN 2 verses works",
+    ] {
+        assert_eq!(
+            shown(text, &hl(q).ranges(text, [])),
+            ["faith", "works"],
+            "{q}"
+        );
+    }
+}

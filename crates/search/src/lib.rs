@@ -8,6 +8,7 @@ pub mod highlight;
 pub mod index;
 pub mod morph;
 pub mod query;
+pub mod stem;
 
 pub use find::{FindOptions, Finder};
 pub use highlight::Highlighter;
@@ -16,9 +17,10 @@ pub use index::{
 };
 pub use morph::{MorphCategory, MorphCriteria, MorphCriterion};
 pub use query::{
-    Compiled, Field, LemmaLookup, MorphQuery, MorphVocabulary, NoLexicon, Query, QueryError,
-    QueryErrorKind, compile, compile_notes, parse, to_fts5,
+    Compiled, Field, IndexQuery, IndexVocabulary, LemmaLookup, NoLexicon, Pattern, Plan, Query,
+    QueryError, QueryErrorKind, compile, compile_notes, parse, to_fts5,
 };
+pub use stem::{stem, stem_prefix};
 
 #[cfg(test)]
 mod find_tests;
@@ -26,3 +28,5 @@ mod find_tests;
 mod highlight_tests;
 #[cfg(test)]
 mod query_tests;
+#[cfg(test)]
+mod stem_tests;

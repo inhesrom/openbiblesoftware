@@ -597,8 +597,10 @@ impl Session {
             .of_type(ResourceType::Lexicon)
             .map(|e| e.path.clone())
             .collect();
+        let word_forms = self.search_word_forms();
         let input = desktop::RunInput {
             query,
+            word_forms,
             searched_count,
             resources: searched,
             indexing,
@@ -746,6 +748,8 @@ mod desktop {
 
     pub(super) struct RunInput {
         pub query: String,
+        /// Word forms on (#180).
+        pub word_forms: bool,
         pub searched_count: usize,
         pub resources: Vec<(SearchedResource, PathBuf, SqliteSearchIndex)>,
         pub indexing: Vec<String>,
@@ -759,7 +763,7 @@ mod desktop {
     pub(super) fn run(input: RunInput, ctx: &JobContext) -> Result<LibraryRunOutput, String> {
         let started = std::time::Instant::now();
         let lookup = crate::bible_search::desktop::lemma_lookup(input.lexicons.clone());
-        let parsed = obs_search::parse(&input.query).map_err(|e| e.to_string())?;
+        let parsed = crate::bible_search::parse_query(&input.query, input.word_forms)?;
         let compiled = obs_search::compile(&parsed, &lookup).map_err(|e| e.to_string())?;
         let highlighter = Highlighter::new(&parsed, &lookup);
         let options = SearchOptions {

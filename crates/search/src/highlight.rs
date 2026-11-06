@@ -2,7 +2,10 @@
 //! `highlight()`, so byte ranges stay in the text the user sees.
 //!
 //! - **Surface terms** (words, phrases, prefixes) are found by re-tokenizing the display text
-//!   with the shared normalizer ([`obs_model::tokenize`]), exactly as the index saw it.
+//!   with the shared normalizer ([`obs_model::tokenize`]), exactly as the index saw it. With
+//!   Word forms on, a word marks every word of its stem ([`crate::stem`]).
+//! - **Proximity** (`NEAR/n`, `BEFORE/n`, `WITHIN n verses`) marks the terms of both sides
+//!   wherever they are in the hit.
 //! - **`strong:` and `lemma:` terms** highlight the Tagged words whose morpheme parts match.
 //!   Inside a Hebrew word of several morphemes (TAHOT `וַ/יִּבְרָא`) only the matching
 //!   morphemes are highlighted: the stored text has no morpheme boundaries, so each prefix
@@ -21,6 +24,7 @@ use obs_scripture::StrongsNumber;
 
 use crate::morph::MorphCriteria;
 use crate::query::{LemmaLookup, Query, is_original_script};
+use crate::stem::stem;
 
 /// STEPBible numbers prefixes, suffixes and other grammatical morphemes from 9001 up.
 const AFFIX_NUMBERS_FROM: u32 = 9000;
@@ -30,6 +34,8 @@ const AFFIX_NUMBERS_FROM: u32 = 9000;
 pub struct Highlighter {
     /// Surface phrases (a word is a one-word phrase) and whether the last word is a prefix.
     phrases: Vec<(Vec<String>, bool)>,
+    /// Stems of words searched with Word forms on.
+    stems: Vec<String>,
     strongs: Vec<StrongsNumber>,
     /// Lemmas as normalized words (transliterations already resolved).
     lemmas: Vec<Vec<String>>,
@@ -97,6 +103,8 @@ impl Highlighter {
         let mut h = Self::default();
         h.collect(query, lemmas);
         h.phrases.dedup();
+        h.stems.sort();
+        h.stems.dedup();
         h.strongs.sort_by_key(ToString::to_string);
         h.strongs.dedup();
         h.lemmas.sort();
@@ -108,6 +116,11 @@ impl Highlighter {
         match q {
             Query::Word { word, prefix, .. } => self.phrases.push((vec![word.clone()], *prefix)),
             Query::Phrase { words, prefix, .. } => self.phrases.push((words.clone(), *prefix)),
+            Query::Stem { stem, .. } => self.stems.push(stem.clone()),
+            Query::Near { left, right, .. } | Query::Within { left, right, .. } => {
+                self.collect(left, lookup);
+                self.collect(right, lookup);
+            }
             Query::Strong { number, .. } => self.strongs.push(*number),
             Query::Lemma { text, .. } => self.lemmas.extend(resolve_lemma(text, lookup)),
             Query::Morph {
@@ -132,6 +145,7 @@ impl Highlighter {
     /// Whether nothing would ever be highlighted.
     pub fn is_empty(&self) -> bool {
         self.phrases.is_empty()
+            && self.stems.is_empty()
             && self.strongs.is_empty()
             && self.lemmas.is_empty()
             && self.morph.is_empty()
@@ -166,6 +180,13 @@ impl Highlighter {
         I: IntoIterator<Item = (Range<usize>, &'a [MorphemePart])>,
     {
         let mut out = Vec::new();
+        if !self.stems.is_empty() {
+            for t in tokenize(text) {
+                if self.stems.binary_search(&stem(&t.text)).is_ok() {
+                    out.push(t.range);
+                }
+            }
+        }
         if !self.phrases.is_empty() {
             let tokens = tokenize(text);
             for (words, prefix) in &self.phrases {

@@ -588,8 +588,9 @@ impl Session {
                 Ok(ids) => ids,
                 Err(e) => return Some(InlineError::new(ErrorField::Search, e, None)),
             },
-            // `compile_notes` refuses Morphology criteria: Notes have no Tagged words.
-            Compiled::Morph(_) | Compiled::Nothing => Vec::new(),
+            // `compile_notes` refuses Morphology criteria, `BEFORE/n` and `WITHIN n verses`
+            // and keeps stemmed words as written: it only ever gives one MATCH.
+            Compiled::PerIndex(_) | Compiled::Nothing => Vec::new(),
         };
         let (all, notebooks) = match (user.annotations(None), user.notebooks()) {
             (Ok(a), Ok(n)) => (a, n),

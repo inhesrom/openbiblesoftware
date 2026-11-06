@@ -151,11 +151,14 @@ fn error_line(ui: &mut Ui, error: Option<&InlineError>, field: ErrorField, text:
     );
 }
 
+/// The query row's toggle for Word forms (#180).
+pub(super) const WORD_FORMS: &str = "Word forms";
+
 /// What the empty query box says.
 pub(super) fn query_hint(mode: SearchMode) -> &'static str {
     match mode {
         SearchMode::Bible => {
-            "Words, \"a phrase\", OR, -word, lov*, strong:H1254, lemma:, @verb aorist"
+            "Words, \"a phrase\", OR, -word, lov*, NEAR/5, strong:H1254, lemma:, @verb aorist"
         }
         SearchMode::Library => {
             "Commentaries, Lexicons, Dictionaries: words, \"a phrase\", OR, lov*"
@@ -204,6 +207,7 @@ impl State {
         let mut morph_open = t.search_fields.morph_open;
         let mut toggle_sidebar = false;
         let recent = self.session.recent_searches(st.mode);
+        let word_forms = self.session.search_word_forms();
         let bibles = st.bibles(&self.session.library);
         if st.mode == SearchMode::Bible {
             self.session.warm_bible_outlines(&bibles);
@@ -271,13 +275,17 @@ impl State {
                         }
                     });
                 });
-                ui.horizontal(|ui| {
+                // Word forms is for English words of Bibles and Library Resources (#180).
+                let forms_toggle = st.mode != SearchMode::Notes;
+                let buttons = if forms_toggle { 320.0 } else { 210.0 };
+                // Wrapped, so a narrow Tab puts the toggle on a line of its own.
+                ui.horizontal_wrapped(|ui| {
                     let r = ui
                         .add(
                             egui::TextEdit::singleline(&mut query)
                                 .id_salt(("search-query", tab))
                                 .hint_text(query_hint(st.mode))
-                                .desired_width((ui.available_width() - 210.0).max(120.0))
+                                .desired_width((ui.available_width() - buttons).max(120.0))
                                 .margin(egui::Margin::symmetric(8, 4)),
                         )
                         .accessible_name("Search for");
@@ -304,6 +312,19 @@ impl State {
                         }
                     });
                     self.save_search_button(ui, tab, &query, &scope, &mut run);
+                    if forms_toggle {
+                        let mut on = word_forms;
+                        if ui
+                            .checkbox(&mut on, WORD_FORMS)
+                            .on_hover_text(
+                                "Also find other forms of English words: love finds loved, \
+                                 loving and loveth. \"Quoted\" words stay exact.",
+                            )
+                            .changed()
+                        {
+                            run.push(("search.word_forms", json!({ "tab": tab.0, "value": on })));
+                        }
+                    }
                 });
                 error_line(ui, error.as_ref(), ErrorField::Query, &query);
                 if bible_mode
