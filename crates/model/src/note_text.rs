@@ -276,19 +276,26 @@ impl Builder<'_> {
     /// typed on, and a line break (a space in a code span) shows as the break itself.
     fn text(&mut self, t: &str, r: Range<usize>, code: bool) {
         let src = &self.body[r.clone()];
-        let base = if src == t {
-            Some(r.start)
+        // For each byte of `t`, its byte in the body.
+        let map: Option<Vec<usize>> = if src == t {
+            Some(r.clone().collect())
         } else if code {
-            code_text_start(src, t).map(|i| r.start + i)
+            code_text_offsets(src, t).map(|m| m.into_iter().map(|o| r.start + o).collect())
         } else {
-            src.find(t).map(|i| r.start + i)
+            src.find(t)
+                .map(|i| (r.start + i..r.start + i + t.len()).collect())
         };
         let last = r.end.saturating_sub(1).max(r.start);
         for (k, c) in t.char_indices() {
             // Text that is not in the body as shown (a character reference) maps onto it.
-            let at = |j: usize| base.map_or((r.start + j).min(last), |b| b + j);
+            let at = |j: usize| map.as_ref().map_or((r.start + j).min(last), |m| m[j]);
             let o = at(k);
-            if self.body.as_bytes().get(o) == Some(&b'\n') {
+            // A line break (or the space a code span reads it as) is the break itself;
+            // anything else is kept, on the line it maps to.
+            let bytes = self.body.as_bytes();
+            let line_break = bytes.get(o) == Some(&b'\n')
+                || (bytes.get(o) == Some(&b'\r') && bytes.get(o + 1) == Some(&b'\n'));
+            if c.is_whitespace() && line_break {
                 continue;
             }
             let i = self.line_of(o);
@@ -330,19 +337,36 @@ impl Builder<'_> {
     }
 }
 
-/// Where a code span's text `t` starts in its source `src` (backticks included): CommonMark
-/// strips the backticks and one space each side when both are there, and reads a line break
-/// as a space.
-fn code_text_start(src: &str, t: &str) -> Option<usize> {
-    let ticks = src.len() - src.trim_start_matches('`').len();
-    let inner = src.get(ticks..src.len().saturating_sub(ticks))?;
+/// Where each byte of a code span's text `t` is in its source `src` (backticks included).
+/// CommonMark strips the backticks and one space each side when both are there, and reads a
+/// line break as a space (pulldown-cmark reads each of `\r\n` as one), which maps onto the
+/// break; the next line's block-quote markers and indent, taken off before the span is
+/// read, are skipped.
+fn code_text_offsets(src: &str, t: &str) -> Option<Vec<usize>> {
+    let s = src.as_bytes();
+    let ticks = s.len() - src.trim_start_matches('`').len();
+    let end = s.len().checked_sub(ticks)?;
     [0, 1].into_iter().find_map(|skip| {
-        let part = inner.get(skip..skip + t.len())?;
-        let same = part
-            .bytes()
-            .zip(t.bytes())
-            .all(|(s, c)| s == c || (s == b'\n' && c == b' '));
-        same.then_some(ticks + skip)
+        let mut at = ticks + skip;
+        let mut out = Vec::with_capacity(t.len());
+        for &c in t.as_bytes() {
+            if at >= end {
+                return None;
+            }
+            if s[at] == c || (c == b' ' && s[at] == b'\r') {
+                out.push(at);
+                at += 1;
+            } else if c == b' ' && s[at] == b'\n' {
+                out.push(at);
+                at += 1;
+                while at < end && matches!(s[at], b' ' | b'\t' | b'>') {
+                    at += 1;
+                }
+            } else {
+                return None;
+            }
+        }
+        Some(out)
     })
 }
 

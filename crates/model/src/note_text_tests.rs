@@ -202,6 +202,39 @@ fn what_is_not_markup_shows_as_typed() {
 }
 
 #[test]
+fn a_code_span_over_lines_keeps_every_character_on_its_line() {
+    // CommonMark reads the line break as a space and takes the quote markers, list indent
+    // and a CRLF's `\r` off the next line before reading the span.
+    for (body, shown) in [
+        ("`a\nb`", "a\nb"),
+        ("> `a\n> b`", "a\nb"),
+        ("> > `ab\n> > cd`", "ab\ncd"),
+        ("- `a\n  b`", "a\nb"),
+        ("> `a\r\n> b`", "a\nb"),
+        ("`a  \nb`", "a  \nb"),
+        ("` a\nb `", "a\nb"),
+    ] {
+        let lines = parse_note_text(body);
+        let text: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
+        assert_eq!(text.join("\n"), shown, "{body:?}");
+        assert_eq!(note_plain_text(body), shown, "{body:?}");
+        // Each shown character maps onto itself in the body.
+        for l in &lines {
+            let r = l.source_range(0..l.text.len());
+            let typed: String = body[r]
+                .chars()
+                .filter(|c| !"`> \r\n".contains(*c))
+                .collect();
+            let seen: String = l.text.chars().filter(|c| !"> ".contains(*c)).collect();
+            assert_eq!(typed, seen, "{body:?}");
+        }
+    }
+    let quoted = parse_note_text("> `a\n> b`");
+    assert_eq!(quoted[1].kind, NoteLineKind::Quote);
+    assert_eq!(quoted[1].content, 7);
+}
+
+#[test]
 fn offsets_map_shown_text_back_to_the_body() {
     let body = "intro\n## A **bold** [link](<Rom 5:8>) \\*";
     let l = &parse_note_text(body)[1];

@@ -294,33 +294,75 @@ pub(super) fn apply_format(text: &str, sel: Range<usize>, f: Format) -> (String,
 
 /// Put `mark` around the selected part of each line the selection touches (past the line's
 /// heading, list or quote marker, its outer spaces left outside, empty lines skipped), or
-/// take it away when every part already has it. With nothing selected the
-/// marks go in with the cursor between them.
+/// take it away when every part already has it, written with `*` or `_`
+/// (`**`/`__` for bold). With nothing selected the marks go in with the cursor between them.
 fn wrap(text: &str, sel: Range<usize>, mark: &str) -> (String, Range<usize>) {
     let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
     let n = mark.len();
-    let star = mark.as_bytes()[0];
+    let kind = if n == 2 {
+        NoteMarkKind::Bold
+    } else {
+        NoteMarkKind::Italic
+    };
+    let lines = obs_model::parse_note_text(text);
+    let delimiter = |c: u8| c == b'*' || c == b'_';
     // Whether a run of `run` marks is the edge of a bold (two or more) or an italic (one or
     // three: the outer one of a bold italic).
     let opens = |run: usize| if n == 2 { run >= 2 } else { run % 2 == 1 };
-    let run_before = |at: usize| {
+    let run_before = |at: usize, c: u8| {
         text.as_bytes()[..at]
             .iter()
             .rev()
-            .take_while(|c| **c == star)
+            .take_while(|x| **x == c)
             .count()
     };
-    let run_after = |at: usize| {
+    let run_after = |at: usize, c: u8| {
         text.as_bytes()[at..]
             .iter()
-            .take_while(|c| **c == star)
+            .take_while(|x| **x == c)
             .count()
     };
-    let has_mark =
-        |p: &Range<usize>| p.end > p.start && opens(run_before(p.start)) && opens(run_after(p.end));
+    // The marks around part `p` that make it bold (or italic), as where the `n` bytes before
+    // and the `n` after it to take away start: runs of `*` or `_` around it, read from the
+    // inside out (past an italic's when looking for a bold), and only where the parse marks
+    // the part so (`snake_case_name` has no italic).
+    let marks_around = |p: &Range<usize>| -> Option<(usize, usize)> {
+        if p.end <= p.start {
+            return None;
+        }
+        let bytes = text.as_bytes();
+        let (mut s, mut e) = (p.start, p.end);
+        let found = loop {
+            let c = *bytes.get(s.checked_sub(1)?)?;
+            if !delimiter(c) || bytes.get(e) != Some(&c) {
+                return None;
+            }
+            let (before, after) = (run_before(s, c), run_after(e, c));
+            if opens(before) && opens(after) {
+                break (s - n, e);
+            }
+            (s, e) = (s - before, e + after);
+        };
+        // The part without marks inside it at its edges, which the mark must cover.
+        let part = &text[p.clone()];
+        let core = p.end - part.trim_start_matches(['*', '_']).len()
+            ..p.start + part.trim_end_matches(['*', '_']).len();
+        let line = lines.iter().find(|l| l.source.contains(&p.start))?;
+        line.marks
+            .iter()
+            .any(|m| {
+                let r = line.source_range(m.range.clone());
+                m.kind == kind
+                    && p.start <= r.start
+                    && r.end <= p.end
+                    && r.start <= core.start
+                    && core.end <= r.end
+            })
+            .then_some(found)
+    };
     let mut parts: Vec<Range<usize>> = Vec::new();
     if a < b {
-        for line in obs_model::parse_note_text(text) {
+        for line in &lines {
             let (s, e) = (a.max(line.content), b.min(line.source.end));
             if s >= e {
                 continue;
@@ -335,38 +377,44 @@ fn wrap(text: &str, sel: Range<usize>, mark: &str) -> (String, Range<usize>) {
             }
             // Marks selected with what they mark (as after the last press): the part is what
             // is inside them.
-            let inner = s + if opens(run_after(s).min(e - s)) { n } else { 0 }
-                ..e - if opens(run_before(e).min(e - s)) {
-                    n
+            let (first, last) = (text.as_bytes()[s], text.as_bytes()[e - 1]);
+            let opening = delimiter(first) && opens(run_after(s, first).min(e - s));
+            let closing = delimiter(last) && opens(run_before(e, last).min(e - s));
+            let inner = s + if opening { n } else { 0 }..e - if closing { n } else { 0 };
+            parts.push(
+                if inner.start < inner.end && inner != (s..e) && marks_around(&inner).is_some() {
+                    inner
                 } else {
-                    0
-                };
-            parts.push(if inner != (s..e) && has_mark(&inner) {
-                inner
-            } else {
-                s..e
-            });
+                    s..e
+                },
+            );
         }
     }
     if parts.is_empty() {
         parts.push(b..b);
     }
-    let remove = parts.iter().all(has_mark);
+    let found: Vec<Option<(usize, usize)>> = parts.iter().map(marks_around).collect();
+    let remove = found.iter().all(Option::is_some);
     let mut new = String::with_capacity(text.len() + parts.len() * 2 * n);
     let mut at = 0;
     // Where the first and the last part are in `new`.
     let mut first = None;
     let mut last = 0;
-    for p in &parts {
-        // A part that already has the marks keeps them when others get them.
-        let add = !remove && !has_mark(p);
-        if remove {
-            new.push_str(&text[at..p.start - n]);
-            at = p.end + n;
-        } else {
-            new.push_str(&text[at..p.start]);
-            at = p.end;
+    for (p, found) in parts.iter().zip(&found) {
+        if let (true, Some((open, close))) = (remove, *found) {
+            new.push_str(&text[at..open]);
+            new.push_str(&text[open + n..p.start]);
+            first.get_or_insert(new.len());
+            new.push_str(&text[p.clone()]);
+            last = new.len();
+            new.push_str(&text[p.end..close]);
+            at = close + n;
+            continue;
         }
+        // A part that already has the marks keeps them when others get them.
+        let add = found.is_none();
+        new.push_str(&text[at..p.start]);
+        at = p.end;
         if add {
             new.push_str(mark);
         }
@@ -762,6 +810,55 @@ mod tests {
         // Italic over bold-italic takes only the italic away.
         let (new, _) = applied("***faith***", "***faith***", Format::Italic);
         assert_eq!(new, "**faith**");
+    }
+
+    #[test]
+    fn bold_and_italic_written_with_underscores_toggle_off_too() {
+        for (text, sel, f, want) in [
+            (
+                "by __faith__ alone",
+                "faith",
+                Format::Bold,
+                "by faith alone",
+            ),
+            (
+                "by _faith_ alone",
+                "faith",
+                Format::Italic,
+                "by faith alone",
+            ),
+            ("__faith__", "__faith__", Format::Bold, "faith"),
+            ("_faith_", "_faith_", Format::Italic, "faith"),
+            // The italic outside a bold, and the bold outside an italic.
+            ("_**faith**_", "faith", Format::Italic, "**faith**"),
+            ("__*faith*__", "faith", Format::Bold, "*faith*"),
+            ("*__faith__*", "faith", Format::Bold, "*faith*"),
+            ("**_faith_**", "faith", Format::Italic, "**faith**"),
+            ("___faith___", "faith", Format::Italic, "__faith__"),
+            // Each line, however it is written.
+            (
+                "__faith__\n**hope**",
+                "faith__\n**hope",
+                Format::Bold,
+                "faith\nhope",
+            ),
+            // Not emphasis: underscores inside a word are left, and the mark goes on.
+            (
+                "snake_case_name",
+                "case",
+                Format::Italic,
+                "snake_*case*_name",
+            ),
+        ] {
+            let (new, selected) = applied(text, sel, f);
+            assert_eq!(new, want, "{text:?} {f:?}");
+            if new.len() < text.len() {
+                assert_eq!(selected, sel.replace(['*', '_'], ""), "{text:?}");
+            }
+        }
+        // Pressed again, the mark goes back on (with `*`).
+        let (new, _) = applied("by faith alone", "faith", Format::Bold);
+        assert_eq!(new, "by **faith** alone");
     }
 
     #[test]

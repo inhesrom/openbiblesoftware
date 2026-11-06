@@ -643,6 +643,19 @@ fn notes_search_finds_words_inside_formatted_text() {
     // The card filter reads the shown text too.
     assert_eq!(card_ids(&s, "grace alone"), std::slice::from_ref(&id));
     assert_eq!(card_ids(&s, "faith"), [plain]);
+    // A code span over lines in a quote or list item: each word is found (#186 review).
+    let quoted = note(&mut s, "Rom 5:3", "> `tribulation\n> patience`", None);
+    let listed = note(&mut s, "Rom 5:4", "- `experience\n  hope`", None);
+    for (word, id) in [
+        ("tribulation", &quoted),
+        ("patience", &quoted),
+        ("experience", &listed),
+        ("hope", &listed),
+    ] {
+        let (_, hits) = notes_search(&mut s, json!({ "text": word }));
+        assert_eq!(hits, std::slice::from_ref(id), "{word}");
+        assert_eq!(card_ids(&s, word), std::slice::from_ref(id), "{word}");
+    }
 }
 
 /// A formatted Note's references are found in the text it shows; a link's text is not a

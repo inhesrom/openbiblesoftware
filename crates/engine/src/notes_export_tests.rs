@@ -296,32 +296,70 @@ fn commonmark_events(markdown: &str) -> Vec<pulldown_cmark::Event<'_>> {
 /// reader reads the very same document from it, every line break kept.
 fn assert_exported_as_typed(body: &str) {
     let markdown = crate::notes_export::note_markdown(body);
-    // A code fence or HTML block left open is closed: the closing line is read with it.
-    let closed = match markdown.rsplit_once('\n') {
-        Some((_, closer)) if markdown.lines().count() > body.trim_end().lines().count() => {
-            format!("{}\n{closer}", body.trim_end())
-        }
-        _ => body.to_string(),
-    };
-    assert_eq!(
-        commonmark_events(&markdown),
-        commonmark_events(&closed),
-        "{body:?} -> {markdown:?}"
-    );
     // Each line is the line typed, or it with a `\` after it; a closing fence or HTML end
-    // may follow.
-    let typed: Vec<&str> = body.trim_end().split('\n').collect();
-    let written: Vec<&str> = markdown.split('\n').collect();
-    assert!(
-        written.len() == typed.len() || written.len() == typed.len() + 1,
-        "{body:?} -> {markdown:?}"
-    );
+    // may follow, on a line of its own.
+    let typed: Vec<&str> = body.split('\n').collect();
+    let mut written: Vec<&str> = markdown.split('\n').collect();
+    let ends_in_break = body.ends_with('\n');
+    let closer = if written.len() > typed.len() || (ends_in_break && written.last() != Some(&"")) {
+        written.pop()
+    } else {
+        None
+    };
+    let kept = match closer {
+        Some(_) if ends_in_break => typed.len() - 1,
+        _ => typed.len(),
+    };
+    assert_eq!(written.len(), kept, "{body:?} -> {markdown:?}");
     for (w, t) in written.iter().zip(&typed) {
         assert!(
             w == t || w.strip_suffix('\\') == Some(t),
             "{t:?} -> {w:?} in {markdown:?}"
         );
     }
+    // A code fence or HTML block left open is closed: the closing line is read with it.
+    let closed = match closer {
+        Some(closer) if ends_in_break => format!("{body}{closer}"),
+        Some(closer) => format!("{body}\n{closer}"),
+        None => body.to_string(),
+    };
+    assert_eq!(
+        commonmark_events(&markdown),
+        commonmark_events(&closed),
+        "{body:?} -> {markdown:?}"
+    );
+}
+
+/// The Markdown export keeps every character typed (#186 review): blank lines before and
+/// after the text, and spaces at the end of a line of code, which are part of the code.
+#[test]
+fn exported_markdown_keeps_white_space_as_typed() {
+    use crate::notes_export::note_markdown;
+    for (body, markdown) in [
+        ("```\ncode  ", "```\ncode  \n```"),
+        ("```\ncode  \n", "```\ncode  \n```"),
+        ("```\ncode\n\n", "```\ncode\n\n```"),
+        ("    code  \n    more  ", "    code  \n    more  "),
+        ("\n\nfirst\nsecond\n\n", "\n\nfirst\\\nsecond\n\n"),
+        ("  \nline  \n  ", "  \nline  \n  "),
+    ] {
+        assert_eq!(note_markdown(body), markdown, "{body:?}");
+        assert_exported_as_typed(body);
+    }
+    // The code a reader reads is the code typed, its trailing spaces in it.
+    let code = |md: &str| -> Vec<String> {
+        pulldown_cmark::Parser::new(md)
+            .filter_map(|e| match e {
+                pulldown_cmark::Event::Text(t) => Some(t.to_string()),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(code(&note_markdown("```\ncode  ")), ["code  \n"]);
+    assert_eq!(
+        code(&note_markdown("```\ncode  \n\n")),
+        code("```\ncode  \n\n")
+    );
 }
 
 #[test]

@@ -87,7 +87,8 @@ Attribution of each quoted Resource that requires one.
   (`escape_note_text`: markup backslash-escaped, leading spaces `&#32;`), so its text as typed
   reads in a Markdown reader exactly as it was written, line by line.
 - A Note's text is CommonMark (Note formatting, #186), and the Markdown export writes it **as
-  typed** (`note_markdown`), never re-written from a parse, so it reads as the Note does: only
+  typed** (`note_markdown`), every character kept (blank lines and the spaces ending a line of
+  code too), never re-written from a parse, so it reads as the Note does: only
   a `\` goes before each line break inside a paragraph (a hard line break, so a reader keeps
   the line breaks the app shows), and a code fence or HTML block the Note leaves open is
   closed, so the next Annotation's heading is not read into it. Its headings are its own
@@ -95,7 +96,8 @@ Attribution of each quoted Resource that requires one.
   `commonmark_spec_samples_export_as_they_read` (a sample of each part of the spec, read by
   pulldown-cmark: the same events as the Note, and every Annotation heading after it still a
   heading), `exported_emphasis_reads_back_as_the_app_shows_it` (every run of four of 14 awkward
-  emphasis spans, 38,416 Notes) and `exported_link_targets_are_the_ones_the_app_follows`.
+  emphasis spans, 38,416 Notes), `exported_link_targets_are_the_ones_the_app_follows` and
+  `exported_markdown_keeps_white_space_as_typed`.
 - The HTML export (`note_html`) is pulldown-cmark's HTML of the Note, with each soft line break
   a `<br />`, the Note's headings two levels down (`<h3>`… under the Annotation's `<h2>`), raw
   HTML shown as typed (escaped), only web links (`https:`, `http:`, `mailto:`) as `<a href>`,

@@ -130,16 +130,11 @@ fn html_lines(text: &str) -> String {
 const HEADING_SHIFT: u8 = 2;
 
 /// A Note's text as Markdown: its source as typed, which is CommonMark (see the module docs),
-/// with a `\` (a hard line break) before each line break inside a paragraph, so a reader
-/// keeps the Note's line breaks as the app shows them, and closed if it ends inside a code
-/// fence or an HTML block, so what follows in the export is not read into it.
+/// every character kept (blank lines and spaces too), with a `\` (a hard line break) before
+/// each line break inside a paragraph, so a reader keeps the Note's line breaks as the app
+/// shows them, and closed if it ends inside a code fence or an HTML block, so what follows
+/// in the export is not read into it.
 pub fn note_markdown(body: &str) -> String {
-    let start = body
-        .split_inclusive('\n')
-        .take_while(|l| l.trim().is_empty())
-        .map(str::len)
-        .sum::<usize>();
-    let body = body[start.min(body.len())..].trim_end();
     let mut out = String::with_capacity(body.len() + 16);
     let mut at = 0;
     for (event, r) in Parser::new(body).into_offset_iter() {
@@ -178,7 +173,12 @@ pub fn note_markdown(body: &str) -> String {
     .map(String::from);
     fences
         .chain(html)
-        .map(|closer| format!("{out}\n{closer}"))
+        .map(|closer| {
+            // The closer on a line of its own, after the text as typed (its last line
+            // break, if any, ends the line before it).
+            let gap = if out.ends_with('\n') { "" } else { "\n" };
+            format!("{out}{gap}{closer}")
+        })
         .find(|closed| ends_closed(closed))
         .unwrap_or(out)
 }
