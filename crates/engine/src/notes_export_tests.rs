@@ -910,3 +910,110 @@ fn a_credit_not_confirmed_when_quoted_is_confirmed_at_the_next_library_load() {
         );
     }
 }
+
+/// Each character of a one-line Note as shown: (bold, italic, link target).
+type Styled = Vec<(char, bool, bool, Option<String>)>;
+
+/// How the app shows a one-line Note.
+fn app_styled(body: &str) -> Styled {
+    let line = obs_model::parse_note_text(body).remove(0);
+    line.text
+        .char_indices()
+        .map(|(i, c)| {
+            let on = |k: &dyn Fn(&obs_model::NoteMarkKind) -> bool| {
+                line.marks
+                    .iter()
+                    .any(|m| m.range.contains(&i) && k(&m.kind))
+            };
+            let target = line.marks.iter().find_map(|m| match &m.kind {
+                obs_model::NoteMarkKind::Link(t) if m.range.contains(&i) => Some(t.clone()),
+                _ => None,
+            });
+            (
+                c,
+                on(&|k| *k == obs_model::NoteMarkKind::Bold),
+                on(&|k| *k == obs_model::NoteMarkKind::Italic),
+                target,
+            )
+        })
+        .collect()
+}
+
+/// How a CommonMark reader shows one paragraph of Markdown.
+fn commonmark_styled(markdown: &str) -> Styled {
+    use pulldown_cmark::{Event, Tag, TagEnd};
+    let (mut strong, mut em) = (0, 0);
+    let mut link: Option<String> = None;
+    let mut out = Styled::new();
+    for event in pulldown_cmark::Parser::new(markdown) {
+        match event {
+            Event::Start(Tag::Strong) => strong += 1,
+            Event::End(TagEnd::Strong) => strong -= 1,
+            Event::Start(Tag::Emphasis) => em += 1,
+            Event::End(TagEnd::Emphasis) => em -= 1,
+            Event::Start(Tag::Link { dest_url, .. }) => link = Some(dest_url.to_string()),
+            Event::End(TagEnd::Link) => link = None,
+            Event::Text(t) => {
+                out.extend(t.chars().map(|c| (c, strong > 0, em > 0, link.clone())));
+            }
+            Event::Start(Tag::Paragraph) | Event::End(TagEnd::Paragraph) => {}
+            other => panic!("{other:?} in {markdown}"),
+        }
+    }
+    out
+}
+
+/// Bold and italic next to each other (#186 review): a CommonMark reader shows the exported
+/// Markdown with the same bold, italic and links as the app shows the Note, each character.
+/// `_faith_*hope*` is one italic word, not `*faith**hope*` with `**` in it.
+#[test]
+fn exported_emphasis_reads_back_as_the_app_shows_it() {
+    use crate::notes_export::note_markdown;
+    let mut bodies: Vec<String> = [
+        "_faith_*hope*",
+        "__faith__**hope**",
+        "**a _b_**_c_",
+        "_a **b**_**c**.",
+        "**a _b_***c*d",
+        "*a*[*b*](Rom 5:8)",
+        "By **grace** through _faith_*,* cf. Rom 5:8.",
+    ]
+    .map(String::from)
+    .to_vec();
+    // And every run of three of these.
+    let parts = [
+        "*a*",
+        "_b_",
+        "**c**",
+        "__d__",
+        "e",
+        " ",
+        "[f](x)",
+        "**g _h_**",
+        "_i **j**_",
+        "***k***",
+        ".",
+    ];
+    for x in parts {
+        for y in parts {
+            for z in parts {
+                bodies.push(format!("{x}{y}{z}"));
+            }
+        }
+    }
+    let mut failures = Vec::new();
+    for body in bodies.iter().filter(|b| !b.starts_with(' ')) {
+        let markdown = note_markdown(body);
+        let mut app = app_styled(body);
+        // The export leaves out spaces at the end of a line.
+        while app.last().is_some_and(|c| c.0 == ' ') {
+            app.pop();
+        }
+        if app != commonmark_styled(&markdown) {
+            failures.push(format!("{body:?} -> {markdown:?}"));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert_eq!(note_markdown("_faith_*hope*"), "*faithhope*");
+    assert_eq!(note_markdown("**a _b_**_c_"), "__a *b*__*c*");
+}

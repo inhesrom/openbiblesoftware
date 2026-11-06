@@ -90,7 +90,12 @@ Attribution of each quoted Resource that requires one.
 - A Note's Note formatting (#186) is kept as CommonMark (`note_markdown`): its headings two
   levels down (`#` → `###`, under the Annotation's `##`), `- ` and `1. ` list items (nested by
   their parent's content column), `> ` quote lines, `**bold**`, `*italic*` and
-  `[text](target)` links (`<…>` around a target with spaces, such as a Bible reference). A
+  `[text](target)` links (`<…>` around a target with spaces, such as a Bible reference).
+  Bold or italic spans that touch are written as one (`_faith_*hope*` → `*faithhope*`), and
+  `_`/`__` replaces `*`/`**` where runs of `*` would otherwise run together and a reader pair
+  them differently (`**a _b_**_c_` → `__a *b*__*c*`); a CommonMark reader shows each character
+  with the bold, italic and link the app shows
+  (`notes_export_tests::exported_emphasis_reads_back_as_the_app_shows_it`). A
   blank line goes between a list or quote and text next to it, which CommonMark would
   otherwise join. HTML (`note_html`) has `<h3>`…, nested `<ul>`/`<ol start>`,
   `<blockquote>`, `<strong>`, `<em>` and `<a href>` for web links; a link to a Bible

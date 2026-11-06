@@ -4,7 +4,8 @@
 //! - **Toolbar** above the field: **B**old, *I*talic, Heading, bulleted list, numbered list,
 //!   block quote and link. Each acts on the selection (or the lines it touches) and keeps the
 //!   keys in the field; pressing one does not end the editing pass. Bold and italic mark each
-//!   selected line on its own, since they end with their line.
+//!   selected line on its own, since they end with their line; a link does too, so the link
+//!   button is off while the selection spans lines.
 //! - **Shortcuts**: Ctrl+B and Ctrl+I (Cmd on macOS). Typing `- `, `1. ` or `> ` at the start
 //!   of a line starts a list or quote; Enter in an item continues it (the next number), and
 //!   Enter in an empty item ends it.
@@ -90,6 +91,8 @@ pub(super) fn note_editor(
     rows: usize,
 ) -> NoteEditorOutput {
     let mut action = None;
+    // A link is one line's text: a selection across lines cannot be one.
+    let across_lines = selection_spans_lines(ui.ctx(), id, text);
     let toolbar = ui
         .horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
@@ -97,7 +100,13 @@ pub(super) fn note_editor(
                 let b = egui::Button::new(f.label())
                     .frame(false)
                     .min_size(egui::vec2(24.0, 20.0));
-                if ui.add(b).on_hover_text(f.hint()).clicked() {
+                let enabled = !(f == Format::Link && across_lines);
+                if ui
+                    .add_enabled(enabled, b)
+                    .on_hover_text(f.hint())
+                    .on_disabled_hover_text(LINK_ONE_LINE)
+                    .clicked()
+                {
                     action = Some(f);
                 }
             }
@@ -146,6 +155,22 @@ pub(super) fn note_editor(
         response,
         on_toolbar,
     }
+}
+
+/// Why the link button is off while the selection spans lines.
+const LINK_ONE_LINE: &str = "Link: select text on one line (a link cannot run across lines)";
+
+/// Whether the field's selection takes in a line break.
+fn selection_spans_lines(ctx: &egui::Context, id: egui::Id, text: &str) -> bool {
+    let Some(range) = egui::TextEdit::load_state(ctx, id).and_then(|s| s.cursor.char_range())
+    else {
+        return false;
+    };
+    let sel = range.as_sorted_char_range();
+    text.chars()
+        .skip(sel.start.0)
+        .take(sel.end.0.saturating_sub(sel.start.0))
+        .any(|c| c == '\n')
 }
 
 /// Run `change` on the field's text and selection (char indices), as one undo step of the
@@ -358,8 +383,12 @@ fn wrap(text: &str, sel: Range<usize>, mark: &str) -> (String, Range<usize>) {
 }
 
 /// `[selection](…)` with the cursor where the target goes; `[](…)` with it in the brackets.
+/// A selection across lines is left as it is: a Note's link ends with its line.
 fn link(text: &str, sel: Range<usize>) -> (String, Range<usize>) {
     let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
+    if text[a..b].contains('\n') {
+        return (text.to_string(), sel);
+    }
     let new = format!("{}[{}]()", &text[..a], &text[a..b]);
     let new = format!("{new}{}", &text[b..]);
     let c = if a == b { sel.start + 1 } else { sel.end + 3 };
@@ -752,6 +781,9 @@ mod tests {
         assert_eq!(r, 11..11);
         let (new, r) = apply_format("x", 1..1, Format::Link);
         assert_eq!((new.as_str(), r), ("x[]()", 2..2));
+        // Across lines there is no link to make: `[faith\nhope](…)` would show as typed.
+        let (new, r) = apply_format("faith\nhope", 0..10, Format::Link);
+        assert_eq!((new.as_str(), r), ("faith\nhope", 0..10));
     }
 
     #[test]

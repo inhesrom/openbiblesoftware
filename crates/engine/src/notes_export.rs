@@ -15,7 +15,9 @@
 //!
 //! The Markdown keeps a Note's text as shown, Note formatting included (#186): headings
 //! (two levels down, under the Annotation's own), bulleted and numbered lists, block quotes,
-//! bold, italic and links are written as CommonMark; the rest of the text has CommonMark's
+//! bold, italic and links are written as CommonMark (bold or italic spans that touch as one,
+//! and with `_` rather than `*` where runs of `*` would run together and a reader pair them
+//! otherwise); the rest of the text has CommonMark's
 //! special characters backslash-escaped, lines end in a hard line break and leading spaces
 //! are written as character references, so a Markdown reader shows (and a parser reads back)
 //! the same text. A blank line separates a list or quote from text next to it, which
@@ -133,40 +135,49 @@ fn html_lines(text: &str) -> String {
 /// How far a Note's headings move down in an export: its `#` sits under the Annotation's `##`.
 const HEADING_SHIFT: u8 = 2;
 
-/// Marks of a line as open and close events, outermost first at each start.
-fn sorted_marks(line: &NoteLine) -> Vec<&NoteMark> {
-    let mut marks: Vec<&NoteMark> = line.marks.iter().collect();
+/// Marks in the order they open, outermost first at each start.
+fn sorted(marks: &[NoteMark]) -> Vec<&NoteMark> {
+    let mut marks: Vec<&NoteMark> = marks.iter().collect();
     marks.sort_by_key(|m| (m.range.start, std::cmp::Reverse(m.range.end)));
     marks
 }
 
 /// Write a line's shown text with its marks: `text` writes a span of plain text, `open` and
-/// `close` a mark's ends.
+/// `close` a mark's ends. `open` is told what is written before it, and whether that ends
+/// with a closing.
 fn write_inline(
     line: &NoteLine,
     text: &dyn Fn(std::ops::Range<usize>) -> String,
-    open: &dyn Fn(&NoteMark) -> String,
+    open: &dyn Fn(&NoteMark, &str, bool) -> String,
     close: &dyn Fn(&NoteMark) -> String,
 ) -> String {
     let mut out = String::new();
     let mut stack: Vec<&NoteMark> = Vec::new();
     let mut at = 0;
-    let close_to = |out: &mut String, stack: &mut Vec<&NoteMark>, at: &mut usize, upto| {
+    // Where the last closing written ends in `out`.
+    let mut closed = None;
+    let close_to = |out: &mut String,
+                    stack: &mut Vec<&NoteMark>,
+                    at: &mut usize,
+                    closed: &mut Option<usize>,
+                    upto| {
         while let Some(top) = stack.last().copied().filter(|t| t.range.end <= upto) {
             out.push_str(&text(*at..top.range.end));
             *at = top.range.end;
             out.push_str(&close(top));
+            *closed = Some(out.len());
             stack.pop();
         }
     };
-    for m in sorted_marks(line) {
-        close_to(&mut out, &mut stack, &mut at, m.range.start);
+    for m in sorted(&line.marks) {
+        close_to(&mut out, &mut stack, &mut at, &mut closed, m.range.start);
         out.push_str(&text(at..m.range.start));
         at = m.range.start;
-        out.push_str(&open(m));
+        let opening = open(m, &out, closed == Some(out.len()));
+        out.push_str(&opening);
         stack.push(m);
     }
-    close_to(&mut out, &mut stack, &mut at, usize::MAX);
+    close_to(&mut out, &mut stack, &mut at, &mut closed, usize::MAX);
     out.push_str(&text(at..line.text.len()));
     out
 }
@@ -180,20 +191,120 @@ fn markdown_target(target: &str) -> String {
     }
 }
 
+fn is_emphasis(m: &NoteMark) -> bool {
+    matches!(m.kind, NoteMarkKind::Bold | NoteMarkKind::Italic)
+}
+
+/// A line's marks with bold (or italic) spans that touch joined into one, where that
+/// crosses no other mark, and one inside another of its kind left out: `_faith_*hope*` shows
+/// one italic word, which `*faith**hope*` would not be to a CommonMark reader.
+fn joined_marks(line: &NoteLine) -> Vec<NoteMark> {
+    let mut marks = line.marks.clone();
+    let crosses = |a: &std::ops::Range<usize>, b: &std::ops::Range<usize>| {
+        (a.start < b.start && b.start < a.end && a.end < b.end)
+            || (b.start < a.start && a.start < b.end && b.end < a.end)
+    };
+    'join: loop {
+        for i in 0..marks.len() {
+            for j in 0..marks.len() {
+                if i == j || !is_emphasis(&marks[i]) || marks[i].kind != marks[j].kind {
+                    continue;
+                }
+                let (outer, inner) = (&marks[i].range, &marks[j].range);
+                if outer.start <= inner.start && inner.end <= outer.end {
+                    marks.remove(j);
+                    continue 'join;
+                }
+                if outer.end != inner.start {
+                    continue;
+                }
+                let joined = marks[i].range.start..marks[j].range.end;
+                if marks
+                    .iter()
+                    .enumerate()
+                    .any(|(k, m)| k != i && k != j && crosses(&m.range, &joined))
+                {
+                    continue;
+                }
+                marks[i].range = joined;
+                marks.remove(j);
+                continue 'join;
+            }
+        }
+        return marks;
+    }
+}
+
+/// Whether a CommonMark reader takes `m` written with `_` as emphasis, `before` written
+/// ahead of it: a `_` does not open or close inside a word. A mark that opens where `m`
+/// closes, or one around it that closes there too, writes punctuation after it.
+fn underscore_fits(line: &NoteLine, marks: &[NoteMark], m: &NoteMark, before: &str) -> bool {
+    let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+    let closes_after = |o: &NoteMark| {
+        o.range.end == m.range.end && (o.range.start < m.range.start || o.range == m.range)
+    };
+    !word(before.chars().next_back())
+        && (marks
+            .iter()
+            .any(|o| o != m && (o.range.start == m.range.end || closes_after(o)))
+            || !word(line.text[m.range.end..].chars().next()))
+}
+
+/// Whether `m` is better written with `_` than `*`, where a run of `*` would run on into
+/// another and a CommonMark reader pair them otherwise:
+/// - it opens just after a closing `*` (`**a _b_**_c_`, not `**a *b****c*`);
+/// - an emphasis of the other kind inside it shares one end with it (`_**a**b_`, not
+///   `***a**b*`);
+///
+/// but not just after a closing `_`.
+fn wants_underscore(
+    line: &NoteLine,
+    marks: &[NoteMark],
+    m: &NoteMark,
+    before: &str,
+    after_closing: bool,
+) -> bool {
+    let shares_one_end = marks.iter().any(|o| {
+        is_emphasis(o)
+            && o.kind != m.kind
+            && m.range.start <= o.range.start
+            && o.range.end <= m.range.end
+            && ((o.range.start == m.range.start) != (o.range.end == m.range.end))
+    });
+    // After a closing `_` it is `*`, for the same reason.
+    let after = |c| after_closing && before.ends_with(c);
+    (after('*') || shares_one_end) && !after('_') && underscore_fits(line, marks, m, before)
+}
+
 fn inline_markdown(line: &NoteLine) -> String {
     let text = line.text.trim_end();
+    let mut line = line.clone();
+    line.marks = joined_marks(&line);
+    // The emphasis written with `_` (see `wants_underscore`).
+    let underscored: std::cell::RefCell<Vec<NoteMark>> = Default::default();
+    let delimiter = |m: &NoteMark| {
+        let mark = if underscored.borrow().contains(m) {
+            "_"
+        } else {
+            "*"
+        };
+        mark.repeat(if m.kind == NoteMarkKind::Bold { 2 } else { 1 })
+    };
     write_inline(
-        line,
+        &line,
         &|r| markdown_escape_part(text, r.start.min(text.len())..r.end.min(text.len())),
-        &|m| match m.kind {
-            NoteMarkKind::Bold => "**".into(),
-            NoteMarkKind::Italic => "*".into(),
+        &|m, before, after_closing| match m.kind {
             NoteMarkKind::Link(_) => "[".into(),
+            _ => {
+                if wants_underscore(&line, &line.marks, m, before, after_closing) {
+                    underscored.borrow_mut().push(m.clone());
+                }
+                delimiter(m)
+            }
         },
         &|m| match &m.kind {
-            NoteMarkKind::Bold => "**".into(),
-            NoteMarkKind::Italic => "*".into(),
             NoteMarkKind::Link(t) => format!("]({})", markdown_target(t)),
+            _ => delimiter(m),
         },
     )
 }
@@ -320,7 +431,7 @@ fn inline_html(line: &NoteLine) -> String {
     write_inline(
         line,
         &|r| html_escape(&line.text[r]),
-        &|m| match &m.kind {
+        &|m, _, _| match &m.kind {
             NoteMarkKind::Bold => "<strong>".into(),
             NoteMarkKind::Italic => "<em>".into(),
             NoteMarkKind::Link(t) if url(t) => format!("<a href=\"{}\">", html_escape(t)),

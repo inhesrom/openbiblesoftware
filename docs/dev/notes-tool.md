@@ -146,7 +146,8 @@ overlap, at a heading's scale); a plain line is laid out exactly as before (`a_p
 
 Used by the cards and by the popup Note editor. Above the field a toolbar: **B**, *I*, **H**
 (cycles `#`, `##`, `###`, text), •, 1., “” and 🔗 (inserts `[selection]()` with the cursor in the
-parentheses). Ctrl+B and Ctrl+I (Cmd on macOS) bold and italicise the selection, or take it
+parentheses; off, with a hover saying why, while the selection spans lines, since a link ends
+with its line). Ctrl+B and Ctrl+I (Cmd on macOS) bold and italicise the selection, or take it
 off when it is already so; as a Note's bold and italics end with their line, each selected
 line gets its own marks, after its heading, list or quote marker. Typing `- `, `1. ` or `> `
 at a line's start starts a list or quote; Enter at the end of an item continues it (with the

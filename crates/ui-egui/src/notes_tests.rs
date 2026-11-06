@@ -1326,6 +1326,53 @@ fn the_note_editor_formats_with_shortcuts_and_its_toolbar_and_undoes() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// The Note editor's link button (#186) makes no link across lines: `[faith\nhope](…)`
+/// would show as typed, since a Note's link ends with its line. On one line it links.
+#[test]
+fn the_note_editor_link_button_does_not_link_across_lines() {
+    let dir = folder("editor-link");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    h.shell.run("tab.close", &json!({ "tab": tb.0 }));
+    settle_all(&mut h);
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Rom 5:8", "body": "faith\nhope" }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    open_notes(&mut h);
+    let body = card_body(&h, &id);
+    h.click(body.center());
+    assert!(h.ctx.text_edit_focused());
+    let text = |h: &Harness| {
+        h.shell
+            .st
+            .notes_ui
+            .editing
+            .as_ref()
+            .map(|e| e.text.clone())
+            .unwrap_or_default()
+    };
+    // Both lines selected: the link button does nothing, and the editor stays open.
+    press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+    h.frame();
+    h.click_text("🔗");
+    assert_eq!(text(&h), "faith\nhope");
+    assert!(h.shell.st.notes_ui.editing.is_some(), "still editing");
+    // The cursor on one line: it links there.
+    press_key(&mut h, egui::Key::End, Modifiers::COMMAND);
+    h.frame();
+    h.click_text("🔗");
+    assert_eq!(text(&h), "faith\nhope[]()");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn the_note_editor_symbols_are_in_the_chrome_fonts_and_bullets_in_the_reading_font() {
     let h = Harness::new();
