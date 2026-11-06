@@ -475,11 +475,25 @@ fn dictionary_keyed_by_headword_with_link_aliases() {
         keys,
         [
             ("AARON".to_string(), "AARON", false),
+            ("ABEL".to_string(), "ABEL", false),
             ("ABRAHAM".to_string(), "ABRAHAM", false),
             ("ABRAM".to_string(), "ABRAHAM", true),
         ]
     );
     assert_eq!(report.dropped_markup.get("<index>"), Some(&1));
+    // A headword listed twice (#149: Hitchcock's two Abels) keeps both senses, as paragraphs
+    // of one entry, in module order.
+    let abel = r.units.iter().find(|u| u.id.as_str() == "ABEL").unwrap();
+    assert_eq!(abel.text, "A city of Naphtali.\nAdam's second son.");
+    assert_eq!(spans_of(&r, "ABEL", "para").len(), 2);
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w == "ABEL: a second entry for `ABEL`; combined with the first"),
+        "{:?}",
+        report.warnings
+    );
     check_golden("topics-osis", &snapshot(&r, &report));
 }
 
