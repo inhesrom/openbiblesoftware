@@ -3118,6 +3118,8 @@ mod command_box;
 #[path = "copy_export_tests.rs"]
 mod copy_export;
 
+#[path = "floating_windows_tests.rs"]
+mod floating_windows;
 #[path = "interlinear_tests.rs"]
 mod interlinear;
 #[path = "toolbar_tests.rs"]

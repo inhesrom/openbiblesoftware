@@ -41,6 +41,9 @@ mod factbook_tests;
 pub mod favorites;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod favorites_tests;
+pub mod floating_windows;
+#[cfg(test)]
+mod floating_windows_tests;
 pub mod get_bibles;
 #[cfg(test)]
 mod get_bibles_tests;
@@ -149,6 +152,7 @@ pub use factbook::{
     FamilyFact, NameMeaning, PeopleDirectory, RelatedEntity,
 };
 pub use favorites::{Favorite, HistoryDay, SavedSearch, TabLocation, Visit, day_heading};
+pub use floating_windows::{FloatingWindow, ScreenRect, WindowId, WindowPlacement, WindowSnapshot};
 pub use guide::{
     CommentaryRow, GuideArrangement, GuideSection, Guides, LibrarySections, SectionData,
     SectionPlace, SectionSource, SectionStatus,

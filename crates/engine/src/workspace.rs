@@ -12,6 +12,7 @@ use obs_scripture::{ListedVersification, Passage, Verse, VerseMap};
 use serde::{Deserialize, Serialize};
 
 use crate::compare::{Comparison, in_range_chapters};
+use crate::floating_windows::{FloatingWindow, WindowId, WindowPlacement};
 use crate::link::{ToStandard, to_native, to_standard};
 use crate::persist::{LayoutNode, WorkspaceSnapshot};
 
@@ -592,6 +593,22 @@ pub enum Effect {
     OpenLauncher(crate::toolbar::Launcher),
     /// Open the Customize toolbar window (View → Customize toolbar…, #141).
     CustomizeToolbar,
+    /// Move a Tab out of its Panel into a new floating window (#152), as the one Tab of
+    /// Panel `panel` there, at `placement` when given.
+    Float {
+        tab: TabId,
+        window: WindowId,
+        panel: PanelId,
+        placement: Option<WindowPlacement>,
+    },
+    /// Move a Tab out of its floating window into a new Panel `panel` at the right of the
+    /// main window (#152).
+    Dock {
+        tab: TabId,
+        panel: PanelId,
+    },
+    /// Close a floating window, its Panels moving to the right of the main window (#152).
+    DockWindow(WindowId),
 }
 
 /// How the caller asked for a Tab to be opened.
@@ -621,6 +638,10 @@ pub struct Workspace {
     clock: u64,
     /// How the UI currently arranges the Panels (kept up to date by the UI, for saving).
     pub arrangement: Option<LayoutNode>,
+    /// The floating windows (#152), oldest first: each one's Panels and place on screen,
+    /// kept up to date by the UI like [`Self::arrangement`].
+    pub floating: Vec<FloatingWindow>,
+    next_window: u64,
     /// Tabs that were opened or jumped since the last [`Workspace::take_visits`], oldest
     /// first, for History (#155).
     visits: Vec<PendingVisit>,
@@ -1391,11 +1412,28 @@ impl Workspace {
                 },
             );
         }
-        let placed: Vec<(u64, Vec<u64>, Option<u64>)> = snap
+        let mut placed: Vec<(u64, Vec<u64>, Option<u64>)> = snap
             .layout
             .as_ref()
             .map(LayoutNode::panels)
             .unwrap_or_default();
+        for w in &snap.windows {
+            placed.extend(w.layout.panels());
+        }
+        self.floating = snap
+            .windows
+            .into_iter()
+            .map(|w| FloatingWindow {
+                id: WindowId(w.id),
+                arrangement: Some(w.layout),
+                placement: w.placement,
+            })
+            .collect();
+        self.next_window = self
+            .floating
+            .iter()
+            .map(|w| w.id.0)
+            .fold(self.next_window, u64::max);
         let mut layout = snap.layout;
         // Tabs the layout does not place get a Panel of their own on the right.
         let unplaced: Vec<u64> = self
@@ -1463,5 +1501,134 @@ impl Workspace {
         self.remembered.clear();
         self.last_reading_panel = None;
         self.last_other_panel = None;
+        self.arrangement = None;
+        self.floating.clear();
+    }
+
+    /// The floating window a Tab is in (none: the main window).
+    pub fn window_of(&self, tab: TabId) -> Option<WindowId> {
+        self.floating
+            .iter()
+            .find(|w| {
+                w.arrangement
+                    .as_ref()
+                    .is_some_and(|a| a.panels().iter().any(|(_, tabs, _)| tabs.contains(&tab.0)))
+            })
+            .map(|w| w.id)
+    }
+
+    /// Float a Tab in a new window of its own (#152), at `placement` when given. A Tab that
+    /// is already alone in a floating window stays there. Returns its window.
+    pub fn float(&mut self, tab: TabId, placement: Option<WindowPlacement>) -> Option<WindowId> {
+        if !self.tabs.contains_key(&tab) {
+            return None;
+        }
+        if let Some(w) = self.window_of(tab)
+            && self.window_tabs(w).len() == 1
+        {
+            return Some(w);
+        }
+        self.next_window += 1;
+        let window = WindowId(self.next_window);
+        let panel = self.move_to_new_panel(tab);
+        self.floating.push(FloatingWindow {
+            id: window,
+            arrangement: Some(LayoutNode::Panel {
+                panel: panel.0,
+                tabs: vec![tab.0],
+                active: Some(tab.0),
+            }),
+            placement,
+        });
+        self.effects.push(Effect::Float {
+            tab,
+            window,
+            panel,
+            placement,
+        });
+        self.focus(tab);
+        Some(window)
+    }
+
+    /// Move a Tab from its floating window into a new Panel at the right of the main window
+    /// (#152). Returns false for a Tab already in the main window.
+    pub fn dock(&mut self, tab: TabId) -> bool {
+        if self.window_of(tab).is_none() {
+            return false;
+        }
+        let panel = self.move_to_new_panel(tab);
+        self.arrangement = Some(beside_right(
+            self.arrangement.take(),
+            LayoutNode::Panel {
+                panel: panel.0,
+                tabs: vec![tab.0],
+                active: Some(tab.0),
+            },
+        ));
+        self.effects.push(Effect::Dock { tab, panel });
+        self.focus(tab);
+        true
+    }
+
+    /// Close a floating window: its Panels move, as they were, to the right of the main
+    /// window (#152). Returns false for no such window.
+    pub fn dock_window(&mut self, window: WindowId) -> bool {
+        let Some(i) = self.floating.iter().position(|w| w.id == window) else {
+            return false;
+        };
+        let w = self.floating.remove(i);
+        if let Some(node) = w.arrangement {
+            self.arrangement = Some(beside_right(self.arrangement.take(), node));
+        }
+        self.effects.push(Effect::DockWindow(window));
+        true
+    }
+
+    /// The Tabs in a floating window.
+    pub fn window_tabs(&self, window: WindowId) -> Vec<TabId> {
+        self.floating
+            .iter()
+            .filter(|w| w.id == window)
+            .filter_map(|w| w.arrangement.as_ref())
+            .flat_map(LayoutNode::panels)
+            .flat_map(|(_, tabs, _)| tabs)
+            .map(TabId)
+            .collect()
+    }
+
+    /// Take a Tab out of its Panel (and out of the saved arrangements, a floating window left
+    /// empty closing) into a new Panel of its own, which is placed by the caller.
+    fn move_to_new_panel(&mut self, tab: TabId) -> PanelId {
+        for (tabs, active) in self.panels.values_mut() {
+            tabs.retain(|t| *t != tab);
+            if *active == Some(tab) {
+                *active = tabs.last().copied();
+            }
+        }
+        self.panels.retain(|_, (tabs, _)| !tabs.is_empty());
+        let mut others: std::collections::BTreeSet<u64> = self.tabs.keys().map(|t| t.0).collect();
+        others.remove(&tab.0);
+        self.arrangement = self.arrangement.take().and_then(|a| a.retain_tabs(&others));
+        for w in &mut self.floating {
+            w.arrangement = w.arrangement.take().and_then(|a| a.retain_tabs(&others));
+        }
+        self.floating.retain(|w| w.arrangement.is_some());
+        let panel = self.new_panel_id();
+        self.panels.insert(panel, (vec![tab], Some(tab)));
+        panel
+    }
+}
+
+/// `node` added at the right of an arrangement.
+fn beside_right(arrangement: Option<LayoutNode>, node: LayoutNode) -> LayoutNode {
+    match arrangement {
+        None => node,
+        Some(LayoutNode::Row { mut children }) => {
+            children.push((node, 1.0));
+            LayoutNode::Row { children }
+        }
+        Some(other) => LayoutNode::Row {
+            children: vec![(other, 2.0), (node, 1.0)],
+        },
     }
 }

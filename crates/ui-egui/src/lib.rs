@@ -309,11 +309,38 @@ impl eframe::App for App {
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         if !self.styled {
             theme::install(ui.ctx());
             self.styled = true;
         }
+        // Floating windows (#152) are kept on screens that are connected.
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.shell.wants_screens()
+            && let Some(window) = frame.winit_window()
+        {
+            let ppp = ui.ctx().pixels_per_point();
+            let mut screens: Vec<obs_engine::ScreenRect> = Vec::new();
+            for m in window
+                .current_monitor()
+                .into_iter()
+                .chain(window.available_monitors())
+            {
+                let (at, size) = (m.position(), m.size());
+                let screen = obs_engine::ScreenRect {
+                    x: at.x as f32 / ppp,
+                    y: at.y as f32 / ppp,
+                    width: size.width as f32 / ppp,
+                    height: size.height as f32 / ppp,
+                };
+                if !screens.contains(&screen) {
+                    screens.push(screen);
+                }
+            }
+            self.shell.set_screens(screens);
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = frame;
         #[cfg(not(target_arch = "wasm32"))]
         {
             let dropped = ui.ctx().input(|i| {

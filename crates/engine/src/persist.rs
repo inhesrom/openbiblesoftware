@@ -10,6 +10,7 @@ use obs_store::{
     Annotation, Change, FavoriteRow, Notebook, PlanReadingRow, ReadingPlanRow, VisitRow,
 };
 
+use crate::floating_windows::WindowSnapshot;
 use crate::workspace::{TabKind, Workspace};
 
 /// Snapshot format version; bump when the shape changes incompatibly.
@@ -131,6 +132,9 @@ pub struct WorkspaceSnapshot {
     pub remembered: Vec<(String, u64)>,
     pub last_reading_panel: Option<u64>,
     pub last_other_panel: Option<u64>,
+    /// Floating windows (#152), each with its own Panels and where it was on screen.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub windows: Vec<WindowSnapshot>,
 }
 
 impl WorkspaceSnapshot {
@@ -152,6 +156,15 @@ impl WorkspaceSnapshot {
         });
         let keep: BTreeSet<u64> = self.tabs.iter().map(|t| t.id).collect();
         self.layout = self.layout.and_then(|l| l.retain_tabs(&keep));
+        self.windows = std::mem::take(&mut self.windows)
+            .into_iter()
+            .filter_map(|w| {
+                Some(WindowSnapshot {
+                    layout: w.layout.retain_tabs(&keep)?,
+                    ..w
+                })
+            })
+            .collect();
         if self.focused.is_some_and(|f| !keep.contains(&f)) {
             self.focused = None;
         }
@@ -353,6 +366,7 @@ impl UserData for obs_store::UserStore {
 impl Workspace {
     /// The Workspace as it is now.
     pub fn snapshot(&self) -> WorkspaceSnapshot {
+        let live: BTreeSet<u64> = self.tabs().map(|t| t.id.0).collect();
         WorkspaceSnapshot {
             version: SNAPSHOT_VERSION,
             tabs: self
@@ -372,6 +386,17 @@ impl Workspace {
             remembered: self.remembered_slots(),
             last_reading_panel: self.last_panels().0,
             last_other_panel: self.last_panels().1,
+            windows: self
+                .floating
+                .iter()
+                .filter_map(|w| {
+                    Some(WindowSnapshot {
+                        id: w.id.0,
+                        layout: w.arrangement.clone()?.retain_tabs(&live)?,
+                        placement: w.placement,
+                    })
+                })
+                .collect(),
         }
     }
 }

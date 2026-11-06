@@ -204,8 +204,12 @@ _Avoid_: Changelog, Diff
 ### Workspace
 
 **Workspace**:
-The live arrangement of Panels and Tabs in the app window.
+The live arrangement of Panels and Tabs in the main window and any Floating windows.
 _Avoid_: Layout (for the live arrangement), Desktop
+
+**Floating window**:
+An OS window of its own holding Panels and Tabs of the Workspace, so they can sit on another monitor. A Tab goes into a new one from its right-click or ⋯ menu (Float in new window) or by being dragged out of its window, and comes back with Move to main window. Closing a Floating window moves its Panels back into the main window. Link sets work across windows, and Layouts and the Last session keep each Floating window with where it was on screen; one whose monitor is gone when it is restored opens on a monitor that is there.
+_Avoid_: Popout, Undocked window, Detached Panel
 
 **Panel**:
 A dockable, resizable region of the Workspace that holds one or more Tabs.
@@ -240,7 +244,7 @@ The other Resources of a Resource Tab's Resource type, in Preferred order. The T
 _Avoid_: Parallel Tabs, Resource swap, Synced resources
 
 **Layout**:
-A named, saved snapshot of the Workspace, including its Link sets, that the user can restore.
+A named, saved snapshot of the Workspace, including its Link sets and Floating windows, that the user can restore.
 _Avoid_: Workspace (for the saved snapshot), Preset, Arrangement
 
 **Favorite**:
