@@ -984,7 +984,7 @@ impl Shell {
 pub(super) fn hint(which: Launcher) -> &'static str {
     match which {
         Launcher::Library => "Find and open a Resource",
-        Launcher::Guides => "Passage Guide, Word Study, Factbook",
+        Launcher::Guides => "Passage Guide, Word Study, Factbook, Topic Guide",
         Launcher::Tools => "Search, Text Comparison, Notes and more",
         Launcher::Layouts => "Saved and built-in Layouts",
     }
@@ -997,6 +997,7 @@ fn guide_hint(id: &str) -> &'static str {
         "guide.exegetical_guide" => "Passage, e.g. Ps 23",
         "guide.word_study" => "G26, ἀγάπη, agape or love",
         "guide.factbook" => "A person or place, e.g. Abraham",
+        "guide.topic_guide" => "A topic, e.g. Forgiveness",
         _ => "",
     }
 }
@@ -1009,6 +1010,7 @@ fn guide_with(id: &'static str, text: &str) -> (&'static str, Value) {
     match id {
         "guide.passage_guide" | "guide.exegetical_guide" => (id, json!({ "passage": text })),
         "guide.factbook" => (id, json!({ "name": text })),
+        "guide.topic_guide" => (id, json!({ "text": text })),
         _ => (id, json!({})),
     }
 }

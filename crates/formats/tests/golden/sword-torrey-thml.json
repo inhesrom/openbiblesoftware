@@ -1,0 +1,457 @@
+{
+  "content_hash": "sha256:17ed6ea90dea12f0ec6418262d1b43a722a4d0334b039c9143990ca7df19cf76",
+  "keys": [
+    [
+      "FORGIVENESS OF INJURIES",
+      "FORGIVENESS OF INJURIES",
+      false
+    ],
+    [
+      "FORGIVENESS OF SIN",
+      "FORGIVENESS OF SIN",
+      false
+    ],
+    [
+      "PRAYER",
+      "PRAYER",
+      false
+    ]
+  ],
+  "manifest": {
+    "abbreviation": "ObsTorrey",
+    "attribution": "Licence: Public Domain\nLicence notes: Abridged from R. A. Torrey's New Topical Textbook (public domain) as CrossWire's Torrey module lays it out, for the Open Bible Software tests.\nImported from the SWORD module ObsTorrey.",
+    "key_schemes": [
+      "headword"
+    ],
+    "language": "en",
+    "license": "LicenseRef-PD",
+    "resource_id": "obstorrey",
+    "resource_type": "dictionary",
+    "source_file": "ObsTorrey",
+    "source_format": "sword",
+    "source_url": null,
+    "title": "Open Bible test topical index (ThML, laid out like Torrey's Topical Textbook)"
+  },
+  "report": {
+    "books": [],
+    "dropped_markup": {},
+    "entries": 3,
+    "license_missing": false,
+    "notes": 0,
+    "source_format": "sword (ThML)",
+    "tagged_words": 0,
+    "verse_map": null,
+    "verses": 0,
+    "versification_hint": null,
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "FORGIVENESS OF INJURIES",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..26",
+          "kind": "para",
+          "style": "prose",
+          "text": "- Christ set an example of"
+        },
+        {
+          "at": "27..35",
+          "kind": "para",
+          "style": "prose",
+          "text": "Lu 23:34"
+        },
+        {
+          "at": "27..35",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 23,
+                "verse": 34
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 23,
+                "verse": 34
+              }
+            }
+          ],
+          "text": "Lu 23:34"
+        },
+        {
+          "at": "36..47",
+          "kind": "para",
+          "style": "prose",
+          "text": "- Commanded"
+        },
+        {
+          "at": "48..66",
+          "kind": "para",
+          "style": "prose",
+          "text": "Mr 11:25; Ro 12:19"
+        },
+        {
+          "at": "48..66",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MRK",
+                "chapter": 11,
+                "verse": 25
+              },
+              "start": {
+                "book": "MRK",
+                "chapter": 11,
+                "verse": 25
+              }
+            },
+            {
+              "end": {
+                "book": "ROM",
+                "chapter": 12,
+                "verse": 19
+              },
+              "start": {
+                "book": "ROM",
+                "chapter": 12,
+                "verse": 19
+              }
+            }
+          ],
+          "text": "Mr 11:25; Ro 12:19"
+        },
+        {
+          "at": "67..79",
+          "kind": "para",
+          "style": "prose",
+          "text": "- MOTIVES TO"
+        },
+        {
+          "at": "80..98",
+          "kind": "para",
+          "style": "prose",
+          "text": ". The mercy of God"
+        },
+        {
+          "at": "99..106",
+          "kind": "para",
+          "style": "prose",
+          "text": "Lu 6:36"
+        },
+        {
+          "at": "99..106",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 6,
+                "verse": 36
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 6,
+                "verse": 36
+              }
+            }
+          ],
+          "text": "Lu 6:36"
+        },
+        {
+          "at": "107..132",
+          "kind": "para",
+          "style": "prose",
+          "text": ". God's forgiveness of us"
+        },
+        {
+          "at": "133..141",
+          "kind": "para",
+          "style": "prose",
+          "text": "Eph 4:32"
+        },
+        {
+          "at": "133..141",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "EPH",
+                "chapter": 4,
+                "verse": 32
+              },
+              "start": {
+                "book": "EPH",
+                "chapter": 4,
+                "verse": 32
+              }
+            }
+          ],
+          "text": "Eph 4:32"
+        },
+        {
+          "at": "142..170",
+          "kind": "para",
+          "style": "prose",
+          "text": ". Christ's forgiveness of us"
+        },
+        {
+          "at": "171..179",
+          "kind": "para",
+          "style": "prose",
+          "text": "Col 3:13"
+        },
+        {
+          "at": "171..179",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "COL",
+                "chapter": 3,
+                "verse": 13
+              },
+              "start": {
+                "book": "COL",
+                "chapter": 3,
+                "verse": 13
+              }
+            }
+          ],
+          "text": "Col 3:13"
+        },
+        {
+          "at": "180..193",
+          "kind": "para",
+          "style": "prose",
+          "text": "- Exemplified"
+        },
+        {
+          "at": "194..202",
+          "kind": "para",
+          "style": "prose",
+          "text": ". Joseph"
+        },
+        {
+          "at": "203..214",
+          "kind": "para",
+          "style": "prose",
+          "text": "Ge 50:20,21"
+        },
+        {
+          "at": "203..214",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "GEN",
+                "chapter": 50,
+                "verse": 20
+              },
+              "start": {
+                "book": "GEN",
+                "chapter": 50,
+                "verse": 20
+              }
+            },
+            {
+              "end": {
+                "book": "GEN",
+                "chapter": 50,
+                "verse": 21
+              },
+              "start": {
+                "book": "GEN",
+                "chapter": 50,
+                "verse": 21
+              }
+            }
+          ],
+          "text": "Ge 50:20,21"
+        }
+      ],
+      "text": "- Christ set an example of\nLu 23:34\n- Commanded\nMr 11:25; Ro 12:19\n- MOTIVES TO\n. The mercy of God\nLu 6:36\n. God's forgiveness of us\nEph 4:32\n. Christ's forgiveness of us\nCol 3:13\n- Exemplified\n. Joseph\nGe 50:20,21",
+      "title": "FORGIVENESS OF INJURIES"
+    },
+    {
+      "id": "FORGIVENESS OF SIN",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..25",
+          "kind": "para",
+          "style": "prose",
+          "text": "- Promised through Christ"
+        },
+        {
+          "at": "26..34",
+          "kind": "para",
+          "style": "prose",
+          "text": "Ac 13:38"
+        },
+        {
+          "at": "26..34",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 13,
+                "verse": 38
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 13,
+                "verse": 38
+              }
+            }
+          ],
+          "text": "Ac 13:38"
+        },
+        {
+          "at": "35..60",
+          "kind": "para",
+          "style": "prose",
+          "text": "- Granted to the penitent"
+        },
+        {
+          "at": "61..68",
+          "kind": "para",
+          "style": "prose",
+          "text": "Ac 2:38"
+        },
+        {
+          "at": "61..68",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 2,
+                "verse": 38
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 2,
+                "verse": 38
+              }
+            }
+          ],
+          "text": "Ac 2:38"
+        }
+      ],
+      "text": "- Promised through Christ\nAc 13:38\n- Granted to the penitent\nAc 2:38",
+      "title": "FORGIVENESS OF SIN"
+    },
+    {
+      "id": "PRAYER",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..11",
+          "kind": "para",
+          "style": "prose",
+          "text": "- Commanded"
+        },
+        {
+          "at": "12..37",
+          "kind": "para",
+          "style": "prose",
+          "text": "Isa 55:6; Mt 7:7; Php 4:6"
+        },
+        {
+          "at": "12..37",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ISA",
+                "chapter": 55,
+                "verse": 6
+              },
+              "start": {
+                "book": "ISA",
+                "chapter": 55,
+                "verse": 6
+              }
+            },
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 7,
+                "verse": 7
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 7,
+                "verse": 7
+              }
+            },
+            {
+              "end": {
+                "book": "PHP",
+                "chapter": 4,
+                "verse": 6
+              },
+              "start": {
+                "book": "PHP",
+                "chapter": 4,
+                "verse": 6
+              }
+            }
+          ],
+          "text": "Isa 55:6; Mt 7:7; Php 4:6"
+        },
+        {
+          "at": "38..49",
+          "kind": "para",
+          "style": "prose",
+          "text": "- God hears"
+        },
+        {
+          "at": "50..64",
+          "kind": "para",
+          "style": "prose",
+          "text": "Ps 10:17; 65:2"
+        },
+        {
+          "at": "50..64",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PSA",
+                "chapter": 10,
+                "verse": 17
+              },
+              "start": {
+                "book": "PSA",
+                "chapter": 10,
+                "verse": 17
+              }
+            },
+            {
+              "end": {
+                "book": "PSA",
+                "chapter": 65,
+                "verse": 2
+              },
+              "start": {
+                "book": "PSA",
+                "chapter": 65,
+                "verse": 2
+              }
+            }
+          ],
+          "text": "Ps 10:17; 65:2"
+        }
+      ],
+      "text": "- Commanded\nIsa 55:6; Mt 7:7; Php 4:6\n- God hears\nPs 10:17; 65:2",
+      "title": "PRAYER"
+    }
+  ],
+  "verses": []
+}

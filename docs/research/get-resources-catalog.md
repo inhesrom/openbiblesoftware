@@ -44,6 +44,7 @@ After removing duplicates, the app's catalog lists 27 Lexicons, 59 Commentaries 
 | ISBE | CrossWire (zLD) | Dictionary | Public Domain | yes, 9380 entries | yes |
 | Nave | CrossWire (zLD) | Dictionary | Public Domain | yes, 5320 entries | yes |
 | Hitchcock | CrossWire (zLD) | Dictionary | Public Domain | yes, 2612 entries | yes |
+| Torrey | CrossWire (RawLD) | Dictionary (topical index, #148) | Public Domain | yes, 628 entries (2026-11-06) | yes |
 
 Every Featured module comes from the main CrossWire repository, which is also the repository the catalog prefers when a module is offered more than once.
 

@@ -298,7 +298,9 @@ fn manifest(
     if !is_valid_resource_id(&resource_id) {
         return Err(ImportError::InvalidResourceId(resource_id));
     }
-    let title = or(&o.title, conf.description(), name);
+    // CrossWire's Nave conf writes its apostrophe as U+07F4 (NKo high tone apostrophe), which
+    // no bundled font has: "Naveߴs Topical Bible" (#148).
+    let title = or(&o.title, conf.description(), name).replace('\u{07F4}', "\u{2019}");
     let abbreviation = or(&o.abbreviation, conf.get("Abbreviation"), name);
     let language = or(&o.language, conf.lang(), "und");
     let mut m = Manifest::new(&resource_id, title, abbreviation, resource_type, language);
@@ -444,7 +446,9 @@ fn feed_tei(raw: &str, w: &mut Writer) {
                         Token::attr(&attrs, "osisRef").and_then(|r| w.parse_osis_ref(&r)),
                     ),
                     "p" => Element::Para(ParaStyle::Prose),
-                    "entryFree" | "superentry" | "entry" | "form" | "def" | "sense" => {
+                    // A topical index's subtopic items (Nave's), one paragraph each.
+                    "item" => Element::Para(ParaStyle::List),
+                    "entryFree" | "superentry" | "entry" | "form" | "def" | "sense" | "list" => {
                         Element::Container
                     }
                     other => Element::Dropped(format!("<{other}>")),

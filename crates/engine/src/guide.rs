@@ -60,10 +60,19 @@ pub enum GuideSection {
     LexiconSummaries,
     /// Exegetical Guide: each Morphology term of its words, explained in plain English.
     GrammaticalNotes,
+    /// Topic Guide (#148): each topical index's subtopics with their Passages
+    /// ([`crate::topic_guide`]).
+    TopicalEntries,
+    /// Topic Guide: every other Dictionary's article on the topic.
+    TopicArticles,
+    /// Topic Guide: the Passages the topical indexes cite most often.
+    TopicPassages,
+    /// Topic Guide: a Library search for the topic.
+    TopicSearch,
 }
 
 impl GuideSection {
-    pub const ALL: [GuideSection; 15] = [
+    pub const ALL: [GuideSection; 19] = [
         GuideSection::Commentaries,
         GuideSection::CrossReferences,
         GuideSection::KeyWords,
@@ -79,6 +88,10 @@ impl GuideSection {
         GuideSection::WordByWord,
         GuideSection::LexiconSummaries,
         GuideSection::GrammaticalNotes,
+        GuideSection::TopicalEntries,
+        GuideSection::TopicArticles,
+        GuideSection::TopicPassages,
+        GuideSection::TopicSearch,
     ];
 
     /// Stable id, as stored and as passed to commands.
@@ -99,6 +112,10 @@ impl GuideSection {
             GuideSection::WordByWord => "word_by_word",
             GuideSection::LexiconSummaries => "lexicon_summaries",
             GuideSection::GrammaticalNotes => "grammatical_notes",
+            GuideSection::TopicalEntries => "topical_entries",
+            GuideSection::TopicArticles => "topic_articles",
+            GuideSection::TopicPassages => "topic_passages",
+            GuideSection::TopicSearch => "topic_search",
         }
     }
 
@@ -123,6 +140,10 @@ impl GuideSection {
             GuideSection::WordByWord => "Word by word",
             GuideSection::LexiconSummaries => "Lexicon summaries",
             GuideSection::GrammaticalNotes => "Grammatical notes",
+            GuideSection::TopicalEntries => "Topical Bible entries",
+            GuideSection::TopicArticles => "Dictionary articles",
+            GuideSection::TopicPassages => "Key Passages",
+            GuideSection::TopicSearch => "Search",
         }
     }
 
@@ -141,13 +162,17 @@ impl GuideSection {
             GuideSection::Summary | GuideSection::KeyPassages | GuideSection::Related => {
                 ResourceType::PeopleAndPlaces
             }
-            GuideSection::DictionaryArticles => ResourceType::Dictionary,
+            GuideSection::DictionaryArticles
+            | GuideSection::TopicalEntries
+            | GuideSection::TopicArticles
+            | GuideSection::TopicPassages
+            | GuideSection::TopicSearch => ResourceType::Dictionary,
         }
     }
 
     /// Whether the section header shows how many rows it has (the Summary has none to count).
     pub fn counted(self) -> bool {
-        self != GuideSection::Summary
+        !matches!(self, GuideSection::Summary | GuideSection::TopicSearch)
     }
 
     /// Whether the section starts collapsed in a new (or reset) Guide arrangement (#15:
@@ -202,6 +227,13 @@ impl GuideSection {
                     .into_iter()
                     .any(|l| crate::key_words::is_original_language(&e.manifest.language, l))
                 })
+            }
+            // A topical index (Nave's, Torrey's), or for articles any other Dictionary.
+            GuideSection::TopicalEntries | GuideSection::TopicPassages => {
+                needed.any(|e| crate::topic_guide::is_topical_index(&e.manifest.resource_id))
+            }
+            GuideSection::TopicArticles => {
+                needed.any(|e| !crate::topic_guide::is_topical_index(&e.manifest.resource_id))
             }
             _ => needed.next().is_some(),
         }
@@ -304,6 +336,25 @@ impl GuideSection {
                 "None in your library: no Bible in this Passage's original language has \
                  Morphology for it."
             }
+            (GuideSection::TopicalEntries | GuideSection::TopicPassages, false) => {
+                "None in your library. Add a topical index (Nave's Topical Bible or Torrey's \
+                 Topical Textbook, under Dictionaries) to see this topic's subtopics and \
+                 Passages."
+            }
+            (GuideSection::TopicalEntries, true) => {
+                "None in your library: no topical index has this topic."
+            }
+            (GuideSection::TopicPassages, true) => {
+                "None in your library: no topical index cites a Passage for this topic."
+            }
+            (GuideSection::TopicArticles, false) => {
+                "None in your library. Add a Dictionary (Easton's, Smith's) to read about this \
+                 topic."
+            }
+            (GuideSection::TopicArticles, true) => {
+                "None in your library: no Dictionary has an article on this topic."
+            }
+            (GuideSection::TopicSearch, _) => "Type a topic to search your library for it.",
         }
     }
 }
@@ -316,14 +367,16 @@ impl Guide {
             Guide::WordStudy => "word_study",
             Guide::Factbook => "factbook",
             Guide::ExegeticalGuide => "exegetical_guide",
+            Guide::TopicGuide => "topic_guide",
         }
     }
 
-    pub const ALL: [Guide; 4] = [
+    pub const ALL: [Guide; 5] = [
         Guide::PassageGuide,
         Guide::WordStudy,
         Guide::Factbook,
         Guide::ExegeticalGuide,
+        Guide::TopicGuide,
     ];
 
     pub fn from_id(id: &str) -> Option<Self> {
@@ -356,6 +409,12 @@ impl Guide {
                 GuideSection::WordByWord,
                 GuideSection::LexiconSummaries,
                 GuideSection::GrammaticalNotes,
+            ],
+            Guide::TopicGuide => &[
+                GuideSection::TopicalEntries,
+                GuideSection::TopicArticles,
+                GuideSection::TopicPassages,
+                GuideSection::TopicSearch,
             ],
         }
     }
@@ -580,6 +639,12 @@ pub enum SectionData {
     LexiconSummaries(Vec<crate::exegetical_guide::LexiconSummary>),
     /// The Morphology terms of a Passage's words, explained (#144).
     GrammaticalNotes(Vec<crate::exegetical_guide::GrammarNote>),
+    /// Each topical index's entries on a topic, in Preferred order (#148).
+    TopicalEntries(Vec<crate::topic_guide::TopicalEntry>),
+    /// The Passages the topical entries cite most often (#148).
+    TopicPassages(Vec<crate::topic_guide::CitedPassage>),
+    /// The topic to search the library for (#148).
+    TopicSearch(String),
 }
 
 impl SectionData {
@@ -601,6 +666,9 @@ impl SectionData {
             SectionData::WordByWord(w) => w.word_count(),
             SectionData::LexiconSummaries(s) => s.len(),
             SectionData::GrammaticalNotes(n) => n.len(),
+            SectionData::TopicalEntries(e) => e.len(),
+            SectionData::TopicPassages(p) => p.len(),
+            SectionData::TopicSearch(q) => usize::from(!q.is_empty()),
         }
     }
 
@@ -645,6 +713,8 @@ pub struct LibrarySections {
     concordances: Arc<crate::word_sections::Concordances>,
     /// The People & places directory, shared with the Session's Factbooks (#149).
     directory: Arc<crate::factbook::DirectoryCache>,
+    /// The topic directory, shared with the Session's Topic Guides (#148).
+    topics: Arc<crate::topic_guide::TopicCache>,
 }
 
 impl SectionSource for LibrarySections {
@@ -655,6 +725,18 @@ impl SectionSource for LibrarySections {
         section: GuideSection,
         _: &JobContext,
     ) -> Result<SectionData, String> {
+        if matches!(
+            section,
+            GuideSection::TopicalEntries
+                | GuideSection::TopicArticles
+                | GuideSection::TopicPassages
+                | GuideSection::TopicSearch
+        ) {
+            let Key::Headword(topic) = key else {
+                return Err(format!("{} needs a topic", section.title()));
+            };
+            return crate::topic_guide::section(library, &self.topics, topic, section);
+        }
         if let Key::Headword(entity) = key {
             return crate::factbook::section(
                 library,
@@ -727,6 +809,10 @@ impl SectionSource for LibrarySections {
             | GuideSection::KeyPassages
             | GuideSection::DictionaryArticles
             | GuideSection::Related => Err(format!("{} needs a person or place", section.title())),
+            GuideSection::TopicalEntries
+            | GuideSection::TopicArticles
+            | GuideSection::TopicPassages
+            | GuideSection::TopicSearch => Err(format!("{} needs a topic", section.title())),
             GuideSection::WordByWord => {
                 let words =
                     crate::exegetical_guide::library_word_by_word(library, *passage, &self.bibles)?;
@@ -779,18 +865,20 @@ impl LibrarySections {
     }
 
     /// Sections that share `aliases`, the Bibles' rendering `indexes` and `concordances`,
-    /// and the People & places `directory` with the Session.
+    /// the People & places `directory` and the `topics` directory with the Session.
     pub fn with_shared(
         aliases: Arc<AliasCache>,
         indexes: Arc<crate::word_study::RenderingIndexes>,
         concordances: Arc<crate::word_sections::Concordances>,
         directory: Arc<crate::factbook::DirectoryCache>,
+        topics: Arc<crate::topic_guide::TopicCache>,
     ) -> Self {
         Self {
             aliases,
             indexes,
             concordances,
             directory,
+            topics,
             ..Self::default()
         }
     }
@@ -1001,6 +1089,8 @@ pub struct Guides {
     directory: Arc<crate::factbook::DirectoryCache>,
     /// Bibles' concordances, shared with the default source.
     concordances: Arc<crate::word_sections::Concordances>,
+    /// The topic directory, shared with the default source and the Topic Guide.
+    topics: Arc<crate::topic_guide::TopicCache>,
 }
 
 impl Default for Guides {
@@ -1009,6 +1099,7 @@ impl Default for Guides {
         let indexes = Arc::new(crate::word_study::RenderingIndexes::default());
         let directory = Arc::new(crate::factbook::DirectoryCache::default());
         let concordances = Arc::new(crate::word_sections::Concordances::default());
+        let topics = Arc::new(crate::topic_guide::TopicCache::default());
         Self {
             arrangements: BTreeMap::new(),
             results: BTreeMap::new(),
@@ -1020,12 +1111,14 @@ impl Default for Guides {
                 Arc::clone(&indexes),
                 Arc::clone(&concordances),
                 Arc::clone(&directory),
+                Arc::clone(&topics),
             )),
             aliases,
             alias_job: None,
             indexes,
             directory,
             concordances,
+            topics,
         }
     }
 }
@@ -1053,6 +1146,11 @@ impl Guides {
     /// The People & places directory the default source and the Factbook read.
     pub fn directory(&self) -> Arc<crate::factbook::DirectoryCache> {
         Arc::clone(&self.directory)
+    }
+
+    /// The topic directory the default source and the Topic Guide read.
+    pub fn topics(&self) -> Arc<crate::topic_guide::TopicCache> {
+        Arc::clone(&self.topics)
     }
 
     /// The Bibles' rendering indexes the default source reads.

@@ -1100,3 +1100,244 @@ fn a_chapter_or_range_command_shows_its_later_verses() {
     });
     drop(h);
 }
+
+/// #148: the Topic Guide on "Forgiveness" shows Nave's subtopics, Easton's article and the
+/// Key Passages; clicking a Passage moves its Link set (the Bible beside it goes there). Typed
+/// text shows the chooser with the topical index's synonyms.
+#[test]
+fn topic_guide_on_forgiveness_shows_naves_subtopics_and_a_passage_moves_the_link_set() {
+    use obs_engine::testing::bibles::{bible, v};
+    use obs_engine::testing::{easton_topics, topical_index};
+    let mut h = Harness::new();
+    let dir = std::env::temp_dir().join(format!("obs-shell-topic-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let files = Files(dir);
+    h.shell.st.session.library = Library::new();
+    let kjv = bible(
+        "kjv",
+        "KJV",
+        &[
+            (
+                v(Book::Genesis, 33, 4),
+                "And Esau ran to meet him, and embraced him, and fell on his neck, and kissed \
+                 him: and they wept.",
+            ),
+            (
+                v(Book::Luke, 23, 34),
+                "Then said Jesus, Father, forgive them; for they know not what they do.",
+            ),
+            (
+                v(Book::Ephesians, 4, 32),
+                "And be ye kind one to another, tenderhearted, forgiving one another, even as \
+                 God for Christ's sake hath forgiven you.",
+            ),
+        ],
+        None,
+        &[],
+    );
+    for r in [
+        kjv,
+        topical_index("nave"),
+        topical_index("torrey"),
+        easton_topics(),
+    ] {
+        add_file(&mut h, &files, &r);
+    }
+    h.shell.reset_layout();
+    let bible_tab = h
+        .shell
+        .session()
+        .workspace
+        .tabs()
+        .find(|t| t.kind == TabKind::Resource("kjv".into()))
+        .unwrap()
+        .id;
+    h.shell
+        .run("tab.go", &json!({ "tab": bible_tab.0, "text": "Gen 33:4" }));
+    h.frames(2);
+    let topic = TabId(
+        h.shell
+            .run(
+                "guide.topic_guide",
+                &json!({ "topic": "Forgiveness", "split": true }),
+            )
+            .unwrap()["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    h.frames(2);
+    let ws = &h.shell.session().workspace;
+    let link = ws.tab(bible_tab).unwrap().link;
+    assert!(link.is_some());
+    assert_eq!(
+        ws.tab(topic).unwrap().link,
+        link,
+        "joins the Bible's Link set"
+    );
+    until(&mut h, "Nave's subtopics", |h| {
+        find_in(h, topic, "OF ENEMIES").is_some()
+            && find_in(h, topic, "INSTANCES OF").is_some()
+            && find_in(h, topic, "Esau forgives Jacob").is_some()
+            && find_in(h, topic, "Nave: FORGIVENESS").is_some()
+    });
+    assert!(find_in(&h, topic, "Torrey: FORGIVENESS OF INJURIES").is_some());
+    assert!(find_in(&h, topic, "(from Sin, Forgiveness of)").is_some());
+    preview(&mut h, "topic-guide-forgiveness");
+    // The other sections, below: collapse the entries to bring them into view.
+    h.shell.run(
+        "guide.collapse_section",
+        &json!({ "guide": "topic_guide", "section": "topical_entries", "collapsed": true }),
+    );
+    until(&mut h, "the article and Key Passages", |h| {
+        find_in(h, topic, "Easton: Forgiveness of sin").is_some()
+            && find_in(h, topic, "cited 3×").is_some()
+    });
+    preview(&mut h, "topic-guide-key-passages");
+    h.shell.run(
+        "guide.collapse_section",
+        &json!({ "guide": "topic_guide", "section": "topic_passages", "collapsed": true }),
+    );
+    until(&mut h, "the Search button", |h| {
+        find_in(h, topic, "Search your library for “Forgiveness”").is_some()
+    });
+    assert_eq!(
+        headers(&h, topic),
+        [
+            "Topical Bible entries",
+            "Dictionary articles",
+            "Key Passages",
+            "Search"
+        ]
+    );
+    h.shell.run(
+        "guide.collapse_section",
+        &json!({ "guide": "topic_guide", "section": "topic_passages", "collapsed": false }),
+    );
+    until(&mut h, "Key Passages again", |h| {
+        find_in(h, topic, "cited 3×").is_some()
+    });
+
+    // The first Key Passage (most cited): Eph 4:32. Clicking it moves the Link set.
+    let key_row = find_in(&h, topic, "cited 3×").unwrap();
+    let eph = h
+        .shapes
+        .iter()
+        .filter(|(s, t)| t == "Eph 4:32" && (s.center().y - key_row.center().y).abs() < 4.0)
+        .map(|(s, _)| *s)
+        .next()
+        .unwrap_or_else(|| panic!("Eph 4:32 beside “cited 3×”: {:?}", h.texts()));
+    h.click(eph.center());
+    h.frames(3);
+    assert_eq!(
+        h.shell
+            .session()
+            .workspace
+            .tab(bible_tab)
+            .unwrap()
+            .history
+            .current(),
+        Some(v(Book::Ephesians, 4, 32)),
+        "the Bible in the Topic Guide's Link set went to Eph 4:32"
+    );
+
+    // ▸ shows a subtopic's Passages inline: Esau's row reads Gen 33:4 from the Bible.
+    h.shell.run(
+        "guide.collapse_section",
+        &json!({ "guide": "topic_guide", "section": "topical_entries", "collapsed": false }),
+    );
+    until(&mut h, "the entries again", |h| {
+        find_in(h, topic, "Esau forgives Jacob").is_some()
+    });
+    let esau = find_in(&h, topic, "Esau forgives Jacob").unwrap();
+    let toggle = h
+        .shapes
+        .iter()
+        .filter(|(s, t)| t == "▶" && (s.center().y - esau.center().y).abs() < 4.0)
+        .map(|(s, _)| *s)
+        .next()
+        .unwrap();
+    h.ctx.enable_accesskit();
+    h.click(toggle.center());
+    until(&mut h, "Esau's Passage inline", |h| {
+        h.tree.as_ref().is_some_and(|tree| {
+            tree.nodes.iter().any(|(_, node)| {
+                node.role() == egui::accesskit::Role::Label
+                    && node
+                        .value()
+                        .is_some_and(|t| t.starts_with("And Esau ran to meet him"))
+            })
+        })
+    });
+
+    // Torrey has two entries on Forgiveness; showing the first subtopic of one leaves the
+    // other's first subtopic closed.
+    let arrow_beside = |h: &Harness, label: &str| -> Option<(Rect, String)> {
+        let row = find_in(h, topic, label)?;
+        h.shapes
+            .iter()
+            .find(|(s, t)| (t == "▶" || t == "▼") && (s.center().y - row.center().y).abs() < 4.0)
+            .cloned()
+    };
+    // They are below the fold: wheel down to them.
+    for _ in 0..60 {
+        if arrow_beside(&h, "Christ set an example of").is_some()
+            && arrow_beside(&h, "Promised through Christ").is_some()
+        {
+            break;
+        }
+        h.events
+            .push(egui::Event::PointerMoved(pane(&h, topic).center()));
+        h.events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -60.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.frames(2);
+    }
+    h.frames(30);
+    until(&mut h, "both Torrey entries", |h| {
+        arrow_beside(h, "Christ set an example of").is_some()
+            && arrow_beside(h, "Promised through Christ").is_some()
+    });
+    let (injuries_toggle, _) = arrow_beside(&h, "Christ set an example of").unwrap();
+    h.click(injuries_toggle.center());
+    until(&mut h, "Torrey's first subtopic open", |h| {
+        arrow_beside(h, "Christ set an example of").is_some_and(|(_, a)| a == "▼")
+    });
+    assert_eq!(
+        arrow_beside(&h, "Promised through Christ").map(|(_, a)| a),
+        Some("▶".to_string()),
+        "the other Torrey entry's first subtopic stays closed"
+    );
+
+    // The chooser: the topic, longer headwords and the topical index's synonyms.
+    h.shell
+        .run("tab.go", &json!({ "tab": topic.0, "text": "forgiveness" }));
+    until(&mut h, "the topic chooser", |h| {
+        find_in(h, topic, "Pardon").is_some()
+            && find_in(h, topic, "see Sin, Forgiveness of").is_some()
+    });
+    assert!(find_in(&h, topic, "Forgiveness of injuries").is_some());
+    preview(&mut h, "topic-guide-chooser");
+    let injuries = find_in(&h, topic, "Forgiveness of injuries").unwrap();
+    h.click(injuries.center());
+    h.frames(3);
+    assert_eq!(
+        h.shell
+            .session()
+            .workspace
+            .tab(topic)
+            .unwrap()
+            .entry_history
+            .current(),
+        Some(Key::Headword("Forgiveness of injuries".into()))
+    );
+    until(&mut h, "Torrey's entry", |h| {
+        find_in(h, topic, "Christ set an example of").is_some()
+    });
+    drop(h);
+    drop(files);
+}

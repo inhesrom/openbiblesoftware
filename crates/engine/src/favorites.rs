@@ -330,6 +330,11 @@ impl Session {
                 );
                 Some((entry(key), label))
             }
+            TabKind::Guide(Guide::TopicGuide) => {
+                let key = entry_key.clone()?;
+                let label = format!("{key} · {}", Guide::TopicGuide.title());
+                Some((entry(key), label))
+            }
             TabKind::Guide(Guide::PassageGuide | Guide::ExegeticalGuide)
             | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences) => {
                 let v = verse?;
@@ -387,6 +392,12 @@ impl Session {
                 return Err("This Factbook has no person or place".into());
             };
             return Ok(self.open_factbook_at(id, req, false));
+        }
+        if kind == TabKind::Guide(Guide::TopicGuide) {
+            let Some(Key::Headword(topic)) = &location.key else {
+                return Err("This Topic Guide has no topic".into());
+            };
+            return Ok(self.open_topic_guide_at(topic, req, false));
         }
         let keyed = matches!(
             kind,

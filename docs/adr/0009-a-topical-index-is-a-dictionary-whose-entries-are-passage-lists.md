@@ -1,0 +1,16 @@
+# A topical index is a Dictionary whose entries are Passage lists
+
+The Topic Guide (#148) needs topical indexes such as Nave's Topical Bible and Torrey's Topical Textbook: works keyed by an English headword ("FORGIVENESS") whose entries are subtopics, each a list of Passages ("→ OF ENEMIES Ex 23:4,5; Pr 19:11; …", "See SIN, FORGIVENESS OF"). We keep the six Resource types: a topical index is a **Dictionary**, keyed by Headword like any other, and the Topic Guide reads its entries as subtopics with Passage lists. It knows which Dictionaries are topical indexes by resource id (`topic_guide::TOPICAL_INDEXES`: `nave`, `naves`, `torrey`, the ids SWORD Import and Get Resources give CrossWire's modules), as the Factbook already knows its names Dictionary (`hitchcock`). Its Topical Bible entries section shows those Dictionaries; its Dictionary articles section shows every other one.
+
+## Considered Options
+
+- **A seventh Resource type, "Topical index":** the type would say plainly what the Resource is, but every place that lists or matches Resource types (the `.obr` manifest, Get Resources filters and its catalog, Preferred order, Collections rules, the Library Tab, Search scope, Parallel resources, the empty states) would gain a case, and an `.obr` with the new type could not be opened by an app built before it. CrossWire distributes both works as ordinary lexicon/dictionary modules (`ModDrv=zLD`/`RawLD`), so SWORD Import would also need a rule to tell them apart.
+- **A Dictionary, with a manifest flag set at Import (from the conf's `LCSH=Bible--Indexes, Topical.`):** exact for SWORD modules, but it changes the `.obr` manifest table (a format change) for one bit the two known modules already give by name.
+- **A Dictionary, recognised by its content (share of text inside Bible references):** needs no list, but the live data does not separate cleanly: Torrey's entries run at about 0.12 references per word, while 10% of Easton's articles run at 0.13 or more (measured on the real modules, 2026-11-06).
+- **A Dictionary, recognised by resource id (chosen):** no format or type change; Nave's and Torrey's stay readable as Dictionaries everywhere else (Library, Search, Parallel resources, a Dictionary Tab), and the Topic Guide reads them as Passage lists. The live CrossWire catalog has exactly these two topical indexes (the only confs with `LCSH=Bible--Indexes, Topical.`).
+
+## Consequences
+
+- A topical index the list does not name (a user's own import under another id) shows under Dictionary articles, not Topical Bible entries. Adding one is a one-line change to `TOPICAL_INDEXES`; if topical indexes become many, the manifest flag above is the next step and this list its migration table.
+- SWORD Import keeps each TEI `<item>` as its own list paragraph (it used to drop `<list>`/`<item>`, running Nave's items into one line), so a subtopic's items and its `See` lines stay apart in the Dictionary Tab too.
+- The Starter library has no topical index: Nave's CrossWire module names a ccel.org file as its source, which #20 excludes from anything we ship or curate. Both topical indexes are Featured under Get Resources › Dictionaries, downloaded by the user from CrossWire.

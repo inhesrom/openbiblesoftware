@@ -3,7 +3,8 @@
 Decisions #15 (sections, Guide arrangement, navigation), #18 (Tab header, placement) and #20
 (derived indexes). Key words and People & places are #54 (see below); the Word Study Guide is
 #55 ([word-study.md](word-study.md)), which reuses this framework (`State::guide_page` in
-`ui-egui`).
+`ui-egui`), as do the Factbook ([factbook.md](factbook.md)) and the Topic Guide
+([topic-guide.md](topic-guide.md)).
 
 ## Contract
 

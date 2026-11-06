@@ -2223,3 +2223,60 @@ pub fn mock_open_catalogue(root: &Path, notice: &str) -> Vec<crate::open_catalog
     ));
     vec![source]
 }
+
+/// A topical index of the SWORD test modules (#148) under the resource id the Topic Guide
+/// knows: `nave` (TEI, laid out like Nave's Topical Bible) or `torrey` (ThML, like Torrey's
+/// Topical Textbook), imported through SWORD Import as Get Resources would.
+pub fn topical_index(id: &str) -> obs_model::Resource {
+    let (module, title, abbreviation) = match id {
+        "nave" => ("ObsNave", "Nave's Topical Bible", "Nave"),
+        _ => ("ObsTorrey", "Torrey's New Topical Textbook", "Torrey"),
+    };
+    let source = obs_formats::SwordSource::open(&sword_assets()).unwrap();
+    let options = obs_formats::SwordOptions {
+        resource_id: id.into(),
+        title: title.into(),
+        abbreviation: abbreviation.into(),
+        tool_version: "test".into(),
+        ..Default::default()
+    };
+    obs_formats::import_sword(&source, module, &options)
+        .unwrap()
+        .0
+}
+
+/// Easton's Bible Dictionary reduced to its public-domain articles on forgiveness and pardon
+/// (#148), laid out as the Starter converter writes them: a heading, then the article.
+pub fn easton_topics() -> obs_model::Resource {
+    use obs_model::{
+        Key, KeyScheme, Manifest, ResourceBuilder, ResourceType, SpanKind, UnitId, UnitKind,
+    };
+    let mut m = Manifest::new(
+        "easton",
+        "Easton's Bible Dictionary",
+        "Easton",
+        ResourceType::Dictionary,
+        "en",
+    );
+    m.key_schemes = vec![KeyScheme::Headword];
+    m.license = "LicenseRef-PublicDomain".into();
+    let mut b = ResourceBuilder::new(m);
+    for (head, body) in [
+        (
+            "Forgiveness of sin",
+            "One of the constituent parts of justification. In pardoning sin, God absolves the \
+             sinner from the condemnation of the law, and that on account of the work of Christ.",
+        ),
+        (
+            "Pardon",
+            "The forgiveness of a crime or of the penalty associated with it.",
+        ),
+    ] {
+        let unit = UnitId::new(head.to_lowercase().replace(' ', "-")).unwrap();
+        let text = format!("{head}\n{body}");
+        b.add_unit(unit.clone(), UnitKind::Entry, Some(head.into()), text);
+        b.add_span(&unit, 0..head.len(), SpanKind::Heading { level: 2 });
+        b.add_key(Key::Headword(head.into()), &unit, None, false);
+    }
+    b.build().unwrap()
+}

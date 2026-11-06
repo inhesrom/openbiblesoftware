@@ -65,6 +65,8 @@ pub struct Session {
     pub word_study: crate::word_study::WordStudies,
     /// Factbook choosers and the People & places directory load (#149).
     pub factbooks: crate::factbook::Factbooks,
+    /// Topic Guide choosers and the topic directory load (#148).
+    pub topic_guides: crate::topic_guide::TopicGuides,
     /// The Notes Tool's Notebook choice, card order and card to reveal (#64).
     pub notes: crate::notes::NotesTool,
     /// Copy verses' options and Copy presets (#154).
@@ -120,6 +122,7 @@ impl Session {
             guides,
             word_study,
             factbooks: crate::factbook::Factbooks::default(),
+            topic_guides: crate::topic_guide::TopicGuides::default(),
             notes: crate::notes::NotesTool::default(),
             copy_verses: crate::copy_verses::CopyVerses::default(),
             places: crate::favorites::FavoritesAndHistory::default(),

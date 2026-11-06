@@ -378,7 +378,7 @@ impl State {
 
     /// Read a Key Passage: the most recently active Bible Tab goes there (its Link set
     /// follows); with Ctrl/Cmd, or with no Bible open, the ★ Bible opens there.
-    fn open_key_passage(&mut self, factbook: TabId, passage: Passage, new_tab: bool) {
+    pub(super) fn open_key_passage(&mut self, factbook: TabId, passage: Passage, new_tab: bool) {
         let library = &self.session.library;
         let bible = (!new_tab)
             .then(|| {

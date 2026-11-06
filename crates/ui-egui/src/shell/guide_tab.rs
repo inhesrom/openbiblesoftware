@@ -15,6 +15,7 @@ use serde_json::json;
 use super::State;
 use super::factbook_tab::FactbookAction;
 use super::guide_words::WordsAction;
+use super::topic_guide_tab::TopicAction;
 use crate::theme;
 
 /// Height of a section header.
@@ -65,6 +66,8 @@ pub(super) enum Action {
     },
     /// Factbook (#149): a link, a Key Passage, an article or a chooser row.
     Factbook(FactbookAction),
+    /// Topic Guide (#148): a Passage, a topic, an entry, a preview toggle or Search.
+    Topic(TopicAction),
     /// An empty state's button (#135): Get Resources, the Starter library or Import.
     Command(&'static str, serde_json::Value),
 }
@@ -290,6 +293,7 @@ impl State {
             Action::Commentary(row, new_tab) => self.open_commentary(tab, &row, new_tab),
             Action::Words(a) => self.words_action(tab, a),
             Action::Factbook(a) => self.factbook_action(tab, a),
+            Action::Topic(a) => self.topic_action(tab, a),
             Action::Command(id, params) => {
                 self.run(id, &params);
             }
@@ -441,6 +445,15 @@ impl State {
                 self.grammatical_notes_section(ui, notes);
                 None
             }
+            SectionData::TopicalEntries(entries) => self
+                .topical_entries_section(ui, tab, entries, new_tab)
+                .map(Action::Topic),
+            SectionData::TopicPassages(passages) => self
+                .topic_passages_section(ui, passages, new_tab)
+                .map(Action::Topic),
+            SectionData::TopicSearch(query) => self
+                .topic_search_section(ui, query, new_tab)
+                .map(Action::Topic),
         }
     }
 

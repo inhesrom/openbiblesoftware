@@ -110,6 +110,9 @@ pub mod toolbar_settings;
 mod toolbar_settings_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod toolbar_tests;
+pub mod topic_guide;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod topic_guide_tests;
 pub mod word_info;
 pub mod word_sections;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -207,6 +210,9 @@ pub use toolbar::{
     LibraryLauncherSection,
 };
 pub use toolbar_settings::{LauncherLabels, ToolbarPosition, ToolbarSettings};
+pub use topic_guide::{
+    CitedPassage, Subtopic, TopicChoice, TopicChooser, TopicDirectory, TopicGuides, TopicalEntry,
+};
 pub use word_info::{LemmaCard, LexiconGloss, PartRole, ShownWord, WordInfo, WordPart};
 pub use word_sections::{
     FilteredOccurrences, Form, Forms, OCCURRENCE_ROWS, OccurrenceList, OccurrencePreview,

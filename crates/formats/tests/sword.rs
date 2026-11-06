@@ -497,6 +497,64 @@ fn dictionary_keyed_by_headword_with_link_aliases() {
     check_golden("topics-osis", &snapshot(&r, &report));
 }
 
+/// A topical index (#148) laid out like Nave's (TEI): each `<item>` under a subtopic is its own
+/// list paragraph, so a subtopic's items and its `See` lines stay apart.
+#[test]
+fn tei_topical_index_keeps_each_subtopic_item_a_paragraph() {
+    let (r, report) = import("ObsNave");
+    assert_eq!(r.manifest.resource_type, ResourceType::Dictionary);
+    // The conf's U+07F4 apostrophe (as in CrossWire's Nave) becomes a typographic one.
+    assert_eq!(
+        r.manifest.title,
+        "Open Bible test topical index (TEI, laid out like Nave\u{2019}s Topical Bible)"
+    );
+    assert!(
+        report.dropped_markup.is_empty(),
+        "{:?}",
+        report.dropped_markup
+    );
+    let entry = r
+        .units
+        .iter()
+        .find(|u| u.id.as_str() == "FORGIVENESS")
+        .unwrap();
+    let lines: Vec<&str> = entry.text.lines().collect();
+    assert_eq!(
+        lines[1..],
+        [
+            "See ENEMY",
+            "→ INSTANCES OF",
+            "Esau forgives Jacob Ge 33:4,11",
+            "Joseph forgives his brothers Ge 45:5-15; 50:19-21",
+            "Jesus forgives his enemies Lu 23:34",
+            "→ OF SINS",
+            "See SIN, FORGIVENESS OF",
+        ]
+    );
+    assert!(
+        lines[0].starts_with("→ OF ENEMIES Ex 23:4,5;"),
+        "{}",
+        lines[0]
+    );
+    let list_items = entry
+        .spans
+        .iter()
+        .filter(|s| {
+            matches!(
+                s.kind,
+                SpanKind::Para {
+                    style: obs_model::ParaStyle::List
+                }
+            )
+        })
+        .count();
+    assert_eq!(list_items, 5);
+    check_golden("nave-tei", &snapshot(&r, &report));
+    let (r, report) = import("ObsTorrey");
+    assert_eq!(report.entries, 3);
+    check_golden("torrey-thml", &snapshot(&r, &report));
+}
+
 #[test]
 fn modules_are_listed_and_unknown_ones_named() {
     let source = SwordSource::open(&root()).unwrap();
@@ -505,7 +563,7 @@ fn modules_are_listed_and_unknown_ones_named() {
         .into_iter()
         .map(|m| (m.name, m.resource_type))
         .collect();
-    assert_eq!(listed.len(), 11);
+    assert_eq!(listed.len(), 13);
     assert!(listed.contains(&("ObsNotes".into(), Some(ResourceType::Commentary))));
     assert_eq!(source.default_module(), None);
     let one = SwordSource::open(&root().join("mods.d/obsnotes.conf")).unwrap();

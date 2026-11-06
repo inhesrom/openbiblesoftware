@@ -99,6 +99,10 @@ _Avoid_: Dictionary (for lemma-keyed works)
 A Resource of entries keyed by an English headword (a topic, person, place or thing).
 _Avoid_: Encyclopedia, Lexicon (for headword-keyed works)
 
+**Topical index**:
+A Dictionary whose entries are Passage lists: each headword's subtopics ("Of enemies", "Instances of") with the Passages that bear on them, and "See" references to other topics. Nave's Topical Bible and Torrey's Topical Textbook are the two; the Topic Guide reads them. It is a Dictionary, not a seventh Resource type.
+_Avoid_: Topical Bible (as the kind), Concordance, Topic list
+
 **Cross-reference set**:
 A Resource made of Cross-references.
 
@@ -276,7 +280,7 @@ One entry in History: a Tab's Current location just after the Tab was opened or 
 _Avoid_: History entry, Hit
 
 **Command box**:
-The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, "pg Rom 8", "eg Jn 3:16", "compare Jn 3:16" and "ws agape" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database.
+The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, "pg Rom 8", "eg Jn 3:16", "compare Jn 3:16", "ws agape" and "tg forgiveness" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database.
 _Avoid_: Omnibox, Search bar, Command palette (for the box)
 
 **Launcher**:
@@ -378,6 +382,10 @@ _Avoid_: Bible Word Study, Lexical study
 **Factbook**:
 The Guide whose Key is one person, people group or place of a People & places index. Its header names it and tells it from others of the same name by its family or region ("John, son of Zebedee"); its sections are Summary (other names, the Name meaning and family), Key Passages (every Passage that mentions it), Dictionary articles, and Related people and places. Typing a name that several share shows a chooser listing each of them. It is never in a Link set.
 _Avoid_: Encyclopedia, Profile, Person page
+
+**Topic Guide**:
+The Guide whose Key is a topic, a Headword such as "Forgiveness". Its sections are Topical Bible entries (each Topical index's subtopics with their Passages, whose text shows on hover or inline), Dictionary articles (every other Dictionary's article on it), Key Passages (the Passages the Topical indexes cite most often) and Search (a Library search for it). Typing in its box lists the topics the text names, with their synonyms from the Topical indexes (Pardon: see Sin, forgiveness of). Clicking a Passage moves its Link set there.
+_Avoid_: Topical study, Subject guide, Topic page
 
 **Name meaning**:
 What a person's or place's name means, from a names Dictionary (Hitchcock's Bible Names in the Starter library), shown in a Factbook's Summary.

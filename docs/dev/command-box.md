@@ -19,6 +19,7 @@ draws the list and runs `command_box.run`. Ranks, highest first (equal ranks kee
 | 95 | `compare`, `tc`, `text comparison` + reference | Text Comparison | `tool.text_comparison {passage}` |
 | 95 | `xref`, `xrefs`, `cross-references` + reference | Cross-references | `tool.cross_references {passage}` |
 | 95 | `ws`, `study`, `word study` + Strong's number, Lemma, transliteration or English words | Word Study | `word_study.open` / `word_study.choose` |
+| 95 | `tg`, `topic`, `topic guide` + text (#148) | Topic Guide's chooser for it | `guide.topic_guide {text}` |
 | 95 | `open` + Resource | Open … | as below |
 | 95 | `search` + text | Search | `search.run` |
 | 92 | a Resource's abbreviation or title (any case) | Open Bible, Open Lexicon … | focuses its most recent Tab, else `resource.open` |
