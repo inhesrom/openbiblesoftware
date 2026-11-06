@@ -98,15 +98,13 @@ impl NoteLine {
     /// The part of [`Self::text`] shown from body bytes `source`: from the first shown byte
     /// typed in it to the last (empty, at the end of the text, when none is).
     pub fn text_range(&self, source: Range<usize>) -> Range<usize> {
-        let mut inside = self
-            .offsets
-            .iter()
-            .enumerate()
-            .filter(|(_, o)| source.contains(o))
-            .map(|(i, _)| i);
-        match inside.next() {
-            Some(first) => first..inside.last().unwrap_or(first) + 1,
-            None => self.text.len()..self.text.len(),
+        let inside = |o: &usize| source.contains(o);
+        match (
+            self.offsets.iter().position(inside),
+            self.offsets.iter().rposition(inside),
+        ) {
+            (Some(first), Some(last)) => first..last + 1,
+            _ => self.text.len()..self.text.len(),
         }
     }
 

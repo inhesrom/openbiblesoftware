@@ -392,7 +392,11 @@ fn exporting_a_formatted_note_keeps_its_formatting_as_markdown_and_html() {
     let shown = |body: &str| {
         obs_model::parse_note_text(body)
             .into_iter()
-            .map(|l| (l.kind, l.text, l.marks))
+            .map(|l| {
+                // Where a mark is in the body differs by the export's `\`; what it marks not.
+                let marks: Vec<_> = l.marks.into_iter().map(|m| (m.range, m.kind)).collect();
+                (l.kind, l.text, marks)
+            })
             .collect::<Vec<_>>()
     };
     assert_eq!(shown(&note), shown(FORMATTED));
