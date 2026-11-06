@@ -34,6 +34,9 @@ use serde_json::{Value, json};
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
 use crate::jobs::{JobEvent, JobEventKind, JobId};
 use crate::library::{Library, LibraryEntry};
+use crate::search_views::{
+    AnalysisOutput, AnalysisSort, ChartBy, ResultsFilter, ResultsView, SearchAnalysis,
+};
 use crate::session::Session;
 use crate::workspace::{OpenRequest, TabId, TabKind, Tool};
 
@@ -444,6 +447,20 @@ pub fn snippet(
     spans: &[Span],
     highlighter: &Highlighter,
 ) -> Snippet {
+    snippet_and_tagged(unit_text, range, spans, highlighter).0
+}
+
+/// The Tagged words of a snippet: byte ranges of its text, and morpheme parts.
+pub(crate) type TaggedWords<'s> = Vec<(Range<usize>, &'s [MorphemePart])>;
+
+/// [`snippet`], and the Tagged words in it: their byte ranges of the snippet's text and their
+/// morpheme parts (for the Analysis view, #146).
+pub(crate) fn snippet_and_tagged<'s>(
+    unit_text: &str,
+    range: Range<usize>,
+    spans: &'s [Span],
+    highlighter: &Highlighter,
+) -> (Snippet, TaggedWords<'s>) {
     let start = range.start.min(unit_text.len());
     let end = range.end.clamp(start, unit_text.len());
     let holes: Vec<Range<usize>> = spans
@@ -488,8 +505,8 @@ pub fn snippet(
             _ => None,
         })
         .collect();
-    let highlights = highlighter.ranges(&text, tagged);
-    Snippet { text, highlights }
+    let highlights = highlighter.ranges(&text, tagged.iter().cloned());
+    (Snippet { text, highlights }, tagged)
 }
 
 // ------------------------------------------------------------------------- per-Tab state
@@ -523,6 +540,20 @@ pub struct SearchTab {
     pub(crate) loading: BTreeSet<usize>,
     /// Bumped by every search; older jobs' results are dropped.
     generation: u64,
+    /// How Bible mode's results are shown: Verses, Grid, Chart or Analysis (#146).
+    pub view: ResultsView,
+    /// The Grid cell or Chart bar the Verse list is narrowed to (#146); `results` then holds
+    /// the narrowed results and `unfiltered` every result.
+    pub filter: Option<ResultsFilter>,
+    pub(crate) unfiltered: Option<Arc<BibleResults>>,
+    /// What the Chart's bars count.
+    pub chart: ChartBy,
+    /// The Analysis table, once made, and its order.
+    pub analysis: Option<Arc<SearchAnalysis>>,
+    pub analysis_sort: AnalysisSort,
+    pub(crate) analysis_order: Arc<Vec<usize>>,
+    /// The job making the Analysis.
+    pub(crate) analysis_job: Option<JobId>,
 }
 
 impl SearchTab {
@@ -577,11 +608,27 @@ impl SearchTab {
         self.results = None;
         self.library_results = None;
         self.notes = None;
-        self.pages.clear();
-        self.loading.clear();
         self.selected = None;
         self.running = false;
+        self.filter = None;
+        self.unfiltered = None;
+        self.chart = ChartBy::Book;
+        self.analysis = None;
+        self.analysis_order = Arc::default();
+        self.analysis_job = None;
+        self.reset_pages();
+    }
+
+    /// Forget the snippets fetched: the rows shown changed.
+    pub(crate) fn reset_pages(&mut self) {
+        self.pages.clear();
+        self.loading.clear();
         self.generation += 1;
+    }
+
+    /// Whether the Analysis is being made.
+    pub fn analysis_running(&self) -> bool {
+        self.analysis_job.is_some()
     }
 }
 
@@ -592,6 +639,8 @@ impl SearchTab {
 pub(crate) enum JobKind {
     Run,
     Page(usize),
+    /// The Analysis table (#146).
+    Analysis,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1097,6 +1146,8 @@ impl Session {
     /// Apply Bible search events; return the others.
     pub(crate) fn poll_bible_searches(&mut self, events: Vec<JobEvent>) -> Vec<JobEvent> {
         let mut other = Vec::new();
+        // Tabs showing the Analysis whose new results need one.
+        let mut analyse = Vec::new();
         for event in events {
             if self.bible_search.warming.contains_key(&event.id) {
                 if event.kind.is_terminal()
@@ -1120,11 +1171,29 @@ impl Session {
             let Some(st) = self.search_tab_mut(job.tab) else {
                 continue;
             };
+            if job.kind == JobKind::Analysis {
+                if st.analysis_job == Some(event.id) {
+                    st.analysis_job = None;
+                    match event.kind {
+                        JobEventKind::Finished(out) => {
+                            if let Ok(out) = out.downcast::<AnalysisOutput>() {
+                                st.analysis_order = Arc::new(out.0.order(st.analysis_sort));
+                                st.analysis = Some(out.0);
+                            }
+                        }
+                        JobEventKind::Failed(e) => {
+                            st.error = Some(InlineError::new(ErrorField::Search, e, None));
+                        }
+                        _ => {}
+                    }
+                }
+                continue;
+            }
             if st.generation != job.generation {
                 continue;
             }
             let page = match job.kind {
-                JobKind::Run => 0,
+                JobKind::Run | JobKind::Analysis => 0,
                 JobKind::Page(p) => p,
             };
             st.loading.remove(&page);
@@ -1140,6 +1209,9 @@ impl Session {
                             st.selected = (!results.rows.is_empty()).then_some(0);
                             st.results = Some(results);
                             st.pages.insert(0, Arc::new(first_page));
+                            if st.view == ResultsView::Analysis {
+                                analyse.push(job.tab);
+                            }
                         }
                         Err(out) => {
                             if let Ok(out) =
@@ -1169,6 +1241,9 @@ impl Session {
                 _ => {}
             }
         }
+        for tab in analyse {
+            self.start_analysis(tab);
+        }
         other
     }
 
@@ -1183,11 +1258,29 @@ impl Session {
         hit: usize,
         new_tab: bool,
     ) -> Result<(&'static str, Option<TabId>), String> {
+        self.open_search_hit_in(tab, row, hit, new_tab, false)
+    }
+
+    /// [`Self::open_search_hit`]; with `all`, `row` counts every result whatever the Results
+    /// filter (as the Analysis table's rows do, #146) and the Verse list's choice is kept.
+    pub fn open_search_hit_in(
+        &mut self,
+        tab: TabId,
+        row: usize,
+        hit: usize,
+        new_tab: bool,
+        all: bool,
+    ) -> Result<(&'static str, Option<TabId>), String> {
         let st = self.search_tab(tab).ok_or("not a Search Tab")?;
         if st.results.is_none() && st.library_results.is_some() {
             return self.open_library_hit(tab, row, new_tab);
         }
-        let results = st.results.clone().ok_or("no results")?;
+        let results = if all {
+            st.all_results().cloned()
+        } else {
+            st.results.clone()
+        }
+        .ok_or("no results")?;
         let r = results.rows.get(row).ok_or("no such row")?;
         let h = r.hits.get(hit).or(r.hits.first()).ok_or("no such hit")?;
         let id = results
@@ -1195,7 +1288,7 @@ impl Session {
             .get(h.bible)
             .map(|b| b.id.clone())
             .ok_or("no such Bible")?;
-        if let Some(st) = self.search_tab_mut(tab) {
+        if !all && let Some(st) = self.search_tab_mut(tab) {
             st.selected = Some(row);
         }
         let link = self.workspace.tab(tab).and_then(|t| t.link);
@@ -1603,6 +1696,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 required: false,
                 help: "Which Bible of the row (0-based; default the first)",
             },
+            ParamSpec {
+                name: "all",
+                kind: ParamKind::Boolean,
+                required: false,
+                help: "The row counts every result, whatever the Results filter (the Analysis table's rows)",
+            },
             SPLIT,
         ],
         enabled: always,
@@ -1759,7 +1858,13 @@ fn search_open(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         .and_then(|n| usize::try_from(n).ok())
         .unwrap_or(0);
     let (via, opened) = s
-        .open_search_hit(tab, row, hit, p.bool("split").unwrap_or(false))
+        .open_search_hit_in(
+            tab,
+            row,
+            hit,
+            p.bool("split").unwrap_or(false),
+            p.bool("all").unwrap_or(false),
+        )
         .map_err(|e| failed(ID, e))?;
     Ok(json!({ "via": via, "tab": opened.map(|t| t.0) }))
 }

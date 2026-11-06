@@ -157,6 +157,14 @@ _Avoid_: Index (unqualified), Search database
 What a search runs over: a Passage list and a set of Resources (or Notebooks for notes). It is chosen beside the query, not written inside it.
 _Avoid_: Filter, Range (for the scope)
 
+**Results view**:
+How a Bible search's results are shown, switched above them: Verses (the Verse list), Grid (a heat map of matching Verses by Bible book × Bible), Chart (bars of matching Verses by Bible book, or by chapter within one book) or Analysis (a table with one row per matched word: Reference, Bible, the word, its Lemma, Morphology and context, sortable by any column and exported as CSV).
+_Avoid_: Mode (the Search Tool's Bible / Library / Notes switch), Report
+
+**Results filter**:
+The Bible book or chapter (and, from a Grid cell, the one Bible) that clicking a Grid cell or Chart bar narrows the Verse list to. It shows as a chip above the list until its × clears it, and a new search clears it. The Grid, Chart and Analysis always count every result. It narrows results already found; the Search scope decides what is searched.
+_Avoid_: Scope (for this), Drill-down
+
 **Resource revision**:
 A corrected release of the same Resource, such as a typo fix in a Bible. It replaces the earlier revision and keeps the Resource's identity, so its Preferred order and Annotations carry over. A downloaded Resource gets one through Update available. A different edition is a different Resource, not a revision.
 _Avoid_: Update, Version (for a correction)
