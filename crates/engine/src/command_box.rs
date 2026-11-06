@@ -14,7 +14,7 @@
 //! | a Strong's number (`G26`) | Word Study |
 //! | a Lemma (`ἀγάπη`) or its transliteration (`agape`) in a Lexicon | Word Study at the entry's Strong's number |
 //! | a menu command's name (`notes`) | run it |
-//! | part of a Resource's abbreviation or title, a Layout's name, a Favorite | open it |
+//! | part of a Resource's abbreviation or title, a Layout's name, a Saved search, a Favorite | open or run it |
 //! | anything | Search (today's toolbar behaviour); when nothing else matched, also Word Study for English words |
 //!
 //! An empty box lists the recent entries: texts run from the box, newest first, kept in the
@@ -55,6 +55,8 @@ pub enum CommandBoxAction {
     OpenResource(String),
     RestoreLayout(String),
     OpenFavorite(i64),
+    /// Run a Saved search (#179), by name.
+    OpenSavedSearch(String),
     /// Run a menu command with no parameters.
     Command(&'static str),
     Search(String),
@@ -77,6 +79,7 @@ impl CommandBoxAction {
             Self::OpenResource(_) => "resource",
             Self::RestoreLayout(_) => "layout",
             Self::OpenFavorite(_) => "favorite",
+            Self::OpenSavedSearch(_) => "saved_search",
             Self::Command(_) => "command",
             Self::Search(_) => "search",
             Self::Recent(_) => "recent",
@@ -169,6 +172,7 @@ mod rank {
     pub const LEMMA: u8 = 80;
     pub const RESOURCE_PART: u8 = 65;
     pub const LAYOUT_PART: u8 = 60;
+    pub const SAVED_SEARCH: u8 = 56;
     pub const FAVORITE: u8 = 55;
     pub const COMMAND_PART: u8 = 50;
     pub const SEARCH: u8 = 10;
@@ -275,6 +279,16 @@ impl Session {
         ranked.extend(self.word_suggestions(text, rank::STRONGS, rank::LEMMA));
         self.command_suggestions(text, &mut ranked);
         if text.chars().count() >= 2 {
+            for n in self.saved_searches_matching(text) {
+                ranked.push((
+                    rank::SAVED_SEARCH,
+                    Suggestion::new(
+                        CommandBoxAction::OpenSavedSearch(n.name.clone()),
+                        format!("{} — {}", n.name, n.search.summary()),
+                        "Saved search",
+                    ),
+                ));
+            }
             for f in self.favorites_matching(text) {
                 ranked.push((
                     rank::FAVORITE,
@@ -616,6 +630,10 @@ impl Session {
             CommandBoxAction::OpenFavorite(id) => {
                 self.run("favorite.open", &json!({ "id": id, "split": new_tab }))
             }
+            CommandBoxAction::OpenSavedSearch(name) => self.run(
+                "search.open_saved",
+                &json!({ "name": name, "split": new_tab }),
+            ),
             CommandBoxAction::Command(id) => self.run(id, &json!({})),
             CommandBoxAction::Search(text) => {
                 self.run("search.run", &json!({ "text": text, "split": new_tab }))

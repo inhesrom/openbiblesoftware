@@ -29,6 +29,7 @@ draws the list and runs `command_box.run`. Ranks, highest first (equal ranks kee
 | 80 | a Lemma in a Lexicon (`ἀγάπη`, `αγαπη`), or a transliteration in a Lexicon's transliteration index (`agape`, `chesed`) | Word Study (`ἀγάπη · G26`) | `word_study.open` |
 | 65 | words starting a Resource's abbreviation or title (`extended strongs`) | Open … | as above |
 | 60 | words starting a Layout's name | Layout | `layout.restore` |
+| 56 | a Saved search's name or query (`Session::saved_searches_matching`, #179) | Saved search | `search.open_saved` |
 | 55 | a Favorite's label or folder (`Session::favorites_matching`, #155) | Favorite | `favorite.open` |
 | 50 | words starting a menu command's label | Command | that command |
 | 10 | anything | Search for “…” | `search.run` |

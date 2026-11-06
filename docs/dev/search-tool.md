@@ -209,6 +209,53 @@ and [a hit opened at its paragraph](../previews/search-library-opened.png). To m
 `UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui library_search_previews`, which writes
 `target/previews/search-library/*.ppm`.
 
+## Saved searches and the Search history (#179)
+
+`obs-engine`'s `saved_searches` keeps both, and `shell/search_sidebar.rs` draws them.
+
+- **What is kept.** A `SavedSearch` (the type Favorites and Visits of a Search already keep):
+  mode, query, the Scope field, the Bibles chosen (none: the ★ Bible), Library mode's Resource
+  types, Collections and single Resources, and Notes mode's Notebook. A **Saved search** is one
+  under a name (`NamedSearch`); names ignore case, and saving under a used name replaces it.
+  The **Search history** (`SearchHistoryEntry`, with when it ran) gets every search that
+  `Session::run_search` starts without an inline error, newest first. The same search run again
+  moves to the top instead of being listed twice, and only the last `SEARCH_HISTORY_LIMIT`
+  (50) are kept.
+- **Storage.** The User database's `search.saved` and `search.history` preferences (JSON
+  arrays), like the Collections and Copy presets, read once at `attach_user`. No schema
+  change. A failed write is a message; the history is still kept for the session.
+- **Running one.** `Session::open_search_in` (also what a Search Favorite or Visit runs) sets
+  every field as kept on the Search Tab (the sidebar's own Tab, else the most recently active,
+  else a new one) and searches. If the kept Search scope names a Bible or Resource no longer in
+  the library, a Collection that was deleted or a Notebook that no longer exists, the search
+  still runs over the rest and `SearchTab::notice` says what was left out ("Searched without
+  what is gone: WEB is no longer in your library."). The next search clears it. With nothing
+  left (a Library search of one deleted Collection) the usual inline error shows under it.
+  The names of removed Resources come from the User database's remembered Resource names.
+- **The sidebar.** On the right of the Search Tab, shown by itself when the Tab is at least
+  640 px wide; **Saved & history** (beside the mode switch) hides or shows it. Saved searches
+  by name (tooltip: what they search), then History as `query · mode · scope`. A click runs one
+  in this Tab, Ctrl/Cmd-click in a new split; a Saved search's right-click menu deletes it;
+  History's **Clear** asks first. **Save…** after Recent opens a name field (the query to
+  start with) and saves the Tab's search.
+- **Command box.** A Saved search whose name or query contains the text (two characters or
+  more) is a suggestion, rank 56, just above Favorites; it runs `search.open_saved`.
+- **Home** (#178) is not built yet; it can list `Session::saved_searches()` and run
+  `search.open_saved`.
+- **Commands.** `search.save {tab, name}`, `search.open_saved {name, tab?, panel?, split?}`,
+  `search.delete_saved {name}`, `search.open_history {index, tab?, panel?, split?}` (0: the
+  newest), `search.clear_history`, and `search.list_saved` (both lists as JSON, each with its
+  `summary`). `search.open_*` answer the Tab, its inline error and its notice.
+
+Tests: `crates/engine/src/saved_searches_tests.rs` (`strong:G26` scoped to the New Testament
+saved as "agape in NT", run after a restart with the same results; 55 searches leave the last
+50, each re-runs, Clear lasts across a restart; names; the Command box; a removed Bible and a
+deleted Collection) and `crates/ui-egui/src/saved_searches_tests.rs` (Save… and the sidebar
+through real clicks and typing, across a relaunch). Previews:
+[the sidebar after saving](../previews/search-saved-sidebar-kittest.png) and
+[a Saved search whose Bible was removed](../previews/search-saved-notice-kittest.png), from
+`UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui --lib saved_searches`.
+
 ## Hand-over from other Tools
 
 `search.run` takes `text`, plus optional `scope`, `bibles` (comma-separated resource ids),

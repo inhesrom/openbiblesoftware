@@ -50,6 +50,7 @@ mod notes_tab;
 mod reading_plans_tab;
 #[path = "references.rs"]
 pub(crate) mod references;
+mod search_sidebar;
 mod search_tab;
 mod search_views;
 mod starter_tab;
