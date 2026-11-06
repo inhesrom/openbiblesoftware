@@ -1928,6 +1928,7 @@ mod library {
         // while HNUM remains the mouse-selected row.
         let target = row_pos(&h, "HEB");
         let mut focused_row = false;
+        // Tab wraps round through the menu bar (the Launchers, Home, the Command box).
         for _ in 0..64 {
             key(&mut h, egui::Key::Tab);
             if h.ctx
@@ -3154,6 +3155,9 @@ mod favorites;
 
 #[path = "reading_plans_tests.rs"]
 mod reading_plans;
+
+#[path = "home_tests.rs"]
+mod home;
 
 #[path = "context_menu_tests.rs"]
 mod context_menu;

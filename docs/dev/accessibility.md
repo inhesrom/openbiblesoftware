@@ -3,7 +3,7 @@
 #68 gave Resource text an AccessKit tree. This audit covers the chrome added since #131:
 toolbar Launchers and panes, the Command box, Get Resources, the Starter library, the Guides
 (Passage Guide, Word Study, Factbook, Exegetical Guide, Topic Guide), interlinear lines, the Search views,
-Reading plans, Favorites and History, the Atlas (#150), Collections, Copy verses, Fonts, Customize toolbar and the
+Reading plans, Home, Favorites and History, the Atlas (#150), Collections, Copy verses, Fonts, Customize toolbar and the
 right-click menu. It checks three things, and all three run in `cargo xtask ci` (gate `a11y`, and again in
 `test`):
 
@@ -54,6 +54,7 @@ control has the keyboard and then checks that a ring in the focus colour is draw
 | Exegetical Guide (#144) | Ctrl+L `eg Lk 1:30` | Tab to a word, Enter (Word Study) | Ctrl+W |
 | Search views (#146) | Ctrl+Shift+F | query, Enter; Tab to *Grid*, Enter | Ctrl+W |
 | Reading plans (#147) | Ctrl+L `reading plans` | Tab to *Start plan*, Enter | Ctrl+W |
+| Home (#178) | Alt+H | Tab to *Open Home at launch*, Space; Tab to *Move Today's reading down*, Enter; Tab to *Word Study*, Enter (a Word Study) | Ctrl+W |
 | Factbook (#149) | Alt+G, Tab to the Factbook box, `Abraham`, Enter | Tab to the *Terah* link, Enter (his Factbook) | Ctrl+W |
 | Topic Guide (#148) | Ctrl+L `topic forgiveness` | Tab to *Topic Guide: Forgiveness*, Enter; Tab to *Search your library for “Forgiveness”*, Enter (Search) | Ctrl+W |
 | Parallel resources (#151) | Ctrl+] | Tab to *Previous of your Bibles*, Enter | — |

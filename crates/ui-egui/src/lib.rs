@@ -126,8 +126,8 @@ impl App {
         #[cfg(target_arch = "wasm32")]
         let offer_starter = false;
         let mut shell = Shell::new(session);
-        shell.restore_or_default();
-        // A file given on the command line opens on top of the restored Workspace.
+        shell.restore_at_launch();
+        // A file given on the command line shows on top of the restored Workspace and Home.
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(p) = &path
             && let Some(id) = shell
@@ -137,13 +137,8 @@ impl App {
                 .iter()
                 .find(|e| e.path == *p)
                 .map(|e| e.manifest.resource_id.clone())
-            && !shell
-                .session()
-                .workspace
-                .tabs()
-                .any(|t| t.kind == obs_engine::TabKind::Resource(id.clone()))
         {
-            shell.run("resource.open", &serde_json::json!({ "id": id }));
+            shell.show_startup_resource(&id);
         }
         if let Some(p) = problems.first() {
             shell

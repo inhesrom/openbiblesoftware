@@ -856,6 +856,7 @@ pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
         TabKind::GetBibles => GET_RESOURCES_TITLE.into(),
         TabKind::StarterLibrary => "Starter library".into(),
         TabKind::Credits => "Credits".into(),
+        TabKind::Home => "Home".into(),
         TabKind::Resource(id) => s
             .library
             .get(id)

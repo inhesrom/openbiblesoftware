@@ -79,6 +79,8 @@ pub struct Session {
     pub(crate) saved_searches: crate::saved_searches::SavedSearches,
     /// Reading plans as the User database has them, and today's date (#147).
     pub(crate) plans: crate::reading_plans::ReadingPlans,
+    /// The Home arrangement and "Open Home at launch" (#178).
+    pub(crate) home: crate::home::HomeSettings,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
     log: Vec<&'static str>,
     /// The User database, when there is one.
@@ -131,6 +133,7 @@ impl Session {
             command_box: crate::command_box::CommandBox::default(),
             saved_searches: crate::saved_searches::SavedSearches::default(),
             plans: crate::reading_plans::ReadingPlans::default(),
+            home: crate::home::HomeSettings::default(),
             log: Vec::new(),
             user: None,
             history: crate::annotations::UndoHistory::default(),
@@ -206,6 +209,7 @@ impl Session {
         self.load_guide_arrangements();
         self.load_favorites_and_history();
         self.load_reading_plans();
+        self.load_home();
         self.load_copy_verses();
         self.load_collections();
         self.load_saved_searches();

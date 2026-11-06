@@ -67,6 +67,7 @@ fn every_tab_kind() -> Vec<TabKind> {
         TabKind::GetBibles,
         TabKind::StarterLibrary,
         TabKind::Credits,
+        TabKind::Home,
         TabKind::Guide(Guide::PassageGuide),
         TabKind::Tool(Tool::Search),
     ] {
@@ -92,7 +93,8 @@ fn every_tab_kind() -> Vec<TabKind> {
             | TabKind::ImportReport(_)
             | TabKind::GetBibles
             | TabKind::StarterLibrary
-            | TabKind::Credits => kinds.push(kind),
+            | TabKind::Credits
+            | TabKind::Home => kinds.push(kind),
         }
     }
     kinds
@@ -129,6 +131,11 @@ fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
         TabKind::GetBibles => ("library.get_resources", split),
         TabKind::StarterLibrary => ("library.starter", split),
         TabKind::Credits => ("help.credits", split),
+        TabKind::Home => {
+            h.shell
+                .run("reading_plan.create", &json!({ "template": "nt-90-days" }));
+            ("home.open", split)
+        }
         TabKind::Guide(Guide::PassageGuide) => (
             "guide.passage_guide",
             json!({ "passage": "Jn 3:16", "split": true }),
@@ -801,6 +808,31 @@ fn keyboard_only_reading_plans() {
     settle(&mut h);
     assert_eq!(h.shell.session().reading_plans().len(), 1);
     close_tab(&mut h, &TabKind::Tool(Tool::ReadingPlans));
+}
+
+/// Home (#178): Alt+H opens it; a card moves down and Open Home at launch turns on from the
+/// keyboard; a Quick start opens its Guide.
+#[test]
+fn keyboard_only_home() {
+    let (mut h, _lab) = keyboard_harness("kb-home");
+    key(&mut h, Key::H, Modifiers::ALT);
+    settle(&mut h);
+    assert_eq!(focused_kind(&h), Some(TabKind::Home));
+    tab_to(&mut h, "Open Home at launch");
+    key(&mut h, Key::Space, Modifiers::NONE);
+    settle(&mut h);
+    assert!(h.shell.session().home_opens_at_launch());
+    tab_to(&mut h, "Move Today's reading down");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    assert_eq!(
+        h.shell.session().home_settings().cards[1].card,
+        obs_engine::HomeCard::TodaysReading
+    );
+    tab_to(&mut h, "Word Study");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    assert_eq!(focused_kind(&h), Some(TabKind::Guide(Guide::WordStudy)));
 }
 
 /// The Factbook (#149): from the Guides pane, a name, Enter; then the Summary's link to his
