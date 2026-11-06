@@ -11,6 +11,7 @@ mod heights;
 mod marks;
 mod palette;
 mod pane;
+mod rich_clipboard;
 pub mod search_view;
 mod selection;
 mod shell;
@@ -29,6 +30,7 @@ pub use heights::HeightIndex;
 pub use marks::{Mark, MarkKind, marks_for};
 pub use palette::{HIGHLIGHT_STYLES, Palette, contrast};
 pub use pane::{AtlasTexture, MEASURE_EMS, PaneOutput, reading_pane};
+pub use rich_clipboard::RichClipboard;
 pub use selection::{
     DocPos, Granularity, Selection, copy_text, range_rects, selected_text, selection_rects, word_at,
 };
@@ -168,6 +170,13 @@ impl App {
     /// bundled fonts can be chosen.
     pub fn with_system_fonts(mut self, fonts: std::sync::Arc<dyn SystemFonts>) -> Self {
         self.shell.set_system_fonts(fonts);
+        self
+    }
+
+    /// The system clipboard, for copying rich text (Copy verses, #154). Without one, rich
+    /// text is copied as plain text.
+    pub fn with_rich_clipboard(mut self, clipboard: std::sync::Arc<dyn RichClipboard>) -> Self {
+        self.shell.set_rich_clipboard(clipboard);
         self
     }
 

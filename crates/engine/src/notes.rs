@@ -336,46 +336,7 @@ impl Session {
             .annotations(only)?
             .into_iter()
             .filter(|a| !attention_only || a.is_orphaned())
-            .map(|a| {
-                let range = a.anchor.as_ref().and_then(Anchor::text_range);
-                let name = |id: &str| {
-                    self.library
-                        .abbreviation_of(id)
-                        .map_or_else(|| id.to_string(), str::to_string)
-                };
-                let missing = match &a.anchor {
-                    Some(Anchor::TextRange { range })
-                        if self.library.get(&range.resource_id).is_none() =>
-                    {
-                        Some(format!(
-                            "{} is not in the library",
-                            name(&range.resource_id)
-                        ))
-                    }
-                    _ => None,
-                };
-                let attention = match &a.anchor {
-                    Some(Anchor::TextRange { range }) if range.orphaned => Some(format!(
-                        "⚠ This text was not found in {} after it changed. Select the text in a \
-                         reading pane and choose Re-attach here{}.",
-                        name(&range.resource_id),
-                        if a.is_note() {
-                            ", keep the Note without an anchor, or delete it"
-                        } else {
-                            ", or delete it"
-                        }
-                    )),
-                    _ => None,
-                };
-                Card {
-                    notebook: notebooks.get(&a.notebook_id).cloned().unwrap_or_default(),
-                    reference: anchor_label(&self.library, a.anchor.as_ref()),
-                    quote: range.map(|r| collapse(&r.quote)),
-                    missing,
-                    attention,
-                    annotation: a,
-                }
-            })
+            .map(|a| self.card(a, &notebooks))
             .filter(|c| {
                 if words.is_empty() {
                     return true;
@@ -392,22 +353,65 @@ impl Session {
             })
             .collect();
         match self.notes.order {
-            CardOrder::Bible => {
-                let library = &self.library;
-                cards.sort_by_cached_key(|c| {
-                    (
-                        bible_key(library, &c.annotation),
-                        c.annotation.created_at,
-                        c.annotation.id.clone(),
-                    )
-                });
-            }
+            CardOrder::Bible => self.sort_in_bible_order(&mut cards),
             CardOrder::Modified => cards.sort_by(|a, b| {
                 (b.annotation.modified_at, &b.annotation.id)
                     .cmp(&(a.annotation.modified_at, &a.annotation.id))
             }),
         }
         Ok(cards)
+    }
+
+    /// The Notes Tool's card for `a`; `notebooks` maps Notebook ids to names.
+    pub(crate) fn card(&self, a: Annotation, notebooks: &BTreeMap<String, String>) -> Card {
+        let range = a.anchor.as_ref().and_then(Anchor::text_range);
+        let name = |id: &str| {
+            self.library
+                .abbreviation_of(id)
+                .map_or_else(|| id.to_string(), str::to_string)
+        };
+        let missing = match &a.anchor {
+            Some(Anchor::TextRange { range }) if self.library.get(&range.resource_id).is_none() => {
+                Some(format!(
+                    "{} is not in the library",
+                    name(&range.resource_id)
+                ))
+            }
+            _ => None,
+        };
+        let attention = match &a.anchor {
+            Some(Anchor::TextRange { range }) if range.orphaned => Some(format!(
+                "⚠ This text was not found in {} after it changed. Select the text in a \
+                 reading pane and choose Re-attach here{}.",
+                name(&range.resource_id),
+                if a.is_note() {
+                    ", keep the Note without an anchor, or delete it"
+                } else {
+                    ", or delete it"
+                }
+            )),
+            _ => None,
+        };
+        Card {
+            notebook: notebooks.get(&a.notebook_id).cloned().unwrap_or_default(),
+            reference: anchor_label(&self.library, a.anchor.as_ref()),
+            quote: range.map(|r| collapse(&r.quote)),
+            missing,
+            attention,
+            annotation: a,
+        }
+    }
+
+    /// Sort cards in Bible order (#18 rule 7).
+    pub(crate) fn sort_in_bible_order(&self, cards: &mut [Card]) {
+        let library = &self.library;
+        cards.sort_by_cached_key(|c| {
+            (
+                bible_key(library, &c.annotation),
+                c.annotation.created_at,
+                c.annotation.id.clone(),
+            )
+        });
     }
 
     /// Open (or focus) the Notes Tool. With `id`, bring that Annotation's card into view (the

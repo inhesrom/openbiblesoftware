@@ -557,6 +557,13 @@ pub enum Effect {
     Switched(TabId),
     /// Put the keyboard in the Command box (Ctrl+L, #139).
     FocusCommandBox,
+    /// Open the Copy verses window (Tools → Copy verses…, #154), with these Passages (a Bible
+    /// reference) and Bibles (resource ids) when given; otherwise at the Current location of
+    /// the most recent Bible Tab.
+    ShowCopyVerses {
+        passages: Option<String>,
+        bibles: Vec<String>,
+    },
 }
 
 /// How the caller asked for a Tab to be opened.

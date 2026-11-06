@@ -6,7 +6,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use egui::{Align2, Color32, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
-use obs_engine::{Cell, ComparedBible, Marks, VerseBlock, verse_blocks};
+use obs_engine::{Cell, ComparedBible, CopiedBible, Marks, VerseBlock, verse_blocks};
 use obs_layout::{ColorRole, LaidBlock, TextSettings, UnitPos};
 use obs_model::Direction;
 use obs_scripture::{Verse, VerseMap};
@@ -47,6 +47,20 @@ impl ComparedBible for ReadingDoc {
     fn verse_text(&self, native: Verse) -> Option<String> {
         ReadingDoc::verse_text(self, native)
             .map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
+    }
+}
+
+impl CopiedBible for ReadingDoc {
+    fn manifest(&self) -> &obs_model::Manifest {
+        &self.manifest
+    }
+
+    fn versification(&self) -> &dyn obs_scripture::Versification {
+        &self.versification
+    }
+
+    fn starts_paragraph(&self, native: Verse) -> bool {
+        ReadingDoc::starts_paragraph(self, native)
     }
 }
 

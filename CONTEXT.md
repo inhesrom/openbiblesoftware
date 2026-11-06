@@ -162,7 +162,7 @@ A corrected release of the same Resource, such as a typo fix in a Bible. It repl
 _Avoid_: Update, Version (for a correction)
 
 **Attribution**:
-The license and credit text that a Resource requires to be shown, displayed in that Resource's About view.
+The license and credit text that a Resource requires to be shown, displayed in that Resource's About view. Text copied with Copy verses, a Notes export or a print page carries the Attribution of each Resource it quotes whose licence asks for credit (anything but public domain or CC0).
 _Avoid_: Credits, Copyright notice
 
 **Credits**:
@@ -254,6 +254,14 @@ _Avoid_: Text font, Body font, Resource font
 **Interface font**:
 The font of the app's own menus, labels and buttons, chosen in View → Fonts. Resource text never uses it.
 _Avoid_: UI font, System font, Chrome font
+
+**Copy verses**:
+The window under Tools → Copy verses… that copies a Passage list from one or more Bibles as plain text, rich text or Markdown, after a preview: the reference before or after the text, verse numbers on or off, paragraphs or one verse per line, quotation marks, and full or abbreviated book names. It also prints them (Print / Save as PDF).
+_Avoid_: Copy Bible Verses, Export verses
+
+**Copy preset**:
+A named set of Copy verses options the user saved, kept in the User database.
+_Avoid_: Template, Style, Copy format
 
 **Bundled font**:
 A font shipped inside the app: Gentium Plus for Latin and Greek, Ezra SIL for Hebrew. It is the default Reading font and the fallback when a chosen font is missing or lacks a character.
@@ -357,6 +365,10 @@ _Avoid_: Broken note, Lost highlight
 The Notes Tool's list of Orphaned annotations, where each can be re-attached to selected text, kept without an anchor (Notes only) or deleted. It shows only when there are some.
 _Avoid_: Broken links, Errors
 
+**Notes export**:
+A Markdown or HTML file made from a Notebook (or all of them) or from the Notes a Notes search found: each Annotation under its Passage, with its quoted text and the Note's text. It can also be printed. It is a copy for reading or sharing, not a backup: the app does not read it back.
+_Avoid_: Backup, Report, Notes dump
+
 **User database**:
-The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Command box's recent entries and preferences. Resources and Search indexes are never part of it.
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Command box's recent entries, Copy presets and preferences. Resources and Search indexes are never part of it.
 _Avoid_: Profile, User library, Settings file

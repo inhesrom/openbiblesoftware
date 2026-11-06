@@ -127,6 +127,31 @@ impl Manifest {
     pub fn has_changes_record(&self) -> bool {
         self.origin == Origin::Starter && is_cc_by(&self.license)
     }
+
+    /// Whether text copied, exported or printed from this Resource must carry its Attribution
+    /// (#154): it has one, and its licence is not one that asks for none.
+    pub fn requires_attribution(&self) -> bool {
+        !self.attribution.trim().is_empty() && !attribution_optional(&self.license)
+    }
+}
+
+/// Licences that ask for no credit: public domain and CC0. Anything else, including an
+/// unknown licence, is taken to require the Attribution.
+const NO_ATTRIBUTION_LICENSES: &[&str] = &[
+    "LicenseRef-PublicDomain",
+    "LicenseRef-PD",
+    "CC0-1.0",
+    "CC-PDDC",
+    "Unlicense",
+];
+
+/// Whether an SPDX expression lets copies go without credit: one of its `OR` alternatives
+/// is public domain or CC0 (`LicenseRef-PD OR CC-BY-3.0` may be used as public domain).
+pub fn attribution_optional(spdx: &str) -> bool {
+    spdx.split(" OR ").any(|alternative| {
+        let alternative = alternative.trim().trim_matches(['(', ')']).trim();
+        NO_ATTRIBUTION_LICENSES.contains(&alternative)
+    })
 }
 
 /// Whether an SPDX expression names a Creative Commons Attribution licence (`CC-BY-4.0`,
@@ -204,6 +229,29 @@ mod tests {
         m.license = "LicenseRef-PublicDomain".into();
         assert!(!m.has_changes_record());
         assert_eq!(changes_record_file("tahot"), "CHANGES-tahot.md");
+    }
+
+    #[test]
+    fn only_resources_whose_licence_asks_for_credit_require_their_attribution() {
+        let mut m = Manifest::new("tagnt", "TAGNT", "TAGNT", ResourceType::Bible, "grc");
+        m.attribution = "Data created by www.STEPBible.org, CC BY 4.0.".into();
+        for (license, required) in [
+            ("CC-BY-4.0", true),
+            ("CC-BY-SA-4.0", true),
+            ("LicenseRef-Copyrighted-Permission-to-distribute", true),
+            (LICENSE_UNKNOWN, true),
+            ("LicenseRef-PublicDomain", false),
+            ("LicenseRef-PD", false),
+            ("CC0-1.0", false),
+            ("LicenseRef-PD OR CC-BY-3.0", false),
+            ("MIT AND CC-BY-4.0", true),
+        ] {
+            m.license = license.into();
+            assert_eq!(m.requires_attribution(), required, "{license}");
+        }
+        m.license = "CC-BY-4.0".into();
+        m.attribution = "  ".into();
+        assert!(!m.requires_attribution(), "nothing to append");
     }
 
     #[test]

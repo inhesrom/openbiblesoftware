@@ -3090,6 +3090,8 @@ mod parallel_resources;
 
 #[path = "command_box_tests.rs"]
 mod command_box;
+#[path = "copy_export_tests.rs"]
+mod copy_export;
 
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {

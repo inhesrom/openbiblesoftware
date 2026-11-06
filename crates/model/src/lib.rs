@@ -36,7 +36,7 @@ pub use dataset::{CrossReference, Entity, EntityKind, EntityRelation, Mention, R
 pub use key::{Key, KeyEntry};
 pub use manifest::{
     Direction, FORMAT_VERSION, KeyScheme, LICENSE_UNKNOWN, Manifest, Origin, ResourceType,
-    cc_by_license_url, changes_record_file, is_cc_by, is_valid_resource_id,
+    attribution_optional, cc_by_license_url, changes_record_file, is_cc_by, is_valid_resource_id,
 };
 pub use morph::{Morph, MorphError, MorphLanguage, MorphPart, PartOfSpeech};
 pub use normalize::{NORMALIZER_VERSION, Token, normalize, tokenize};

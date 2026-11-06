@@ -288,6 +288,28 @@ impl ReadingDoc {
         self.units.get(self.verse_units[i])?.text.get(v.range())
     }
 
+    /// Whether the Bible Verse starting at `verse` begins a paragraph: a paragraph starts
+    /// after the Verse before it in the same unit ends, up to this Verse's first byte.
+    pub fn starts_paragraph(&self, verse: Verse) -> bool {
+        let Some(&i) = self.verse_index.get(&verse) else {
+            return false;
+        };
+        let (Some(v), Some(&unit)) = (self.verses.get(i), self.verse_units.get(i)) else {
+            return false;
+        };
+        let from = match i.checked_sub(1) {
+            Some(p) if self.verse_units.get(p) == Some(&unit) => {
+                self.verses.get(p).map_or(0, |p| p.end)
+            }
+            _ => 0,
+        };
+        self.units.get(unit).is_some_and(|u| {
+            u.spans.iter().any(|s| {
+                matches!(s.kind, SpanKind::Para { .. }) && (from..=v.start).contains(&s.start)
+            })
+        })
+    }
+
     /// The block of `unit` that contains unit byte `byte` (or the next block after it).
     pub fn block_at(&self, unit: usize, byte: usize) -> Option<usize> {
         let first = self.blocks.partition_point(|b| b.unit < unit);
