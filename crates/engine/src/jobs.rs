@@ -146,8 +146,13 @@ struct Queued {
 struct Shared {
     queue: Mutex<VecDeque<Queued>>,
     ready: Condvar,
+    /// Set only while holding `queue`; see [`JobQueue`]'s `Drop`.
     shutdown: AtomicBool,
     cancels: Mutex<Vec<(JobId, Arc<AtomicBool>)>>,
+    /// Tests stall an idle worker here, between its `shutdown` check and its wait, the way a
+    /// starved CI runner can (#123).
+    #[cfg(test)]
+    pause_before_wait: Duration,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -216,8 +221,12 @@ fn step_once(q: &mut Queued, events: &Sender<JobEvent>) -> Outcome {
 
 impl JobQueue {
     fn with_workers(threads: usize) -> Self {
+        Self::with_shared(threads, Shared::default())
+    }
+
+    fn with_shared(threads: usize, shared: Shared) -> Self {
         let (events_tx, events_rx) = channel();
-        let shared = Arc::new(Shared::default());
+        let shared = Arc::new(shared);
         let workers = (0..threads)
             .filter_map(|i| {
                 let shared = Arc::clone(&shared);
@@ -342,6 +351,8 @@ fn worker(shared: &Shared, events: &Sender<JobEvent>) {
                 if let Some(q) = queue.pop_front() {
                     break q;
                 }
+                #[cfg(test)]
+                std::thread::sleep(shared.pause_before_wait);
                 queue = shared
                     .ready
                     .wait(queue)
@@ -363,7 +374,14 @@ fn worker(shared: &Shared, events: &Sender<JobEvent>) {
 
 impl Drop for JobQueue {
     fn drop(&mut self) {
-        self.shared.shutdown.store(true, Ordering::Relaxed);
+        // An idle worker checks `shutdown` and then waits, all under the queue lock. Setting the
+        // flag under that lock means the worker either sees it or is already waiting when
+        // `notify_all` runs; set without the lock, the wake-up could land in between and be
+        // lost, leaving `join` below waiting forever (#123).
+        {
+            let _queue = lock(&self.shared.queue);
+            self.shared.shutdown.store(true, Ordering::Relaxed);
+        }
         for (_, flag) in lock(&self.shared.cancels).iter() {
             flag.store(true, Ordering::Relaxed);
         }
@@ -393,6 +411,7 @@ pub fn sword_installer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     const WAIT: Duration = Duration::from_secs(10);
 
@@ -420,10 +439,12 @@ mod tests {
         }
     }
 
-    /// Events for `id` until its terminal event.
+    /// Events for `id` until its terminal event, which must come within `WAIT` overall: a job
+    /// that keeps reporting progress but never ends fails the test instead of hanging it.
     fn events_until_done(q: &JobQueue, id: JobId) -> Vec<JobEventKind> {
+        let deadline = Instant::now() + WAIT;
         let mut out = Vec::new();
-        while let Some(e) = q.wait_event(WAIT) {
+        while let Some(e) = q.wait_event(deadline.saturating_duration_since(Instant::now())) {
             if e.id != id {
                 continue;
             }
@@ -433,7 +454,26 @@ mod tests {
                 return out;
             }
         }
-        panic!("job {id:?} did not finish; got {out:?}");
+        let progress = out
+            .iter()
+            .filter(|k| matches!(k, JobEventKind::Progress { .. }))
+            .count();
+        let others: Vec<_> = out
+            .iter()
+            .filter(|k| !matches!(k, JobEventKind::Progress { .. }))
+            .collect();
+        panic!("job {id:?} did not finish within {WAIT:?}; got {progress} Progress and {others:?}");
+    }
+
+    /// Drop `q` and fail if that takes longer than `WAIT` (a worker that never wakes).
+    fn drop_within_wait(q: JobQueue) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            drop(q);
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(WAIT)
+            .expect("dropping the JobQueue hung: a worker was never woken to shut down");
     }
 
     #[test]
@@ -481,6 +521,27 @@ mod tests {
             "{rest:?}"
         );
         assert!(!q.cancel(id), "finished jobs are forgotten");
+        drop_within_wait(q);
+    }
+
+    /// #123: the worker that ran the job goes idle as the test drops the queue. If the drop's
+    /// wake-up lands between the worker's `shutdown` check and its wait, the worker must still
+    /// stop. The pause holds every idle worker in that gap.
+    #[test]
+    fn dropping_the_queue_wakes_a_worker_stalled_before_its_wait() {
+        let q = JobQueue::with_shared(
+            2,
+            Shared {
+                pause_before_wait: Duration::from_millis(50),
+                ..Shared::default()
+            },
+        );
+        let id = q.submit_fn("quick", |_| Ok(1u8));
+        assert!(matches!(
+            events_until_done(&q, id).last(),
+            Some(JobEventKind::Finished(_))
+        ));
+        drop_within_wait(q);
     }
 
     #[test]
@@ -572,7 +633,7 @@ mod tests {
             total: None,
         });
         std::thread::sleep(Duration::from_millis(5));
-        drop(q); // must not hang
+        drop_within_wait(q);
     }
 
     /// Streams forever in 1 KiB chunks until the progress callback says stop.
