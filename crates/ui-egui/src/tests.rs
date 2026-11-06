@@ -644,7 +644,7 @@ fn every_ink_on_every_highlight_meets_wcag_aa_in_every_tone() {
         let u = contrast(p.underline, p.page);
         assert!(u >= 3.0, "{name}: underline {u:.2}:1");
     }
-    assert_eq!(pairs, 3 * 9 * 6);
+    assert_eq!(pairs, 3 * 9 * 7);
     eprintln!("lowest contrast {:.2}:1 ({})", worst.0, worst.1);
     // The formula itself: black on white is 21:1, a colour on itself 1:1.
     assert!((contrast(egui::Color32::BLACK, egui::Color32::WHITE) - 21.0).abs() < 0.01);

@@ -11,6 +11,7 @@ use egui_tiles::{Container, Linear, LinearDir, Tile, TileId, Tiles, Tree, UiResp
 use obs_engine::{
     Effect, HeaderBox, JobMode, LayoutNode, MENUS, MenuItem, PanelId, Placement, Session, TabId,
     TabKind, Tool,
+    interlinear::{InterlinearKind, InterlinearLine},
 };
 use obs_model::{Key, ResourceType};
 use obs_scripture::{Passage, RefStyle, Standard, Verse, format_passage};
@@ -18,6 +19,7 @@ use serde_json::{Value, json};
 
 use crate::compare_view::{ComparisonBible, ComparisonView, comparison_pane, paint_star};
 use crate::doc::ReadingDoc;
+use crate::interlinear::InterlinearSource;
 use crate::palette::Palette;
 use crate::pane::{AtlasTexture, WordHit, reading_pane};
 use crate::theme;
@@ -451,6 +453,7 @@ impl Shell {
                             self.st.opened(tab);
                         }
                     }
+                    self.st.lexicon_replaced(&id);
                 }
                 Effect::Switched(tab) => self.st.switched(tab),
                 Effect::NavigateStandard { tab, verse } => {
@@ -1463,6 +1466,7 @@ impl State {
             ui.ctx().request_repaint();
             return;
         }
+        self.sync_interlinear(tab, false);
         let palette = self.palette;
         let text = self.session.text;
         let Some(t) = self.tabs.get_mut(&tab) else {
@@ -1546,6 +1550,133 @@ impl State {
             }
         }
         self.after_reading_pane(ui, tab, &out);
+    }
+
+    /// The interlinear kind and lines (#143) a Bible Tab shows: none when they are off, or
+    /// when its Bible has no Tagged words.
+    fn interlinear_lines(&self, tab: TabId) -> Option<(InterlinearKind, Vec<InterlinearLine>)> {
+        let kind = obs_engine::interlinear::tab_kind(&self.session, tab)?;
+        let lines = self.session.workspace.tab(tab)?.interlinear.shown(kind);
+        let view = self.tabs.get(&tab)?.view.as_ref()?;
+        (!lines.is_empty() && view.doc.has_tagged_words()).then_some((kind, lines))
+    }
+
+    /// Give a Bible Tab's view the interlinear lines the Tab shows (#143). They are built
+    /// again only when the lines, or the Lexicons they are looked up in (or their
+    /// revisions), change, or when `rebuild` (a Lexicon was replaced in place).
+    fn sync_interlinear(&mut self, tab: TabId, rebuild: bool) {
+        let wanted = self.interlinear_lines(tab);
+        let lexicons: Vec<(String, u32)> = match &wanted {
+            Some((kind, lines)) if InterlinearSource::needs_lexicons(*kind, lines) => self
+                .session
+                .library
+                .of_type(ResourceType::Lexicon)
+                .map(|e| (e.manifest.resource_id.clone(), e.manifest.revision))
+                .collect(),
+            _ => Vec::new(),
+        };
+        let Some(view) = self.tabs.get(&tab).and_then(|t| t.view.as_ref()) else {
+            return;
+        };
+        let current = view.interlinear();
+        let source = match wanted {
+            None if current.is_none() => return,
+            None => None,
+            Some((kind, lines)) => {
+                if !rebuild && current.is_some_and(|s| s.is_for(kind, &lines, &lexicons)) {
+                    return;
+                }
+                // A Lexicon that cannot be loaded is left out (its Tab would say why).
+                let docs = lexicons
+                    .iter()
+                    .filter_map(|(id, _)| self.doc(id).ok())
+                    .collect();
+                InterlinearSource::new(kind, lines, lexicons, docs).map(Arc::new)
+            }
+        };
+        if let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) {
+            view.set_interlinear(source);
+        }
+    }
+
+    /// Look a replaced Lexicon's words up again in every Tab whose interlinear lines use it
+    /// (#143): the update keeps its resource id, and maybe its revision.
+    fn lexicon_replaced(&mut self, resource_id: &str) {
+        let using: Vec<TabId> = self
+            .tabs
+            .iter()
+            .filter(|(_, t)| {
+                t.view
+                    .as_ref()
+                    .and_then(|v| v.interlinear())
+                    .is_some_and(|s| s.looks_up_in(resource_id))
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for tab in using {
+            self.sync_interlinear(tab, true);
+        }
+    }
+
+    /// A Bible Tab's interlinear controls (#143), laid out right to left: the lines menu (⏷)
+    /// and the Interlinear toggle. Only for a Bible with Tagged words.
+    fn interlinear_controls(&mut self, ui: &mut Ui, tab: TabId, narrow: bool) {
+        let Some(kind) = obs_engine::interlinear::tab_kind(&self.session, tab) else {
+            return;
+        };
+        if !self
+            .tabs
+            .get(&tab)
+            .and_then(|t| t.view.as_ref())
+            .is_some_and(|v| v.doc.has_tagged_words())
+        {
+            return;
+        }
+        let Some(lines) = self
+            .session
+            .workspace
+            .tab(tab)
+            .map(|t| t.interlinear.clone())
+        else {
+            return;
+        };
+        let what = match kind {
+            InterlinearKind::Reverse => "the Hebrew or Greek under each word",
+            InterlinearKind::Interlinear => "English and grammar under each word",
+        };
+        let mut run: Option<Value> = None;
+        ui.menu_button(RichText::new("⏷").small(), |ui| {
+            ui.label(
+                RichText::new("Interlinear lines")
+                    .small()
+                    .color(theme::c().muted),
+            );
+            for line in kind.lines() {
+                let mut chosen = lines.is_chosen(kind, *line);
+                // The last line picked stays.
+                let last = chosen && lines.shown(kind).len() <= 1 && lines.on;
+                if ui
+                    .add_enabled(!last, egui::Checkbox::new(&mut chosen, line.name()))
+                    .clicked()
+                {
+                    run = Some(json!({ "tab": tab.0, "line": line.id(), "shown": chosen }));
+                }
+            }
+        })
+        .response
+        .on_hover_text("Choose the interlinear lines");
+        let label = if narrow { "Int." } else { "Interlinear" };
+        if ui
+            .selectable_label(lines.on, RichText::new(label).small())
+            .on_hover_text(format!("Interlinear lines: {what}"))
+            .clicked()
+        {
+            run = Some(json!({ "tab": tab.0, "on": !lines.on }));
+        }
+        if let Some(params) = run {
+            self.session.workspace.user_focused(tab);
+            self.run("tab.interlinear", &params);
+        }
     }
 
     /// Text Comparison: the Bible chips, then the Verse blocks. The view follows the Tab's
@@ -1779,6 +1910,7 @@ impl State {
                         self.tab_menu(ui, tab);
                         self.favorite_star(ui, tab);
                         if matches!(kind, TabKind::Resource(_)) {
+                            self.interlinear_controls(ui, tab, narrow);
                             self.parallel_resources(ui, tab, narrow);
                         }
                         let measured = ui.min_rect().width();

@@ -1,7 +1,7 @@
 //! Open Bible Software desktop app.
 //!
 //! `openbible [file.obr]` opens the app. `openbible --bench [--obr FILE] [--hz N] [--json OUT]
-//! [--quick]` runs the headless scroll/fling/jump benchmark (`cargo xtask bench`).
+//! [--interlinear-panes N] [--quick]` runs the headless scroll/fling/jump benchmark (`cargo xtask bench`).
 
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -24,6 +24,9 @@ fn bench(args: &[String]) -> ExitCode {
             "--hz" => cfg.refresh_hz = it.next().and_then(|v| v.parse().ok()).unwrap_or(60.0),
             "--json" => json = it.next().cloned(),
             "--obr" => obr = it.next().cloned(),
+            "--interlinear-panes" => {
+                cfg.interlinear_panes = it.next().and_then(|v| v.parse().ok()).unwrap_or(1);
+            }
             "--quick" => {
                 cfg.steady_frames = 120;
                 cfg.flings = 1;

@@ -9,7 +9,7 @@ use obs_render::GlyphAtlas;
 
 use crate::marks::{Mark, MarkKind};
 use crate::palette::Palette;
-use crate::selection::{DocPos, Granularity, Selection, copy_text, range_rects, selection_rects};
+use crate::selection::{DocPos, Granularity, Selection, range_rects, selection_rects};
 use crate::view::{MARGIN, ReadingView, SYNC_BUDGET};
 use obs_layout::{InlineObject, UnitPos};
 use obs_scripture::Verse;
@@ -121,6 +121,9 @@ pub struct PaneOutput {
     /// Where in the text the pointer is when the right-click menu opens (by a right-click or
     /// from the keyboard): its Verse and Tagged word are there, not at the selection's start.
     pub pointer_at: Option<DocPos>,
+    /// An interlinear line (#143) was clicked: the right-click menu opens for its word, which
+    /// is now the selection.
+    pub cell_clicked: bool,
 }
 
 /// Draw the reading pane into all the space `ui` has, and handle its input. `flash` marks a
@@ -284,29 +287,38 @@ pub fn reading_pane(
             out.selection_rect = Some(out.selection_rect.map_or(r, |u| u.union(r)));
         }
     }
-    // The Tagged word under the pointer is underlined at once, pinned or not.
+    // The Tagged word under the pointer is underlined at once, pinned or not. Its
+    // interlinear lines (#143) point at it too.
+    let mut on_cell = false;
     let hovered_word = response.hover_pos().and_then(|p| {
-        let (unit, UnitPos::Text(byte)) =
-            view.hit_in_unit_at(p.x - text_rect.left(), p.y - rect.top())?
-        else {
-            return None;
+        let (unit, pos) = view.hit_in_unit_at(p.x - text_rect.left(), p.y - rect.top())?;
+        let byte = match pos {
+            UnitPos::Text(byte) => byte,
+            UnitPos::Object {
+                anchor,
+                object: InlineObject::InterlinearCell { .. },
+            } => {
+                on_cell = true;
+                anchor
+            }
+            UnitPos::Object { .. } => return None,
         };
         let (range, _) = view.doc.tagged_word_at(unit, byte)?;
         Some(WordHit { unit, range })
     });
     if let Some(w) = &hovered_word {
-        let sel = Selection {
-            anchor: DocPos {
+        let word = (
+            DocPos {
                 unit: w.unit,
                 byte: w.range.start,
             },
-            head: DocPos {
+            DocPos {
                 unit: w.unit,
                 byte: w.range.end,
             },
-            granularity: Granularity::Grapheme,
-        };
-        for [x0, _, x1, y1] in selection_rects(view, &sel, rect.height()) {
+        );
+        let rects = range_rects(view, &[word], rect.height());
+        for &[x0, _, x1, y1] in rects.iter().flatten() {
             let y = rect.top() + y1 - 1.5;
             painter.line_segment(
                 [
@@ -317,7 +329,15 @@ pub fn reading_pane(
             );
         }
         if !view.dragging_scrollbar && response.clicked() {
-            out.clicked_word = Some(w.clone());
+            if on_cell {
+                // A click on an interlinear line opens the word's right-click menu (#142),
+                // acting on the whole Tagged word (e.g. "he gave"), not its first word.
+                select_tagged_word_for_menu(view, word);
+                out.pointer_at = Some(word.0);
+                out.cell_clicked = true;
+            } else {
+                out.clicked_word = Some(w.clone());
+            }
         }
     }
     out.hovered_word = hovered_word;
@@ -617,7 +637,7 @@ fn handle_selection(
             .selection
             .filter(|s| !s.is_empty() || s.granularity != Granularity::Grapheme)
     {
-        ui.ctx().copy_text(copy_text(&view.doc, &sel));
+        ui.ctx().copy_text(view.copy_text(&sel));
     }
     input
 }
@@ -648,6 +668,23 @@ pub(crate) fn select_for_menu(view: &mut ReadingView, at: DocPos) {
         granularity: Granularity::Word,
     };
     view.selection = has_text(view, &word).then_some(word);
+}
+
+/// The menu of an interlinear cell acts on the selection when it covers the cell's whole
+/// Tagged word `word`, else on that word's full range (which becomes the selection).
+fn select_tagged_word_for_menu(view: &mut ReadingView, word: (DocPos, DocPos)) {
+    if view.selection.is_some_and(|s| {
+        let (a, b) = s.range(&view.doc);
+        has_text(view, &s) && a <= word.0 && word.1 <= b
+    }) {
+        return;
+    }
+    let sel = Selection {
+        anchor: word.0,
+        head: word.1,
+        granularity: Granularity::Grapheme,
+    };
+    view.selection = has_text(view, &sel).then_some(sel);
 }
 
 /// Whether a selection covers any text other than white space (stopping at the first such

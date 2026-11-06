@@ -50,6 +50,8 @@ pub struct ReadingDoc {
     span_indexes: Vec<OnceLock<SpanIndex>>,
     /// The Standard Passage of each Verse, built on first use (Annotations in this Bible).
     standard_index: OnceLock<StandardIndex>,
+    /// Whether any word carries original-language data, found on first use.
+    tagged: OnceLock<bool>,
 }
 
 /// Bible Verses by the Standard Passage they map to (ADR 0002), for finding where a Passage
@@ -161,6 +163,7 @@ impl ReadingDoc {
             verse_map: None,
             span_indexes,
             standard_index: OnceLock::new(),
+            tagged: OnceLock::new(),
         }
     }
 
@@ -226,6 +229,18 @@ impl ReadingDoc {
     /// Index into `units` of Bible Verse `i` (an index into `verses`).
     pub fn verse_unit(&self, i: usize) -> Option<usize> {
         self.verse_units.get(i).copied()
+    }
+
+    /// Whether any of its words is a Tagged word (with a Strong's number): a Bible that can
+    /// show interlinear lines (#143).
+    pub fn has_tagged_words(&self) -> bool {
+        *self.tagged.get_or_init(|| {
+            self.units.iter().any(|u| {
+                u.spans
+                    .iter()
+                    .any(|s| matches!(&s.kind, SpanKind::TaggedWord { parts } if !parts.is_empty()))
+            })
+        })
     }
 
     /// The innermost Tagged word at unit byte `byte`: its bytes and its morphemes.

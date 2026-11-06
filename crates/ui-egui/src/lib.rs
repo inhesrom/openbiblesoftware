@@ -8,6 +8,7 @@ pub mod bench;
 mod compare_view;
 mod doc;
 mod heights;
+mod interlinear;
 mod marks;
 mod palette;
 mod pane;
@@ -27,6 +28,7 @@ pub use compare_view::{
 };
 pub use doc::{DocBlock, ReadingDoc};
 pub use heights::HeightIndex;
+pub use interlinear::InterlinearSource;
 pub use marks::{Mark, MarkKind, marks_for};
 pub use palette::{HIGHLIGHT_STYLES, Palette, contrast};
 pub use pane::{AtlasTexture, MEASURE_EMS, PaneOutput, reading_pane};

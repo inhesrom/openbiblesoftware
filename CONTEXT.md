@@ -70,6 +70,10 @@ _Avoid_: Parsing code, Morph tag (in user-facing text)
 A short English meaning for a Lemma or a Tagged word.
 _Avoid_: Definition, Translation
 
+**Interlinear lines**:
+Short lines stacked under each Tagged word in a Bible Tab, toggled from the Tab header; the user picks which lines show, and the choice is kept per Tab and saved in Layouts. In an English Bible with Strong's numbers they form a **reverse interlinear** (Lemma, transliteration, Strong's number, Morphology, Gloss: the Hebrew or Greek behind each English word); in a Hebrew, Aramaic or Greek Bible they form an **interlinear** (Gloss, transliteration, Morphology, Strong's number under the original text). The lines are not text of the Resource: Annotations never anchor in them.
+_Avoid_: Interlinear text, Interlinear Bible (it is the same Bible with lines under it), Glosses row
+
 ### Library
 
 **Resource**:

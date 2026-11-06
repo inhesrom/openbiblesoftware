@@ -487,6 +487,7 @@ impl Session {
                         location: None,
                         entry_location: None,
                         link: t.link,
+                        interlinear: Default::default(),
                     });
                     if t.kind.is_reading() {
                         snap.focused = snap.focused.or(Some(id));

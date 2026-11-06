@@ -6,11 +6,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use obs_layout::{LaidBlock, TextSettings, UnitPos, block_paragraph, estimate_height};
+use obs_layout::{LaidBlock, Paragraph, TextSettings, UnitPos, block_paragraph, estimate_height};
 use obs_scripture::Verse;
 
 use crate::doc::ReadingDoc;
 use crate::heights::HeightIndex;
+use crate::interlinear::InterlinearSource;
 use crate::selection::{DocPos, Selection};
 use crate::workers::{LayoutClient, lay_out};
 
@@ -22,6 +23,10 @@ pub const SYNC_BUDGET: Duration = Duration::from_micros(1500);
 /// 194 KB, lays out in about 60 ms with an empty shape cache). Blocks predicted not to fit
 /// the remaining budget go to the workers instead, so one long paragraph cannot overrun it.
 const LAYOUT_COST_PER_BYTE: Duration = Duration::from_nanos(320);
+
+/// How many times dearer a block is to lay out with interlinear lines (#143): each Tagged
+/// word adds its lines' lookups and shaping.
+const INTERLINEAR_COST: u32 = 6;
 
 /// How far beyond the viewport to lay out ahead of time, in viewport heights (#19 rule 3).
 const PREFETCH: f32 = 1.5;
@@ -105,6 +110,29 @@ pub struct ReadingView {
     pub(crate) dragging_scrollbar: bool,
     /// Where the pane last drew the text's top-left corner, in screen points.
     pub(crate) text_origin: [f32; 2],
+    /// The interlinear lines under its Tagged words, when the Tab shows them (#143).
+    interlinear: Option<Arc<InterlinearSource>>,
+}
+
+/// Block `i` of `doc` as a paragraph: with its interlinear lines when there are any (or, for
+/// an `estimate`, room for them).
+fn paragraph(
+    doc: &ReadingDoc,
+    i: usize,
+    settings: &TextSettings,
+    interlinear: Option<&InterlinearSource>,
+    estimate: bool,
+) -> Option<Paragraph> {
+    if let Some(source) = interlinear {
+        return source.paragraph(doc, i, settings, estimate);
+    }
+    let b = doc.blocks.get(i)?;
+    Some(block_paragraph(
+        doc.units.get(b.unit)?,
+        &b.source,
+        doc.direction(),
+        settings,
+    ))
 }
 
 impl ReadingView {
@@ -125,6 +153,7 @@ impl ReadingView {
             selection: None,
             dragging_scrollbar: false,
             text_origin: [0.0, 0.0],
+            interlinear: None,
         };
         view.set_width(600.0);
         view
@@ -152,21 +181,40 @@ impl ReadingView {
         }
     }
 
+    /// The interlinear lines it shows (#143).
+    pub fn interlinear(&self) -> Option<&Arc<InterlinearSource>> {
+        self.interlinear.as_ref()
+    }
+
+    /// A selection as copied: [`crate::copy_text`], with the interlinear lines of its Tagged
+    /// words when the Tab shows them (#143).
+    pub fn copy_text(&self, sel: &Selection) -> String {
+        let rows = self.interlinear.as_ref().map_or_else(Vec::new, |source| {
+            let (a, b) = sel.range(&self.doc);
+            source.copy_rows(&self.doc, a, b)
+        });
+        crate::selection::copy_text_with(&self.doc, sel, &rows)
+    }
+
+    /// Show these interlinear lines (none: no lines). The text is laid out again, and the
+    /// Current location stays where it is.
+    pub fn set_interlinear(&mut self, source: Option<Arc<InterlinearSource>>) {
+        let key = |s: Option<&Arc<InterlinearSource>>| s.map(|s| s.key());
+        if key(source.as_ref()) != key(self.interlinear.as_ref()) {
+            self.interlinear = source;
+            self.reset_heights();
+        }
+    }
+
     fn reset_heights(&mut self) {
         // Keep the reader on the same verse across a relayout.
         let keep = self.current_location_opt();
         let doc = Arc::clone(&self.doc);
-        let estimates = doc
-            .blocks
-            .iter()
-            .map(|b| {
-                let p = block_paragraph(
-                    &doc.units[b.unit],
-                    &b.source,
-                    doc.direction(),
-                    &self.settings,
-                );
-                estimate_height(&p, self.width)
+        let interlinear = self.interlinear.as_deref();
+        let estimates = (0..doc.blocks.len())
+            .map(|i| {
+                paragraph(&doc, i, &self.settings, interlinear, true)
+                    .map_or(0.0, |p| estimate_height(&p, self.width))
             })
             .collect();
         self.heights = HeightIndex::new(estimates);
@@ -189,14 +237,13 @@ impl ReadingView {
         if let Some(l) = self.laid.get(&i) {
             return Some(Arc::clone(l));
         }
-        let doc = Arc::clone(&self.doc);
-        let b = doc.blocks.get(i)?;
-        let p = block_paragraph(
-            &doc.units[b.unit],
-            &b.source,
-            doc.direction(),
+        let p = paragraph(
+            &self.doc,
+            i,
             &self.settings,
-        );
+            self.interlinear.as_deref(),
+            false,
+        )?;
         let l = Arc::new(lay_out(&p, self.width));
         self.layouts += 1;
         self.heights.set(i, l.height);
@@ -282,10 +329,21 @@ impl ReadingView {
         }
         let key = self.key(i);
         let (doc, settings, width) = (Arc::clone(&self.doc), self.settings, self.width);
+        let interlinear = self.interlinear.clone();
         self.client.submit_with(key, move || {
-            let b = &doc.blocks[i];
-            let p = block_paragraph(&doc.units[b.unit], &b.source, doc.direction(), &settings);
-            lay_out(&p, width)
+            match paragraph(&doc, i, &settings, interlinear.as_deref(), false) {
+                Some(p) => lay_out(&p, width),
+                // Checked above: the block exists.
+                None => lay_out(
+                    &obs_layout::snippet_paragraph(
+                        "",
+                        obs_layout::ColorRole::Ink,
+                        false,
+                        &settings,
+                    ),
+                    width,
+                ),
+            }
         });
         true
     }
@@ -416,12 +474,17 @@ impl ReadingView {
         let mut blocks = Vec::new();
         let mut i = self.anchor.0;
         let mut top = -self.anchor.1;
+        let cost_per_byte = if self.interlinear.is_some() {
+            LAYOUT_COST_PER_BYTE * INTERLINEAR_COST
+        } else {
+            LAYOUT_COST_PER_BYTE
+        };
         while top < height && i < n {
             let laid = match self.laid.get(&i) {
                 Some(l) => Some(Arc::clone(l)),
                 None if budget.is_none_or(|b| {
                     let bytes = self.doc.blocks[i].source.range.len() as u32;
-                    stats.sync_layout + LAYOUT_COST_PER_BYTE * bytes <= b
+                    stats.sync_layout + cost_per_byte * bytes <= b
                 }) =>
                 {
                     let start = Instant::now();

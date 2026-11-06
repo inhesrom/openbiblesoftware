@@ -44,6 +44,9 @@ mod guide_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod guide_words_tests;
 pub mod import;
+pub mod interlinear;
+#[cfg(test)]
+mod interlinear_tests;
 pub mod jobs;
 pub mod key_words;
 mod library;
@@ -136,6 +139,9 @@ pub use guide::{
 pub use import::{
     DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,
     ImportSource, Imports, RepoOrigin, UNAVAILABLE_INDEX,
+};
+pub use interlinear::{
+    InterlinearKind, InterlinearLine, InterlinearLines, LexiconWord, cell_gloss, cell_texts,
 };
 pub use jobs::{
     Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step, sword_installer,

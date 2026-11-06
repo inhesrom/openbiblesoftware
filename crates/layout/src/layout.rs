@@ -16,6 +16,9 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::paragraph::{Align, InlineObject, Paragraph, RunSource};
 use crate::style::RunStyle;
 
+/// Space between neighbouring interlinear columns, as a share of the lines' text size.
+const COLUMN_GAP: f32 = 0.9;
+
 /// One shaped piece of a line: a single run, direction and line-break segment.
 #[derive(Debug, Clone)]
 pub struct LaidItem {
@@ -32,6 +35,8 @@ pub struct LaidItem {
     pub bytes: Range<usize>,
     trailing_space: f32,
     breakable_after: bool,
+    /// The interlinear word (index into the paragraph's interlinear words) it is part of.
+    word: Option<usize>,
 }
 
 impl LaidItem {
@@ -58,6 +63,30 @@ pub struct LaidLine {
     pub items: Vec<LaidItem>,
     /// Paragraph-text bytes on this line (logical).
     pub bytes: Range<usize>,
+    /// Bottom of the line's text, above any interlinear lines under it (`bottom` without).
+    pub text_bottom: f32,
+}
+
+/// One interlinear line under a Tagged word (#143), laid out on its own.
+#[derive(Debug, Clone)]
+pub struct LaidCell {
+    /// Index of the block line whose word it sits under.
+    pub line: usize,
+    /// Its row: 0 is the line just under the word.
+    pub row: usize,
+    /// Unit bytes of the Tagged word.
+    pub word: Range<usize>,
+    /// Its text, in logical order.
+    pub text: String,
+    /// Its box, in px from the block's top-left.
+    pub x: f32,
+    pub width: f32,
+    pub top: f32,
+    pub bottom: f32,
+    pub baseline: f32,
+    /// Shaped pieces in visual order; their x is absolute in the block and their cluster
+    /// bytes index `text`.
+    pub items: Vec<LaidItem>,
 }
 
 /// Where a paragraph byte came from.
@@ -90,6 +119,102 @@ pub struct LaidBlock {
     run_starts: Vec<usize>,
     sources: Vec<RunSource>,
     pub lines: Vec<LaidLine>,
+    /// Interlinear lines under its Tagged words (#143), line by line.
+    pub cells: Vec<LaidCell>,
+}
+
+/// A shaped piece of an interlinear cell: one face and one bidi level.
+struct CellPiece {
+    shaped: Arc<ShapedRun>,
+    style: RunStyle,
+    /// Its resolved bidi level (odd: right to left).
+    level: u8,
+    /// Its bytes of the cell's text.
+    bytes: Range<usize>,
+}
+
+/// An interlinear cell's text, its shaped pieces in logical order, and its width.
+type CellPieces = (String, Vec<CellPiece>, f32);
+
+/// An interlinear word as laid out: its paragraph bytes and its lines, shaped.
+struct WordColumn {
+    /// Paragraph-text bytes of the word.
+    bytes: Range<usize>,
+    /// Unit bytes of the word.
+    unit: Range<usize>,
+    /// Each row's text and shaped pieces (logical order), with its width.
+    cells: Vec<CellPieces>,
+    /// Space added on each side of the word so its column fits its widest line.
+    pad: f32,
+}
+
+/// The paragraph bytes of unit bytes `unit`, if the runs show all of them as text.
+fn para_range(
+    run_starts: &[usize],
+    sources: &[RunSource],
+    n: usize,
+    unit: &Range<usize>,
+) -> Option<Range<usize>> {
+    let mut start = None;
+    let mut end = None;
+    for (i, src) in sources.iter().enumerate() {
+        if let RunSource::Text { unit_start } = *src {
+            let len = run_starts.get(i + 1).copied().unwrap_or(n) - run_starts[i];
+            if start.is_none() && unit.start >= unit_start && unit.start < unit_start + len {
+                start = Some(run_starts[i] + (unit.start - unit_start));
+            }
+            if unit.end > unit_start && unit.end <= unit_start + len {
+                end = Some(run_starts[i] + (unit.end - unit_start));
+            }
+        }
+    }
+    let (s, e) = (start?, end?);
+    (s < e).then_some(s..e)
+}
+
+/// Shape an interlinear cell's runs (one per script and face) in logical order. A cell is a
+/// bidi paragraph of its own (its first strong letter sets its direction), split where its
+/// face or resolved level changes, so mixed Hebrew and Latin, digits and punctuation each
+/// read their own way.
+fn shape_cell(runs: &[crate::paragraph::Run], cache: &ShapeCache) -> CellPieces {
+    let mut text = String::new();
+    let mut run_starts = Vec::with_capacity(runs.len());
+    for r in runs {
+        run_starts.push(text.len());
+        text.push_str(&r.text);
+    }
+    let n = text.len();
+    let bidi = BidiInfo::new(&text, None);
+    let levels = &bidi.levels;
+    let mut bounds = run_starts.clone();
+    bounds.push(n);
+    for i in 1..n {
+        if text.is_char_boundary(i) && levels[i] != levels[i - 1] {
+            bounds.push(i);
+        }
+    }
+    bounds.sort_unstable();
+    bounds.dedup();
+    let mut pieces = Vec::with_capacity(bounds.len());
+    let mut width = 0.0;
+    for w in bounds.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        if a >= b {
+            continue;
+        }
+        let style = runs[run_starts.partition_point(|&s| s <= a).saturating_sub(1)].style;
+        let level = levels[a];
+        if let Ok(shaped) = cache.shape(&text[a..b], style.shape_style(level.is_rtl())) {
+            width += shaped.width;
+            pieces.push(CellPiece {
+                shaped,
+                style,
+                level: level.number(),
+                bytes: a..b,
+            });
+        }
+    }
+    (text, pieces, width)
 }
 
 /// Lay `para` out at `width` px, shaping through `cache`.
@@ -107,12 +232,38 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
     let levels = &bidi.levels;
     let run_of = |p: usize| run_starts.partition_point(|&s| s <= p).saturating_sub(1);
 
-    // Segment at run starts, break opportunities and direction changes.
+    // Interlinear words (#143): their paragraph bytes and shaped lines.
+    let rows = para.interlinear.as_ref().map_or(0, |il| il.rows);
+    let mut columns: Vec<WordColumn> = para
+        .interlinear
+        .iter()
+        .flat_map(|il| &il.words)
+        .filter_map(|w| {
+            Some(WordColumn {
+                bytes: para_range(&run_starts, &sources, n, &w.word)?,
+                unit: w.word.clone(),
+                cells: w.cells.iter().map(|c| shape_cell(c, cache)).collect(),
+                pad: 0.0,
+            })
+        })
+        .collect();
+    columns.sort_by_key(|c| c.bytes.start);
+    let column_at = |p: usize| {
+        let i = columns.partition_point(|c| c.bytes.start <= p);
+        i.checked_sub(1).filter(|&i| columns[i].bytes.contains(&p))
+    };
+
+    // Segment at run starts, break opportunities, direction changes and interlinear words.
     let mut bounds: Vec<usize> = vec![0, n];
     bounds.extend(run_starts.iter().copied());
+    for c in &columns {
+        bounds.push(c.bytes.start);
+        bounds.push(c.bytes.end);
+    }
     let mut breaks = HashSet::new();
     for (i, _) in unicode_linebreak::linebreaks(&text) {
-        if i < n {
+        // An interlinear word is never broken: its lines stand under all of it.
+        if i < n && column_at(i).is_none_or(|c| columns[c].bytes.start == i) {
             bounds.push(i);
             breaks.insert(i);
         }
@@ -148,8 +299,39 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
             shaped,
             bytes: a..b,
             breakable_after: breaks.contains(&b) || b == n,
+            word: column_at(a),
         });
     }
+
+    // Each interlinear word is as wide as its widest line, plus a gap between columns.
+    if !columns.is_empty() {
+        let gap = para
+            .interlinear
+            .as_ref()
+            .map_or(0.0, |il| il.size * COLUMN_GAP);
+        let mut word_widths = vec![0.0f32; columns.len()];
+        for it in &items {
+            if let Some(w) = it.word {
+                word_widths[w] += it.width;
+            }
+        }
+        for (c, word) in columns.iter_mut().zip(word_widths) {
+            let widest = c.cells.iter().map(|(_, _, w)| *w).fold(0.0, f32::max);
+            if widest > 0.0 {
+                c.pad = ((widest + gap - word) / 2.0).max(0.0);
+            }
+        }
+    }
+    // Extra width an item takes in line filling: its word's padding, once on each side.
+    let pads = |items: &[LaidItem], i: usize| {
+        let Some(w) = items[i].word else {
+            return 0.0;
+        };
+        let first = i == 0 || items[i - 1].word != Some(w);
+        let last = i + 1 == items.len() || items[i + 1].word != Some(w);
+        columns[w].pad * (f32::from(u8::from(first)) + f32::from(u8::from(last)))
+    };
+    let extra: Vec<f32> = (0..items.len()).map(|i| pads(&items, i)).collect();
 
     // Greedy line filling over unbreakable chunks.
     let available =
@@ -159,8 +341,8 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
     let mut cur_w = 0.0f32;
     let mut chunk: Vec<LaidItem> = Vec::new();
     let mut chunk_w = 0.0f32;
-    for it in items {
-        chunk_w += it.width;
+    for (it, extra) in items.into_iter().zip(extra) {
+        chunk_w += it.width + extra;
         let br = it.breakable_after;
         let trail = it.trailing_space;
         chunk.push(it);
@@ -186,7 +368,25 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
         .runs
         .first()
         .map_or_else(|| RunStyle::body(16.0), |r| r.style);
+    // Interlinear rows: each as tall as its tallest cell anywhere in the paragraph, so rows
+    // line up from line to line.
+    let row_extents: Vec<(f32, f32)> = (0..rows)
+        .map(|row| {
+            let size = para.interlinear.as_ref().map_or(12.0, |il| il.size);
+            let mut ext = RunStyle::body(size).line_extent(para.hebrew_line_height);
+            for c in &columns {
+                if let Some((_, pieces, _)) = c.cells.get(row) {
+                    for piece in pieces {
+                        let (a, d) = piece.style.line_extent(para.hebrew_line_height);
+                        ext = (ext.0.max(a), ext.1.max(d));
+                    }
+                }
+            }
+            ext
+        })
+        .collect();
     let mut lines = Vec::with_capacity(lines_items.len());
+    let mut cells = Vec::new();
     let mut y = para.space_before;
     for (li, its) in lines_items.into_iter().enumerate() {
         let start = its.iter().map(|i| i.bytes.start).min().unwrap_or(n);
@@ -211,7 +411,8 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
         }
         let natural = asc + desc;
         let line_height = natural * para.line_spacing;
-        let content: f32 = ordered.iter().map(|i| i.width).sum::<f32>() - hang;
+        let padding: f32 = (0..ordered.len()).map(|i| pads(&ordered, i)).sum();
+        let content: f32 = ordered.iter().map(|i| i.width).sum::<f32>() + padding - hang;
         let first_indent = if li == 0 { para.indent } else { 0.0 };
         let mut x = match (para.align, para.rtl) {
             (Align::Center, _) => ((width - content) / 2.0).max(0.0),
@@ -222,19 +423,102 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
             // Hanging space sits at the logical end, which is the left edge in RTL.
             x -= hang;
         }
-        for it in &mut ordered {
-            it.x = x;
-            x += it.width;
+        for i in 0..ordered.len() {
+            let w = ordered[i].word;
+            let first = i == 0 || ordered[i - 1].word != w;
+            let last = i + 1 == ordered.len() || ordered[i + 1].word != w;
+            let pad = w.map_or(0.0, |w| columns[w].pad);
+            if first {
+                x += pad;
+            }
+            ordered[i].x = x;
+            x += ordered[i].width;
+            if last {
+                x += pad;
+            }
         }
         let top = y;
         let baseline = (top + (line_height - natural) / 2.0 + asc).round();
         y += line_height;
+        let mut text_bottom = y;
+        if rows > 0 {
+            // The lines under each word on this line, centred on its column.
+            let mut row_baselines = Vec::with_capacity(rows);
+            let mut row_y = baseline + desc + fallback.size * 0.08;
+            text_bottom = row_y;
+            for &(a, d) in &row_extents {
+                row_baselines.push(((row_y + a).round(), row_y, row_y + a + d));
+                row_y += (a + d) * 1.08;
+            }
+            y = row_y + fallback.size * 0.45;
+            let mut seen: Vec<usize> = Vec::new();
+            for it in &ordered {
+                let Some(w) = it.word else { continue };
+                if seen.contains(&w) {
+                    continue;
+                }
+                seen.push(w);
+                let (left, right) = ordered
+                    .iter()
+                    .filter(|o| o.word == Some(w))
+                    .fold((f32::MAX, f32::MIN), |(l, r), o| {
+                        (l.min(o.x), r.max(o.x + o.width))
+                    });
+                let centre = (left + right) / 2.0;
+                let column = &columns[w];
+                for (row, (cell_text, pieces, cell_width)) in column.cells.iter().enumerate() {
+                    let Some(&(cell_baseline, cell_top, cell_bottom)) = row_baselines.get(row)
+                    else {
+                        continue;
+                    };
+                    if pieces.is_empty() {
+                        continue;
+                    }
+                    let x0 = centre - cell_width / 2.0;
+                    let mut px = x0;
+                    let logical: Vec<LaidItem> = pieces
+                        .iter()
+                        .map(|p| LaidItem {
+                            x: 0.0,
+                            width: p.shaped.width,
+                            run: 0,
+                            rtl: p.level % 2 == 1,
+                            style: p.style,
+                            shaped: Arc::clone(&p.shaped),
+                            bytes: p.bytes.clone(),
+                            trailing_space: p.shaped.trailing_space,
+                            breakable_after: false,
+                            word: Some(w),
+                        })
+                        .collect();
+                    let cell_levels: Vec<u8> = pieces.iter().map(|p| p.level).collect();
+                    let mut laid = reorder(logical, &cell_levels);
+                    for item in &mut laid {
+                        item.x = px;
+                        px += item.width;
+                    }
+                    cells.push(LaidCell {
+                        line: li,
+                        row,
+                        word: column.unit.clone(),
+                        text: cell_text.clone(),
+                        x: x0,
+                        width: *cell_width,
+                        top: cell_top,
+                        bottom: cell_bottom,
+                        baseline: cell_baseline,
+                        items: laid,
+                    });
+                }
+            }
+        }
         lines.push(LaidLine {
             top,
             baseline,
             bottom: y,
             items: ordered,
             bytes: start..end,
+            text_bottom,
         });
     }
     LaidBlock {
@@ -245,6 +529,7 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
         run_starts,
         sources,
         lines,
+        cells,
     }
 }
 
@@ -320,11 +605,17 @@ impl LaidBlock {
         i.min(self.lines.len().saturating_sub(1))
     }
 
-    /// The cluster exactly under a point, traced back to the unit.
+    /// The cluster exactly under a point, traced back to the unit. Over an interlinear line
+    /// it is that line's cell, as an [`InlineObject::InterlinearCell`] anchored at its word's
+    /// first byte, with the word's paragraph bytes.
     pub fn hit(&self, x: f32, y: f32) -> Option<Hit> {
-        let line = self.lines.get(self.line_index_at(y))?;
+        let li = self.line_index_at(y);
+        let line = self.lines.get(li)?;
         if y < line.top || y >= line.bottom {
             return None;
+        }
+        if y >= line.text_bottom {
+            return self.cell_at(li, x, y).map(|c| self.cell_hit(c));
         }
         for it in &line.items {
             if x < it.x || x >= it.x + it.width {
@@ -340,24 +631,62 @@ impl LaidBlock {
         None
     }
 
+    /// The interlinear cell of line `li` under a point: within its row, from its column's
+    /// left to right edge.
+    fn cell_at(&self, li: usize, x: f32, y: f32) -> Option<&LaidCell> {
+        self.cells
+            .iter()
+            .find(|c| c.line == li && y >= c.top && y < c.bottom && x >= c.x && x < c.x + c.width)
+    }
+
+    fn cell_hit(&self, cell: &LaidCell) -> Hit {
+        let bytes = self
+            .from_unit(cell.word.start)
+            .zip(self.from_unit(cell.word.end))
+            .map_or(0..0, |(a, b)| a..b);
+        Hit {
+            bytes,
+            source: UnitPos::Object {
+                anchor: cell.word.start,
+                object: InlineObject::InterlinearCell { row: cell.row },
+            },
+        }
+    }
+
+    /// The interlinear cells under the Tagged words that overlap unit bytes `unit` (a
+    /// selection), for drawing it.
+    pub fn cells_in(&self, unit: Range<usize>) -> impl Iterator<Item = &LaidCell> + '_ {
+        self.cells
+            .iter()
+            .filter(move |c| c.word.start < unit.end && c.word.end > unit.start)
+    }
+
     /// The logical caret position (paragraph byte, on a grapheme boundary) nearest a point:
-    /// for selection, which works in document coordinates (#14 rule 9).
+    /// for selection, which works in document coordinates (#14 rule 9). Between items (the
+    /// space an interlinear column adds around its word) it is the nearer item's edge; under
+    /// the text, among interlinear lines, it goes by x alone.
     pub fn caret_at(&self, x: f32, y: f32) -> usize {
         let Some(line) = self.lines.get(self.line_index_at(y)) else {
             return 0;
         };
-        let (Some(first), Some(last)) = (line.items.first(), line.items.last()) else {
+        if line.items.is_empty() {
             return line.bytes.start;
-        };
+        }
+        let left = line.items.iter().map(|i| i.x).fold(f32::MAX, f32::min);
+        let right = line
+            .items
+            .iter()
+            .map(|i| i.x + i.width)
+            .fold(f32::MIN, f32::max);
         // Beyond the line: its logical start on the paragraph's start side, else its end.
-        if x < first.x {
+        if x < left {
             return if self.rtl {
                 line.bytes.end
             } else {
                 line.bytes.start
             };
         }
-        if x >= last.x + last.width {
+        if x >= right {
             return if self.rtl {
                 line.bytes.start
             } else {
@@ -380,7 +709,22 @@ impl LaidBlock {
                 }
             }
         }
-        line.bytes.start
+        // In a gap: the nearest item's nearer edge.
+        let nearest = line.items.iter().min_by(|a, b| {
+            let d = |i: &LaidItem| (i.x - x).abs().min((i.x + i.width - x).abs());
+            d(a).total_cmp(&d(b))
+        });
+        match nearest {
+            Some(it) => {
+                let at_left = (it.x - x).abs() <= (it.x + it.width - x).abs();
+                self.snap(if at_left ^ it.rtl {
+                    it.bytes.start
+                } else {
+                    it.bytes.end
+                })
+            }
+            None => line.bytes.start,
+        }
     }
 
     /// Round a paragraph byte to the nearest grapheme boundary at or before it.
@@ -397,9 +741,9 @@ impl LaidBlock {
     }
 
     /// Every glyph with its absolute position (pen x, baseline y) and the item it belongs to,
-    /// for painting.
+    /// for painting: the text's, then the interlinear lines'.
     pub fn glyphs(&self) -> impl Iterator<Item = (&LaidLine, &LaidItem, f32, f32, u32)> + '_ {
-        self.lines.iter().flat_map(|line| {
+        let text = self.lines.iter().flat_map(|line| {
             line.items.iter().flat_map(move |it| {
                 it.shaped.glyphs.iter().map(move |g| {
                     (
@@ -411,6 +755,19 @@ impl LaidBlock {
                     )
                 })
             })
-        })
+        });
+        let cells = self
+            .cells
+            .iter()
+            .filter_map(|c| Some((self.lines.get(c.line)?, c)));
+        let cells = cells.flat_map(|(line, c)| {
+            c.items.iter().flat_map(move |it| {
+                it.shaped
+                    .glyphs
+                    .iter()
+                    .map(move |g| (line, it, it.x + g.x, c.baseline - g.y, g.id))
+            })
+        });
+        text.chain(cells)
     }
 }

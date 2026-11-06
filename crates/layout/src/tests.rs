@@ -579,6 +579,7 @@ fn previews() {
                         ColorRole::NoteMarker => "#2e7d4f",
                         ColorRole::Accent => "#a0522d",
                         ColorRole::WordsOfJesus => "#b22222",
+                        ColorRole::Interlinear => "#2e7d4f",
                     };
                     paths.push_str(&format!("  <path fill=\"{fill}\" d=\"{d}\"/>\n"));
                 }

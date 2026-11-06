@@ -360,6 +360,8 @@ pub struct Tab {
     /// Where a Resource Tab that has just switched to a parallel resource (#151) goes once
     /// that Resource is loaded: its old location, as a Standard Verse.
     pub arriving_at: Option<Verse>,
+    /// A Bible Tab's interlinear lines (#143).
+    pub interlinear: crate::interlinear::InterlinearLines,
 }
 
 impl Tab {
@@ -812,6 +814,7 @@ impl Workspace {
                 comparison: Comparison::default(),
                 search: Default::default(),
                 arriving_at: None,
+                interlinear: Default::default(),
             },
         );
         // A linked Tool or Guide starts at its Link set's location. (Bibles wait until their
@@ -1357,6 +1360,7 @@ impl Workspace {
                     comparison: Comparison::default(),
                     search: Default::default(),
                     arriving_at: None,
+                    interlinear: t.interlinear,
                 },
             );
         }

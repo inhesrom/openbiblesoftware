@@ -3111,6 +3111,8 @@ mod command_box;
 #[path = "copy_export_tests.rs"]
 mod copy_export;
 
+#[path = "interlinear_tests.rs"]
+mod interlinear;
 #[path = "toolbar_tests.rs"]
 mod toolbar;
 
