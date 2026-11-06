@@ -621,3 +621,63 @@ fn a_strongs_only_greek_bible_still_offers_the_starter_library_for_forms() {
     click_action(&mut h, study, forms, ADD_STARTER);
     expect_starter_library(&mut h);
 }
+
+/// The Factbook (#149) with an empty Library: its chooser and every section offer the way to
+/// get TIPNR (the Starter library; SWORD repositories offer no People & places index), and
+/// Dictionary articles Get Dictionaries….
+#[test]
+fn every_factbook_section_and_its_chooser_have_a_working_action() {
+    let (mut h, _lab) = setup("factbook", &[]);
+    let chooser = h
+        .shell
+        .run("guide.factbook", &json!({ "name": "John", "split": true }))
+        .unwrap()["tab"]
+        .as_u64()
+        .map(TabId)
+        .unwrap();
+    until(&mut h, "the chooser's buttons", |h| {
+        find_in(
+            h,
+            chooser,
+            "No People & places index in your library. Add one (TIPNR) to look up people and \
+             places.",
+        )
+        .is_some()
+            && find_in(h, chooser, ADD_STARTER).is_some()
+    });
+    assert!(find_in(&h, chooser, "Get People & places indexes…").is_none());
+    let at = find_in(&h, chooser, ADD_STARTER).unwrap().center();
+    h.click(at);
+    settle(&mut h);
+    expect_starter_library(&mut h);
+    h.shell.run("tab.close", &json!({ "tab": chooser.0 }));
+    h.frames(2);
+
+    let factbook = h
+        .shell
+        .run(
+            "guide.factbook",
+            &json!({ "entity": "Abraham@Gen.11.26-1Pe", "split": true }),
+        )
+        .unwrap()["tab"]
+        .as_u64()
+        .map(TabId)
+        .unwrap();
+    use GuideSection::*;
+    until(&mut h, "every section's buttons", |h| {
+        [Summary, KeyPassages, Related]
+            .iter()
+            .all(|s| in_section(h, factbook, *s, ADD_STARTER).is_some())
+            && in_section(h, factbook, DictionaryArticles, "Get Dictionaries…").is_some()
+    });
+    click_action(&mut h, factbook, DictionaryArticles, "Get Dictionaries…");
+    expect_get_resources(&mut h, ResourceFilter::Type(ResourceType::Dictionary));
+    for section in [Summary, KeyPassages, Related] {
+        click_action(&mut h, factbook, section, ADD_STARTER);
+        expect_starter_library(&mut h);
+    }
+    for section in [Summary, KeyPassages, DictionaryArticles, Related] {
+        click_action(&mut h, factbook, section, IMPORT);
+        expect_import(&mut h);
+    }
+}

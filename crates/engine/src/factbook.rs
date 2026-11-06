@@ -621,6 +621,28 @@ pub fn section(
 ) -> Result<crate::SectionData, String> {
     use crate::{GuideSection, SectionData};
     use obs_store::ResourceStore;
+    if library
+        .of_type(obs_model::ResourceType::PeopleAndPlaces)
+        .next()
+        .is_none()
+    {
+        // No index at all: the section is empty, and its empty state says how to get one
+        // (#135) instead of failing.
+        return match section {
+            GuideSection::Summary => Ok(SectionData::FactbookSummary(FactbookSummary {
+                other_names: Vec::new(),
+                meaning: None,
+                family: Vec::new(),
+            })),
+            GuideSection::KeyPassages => Ok(SectionData::KeyPassages(Vec::new())),
+            GuideSection::DictionaryArticles => Ok(SectionData::DictionaryArticles(Vec::new())),
+            GuideSection::Related => Ok(SectionData::Related(Vec::new())),
+            other => Err(format!(
+                "{} needs a Passage or a Strong's number",
+                other.title()
+            )),
+        };
+    }
     let dir = directory.get(library)?;
     let entry = dir
         .get(id)

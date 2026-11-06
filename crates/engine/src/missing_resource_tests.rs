@@ -121,6 +121,20 @@ fn each_section_names_its_resource_type_tagging_and_get_resources_filter() {
             Tagging::Morphology,
             Some("Get Hebrew & Greek texts…"),
         ),
+        (Summary, ResourceType::PeopleAndPlaces, Tagging::None, None),
+        (
+            KeyPassages,
+            ResourceType::PeopleAndPlaces,
+            Tagging::None,
+            None,
+        ),
+        (
+            DictionaryArticles,
+            ResourceType::Dictionary,
+            Tagging::None,
+            Some("Get Dictionaries…"),
+        ),
+        (Related, ResourceType::PeopleAndPlaces, Tagging::None, None),
     ];
     assert_eq!(cases.len(), GuideSection::ALL.len());
     for (section, ty, tagging, label) in cases {
@@ -182,6 +196,18 @@ fn an_empty_library_is_offered_the_starter_resources_that_fill_each_section() {
     );
     assert_eq!(offered(Forms, Some("G26"), &empty), ids(&["tagnt"]));
     assert_eq!(offered(Forms, Some("H1254A"), &empty), ids(&["tahot"]));
+    // Factbook (#149): TIPNR, and the Dictionaries for their articles.
+    for section in [Summary, KeyPassages, Related] {
+        assert_eq!(
+            offered(section, None, &empty),
+            ids(&["tipnr"]),
+            "{section:?}"
+        );
+    }
+    assert_eq!(
+        offered(DictionaryArticles, None, &empty),
+        ids(&["easton", "smith"])
+    );
 }
 
 #[test]

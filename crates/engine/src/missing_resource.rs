@@ -84,17 +84,22 @@ impl GuideSection {
             GuideSection::Commentaries
             | GuideSection::CrossReferences
             | GuideSection::PeopleAndPlaces
-            | GuideSection::LexiconEntries => Tagging::None,
+            | GuideSection::LexiconEntries
+            | GuideSection::Summary
+            | GuideSection::KeyPassages
+            | GuideSection::DictionaryArticles
+            | GuideSection::Related => Tagging::None,
         }
     }
 
     /// The Get Resources filter that lists what the section reads: Bibles (whose rows show
-    /// the Strong's badge) for the Strong's-number sections, Hebrew & Greek for Forms.
+    /// the Strong's badge) for the Strong's-number sections, Hebrew & Greek for Forms; `None`
+    /// for a Resource type the online repositories do not offer (Cross-reference sets,
+    /// People & places indexes).
     pub fn get_resources_filter(self) -> Option<ResourceFilter> {
         match self {
             GuideSection::Forms => Some(ResourceFilter::HebrewAndGreek),
-            GuideSection::CrossReferences | GuideSection::PeopleAndPlaces => None,
-            s => Some(ResourceFilter::Type(s.resource_type())),
+            s => Some(ResourceFilter::Type(s.resource_type())).filter(|f| f.id().is_some()),
         }
     }
 
