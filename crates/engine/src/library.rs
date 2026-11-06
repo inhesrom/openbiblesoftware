@@ -41,6 +41,8 @@ pub struct Library {
     /// remembered in the User database), so their dormant Annotations can say which Resource
     /// is missing ("WEB is not in the library", #17 rule 13).
     departed: std::collections::BTreeMap<String, String>,
+    /// The user's Collections and Resource tags (#153), from the User database.
+    collections: crate::collections::CollectionSet,
 }
 
 impl Library {
@@ -54,6 +56,15 @@ impl Library {
 
     pub fn set_directory(&mut self, dir: PathBuf) {
         self.dir = Some(dir);
+    }
+
+    /// The Collections and Resource tags ([`crate::collections`]).
+    pub fn collection_set(&self) -> &crate::collections::CollectionSet {
+        &self.collections
+    }
+
+    pub fn set_collection_set(&mut self, set: crate::collections::CollectionSet) {
+        self.collections = set;
     }
 
     pub fn entries(&self) -> &[LibraryEntry] {
@@ -290,16 +301,29 @@ impl Library {
     }
 }
 
-/// The Library Tab's filter: header text and language chips, applied together.
+/// The Library Tab's filter: header text, language chips and a Collection, applied together.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LibraryFilter {
     /// Matched case-insensitively against abbreviation, title and resource id.
     pub text: String,
     /// Selected language chips ([`language_name`]s); none selected shows every language.
     pub languages: Vec<String>,
+    /// The Collection chosen (#153): only its Resources show. `None`: every Resource.
+    pub collection: Option<String>,
 }
 
 impl LibraryFilter {
+    /// [`Self::matches`], and in the chosen Collection of `library`.
+    pub fn matches_in(&self, library: &Library, m: &Manifest) -> bool {
+        self.matches(m)
+            && self
+                .collection
+                .as_deref()
+                .is_none_or(|c| library.in_collection(c, &m.resource_id))
+    }
+
+    /// The header text and language chips (the Collection needs the library:
+    /// [`Self::matches_in`]).
     pub fn matches(&self, m: &Manifest) -> bool {
         let lang = self.languages.is_empty()
             || self

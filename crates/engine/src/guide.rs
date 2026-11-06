@@ -156,6 +156,12 @@ impl GuideSection {
         self == GuideSection::Forms
     }
 
+    /// Whether the section can be filtered to a Collection (#153): the Passage Guide's
+    /// Commentaries, one row per Resource.
+    pub fn filterable(self) -> bool {
+        self == GuideSection::Commentaries
+    }
+
     /// What an empty section says (#15 rule 1): with no Resource of the kind it needs, a
     /// hint naming that kind; otherwise that nothing in the library covers the Key. Translated
     /// as and Occurrences need a Bible with Strong's numbers (English for Translated as):
@@ -373,11 +379,14 @@ impl SectionPlace {
     }
 }
 
-/// The order of a Guide's sections and which are collapsed or hidden. Always holds each of
-/// the Guide's sections exactly once.
+/// The order of a Guide's sections and which are collapsed or hidden, and the Collection
+/// each filterable section shows (#153). Always holds each of the Guide's sections exactly
+/// once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuideArrangement {
     pub sections: Vec<SectionPlace>,
+    /// Section → the Collection its rows are filtered to ([`GuideSection::filterable`]).
+    pub filters: BTreeMap<GuideSection, String>,
 }
 
 /// The stored form. Section ids stay strings so an arrangement saved by a later version with
@@ -394,6 +403,8 @@ struct StoredPlace {
     collapsed: bool,
     #[serde(default)]
     hidden: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    collection: Option<String>,
 }
 
 impl GuideArrangement {
@@ -405,6 +416,7 @@ impl GuideArrangement {
                 .copied()
                 .map(SectionPlace::new)
                 .collect(),
+            filters: BTreeMap::new(),
         }
     }
 
@@ -416,11 +428,15 @@ impl GuideArrangement {
         };
         let defaults = guide.sections();
         let mut sections: Vec<SectionPlace> = Vec::new();
+        let mut filters = BTreeMap::new();
         for p in stored.sections {
             if let Some(section) = GuideSection::from_id(&p.id)
                 && defaults.contains(&section)
                 && !sections.iter().any(|s| s.section == section)
             {
+                if let Some(c) = p.collection.filter(|_| section.filterable()) {
+                    filters.insert(section, c);
+                }
                 sections.push(SectionPlace {
                     section,
                     collapsed: p.collapsed,
@@ -439,7 +455,7 @@ impl GuideArrangement {
                 .map_or(0, |p| p + 1);
             sections.insert(at, SectionPlace::new(*s));
         }
-        Self { sections }
+        Self { sections, filters }
     }
 
     pub fn to_json(&self) -> String {
@@ -451,6 +467,7 @@ impl GuideArrangement {
                     id: p.section.id().into(),
                     collapsed: p.collapsed,
                     hidden: p.hidden,
+                    collection: self.filters.get(&p.section).cloned(),
                 })
                 .collect(),
         };
@@ -485,6 +502,22 @@ impl GuideArrangement {
     pub fn set_collapsed(&mut self, section: GuideSection, collapsed: bool) -> bool {
         self.place_mut(section)
             .is_some_and(|p| std::mem::replace(&mut p.collapsed, collapsed) != collapsed)
+    }
+
+    /// The Collection a section's rows are filtered to.
+    pub fn filter(&self, section: GuideSection) -> Option<&str> {
+        self.filters.get(&section).map(String::as_str)
+    }
+
+    /// Filter a section to a Collection (`None`: every Resource). Returns whether anything
+    /// changed.
+    pub fn set_filter(&mut self, section: GuideSection, collection: Option<String>) -> bool {
+        let old = self.filters.get(&section).cloned();
+        match &collection {
+            Some(c) => self.filters.insert(section, c.clone()),
+            None => self.filters.remove(&section),
+        };
+        old != collection
     }
 
     pub fn set_hidden(&mut self, section: GuideSection, hidden: bool) -> bool {
@@ -1048,7 +1081,54 @@ fn pref(guide: Guide) -> String {
 impl Session {
     /// Where a section is for `key`. Never waits: a section not computed yet is submitted to
     /// the job queue and reported as [`SectionStatus::Loading`]; ask again on a later frame.
+    /// A section filtered to a Collection (#153) keeps only the rows of its Resources.
     pub fn guide_section(&mut self, key: &Key, section: GuideSection) -> SectionStatus {
+        let status = self.guide_section_unfiltered(key, section);
+        let filter = Guide::ALL
+            .into_iter()
+            .filter(|g| g.sections().contains(&section))
+            .find_map(|g| self.guide_filter(g, section));
+        match (status, filter) {
+            (SectionStatus::Ready(data), Some(collection)) => match &*data {
+                SectionData::Commentaries(rows) => SectionStatus::Ready(Arc::new(
+                    SectionData::Commentaries(
+                        rows.iter()
+                            .filter(|r| self.library.in_collection(&collection, &r.resource_id))
+                            .cloned()
+                            .collect(),
+                    ),
+                )),
+                _ => SectionStatus::Ready(data),
+            },
+            (status, _) => status,
+        }
+    }
+
+    /// The Collection a section is filtered to, if any (and it still exists).
+    pub fn guide_filter(&self, guide: Guide, section: GuideSection) -> Option<String> {
+        self.guides
+            .arrangement(guide)
+            .filter(section)
+            .and_then(|c| self.library.collection(c))
+            .map(|c| c.name.clone())
+    }
+
+    /// Follow a Collection renamed (`to: Some`) or deleted in every Guide filter.
+    pub(crate) fn rename_guide_filters(&mut self, from: &str, to: Option<&str>) {
+        for guide in Guide::ALL {
+            let arrangement = self.guides.arrangement(guide);
+            for (section, c) in &arrangement.filters {
+                if c.eq_ignore_ascii_case(from) {
+                    let (section, to) = (*section, to.map(String::from));
+                    let _ = self.arrange(guide, |a| {
+                        a.set_filter(section, to);
+                    });
+                }
+            }
+        }
+    }
+
+    fn guide_section_unfiltered(&mut self, key: &Key, section: GuideSection) -> SectionStatus {
         let fingerprint: Vec<_> = self
             .library
             .entries()
@@ -1205,7 +1285,12 @@ fn arrangement_json(a: &GuideArrangement) -> Value {
     Value::Array(
         a.sections
             .iter()
-            .map(|p| json!({ "section": p.section.id(), "collapsed": p.collapsed, "hidden": p.hidden }))
+            .map(|p| json!({
+                "section": p.section.id(),
+                "collapsed": p.collapsed,
+                "hidden": p.hidden,
+                "collection": a.filter(p.section),
+            }))
             .collect(),
     )
 }
@@ -1327,6 +1412,45 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
             let hidden = p.bool("hidden").unwrap_or(true);
             s.arrange(guide, |a| {
                 a.set_hidden(section, hidden);
+            })
+        },
+    },
+    CommandSpec {
+        id: "guide.filter_section",
+        label: "Filter Guide section to a Collection",
+        shortcut: None,
+        params: &[
+            GUIDE,
+            SECTION,
+            ParamSpec {
+                name: "collection",
+                kind: ParamKind::String,
+                required: false,
+                help: "The Collection whose Resources the section shows (missing or empty: every Resource)",
+            },
+        ],
+        enabled: always,
+        run: |s, p| {
+            const ID: &str = "guide.filter_section";
+            let guide = guide_param(ID, &p)?;
+            let section = section_param(ID, guide, &p)?;
+            if !section.filterable() {
+                return Err(failed(
+                    ID,
+                    format!("{} cannot be filtered to a Collection", section.title()),
+                ));
+            }
+            let collection = match p.str("collection").map(str::trim).filter(|c| !c.is_empty()) {
+                None => None,
+                Some(c) => Some(
+                    s.library
+                        .collection(c)
+                        .map(|c| c.name.clone())
+                        .ok_or_else(|| failed(ID, format!("no Collection named “{c}”")))?,
+                ),
+            };
+            s.arrange(guide, |a| {
+                a.set_filter(section, collection);
             })
         },
     },
