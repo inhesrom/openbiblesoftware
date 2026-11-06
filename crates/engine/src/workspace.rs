@@ -99,6 +99,9 @@ pub enum TabKind {
     /// Help → Credits (#67): Starter Resources, data built into the app, fonts and
     /// third-party licences. Keyless, single instance.
     Credits,
+    /// Home (#178): today's reading, where the user left off, History and Favorites, the
+    /// Verse of the day, Quick start and the library summary. Keyless, single instance.
+    Home,
     Guide(Guide),
     Tool(Tool),
 }
@@ -136,6 +139,7 @@ enum Slot {
     GetBibles,
     StarterLibrary,
     Credits,
+    Home,
     Guide(Guide),
     Tool(Tool),
 }
@@ -152,6 +156,7 @@ impl TabKind {
                 | TabKind::GetBibles
                 | TabKind::StarterLibrary
                 | TabKind::Credits
+                | TabKind::Home
                 | TabKind::Tool(
                     Tool::Notes
                         | Tool::WordInfo
@@ -165,6 +170,12 @@ impl TabKind {
     /// Resources open in reading Panels; everything else in non-reading Panels.
     pub fn is_reading(&self) -> bool {
         matches!(self, TabKind::Resource(_))
+    }
+
+    /// Whether a new Tab of this kind goes to the last reading Panel when no Panel is
+    /// remembered for it: Resources, and Home, which wants the room (#178).
+    fn opens_in_reading_panel(&self) -> bool {
+        matches!(self, TabKind::Resource(_) | TabKind::Home)
     }
 
     pub fn header_box(&self) -> HeaderBox {
@@ -183,6 +194,7 @@ impl TabKind {
             | TabKind::GetBibles
             | TabKind::StarterLibrary
             | TabKind::Credits
+            | TabKind::Home
             | TabKind::Tool(Tool::ReadingPlans) => HeaderBox::Keyless,
             _ => HeaderBox::Reference,
         }
@@ -206,6 +218,7 @@ impl TabKind {
                 | TabKind::GetBibles
                 | TabKind::StarterLibrary
                 | TabKind::Credits
+                | TabKind::Home
                 | TabKind::Guide(Guide::Factbook)
                 | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History | Tool::ReadingPlans)
         )
@@ -233,6 +246,7 @@ impl TabKind {
             TabKind::GetBibles => Slot::GetBibles,
             TabKind::StarterLibrary => Slot::StarterLibrary,
             TabKind::Credits => Slot::Credits,
+            TabKind::Home => Slot::Home,
             TabKind::Guide(g) => Slot::Guide(*g),
             TabKind::Tool(t) => Slot::Tool(*t),
         }
@@ -908,7 +922,7 @@ impl Workspace {
             .filter(live)
             .or_else(|| self.remembered.get(&kind.slot()).copied().filter(live))
             .or_else(|| {
-                if kind.is_reading() {
+                if kind.opens_in_reading_panel() {
                     self.last_reading_panel.filter(live)
                 } else {
                     self.last_other_panel.filter(live)

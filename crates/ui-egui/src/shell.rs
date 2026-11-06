@@ -45,6 +45,7 @@ mod fonts_window;
 mod get_bibles_tab;
 mod guide_tab;
 mod guide_words;
+mod home_tab;
 mod import_tab;
 mod library_tab;
 mod missing_resource;
@@ -728,12 +729,25 @@ impl Shell {
         }
     }
 
-    /// Restore the Last session if there is one, else open the default layout.
-    pub fn restore_or_default(&mut self) {
+    /// Restore the Last session if there is one, else open the default layout. Returns
+    /// whether there was one.
+    pub fn restore_or_default(&mut self) -> bool {
         if self.st.session.restore_last_session() {
             self.apply_effects();
+            true
         } else {
             self.reset_layout();
+            false
+        }
+    }
+
+    /// The Workspace at launch: the Last session (else the default layout), with Home on top
+    /// on the first run (no Last session) and at every launch when "Open Home at launch" is
+    /// on (#178).
+    pub fn restore_at_launch(&mut self) {
+        let restored = self.restore_or_default();
+        if !restored || self.st.session.home_opens_at_launch() {
+            self.run("home.open", &json!({}));
         }
     }
 
@@ -966,9 +980,12 @@ impl Shell {
             let menus = ui.cursor().left() - rest;
             let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 self.command_box(ui);
-                // Today's reading (#147), left of the Command box.
+                // Today's reading (#147), left of the Command box, and Home (#178).
                 ui.add_space(8.0);
                 if self.st.todays_reading_button(ui) {
+                    self.apply_effects();
+                }
+                if self.st.home_button(ui) {
                     self.apply_effects();
                 }
                 ui.min_rect().width()
@@ -1723,6 +1740,7 @@ impl State {
             TabKind::GetBibles => self.get_bibles_body(&mut body),
             TabKind::StarterLibrary => self.starter_body(&mut body),
             TabKind::Credits => self.credits_body(&mut body, tab),
+            TabKind::Home => self.home_body(&mut body, tab),
             TabKind::Guide(
                 g @ (obs_engine::Guide::PassageGuide | obs_engine::Guide::ExegeticalGuide),
             ) => self.passage_keyed_guide_body(&mut body, tab, g),

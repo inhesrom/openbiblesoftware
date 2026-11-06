@@ -73,6 +73,6 @@ there, else a new Tab opens; a Bible no longer in the library gives way to any B
 
 ## Hand-offs
 
-- A start page does not exist yet; the toolbar carries Today's reading. A start page can list
-  `Session::reading_plans()` with `ReadingPlan::due_on(Session::plan_today())`.
+- Home (#178) lists each unfinished plan's Readings due today (`Session::home_plans`), each
+  opening with `reading_plan.open {plan, position}`; see [home.md](home.md).
 - The Command box (#139) can run `reading_plan.open` with a plan id for "Today's reading".

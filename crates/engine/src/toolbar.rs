@@ -133,7 +133,7 @@ impl LibraryLauncherSection {
 }
 
 /// The Resource types in the order the Library lists them.
-const TYPE_ORDER: [ResourceType; 6] = [
+pub(crate) const TYPE_ORDER: [ResourceType; 6] = [
     ResourceType::Bible,
     ResourceType::Commentary,
     ResourceType::Lexicon,

@@ -1,0 +1,487 @@
+//! Home (#178): a card each for Today's reading, Continue where you left off, History and
+//! Favorites, the Verse of the day, Quick start and the library summary, laid out in two
+//! columns when there is room. Each card's header moves it up or down or hides it (the Home
+//! arrangement is one preference); the line under the title turns "Open Home at launch" on
+//! or off, resets the cards, and shows hidden cards again. Every row opens its
+//! place with one click (Ctrl/Cmd-click: in a new split) through the same commands as the
+//! Tools it comes from.
+
+use egui::{RichText, Ui, vec2};
+use obs_engine::{HomeCard, PlanDate, QUICK_STARTS, TabId, day_heading};
+use serde_json::{Value, json};
+
+use super::State;
+use crate::theme;
+
+/// Narrower than this, the cards stack in one column.
+const TWO_COLUMNS: f32 = 760.0;
+
+/// A command a card asked for.
+type Run = Option<(&'static str, Value)>;
+
+impl State {
+    /// The toolbar's Home button, left of Today's reading. Returns whether it ran a command.
+    pub(super) fn home_button(&mut self, ui: &mut Ui) -> bool {
+        let open = self
+            .session
+            .workspace
+            .focused()
+            .and_then(|t| self.session.workspace.tab(t))
+            .is_some_and(|t| t.kind == obs_engine::TabKind::Home);
+        let r = ui
+            .add(egui::Button::new(RichText::new("Home").size(12.5)).selected(open))
+            .on_hover_text(
+                "Today's reading, where you left off, Quick start and your library (Alt+H)",
+            );
+        if !r.clicked() {
+            return false;
+        }
+        self.run("home.open", &json!({}));
+        true
+    }
+
+    pub(super) fn home_body(&mut self, ui: &mut Ui, tab: TabId) {
+        let settings = self.session.home_settings().clone();
+        let visible: Vec<HomeCard> = settings.visible().collect();
+        let hidden: Vec<HomeCard> = settings.hidden().collect();
+        let today = self.session.plan_today();
+        let mut run: Run = None;
+        egui::Frame::new()
+            .fill(theme::c().field)
+            .inner_margin(egui::Margin::symmetric(18, 14))
+            .show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                egui::ScrollArea::vertical()
+                    .id_salt(("home", tab))
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.label(
+                            RichText::new("Home")
+                                .font(theme::display(24.0))
+                                .color(theme::c().ink),
+                        );
+                        ui.horizontal_wrapped(|ui| {
+                            muted(ui, &today.long_label());
+                            ui.add_space(12.0);
+                            home_settings_row(ui, settings.open_at_launch, &mut run);
+                        });
+                        hidden_row(ui, &hidden, &mut run);
+                        ui.add_space(10.0);
+                        if visible.is_empty() {
+                            muted(ui, "Every card is hidden.");
+                        }
+                        if ui.available_width() >= TWO_COLUMNS {
+                            ui.columns(2, |cols| {
+                                for (i, card) in visible.iter().enumerate() {
+                                    self.home_card(&mut cols[i % 2], *card, &visible, &mut run);
+                                }
+                            });
+                        } else {
+                            for card in &visible {
+                                self.home_card(ui, *card, &visible, &mut run);
+                            }
+                        }
+                    });
+            });
+        if let Some((id, params)) = run {
+            self.session.workspace.user_focused(tab);
+            self.run(id, &params);
+        }
+    }
+
+    /// One card: its header (title, move up/down, hide) and its body.
+    fn home_card(&mut self, ui: &mut Ui, card: HomeCard, visible: &[HomeCard], run: &mut Run) {
+        let place = visible.iter().position(|c| *c == card).unwrap_or(0);
+        let all = self.session.home_settings().clone();
+        egui::Frame::new()
+            .fill(theme::c().surface)
+            .stroke(egui::Stroke::new(1.0, theme::c().rule))
+            .corner_radius(6.0)
+            .inner_margin(egui::Margin::same(12))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(card.title())
+                            .strong()
+                            .size(15.0)
+                            .color(theme::c().ink),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let title = card.title();
+                        if card_button(ui, "×", &format!("Hide {title}")).clicked() {
+                            *run = Some(("home.hide_card", json!({ "card": card.id() })));
+                        }
+                        // Moves are within the whole order, hidden cards included: past the
+                        // next shown card down, to the previous shown card's place up.
+                        let next = visible.get(place + 1).and_then(|c| all.position(*c));
+                        let prev = place
+                            .checked_sub(1)
+                            .and_then(|i| visible.get(i))
+                            .and_then(|c| all.position(*c));
+                        if ui
+                            .add_enabled_ui(next.is_some(), |ui| {
+                                card_button(ui, "⏷", &format!("Move {title} down"))
+                            })
+                            .inner
+                            .clicked()
+                            && let Some(to) = next
+                        {
+                            *run = Some(("home.move_card", json!({ "card": card.id(), "to": to })));
+                        }
+                        if ui
+                            .add_enabled_ui(prev.is_some(), |ui| {
+                                card_button(ui, "⏶", &format!("Move {title} up"))
+                            })
+                            .inner
+                            .clicked()
+                            && let Some(to) = prev
+                        {
+                            *run = Some(("home.move_card", json!({ "card": card.id(), "to": to })));
+                        }
+                    });
+                });
+                ui.add_space(4.0);
+                match card {
+                    HomeCard::TodaysReading => self.todays_reading_card(ui, run),
+                    HomeCard::ContinueReading => self.continue_card(ui, run),
+                    HomeCard::HistoryAndFavorites => self.history_favorites_card(ui, run),
+                    HomeCard::VerseOfTheDay => self.verse_of_the_day_card(ui, run),
+                    HomeCard::QuickStart => self.quick_start_card(ui, run),
+                    HomeCard::LibrarySummary => self.library_summary_card(ui, run),
+                }
+            });
+        ui.add_space(10.0);
+    }
+
+    fn todays_reading_card(&mut self, ui: &mut Ui, run: &mut Run) {
+        if self.session.user.is_none() {
+            muted(
+                ui,
+                "Reading plans are kept in the User database, which is not open.",
+            );
+            return;
+        }
+        let plans = self.session.home_plans();
+        if plans.is_empty() {
+            muted(ui, "No Reading plan yet.");
+            if ui.link("Start a Reading plan…").clicked() {
+                *run = Some(("tool.reading_plans", json!({})));
+            }
+            return;
+        }
+        let split = self.split_held;
+        for plan in &plans {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new(&plan.name).color(theme::c().ink));
+                if plan.behind > 0 {
+                    let behind = if plan.behind == 1 {
+                        "Behind by 1 day".to_string()
+                    } else {
+                        format!("Behind by {} days", plan.behind)
+                    };
+                    if ui
+                        .add(
+                            egui::Button::new(RichText::new(behind).color(theme::c().warn))
+                                .frame(false),
+                        )
+                        .on_hover_text("Catch up or Reschedule in Reading plans")
+                        .clicked()
+                    {
+                        *run = Some(("tool.reading_plans", json!({})));
+                    }
+                }
+            });
+            ui.horizontal_wrapped(|ui| {
+                for r in &plan.readings {
+                    let text = if r.read {
+                        format!("{} · read", r.label)
+                    } else {
+                        r.label.clone()
+                    };
+                    if ui
+                        .button(RichText::new(text).size(14.0))
+                        .on_hover_text("Open in the plan's Bible (Ctrl/Cmd-click: in a new split)")
+                        .clicked()
+                    {
+                        *run = Some((
+                            "reading_plan.open",
+                            json!({ "plan": plan.id, "position": r.position, "split": split }),
+                        ));
+                    }
+                }
+                if plan.readings.is_empty() {
+                    let next = plan.next.map(PlanDate::short_label).unwrap_or_default();
+                    muted(ui, &format!("Next reading: {next}"));
+                }
+            });
+            ui.add_space(4.0);
+        }
+    }
+
+    fn continue_card(&mut self, ui: &mut Ui, run: &mut Run) {
+        let Some(v) = self.session.home_continue().cloned() else {
+            muted(
+                ui,
+                "Where you read last shows here once you have opened a Bible or a Guide.",
+            );
+            return;
+        };
+        if ui
+            .add(
+                egui::Button::new(RichText::new(&v.label).size(16.0).color(theme::c().lapis))
+                    .frame(false),
+            )
+            .on_hover_text("Open it again (Ctrl/Cmd-click: in a new split)")
+            .clicked()
+        {
+            *run = Some((
+                "history.open",
+                json!({ "id": v.id, "split": self.split_held }),
+            ));
+        }
+        muted(
+            ui,
+            &format!("{}, {}", day_heading(&v.day, v.days_ago), v.time),
+        );
+    }
+
+    fn history_favorites_card(&mut self, ui: &mut Ui, run: &mut Run) {
+        let split = self.split_held;
+        heading(ui, "History");
+        let history: Vec<(i64, String)> = self
+            .session
+            .home_history()
+            .iter()
+            .map(|v| (v.id, v.label.clone()))
+            .collect();
+        if history.is_empty() {
+            let shown = self.session.home_continue().is_some();
+            muted(
+                ui,
+                if shown {
+                    "Nothing else yet."
+                } else {
+                    "Nothing yet."
+                },
+            );
+        }
+        for (id, label) in &history {
+            if place_row(ui, label) {
+                *run = Some(("history.open", json!({ "id": id, "split": split })));
+            }
+        }
+        if ui.link("All History…").clicked() {
+            *run = Some(("tool.history", json!({})));
+        }
+        ui.add_space(6.0);
+        heading(ui, "Favorites");
+        let favorites: Vec<(i64, String)> = self
+            .session
+            .home_favorites()
+            .iter()
+            .map(|f| (f.id, f.label.clone()))
+            .collect();
+        if favorites.is_empty() {
+            muted(
+                ui,
+                "Star a place with the ☆ in a Tab's header (Ctrl+D) to keep it here.",
+            );
+        }
+        for (id, label) in &favorites {
+            if place_row(ui, &format!("★ {label}")) {
+                *run = Some(("favorite.open", json!({ "id": id, "split": split })));
+            }
+        }
+        if !favorites.is_empty() && ui.link("All Favorites…").clicked() {
+            *run = Some(("tool.favorites", json!({})));
+        }
+    }
+
+    fn verse_of_the_day_card(&mut self, ui: &mut Ui, run: &mut Run) {
+        let votd = self.session.verse_of_the_day();
+        if ui
+            .add(
+                egui::Button::new(
+                    RichText::new(&votd.label)
+                        .strong()
+                        .size(15.0)
+                        .color(theme::c().lapis),
+                )
+                .frame(false),
+            )
+            .on_hover_text("Read it in the ★ Bible (Ctrl/Cmd-click: in a new split)")
+            .clicked()
+        {
+            let mut p = json!({ "passage": votd.label, "split": self.split_held });
+            if let Some(b) = &votd.bible {
+                p["bible"] = json!(b);
+            }
+            *run = Some(("notes.show_passage", p));
+        }
+        if votd.bible.is_some() {
+            self.preview(ui, votd.passage, false);
+        } else {
+            muted(ui, "Add a Bible to your library to read it here.");
+            if ui.link("Get Bibles…").clicked() {
+                *run = Some(("library.get_resources", json!({ "type": "bibles" })));
+            }
+        }
+    }
+
+    fn quick_start_card(&mut self, ui: &mut Ui, run: &mut Run) {
+        for q in &QUICK_STARTS {
+            ui.horizontal(|ui| {
+                if ui
+                    .add(
+                        egui::Button::new(RichText::new(q.label).size(14.0))
+                            .min_size(vec2(130.0, 26.0)),
+                    )
+                    .on_hover_text(q.help)
+                    .clicked()
+                {
+                    *run = Some((q.command, self.session.quick_start_params(q)));
+                }
+                ui.add(egui::Label::new(RichText::new(q.help).color(theme::c().muted)).wrap());
+            });
+        }
+    }
+
+    fn library_summary_card(&mut self, ui: &mut Ui, run: &mut Run) {
+        egui::Grid::new("home-library")
+            .num_columns(2)
+            .spacing(vec2(12.0, 4.0))
+            .show(ui, |ui| {
+                for c in self.session.library_summary() {
+                    ui.label(
+                        RichText::new(obs_engine::library_search::type_plural(c.resource_type))
+                            .color(theme::c().ink),
+                    );
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(c.count.to_string()).color(theme::c().ink));
+                        if c.count > 0 {
+                            return;
+                        }
+                        ui.add_space(12.0);
+                        match c.get {
+                            Some(f) => {
+                                if ui.link(format!("Get {}…", f.label())).clicked() {
+                                    *run = Some((
+                                        "library.get_resources",
+                                        json!({ "type": f.id().unwrap_or_default() }),
+                                    ));
+                                }
+                            }
+                            None => {
+                                if ui
+                                    .link("Starter library…")
+                                    .on_hover_text("These come with the Starter library")
+                                    .clicked()
+                                {
+                                    *run = Some(("library.starter", json!({})));
+                                }
+                            }
+                        }
+                    });
+                    ui.end_row();
+                }
+            });
+        ui.add_space(6.0);
+        let starter = self.session.starter_summary();
+        // Each link on a line of its own: a link wrapped over two lines leaves an unnamed
+        // AccessKit node for its second line.
+        if starter.in_library == 0 {
+            muted(ui, "The Starter library is not in your library.");
+            if ui.link("Add the Starter library…").clicked() {
+                *run = Some(("library.starter", json!({})));
+            }
+        } else {
+            let of = match starter.offered {
+                Some(n) if n != starter.in_library => format!(" of {n}"),
+                _ => String::new(),
+            };
+            muted(
+                ui,
+                &format!("Starter library: {}{of} Resources", starter.in_library),
+            );
+            if ui.link("Starter library…").clicked() {
+                *run = Some(("library.starter", json!({})));
+            }
+        }
+        if ui.link("Open the Library").clicked() {
+            *run = Some(("library.open", json!({})));
+        }
+    }
+}
+
+/// "Open Home at launch" and Reset cards.
+fn home_settings_row(ui: &mut Ui, open_at_launch: bool, run: &mut Run) {
+    let mut on = open_at_launch;
+    if ui
+        .checkbox(&mut on, "Open Home at launch")
+        .on_hover_text("Show Home at every launch, on top of the Workspace as you left it")
+        .changed()
+    {
+        *run = Some(("home.open_at_launch", json!({ "on": on })));
+    }
+    if ui
+        .small_button("Reset cards")
+        .on_hover_text("Every card shown, in the first order")
+        .clicked()
+    {
+        *run = Some(("home.reset_cards", json!({})));
+    }
+}
+
+/// The hidden cards, each with Show.
+fn hidden_row(ui: &mut Ui, hidden: &[HomeCard], run: &mut Run) {
+    if hidden.is_empty() {
+        return;
+    }
+    ui.horizontal_wrapped(|ui| {
+        muted(ui, "Hidden:");
+        for card in hidden {
+            if ui
+                .small_button(format!("Show {}", card.title()))
+                .on_hover_text("Show this card on Home again")
+                .clicked()
+            {
+                *run = Some((
+                    "home.hide_card",
+                    json!({ "card": card.id(), "hidden": false }),
+                ));
+            }
+        }
+    });
+}
+
+/// A small header button with an accessible name.
+fn card_button(ui: &mut Ui, text: &str, name: &str) -> egui::Response {
+    ui.add(egui::Button::new(RichText::new(text).color(theme::c().muted)).frame(false))
+        .accessible_name(name)
+        .on_hover_text(name)
+}
+
+/// One place to open: returns whether it was clicked.
+fn place_row(ui: &mut Ui, label: &str) -> bool {
+    ui.add(
+        egui::Button::new(RichText::new(label).size(14.0).color(theme::c().ink))
+            .frame(false)
+            .min_size(vec2(ui.available_width(), 22.0)),
+    )
+    .on_hover_text("Open (Ctrl/Cmd-click: in a new split)")
+    .clicked()
+}
+
+fn muted(ui: &mut Ui, text: &str) {
+    ui.label(RichText::new(text).color(theme::c().muted));
+}
+
+fn heading(ui: &mut Ui, text: &str) {
+    ui.label(
+        RichText::new(text.to_uppercase())
+            .size(10.5)
+            .strong()
+            .color(theme::c().muted),
+    );
+}

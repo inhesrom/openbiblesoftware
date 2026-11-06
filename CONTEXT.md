@@ -331,6 +331,14 @@ _Avoid_: Preset, Template
 The Workspace as the user left it, restored automatically at the next launch. It is not a Layout.
 _Avoid_: Autosave layout
 
+**Home**:
+The Tab the app opens on at its first launch, and from the Home button beside Today's reading (Alt+H). Its cards are Today's reading, Continue where you left off (the newest Visit), History and Favorites, the Verse of the day, Quick start (Passage Guide, Word Study, Get Resources, Import) and Your library (how many Resources of each Resource type, with Get Resources for an empty one, and how much of the Starter library is there); each row opens its place with one click. The cards are reordered and hidden like a Guide's sections, and that **Home arrangement** is kept in the User database. With **Open Home at launch** on, Home opens on top of the Last session at every launch. It has no Current location, so it is never a Visit or a Favorite.
+_Avoid_: Dashboard, Start page, Welcome screen
+
+**Verse of the day**:
+One Passage a day from the app's own short list of well-known Passages, the same all day and the next in the list the next day, shown on Home in the ★ Bible; clicking it reads it there.
+_Avoid_: Daily verse, Devotional
+
 **Find bar**:
 The bar Ctrl+F opens under a Resource or Text Comparison Tab's header (also the Tab's ⋯ menu, Find…) to find words in that Resource only: every match in the whole Resource (or every row) is marked, the count reads "12 of 48", Enter / Shift+Enter (▼ ▲) move from match to match, scrolling to each, and Esc closes it and clears the marks. It matches as Search does (case, accents, breathings, Hebrew points and final forms ignored), with Match case, Whole word and Ignore diacritics (on by default; then, unless Match case is on, Latin letters also find Greek and Hebrew words by transliteration, "agape" → ἀγάπη). Its marks are an overlay, not Highlights, and are never saved. Search all Resources (Alt+Enter) runs the same words in the Search Tool.
 _Avoid_: Search (for this), Find dialog, Quick find
@@ -378,7 +386,7 @@ The Passages of a Reading plan due on one day and ticked off together. A day may
 _Avoid_: Portion, Assignment, Lesson
 
 **Today's reading**:
-The toolbar button showing the Readings due today in the first Reading plan with any, and opening the first unread one in the plan's Bible with one click.
+The toolbar button showing the Readings due today in the first Reading plan with any, and opening the first unread one in the plan's Bible with one click. Home's Today's reading card lists the Readings due today in each Reading plan, each one click from the plan's Bible.
 _Avoid_: Daily verse, Devotion
 
 **Behind**:
@@ -474,5 +482,5 @@ A Markdown or HTML file made from a Notebook (or all of them) or from the Notes 
 _Avoid_: Backup, Report, Notes dump
 
 **User database**:
-The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, Saved searches and the Search history, the Command box's recent entries, Copy presets, Collections, Resource tags and preferences. Resources and Search indexes are never part of it.
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Home arrangement, Saved searches and the Search history, the Command box's recent entries, Copy presets, Collections, Resource tags and preferences. Resources and Search indexes are never part of it.
 _Avoid_: Profile, User library, Settings file

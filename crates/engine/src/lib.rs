@@ -59,6 +59,9 @@ pub mod guide;
 mod guide_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod guide_words_tests;
+pub mod home;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod home_tests;
 pub mod import;
 pub mod interlinear;
 #[cfg(test)]
@@ -173,6 +176,11 @@ pub use floating_windows::{FloatingWindow, ScreenRect, WindowId, WindowPlacement
 pub use guide::{
     CommentaryRow, GuideArrangement, GuideSection, Guides, LibrarySections, SectionData,
     SectionPlace, SectionSource, SectionStatus,
+};
+pub use home::{
+    CardPlace, HOME_PREF, HomeCard, HomePlan, HomeReading, HomeSettings, LibraryCount,
+    QUICK_STARTS, QuickStart, StarterSummary, VERSES_OF_THE_DAY, VerseOfTheDay,
+    verse_of_the_day_on,
 };
 pub use import::{
     DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,

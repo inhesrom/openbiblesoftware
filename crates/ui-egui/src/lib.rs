@@ -126,7 +126,7 @@ impl App {
         #[cfg(target_arch = "wasm32")]
         let offer_starter = false;
         let mut shell = Shell::new(session);
-        shell.restore_or_default();
+        shell.restore_at_launch();
         // A file given on the command line opens on top of the restored Workspace.
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(p) = &path

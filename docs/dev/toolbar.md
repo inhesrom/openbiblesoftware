@@ -105,7 +105,7 @@ the Workspace snapshot, so loading a Layout never moves the toolbar.
 | Left | a column at the left, under the menu bar | icons only, labels in the tooltips | to its right |
 | Right | a column at the right, under the menu bar | icons only, labels in the tooltips | to its left |
 
-The menu bar keeps the app's name, View, Help, Today's reading and the Command box wherever the
+The menu bar keeps the app's name, View, Help, Home (#178), Today's reading and the Command box wherever the
 Launchers are, so View → Toolbar position is always reachable.
 
 Ways to change it:
