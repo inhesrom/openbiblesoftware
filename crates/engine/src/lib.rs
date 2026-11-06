@@ -19,13 +19,22 @@ pub mod bible_search;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod bible_search_tests;
 mod builtin;
+pub mod collections;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod collections_tests;
 pub mod command;
 pub mod command_box;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod command_box_tests;
 pub mod compare;
+pub mod copy_verses;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod copy_verses_tests;
 pub mod credits;
 pub mod cross_references;
+pub mod exegetical_guide;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod exegetical_guide_tests;
 pub mod factbook;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod factbook_tests;
@@ -41,6 +50,9 @@ mod guide_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod guide_words_tests;
 pub mod import;
+pub mod interlinear;
+#[cfg(test)]
+mod interlinear_tests;
 pub mod jobs;
 pub mod key_words;
 mod library;
@@ -57,6 +69,9 @@ pub mod missing_resource;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod missing_resource_tests;
 pub mod notes;
+pub mod notes_export;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod notes_export_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod notes_tests;
 pub mod open_catalogue;
@@ -74,6 +89,9 @@ pub mod resource_navigation;
 pub mod search;
 #[cfg(test)]
 mod search_tests;
+pub mod search_views;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod search_views_tests;
 mod session;
 pub mod starter;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -81,6 +99,12 @@ mod starter_tests;
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub mod testing;
+pub mod toolbar;
+pub mod toolbar_settings;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod toolbar_settings_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod toolbar_tests;
 pub mod word_info;
 pub mod word_sections;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -106,11 +130,19 @@ pub use bible_search::{
     SearchRequestFields, SearchTab, SearchedBible, Snippet, VerseRow, parse_scope, scope_presets,
     verse_rows,
 };
+pub use collections::{Collection, CollectionRule, CollectionSet, parse_rules, rules_text};
 pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSpec, Params};
 pub use command_box::{CommandBoxAction, Suggestion};
 pub use compare::{
     Cell, ComparedBible, ComparedCell, Comparison, DEFAULT_BIBLES, Marks, VerseBlock, WordDiff,
     verse_blocks, word_diff,
+};
+pub use copy_verses::{
+    BookNames, CopiedBible, CopiedBlock, CopiedText, CopiedVerse, CopyFormat, CopyOptions,
+    CopyPreset, CopyVerses, ReferencePlacement, VerseLayout, copy_verses, html_document,
+};
+pub use exegetical_guide::{
+    ExegeticalVerse, ExegeticalWord, GrammarNote, LexiconSummary, WordByWord,
 };
 pub use factbook::{
     DictionaryArticle, DirectoryEntry, EntityCard, EntityLink, FactbookChooser, FactbookSummary,
@@ -124,6 +156,9 @@ pub use guide::{
 pub use import::{
     DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,
     ImportSource, Imports, OpenOrigin, RepoOrigin, UNAVAILABLE_INDEX,
+};
+pub use interlinear::{
+    InterlinearKind, InterlinearLine, InterlinearLines, LexiconWord, cell_gloss, cell_texts,
 };
 pub use jobs::{
     Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step, sword_installer,
@@ -141,6 +176,7 @@ pub use licence::{LicenceClass, LicenceFilter, licence_class};
 pub use link::LINK_SETS;
 pub use missing_resource::{EmptyState, MissingResource, StarterOffer, Tagging};
 pub use notes::{Card, CardOrder, NoteHit, NotesFilter, NotesResults, NotesTool, body_references};
+pub use notes_export::{NotesExport, NotesFormat, NotesSource};
 pub use people_places::{ArticleLink, Fact, PersonOrPlace};
 pub use persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, UserData, WorkspaceSnapshot};
 pub use reading_plans::{
@@ -153,7 +189,16 @@ pub use search::{
     INDEX_VERSION, IndexStatus, ResourceHits, SearchIndexes, SearchRequest, SearchResults,
     default_search_cache_dir,
 };
+pub use search_views::{
+    AnalysisColumn, AnalysisRow, AnalysisSort, ChartBar, ChartBy, HitGrid, ResultsFilter,
+    ResultsView, SearchAnalysis, chart_bars,
+};
 pub use session::{JobMode, Session};
+pub use toolbar::{
+    BUILTIN_LAYOUTS, Launcher, LayoutCard, LayoutThumbnail, LibraryLauncherRow,
+    LibraryLauncherSection,
+};
+pub use toolbar_settings::{LauncherLabels, ToolbarPosition, ToolbarSettings};
 pub use word_info::{LemmaCard, LexiconGloss, PartRole, ShownWord, WordInfo, WordPart};
 pub use word_sections::{
     FilteredOccurrences, Form, Forms, OCCURRENCE_ROWS, OccurrenceList, OccurrencePreview,

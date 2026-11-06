@@ -50,6 +50,8 @@ pub struct ReadingDoc {
     span_indexes: Vec<OnceLock<SpanIndex>>,
     /// The Standard Passage of each Verse, built on first use (Annotations in this Bible).
     standard_index: OnceLock<StandardIndex>,
+    /// Whether any word carries original-language data, found on first use.
+    tagged: OnceLock<bool>,
 }
 
 /// Bible Verses by the Standard Passage they map to (ADR 0002), for finding where a Passage
@@ -161,6 +163,7 @@ impl ReadingDoc {
             verse_map: None,
             span_indexes,
             standard_index: OnceLock::new(),
+            tagged: OnceLock::new(),
         }
     }
 
@@ -228,6 +231,18 @@ impl ReadingDoc {
         self.verse_units.get(i).copied()
     }
 
+    /// Whether any of its words is a Tagged word (with a Strong's number): a Bible that can
+    /// show interlinear lines (#143).
+    pub fn has_tagged_words(&self) -> bool {
+        *self.tagged.get_or_init(|| {
+            self.units.iter().any(|u| {
+                u.spans
+                    .iter()
+                    .any(|s| matches!(&s.kind, SpanKind::TaggedWord { parts } if !parts.is_empty()))
+            })
+        })
+    }
+
     /// The innermost Tagged word at unit byte `byte`: its bytes and its morphemes.
     pub fn tagged_word_at(
         &self,
@@ -286,6 +301,28 @@ impl ReadingDoc {
         let &i = self.verse_index.get(&verse)?;
         let v = self.verses.get(i)?;
         self.units.get(self.verse_units[i])?.text.get(v.range())
+    }
+
+    /// Whether the Bible Verse starting at `verse` begins a paragraph: a paragraph starts
+    /// after the Verse before it in the same unit ends, up to this Verse's first byte.
+    pub fn starts_paragraph(&self, verse: Verse) -> bool {
+        let Some(&i) = self.verse_index.get(&verse) else {
+            return false;
+        };
+        let (Some(v), Some(&unit)) = (self.verses.get(i), self.verse_units.get(i)) else {
+            return false;
+        };
+        let from = match i.checked_sub(1) {
+            Some(p) if self.verse_units.get(p) == Some(&unit) => {
+                self.verses.get(p).map_or(0, |p| p.end)
+            }
+            _ => 0,
+        };
+        self.units.get(unit).is_some_and(|u| {
+            u.spans.iter().any(|s| {
+                matches!(s.kind, SpanKind::Para { .. }) && (from..=v.start).contains(&s.start)
+            })
+        })
     }
 
     /// The block of `unit` that contains unit byte `byte` (or the next block after it).

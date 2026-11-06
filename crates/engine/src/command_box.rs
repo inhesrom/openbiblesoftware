@@ -43,6 +43,7 @@ pub enum CommandBoxAction {
     /// Show the Passage (Standard versification) in a Bible.
     GoTo(Passage),
     PassageGuide(Passage),
+    ExegeticalGuide(Passage),
     TextComparison(Passage),
     CrossReferences(Passage),
     WordStudy(StrongsNumber),
@@ -65,6 +66,7 @@ impl CommandBoxAction {
         match self {
             Self::GoTo(_) => "go_to",
             Self::PassageGuide(_) => "passage_guide",
+            Self::ExegeticalGuide(_) => "exegetical_guide",
             Self::TextComparison(_) => "text_comparison",
             Self::CrossReferences(_) => "cross_references",
             Self::WordStudy(_) => "word_study",
@@ -119,6 +121,7 @@ impl CommandBox {
 /// Leading words that name a Guide, Tool or action, longest first so `passage guide` wins
 /// over `guide`.
 const VERBS: &[(&str, Verb)] = &[
+    ("exegetical guide", Verb::ExegeticalGuide),
     ("cross-references", Verb::CrossReferences),
     ("cross references", Verb::CrossReferences),
     ("text comparison", Verb::Compare),
@@ -132,6 +135,7 @@ const VERBS: &[(&str, Verb)] = &[
     ("xref", Verb::CrossReferences),
     ("open", Verb::Open),
     ("pg", Verb::PassageGuide),
+    ("eg", Verb::ExegeticalGuide),
     ("ws", Verb::WordStudy),
     ("tc", Verb::Compare),
 ];
@@ -139,6 +143,7 @@ const VERBS: &[(&str, Verb)] = &[
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Verb {
     PassageGuide,
+    ExegeticalGuide,
     Compare,
     CrossReferences,
     WordStudy,
@@ -209,7 +214,7 @@ fn written(p: Passage) -> String {
     format_passage(p, &Standard, RefStyle::Long)
 }
 
-fn type_name(t: ResourceType) -> &'static str {
+pub(crate) fn type_name(t: ResourceType) -> &'static str {
     match t {
         ResourceType::Bible => "Bible",
         ResourceType::Commentary => "Commentary",
@@ -350,6 +355,12 @@ impl Session {
                     at(CommandBoxAction::PassageGuide, "Passage Guide").map(|s| (rank::VERB, s)),
                 );
             }
+            Verb::ExegeticalGuide => {
+                out.extend(
+                    at(CommandBoxAction::ExegeticalGuide, "Exegetical Guide")
+                        .map(|s| (rank::VERB, s)),
+                );
+            }
             Verb::Compare => {
                 out.extend(
                     at(CommandBoxAction::TextComparison, "Text Comparison")
@@ -419,13 +430,15 @@ impl Session {
         if needle.chars().count() < 3 {
             return;
         }
+        // The Launchers too (#141), so one hidden from the toolbar is still a few keys away.
         let ids = crate::workspace_commands::MENUS
             .iter()
             .flat_map(|m| m.items)
             .filter_map(|i| match i {
                 crate::MenuItem::Command(id) => Some(*id),
                 _ => None,
-            });
+            })
+            .chain(crate::Launcher::ALL.iter().map(|l| l.command()));
         for id in ids {
             let Some(spec) = self.commands().get(id) else {
                 continue;
@@ -554,6 +567,7 @@ impl Session {
         match action {
             CommandBoxAction::GoTo(p) => go_to(self, *p, new_tab),
             CommandBoxAction::PassageGuide(p) => self.run("guide.passage_guide", &at(*p)),
+            CommandBoxAction::ExegeticalGuide(p) => self.run("guide.exegetical_guide", &at(*p)),
             CommandBoxAction::TextComparison(p) => self.run("tool.text_comparison", &at(*p)),
             CommandBoxAction::CrossReferences(p) => self.run("tool.cross_references", &at(*p)),
             CommandBoxAction::WordStudy(n) => self.run(

@@ -1573,7 +1573,7 @@ fn catalog_tags_bibles_with_strongs_and_morphology_from_the_conf() {
     assert_eq!(tags("ObsGreekBible"), [TAG_STRONGS]);
     assert_eq!(
         catalog.get("ObsGreekBible").unwrap().used_by(),
-        Some("Used by Word Info and Word Study › Occurrences")
+        Some("Used by Word Info, Word Study › Occurrences, and the Exegetical Guide")
     );
     assert!(tags("ObsHebrew").is_empty());
     // Only Bibles carry tags.
@@ -1584,7 +1584,7 @@ fn catalog_tags_bibles_with_strongs_and_morphology_from_the_conf() {
     assert_eq!(oshb.licence.as_deref(), Some("Creative Commons: BY 4.0"));
     assert_eq!(
         oshb.used_by(),
-        Some("Used by Word Info and Word Study › Occurrences and Forms")
+        Some("Used by Word Info, Word Study › Occurrences and Forms, and the Exegetical Guide")
     );
     assert_eq!(
         catalog.get("ObsKjvOsis").unwrap().used_by(),

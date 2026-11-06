@@ -98,6 +98,7 @@ pub fn registry() -> CommandRegistry {
         .iter()
         .chain(crate::workspace_commands::COMMANDS)
         .chain(crate::library_commands::COMMANDS)
+        .chain(crate::collections::COMMANDS)
         .chain(crate::import::COMMANDS)
         .chain(crate::get_bibles::COMMANDS)
         .chain(crate::starter::COMMANDS)
@@ -108,6 +109,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::search::COMMANDS)
         .chain(crate::guide::COMMANDS)
         .chain(crate::bible_search::COMMANDS)
+        .chain(crate::search_views::COMMANDS)
         .chain(crate::word_study::COMMANDS)
         .chain(crate::factbook::COMMANDS)
         .chain(crate::library_search::COMMANDS)
@@ -116,6 +118,11 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::reading_plans::COMMANDS)
         .chain(crate::lookups::COMMANDS)
         .chain(crate::command_box::COMMANDS)
+        .chain(crate::copy_verses::COMMANDS)
+        .chain(crate::notes_export::COMMANDS)
+        .chain(crate::toolbar::COMMANDS)
+        .chain(crate::interlinear::COMMANDS)
+        .chain(crate::toolbar_settings::COMMANDS)
     {
         // Ids in COMMANDS are unique (checked by a test), so registration cannot fail.
         let _ = r.register(*spec);

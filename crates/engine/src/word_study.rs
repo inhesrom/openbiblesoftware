@@ -320,9 +320,18 @@ fn lexicon_entries_in(
     entry: &LibraryEntry,
     number: StrongsNumber,
 ) -> Result<Vec<LexiconEntry>, obs_store::StoreError> {
-    use obs_model::SpanKind;
-    use obs_store::ResourceStore;
     let reader = obs_store::ObrReader::open(&entry.path)?;
+    lexicon_entries_from(&reader, number)
+}
+
+/// The entries for `number` in one open Lexicon (extended number first, then the base
+/// number), each once.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn lexicon_entries_from(
+    reader: &dyn obs_store::ResourceStore,
+    number: StrongsNumber,
+) -> Result<Vec<LexiconEntry>, obs_store::StoreError> {
+    use obs_model::SpanKind;
     let m = reader.manifest().clone();
     let mut seen = BTreeSet::new();
     let mut out = Vec::new();

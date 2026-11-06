@@ -11,6 +11,7 @@ use egui_tiles::{Container, Linear, LinearDir, Tile, TileId, Tiles, Tree, UiResp
 use obs_engine::{
     Effect, HeaderBox, JobMode, LayoutNode, MENUS, MenuItem, PanelId, Placement, Session, TabId,
     TabKind, Tool,
+    interlinear::{InterlinearKind, InterlinearLine},
 };
 use obs_model::{Key, ResourceType};
 use obs_scripture::{Passage, RefStyle, Standard, Verse, format_passage};
@@ -18,6 +19,7 @@ use serde_json::{Value, json};
 
 use crate::compare_view::{ComparisonBible, ComparisonView, comparison_pane, paint_star};
 use crate::doc::ReadingDoc;
+use crate::interlinear::InterlinearSource;
 use crate::palette::Palette;
 use crate::pane::{AtlasTexture, WordHit, reading_pane};
 use crate::theme;
@@ -25,9 +27,13 @@ use crate::view::ReadingView;
 use crate::workers::SnippetCache;
 
 mod annotate;
+mod collections_ui;
 mod command_box;
 mod context_menu;
+mod copy_window;
 mod credits_tab;
+mod exegetical_guide;
+mod export;
 mod factbook_tab;
 mod favorites_tab;
 mod fonts_window;
@@ -42,7 +48,11 @@ mod reading_plans_tab;
 #[path = "references.rs"]
 pub(crate) mod references;
 mod search_tab;
+mod search_views;
 mod starter_tab;
+mod toolbar;
+mod toolbar_bar;
+mod toolbar_look;
 mod word_info_tab;
 mod word_sections_view;
 mod word_study_tab;
@@ -74,6 +84,10 @@ struct TabUi {
     languages: Vec<String>,
     selected: Option<String>,
     dragging: Option<String>,
+    /// Library Tab: the Collection chip that filters the list (#153).
+    collection: Option<String>,
+    /// About Tab: the Resource tags being edited (#153).
+    tags_edit: Option<String>,
     /// A Text Comparison Tab's view.
     comparison: Option<ComparisonView>,
     /// A Search Tab's results view and its fields being edited.
@@ -81,7 +95,6 @@ struct TabUi {
     search_fields: search_tab::Fields,
     /// Failed selected Bibles are retried only on request (or after removal/reselection).
     comparison_errors: BTreeMap<String, String>,
-    reference_passage: Option<Passage>,
     reference_at: Option<Passage>,
     expanded_references: std::collections::BTreeSet<Verse>,
     /// A Passage Guide section whose header is being dragged.
@@ -151,12 +164,16 @@ pub(crate) struct State {
     /// The Get Bibles Tab's search and language filter.
     get_bibles_ui: get_bibles_tab::GetBiblesUi,
     picker: Option<std::sync::mpsc::Receiver<Option<std::path::PathBuf>>>,
+    /// The Search Analysis's CSV save dialog, for its Tab (#146).
+    csv_picker: Option<(TabId, std::sync::mpsc::Receiver<Option<std::path::PathBuf>>)>,
     /// When the Last session was last checked for saving.
     last_save: f64,
     /// This frame's Page-tone palette.
     pub(crate) palette: Palette,
     /// The toolbar's Command box (#139).
     pub(crate) command_box: command_box::CommandBoxUi,
+    /// The toolbar's Launchers and their panes (#140).
+    pub(crate) toolbar: toolbar::ToolbarUi,
     now: f64,
     /// Ctrl/Cmd is held: opening something splits off a new Panel.
     split_held: bool,
@@ -176,6 +193,14 @@ pub(crate) struct State {
     fonts_ui: fonts_window::FontsUi,
     /// The Reading plans Tool's New plan form (#147).
     plans_ui: reading_plans_tab::PlansUi,
+    /// The Copy verses window (#154).
+    copy_ui: copy_window::CopyUi,
+    /// The New Collection… / Edit… window (#153).
+    collection_editor: Option<collections_ui::CollectionEditor>,
+    /// A Notes export waiting for its save dialog (#154).
+    export_ui: export::ExportUi,
+    /// The system clipboard for rich text (Copy verses), when the app has one.
+    rich_clipboard: Option<Arc<dyn crate::RichClipboard>>,
 }
 
 /// The app window's content: menus, Command box and the docked Workspace.
@@ -207,9 +232,11 @@ impl Shell {
                 pick_import: false,
                 get_bibles_ui: get_bibles_tab::GetBiblesUi::default(),
                 picker: None,
+                csv_picker: None,
                 last_save: 0.0,
                 palette: Palette::PAPER,
                 command_box: command_box::CommandBoxUi::default(),
+                toolbar: toolbar::ToolbarUi::default(),
                 now: 0.0,
                 split_held: false,
                 panels: std::collections::HashMap::new(),
@@ -220,6 +247,10 @@ impl Shell {
                 notes_ui: notes_tab::NotesUi::default(),
                 fonts_ui: fonts_window::FontsUi::default(),
                 plans_ui: reading_plans_tab::PlansUi::default(),
+                copy_ui: copy_window::CopyUi::default(),
+                collection_editor: None,
+                export_ui: export::ExportUi::default(),
+                rich_clipboard: None,
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -238,6 +269,11 @@ impl Shell {
     /// bundled fonts can be chosen.
     pub fn set_system_fonts(&mut self, fonts: Arc<dyn crate::SystemFonts>) {
         self.st.fonts_ui.set_source(fonts);
+    }
+
+    /// The system clipboard, for copying rich text (Copy verses, #154).
+    pub fn set_rich_clipboard(&mut self, clipboard: Arc<dyn crate::RichClipboard>) {
+        self.st.rich_clipboard = Some(clipboard);
     }
 
     /// Run a command and apply what it changed. Failures become a toast.
@@ -390,14 +426,27 @@ impl Shell {
                 } => self.st.confirm = Some((resource_id, title, message)),
                 Effect::PickImport => self.st.pick_import = true,
                 Effect::ShowFonts => self.st.fonts_ui.open = true,
-                Effect::FocusCommandBox => self.st.command_box.focus = true,
+                Effect::FocusCommandBox => {
+                    self.st.toolbar.close();
+                    self.st.command_box.focus = true;
+                }
+                Effect::OpenLauncher(which) => self.st.toolbar.toggle(which),
+                Effect::CustomizeToolbar => {
+                    self.st.toolbar.close();
+                    self.st.toolbar.customizing = true;
+                }
+                Effect::ShowCopyVerses { passages, bibles } => {
+                    self.st.open_copy_verses(passages, bibles);
+                }
                 Effect::Removed(id) => {
                     self.st.docs.remove(&id);
                     self.st.marks.forget(&id);
+                    self.st.copy_ui.removed(&id);
                 }
                 Effect::Replaced(id) => {
                     self.st.docs.remove(&id);
                     self.st.marks.forget(&id);
+                    self.st.copy_ui.replaced(&id);
                     // Its open Tabs (and every Text Comparison) load the new text, where they
                     // were.
                     let reload: Vec<TabId> = self
@@ -417,6 +466,7 @@ impl Shell {
                             self.st.opened(tab);
                         }
                     }
+                    self.st.lexicon_replaced(&id);
                 }
                 Effect::Switched(tab) => self.st.switched(tab),
                 Effect::NavigateStandard { tab, verse } => {
@@ -759,6 +809,7 @@ impl Shell {
             || self.st.session.starter.download().is_some()
             || self.st.session.starter.is_checking()
             || self.st.picker.is_some()
+            || self.st.export_waiting()
             || self.st.session.guides.is_busy()
             || self.st.session.bible_search_running()
             || self.st.session.word_study.is_busy()
@@ -796,18 +847,25 @@ impl Shell {
         // here, not at restore, so it comes through the app's transport.
         self.st.session.load_starter_manifest_for_open_tab();
         self.st.poll_picker();
+        self.st.poll_export();
+        self.st.poll_csv_picker();
         self.apply_effects();
         if let Some(after) = self.background_repaint() {
             ui.ctx().request_repaint_after(after);
         }
         self.shortcuts(ui);
-        egui::Panel::top("menus")
+        self.st.toolbar.begin_frame();
+        let menus = egui::Panel::top("menus")
             .frame(
                 egui::Frame::new()
                     .fill(theme::c().surface)
                     .inner_margin(egui::Margin::symmetric(14, 6)),
             )
             .show(ui, |ui| self.menu_bar(ui));
+        self.st.toolbar.menus_bottom = menus.response.rect.bottom();
+        // The toolbar at the Bottom, Left or Right, or Auto-hidden (#141); then its open pane.
+        self.toolbar_outside_menus(ui);
+        self.launcher_pane(ui);
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -830,6 +888,7 @@ impl Shell {
             });
         self.apply_effects();
         self.st.overlays(ui);
+        self.customize_window(ui.ctx());
         // A Notes card being edited saves as the user types, and at once once its Tab is not
         // drawn (#64): checked here, since the Notes Tab's own code only runs while drawn.
         self.st.notes_after_frame(ui.ctx());
@@ -889,6 +948,8 @@ impl Shell {
         self.apply_effects();
     }
 
+    /// The menu bar: the app's name, the Launchers (#140) when the toolbar is at the Top (#141),
+    /// the View and Help menus, and the Command box on the right.
     fn menu_bar(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.label(
@@ -896,34 +957,44 @@ impl Shell {
                     .font(theme::display(19.0))
                     .color(theme::c().ink),
             );
-            ui.add_space(6.0);
+            ui.add_space(10.0);
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let toolbar = &self.st.session.toolbar;
+            if toolbar.position == obs_engine::ToolbarPosition::Top && !toolbar.auto_hide {
+                let room = ui.available_width() - self.st.toolbar.reserve;
+                self.launcher_strip(ui, room, false);
+                ui.add_space(8.0);
+            }
+            let rest = ui.cursor().left();
             ui.scope(|ui| {
                 let w = &mut ui.visuals_mut().widgets;
                 w.inactive.bg_stroke = Stroke::NONE;
                 w.inactive.weak_bg_fill = Color32::TRANSPARENT;
                 w.hovered.bg_stroke = Stroke::NONE;
-                // The Library menu counts the downloaded Resources with an update (#136).
-                let updates = self.st.session.resource_updates().updates.len();
-                for menu in MENUS {
-                    let title = match menu.title {
-                        "Library" if updates > 0 => format!("Library ({updates})"),
-                        t => t.to_string(),
-                    };
-                    ui.menu_button(title, |ui| {
+                let launched: Vec<&str> = obs_engine::Launcher::ALL
+                    .iter()
+                    .map(|l| l.title())
+                    .collect();
+                for menu in MENUS.iter().filter(|m| !launched.contains(&m.title)) {
+                    ui.menu_button(menu.title, |ui| {
                         for item in menu.items {
                             self.menu_item(ui, *item);
                         }
                     });
                 }
             });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let menus = ui.cursor().left() - rest;
+            let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 self.command_box(ui);
                 // Today's reading (#147), left of the Command box.
                 ui.add_space(8.0);
                 if self.st.todays_reading_button(ui) {
                     self.apply_effects();
                 }
+                ui.min_rect().width()
             });
+            // What the Launchers leave room for next frame: the menus, the right side and gaps.
+            self.st.toolbar.reserve = menus + right.inner + 8.0 + 2.0 * ui.spacing().item_spacing.x;
         });
     }
 
@@ -939,6 +1010,9 @@ impl Shell {
                 let label = match id {
                     "view.red_letter" if self.st.session.text.red_letter => "✓ Red letter".into(),
                     "view.highlights" if self.st.session.appearance.show_highlights => {
+                        format!("✓ {}", spec.label)
+                    }
+                    "view.toolbar_auto_hide" if self.st.session.toolbar.auto_hide => {
                         format!("✓ {}", spec.label)
                     }
                     "library.get_resources" => {
@@ -1008,102 +1082,8 @@ impl Shell {
                     self.run("notebook.show_in_text", &json!({ "id": id, "show": show }));
                 }
             }
-            MenuItem::Favorites => {
-                let favorites: Vec<(i64, String, String)> = self
-                    .st
-                    .session
-                    .favorites()
-                    .iter()
-                    .map(|f| (f.id, f.folder.clone(), f.label.clone()))
-                    .collect();
-                let mut picked = None;
-                ui.menu_button("Favorites", |ui| {
-                    if favorites.is_empty() {
-                        ui.label(RichText::new("No Favorites yet").color(theme::c().muted));
-                    }
-                    let mut folder: Option<&str> = None;
-                    for (i, (id, f, label)) in favorites.iter().enumerate() {
-                        if !f.is_empty() {
-                            if folder != Some(f.as_str()) {
-                                folder = Some(f.as_str());
-                                ui.menu_button(f, |ui| {
-                                    for (id, _, label) in
-                                        favorites[i..].iter().take_while(|(_, g, _)| g == f)
-                                    {
-                                        if ui.button(label).clicked() {
-                                            picked = Some(*id);
-                                        }
-                                    }
-                                });
-                            }
-                            continue;
-                        }
-                        if ui.button(label).clicked() {
-                            picked = Some(*id);
-                        }
-                    }
-                });
-                if let Some(id) = picked {
-                    let split = ui.input(|i| i.modifiers.command);
-                    self.run("favorite.open", &json!({ "id": id, "split": split }));
-                    ui.close();
-                }
-            }
-            MenuItem::Layouts => {
-                let names = self
-                    .st
-                    .session
-                    .user
-                    .as_ref()
-                    .and_then(|u| u.layouts().ok())
-                    .unwrap_or_default();
-                if names.is_empty() {
-                    ui.label(RichText::new("No saved layouts").color(theme::c().muted));
-                }
-                for name in names {
-                    let mut run: Option<&'static str> = None;
-                    ui.menu_button(&name, |ui| {
-                        for id in ["layout.restore", "layout.rename", "layout.delete"] {
-                            let label = self.st.session.commands().get(id).map_or(id, |c| c.label);
-                            let label = label.replace(" layout", "");
-                            if ui.button(label).clicked() {
-                                run = Some(id);
-                                ui.close();
-                            }
-                        }
-                    });
-                    if let Some(id) = run {
-                        self.run(id, &json!({ "name": name }));
-                        ui.close();
-                    }
-                }
-            }
-            MenuItem::Resources => {
-                let entries: Vec<(String, String, ResourceType)> = self
-                    .st
-                    .session
-                    .library
-                    .entries()
-                    .iter()
-                    .map(|e| {
-                        (
-                            e.manifest.resource_id.clone(),
-                            format!("{} — {}", e.manifest.abbreviation, e.manifest.title),
-                            e.manifest.resource_type,
-                        )
-                    })
-                    .collect();
-                if entries.is_empty() {
-                    ui.label(RichText::new("No Resources yet").color(theme::c().muted));
-                }
-                for (id, label, _) in entries {
-                    if ui.button(label).clicked() {
-                        let split = ui.input(|i| i.modifiers.command);
-                        self.run("resource.open", &json!({ "id": id, "split": split }));
-                        ui.close();
-                    }
-                }
-            }
+            // The Library and Layouts menus are the Library and Layouts Launchers' panes now.
+            MenuItem::Favorites | MenuItem::Layouts | MenuItem::Resources => {}
         }
     }
 }
@@ -1486,9 +1466,9 @@ impl State {
             TabKind::GetBibles => self.get_bibles_body(&mut body),
             TabKind::StarterLibrary => self.starter_body(&mut body),
             TabKind::Credits => self.credits_body(&mut body, tab),
-            TabKind::Guide(obs_engine::Guide::PassageGuide) => {
-                self.passage_guide_body(&mut body, tab)
-            }
+            TabKind::Guide(
+                g @ (obs_engine::Guide::PassageGuide | obs_engine::Guide::ExegeticalGuide),
+            ) => self.passage_keyed_guide_body(&mut body, tab, g),
             TabKind::Guide(obs_engine::Guide::WordStudy) => self.word_study_body(&mut body, tab),
             TabKind::Guide(obs_engine::Guide::Factbook) => self.factbook_body(&mut body, tab),
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
@@ -1516,6 +1496,7 @@ impl State {
             ui.ctx().request_repaint();
             return;
         }
+        self.sync_interlinear(tab, false);
         let palette = self.palette;
         let text = self.session.text;
         let Some(t) = self.tabs.get_mut(&tab) else {
@@ -1599,6 +1580,133 @@ impl State {
             }
         }
         self.after_reading_pane(ui, tab, &out);
+    }
+
+    /// The interlinear kind and lines (#143) a Bible Tab shows: none when they are off, or
+    /// when its Bible has no Tagged words.
+    fn interlinear_lines(&self, tab: TabId) -> Option<(InterlinearKind, Vec<InterlinearLine>)> {
+        let kind = obs_engine::interlinear::tab_kind(&self.session, tab)?;
+        let lines = self.session.workspace.tab(tab)?.interlinear.shown(kind);
+        let view = self.tabs.get(&tab)?.view.as_ref()?;
+        (!lines.is_empty() && view.doc.has_tagged_words()).then_some((kind, lines))
+    }
+
+    /// Give a Bible Tab's view the interlinear lines the Tab shows (#143). They are built
+    /// again only when the lines, or the Lexicons they are looked up in (or their
+    /// revisions), change, or when `rebuild` (a Lexicon was replaced in place).
+    fn sync_interlinear(&mut self, tab: TabId, rebuild: bool) {
+        let wanted = self.interlinear_lines(tab);
+        let lexicons: Vec<(String, u32)> = match &wanted {
+            Some((kind, lines)) if InterlinearSource::needs_lexicons(*kind, lines) => self
+                .session
+                .library
+                .of_type(ResourceType::Lexicon)
+                .map(|e| (e.manifest.resource_id.clone(), e.manifest.revision))
+                .collect(),
+            _ => Vec::new(),
+        };
+        let Some(view) = self.tabs.get(&tab).and_then(|t| t.view.as_ref()) else {
+            return;
+        };
+        let current = view.interlinear();
+        let source = match wanted {
+            None if current.is_none() => return,
+            None => None,
+            Some((kind, lines)) => {
+                if !rebuild && current.is_some_and(|s| s.is_for(kind, &lines, &lexicons)) {
+                    return;
+                }
+                // A Lexicon that cannot be loaded is left out (its Tab would say why).
+                let docs = lexicons
+                    .iter()
+                    .filter_map(|(id, _)| self.doc(id).ok())
+                    .collect();
+                InterlinearSource::new(kind, lines, lexicons, docs).map(Arc::new)
+            }
+        };
+        if let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) {
+            view.set_interlinear(source);
+        }
+    }
+
+    /// Look a replaced Lexicon's words up again in every Tab whose interlinear lines use it
+    /// (#143): the update keeps its resource id, and maybe its revision.
+    fn lexicon_replaced(&mut self, resource_id: &str) {
+        let using: Vec<TabId> = self
+            .tabs
+            .iter()
+            .filter(|(_, t)| {
+                t.view
+                    .as_ref()
+                    .and_then(|v| v.interlinear())
+                    .is_some_and(|s| s.looks_up_in(resource_id))
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for tab in using {
+            self.sync_interlinear(tab, true);
+        }
+    }
+
+    /// A Bible Tab's interlinear controls (#143), laid out right to left: the lines menu (⏷)
+    /// and the Interlinear toggle. Only for a Bible with Tagged words.
+    fn interlinear_controls(&mut self, ui: &mut Ui, tab: TabId, narrow: bool) {
+        let Some(kind) = obs_engine::interlinear::tab_kind(&self.session, tab) else {
+            return;
+        };
+        if !self
+            .tabs
+            .get(&tab)
+            .and_then(|t| t.view.as_ref())
+            .is_some_and(|v| v.doc.has_tagged_words())
+        {
+            return;
+        }
+        let Some(lines) = self
+            .session
+            .workspace
+            .tab(tab)
+            .map(|t| t.interlinear.clone())
+        else {
+            return;
+        };
+        let what = match kind {
+            InterlinearKind::Reverse => "the Hebrew or Greek under each word",
+            InterlinearKind::Interlinear => "English and grammar under each word",
+        };
+        let mut run: Option<Value> = None;
+        ui.menu_button(RichText::new("⏷").small(), |ui| {
+            ui.label(
+                RichText::new("Interlinear lines")
+                    .small()
+                    .color(theme::c().muted),
+            );
+            for line in kind.lines() {
+                let mut chosen = lines.is_chosen(kind, *line);
+                // The last line picked stays.
+                let last = chosen && lines.shown(kind).len() <= 1 && lines.on;
+                if ui
+                    .add_enabled(!last, egui::Checkbox::new(&mut chosen, line.name()))
+                    .clicked()
+                {
+                    run = Some(json!({ "tab": tab.0, "line": line.id(), "shown": chosen }));
+                }
+            }
+        })
+        .response
+        .on_hover_text("Choose the interlinear lines");
+        let label = if narrow { "Int." } else { "Interlinear" };
+        if ui
+            .selectable_label(lines.on, RichText::new(label).small())
+            .on_hover_text(format!("Interlinear lines: {what}"))
+            .clicked()
+        {
+            run = Some(json!({ "tab": tab.0, "on": !lines.on }));
+        }
+        if let Some(params) = run {
+            self.session.workspace.user_focused(tab);
+            self.run("tab.interlinear", &params);
+        }
     }
 
     /// Text Comparison: the Bible chips, then the Verse blocks. The view follows the Tab's
@@ -1832,6 +1940,7 @@ impl State {
                         self.tab_menu(ui, tab);
                         self.favorite_star(ui, tab);
                         if matches!(kind, TabKind::Resource(_)) {
+                            self.interlinear_controls(ui, tab, narrow);
                             self.parallel_resources(ui, tab, narrow);
                         }
                         let measured = ui.min_rect().width();
@@ -2091,13 +2200,6 @@ impl State {
                             .session
                             .run("tab.go", &json!({ "tab": tab.0, "text": text }));
                         if let Some(t) = self.tabs.get_mut(&tab) {
-                            if let Ok(result) = &out {
-                                t.reference_passage = result["text"].as_str().and_then(|text| {
-                                    obs_scripture::parse_reference(text, &Standard, None)
-                                        .ok()
-                                        .and_then(|p| p.passages().first().copied())
-                                });
-                            }
                             t.error = out.err().map(|e| match e {
                                 obs_engine::CommandError::Failed { message, .. } => message,
                                 e => e.to_string(),
@@ -2208,6 +2310,8 @@ impl State {
         self.remove_prompt(&ctx);
         self.import_chooser(&ctx);
         self.fonts_window(&ctx);
+        self.copy_window(&ctx);
+        self.collection_editor_window(&ctx);
         if let Some((msg, t)) = &self.toast {
             if self.now - t < 4.0 {
                 let screen = ctx.content_rect();
@@ -2424,6 +2528,7 @@ impl egui_tiles::Behavior<TabId> for State {
             for id in [
                 "library.open",
                 "guide.passage_guide",
+                "guide.exegetical_guide",
                 "guide.word_study",
                 "tool.search",
                 "tool.text_comparison",

@@ -227,6 +227,11 @@ impl SearchView {
     pub fn has_pending(&self) -> bool {
         self.snippets.has_pending()
     }
+
+    /// Collect finished layouts while the list is not drawn (another results view is shown).
+    pub fn drain(&mut self) {
+        self.snippets.drain();
+    }
 }
 
 /// What one frame paints, gathered row by row.

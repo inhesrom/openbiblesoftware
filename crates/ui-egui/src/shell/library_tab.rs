@@ -34,6 +34,8 @@ enum Action {
     Remove(String),
     Move(String, usize),
     Step(String, bool),
+    /// Add a Resource to a Collection by hand, or take it out: (Collection, resource id).
+    Collect(String, String),
 }
 
 impl State {
@@ -45,15 +47,24 @@ impl State {
         // Removal can retire a chip; never leave its filter selected invisibly.
         t.languages
             .retain(|lang| languages.contains(&lang.as_str()));
+        // A deleted Collection never stays chosen invisibly.
+        if t.collection
+            .as_ref()
+            .is_some_and(|c| self.session.library.collection(c).is_none())
+        {
+            t.collection = None;
+        }
         let filter = LibraryFilter {
             text: t.filter.clone(),
             languages: t.languages.clone(),
+            collection: t.collection.clone(),
         };
         let selected = t.selected.clone();
         let mut dragging = t.dragging.clone();
         let mut action: Option<Action> = None;
         let mut select: Option<String> = None;
         let mut toggle: Option<String> = None;
+        let mut bar = None;
         let mut drag_start: Option<String> = None;
         let mut drag_end = false;
         let mut rows: Vec<Row> = Vec::new();
@@ -93,6 +104,7 @@ impl State {
                         }
                     }
                 });
+                bar = super::collections_ui::collections_bar(ui, lib, filter.collection.as_deref());
                 ui.add_space(4.0);
                 let scroll = egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
@@ -102,7 +114,7 @@ impl State {
                             let shown: Vec<(usize, &Manifest)> = lib
                                 .of_type(ty)
                                 .enumerate()
-                                .filter(|(_, e)| filter.matches(&e.manifest))
+                                .filter(|(_, e)| filter.matches_in(lib, &e.manifest))
                                 .map(|(i, e)| (i, &e.manifest))
                                 .collect();
                             if shown.is_empty() {
@@ -141,7 +153,7 @@ impl State {
                                     action = Some(Action::Open(id.clone()));
                                 }
                                 row.body.context_menu(|ui| {
-                                    if let Some(a) = row_menu(ui, id) {
+                                    if let Some(a) = row_menu(ui, lib, id) {
                                         action = Some(a);
                                     }
                                 });
@@ -200,8 +212,8 @@ impl State {
         if let Some(t) = self.tabs.get_mut(&tab) {
             if let Some(lang) = toggle {
                 let mut f = LibraryFilter {
-                    text: String::new(),
                     languages: std::mem::take(&mut t.languages),
+                    ..LibraryFilter::default()
                 };
                 f.toggle_language(&lang);
                 t.languages = f.languages;
@@ -216,8 +228,11 @@ impl State {
                 t.dragging = Some(id);
             }
         }
-        if drag_end || action.is_some() {
+        if drag_end || action.is_some() || bar.is_some() {
             self.session.workspace.user_focused(tab);
+        }
+        if let Some(bar) = bar {
+            self.collections_bar_action(tab, bar);
         }
         match action {
             None => {}
@@ -233,6 +248,9 @@ impl State {
             }
             Some(Action::Move(id, to)) => {
                 self.run("library.move", &json!({ "id": id, "to": to }));
+            }
+            Some(Action::Collect(name, id)) => {
+                self.run("collection.toggle", &json!({ "name": name, "id": id }));
             }
             Some(Action::Step(id, up)) => {
                 let cmd = if up {
@@ -258,6 +276,8 @@ impl State {
             return;
         };
         let annotations = self.session.annotations_referring(id);
+        let current_tags = self.session.library.tags_of(id).join(", ");
+        let mut set_tags: Option<String> = None;
         let mut action: Option<Action> = None;
         egui::Frame::new()
             .fill(theme::c().field)
@@ -291,6 +311,30 @@ impl State {
                                     ui.label(value);
                                     ui.end_row();
                                 }
+                                // Resource tags (#153): the user's own labels, for a
+                                // Collection's tag: rules. Saved when the field loses focus.
+                                ui.label(RichText::new("Tags").color(theme::c().muted));
+                                if let Some(t) = self.tabs.get_mut(&tab) {
+                                    let text =
+                                        t.tags_edit.get_or_insert_with(|| current_tags.clone());
+                                    let r = ui
+                                        .add(
+                                            egui::TextEdit::singleline(text)
+                                                .hint_text("older, reformed")
+                                                .desired_width(260.0),
+                                        )
+                                        .on_hover_text(
+                                            "Your own labels for this Resource, comma-separated; \
+                                             a Collection's tag: rule matches them",
+                                        );
+                                    if r.lost_focus() && *text != current_tags {
+                                        set_tags = Some(text.clone());
+                                    }
+                                    if !r.has_focus() {
+                                        t.tags_edit = None;
+                                    }
+                                }
+                                ui.end_row();
                             });
                         ui.add_space(10.0);
                         section(ui, "Attribution");
@@ -355,6 +399,9 @@ impl State {
                         });
                     });
             });
+        if let Some(tags) = set_tags {
+            self.run("resource.tags", &json!({ "id": id, "tags": tags }));
+        }
         match action {
             Some(Action::Open(id)) => {
                 self.run("resource.open", &json!({ "id": id }));
@@ -506,7 +553,7 @@ fn library_row(
 }
 
 /// The right-click menu of a Library row.
-fn row_menu(ui: &mut Ui, id: &str) -> Option<Action> {
+fn row_menu(ui: &mut Ui, library: &obs_engine::Library, id: &str) -> Option<Action> {
     let mut action = None;
     let items: [(&str, Action); 5] = [
         ("Open", Action::Open(id.to_string())),
@@ -516,6 +563,11 @@ fn row_menu(ui: &mut Ui, id: &str) -> Option<Action> {
         ("Remove…", Action::Remove(id.to_string())),
     ];
     for (i, (label, a)) in items.into_iter().enumerate() {
+        if i == 2
+            && let Some(name) = super::collections_ui::collections_menu(ui, library, id)
+        {
+            action = Some(Action::Collect(name, id.to_string()));
+        }
         if i == 2 || i == 4 {
             ui.separator();
         }

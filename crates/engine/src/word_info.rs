@@ -7,7 +7,7 @@ use obs_scripture::StrongsNumber;
 
 /// STEPBible numbers prefixes, suffixes and other grammatical morphemes from H9001 / G9001
 /// up; the first part below that is the word's own Lemma.
-const AFFIX_NUMBERS_FROM: u32 = 9000;
+pub(crate) const AFFIX_NUMBERS_FROM: u32 = 9000;
 
 /// Longest Lexicon gloss shown on a card, in characters.
 const EXCERPT_CHARS: usize = 160;

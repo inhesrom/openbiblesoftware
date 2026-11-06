@@ -1315,6 +1315,92 @@ pub fn kjv_love() -> obs_model::Resource {
     )
 }
 
+/// KJV verses (public domain) where G26 (ἀγάπη) is rendered "love" or "charity", tagged with
+/// Strong's numbers only, as KJV+Strong's is, for the Search results views (#146): four
+/// Verses each in John and 1 John, one each in Romans and 1 Corinthians; John 3:16 has G25
+/// only.
+pub fn kjv_agape() -> obs_model::Resource {
+    use obs_scripture::{Book, Verse};
+    tagged_bible(
+        "kjv",
+        "King James Version with Strong's (test)",
+        "KJV",
+        "en",
+        &[
+            (
+                Verse::new(Book::John, 3, 16),
+                "For God so loved{G25} the world, that he gave his only_begotten{G3439} Son",
+            ),
+            (
+                Verse::new(Book::John, 13, 35),
+                "By this shall all men know that ye are my disciples, if ye have love{G26} one to another.",
+            ),
+            (
+                Verse::new(Book::John, 15, 9),
+                "As the Father hath loved{G25} me, so have I loved{G25} you: continue ye in my love{G26}.",
+            ),
+            (
+                Verse::new(Book::John, 15, 13),
+                "Greater love{G26} hath no man than this, that a man lay down his life for his friends.",
+            ),
+            (
+                Verse::new(Book::John, 17, 26),
+                "that the love{G26} wherewith thou hast loved{G25} me may be in them, and I in them.",
+            ),
+            (
+                Verse::new(Book::Romans, 5, 5),
+                "because the love{G26} of God is shed abroad in our hearts by the Holy Ghost",
+            ),
+            (
+                Verse::new(Book::FirstCorinthians, 13, 13),
+                "And now abideth faith, hope, charity{G26}, these three; but the greatest of these is charity{G26}.",
+            ),
+            (
+                Verse::new(Book::FirstJohn, 4, 7),
+                "Beloved, let us love{G25} one another: for love{G26} is of God",
+            ),
+            (
+                Verse::new(Book::FirstJohn, 4, 8),
+                "He that loveth{G25} not knoweth not God; for God is love{G26}.",
+            ),
+            (
+                Verse::new(Book::FirstJohn, 4, 16),
+                "God is love{G26}; and he that dwelleth in love{G26} dwelleth in God, and God in him.",
+            ),
+            (
+                Verse::new(Book::FirstJohn, 4, 18),
+                "There is no fear in love{G26}; but perfect love{G26} casteth out fear",
+            ),
+        ],
+    )
+}
+
+/// A Greek New Testament excerpt (the SBLGNT wording of John 13:35 and 1 John 4:8, 16) tagged
+/// with Strong's number, Lemma and Morphology, as a tagged Greek text is (#146).
+pub fn greek_agape() -> obs_model::Resource {
+    use obs_scripture::{Book, Verse};
+    tagged_bible(
+        "tgnt",
+        "Tagged Greek New Testament (test)",
+        "TGNT",
+        "grc",
+        &[
+            (
+                Verse::new(Book::John, 13, 35),
+                "ἐν τούτῳ γνώσονται πάντες ὅτι ἐμοὶ μαθηταί ἐστε, ἐὰν ἀγάπην{G26|ἀγάπη|N-ASF|love} ἔχητε ἐν ἀλλήλοις.",
+            ),
+            (
+                Verse::new(Book::FirstJohn, 4, 8),
+                "ὁ μὴ ἀγαπῶν{G25|ἀγαπάω|V-PAP-NSM|loving} οὐκ ἔγνω τὸν θεόν, ὅτι ὁ θεὸς ἀγάπη{G26|ἀγάπη|N-NSF|love} ἐστίν.",
+            ),
+            (
+                Verse::new(Book::FirstJohn, 4, 16),
+                "ὁ θεὸς ἀγάπη{G26|ἀγάπη|N-NSF|love} ἐστίν, καὶ ὁ μένων ἐν τῇ ἀγάπῃ{G26|ἀγάπη|N-DSF|love} ἐν τῷ θεῷ μένει",
+            ),
+        ],
+    )
+}
+
 /// A Hebrew Bible tagged with extended Strong's numbers and readable Morphology, like TAHOT:
 /// H1254A three times, always a verb.
 pub fn hebrew_bara() -> obs_model::Resource {
@@ -1729,9 +1815,10 @@ pub fn tagnt_grace() -> obs_model::Resource {
     r
 }
 
-/// A User database whose preference writes, or its next few History Visit writes, fail
-/// ("disk full"); everything else is the real `store`. For checking that a failed save is
-/// reported, not hidden, and that History keeps what it could not write.
+/// A User database whose preference writes, its next few History Visit writes, or its next
+/// few annotation change lists fail ("disk full"); everything else is the real `store`. For
+/// checking that a failed save is reported, not hidden, that History keeps what it could not
+/// write, and that undo keeps a step it could not write.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug)]
 pub struct WritesFail {
@@ -1740,6 +1827,9 @@ pub struct WritesFail {
     pub preferences: bool,
     /// How many Visit writes still fail before they work again.
     pub visits: std::cell::Cell<u32>,
+    /// How many annotation change lists still fail before they work again; shared, so a
+    /// test can set it after the Session owns the store.
+    pub changes: std::sync::Arc<std::sync::atomic::AtomicU32>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1750,6 +1840,7 @@ impl WritesFail {
             store,
             preferences: true,
             visits: std::cell::Cell::new(0),
+            changes: std::sync::Arc::default(),
         }
     }
 
@@ -1759,7 +1850,22 @@ impl WritesFail {
             store,
             preferences: false,
             visits: std::cell::Cell::new(failures),
+            changes: std::sync::Arc::default(),
         }
+    }
+
+    /// Every write works until the returned count of annotation change lists to fail is set.
+    pub fn changes(
+        store: obs_store::UserStore,
+    ) -> (Self, std::sync::Arc<std::sync::atomic::AtomicU32>) {
+        let s = Self {
+            store,
+            preferences: false,
+            visits: std::cell::Cell::new(0),
+            changes: std::sync::Arc::default(),
+        };
+        let failures = std::sync::Arc::clone(&s.changes);
+        (s, failures)
     }
 }
 
@@ -1876,7 +1982,15 @@ impl crate::UserData for WritesFail {
     fn search_notes(&self, fts_query: &str) -> Result<Vec<String>, String> {
         crate::UserData::search_notes(&self.store, fts_query)
     }
-    fn apply_changes(&self, changes: &[obs_store::Change]) -> Result<(), String> {
+    fn apply_changes(&self, changes: &[obs_store::Change]) -> Result<(), obs_store::StoreError> {
+        use std::sync::atomic::Ordering;
+        let failures = self.changes.load(Ordering::SeqCst);
+        if failures > 0 {
+            self.changes.store(failures - 1, Ordering::SeqCst);
+            return Err(obs_store::StoreError::Sqlite(
+                "database or disk is full".into(),
+            ));
+        }
         crate::UserData::apply_changes(&self.store, changes)
     }
     fn annotation_dump(&self) -> Result<String, String> {

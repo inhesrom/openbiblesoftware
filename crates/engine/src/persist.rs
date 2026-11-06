@@ -111,6 +111,12 @@ pub struct TabSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_location: Option<obs_model::Key>,
     pub link: Option<char>,
+    /// A Bible Tab's interlinear lines (#143).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::interlinear::InterlinearLines::is_default"
+    )]
+    pub interlinear: crate::interlinear::InterlinearLines,
 }
 
 /// The Workspace as saved: Tabs, the arrangement of Panels, Link sets, focus and each Tab
@@ -220,10 +226,12 @@ pub trait UserData: std::fmt::Debug {
     fn annotations_referring(&self, resource_id: &str) -> Result<u64, String>;
     /// Ids of Notes matching an FTS5 query over normalized words, newest first.
     fn search_notes(&self, fts_query: &str) -> Result<Vec<String>, String>;
-    /// Apply row Changes in one transaction, checking each row is still its `before`.
-    fn apply_changes(&self, changes: &[Change]) -> Result<(), String>;
+    /// Apply row Changes in one transaction, checking each row is still its `before`. The
+    /// error says why: undo tells a Conflict or Rejected list (the history no longer fits the
+    /// database) from a failure that may pass (a busy or full disk).
+    fn apply_changes(&self, changes: &[Change]) -> Result<(), obs_store::StoreError>;
     /// The annotation tables as text, for tests comparing database states.
-    #[doc(hidden)]
+    #[cfg(any(test, feature = "test-support"))]
     fn annotation_dump(&self) -> Result<String, String>;
 }
 
@@ -333,9 +341,10 @@ impl UserData for obs_store::UserStore {
     fn search_notes(&self, fts_query: &str) -> Result<Vec<String>, String> {
         obs_store::UserStore::search_notes(self, fts_query).map_err(|e| e.to_string())
     }
-    fn apply_changes(&self, changes: &[Change]) -> Result<(), String> {
-        obs_store::UserStore::apply_changes(self, changes).map_err(|e| e.to_string())
+    fn apply_changes(&self, changes: &[Change]) -> Result<(), obs_store::StoreError> {
+        obs_store::UserStore::apply_changes(self, changes)
     }
+    #[cfg(any(test, feature = "test-support"))]
     fn annotation_dump(&self) -> Result<String, String> {
         obs_store::UserStore::annotation_dump(self).map_err(|e| e.to_string())
     }
@@ -355,6 +364,7 @@ impl Workspace {
                     location: t.history.current(),
                     entry_location: t.entry_history.current(),
                     link: t.link,
+                    interlinear: t.interlinear.clone(),
                 })
                 .collect(),
             layout: self.arrangement.clone(),

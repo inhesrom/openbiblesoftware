@@ -166,6 +166,8 @@ impl Palette {
             ColorRole::NoteMarker => self.note_marker,
             ColorRole::Accent => self.accent,
             ColorRole::WordsOfJesus => self.words_of_jesus,
+            // Interlinear lines (#143) read as the text's companions, apart from the ink.
+            ColorRole::Interlinear => self.note_marker,
         }
     }
 
@@ -186,7 +188,7 @@ impl Palette {
     }
 
     /// Every text colour of this tone, by role.
-    pub fn inks(&self) -> [(ColorRole, Color32); 6] {
+    pub fn inks(&self) -> [(ColorRole, Color32); 7] {
         [
             ColorRole::Ink,
             ColorRole::VerseNumber,
@@ -194,6 +196,7 @@ impl Palette {
             ColorRole::NoteMarker,
             ColorRole::Accent,
             ColorRole::WordsOfJesus,
+            ColorRole::Interlinear,
         ]
         .map(|r| (r, self.color(r)))
     }

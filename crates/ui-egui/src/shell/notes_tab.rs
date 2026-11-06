@@ -33,7 +33,8 @@ use std::sync::Arc;
 
 use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, UiBuilder, pos2, vec2};
 use obs_engine::{
-    Card, CardOrder, Content, HighlightStyle, Notebook, NotesFilter, TabId, body_references,
+    Card, CardOrder, Content, HighlightStyle, Notebook, NotesFilter, NotesFormat, TabId,
+    body_references,
 };
 use obs_layout::{ColorRole, LaidBlock};
 use obs_scripture::{PassageList, RefStyle, Standard, format_passage};
@@ -219,7 +220,7 @@ impl State {
                 .max_rect(column.shrink2(vec2(8.0, 6.0)))
                 .id_salt(("notes-column", tab)),
         );
-        self.notebook_column(&mut col, &mut run);
+        let export = self.notebook_column(&mut col, &mut run);
         let mut list = ui.new_child(
             UiBuilder::new()
                 .max_rect(cards.shrink2(vec2(10.0, 6.0)))
@@ -230,6 +231,14 @@ impl State {
         self.delete_notebook_dialog(ui.ctx(), &mut run);
         for (id, params) in run {
             self.run(id, &params);
+        }
+        if let Some(format) = export {
+            // The Notebook shown; All and Needs attention export every Notebook.
+            let notebook = match &self.session.notes.filter {
+                NotesFilter::Notebook(id) => id.clone(),
+                NotesFilter::All | NotesFilter::NeedsAttention => "all".to_string(),
+            };
+            self.export_or_print(ui.ctx(), json!({ "notebook": notebook }), format);
         }
         self.run_reattach();
     }
@@ -455,10 +464,16 @@ impl State {
         }
     }
 
-    fn notebook_column(&mut self, ui: &mut Ui, run: &mut Vec<(&'static str, Value)>) {
+    /// The Notebook column; returns the Export menu's choice, if made.
+    fn notebook_column(
+        &mut self,
+        ui: &mut Ui,
+        run: &mut Vec<(&'static str, Value)>,
+    ) -> Option<NotesFormat> {
         let filter = self.session.notes.filter.clone();
         let total: u64 = self.notes_ui.counts.values().sum();
         let notebooks = self.notes_ui.notebooks.clone();
+        let mut export = None;
         egui::ScrollArea::vertical()
             .id_salt("notes-notebooks")
             .auto_shrink([false, false])
@@ -616,7 +631,14 @@ impl State {
                         }
                     }
                 }
+                ui.add_space(8.0);
+                let shown = match &filter {
+                    NotesFilter::Notebook(id) => self.notes_ui.counts.get(id).copied().unwrap_or(0),
+                    NotesFilter::All | NotesFilter::NeedsAttention => total,
+                };
+                export = export_menu(ui, "Export…", shown > 0);
             });
+        export
     }
 
     /// Ask what happens to a deleted Notebook's Annotations (#17 rule 19).
@@ -1027,10 +1049,14 @@ impl State {
         width: f32,
     ) -> Option<(Rect, Arc<LaidBlock>)> {
         let settings = self.session.text;
-        let laid =
-            self.notes_ui
-                .snippets
-                .get_styled(text, base, styled, width.max(40.0), &settings);
+        let laid = self.notes_ui.snippets.get_styled(
+            text,
+            base,
+            styled,
+            false,
+            width.max(40.0),
+            &settings,
+        );
         let Some(laid) = laid else {
             ui.allocate_space(vec2(width, settings.size * 1.6));
             ui.ctx().request_repaint();
@@ -1109,6 +1135,44 @@ impl State {
             }
             run.push(("annotation.delete", json!({ "id": a.id })));
             ui.close();
+        }
+    }
+}
+
+/// The Export menu of the Notes Tool and of a Notes search (#154): Markdown, HTML, or
+/// Print / Save as PDF. Returns the format chosen.
+pub(super) fn export_menu(ui: &mut Ui, label: &str, enabled: bool) -> Option<NotesFormat> {
+    let mut chosen = None;
+    ui.add_enabled_ui(enabled, |ui| {
+        ui.menu_button(label, |ui| {
+            for (format, item) in [
+                (NotesFormat::Markdown, "Export as Markdown…"),
+                (NotesFormat::Html, "Export as HTML…"),
+                (NotesFormat::Print, "Print / Save as PDF…"),
+            ] {
+                if ui.button(item).clicked() {
+                    chosen = Some(format);
+                    ui.close();
+                }
+            }
+        })
+        .response
+        .on_hover_text("Export these Annotations with their Passages and quoted text");
+    });
+    chosen
+}
+
+impl State {
+    /// Export (asking where to save) or print the Notes `params` choose.
+    pub(super) fn export_or_print(
+        &mut self,
+        ctx: &egui::Context,
+        params: Value,
+        format: NotesFormat,
+    ) {
+        match format {
+            NotesFormat::Print => self.print_notes(ctx, params),
+            NotesFormat::Markdown | NotesFormat::Html => self.export_notes(ctx, params, format),
         }
     }
 }

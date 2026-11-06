@@ -240,6 +240,7 @@ pub(super) enum MenuAction {
     LookUp,
     ChooseWord,
     PassageGuide,
+    ExegeticalGuide,
     CrossReferences,
     TextComparison,
     CopyVerse,
@@ -365,6 +366,7 @@ fn actions_ui(
             };
             for (label, action) in [
                 ("Passage Guide", MenuAction::PassageGuide),
+                ("Exegetical Guide", MenuAction::ExegeticalGuide),
                 ("Cross-references", MenuAction::CrossReferences),
                 ("Text Comparison", MenuAction::TextComparison),
             ] {
@@ -495,7 +497,11 @@ impl State {
                     .unwrap_or_else(|| response.rect.left_top() + vec2(40.0, 40.0)),
             );
         }
-        let opened = (out.context_clicked || key).then(|| self.reading_targets(tab, out));
+        if out.cell_clicked {
+            at = response.hover_pos();
+        }
+        let opened = (out.context_clicked || key || out.cell_clicked)
+            .then(|| self.reading_targets(tab, out));
         let Some((action, new_tab)) = self.show_menu(ui, tab, &response, opened, at) else {
             return;
         };
@@ -803,6 +809,9 @@ impl State {
                 json!({ "words": selection, "new_tab": new_tab }),
             )),
             MenuAction::PassageGuide => passage.is_some().then(|| open_at("guide.passage_guide")),
+            MenuAction::ExegeticalGuide => {
+                passage.is_some().then(|| open_at("guide.exegetical_guide"))
+            }
             MenuAction::CrossReferences => {
                 passage.is_some().then(|| open_at("tool.cross_references"))
             }

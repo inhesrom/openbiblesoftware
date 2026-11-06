@@ -29,7 +29,10 @@ Decisions #15 (sections, Guide arrangement, navigation), #18 (Tab header, placem
   #102) when it overlaps the Passage; otherwise the first section starting inside the
   Passage; otherwise the latest, narrowest section still overlapping it. The row carries the
   section's Passage, its leading Heading span (if any) and up to 900 characters of the text
-  after it. Each Commentary's Passage Keys are loaded once per revision and cached.
+  after it. Each Commentary's Passage Keys are loaded once per revision and cached. The
+  section can be filtered to a Collection (#153, `guide.filter_section`, kept in the Guide
+  arrangement); `Session::guide_section` then returns only that Collection's rows. See
+  [collections.md](collections.md).
 - Cross-references: `cross_references::library_references` (#51), unchanged. The Guide
   draws them with the Tool's `reference_groups`: grouped by source Verse, top 8 with Show
   all, worker-backed one-line previews and hover popups.

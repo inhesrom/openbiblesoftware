@@ -70,6 +70,10 @@ _Avoid_: Parsing code, Morph tag (in user-facing text)
 A short English meaning for a Lemma or a Tagged word.
 _Avoid_: Definition, Translation
 
+**Interlinear lines**:
+Short lines stacked under each Tagged word in a Bible Tab, toggled from the Tab header; the user picks which lines show, and the choice is kept per Tab and saved in Layouts. In an English Bible with Strong's numbers they form a **reverse interlinear** (Lemma, transliteration, Strong's number, Morphology, Gloss: the Hebrew or Greek behind each English word); in a Hebrew, Aramaic or Greek Bible they form an **interlinear** (Gloss, transliteration, Morphology, Strong's number under the original text). The lines are not text of the Resource: Annotations never anchor in them.
+_Avoid_: Interlinear text, Interlinear Bible (it is the same Bible with lines under it), Glosses row
+
 ### Library
 
 **Resource**:
@@ -117,6 +121,14 @@ _Avoid_: Offset, Selection (for the stored span)
 The user's ranking of Resources within one Resource type. The first Resource in the ranking is used for lookups, and guides follow the ranking.
 _Avoid_: Priority, Top Bibles, Favorites
 
+**Collection**:
+A named set of Resources the user saves in the Library Tab (New Collection…), chosen by hand, by rules (Resource type, language, Resource tag, licence, title contains), or both. A rule-based Collection takes in a Resource as soon as it is downloaded or imported. A Collection can be a Library search's Search scope, the Passage Guide's Commentaries filter, and the Library Tab's filter. Collections are kept in the User database; deleting one never removes its Resources.
+_Avoid_: Set, Group, Shelf, Folder (for Resources)
+
+**Resource tag**:
+A label of the user's own on a Resource, set in its About Tab (such as "older" or "reformed"), so a Collection's rule can gather the Resources that carry it. Kept in the User database.
+_Avoid_: Category, Keyword, Label (as the name)
+
 **Starter library**:
 The set of Resources bundled with the installer, available offline from first launch. They are added to the library on the first launch; an installer without them offers to download them under Library → Starter library…, which also lists each one and adds back any that are missing.
 _Avoid_: Default library, Base package
@@ -162,15 +174,23 @@ A cache built from one Resource so that it can be searched. It is derived data, 
 _Avoid_: Index (unqualified), Search database
 
 **Search scope**:
-What a search runs over: a Passage list and a set of Resources (or Notebooks for notes). It is chosen beside the query, not written inside it.
+What a search runs over: a Passage list and a set of Resources (or Notebooks for notes). A Library search's Resources can be whole Resource types, Collections and single Resources. It is chosen beside the query, not written inside it.
 _Avoid_: Filter, Range (for the scope)
+
+**Results view**:
+How a Bible search's results are shown, switched above them: Verses (the Verse list), Grid (a heat map of matching Verses by Bible book × Bible), Chart (bars of matching Verses by Bible book, or by chapter within one book) or Analysis (a table with one row per matched word: Reference, Bible, the word, its Lemma, Morphology and context, sortable by any column and exported as CSV).
+_Avoid_: Mode (the Search Tool's Bible / Library / Notes switch), Report
+
+**Results filter**:
+The Bible book or chapter (and, from a Grid cell, the one Bible) that clicking a Grid cell or Chart bar narrows the Verse list to. It shows as a chip above the list until its × clears it, and a new search clears it. The Grid, Chart and Analysis always count every result. It narrows results already found; the Search scope decides what is searched.
+_Avoid_: Scope (for this), Drill-down
 
 **Resource revision**:
 A corrected release of the same Resource, such as a typo fix in a Bible. It replaces the earlier revision and keeps the Resource's identity, so its Preferred order and Annotations carry over. A downloaded Resource gets one through Update available. A different edition is a different Resource, not a revision.
 _Avoid_: Update, Version (for a correction)
 
 **Attribution**:
-The license and credit text that a Resource requires to be shown, displayed in that Resource's About view.
+The license and credit text that a Resource requires to be shown, displayed in that Resource's About view. Text copied with Copy verses, a Notes export or a print page carries the Attribution of each Resource it quotes whose licence asks for credit (anything but public domain or CC0). A quote carries the Attribution of the revision it was taken from. The User database remembers the Attribution of each revision of a Resource seen in the library, so the quotes its kept Annotations hold still carry it after it is removed (or its file goes missing); a Notes export leaves out a quote whose revision's Attribution was never saved, or not saved as of when the quote was taken, and says why.
 _Avoid_: Credits, Copyright notice
 
 **Credits**:
@@ -240,8 +260,20 @@ One entry in History: a Tab's Current location just after the Tab was opened or 
 _Avoid_: History entry, Hit
 
 **Command box**:
-The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, "pg Rom 8", "compare Jn 3:16" and "ws agape" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database.
+The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, "pg Rom 8", "eg Jn 3:16", "compare Jn 3:16" and "ws agape" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database.
 _Avoid_: Omnibox, Search bar, Command palette (for the box)
+
+**Launcher**:
+A toolbar button with an icon and a label (Library, Guides, Tools, Layouts) that drops down what it launches, under itself; Alt+L, Alt+G, Alt+T and Alt+Y open them from the keyboard. The Library launcher searches the library by title, abbreviation, Resource type and language, and with nothing typed lists the Resources opened lately (Recent: those of the newest History Visits and of open Tabs) and the top of each type's Preferred order. The Layouts launcher shows saved and Built-in Layouts as cards with a thumbnail of their Panel tiling.
+_Avoid_: Ribbon, Toolbar menu, Pane (for its drop-down)
+
+**Toolbar**:
+The bar holding the Launchers. It sits at the Top of the window (in the menu bar) by default, or at the Bottom, Left or Right: its Toolbar position, chosen in View → Toolbar position, by right-clicking it, or by dragging its grip to that edge. At the Left and Right it shows icons only, with the labels in the tooltips. Customize toolbar… shows or hides each Launcher, orders them, and picks icons and labels, icons only or labels only; a Launcher with no room in a small window goes into its » button. With Auto-hide it is drawn over the Workspace only while the pointer is at its window edge or Alt is held. A hidden Launcher still opens from its shortcut and the Command box. All of this is a preference in the User database, never part of a Layout.
+_Avoid_: Ribbon, Dock, Menu bar (for the toolbar)
+
+**Built-in Layout**:
+One of the Layouts that come with the app: "Bible + Commentary", "Word study desk", "Parallel Bibles" and "Reading only". It is made from the library's Preferred order when it is loaded, at the Passage shown then, and cannot be renamed or deleted. One that needs a Resource the library lacks says so instead.
+_Avoid_: Preset, Template
 
 **Last session**:
 The Workspace as the user left it, restored automatically at the next launch. It is not a Layout.
@@ -262,6 +294,14 @@ _Avoid_: Text font, Body font, Resource font
 **Interface font**:
 The font of the app's own menus, labels and buttons, chosen in View → Fonts. Resource text never uses it.
 _Avoid_: UI font, System font, Chrome font
+
+**Copy verses**:
+The window under Tools → Copy verses… that copies a Passage list from one or more Bibles as plain text, rich text or Markdown, after a preview: the reference before or after the text, verse numbers on or off, paragraphs or one verse per line, quotation marks, and full or abbreviated book names. It also prints them (Print / Save as PDF).
+_Avoid_: Copy Bible Verses, Export verses
+
+**Copy preset**:
+A named set of Copy verses options the user saved, kept in the User database.
+_Avoid_: Template, Style, Copy format
 
 **Bundled font**:
 A font shipped inside the app: Gentium Plus for Latin and Greek, Ezra SIL for Hebrew. It is the default Reading font and the fallback when a chosen font is missing or lacks a character.
@@ -306,6 +346,10 @@ _Avoid_: Panel, Card, Widget
 **Passage Guide**:
 The Guide whose Key is a Passage. Its sections in v0.1 are Commentaries, Cross-references, Key words, and People & places.
 _Avoid_: Exegetical Guide
+
+**Exegetical Guide**:
+The Guide whose Key is a Passage, read word by word in its original language: each Tagged word of the first Hebrew (Old Testament) or Greek (New Testament) Bible in Preferred order that has the Passage, reached through that Bible's Verse map. Its sections are Word by word (the word, transliteration, Lemma, Strong's number, Gloss and Morphology in plain English, each word linking to its Word Study), Lexicon summaries (the first Lexicon's short entry for each word) and Grammatical notes (what each Morphology term the words use means). It joins Link sets like the Passage Guide.
+_Avoid_: Interlinear, Exegetical report, Word-by-word view
 
 **Word Study**:
 The Guide whose Key is a Strong's number. Its sections in v0.1 are Lexicon entries, Translated as, Occurrences, and Forms.
@@ -365,6 +409,10 @@ _Avoid_: Broken note, Lost highlight
 The Notes Tool's list of Orphaned annotations, where each can be re-attached to selected text, kept without an anchor (Notes only) or deleted. It shows only when there are some.
 _Avoid_: Broken links, Errors
 
+**Notes export**:
+A Markdown or HTML file made from a Notebook (or all of them) or from the Notes a Notes search found: each Annotation under its Passage, with its quoted text and the Note's text. It can also be printed. It is a copy for reading or sharing, not a backup: the app does not read it back.
+_Avoid_: Backup, Report, Notes dump
+
 **User database**:
-The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Command box's recent entries and preferences. Resources and Search indexes are never part of it.
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Command box's recent entries, Copy presets, Collections, Resource tags and preferences. Resources and Search indexes are never part of it.
 _Avoid_: Profile, User library, Settings file

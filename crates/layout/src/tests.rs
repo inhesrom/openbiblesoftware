@@ -579,6 +579,7 @@ fn previews() {
                         ColorRole::NoteMarker => "#2e7d4f",
                         ColorRole::Accent => "#a0522d",
                         ColorRole::WordsOfJesus => "#b22222",
+                        ColorRole::Interlinear => "#2e7d4f",
                     };
                     paths.push_str(&format!("  <path fill=\"{fill}\" d=\"{d}\"/>\n"));
                 }
@@ -635,4 +636,15 @@ fn styled_snippets_colour_their_ranges_and_keep_positions() {
         odd.runs.iter().map(|r| r.text.as_str()).collect::<String>(),
         text
     );
+}
+
+#[test]
+fn a_line_reads_right_to_left_when_its_first_strong_character_does() {
+    for rtl in ["בְּרֵאשִׁית", "1 בְּרֵאשִׁית Gen", "**1** בְּרֵאשִׁית", "“בְּרֵאשִׁית"]
+    {
+        assert!(crate::starts_rtl(rtl), "{rtl}");
+    }
+    for ltr in ["Genesis 1:1 (TAHOT)", "16 For God", "", "1 2 3"] {
+        assert!(!crate::starts_rtl(ltr), "{ltr}");
+    }
 }

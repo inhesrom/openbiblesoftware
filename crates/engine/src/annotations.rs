@@ -9,7 +9,8 @@
 //!   each side and the Resource's content hash.
 //! - **Selections across text units** (in a Bible: across Bible books) make one Highlight per
 //!   unit, all in one undo step. A Note on such a selection gets one Passage anchor over the
-//!   whole selection, without a Text range.
+//!   whole selection, without a Text range; outside a Bible, the first unit's Text range (a
+//!   Text range stays within one unit; see docs/dev/annotations.md).
 //! - **Undo** is inverse operations: every command writes a list of row [`Change`]s in one
 //!   transaction and records it; undo writes the inverted list, redo the list again. Each
 //!   write first checks the rows are as expected, so history never lands on rows that
@@ -213,6 +214,13 @@ fn words_of(text: &str, range: std::ops::Range<usize>) -> std::ops::Range<usize>
 
 fn store_err(e: StoreError) -> String {
     e.to_string()
+}
+
+/// Whether a failed undo or redo means the history no longer fits the database: its rows
+/// changed underneath it (Conflict) or the step breaks a rule (Rejected). Any other failure
+/// (SQLite busy, disk full) may pass, so the step is kept.
+fn history_is_stale(e: &StoreError) -> bool {
+    matches!(e, StoreError::Conflict(_) | StoreError::Rejected(_))
 }
 
 /// What a Text range covers, as its anchor records it.
@@ -441,7 +449,9 @@ impl Session {
         if changes.is_empty() {
             return Ok(());
         }
-        self.user_data()?.apply_changes(&changes)?;
+        self.user_data()?
+            .apply_changes(&changes)
+            .map_err(store_err)?;
         self.history.push(UndoStep {
             label: label.to_string(),
             changes,
@@ -451,15 +461,21 @@ impl Session {
     }
 
     /// Revert the last step. Returns its label, or `None` if there was nothing to undo. If the
-    /// rows changed underneath the history, nothing is written and the history is cleared.
+    /// rows changed underneath the history, nothing is written and the history is cleared; if
+    /// the write failed for another reason (a busy or full disk), the step stays to try again.
     pub fn undo(&mut self) -> Result<Option<String>, String> {
         let Some(step) = self.history.undo.pop() else {
             return Ok(None);
         };
         let written = inverse(&step.changes);
         if let Err(e) = self.user_data()?.apply_changes(&written) {
-            self.history.clear();
-            return Err(format!("Could not undo {}: {e}", step.label));
+            let message = format!("Could not undo {}: {e}", step.label);
+            if history_is_stale(&e) {
+                self.history.clear();
+            } else {
+                self.history.undo.push(step);
+            }
+            return Err(message);
         }
         let label = step.label.clone();
         self.history.redo.push(step);
@@ -476,8 +492,13 @@ impl Session {
             return Ok(None);
         };
         if let Err(e) = self.user_data()?.apply_changes(&step.changes) {
-            self.history.clear();
-            return Err(format!("Could not redo {}: {e}", step.label));
+            let message = format!("Could not redo {}: {e}", step.label);
+            if history_is_stale(&e) {
+                self.history.clear();
+            } else {
+                self.history.redo.push(step);
+            }
+            return Err(message);
         }
         let label = step.label.clone();
         let written = step.changes.clone();
@@ -608,6 +629,7 @@ impl Session {
                 .map(|a| Change::insert(Row::Annotation(a.clone())))
                 .collect(),
         )?;
+        self.confirm_quoted_attribution(&sel.resource_id, now);
         self.remember_notebook(notebook_id, &notebook);
         Ok(made)
     }
@@ -641,6 +663,9 @@ impl Session {
             modified_at: now,
         };
         self.commit("Note", vec![Change::insert(Row::Annotation(note.clone()))])?;
+        if let NoteTarget::Selection(sel) = target {
+            self.confirm_quoted_attribution(&sel.resource_id, now);
+        }
         self.remember_notebook(notebook_id, &notebook);
         Ok(note)
     }
@@ -711,10 +736,12 @@ impl Session {
             modified_at: now_ms().max(before.modified_at),
             ..before.clone()
         };
-        self.user_data()?.apply_changes(&[Change::update(
-            Row::Annotation(before),
-            Row::Annotation(after.clone()),
-        )])?;
+        self.user_data()?
+            .apply_changes(&[Change::update(
+                Row::Annotation(before),
+                Row::Annotation(after.clone()),
+            )])
+            .map_err(store_err)?;
         if let Some(step) = self.history.undo.last_mut()
             && let Some(change) = step.changes.first_mut()
         {
@@ -768,10 +795,12 @@ impl Session {
             }
         };
         let anchor = anchor.ok_or("Select some text first")?;
-        self.edit_annotation(id, "Re-attach", true, |a| {
+        let reattached = self.edit_annotation(id, "Re-attach", true, |a| {
             a.anchor = Some(anchor);
             Ok(())
-        })
+        })?;
+        self.confirm_quoted_attribution(&sel.resource_id, reattached.created_at);
+        Ok(reattached)
     }
 
     /// **Keep without anchor** (#17 rule 12): a Note (an Orphaned one, typically) stops

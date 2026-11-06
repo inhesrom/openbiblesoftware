@@ -375,6 +375,7 @@ fn the_verse_target_opens_passage_keyed_tools_at_the_verse() {
     let loved = super::word_info::word_spot(&h, kjv, "loved");
     for (action, kind) in [
         ("Passage Guide", TabKind::Guide(Guide::PassageGuide)),
+        ("Exegetical Guide", TabKind::Guide(Guide::ExegeticalGuide)),
         ("Cross-references", TabKind::Tool(Tool::CrossReferences)),
         ("Text Comparison", TabKind::Tool(Tool::TextComparison)),
     ] {

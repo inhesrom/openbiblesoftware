@@ -15,6 +15,7 @@ draws the list and runs `command_box.run`. Ranks, highest first (equal ranks kee
 |---|---|---|---|
 | 100 | a Layout's name (any case) | Layout | `layout.restore` |
 | 95 | `pg`, `guide`, `passage guide` + reference | Passage Guide | `guide.passage_guide {passage}` |
+| 95 | `eg`, `exegetical guide` + reference | Exegetical Guide | `guide.exegetical_guide {passage}` |
 | 95 | `compare`, `tc`, `text comparison` + reference | Text Comparison | `tool.text_comparison {passage}` |
 | 95 | `xref`, `xrefs`, `cross-references` + reference | Cross-references | `tool.cross_references {passage}` |
 | 95 | `ws`, `study`, `word study` + Strong's number, Lemma, transliteration or English words | Word Study | `word_study.open` / `word_study.choose` |

@@ -412,6 +412,321 @@ impl fmt::Display for Morph {
     }
 }
 
+/// What sort of grammar a [`GrammarTerm`] names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum TermKind {
+    /// Hebrew and Aramaic verb stem (Qal, Piel, Peal …).
+    Stem,
+    /// Greek tense, or the Hebrew verb form held in [`MorphPart::tense`] (perfect …).
+    Tense,
+    Voice,
+    Mood,
+    /// Participle or infinitive.
+    Form,
+    Case,
+    State,
+    /// Only the dual is explained: singular and plural need no note.
+    Number,
+}
+
+impl TermKind {
+    /// What the term is called in a note: "Tense", or "Verb form" for Hebrew and Aramaic,
+    /// whose perfect and imperfect are aspects rather than times.
+    pub fn label(self, language: MorphLanguage) -> &'static str {
+        let greek = language == MorphLanguage::Greek;
+        match self {
+            TermKind::Stem => "Stem",
+            TermKind::Tense if greek => "Tense",
+            TermKind::Tense => "Verb form",
+            TermKind::Voice => "Voice",
+            TermKind::Mood => "Mood",
+            TermKind::Form => "Verb form",
+            TermKind::Case => "Case",
+            TermKind::State => "State",
+            TermKind::Number => "Number",
+        }
+    }
+}
+
+/// One grammatical term of a parsed code ("aorist", "Qal", "genitive"), which the
+/// Exegetical Guide's Grammatical notes explain in plain English (#144).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GrammarTerm {
+    pub language: MorphLanguage,
+    pub kind: TermKind,
+    /// As [`Morph::short`] spells it.
+    pub name: &'static str,
+}
+
+impl Morph {
+    /// The grammatical terms of every part, in reading order (stem, tense, voice, mood, form,
+    /// case, state, then a dual number), each once.
+    pub fn terms(&self) -> Vec<GrammarTerm> {
+        let mut out: Vec<GrammarTerm> = Vec::new();
+        let language = self.language;
+        for p in self.parts.iter().filter(|p| p.pos.is_some()) {
+            let named = [
+                (TermKind::Stem, p.stem),
+                (TermKind::Tense, p.tense),
+                (TermKind::Voice, p.voice),
+                (TermKind::Mood, p.mood),
+                (TermKind::Form, p.form),
+                (TermKind::Case, p.case.map(|c| c.word(true))),
+                (TermKind::State, p.state.map(|s| s.word(true))),
+                (
+                    TermKind::Number,
+                    (p.number == Some(Number::Dual)).then_some("dual"),
+                ),
+            ];
+            for (kind, name) in named {
+                if let Some(name) = name {
+                    let term = GrammarTerm {
+                        language,
+                        kind,
+                        name,
+                    };
+                    if !out.contains(&term) {
+                        out.push(term);
+                    }
+                }
+            }
+        }
+        out
+    }
+}
+
+/// Said of every stem without a note of its own (the rarer stems of hollow and doubled roots).
+const OTHER_STEM: &str = "A less common verb stem. A stem adjusts what the root means: it can \
+     make it intensive, causative, passive or reflexive.";
+
+impl GrammarTerm {
+    /// What the term means, in plain English, for a reader without Hebrew or Greek grammar.
+    /// The wording is the project's own.
+    pub fn explanation(&self) -> &'static str {
+        let greek = self.language == MorphLanguage::Greek;
+        match (self.kind, self.name) {
+            // Hebrew stems.
+            (TermKind::Stem, "Qal") => {
+                "The simple stem of a Hebrew verb: the root's plain meaning, usually active \
+                 (he broke, he said)."
+            }
+            (TermKind::Stem, "Qal passive") => {
+                "An old passive of the simple stem (it was given, he was taken)."
+            }
+            (TermKind::Stem, "Niphal") => {
+                "Usually the passive or reflexive of the simple stem (it was broken, he hid \
+                 himself)."
+            }
+            (TermKind::Stem, "Piel") => {
+                "Often strengthens the root or makes it bring about a state (he shattered, he \
+                 made holy)."
+            }
+            (TermKind::Stem, "Pual") => {
+                "The passive of the Piel (it was shattered, it was made holy)."
+            }
+            (TermKind::Stem, "Hiphil") => {
+                "Usually causative: the subject makes something happen (he made king, he \
+                 caused to hear)."
+            }
+            (TermKind::Stem, "Hophal") => {
+                "The passive of the causative stem (he was made king, it was brought)."
+            }
+            (TermKind::Stem, "Hithpael") => {
+                "Usually reflexive or mutual: acting on or for oneself, or on one another (he \
+                 made himself holy, they looked at one another)."
+            }
+            (TermKind::Stem, "Polel" | "Pilpel" | "Poel" | "Palel" | "Pilel") => {
+                "A form of the Piel used by short or doubled roots; it usually has the Piel's \
+                 sense."
+            }
+            (TermKind::Stem, "Polal" | "Polpal" | "Poal" | "Pulal") => {
+                "A form of the Pual used by short or doubled roots: passive."
+            }
+            (TermKind::Stem, "Hithpolel" | "Hithpalpel" | "Hithpoel") => {
+                "A form of the Hithpael used by short or doubled roots: usually reflexive."
+            }
+            // Aramaic stems.
+            (TermKind::Stem, "Peal") => {
+                "The simple stem of an Aramaic verb, like the Hebrew Qal: the root's plain \
+                 meaning."
+            }
+            (TermKind::Stem, "Peil") => "The passive of the Aramaic simple stem.",
+            (TermKind::Stem, "Pael") => "Often strengthens the root, like the Hebrew Piel.",
+            (TermKind::Stem, "Aphel" | "Haphel" | "Shaphel" | "Saphel") => {
+                "Usually causative, like the Hebrew Hiphil: the subject makes something happen."
+            }
+            (TermKind::Stem, "Hitpeel" | "Hitpaal" | "Hitpael" | "Ithpoel" | "Hephal") => {
+                "Usually the passive or reflexive of another Aramaic stem."
+            }
+            (TermKind::Stem, _) => OTHER_STEM,
+
+            // Hebrew and Aramaic verb forms.
+            (TermKind::Tense, "perfect") if !greek => {
+                "Presents the action as a whole, usually complete or past (he said); with \
+                 verbs of state often present (he knows, it is good)."
+            }
+            (TermKind::Tense, "imperfect") if !greek => {
+                "Presents the action as not yet complete: often future (he will say), \
+                 repeated or habitual (he used to say), or wished for."
+            }
+            (TermKind::Tense, "consecutive imperfect") => {
+                "The usual verb of Hebrew storytelling: joined to “and”, it moves the story \
+                 on in the past (and he said)."
+            }
+            (TermKind::Tense, "consecutive perfect") => {
+                "A perfect joined to “and” that usually carries on a future, a command or a \
+                 habit (and you shall say)."
+            }
+            (TermKind::Tense, "conjunctive imperfect") => {
+                "An imperfect with a plain “and” in front (and he will say), not the \
+                 storytelling form."
+            }
+            // Greek tenses.
+            (TermKind::Tense, "present") => {
+                "Presents the action as going on or repeated (he believes, he keeps \
+                 believing); in statements of fact usually present time."
+            }
+            (TermKind::Tense, "imperfect") => {
+                "An action going on or repeated in the past (he was teaching, he kept saying)."
+            }
+            (TermKind::Tense, "future") => "An action that will happen (he will save).",
+            (TermKind::Tense, "aorist") => {
+                "Presents the action as a simple whole, without saying how long it took; in \
+                 statements of fact usually past (he loved, he gave)."
+            }
+            (TermKind::Tense, "perfect") => {
+                "A completed action whose result still stands (it has been written, and so \
+                 it stands written)."
+            }
+            (TermKind::Tense, "pluperfect") => {
+                "A completed action whose result stood at a past time (he had come, it had \
+                 been written)."
+            }
+            (TermKind::Tense, "2nd present" | "2nd future") => {
+                "Means the same as the tense it names; only the spelling follows an older, \
+                 irregular pattern."
+            }
+            (TermKind::Tense, "2nd aorist") => {
+                "Means the same as the aorist (a simple whole action, in statements usually \
+                 past); only the spelling follows an older, irregular pattern."
+            }
+            (TermKind::Tense, "2nd perfect" | "2nd pluperfect") => {
+                "Means the same as the perfect or pluperfect (a completed action whose result \
+                 stands); only the spelling follows an older, irregular pattern."
+            }
+            (TermKind::Tense, _) => "How the verb presents the action in time or in its course.",
+
+            // Greek voices.
+            (TermKind::Voice, "active") => "The subject does the action (he loved).",
+            (TermKind::Voice, "middle") => {
+                "The subject acts on or for itself, or with a personal stake (he washed \
+                 himself, he chose for himself)."
+            }
+            (TermKind::Voice, "passive") => "The subject receives the action (he was loved).",
+            (TermKind::Voice, "middle deponent") => {
+                "Middle in form but active in meaning: the verb has no active forms (he \
+                 comes, he answers)."
+            }
+            (TermKind::Voice, "passive deponent") => {
+                "Passive in form but active in meaning: the verb has no active forms."
+            }
+            (TermKind::Voice, "middle or passive deponent") => {
+                "Middle or passive in form but active in meaning: the verb has no active forms."
+            }
+            (TermKind::Voice, "middle or passive") => {
+                "The form could be middle or passive; the context decides which."
+            }
+            (TermKind::Voice, "impersonal active") => {
+                "An active verb with no personal subject (it is necessary, it is fitting)."
+            }
+            (TermKind::Voice, _) => "How the subject relates to the action.",
+
+            // Moods.
+            (TermKind::Mood, "indicative") => {
+                "States something as fact or asks about it: the ordinary mood of statements \
+                 and questions."
+            }
+            (TermKind::Mood, "subjunctive") => {
+                "What may or should happen: used for purpose (so that …), conditions (if …), \
+                 possibility and urging (let us …)."
+            }
+            (TermKind::Mood, "optative") => {
+                "A wish or a remote possibility (may it be!, may it never be!)."
+            }
+            (TermKind::Mood, "imperative") if greek => {
+                "A command or request (believe!, let him come)."
+            }
+            (TermKind::Mood, "imperative") => "A direct command to someone (go!, say!).",
+            (TermKind::Mood, "jussive") => {
+                "A wish or indirect command about someone else (let him go, may he do)."
+            }
+            (TermKind::Mood, "cohortative") => {
+                "A wish or resolve of the speaker (let me go, let us go up)."
+            }
+            (TermKind::Mood, _) => "How the speaker presents the action: as fact, wish or command.",
+
+            // Non-finite forms.
+            (TermKind::Form, "participle") if greek => {
+                "A verbal adjective (believing, the one who believes). It agrees with a noun \
+                 and often works like a clause: while …, because …, who …."
+            }
+            (TermKind::Form, "participle") => {
+                "A verbal adjective: someone doing the action (one who says, saying), often \
+                 ongoing."
+            }
+            (TermKind::Form, "passive participle") => {
+                "A verbal adjective with a passive sense (blessed, written)."
+            }
+            (TermKind::Form, "imperatival participle") => "A participle used as a command.",
+            (TermKind::Form, "infinitive") => {
+                "A verbal noun (to believe); it can express purpose or result, or be the \
+                 subject or object of a verb."
+            }
+            (TermKind::Form, "infinitive construct") => {
+                "A verbal noun (to say, saying), often with a preposition (when he said, in \
+                 order to say)."
+            }
+            (TermKind::Form, "infinitive absolute") => {
+                "A verbal noun that stresses the verb beside it (you shall surely die) or \
+                 stands for a command."
+            }
+            (TermKind::Form, _) => "A verb used as a noun or adjective.",
+
+            // Greek cases.
+            (TermKind::Case, "nominative") => {
+                "The subject, or what is said about the subject (God is love)."
+            }
+            (TermKind::Case, "genitive") => {
+                "Usually “of”: belonging, source or description (the love of God); also \
+                 after some prepositions."
+            }
+            (TermKind::Case, "dative") => {
+                "Usually “to” or “for”: the indirect object; also means or place (by grace, \
+                 in the Spirit)."
+            }
+            (TermKind::Case, "accusative") => {
+                "The direct object (he loved the world); also after some prepositions."
+            }
+            (TermKind::Case, "vocative") => "Someone spoken to directly (O Lord, Father!).",
+            (TermKind::Case, _) => "What job the word does in the sentence.",
+
+            // Hebrew and Aramaic noun states.
+            (TermKind::State, "absolute") => "The ordinary form of a noun, standing on its own.",
+            (TermKind::State, "construct") => {
+                "Bound to the next word, which it belongs with: read it with “of” (the word \
+                 of the LORD)."
+            }
+            (TermKind::State, "determined") => {
+                "Aramaic for a definite noun, as if with “the” (the king)."
+            }
+            (TermKind::State, _) => "The form a noun takes for how it joins the next word.",
+
+            (TermKind::Number, "dual") => "Exactly two, mostly of pairs (two hands, both eyes).",
+            (TermKind::Number, _) => "How many: one, or more than one.",
+        }
+    }
+}
+
 mod hebrew {
     use super::*;
 

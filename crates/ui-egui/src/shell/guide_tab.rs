@@ -1,6 +1,6 @@
-//! Guide Tabs (#53): the Guide's Key (a Passage Guide's Passage, a Word Study's header), then
-//! its sections in the Guide arrangement's order ([`State::guide_page`], shared by every kind
-//! of Guide). Sections come from the engine as pure data computed on the job queue
+//! Guide Tabs (#53): the Guide's Key (a Passage Guide's or Exegetical Guide's Passage, a Word
+//! Study's header), then its sections in the Guide arrangement's order
+//! ([`State::guide_page`], shared by every kind of Guide). Sections come from the engine as pure data computed on the job queue
 //! ([`obs_engine::Session::guide_section`]); a section still computing shows "Loading…" and
 //! the frame goes on. Headers collapse on click and reorder by dragging; the arrangement is
 //! the engine's, per kind of Guide, so every Passage Guide shows the same one.
@@ -76,13 +76,14 @@ struct Drawn {
 }
 
 impl State {
-    pub(super) fn passage_guide_body(&mut self, ui: &mut Ui, tab: TabId) {
-        let at = self
+    /// A Passage Guide's or Exegetical Guide's page: the Passage, then the Guide's sections.
+    pub(super) fn passage_keyed_guide_body(&mut self, ui: &mut Ui, tab: TabId, guide: Guide) {
+        let passage = self
             .session
             .workspace
             .tab(tab)
-            .and_then(|t| t.history.current());
-        let Some(at) = at else {
+            .and_then(|t| t.shown_passage());
+        let Some(passage) = passage else {
             hint_page(
                 ui,
                 "Type a Passage in the box above (for example “Jn 3:16-18”), or put this Guide \
@@ -93,31 +94,20 @@ impl State {
         let Some(t) = self.tabs.get_mut(&tab) else {
             return;
         };
-        // A typed range is kept until the Guide moves to another first Verse.
-        if t.reference_passage.is_some_and(|p| p.start() != at) {
-            t.reference_passage = None;
-        }
-        let passage = t.reference_passage.unwrap_or(Passage::verse(at));
         if t.reference_at != Some(passage) {
             t.reference_at = Some(passage);
             t.expanded_references.clear();
             t.guide_expanded.clear();
         }
         let title = format_passage(passage, &Standard, RefStyle::Long);
-        self.guide_page(
-            ui,
-            tab,
-            Guide::PassageGuide,
-            &Key::Passage(passage),
-            &mut |_, ui| {
-                ui.label(
-                    RichText::new(title.clone())
-                        .font(theme::display(20.0))
-                        .color(theme::c().ink),
-                );
-                None
-            },
-        );
+        self.guide_page(ui, tab, guide, &Key::Passage(passage), &mut |_, ui| {
+            ui.label(
+                RichText::new(title.clone())
+                    .font(theme::display(20.0))
+                    .color(theme::c().ink),
+            );
+            None
+        });
     }
 
     /// A Guide's page: `head` (the Guide's Key), then its sections in the Guide arrangement's
@@ -363,6 +353,32 @@ impl State {
             }
             SectionStatus::Ready(data) => data,
         };
+        // A section filtered to a Collection (#153): the chooser, and its own empty state.
+        let mut filter = None;
+        if section.filterable()
+            && let Some(guide) = Guide::ALL
+                .into_iter()
+                .find(|g| g.sections().contains(&section))
+        {
+            filter = self.session.guide_filter(guide, section);
+            if let Some(a) =
+                collection_filter(ui, &self.session.library, guide, section, filter.as_deref())
+            {
+                return Some(a);
+            }
+        }
+        if data.is_empty()
+            && let Some(name) = filter
+        {
+            ui.label(
+                RichText::new(format!(
+                    "Nothing in the Collection “{name}” covers this. Choose “Every Resource” to \
+                     see the rest of your library."
+                ))
+                .color(theme::c().muted),
+            );
+            return None;
+        }
         if data.is_empty() {
             let empty = self.session.guide_empty_state(key, section);
             return self
@@ -417,6 +433,14 @@ impl State {
             SectionData::Related(rows) => self
                 .factbook_related(ui, tab, rows, new_tab)
                 .map(Action::Factbook),
+            SectionData::WordByWord(w) => self.word_by_word_section(ui, tab, w, new_tab),
+            SectionData::LexiconSummaries(rows) => {
+                self.lexicon_summaries_section(ui, tab, rows, new_tab)
+            }
+            SectionData::GrammaticalNotes(notes) => {
+                self.grammatical_notes_section(ui, notes);
+                None
+            }
         }
     }
 
@@ -693,4 +717,53 @@ pub(super) fn hint_page(ui: &mut Ui, text: &str) {
             ui.set_min_size(ui.available_size());
             ui.label(RichText::new(text).color(theme::c().muted));
         });
+}
+
+/// A filterable section's Collection chooser (#153), shown once the user has Collections:
+/// "Every Resource" or one Collection, for every Guide of the kind.
+fn collection_filter(
+    ui: &mut Ui,
+    library: &obs_engine::Library,
+    guide: Guide,
+    section: GuideSection,
+    chosen: Option<&str>,
+) -> Option<Action> {
+    if library.collections().is_empty() {
+        return None;
+    }
+    let mut picked: Option<Option<String>> = None;
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Collection").small().color(theme::c().muted));
+        egui::ComboBox::from_id_salt(("guide-collection", guide.id(), section.id()))
+            .selected_text(chosen.unwrap_or("Every Resource"))
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(chosen.is_none(), "Every Resource")
+                    .clicked()
+                {
+                    picked = Some(None);
+                }
+                for c in library.collections() {
+                    let on = chosen == Some(c.name.as_str());
+                    if ui.selectable_label(on, c.name.as_str()).clicked() {
+                        picked = Some(Some(c.name.clone()));
+                    }
+                }
+            })
+            .response
+            .on_hover_text(
+                "Show only the Resources of one Collection, in every Guide of this kind",
+            );
+    });
+    let picked = picked?;
+    (picked.as_deref() != chosen).then(|| {
+        Action::Command(
+            "guide.filter_section",
+            json!({
+                "guide": guide.id(),
+                "section": section.id(),
+                "collection": picked.unwrap_or_default(),
+            }),
+        )
+    })
 }

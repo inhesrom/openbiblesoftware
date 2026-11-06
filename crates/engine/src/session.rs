@@ -55,6 +55,8 @@ pub struct Session {
     /// The fonts chosen in View → Fonts (#138), by name. The UI loads them and puts the
     /// reading faces into [`Self::text`].
     pub fonts: crate::appearance::FontChoices,
+    /// Where the toolbar sits and what it shows (#141), an app preference.
+    pub toolbar: crate::toolbar_settings::ToolbarSettings,
     /// What Word Info shows and whether it is pinned (#50).
     pub word_info: crate::word_info::WordInfo,
     /// Guide arrangements and Guide sections computed on the job queue (#53).
@@ -65,6 +67,8 @@ pub struct Session {
     pub factbooks: crate::factbook::Factbooks,
     /// The Notes Tool's Notebook choice, card order and card to reveal (#64).
     pub notes: crate::notes::NotesTool,
+    /// Copy verses' options and Copy presets (#154).
+    pub copy_verses: crate::copy_verses::CopyVerses,
     /// Favorites and History as the User database has them (#155).
     pub(crate) places: crate::favorites::FavoritesAndHistory,
     /// The Command box's recent entries (#139).
@@ -111,11 +115,13 @@ impl Session {
             text: TextSettings::default(),
             appearance: crate::appearance::Appearance::default(),
             fonts: crate::appearance::FontChoices::default(),
+            toolbar: crate::toolbar_settings::ToolbarSettings::default(),
             word_info: crate::word_info::WordInfo::default(),
             guides,
             word_study,
             factbooks: crate::factbook::Factbooks::default(),
             notes: crate::notes::NotesTool::default(),
+            copy_verses: crate::copy_verses::CopyVerses::default(),
             places: crate::favorites::FavoritesAndHistory::default(),
             command_box: crate::command_box::CommandBox::default(),
             plans: crate::reading_plans::ReadingPlans::default(),
@@ -165,6 +171,11 @@ impl Session {
                 &mut self.fonts,
             );
         }
+        if let Ok(Some(v)) = user.preference(crate::toolbar_settings::TOOLBAR_PREF)
+            && let Ok(v) = serde_json::from_str::<serde_json::Value>(&v)
+        {
+            self.toolbar = crate::toolbar_settings::ToolbarSettings::from_json(&v);
+        }
         if let Ok(order) = user.preferred_order() {
             self.library.set_preferred_order(order.clone());
             // Pin the initial order too: a later Import must not sort ahead of Resources
@@ -189,6 +200,8 @@ impl Session {
         self.load_guide_arrangements();
         self.load_favorites_and_history();
         self.load_reading_plans();
+        self.load_copy_verses();
+        self.load_collections();
         // Library load: Annotations made against another revision of a Resource move with
         // their text (or are orphaned) before it shows them (#65).
         self.remember_resource_names();

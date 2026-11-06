@@ -10,7 +10,7 @@
 use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, pos2, vec2};
 use obs_engine::bible_search::{ErrorField, InlineError, PAGE_ROWS, SearchMode, scope_presets};
 use obs_engine::library_search::{LIBRARY_TYPES, type_id, type_plural};
-use obs_engine::{SearchTab, TabId};
+use obs_engine::{ResultsView, SearchTab, TabId};
 use obs_layout::ColorRole;
 use obs_model::ResourceType;
 use serde_json::{Value, json};
@@ -331,6 +331,15 @@ impl State {
                     ));
                 }
             }
+            for name in &scope.collections {
+                if chip(
+                    ui,
+                    &format!("Collection: {name}"),
+                    "Do not search this Collection",
+                ) {
+                    run.push(("search.collection", json!({ "tab": tab.0, "name": name })));
+                }
+            }
             for id in &scope.resources {
                 let Some(e) = library.get(id) else {
                     continue;
@@ -341,6 +350,29 @@ impl State {
             }
             ui.menu_button(RichText::new("Choose…").size(12.5), |ui| {
                 let mut any = false;
+                // Collections (#153): chosen while every type is searched, one narrows the
+                // search to just it.
+                if !library.collections().is_empty() {
+                    ui.label(RichText::new("Collections").small().color(theme::c().muted));
+                    for c in library.collections() {
+                        let mut on = scope.collections.contains(&c.name);
+                        if ui
+                            .checkbox(&mut on, c.name.as_str())
+                            .on_hover_text(if c.rules.is_empty() {
+                                "Chosen by hand".to_string()
+                            } else {
+                                obs_engine::rules_text(&c.rules)
+                            })
+                            .clicked()
+                        {
+                            run.push((
+                                "search.collection",
+                                json!({ "tab": tab.0, "name": c.name }),
+                            ));
+                        }
+                    }
+                    ui.separator();
+                }
                 for ty in LIBRARY_TYPES {
                     let entries: Vec<_> = library.of_type(ty).collect();
                     if entries.is_empty() {
@@ -377,13 +409,19 @@ impl State {
                 }
             })
             .response
-            .on_hover_text("Choose Resource types or single Resources to search");
+            .on_hover_text("Choose Resource types, Collections or single Resources to search");
         });
     }
 
-    /// The summary line, notices about Resources not searched, and the results.
+    /// The summary line, notices about Resources not searched, and the results: in Bible
+    /// mode, in the chosen results view (#146).
     fn search_results(&mut self, ui: &mut Ui, tab: TabId, st: &SearchTab) {
-        let summary = match (&st.results, &st.library_results) {
+        // The Grid, Chart and Analysis count every result; the Verse list may be filtered.
+        let shown = match st.view {
+            ResultsView::Verses => st.results.as_ref(),
+            _ => st.all_results(),
+        };
+        let summary = match (shown, &st.library_results) {
             (Some(r), _) => Some((
                 r.summary(),
                 r.indexing.clone(),
@@ -427,7 +465,23 @@ impl State {
                                 .color(theme::c().warn),
                         );
                     }
+                    if st.all_results().is_some() {
+                        self.results_view_switch(ui, tab, st);
+                    }
                 });
+        }
+        if st.all_results().is_some() {
+            if st.view != ResultsView::Verses
+                && let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.search.as_mut())
+            {
+                view.drain();
+            }
+            match st.view {
+                ResultsView::Verses => {}
+                ResultsView::Grid => return self.results_grid(ui, tab, st),
+                ResultsView::Chart => return self.results_chart(ui, tab, st),
+                ResultsView::Analysis => return self.results_analysis(ui, tab, st),
+            }
         }
         let focused = self.session.workspace.focused() == Some(tab);
         let typing = ui.memory(|m| m.focused().is_some());
@@ -506,11 +560,19 @@ impl State {
             .inner_margin(egui::Margin::symmetric(12, 4))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.label(
-                    RichText::new(results.summary())
-                        .strong()
-                        .color(theme::c().ink),
-                );
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(results.summary())
+                            .strong()
+                            .color(theme::c().ink),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let any = !results.hits.is_empty();
+                        if let Some(format) = super::notes_tab::export_menu(ui, "Export…", any) {
+                            self.export_or_print(ui.ctx(), json!({ "tab": tab.0 }), format);
+                        }
+                    });
+                });
             });
         let rows = results.hits.len();
         if rows == 0 {

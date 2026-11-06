@@ -39,6 +39,8 @@ struct Harness {
     opened: Vec<String>,
     /// Text the app put on the clipboard, oldest first.
     copied: Vec<String>,
+    /// The window's size in points (1400 × 900 unless a test makes it smaller).
+    screen: egui::Vec2,
 }
 
 fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
@@ -142,6 +144,7 @@ impl Harness {
             last_shapes: Vec::new(),
             opened: Vec::new(),
             copied: Vec::new(),
+            screen: vec2(1400.0, 900.0),
         };
         h.frames(3);
         h
@@ -151,7 +154,7 @@ impl Harness {
         self.events
             .insert(0, Event::ModifiersChanged(self.modifiers));
         let input = RawInput {
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1400.0, 900.0))),
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, self.screen)),
             time: Some(self.time),
             events: std::mem::take(&mut self.events),
             system_theme: Some(self.os_theme),
@@ -337,7 +340,7 @@ impl Harness {
     /// Rasterize last frame as the GPU would (premultiplied alpha, nearest texels) into a PPM.
     fn screenshot(&self, path: &std::path::Path) {
         let ppp = 1.0;
-        let (w, h) = (1400usize, 900usize);
+        let (w, h) = (self.screen.x as usize, self.screen.y as usize);
         let prims = self.ctx.tessellate(self.last_shapes.clone(), ppp);
         let mut px = vec![[0.0f32; 3]; w * h];
         for p in &prims {
@@ -461,6 +464,15 @@ fn collect(shape: &Shape, out: &mut Vec<(Rect, String)>) {
         }
         _ => {}
     }
+}
+
+/// The count drawn on the Library launcher, if any.
+fn library_badge(h: &Harness) -> Option<String> {
+    let button = h.shell.st.toolbar.buttons[&obs_engine::Launcher::Library];
+    h.shapes
+        .iter()
+        .find(|(r, t)| t != "Library" && button.contains(r.center()))
+        .map(|(_, t)| t.clone())
 }
 
 #[test]
@@ -1058,7 +1070,7 @@ fn quit_and_relaunch_restores_panels_tabs_locations_and_link_sets() {
 }
 
 #[test]
-fn a_layout_round_trips_and_can_be_renamed_and_deleted_from_the_menu() {
+fn a_layout_round_trips_and_can_be_renamed_and_deleted_from_the_layouts_launcher() {
     let db = temp_db("layouts");
     let mut h = Harness::launch(Some(&db));
     let tb = h.tab_id("TB");
@@ -1085,16 +1097,16 @@ fn a_layout_round_trips_and_can_be_renamed_and_deleted_from_the_menu() {
     );
     h.frames(3);
     assert_ne!(workspace_state(&mut h), saved);
+    // One click on its card loads it.
     h.open_menu("Layouts");
     h.click_text("Two Bibles");
-    h.click_text("Restore");
     h.frames(3);
     assert_eq!(workspace_state(&mut h), saved);
     assert_eq!(loc_of(&mut h, "TB"), Some(ge(31, 20)));
-    // Rename through the prompt.
+    assert!(h.shell.st.toolbar.open.is_none(), "loading closes the pane");
+    // Rename in place: the picked card's Rename edits its name; Enter keeps it.
     h.open_menu("Layouts");
-    h.click_text("Two Bibles");
-    h.click_text("Rename…");
+    h.click_text("Rename");
     for _ in 0.."Two Bibles".len() {
         h.events.push(Event::Key {
             key: egui::Key::Backspace,
@@ -1106,12 +1118,21 @@ fn a_layout_round_trips_and_can_be_renamed_and_deleted_from_the_menu() {
     }
     h.events.push(Event::Text("Genesis study".into()));
     h.frame();
-    h.click_text("Save");
+    h.events.push(Event::Key {
+        key: egui::Key::Enter,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    });
+    h.frames(2);
     let user = h.shell.st.session.user.as_ref().unwrap();
     assert_eq!(user.layouts().unwrap(), ["Genesis study"]);
-    // Delete.
-    h.open_menu("Layouts");
-    h.click_text("Genesis study");
+    assert!(
+        h.find("Genesis study").is_some(),
+        "the pane stays open, renamed"
+    );
+    // Delete in place.
     h.click_text("Delete");
     let user = h.shell.st.session.user.as_ref().unwrap();
     assert!(user.layouts().unwrap().is_empty());
@@ -3090,8 +3111,19 @@ mod context_menu;
 #[path = "parallel_resources_tests.rs"]
 mod parallel_resources;
 
+#[path = "collections_tests.rs"]
+mod collections;
 #[path = "command_box_tests.rs"]
 mod command_box;
+#[path = "copy_export_tests.rs"]
+mod copy_export;
+
+#[path = "interlinear_tests.rs"]
+mod interlinear;
+#[path = "toolbar_tests.rs"]
+mod toolbar;
+#[path = "toolbar_position_tests.rs"]
+mod toolbar_position;
 
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {
@@ -3670,8 +3702,11 @@ mod get_bibles {
         // The untagged-by-Morphology test Bible has the Strong's badge only.
         row_button(&h, "Greek test Bible", "Strong's");
         assert!(
-            h.find("Used by Word Info and Word Study › Occurrences and Forms · Creative Commons: BY 4.0")
-                .is_some(),
+            h.find(
+                "Used by Word Info, Word Study › Occurrences and Forms, and the Exegetical \
+                 Guide · Creative Commons: BY 4.0"
+            )
+            .is_some(),
             "{:?}",
             h.texts()
         );
@@ -3816,14 +3851,15 @@ mod get_bibles {
         }
         preview(&h, "get-resources-update-available");
 
-        // The Library menu counts it, and so does Get Resources… inside it.
-        h.open_menu("Library (1)");
+        // The Library launcher counts it, and so does Get Resources… in its pane.
+        assert_eq!(library_badge(&h), Some("1".to_string()));
+        h.open_menu("Library");
         assert!(
             h.find("Get Resources… (1 update)").is_some(),
             "{:?}",
             h.texts()
         );
-        h.open_menu("Library (1)");
+        h.open_menu("Library");
 
         // Update all: the same Resource, its next revision, read again in its open Tab.
         h.click_text("Update all");
@@ -3850,7 +3886,7 @@ mod get_bibles {
             "{:?}",
             h.texts()
         );
-        assert!(h.find("Library").is_some() && h.find("Library (1)").is_none());
+        assert!(h.find("Library").is_some() && library_badge(&h).is_none());
         preview(&h, "get-resources-updated");
         drop(h);
         std::fs::remove_dir_all(root).unwrap();

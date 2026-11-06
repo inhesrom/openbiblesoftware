@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::resource_navigation::ResourceNavigation;
 use obs_model::{Key, KeyScheme};
-use obs_scripture::{ListedVersification, Verse, VerseMap};
+use obs_scripture::{ListedVersification, Passage, Verse, VerseMap};
 use serde::{Deserialize, Serialize};
 
 use crate::compare::{Comparison, in_range_chapters};
@@ -44,6 +44,8 @@ pub enum Guide {
     WordStudy,
     /// A hub page for one person, people group or place of a People & places index (#149).
     Factbook,
+    /// A Passage word by word in its original language (#144).
+    ExegeticalGuide,
 }
 
 impl Tool {
@@ -67,6 +69,7 @@ impl Guide {
             Guide::PassageGuide => "Passage Guide",
             Guide::WordStudy => "Word Study",
             Guide::Factbook => "Factbook",
+            Guide::ExegeticalGuide => "Exegetical Guide",
         }
     }
 }
@@ -193,7 +196,7 @@ impl TabKind {
     /// Key schemes a Tab of this kind follows. A Resource's come from its manifest instead.
     pub fn default_key_schemes(&self) -> Vec<KeyScheme> {
         match self {
-            TabKind::Guide(Guide::PassageGuide)
+            TabKind::Guide(Guide::PassageGuide | Guide::ExegeticalGuide)
             | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences)
             | TabKind::Resource(_) => vec![KeyScheme::Passage],
             TabKind::Guide(Guide::WordStudy) => vec![KeyScheme::StrongsNumber],
@@ -360,6 +363,12 @@ pub struct Tab {
     /// Where a Resource Tab that has just switched to a parallel resource (#151) goes once
     /// that Resource is loaded: its old location, as a Standard Verse.
     pub arriving_at: Option<Verse>,
+    /// A Bible Tab's interlinear lines (#143).
+    pub interlinear: crate::interlinear::InterlinearLines,
+    /// The whole Passage a Passage Guide, Exegetical Guide or Cross-references Tab shows when
+    /// a command or typed reference gave a chapter or range (Standard numbering). Kept while
+    /// the Tab's location is the Passage's first Verse; otherwise the Tab shows that Verse.
+    pub passage: Option<Passage>,
 }
 
 impl Tab {
@@ -443,13 +452,28 @@ impl Tab {
     }
 
     /// A jump, Back/Forward or follow moved the Tab: a Text Comparison range is cleared once
-    /// the Tab leaves the range's chapters (#18 rule 13).
+    /// the Tab leaves the range's chapters (#18 rule 13), a Guide's [`Self::passage`] once the
+    /// Tab leaves its first Verse.
     fn moved_to(&mut self, verse: Verse) {
         if let Some(r) = self.comparison.range
             && !in_range_chapters(r, verse)
         {
             self.comparison.range = None;
         }
+        if self.passage.is_some_and(|p| p.start() != verse) {
+            self.passage = None;
+        }
+    }
+
+    /// The Passage this Tab shows: its [`Self::passage`] while the Tab is at its first Verse,
+    /// otherwise the Verse it is at.
+    pub fn shown_passage(&self) -> Option<Passage> {
+        let at = self.history.current()?;
+        Some(
+            self.passage
+                .filter(|p| p.start() == at)
+                .unwrap_or(Passage::verse(at)),
+        )
     }
 }
 
@@ -557,6 +581,17 @@ pub enum Effect {
     Switched(TabId),
     /// Put the keyboard in the Command box (Ctrl+L, #139).
     FocusCommandBox,
+    /// Open the Copy verses window (Tools → Copy verses…, #154), with these Passages (a Bible
+    /// reference) and Bibles (resource ids) when given; otherwise at the Current location of
+    /// the most recent Bible Tab.
+    ShowCopyVerses {
+        passages: Option<String>,
+        bibles: Vec<String>,
+    },
+    /// Drop down a toolbar Launcher (Alt+L, Alt+G, Alt+T, Alt+Y, #140).
+    OpenLauncher(crate::toolbar::Launcher),
+    /// Open the Customize toolbar window (View → Customize toolbar…, #141).
+    CustomizeToolbar,
 }
 
 /// How the caller asked for a Tab to be opened.
@@ -642,6 +677,25 @@ impl Workspace {
             .iter()
             .find(|(_, (tabs, _))| tabs.contains(&tab))
             .map(|(p, _)| *p)
+    }
+
+    /// A Panel's active Tab.
+    pub fn active_in(&self, panel: PanelId) -> Option<TabId> {
+        self.panels
+            .get(&panel)
+            .and_then(|(tabs, active)| active.or(tabs.first().copied()))
+    }
+
+    /// The id the next Tab opened will get.
+    pub fn next_tab_id(&self) -> u64 {
+        self.next_tab + 1
+    }
+
+    /// Every Tab, most recently active first.
+    pub fn by_activity(&self) -> Vec<TabId> {
+        let mut tabs: Vec<TabId> = self.tabs.keys().copied().collect();
+        tabs.sort_by_key(|t| std::cmp::Reverse((self.activity.get(t).copied().unwrap_or(0), *t)));
+        tabs
     }
 
     /// A fresh Panel id (for Panels the user makes by dragging a Tab out).
@@ -784,6 +838,8 @@ impl Workspace {
                 comparison: Comparison::default(),
                 search: Default::default(),
                 arriving_at: None,
+                interlinear: Default::default(),
+                passage: None,
             },
         );
         // A linked Tool or Guide starts at its Link set's location. (Bibles wait until their
@@ -1059,6 +1115,7 @@ impl Workspace {
                 to_native(t.verse_map.as_deref(), t.versification.as_deref(), standard)
         {
             t.history.visit(native);
+            t.moved_to(native);
             self.effects.push(Effect::Navigate { tab, verse: native });
             self.visited(tab);
         }
@@ -1329,6 +1386,8 @@ impl Workspace {
                     comparison: Comparison::default(),
                     search: Default::default(),
                     arriving_at: None,
+                    interlinear: t.interlinear,
+                    passage: None,
                 },
             );
         }

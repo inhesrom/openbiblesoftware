@@ -10,6 +10,9 @@ use crate::paragraph::Paragraph;
 /// fonts (#138) use the same averages for their script.
 const LATIN_ADVANCE: f32 = 0.43;
 const HEBREW_ADVANCE: f32 = 0.55;
+/// How much wider a paragraph runs with interlinear lines under its words (#143): tuned on
+/// KJV Jn 3:16 with a Greek Lemma and a Strong's number under each word.
+const INTERLINEAR_WIDEN: f32 = 1.6;
 
 /// A height estimate for `para` at `width` px, from character counts and font size.
 pub fn estimate_height(para: &Paragraph, width: f32) -> f32 {
@@ -39,8 +42,17 @@ pub fn estimate_height(para: &Paragraph, width: f32) -> f32 {
         line_size = 16.0 * 1.46;
     }
     let avail = (width - para.inset - para.indent * 0.5).max(1.0);
-    let lines = (text_width / avail).ceil().max(1.0);
-    para.space_before + lines * line_size * para.line_spacing + para.space_after
+    // Interlinear lines (#143) widen each Tagged word to its column and add rows under
+    // every line.
+    let (widen, rows) = match &para.interlinear {
+        Some(il) if il.rows > 0 => (
+            INTERLINEAR_WIDEN,
+            il.rows as f32 * il.size * 1.35 + line_size / 1.46 * 0.5,
+        ),
+        _ => (1.0, 0.0),
+    };
+    let lines = (text_width * widen / avail).ceil().max(1.0);
+    para.space_before + lines * (line_size * para.line_spacing + rows) + para.space_after
 }
 
 /// Combining marks (Hebrew points and accents, Greek and Latin diacritics).

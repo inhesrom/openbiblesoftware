@@ -28,10 +28,11 @@ toml = "1"
 zip = { version = "8", default-features = false, features = ["deflate-flate2"], optional = true }
 
 [features]
-# Mock SWORD repositories for tests in this and dependent crates.
-test-support = ["dep:zip"]
+# Mock SWORD repositories and the User database dump, for tests in this and dependent crates.
+test-support = ["dep:zip", "obs-store/test-support"]
 
 [dev-dependencies]
+obs-store = { workspace = true, features = ["test-support"] }
 zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
 
 [lints]

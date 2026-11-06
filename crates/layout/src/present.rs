@@ -97,11 +97,11 @@ pub fn unit_blocks(unit: &TextUnit) -> Vec<BlockSource> {
 
 /// Style flags accumulated from the spans over a piece of text.
 #[derive(Debug, Clone, Copy, Default)]
-struct Flags {
-    bold: bool,
-    italic: bool,
-    small_caps: bool,
-    role: Option<ColorRole>,
+pub(crate) struct Flags {
+    pub(crate) bold: bool,
+    pub(crate) italic: bool,
+    pub(crate) small_caps: bool,
+    pub(crate) role: Option<ColorRole>,
 }
 
 /// Lay a block's text out as runs.
@@ -247,6 +247,7 @@ pub fn block_paragraph(
         space_after,
         align,
         hebrew_line_height: settings.hebrew_line_height,
+        interlinear: None,
     }
 }
 
@@ -464,7 +465,7 @@ fn cluster_script(cluster: &str) -> Option<ReadingScript> {
 /// Neutral clusters (spaces, punctuation, digits) stay with the run before them, or, at the
 /// start, with the first cluster that has a script. Every cluster, neutral or not, is drawn
 /// only in a face that covers it.
-fn push_text(
+pub(crate) fn push_text(
     runs: &mut Vec<Run>,
     text: &str,
     unit_start: usize,
@@ -599,6 +600,12 @@ fn push_run(runs: &mut Vec<Run>, text: &str, unit_start: usize, style: RunStyle)
     }
 }
 
+/// Whether `text` reads right to left as a paragraph of its own: its first strong character
+/// is right-to-left (UAX #9 rules P2-P3), as for a line of copied Hebrew text.
+pub fn starts_rtl(text: &str) -> bool {
+    unicode_bidi::get_base_direction(text) == unicode_bidi::Direction::Rtl
+}
+
 /// A one-off paragraph of plain text in `base`, with the byte ranges in `styled` drawn in
 /// their own colour role (a Note body's Bible references as links, #64). Byte positions map
 /// back to `text` (as unit positions), so hit tests and range rects work on them.
@@ -679,5 +686,6 @@ pub fn snippet_paragraph(
         space_after: 0.0,
         align: Align::Start,
         hebrew_line_height: settings.hebrew_line_height,
+        interlinear: None,
     }
 }
