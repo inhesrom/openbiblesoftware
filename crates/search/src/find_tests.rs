@@ -54,7 +54,10 @@ fn ignore_diacritics_finds_greek_typed_without_accents() {
     let text = "Ἀγαπητοί, ἀγαπῶμεν ἀλλήλους, ὅτι ἡ ἀγάπη ἐκ τοῦ θεοῦ ἐστιν. ὁ θεὸς ἀγάπη ἐστίν.";
     let d = FindOptions::default();
     assert_eq!(find("αγαπη", d, text), ["Ἀγαπη", "ἀγάπη", "ἀγάπη"]);
-    assert_eq!(find("αγαπη", opts(false, true, true), text), ["ἀγάπη", "ἀγάπη"]);
+    assert_eq!(
+        find("αγαπη", opts(false, true, true), text),
+        ["ἀγάπη", "ἀγάπη"]
+    );
     assert_eq!(find("θεος", d, text), ["θεὸς"]);
     // Final sigma typed or not.
     assert_eq!(find("θεοσ", d, text), ["θεὸς"]);

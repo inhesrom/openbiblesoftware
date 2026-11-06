@@ -53,7 +53,6 @@ fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || is_combining_mark(c)
 }
 
-
 impl Finder {
     /// `None` when there is nothing to find (an empty or all-space query).
     pub fn new(query: &str, options: FindOptions) -> Option<Self> {
@@ -82,7 +81,11 @@ impl Finder {
 
     /// Where `text` matches, as sorted, non-overlapping byte ranges of `text`.
     pub fn find(&self, text: &str) -> Vec<Range<usize>> {
-        let folded = fold_for_find(text, self.options.match_case, !self.options.ignore_diacritics);
+        let folded = fold_for_find(
+            text,
+            self.options.match_case,
+            !self.options.ignore_diacritics,
+        );
         let mut out = Vec::new();
         let hay = folded.text.as_str();
         let mut from = 0;
@@ -122,31 +125,29 @@ impl Finder {
 
 /// Runs of Greek or Hebrew words whose transliterations are `words`.
 fn transliterated_matches(text: &str, words: &[String]) -> Vec<Range<usize>> {
-        let tokens: Vec<(Range<usize>, Option<String>)> = tokenize(text)
-            .into_iter()
-            .map(|t| {
-                let word = &text[t.range.clone()];
-                let key = word
-                    .chars()
-                    .any(is_original_script)
-                    .then(|| transliteration_key(word));
-                (t.range, key)
-            })
-            .collect();
-        let n = words.len();
-        let mut out = Vec::new();
-        if tokens.len() < n {
-            return out;
+    let tokens: Vec<(Range<usize>, Option<String>)> = tokenize(text)
+        .into_iter()
+        .map(|t| {
+            let word = &text[t.range.clone()];
+            let key = word
+                .chars()
+                .any(is_original_script)
+                .then(|| transliteration_key(word));
+            (t.range, key)
+        })
+        .collect();
+    let n = words.len();
+    let mut out = Vec::new();
+    if tokens.len() < n {
+        return out;
+    }
+    for i in 0..=tokens.len() - n {
+        let all = (0..n).all(|k| tokens[i + k].1.as_ref() == Some(&words[k]));
+        if all {
+            out.push(tokens[i].0.start..tokens[i + n - 1].0.end);
         }
-        for i in 0..=tokens.len() - n {
-            let all = (0..n).all(|k| {
-                tokens[i + k].1.as_ref() == Some(&words[k])
-            });
-            if all {
-                out.push(tokens[i].0.start..tokens[i + n - 1].0.end);
-            }
-        }
-        out
+    }
+    out
 }
 
 /// Whether `range` of `text` is not part of a longer word on either side.

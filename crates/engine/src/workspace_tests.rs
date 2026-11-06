@@ -520,7 +520,8 @@ fn ctrl_f_opens_the_find_bar_of_a_resource_or_text_comparison_tab() {
     s.run("tab.find", &json!({ "tab": kjv.0, "text": "love" }))
         .unwrap();
     s.run("tab.find_next", &json!({ "tab": kjv.0 })).unwrap();
-    s.run("tab.find_previous", &json!({ "tab": kjv.0 })).unwrap();
+    s.run("tab.find_previous", &json!({ "tab": kjv.0 }))
+        .unwrap();
     assert_eq!(
         s.workspace.take_effects(),
         [

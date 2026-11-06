@@ -72,7 +72,10 @@ impl FindFolded {
     pub fn original(&self, start: usize, end: usize) -> Option<std::ops::Range<usize>> {
         let (start, end) = (u32::try_from(start).ok()?, u32::try_from(end).ok()?);
         // The last cluster starting at `start`, the first starting at `end`.
-        let s = self.clusters.partition_point(|c| c.0 <= start).checked_sub(1)?;
+        let s = self
+            .clusters
+            .partition_point(|c| c.0 <= start)
+            .checked_sub(1)?;
         let e = self.clusters.partition_point(|c| c.0 < end);
         let (fs, os) = *self.clusters.get(s)?;
         let (fe, oe) = *self.clusters.get(e)?;
@@ -233,8 +236,12 @@ mod tests {
     #[test]
     fn find_folding_keeps_what_its_options_keep() {
         // Defaults: exactly the Search normalizer.
-        for s in ["Ἐν ἀρχῇ ἦν ὁ λόγος", "בְּרֵאשִׁ֖ית בָּרָ֣א", "Naïve CAFÉ “x”"] {
-            assert_eq!(fold_for_find(s, false, false).text, normalize(s).nfd().collect::<String>());
+        for s in ["Ἐν ἀρχῇ ἦν ὁ λόγος", "בְּרֵאשִׁ֖ית בָּרָ֣א", "Naïve CAFÉ “x”"]
+        {
+            assert_eq!(
+                fold_for_find(s, false, false).text,
+                normalize(s).nfd().collect::<String>()
+            );
         }
         assert_eq!(fold_for_find("Λόγος", true, false).text, "Λογοσ");
         let kept = fold_for_find("ἀγάπη", false, true).text;

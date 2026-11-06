@@ -117,7 +117,10 @@ pub(crate) enum FindStatus {
     /// Nothing typed.
     Empty,
     Finding,
-    Found { current: Option<usize>, total: usize },
+    Found {
+        current: Option<usize>,
+        total: usize,
+    },
 }
 
 /// One Tab's Find bar (Ctrl+F): what is typed, its options and the matches.
@@ -286,7 +289,11 @@ impl FindBar {
         view: &mut crate::compare_view::ComparisonView,
         ctx: &egui::Context,
     ) -> bool {
-        self.refresh(view.generation(), || FindSource::Rows(view.find_rows()), ctx);
+        self.refresh(
+            view.generation(),
+            || FindSource::Rows(view.find_rows()),
+            ctx,
+        );
         let top = (view.top_block(), 0, 0);
         let arrived = self.poll();
         let show = if arrived && !self.matches.is_empty() {

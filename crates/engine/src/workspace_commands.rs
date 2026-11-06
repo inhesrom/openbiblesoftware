@@ -1386,11 +1386,7 @@ fn focused_can_find(s: &Session) -> bool {
         .is_some_and(|t| t.kind.has_find_bar())
 }
 
-fn findable_tab(
-    command: &'static str,
-    s: &Session,
-    p: &Params<'_>,
-) -> Result<TabId, CommandError> {
+fn findable_tab(command: &'static str, s: &Session, p: &Params<'_>) -> Result<TabId, CommandError> {
     let tab = tab_param(command, s, p)?;
     match s.workspace.tab(tab) {
         Some(t) if t.kind.has_find_bar() => Ok(tab),

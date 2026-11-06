@@ -79,8 +79,26 @@ const JOHN_LOVE: &[(u16, u16, &str)] = &[
 ];
 
 const FILLER: &[&str] = &[
-    "and", "Jesus", "answered", "said", "unto", "them", "verily", "I", "say", "you", "the",
-    "disciples", "went", "into", "Galilee", "with", "him", "came", "to", "Jerusalem",
+    "and",
+    "Jesus",
+    "answered",
+    "said",
+    "unto",
+    "them",
+    "verily",
+    "I",
+    "say",
+    "you",
+    "the",
+    "disciples",
+    "went",
+    "into",
+    "Galilee",
+    "with",
+    "him",
+    "came",
+    "to",
+    "Jerusalem",
 ];
 
 /// The Gospel of John, every chapter at its KJV length, one paragraph per five verses: the
@@ -314,7 +332,10 @@ fn ctrl_f_love_in_kjv_john_counts_every_hit_enter_steps_through_all_in_order_and
 
     key(&mut h, Key::F, CTRL);
     assert!(h.find(FIND_HINT).is_some(), "{:?}", h.texts());
-    assert!(h.ctx.memory(|m| m.has_focus(field_id(tab))), "the keyboard is in the field");
+    assert!(
+        h.ctx.memory(|m| m.has_focus(field_id(tab))),
+        "the keyboard is in the field"
+    );
     type_text(&mut h, "love");
     settle(&mut h, tab);
     let matches: Vec<(usize, usize)> = bar(&h, tab)
@@ -331,14 +352,26 @@ fn ctrl_f_love_in_kjv_john_counts_every_hit_enter_steps_through_all_in_order_and
     assert_eq!(current(&h, tab), Some(0));
     assert!(h.find(&format!("1 of {n}")).is_some(), "{:?}", h.texts());
     let palette = h.shell.st.palette;
-    assert!(!filled(&h, palette.find_match).is_empty(), "other hits are drawn");
+    assert!(
+        !filled(&h, palette.find_match).is_empty(),
+        "other hits are drawn"
+    );
     preview(&h, "kjv-john-love");
 
     // Enter goes through every hit in order, each scrolled into view and drawn as current
     // (over the four letters of "love"), then wraps to the first.
     let mut moved = 0;
     for k in 1..=n {
-        let top = h.shell.st.tabs.get_mut(&tab).unwrap().view.as_mut().unwrap().text_anchor();
+        let top = h
+            .shell
+            .st
+            .tabs
+            .get_mut(&tab)
+            .unwrap()
+            .view
+            .as_mut()
+            .unwrap()
+            .text_anchor();
         key(&mut h, Key::Enter, Modifiers::NONE);
         let want = k % n;
         assert_eq!(current(&h, tab), Some(want), "Enter #{k}");
@@ -350,7 +383,16 @@ fn ctrl_f_love_in_kjv_john_counts_every_hit_enter_steps_through_all_in_order_and
         let now = filled(&h, palette.search_hit);
         assert_eq!(now.len(), 1, "Enter #{k}: one current hit drawn");
         assert_eq!(glyphs_in(&h, now[0]), 4, "Enter #{k}: over “love”");
-        let after = h.shell.st.tabs.get_mut(&tab).unwrap().view.as_mut().unwrap().text_anchor();
+        let after = h
+            .shell
+            .st
+            .tabs
+            .get_mut(&tab)
+            .unwrap()
+            .view
+            .as_mut()
+            .unwrap()
+            .text_anchor();
         if after != top {
             moved += 1;
         }
@@ -380,7 +422,10 @@ fn ctrl_f_love_in_kjv_john_counts_every_hit_enter_steps_through_all_in_order_and
     // Ctrl+F opens a new, empty one.
     key(&mut h, Key::F, CTRL);
     assert!(h.find(FIND_HINT).is_some());
-    assert_eq!(bar(&h, tab).unwrap().status(), crate::find::FindStatus::Empty);
+    assert_eq!(
+        bar(&h, tab).unwrap().status(),
+        crate::find::FindStatus::Empty
+    );
 }
 
 #[test]
@@ -532,7 +577,10 @@ fn text_comparison_rows_are_found_and_stepped_through() {
     settle(&mut h, cmp);
     let view = h.shell.st.tabs[&cmp].comparison.as_ref().unwrap();
     let rows = view.find_rows();
-    let expected: usize = rows.iter().map(|(_, _, t)| t.matches("Laban").count()).sum();
+    let expected: usize = rows
+        .iter()
+        .map(|(_, _, t)| t.matches("Laban").count())
+        .sum();
     let found = bar(&h, cmp).unwrap().found();
     assert_eq!(found.matches.len(), expected);
     assert!(expected > 10);
@@ -574,7 +622,10 @@ fn alt_enter_hands_the_find_text_to_the_search_tool() {
     assert_eq!(st.mode, obs_engine::SearchMode::Bible);
     let mut bibles = st.bibles(&h.shell.st.session.library);
     bibles.sort();
-    assert!(bibles.contains(&"kjv-john".to_string()) && bibles.len() >= 3, "{bibles:?}");
+    assert!(
+        bibles.contains(&"kjv-john".to_string()) && bibles.len() >= 3,
+        "{bibles:?}"
+    );
     // The Find bar stays as it was.
     assert_eq!(bar(&h, tab).unwrap().text, "love one another");
 }
@@ -584,7 +635,15 @@ fn ctrl_f_with_a_selection_finds_the_selected_words() {
     let mut h = Harness::new();
     let tab = open(&mut h, kjv_john());
     {
-        let view = h.shell.st.tabs.get_mut(&tab).unwrap().view.as_mut().unwrap();
+        let view = h
+            .shell
+            .st
+            .tabs
+            .get_mut(&tab)
+            .unwrap()
+            .view
+            .as_mut()
+            .unwrap();
         let text = &view.doc.units[0].text;
         let at = text.find("everlasting life").unwrap();
         view.selection = Some(crate::Selection {
@@ -654,11 +713,21 @@ fn real_kjv_john_love_counts_and_enter_visits_every_hit_in_order() {
     let matches = bar(&h, tab).unwrap().found().matches.to_vec();
     assert_eq!(matches.len(), expected);
     let first = current(&h, tab).unwrap();
-    assert_eq!(matches[first].unit, john, "the first hit from John 1:1 is in John");
+    assert_eq!(
+        matches[first].unit, john,
+        "the first hit from John 1:1 is in John"
+    );
     assert!(first == 0 || matches[first - 1].unit < john);
     let n = matches.len();
-    assert!(h.find(&format!("{} of {n}", first + 1)).is_some(), "{:?}", h.texts());
-    eprintln!("KJV: {n} hits of “love”, {in_john} in John; John's first is {} of {n}", first + 1);
+    assert!(
+        h.find(&format!("{} of {n}", first + 1)).is_some(),
+        "{:?}",
+        h.texts()
+    );
+    eprintln!(
+        "KJV: {n} hits of “love”, {in_john} in John; John's first is {} of {n}",
+        first + 1
+    );
     let started = std::time::Instant::now();
     for k in 1..=n {
         key(&mut h, Key::Enter, Modifiers::NONE);
@@ -670,10 +739,16 @@ fn real_kjv_john_love_counts_and_enter_visits_every_hit_in_order() {
         let m = &matches[(first + k) % n];
         let unit = &h.shell.st.tabs[&tab].view.as_ref().unwrap().doc.units[m.unit];
         let context = (m.unit, m.range.clone(), &unit.text[m.range.clone()]);
-        assert!(!now.is_empty(), "Enter #{k}: the current hit is drawn ({context:?})");
+        assert!(
+            !now.is_empty(),
+            "Enter #{k}: the current hit is drawn ({context:?})"
+        );
         assert_eq!(glyphs, 4, "Enter #{k}: over “love” ({context:?}, {now:?})");
     }
-    eprintln!("Enter visited all {n} hits in order in {:?}", started.elapsed());
+    eprintln!(
+        "Enter visited all {n} hits in order in {:?}",
+        started.elapsed()
+    );
     key(&mut h, Key::Escape, Modifiers::NONE);
     assert!(bar(&h, tab).is_none());
     assert!(filled(&h, h.shell.st.palette.find_match).is_empty());

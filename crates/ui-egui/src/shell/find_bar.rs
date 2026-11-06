@@ -57,12 +57,23 @@ fn arrow_button(ui: &mut Ui, up: bool, enabled: bool, what: &str) -> egui::Respo
     let color = if enabled { c.ink } else { c.muted };
     let (x, y, s) = (rect.center().x, rect.center().y, 4.5);
     let points = if up {
-        vec![pos2(x - s, y + s * 0.6), pos2(x + s, y + s * 0.6), pos2(x, y - s * 0.7)]
+        vec![
+            pos2(x - s, y + s * 0.6),
+            pos2(x + s, y + s * 0.6),
+            pos2(x, y - s * 0.7),
+        ]
     } else {
-        vec![pos2(x - s, y - s * 0.6), pos2(x + s, y - s * 0.6), pos2(x, y + s * 0.7)]
+        vec![
+            pos2(x - s, y - s * 0.6),
+            pos2(x + s, y - s * 0.6),
+            pos2(x, y + s * 0.7),
+        ]
     };
-    ui.painter()
-        .add(egui::Shape::convex_polygon(points, color, egui::Stroke::NONE));
+    ui.painter().add(egui::Shape::convex_polygon(
+        points,
+        color,
+        egui::Stroke::NONE,
+    ));
     let label = what.split(" (").next().unwrap_or(what).to_string();
     r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, &label));
     r.on_hover_text(what)

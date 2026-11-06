@@ -181,7 +181,10 @@ impl TabKind {
 
     /// Whether it has a Find bar (Ctrl+F, #175): a Resource or Text Comparison Tab.
     pub fn has_find_bar(&self) -> bool {
-        matches!(self, TabKind::Resource(_) | TabKind::Tool(Tool::TextComparison))
+        matches!(
+            self,
+            TabKind::Resource(_) | TabKind::Tool(Tool::TextComparison)
+        )
     }
 
     /// Whether the header has a link chip.
