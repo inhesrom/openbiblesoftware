@@ -288,7 +288,8 @@ impl State {
                         egui::TextEdit::singleline(&mut filter.query)
                             .hint_text("Search by name or abbreviation")
                             .desired_width(search_width),
-                    );
+                    )
+                    .accessible_name("Search by name or abbreviation");
                     let shown = filter
                         .language
                         .as_deref()
@@ -304,7 +305,9 @@ impl State {
                                 let label = format!("{} ({code}) · {n}", language_name(&code));
                                 ui.selectable_value(&mut filter.language, Some(code), label);
                             }
-                        });
+                        })
+                        .response
+                        .accessible_name("Language");
                     if !gb.is_refreshing()
                         && ui
                             .small_button("Refresh")
@@ -420,6 +423,7 @@ fn listing_row(
             ListingStatus::Available if b.refused.is_some() => {
                 let why = b.refused.as_deref().unwrap_or_default();
                 ui.add_enabled(false, egui::Button::new("Download"))
+                    .accessible_name(format!("Download {}", b.title))
                     .on_disabled_hover_text(format!("Import cannot read this module yet: {why}"));
                 ui.label(
                     RichText::new("Not supported yet")
@@ -431,6 +435,7 @@ fn listing_row(
             ListingStatus::Available => {
                 if ui
                     .button("Download")
+                    .accessible_name(format!("Download {}", b.title))
                     .on_hover_text(format!("Download {} {}", b.module, b.source_label()))
                     .clicked()
                 {
@@ -443,7 +448,11 @@ fn listing_row(
                 done,
                 total,
             } => {
-                if ui.small_button("Cancel").clicked() {
+                if ui
+                    .small_button("Cancel")
+                    .accessible_name(format!("Cancel {}", b.title))
+                    .clicked()
+                {
                     action = Some(Action::Run("import.cancel", json!({"id": resource_id})));
                 }
                 #[allow(clippy::cast_precision_loss)]
@@ -462,7 +471,11 @@ fn listing_row(
                 );
             }
             ListingStatus::Installed { resource_id } => {
-                if ui.button("Open").clicked() {
+                if ui
+                    .button("Open")
+                    .accessible_name(format!("Open {}", b.title))
+                    .clicked()
+                {
                     action = Some(Action::Run("resource.open", json!({"id": resource_id})));
                 }
                 ui.label(RichText::new("Installed").small().color(theme::c().muted));
@@ -474,6 +487,7 @@ fn listing_row(
             } => {
                 if ui
                     .button("Update")
+                    .accessible_name(format!("Update {}", b.title))
                     .on_hover_text(format!(
                         "Download version {available} {} and replace the Resource with it; \
                          Notes and Highlights move with their text",
@@ -483,7 +497,11 @@ fn listing_row(
                 {
                     action = Some(Action::Run("getbibles.update", json!({"module": b.module})));
                 }
-                if ui.button("Open").clicked() {
+                if ui
+                    .button("Open")
+                    .accessible_name(format!("Open {}", b.title))
+                    .clicked()
+                {
                     action = Some(Action::Run("resource.open", json!({"id": resource_id})));
                 }
                 ui.label(
@@ -495,7 +513,12 @@ fn listing_row(
                 .on_hover_text(update_versions(installed, available));
             }
             ListingStatus::Failed { error, .. } => {
-                if ui.button("Retry").on_hover_text(error.as_str()).clicked() {
+                if ui
+                    .button("Retry")
+                    .accessible_name(format!("Retry {}", b.title))
+                    .on_hover_text(error.as_str())
+                    .clicked()
+                {
                     action = Some(download(b));
                 }
                 ui.colored_label(theme::c().warn, "Failed")

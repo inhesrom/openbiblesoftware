@@ -3164,6 +3164,8 @@ mod copy_export;
 #[path = "find_tests.rs"]
 mod find_bar;
 
+#[path = "a11y_audit_tests.rs"]
+mod a11y_audit;
 #[path = "floating_windows_tests.rs"]
 mod floating_windows;
 #[path = "interlinear_tests.rs"]

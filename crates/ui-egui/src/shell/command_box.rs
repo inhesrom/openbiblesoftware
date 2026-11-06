@@ -36,7 +36,7 @@ pub(crate) struct CommandBoxUi {
     pub(crate) focus: bool,
     /// Where the dropdown was drawn last frame, so a click on it is not lost to the box
     /// losing focus at the press.
-    dropdown: Option<Rect>,
+    pub(super) dropdown: Option<Rect>,
 }
 
 impl Shell {
@@ -71,7 +71,7 @@ impl Shell {
             .desired_width(280.0)
             .margin(egui::Margin::symmetric(8, 4))
             .show(ui);
-        let r = out.response.clone();
+        let r = egui::Response::clone(&out.response).accessible_name("Command box");
         if std::mem::take(&mut cb.focus) {
             r.request_focus();
             out.state
@@ -149,6 +149,14 @@ impl Shell {
                                 label,
                                 c.ink,
                             );
+                            resp.widget_info(|| {
+                                egui::WidgetInfo::selected(
+                                    egui::Role::ListBoxOption,
+                                    true,
+                                    i == cb.selected,
+                                    format!("{} · {}", s.label, s.detail),
+                                )
+                            });
                             if resp.clicked() {
                                 clicked = Some((i, ui.input(|i| i.modifiers.alt)));
                             }

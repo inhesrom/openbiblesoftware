@@ -45,13 +45,25 @@ impl State {
             {
                 action = Some(("library.starter", json!({})));
             }
-            if self.session.is_enabled("library.import")
-                && ui
+            if self.session.is_enabled("library.import") {
+                // On a row of its own when it does not fit: a link wrapped across rows is two
+                // widgets, and screen readers get no name for the second (#182).
+                let font = egui::TextStyle::Small.resolve(ui.style());
+                let width = (ui.painter())
+                    .layout_no_wrap(IMPORT_FILE.into(), font, egui::Color32::PLACEHOLDER)
+                    .size()
+                    .x
+                    + ui.spacing().item_spacing.x;
+                if ui.available_size_before_wrap().x < width {
+                    ui.end_row();
+                }
+                if ui
                     .link(RichText::new(IMPORT_FILE).small())
                     .on_hover_text("Import a USFM or SWORD file you already have")
                     .clicked()
-            {
-                action = Some(("library.import", json!({})));
+                {
+                    action = Some(("library.import", json!({})));
+                }
             }
         });
         action

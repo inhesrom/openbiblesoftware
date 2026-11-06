@@ -54,6 +54,7 @@ mod search_sidebar;
 mod search_tab;
 mod search_views;
 mod starter_tab;
+mod tile_handles;
 mod toolbar;
 mod toolbar_bar;
 mod toolbar_look;
@@ -799,7 +800,9 @@ impl Shell {
                     });
                 } else {
                     self.main_drag_out(ui);
+                    let before = tile_handles::widgets_so_far(ui);
                     self.tree.ui(&mut self.st, ui);
+                    tile_handles::after_tree(ui, &mut self.tree, before);
                 }
             });
         self.apply_effects();
@@ -809,6 +812,7 @@ impl Shell {
             (self.st.note_editor.as_ref()).is_none_or(|ed| self.keys_window(ed.tab).is_none());
         self.st.overlays(ui, note_here);
         self.customize_window(ui.ctx());
+        focus_ring(ui.ctx());
         // A Notes card being edited saves as the user types, and at once once its Tab is not
         // drawn (#64): checked here, since the Notes Tab's own code only runs while drawn.
         self.st.notes_after_frame(ui.ctx());
@@ -2221,6 +2225,7 @@ impl State {
         let mut run: Option<(&'static str, Value)> = None;
         let next = ui
             .add_enabled(others, arrow("▶"))
+            .accessible_name(format!("Next of your {what}"))
             .on_hover_text(format!("Next of your {what} (Ctrl+])"))
             .on_disabled_hover_text(format!("There are no other {what} in the library"));
         if next.clicked() {
@@ -2249,6 +2254,7 @@ impl State {
         });
         let previous = ui
             .add_enabled(others, arrow("◀"))
+            .accessible_name(format!("Previous of your {what}"))
             .on_hover_text(format!("Previous of your {what} (Ctrl+[)"))
             .on_disabled_hover_text(format!("There are no other {what} in the library"));
         if previous.clicked() {
@@ -2346,12 +2352,14 @@ impl State {
             }
             HeaderBox::Filter => {
                 if let Some(t) = self.tabs.get_mut(&tab) {
-                    let r = ui.add(
-                        egui::TextEdit::singleline(&mut t.filter)
-                            .hint_text("Filter")
-                            .desired_width(width)
-                            .margin(egui::Margin::symmetric(8, 4)),
-                    );
+                    let r = ui
+                        .add(
+                            egui::TextEdit::singleline(&mut t.filter)
+                                .hint_text("Filter")
+                                .desired_width(width)
+                                .margin(egui::Margin::symmetric(8, 4)),
+                        )
+                        .accessible_name("Filter");
                     if r.lost_focus() {
                         // TextEdit releases focus on Enter; don't let that same key open a row.
                         ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
@@ -2377,13 +2385,15 @@ impl State {
                     return;
                 };
                 let mut text = t.edit.clone().unwrap_or(shown);
-                let r = ui.add(
-                    egui::TextEdit::singleline(&mut text)
-                        .id_salt(("refbox", tab))
-                        .hint_text(hint)
-                        .desired_width(width)
-                        .margin(egui::Margin::symmetric(8, 4)),
-                );
+                let r = ui
+                    .add(
+                        egui::TextEdit::singleline(&mut text)
+                            .id_salt(("refbox", tab))
+                            .hint_text(hint)
+                            .desired_width(width)
+                            .margin(egui::Margin::symmetric(8, 4)),
+                    )
+                    .accessible_name(hint);
                 if r.has_focus() {
                     t.edit = Some(text.clone());
                 }
@@ -2457,7 +2467,9 @@ impl State {
                 self.run("tab.close", &json!({ "tab": tab.0 }));
                 ui.close();
             }
-        });
+        })
+        .response
+        .accessible_name("Tab menu");
     }
 
     /// Ask for a Layout name (Save layout as…, Rename…).
@@ -2476,12 +2488,14 @@ impl State {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .show(ctx, |ui| {
-                let r = ui.add(
-                    egui::TextEdit::singleline(&mut text)
-                        .id_salt("layout-name")
-                        .hint_text("Layout name")
-                        .desired_width(260.0),
-                );
+                let r = ui
+                    .add(
+                        egui::TextEdit::singleline(&mut text)
+                            .id_salt("layout-name")
+                            .hint_text("Layout name")
+                            .desired_width(260.0),
+                    )
+                    .accessible_name("Layout name");
                 r.request_focus();
                 if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     done = Some(true);
@@ -2613,7 +2627,7 @@ impl State {
         let txt = RichText::new(link.map_or_else(|| "–".to_string(), String::from))
             .strong()
             .size(11.5)
-            .color(Color32::WHITE);
+            .color(theme::text_on(theme::link_color(link)));
         let resp = ui
             .add(
                 egui::Button::new(txt)
@@ -2624,6 +2638,9 @@ impl State {
             )
             .on_hover_text(
                 "Link set: Tabs with the same letter follow one location. Click to change.",
+            )
+            .accessible_name(
+                link.map_or_else(|| "Not linked".to_string(), |c| format!("Link set {c}")),
             );
         egui::Popup::menu(&resp).show(|ui| self.link_menu(ui, tab));
     }
@@ -2793,7 +2810,9 @@ impl egui_tiles::Behavior<TabId> for State {
                 self.run(id, &params);
                 ui.close();
             }
-        });
+        })
+        .response
+        .accessible_name("Open a Tab in this Panel");
     }
 
     fn tab_bar_height(&self, _style: &egui::Style) -> f32 {
@@ -2853,6 +2872,44 @@ impl egui_tiles::Behavior<TabId> for State {
             ..Default::default()
         }
     }
+}
+
+/// The ring round the widget that has the keyboard (#182). egui's own widgets show focus only
+/// by a change of colour, and those drawn with the painter not at all; one ring for all of them
+/// shows where Tab went. Text fields keep their own border and caret.
+fn focus_ring(ctx: &egui::Context) {
+    let Some(id) = ctx.memory(egui::Memory::focused) else {
+        return;
+    };
+    if egui::text_edit::TextEditState::load(ctx, id).is_some() {
+        return;
+    }
+    let Some(r) = ctx.read_response(id) else {
+        return;
+    };
+    // Only what is in view: a widget scrolled partly away is ringed where it shows.
+    let rect = r.interact_rect;
+    if !rect.is_positive() {
+        return;
+    }
+    let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::unique(FOCUS_RING));
+    ctx.layer_painter(layer).rect_stroke(
+        rect.expand(1.0),
+        4.0,
+        Stroke::new(FOCUS_RING_WIDTH, theme::c().lapis),
+        egui::StrokeKind::Outside,
+    );
+}
+
+/// The focus ring's layer, and its width in points.
+pub(crate) const FOCUS_RING: &str = "focus-ring";
+pub(crate) const FOCUS_RING_WIDTH: f32 = 2.0;
+
+/// Call before drawing a window; the closure, called after, says whether Esc closes it (#182):
+/// it does unless a menu or drop-down was open when the frame began (Esc closes that first).
+fn escape_closes_window(ctx: &egui::Context) -> impl FnOnce() -> bool + '_ {
+    let popup = egui::Popup::is_any_open(ctx);
+    move || !popup && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
 }
 
 impl State {

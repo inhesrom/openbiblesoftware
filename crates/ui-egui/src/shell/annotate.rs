@@ -268,8 +268,18 @@ pub(super) fn menu_label(
     let font = egui::TextStyle::Button.resolve(ui.style());
     let ink = ui.visuals().text_color();
     let mut job = egui::text::LayoutJob::default();
-    let square = palette.highlight(style).unwrap_or(palette.page);
-    job.append("■", 0.0, TextFormat::simple(font.clone(), square));
+    // The swatch sits on the menu, not the page: the style's margin-mark colour for the
+    // chrome's theme, strong enough to see against it (#182).
+    let chrome = if crate::theme::c().dark {
+        Palette::DARK
+    } else {
+        Palette::PAPER
+    };
+    job.append(
+        "■",
+        0.0,
+        TextFormat::simple(font.clone(), chrome.mark(style)),
+    );
     let mut name = TextFormat::simple(font, ink);
     if palette.highlight(style).is_none() {
         name.underline = Stroke::new(2.0, palette.underline);
@@ -640,13 +650,15 @@ impl State {
                                 .color(theme::c().muted),
                         );
                     }
-                    let r = ui.add(
-                        egui::TextEdit::multiline(&mut ed.body)
-                            .id(editor_body_id())
-                            .hint_text("Write a note…")
-                            .desired_rows(5)
-                            .desired_width(f32::INFINITY),
-                    );
+                    let r = ui
+                        .add(
+                            egui::TextEdit::multiline(&mut ed.body)
+                                .id(editor_body_id())
+                                .hint_text("Write a note…")
+                                .desired_rows(5)
+                                .desired_width(f32::INFINITY),
+                        )
+                        .accessible_name("Note");
                     if !ed.focused_once {
                         r.request_focus();
                         ed.focused_once = r.has_focus();
@@ -664,7 +676,9 @@ impl State {
                                 for (id, name) in &ed.notebooks {
                                     ui.selectable_value(&mut ed.notebook, id.clone(), name);
                                 }
-                            });
+                            })
+                            .response
+                            .accessible_name("Notebook");
                     });
                     ui.horizontal(|ui| {
                         if ui

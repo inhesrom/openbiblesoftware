@@ -37,11 +37,14 @@ pub const LIGHT: Chrome = Chrome {
     field: Color32::from_rgb(255, 255, 253),
     rule: Color32::from_rgb(205, 213, 211),
     ink: Color32::from_rgb(32, 38, 41),
-    muted: Color32::from_rgb(91, 103, 108),
+    // Dark enough for AA on the selection as well as on the surfaces (#182).
+    muted: Color32::from_rgb(80, 91, 96),
     lapis: Color32::from_rgb(45, 78, 134),
-    verdigris: Color32::from_rgb(45, 116, 105),
+    // AA as text on the selection too (#182).
+    verdigris: Color32::from_rgb(36, 104, 94),
     violet: Color32::from_rgb(112, 79, 145),
-    gilt: Color32::from_rgb(180, 138, 53),
+    // Deep enough for the ★ to show on every surface, 3:1 (#182).
+    gilt: Color32::from_rgb(150, 112, 30),
     selection: Color32::from_rgb(211, 224, 244),
     hover: Color32::from_rgb(226, 235, 247),
     hover_rule: Color32::from_rgb(166, 184, 211),
@@ -57,12 +60,16 @@ pub const DARK: Chrome = Chrome {
     field: Color32::from_rgb(40, 45, 50),
     rule: Color32::from_rgb(58, 64, 70),
     ink: Color32::from_rgb(222, 226, 228),
-    muted: Color32::from_rgb(150, 160, 166),
-    lapis: Color32::from_rgb(110, 150, 214),
-    verdigris: Color32::from_rgb(82, 168, 152),
+    // AA on the hover and selection fills too (#182).
+    muted: Color32::from_rgb(160, 170, 176),
+    // AA as text on the hover and selection fills too (#182).
+    lapis: Color32::from_rgb(132, 168, 226),
+    // AA as text on the hover and selection fills too (#182).
+    verdigris: Color32::from_rgb(96, 184, 168),
     violet: Color32::from_rgb(160, 128, 200),
     gilt: Color32::from_rgb(206, 168, 88),
-    selection: Color32::from_rgb(44, 66, 104),
+    // Deep enough that lapis and muted text on it meet AA (#182).
+    selection: Color32::from_rgb(28, 44, 74),
     hover: Color32::from_rgb(48, 56, 66),
     hover_rule: Color32::from_rgb(84, 104, 136),
     warn: Color32::from_rgb(232, 140, 100),
@@ -85,6 +92,28 @@ pub fn set_for(ctx: &egui::Context) {
     } else {
         LIGHT
     };
+    CURRENT.with(|cur| cur.set(chrome));
+}
+
+/// The text colour for a label on a solid `fill` (a Link set chip, a badge, a heat cell):
+/// white or near-black, whichever reads better, and black when neither meets WCAG AA (#182).
+pub fn text_on(fill: Color32) -> Color32 {
+    let contrast = |c| crate::palette::contrast(c, fill);
+    let best = if contrast(Color32::WHITE) >= contrast(LIGHT.ink) {
+        Color32::WHITE
+    } else {
+        LIGHT.ink
+    };
+    if contrast(best) < 4.5 && contrast(Color32::BLACK) > contrast(best) {
+        Color32::BLACK
+    } else {
+        best
+    }
+}
+
+/// Use `chrome` for the frame being drawn on this thread, as [`set_for`] does from a context.
+#[cfg(test)]
+pub(crate) fn set_for_test(chrome: Chrome) {
     CURRENT.with(|cur| cur.set(chrome));
 }
 
@@ -176,6 +205,8 @@ fn style(style: &mut egui::Style, ch: &Chrome) {
     v.faint_bg_color = ch.surface;
     v.code_bg_color = ch.surface;
     v.hyperlink_color = ch.lapis;
+    // Hints and shortcuts: egui's default fades the ink, below AA on the fields (#182).
+    v.weak_text_color = Some(ch.muted);
     v.selection.bg_fill = ch.selection;
     v.selection.stroke = Stroke::new(1.0, ch.lapis);
     v.window_stroke = Stroke::new(1.0, ch.rule);

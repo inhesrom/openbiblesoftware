@@ -258,6 +258,7 @@ impl State {
                 .get_or_insert_with(|| Arc::new(source.families())),
         );
         let mut open = true;
+        let escape = super::escape_closes_window(ctx);
         let mut picks: Vec<(FontSlot, Option<(String, String)>)> = Vec::new();
         let max_height = ctx.content_rect().height() * 0.75;
         egui::Window::new("Fonts")
@@ -280,7 +281,8 @@ impl State {
                         egui::TextEdit::singleline(&mut self.fonts_ui.filter)
                             .id_salt("fonts-filter")
                             .desired_width(200.0),
-                    );
+                    )
+                    .accessible_name("Filter installed fonts");
                 });
                 if families.is_empty() {
                     ui.label(
@@ -300,7 +302,7 @@ impl State {
                         }
                     });
             });
-        if !open {
+        if !open || escape() {
             self.fonts_ui.open = false;
         }
         for (slot, pick) in picks {
@@ -353,7 +355,9 @@ impl State {
                             picks.push((slot, Some((f.name.clone(), style))));
                         }
                     }
-                });
+                })
+                .response
+                .accessible_name(format!("{} font", slot.label()));
             if let Some((family, style)) = &current {
                 let styles = families
                     .iter()
@@ -369,7 +373,9 @@ impl State {
                                 picks.push((slot, Some((family.clone(), st))));
                             }
                         }
-                    });
+                    })
+                    .response
+                    .accessible_name(format!("{} style", slot.label()));
             }
         });
         if let Some(why) = self.fonts_ui.missing[slot as usize] {

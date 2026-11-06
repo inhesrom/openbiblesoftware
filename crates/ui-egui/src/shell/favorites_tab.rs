@@ -315,12 +315,14 @@ fn new_folder_field(ui: &mut Ui, salt: impl std::hash::Hash + std::fmt::Debug) -
     let mut text: String = ui.data_mut(|d| d.get_temp(id)).unwrap_or_default();
     let mut done = false;
     ui.horizontal(|ui| {
-        let r = ui.add(
-            egui::TextEdit::singleline(&mut text)
-                .id_salt(id)
-                .hint_text("New folder")
-                .desired_width(140.0),
-        );
+        let r = ui
+            .add(
+                egui::TextEdit::singleline(&mut text)
+                    .id_salt(id)
+                    .hint_text("New folder")
+                    .desired_width(140.0),
+            )
+            .accessible_name("New folder");
         done |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         done |= ui
             .add_enabled(!text.trim().is_empty(), egui::Button::new("Add"))

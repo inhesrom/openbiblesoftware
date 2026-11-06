@@ -21,8 +21,8 @@ const TBESG: &str = "Brief lexicon of Extended Strongs for Greek";
 /// The mock CrossWire Lexicon with G26 (`StrongsGreek`).
 const STRONGS_GREEK: &str = "Strong's Greek Bible Dictionary";
 
-struct Lab {
-    root: PathBuf,
+pub(super) struct Lab {
+    pub(super) root: PathBuf,
     _repos: Arc<MockRepos>,
 }
 
@@ -34,7 +34,7 @@ impl Drop for Lab {
 
 /// A launch with an empty Library folder, mock SWORD repositories for Get Resources, and a
 /// released Starter library (no bundle) at a `file://` URL. `resources` are in the Library.
-fn setup(name: &str, resources: &[obs_model::Resource]) -> (Harness, Lab) {
+pub(super) fn setup(name: &str, resources: &[obs_model::Resource]) -> (Harness, Lab) {
     let root =
         std::env::temp_dir().join(format!("obs-shell-missing-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
@@ -88,7 +88,7 @@ fn cross_references() -> obs_model::Resource {
 /// A released Starter library with a Resource for every Guide section: the KJV with Strong's
 /// and the Lexicons of [`starter_set`], a Commentary, the Cross-reference set, TIPNR and
 /// Greek Bibles with Morphology (G26 in one of them).
-fn release_set() -> Vec<obs_model::Resource> {
+pub(super) fn release_set() -> Vec<obs_model::Resource> {
     let john = Passage::verse(Verse::new(obs_scripture::Book::John, 3, 16));
     let mut set = starter_set();
     set.extend([
@@ -113,7 +113,7 @@ fn release_set() -> Vec<obs_model::Resource> {
 }
 
 /// Run queued jobs (inline mode), apply their results and draw.
-fn settle(h: &mut Harness) {
+pub(super) fn settle(h: &mut Harness) {
     for _ in 0..30 {
         h.shell.st.session.jobs().pump(64);
         h.frames(2);

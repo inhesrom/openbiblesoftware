@@ -272,13 +272,15 @@ impl State {
                     });
                 });
                 ui.horizontal(|ui| {
-                    let r = ui.add(
-                        egui::TextEdit::singleline(&mut query)
-                            .id_salt(("search-query", tab))
-                            .hint_text(query_hint(st.mode))
-                            .desired_width((ui.available_width() - 210.0).max(120.0))
-                            .margin(egui::Margin::symmetric(8, 4)),
-                    );
+                    let r = ui
+                        .add(
+                            egui::TextEdit::singleline(&mut query)
+                                .id_salt(("search-query", tab))
+                                .hint_text(query_hint(st.mode))
+                                .desired_width((ui.available_width() - 210.0).max(120.0))
+                                .margin(egui::Margin::symmetric(8, 4)),
+                        )
+                        .accessible_name("Search for");
                     let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     if enter {
                         // The same Enter must not also open the selected result.
@@ -324,13 +326,15 @@ impl State {
                 }
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Scope").small().color(theme::c().muted));
-                    let r = ui.add(
-                        egui::TextEdit::singleline(&mut scope)
-                            .id_salt(("search-scope", tab))
-                            .hint_text("Whole Bible, or a Passage list: Rom 1-8; Gal")
-                            .desired_width(220.0)
-                            .margin(egui::Margin::symmetric(8, 3)),
-                    );
+                    let r = ui
+                        .add(
+                            egui::TextEdit::singleline(&mut scope)
+                                .id_salt(("search-scope", tab))
+                                .hint_text("Whole Bible, or a Passage list: Rom 1-8; Gal")
+                                .desired_width(220.0)
+                                .margin(egui::Margin::symmetric(8, 3)),
+                        )
+                        .accessible_name("Scope");
                     if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
                         run.push((
@@ -382,7 +386,9 @@ impl State {
                                         ));
                                     }
                                 }
-                            });
+                            })
+                            .response
+                            .accessible_name("Notebook");
                     });
                     error_line(ui, error.as_ref(), ErrorField::Search, "");
                     return;
