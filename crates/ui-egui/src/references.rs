@@ -362,7 +362,7 @@ impl State {
 
     /// Resource text is always drawn with the glyph atlas. A cache miss only submits work;
     /// it never shapes, lays out or reads SQLite on the UI thread.
-    fn preview(&mut self, ui: &mut Ui, passage: Passage, one_line: bool) {
+    pub(super) fn preview(&mut self, ui: &mut Ui, passage: Passage, one_line: bool) {
         let width = ui.available_width().max(40.0);
         let height = self.session.text.size * 1.8;
         if one_line

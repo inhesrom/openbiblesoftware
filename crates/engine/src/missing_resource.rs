@@ -91,7 +91,11 @@ impl GuideSection {
             | GuideSection::KeyPassages
             | GuideSection::DictionaryArticles
             | GuideSection::Related
-            | GuideSection::LexiconSummaries => Tagging::None,
+            | GuideSection::LexiconSummaries
+            | GuideSection::TopicalEntries
+            | GuideSection::TopicArticles
+            | GuideSection::TopicPassages
+            | GuideSection::TopicSearch => Tagging::None,
         }
     }
 
@@ -135,6 +139,14 @@ impl GuideSection {
             // Articles are found through the People & places index (TIPNR).
             GuideSection::DictionaryArticles => {
                 ty == ResourceType::Dictionary || ty == ResourceType::PeopleAndPlaces
+            }
+            // The Starter library has no topical index (ADR 0009): Get Resources has them.
+            GuideSection::TopicalEntries | GuideSection::TopicPassages => {
+                crate::topic_guide::is_topical_index(&item.resource_id)
+            }
+            GuideSection::TopicArticles => {
+                ty == ResourceType::Dictionary
+                    && !crate::topic_guide::is_topical_index(&item.resource_id)
             }
             s => ty == s.resource_type(),
         }
@@ -204,8 +216,14 @@ impl GuideSection {
         library: &Library,
         starter: Option<&StarterManifest>,
     ) -> MissingResource {
+        // The Starter library is made without a topical index; never offer it for one.
+        let never_starter = matches!(
+            self,
+            GuideSection::TopicalEntries | GuideSection::TopicPassages
+        );
         let starter = match (has, starter) {
             (true, _) => StarterOffer::None,
+            (false, _) if never_starter => StarterOffer::None,
             (false, None) => StarterOffer::Unlisted,
             (false, Some(manifest)) => {
                 let ids: Vec<String> = manifest

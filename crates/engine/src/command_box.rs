@@ -8,7 +8,7 @@
 //! | Text | Suggestion |
 //! |---|---|
 //! | a Layout's name, exactly | restore that Layout |
-//! | `pg`/`guide`/`passage guide` + reference; `compare`/`tc` + reference; `xref` + reference; `ws`/`study`/`word study` + word; `open` + Resource; `search` + text | that Guide, Tool, Resource or Search |
+//! | `pg`/`guide`/`passage guide` + reference; `compare`/`tc` + reference; `xref` + reference; `ws`/`study`/`word study` + word; `tg`/`topic`/`topic guide` + topic; `open` + Resource; `search` + text | that Guide, Tool, Resource or Search |
 //! | a Resource's abbreviation or title, exactly | open it |
 //! | a Bible reference (`jn 3:16`, also `jn 3 16`) | go there in the focused Bible (else the most recent Bible Tab, else the first Bible in Preferred order) |
 //! | a Strong's number (`G26`) | Word Study |
@@ -49,6 +49,8 @@ pub enum CommandBoxAction {
     WordStudy(StrongsNumber),
     /// The Word Study's English-word chooser.
     WordStudyWords(String),
+    /// The Topic Guide's chooser for a topic (#148).
+    TopicGuide(String),
     /// Open (or focus) a Resource, by resource id.
     OpenResource(String),
     RestoreLayout(String),
@@ -71,6 +73,7 @@ impl CommandBoxAction {
             Self::CrossReferences(_) => "cross_references",
             Self::WordStudy(_) => "word_study",
             Self::WordStudyWords(_) => "word_study_words",
+            Self::TopicGuide(_) => "topic_guide",
             Self::OpenResource(_) => "resource",
             Self::RestoreLayout(_) => "layout",
             Self::OpenFavorite(_) => "favorite",
@@ -126,11 +129,13 @@ const VERBS: &[(&str, Verb)] = &[
     ("cross references", Verb::CrossReferences),
     ("text comparison", Verb::Compare),
     ("passage guide", Verb::PassageGuide),
+    ("topic guide", Verb::TopicGuide),
     ("word study", Verb::WordStudy),
     ("compare", Verb::Compare),
     ("search", Verb::Search),
     ("guide", Verb::PassageGuide),
     ("study", Verb::WordStudy),
+    ("topic", Verb::TopicGuide),
     ("xrefs", Verb::CrossReferences),
     ("xref", Verb::CrossReferences),
     ("open", Verb::Open),
@@ -138,6 +143,7 @@ const VERBS: &[(&str, Verb)] = &[
     ("eg", Verb::ExegeticalGuide),
     ("ws", Verb::WordStudy),
     ("tc", Verb::Compare),
+    ("tg", Verb::TopicGuide),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,6 +153,7 @@ enum Verb {
     Compare,
     CrossReferences,
     WordStudy,
+    TopicGuide,
     Open,
     Search,
 }
@@ -387,6 +394,14 @@ impl Session {
                 }
                 out.extend(words);
             }
+            Verb::TopicGuide => out.push((
+                rank::VERB,
+                Suggestion::new(
+                    CommandBoxAction::TopicGuide(rest.to_string()),
+                    format!("“{rest}”"),
+                    "Topic Guide",
+                ),
+            )),
             Verb::Open => {
                 let mut found = Vec::new();
                 self.resource_suggestions(rest, &mut found);
@@ -577,6 +592,10 @@ impl Session {
             CommandBoxAction::WordStudyWords(w) => self.run(
                 "word_study.choose",
                 &json!({ "words": w, "new_tab": new_tab }),
+            ),
+            CommandBoxAction::TopicGuide(text) => self.run(
+                "guide.topic_guide",
+                &json!({ "text": text, "new_tab": new_tab }),
             ),
             CommandBoxAction::OpenResource(id) => {
                 let kind = TabKind::Resource(id.clone());

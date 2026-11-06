@@ -56,6 +56,7 @@ mod starter_tab;
 mod toolbar;
 mod toolbar_bar;
 mod toolbar_look;
+mod topic_guide_tab;
 mod word_info_tab;
 mod word_sections_view;
 mod word_study_tab;
@@ -118,6 +119,10 @@ struct TabUi {
     /// whether Translated as shows every rendering, for `lexicon_entries_for`.
     occurrence_form: Option<String>,
     renderings_all: bool,
+    /// Topic Guide (#148): the subtopics showing their Passages' text inline, by Resource id
+    /// and subtopic index, for the topic in `topic_previews_for`.
+    topic_previews: std::collections::BTreeSet<(String, usize)>,
+    topic_previews_for: Option<String>,
     /// Where the header's Favorites ☆ was drawn last frame (#155).
     favorite_star: Option<egui::Rect>,
     /// History: "Clear History…" is asking to confirm.
@@ -721,6 +726,7 @@ impl Shell {
             || self.st.session.word_study.is_busy()
             || self.st.session.reanchoring.is_busy()
             || self.st.session.factbooks.is_busy()
+            || self.st.session.topic_guides.is_busy()
         {
             Some(std::time::Duration::from_millis(16))
         } else if self.st.session.search.is_building() {
@@ -745,7 +751,8 @@ impl Shell {
             && (self.st.session.guides.is_busy()
                 || self.st.session.word_study.is_busy()
                 || self.st.session.reanchoring.is_busy()
-                || self.st.session.factbooks.is_busy())
+                || self.st.session.factbooks.is_busy()
+                || self.st.session.topic_guides.is_busy())
         {
             self.st.session.jobs().pump(1);
         }
@@ -1572,9 +1579,14 @@ impl State {
                 .and_then(|d| d.card(&id))
                 .map_or_else(|| obs_engine::people_places::display_name(&id), |c| c.name);
         }
+        if t.header_box() == HeaderBox::Topic
+            && let Some(text) = self.session.topic_guides.choosing(tab)
+        {
+            return text.to_string();
+        }
         if matches!(
             t.header_box(),
-            HeaderBox::Lexicon | HeaderBox::Headword | HeaderBox::Word
+            HeaderBox::Lexicon | HeaderBox::Headword | HeaderBox::Word | HeaderBox::Topic
         ) {
             return t
                 .entry_history
@@ -1626,6 +1638,9 @@ impl State {
             ) => self.passage_keyed_guide_body(&mut body, tab, g),
             TabKind::Guide(obs_engine::Guide::WordStudy) => self.word_study_body(&mut body, tab),
             TabKind::Guide(obs_engine::Guide::Factbook) => self.factbook_body(&mut body, tab),
+            TabKind::Guide(obs_engine::Guide::TopicGuide) => {
+                self.topic_guide_body(&mut body, tab);
+            }
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
             TabKind::Tool(Tool::CrossReferences) => self.cross_references_body(&mut body, tab),
             TabKind::Tool(Tool::WordInfo) => self.word_info_body(&mut body, tab),
@@ -2103,6 +2118,7 @@ impl State {
                             | HeaderBox::Headword
                             | HeaderBox::Word
                             | HeaderBox::Name
+                            | HeaderBox::Topic
                     ) {
                         self.history_buttons(ui, tab);
                     }
@@ -2274,10 +2290,7 @@ impl State {
 
     fn history_buttons(&mut self, ui: &mut Ui, tab: TabId) {
         let (back, fwd) = self.session.workspace.tab(tab).map_or((false, false), |t| {
-            if matches!(
-                t.header_box(),
-                HeaderBox::Lexicon | HeaderBox::Headword | HeaderBox::Word | HeaderBox::Name
-            ) {
+            if t.keeps_entries() {
                 (
                     t.entry_history.can_go_back(),
                     t.entry_history.can_go_forward(),
@@ -2346,6 +2359,7 @@ impl State {
             }
             HeaderBox::Word
             | HeaderBox::Name
+            | HeaderBox::Topic
             | HeaderBox::Reference
             | HeaderBox::Lexicon
             | HeaderBox::Headword => {
@@ -2353,6 +2367,7 @@ impl State {
                 let hint = match kind {
                     HeaderBox::Word => "Strong's number or word",
                     HeaderBox::Name => "Person or place",
+                    HeaderBox::Topic => "Topic",
                     HeaderBox::Lexicon => "Strong's number or Lemma",
                     HeaderBox::Headword => "Headword",
                     _ => "Go to passage",

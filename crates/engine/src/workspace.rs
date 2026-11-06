@@ -47,6 +47,8 @@ pub enum Guide {
     Factbook,
     /// A Passage word by word in its original language (#144).
     ExegeticalGuide,
+    /// One topic across the topical indexes and Dictionaries (#148).
+    TopicGuide,
 }
 
 impl Tool {
@@ -71,6 +73,7 @@ impl Guide {
             Guide::WordStudy => "Word Study",
             Guide::Factbook => "Factbook",
             Guide::ExegeticalGuide => "Exegetical Guide",
+            Guide::TopicGuide => "Topic Guide",
         }
     }
 }
@@ -106,6 +109,8 @@ pub enum HeaderBox {
     Word,
     /// The name of a person or place (Factbook).
     Name,
+    /// A topic (Topic Guide).
+    Topic,
     /// A Lexicon Strong's number or Lemma.
     Lexicon,
     /// A Dictionary headword.
@@ -167,6 +172,7 @@ impl TabKind {
             TabKind::Tool(Tool::WordInfo) => HeaderBox::FollowsHover,
             TabKind::Guide(Guide::WordStudy) => HeaderBox::Word,
             TabKind::Guide(Guide::Factbook) => HeaderBox::Name,
+            TabKind::Guide(Guide::TopicGuide) => HeaderBox::Topic,
             // The query, mode and scope fields are the Tab's body (#59).
             TabKind::Tool(Tool::Search) => HeaderBox::Keyless,
             TabKind::About(_)
@@ -209,6 +215,8 @@ impl TabKind {
             | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences)
             | TabKind::Resource(_) => vec![KeyScheme::Passage],
             TabKind::Guide(Guide::WordStudy) => vec![KeyScheme::StrongsNumber],
+            // A Topic Guide follows (and moves) its Link set's Dictionary headwords.
+            TabKind::Guide(Guide::TopicGuide) => vec![KeyScheme::Headword],
             _ => Vec::new(),
         }
     }
@@ -401,6 +409,10 @@ impl Tab {
         if self.kind == TabKind::Guide(Guide::WordStudy) {
             return matches!(key, Key::StrongsNumber(_)).then(|| key.clone());
         }
+        // A Topic Guide takes any headword as its topic (#148).
+        if self.kind == TabKind::Guide(Guide::TopicGuide) {
+            return matches!(key, Key::Headword(_)).then(|| key.clone());
+        }
         if self.kind == TabKind::Guide(Guide::Factbook) {
             return None;
         }
@@ -423,12 +435,16 @@ impl Tab {
         self.key_schemes.contains(&KeyScheme::Passage)
     }
 
-    /// Whether the Tab's location is an entry Key (Lexicon, Dictionary, Word Study, Factbook)
-    /// kept in `entry_history`, rather than a Verse kept in `history`.
+    /// Whether the Tab's location is an entry Key (Lexicon, Dictionary, Word Study, Factbook,
+    /// Topic Guide) kept in `entry_history`, rather than a Verse kept in `history`.
     pub fn keeps_entries(&self) -> bool {
         matches!(
             self.header_box(),
-            HeaderBox::Lexicon | HeaderBox::Headword | HeaderBox::Word | HeaderBox::Name
+            HeaderBox::Lexicon
+                | HeaderBox::Headword
+                | HeaderBox::Word
+                | HeaderBox::Name
+                | HeaderBox::Topic
         )
     }
 

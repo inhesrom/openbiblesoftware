@@ -158,6 +158,31 @@ fn each_section_names_its_resource_type_tagging_and_get_resources_filter() {
             Tagging::Morphology,
             Some("Get Hebrew & Greek texts…"),
         ),
+        // The Topic Guide (#148): topical indexes are Dictionaries (ADR 0009).
+        (
+            TopicalEntries,
+            ResourceType::Dictionary,
+            Tagging::None,
+            Some("Get Dictionaries…"),
+        ),
+        (
+            TopicArticles,
+            ResourceType::Dictionary,
+            Tagging::None,
+            Some("Get Dictionaries…"),
+        ),
+        (
+            TopicPassages,
+            ResourceType::Dictionary,
+            Tagging::None,
+            Some("Get Dictionaries…"),
+        ),
+        (
+            TopicSearch,
+            ResourceType::Dictionary,
+            Tagging::None,
+            Some("Get Dictionaries…"),
+        ),
     ];
     assert_eq!(cases.len(), GuideSection::ALL.len());
     for (section, ty, tagging, label) in cases {
