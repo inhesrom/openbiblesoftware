@@ -9,7 +9,7 @@ use egui_tiles::{Tile, Tree};
 use obs_engine::floating_windows::MIN_WINDOW;
 use obs_engine::{PanelId, Placement, ScreenRect, TabId, WindowId, WindowPlacement};
 
-use super::{PanelTiles, Shell, attach_beside, build_node, dock_node, insert_pane};
+use super::{PanelTiles, Shell, attach_beside, build_node, dock_node, insert_pane, tile_handles};
 use crate::theme;
 
 /// A new floating window's size when its Tab's Panel size is not known, in points.
@@ -478,8 +478,11 @@ impl Shell {
         // Panel.
         let split_held = self.st.split_held;
         self.st.split_held = ctx.input(|i| i.modifiers.command);
-        // Keys typed in this window run like keys typed in the main one, on its Tabs.
+        // Keys typed in this window run like keys typed in the main one, on its Tabs. An OS
+        // window has its own keyboard focus: Tab's target here is scrolled into view, and
+        // ringed below, as in the main window (#182).
         if native {
+            super::scroll_focus_into_view(&ctx);
             self.shortcuts(ui, Some(id));
         }
         egui::CentralPanel::default()
@@ -504,7 +507,9 @@ impl Shell {
                 // The dock's behaviour finds Panels by tile in `st.panels`: this window's,
                 // while it is drawn.
                 std::mem::swap(&mut self.st.panels, &mut d.panels);
+                let before = tile_handles::widgets_so_far(ui);
                 d.tree.ui(&mut self.st, ui);
+                tile_handles::after_tree(ui, &mut d.tree, before);
                 std::mem::swap(&mut self.st.panels, &mut d.panels);
             });
         // A Note being written on one of this window's Tabs is written here.
@@ -513,6 +518,9 @@ impl Shell {
             && self.keys_window(ed.tab) == Some(id)
         {
             self.st.note_editor_ui(&ctx);
+        }
+        if native {
+            super::focus_ring(&ctx);
         }
         self.st.split_held = split_held;
         self.apply_effects();

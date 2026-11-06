@@ -190,7 +190,8 @@ impl Harness {
         let mut viewports = egui::ViewportIdMap::default();
         viewports.insert(egui::ViewportId::ROOT, self.root_info.clone());
         if let Some(n) = &self.native {
-            n.borrow_mut().begin_frame(self.time, &mut viewports);
+            n.borrow_mut()
+                .begin_frame(self.time, self.os_theme, &mut viewports);
         }
         let input = RawInput {
             viewports,

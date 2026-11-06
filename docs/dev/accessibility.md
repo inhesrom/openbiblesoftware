@@ -60,6 +60,12 @@ control has the keyboard and then checks that a ring in the focus colour is draw
 | Copy verses (#154) | Ctrl+L `copy verses` | Tab to *Copy plain text*, Enter | Esc |
 | Favorites (#155) | Ctrl+D, Ctrl+L `favorites` | Tab to the Favorite, Enter | Ctrl+W |
 | Panel separator | Tab | → → widens the left Panel by 48 points | — |
+| Floating window (#152), an OS window of its own | `tab.float` on a Search Tab, a Bible split beside it (set-up) | In that window: Tab to *Search for*, query, Enter; Tab to *Grid*, Enter; Tab to *Resize Panels*, → → | — |
+
+The floating-window test (`keyboard_only_floating_window`) draws the window as eframe does,
+a viewport with its own input and its own AccessKit tree, and also checks that tree has no
+unnamed interactive node. Each OS window has its own keyboard focus, so the focus ring, the
+scroll into view and the separators' names and arrow keys are applied per window.
 
 ## 3. Contrast meets WCAG AA in every theme × Page tone
 
@@ -84,7 +90,7 @@ text on every Link set chip and badge, and the Grid view's heat cells at every h
 |---|---|
 | Header boxes (reference, word, name, Lexicon, headword, filter), the Command box and the fields and drop-downs in Get Resources, Search, Fonts, Copy verses, Notes, the Note editor, Reading plans, Favorites, the Collection editor and the toolbar panes had no name (a hint is not a name) | `accessible_name`, mostly the hint or the visible label beside it |
 | The Command box's suggestions, the panes' footer links, Credits' linked text were unnamed | Named, with roles (list option, link); a focused Credits text opens its first URL with Enter |
-| egui_tiles' Panel separators and tab-bar backgrounds were unnamed Tab stops with no focus | `shell/tile_handles.rs` names them (*Resize Panels*, a splitter; *Panel tab bar*); ←/→ (↑/↓) move a focused separator 24 points |
+| egui_tiles' Panel separators and tab-bar backgrounds were unnamed Tab stops with no focus | `shell/tile_handles.rs` names them, in the main window and in floating windows (*Resize Panels*, a splitter; *Panel tab bar*); ←/→ (↑/↓) move a focused separator 24 points |
 | Many custom widgets (Guide headers, word links, Factbook cards, Layout cards, the reading pane) and egui buttons showed focus by colour alone, or not at all | One focus ring (2 pt, lapis) round whatever has the keyboard; text fields keep their own border |
 | A link wrapped across two rows (Import a file…; the Topic Guide's Passage and *see* links, e.g. *Matt 19:11*) is two widgets in egui; the second had no name | It starts a new row when it does not fit (`shell::unbroken_link`, also used for the Factbook's Passage and family links) |
 | Tab moved the keyboard to widgets scrolled out of sight without scrolling, so the focus ring was out of sight (the Topic Guide's Search button) | A widget the keyboard has just moved to is scrolled into view, through AccessKit's Scroll into view as a screen reader would ask |
@@ -114,8 +120,8 @@ text on every Link set chip and badge, and the Grid view's heat cells at every h
   is no shortcut to move between Panels (F6 in many apps).
 - **What is checked** is text drawn as text shapes against solid fills. Launcher icons and
   other line drawings are checked only through the chrome colour test, not as drawn.
-- **Surfaces not built yet**: the Atlas (#150), the Home Tab (#178) and the Topic Guide (#148)
-  are open tickets. Because `every_tab_kind` matches `TabKind` without a catch-all, the first
+- **Surfaces not built yet**: the Atlas (#150) and the Home Tab (#178) are open tickets.
+  Because `every_tab_kind` matches `TabKind` without a catch-all, the first
   of them to add a Tab kind has to add it to the audit.
 - **No screen reader was run.** The checks read the AccessKit tree the app publishes; nobody
   has tried NVDA, VoiceOver or Orca against it on this host (no display, no screen reader).

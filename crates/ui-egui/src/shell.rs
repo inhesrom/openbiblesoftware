@@ -2882,7 +2882,8 @@ impl egui_tiles::Behavior<TabId> for State {
 /// moved, so scrolling away from it with the wheel stays put; and not for a widget over half
 /// the screen tall (a reading pane), which can never be wholly in view.
 fn scroll_focus_into_view(ctx: &egui::Context) {
-    let last_id = egui::Id::unique("focus-scrolled-into-view");
+    // Each OS window has its own focus; the one last scrolled to is kept per window.
+    let last_id = egui::Id::unique("focus-scrolled-into-view").with(ctx.viewport_id());
     let focused = ctx.memory(egui::Memory::focused);
     let last = ctx.data_mut(|d| {
         let last = d.get_temp::<egui::Id>(last_id);

@@ -11,7 +11,7 @@
 //! Findings and the gaps left are in `docs/dev/accessibility.md`.
 
 use egui::Key;
-use egui::accesskit::{Action, Node, NodeId, Role};
+use egui::accesskit::{Action, Node, NodeId, Role, TreeUpdate};
 use egui::epaint::ClippedShape;
 use egui::{Color32, Shape};
 use obs_engine::{Guide, Launcher, PageTone, Tool};
@@ -199,9 +199,11 @@ fn audit_harness(name: &str) -> (Harness, Lab) {
 // Names and roles.
 
 fn nodes(h: &Harness) -> std::collections::HashMap<NodeId, Node> {
-    (h.tree.as_ref().expect("an AccessKit tree").nodes.iter())
-        .cloned()
-        .collect()
+    tree_nodes(h.tree.as_ref().expect("an AccessKit tree"))
+}
+
+fn tree_nodes(tree: &TreeUpdate) -> std::collections::HashMap<NodeId, Node> {
+    tree.nodes.iter().cloned().collect()
 }
 
 /// A node's accessible name: its label (a Label's is its value), else the names of the nodes
@@ -223,7 +225,12 @@ fn name_of(nodes: &std::collections::HashMap<NodeId, Node>, node: &Node) -> Stri
 /// The interactive nodes of the tree (the keyboard can focus them or they can be clicked)
 /// that have no accessible name, described by role and bounds.
 fn unnamed(h: &Harness) -> Vec<String> {
-    let nodes = nodes(h);
+    unnamed_in(h.tree.as_ref().expect("an AccessKit tree"))
+}
+
+/// [`unnamed`] in one window's AccessKit tree.
+fn unnamed_in(tree: &TreeUpdate) -> Vec<String> {
+    let nodes = tree_nodes(tree);
     let mut out: Vec<String> = (nodes.values())
         .filter(|n| n.supports_action(Action::Click) || n.supports_action(Action::Focus))
         // ARIA requires no name of a window or a scroll bar.
@@ -454,8 +461,12 @@ fn every_pane_menu_and_window_names_its_interactive_nodes() {
 
 /// The node that has the keyboard: its name, role and bounds.
 fn focused(h: &Harness) -> Option<(String, Role, egui::Rect)> {
-    let tree = h.tree.as_ref()?;
-    let nodes = nodes(h);
+    focused_in(h.tree.as_ref()?)
+}
+
+/// [`focused`] in one window's AccessKit tree.
+fn focused_in(tree: &TreeUpdate) -> Option<(String, Role, egui::Rect)> {
+    let nodes = tree_nodes(tree);
     let node = nodes.get(&tree.focus)?;
     let b = node.bounds()?;
     Some((
@@ -471,7 +482,12 @@ fn focused(h: &Harness) -> Option<(String, Role, egui::Rect)> {
 /// A stroke in the focus colour is drawn round the focused widget: the shell's focus ring, or
 /// a text field's own border.
 fn assert_focus_ring(h: &Harness) {
-    let (name, role, bounds) = focused(h).expect("something has the keyboard");
+    assert_focus_ring_in(h.tree.as_ref().expect("an AccessKit tree"), &h.last_shapes);
+}
+
+/// [`assert_focus_ring`] in one window: its AccessKit tree, and what it painted.
+fn assert_focus_ring_in(tree: &TreeUpdate, shapes: &[ClippedShape]) {
+    let (name, role, bounds) = focused_in(tree).expect("something has the keyboard");
     let lapis = crate::theme::c().lapis;
     let mut found = false;
     let mut check = |shape: &Shape| {
@@ -490,7 +506,7 @@ fn assert_focus_ring(h: &Harness) {
             s => f(s),
         }
     }
-    for c in &h.last_shapes {
+    for c in shapes {
         walk(&c.shape, &mut check);
     }
     assert!(found, "no focus ring round {role:?} {name:?} at {bounds:?}");
@@ -1000,6 +1016,98 @@ fn keyboard_only_panel_separator() {
     assert!((after - before - 48.0).abs() < 2.0, "{before} -> {after}");
     assert_eq!(
         focused(&h).map(|f| f.0).as_deref(),
+        Some(super::super::tile_handles::SEPARATOR),
+        "the arrow keys moved the focus away"
+    );
+}
+
+/// Press Tab in the floating OS window `w` until the widget named `name` has its keyboard, and
+/// check the window shows it.
+fn tab_to_in(h: &mut Harness, w: obs_engine::WindowId, name: &str) {
+    let mut seen = Vec::new();
+    for _ in 0..200 {
+        let win = h.window(w);
+        let tree = win.tree.as_ref().expect("the window's AccessKit tree");
+        if let Some((n, ..)) = focused_in(tree) {
+            if n == name {
+                assert_focus_ring_in(tree, &win.last_shapes);
+                return;
+            }
+            seen.push(n);
+        }
+        drop(win);
+        h.key_in(w, Key::Tab, Modifiers::NONE);
+    }
+    panic!("Tab never reached {name:?} in the floating window; it went through {seen:?}");
+}
+
+/// The widths of the Panels of floating window `w`, left to right.
+fn floating_panel_widths(h: &Harness, w: obs_engine::WindowId) -> Vec<f32> {
+    let d = h.shell.floating.iter().find(|d| d.id == w).unwrap();
+    let tiles = &d.tree.tiles;
+    let mut rects: Vec<egui::Rect> = (tiles.tile_ids())
+        .filter(|t| matches!(tiles.get(*t), Some(Tile::Container(Container::Tabs(_)))))
+        .filter_map(|t| tiles.rect(t))
+        .collect();
+    rects.sort_by(|a, b| a.left().total_cmp(&b.left()));
+    rects.iter().map(egui::Rect::width).collect()
+}
+
+/// A floating window that is an OS window of its own (#152) is as usable by keyboard and screen
+/// reader as the main window (#182): no unnamed interactive node, the focus ring on the
+/// control Tab reaches (the Search Tab's own view buttons), and a named separator between its
+/// Panels that the arrow keys move.
+#[test]
+fn keyboard_only_floating_window() {
+    let (mut h, _lab) = keyboard_harness("kb-floating");
+    h.native_windows();
+    key(&mut h, Key::F, CTRL | Modifiers::SHIFT);
+    assert_eq!(focused_kind(&h), Some(TabKind::Tool(Tool::Search)));
+    let search = h.shell.session().workspace.focused().unwrap();
+    h.shell.run("tab.float", &json!({ "tab": search.0 }));
+    settle(&mut h);
+    let w = h.shell.floating[0].id;
+    assert!(h.shell.floating[0].native, "an OS window of its own");
+    // A Bible in a Panel beside the Search Tab, in the same window.
+    h.shell.run(
+        "resource.open",
+        &json!({ "id": "kjv-strongs", "split": true }),
+    );
+    settle(&mut h);
+    assert_eq!(h.shell.session().workspace.window_tabs(w).len(), 2);
+    assert_eq!(floating_panel_widths(&h, w).len(), 2, "two Panels");
+    let bad = unnamed_in(
+        h.window(w)
+            .tree
+            .as_ref()
+            .expect("the window's AccessKit tree"),
+    );
+    assert!(bad.is_empty(), "unnamed in the floating window: {bad:#?}");
+
+    tab_to_in(&mut h, w, "Search for");
+    h.window(w).events.push(Event::Text("God".into()));
+    h.frames(2);
+    h.key_in(w, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    tab_to_in(&mut h, w, "Grid");
+    h.key_in(w, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    assert_eq!(
+        h.shell.session().search_tab(search).unwrap().view,
+        obs_engine::ResultsView::Grid
+    );
+
+    let before = floating_panel_widths(&h, w)[0];
+    tab_to_in(&mut h, w, super::super::tile_handles::SEPARATOR);
+    h.key_in(w, Key::ArrowRight, Modifiers::NONE);
+    h.key_in(w, Key::ArrowRight, Modifiers::NONE);
+    let after = floating_panel_widths(&h, w)[0];
+    assert!((after - before - 48.0).abs() < 2.0, "{before} -> {after}");
+    let win = h.window(w);
+    assert_eq!(
+        focused_in(win.tree.as_ref().unwrap())
+            .map(|f| f.0)
+            .as_deref(),
         Some(super::super::tile_handles::SEPARATOR),
         "the arrow keys moved the focus away"
     );
