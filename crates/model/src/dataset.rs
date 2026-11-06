@@ -189,7 +189,8 @@ pub struct Event {
     pub kind: EventKind,
     pub start: HistoricalDate,
     /// When it ended, for one that lasts (a reign, a life, an era); `None` for one on a single
-    /// day or within one year.
+    /// day or within one year. An Era's end is the date the next Era begins, not its own last
+    /// day.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub end: Option<HistoricalDate>,
     /// The source marks the date as approximate ("c. 2242 BC").

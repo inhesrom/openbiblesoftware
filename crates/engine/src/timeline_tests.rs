@@ -82,10 +82,18 @@ fn the_timeline_shows_the_patriarchs_kingdom_and_exile_eras_with_davids_life() {
             ("Exile", "586–536 BC"),
             ("Return and Restoration", "536–441 BC"),
             ("Between the Testaments", "441–4 BC"),
-            ("Life of Jesus", "4 BC–AD 30"),
-            ("Early Church", "AD 30–60"),
+            ("Life of Jesus", "4 BC–7 April AD 30"),
+            ("Early Church", "7 April AD 30–AD 60"),
         ]
     );
+    // Each Era ends at the very point the next begins: no gap, no overlap.
+    let bands: Vec<(f64, f64)> = tl
+        .of_kind(EventKind::Era)
+        .map(|(_, e)| (e.from, e.to))
+        .collect();
+    for pair in bands.windows(2) {
+        assert_eq!(pair[0].1, pair[1].0);
+    }
     let era = |title: &str| tl.titled(title).unwrap();
     let david = tl.titled("David").unwrap();
     assert_eq!(david.kind, EventKind::Lifespan);
@@ -154,6 +162,50 @@ fn opening_1_kings_6_emphasises_the_temples_construction() {
     let v = tl.emphasis(Passage::verse(Verse::new(Book::FirstKings, 6, 14)));
     assert_eq!(tl.entries[v.focus.unwrap()].title, focus.title);
     assert_eq!(v.widened, None);
+}
+
+/// Era boundaries keep the anchor's day: the Life of Jesus ends and the Early Church begins
+/// at the Resurrection (7 April AD 30), so John 19's Crucifixion (4 April) emphasises the Life
+/// of Jesus and John 20's Resurrection the Early Church, each alone.
+#[test]
+fn an_era_boundary_falls_on_its_anchors_day() {
+    let t = Temp::new("era-day");
+    let tl = read(&t);
+    let eras_of = |passage: Passage| -> (String, Vec<String>) {
+        let e = tl.emphasis(passage);
+        let focus = tl.entries[e.focus.unwrap()].title.clone();
+        let eras = e
+            .entries
+            .iter()
+            .map(|&i| &tl.entries[i])
+            .filter(|x| x.kind == EventKind::Era)
+            .map(|x| x.title.clone())
+            .collect();
+        (focus, eras)
+    };
+    assert_eq!(
+        eras_of(chapter(Book::John, 19)),
+        (
+            "Crucifixion and Burial".into(),
+            vec!["Life of Jesus".into()]
+        )
+    );
+    assert_eq!(
+        eras_of(chapter(Book::John, 20)),
+        (
+            "Resurrection and Ascension".into(),
+            vec!["Early Church".into()]
+        )
+    );
+    let life = tl.titled("Life of Jesus").unwrap();
+    let church = tl.titled("Early Church").unwrap();
+    let crucifixion = tl.titled("Crucifixion and Burial").unwrap();
+    let resurrection = tl.titled("Resurrection and Ascension").unwrap();
+    assert!(life.from <= crucifixion.from && crucifixion.to < life.to);
+    assert_eq!(
+        (life.to, church.from),
+        (resurrection.from, resurrection.from)
+    );
 }
 
 /// A Verse no Event tells widens to its chapter; a Passage none tells emphasises nothing.

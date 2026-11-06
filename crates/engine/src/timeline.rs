@@ -51,7 +51,13 @@ pub struct TimelineEntry {
 impl TimelineEntry {
     pub fn from_event(index_id: &str, e: &Event) -> Self {
         let from = position(e.start);
-        let to = e.end.map_or(from, |end| position_end(end).max(from));
+        // An Era ends where the next begins, so the two share one point and a date on it
+        // belongs to the later Era alone.
+        let end_at = |end| match e.kind {
+            EventKind::Era => position(end),
+            _ => position_end(end),
+        };
+        let to = e.end.map_or(from, |end| end_at(end).max(from));
         TimelineEntry {
             id: e.id.clone(),
             index_id: index_id.to_string(),

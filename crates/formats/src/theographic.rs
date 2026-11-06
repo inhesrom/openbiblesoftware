@@ -52,7 +52,8 @@ pub const DROPPED_VERSE: &str = "event Verse: unreadable or outside the Standard
 pub const DROPPED_LIFETIME: &str = "event: a Lifetime of a person whose years are known";
 
 /// Where an Era starts or ends: at the start or end of a Theographic event (by title), plus
-/// whole years.
+/// whole years, to the day where the event gives one. One Era ends on the date the next
+/// begins, which belongs to the next.
 #[derive(Debug, Clone, Copy)]
 pub enum EraBound {
     Start(&'static str),
@@ -380,12 +381,11 @@ pub fn import_theographic_events(
                 line: 0,
                 message: format!("{}: no event titled `{title}` to date it by", era.id),
             })?;
-            let date = if at_end {
-                row.end.unwrap_or(row.start)
+            Ok(if at_end {
+                end_boundary(row.start, row.end)
             } else {
-                row.start
-            };
-            Ok(HistoricalDate::year(date.year + years))
+                plus_years(row.start, years)
+            })
         };
         events.push(Event {
             id: era.id.to_string(),
@@ -573,6 +573,35 @@ pub(crate) fn end_of(start: HistoricalDate, d: Duration) -> Option<HistoricalDat
             let whole = years.round() as i32;
             (whole >= 1).then(|| HistoricalDate::year(start.year + whole))
         }
+    }
+}
+
+/// Where an Era bounded by the end of an event starting at `start` and ending `end` begins
+/// (or the one before it ends): the day after its last day where the source gives days, else
+/// its last year (year-only dates sit at the start of their year).
+fn end_boundary(start: HistoricalDate, end: Option<HistoricalDate>) -> HistoricalDate {
+    let last = end.unwrap_or(start);
+    match (last.month, last.day) {
+        (Some(month), Some(day)) => {
+            let (year, month, day) = civil_from_days(days_from_civil(last.year, month, day) + 1);
+            HistoricalDate {
+                year,
+                month: Some(month),
+                day: Some(day),
+            }
+        }
+        _ => HistoricalDate::year(last.year),
+    }
+}
+
+/// `date` plus whole `years`, keeping its month and day (29 February becomes the 28th in a
+/// common year).
+fn plus_years(date: HistoricalDate, years: i32) -> HistoricalDate {
+    let year = date.year + years;
+    HistoricalDate {
+        year,
+        month: date.month,
+        day: date.day.map(|d| d.min(days_in_month(year, month_of(date)))),
     }
 }
 
@@ -860,6 +889,32 @@ impl<'a> Tipnr<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn era_bounds_keep_the_anchors_day() {
+        let day = |year, month, day| HistoricalDate {
+            year,
+            month: Some(month),
+            day: Some(day),
+        };
+        // An event's end bounds an Era from the day after its last day, across a year's end.
+        assert_eq!(end_boundary(day(30, 4, 4), None), day(30, 4, 5));
+        assert_eq!(
+            end_boundary(day(29, 12, 20), Some(day(29, 12, 31))),
+            day(30, 1, 1)
+        );
+        // Year-only dates stay years.
+        assert_eq!(
+            end_boundary(HistoricalDate::bc(597), Some(HistoricalDate::bc(586))),
+            HistoricalDate::bc(586)
+        );
+        assert_eq!(
+            plus_years(HistoricalDate::bc(606), 70),
+            HistoricalDate::bc(536)
+        );
+        assert_eq!(plus_years(day(28, 2, 29), 1), day(29, 2, 28));
+        assert_eq!(plus_years(day(30, 4, 7), 2), day(32, 4, 7));
+    }
 
     #[test]
     fn dates_and_durations_read_as_the_dataset_writes_them() {

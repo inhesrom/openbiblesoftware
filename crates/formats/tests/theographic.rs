@@ -118,6 +118,19 @@ fn eras_are_dated_from_the_events_they_are_anchored_to() {
         span("era:exile"),
         ("Exile", HistoricalDate::bc(586), HistoricalDate::bc(536))
     );
+    // A bound keeps its anchor's day: the Resurrection, 7 April AD 30, ends the Life of Jesus
+    // and begins the Early Church, so the Crucifixion (4 April) falls before it.
+    let resurrection = HistoricalDate {
+        year: 30,
+        month: Some(4),
+        day: Some(7),
+    };
+    assert_eq!(
+        span("era:life-of-jesus"),
+        ("Life of Jesus", HistoricalDate::bc(4), resurrection)
+    );
+    assert_eq!(span("era:early-church").1, resurrection);
+    assert!(event(&r, "event:459").start < resurrection);
 }
 
 /// David's Lifespan runs from his birth in 1085 BC to his death in 1015 BC (People.csv's
