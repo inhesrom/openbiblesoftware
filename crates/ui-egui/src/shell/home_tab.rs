@@ -30,9 +30,11 @@ impl State {
             .is_some_and(|t| t.kind == obs_engine::TabKind::Home);
         let r = ui
             .add(egui::Button::new(RichText::new("Home").size(12.5)).selected(open))
-            .on_hover_text(
-                "Today's reading, where you left off, Quick start and your library (Alt+H)",
-            );
+            .on_hover_text(super::with_key(
+                &self.session,
+                "Today's reading, where you left off, Quick start and your library",
+                "home.open",
+            ));
         if !r.clicked() {
             return false;
         }
