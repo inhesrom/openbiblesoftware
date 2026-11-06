@@ -235,6 +235,35 @@ fn a_code_span_over_lines_keeps_every_character_on_its_line() {
 }
 
 #[test]
+fn a_code_span_over_lines_keeps_the_indent_typed_after_a_line_break() {
+    // Only the container prefix is taken off the next line; white space after it is the
+    // span's own text and shows as typed (#186 review).
+    for (body, shown) in [
+        ("``faith\n hope``", "faith\n hope"),
+        ("`faith\n hope`", "faith\n hope"),
+        ("> `a\n>   b`", "a\n  b"),
+        ("- `a\n     b`", "a\n   b"),
+        ("`a\r\n b`", "a\n b"),
+        ("`a\n\tb`", "a\n\tb"),
+    ] {
+        assert_eq!(note_plain_text(body), shown, "{body:?}");
+        let lines = parse_note_text(body);
+        let last = lines.last().unwrap();
+        let word = last.text.trim_start();
+        let at = last.text.len() - word.len();
+        assert_eq!(
+            &body[last.source_range(at..last.text.len())],
+            word,
+            "{body:?}"
+        );
+    }
+    let lines = parse_note_text("``faith\n hope``");
+    assert_eq!(lines[0].text, "faith");
+    assert_eq!(lines[1].text, " hope");
+    assert_eq!(lines[1].kind, NoteLineKind::Text);
+}
+
+#[test]
 fn offsets_map_shown_text_back_to_the_body() {
     let body = "intro\n## A **bold** [link](<Rom 5:8>) \\*";
     let l = &parse_note_text(body)[1];

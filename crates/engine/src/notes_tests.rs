@@ -656,6 +656,17 @@ fn notes_search_finds_words_inside_formatted_text() {
         assert_eq!(hits, std::slice::from_ref(id), "{word}");
         assert_eq!(card_ids(&s, word), std::slice::from_ref(id), "{word}");
     }
+    // Indent typed after a line break inside a code span is its own text and splits no
+    // word (#186 review).
+    let indented = note(&mut s, "Rom 5:5", "``charity\n hope``", None);
+    let (_, hits) = notes_search(&mut s, json!({ "text": "charity" }));
+    assert_eq!(hits, std::slice::from_ref(&indented));
+    let (_, mut hits) = notes_search(&mut s, json!({ "text": "hope" }));
+    hits.sort();
+    let mut want = vec![listed.clone(), indented.clone()];
+    want.sort();
+    assert_eq!(hits, want);
+    assert!(card_ids(&s, "hope").contains(&indented));
 }
 
 /// A formatted Note's references are found in the text it shows; a link's text is not a

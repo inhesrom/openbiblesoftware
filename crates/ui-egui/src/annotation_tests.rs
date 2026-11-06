@@ -458,6 +458,30 @@ fn an_empty_note_is_not_saved_and_esc_saves_a_written_one() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// The Note editor saves its text as typed (#186 review): white space is CommonMark, so four
+/// leading spaces make a code block whose `**` shows as typed, and trimming them would turn
+/// it bold.
+#[test]
+fn the_note_editor_saves_white_space_as_typed() {
+    let dir = folder("note-indent");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    let (_, _, _, r) = word_in_view(&h, tb, 120.0);
+    double_click(&mut h, r.center());
+    press_key(&mut h, egui::Key::N, cmd_shift());
+    h.events.push(Event::Text("    **faith**  ".into()));
+    h.frame();
+    press_key(&mut h, egui::Key::Escape, Modifiers::NONE);
+    let notes = h.shell.st.session.annotations(None).unwrap();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].body(), "    **faith**  ");
+    let shown = obs_model::parse_note_text(notes[0].body());
+    assert_eq!(shown[0].text, "**faith**  ");
+    assert!(shown[0].marks.is_empty(), "{:?}", shown[0].marks);
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// A Note whose save fails stays in its editor, text and error shown, even when another
 /// Note is started.
 #[test]

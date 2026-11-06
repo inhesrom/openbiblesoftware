@@ -426,8 +426,18 @@ impl State {
                 return;
             }
         };
-        // Focus now, so keys typed on the very next frame land in the editor.
+        // Focus now, so keys typed on the very next frame land in the editor; the key that
+        // opened it (Enter or Space on a menu item) is not typed into it this frame.
         ctx.memory_mut(|m| m.request_focus(editor_body_id()));
+        ctx.input_mut(|i| {
+            i.events.retain(|e| match e {
+                egui::Event::Key { key, pressed, .. } => {
+                    !(*pressed && matches!(key, egui::Key::Enter | egui::Key::Space))
+                }
+                egui::Event::Text(_) => false,
+                _ => true,
+            });
+        });
         self.note_editor = Some(NoteEditor {
             tab,
             target,
@@ -467,13 +477,14 @@ impl State {
         self.run("search.run", &params);
     }
 
-    /// Save the open Note editor's Note (nothing is saved when it is empty) and close it,
-    /// returning the new Note's id. If the save fails, the editor stays open with the error,
-    /// keeping the text.
+    /// Save the open Note editor's Note (nothing is saved when it is only white space) and
+    /// close it, returning the new Note's id. The text is saved as typed: its white space is
+    /// CommonMark (four spaces start a code block), as in the Notes Tool's editor. If the save
+    /// fails, the editor stays open with the error, keeping the text.
     pub(super) fn save_note(&mut self) -> Option<String> {
         let mut ed = self.note_editor.take()?;
-        let body = ed.body.trim();
-        if body.is_empty() {
+        let body = ed.body.as_str();
+        if body.trim().is_empty() {
             return None;
         }
         let mut params = ed.target.clone();

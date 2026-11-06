@@ -31,7 +31,8 @@ pub enum NoteLineKind {
     Heading(u8),
     /// A bulleted list item; `level` 0 is not nested.
     Bullet { level: u8 },
-    /// A numbered list item, shown with the number typed.
+    /// A numbered list item. `number` is CommonMark's: the list's first item shows the
+    /// number typed, and each later item the one before plus one, whatever was typed.
     Numbered { level: u8, number: u32 },
     /// A block-quote line.
     Quote,
@@ -280,7 +281,12 @@ impl Builder<'_> {
         let map: Option<Vec<usize>> = if src == t {
             Some(r.clone().collect())
         } else if code {
-            code_text_offsets(src, t).map(|m| m.into_iter().map(|o| r.start + o).collect())
+            // A span the alignment cannot follow stays whole on its first line, mapped onto
+            // its opening backtick, rather than split where a guessed offset falls.
+            Some(code_text_offsets(src, t).map_or_else(
+                || vec![r.start; t.len()],
+                |m| m.into_iter().map(|o| r.start + o).collect(),
+            ))
         } else {
             src.find(t)
                 .map(|i| (r.start + i..r.start + i + t.len()).collect())
@@ -338,36 +344,27 @@ impl Builder<'_> {
 }
 
 /// Where each byte of a code span's text `t` is in its source `src` (backticks included).
-/// CommonMark strips the backticks and one space each side when both are there, and reads a
-/// line break as a space (pulldown-cmark reads each of `\r\n` as one), which maps onto the
-/// break; the next line's block-quote markers and indent, taken off before the span is
-/// read, are skipped.
+/// The text is the source with bytes taken out, never added or reordered: CommonMark strips
+/// the backticks and one space each side when both are there, and the parser takes the next
+/// line's container prefix (block-quote markers, list indent) off before reading the span,
+/// keeping any white space after it as typed. A line break reads as a space (pulldown-cmark
+/// reads each of `\r\n` as one), which maps onto the break. So each byte of `t` maps onto
+/// the first byte after the last one mapped that it can be, skipping what was taken out
+/// (white space or `>` before a line's content, so literal indent is kept as shown text).
+/// `None` when `t` does not fit `src` so.
 fn code_text_offsets(src: &str, t: &str) -> Option<Vec<usize>> {
     let s = src.as_bytes();
     let ticks = s.len() - src.trim_start_matches('`').len();
     let end = s.len().checked_sub(ticks)?;
-    [0, 1].into_iter().find_map(|skip| {
-        let mut at = ticks + skip;
-        let mut out = Vec::with_capacity(t.len());
-        for &c in t.as_bytes() {
-            if at >= end {
-                return None;
-            }
-            if s[at] == c || (c == b' ' && s[at] == b'\r') {
-                out.push(at);
-                at += 1;
-            } else if c == b' ' && s[at] == b'\n' {
-                out.push(at);
-                at += 1;
-                while at < end && matches!(s[at], b' ' | b'\t' | b'>') {
-                    at += 1;
-                }
-            } else {
-                return None;
-            }
-        }
-        Some(out)
-    })
+    let mut at = ticks;
+    let mut out = Vec::with_capacity(t.len());
+    for &c in t.as_bytes() {
+        let fits = |b: u8| b == c || (c == b' ' && matches!(b, b'\n' | b'\r'));
+        at += s.get(at..end)?.iter().position(|&b| fits(b))?;
+        out.push(at);
+        at += 1;
+    }
+    Some(out)
 }
 
 /// The text a Note shows, markup removed: one line per line (for search and filtering).

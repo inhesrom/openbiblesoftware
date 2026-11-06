@@ -969,7 +969,8 @@ fn escape_in_the_note_editor_leaves_the_window_behind_open() {
     let notes = h.shell.st.session.annotations(None).unwrap();
     assert!(
         notes.iter().any(|n| n.body() == "Light first"),
-        "Esc did not save the Note"
+        "Esc did not save the Note: {:?}",
+        notes.iter().map(|n| n.body()).collect::<Vec<_>>()
     );
     key(&mut h, Key::Escape, Modifiers::NONE);
     assert!(!h.shell.st.fonts_ui.open, "the next Esc left Fonts open");
