@@ -755,6 +755,7 @@ impl Shell {
             || self.st.session.bible_search_running()
             || self.st.session.word_study.is_busy()
             || self.st.session.reanchoring.is_busy()
+            || self.st.session.factbooks.is_busy()
         {
             Some(std::time::Duration::from_millis(16))
         } else if self.st.session.search.is_building() {
@@ -772,12 +773,13 @@ impl Shell {
         self.st.now = ui.input(|i| i.time);
         self.st.split_held = ui.input(|i| i.modifiers.command);
         // Poll, never wait: parsing, Resource writes, Search-index hooks and Guide sections
-        // live on workers. Without worker threads (wasm), Guide sections step here, a job a
-        // frame.
+        // live on workers. Without worker threads (wasm), Guide sections and the People &
+        // places directory step here, a job a frame.
         if !self.st.session.jobs().is_threaded()
             && (self.st.session.guides.is_busy()
                 || self.st.session.word_study.is_busy()
-                || self.st.session.reanchoring.is_busy())
+                || self.st.session.reanchoring.is_busy()
+                || self.st.session.factbooks.is_busy())
         {
             self.st.session.jobs().pump(1);
         }

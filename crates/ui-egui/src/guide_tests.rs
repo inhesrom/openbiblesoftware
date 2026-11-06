@@ -868,3 +868,44 @@ fn abram_opens_his_factbook_and_the_john_chooser_lists_the_johns() {
     });
     drop(h);
 }
+
+/// #149: a Factbook chooser opened first thing (no Guide open, so no Guide job to step) loads
+/// the People & places directory by itself: frames step its job and keep coming while it
+/// loads.
+#[test]
+fn a_cold_factbook_chooser_loads_the_directory_by_itself() {
+    use obs_engine::testing::johns;
+    let mut h = Harness::new();
+    let dir = std::env::temp_dir().join(format!("obs-shell-cold-chooser-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let files = Files(dir);
+    h.shell.st.session.library = Library::new();
+    add_file(&mut h, &files, &johns());
+    h.shell.reset_layout();
+    h.frames(2);
+    let tab = TabId(
+        h.shell
+            .run("guide.factbook", &json!({ "name": "John" }))
+            .unwrap()["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    let session = &h.shell.st.session;
+    assert!(!session.guides.is_busy(), "no Guide job to piggyback on");
+    assert!(!session.word_study.is_busy());
+    // The chooser's first frame asks for the directory; while it loads, frames keep coming.
+    h.frame();
+    assert!(h.shell.st.session.factbooks.is_busy());
+    assert!(
+        h.shell.background_repaint().is_some(),
+        "a loading directory keeps frames coming"
+    );
+    until(&mut h, "the cold John chooser", |h| {
+        find_in(h, tab, "John (son of Zebedee)").is_some()
+    });
+    assert!(find_in(&h, tab, "John (son of Zechariah)").is_some());
+    assert!(!h.shell.st.session.factbooks.is_busy());
+    drop(h);
+    drop(files);
+}
