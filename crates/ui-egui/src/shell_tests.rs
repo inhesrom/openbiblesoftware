@@ -474,9 +474,15 @@ fn default_layout_has_a_bible_and_a_tools_panel() {
     for t in ["A", "‹", "›", "Genesis 30:1", "Test Bible", "…"] {
         assert!(h.find(t).is_some(), "{t:?} missing: {:?}", h.texts());
     }
-    // The launcher menus and the Search field.
+    // The launcher menus and the Command box (#139).
     for t in [
-        "Library", "Guides", "Tools", "Layouts", "View", "Help", "Search",
+        "Library",
+        "Guides",
+        "Tools",
+        "Layouts",
+        "View",
+        "Help",
+        crate::shell::command_box::HINT,
     ] {
         assert!(h.find(t).is_some(), "{t}");
     }
@@ -3075,6 +3081,9 @@ mod context_menu;
 
 #[path = "parallel_resources_tests.rs"]
 mod parallel_resources;
+
+#[path = "command_box_tests.rs"]
+mod command_box;
 
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {

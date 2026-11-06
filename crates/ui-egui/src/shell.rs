@@ -25,6 +25,7 @@ use crate::view::ReadingView;
 use crate::workers::SnippetCache;
 
 mod annotate;
+mod command_box;
 mod context_menu;
 mod credits_tab;
 mod favorites_tab;
@@ -151,7 +152,8 @@ pub(crate) struct State {
     last_save: f64,
     /// This frame's Page-tone palette.
     pub(crate) palette: Palette,
-    search: String,
+    /// The toolbar's Command box (#139).
+    pub(crate) command_box: command_box::CommandBoxUi,
     now: f64,
     /// Ctrl/Cmd is held: opening something splits off a new Panel.
     split_held: bool,
@@ -171,7 +173,7 @@ pub(crate) struct State {
     fonts_ui: fonts_window::FontsUi,
 }
 
-/// The app window's content: menus, Search field and the docked Workspace.
+/// The app window's content: menus, Command box and the docked Workspace.
 pub struct Shell {
     pub(crate) st: State,
     pub(crate) tree: Tree<TabId>,
@@ -202,7 +204,7 @@ impl Shell {
                 picker: None,
                 last_save: 0.0,
                 palette: Palette::PAPER,
-                search: String::new(),
+                command_box: command_box::CommandBoxUi::default(),
                 now: 0.0,
                 split_held: false,
                 panels: std::collections::HashMap::new(),
@@ -382,6 +384,7 @@ impl Shell {
                 } => self.st.confirm = Some((resource_id, title, message)),
                 Effect::PickImport => self.st.pick_import = true,
                 Effect::ShowFonts => self.st.fonts_ui.open = true,
+                Effect::FocusCommandBox => self.st.command_box.focus = true,
                 Effect::Removed(id) => {
                     self.st.docs.remove(&id);
                     self.st.marks.forget(&id);
@@ -906,19 +909,7 @@ impl Shell {
                 }
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let r = ui.add(
-                    egui::TextEdit::singleline(&mut self.st.search)
-                        .hint_text("Search")
-                        .desired_width(220.0)
-                        .margin(egui::Margin::symmetric(8, 4)),
-                );
-                if r.lost_focus()
-                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                    && !self.st.search.trim().is_empty()
-                {
-                    let text = self.st.search.trim().to_string();
-                    self.run("search.run", &json!({ "text": text }));
-                }
+                self.command_box(ui);
             });
         });
     }

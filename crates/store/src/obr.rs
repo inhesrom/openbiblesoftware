@@ -1018,6 +1018,16 @@ impl ResourceStore for ObrReader {
         )
     }
 
+    fn keys_of_unit(&self, unit: &UnitId) -> Result<Vec<KeyEntry>, StoreError> {
+        let Some(ord) = self.unit_ord(unit)? else {
+            return Ok(Vec::new());
+        };
+        self.key_rows(
+            "SELECT scheme, key, unit, start, end, alias FROM keys WHERE unit = ?1",
+            &[&ord],
+        )
+    }
+
     fn unit_alias(&self, old: &UnitId) -> Result<Option<UnitId>, StoreError> {
         let new: Option<String> = self
             .conn

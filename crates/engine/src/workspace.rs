@@ -535,6 +535,8 @@ pub enum Effect {
     /// A Resource Tab now shows another Resource (a parallel resource, or Back/Forward across
     /// a switch, #151): load it, at the Tab's location.
     Switched(TabId),
+    /// Put the keyboard in the Command box (Ctrl+L, #139).
+    FocusCommandBox,
 }
 
 /// How the caller asked for a Tab to be opened.

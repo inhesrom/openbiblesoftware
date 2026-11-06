@@ -41,7 +41,7 @@ pub enum MenuItem {
 
 use MenuItem::{Command as C, Layouts, Resources, Separator};
 
-/// The top menu bar (#18 rule 3). A Search field sits to the right of it.
+/// The top menu bar (#18 rule 3). The Command box (#139) sits to the right of it.
 pub const MENUS: &[Menu] = &[
     Menu {
         title: "Library",

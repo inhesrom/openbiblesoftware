@@ -65,6 +65,8 @@ pub struct Session {
     pub notes: crate::notes::NotesTool,
     /// Favorites and History as the User database has them (#155).
     pub(crate) places: crate::favorites::FavoritesAndHistory,
+    /// The Command box's recent entries (#139).
+    pub(crate) command_box: crate::command_box::CommandBox,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
     log: Vec<&'static str>,
     /// The User database, when there is one.
@@ -110,6 +112,7 @@ impl Session {
             word_study,
             notes: crate::notes::NotesTool::default(),
             places: crate::favorites::FavoritesAndHistory::default(),
+            command_box: crate::command_box::CommandBox::default(),
             log: Vec::new(),
             user: None,
             history: crate::annotations::UndoHistory::default(),
@@ -173,6 +176,7 @@ impl Session {
         self.user = Some(user);
         self.reload_starter_state();
         self.bible_search.forget_recent();
+        self.command_box.forget_recent();
         self.history.clear();
         self.annotations_revision += 1;
         self.restore_import_reports();
