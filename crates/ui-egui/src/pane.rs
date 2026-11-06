@@ -330,8 +330,9 @@ pub fn reading_pane(
         }
         if !view.dragging_scrollbar && response.clicked() {
             if on_cell {
-                // A click on an interlinear line opens the word's right-click menu (#142).
-                select_for_menu(view, word.0);
+                // A click on an interlinear line opens the word's right-click menu (#142),
+                // acting on the whole Tagged word (e.g. "he gave"), not its first word.
+                select_tagged_word_for_menu(view, word);
                 out.pointer_at = Some(word.0);
                 out.cell_clicked = true;
             } else {
@@ -667,6 +668,23 @@ pub(crate) fn select_for_menu(view: &mut ReadingView, at: DocPos) {
         granularity: Granularity::Word,
     };
     view.selection = has_text(view, &word).then_some(word);
+}
+
+/// The menu of an interlinear cell acts on the selection when it covers the cell's whole
+/// Tagged word `word`, else on that word's full range (which becomes the selection).
+fn select_tagged_word_for_menu(view: &mut ReadingView, word: (DocPos, DocPos)) {
+    if view.selection.is_some_and(|s| {
+        let (a, b) = s.range(&view.doc);
+        has_text(view, &s) && a <= word.0 && word.1 <= b
+    }) {
+        return;
+    }
+    let sel = Selection {
+        anchor: word.0,
+        head: word.1,
+        granularity: Granularity::Grapheme,
+    };
+    view.selection = has_text(view, &sel).then_some(sel);
 }
 
 /// Whether a selection covers any text other than white space (stopping at the first such

@@ -1,8 +1,8 @@
 //! Interlinear lines in Bible Tabs (#143) through the shell's real-event headless harness:
 //! the Tab header's toggle and line picker, Greek Lemmas under KJV John 3:16, glosses under
 //! TAHOT Genesis 1:1 right to left, the Current location kept across toggles, a click on a
-//! line opening the word's right-click menu, and selecting and copying the lines (which
-//! Annotations never anchor to).
+//! line opening the right-click menu of its whole (even multiword) Tagged word, and
+//! selecting and copying the lines (which Annotations never anchor to).
 
 use obs_engine::{InterlinearLine, Library, TabId};
 use obs_layout::{LaidBlock, LaidCell};
@@ -428,6 +428,74 @@ fn clicking_an_interlinear_line_opens_the_words_right_click_menu() {
     drop(h);
 }
 
+/// A cell stands for its whole Tagged word: a click under "he gave" (one Strong's number on
+/// two English words) makes the menu act on "he gave", not on "he".
+#[test]
+fn clicking_the_line_under_a_multiword_tagged_word_acts_on_the_whole_word() {
+    let mut h = Harness::launch(Some(&temp_db("interlinear-multiword")));
+    let _files = setup(&mut h, "multiword");
+    let kjv = open_at(&mut h, "kjv", "Jn 3:16");
+    h.shell
+        .run("tab.interlinear", &json!({ "tab": kjv.0, "on": true }))
+        .unwrap();
+    settle_all(&mut h);
+    let verse = verse_range(&h, kjv, Verse::new(Book::John, 3, 16));
+    for (n, (words, strongs, lemma)) in [
+        ("he gave", "G1325", "δίδωμι"),
+        ("only begotten", "G3439", "μονογενής"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let word = word_range(&h, kjv, words, verse.start);
+        let (top, laid) = block_at(&h, kjv, 0, word.start);
+        let lemma_row = cell(&laid, &word, 0);
+        assert_eq!(lemma_row.text, lemma);
+        let spot = cell_spot(&h, kjv, top, &cell(&laid, &word, 2));
+
+        // The menu: the whole Tagged word is the selection, with its Strong's number.
+        h.click(spot);
+        assert!(egui::Popup::is_any_open(&h.ctx), "the menu opened");
+        let title = format!("“{words}”");
+        for t in [title.as_str(), lemma, strongs] {
+            assert!(h.find(t).is_some(), "no {t}: {:?}", h.texts());
+        }
+        let sel = view(&h, kjv).selection.unwrap();
+        let (a, b) = sel.range(&view(&h, kjv).doc);
+        assert_eq!((a.byte, b.byte), (word.start, word.end), "{words}");
+
+        // Copy from the menu's Selection: the whole word, its lines, then the reference.
+        hover_text(&mut h, &title);
+        h.click_text("Copy");
+        let copied = h.copied.last().cloned().unwrap_or_default();
+        let lines: Vec<&str> = copied.lines().collect();
+        assert_eq!(lines[0], words, "{copied}");
+        let row = format!("{words}\t{lemma}\t");
+        assert!(lines.iter().any(|l| l.starts_with(&row)), "{copied}");
+        assert!(
+            lines[1..]
+                .iter()
+                .all(|l| !l.starts_with("he\t") && !l.starts_with("only\t"))
+        );
+        assert_eq!(lines.last(), Some(&"John 3:16 (KJV)"), "{copied}");
+
+        // A Highlight from the menu anchors on the whole word.
+        h.click(spot);
+        hover_text(&mut h, &title);
+        h.click_text("■Yellow");
+        let stored = h.shell.st.session.annotations(None).unwrap();
+        assert_eq!(stored.len(), n + 1);
+        let range = stored
+            .iter()
+            .filter_map(|a| a.anchor.as_ref()?.text_range())
+            .find(|r| r.start as usize == word.start)
+            .unwrap_or_else(|| panic!("no Highlight on {words}"));
+        assert_eq!(range.end as usize, word.end);
+        assert_eq!(range.quote, words);
+    }
+    drop(h);
+}
+
 #[test]
 fn interlinear_lines_are_selected_and_copied_with_their_words_but_never_anchored() {
     let mut h = Harness::launch(Some(&temp_db("interlinear-copy")));
@@ -581,6 +649,13 @@ fn a_replaced_lexicon_updates_the_lines_of_open_bibles() {
     assert_eq!(shown(&h), ("ἀγαπάω".into(), "to cherish".into()));
     assert!(copied(&h).contains("\tto cherish"), "{}", copied(&h));
     drop(h);
+}
+
+/// Hover a text (the menu's left column chooses the row under the pointer).
+fn hover_text(h: &mut Harness, text: &str) {
+    let p = h.at(text);
+    h.events.push(Event::PointerMoved(p));
+    h.frames(2);
 }
 
 fn press(h: &mut Harness, key: egui::Key, modifiers: Modifiers) {
