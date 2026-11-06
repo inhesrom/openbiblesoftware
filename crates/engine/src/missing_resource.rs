@@ -4,7 +4,7 @@
 //! so the app always says how to get the missing Resource, not only that it is missing.
 
 use obs_model::{Key, ResourceType};
-use obs_scripture::{StrongsLanguage, StrongsNumber};
+use obs_scripture::{StrongsLanguage, Testament};
 
 use crate::get_bibles::ResourceFilter;
 use crate::guide::GuideSection;
@@ -80,7 +80,9 @@ impl GuideSection {
             GuideSection::KeyWords | GuideSection::TranslatedAs | GuideSection::Occurrences => {
                 Tagging::StrongsNumbers
             }
-            GuideSection::Forms => Tagging::Morphology,
+            GuideSection::Forms | GuideSection::WordByWord | GuideSection::GrammaticalNotes => {
+                Tagging::Morphology
+            }
             GuideSection::Commentaries
             | GuideSection::CrossReferences
             | GuideSection::PeopleAndPlaces
@@ -88,26 +90,29 @@ impl GuideSection {
             | GuideSection::Summary
             | GuideSection::KeyPassages
             | GuideSection::DictionaryArticles
-            | GuideSection::Related => Tagging::None,
+            | GuideSection::Related
+            | GuideSection::LexiconSummaries => Tagging::None,
         }
     }
 
     /// The Get Resources filter that lists what the section reads: Bibles (whose rows show
-    /// the Strong's badge) for the Strong's-number sections, Hebrew & Greek for Forms; `None`
-    /// for a Resource type the online repositories do not offer (Cross-reference sets,
-    /// People & places indexes).
+    /// the Strong's badge) for the Strong's-number sections, Hebrew & Greek for Forms and the
+    /// Exegetical Guide's Bible sections; `None` for a Resource type the online repositories
+    /// do not offer (Cross-reference sets, People & places indexes).
     pub fn get_resources_filter(self) -> Option<ResourceFilter> {
         match self {
-            GuideSection::Forms => Some(ResourceFilter::HebrewAndGreek),
+            GuideSection::Forms | GuideSection::WordByWord | GuideSection::GrammaticalNotes => {
+                Some(ResourceFilter::HebrewAndGreek)
+            }
             s => Some(ResourceFilter::Type(s.resource_type())).filter(|f| f.id().is_some()),
         }
     }
 
-    /// Whether a Starter Resource would fill the section for a Word Study on `strongs`
-    /// (`None`: any number). The tagged English Bible is the first of the Starter Preferred
-    /// order (the KJV with Strong's); Hebrew and Greek Bibles (TAHOT, TAGNT) carry Strong's
-    /// numbers and Morphology.
-    pub fn filled_by(self, item: &StarterItem, strongs: Option<StrongsNumber>) -> bool {
+    /// Whether a Starter Resource would fill the section for a Key in the original
+    /// `language` ([`key_language`]; `None`: either). The tagged English Bible is the first of
+    /// the Starter Preferred order (the KJV with Strong's); Hebrew and Greek Bibles (TAHOT,
+    /// TAGNT) carry Strong's numbers and Morphology.
+    pub fn filled_by(self, item: &StarterItem, language: Option<StrongsLanguage>) -> bool {
         let Some(ty) = item.resource_type else {
             return false;
         };
@@ -120,12 +125,13 @@ impl GuideSection {
         };
         let tagged_english = ty == ResourceType::Bible
             && STARTER_PREFERRED_ORDER.first() == Some(&&*item.resource_id);
-        let language = strongs.map(StrongsNumber::language);
         match self {
             GuideSection::KeyWords => tagged_english || original(None),
             GuideSection::TranslatedAs => tagged_english,
             GuideSection::Occurrences => tagged_english || original(language),
-            GuideSection::Forms => original(language),
+            GuideSection::Forms | GuideSection::WordByWord | GuideSection::GrammaticalNotes => {
+                original(language)
+            }
             // Articles are found through the People & places index (TIPNR).
             GuideSection::DictionaryArticles => {
                 ty == ResourceType::Dictionary || ty == ResourceType::PeopleAndPlaces
@@ -138,8 +144,8 @@ impl GuideSection {
     /// needs ([`Self::tagging`]), so an empty section means nothing covers the Key. A Bible
     /// without Tagged words has the type Key words and Forms read ([`Self::has_needed`]) but
     /// can never fill them, nor can a Hebrew or Greek Bible with Strong's numbers but no
-    /// Morphology fill Forms. Forms needs Morphology in the original language of `strongs`
-    /// (`None`: Hebrew or Greek). Tagging is read from what the section's job loaded (never
+    /// Morphology fill Forms. Forms, Word by word and Grammatical notes need Morphology in
+    /// the original `language` of the Key ([`key_language`]; `None`: Hebrew or Greek). Tagging is read from what the section's job loaded (never
     /// read here): a Bible whose rendering index (Strong's numbers) or concordance
     /// (Morphology) is not loaded counts as lacking it.
     pub fn has_needed_tagging(
@@ -147,7 +153,7 @@ impl GuideSection {
         library: &Library,
         indexes: &crate::word_study::RenderingIndexes,
         concordances: &crate::word_sections::Concordances,
-        strongs: Option<StrongsNumber>,
+        language: Option<StrongsLanguage>,
     ) -> bool {
         let tagged = |e: &crate::LibraryEntry| {
             indexes
@@ -157,14 +163,16 @@ impl GuideSection {
         let mut bibles = library.of_type(ResourceType::Bible);
         match self {
             GuideSection::KeyWords => bibles.any(tagged),
-            // Morphology in a Hebrew or Greek Bible (TAHOT, TAGNT) of the number's language.
-            GuideSection::Forms => bibles.any(|e| {
-                [StrongsLanguage::Hebrew, StrongsLanguage::Greek]
-                    .into_iter()
-                    .filter(|l| strongs.is_none_or(|n| n.language() == *l))
-                    .any(|l| is_original_language(&e.manifest.language, l))
-                    && concordances.loaded(e).is_some_and(|c| c.has_morphology())
-            }),
+            // Morphology in a Hebrew or Greek Bible (TAHOT, TAGNT) of the Key's language.
+            GuideSection::Forms | GuideSection::WordByWord | GuideSection::GrammaticalNotes => {
+                bibles.any(|e| {
+                    [StrongsLanguage::Hebrew, StrongsLanguage::Greek]
+                        .into_iter()
+                        .filter(|l| language.is_none_or(|want| want == *l))
+                        .any(|l| is_original_language(&e.manifest.language, l))
+                        && concordances.loaded(e).is_some_and(|c| c.has_morphology())
+                })
+            }
             GuideSection::DictionaryArticles => {
                 self.has_needed(library, indexes) && !self.lacks_people_index(library)
             }
@@ -192,7 +200,7 @@ impl GuideSection {
     pub fn missing_resource(
         self,
         has: bool,
-        strongs: Option<StrongsNumber>,
+        language: Option<StrongsLanguage>,
         library: &Library,
         starter: Option<&StarterManifest>,
     ) -> MissingResource {
@@ -204,7 +212,7 @@ impl GuideSection {
                     .resources
                     .iter()
                     .filter(|i| {
-                        self.filled_by(i, strongs)
+                        self.filled_by(i, language)
                             && library.get(&i.resource_id).is_none()
                             && !(self == GuideSection::DictionaryArticles
                                 && i.resource_type
@@ -236,18 +244,35 @@ impl GuideSection {
     }
 }
 
+/// The original language a Key is read in: a Strong's number's own; for a Passage, Hebrew in
+/// the Old Testament and Greek in the New (by its first Verse); otherwise `None`.
+pub fn key_language(key: &Key) -> Option<StrongsLanguage> {
+    match key {
+        Key::StrongsNumber(n) => Some(n.language()),
+        Key::Passage(p) => Some(match p.start().book.testament() {
+            Testament::Old => StrongsLanguage::Hebrew,
+            Testament::New => StrongsLanguage::Greek,
+        }),
+        _ => None,
+    }
+}
+
 impl Session {
     /// The empty state of `section` for `key`: its "None in your library" text and what would
     /// fill it. Asked for by the UI each frame, so it follows Resources being added.
     pub fn guide_empty_state(&self, key: &Key, section: GuideSection) -> EmptyState {
         let indexes = self.guides.indexes();
         let concordances = self.guides.concordances();
-        let strongs = match key {
-            Key::StrongsNumber(n) => Some(*n),
-            _ => None,
+        let language = key_language(key);
+        let has = match (section, language) {
+            // The Exegetical Guide reads the Passage's own original language.
+            (GuideSection::WordByWord | GuideSection::GrammaticalNotes, Some(l)) => self
+                .library
+                .of_type(ResourceType::Bible)
+                .any(|e| is_original_language(&e.manifest.language, l)),
+            _ => section.has_needed(&self.library, &indexes),
         };
-        let has = section.has_needed(&self.library, &indexes);
-        let tagged = section.has_needed_tagging(&self.library, &indexes, &concordances, strongs);
+        let tagged = section.has_needed_tagging(&self.library, &indexes, &concordances, language);
         let message = match (section.lacks_people_index(&self.library), has) {
             (true, true) => {
                 "None in your library. Add a People & places index (TIPNR) to find the \
@@ -263,7 +288,7 @@ impl Session {
             message,
             missing: section.missing_resource(
                 tagged,
-                strongs,
+                language,
                 &self.library,
                 self.starter.manifest(),
             ),

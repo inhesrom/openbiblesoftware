@@ -233,7 +233,12 @@ fn the_guides_pane_opens_each_guide_at_what_is_typed() {
     let mut h = Harness::new();
     key(&mut h, Key::G, Modifiers::ALT);
     assert_eq!(open(&h), Some(Launcher::Guides));
-    for t in ["Passage Guide", "Word Study", "Factbook"] {
+    for t in [
+        "Passage Guide",
+        "Exegetical Guide",
+        "Word Study",
+        "Factbook",
+    ] {
         assert!(pane_texts(&h).contains(&t), "{t}: {:?}", pane_texts(&h));
     }
     // The keyboard starts in the Passage Guide's box.
@@ -247,8 +252,25 @@ fn the_guides_pane_opens_each_guide_at_what_is_typed() {
     assert_eq!(guide.history.current(), Some(ge(31, 3)));
     assert_eq!(open(&h), None);
 
-    // ↓ to Word Study's box: a Strong's number.
+    // ↓ to the Exegetical Guide's box (#144): a chapter stays whole.
     key(&mut h, Key::G, Modifiers::ALT);
+    key(&mut h, Key::ArrowDown, Modifiers::NONE);
+    type_text(&mut h, "Gen 31");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    let ws = &h.shell.st.session.workspace;
+    let exegetical = ws
+        .tabs()
+        .find(|t| t.kind == TabKind::Guide(Guide::ExegeticalGuide))
+        .expect("an Exegetical Guide");
+    assert_eq!(exegetical.history.current(), Some(ge(31, 1)));
+    assert_eq!(
+        exegetical.shown_passage().map(|p| p.end()),
+        Some(ge(31, 55))
+    );
+
+    // ↓↓ to Word Study's box: a Strong's number.
+    key(&mut h, Key::G, Modifiers::ALT);
+    key(&mut h, Key::ArrowDown, Modifiers::NONE);
     key(&mut h, Key::ArrowDown, Modifiers::NONE);
     type_text(&mut h, "G25");
     key(&mut h, Key::Enter, Modifiers::NONE);

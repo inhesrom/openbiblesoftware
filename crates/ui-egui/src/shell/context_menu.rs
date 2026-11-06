@@ -240,6 +240,7 @@ pub(super) enum MenuAction {
     LookUp,
     ChooseWord,
     PassageGuide,
+    ExegeticalGuide,
     CrossReferences,
     TextComparison,
     CopyVerse,
@@ -365,6 +366,7 @@ fn actions_ui(
             };
             for (label, action) in [
                 ("Passage Guide", MenuAction::PassageGuide),
+                ("Exegetical Guide", MenuAction::ExegeticalGuide),
                 ("Cross-references", MenuAction::CrossReferences),
                 ("Text Comparison", MenuAction::TextComparison),
             ] {
@@ -807,6 +809,9 @@ impl State {
                 json!({ "words": selection, "new_tab": new_tab }),
             )),
             MenuAction::PassageGuide => passage.is_some().then(|| open_at("guide.passage_guide")),
+            MenuAction::ExegeticalGuide => {
+                passage.is_some().then(|| open_at("guide.exegetical_guide"))
+            }
             MenuAction::CrossReferences => {
                 passage.is_some().then(|| open_at("tool.cross_references"))
             }

@@ -38,7 +38,7 @@ pub use manifest::{
     Direction, FORMAT_VERSION, KeyScheme, LICENSE_UNKNOWN, Manifest, Origin, ResourceType,
     attribution_optional, cc_by_license_url, changes_record_file, is_cc_by, is_valid_resource_id,
 };
-pub use morph::{Morph, MorphError, MorphLanguage, MorphPart, PartOfSpeech};
+pub use morph::{GrammarTerm, Morph, MorphError, MorphLanguage, MorphPart, PartOfSpeech, TermKind};
 pub use normalize::{NORMALIZER_VERSION, Token, normalize, tokenize};
 pub use renderings::{Rendering, RenderingIndex, StrongsTotal, rendering_key};
 pub use translit::{

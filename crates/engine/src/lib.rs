@@ -29,6 +29,9 @@ pub mod copy_verses;
 mod copy_verses_tests;
 pub mod credits;
 pub mod cross_references;
+pub mod exegetical_guide;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod exegetical_guide_tests;
 pub mod factbook;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod factbook_tests;
@@ -126,6 +129,9 @@ pub use compare::{
 pub use copy_verses::{
     BookNames, CopiedBible, CopiedBlock, CopiedText, CopiedVerse, CopyFormat, CopyOptions,
     CopyPreset, CopyVerses, ReferencePlacement, VerseLayout, copy_verses, html_document,
+};
+pub use exegetical_guide::{
+    ExegeticalVerse, ExegeticalWord, GrammarNote, LexiconSummary, WordByWord,
 };
 pub use factbook::{
     DictionaryArticle, DirectoryEntry, EntityCard, EntityLink, FactbookChooser, FactbookSummary,

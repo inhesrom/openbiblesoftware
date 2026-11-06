@@ -31,6 +31,7 @@ mod command_box;
 mod context_menu;
 mod copy_window;
 mod credits_tab;
+mod exegetical_guide;
 mod export;
 mod factbook_tab;
 mod favorites_tab;
@@ -88,7 +89,6 @@ struct TabUi {
     search_fields: search_tab::Fields,
     /// Failed selected Bibles are retried only on request (or after removal/reselection).
     comparison_errors: BTreeMap<String, String>,
-    reference_passage: Option<Passage>,
     reference_at: Option<Passage>,
     expanded_references: std::collections::BTreeSet<Verse>,
     /// A Passage Guide section whose header is being dragged.
@@ -1436,9 +1436,9 @@ impl State {
             TabKind::GetBibles => self.get_bibles_body(&mut body),
             TabKind::StarterLibrary => self.starter_body(&mut body),
             TabKind::Credits => self.credits_body(&mut body, tab),
-            TabKind::Guide(obs_engine::Guide::PassageGuide) => {
-                self.passage_guide_body(&mut body, tab)
-            }
+            TabKind::Guide(
+                g @ (obs_engine::Guide::PassageGuide | obs_engine::Guide::ExegeticalGuide),
+            ) => self.passage_keyed_guide_body(&mut body, tab, g),
             TabKind::Guide(obs_engine::Guide::WordStudy) => self.word_study_body(&mut body, tab),
             TabKind::Guide(obs_engine::Guide::Factbook) => self.factbook_body(&mut body, tab),
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
@@ -2170,13 +2170,6 @@ impl State {
                             .session
                             .run("tab.go", &json!({ "tab": tab.0, "text": text }));
                         if let Some(t) = self.tabs.get_mut(&tab) {
-                            if let Ok(result) = &out {
-                                t.reference_passage = result["text"].as_str().and_then(|text| {
-                                    obs_scripture::parse_reference(text, &Standard, None)
-                                        .ok()
-                                        .and_then(|p| p.passages().first().copied())
-                                });
-                            }
                             t.error = out.err().map(|e| match e {
                                 obs_engine::CommandError::Failed { message, .. } => message,
                                 e => e.to_string(),
@@ -2504,6 +2497,7 @@ impl egui_tiles::Behavior<TabId> for State {
             for id in [
                 "library.open",
                 "guide.passage_guide",
+                "guide.exegetical_guide",
                 "guide.word_study",
                 "tool.search",
                 "tool.text_comparison",

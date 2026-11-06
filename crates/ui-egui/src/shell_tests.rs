@@ -3691,8 +3691,11 @@ mod get_bibles {
         // The untagged-by-Morphology test Bible has the Strong's badge only.
         row_button(&h, "Greek test Bible", "Strong's");
         assert!(
-            h.find("Used by Word Info and Word Study › Occurrences and Forms · Creative Commons: BY 4.0")
-                .is_some(),
+            h.find(
+                "Used by Word Info, Word Study › Occurrences and Forms, and the Exegetical \
+                 Guide · Creative Commons: BY 4.0"
+            )
+            .is_some(),
             "{:?}",
             h.texts()
         );

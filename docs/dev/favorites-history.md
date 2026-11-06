@@ -16,7 +16,7 @@ A Favorite and a Visit both store a `TabLocation` as JSON:
 
 - **Resource**: its id plus a Passage (`verse`, in that Resource's own numbering) or, for a
   Lexicon or Dictionary, the entry Key (`key`).
-- **Passage Guide, Text Comparison, Cross-references**: a Passage in the Standard versification.
+- **Passage Guide, Exegetical Guide, Text Comparison, Cross-references**: a Passage in the Standard versification.
 - **Word Study**: its Strong's number (`key`).
 - **Search**: the Search Tool's fields (`SavedSearch`: mode, query, Scope, chosen Bibles,
   Library mode's Resource types and Resources, Notes mode's Notebook).

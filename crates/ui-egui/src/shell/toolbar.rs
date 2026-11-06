@@ -971,6 +971,7 @@ fn hint(which: Launcher) -> &'static str {
 fn guide_hint(id: &str) -> &'static str {
     match id {
         "guide.passage_guide" => "Passage, e.g. Jn 3:16",
+        "guide.exegetical_guide" => "Passage, e.g. Ps 23",
         "guide.word_study" => "G26, ἀγάπη, agape or love",
         "guide.factbook" => "A person or place, e.g. Abraham",
         _ => "",
@@ -983,7 +984,7 @@ fn guide_with(id: &'static str, text: &str) -> (&'static str, Value) {
         return (id, json!({}));
     }
     match id {
-        "guide.passage_guide" => (id, json!({ "passage": text })),
+        "guide.passage_guide" | "guide.exegetical_guide" => (id, json!({ "passage": text })),
         "guide.factbook" => (id, json!({ "name": text })),
         _ => (id, json!({})),
     }

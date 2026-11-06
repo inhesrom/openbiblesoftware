@@ -7,7 +7,7 @@ target chosen. Hovering a target chooses it, so the action is one more click.
 | Target | Shown as | Actions |
 |---|---|---|
 | Selection | “loved” | the 5 Highlight styles, Note…, Copy, Search this, Look up in Dictionary, Word Study… (English-word chooser, up to 3 words) |
-| Verse | John 3:16 | Passage Guide, Cross-references, Text Comparison, Copy with reference, Add Note on verse |
+| Verse | John 3:16 | Passage Guide, Exegetical Guide, Cross-references, Text Comparison, Copy with reference, Add Note on verse |
 | Lemma | ἀγαπάω | Word Study, Open in preferred Lexicon, Pin in Word Info, Search Bible for ἀγαπάω |
 | Strong's number | G25 | Word Study, Open in preferred Lexicon, Pin in Word Info, Search Bible for G25 |
 | Morphology | plain English | Copy, Pin in Word Info |

@@ -326,7 +326,7 @@ impl Session {
                 );
                 Some((entry(key), label))
             }
-            TabKind::Guide(Guide::PassageGuide)
+            TabKind::Guide(Guide::PassageGuide | Guide::ExegeticalGuide)
             | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences) => {
                 let v = verse?;
                 Some((place(v), format!("{} · {}", reference(v), title(&t.kind))))
@@ -387,7 +387,7 @@ impl Session {
         let keyed = matches!(
             kind,
             TabKind::Resource(_)
-                | TabKind::Guide(Guide::PassageGuide)
+                | TabKind::Guide(Guide::PassageGuide | Guide::ExegeticalGuide)
                 | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences)
         );
         if !keyed || (location.verse.is_none() && location.key.is_none()) {

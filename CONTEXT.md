@@ -244,7 +244,7 @@ One entry in History: a Tab's Current location just after the Tab was opened or 
 _Avoid_: History entry, Hit
 
 **Command box**:
-The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, "pg Rom 8", "compare Jn 3:16" and "ws agape" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database.
+The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, "pg Rom 8", "eg Jn 3:16", "compare Jn 3:16" and "ws agape" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database.
 _Avoid_: Omnibox, Search bar, Command palette (for the box)
 
 **Launcher**:
@@ -326,6 +326,10 @@ _Avoid_: Panel, Card, Widget
 **Passage Guide**:
 The Guide whose Key is a Passage. Its sections in v0.1 are Commentaries, Cross-references, Key words, and People & places.
 _Avoid_: Exegetical Guide
+
+**Exegetical Guide**:
+The Guide whose Key is a Passage, read word by word in its original language: each Tagged word of the first Hebrew (Old Testament) or Greek (New Testament) Bible in Preferred order that has the Passage, reached through that Bible's Verse map. Its sections are Word by word (the word, transliteration, Lemma, Strong's number, Gloss and Morphology in plain English, each word linking to its Word Study), Lexicon summaries (the first Lexicon's short entry for each word) and Grammatical notes (what each Morphology term the words use means). It joins Link sets like the Passage Guide.
+_Avoid_: Interlinear, Exegetical report, Word-by-word view
 
 **Word Study**:
 The Guide whose Key is a Strong's number. Its sections in v0.1 are Lexicon entries, Translated as, Occurrences, and Forms.
