@@ -234,13 +234,16 @@ impl OpenSource {
                 .ok_or_else(|| {
                     format!("the download has no licence notice ({file}); not imported")
                 })?;
-            if !plain_text(&notice)
-                .to_lowercase()
-                .contains(&phrase.to_lowercase())
-            {
+            let notice = plain_text(&notice).to_lowercase();
+            if !notice.contains(&phrase.to_lowercase()) {
                 return Err(format!(
                     "the licence notice in the download ({file}) no longer says \"{phrase}\"; \
                      not imported"
+                ));
+            }
+            if let Some(why) = notice_restriction(&notice, phrase) {
+                return Err(format!(
+                    "the licence notice in the download ({file}) {why}; not imported"
                 ));
             }
         }
@@ -307,6 +310,58 @@ impl OpenSource {
             .finish_with_progress(progress)
             .map_err(|e| e.to_string())
     }
+}
+
+/// Statements that take away or restrict a free licence wherever they stand in a notice.
+const RESTRICTIVE_NOTICE: &[&str] = &[
+    "all rights reserved",
+    "not public domain",
+    "non-commercial",
+    "noncommercial",
+    "non commercial",
+    "no derivatives",
+    "noderivatives",
+    "no derivs",
+    "may not be",
+    "must not be",
+    "not permitted",
+    "prohibited",
+];
+
+/// Words read on each side of the expected phrase, within its clause, for a negation:
+/// "is no longer in the Public Domain", "Public Domain status revoked".
+const NOTICE_WINDOW_BEFORE: usize = 5;
+const NOTICE_WINDOW_AFTER: usize = 3;
+
+/// Why a licence notice (plain text, lowercased) that contains `phrase` still does not grant
+/// it: a restrictive statement anywhere, or a negation next to the phrase. eBible's notices
+/// say "not copyrighted" or "no copyright restrictions" in other sentences, so only the
+/// phrase's own neighbourhood is read for negations.
+fn notice_restriction(notice: &str, phrase: &str) -> Option<String> {
+    use crate::licence::{clauses, has_negation, words};
+    if let Some(r) = RESTRICTIVE_NOTICE.iter().find(|r| notice.contains(*r)) {
+        return Some(format!("says \"{r}\""));
+    }
+    let phrase = phrase.to_lowercase();
+    for (at, _) in notice.match_indices(&phrase) {
+        let before = words(clauses(&notice[..at]).last().copied().unwrap_or_default());
+        let after = words(clauses(&notice[at + phrase.len()..])[0]);
+        let near: Vec<&String> = before
+            .iter()
+            .skip(before.len().saturating_sub(NOTICE_WINDOW_BEFORE))
+            .chain(after.iter().take(NOTICE_WINDOW_AFTER))
+            .collect();
+        if has_negation(&near) {
+            return Some(format!(
+                "qualifies \"{phrase}\" (\"{}\")",
+                near.iter()
+                    .map(|w| w.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ));
+        }
+    }
+    None
 }
 
 /// HTML reduced to its words, for the licence notice check: tags dropped, entities
@@ -448,6 +503,68 @@ mod tests {
             "{:?}",
             unpinned.problems()
         );
+    }
+
+    /// #134 review: the notices in eBible's live zips (2026-11-06; cut to the parts around
+    /// the phrase and their other negations) pass, though they say "not copyrighted" and
+    /// "no copyright restrictions" elsewhere.
+    #[test]
+    fn the_live_ebible_notices_grant_their_phrase() {
+        for (notice, phrase) in [
+            (
+                "<h1>Young's Literal Translation</h1><p>Young's Literal Translation of the Holy \
+                 Bible<br/>Public Domain</p><p>Language: ENGLISH</p><p>This public domain \
+                 Bible translation is brought to you courtesy of eBible.org.</p>",
+                "Public Domain",
+            ),
+            (
+                "<p>The Geneva Bible in Old English of 1599<br/>Public Domain</p><p>Language: \
+                 English</p><p>This digital copy is freely available world-wide, with no \
+                 copyright restrictions, courtesy of eBible.org and many others. Note that the \
+                 spelling used is the original spelling, which is not modern English.</p>",
+                "Public Domain",
+            ),
+            (
+                "<p>Contributor: Public Domain</p><p>Cette Bible est dans le domaine public. Il \
+                 n'est pas protégé par copyright. This Bible is in the Public Domain. It is not \
+                 copyrighted.</p>",
+                "Public Domain",
+            ),
+            (
+                "<p>This translation is made available to you under the terms of the \
+                 <a href='https://creativecommons.org/licenses/by-sa/4.0/'>Creative Commons \
+                 Attribution Share-Alike license 4.0.</a></p><p>If you make any changes to the \
+                 text, you must indicate that you did so in a way that makes it clear that the \
+                 original licensor is not necessarily endorsing your changes.</p>",
+                "Creative Commons Attribution Share-Alike license 4.0",
+            ),
+        ] {
+            let text = plain_text(notice).to_lowercase();
+            assert!(text.contains(&phrase.to_lowercase()), "{notice}");
+            assert_eq!(notice_restriction(&text, phrase), None, "{notice}");
+        }
+    }
+
+    /// #134 review: a notice that keeps the expected phrase but takes the grant back is
+    /// refused.
+    #[test]
+    fn a_notice_that_keeps_the_phrase_but_revokes_it_is_refused() {
+        for notice in [
+            "<p>Not Public Domain. All rights reserved.</p>",
+            "<p>Not Public Domain</p>",
+            "<p>This Bible is no longer in the Public Domain.</p>",
+            "<p>Public Domain status revoked.</p>",
+            "<p>Public Domain, except the notes.</p>",
+            "<p>Public Domain</p><p>Copyright 2030. All rights reserved.</p>",
+            "<p>Public Domain</p><p>Free for non-commercial use.</p>",
+            "<p>Public Domain</p><p>This text may not be redistributed.</p>",
+        ] {
+            let text = plain_text(notice).to_lowercase();
+            assert!(
+                notice_restriction(&text, "Public Domain").is_some(),
+                "{notice}"
+            );
+        }
     }
 
     #[test]

@@ -31,10 +31,101 @@ impl LicenceClass {
     }
 }
 
+/// Words that turn a licence statement around or qualify it: "Not Public Domain", "no
+/// longer under CC BY", "Public Domain except the notes".
+const NEGATIONS: &[&str] = &[
+    "not",
+    "no",
+    "never",
+    "nor",
+    "neither",
+    "without",
+    "cannot",
+    "isn",
+    "aren",
+    "wasn",
+    "doesn",
+    "except",
+    "excepting",
+    "excluding",
+    "unless",
+    "but",
+    "revoked",
+    "withdrawn",
+];
+
+/// Creative Commons restriction names that contain a negation word but are not one.
+const RESTRICTION_NAMES: &[&str] = &["no derivatives", "no derivative works", "no derivs"];
+
+/// The words of `text`, lowercased: runs of letters and digits.
+pub(crate) fn words(text: &str) -> Vec<String> {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Whether one of `words` negates or qualifies a licence statement.
+pub(crate) fn has_negation<S: AsRef<str>>(words: &[S]) -> bool {
+    words.iter().any(|w| NEGATIONS.contains(&w.as_ref()))
+}
+
+/// `text` cut into clauses at `;`, line breaks and full stops (a `.` followed by a space or
+/// the end, so "4.0" and "ebible.org" stay whole). A `?` or `!` does not end one, so
+/// "Public Domain? No." stays one clause.
+pub(crate) fn clauses(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut chars = text.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        let next_is_space = chars.peek().is_none_or(|(_, n)| n.is_whitespace());
+        let end = matches!(c, ';' | '\n') || (c == '.' && next_is_space);
+        if end {
+            out.push(&text[start..i]);
+            start = i + c.len_utf8();
+        }
+    }
+    out.push(&text[start..]);
+    out
+}
+
 /// The class of a licence as published: a conf's `DistributionLicense` or an SPDX id.
-/// Restrictions win: a non-commercial or no-derivatives clause is never Free to share.
+/// Restrictions win: a non-commercial or no-derivatives clause is never Free to share. A
+/// clause that names a licence and also negates or qualifies it ("Not Public Domain",
+/// "CC BY except the notes"), or a free licence beside "all rights reserved", is not a
+/// form the rules know, so it is Unclear.
 pub fn licence_class(licence: &str) -> LicenceClass {
     let l = licence.to_lowercase();
+    let negated_grant = clauses(&l).into_iter().any(|clause| {
+        let mut clause = clause.to_string();
+        for name in RESTRICTION_NAMES {
+            clause = clause.replace(name, " ");
+        }
+        has_negation(&words(&clause)) && class_ignoring_negation(&clause) != LicenceClass::Unclear
+    });
+    if negated_grant {
+        return LicenceClass::Unclear;
+    }
+    if l.contains("all rights reserved") && class_names_free_licence(&l) {
+        return LicenceClass::Unclear;
+    }
+    class_ignoring_negation(&l)
+}
+
+/// Whether `l` (lowercased) names Public Domain, a Creative Commons licence or the GPL.
+fn class_names_free_licence(l: &str) -> bool {
+    let words = words(l);
+    let word = |w: &str| words.iter().any(|x| x == w);
+    l.contains("public domain")
+        || l.contains("creative commons")
+        || ["publicdomain", "creativecommons", "cc", "cc0", "gpl"]
+            .iter()
+            .any(|w| word(w))
+}
+
+/// The class of `l` (lowercased) read from its licence names alone.
+fn class_ignoring_negation(l: &str) -> LicenceClass {
     let words: Vec<&str> = l
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())
@@ -69,7 +160,7 @@ pub fn licence_class(licence: &str) -> LicenceClass {
     let permission = [
         "permission to distribute",
         "permission granted to distribute",
-        "distribution permitted",
+        "distribution permitted to",
         "distribution rights granted",
         "freely distributable",
     ]
@@ -335,6 +426,61 @@ mod tests {
             assert!(!LicenceFilter::PersonalUse.accepts(licence_class(value)));
             assert!(LicenceFilter::All.accepts(licence_class(value)));
         }
+    }
+
+    /// #134 review: a licence name inside a statement that negates or qualifies it is not a
+    /// grant. The rules fail closed: such values are Unclear and pass neither licence filter.
+    #[test]
+    fn negated_or_qualified_licences_are_unclear() {
+        for value in [
+            "Not Public Domain; all rights reserved",
+            "Not Public Domain",
+            "This text is not in the public domain.",
+            "No longer in the Public Domain",
+            "Public Domain? No.",
+            "Public Domain, except the notes",
+            "Public domain, but the notes are copyrighted",
+            "Public Domain. All rights reserved.",
+            "Creative Commons: BY-SA 4.0; all rights reserved",
+            "Not licensed under Creative Commons: by-sa",
+            "Not under the GPL",
+            "GPL licence revoked",
+            "Copyrighted; no permission to distribute granted to CrossWire",
+            "Copyrighted; permission to distribute granted to CrossWire was withdrawn",
+            "Not for non-commercial use under CC BY-NC",
+            "Copyrighted; distribution not permitted to CrossWire",
+        ] {
+            assert_eq!(licence_class(value), Unclear, "{value}");
+            assert!(!LicenceFilter::FreeToShare.accepts(licence_class(value)));
+            assert!(!LicenceFilter::PersonalUse.accepts(licence_class(value)));
+        }
+        // A restriction stated beside its grant, or a negation outside the licence's own
+        // clause, keeps the grant's class.
+        for (value, class) in [
+            (
+                "Creative Commons Attribution No Derivatives 4.0",
+                PersonalUse,
+            ),
+            ("Creative Commons BY-ND; no derivative works", PersonalUse),
+            (
+                "Copyrighted; all rights reserved; permission to distribute granted to CrossWire",
+                PersonalUse,
+            ),
+            (
+                "This Bible is in the Public Domain. It is not copyrighted.",
+                FreeToShare,
+            ),
+        ] {
+            assert_eq!(licence_class(value), class, "{value}");
+        }
+    }
+
+    #[test]
+    fn clauses_end_at_sentence_ends_only() {
+        assert_eq!(
+            clauses("CC BY 4.0 see www.example.org. Not PD; ok"),
+            ["CC BY 4.0 see www.example.org", " Not PD", " ok"]
+        );
     }
 
     #[test]

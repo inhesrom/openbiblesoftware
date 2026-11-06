@@ -312,6 +312,26 @@ fn a_download_whose_licence_notice_changed_is_refused() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+/// #134 review: a notice that still contains the expected phrase but revokes the grant is
+/// refused too, and nothing is imported under a Public Domain licence.
+#[test]
+fn a_download_whose_notice_negates_its_phrase_is_refused() {
+    let (mut s, _repos, root) = session(
+        "negated",
+        "<html><p>Not Public Domain. All rights reserved.</p></html>",
+    );
+    let id = download_open(&mut s, "web-excerpt");
+    let record = s.imports.report(&id).unwrap();
+    assert_eq!(record.phase, ImportPhase::Failed);
+    let error = record.error.clone().unwrap();
+    assert!(error.contains("not imported"), "{error}");
+    assert!(!error.contains("no longer says"), "{error}");
+    assert!(s.library.get(&id).is_none());
+    assert!(!root.join(format!("library/{id}.obr")).exists());
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn a_pinned_download_with_another_sha256_is_refused() {
     let root = temp("pinned");
