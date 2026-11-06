@@ -3062,6 +3062,8 @@ mod word_info;
 mod credits;
 #[path = "guide_tests.rs"]
 mod guide;
+#[path = "open_catalogue_tests.rs"]
+mod open_catalogue;
 #[path = "starter_library_tests.rs"]
 mod starter_library;
 #[path = "word_study_tests.rs"]
@@ -3112,6 +3114,8 @@ mod get_bibles {
         s.set_fetch(repos.clone());
         s.get_bibles.set_cache_path(root.join("sword-catalog.json"));
         s.get_bibles.set_sword_dir(root.join("sword"));
+        // These tests count the SWORD catalog's rows; the Open catalogue has its own tests.
+        s.get_bibles.set_open_catalogue(Vec::new());
         std::fs::create_dir_all(root.join("library")).unwrap();
         s.library.set_directory(root.join("library"));
         h.frames(2);
@@ -3250,7 +3254,7 @@ mod get_bibles {
         h.shell.st.get_bibles_ui.query = "nothing like this".into();
         h.frames(2);
         assert!(
-            h.find("Nothing matches the search, type and language.")
+            h.find("Nothing matches the search, type, language and licence.")
                 .is_some()
         );
         drop(h);
@@ -3582,7 +3586,7 @@ mod get_bibles {
         h.frames(2);
         assert!(h.find("ALL LEXICONS · 0").is_some(), "{:?}", h.texts());
         assert!(
-            h.find("Nothing matches the search, type and language.")
+            h.find("Nothing matches the search, type, language and licence.")
                 .is_some()
         );
         h.click_text("Bibles");

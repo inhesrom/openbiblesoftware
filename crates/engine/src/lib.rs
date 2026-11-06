@@ -48,6 +48,7 @@ mod library_commands;
 pub mod library_search;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod library_search_tests;
+pub mod licence;
 pub mod link;
 mod lookups;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -58,6 +59,9 @@ mod missing_resource_tests;
 pub mod notes;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod notes_tests;
+pub mod open_catalogue;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod open_catalogue_tests;
 pub mod people_places;
 pub mod persist;
 pub mod reading_plans;
@@ -119,7 +123,7 @@ pub use guide::{
 };
 pub use import::{
     DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,
-    ImportSource, Imports, RepoOrigin, UNAVAILABLE_INDEX,
+    ImportSource, Imports, OpenOrigin, RepoOrigin, UNAVAILABLE_INDEX,
 };
 pub use jobs::{
     Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step, sword_installer,
@@ -133,6 +137,7 @@ pub use library_commands::annotations_phrase;
 pub use library_search::{
     LIBRARY_TYPES, LibraryGroup, LibraryResults, LibraryRow, LibraryScope, SearchedResource,
 };
+pub use licence::{LicenceClass, LicenceFilter, licence_class};
 pub use link::LINK_SETS;
 pub use missing_resource::{EmptyState, MissingResource, StarterOffer, Tagging};
 pub use notes::{Card, CardOrder, NoteHit, NotesFilter, NotesResults, NotesTool, body_references};

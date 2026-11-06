@@ -287,14 +287,25 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         id: "library.get_resources",
         label: "Get Resources…",
         shortcut: None,
-        params: &[PANEL, SPLIT, crate::get_bibles::TYPE],
+        params: &[
+            PANEL,
+            SPLIT,
+            crate::get_bibles::TYPE,
+            crate::get_bibles::LICENCE,
+        ],
         enabled: always,
         run: |s, p| {
+            let failed = |message| CommandError::Failed {
+                command: "library.get_resources",
+                message,
+            };
             let filter = crate::get_bibles::type_filter_from_id(p.str("type").unwrap_or_default())
-                .map_err(|message| CommandError::Failed {
-                    command: "library.get_resources",
-                    message,
-                })?;
+                .map_err(failed)?;
+            // The licence filter is kept unless asked for (#134).
+            if let Some(licence) = p.str("licence") {
+                let licence = crate::licence::LicenceFilter::from_id(licence).map_err(failed)?;
+                s.get_bibles.set_licence_filter(licence);
+            }
             open_get_resources(s, p, filter)
         },
     },

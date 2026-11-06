@@ -16,6 +16,8 @@ use serde_json::{Value, json};
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params};
 use crate::library_search::type_plural;
+use crate::licence::{LicenceClass, LicenceFilter, licence_class};
+use crate::open_catalogue::{OPEN_CATALOGUE, OpenSource};
 use crate::{JobEvent, JobEventKind, JobId, Session};
 
 /// The Featured Bibles' data file: module + repository, in display order, and the Featured
@@ -227,6 +229,16 @@ fn bible() -> ResourceType {
     ResourceType::Bible
 }
 
+/// Where a Get Resources row downloads from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ListingSource {
+    /// A module of a SWORD repository.
+    #[default]
+    Sword,
+    /// An entry of the Open catalogue (#134), from its publisher's own URL.
+    Open,
+}
+
 /// One Bible, Lexicon, Commentary or Dictionary a repository offers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceListing {
@@ -261,6 +273,13 @@ pub struct ResourceListing {
     /// row is shown, but cannot be downloaded.
     #[serde(default)]
     pub refused: Option<String>,
+    /// A SWORD module, or an Open catalogue entry (#134; then `module` is the entry's id and
+    /// `repo` its publisher).
+    #[serde(default)]
+    pub source: ListingSource,
+    /// An Open catalogue entry's archived licence evidence.
+    #[serde(default)]
+    pub evidence_url: Option<String>,
 }
 
 impl ResourceListing {
@@ -307,7 +326,21 @@ impl ResourceListing {
             morphology: kind == ResourceType::Bible
                 && filter(&["OSISMorph", "GBFMorph", "ThMLMorph"]),
             refused: obs_formats::sword_import_type(conf).err(),
+            source: ListingSource::Sword,
+            evidence_url: None,
         })
+    }
+
+    /// What its licence lets the user do (#134). No licence is Unclear.
+    pub fn licence_class(&self) -> LicenceClass {
+        self.licence
+            .as_deref()
+            .map_or(LicenceClass::Unclear, licence_class)
+    }
+
+    /// From the Open catalogue (#134) rather than a SWORD repository.
+    pub fn is_open(&self) -> bool {
+        self.source == ListingSource::Open
     }
 
     /// Which features the Resource feeds, for its row: "Used by Passage Guide › Commentaries".
@@ -641,6 +674,28 @@ pub struct GetBibles {
     refreshing: Option<JobId>,
     cache_path: Option<PathBuf>,
     sword_dir: Option<PathBuf>,
+    /// The licence filter (#134). It applies to every section and to All.
+    licence: LicenceFilter,
+    /// The Open catalogue and its rows, when a test sets one; else the compiled-in one.
+    open: Option<(Vec<OpenSource>, Vec<ResourceListing>)>,
+}
+
+/// The compiled-in Open catalogue's rows.
+fn default_open_listings() -> &'static [ResourceListing] {
+    static ROWS: std::sync::OnceLock<Vec<ResourceListing>> = std::sync::OnceLock::new();
+    ROWS.get_or_init(|| {
+        crate::open_catalogue::open_sources()
+            .iter()
+            .map(OpenSource::listing)
+            .collect()
+    })
+}
+
+fn by_title(a: &&ResourceListing, b: &&ResourceListing) -> std::cmp::Ordering {
+    a.title
+        .to_lowercase()
+        .cmp(&b.title.to_lowercase())
+        .then_with(|| a.module.cmp(&b.module))
 }
 
 impl GetBibles {
@@ -659,6 +714,118 @@ impl GetBibles {
     /// The Resource type listed (Bible for Hebrew & Greek); `None` is All.
     pub fn type_filter(&self) -> Option<ResourceType> {
         self.filter.resource_type()
+    }
+
+    /// The licence filter (#134).
+    pub fn licence_filter(&self) -> LicenceFilter {
+        self.licence
+    }
+
+    pub fn set_licence_filter(&mut self, licence: LicenceFilter) {
+        self.licence = licence;
+    }
+
+    /// The Open catalogue's entries (#134).
+    pub fn open_sources(&self) -> &[OpenSource] {
+        match &self.open {
+            Some((sources, _)) => sources,
+            None => crate::open_catalogue::open_sources(),
+        }
+    }
+
+    pub fn open_source(&self, id: &str) -> Option<&OpenSource> {
+        self.open_sources().iter().find(|s| s.id == id)
+    }
+
+    /// The Open catalogue's rows, in data-file order. They need no fetch: the Open catalogue
+    /// lists offline.
+    pub fn open_listings(&self) -> &[ResourceListing] {
+        match &self.open {
+            Some((_, rows)) => rows,
+            None => default_open_listings(),
+        }
+    }
+
+    /// Use another Open catalogue (tests: entries with `file://` URLs).
+    pub fn set_open_catalogue(&mut self, sources: Vec<OpenSource>) {
+        let rows = sources.iter().map(OpenSource::listing).collect();
+        self.open = Some((sources, rows));
+    }
+
+    /// The sections above All, titled, in order: the filter's Featured sections (see
+    /// [`ResourceCatalog::featured_sections`]), then the Open catalogue's rows the filter
+    /// accepts. Rows the licence filter hides are left out. With All, empty Featured sections
+    /// are left out; an empty Open catalogue section always is.
+    pub fn sections(
+        &self,
+        filter: ResourceFilter,
+        licence: LicenceFilter,
+    ) -> Vec<(String, Vec<&ResourceListing>)> {
+        let mut out = self
+            .catalog
+            .as_ref()
+            .map(|c| c.featured_sections(filter))
+            .unwrap_or_default();
+        for (_, rows) in &mut out {
+            rows.retain(|b| licence.accepts(b.licence_class()));
+        }
+        if filter == ResourceFilter::All {
+            out.retain(|(_, rows)| !rows.is_empty());
+        }
+        let open: Vec<&ResourceListing> = self
+            .open_listings()
+            .iter()
+            .filter(|b| filter.accepts(b) && licence.accepts(b.licence_class()))
+            .collect();
+        if !open.is_empty() {
+            out.push((OPEN_CATALOGUE.to_string(), open));
+        }
+        out
+    }
+
+    /// "All": the catalog's listings and the Open catalogue's rows that pass every filter
+    /// (type, search, language and licence), by title.
+    pub fn all_listings(
+        &self,
+        query: &str,
+        language: Option<&str>,
+        filter: ResourceFilter,
+        licence: LicenceFilter,
+    ) -> Vec<&ResourceListing> {
+        let mut out = self
+            .catalog
+            .as_ref()
+            .map(|c| c.all(query, language, filter))
+            .unwrap_or_default();
+        out.extend(self.open_listings().iter().filter(|b| {
+            filter.accepts(b) && b.matches(query) && language.is_none_or(|l| b.language == l)
+        }));
+        out.retain(|b| licence.accepts(b.licence_class()));
+        out.sort_by(by_title);
+        out
+    }
+
+    /// Language codes among the listings the type and licence filters accept, the Open
+    /// catalogue's included, most listings first, for the language filter.
+    pub fn languages(
+        &self,
+        filter: ResourceFilter,
+        licence: LicenceFilter,
+    ) -> Vec<(String, usize)> {
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        let catalog = self.catalog.iter().flat_map(|c| c.listings.iter());
+        for b in catalog
+            .chain(self.open_listings())
+            .filter(|b| filter.accepts(b) && licence.accepts(b.licence_class()))
+        {
+            *counts.entry(b.language.as_str()).or_default() += 1;
+        }
+        let mut out: Vec<(String, usize)> = counts
+            .into_iter()
+            .map(|(l, n)| (l.to_string(), n))
+            .collect();
+        out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        out
     }
 
     /// Set when the last refresh failed; the Tab shows the cached catalog with this message.
@@ -844,6 +1011,19 @@ fn is_newer(available: Option<&str>, installed: &str) -> bool {
         == std::cmp::Ordering::Greater
 }
 
+/// Whether Import record `r` is a download of `listing`.
+fn imported_from(r: &crate::ImportRecord, listing: &ResourceListing) -> bool {
+    match listing.source {
+        ListingSource::Sword => r.origin.as_ref().is_some_and(|o| {
+            o.module.eq_ignore_ascii_case(&listing.module) && o.repo == listing.repo
+        }),
+        ListingSource::Open => r
+            .open_origin
+            .as_ref()
+            .is_some_and(|o| o.id == listing.module),
+    }
+}
+
 pub(crate) fn now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -856,13 +1036,10 @@ impl Session {
     pub fn listing_status(&self, listing: &ResourceListing) -> ListingStatus {
         let mut best = ListingStatus::Available;
         for r in self.imports.records() {
-            let Some(origin) = &r.origin else {
-                continue;
-            };
-            if !(origin.module.eq_ignore_ascii_case(&listing.module) && origin.repo == listing.repo)
-            {
+            if !imported_from(r, listing) {
                 continue;
             }
+            let origin = r.origin.as_ref();
             let id = r.resource_id.clone();
             let status = if self.imports.job_of(&id).is_some() {
                 ListingStatus::InProgress {
@@ -872,7 +1049,7 @@ impl Session {
                     total: r.total,
                 }
             } else if r.phase == crate::ImportPhase::Complete && self.library.get(&id).is_some() {
-                match origin.version.as_deref() {
+                match origin.and_then(|o| o.version.as_deref()) {
                     Some(installed) if is_newer(listing.version.as_deref(), installed) => {
                         ListingStatus::UpdateAvailable {
                             resource_id: id,
@@ -931,16 +1108,25 @@ impl Session {
             }
             ListingStatus::Failed { .. } | ListingStatus::Available => {}
         }
-        // Retry: drop earlier failed attempts and their report Tabs.
+        self.drop_failed_downloads(&listing);
+        let sword_dir = self
+            .get_bibles
+            .sword_dir()
+            .ok_or("No folder for downloaded SWORD modules")?;
+        self.start_import(crate::ImportSource::Repository {
+            repo,
+            module: listing.module,
+            sword_dir,
+        })
+    }
+
+    /// Retry: drop earlier failed downloads of `listing` and their report Tabs.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn drop_failed_downloads(&mut self, listing: &ResourceListing) {
         let failed: Vec<String> = self
             .imports
             .records()
-            .filter(|r| {
-                r.phase == crate::ImportPhase::Failed
-                    && r.origin.as_ref().is_some_and(|o| {
-                        o.module.eq_ignore_ascii_case(&listing.module) && o.repo == listing.repo
-                    })
-            })
+            .filter(|r| r.phase == crate::ImportPhase::Failed && imported_from(r, listing))
             .map(|r| r.resource_id.clone())
             .collect();
         for id in failed {
@@ -955,15 +1141,30 @@ impl Session {
                 self.workspace.close(tab);
             }
         }
-        let sword_dir = self
+    }
+
+    /// Download Open catalogue entry `id` from its publisher, check it, and import it, with
+    /// its live Import report (#134). A failed earlier attempt is replaced (Retry). Returns the
+    /// Resource id, report Tab and job.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn download_open(&mut self, id: &str) -> Result<(String, u64, JobId), String> {
+        let source = self
             .get_bibles
-            .sword_dir()
-            .ok_or("No folder for downloaded SWORD modules")?;
-        self.start_import(crate::ImportSource::Repository {
-            repo,
-            module: listing.module,
-            sword_dir,
-        })
+            .open_source(id)
+            .cloned()
+            .ok_or_else(|| format!("The Open catalogue has no entry {id:?}"))?;
+        let listing = source.listing();
+        match self.listing_status(&listing) {
+            ListingStatus::Installed { .. } | ListingStatus::UpdateAvailable { .. } => {
+                return Err(format!("{} is already in your Library", listing.title));
+            }
+            ListingStatus::InProgress { .. } => {
+                return Err(format!("{} is already downloading", listing.title));
+            }
+            ListingStatus::Failed { .. } | ListingStatus::Available => {}
+        }
+        self.drop_failed_downloads(&listing);
+        self.start_import(crate::ImportSource::Open(Box::new(source)))
     }
 
     /// The downloaded Resources in the Library: (Resource id, origin of the revision in the
@@ -1200,6 +1401,19 @@ const LANGUAGE: ParamSpec = ParamSpec {
     required: false,
     help: "Only Resources in this language (BCP 47 code)",
 };
+/// The licence filter, for `getbibles.list` and `library.get_resources` (#134).
+pub(crate) const LICENCE: ParamSpec = ParamSpec {
+    name: "licence",
+    kind: ParamKind::String,
+    required: false,
+    help: "free-to-share, personal-use or all",
+};
+const OPEN_ID: ParamSpec = ParamSpec {
+    name: "id",
+    kind: ParamKind::String,
+    required: true,
+    help: "Open catalogue entry id",
+};
 /// The type filter, for `getbibles.list` and `library.get_resources`.
 pub(crate) const TYPE: ParamSpec = ParamSpec {
     name: "type",
@@ -1229,6 +1443,14 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         run: download,
     },
     CommandSpec {
+        id: "getbibles.download_open",
+        label: "Download from the Open catalogue",
+        shortcut: None,
+        params: &[OPEN_ID],
+        enabled: desktop,
+        run: download_open,
+    },
+    CommandSpec {
         id: "getbibles.update",
         label: "Update Resource",
         shortcut: None,
@@ -1248,7 +1470,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         id: "getbibles.list",
         label: "List available Resources",
         shortcut: None,
-        params: &[QUERY, LANGUAGE, TYPE],
+        params: &[QUERY, LANGUAGE, TYPE, LICENCE],
         enabled: crate::command::always,
         run: list,
     },
@@ -1276,6 +1498,26 @@ fn download(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             message,
         })?;
     Ok(json!({"id": id, "tab": tab, "job": job.0}))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn download_open(_: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
+    Err(CommandError::Failed {
+        command: "getbibles.download_open",
+        message: "Downloads require desktop".into(),
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn download_open(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    let id = p.str("id").unwrap_or_default();
+    let (rid, tab, job) = s
+        .download_open(id)
+        .map_err(|message| CommandError::Failed {
+            command: "getbibles.download_open",
+            message,
+        })?;
+    Ok(json!({"id": rid, "tab": tab, "job": job.0}))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -1324,16 +1566,17 @@ fn update_all(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
     Ok(json!({"started": started, "failed": failed}))
 }
 
-/// The listings, filtered by `query`, `language` and `type` (all types when not given).
-/// `featured` holds the rows of the filter's Featured sections, in order (Bibles, then Hebrew
-/// & Greek, then the other types); `sections` names them.
+/// The listings, filtered by `query`, `language`, `type` (all types when not given) and
+/// `licence` (all licences when not given). `featured` holds the rows of the filter's Featured
+/// sections, in order (Bibles, then Hebrew & Greek, then the other types); `open` the Open
+/// catalogue's rows (#134); `sections` names them all. Every row gives its `licence_class`.
 fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
-    let filter = type_filter_from_id(p.str("type").unwrap_or_default()).map_err(|message| {
-        CommandError::Failed {
-            command: "getbibles.list",
-            message,
-        }
-    })?;
+    let failed = |message| CommandError::Failed {
+        command: "getbibles.list",
+        message,
+    };
+    let filter = type_filter_from_id(p.str("type").unwrap_or_default()).map_err(failed)?;
+    let licence = LicenceFilter::from_id(p.str("licence").unwrap_or_default()).map_err(failed)?;
     let summary = s.resource_updates();
     let updates = json!({
         "available": summary.updates.iter().map(|u| json!({
@@ -1347,12 +1590,6 @@ fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         },
         "up_to_date": summary.up_to_date(),
     });
-    let Some(catalog) = s.get_bibles.catalog() else {
-        return Ok(
-            json!({"featured": [], "all": [], "offline": s.get_bibles.offline(),
-                         "updates": updates}),
-        );
-    };
     let row = |b: &ResourceListing| {
         let update = match s.listing_status(b) {
             ListingStatus::UpdateAvailable {
@@ -1362,19 +1599,29 @@ fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             } => Some(json!({"installed": installed, "available": available})),
             _ => None,
         };
+        let source = match b.source {
+            ListingSource::Sword => "sword",
+            ListingSource::Open => "open",
+        };
         json!({"module": b.module, "type": crate::library_search::type_id(b.kind),
                "repo": b.repo, "title": b.title, "abbreviation": b.abbreviation,
                "language": b.language, "size": b.size, "licence": b.licence,
+               "licence_class": b.licence_class(), "source": source,
+               "evidence_url": b.evidence_url,
                "version": b.version, "tags": b.tags(), "used_by": b.used_by(),
                "refused": b.refused, "update": update})
     };
+    let gb = &s.get_bibles;
     let query = p.str("query").unwrap_or_default();
     let language = p.str("language").filter(|l| !l.is_empty());
-    let sections = catalog.featured_sections(filter);
-    let featured: Vec<Value> = sections
-        .iter()
-        .flat_map(|(_, rows)| rows.iter().map(|b| row(b)))
-        .collect();
+    let sections = gb.sections(filter, licence);
+    let rows_of = |open: bool| -> Vec<Value> {
+        sections
+            .iter()
+            .filter(|(title, _)| (title == OPEN_CATALOGUE) == open)
+            .flat_map(|(_, rows)| rows.iter().map(|b| row(b)))
+            .collect()
+    };
     let section_rows: Vec<Value> = sections
         .iter()
         .map(|(title, rows)| {
@@ -1382,11 +1629,15 @@ fn list(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         })
         .collect();
     Ok(json!({
-        "fetched_at": catalog.fetched_at,
-        "offline": s.get_bibles.offline(),
+        "fetched_at": gb.catalog().map(|c| c.fetched_at),
+        "offline": gb.offline(),
         "updates": updates,
-        "featured": featured,
+        "featured": rows_of(false),
+        "open": rows_of(true),
         "sections": section_rows,
-        "all": catalog.all(query, language, filter).into_iter().map(row).collect::<Vec<_>>(),
+        "all": gb.all_listings(query, language, filter, licence)
+            .into_iter()
+            .map(row)
+            .collect::<Vec<_>>(),
     }))
 }

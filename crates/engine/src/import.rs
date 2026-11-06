@@ -74,6 +74,21 @@ pub struct ImportRecord {
     /// The repository and module a Get Bibles download came from (#91).
     #[serde(default)]
     pub origin: Option<RepoOrigin>,
+    /// The Open catalogue entry a download came from (#134).
+    #[serde(default)]
+    pub open_origin: Option<OpenOrigin>,
+}
+
+/// Where a Resource downloaded from the Open catalogue came from (#134).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpenOrigin {
+    /// The Open catalogue entry's id.
+    pub id: String,
+    /// The publisher's URL it was downloaded from.
+    pub url: String,
+    /// The downloaded file's sha256, once downloaded and checked.
+    #[serde(default)]
+    pub sha256: Option<String>,
 }
 
 /// Where a downloaded Resource came from: a module of a SWORD repository.
@@ -227,6 +242,9 @@ impl Session {
                         if let Some(origin) = record.origin.as_mut() {
                             origin.version = out.version;
                         }
+                        if let Some(open) = record.open_origin.as_mut() {
+                            open.sha256 = out.sha256;
+                        }
                         let replaced = self.library.get(&id).is_some();
                         self.library.add(out.entry);
                         self.remove_older_search_indexes(&id);
@@ -285,6 +303,8 @@ struct Imported {
     index: ImportIndexStatus,
     /// A downloaded module's conf `Version` (empty when it has none).
     version: Option<String>,
+    /// An Open catalogue download's sha256.
+    sha256: Option<String>,
 }
 
 const SOURCE: ParamSpec = ParamSpec {
@@ -394,6 +414,8 @@ pub enum ImportSource {
         module: String,
         sword_dir: std::path::PathBuf,
     },
+    /// An Open catalogue entry, downloaded from its publisher and checked first (#134).
+    Open(Box<crate::open_catalogue::OpenSource>),
 }
 
 // Desktop Import uses these; the browser build has no local Import.
@@ -417,6 +439,7 @@ impl ImportSource {
             Self::Usfm(p) | Self::Sword { path: p, .. } | Self::Repository { sword_dir: p, .. } => {
                 p
             }
+            Self::Open(source) => Path::new(&source.url),
         }
     }
 
@@ -427,6 +450,7 @@ impl ImportSource {
                 module: Some(m), ..
             }
             | Self::Repository { module: m, .. } => m.clone(),
+            Self::Open(source) => source.id.clone(),
             Self::Sword { path, .. } if path.is_dir() => path
                 .file_name()
                 .unwrap_or_default()
@@ -449,6 +473,7 @@ impl ImportSource {
                 module: Some(m),
             } => format!("{} ({m})", path.display()),
             Self::Repository { repo, module, .. } => format!("{module} from {}", repo.name),
+            Self::Open(source) => format!("{} from {}", source.url, source.publisher),
             _ => self.path().display().to_string(),
         }
     }
@@ -569,7 +594,7 @@ impl Session {
         revision: Option<Revision>,
     ) -> JobId {
         let id = id.to_string();
-        let (phase, origin) = match &source {
+        let (phase, origin, open_origin) = match &source {
             ImportSource::Repository { repo, module, .. } => (
                 ImportPhase::Download,
                 Some(RepoOrigin {
@@ -577,8 +602,18 @@ impl Session {
                     module: module.clone(),
                     version: None,
                 }),
+                None,
             ),
-            _ => (ImportPhase::Parse, None),
+            ImportSource::Open(source) => (
+                ImportPhase::Download,
+                None,
+                Some(OpenOrigin {
+                    id: source.id.clone(),
+                    url: source.url.clone(),
+                    sha256: None,
+                }),
+            ),
+            _ => (ImportPhase::Parse, None, None),
         };
         let record = ImportRecord {
             resource_id: id.clone(),
@@ -590,6 +625,7 @@ impl Session {
             index: ImportIndexStatus::Deferred,
             error: None,
             origin,
+            open_origin,
         };
         let indexer = Arc::clone(&self.imports.indexer);
         let fetch = self.fetch();
@@ -781,6 +817,7 @@ fn import_source(
     let (dir, id) = (to.dir, to.id);
     let mut made = Made::default();
     let mut version = None;
+    let mut sha256 = None;
     let run = || -> Result<Imported, Box<dyn std::error::Error>> {
         let (mut resource, report) = match source {
             ImportSource::Usfm(path) => {
@@ -822,6 +859,31 @@ fn import_source(
                     })
                     .map(|m| m.version.unwrap_or_default());
                 parse_sword(sword_dir, Some(module), id)?
+            }
+            ImportSource::Open(open) => {
+                ctx.phase("Download");
+                let bytes = fetch
+                    .get(&open.url, &mut |done, total| {
+                        ctx.progress(done, total.unwrap_or(0));
+                        !ctx.is_cancelled()
+                    })
+                    .map_err(|e| -> Box<dyn std::error::Error> {
+                        if e == obs_formats::sword_repo::FetchError::Cancelled || ctx.is_cancelled()
+                        {
+                            cancelled()
+                        } else {
+                            format!("download from {}: {e}", open.publisher).into()
+                        }
+                    })?;
+                if ctx.is_cancelled() {
+                    return Err(cancelled());
+                }
+                sha256 = Some(open.check_download(&bytes)?);
+                ctx.phase("Parse");
+                open.import(&bytes, id, &tool_version(), |done, total| {
+                    ctx.progress(done as u64, total as u64);
+                    !ctx.is_cancelled()
+                })?
             }
         };
         if ctx.is_cancelled() {
@@ -868,6 +930,7 @@ fn import_source(
             report,
             index,
             version: version.take(),
+            sha256: sha256.take(),
         })
     };
     match run() {

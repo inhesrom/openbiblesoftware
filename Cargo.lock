@@ -2495,6 +2495,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "toml 1.1.8+spec-1.1.0",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -2524,6 +2525,7 @@ dependencies = [
  "sword-modules",
  "unicode-normalization",
  "usfm3",
+ "zip 8.6.0",
 ]
 
 [[package]]

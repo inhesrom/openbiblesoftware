@@ -23,10 +23,16 @@ serde_json.workspace = true
 sha2.workspace = true
 # Parses the Featured Bibles data file (Get Bibles, #91).
 toml = "1"
+# Writes the mock Open catalogue's USFM zip (feature test-support, #134); the same version
+# obs-formats reads with, so no new crate.
+zip = { version = "8", default-features = false, features = ["deflate-flate2"], optional = true }
 
 [features]
 # Mock SWORD repositories for tests in this and dependent crates.
-test-support = []
+test-support = ["dep:zip"]
+
+[dev-dependencies]
+zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
 
 [lints]
 workspace = true

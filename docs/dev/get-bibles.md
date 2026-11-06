@@ -1,6 +1,6 @@
-# Get Resources (#91, #132, #133, #136)
+# Get Resources (#91, #132, #133, #134, #136)
 
-**Library → Get Resources…** lists the Bibles, Lexicons, Commentaries and Dictionaries that SWORD repositories offer. One click on **Download** fetches a module from its own repository, runs SWORD Import, and puts the Resource in the Library. **Library → Get Bibles…** opens the same Tab with its type filter set to Bibles.
+**Library → Get Resources…** lists the Bibles, Lexicons, Commentaries and Dictionaries that SWORD repositories offer, and the Open catalogue's openly licensed Resources from outside SWORD (#134). One click on **Download** fetches a module from its own repository, runs SWORD Import, and puts the Resource in the Library. **Library → Get Bibles…** opens the same Tab with its type filter set to Bibles.
 
 The code keeps its #91 names (`get_bibles` module, `TabKind::GetBibles`, `getbibles.*` commands), because saved Layouts and scripts use them.
 
@@ -12,6 +12,8 @@ What the Tab shows:
 - **Type.** A SWORD Dictionary module whose conf has `Feature=GreekDef` or `HebrewDef` is listed as a Lexicon. General books and locked modules are not listed.
 - **Used by.** Each row says which feature the Resource feeds, for example "Used by Passage Guide › Commentaries".
 - **Not supported yet.** A module SWORD Import refuses from its conf alone (Commentary numbering other than KJV/KJVA, `HREFCom`, daily devotionals) is still listed. Its Download is disabled, and the reason shows on hover (`obs_formats::sword_import_type`).
+- **Licence filter** (#134): Free to share · Free for personal use · All licences, on its own row under the type filter. It applies to every section and to All. Each choice includes the stricter ones, and Unclear licences show only under All licences. `obs_engine::licence::licence_class` maps a conf's free-text `DistributionLicense`, or an SPDX id, to a Licence class. Restrictions win: any non-commercial or no-derivatives wording makes a work Free for personal use. Every value seen in the live catalogs is pinned in a test with its class (`LIVE_VALUES`). The licence badge's colour is the class. `getbibles.list` and `library.get_resources` take `licence` (`free-to-share`, `personal-use`, `all`); `library.get_resources` keeps the current licence filter when it is not given.
+- **Open catalogue** (#134): a section after the Featured sections, and rows in All. Its entries are compiled in from `crates/engine/data/open-catalogue.toml`, so they list before the SWORD catalog is fetched, and offline. A row says "from <publisher>" and links to its archived **Licence evidence**. **Download** runs `getbibles.download_open` (`Session::download_open`): it fetches the publisher's file through the app's transport, checks it (`OpenSource::check_download`: the pinned sha256, or the licence phrase in the notice inside the zip), imports it (`usfm-zip`: the zip's USFM books through USFM Import) with the entry's licence, Attribution and changes in the manifest, and records `OpenOrigin` (entry, URL, sha256) on the Import record. A refused or failed download leaves nothing behind and offers Retry. Help → Credits lists these Resources under **Downloaded open Resources** (`Session::open_resource_credits`). Why downloads come from the publisher rather than a pinned archive: [ADR 0008](../adr/0008-open-catalogue-downloads-from-the-publisher-checked-by-pin-or-licence-notice.md).
 - **Update available** (#136). A downloaded Resource whose repository now lists a newer `Version` of its module shows "Update available" with **Update** and **Open**; hovering it gives both versions ("Version 1.1 is available (you have 1.0)"). Above the list, "N updates available: …" has **Update all**, and the Library menu shows the count ("Library (2)", "Get Resources… (2 updates)").
 
 ## Updates and removal (#136)
@@ -41,6 +43,7 @@ What the Tab shows:
 | What | Where | Override |
 |---|---|---|
 | Featured Bibles and the Featured Hebrew & Greek group (`[[hebrew_greek]]`, checked against the live catalogs: [docs/research/original-language-catalog.md](../research/original-language-catalog.md)) | `crates/engine/data/featured-bibles.toml` | edit the file |
+| The Open catalogue, with each entry's licence evidence (`data/open-evidence/<id>.md`); research and candidates: [docs/research/open-catalogue.md](../research/open-catalogue.md) | `crates/engine/data/open-catalogue.toml` | edit the file (the `open_catalogue` tests check every entry) |
 | Featured Lexicons, Commentaries, Dictionaries | `crates/engine/data/featured-resources.toml` (checked against the live catalogs: [docs/research/get-resources-catalog.md](../research/get-resources-catalog.md)) | edit the file |
 | Catalog cache (opens offline) | `<data>/OpenBible/sword-catalog.json` | `OBS_SWORD_CATALOG` |
 | Downloaded SWORD modules | `<data>/OpenBible/sword/` | `OBS_SWORD_DIR` |
@@ -53,12 +56,14 @@ When a module is in several repositories, Get Resources shows it once, even when
 ## Tests
 
 - **Offline, in CI:** `crates/engine/src/get_bibles_tests.rs` and the `get_bibles` UI tests use `obs_engine::testing::MockRepos`, which builds `file://` repositories from the open-text SWORD fixtures (feature `test-support`). In the mock, "NASB1995" is the public-domain KJV excerpt under another name and "StrongsGreek" is the open test Greek lexicon. `MockRepos::publish` bumps a module's `Version` (and can edit a RawText module's text) to test updates. The mock also has a Commentary (`ObsNotes`), a Dictionary (`ObsTopics`), two Commentaries that Import refuses (`ObsHebrewNotes`, MT numbering, and `ObsLinks`, `HREFCom`), and the Hebrew & Greek Bibles "OSHB" and "MorphGNT" (the tagged test excerpts `ObsHebrewOt` and `ObsGreekNt`, written in the shapes the real modules use).
+- **Open catalogue and licence filter, offline:** `crates/engine/src/open_catalogue_tests.rs` and the `open_catalogue` UI tests use `obs_engine::testing::mock_open_catalogue`. It writes an eBible-style USFM zip (the open-text WEB excerpt plus a `copr.htm`) and returns an entry for it at a `file://` URL.
 - **Live, by hand only:** these tests need the network and download copyrighted modules, all into a temp folder that is deleted afterwards. CI never runs them.
 
   ```sh
   # HTTPS through the app's transport: catalog, NASB 1995 size and download, every Featured
   # Bible, every Featured Lexicon/Commentary/Dictionary, StrongsGreek → Word Study G26, and
-  # every Featured Hebrew & Greek Bible with its tags and Forms of G26 and H1254.
+  # every Featured Hebrew & Greek Bible with its tags and Forms of G26 and H1254; every Open
+  # catalogue entry from its publisher; the licence classes of the live catalog.
   cargo test -p openbible --release -- --ignored --nocapture --test-threads=1 live_
   # The Tab itself, clicked from Download to reading NASB 1995, then offline from the cache.
   # Uses the repositories' FTP sources; screenshots go to target/previews/ (never commit them).

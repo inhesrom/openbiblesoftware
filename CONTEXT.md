@@ -130,8 +130,16 @@ Adding a Resource to the library from a local file in an open format (USFM or SW
 _Avoid_: Install, Download
 
 **Get Resources**:
-The Tab that lists the Bibles, Lexicons, Commentaries and Dictionaries offered by online SWORD repositories, Featured ones first, each one click from download and Import. "Get Bibles" is the same Tab filtered to Bibles.
+The Tab that lists the Bibles, Lexicons, Commentaries and Dictionaries offered by online SWORD repositories and by the Open catalogue, Featured ones first, each one click from download and Import. "Get Bibles" is the same Tab filtered to Bibles. Its licence filter shows only what is Free to share, what is Free for personal use, or All licences.
 _Avoid_: Store, Shop, Module manager, Install (for the whole flow)
+
+**Open catalogue**:
+The curated list of openly licensed Resources that are not SWORD modules, such as eBible.org's USFM Bibles. Get Resources lists them, and Download fetches each one from its publisher's own URL and imports it with our own importer. Each entry has its licence, Attribution and archived licence evidence. A download is checked first, against a pinned sha256 or against the licence notice inside it.
+_Avoid_: Store, Mirror, Extra repository
+
+**Licence class**:
+What a Resource's licence lets the user do. There are three. **Free to share**: Public Domain, CC0, CC BY, CC BY-SA or GPL. **Free for personal use**: permission to distribute granted to a repository, non-commercial, or no derivatives. **Unclear**: no licence, or one the rules do not recognise. Unclear is never shown as free. SWORD's free-text `DistributionLicense` and SPDX ids both map to a Licence class.
+_Avoid_: Licence type, Free/Non-free, Open (unqualified, for the class)
 
 **Update available**:
 What Get Resources shows on a downloaded Resource when its SWORD repository now offers a newer `Version` of the module it was downloaded as; the Library menu counts them. Update (one Resource) or Update all downloads it and imports it as the Resource's next Resource revision. Updates are checked when the catalog is fetched, and nothing is downloaded until the user clicks. When the repositories cannot be reached, or only a catalog saved by an earlier run of the app is known, the Tab says updates could not be checked or when they last were, never that the Resources are up to date. Starter library Resources are updated with the Starter library, not here.
@@ -166,7 +174,7 @@ The license and credit text that a Resource requires to be shown, displayed in t
 _Avoid_: Credits, Copyright notice
 
 **Credits**:
-The app-level list under Help → Credits: every Starter library Resource, the data built into the app, the bundled fonts and the third-party software, each with its licence. A Resource's own Attribution stays in its About view.
+The app-level list under Help → Credits: every Starter library Resource, the Resources downloaded from the Open catalogue, the data built into the app, the bundled fonts and the third-party software, each with its licence. A Resource's own Attribution stays in its About view.
 _Avoid_: Acknowledgements, About (for this list)
 
 **Change record**:
