@@ -261,7 +261,7 @@ impl State {
         let escape = super::escape_closes_window(ctx);
         let mut picks: Vec<(FontSlot, Option<(String, String)>)> = Vec::new();
         let max_height = ctx.content_rect().height() * 0.75;
-        egui::Window::new("Fonts")
+        let window = egui::Window::new("Fonts")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -302,7 +302,7 @@ impl State {
                         }
                     });
             });
-        if !open || escape() {
+        if !open || escape(window.map(|r| r.response.layer_id)) {
             self.fonts_ui.open = false;
         }
         for (slot, pick) in picks {

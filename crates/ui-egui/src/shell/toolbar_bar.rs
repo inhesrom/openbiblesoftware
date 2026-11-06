@@ -291,7 +291,7 @@ impl Shell {
         let escape = super::escape_closes_window(ctx);
         let mut acts: Vec<(&'static str, Value)> = Vec::new();
         let mut done = false;
-        egui::Window::new("Customize toolbar")
+        let window = egui::Window::new("Customize toolbar")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -383,7 +383,7 @@ impl Shell {
                     }
                 });
             });
-        if !open || done || escape() {
+        if !open || done || escape(window.map(|r| r.response.layer_id)) {
             self.st.toolbar.customizing = false;
         }
         for (id, params) in acts {

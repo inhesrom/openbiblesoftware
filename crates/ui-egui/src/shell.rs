@@ -2905,11 +2905,71 @@ fn focus_ring(ctx: &egui::Context) {
 pub(crate) const FOCUS_RING: &str = "focus-ring";
 pub(crate) const FOCUS_RING_WIDTH: f32 = 2.0;
 
-/// Call before drawing a window; the closure, called after, says whether Esc closes it (#182):
-/// it does unless a menu or drop-down was open when the frame began (Esc closes that first).
-fn escape_closes_window(ctx: &egui::Context) -> impl FnOnce() -> bool + '_ {
+/// Call before drawing a window that Esc closes; the closure, called after with the layer the
+/// window was drawn on, says whether Esc closes it now (#182). Esc closes one window: the one
+/// with the keyboard, or with the keyboard in none, the one last brought to the front; never
+/// while a menu or drop-down was open when the frame began (Esc closes that first).
+fn escape_closes_window(ctx: &egui::Context) -> impl FnOnce(Option<egui::LayerId>) -> bool + '_ {
     let popup = egui::Popup::is_any_open(ctx);
-    move || !popup && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    move |layer| {
+        let Some(layer) = layer else {
+            return false;
+        };
+        let (front, keyboard) = escape_windows_note(ctx, layer);
+        if popup || !ctx.input(|i| i.key_pressed(egui::Key::Escape) && i.modifiers.is_none()) {
+            return false;
+        }
+        let ours = match keyboard {
+            // The keyboard is in a window (or a pane) of its own: Esc is for that one.
+            Some(l) if l.order == egui::Order::Middle => l == layer,
+            _ => front == layer,
+        };
+        ours && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    }
+}
+
+/// What [`escape_closes_window`] keeps between frames.
+#[derive(Clone, Default)]
+struct EscapeWindows {
+    /// The open windows Esc closes, back to front, with the pass each was last drawn in.
+    windows: Vec<(egui::LayerId, u64)>,
+    /// The layer the keyboard was in as the last pass ended (Esc takes the keyboard from its
+    /// widget before anything is drawn), and as this pass's windows were drawn.
+    keyboard_before: Option<egui::LayerId>,
+    keyboard_now: (u64, Option<egui::LayerId>),
+}
+
+/// Note `layer` drawn this pass (to the front when it has just opened or is pressed on, as
+/// egui raises a window); return the front window and where the keyboard was before this pass.
+fn escape_windows_note(
+    ctx: &egui::Context,
+    layer: egui::LayerId,
+) -> (egui::LayerId, Option<egui::LayerId>) {
+    let pass = ctx.cumulative_pass_nr();
+    let pressed_on = (ctx.input(|i| i.pointer.any_pressed().then(|| i.pointer.interact_pos())))
+        .flatten()
+        .is_some_and(|p| ctx.layer_id_at(p) == Some(layer));
+    let keyboard = (ctx.memory(|m| m.focused()))
+        .and_then(|id| ctx.read_response(id))
+        .map(|r| r.layer_id);
+    ctx.data_mut(|d| {
+        let s = d.get_temp_mut_or_default::<EscapeWindows>(egui::Id::unique("escape-windows"));
+        if s.keyboard_now.0 != pass {
+            s.keyboard_before = s.keyboard_now.1;
+        }
+        s.keyboard_now = (pass, keyboard);
+        // Drawn in neither this pass nor the last: closed.
+        s.windows.retain(|&(_, seen)| seen + 1 >= pass);
+        match s.windows.iter().position(|&(l, _)| l == layer) {
+            Some(i) if !pressed_on => s.windows[i].1 = pass,
+            _ => {
+                s.windows.retain(|&(l, _)| l != layer);
+                s.windows.push((layer, pass));
+            }
+        }
+        let front = s.windows.last().map_or(layer, |&(l, _)| l);
+        (front, s.keyboard_before)
+    })
 }
 
 impl State {

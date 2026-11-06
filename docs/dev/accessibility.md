@@ -88,8 +88,8 @@ text on every Link set chip and badge, and the Grid view's heat cells at every h
 | A link wrapped across two rows (Import a file…) is two widgets in egui; the second had no name | It starts a new row when it does not fit |
 | Word Study's disclosure arrow was a second Tab stop with no name for the entry title's action | Mouse only; the title is the stop |
 | Ambiguous names: *…*, *+*, *▶*, *◀*, *A*, *Open* ×10, *Download* ×n | *Tab menu*, *Open a Tab in this Panel*, *Next/Previous of your Bibles*, *Link set A*, *Open KJV (test)*, *Download …*; menu targets read *Verse: Gen 1:1* |
-| Shift+F10 opened nothing without the pointer over the text and no selection, so the menu had no keyboard-only route | It selects the Verse at the top of the view and acts on that; moving onto a target with Tab chooses it, as hovering does |
-| Fonts, Copy verses and Customize toolbar could only be closed with the mouse or by tabbing to their × | Esc closes them (after first closing a drop-down inside) |
+| Shift+F10 opened nothing without the pointer over the text and no selection, so the menu had no keyboard-only route | It selects the Verse at the top of the view and acts on that; moving onto a target with Tab chooses it, as hovering does, and a pointer resting on another target does not take it back until it moves (arrow keys also move between the columns) |
+| Fonts, Copy verses and Customize toolbar could only be closed with the mouse or by tabbing to their × | Esc closes them (after first closing a drop-down inside), one at a time: the window with the keyboard, or with the keyboard in none, the one in front |
 | Hints and shortcuts (egui's faded ink) were 4.16:1 on fields | `weak_text_color` is the theme's muted ink |
 | Light: muted on the selection 4.37:1, verdigris on the selection 4.13:1, the ★ (gilt) 2.66:1 | Light muted, verdigris and gilt darkened |
 | Dark: lapis on the selection 3.35:1 and on hover 3.95:1, muted on hover 4.45:1, verdigris on hover 4.19:1 | Dark selection deepened; lapis, muted and verdigris lightened |

@@ -40,7 +40,8 @@ Text Comparison space, a Library-mode Search row, a Search pane without results)
   has focus or the Note editor is open), at the word under the pointer (which it selects, like
   a right-click) or else at the selection. With neither (the keyboard alone, #182) it selects
   the Verse at the top of the view and acts on that. Tab moves through the menu; moving onto a
-  target chooses it, as hovering does, and Enter runs an action. Esc closes it.
+  target chooses it, as hovering does (a pointer resting on another target takes it back only
+  once it moves), and Enter runs an action. Esc closes it.
 
 ## Commands
 

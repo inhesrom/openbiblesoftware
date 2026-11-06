@@ -265,14 +265,16 @@ fn menu_ui(
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             ui.set_min_width(130.0);
+            let pointer_moved = ui.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
             for target in m.targets() {
                 ui.label(RichText::new(target.kind()).small().color(theme::c().muted));
                 let value = m.value(target);
                 let r = ui
                     .selectable_label(m.chosen == target, value.clone())
                     .accessible_name(format!("{}: {value}", target.kind()));
-                // The keyboard chooses a target by moving onto it, as the pointer does.
-                if r.hovered() || r.clicked() || r.gained_focus() {
+                // The keyboard chooses a target by moving onto it, as the pointer does; a
+                // pointer resting on another target takes it back only once it moves.
+                if r.clicked() || r.gained_focus() || (r.hovered() && pointer_moved) {
                     m.chosen = target;
                 }
             }

@@ -26,7 +26,7 @@ const CTRL: Modifiers = Modifiers {
     ..Modifiers::NONE
 };
 
-fn key(h: &mut Harness, key: Key, modifiers: Modifiers) {
+pub(super) fn key(h: &mut Harness, key: Key, modifiers: Modifiers) {
     h.modifiers = modifiers;
     h.events.push(Event::Key {
         key,
@@ -498,7 +498,7 @@ fn assert_focus_ring(h: &Harness) {
 }
 
 /// Press Tab until the widget named `name` has the keyboard, and check it shows it.
-fn tab_to(h: &mut Harness, name: &str) {
+pub(super) fn tab_to(h: &mut Harness, name: &str) {
     let mut seen = Vec::new();
     for _ in 0..200 {
         if let Some((n, ..)) = focused(h) {
@@ -800,6 +800,44 @@ fn keyboard_only_copy_verses() {
         "{:?}",
         h.copied
     );
+    key(&mut h, Key::Escape, Modifiers::NONE);
+    assert!(!h.shell.st.copy_ui.open);
+}
+
+/// Esc closes one window (#182): with Fonts open behind Copy verses, the one with the
+/// keyboard; with the keyboard in neither, the front one.
+#[test]
+fn escape_closes_the_window_with_the_keyboard_not_the_one_behind() {
+    let (mut h, _lab) = keyboard_harness("kb-two-windows");
+    command(&mut h, "fonts");
+    command(&mut h, "copy verses");
+    assert!(h.shell.st.fonts_ui.open && h.shell.st.copy_ui.open);
+    tab_to(&mut h, "Copy plain text");
+    key(&mut h, Key::Escape, Modifiers::NONE);
+    assert!(!h.shell.st.copy_ui.open, "Esc left Copy verses open");
+    assert!(
+        h.shell.st.fonts_ui.open,
+        "Esc closed Fonts, behind Copy verses"
+    );
+
+    // The keyboard in Fonts, Copy verses in front: Esc closes Fonts.
+    command(&mut h, "copy verses");
+    tab_to(&mut h, "Filter installed fonts");
+    key(&mut h, Key::Escape, Modifiers::NONE);
+    assert!(!h.shell.st.fonts_ui.open, "Esc left Fonts open");
+    assert!(h.shell.st.copy_ui.open, "Esc closed Copy verses");
+
+    // The keyboard in neither: the front window, then the one behind.
+    command(&mut h, "fonts");
+    h.ctx.memory_mut(|m| {
+        if let Some(id) = m.focused() {
+            m.surrender_focus(id);
+        }
+    });
+    h.frames(2);
+    key(&mut h, Key::Escape, Modifiers::NONE);
+    assert!(!h.shell.st.fonts_ui.open, "Esc left the front window open");
+    assert!(h.shell.st.copy_ui.open, "Esc closed the window behind");
     key(&mut h, Key::Escape, Modifiers::NONE);
     assert!(!h.shell.st.copy_ui.open);
 }

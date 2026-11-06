@@ -226,7 +226,7 @@ impl State {
         let escape = super::escape_closes_window(ctx);
         let mut acts: Vec<Act> = Vec::new();
         let max_height = ctx.content_rect().height() * 0.4;
-        egui::Window::new("Copy verses")
+        let window = egui::Window::new("Copy verses")
             .id(egui::Id::unique(WINDOW))
             .open(&mut open)
             .collapsible(false)
@@ -364,7 +364,7 @@ impl State {
                     }
                 });
             });
-        if !open || escape() {
+        if !open || escape(window.map(|r| r.response.layer_id)) {
             self.copy_ui.open = false;
         }
         for act in acts {
