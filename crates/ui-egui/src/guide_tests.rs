@@ -1270,6 +1270,49 @@ fn topic_guide_on_forgiveness_shows_naves_subtopics_and_a_passage_moves_the_link
         })
     });
 
+    // Torrey has two entries on Forgiveness; showing the first subtopic of one leaves the
+    // other's first subtopic closed.
+    let arrow_beside = |h: &Harness, label: &str| -> Option<(Rect, String)> {
+        let row = find_in(h, topic, label)?;
+        h.shapes
+            .iter()
+            .find(|(s, t)| (t == "▶" || t == "▼") && (s.center().y - row.center().y).abs() < 4.0)
+            .cloned()
+    };
+    // They are below the fold: wheel down to them.
+    for _ in 0..60 {
+        if arrow_beside(&h, "Christ set an example of").is_some()
+            && arrow_beside(&h, "Promised through Christ").is_some()
+        {
+            break;
+        }
+        h.events
+            .push(egui::Event::PointerMoved(pane(&h, topic).center()));
+        h.events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -60.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.frames(2);
+    }
+    h.frames(30);
+    until(&mut h, "both Torrey entries", |h| {
+        arrow_beside(h, "Christ set an example of").is_some()
+            && arrow_beside(h, "Promised through Christ").is_some()
+    });
+    let (injuries_toggle, _) = arrow_beside(&h, "Christ set an example of").unwrap();
+    h.click(injuries_toggle.center());
+    until(&mut h, "Torrey's first subtopic open", |h| {
+        arrow_beside(h, "Christ set an example of").is_some_and(|(_, a)| a == "▼")
+    });
+    assert_eq!(
+        arrow_beside(&h, "Promised through Christ").map(|(_, a)| a),
+        Some("▶".to_string()),
+        "the other Torrey entry's first subtopic stays closed"
+    );
+
     // The chooser: the topic, longer headwords and the topical index's synonyms.
     h.shell
         .run("tab.go", &json!({ "tab": topic.0, "text": "forgiveness" }));

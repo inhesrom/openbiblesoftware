@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
 use obs_model::{Direction, Key, ParaStyle, ResourceType, Span, SpanKind, normalize};
-use obs_scripture::Passage;
+use obs_scripture::{Passage, Standard};
 use serde_json::{Value, json};
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
@@ -460,12 +460,11 @@ pub fn key_passages(entries: &[TopicalEntry]) -> Vec<CitedPassage> {
                 .unwrap_or(u32::MAX),
         })
         .collect();
-    let width = |p: Passage| {
-        (
-            (p.end().book as u8).saturating_sub(p.start().book as u8),
-            p.end().chapter.saturating_sub(p.start().chapter),
-            p.end().verse.saturating_sub(p.start().verse),
-        )
+    // Standard Verses spanned, so a cross-chapter Passage compares by its length; a Verse
+    // outside the Standard ranks last.
+    let width = |p: Passage| match (Standard.ordinal(p.start()), Standard.ordinal(p.end())) {
+        (Some(a), Some(b)) => b.saturating_sub(a),
+        _ => u32::MAX,
     };
     ranked.sort_by(|a, b| {
         b.citations
@@ -933,6 +932,21 @@ impl Session {
         }
     }
 
+    /// A blank Topic Guide starts at its Link set's current Headword (a linked Dictionary's
+    /// entry, say), as Word Study adopts its Link set's Strong's number.
+    fn adopt_link_headword(&mut self, tab: TabId) {
+        let blank = self
+            .workspace
+            .tab(tab)
+            .is_some_and(|t| t.entry_history.current().is_none());
+        if blank
+            && let Some(key) = self.workspace.set_entry_location(tab)
+            && let Some(t) = self.workspace.tab_mut(tab)
+        {
+            t.entry_history.scrolled_to(key);
+        }
+    }
+
     /// Open a Topic Guide at `topic` (in the most recent Topic Guide Tab unless `new_tab`).
     pub(crate) fn open_topic_guide_at(
         &mut self,
@@ -1023,6 +1037,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[CommandSpec {
             return Ok(json!({ "tab": tab.0, "key": topic.trim() }));
         }
         let tab = s.topic_guide_tab(req, new_tab);
+        s.adopt_link_headword(tab);
         match p.str("text").filter(|t| !t.trim().is_empty()) {
             Some(text) => {
                 s.choose_topic(tab, text);

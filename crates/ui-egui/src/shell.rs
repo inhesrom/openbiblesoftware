@@ -119,9 +119,9 @@ struct TabUi {
     /// whether Translated as shows every rendering, for `lexicon_entries_for`.
     occurrence_form: Option<String>,
     renderings_all: bool,
-    /// Topic Guide (#148): the subtopics showing their Passages' text inline, by Resource id
-    /// and subtopic index, for the topic in `topic_previews_for`.
-    topic_previews: std::collections::BTreeSet<(String, usize)>,
+    /// Topic Guide (#148): the subtopics showing their Passages' text inline, for the topic
+    /// in `topic_previews_for`.
+    topic_previews: std::collections::BTreeSet<topic_guide_tab::SubtopicId>,
     topic_previews_for: Option<String>,
     /// Where the header's Favorites ☆ was drawn last frame (#155).
     favorite_star: Option<egui::Rect>,

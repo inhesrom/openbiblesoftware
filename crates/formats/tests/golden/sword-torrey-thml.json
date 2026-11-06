@@ -1,9 +1,14 @@
 {
-  "content_hash": "sha256:c505025de661652b0a8a0f2bbd76f91b0f6077af39ab92bdc66e7976c0bb6629",
+  "content_hash": "sha256:17ed6ea90dea12f0ec6418262d1b43a722a4d0334b039c9143990ca7df19cf76",
   "keys": [
     [
       "FORGIVENESS OF INJURIES",
       "FORGIVENESS OF INJURIES",
+      false
+    ],
+    [
+      "FORGIVENESS OF SIN",
+      "FORGIVENESS OF SIN",
       false
     ],
     [
@@ -30,7 +35,7 @@
   "report": {
     "books": [],
     "dropped_markup": {},
-    "entries": 2,
+    "entries": 3,
     "license_missing": false,
     "notes": 0,
     "source_format": "sword (ThML)",
@@ -270,6 +275,76 @@
       ],
       "text": "- Christ set an example of\nLu 23:34\n- Commanded\nMr 11:25; Ro 12:19\n- MOTIVES TO\n. The mercy of God\nLu 6:36\n. God's forgiveness of us\nEph 4:32\n. Christ's forgiveness of us\nCol 3:13\n- Exemplified\n. Joseph\nGe 50:20,21",
       "title": "FORGIVENESS OF INJURIES"
+    },
+    {
+      "id": "FORGIVENESS OF SIN",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..25",
+          "kind": "para",
+          "style": "prose",
+          "text": "- Promised through Christ"
+        },
+        {
+          "at": "26..34",
+          "kind": "para",
+          "style": "prose",
+          "text": "Ac 13:38"
+        },
+        {
+          "at": "26..34",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 13,
+                "verse": 38
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 13,
+                "verse": 38
+              }
+            }
+          ],
+          "text": "Ac 13:38"
+        },
+        {
+          "at": "35..60",
+          "kind": "para",
+          "style": "prose",
+          "text": "- Granted to the penitent"
+        },
+        {
+          "at": "61..68",
+          "kind": "para",
+          "style": "prose",
+          "text": "Ac 2:38"
+        },
+        {
+          "at": "61..68",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "ACT",
+                "chapter": 2,
+                "verse": 38
+              },
+              "start": {
+                "book": "ACT",
+                "chapter": 2,
+                "verse": 38
+              }
+            }
+          ],
+          "text": "Ac 2:38"
+        }
+      ],
+      "text": "- Promised through Christ\nAc 13:38\n- Granted to the penitent\nAc 2:38",
+      "title": "FORGIVENESS OF SIN"
     },
     {
       "id": "PRAYER",

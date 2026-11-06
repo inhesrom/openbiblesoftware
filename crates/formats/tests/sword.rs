@@ -551,7 +551,7 @@ fn tei_topical_index_keeps_each_subtopic_item_a_paragraph() {
     assert_eq!(list_items, 5);
     check_golden("nave-tei", &snapshot(&r, &report));
     let (r, report) = import("ObsTorrey");
-    assert_eq!(report.entries, 2);
+    assert_eq!(report.entries, 3);
     check_golden("torrey-thml", &snapshot(&r, &report));
 }
 

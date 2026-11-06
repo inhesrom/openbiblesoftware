@@ -10,7 +10,8 @@ framework ([passage-guide.md](passage-guide.md)); the topical index decision is
 - **Key.** `Key::Headword(<topic>)` in the Tab's entry history (`Forgiveness`).
   `TabKind::Guide(Guide::TopicGuide)`, `HeaderBox::Topic`, Key scheme Headword: it has a link
   chip and follows (and moves) its Link set's Dictionary headwords. Opened from a Bible it
-  joins that Bible's Link set. Headwords compare normalized (`FORGIVENESS` = `Forgiveness`).
+  joins that Bible's Link set; opened blank in a Link set (from a Dictionary there, say) it
+  starts at the set's current headword. Headwords compare normalized (`FORGIVENESS` = `Forgiveness`).
 - **Topical index.** A Dictionary whose resource id is in `topic_guide::TOPICAL_INDEXES`
   (`nave`, `naves`, `torrey`). Every other Dictionary feeds Dictionary articles.
 - **Topic directory.** `topic_guide::TopicDirectory`: every Dictionary headword (Headword Keys,
@@ -35,7 +36,7 @@ framework ([passage-guide.md](passage-guide.md)); the topical index decision is
     own headword, or when it has none, up to 3 under longer ones (Easton: `Forgiveness of sin`),
     with ~600 characters of it.
   - `topic_passages` "Key Passages": every distinct Passage the topical entries cite, ranked by
-    how many citations share a Verse with it (narrower first, then Bible order), skipping one
+    how many citations share a Verse with it (narrower first, by Standard Verses spanned, then Bible order), skipping one
     that overlaps a Passage already chosen; at most 12.
   - `topic_search` "Search": the topic, for `search.run {text, mode: "library"}`.
 - **Chooser.** `tab.go` on a Topic Guide (its box) takes text: the chooser lists the headword
@@ -57,7 +58,8 @@ framework ([passage-guide.md](passage-guide.md)); the topical index decision is
   Dictionary there; per subtopic its label (level 2 indented), its Passages as links (hover:
   the Scripture popup from the ★ Bible), `(from Sin, Forgiveness of)` for a followed `See`, and
   `see` links to other topics (`SIN, FORGIVENESS OF` opens `Sin`). ▶ shows the first 8 Passages'
-  text inline (one line each). The first 12 subtopics of each entry, then Show all.
+  text inline (one line each), per subtopic of each entry (a topical index can have several
+  entries on a topic). The first 12 subtopics of each entry, then Show all.
 - Key Passages: the Passage link, `cited N×`, and its first line from the ★ Bible.
 - A Passage click moves the Topic Guide's Link set (a Bible in it goes there); unlinked, the most
   recent Bible Tab goes there (or the ★ Bible opens); Ctrl/Cmd opens the ★ Bible in a new Tab.

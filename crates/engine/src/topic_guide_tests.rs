@@ -106,7 +106,8 @@ fn forgiveness_shows_naves_subtopics_eastons_article_and_key_passages() {
         titles,
         [
             ("Nave", "FORGIVENESS"),
-            ("Torrey", "FORGIVENESS OF INJURIES")
+            ("Torrey", "FORGIVENESS OF INJURIES"),
+            ("Torrey", "FORGIVENESS OF SIN")
         ]
     );
     let nave = &entries[0];
@@ -232,7 +233,7 @@ fn the_chooser_lists_the_topic_longer_headwords_and_synonyms() {
         [
             ("Forgiveness", vec!["Nave"], vec![]),
             ("Forgiveness of injuries", vec!["Torrey"], vec![]),
-            ("Forgiveness of sin", vec!["Easton"], vec![]),
+            ("Forgiveness of sin", vec!["Easton", "Torrey"], vec![]),
             // A synonym from the topical index: Nave's PARDON only says "See SIN,
             // FORGIVENESS OF". Easton's spelling is shown; sources in Preferred order.
             (
@@ -326,6 +327,62 @@ fn a_topic_guide_follows_and_moves_its_link_sets_headwords() {
         s.workspace.tab(other).unwrap().entry_history.current(),
         Some(Key::Headword("Forgiveness".into()))
     );
+}
+
+#[test]
+fn a_new_topic_guide_starts_at_its_linked_dictionarys_headword() {
+    let t = Temp::new("adopt");
+    let mut s = session(&t, &library());
+    let dictionary = s
+        .run("resource.open", &json!({ "id": "easton" }))
+        .map(|out| TabId(out["tab"].as_u64().unwrap()))
+        .unwrap();
+    s.workspace.set_link(dictionary, Some('A'));
+    s.workspace
+        .navigate_entry(dictionary, Key::Headword("Pardon".into()));
+    s.workspace.focus(dictionary);
+    let out = s.run("guide.topic_guide", &json!({})).unwrap();
+    let topic = s
+        .workspace
+        .tab(TabId(out["tab"].as_u64().unwrap()))
+        .unwrap();
+    assert_eq!(topic.link, Some('A'));
+    assert_eq!(
+        topic.entry_history.current(),
+        Some(Key::Headword("Pardon".into()))
+    );
+}
+
+#[test]
+fn key_passages_rank_a_narrower_cross_chapter_passage_first() {
+    let genesis = |c1, v1, c2, v2| {
+        Passage::new(
+            Verse::new(Book::Genesis, c1, v1),
+            Verse::new(Book::Genesis, c2, v2),
+        )
+        .unwrap()
+    };
+    let entry = crate::topic_guide::TopicalEntry {
+        article: crate::people_places::ArticleLink {
+            resource_id: "nave".into(),
+            abbreviation: "Nave".into(),
+            title: "Nave's Topical Bible".into(),
+            headword: "CREATION".into(),
+        },
+        subtopics: vec![crate::topic_guide::Subtopic {
+            level: 0,
+            label: String::new(),
+            passages: vec![genesis(1, 1, 1, 31), genesis(1, 31, 2, 1)],
+            see: Vec::new(),
+            via: None,
+        }],
+        direction: obs_model::Direction::Ltr,
+    };
+    let ranked: Vec<String> = crate::topic_guide::key_passages(&[entry])
+        .into_iter()
+        .map(|c| short(c.passage))
+        .collect();
+    assert_eq!(ranked, [short(genesis(1, 31, 2, 1))]);
 }
 
 #[test]

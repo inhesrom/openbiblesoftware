@@ -32,14 +32,23 @@ pub(super) enum TopicAction {
     Passage(Passage, bool),
     /// A topical index or Dictionary at an entry.
     Article(ArticleLink, bool),
-    /// Show (or hide) a subtopic's Passages inline: topical index id, subtopic index.
-    TogglePreview(String, usize),
+    /// Show (or hide) a subtopic's Passages inline.
+    TogglePreview(SubtopicId),
     /// Search the library for the topic.
     Search(String, bool),
     /// Close the chooser.
     StopChoosing,
     /// An empty state's button (#135).
     Command(&'static str, serde_json::Value),
+}
+
+/// One subtopic row of the Topical Bible entries: one topical index can have several entries
+/// on a topic (Torrey's PRAYER and PRAYER, ANSWERS TO), so the headword is part of it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct SubtopicId {
+    resource_id: String,
+    headword: String,
+    index: usize,
 }
 
 impl State {
@@ -240,10 +249,15 @@ impl State {
                 entry.subtopics.len().min(SUBTOPICS_SHOWN)
             };
             for (i, sub) in entry.subtopics[..shown].iter().enumerate() {
-                let open = self.tabs.get(&tab).is_some_and(|t| {
-                    t.topic_previews
-                        .contains(&(entry.article.resource_id.clone(), i))
-                });
+                let id = SubtopicId {
+                    resource_id: entry.article.resource_id.clone(),
+                    headword: entry.article.headword.clone(),
+                    index: i,
+                };
+                let open = self
+                    .tabs
+                    .get(&tab)
+                    .is_some_and(|t| t.topic_previews.contains(&id));
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
                     ui.add_space(16.0 * f32::from(sub.level.saturating_sub(1)));
@@ -258,10 +272,7 @@ impl State {
                             })
                             .clicked()
                         {
-                            action = Some(TopicAction::TogglePreview(
-                                entry.article.resource_id.clone(),
-                                i,
-                            ));
+                            action = Some(TopicAction::TogglePreview(id.clone()));
                         }
                     }
                     if !sub.label.is_empty() {
@@ -424,11 +435,11 @@ impl State {
                 }
             }
             TopicAction::Article(a, new_tab) => self.open_article(tab, &a, new_tab),
-            TopicAction::TogglePreview(resource, i) => {
+            TopicAction::TogglePreview(id) => {
                 if let Some(t) = self.tabs.get_mut(&tab)
-                    && !t.topic_previews.remove(&(resource.clone(), i))
+                    && !t.topic_previews.remove(&id)
                 {
-                    t.topic_previews.insert((resource, i));
+                    t.topic_previews.insert(id);
                 }
             }
             TopicAction::Search(text, new_tab) => {
