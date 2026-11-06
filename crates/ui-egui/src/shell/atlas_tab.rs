@@ -365,14 +365,10 @@ fn lines(
     max_rank: u8,
     to_screen: &dyn Fn(f64, f64) -> Pos2,
 ) {
-    for line in lines.iter().filter(|l| l.rank <= max_rank) {
-        let touches = line
-            .points
-            .iter()
-            .any(|p| visible.contains(f64::from(p[0]), f64::from(p[1])));
-        if !touches && line.points.len() < 64 {
-            continue;
-        }
+    for line in lines
+        .iter()
+        .filter(|l| l.rank <= max_rank && l.may_show_in(&visible))
+    {
         let points: Vec<Pos2> = line
             .points
             .iter()

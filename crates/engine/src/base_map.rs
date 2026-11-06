@@ -88,6 +88,14 @@ impl GeoBounds {
     pub fn contains(&self, lon: f64, lat: f64) -> bool {
         (self.west..=self.east).contains(&lon) && (self.south..=self.north).contains(&lat)
     }
+
+    /// Whether the two boxes share any point (touching edges count).
+    pub fn overlaps(&self, other: &GeoBounds) -> bool {
+        self.west <= other.east
+            && other.west <= self.east
+            && self.south <= other.north
+            && other.south <= self.north
+    }
 }
 
 /// Triangles: `points` are `[longitude, latitude]` in degrees; each three `triangles` indices
@@ -104,6 +112,21 @@ pub struct MapMesh {
 pub struct MapLine {
     pub rank: u8,
     pub points: Vec<[f32; 2]>,
+}
+
+impl MapLine {
+    /// Whether any part of the line may show in `visible`: its bounding box overlaps the view.
+    /// Never false for a line that crosses the view, even when no vertex lies inside it (a
+    /// long straight segment across a zoomed-in view); may be true for a line that misses
+    /// it, which the painter's clip then hides.
+    pub fn may_show_in(&self, visible: &GeoBounds) -> bool {
+        GeoBounds::around(
+            self.points
+                .iter()
+                .map(|p| (f64::from(p[0]), f64::from(p[1]))),
+        )
+        .is_some_and(|b| b.overlaps(visible))
+    }
 }
 
 /// The base map: land and lakes to fill, coasts, lake shores and rivers to stroke.
@@ -386,6 +409,25 @@ mod tests {
         let neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
         let pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
         !(neg && pos)
+    }
+
+    #[test]
+    fn a_line_crossing_the_view_shows_though_no_vertex_is_inside() {
+        let view = GeoBounds {
+            west: 34.8,
+            south: 31.85,
+            east: 35.2,
+            north: 32.15,
+        };
+        let line = |points: Vec<[f32; 2]>| MapLine { rank: 0, points };
+        // One segment straight across the view, both ends outside it.
+        assert!(line(vec![[34.0, 32.0], [36.0, 32.0]]).may_show_in(&view));
+        // A vertex inside.
+        assert!(line(vec![[35.0, 32.0], [40.0, 40.0]]).may_show_in(&view));
+        // Wholly beside the view.
+        assert!(!line(vec![[36.0, 31.0], [37.0, 33.0]]).may_show_in(&view));
+        assert!(!line(vec![[34.0, 33.0], [36.0, 33.5]]).may_show_in(&view));
+        assert!(!line(vec![]).may_show_in(&view));
     }
 
     #[test]
