@@ -381,9 +381,12 @@ pub struct AnalysisRow {
     pub rtl: bool,
     pub word: String,
     /// The matched Tagged words' Lemmas (a word's own, else its Lexicon headword), and their
-    /// Morphology codes; empty for an untagged word.
+    /// Morphology in plain English (a code the decoder cannot read stays as written); empty
+    /// for an untagged word.
     pub lemma: String,
     pub morphology: String,
+    /// The Morphology codes as the Bible tags them, for a tooltip.
+    pub morph_codes: String,
     /// The hit's text as the Verse list shows it, and where the word is in it.
     pub context: Arc<str>,
     pub word_range: Range<usize>,
@@ -465,10 +468,16 @@ pub struct SearchAnalysis {
 impl SearchAnalysis {
     /// The row indices in `sort` order. Text columns compare case-insensitively, empty
     /// cells last either way; Context compares the words after the match (then before it),
-    /// as a concordance does; Reference is canonical order. Ties keep canonical order
-    /// whichever way the column sorts.
+    /// as a concordance does; Reference is canonical order (Verse-list row). Ties keep
+    /// canonical order whichever way the column sorts.
     pub fn order(&self, sort: AnalysisSort) -> Vec<usize> {
         let mut order: Vec<usize> = (0..self.rows.len()).collect();
+        if sort.column == AnalysisColumn::Reference {
+            if sort.descending {
+                order.sort_by(|&a, &b| self.rows[b].row.cmp(&self.rows[a].row).then(a.cmp(&b)));
+            }
+            return order;
+        }
         let key = |r: &AnalysisRow| -> String {
             match sort.column {
                 AnalysisColumn::Reference => String::new(),
@@ -478,12 +487,6 @@ impl SearchAnalysis {
                 c => r.cell(c).to_lowercase(),
             }
         };
-        if sort.column == AnalysisColumn::Reference {
-            if sort.descending {
-                order.reverse();
-            }
-            return order;
-        }
         let keys: Vec<String> = self.rows.iter().map(key).collect();
         order.sort_by(|&a, &b| {
             let by = keys[a].cmp(&keys[b]);
@@ -548,7 +551,8 @@ pub struct MatchedWord {
     pub lemmas: Vec<String>,
     /// Strong's numbers of parts without a Lemma, for the Lexicon to name.
     pub unnamed: Vec<obs_scripture::StrongsNumber>,
-    pub morphology: Vec<String>,
+    /// The parts' Morphology codes as tagged.
+    pub morph_codes: Vec<String>,
 }
 
 /// The matched words of a snippet: one per highlight, widened to the Tagged words it touches
@@ -574,7 +578,7 @@ pub fn matched_words(
         }
         let mut lemmas = Vec::new();
         let mut unnamed = Vec::new();
-        let mut morphology = Vec::new();
+        let mut morph_codes = Vec::new();
         for (_, parts) in touched {
             let matched = highlighter.matching_parts(parts);
             let any = matched.iter().any(|m| *m);
@@ -587,7 +591,7 @@ pub fn matched_words(
                     None => unnamed.push(p.strongs),
                 }
                 if let Some(m) = p.morph.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
-                    morphology.push(m.to_string());
+                    morph_codes.push(m.to_string());
                 }
             }
         }
@@ -595,7 +599,7 @@ pub fn matched_words(
             range: start..end,
             lemmas,
             unnamed,
-            morphology,
+            morph_codes,
         });
     }
     out
@@ -738,9 +742,10 @@ pub(crate) struct AnalysisOutput(pub(crate) Arc<SearchAnalysis>);
 #[cfg(not(target_arch = "wasm32"))]
 mod desktop {
     use std::collections::HashMap;
+    use std::collections::hash_map::Entry;
     use std::path::PathBuf;
 
-    use obs_model::UnitId;
+    use obs_model::{UnitId, morph};
     use obs_scripture::StrongsNumber;
     use obs_store::{ObrReader, ResourceStore};
 
@@ -750,14 +755,16 @@ mod desktop {
 
     /// Read every hit's text and spans and list its matched words. Parts without a Lemma
     /// borrow the headword of the first Lexicon (in Preferred order) that has their number.
+    /// A searched Bible that is gone from the Library or cannot be read fails the job: an
+    /// Analysis missing its hits would count, sort and export as if it were whole.
     pub(super) fn analysis(
         results: Arc<BibleResults>,
         obrs: &[Option<PathBuf>],
         lexicons: &[PathBuf],
         ctx: &JobContext,
     ) -> Result<AnalysisOutput, String> {
-        let mut readers: HashMap<usize, Option<ObrReader>> = HashMap::new();
-        let mut texts: HashMap<(usize, UnitId), Option<String>> = HashMap::new();
+        let mut readers: HashMap<usize, ObrReader> = HashMap::new();
+        let mut texts: HashMap<(usize, UnitId), String> = HashMap::new();
         let lexicons: Vec<ObrReader> = lexicons
             .iter()
             .filter_map(|p| ObrReader::open(p).ok())
@@ -770,35 +777,51 @@ mod desktop {
             }
             let reference = results.row_reference(row);
             for (k, h) in row.hits.iter().enumerate() {
-                let Some(reader) = readers
-                    .entry(h.bible)
-                    .or_insert_with(|| {
-                        obrs.get(h.bible)
-                            .and_then(Option::as_ref)
-                            .and_then(|p| ObrReader::open(p).ok())
-                    })
-                    .as_ref()
-                else {
-                    continue;
-                };
-                let text = texts
-                    .entry((h.bible, h.unit.clone()))
-                    .or_insert_with(|| reader.unit_text(&h.unit).ok().flatten().map(|t| t.1));
-                let Some(text) = text.as_deref() else {
-                    continue;
-                };
-                let range = h.range.start as usize..h.range.end as usize;
-                let spans = reader
-                    .spans_starting_in(&h.unit, range.clone())
-                    .unwrap_or_default();
-                let (snippet, tagged) =
-                    snippet_and_tagged(text, range, &spans, &results.highlighter);
-                let context: Arc<str> = Arc::from(snippet.text.as_str());
                 let (bible, rtl) = results
                     .bibles
                     .get(h.bible)
                     .map(|b| (b.abbreviation.clone(), b.rtl))
                     .unwrap_or_default();
+                let reader = match readers.entry(h.bible) {
+                    Entry::Occupied(e) => e.into_mut(),
+                    Entry::Vacant(e) => {
+                        let path = obrs.get(h.bible).and_then(Option::as_ref).ok_or_else(|| {
+                            format!(
+                                "{bible} is no longer in the Library: search again to \
+                                 analyse these results"
+                            )
+                        })?;
+                        e.insert(
+                            ObrReader::open(path)
+                                .map_err(|e| format!("Could not open {bible}: {e}"))?,
+                        )
+                    }
+                };
+                let text = match texts.entry((h.bible, h.unit.clone())) {
+                    Entry::Occupied(e) => e.into_mut(),
+                    Entry::Vacant(e) => {
+                        let text = reader
+                            .unit_text(&h.unit)
+                            .map_err(|e| format!("Could not read {bible} at {reference}: {e}"))?
+                            .ok_or_else(|| {
+                                format!(
+                                    "{bible} has no text at {reference}: search again to \
+                                     analyse these results"
+                                )
+                            })?
+                            .1;
+                        e.insert(text)
+                    }
+                };
+                let range = h.range.start as usize..h.range.end as usize;
+                let spans = reader
+                    .spans_starting_in(&h.unit, range.clone())
+                    .map_err(|e| {
+                        format!("Could not read the tags of {bible} at {reference}: {e}")
+                    })?;
+                let (snippet, tagged) =
+                    snippet_and_tagged(text, range, &spans, &results.highlighter);
+                let context: Arc<str> = Arc::from(snippet.text.as_str());
                 for w in matched_words(&snippet, &tagged, &results.highlighter) {
                     let mut lemmas = w.lemmas;
                     for n in w.unnamed {
@@ -817,7 +840,13 @@ mod desktop {
                         rtl,
                         word: context.get(w.range.clone()).unwrap_or_default().to_string(),
                         lemma: lemmas.join(" "),
-                        morphology: w.morphology.join(" "),
+                        morphology: w
+                            .morph_codes
+                            .iter()
+                            .map(|c| plain_morphology(c))
+                            .collect::<Vec<_>>()
+                            .join("; "),
+                        morph_codes: w.morph_codes.join(" "),
                         context: Arc::clone(&context),
                         word_range: w.range,
                     });
@@ -825,6 +854,16 @@ mod desktop {
             }
         }
         Ok(AnalysisOutput(Arc::new(SearchAnalysis { results, rows })))
+    }
+
+    /// A Morphology code in plain English (`N-ASF` → `noun, acc. fem. sing.`), as Word Info
+    /// shows it; a code the decoder cannot read stays as written.
+    fn plain_morphology(code: &str) -> String {
+        morph::parse(code)
+            .ok()
+            .map(|m| m.short())
+            .filter(|m| !m.is_empty())
+            .unwrap_or_else(|| code.to_string())
     }
 
     /// The headword of the first Lexicon entry for `number`.

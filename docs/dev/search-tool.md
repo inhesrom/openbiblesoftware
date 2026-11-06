@@ -75,16 +75,21 @@ searches.
   Verse matched in two Bibles counts once. Clicking a bar sets the filter to that book or
   chapter.
 - **Analysis**: one row per matched word of every hit. Columns: Reference (the row's Standard
-  reference), Bible, the word, its Lemma, its Morphology code and a short Context. The word is
+  reference), Bible, the word, its Lemma, its Morphology and a short Context. The word is
   the whole Tagged word(s) a highlight touches, so a Hebrew root highlighted without its
   prefix is still one word, and KJV+Strong's `the love` is the span it tags. Lemma and
   Morphology come from the parts the query matched (all parts for a plain word search). A
   part without a Lemma (KJV+Strong's) borrows the headword of the first Lexicon in Preferred
-  order that has its number, as Word Info does. A background job makes the table the first
-  time it is shown for a search, and again after a new search while it is shown. Rows open
-  their Verse like a hit.
+  order that has its number, as Word Info does. Morphology reads in plain English through the
+  same decoder as Word Info (`noun, acc. fem. sing.`); the code as tagged (`N-ASF`) is the
+  cell's tooltip, and a code the decoder cannot read stays as written. A background job makes
+  the table the first time it is shown for a search, and again after a new search while it is
+  shown. If a searched Bible has since been removed from the Library, or its file or tags
+  cannot be read, the job fails with that message under the search box instead of making a
+  table (and an export) without that Bible's hits. Rows open their Verse like a hit.
   - **Sorting**: click a header to sort by it, and again to reverse. Text compares
-    case-insensitively and empty cells go last either way. Reference is canonical order.
+    case-insensitively and empty cells go last either way. Reference is canonical order;
+    reversed, the Verses turn round but a Verse's words and Bibles keep canonical order.
     Context compares the words after the match, then before it, as a concordance does. Ties
     keep canonical order.
   - **Export CSV…** saves the table in the order shown: a header row, then six fields per

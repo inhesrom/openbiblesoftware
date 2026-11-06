@@ -279,8 +279,21 @@ fn analysis_lists_each_matched_word_with_its_lemma_and_morphology() {
     );
     assert_eq!(
         rows[1],
-        s_(["John 13:35", "TGNT", "ἀγάπην", "ἀγάπη", "N-ASF"])
+        s_([
+            "John 13:35",
+            "TGNT",
+            "ἀγάπην",
+            "ἀγάπη",
+            "noun, acc. fem. sing."
+        ])
     );
+    // Morphology reads in plain English, as in Word Info; the code stays for a tooltip.
+    let tgnt = order
+        .iter()
+        .map(|&i| &a.rows[i])
+        .find(|r| r.bible == "TGNT")
+        .unwrap();
+    assert_eq!(tgnt.morph_codes, "N-ASF");
     assert!(rows.iter().all(|r| r[2] != "loved"));
     let cor: Vec<&[String; 5]> = rows
         .iter()
@@ -288,7 +301,10 @@ fn analysis_lists_each_matched_word_with_its_lemma_and_morphology() {
         .collect();
     assert_eq!(cor.len(), 2);
     assert!(cor.iter().all(|r| r[2] == "charity"));
-    let dsf = rows.iter().find(|r| r[4] == "N-DSF").unwrap();
+    let dsf = rows
+        .iter()
+        .find(|r| r[4] == "noun, dat. fem. sing.")
+        .unwrap();
     assert_eq!(dsf[0], "1 John 4:16");
     assert_eq!(dsf[2], "ἀγάπῃ");
     // The context is the hit's text around the word.
@@ -387,7 +403,11 @@ fn analysis_sorts_by_every_column_both_ways() {
                 let (kb, ib) = key(w[1]);
                 let ok = match (column, descending) {
                     (AnalysisColumn::Reference, false) => ia < ib,
-                    (AnalysisColumn::Reference, true) => ia > ib,
+                    // Verses turned round; words of one Verse stay in canonical order.
+                    (AnalysisColumn::Reference, true) => {
+                        let (ra, rb) = (a.rows[ia].row, a.rows[ib].row);
+                        ra > rb || (ra == rb && ia < ib)
+                    }
                     // Empty cells last, whichever way.
                     _ if ka.is_empty() != kb.is_empty() => kb.is_empty(),
                     (_, false) => ka < kb || (ka == kb && ia < ib),
@@ -424,20 +444,39 @@ fn analysis_sorts_by_every_column_both_ways() {
         &json!({ "tab": tab.0, "column": "morphology", "descending": true }),
     )
     .unwrap();
-    assert_eq!(first(&s)[4], "N-NSF");
+    assert_eq!(first(&s)[4], "noun, nom. fem. sing.");
     // Ascending too, the KJV's words (no Morphology) come last.
     s.run(
         "search.sort",
         &json!({ "tab": tab.0, "column": "morphology", "descending": false }),
     )
     .unwrap();
-    assert_eq!(first(&s)[4], "N-ASF");
+    assert_eq!(first(&s)[4], "noun, acc. fem. sing.");
     s.run(
         "search.sort",
         &json!({ "tab": tab.0, "column": "reference", "descending": true }),
     )
     .unwrap();
     assert_eq!(first(&s)[0], "1 John 4:18");
+    // Descending Reference turns the Verses round but keeps each Verse's words, and its
+    // Bibles, in canonical order: John 13:35's KJV word still comes before its TGNT word.
+    let (a, order) = analysis(&s, tab);
+    let rows = table(&a, &order);
+    let john = |b: &str| {
+        rows.iter()
+            .position(|r| r[0] == "John 13:35" && r[1] == b)
+            .unwrap()
+    };
+    assert!(john("KJV") < john("TGNT"), "{rows:?}");
+    let charity: Vec<usize> = order
+        .iter()
+        .copied()
+        .filter(|&i| a.rows[i].reference == "1 Corinthians 13:13")
+        .collect();
+    assert_eq!(charity.len(), 2);
+    assert!(charity[0] < charity[1], "ties keep canonical order");
+    let refs: Vec<usize> = order.iter().map(|&i| a.rows[i].row).collect();
+    assert!(refs.windows(2).all(|w| w[0] >= w[1]), "{refs:?}");
     assert!(
         s.run("search.sort", &json!({ "tab": tab.0, "column": "colour" }))
             .is_err()
@@ -526,7 +565,13 @@ fn analysis_exports_as_csv_a_spreadsheet_opens() {
     // In the order shown: TGNT first.
     assert_eq!(
         records[1][..5],
-        ["John 13:35", "TGNT", "ἀγάπην", "ἀγάπη", "N-ASF"]
+        [
+            "John 13:35",
+            "TGNT",
+            "ἀγάπην",
+            "ἀγάπη",
+            "noun, acc. fem. sing."
+        ]
     );
     assert!(records[1][5].starts_with("ἐν τούτῳ γνώσονται πάντες ὅτι ἐμοὶ μαθηταί ἐστε,"));
     // A context with commas is quoted and reads back whole.
@@ -541,6 +586,68 @@ fn analysis_exports_as_csv_a_spreadsheet_opens() {
     assert!(body.contains(
         "\"And now abideth faith, hope, charity, these three; but the greatest of these is charity.\""
     ));
+    cleanup(s, root);
+}
+
+/// A searched Bible removed from the Library before the Analysis is first shown: the
+/// Analysis fails with a message instead of counting and exporting without that Bible's hits.
+#[test]
+fn analysis_fails_when_a_searched_bible_was_removed() {
+    let (mut s, root) = fixture("removed");
+    let tab = search_g26(&mut s);
+    s.run("library.remove", &json!({ "id": "tgnt", "confirm": true }))
+        .unwrap();
+    assert!(
+        tab_state(&s, tab).all_results().is_some(),
+        "the Search Tab keeps its results"
+    );
+    s.set_results_view(tab, ResultsView::Analysis);
+    settle(&mut s);
+    let st = tab_state(&s, tab);
+    assert!(!st.analysis_running());
+    assert!(
+        st.analysis.is_none(),
+        "no partial Analysis: {:?} {:?}",
+        st.all_results().map(|r| r.summary()),
+        st.error
+    );
+    let error = st.error.as_ref().expect("the failure is shown");
+    assert_eq!(error.field, ErrorField::Search);
+    assert!(
+        error.message.contains("TGNT is no longer in the Library"),
+        "{}",
+        error.message
+    );
+    let path = root.join("partial.csv");
+    assert!(
+        s.run(
+            "search.export_csv",
+            &json!({ "tab": tab.0, "path": path.to_string_lossy() }),
+        )
+        .is_err()
+    );
+    assert!(!path.exists(), "nothing exported");
+    cleanup(s, root);
+}
+
+/// A searched Bible whose file can no longer be read (replaced on disk after the search):
+/// the Analysis fails rather than leaving its hits out.
+#[test]
+fn analysis_fails_when_a_searched_bible_cannot_be_read() {
+    let (mut s, root) = fixture("unreadable");
+    let tab = search_g26(&mut s);
+    let path = s.library.get("tgnt").unwrap().path.clone();
+    std::fs::write(&path, b"not a Resource").unwrap();
+    s.set_results_view(tab, ResultsView::Analysis);
+    settle(&mut s);
+    let st = tab_state(&s, tab);
+    assert!(st.analysis.is_none(), "no partial Analysis");
+    let error = st.error.as_ref().expect("the failure is shown");
+    assert!(
+        error.message.contains("Could not open TGNT"),
+        "{}",
+        error.message
+    );
     cleanup(s, root);
 }
 

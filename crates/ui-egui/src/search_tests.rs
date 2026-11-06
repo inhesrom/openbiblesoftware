@@ -895,7 +895,7 @@ fn analysis_table_sorts_by_each_column_header_and_opens_a_row() {
         "Morphology",
         "Context",
         "John 13:35",
-        "N-ASF",
+        "noun, acc. fem. sing.",
     ] {
         assert!(h.find(text).is_some(), "{text} not drawn: {:?}", h.texts());
     }
@@ -916,15 +916,36 @@ fn analysis_table_sorts_by_each_column_header_and_opens_a_row() {
         assert_eq!(sort(&h).column, column);
         assert_eq!(sort(&h).descending, !reference, "{column:?}");
     }
-    // Morphology descending: N-NSF rows above N-DSF above N-ASF.
+    // Morphology in plain English, descending: nominative rows above dative above
+    // accusative. No raw code is drawn in the table.
     let at = lowest(&h, "Morphology").center();
     h.click(at);
     h.click(at);
     assert!(sort(&h).descending);
+    let (nom, dat, acc) = (
+        "noun, nom. fem. sing.",
+        "noun, dat. fem. sing.",
+        "noun, acc. fem. sing.",
+    );
     let top = |t: &str| h.find(t).map(|r| r.top()).unwrap();
-    assert!(top("N-NSF") < top("N-DSF") && top("N-DSF") < top("N-ASF"));
+    assert!(top(nom) < top(dat) && top(dat) < top(acc));
+    for code in ["N-NSF", "N-DSF", "N-ASF"] {
+        assert!(h.find(code).is_none(), "raw {code} drawn");
+    }
+    // Resting on the Morphology cell (a second of frames) shows the code as the Bible tags
+    // it.
+    let p = h.at(dat);
+    h.events.push(egui::Event::PointerMoved(p));
+    h.frames(60);
+    assert!(
+        h.texts()
+            .iter()
+            .any(|t| t.contains("Morphology code: N-DSF")),
+        "no code tooltip: {:?}",
+        h.texts()
+    );
     // Clicking a row opens its Verse.
-    h.click_text("N-DSF");
+    h.click_text(dat);
     h.frames(3);
     let tgnt = h.tab_id("TGNT");
     assert_eq!(

@@ -25,7 +25,7 @@ const BAR_HEIGHT: f32 = 20.0;
 /// The longest bar.
 const BAR_MAX: f32 = 640.0;
 /// The Analysis table's fixed columns (Context takes the rest).
-const COLUMN_WIDTHS: [f32; 5] = [150.0, 64.0, 130.0, 120.0, 100.0];
+const COLUMN_WIDTHS: [f32; 5] = [150.0, 64.0, 130.0, 120.0, 180.0];
 const CONTEXT_MIN: f32 = 260.0;
 
 /// A Grid cell's fill: none for no hit, then from a pale to a full lapis by heat.
@@ -297,13 +297,19 @@ impl State {
         let muted = theme::c().muted;
         let Some((analysis, order)) = st.analysis_rows() else {
             ui.add_space(30.0);
+            // A failed Analysis says why under the search box; no spinner here then.
+            let failed = !st.analysis_running() && st.error.is_some();
             ui.vertical_centered(|ui| {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label(RichText::new("Analysing the matched words…").color(muted));
-                });
+                if failed {
+                    ui.label(RichText::new("The Analysis could not be made.").color(muted));
+                } else {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(RichText::new("Analysing the matched words…").color(muted));
+                    });
+                }
             });
-            if !st.analysis_running() && st.error.is_none() {
+            if !failed && !st.analysis_running() {
                 self.run("search.view", &json!({ "tab": tab.0, "value": "analysis" }));
             }
             return;
@@ -457,6 +463,17 @@ impl State {
                             r.widget_info(|| {
                                 egui::WidgetInfo::labeled(egui::Role::Button, true, &label)
                             });
+                            // The Morphology cell's tooltip: the whole parsing (a long one is
+                            // clipped in the cell) and the code as the Bible tags it.
+                            let on_morphology = r.hover_pos().is_some_and(|p| cells[4].contains(p));
+                            let r = if on_morphology && !row.morph_codes.is_empty() {
+                                r.on_hover_text(format!(
+                                    "{}\nMorphology code: {}",
+                                    row.morphology, row.morph_codes
+                                ))
+                            } else {
+                                r
+                            };
                             if r.clicked() {
                                 let split = ui.input(|i| i.modifiers.command);
                                 run.push((
