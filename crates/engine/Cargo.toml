@@ -19,6 +19,8 @@ obs-store.workspace = true
 obs-render.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# Writes a Note's text (CommonMark, #186) as HTML in Notes exports.
+pulldown-cmark = { workspace = true, features = ["html"] }
 # Verifies downloaded and bundled Starter library files against their manifest (#131).
 sha2.workspace = true
 # Parses the Featured Bibles data file (Get Bibles, #91).
@@ -34,8 +36,6 @@ test-support = ["dep:zip", "obs-store/test-support"]
 [dev-dependencies]
 obs-store = { workspace = true, features = ["test-support"] }
 zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
-# Reads Notes exports as a CommonMark reader would, to check Note formatting survives (#186).
-pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 
 [lints]
 workspace = true

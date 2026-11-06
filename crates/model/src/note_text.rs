@@ -1,23 +1,24 @@
-//! Note formatting (#186): the Markdown subset a Note's text is written in (ADR 0010).
+//! Note formatting (#186): a Note's text is CommonMark (ADR 0010).
 //!
-//! A Note body is read **line by line**: every line break in the text is a line break where it
-//! is shown, as it was when Notes were plain text, and a blank line is a gap.
+//! The text is read by a CommonMark parser (pulldown-cmark, no extensions), so headings,
+//! bulleted and numbered lists (numbered as CommonMark numbers them), block quotes,
+//! `**bold**`/`__bold__`, `*italic*`/`_italic_`, `[text](target)` links (a target with
+//! spaces, such as a Bible reference, in `<…>`), autolinks and `\` escapes follow the spec.
+//! Code spans and blocks show their text; raw HTML shows as typed (it is never run).
 //!
-//! - **Line kinds**: `# `, `## ` … `###### ` start a heading; `- `, `* ` or `+ ` a bulleted
-//!   item and `1. ` or `1) ` a numbered item (indented two spaces per level under the item
-//!   above); `>` a block-quote line. Anything else is text, its leading spaces kept.
-//! - **Inline**: `**bold**` and `__bold__`, `*italic*` and `_italic_` (CommonMark's flanking
-//!   rules, so `snake_case` and `2 * 3 * 4` stay as typed), `[text](target)` links, whose
-//!   target is a Bible reference or a URL, and `\` before ASCII punctuation for the character
-//!   itself. A `\` ending a line is CommonMark's hard line break, which every line break is
-//!   here, so it shows nothing. Nothing else is markup: no code, HTML, tables or images.
-//!
-//! [`parse_note_text`] gives each line's shown text with its [`NoteMark`]s and a map back to
-//! the body, so the editor can colour the source and the Notes Tool can draw the result.
-//! [`escape_note_text`] turns plain text into a body that shows it exactly as typed: the User
-//! database migration runs it over every Note written before formatting existed.
+//! What is shown is laid out **per line of the text**: a line break inside a paragraph (a
+//! CommonMark soft line break) is a line break where the Note is shown, as it was when Notes
+//! were plain text (the way comment boxes on many sites read Markdown), and each blank line
+//! is a gap. [`parse_note_text`] gives each line of the body its shown text with its
+//! [`NoteMark`]s and a map back to the body, so the editor can colour the source and the
+//! Notes Tool can draw the result. A span (bold, a link) that runs over a line break is
+//! marked on each line it covers. [`escape_note_text`] turns plain text into a body that
+//! shows it exactly as typed: the User database migration runs it over every Note written
+//! before formatting existed.
 
 use std::ops::Range;
+
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
 /// What one line of a Note is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -107,19 +108,242 @@ impl NoteLine {
     }
 }
 
-/// Read a Note body: one [`NoteLine`] per line.
+/// Read a Note body: one [`NoteLine`] per line of the body.
 pub fn parse_note_text(body: &str) -> Vec<NoteLine> {
     let mut lines = Vec::new();
     let mut start = 0;
-    // The list level of the line above, if it was a list item.
-    let mut above: Option<u8> = None;
     for raw in body.split('\n') {
-        let line = parse_line(raw, start, above);
-        above = line.kind.list_level();
+        let source = start..start + raw.len();
+        lines.push(NoteLine {
+            kind: NoteLineKind::Blank,
+            text: String::new(),
+            marks: Vec::new(),
+            content: source.end,
+            source,
+            offsets: Vec::new(),
+        });
         start += raw.len() + 1;
-        lines.push(line);
     }
-    lines
+    let mut b = Builder {
+        body,
+        kind_set: vec![false; lines.len()],
+        first_inline: vec![None; lines.len()],
+        lines,
+        heading: None,
+        quote_depth: 0,
+        quotes: Vec::new(),
+        lists: Vec::new(),
+        open: Vec::new(),
+    };
+    for (event, r) in Parser::new_ext(body, Options::empty()).into_offset_iter() {
+        b.event(event, r);
+    }
+    b.finish()
+}
+
+/// [`parse_note_text`] at work.
+struct Builder<'a> {
+    body: &'a str,
+    lines: Vec<NoteLine>,
+    /// Whether a line's kind is decided (by a block starting on it, or its first text).
+    kind_set: Vec<bool>,
+    /// Where the first inline content of each line starts in the body.
+    first_inline: Vec<Option<usize>>,
+    /// The level of the heading being read.
+    heading: Option<u8>,
+    quote_depth: usize,
+    quotes: Vec<Range<usize>>,
+    /// Open lists, innermost last: the number the next item gets if numbered.
+    lists: Vec<Option<u64>>,
+    /// Open spans: what, and the line and byte of its text they start at.
+    open: Vec<(NoteMarkKind, usize, usize)>,
+}
+
+impl Builder<'_> {
+    /// The line body byte `at` is on.
+    fn line_of(&self, at: usize) -> usize {
+        self.lines
+            .partition_point(|l| l.source.start <= at)
+            .saturating_sub(1)
+    }
+
+    fn set_kind(&mut self, at: usize, kind: NoteLineKind) {
+        let i = self.line_of(at);
+        self.lines[i].kind = kind;
+        self.kind_set[i] = true;
+    }
+
+    fn inline_at(&mut self, at: usize) {
+        let i = self.line_of(at);
+        let first = &mut self.first_inline[i];
+        *first = Some(first.map_or(at, |f| f.min(at)));
+    }
+
+    fn event(&mut self, event: Event<'_>, r: Range<usize>) {
+        match event {
+            Event::Start(tag) => self.start(tag, r),
+            Event::End(tag) => self.end(tag),
+            Event::Text(t) | Event::Html(t) | Event::InlineHtml(t) => {
+                // An escaped character: its `\` goes with it.
+                let escaped = r.start > 0
+                    && self.body.as_bytes()[r.start - 1] == b'\\'
+                    && t.starts_with(|c: char| c.is_ascii_punctuation());
+                self.inline_at(r.start - usize::from(escaped));
+                self.text(&t, r, false);
+            }
+            Event::Code(t) => {
+                self.inline_at(r.start);
+                self.text(&t, r, true);
+            }
+            _ => {}
+        }
+    }
+
+    fn start(&mut self, tag: Tag<'_>, r: Range<usize>) {
+        match tag {
+            Tag::Heading { level, .. } => {
+                let n = level as u8;
+                self.heading = Some(n);
+                self.set_kind(r.start, NoteLineKind::Heading(n));
+            }
+            Tag::BlockQuote(_) => {
+                self.quote_depth += 1;
+                self.quotes.push(r.clone());
+                self.set_kind(r.start, NoteLineKind::Quote);
+            }
+            Tag::List(first) => self.lists.push(first),
+            Tag::Item => {
+                let level = u8::try_from(self.lists.len().saturating_sub(1)).unwrap_or(u8::MAX);
+                let kind = match self.lists.last_mut() {
+                    Some(Some(next)) => {
+                        let number = u32::try_from(*next).unwrap_or(u32::MAX);
+                        *next = next.saturating_add(1);
+                        NoteLineKind::Numbered { level, number }
+                    }
+                    _ => NoteLineKind::Bullet { level },
+                };
+                self.set_kind(r.start, kind);
+            }
+            Tag::Emphasis | Tag::Strong | Tag::Link { .. } => {
+                self.inline_at(r.start);
+                let kind = match tag {
+                    Tag::Emphasis => NoteMarkKind::Italic,
+                    Tag::Strong => NoteMarkKind::Bold,
+                    Tag::Link { dest_url, .. } => NoteMarkKind::Link(dest_url.to_string()),
+                    _ => return,
+                };
+                let line = self.line_of(r.start);
+                let at = self.lines[line].text.len();
+                self.open.push((kind, line, at));
+            }
+            Tag::Image { .. } => self.inline_at(r.start),
+            _ => {}
+        }
+    }
+
+    fn end(&mut self, tag: TagEnd) {
+        match tag {
+            TagEnd::Heading(_) => self.heading = None,
+            TagEnd::BlockQuote(_) => self.quote_depth = self.quote_depth.saturating_sub(1),
+            TagEnd::List(_) => {
+                self.lists.pop();
+            }
+            TagEnd::Emphasis | TagEnd::Strong | TagEnd::Link => {
+                let Some((kind, first, at)) = self.open.pop() else {
+                    return;
+                };
+                // Its text is the last added: it ends on the last line that took text.
+                let last = (first..self.lines.len())
+                    .rev()
+                    .find(|&i| !self.lines[i].text.is_empty() || i == first)
+                    .unwrap_or(first);
+                for i in first..=last {
+                    let from = if i == first { at } else { 0 };
+                    let to = self.lines[i].text.len();
+                    if from < to {
+                        self.lines[i].marks.push(NoteMark {
+                            range: from..to,
+                            kind: kind.clone(),
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Shown text `t`, read from body bytes `r`: each character goes to the line it was
+    /// typed on, and a line break (a space in a code span) shows as the break itself.
+    fn text(&mut self, t: &str, r: Range<usize>, code: bool) {
+        let src = &self.body[r.clone()];
+        let base = if src == t {
+            Some(r.start)
+        } else if code {
+            code_text_start(src, t).map(|i| r.start + i)
+        } else {
+            src.find(t).map(|i| r.start + i)
+        };
+        let last = r.end.saturating_sub(1).max(r.start);
+        for (k, c) in t.char_indices() {
+            // Text that is not in the body as shown (a character reference) maps onto it.
+            let at = |j: usize| base.map_or((r.start + j).min(last), |b| b + j);
+            let o = at(k);
+            if self.body.as_bytes().get(o) == Some(&b'\n') {
+                continue;
+            }
+            let i = self.line_of(o);
+            if !self.kind_set[i] {
+                self.kind_set[i] = true;
+                self.lines[i].kind = match (self.heading, self.quote_depth) {
+                    (Some(n), _) => NoteLineKind::Heading(n),
+                    (None, 0) => NoteLineKind::Text,
+                    _ => NoteLineKind::Quote,
+                };
+            }
+            let line = &mut self.lines[i];
+            line.text.push(c);
+            line.offsets.extend((k..k + c.len_utf8()).map(at));
+        }
+    }
+
+    fn finish(mut self) -> Vec<NoteLine> {
+        for (i, line) in self.lines.iter_mut().enumerate() {
+            // A `>` line with nothing after it, inside a block quote, is part of the quote.
+            let raw = &self.body[line.source.clone()];
+            if !self.kind_set[i]
+                && raw.trim_start().starts_with('>')
+                && self
+                    .quotes
+                    .iter()
+                    .any(|q| q.start <= line.source.start && line.source.start < q.end)
+            {
+                line.kind = NoteLineKind::Quote;
+            }
+            line.content = self.first_inline[i]
+                .or(line.offsets.first().copied())
+                .filter(|c| line.source.contains(c))
+                .unwrap_or(line.source.end);
+            line.marks
+                .sort_by_key(|m| (m.range.start, std::cmp::Reverse(m.range.end)));
+        }
+        self.lines
+    }
+}
+
+/// Where a code span's text `t` starts in its source `src` (backticks included): CommonMark
+/// strips the backticks and one space each side when both are there, and reads a line break
+/// as a space.
+fn code_text_start(src: &str, t: &str) -> Option<usize> {
+    let ticks = src.len() - src.trim_start_matches('`').len();
+    let inner = src.get(ticks..src.len().saturating_sub(ticks))?;
+    [0, 1].into_iter().find_map(|skip| {
+        let part = inner.get(skip..skip + t.len())?;
+        let same = part
+            .bytes()
+            .zip(t.bytes())
+            .all(|(s, c)| s == c || (s == b'\n' && c == b' '));
+        same.then_some(ticks + skip)
+    })
 }
 
 /// The text a Note shows, markup removed: one line per line (for search and filtering).
@@ -131,424 +355,64 @@ pub fn note_plain_text(body: &str) -> String {
         .join("\n")
 }
 
-/// A body that shows `plain` exactly as typed: each line as text, with what would be markup
-/// backslash-escaped. Lines that already read as plain text are left as they are.
+/// Whether `plain` already shows exactly as typed: each line as text (or a gap), unmarked.
+fn shows_as_typed(plain: &str) -> bool {
+    let lines = parse_note_text(plain);
+    lines.iter().zip(plain.split('\n')).all(|(l, typed)| {
+        if typed.trim().is_empty() {
+            l.kind == NoteLineKind::Blank
+        } else {
+            l.kind == NoteLineKind::Text && l.text == typed && l.marks.is_empty()
+        }
+    })
+}
+
+/// A body that shows `plain` exactly as typed, one text line per line. Plain text that
+/// already reads so is left as it is; otherwise each line has what CommonMark would read as
+/// markup backslash-escaped, and its leading and trailing spaces written as character
+/// references (`&#32;`), which CommonMark would otherwise drop.
 pub fn escape_note_text(plain: &str) -> String {
+    if shows_as_typed(plain) {
+        return plain.to_string();
+    }
     plain
         .split('\n')
-        .map(|line| {
-            let parsed = parse_line(line, 0, None);
-            let as_typed = match parsed.kind {
-                NoteLineKind::Blank => true,
-                NoteLineKind::Text => parsed.text == line && parsed.marks.is_empty(),
-                _ => false,
-            };
-            if as_typed {
-                line.to_string()
-            } else {
-                escape_line(line)
-            }
-        })
+        .map(escape_line)
         .collect::<Vec<_>>()
         .join("\n")
 }
 
 fn escape_line(line: &str) -> String {
+    if line.trim().is_empty() {
+        return line.to_string();
+    }
+    let entity = |c: char| if c == '\t' { "&#9;" } else { "&#32;" };
     let body = line.trim_start_matches([' ', '\t']);
+    let core = body.trim_end_matches([' ', '\t']);
     let mut out = String::with_capacity(line.len() + 8);
-    out.push_str(&line[..line.len() - body.len()]);
-    let mut rest = body;
-    if let Some(c) = rest
-        .chars()
-        .next()
-        .filter(|c| matches!(c, '#' | '>' | '-' | '+'))
-    {
-        out.push('\\');
-        out.push(c);
-        rest = &rest[1..];
-    } else {
-        let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
-        if digits > 0 && rest[digits..].starts_with(['.', ')']) {
-            out.push_str(&rest[..digits]);
-            out.push('\\');
-            rest = &rest[digits..];
-        }
-    }
-    for c in rest.chars() {
-        if matches!(c, '\\' | '*' | '_' | '[' | ']') {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
-}
-
-/// Leading spaces (a tab counts as four) and the rest.
-fn indent(raw: &str) -> (usize, usize) {
-    let mut cols = 0;
-    let mut bytes = 0;
-    for c in raw.chars() {
-        match c {
-            ' ' => cols += 1,
-            '\t' => cols += 4,
-            _ => break,
-        }
-        bytes += 1;
-    }
-    (cols, bytes)
-}
-
-fn parse_line(raw: &str, start: usize, above: Option<u8>) -> NoteLine {
-    let source = start..start + raw.len();
-    if raw.trim().is_empty() {
-        return NoteLine {
-            kind: NoteLineKind::Blank,
-            text: String::new(),
-            marks: Vec::new(),
-            content: source.start,
-            source,
-            offsets: Vec::new(),
-        };
-    }
-    // Text keeps its leading spaces: its content is the whole line.
-    let (kind, content) = line_kind(raw, above);
-    let (text, marks, offsets) = parse_inline(&raw[content..], start + content);
-    NoteLine {
-        kind,
-        text,
-        marks,
-        source,
-        content: start + content,
-        offsets,
-    }
-}
-
-/// The line's kind and the byte where its content starts.
-fn line_kind(raw: &str, above: Option<u8>) -> (NoteLineKind, usize) {
-    let hashes = raw.bytes().take_while(|b| *b == b'#').count();
-    if (1..=6).contains(&hashes) && raw[hashes..].starts_with(' ') {
-        return (NoteLineKind::Heading(hashes as u8), hashes + 1);
-    }
-    if let Some(rest) = raw.strip_prefix('>') {
-        let skip = usize::from(rest.starts_with(' '));
-        return (NoteLineKind::Quote, 1 + skip);
-    }
-    let (cols, lead) = indent(raw);
-    // Nested two columns per level, at most one level deeper than the item above.
-    let level = match above {
-        Some(a) => (cols / 2).min(usize::from(a) + 1),
-        None if cols < 2 => 0,
-        None => return (NoteLineKind::Text, 0),
-    };
-    let level = level.min(8) as u8;
-    let body = &raw[lead..];
-    if body.len() >= 2 && body.starts_with(['-', '*', '+']) && body.as_bytes()[1] == b' ' {
-        return (NoteLineKind::Bullet { level }, lead + 2);
-    }
-    let digits = body.bytes().take_while(u8::is_ascii_digit).count();
-    if (1..=9).contains(&digits)
-        && body[digits..].starts_with(['.', ')'])
-        && body[digits + 1..].starts_with(' ')
-        && let Ok(number) = body[..digits].parse()
-    {
-        return (NoteLineKind::Numbered { level, number }, lead + digits + 2);
-    }
-    (NoteLineKind::Text, 0)
-}
-
-/// A run of `*` or `_` while emphasis is matched.
-struct Delims {
-    ch: char,
-    /// Its first byte in the body, and its length.
-    at: usize,
-    len: usize,
-    open: bool,
-    close: bool,
-    /// Taken from its start by the emphasis it closes, and from its end by what it opens.
-    closed: usize,
-    opened: usize,
-    /// The emphasis it closes and opens, by match index.
-    closes: Vec<usize>,
-    opens: Vec<usize>,
-}
-
-impl Delims {
-    fn left(&self) -> usize {
-        self.len - self.closed - self.opened
-    }
-}
-
-/// A piece of a line before emphasis is matched.
-enum Piece {
-    /// Shown text, each byte with its byte in the body.
-    Text(String, Vec<usize>),
-    Delims(Delims),
-    /// A link, its text already parsed.
-    Link {
-        text: String,
-        marks: Vec<NoteMark>,
-        offsets: Vec<usize>,
-        target: String,
-    },
-}
-
-fn is_punct(c: Option<char>) -> bool {
-    c.is_some_and(|c| c.is_ascii_punctuation() || (!c.is_alphanumeric() && !c.is_whitespace()))
-}
-
-fn is_space(c: Option<char>) -> bool {
-    c.is_none_or(char::is_whitespace)
-}
-
-/// A link's `(target)` at the start of `s` (just after the text's `]`): the target and the
-/// bytes it takes. `<…>` encloses a target with spaces.
-fn link_target(s: &str) -> Option<(String, usize)> {
-    let rest = s.strip_prefix('(')?;
-    if let Some(angled) = rest.strip_prefix('<') {
-        let end = angled.find('>')?;
-        if end == 0 || !angled[end + 1..].starts_with(')') {
-            return None;
-        }
-        return Some((angled[..end].to_string(), 1 + 1 + end + 1 + 1));
-    }
-    let end = rest.find(')')?;
-    let target = rest[..end].trim();
-    if target.is_empty() || target.contains(['(', '<']) {
-        return None;
-    }
-    Some((target.to_string(), 1 + end + 1))
-}
-
-/// The byte of the `]` that closes a link text starting at `s[0]` (after its `[`), skipping
-/// escapes and nested brackets.
-fn link_text_end(s: &str) -> Option<usize> {
-    let mut depth = 0usize;
-    let mut chars = s.char_indices();
+    out.extend(line[..line.len() - body.len()].chars().map(entity));
+    // What would start a block at the start of a line: a heading, quote, list item, setext
+    // underline or code fence; a numbered item's `.` or `)`.
+    let digits = core.bytes().take_while(u8::is_ascii_digit).count();
+    let numbered = digits > 0 && core[digits..].starts_with(['.', ')']);
+    let mut chars = core.char_indices().peekable();
     while let Some((i, c)) = chars.next() {
-        match c {
-            '\\' => {
-                chars.next();
-            }
-            '[' => depth += 1,
-            ']' if depth == 0 => return Some(i),
-            ']' => depth -= 1,
-            _ => {}
-        }
-    }
-    None
-}
-
-/// Shown text, marks and offsets being built.
-#[derive(Default)]
-struct Shown {
-    text: String,
-    marks: Vec<NoteMark>,
-    offsets: Vec<usize>,
-}
-
-impl Shown {
-    fn push(&mut self, c: char, at: usize) {
-        self.text.push(c);
-        self.offsets.extend((0..c.len_utf8()).map(|k| at + k));
-    }
-}
-
-/// Inline markup of `s` (which starts at body byte `base`): shown text, marks, offsets.
-fn parse_inline(s: &str, base: usize) -> (String, Vec<NoteMark>, Vec<usize>) {
-    let mut pieces: Vec<Piece> = Vec::new();
-    let mut run = Shown::default();
-    let flush = |pieces: &mut Vec<Piece>, run: &mut Shown| {
-        if !run.text.is_empty() {
-            let r = std::mem::take(run);
-            pieces.push(Piece::Text(r.text, r.offsets));
-        }
-    };
-    let mut i = 0;
-    while let Some(c) = s[i..].chars().next() {
-        let rest = &s[i..];
-        match c {
-            '\\' => match rest[1..].chars().next() {
-                Some(n) if n.is_ascii_punctuation() => {
-                    run.push(n, base + i + 1);
-                    i += 2;
-                }
-                // CommonMark's hard line break; every line break is one here already.
-                None => i += 1,
-                _ => {
-                    run.push(c, base + i);
-                    i += 1;
-                }
-            },
-            '*' | '_' => {
-                let len = rest.bytes().take_while(|b| *b == c as u8).count();
-                let before = s[..i].chars().next_back();
-                let after = s[i + len..].chars().next();
-                let left_flanking =
-                    !is_space(after) && (!is_punct(after) || is_space(before) || is_punct(before));
-                let right_flanking =
-                    !is_space(before) && (!is_punct(before) || is_space(after) || is_punct(after));
-                let (open, close) = if c == '*' {
-                    (left_flanking, right_flanking)
-                } else {
-                    (
-                        left_flanking && (!right_flanking || is_punct(before)),
-                        right_flanking && (!left_flanking || is_punct(after)),
-                    )
-                };
-                flush(&mut pieces, &mut run);
-                pieces.push(Piece::Delims(Delims {
-                    ch: c,
-                    at: base + i,
-                    len,
-                    open,
-                    close,
-                    closed: 0,
-                    opened: 0,
-                    closes: Vec::new(),
-                    opens: Vec::new(),
-                }));
-                i += len;
-            }
-            '[' => {
-                let link = link_text_end(&rest[1..]).and_then(|end| {
-                    let (target, used) = link_target(&rest[1 + end + 1..])?;
-                    Some((end, target, used))
-                });
-                match link {
-                    Some((end, target, used)) => {
-                        flush(&mut pieces, &mut run);
-                        let (text, marks, offsets) = parse_inline(&rest[1..1 + end], base + i + 1);
-                        pieces.push(Piece::Link {
-                            text,
-                            marks,
-                            offsets,
-                            target,
-                        });
-                        i += 1 + end + 1 + used;
-                    }
-                    None => {
-                        run.push(c, base + i);
-                        i += 1;
-                    }
-                }
-            }
-            _ => {
-                run.push(c, base + i);
-                i += c.len_utf8();
-            }
-        }
-    }
-    flush(&mut pieces, &mut run);
-    let strong = match_emphasis(&mut pieces);
-    assemble(pieces, &strong)
-}
-
-/// CommonMark's emphasis matching, simplified: each closer takes the nearest opener of its
-/// character, two from each when both have two left, else one; runs between them can no
-/// longer match. Returns, per match, whether it is bold.
-fn match_emphasis(pieces: &mut [Piece]) -> Vec<bool> {
-    let mut strong: Vec<bool> = Vec::new();
-    let mut i = 0;
-    while i < pieces.len() {
-        let closer = match &pieces[i] {
-            Piece::Delims(d) if d.close && d.left() > 0 => Some(d.ch),
-            _ => None,
+        let next = chars.peek().map(|(_, n)| *n);
+        let escape = match c {
+            '\\' | '`' | '*' | '_' | '[' | ']' | '<' => true,
+            // A character reference (`&amp;`) would show as the character.
+            '&' => next.is_some_and(|n| n.is_alphanumeric() || n == '#'),
+            '#' | '>' | '-' | '+' | '=' | '~' => i == 0,
+            '.' | ')' => numbered && i == digits,
+            _ => false,
         };
-        let Some(ch) = closer else {
-            i += 1;
-            continue;
-        };
-        let opener = (0..i).rev().find(
-            |&j| matches!(&pieces[j], Piece::Delims(d) if d.ch == ch && d.open && d.left() > 0),
-        );
-        let Some(j) = opener else {
-            i += 1;
-            continue;
-        };
-        let left = |p: &Piece| match p {
-            Piece::Delims(d) => d.left(),
-            _ => 0,
-        };
-        let n = if left(&pieces[j]) >= 2 && left(&pieces[i]) >= 2 {
-            2
-        } else {
-            1
-        };
-        let m = strong.len();
-        strong.push(n == 2);
-        if let Piece::Delims(d) = &mut pieces[j] {
-            d.opened += n;
-            d.opens.push(m);
+        if escape {
+            out.push('\\');
         }
-        if let Piece::Delims(d) = &mut pieces[i] {
-            d.closed += n;
-            d.closes.push(m);
-        }
-        for p in &mut pieces[j + 1..i] {
-            if let Piece::Delims(d) = p {
-                d.open = false;
-                d.close = false;
-            }
-        }
-        // The same closer may go on to close an earlier opener with what is left of it.
+        out.push(c);
     }
-    strong
-}
-
-fn assemble(pieces: Vec<Piece>, strong: &[bool]) -> (String, Vec<NoteMark>, Vec<usize>) {
-    let mut out = Shown::default();
-    let mut starts: Vec<Option<usize>> = vec![None; strong.len()];
-    for p in pieces {
-        match p {
-            Piece::Text(t, o) => {
-                out.text.push_str(&t);
-                out.offsets.extend(o);
-            }
-            Piece::Link {
-                text,
-                marks,
-                offsets,
-                target,
-            } => {
-                let at = out.text.len();
-                out.marks.push(NoteMark {
-                    range: at..at + text.len(),
-                    kind: NoteMarkKind::Link(target),
-                });
-                out.marks.extend(marks.into_iter().map(|m| NoteMark {
-                    range: m.range.start + at..m.range.end + at,
-                    kind: m.kind,
-                }));
-                out.text.push_str(&text);
-                out.offsets.extend(offsets);
-            }
-            Piece::Delims(d) => {
-                for &m in &d.closes {
-                    if let Some(start) = starts[m] {
-                        out.marks.push(NoteMark {
-                            range: start..out.text.len(),
-                            kind: if strong[m] {
-                                NoteMarkKind::Bold
-                            } else {
-                                NoteMarkKind::Italic
-                            },
-                        });
-                    }
-                }
-                // What no match took shows as typed: closers take a run's start, openers
-                // its end.
-                for k in 0..d.left() {
-                    out.push(d.ch, d.at + d.closed + k);
-                }
-                for &m in &d.opens {
-                    starts[m] = Some(out.text.len());
-                }
-            }
-        }
-    }
-    out.marks
-        .sort_by_key(|m| (m.range.start, std::cmp::Reverse(m.range.end)));
-    (out.text, out.marks, out.offsets)
+    out.extend(body[core.len()..].chars().map(entity));
+    out
 }
 
 #[cfg(test)]

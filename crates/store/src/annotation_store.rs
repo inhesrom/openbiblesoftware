@@ -165,14 +165,14 @@ CREATE INDEX anchors_passage ON anchors (start_book, start_chapter, start_verse)
 CREATE INDEX anchors_resource ON anchors (resource_id) WHERE resource_id IS NOT NULL;
 ";
 
-/// Migration 9 → 10 (#186, ADR 0010): Note text becomes Note formatting, a Markdown subset.
+/// Migration 9 → 10 (#186, ADR 0010): Note text becomes Note formatting, CommonMark.
 /// No table changes: [`escape_plain_notes`] runs first and rewrites each Note written as
 /// plain text so it shows exactly as before, and re-indexes it.
 pub(crate) const SCHEMA_10: &str = "";
 
-/// Before migration 9 → 10: every Note body was plain text. Where a line would now read as
-/// formatting (`# heading`, `- item`, `*stars*`, `[link](x)`) its markup characters are
-/// backslash-escaped, so every Note looks exactly as it did; other bodies are untouched.
+/// Before migration 9 → 10: every Note body was plain text. A body that would now read as
+/// formatting (`# heading`, `- item`, `*stars*`, `[link](x)`, leading spaces) is escaped
+/// (`escape_note_text`), so every Note looks exactly as it did; other bodies are untouched.
 /// `notes_fts` is rebuilt from the text the Notes show, without markup. `modified_at` stays:
 /// the user changed nothing.
 pub(crate) fn escape_plain_notes(c: &Connection) -> Result<(), StoreError> {

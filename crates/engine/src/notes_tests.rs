@@ -623,7 +623,7 @@ fn notes_search_finds_words_inside_formatted_text() {
     let id = note(
         &mut s,
         "Rom 5:1",
-        "## Justified\n- by **grace** alone\n> *peace* with [God](Rom 5:1)",
+        "## Justified\n- by **grace** alone\n> *peace* with [God](<Rom 5:1>)",
         None,
     );
     let plain = note(&mut s, "Rom 5:2", "access by faith", None);
@@ -649,7 +649,7 @@ fn notes_search_finds_words_inside_formatted_text() {
 /// reference (its target says where it goes) and a link target can be a Bible reference.
 #[test]
 fn references_in_formatted_text_are_found_outside_links() {
-    let lines = note_body("## Peace, Rom 5:1\n- **Jn 3:16** and [this](Gen 1:1) or Mt 5:3");
+    let lines = note_body("## Peace, Rom 5:1\n- **Jn 3:16** and [this](<Gen 1:1>) or Mt 5:3");
     let refs = |i: usize| -> Vec<String> {
         lines[i]
             .references

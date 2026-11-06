@@ -1,5 +1,5 @@
 //! Resource manifest, text units, the standoff span vocabulary, Keys, `ResourceBuilder`, and
-//! the shared text normalizer, transliteration, and Note formatting (the Markdown subset Note
+//! the shared text normalizer, transliteration, and Note formatting (the CommonMark Note
 //! text is written in).
 //!
 //! Layer L1. No SQLite and no UI here: the `.obr` writer in `obs-store` turns a [`Resource`]

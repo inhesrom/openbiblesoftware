@@ -9,7 +9,7 @@ managing every Annotation (#18 rule 7). The Search Tool's Notes mode searches No
 |---|---|---|
 | `obs-search` | `compile_notes` | The #16 query grammar compiled for `notes_fts` (one `body` column). A Strong's number or Lemma matches itself as written in a Note. |
 | `obs-formats` | `scripture_references` | Bible references in typed text, with byte ranges (Note bodies). English words that are also book spellings need a period. |
-| `obs-model` | `parse_note_text`, `escape_note_text`, `note_plain_text` | Note formatting (#186): a Note's text as shown, line by line, with its marks; plain text escaped to show as typed. |
+| `obs-model` | `parse_note_text`, `escape_note_text`, `note_plain_text` | Note formatting (#186): a Note's CommonMark as shown, line by line, with its marks; plain text escaped to show as typed. |
 | `obs-layout` | `styled_snippet_paragraph`, `formatted_snippet_paragraph` | An inline snippet with some byte ranges in their own colour role (references as links), or bold, italic and at a heading's scale. |
 | `obs-engine` | `notes.rs` | Cards, following anchors, Show in text, Notes search; commands `notes.notebook`, `notes.order`, `notes.open`, `notes.follow`, `notes.show_passage`, `search.notebook`. |
 | `obs-ui-egui` | `shell/notes_tab.rs`, `shell/note_editor.rs`, `shell/search_tab.rs` | The Notebook column, the virtualized card list, the Note editor, the delete dialog, and the Notes results. |
@@ -109,33 +109,38 @@ annotation its warning.
 
 ## Note formatting (#186)
 
-A Note's text is a line-based Markdown subset, stored as typed in `annotations.body`
-([ADR 0010](../adr/0010-note-text-is-a-line-based-markdown-subset.md)). `obs_model::parse_note_text`
-reads it; everything else goes through it.
+A Note's text is CommonMark, stored as typed in `annotations.body`
+([ADR 0010](../adr/0010-note-text-is-commonmark.md)). `obs_model::parse_note_text` reads it
+with pulldown-cmark (no extensions) and gives each line of the text what it shows; everything
+else goes through it.
 
 | Typed | Shown |
 |---|---|
-| `# `, `## `, `### ` (to `###### `) at a line's start | A heading: bold, larger (×1.35, ×1.2, ×1.08), in the heading colour |
+| `# `, `## `, `### ` (to `###### `), or a setext underline | A heading: bold, larger (×1.35, ×1.2, ×1.08), in the heading colour |
 | `- `, `* ` or `+ ` | A bulleted item (•, then ○ and – for nested items) |
-| `1. ` or `1) ` | A numbered item, with the number typed |
-| two more spaces before the marker, under an item | One level deeper (18 px), at most one level below the item above |
+| `1. ` or `1) ` | A numbered item, numbered as CommonMark numbers it (on from the list's first number) |
+| the marker under an item's text (two columns under `- `, three under `1. `) | One level deeper (18 px) |
 | `>` or `> ` | A block-quote line, beside a rule |
 | `**bold**`, `__bold__` | Bold (the reading font's bold face) |
 | `*italic*`, `_italic_` | Italic; CommonMark's flanking rules, so `snake_case` and `2 * 3` stay as typed |
-| `[text](Rom 5:8)`, `[text](<Rom 5>)` | A link to the Passage: hover previews it, click shows it, as for a reference |
-| `[text](https://…)` | A link to the web address: hover shows it, click opens the browser |
-| `\` before ASCII punctuation | The character itself; a `\` ending a line is CommonMark's hard break and shows nothing |
+| `[text](<Rom 5:8>)`, `[text](<Rom 5>)` | A link to the Passage: hover previews it, click shows it, as for a reference |
+| `[text](https://…)`, `<https://…>` | A link to the web address: hover shows it, click opens the browser |
+| `\` before ASCII punctuation, `&amp;` | The character itself |
+| `` `code` ``, code blocks, raw HTML | Their text, as typed (HTML is never run) |
 
-Every line break is a line break where the Note is shown, and a blank line is a gap
-(`0.8 ×` the text size), as for plain Notes before. Bible references in a line's shown text
-are links wherever they are (bold, in a list item, in a heading), except inside a link, whose
+Every line break is a line break where the Note is shown (a soft line break inside a paragraph
+is drawn as one), and each blank line is a gap (`0.8 ×` the text size), as for plain Notes
+before. Bold or a link that runs over a line break is marked on each line. A line that
+continues a list item's text is drawn as text. Bible references in a line's shown text are
+links wherever they are (bold, in a list item, in a heading), except inside a link, whose
 target decides where it goes (`notes::note_body`). Each line is laid out by the pipeline with
 `obs_layout::formatted_snippet_paragraph` (bold, italic and link-colour byte ranges, which may
 overlap, at a heading's scale); a plain line is laid out exactly as before (`a_plain_formatted_snippet_is_the_styled_snippet_it_replaces`).
 
-- **Old Notes**: User database migration 9 → 10 escapes, in each Note written before, any
-  line that would now read as formatting (`# not a heading` becomes `\# not a heading`), so
-  every old Note shows exactly as it did; Notes that read as plain text are untouched.
+- **Old Notes**: User database migration 9 → 10 escapes each Note written before that would
+  not show exactly as typed: on each line, what CommonMark would read as markup gets a `\`
+  (`# not a heading` becomes `\# not a heading`) and leading or trailing spaces become `&#32;`,
+  so every old Note shows exactly as it did; Notes that read as plain text are untouched.
 - **Search and the filter field** read the text a Note shows (`note_plain_text`): `notes_fts`
   indexes it, so `**grace** alone` is found by the phrase `"grace alone"`, and link targets are
   not words of the Note. Notes search snippets show no markup.
@@ -145,16 +150,18 @@ overlap, at a heading's scale); a plain line is laid out exactly as before (`a_p
 ### The Note editor (`shell/note_editor.rs`)
 
 Used by the cards and by the popup Note editor. Above the field a toolbar: **B**, *I*, **H**
-(cycles `#`, `##`, `###`, text), •, 1., “” and 🔗 (inserts `[selection]()` with the cursor in the
-parentheses; off, with a hover saying why, while the selection spans lines, since a link ends
-with its line). Ctrl+B and Ctrl+I (Cmd on macOS) bold and italicise the selection, or take it
-off when it is already so; as a Note's bold and italics end with their line, each selected
-line gets its own marks, after its heading, list or quote marker. Typing `- `, `1. ` or `> `
+(cycles `#`, `##`, `###`, text), •, 1., “” and 🔗 (inserts `[selection](<>)` with the cursor
+between `<` and `>`, so a Bible reference's spaces are part of the target; off, with a hover
+saying why, while the selection spans lines). Ctrl+B and Ctrl+I (Cmd on macOS) bold and
+italicise the selection, or take it off when it is already so; each selected line gets its own
+marks, after its heading, list or quote marker, empty lines skipped (a span cannot run over a
+blank line or a list item's marker). Typing `- `, `1. ` or `> `
 at a line's start starts a list or quote; Enter at the end of an item continues it (with the
 next number) and Enter in an empty item ends it. List, quote and heading changes apply to
-every line the selection touches, each read in its place in the Note: numbering goes per
-nesting level (on from a numbered item just above), and the nested items of a line that stops
-being an item move out a level rather than turn into text.
+every line the selection touches, each read in its place in the Note's parse: numbering goes
+per nesting level (on from a numbered item just above), a nested item is written under its
+parent's text (re-indented when the parent's marker changes width), and the nested items of a
+line that stops being an item move out a level rather than turn into text.
 
 The field shows the Markdown as typed, coloured: headings in the display face and larger,
 bold text strong, italics slanted, markup dimmed, links and Bible references in the link colour
@@ -162,8 +169,8 @@ and underlined. Each toolbar or shortcut change is one step of the field's own u
 Ctrl+Shift+Z), and pressing the toolbar does not end the card's editing pass (the field gets
 the keys back). The saves of an editing pass are still one `annotation.edit` undo step.
 
-Exports keep the formatting: see [copy-export.md](copy-export.md) and `notes_export.rs`
-(`note_markdown`, `note_html`).
+Exports keep the formatting: the Markdown is the text as typed, the HTML pulldown-cmark's;
+see [copy-export.md](copy-export.md) and `notes_export.rs` (`note_markdown`, `note_html`).
 
 ## Following a card (#18 rule 10)
 

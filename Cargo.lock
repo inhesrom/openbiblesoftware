@@ -2581,6 +2581,7 @@ name = "obs-model"
 version = "0.0.0"
 dependencies = [
  "obs-scripture",
+ "pulldown-cmark",
  "serde",
  "serde_json",
  "sha2",

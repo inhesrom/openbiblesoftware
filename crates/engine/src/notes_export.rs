@@ -13,18 +13,13 @@
 //! write failed), is left out with a note saying why, so no quote goes out without the
 //! credit it may need.
 //!
-//! The Markdown keeps a Note's text as shown, Note formatting included (#186): headings
-//! (two levels down, under the Annotation's own), bulleted and numbered lists, block quotes,
-//! bold, italic and links are written as CommonMark (bold or italic spans that touch as one,
-//! and with `_` rather than `*` where runs of `*` would run together and a reader pair them
-//! otherwise); the rest of the text has CommonMark's
-//! special characters backslash-escaped, lines end in a hard line break and leading spaces
-//! are written as character references, so a Markdown reader shows (and a parser reads back)
-//! the same text. A blank line separates a list or quote from text next to it, which
-//! CommonMark would otherwise run together. A numbered item keeps the number typed: where it
-//! does not follow on from the item above, the Markdown starts a new list there (CommonMark
-//! numbers a list on from its first item) and the HTML gives the item its `value`. The HTML
-//! has the same structure.
+//! A Note's text is CommonMark (Note formatting, #186). The Markdown export writes it as
+//! typed, never re-written from a parse: only a `\` goes before each line break inside a
+//! paragraph (a hard line break, so a reader keeps every line break as the app shows it),
+//! and a code fence or HTML block the Note leaves open is closed, so the rest of the export
+//! is not read into it. The HTML export is a CommonMark reader's HTML (pulldown-cmark), with
+//! line breaks kept, the Note's headings two levels down (under the Annotation's own), raw
+//! HTML shown as typed, and only web links as links.
 
 use std::collections::BTreeMap;
 
@@ -34,11 +29,9 @@ use serde_json::{Value, json};
 
 use crate::annotations::{Anchor, Content, TextRange};
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params};
-use obs_model::{NoteLine, NoteLineKind, NoteMark, NoteMarkKind, parse_note_text};
+use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
 
-use crate::copy_verses::{
-    html_document, html_escape, markdown_escape, markdown_escape_line_start, markdown_escape_part,
-};
+use crate::copy_verses::{html_document, html_escape, markdown_escape, markdown_escape_line_start};
 use crate::notes::{Card, NotesFilter};
 use crate::session::Session;
 use crate::workspace::TabId;
@@ -132,409 +125,168 @@ fn html_lines(text: &str) -> String {
         .join("\n")
 }
 
-/// How far a Note's headings move down in an export: its `#` sits under the Annotation's `##`.
+/// How far a Note's headings move down in the HTML export: its `#` sits under the
+/// Annotation's `##`.
 const HEADING_SHIFT: u8 = 2;
 
-/// Marks in the order they open, outermost first at each start.
-fn sorted(marks: &[NoteMark]) -> Vec<&NoteMark> {
-    let mut marks: Vec<&NoteMark> = marks.iter().collect();
-    marks.sort_by_key(|m| (m.range.start, std::cmp::Reverse(m.range.end)));
-    marks
-}
-
-/// Write a line's shown text with its marks: `text` writes a span of plain text, `open` and
-/// `close` a mark's ends. `open` is told what is written before it, and whether that ends
-/// with a closing.
-fn write_inline(
-    line: &NoteLine,
-    text: &dyn Fn(std::ops::Range<usize>) -> String,
-    open: &dyn Fn(&NoteMark, &str, bool) -> String,
-    close: &dyn Fn(&NoteMark) -> String,
-) -> String {
-    let mut out = String::new();
-    let mut stack: Vec<&NoteMark> = Vec::new();
-    let mut at = 0;
-    // Where the last closing written ends in `out`.
-    let mut closed = None;
-    let close_to = |out: &mut String,
-                    stack: &mut Vec<&NoteMark>,
-                    at: &mut usize,
-                    closed: &mut Option<usize>,
-                    upto| {
-        while let Some(top) = stack.last().copied().filter(|t| t.range.end <= upto) {
-            out.push_str(&text(*at..top.range.end));
-            *at = top.range.end;
-            out.push_str(&close(top));
-            *closed = Some(out.len());
-            stack.pop();
-        }
-    };
-    for m in sorted(&line.marks) {
-        close_to(&mut out, &mut stack, &mut at, &mut closed, m.range.start);
-        out.push_str(&text(at..m.range.start));
-        at = m.range.start;
-        let opening = open(m, &out, closed == Some(out.len()));
-        out.push_str(&opening);
-        stack.push(m);
-    }
-    close_to(&mut out, &mut stack, &mut at, &mut closed, usize::MAX);
-    out.push_str(&text(at..line.text.len()));
-    out
-}
-
-/// A link target as a CommonMark destination: `<…>` around one with spaces or parentheses.
-fn markdown_target(target: &str) -> String {
-    if target.contains([' ', '(', ')']) {
-        format!("<{}>", target.replace(['<', '>'], ""))
-    } else {
-        target.to_string()
-    }
-}
-
-fn is_emphasis(m: &NoteMark) -> bool {
-    matches!(m.kind, NoteMarkKind::Bold | NoteMarkKind::Italic)
-}
-
-/// A line's marks with bold (or italic) spans that touch joined into one, where that
-/// crosses no other mark, and one inside another of its kind left out: `_faith_*hope*` shows
-/// one italic word, which `*faith**hope*` would not be to a CommonMark reader.
-fn joined_marks(line: &NoteLine) -> Vec<NoteMark> {
-    let mut marks = line.marks.clone();
-    let crosses = |a: &std::ops::Range<usize>, b: &std::ops::Range<usize>| {
-        (a.start < b.start && b.start < a.end && a.end < b.end)
-            || (b.start < a.start && a.start < b.end && b.end < a.end)
-    };
-    'join: loop {
-        for i in 0..marks.len() {
-            for j in 0..marks.len() {
-                if i == j || !is_emphasis(&marks[i]) || marks[i].kind != marks[j].kind {
-                    continue;
-                }
-                let (outer, inner) = (&marks[i].range, &marks[j].range);
-                if outer.start <= inner.start && inner.end <= outer.end {
-                    marks.remove(j);
-                    continue 'join;
-                }
-                if outer.end != inner.start {
-                    continue;
-                }
-                let joined = marks[i].range.start..marks[j].range.end;
-                if marks
-                    .iter()
-                    .enumerate()
-                    .any(|(k, m)| k != i && k != j && crosses(&m.range, &joined))
-                {
-                    continue;
-                }
-                marks[i].range = joined;
-                marks.remove(j);
-                continue 'join;
-            }
-        }
-        return marks;
-    }
-}
-
-/// Whether a CommonMark reader takes `m` written with `_` as emphasis, `before` written
-/// ahead of it: a `_` does not open or close inside a word. A mark that opens where `m`
-/// closes, or one around it that closes there too, writes punctuation after it.
-fn underscore_fits(line: &NoteLine, marks: &[NoteMark], m: &NoteMark, before: &str) -> bool {
-    let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
-    let closes_after = |o: &NoteMark| {
-        o.range.end == m.range.end && (o.range.start < m.range.start || o.range == m.range)
-    };
-    !word(before.chars().next_back())
-        && (marks
-            .iter()
-            .any(|o| o != m && (o.range.start == m.range.end || closes_after(o)))
-            || !word(line.text[m.range.end..].chars().next()))
-}
-
-/// Whether `m` is better written with `_` than `*`, where a run of `*` would run on into
-/// another and a CommonMark reader pair them otherwise:
-/// - it opens just after a closing `*` (`**a _b_**_c_`, not `**a *b****c*`);
-/// - an emphasis of the other kind inside it shares one end with it (`_**a**b_`, not
-///   `***a**b*`);
-///
-/// but not just after a closing `_`.
-fn wants_underscore(
-    line: &NoteLine,
-    marks: &[NoteMark],
-    m: &NoteMark,
-    before: &str,
-    after_closing: bool,
-) -> bool {
-    let shares_one_end = marks.iter().any(|o| {
-        is_emphasis(o)
-            && o.kind != m.kind
-            && m.range.start <= o.range.start
-            && o.range.end <= m.range.end
-            && ((o.range.start == m.range.start) != (o.range.end == m.range.end))
-    });
-    // After a closing `_` it is `*`, for the same reason.
-    let after = |c| after_closing && before.ends_with(c);
-    (after('*') || shares_one_end) && !after('_') && underscore_fits(line, marks, m, before)
-}
-
-fn inline_markdown(line: &NoteLine) -> String {
-    let text = line.text.trim_end();
-    let mut line = line.clone();
-    line.marks = joined_marks(&line);
-    // The emphasis written with `_` (see `wants_underscore`).
-    let underscored: std::cell::RefCell<Vec<NoteMark>> = Default::default();
-    let delimiter = |m: &NoteMark| {
-        let mark = if underscored.borrow().contains(m) {
-            "_"
-        } else {
-            "*"
-        };
-        mark.repeat(if m.kind == NoteMarkKind::Bold { 2 } else { 1 })
-    };
-    write_inline(
-        &line,
-        &|r| markdown_escape_part(text, r.start.min(text.len())..r.end.min(text.len())),
-        &|m, before, after_closing| match m.kind {
-            NoteMarkKind::Link(_) => "[".into(),
-            _ => {
-                if wants_underscore(&line, &line.marks, m, before, after_closing) {
-                    underscored.borrow_mut().push(m.clone());
-                }
-                delimiter(m)
-            }
-        },
-        &|m| match &m.kind {
-            NoteMarkKind::Link(t) => format!("]({})", markdown_target(t)),
-            _ => delimiter(m),
-        },
-    )
-}
-
-/// What kind of Markdown block a line belongs to; a change of kind between two lines needs a
-/// blank line, except next to a heading.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Group {
-    Text,
-    Blank,
-    Heading,
-    List,
-    Quote,
-}
-
-fn group(kind: NoteLineKind) -> Group {
-    match kind {
-        NoteLineKind::Text => Group::Text,
-        NoteLineKind::Blank => Group::Blank,
-        NoteLineKind::Heading(_) => Group::Heading,
-        NoteLineKind::Bullet { .. } | NoteLineKind::Numbered { .. } => Group::List,
-        NoteLineKind::Quote => Group::Quote,
-    }
-}
-
-/// A Note's text as Markdown (see the module docs).
+/// A Note's text as Markdown: its source as typed, which is CommonMark (see the module docs),
+/// with a `\` (a hard line break) before each line break inside a paragraph, so a reader
+/// keeps the Note's line breaks as the app shows them, and closed if it ends inside a code
+/// fence or an HTML block, so what follows in the export is not read into it.
 pub fn note_markdown(body: &str) -> String {
-    let lines = parse_note_text(body);
-    let mut out: Vec<String> = Vec::new();
-    // The last list item at each level: its content column, for nesting, and if numbered
-    // the number that follows on from it and the delimiter written.
-    let mut levels: Vec<(usize, Option<(u32, char)>)> = Vec::new();
-    for (i, line) in lines.iter().enumerate() {
-        let g = group(line.kind);
-        if let Some(prev) = i.checked_sub(1).map(|p| group(lines[p].kind))
-            && prev != g
-            && ![prev, g]
-                .iter()
-                .any(|x| matches!(x, Group::Blank | Group::Heading))
+    let start = body
+        .split_inclusive('\n')
+        .take_while(|l| l.trim().is_empty())
+        .map(str::len)
+        .sum::<usize>();
+    let body = body[start.min(body.len())..].trim_end();
+    let mut out = String::with_capacity(body.len() + 16);
+    let mut at = 0;
+    for (event, r) in Parser::new(body).into_offset_iter() {
+        if event == Event::SoftBreak
+            && let Some(nl) = body[r.clone()].find(['\r', '\n']).map(|i| i + r.start)
         {
-            out.push(String::new());
+            out.push_str(&body[at..nl]);
+            out.push('\\');
+            at = nl;
         }
-        let next = lines.get(i + 1).map(|n| group(n.kind));
-        let content = markdown_escape_line_start(&inline_markdown(line));
-        let written = match line.kind {
-            NoteLineKind::Blank => String::new(),
-            NoteLineKind::Text => {
-                let body = content.trim_start_matches([' ', '\t']);
-                let lead: String = content[..content.len() - body.len()]
-                    .chars()
-                    .map(|c| if c == '\t' { "&#9;" } else { "&#32;" })
-                    .collect();
-                let mut text = format!("{lead}{body}");
-                if next == Some(Group::Text) {
-                    text.push('\\');
-                }
-                text
-            }
-            NoteLineKind::Heading(level) => {
-                let hashes = "#".repeat(usize::from((level + HEADING_SHIFT).min(6)));
-                format!("{hashes} {content}")
-            }
-            NoteLineKind::Quote => {
-                let mut text = format!("> {content}");
-                if next == Some(Group::Quote) {
-                    text.push('\\');
-                }
-                text
-            }
-            NoteLineKind::Bullet { level } | NoteLineKind::Numbered { level, .. } => {
-                let level = usize::from(level).min(levels.len());
-                let before = levels.get(level).copied();
-                levels.truncate(level);
-                let indent = levels.last().map_or(0, |l| l.0);
-                let (marker, numbered) = match line.kind {
-                    NoteLineKind::Numbered { number, .. } => {
-                        // CommonMark numbers a list's items on from its first, so a number
-                        // that does not follow on starts a new list (at that number), which
-                        // a change of delimiter does.
-                        let delim = match before {
-                            Some((_, Some((next, d)))) if next == number => d,
-                            Some((_, Some((_, '.')))) => ')',
-                            _ => '.',
-                        };
-                        // Nor may a list that starts at another number than 1 interrupt
-                        // the text of the item above: a blank line ends that text first.
-                        if level > 0 && before.is_none() && number != 1 {
-                            out.push(String::new());
-                        }
-                        (
-                            format!("{number}{delim} "),
-                            Some((number.saturating_add(1), delim)),
-                        )
-                    }
-                    _ => ("- ".to_string(), None),
-                };
-                levels.push((indent + marker.len(), numbered));
-                format!("{}{marker}{content}", " ".repeat(indent))
-            }
-        };
-        match g {
-            Group::List => {}
-            // A blank line does not end a CommonMark list: the next item may follow on.
-            Group::Blank => levels.truncate(1),
-            _ => levels.clear(),
-        }
-        out.push(written.trim_end_matches(' ').to_string());
     }
-    while out.last().is_some_and(String::is_empty) {
-        out.pop();
+    out.push_str(&body[at..]);
+    if ends_closed(&out) {
+        return out;
     }
-    while out.first().is_some_and(String::is_empty) {
-        out.remove(0);
-    }
-    out.join("\n")
+    let longest = |c: char| {
+        out.split(|x| x != c)
+            .map(str::len)
+            .max()
+            .unwrap_or(0)
+            .max(3)
+    };
+    let fences = ['`', '~']
+        .into_iter()
+        .flat_map(|c| (3..=longest(c)).map(move |n| c.to_string().repeat(n)));
+    let html = [
+        "-->",
+        "?>",
+        "]]>",
+        ">",
+        "</script>",
+        "</pre>",
+        "</style>",
+        "</textarea>",
+    ]
+    .map(String::from);
+    fences
+        .chain(html)
+        .map(|closer| format!("{out}\n{closer}"))
+        .find(|closed| ends_closed(closed))
+        .unwrap_or(out)
 }
 
-fn inline_html(line: &NoteLine) -> String {
-    let url = |t: &str| {
-        ["https://", "http://", "mailto:"]
-            .iter()
-            .any(|p| t.starts_with(p))
-    };
-    write_inline(
-        line,
-        &|r| html_escape(&line.text[r]),
-        &|m, _, _| match &m.kind {
-            NoteMarkKind::Bold => "<strong>".into(),
-            NoteMarkKind::Italic => "<em>".into(),
-            NoteMarkKind::Link(t) if url(t) => format!("<a href=\"{}\">", html_escape(t)),
-            NoteMarkKind::Link(_) => String::new(),
-        },
-        &|m| match &m.kind {
-            NoteMarkKind::Bold => "</strong>".into(),
-            NoteMarkKind::Italic => "</em>".into(),
-            NoteMarkKind::Link(t) if url(t) => "</a>".into(),
-            // A Bible reference: its text, then where it points when that is not the same.
-            NoteMarkKind::Link(t) if line.text[m.range.clone()].trim() == t.trim() => String::new(),
-            NoteMarkKind::Link(t) => format!(" ({})", html_escape(t)),
-        },
+/// Whether a heading after Markdown `md` (and a blank line) is read as one, not as part of
+/// a code fence or HTML block left open in it.
+fn ends_closed(md: &str) -> bool {
+    let probe = format!("{md}\n\n# end");
+    let events: Vec<Event<'_>> = Parser::new(&probe).collect();
+    matches!(
+        events.as_slice(),
+        [
+            ..,
+            Event::Start(Tag::Heading {
+                level: HeadingLevel::H1,
+                ..
+            }),
+            Event::Text(t),
+            Event::End(TagEnd::Heading(HeadingLevel::H1)),
+        ] if t.as_ref() == "end"
     )
 }
 
-/// A Note's text as HTML: paragraphs (`<br>` between lines), headings two levels down,
-/// nested `<ul>`/`<ol>` lists and block quotes.
+/// Whether a link target is a web address the HTML export may link to.
+fn web_target(t: &str) -> bool {
+    ["https://", "http://", "mailto:"]
+        .iter()
+        .any(|p| t.starts_with(p))
+}
+
+/// A Note's text as HTML, by a CommonMark reader, as the app shows it: each line break a
+/// line break (`<br />`), headings two levels down, raw HTML shown as typed (escaped), web
+/// links as `<a href>` and a link to a Bible reference as its text followed by the reference
+/// in parentheses when they differ; paragraphs take their direction from their first letter.
 pub fn note_html(body: &str) -> String {
-    let lines = parse_note_text(body);
-    let mut out: Vec<String> = Vec::new();
-    // Text or quote lines waiting for their paragraph.
-    let mut para: Vec<String> = Vec::new();
-    let mut para_quote = false;
-    // Open lists: whether each is numbered, and the number that follows on in it.
-    let mut lists: Vec<(bool, u32)> = Vec::new();
-    let flush = |out: &mut Vec<String>, para: &mut Vec<String>, quote: bool| {
-        if para.is_empty() {
-            return;
-        }
-        // Its direction from its first letter: a Hebrew paragraph reads right to left.
-        let p = format!("<p dir=\"auto\">{}</p>", para.join("<br>\n"));
-        out.push(if quote {
-            format!("<blockquote>{p}</blockquote>")
-        } else {
-            p
-        });
-        para.clear();
+    let shift = |level: HeadingLevel| {
+        HeadingLevel::try_from((level as usize + usize::from(HEADING_SHIFT)).min(6))
+            .unwrap_or(HeadingLevel::H6)
     };
-    let close_lists = |out: &mut Vec<String>, lists: &mut Vec<(bool, u32)>, keep: usize| {
-        while lists.len() > keep {
-            let numbered = lists.pop().is_some_and(|l| l.0);
-            out.push(if numbered { "</li></ol>" } else { "</li></ul>" }.into());
-        }
-    };
-    for line in &lines {
-        let quote = line.kind == NoteLineKind::Quote;
-        if !matches!(line.kind, NoteLineKind::Text | NoteLineKind::Quote) || quote != para_quote {
-            flush(&mut out, &mut para, para_quote);
-        }
-        if line.kind.list_level().is_none() {
-            close_lists(&mut out, &mut lists, 0);
-        }
-        match line.kind {
-            NoteLineKind::Blank => {}
-            NoteLineKind::Text | NoteLineKind::Quote => {
-                para_quote = quote;
-                para.push(inline_html(line));
+    let mut events: Vec<Event<'_>> = Vec::new();
+    // Open links: for one not written as a link, its target and the text shown so far.
+    let mut links: Vec<Option<(String, String)>> = Vec::new();
+    for event in Parser::new(body) {
+        match event {
+            Event::SoftBreak => events.push(Event::HardBreak),
+            Event::Start(Tag::Heading {
+                level,
+                id,
+                classes,
+                attrs,
+            }) => events.push(Event::Start(Tag::Heading {
+                level: shift(level),
+                id,
+                classes,
+                attrs,
+            })),
+            Event::End(TagEnd::Heading(level)) => {
+                events.push(Event::End(TagEnd::Heading(shift(level))));
             }
-            NoteLineKind::Heading(level) => {
-                let n = (level + HEADING_SHIFT).min(6);
-                out.push(format!("<h{n}>{}</h{n}>", inline_html(line)));
+            // Raw HTML shows as typed, its lines as lines of a paragraph.
+            Event::Start(Tag::HtmlBlock) => events.push(Event::Start(Tag::Paragraph)),
+            Event::End(TagEnd::HtmlBlock) => {
+                if events.last() == Some(&Event::HardBreak) {
+                    events.pop();
+                }
+                events.push(Event::End(TagEnd::Paragraph));
             }
-            NoteLineKind::Bullet { level } | NoteLineKind::Numbered { level, .. } => {
-                let number = match line.kind {
-                    NoteLineKind::Numbered { number, .. } => Some(number),
-                    _ => None,
-                };
-                let numbered = number.is_some();
-                let level = usize::from(level).min(lists.len());
-                close_lists(&mut out, &mut lists, level + 1);
-                let item = |value: Option<u32>| match value {
-                    Some(n) => format!("<li value=\"{n}\">{}", inline_html(line)),
-                    None => format!("<li>{}", inline_html(line)),
-                };
-                let next = number.map_or(0, |n| n.saturating_add(1));
-                match lists.get_mut(level) {
-                    Some(open) if open.0 == numbered => {
-                        // An item numbered as typed, not on from the one above.
-                        let value = number.filter(|n| *n != open.1);
-                        open.1 = next;
-                        out.push(format!("</li>\n{}", item(value)));
-                    }
-                    other => {
-                        // Another kind of list at this level: the old one ends here.
-                        if other.is_some() {
-                            close_lists(&mut out, &mut lists, level);
-                        }
-                        let open = match number {
-                            Some(1) => "<ol>".to_string(),
-                            Some(n) => format!("<ol start=\"{n}\">"),
-                            None => "<ul>".to_string(),
-                        };
-                        out.push(format!("{open}\n{}", item(None)));
-                        lists.push((numbered, next));
-                    }
+            Event::Html(t) => {
+                let line = t.trim_end_matches(['\r', '\n']).to_string();
+                let broke = line.len() < t.len();
+                events.push(Event::Text(line.into()));
+                if broke {
+                    events.push(Event::HardBreak);
                 }
             }
+            Event::InlineHtml(t) => events.push(Event::Text(t)),
+            Event::Start(Tag::Link { ref dest_url, .. }) if !web_target(dest_url) => {
+                links.push(Some((dest_url.to_string(), String::new())));
+            }
+            Event::Start(Tag::Link { .. }) => {
+                links.push(None);
+                events.push(event);
+            }
+            Event::End(TagEnd::Link) => match links.pop() {
+                Some(Some((target, text))) => {
+                    if text.trim() != target.trim() {
+                        events.push(Event::Text(format!(" ({target})").into()));
+                    }
+                }
+                _ => events.push(event),
+            },
+            // An image is not fetched: its description shows.
+            Event::Start(Tag::Image { .. }) | Event::End(TagEnd::Image) => {}
+            Event::Text(ref t) | Event::Code(ref t) => {
+                for (_, text) in links.iter_mut().flatten() {
+                    text.push_str(t);
+                }
+                events.push(event);
+            }
+            other => events.push(other),
         }
     }
-    flush(&mut out, &mut para, para_quote);
-    close_lists(&mut out, &mut lists, 0);
-    out.join("\n")
+    let mut html = String::new();
+    pulldown_cmark::html::push_html(&mut html, events.into_iter());
+    // Text is escaped, so `<p>` here is only ever the element.
+    html.replace("<p>", "<p dir=\"auto\">")
+        .trim_end()
+        .to_string()
 }
 
 /// Why a Text range's quote was left out of the export (see [`Session::notes_export`]).

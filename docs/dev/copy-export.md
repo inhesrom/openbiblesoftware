@@ -83,31 +83,25 @@ Attribution of each quoted Resource that requires one.
 - Each heading is the Notes Tool's reference: it reads back as a Bible reference in the
   Standard versification once the Bible abbreviation in parentheses is removed.
 - The quote is the Text range's quoted text (white space collapsed) as a block quote.
-- A Note's text keeps its lines: CommonMark's special characters are backslash-escaped,
-  block markers at a line start (`-`, `+`, `=`, `1.`) are escaped, lines end in a hard line
-  break, leading spaces are written `&#32;`, and a blank line stays a paragraph break.
-  Trailing spaces on a line are dropped.
-- A Note's Note formatting (#186) is kept as CommonMark (`note_markdown`): its headings two
-  levels down (`#` → `###`, under the Annotation's `##`), `- ` and `1. ` list items (nested by
-  their parent's content column), `> ` quote lines, `**bold**`, `*italic*` and
-  `[text](target)` links (`<…>` around a target with spaces, such as a Bible reference).
-  Bold or italic spans that touch are written as one (`_faith_*hope*` → `*faithhope*`), and
-  `_`/`__` replaces `*`/`**` where runs of `*` would otherwise run together and a reader pair
-  them differently (`**a _b_**_c_` → `__a *b*__*c*`); a CommonMark reader shows each character
-  with the bold, italic and link the app shows
-  (`notes_export_tests::exported_emphasis_reads_back_as_the_app_shows_it`). A
-  blank line goes between a list or quote and text next to it, which CommonMark would
-  otherwise join. HTML (`note_html`) has `<h3>`…, nested `<ul>`/`<ol start>`,
-  `<blockquote>`, `<strong>`, `<em>` and `<a href>` for web links; a link to a Bible
-  reference is its text followed by the reference in parentheses when they differ.
-  `notes_export_tests::exporting_a_formatted_note_keeps_its_formatting_as_markdown_and_html`
-  reads the Markdown with a CommonMark parser (pulldown-cmark, a dev-dependency) to check.
-- A numbered item keeps the number typed, as the card shows it (`1. first` / `5. fifth` is
-  1, 5). CommonMark numbers a list on from its first item, so where a number does not follow
-  on the Markdown switches the delimiter (`5) fifth`), which starts a new list at that number;
-  a nested list starting at another number than 1 gets a blank line before it, since it may
-  not interrupt its parent's text. HTML gives such an item `<li value>`.
-  `notes_export_tests::exported_numbered_items_keep_the_numbers_typed`.
+- A Note written as plain text before Note formatting was escaped once by the v10 migration
+  (`escape_note_text`: markup backslash-escaped, leading spaces `&#32;`), so its text as typed
+  reads in a Markdown reader exactly as it was written, line by line.
+- A Note's text is CommonMark (Note formatting, #186), and the Markdown export writes it **as
+  typed** (`note_markdown`), never re-written from a parse, so it reads as the Note does: only
+  a `\` goes before each line break inside a paragraph (a hard line break, so a reader keeps
+  the line breaks the app shows), and a code fence or HTML block the Note leaves open is
+  closed, so the next Annotation's heading is not read into it. Its headings are its own
+  (`#` stays `#`). Tests: `exporting_a_formatted_note_keeps_its_formatting_as_markdown_and_html`,
+  `commonmark_spec_samples_export_as_they_read` (a sample of each part of the spec, read by
+  pulldown-cmark: the same events as the Note, and every Annotation heading after it still a
+  heading), `exported_emphasis_reads_back_as_the_app_shows_it` (every run of four of 14 awkward
+  emphasis spans, 38,416 Notes) and `exported_link_targets_are_the_ones_the_app_follows`.
+- The HTML export (`note_html`) is pulldown-cmark's HTML of the Note, with each soft line break
+  a `<br />`, the Note's headings two levels down (`<h3>`… under the Annotation's `<h2>`), raw
+  HTML shown as typed (escaped), only web links (`https:`, `http:`, `mailto:`) as `<a href>`,
+  and a link to a Bible reference as its text followed by the reference in parentheses when
+  they differ. Lists are numbered as CommonMark numbers them, the same numbers the app shows
+  (`exported_numbered_items_show_the_numbers_the_app_shows`).
 - A Notebook lists in Bible order; a Notes search result keeps its order (newest change
   first) and is titled `Notes matching “…”`.
 

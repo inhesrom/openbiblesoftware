@@ -1368,7 +1368,7 @@ fn the_note_editor_link_button_does_not_link_across_lines() {
     press_key(&mut h, egui::Key::End, Modifiers::COMMAND);
     h.frame();
     h.click_text("🔗");
-    assert_eq!(text(&h), "faith\nhope[]()");
+    assert_eq!(text(&h), "faith\nhope[](<>)");
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }

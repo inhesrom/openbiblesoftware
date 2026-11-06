@@ -4,8 +4,10 @@
 //! - **Toolbar** above the field: **B**old, *I*talic, Heading, bulleted list, numbered list,
 //!   block quote and link. Each acts on the selection (or the lines it touches) and keeps the
 //!   keys in the field; pressing one does not end the editing pass. Bold and italic mark each
-//!   selected line on its own, since they end with their line; a link does too, so the link
-//!   button is off while the selection spans lines.
+//!   selected line on its own (empty lines skipped), since a span cannot run over a blank line
+//!   or a list item's marker; the link button is off while the selection spans lines. Lists
+//!   are read from the whole Note's parse, and a nested item is written under its parent's
+//!   text, as CommonMark nests it. A link target goes between `<` and `>`.
 //! - **Shortcuts**: Ctrl+B and Ctrl+I (Cmd on macOS). Typing `- `, `1. ` or `> ` at the start
 //!   of a line starts a list or quote; Enter in an item continues it (the next number), and
 //!   Enter in an empty item ends it.
@@ -69,7 +71,7 @@ impl Format {
             Format::Numbered => "Numbered list (or type “1. ” at the start of a line)",
             Format::Quote => "Block quote (or type “> ” at the start of a line)",
             Format::Link => {
-                "Link: type a Bible reference (Rom 5:8) or a web address between the parentheses"
+                "Link: type a Bible reference (Rom 5:8) or a web address between the < and >"
             }
         }
     }
@@ -158,7 +160,7 @@ pub(super) fn note_editor(
 }
 
 /// Why the link button is off while the selection spans lines.
-const LINK_ONE_LINE: &str = "Link: select text on one line (a link cannot run across lines)";
+const LINK_ONE_LINE: &str = "Link: select text on one line";
 
 /// Whether the field's selection takes in a line break.
 fn selection_spans_lines(ctx: &egui::Context, id: egui::Id, text: &str) -> bool {
@@ -291,8 +293,8 @@ pub(super) fn apply_format(text: &str, sel: Range<usize>, f: Format) -> (String,
 }
 
 /// Put `mark` around the selected part of each line the selection touches (past the line's
-/// heading, list or quote marker, its outer spaces left outside: a Note's bold and italics end
-/// with their line), or take it away when every part already has it. With nothing selected the
+/// heading, list or quote marker, its outer spaces left outside, empty lines skipped), or
+/// take it away when every part already has it. With nothing selected the
 /// marks go in with the cursor between them.
 fn wrap(text: &str, sel: Range<usize>, mark: &str) -> (String, Range<usize>) {
     let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
@@ -382,16 +384,17 @@ fn wrap(text: &str, sel: Range<usize>, mark: &str) -> (String, Range<usize>) {
     (new, start..end)
 }
 
-/// `[selection](…)` with the cursor where the target goes; `[](…)` with it in the brackets.
-/// A selection across lines is left as it is: a Note's link ends with its line.
+/// `[selection](<…>)` with the cursor where the target goes (between `<` and `>`, so a
+/// Bible reference's spaces are part of it); `[](<>)` with it in the brackets. A selection
+/// across lines is left as it is: the toolbar keeps a link on one line.
 fn link(text: &str, sel: Range<usize>) -> (String, Range<usize>) {
     let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
     if text[a..b].contains('\n') {
         return (text.to_string(), sel);
     }
-    let new = format!("{}[{}]()", &text[..a], &text[a..b]);
+    let new = format!("{}[{}](<>)", &text[..a], &text[a..b]);
     let new = format!("{new}{}", &text[b..]);
-    let c = if a == b { sel.start + 1 } else { sel.end + 3 };
+    let c = if a == b { sel.start + 1 } else { sel.end + 4 };
     (new, c..c)
 }
 
@@ -441,20 +444,19 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
         }
         1
     };
+    // The content column of the list item open at each level, as the lines are written: a
+    // nested item goes under its parent's text, as CommonMark nests it (`- ` two columns,
+    // `1. ` three).
+    let mut cols = parent_columns(text, &lines[..first]);
     let mut out: Vec<String> = Vec::new();
     for l in chosen {
-        let line = &text[l.source.clone()];
-        let level = l.kind.list_level();
-        let lead = match level {
-            Some(_) => &line[..line.len() - line.trim_start_matches([' ', '\t']).len()],
-            None => "",
-        };
         let rest = &text[l.content..l.source.end];
         // Text's leading spaces are its own; a marker goes before what it says.
         let rest = match l.kind {
             NoteLineKind::Text if !remove => rest.trim_start(),
             _ => rest,
         };
+        let level = l.kind.list_level().map_or(0, usize::from).min(cols.len());
         let marker = match f {
             _ if remove => String::new(),
             Format::Heading => match l.kind {
@@ -462,9 +464,9 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
                 NoteLineKind::Heading(_) => String::new(),
                 _ => "# ".into(),
             },
-            Format::Bullet => format!("{lead}- "),
+            Format::Bullet => "- ".into(),
             Format::Numbered => {
-                let level = level.unwrap_or(0);
+                let level = u8::try_from(level).unwrap_or(u8::MAX);
                 let at = usize::from(level);
                 numbers.truncate(at + 1);
                 if numbers.len() <= at {
@@ -479,33 +481,46 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
                 shallowest = Some(shallowest.map_or(level, |s| s.min(level)));
                 let n = numbers[at];
                 numbers[at] = n.saturating_add(1);
-                format!("{lead}{n}. ")
+                format!("{n}. ")
             }
             _ => "> ".into(),
         };
-        out.push(format!("{marker}{rest}"));
+        if matches!(f, Format::Bullet | Format::Numbered) && !remove {
+            let indent = level.checked_sub(1).map_or(0, |p| cols[p]);
+            cols.truncate(level);
+            cols.push(indent + marker.len());
+            out.push(format!("{}{marker}{rest}", " ".repeat(indent)));
+        } else {
+            cols.clear();
+            out.push(format!("{marker}{rest}"));
+        }
     }
     let replaced = out.join("\n");
-    // Items nested under the last line when it stops being a list item: without an item above
-    // they would read as text, so they move out, the first to the top level.
+    // The items nested below the selection, written again under their (new) parents. When
+    // the last line stops being a list item, they move out a level: without an item above
+    // they would read as text.
     let still_list = !remove && matches!(f, Format::Bullet | Format::Numbered);
     let after = first + touched.len();
     let mut moved: Vec<String> = Vec::new();
-    if !still_list
-        && let Some(depth) = lines
-            .get(after)
-            .and_then(|l| l.kind.list_level())
-            .filter(|d| *d > 0)
+    if let Some(depth) = lines
+        .get(after)
+        .and_then(|l| l.kind.list_level())
+        .filter(|d| *d > 0)
     {
+        let shift = if still_list { 0 } else { usize::from(depth) };
         for l in &lines[after..] {
-            match l.kind.list_level() {
-                Some(level) if level > 0 => {
-                    let line = &text[l.source.clone()];
-                    let indent = " ".repeat(2 * usize::from(level - level.min(depth)));
-                    moved.push(format!("{indent}{}", line.trim_start_matches([' ', '\t'])));
-                }
-                _ => break,
-            }
+            let Some(level) = l.kind.list_level().filter(|level| *level > 0) else {
+                break;
+            };
+            let level = (usize::from(level) - shift.min(usize::from(level))).min(cols.len());
+            let line = &text[l.source.clone()];
+            let item = line.trim_start_matches([' ', '\t']);
+            let marker_end = l.content.saturating_sub(l.source.end - item.len());
+            let (marker, rest) = item.split_at(marker_end.min(item.len()));
+            let indent = level.checked_sub(1).map_or(0, |p| cols[p]);
+            cols.truncate(level);
+            cols.push(indent + marker.len());
+            moved.push(format!("{}{marker}{rest}", " ".repeat(indent)));
         }
     }
     let from = touched[0].start;
@@ -517,6 +532,39 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
     let new = format!("{}{replaced}{tail}{}", &text[..from], &text[to..]);
     let start = text[..from].chars().count();
     (new, start..start + replaced.chars().count())
+}
+
+/// The content columns of the list items the line after `above` would be nested under,
+/// by level, read from the end of `above` (the Note's lines before it).
+fn parent_columns(text: &str, above: &[obs_model::NoteLine]) -> Vec<usize> {
+    let mut cols: Vec<Option<usize>> = Vec::new();
+    let mut below: Option<u8> = None;
+    for l in above.iter().rev() {
+        match l.kind.list_level() {
+            Some(level) if below.is_none_or(|b| level < b) => {
+                let at = usize::from(level);
+                if cols.len() <= at {
+                    cols.resize(at + 1, None);
+                }
+                cols[at] = Some(l.content - l.source.start);
+                below = Some(level);
+                if level == 0 {
+                    break;
+                }
+            }
+            Some(_) => {}
+            // An item's own paragraphs and gaps are inside the list; other lines end it.
+            None if l.kind == NoteLineKind::Blank
+                || text[l.source.clone()].starts_with([' ', '\t']) => {}
+            None => break,
+        }
+    }
+    // A level whose item was not found: two columns a level.
+    let mut out = Vec::with_capacity(cols.len());
+    for (i, c) in cols.into_iter().enumerate() {
+        out.push(c.unwrap_or(2 * (i + 1)));
+    }
+    out
 }
 
 /// One format of the field's text: font, colour, slant, underline.
@@ -679,7 +727,7 @@ mod tests {
 
     #[test]
     fn bold_and_italic_mark_each_line_of_a_selection_past_its_marker() {
-        // A Note's bold ends with its line, so each line gets its own marks.
+        // Each line gets its own marks (a span cannot cross a list marker or blank line).
         let (new, sel) = applied("faith\nhope", "faith\nhope", Format::Bold);
         assert_eq!(
             (new.as_str(), sel.as_str()),
@@ -727,7 +775,7 @@ mod tests {
             "a\n  - b\n  - c\n- d",
             Format::Numbered,
         );
-        assert_eq!(new, "1. a\n  1. b\n  2. c\n2. d");
+        assert_eq!(new, "1. a\n   1. b\n   2. c\n2. d");
         let kinds: Vec<_> = obs_model::parse_note_text(&new)
             .iter()
             .map(|l| l.kind)
@@ -755,6 +803,25 @@ mod tests {
         );
         let (back, _) = applied(&new, &new, Format::Numbered);
         assert_eq!(back, "a\nb\nc\nd");
+        // A parent numbered: its nested items move under its text, so they stay nested.
+        let (new, _) = applied("- a\n  - b\n- c", "a", Format::Numbered);
+        assert_eq!(new, "1. a\n   - b\n- c");
+        assert_eq!(
+            obs_model::parse_note_text(&new)[1].kind,
+            NoteLineKind::Bullet { level: 1 }
+        );
+        // An item made under a numbered one goes under its text.
+        let (new, _) = applied("1. x\ny", "y", Format::Bullet);
+        assert_eq!(new, "1. x\n- y");
+        let (new, _) = applied("1. x\n   - y\n   - z", "z", Format::Numbered);
+        assert_eq!(new, "1. x\n   - y\n   1. z");
+        assert_eq!(
+            obs_model::parse_note_text(&new)[2].kind,
+            NoteLineKind::Numbered {
+                level: 1,
+                number: 1
+            }
+        );
         // A line numbered under a numbered list follows on from its number.
         let (new, _) = applied("1. x\n   - y\nz", "z", Format::Numbered);
         assert_eq!(new, "1. x\n   - y\n2. z");
@@ -777,11 +844,17 @@ mod tests {
     #[test]
     fn link_puts_the_cursor_where_the_target_goes() {
         let (new, r) = apply_format("see this", chars("see this", "this"), Format::Link);
-        assert_eq!(new, "see [this]()");
-        assert_eq!(r, 11..11);
+        assert_eq!(new, "see [this](<>)");
+        assert_eq!(r, 12..12);
         let (new, r) = apply_format("x", 1..1, Format::Link);
-        assert_eq!((new.as_str(), r), ("x[]()", 2..2));
-        // Across lines there is no link to make: `[faith\nhope](…)` would show as typed.
+        assert_eq!((new.as_str(), r), ("x[](<>)", 2..2));
+        // Typed between `<` and `>`, a Bible reference with its spaces is the target.
+        let typed = "see [this](<Rom 5:8>)";
+        assert_eq!(
+            obs_model::parse_note_text(typed)[0].marks[0].kind,
+            NoteMarkKind::Link("Rom 5:8".into())
+        );
+        // The toolbar keeps a link on one line.
         let (new, r) = apply_format("faith\nhope", 0..10, Format::Link);
         assert_eq!((new.as_str(), r), ("faith\nhope", 0..10));
     }
