@@ -31,6 +31,12 @@ Needs the toolchain from `rust-toolchain.toml` (stable, with the `wasm32-unknown
 and, for tests, [`cargo-nextest`](https://nexte.st/) (`cargo xtask test` falls back to `cargo test`
 locally). Bundled fonts and data files need an entry in [`ATTRIBUTION.toml`](ATTRIBUTION.toml).
 
+## Releases
+
+Pushing a `v*` tag publishes unsigned Release archives for Linux, macOS and Windows, each with
+the Starter library beside the app, plus the Starter `.obr` files; see
+[`docs/dev/releasing.md`](docs/dev/releasing.md).
+
 ## Licence
 
 Code is dual-licensed under MIT ([`LICENSE-MIT`](LICENSE-MIT)) or Apache-2.0 ([`LICENSE-APACHE`](LICENSE-APACHE)). Bundled content keeps its own licence; see

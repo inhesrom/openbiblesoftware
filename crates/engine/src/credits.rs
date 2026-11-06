@@ -26,8 +26,8 @@ const ATTRIBUTION_TOML: &str = include_str!("../../../ATTRIBUTION.toml");
 const STARTER_LOCK: &str = include_str!("../../../starter/sources.toml");
 const THIRD_PARTY_JSON: &str = include_str!("../data/third-party-licenses.json");
 
-/// Where each release publishes the Starter library's change records (the `starter`
-/// workflow uploads `dist/starter/*` to the release).
+/// Where each release publishes the Starter library's change records (the `release`
+/// workflow uploads them with the `.obr` files).
 pub const PUBLISHED_CHANGES: &str =
     "https://github.com/inhesrom/openbiblesoftware/releases/latest/download/";
 

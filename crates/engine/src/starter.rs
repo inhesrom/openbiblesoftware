@@ -40,8 +40,8 @@ pub const MANIFEST_FILE: &str = "starter-manifest.json";
 /// Release manifest format this app reads.
 pub const MANIFEST_FORMAT: u32 = 1;
 
-/// Where each release publishes the Starter library (the `starter` workflow uploads
-/// `dist/starter/*`).
+/// Where each release publishes the Starter library (the `release` workflow uploads every
+/// `.obr`, `starter-manifest.json` and the change records).
 pub const RELEASE_DOWNLOADS: &str = crate::credits::PUBLISHED_CHANGES;
 
 /// User database preference holding the [`StarterState`].

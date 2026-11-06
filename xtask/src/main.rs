@@ -4,6 +4,7 @@ mod assets;
 mod bench;
 mod layers;
 mod licenses;
+mod release;
 mod starter;
 mod tvtms;
 
@@ -31,6 +32,10 @@ performance:
 starter library:
   starter  build dist/starter/*.obr from starter/sources.toml (`cargo xtask starter --help`)
 
+releases (docs/dev/releasing.md):
+  release-archive  pack the app and dist/starter/ into a Release archive (`--help`)
+  release-smoke    launch an unpacked Release archive, check its Starter library got in (`--help`)
+
 maintenance:
   tvtms <TVTMS.txt>   regenerate the embedded STEPBible TVTMS rules";
 
@@ -57,6 +62,14 @@ fn run() -> Result<()> {
         "starter" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             starter::run(&root, &rest)
+        }
+        "release-archive" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            release::run_archive(&root, &rest)
+        }
+        "release-smoke" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            release::run_smoke(&root, &rest)
         }
         "licenses" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();

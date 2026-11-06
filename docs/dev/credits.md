@@ -53,8 +53,8 @@ nextest.
 ## Change records
 
 `cargo xtask starter` writes `dist/starter/CHANGES-<id>.md` for every lock entry whose SPDX
-expression names a CC BY licence (`obs_model::is_cc_by`). The `starter` workflow attaches
-`dist/starter/*` to the release. Each record has:
+expression names a CC BY licence (`obs_model::is_cc_by`). The `release` workflow attaches
+them to the release with the `.obr` files ([releasing](releasing.md)). Each record has:
 
 - the title, the abbreviation and the `resource_id`;
 - the licence with a link to its Creative Commons deed, the edition, the publisher and the

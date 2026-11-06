@@ -137,6 +137,10 @@ _Avoid_: Default library, Base package
 A Starter library Resource the user removed from the library. It is remembered in the User database and never added back silently; Library → Starter library… lists it as Removed, with Add back.
 _Avoid_: Deleted resource, Hidden resource
 
+**Release archive**:
+The app for one platform as a plain `.tar.gz` or `.zip`, with the Starter library in a `starter` folder beside it, published with each tagged release. Unpacked, it runs as it is and adds the Starter library on the first launch. What users download until there are installers; it is unsigned.
+_Avoid_: Installer, Bundle, Package (for the archive)
+
 **Import**:
 Adding a Resource to the library from a local file in an open format (USFM or SWORD in v0.1). Every Import produces an Import report.
 _Avoid_: Install, Download

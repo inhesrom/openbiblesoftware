@@ -1,0 +1,162 @@
+name: Release
+
+# Builds the app on Linux, macOS and Windows, packs each build with the Starter library into a
+# Release archive (`cargo xtask release-archive`), launches the unpacked Linux archive on an
+# empty data folder (`cargo xtask release-smoke`), and on a pushed `v*` tag publishes the
+# archives, every Starter `.obr`, `starter-manifest.json` and the `CHANGES-*.md` records to the
+# GitHub release. A `workflow_dispatch` run (even on a `v*` tag), or a pull request that changes
+# this pipeline, is a dry run: everything except publishing, with the assets as workflow
+# artifacts. Only the `push` event publishes, so a dry run can never overwrite release assets.
+# See docs/dev/releasing.md.
+#
+# TODO(#1): signing, macOS notarization and installers (msi/dmg/AppImage) wait for the
+# packaging decisions in #1. Until then the archives are unsigned.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - ".github/workflows/starter.yml"
+      - "xtask/src/release.rs"
+
+concurrency:
+  # Keyed by event too, so a dry run dispatched on a tag never cancels or queues behind the
+  # publishing run of that tag. Never cancel a release half-published.
+  group: release-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The Starter library is built once, by the `starter` workflow, and reused from its
+  # `starter-library` artifact.
+  starter:
+    name: Starter library
+    uses: ./.github/workflows/starter.yml
+
+  build:
+    name: build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin: openbible
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bin: openbible
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin: openbible.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo build --release -p openbible
+        run: cargo build --release --locked -p openbible
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.target }}
+          path: target/release/${{ matrix.bin }}
+          if-no-files-found: error
+
+  package:
+    name: Release archives
+    needs: [starter, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/download-artifact@v4
+        with:
+          name: starter-library
+          path: dist/starter
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: app-*
+          path: target/apps
+      - name: Version
+        run: |
+          # Only a pushed tag names the archives after the tag; dry runs (dispatch, PR) never do.
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="$GITHUB_REF_NAME"
+          else
+            version="dev-${GITHUB_SHA::7}"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: cargo xtask release-archive
+        run: |
+          for target in x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-pc-windows-msvc; do
+            bin=openbible
+            if [[ $target == *windows* ]]; then bin=openbible.exe; fi
+            cargo xtask release-archive --bin "target/apps/app-$target/$bin" \
+              --name "openbible-$VERSION-$target" --out dist/release-assets
+          done
+      - name: Launch the Linux archive with its Starter library
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri libegl1 libxkbcommon-x11-0
+          xvfb-run -a -s "-screen 0 1280x800x24" cargo xtask release-smoke \
+            "dist/release-assets/openbible-$VERSION-x86_64-unknown-linux-gnu.tar.gz" \
+            --shot target/release-smoke.ppm
+      - name: Starter assets and checksums
+        run: |
+          cp dist/starter/*.obr dist/starter/starter-manifest.json dist/starter/CHANGES-*.md \
+            dist/starter/starter-build-report.md dist/release-assets/
+          (cd dist/release-assets && sha256sum -- * > SHA256SUMS)
+          ls -l dist/release-assets
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: dist/release-assets/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-smoke-screenshot
+          path: target/release-smoke.ppm
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    # Publish only for a pushed tag: a workflow_dispatch on a `v*` tag must stay a dry run,
+    # because `gh release upload --clobber` below would replace published assets.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist/release-assets
+      - name: gh release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Unsigned builds of Open Bible Software (working name) for Linux, macOS and Windows."
+            echo "Unpack the archive for your platform and run \`openbible\`; the Starter library is in \`starter/\` beside it."
+            echo "See docs/dev/releasing.md for what is in each archive."
+            echo
+            cat dist/release-assets/starter-build-report.md
+          } > release-notes.md
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/release-assets/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+              --notes-file release-notes.md dist/release-assets/*
+          fi
