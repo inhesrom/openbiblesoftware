@@ -105,7 +105,8 @@ pub struct IdChange {
 /// Starter Bible (`usfm`, `tahot`, `tagnt`; #40), dataset (#43), study (#44), and Lexicon (#41) importers:
 /// `stepbible-tbes` (TBESH/TBESG TSV), `strongs-hebrew` / `strongs-greek`
 /// (openscriptures/strongs XML), `oshb-bdb` (BDB XML plus the lexical index as an extra file),
-/// `abbott-smith` (TEI XML).
+/// `abbott-smith` (TEI XML), and `sword-zip` (one module in a CrossWire `rawzip` package, read
+/// by the app's own SWORD Import; Hitchcock's Bible Names, #149).
 pub const IMPORTERS: &[&str] = &[
     "usfm",
     "tahot",
@@ -121,6 +122,7 @@ pub const IMPORTERS: &[&str] = &[
     "jfb-html",
     "easton-zld",
     "smith-rawld",
+    "sword-zip",
 ];
 
 /// Hosts whose site terms restrict republishing (#20 decision 3).
