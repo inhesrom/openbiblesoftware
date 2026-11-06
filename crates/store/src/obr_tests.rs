@@ -1007,23 +1007,27 @@ fn commentary_volumes_round_trip_outside_the_content_hash_and_older_files_have_n
         format_3.manifest.content_hash,
         resource.manifest.content_hash
     );
-    write_obr(&format_3, &path).unwrap();
-    Connection::open(&path)
+    // Each file has its own path: Windows cannot replace a file a reader still has open.
+    let old_path = dir.path("mhc-format-3.obr");
+    write_obr(&format_3, &old_path).unwrap();
+    Connection::open(&old_path)
         .unwrap()
         .execute_batch("DROP TABLE volumes; VACUUM;")
         .unwrap();
-    let reader = ObrReader::open(&path).unwrap();
+    let reader = ObrReader::open(&old_path).unwrap();
     assert_eq!(reader.manifest().format_version, 3);
     assert!(reader.volumes().unwrap().is_empty());
     assert_eq!(reader.load().unwrap(), format_3);
+    drop(reader);
 
     // A format 4 file without the table is damaged.
-    write_obr(&resource, &path).unwrap();
-    Connection::open(&path)
+    let damaged = dir.path("mhc-no-volumes.obr");
+    write_obr(&resource, &damaged).unwrap();
+    Connection::open(&damaged)
         .unwrap()
         .execute_batch("DROP TABLE volumes;")
         .unwrap();
-    let reader = ObrReader::open(&path).unwrap();
+    let reader = ObrReader::open(&damaged).unwrap();
     assert!(reader.volumes().is_err());
 }
 
