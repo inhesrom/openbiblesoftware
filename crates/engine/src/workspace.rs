@@ -364,6 +364,14 @@ impl<T: Clone + PartialEq> History<T> {
         self.current = Some(at);
     }
 
+    /// The Tab followed its Link set to `at` (#176): the view moved by location alone, so it
+    /// no longer shows the unit it was reached by, even where the location is unchanged (a
+    /// Commentary on its book introduction follows to the section at the same Verse).
+    pub fn followed_to(&mut self, at: T) {
+        self.unit = None;
+        self.current = Some(at);
+    }
+
     /// Scrolling shows unit `visible` at the top: once that is not the unit the location was
     /// reached by, the view no longer shows it, though the location may be unchanged (an
     /// introduction scrolled into the section sharing its first Verse, #176).
@@ -1223,7 +1231,7 @@ impl Workspace {
             t.id != tab && t.link == Some(link) && t.key_schemes.contains(&key.scheme())
         }) {
             if let Some(key) = t.entry_key(key) {
-                t.entry_history.scrolled_to(key.clone());
+                t.entry_history.followed_to(key.clone());
                 self.effects.push(Effect::NavigateEntry { tab: t.id, key });
             }
         }
@@ -1323,6 +1331,7 @@ impl Workspace {
     pub fn user_scrolled_into(&mut self, tab: TabId, visible: &UnitId) {
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.history.scrolled_into(visible);
+            t.entry_history.scrolled_into(visible);
         }
     }
 
@@ -1425,7 +1434,7 @@ impl Workspace {
         }
         if let Some(key) = self.set_entry_location(tab) {
             if let Some(t) = self.tabs.get_mut(&tab) {
-                t.entry_history.scrolled_to(key.clone());
+                t.entry_history.followed_to(key.clone());
             }
             self.effects.push(Effect::NavigateEntry { tab, key });
         }
@@ -1465,7 +1474,7 @@ impl Workspace {
 
     fn follow(&mut self, tab: TabId, verse: Verse, flash: bool) {
         if let Some(t) = self.tabs.get_mut(&tab) {
-            t.history.scrolled_to(verse);
+            t.history.followed_to(verse);
             t.moved_to(verse);
             self.effects.push(Effect::Follow { tab, verse, flash });
         }
