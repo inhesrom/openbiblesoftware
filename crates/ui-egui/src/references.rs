@@ -281,7 +281,15 @@ impl State {
             Some(Ok(groups)) => groups,
         };
         if groups.is_empty() {
-            ui.label("None in your library — add a Cross-reference set or try another Passage");
+            // #135: say what is missing and offer the way to get it.
+            let empty = self.session.guide_empty_state(
+                &obs_model::Key::Passage(passage),
+                obs_engine::GuideSection::CrossReferences,
+            );
+            if let Some((id, params)) = self.missing_resource_ui(ui, empty.message, &empty.missing)
+            {
+                self.run(id, &params);
+            }
             return;
         }
         let mut navigate = None;

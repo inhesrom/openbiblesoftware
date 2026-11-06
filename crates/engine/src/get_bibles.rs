@@ -137,6 +137,23 @@ impl ResourceFilter {
         }
     }
 
+    /// The id [`type_filter_from_id`] reads back, for `library.get_resources`; `None` for a
+    /// Resource type the online repositories do not offer (Cross-reference sets, People &
+    /// places indexes).
+    pub fn id(self) -> Option<&'static str> {
+        match self {
+            ResourceFilter::All => Some("all"),
+            ResourceFilter::HebrewAndGreek => Some("hebrew-greek"),
+            ResourceFilter::Type(ResourceType::Bible) => Some("bibles"),
+            ResourceFilter::Type(ResourceType::Lexicon) => Some("lexicons"),
+            ResourceFilter::Type(ResourceType::Commentary) => Some("commentaries"),
+            ResourceFilter::Type(ResourceType::Dictionary) => Some("dictionaries"),
+            ResourceFilter::Type(
+                ResourceType::CrossReferenceSet | ResourceType::PeopleAndPlaces,
+            ) => None,
+        }
+    }
+
     /// Shown on the filter row and in "All …".
     pub fn label(self) -> &'static str {
         match self {

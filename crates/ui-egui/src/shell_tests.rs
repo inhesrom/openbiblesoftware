@@ -3067,6 +3067,9 @@ mod starter_library;
 #[path = "word_study_tests.rs"]
 mod word_study;
 
+#[path = "missing_resource_tests.rs"]
+mod missing_resource;
+
 #[path = "search_tests.rs"]
 mod search;
 

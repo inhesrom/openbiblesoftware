@@ -37,6 +37,8 @@ pub(super) enum FactbookAction {
     Article(ArticleLink, bool),
     /// Close the chooser.
     StopChoosing,
+    /// The no-index hint's button (#135): Get Resources, the Starter library or Import.
+    Command(&'static str, serde_json::Value),
 }
 
 impl State {
@@ -120,23 +122,38 @@ impl State {
                     WordStatus::Ready(c) => c,
                 };
                 if chooser.choices.is_empty() {
-                    let hint = if self
+                    if self
                         .session
                         .library
                         .of_type(ResourceType::PeopleAndPlaces)
                         .next()
                         .is_some()
                     {
-                        format!(
-                            "No person or place is called “{name}”. Try another spelling \
-                             (Abram, Jacob, Bethlehem)."
-                        )
+                        ui.label(
+                            RichText::new(format!(
+                                "No person or place is called “{name}”. Try another spelling \
+                                 (Abram, Jacob, Bethlehem)."
+                            ))
+                            .color(theme::c().muted),
+                        );
                     } else {
-                        "No People & places index in your library. Add one (TIPNR) to look up \
-                         people and places."
-                            .to_string()
-                    };
-                    ui.label(RichText::new(hint).color(theme::c().muted));
+                        // The index the Factbook's sections read is what the chooser needs
+                        // too (#135).
+                        let missing = GuideSection::Summary.missing_resource(
+                            false,
+                            None,
+                            &self.session.library,
+                            self.session.starter.manifest(),
+                        );
+                        if let Some((id, params)) = self.missing_resource_ui(
+                            ui,
+                            "No People & places index in your library. Add one (TIPNR) to look \
+                             up people and places.",
+                            &missing,
+                        ) {
+                            action = Some(FactbookAction::Command(id, params));
+                        }
+                    }
                     return;
                 }
                 ui.label(
@@ -353,6 +370,9 @@ impl State {
             FactbookAction::StopChoosing => self.session.stop_choosing_factbook(tab),
             FactbookAction::Article(a, new_tab) => self.open_article(tab, &a, new_tab),
             FactbookAction::Passage(p, new_tab) => self.open_key_passage(tab, p, new_tab),
+            FactbookAction::Command(id, params) => {
+                self.run(id, &params);
+            }
         }
     }
 

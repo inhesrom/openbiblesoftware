@@ -1122,6 +1122,33 @@ pub fn tagnt_john_3_16() -> obs_model::Resource {
     )
 }
 
+/// John 15:13 and 1 John 4:8 as STEPBible's TAGNT tags them (CC BY): G26 with its
+/// Morphology, genitive once and nominative once.
+pub fn tagnt_love() -> obs_model::Resource {
+    use obs_scripture::{Book, Verse};
+    let mut r = tagged_bible(
+        "tagnt-love",
+        "Translators Amalgamated Greek NT (test)",
+        "TAGNT",
+        "grc",
+        &[
+            (
+                Verse::new(Book::John, 15, 13),
+                "μείζονα{G3187|μείζων|A-ASF-C|Greater} ταύτης{G3778|οὗτος|D-GSF|than_this} \
+                 ἀγάπης{G26|ἀγάπη|N-GSF|love} οὐδεὶς{G3762|οὐδείς|A-NSM-N|no_one} \
+                 ἔχει{G2192|ἔχω|V-PAI-3S|has}",
+            ),
+            (
+                Verse::new(Book::FirstJohn, 4, 8),
+                "ὁ{G3588|ὁ|T-NSM|-} θεὸς{G2316|θεός|N-NSM-T|God} \
+                 ἀγάπη{G26|ἀγάπη|N-NSF|love} ἐστίν{G1510|εἰμί|V-PAI-3S|is}.",
+            ),
+        ],
+    );
+    r.manifest.license = "CC-BY-4.0".into();
+    r
+}
+
 /// KJV Genesis 12:1 (public domain) with Strong's numbers.
 pub fn kjv_genesis_12() -> obs_model::Resource {
     tagged_bible(

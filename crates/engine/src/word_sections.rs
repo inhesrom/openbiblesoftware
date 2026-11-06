@@ -311,6 +311,12 @@ impl Concordance {
     fn code(&self, id: u32) -> Option<&str> {
         self.codes.get(id as usize).map(String::as_str)
     }
+
+    /// Whether any Tagged word carries a Morphology code, so the Bible can fill Forms. A
+    /// Bible with Strong's numbers only cannot.
+    pub fn has_morphology(&self) -> bool {
+        !self.codes.is_empty()
+    }
 }
 
 /// Each Bible Verse (own numbering) with its Standard Verse (`None`: Unmapped), as the
@@ -386,6 +392,21 @@ impl Concordances {
     pub fn get(&self, _: &LibraryEntry) -> Result<Arc<Concordance>, String> {
         Err("Opening Resources is not supported here".into())
     }
+
+    /// A Bible's concordance if a job has already gathered it; never reads, nor waits for a
+    /// job gathering it (for the UI thread).
+    pub fn loaded(&self, entry: &LibraryEntry) -> Option<Arc<Concordance>> {
+        let identity = crate::key_words::identity(&entry.manifest);
+        let slot = {
+            let loaded = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
+            Arc::clone(loaded.get(&identity)?)
+        };
+        match slot.try_lock() {
+            Ok(c) => c.clone(),
+            Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner().clone(),
+            Err(std::sync::TryLockError::WouldBlock) => None,
+        }
+    }
 }
 
 /// A Bible, the number counted in it, and its renderings with counts.
@@ -443,10 +464,12 @@ fn original(entry: &LibraryEntry, language: StrongsLanguage) -> bool {
 }
 
 /// The Bible occurrences are counted in, with its concordance and `number`'s hits there:
-/// the first Bible in Preferred order in the number's original language that tags it, else
-/// (unless `original_only`) the first tagged Bible that does. A Bible's rendering index is
-/// checked before its concordance is gathered. A Bible that cannot be read is passed over;
-/// it is an error only when nothing answered.
+/// the first Bible in Preferred order in the number's original language whose hits carry
+/// Morphology (TAGNT after a Greek Bible with Strong's numbers only, so Forms and the
+/// Occurrences form filter read the same Bible), else the first in that language that tags
+/// it, else (unless `original_only`) the first tagged Bible that does. A Bible's rendering
+/// index is checked before its concordance is gathered. A Bible that cannot be read is passed
+/// over; it is an error only when nothing answered.
 #[allow(clippy::type_complexity)]
 fn counted_in<'a>(
     library: &'a Library,
@@ -470,7 +493,12 @@ fn counted_in<'a>(
         .iter()
         .filter(|e| !original_only && !original(e, language));
     let mut errors = Vec::new();
+    // The first Bible with hits, if none in the original language has Morphology for them.
+    let mut uncoded = None;
     for entry in originals.chain(others) {
+        if uncoded.is_some() && !original(entry, language) {
+            break;
+        }
         let tags = match indexes.get(entry) {
             Ok(index) => {
                 index.total(number).is_some()
@@ -487,12 +515,22 @@ fn counted_in<'a>(
         match concordances.get(entry) {
             Ok(c) => {
                 let (counted, hits) = c.hits(number);
-                if !hits.is_empty() {
+                if hits.is_empty() {
+                    continue;
+                }
+                let coded = hits.iter().any(|(_, code)| c.code(*code).is_some());
+                if coded && original(entry, language) {
                     return Ok(Some((entry, c, counted, hits)));
+                }
+                if uncoded.is_none() {
+                    uncoded = Some((*entry, c, counted, hits));
                 }
             }
             Err(e) => errors.push(format!("{}: {e}", entry.manifest.abbreviation)),
         }
+    }
+    if uncoded.is_some() {
+        return Ok(uncoded);
     }
     if errors.is_empty() {
         Ok(None)

@@ -52,6 +52,9 @@ pub mod link;
 mod lookups;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod lookups_tests;
+pub mod missing_resource;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod missing_resource_tests;
 pub mod notes;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod notes_tests;
@@ -131,6 +134,7 @@ pub use library_search::{
     LIBRARY_TYPES, LibraryGroup, LibraryResults, LibraryRow, LibraryScope, SearchedResource,
 };
 pub use link::LINK_SETS;
+pub use missing_resource::{EmptyState, MissingResource, StarterOffer, Tagging};
 pub use notes::{Card, CardOrder, NoteHit, NotesFilter, NotesResults, NotesTool, body_references};
 pub use people_places::{ArticleLink, Fact, PersonOrPlace};
 pub use persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, UserData, WorkspaceSnapshot};
