@@ -54,15 +54,23 @@ fn native_save_dialog(_: &str, _: NotesFormat) -> Option<PathBuf> {
     None
 }
 
-/// A `file://` URL for a local path.
+/// A `file://` URL for a local path, percent-encoded (print page names have spaces).
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn file_url(path: &Path) -> String {
     let text = path.to_string_lossy().replace('\\', "/");
-    if text.starts_with('/') {
-        format!("file://{text}")
+    let mut url = String::from(if text.starts_with('/') {
+        "file://"
     } else {
-        format!("file:///{text}")
+        "file:///"
+    });
+    for b in text.bytes() {
+        if b.is_ascii_alphanumeric() || b"/:-._~".contains(&b) {
+            url.push(char::from(b));
+        } else {
+            url.push_str(&format!("%{b:02X}"));
+        }
     }
+    url
 }
 
 /// Where print pages are written: `<temp>/openbible-print/<name>.html`.

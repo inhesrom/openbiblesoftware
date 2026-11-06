@@ -122,6 +122,32 @@ fn field(h: &Harness, label: &str) -> Pos2 {
     pos2(r.right() + 120.0, r.center().y)
 }
 
+/// The print page the app last opened in the browser (a `file://` URL: `file:///tmp/…`, or
+/// `file:///C:/…` on Windows).
+fn print_page(h: &Harness) -> String {
+    let url = h.opened.last().expect("a page was opened");
+    let encoded = url.strip_prefix("file://").unwrap().as_bytes();
+    let mut bytes = Vec::new();
+    let mut i = 0;
+    while i < encoded.len() {
+        if encoded[i] == b'%' {
+            let hex = std::str::from_utf8(&encoded[i + 1..i + 3]).unwrap();
+            bytes.push(u8::from_str_radix(hex, 16).unwrap());
+            i += 3;
+        } else {
+            bytes.push(encoded[i]);
+            i += 1;
+        }
+    }
+    let path = String::from_utf8(bytes).unwrap();
+    let path = match path.as_bytes() {
+        [b'/', _, b':', ..] => &path[1..],
+        _ => &path,
+    };
+    assert!(!url.contains(' '), "{url}");
+    std::fs::read_to_string(path).unwrap()
+}
+
 fn expected_markdown() -> String {
     format!(
         "John 3:16-18 (KJV)\n\n“**16** {}\n\n**17** {}\n\n**18** {}”\n\n\
@@ -231,9 +257,7 @@ fn copy_verses_copies_jn_3_16_18_in_kjv_and_bsb_with_a_preset_as_markdown_and_ri
 
     // Print / Save as PDF: a print page opened in the browser.
     click_in_window(&mut h, "Print…");
-    let url = h.opened.last().unwrap().clone();
-    let path = url.strip_prefix("file://").unwrap();
-    let page = std::fs::read_to_string(path).unwrap();
+    let page = print_page(&h);
     assert!(page.contains(&expected_html()) && page.contains("window.print()"));
     drop(h);
     let _ = std::fs::remove_dir_all(&dir);
@@ -310,8 +334,7 @@ fn the_notes_tool_exports_its_notebook_to_markdown_and_prints_it() {
     );
     h.click_text("Export…");
     h.click_text("Print / Save as PDF…");
-    let url = h.opened.last().unwrap().clone();
-    let page = std::fs::read_to_string(url.strip_prefix("file://").unwrap()).unwrap();
+    let page = print_page(&h);
     assert!(page.contains("<h1>Sermon prep</h1>") && page.contains("<h2>John 3:16</h2>"));
     drop(h);
     let _ = std::fs::remove_dir_all(&dir);
