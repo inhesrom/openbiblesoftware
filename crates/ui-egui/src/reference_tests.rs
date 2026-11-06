@@ -72,12 +72,72 @@ fn setup(
     (h, files, bible, tool)
 }
 
+/// Writes `resource` to a file name the folder has not held before and points the library at
+/// it, replacing any earlier revision's entry. Writing over the earlier file instead renames
+/// onto it, which Windows denies ("Access is denied", #121) while a worker still has that file
+/// open, e.g. a Cross-references row preview still reading the previous Bible revision.
 fn add_file(h: &mut Harness, files: &ReferenceFiles, resource: &Resource) {
-    let path = files
-        .0
-        .join(format!("{}.obr", resource.manifest.resource_id));
+    let id = &resource.manifest.resource_id;
+    let path = (0..)
+        .map(|n| match n {
+            0 => files.0.join(format!("{id}.obr")),
+            n => files.0.join(format!("{id}-{n}.obr")),
+        })
+        .find(|path| !path.exists())
+        .unwrap();
     obs_store::write_obr(resource, &path).unwrap();
     h.shell.st.session.library.add_file(&path).unwrap();
+}
+
+#[test]
+fn replacing_a_library_resource_leaves_a_worker_open_earlier_revision_untouched() {
+    use obs_store::ResourceStore;
+    let mut h = Harness::new();
+    let dir = temp_db("references-replace")
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    std::fs::create_dir_all(&dir).unwrap();
+    let files = ReferenceFiles(dir);
+    h.shell.st.session.library = obs_engine::Library::new();
+    let mut resource = obs_store::sample_resource();
+    add_file(&mut h, &files, &resource);
+    let path = |h: &Harness| {
+        h.shell
+            .st
+            .session
+            .library
+            .get("kjv-sample")
+            .unwrap()
+            .path
+            .clone()
+    };
+    let earlier = path(&h);
+    // Stands in for a preview worker still reading the earlier revision.
+    let open = obs_store::ObrReader::open(&earlier).unwrap();
+    resource.manifest.revision = 2;
+    resource.manifest.content_hash = resource.content_hash();
+    add_file(&mut h, &files, &resource);
+    let replaced = path(&h);
+    assert_ne!(
+        replaced, earlier,
+        "never renames onto a file a worker may hold open"
+    );
+    assert_eq!(open.manifest().revision, 1);
+    assert_eq!(
+        obs_store::ObrReader::open(&earlier)
+            .unwrap()
+            .manifest()
+            .revision,
+        1
+    );
+    assert_eq!(
+        obs_store::ObrReader::open(&replaced)
+            .unwrap()
+            .manifest()
+            .revision,
+        2
+    );
 }
 
 fn john(n: u16) -> Passage {
@@ -224,7 +284,7 @@ fn scripture_ref_and_zero_width_xref_hover_draw_worker_previews() {
         });
     }
     resource.manifest.content_hash = resource.content_hash();
-    // The read-only fixture is replaced before any preview opens it.
+    // The fixture's library file and open document are replaced before any hover preview.
     add_file(&mut h, &files, &resource);
     h.shell.st.docs.insert(
         "kjv-sample".into(),
@@ -574,7 +634,8 @@ fn range_and_split_map_reference_popups_keep_one_preview_per_written_target() {
             },
         });
         let span = unit.spans.len() - 1;
-        // Previews read the library file through its own Verse map, so replace it as well.
+        // Previews read the library file through its own Verse map, so add this revision to
+        // the library as well.
         resource.manifest.revision = revision;
         resource.manifest.content_hash = resource.content_hash();
         add_file(&mut h, &files, &resource);
