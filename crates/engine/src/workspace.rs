@@ -382,6 +382,8 @@ pub struct Tab {
     pub arriving_at: Option<Verse>,
     /// A Bible Tab's interlinear lines (#143).
     pub interlinear: crate::interlinear::InterlinearLines,
+    /// A Resource Tab shows its Contents pane (#176).
+    pub contents: bool,
     /// The whole Passage a Passage Guide, Exegetical Guide or Cross-references Tab shows when
     /// a command or typed reference gave a chapter or range (Standard numbering). Kept while
     /// the Tab's location is the Passage's first Verse; otherwise the Tab shows that Verse.
@@ -895,6 +897,7 @@ impl Workspace {
                 search: Default::default(),
                 arriving_at: None,
                 interlinear: Default::default(),
+                contents: false,
                 passage: None,
             },
         );
@@ -1443,6 +1446,7 @@ impl Workspace {
                     search: Default::default(),
                     arriving_at: None,
                     interlinear: t.interlinear,
+                    contents: t.contents,
                     passage: None,
                 },
             );

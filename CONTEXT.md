@@ -267,6 +267,10 @@ _Avoid_: Compare, Diff view
 The Key that a Tab is showing right now.
 _Avoid_: Position, Cursor
 
+**Contents**:
+The outline of a Resource that a Resource Tab shows beside its text when its header's Contents button is on: a Bible's Bible books and chapters; a Commentary's volumes (when it names them), Bible books, chapters and sections, each introduction first; a Lexicon's or Dictionary's entries A–Z, under their first letter, with a filter box. The line of the Tab's Current location is highlighted, and follows the text as it scrolls; clicking a line takes the Tab there, as a jump its Link set follows. It is made from the Resource itself, the first time its Contents are shown.
+_Avoid_: TOC, Outline, Index, Navigator
+
 **Link set**:
 A lettered group of Tabs (A, B, C…) that share a Current location. When one Tab navigates, every other member whose Resource has that Key scheme follows, translating through Verse maps. A Tab belongs to at most one Link set.
 _Avoid_: Sync group, Linked panels

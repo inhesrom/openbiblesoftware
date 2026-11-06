@@ -29,6 +29,7 @@ use crate::workers::SnippetCache;
 mod annotate;
 mod collections_ui;
 mod command_box;
+mod contents_pane;
 mod context_menu;
 mod copy_window;
 mod credits_tab;
@@ -137,6 +138,8 @@ struct TabUi {
     header_controls: f32,
     /// A Resource or Text Comparison Tab's Find bar, while it is open (Ctrl+F, #175).
     find: Option<crate::find::FindBar>,
+    /// A Resource Tab's Contents pane: its filter, open lines and highlighted line (#176).
+    contents: contents_pane::ContentsUi,
 }
 
 /// A Resource Tab's location when it switched to a parallel resource (#151), in that
@@ -213,6 +216,8 @@ pub(crate) struct State {
     export_ui: export::ExportUi,
     /// The system clipboard for rich text (Copy verses), when the app has one.
     rich_clipboard: Option<Arc<dyn crate::RichClipboard>>,
+    /// Each Resource's Contents, built on a worker the first time its pane opens (#176).
+    contents: contents_pane::ContentsCache,
 }
 
 /// The app window's content: menus, Command box and the docked Workspace.
@@ -269,6 +274,7 @@ impl Shell {
                 collection_editor: None,
                 export_ui: export::ExportUi::default(),
                 rich_clipboard: None,
+                contents: Default::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -1658,7 +1664,35 @@ impl State {
         }
     }
 
+    /// A Resource Tab's text, with its Contents pane beside it when the pane is open (#176).
     fn reading_body(&mut self, ui: &mut Ui, tab: TabId) {
+        let open = self.session.workspace.tab(tab).is_some_and(|t| t.contents);
+        if !open {
+            self.reading_text(ui, tab);
+            return;
+        }
+        let rect = ui.max_rect();
+        let width = contents_pane::pane_width(rect.width());
+        let side = egui::Rect::from_min_max(rect.min, pos2(rect.left() + width, rect.bottom()));
+        let text = egui::Rect::from_min_max(pos2(side.right(), rect.top()), rect.max);
+        let mut body = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(text)
+                .id_salt(("reading", tab)),
+        );
+        body.set_clip_rect(text.intersect(ui.clip_rect()));
+        self.reading_text(&mut body, tab);
+        // Drawn after the text, so the highlight is where the text is now.
+        let mut pane = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(side)
+                .id_salt(("contents", tab)),
+        );
+        pane.set_clip_rect(side.intersect(ui.clip_rect()));
+        self.contents_pane(&mut pane, tab);
+    }
+
+    fn reading_text(&mut self, ui: &mut Ui, tab: TabId) {
         // The Tab switched Resources this frame (#151) and its view still shows the old one
         // until the switch is applied: the old view must not report its location.
         let stale = match (
@@ -2111,6 +2145,9 @@ impl State {
                     ui.add_space(4.0);
                     if kind.has_link_chip() {
                         self.link_chip(ui, tab);
+                    }
+                    if matches!(kind, TabKind::Resource(_)) {
+                        self.contents_button(ui, tab);
                     }
                     let header = self
                         .session

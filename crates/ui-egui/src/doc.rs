@@ -52,6 +52,8 @@ pub struct ReadingDoc {
     standard_index: OnceLock<StandardIndex>,
     /// Whether any word carries original-language data, found on first use.
     tagged: OnceLock<bool>,
+    /// A Commentary's volume per Bible book, for its Contents (#176).
+    pub volumes: std::collections::BTreeMap<obs_scripture::Book, String>,
 }
 
 /// Bible Verses by the Standard Passage they map to (ADR 0002), for finding where a Passage
@@ -84,6 +86,7 @@ impl ReadingDoc {
         }
         let mut doc = Self::build(reader.manifest().clone(), units, reader.verses()?, keys);
         doc.verse_map = reader.verse_map()?.map(std::sync::Arc::new);
+        doc.volumes = reader.volumes()?;
         Ok(doc)
     }
 
@@ -96,6 +99,7 @@ impl ReadingDoc {
             .collect();
         let mut doc = Self::build(resource.manifest, units, resource.verses, resource.keys);
         doc.verse_map = resource.verse_map.map(std::sync::Arc::new);
+        doc.volumes = resource.volumes;
         doc
     }
 
@@ -164,6 +168,7 @@ impl ReadingDoc {
             span_indexes,
             standard_index: OnceLock::new(),
             tagged: OnceLock::new(),
+            volumes: Default::default(),
         }
     }
 

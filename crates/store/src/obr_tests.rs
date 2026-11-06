@@ -938,3 +938,61 @@ fn only_bibles_get_a_rendering_index() {
         Some(RenderingIndex::default())
     );
 }
+
+#[test]
+fn commentary_volumes_round_trip_outside_the_content_hash_and_older_files_have_none() {
+    use obs_model::{ResourceBuilder, ResourceType, UnitKind};
+    let dir = TempDir::new("volumes");
+    let path = dir.path("mhc.obr");
+    let build = |volumes: bool| {
+        let mut b = ResourceBuilder::new(dataset_manifest("mhc", ResourceType::Commentary));
+        let unit = UnitId::new("Gen.1.1-Gen.1.2").unwrap();
+        b.add_unit(
+            unit.clone(),
+            UnitKind::Section,
+            None,
+            "In the beginning.".into(),
+        );
+        b.add_key(
+            Key::Passage(
+                Passage::new(
+                    Verse::new(Book::Genesis, 1, 1),
+                    Verse::new(Book::Genesis, 1, 2),
+                )
+                .unwrap(),
+            ),
+            &unit,
+            None,
+            false,
+        );
+        if volumes {
+            b.set_volume(Book::Genesis, "Volume 1");
+            b.set_volume(Book::Matthew, "Volume 5");
+        }
+        b.build().unwrap()
+    };
+    let resource = build(true);
+    assert_eq!(
+        resource.manifest.content_hash,
+        build(false).manifest.content_hash
+    );
+    write_obr(&resource, &path).unwrap();
+    let reader = ObrReader::open(&path).unwrap();
+    assert_eq!(
+        reader.volumes().unwrap(),
+        BTreeMap::from([
+            (Book::Genesis, "Volume 1".to_string()),
+            (Book::Matthew, "Volume 5".to_string())
+        ])
+    );
+    assert_eq!(reader.load().unwrap(), resource);
+    drop(reader);
+    // A file written before the table existed opens with no volumes.
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch("DROP TABLE volumes;")
+        .unwrap();
+    let reader = ObrReader::open(&path).unwrap();
+    assert!(reader.volumes().unwrap().is_empty());
+    assert_eq!(reader.load().unwrap(), build(false));
+}

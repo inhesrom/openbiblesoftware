@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::ops::Range;
 
-use obs_scripture::{Passage, Standard, Verse, VerseMap, Versification};
+use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, Versification};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -46,6 +46,10 @@ pub struct Resource {
     /// A Bible's English rendering → Strong's index and Strong's totals (#20 rule 5), from its
     /// Tagged words; empty for other Resource types. Derived, so not part of the content hash.
     pub renderings: RenderingIndex,
+    /// A Commentary's volumes (#176): the volume title each Bible book's sections are printed
+    /// in, such as "Volume 1" for Genesis. Navigation metadata for the Contents pane, so not
+    /// part of the content hash; empty when the source names no volumes.
+    pub volumes: BTreeMap<Book, String>,
 }
 
 /// One problem found while validating a Resource.
@@ -256,6 +260,7 @@ pub struct ResourceBuilder {
     cross_references: Vec<CrossReference>,
     entities: Vec<Entity>,
     mentions: Vec<Mention>,
+    volumes: BTreeMap<Book, String>,
 }
 
 fn offset(n: usize) -> u32 {
@@ -276,6 +281,7 @@ impl ResourceBuilder {
             cross_references: Vec::new(),
             entities: Vec::new(),
             mentions: Vec::new(),
+            volumes: BTreeMap::new(),
         }
     }
 
@@ -367,6 +373,12 @@ impl ResourceBuilder {
         });
     }
 
+    /// Record that `book`'s sections are printed in the volume titled `title` (#176). A book
+    /// is in one volume: recording it again replaces the title.
+    pub fn set_volume(&mut self, book: Book, title: impl Into<String>) {
+        self.volumes.insert(book, title.into());
+    }
+
     pub fn count_dropped(&mut self, marker: &str) {
         *self.dropped.entry(marker.to_string()).or_insert(0) += 1;
     }
@@ -431,6 +443,7 @@ impl ResourceBuilder {
             mentions,
             transliterations,
             renderings,
+            volumes: self.volumes,
         };
         if let Err(more) = resource.validate() {
             errors.extend(more.0);

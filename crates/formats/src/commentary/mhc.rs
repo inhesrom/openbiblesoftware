@@ -67,6 +67,10 @@ fn page(import: &mut StudyImport, title: &str, source: &str) -> Result<()> {
         })
         .with_context(|| format!("unrecognized MHC Bible book {name}"))?;
     let book_passage = Passage::book(&Standard, book).context("Bible book outside Standard")?;
+    // `…/Volume 1/Genesis/…`: the printed volume, for the Contents pane (#176).
+    if let Some(volume) = segments.get(1).filter(|s| s.starts_with("Volume ")) {
+        import.builder.set_volume(book, volume.trim());
+    }
     let subchapter = segments
         .last()
         .and_then(|s| s.strip_prefix("Chapter "))
