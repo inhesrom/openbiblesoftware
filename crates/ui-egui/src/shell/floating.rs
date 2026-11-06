@@ -4,7 +4,7 @@
 //! one [`Shell`] (ADR 0008), so its Tabs share the Session: Link sets, focus and commands
 //! work across windows. Closing one docks its Panels back into the main window.
 
-use egui::{Rect, Ui, pos2, vec2};
+use egui::{Pos2, Rect, Ui, pos2, vec2};
 use egui_tiles::{Tile, Tree};
 use obs_engine::floating_windows::MIN_WINDOW;
 use obs_engine::{PanelId, Placement, ScreenRect, TabId, WindowId, WindowPlacement};
@@ -19,6 +19,52 @@ const DEFAULT_SIZE: (f32, f32) = (640.0, 720.0);
 const CASCADE: f32 = 48.0;
 /// How often the app is asked for the connected screens while floating windows are open.
 const SCREENS_EVERY_SECS: f64 = 2.0;
+/// How many times a new window that opened somewhere other than asked is moved there.
+const PLACE_TRIES: u8 = 3;
+
+/// What the operating system measures window places in: the same units across all its
+/// monitors, which egui points are not when the monitors' scale factors differ (a window's
+/// points are its own pixels over its own scale). Pixels on Windows and Linux (X11), points
+/// on macOS, as winit reports them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesktopUnits {
+    Pixels,
+    Points,
+}
+
+impl DesktopUnits {
+    /// This platform's.
+    pub const NATIVE: Self = if cfg!(target_os = "macos") {
+        Self::Points
+    } else {
+        Self::Pixels
+    };
+
+    /// Desktop units per egui point in a window drawn at `pixels_per_point` (its scale factor
+    /// times egui's zoom) with egui's `zoom`.
+    pub fn per_point(self, pixels_per_point: f32, zoom: f32) -> f32 {
+        match self {
+            Self::Pixels => pixels_per_point,
+            Self::Points => zoom,
+        }
+    }
+
+    /// A monitor as winit lists it (its corner and size in physical pixels, its scale factor)
+    /// in desktop units, with egui's `zoom`.
+    pub fn screen(self, at: (i32, i32), size: (u32, u32), scale: f32, zoom: f32) -> ScreenRect {
+        let per_pixel = match self {
+            Self::Pixels => 1.0,
+            Self::Points => 1.0 / scale,
+        };
+        ScreenRect {
+            x: at.0 as f32 * per_pixel,
+            y: at.1 as f32 * per_pixel,
+            width: size.0 as f32 * per_pixel,
+            height: size.1 as f32 * per_pixel,
+            scale: self.per_point(scale * zoom, zoom),
+        }
+    }
+}
 
 /// One floating window: its dock, and where it is on screen.
 pub(crate) struct FloatingDock {
@@ -32,6 +78,12 @@ pub(crate) struct FloatingDock {
     pub(crate) placement: Option<WindowPlacement>,
     /// Shown at least once (its opening place was checked against the screens).
     shown: bool,
+    /// Times it was moved to where it should open, after opening elsewhere (as when the OS
+    /// placed it at another screen's scale). [`PLACE_TRIES`] once it is in place.
+    place_tries: u8,
+    /// An OS window of its own (else an egui window embedded in the main one, whose keys are
+    /// the main window's).
+    pub(crate) native: bool,
     /// The user closed its window.
     pub(crate) close: bool,
 }
@@ -45,6 +97,8 @@ impl FloatingDock {
             open_at: placement,
             placement,
             shown: false,
+            place_tries: 0,
+            native: false,
             close: false,
         }
     }
@@ -63,24 +117,65 @@ impl FloatingDock {
 }
 
 /// The screens (monitors) connected, as the app last told, and the main window's place.
-#[derive(Default)]
 pub(crate) struct Screens {
     list: Vec<ScreenRect>,
     told_at: Option<f64>,
-    main: Option<Rect>,
+    /// The main window's outer rectangle in desktop units, and its desktop units per point.
+    main: Option<(Rect, f32)>,
+    /// What window places are measured in.
+    pub(crate) units: DesktopUnits,
+    /// Where on the desktop the pointer last was while dragging a Tab, and the desktop units
+    /// per point of the window it was in: a pointer that leaves its window mid-drag is gone
+    /// from that window's input.
+    drag_at: Option<(TabId, Pos2, f32)>,
+}
+
+impl Default for Screens {
+    fn default() -> Self {
+        Self {
+            list: Vec::new(),
+            told_at: None,
+            main: None,
+            units: DesktopUnits::NATIVE,
+            drag_at: None,
+        }
+    }
+}
+
+impl Screens {
+    /// The screen a point in desktop units is on.
+    fn at(&self, p: Pos2) -> Option<ScreenRect> {
+        self.list.iter().copied().find(|s| s.contains(p.x, p.y))
+    }
+
+    /// Desktop units per point in the viewport being drawn.
+    fn per_point(&self, ctx: &egui::Context) -> f32 {
+        self.units
+            .per_point(ctx.pixels_per_point(), ctx.zoom_factor())
+    }
+
+    /// Desktop units per point where a window is placed: its screen's, or the main window's
+    /// when its screen is not known.
+    fn per_point_at(&self, p: &WindowPlacement) -> f32 {
+        p.screen
+            .map(|s| s.units_per_point())
+            .or(self.main.map(|(_, k)| k))
+            .unwrap_or(1.0)
+    }
 }
 
 /// A Tab dragged out of its window: the Tab, its pane's size, and where on the desktop the
-/// pointer left it (none: not known).
+/// pointer left it with the desktop units per point there (none: not known).
 struct DraggedOut {
     tab: TabId,
     size: Option<egui::Vec2>,
-    at: Option<egui::Pos2>,
+    at: Option<(Pos2, f32)>,
 }
 
 /// A Tab of `tree` whose drag ended outside the window (released there, or the pointer left
-/// the window while dragging it).
-fn dragged_out(tree: &Tree<TabId>, ui: &Ui) -> Option<DraggedOut> {
+/// the window while dragging it). While it is dragged, `screens` keeps where the pointer is
+/// on the desktop, for when the pointer leaves the window and its position goes with it.
+fn dragged_out(tree: &Tree<TabId>, ui: &Ui, screens: &mut Screens) -> Option<DraggedOut> {
     let tile = tree.dragged_id(ui.ctx())?;
     let Some(Tile::Pane(tab)) = tree.tiles.get(tile) else {
         return None;
@@ -93,21 +188,33 @@ fn dragged_out(tree: &Tree<TabId>, ui: &Ui) -> Option<DraggedOut> {
             i.viewport().inner_rect,
         )
     });
+    let k = screens.per_point(ui.ctx());
+    if let Some(at) = pos
+        .zip(inner)
+        .map(|(p, inner)| (inner.min + p.to_vec2()) * k)
+    {
+        screens.drag_at = Some((*tab, at, k));
+    }
     let outside = pos.is_none_or(|p| !ui.ctx().content_rect().contains(p));
     if !(outside && (released || !has_pointer)) {
         return None;
     }
+    let at = screens
+        .drag_at
+        .take()
+        .filter(|(t, _, _)| t == tab)
+        .map(|(_, at, k)| (at, k));
     Some(DraggedOut {
         tab: *tab,
         size: tree.tiles.rect(tile).map(|r| r.size()),
-        at: pos.zip(inner).map(|(p, inner)| inner.min + p.to_vec2()),
+        at,
     })
 }
 
 impl Shell {
-    /// The app tells the screens connected now, the main window's first (#152), in points
-    /// on the desktop. A floating window restored onto a screen that is gone is moved onto
-    /// one of these.
+    /// The app tells the screens connected now, the main window's first (#152), in desktop
+    /// units (see [`DesktopUnits::screen`]). A floating window restored onto a screen that is
+    /// gone is moved onto one of these.
     pub fn set_screens(&mut self, screens: Vec<ScreenRect>) {
         self.screens.list = screens;
         self.screens.told_at = Some(self.st.now);
@@ -127,14 +234,18 @@ impl Shell {
     /// window's corner, at the size its Tab had.
     fn new_window_place(&self, size: Option<egui::Vec2>) -> WindowPlacement {
         let size = size.unwrap_or(vec2(DEFAULT_SIZE.0, DEFAULT_SIZE.1));
-        let corner = self.screens.main.map_or(pos2(0.0, 0.0), |r| r.min);
-        let step = CASCADE * (1 + self.floating.len()) as f32;
+        let (corner, k) = self
+            .screens
+            .main
+            .map_or((pos2(0.0, 0.0), 1.0), |(r, k)| (r.min, k));
+        let step = CASCADE * (1 + self.floating.len()) as f32 * k;
+        let at = corner + vec2(step, step);
         WindowPlacement {
-            x: corner.x + step,
-            y: corner.y + step,
+            x: at.x,
+            y: at.y,
             width: size.x.max(MIN_WINDOW.0),
             height: size.y.max(MIN_WINDOW.1),
-            screen: None,
+            screen: self.screens.at(at),
         }
     }
 
@@ -192,23 +303,32 @@ impl Shell {
     fn float_dragged(&mut self, ctx: &egui::Context, out: DraggedOut) {
         ctx.stop_dragging();
         let size = out.size.unwrap_or(vec2(DEFAULT_SIZE.0, DEFAULT_SIZE.1));
-        let place = out.at.map(|at| WindowPlacement {
-            // The pointer lands on the new window's title bar.
-            x: at.x - size.x.min(160.0) / 2.0,
-            y: at.y - 12.0,
-            width: size.x.max(MIN_WINDOW.0),
-            height: size.y.max(MIN_WINDOW.1),
-            screen: None,
+        let place = out.at.map(|(at, from)| {
+            let screen = self.screens.at(at);
+            let k = screen.map_or(from, |s| s.units_per_point());
+            WindowPlacement {
+                // The pointer lands on the new window's title bar.
+                x: at.x - size.x.min(160.0) / 2.0 * k,
+                y: at.y - 12.0 * k,
+                width: size.x.max(MIN_WINDOW.0),
+                height: size.y.max(MIN_WINDOW.1),
+                screen,
+            }
         });
         let place = place.or_else(|| Some(self.new_window_place(out.size)));
         self.st.session.workspace.float(out.tab, place);
         self.apply_effects();
     }
 
+    /// Each frame, first: where the main window is on the desktop.
+    pub(super) fn note_main_window(&mut self, ctx: &egui::Context) {
+        let k = self.screens.per_point(ctx);
+        self.screens.main = ctx.input(|i| i.viewport().outer_rect).map(|r| (r * k, k));
+    }
+
     /// Before the main window's dock is drawn: a Tab dragged out of it floats.
     pub(super) fn main_drag_out(&mut self, ui: &Ui) {
-        self.screens.main = ui.input(|i| i.viewport().outer_rect);
-        if let Some(out) = dragged_out(&self.tree, ui) {
+        if let Some(out) = dragged_out(&self.tree, ui, &mut self.screens) {
             self.float_dragged(ui.ctx(), out);
         }
     }
@@ -233,8 +353,11 @@ impl Shell {
                 continue;
             };
             if let Some(p) = d.open_at {
+                // In points at the scale of the screen it opens on; moved there by its desktop
+                // place once it reports one, should it open at another scale.
+                let k = self.screens.per_point_at(&p);
                 builder = builder
-                    .with_position(pos2(p.x, p.y))
+                    .with_position(pos2(p.x / k, p.y / k))
                     .with_inner_size(vec2(p.width, p.height));
             }
             let viewport = d.viewport_id();
@@ -272,40 +395,93 @@ impl Shell {
         }
     }
 
-    /// One floating window's frame: its dock, the keys typed in it, and where it is now.
+    /// The floating window that is an OS window of its own and shows `tab` (none: the main
+    /// window, which also holds the floating windows embedded in it): the window whose keys
+    /// reach `tab`.
+    pub(super) fn keys_window(&self, tab: TabId) -> Option<WindowId> {
+        self.floating
+            .iter()
+            .find(|d| d.native && d.tree.tiles.find_pane(&tab).is_some())
+            .map(|d| d.id)
+    }
+
+    /// The Tab keys typed in `window` (none: the main one) act on: the focused Tab when it is
+    /// in that window, else the Tab last focused there, else (when a Tab in another window is
+    /// focused) the active Tab of one of its Panels.
+    pub(super) fn focus_in(&self, window: Option<WindowId>) -> Option<TabId> {
+        let ws = &self.st.session.workspace;
+        let here = |t: &TabId| ws.tab(*t).is_some() && self.keys_window(*t) == window;
+        let focused = ws.focused();
+        if let Some(t) = focused.filter(here) {
+            return Some(t);
+        }
+        if let Some(t) = self.last_focused.get(&window).copied().filter(here) {
+            return Some(t);
+        }
+        // Nothing focused anywhere: nothing here either.
+        focused?;
+        let panels = match window {
+            None => &self.st.panels,
+            Some(w) => &self.floating.iter().find(|d| d.id == w)?.panels,
+        };
+        panels.values().filter_map(|p| ws.active_in(*p)).find(here)
+    }
+
+    /// One floating window's frame: its dock, the keys typed in it, its Note editor, and where
+    /// it is now.
     fn floating_ui(&mut self, ui: &mut Ui, id: WindowId, class: egui::ViewportClass) {
         let ctx = ui.ctx().clone();
         // An egui window inside the main one (no OS windows) reads the main window's input:
-        // its close and place are not this window's.
-        let (closing, outer, inner) = if class == egui::ViewportClass::EmbeddedWindow {
-            (false, None, None)
-        } else {
+        // its close, place and keys are not this window's.
+        let native = class != egui::ViewportClass::EmbeddedWindow;
+        let (closing, outer, inner) = if native {
             ctx.input(|i| {
                 let v = i.viewport();
                 (v.close_requested(), v.outer_rect, v.inner_rect)
             })
+        } else {
+            (false, None, None)
         };
-        let screens = &self.screens.list;
+        let k = self.screens.per_point(&ctx);
+        let screens = &self.screens;
         let Some(d) = self.floating.iter_mut().find(|d| d.id == id) else {
             return;
         };
+        d.native = native;
         if closing {
             d.close = true;
         }
         if let (Some(outer), Some(inner)) = (outer, inner) {
-            let centre = outer.center();
+            let at = outer.min * k;
+            // Opened elsewhere than asked (at another screen's scale than the one it opened
+            // on): moved there, in this window's points now that its scale is known.
+            if let Some(want) = d.open_at
+                && d.place_tries < PLACE_TRIES
+                && (want.x - at.x).abs().max((want.y - at.y).abs()) > 1.0
+            {
+                d.place_tries += 1;
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(
+                    pos2(want.x, want.y) / k,
+                ));
+            } else {
+                d.place_tries = PLACE_TRIES;
+            }
             d.placement = Some(WindowPlacement {
-                x: outer.min.x,
-                y: outer.min.y,
+                x: at.x,
+                y: at.y,
                 width: inner.width(),
                 height: inner.height(),
-                screen: screens.iter().copied().find(|s| {
-                    Rect::from_min_size(pos2(s.x, s.y), vec2(s.width, s.height)).contains(centre)
-                }),
+                screen: screens.at(outer.center() * k),
             });
         }
-        // Keys typed in this window run like keys typed in the main one.
-        self.shortcuts(ui);
+        // Ctrl/Cmd held in this window, not the main one, opens what is picked here in a new
+        // Panel.
+        let split_held = self.st.split_held;
+        self.st.split_held = ctx.input(|i| i.modifiers.command);
+        // Keys typed in this window run like keys typed in the main one, on its Tabs.
+        if native {
+            self.shortcuts(ui, Some(id));
+        }
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -318,7 +494,7 @@ impl Shell {
                 };
                 // Dragging the only Tab out of its window would make the same window again.
                 if d.tab_count() > 1
-                    && let Some(out) = dragged_out(&d.tree, ui)
+                    && let Some(out) = dragged_out(&d.tree, ui, &mut self.screens)
                 {
                     self.float_dragged(&ctx, out);
                 }
@@ -331,6 +507,14 @@ impl Shell {
                 d.tree.ui(&mut self.st, ui);
                 std::mem::swap(&mut self.st.panels, &mut d.panels);
             });
+        // A Note being written on one of this window's Tabs is written here.
+        if native
+            && let Some(ed) = &self.st.note_editor
+            && self.keys_window(ed.tab) == Some(id)
+        {
+            self.st.note_editor_ui(&ctx);
+        }
+        self.st.split_held = split_held;
         self.apply_effects();
     }
 }

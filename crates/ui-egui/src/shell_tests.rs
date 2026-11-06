@@ -41,6 +41,11 @@ struct Harness {
     copied: Vec<String>,
     /// The window's size in points (1400 × 900 unless a test makes it smaller).
     screen: egui::Vec2,
+    /// The main window as the window system reports it (place, scale, focus).
+    root_info: egui::ViewportInfo,
+    /// Floating windows as OS windows of their own, when a test asks for them
+    /// ([`Harness::native_windows`]); else egui embeds them in the main window.
+    native: Option<std::rc::Rc<std::cell::RefCell<floating_windows::NativeWindows>>>,
 }
 
 fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
@@ -126,6 +131,16 @@ impl Harness {
 
     /// Draw `shell` (already restored) in a fresh window, as the first frames of a launch.
     fn from_shell(shell: Shell) -> Self {
+        Self::open(shell, false)
+    }
+
+    /// Like [`Self::from_shell`], with floating windows as OS windows of their own from the
+    /// first frame ([`Self::native_windows`]).
+    fn native_from_shell(shell: Shell) -> Self {
+        Self::open(shell, true)
+    }
+
+    fn open(shell: Shell, native: bool) -> Self {
         let ctx = egui::Context::default();
         crate::theme::install(&ctx);
         let mut h = Self {
@@ -145,7 +160,12 @@ impl Harness {
             opened: Vec::new(),
             copied: Vec::new(),
             screen: vec2(1400.0, 900.0),
+            root_info: egui::ViewportInfo::default(),
+            native: None,
         };
+        if native {
+            h.native_windows();
+        }
         h.frames(3);
         h
     }
@@ -153,7 +173,13 @@ impl Harness {
     fn frame(&mut self) {
         self.events
             .insert(0, Event::ModifiersChanged(self.modifiers));
+        let mut viewports = egui::ViewportIdMap::default();
+        viewports.insert(egui::ViewportId::ROOT, self.root_info.clone());
+        if let Some(n) = &self.native {
+            n.borrow_mut().begin_frame(self.time, &mut viewports);
+        }
         let input = RawInput {
+            viewports,
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, self.screen)),
             time: Some(self.time),
             events: std::mem::take(&mut self.events),
@@ -163,6 +189,9 @@ impl Harness {
         self.time += 1.0 / 60.0;
         let shell = &mut self.shell;
         let mut out = self.ctx.run_ui(input, |ui| shell.ui(ui));
+        if let Some(n) = &self.native {
+            n.borrow_mut().end_frame(&out.viewport_output);
+        }
         // No GPU here: texture uploads are kept as images, for screenshots only.
         for (id, deltas) in std::mem::take(&mut out.textures_delta.set) {
             for delta in deltas {

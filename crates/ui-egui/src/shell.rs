@@ -37,6 +37,7 @@ mod export;
 mod factbook_tab;
 mod favorites_tab;
 mod floating;
+pub use floating::DesktopUnits;
 mod fonts_window;
 mod get_bibles_tab;
 mod guide_tab;
@@ -213,6 +214,8 @@ pub struct Shell {
     pub(crate) floating: Vec<floating::FloatingDock>,
     /// The screens (monitors) connected, the main window's first, as the app last told.
     screens: floating::Screens,
+    /// The Tab last focused in each window (none: the main one), for the keys typed there.
+    last_focused: BTreeMap<Option<obs_engine::WindowId>, TabId>,
 }
 
 impl Default for Shell {
@@ -261,6 +264,7 @@ impl Shell {
             shown: Vec::new(),
             floating: Vec::new(),
             screens: floating::Screens::default(),
+            last_focused: BTreeMap::new(),
         }
     }
 
@@ -728,6 +732,7 @@ impl Shell {
         self.st.references.refresh(&self.st.session.library);
         self.st.now = ui.input(|i| i.time);
         self.st.split_held = ui.input(|i| i.modifiers.command);
+        self.note_main_window(ui.ctx());
         // Poll, never wait: parsing, Resource writes, Search-index hooks and Guide sections
         // live on workers. Without worker threads (wasm), Guide sections and the People &
         // places directory step here, a job a frame.
@@ -750,7 +755,7 @@ impl Shell {
         if let Some(after) = self.background_repaint() {
             ui.ctx().request_repaint_after(after);
         }
-        self.shortcuts(ui);
+        self.shortcuts(ui, None);
         self.st.toolbar.begin_frame();
         let menus = egui::Panel::top("menus")
             .frame(
@@ -786,7 +791,10 @@ impl Shell {
             });
         self.apply_effects();
         self.show_floating_windows(ui.ctx());
-        self.st.overlays(ui);
+        // A Note being written on a Tab in a floating OS window is drawn in that window.
+        let note_here =
+            (self.st.note_editor.as_ref()).is_none_or(|ed| self.keys_window(ed.tab).is_none());
+        self.st.overlays(ui, note_here);
         self.customize_window(ui.ctx());
         // A Notes card being edited saves as the user types, and at once once its Tab is not
         // drawn (#64): checked here, since the Notes Tab's own code only runs while drawn.
@@ -806,8 +814,19 @@ impl Shell {
         self.save_session(closing);
     }
 
-    fn shortcuts(&mut self, ui: &mut Ui) {
-        let focused = self.st.session.workspace.focused();
+    /// The keys typed in `window` (none: the main one), on the Tab focused there
+    /// ([`Self::focus_in`]). The window gaining the keyboard, or a key run in it, makes that
+    /// Tab the focused one.
+    fn shortcuts(&mut self, ui: &mut Ui, window: Option<obs_engine::WindowId>) {
+        if let Some(f) = self.st.session.workspace.focused() {
+            self.last_focused.insert(self.keys_window(f), f);
+        }
+        let focused = self.focus_in(window);
+        let gained =
+            ui.input(|i| (i.events.iter()).any(|e| matches!(e, egui::Event::WindowFocused(true))));
+        if gained {
+            self.focus_here(focused);
+        }
         // Keys a text field uses itself (Ctrl+Z, Esc …) are left to it while it has focus.
         let typing = ui.ctx().text_edit_focused();
         let all = bindings(&self.st.session);
@@ -840,11 +859,26 @@ impl Shell {
                 run.push((spec.id, params));
             }
         }
+        if !run.is_empty() {
+            self.focus_here(focused);
+        }
         for (id, p) in run {
             self.run(id, &p);
         }
-        self.st.annotation_keys(ui);
+        if self.st.annotation_keys(ui, focused) {
+            self.focus_here(focused);
+        }
         self.apply_effects();
+    }
+
+    /// The Tab focused in the window whose keys are being read becomes the focused one.
+    fn focus_here(&mut self, tab: Option<TabId>) {
+        let ws = &mut self.st.session.workspace;
+        if let Some(t) = tab
+            && ws.focused() != Some(t)
+        {
+            ws.user_focused(t);
+        }
     }
 
     /// The menu bar: the app's name, the Launchers (#140) when the toolbar is at the Top (#141),
@@ -2414,10 +2448,13 @@ impl State {
         }
     }
 
-    /// Toasts and the About/Credits window.
-    fn overlays(&mut self, ui: &Ui) {
+    /// Toasts and the About/Credits window, and the Note editor when `note_here` (its Tab is
+    /// not in a floating OS window, which draws it).
+    fn overlays(&mut self, ui: &Ui, note_here: bool) {
         let ctx = ui.ctx().clone();
-        self.note_editor_ui(&ctx);
+        if note_here {
+            self.note_editor_ui(&ctx);
+        }
         self.layout_prompt(&ctx);
         self.remove_prompt(&ctx);
         self.import_chooser(&ctx);

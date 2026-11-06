@@ -208,7 +208,7 @@ The live arrangement of Panels and Tabs in the main window and any Floating wind
 _Avoid_: Layout (for the live arrangement), Desktop
 
 **Floating window**:
-An OS window of its own holding Panels and Tabs of the Workspace, so they can sit on another monitor. A Tab goes into a new one from its right-click or ⋯ menu (Float in new window) or by being dragged out of its window, and comes back with Move to main window. Closing a Floating window moves its Panels back into the main window. Link sets work across windows, and Layouts and the Last session keep each Floating window with where it was on screen; one whose monitor is gone when it is restored opens on a monitor that is there.
+An OS window of its own holding Panels and Tabs of the Workspace, so they can sit on another monitor. A Tab goes into a new one from its right-click or ⋯ menu (Float in new window) or by being dragged out of its window, and comes back with Move to main window. Closing a Floating window moves its Panels back into the main window. Keys typed in a window act on that window's Tabs. Link sets work across windows, and Layouts and the Last session keep each Floating window with where it was on screen; one whose monitor is gone when it is restored opens on a monitor that is there.
 _Avoid_: Popout, Undocked window, Detached Panel
 
 **Panel**:

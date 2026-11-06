@@ -75,6 +75,19 @@ fn screen(x: f32, y: f32, width: f32, height: f32) -> ScreenRect {
         y,
         width,
         height,
+        scale: 1.0,
+    }
+}
+
+/// A screen of `width` × `height` points at `scale` desktop units per point (a 2× monitor on
+/// a desktop measured in pixels), its corner at `x`, `y` in desktop units.
+fn scaled_screen(x: f32, y: f32, width: f32, height: f32, scale: f32) -> ScreenRect {
+    ScreenRect {
+        x,
+        y,
+        width: width * scale,
+        height: height * scale,
+        scale,
     }
 }
 
@@ -92,6 +105,15 @@ fn tab_float_moves_a_tab_into_a_new_window_of_its_own() {
     let kjv = open(&mut s, "kjv");
     let heb = open(&mut s, "heb");
     let main_panel = s.workspace.panel_of(kjv).unwrap();
+    // The main window's arrangement, as the UI keeps it, holds both Tabs side by side.
+    let panel_node = |tab: TabId| LayoutNode::Panel {
+        panel: s.workspace.panel_of(tab).unwrap().0,
+        tabs: vec![tab.0],
+        active: Some(tab.0),
+    };
+    s.workspace.arrangement = Some(LayoutNode::Row {
+        children: vec![(panel_node(kjv), 0.5), (panel_node(heb), 0.5)],
+    });
     s.workspace.take_effects();
     let out = s.run("tab.float", &json!({ "tab": heb.0 })).unwrap();
     let window = WindowId(out["window"].as_u64().unwrap());
@@ -115,7 +137,7 @@ fn tab_float_moves_a_tab_into_a_new_window_of_its_own() {
             Effect::Focus(heb),
         ]
     );
-    // The main window's arrangement no longer holds it; the window's holds only it.
+    // The main window's arrangement holds only KJV now; the window's holds only HEB.
     let main: Vec<u64> = s
         .workspace
         .arrangement
@@ -125,7 +147,7 @@ fn tab_float_moves_a_tab_into_a_new_window_of_its_own() {
         .into_iter()
         .flat_map(|(_, tabs, _)| tabs)
         .collect();
-    assert!(!main.contains(&heb.0), "{main:?}");
+    assert_eq!(main, [kjv.0]);
     assert_eq!(window_tab_ids(&s), [vec![heb.0]]);
     // Floating it again leaves it where it is; Move to main window brings it back.
     s.run("tab.float", &json!({ "tab": heb.0 })).unwrap();
@@ -296,4 +318,30 @@ fn a_window_whose_screen_is_gone_is_moved_on_screen() {
         (moved.x, moved.y),
         ((1920.0 - 800.0) / 2.0, (1080.0 - 600.0) / 2.0)
     );
+}
+
+#[test]
+fn a_window_on_a_screen_of_another_scale_keeps_its_place_in_that_screens_points() {
+    // A 1× main screen and, right of it, a 2× screen, on a desktop measured in pixels.
+    let main = scaled_screen(0.0, 0.0, 1920.0, 1080.0, 1.0);
+    let second = scaled_screen(1920.0, 0.0, 1440.0, 900.0, 2.0);
+    // 240 × 50 points from the 2× screen's corner: 480 × 100 pixels.
+    let at = placement(2400.0, 100.0, Some(second));
+    assert_eq!(at.units_per_point(), 2.0);
+    assert_eq!(at.on_screen(&[main, second]), at, "both there: it stays");
+    // The 2× screen is gone: 240 × 50 points from the main screen's corner, same size.
+    let moved = at.on_screen(&[main]);
+    assert_eq!((moved.x, moved.y), (240.0, 50.0));
+    assert_eq!((moved.width, moved.height), (800.0, 600.0));
+    assert_eq!(moved.screen, Some(main));
+    // And the other way: from the 1× screen onto a 2× one, its offset kept in points as far
+    // as it fits in the 2× screen's 1440 × 900 points.
+    let from_main = placement(100.0, 700.0, Some(main));
+    let moved = from_main.on_screen(&[second]);
+    assert_eq!((moved.width, moved.height), (800.0, 600.0));
+    assert_eq!((moved.x, moved.y), (1920.0 + 100.0 * 2.0, 300.0 * 2.0));
+    // A snapshot from before screens had a scale reads as 1×.
+    let old: ScreenRect =
+        serde_json::from_str(r#"{"x":0.0,"y":0.0,"width":10.0,"height":10.0}"#).unwrap();
+    assert_eq!(old.units_per_point(), 1.0);
 }

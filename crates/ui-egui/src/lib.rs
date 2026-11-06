@@ -36,7 +36,7 @@ pub use rich_clipboard::RichClipboard;
 pub use selection::{
     DocPos, Granularity, Selection, copy_text, range_rects, selected_text, selection_rects, word_at,
 };
-pub use shell::{Shell, parse_shortcut};
+pub use shell::{DesktopUnits, Shell, parse_shortcut};
 pub use system_fonts::{FontFile, InstalledFamily, NoSystemFonts, SystemFonts};
 pub use view::{Frame, FrameBlock, FrameStats, ReadingView, SYNC_BUDGET, VisibleBlock};
 pub use workers::{LayoutClient, SnippetCache, lay_out, set_layout_slowdown};
@@ -319,7 +319,8 @@ impl eframe::App for App {
         if self.shell.wants_screens()
             && let Some(window) = frame.winit_window()
         {
-            let ppp = ui.ctx().pixels_per_point();
+            let zoom = ui.ctx().zoom_factor();
+            let units = DesktopUnits::NATIVE;
             let mut screens: Vec<obs_engine::ScreenRect> = Vec::new();
             for m in window
                 .current_monitor()
@@ -327,12 +328,12 @@ impl eframe::App for App {
                 .chain(window.available_monitors())
             {
                 let (at, size) = (m.position(), m.size());
-                let screen = obs_engine::ScreenRect {
-                    x: at.x as f32 / ppp,
-                    y: at.y as f32 / ppp,
-                    width: size.width as f32 / ppp,
-                    height: size.height as f32 / ppp,
-                };
+                let screen = units.screen(
+                    (at.x, at.y),
+                    (size.width, size.height),
+                    m.scale_factor() as f32,
+                    zoom,
+                );
                 if !screens.contains(&screen) {
                     screens.push(screen);
                 }
