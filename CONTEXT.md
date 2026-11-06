@@ -231,6 +231,10 @@ _Avoid_: Recent, Recently viewed, Journal
 One entry in History: a Tab's Current location just after the Tab was opened or jumped (typing a reference, following a link, Back or Forward, running a search). Scrolling and following a Link set make no Visit.
 _Avoid_: History entry, Hit
 
+**Command box**:
+The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, "pg Rom 8", "compare Jn 3:16" and "ws agape" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database.
+_Avoid_: Omnibox, Search bar, Command palette (for the box)
+
 **Last session**:
 The Workspace as the user left it, restored automatically at the next launch. It is not a Layout.
 _Avoid_: Autosave layout
@@ -332,5 +336,5 @@ The Notes Tool's list of Orphaned annotations, where each can be re-attached to 
 _Avoid_: Broken links, Errors
 
 **User database**:
-The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History and preferences. Resources and Search indexes are never part of it.
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, the Command box's recent entries and preferences. Resources and Search indexes are never part of it.
 _Avoid_: Profile, User library, Settings file

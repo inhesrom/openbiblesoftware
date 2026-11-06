@@ -533,6 +533,39 @@ fn transliteration_index_round_trips_and_answers_lookups() {
 }
 
 #[test]
+fn keys_of_unit_lists_a_lexicon_entrys_strongs_numbers_and_lemma() {
+    let dir = TempDir::new("unit-keys");
+    let path = dir.path("lex.obr");
+    write_obr(&lexicon(), &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    let unit = UnitId::new("H1254A").unwrap();
+    let keys: Vec<(String, bool)> = r
+        .keys_of_unit(&unit)
+        .unwrap()
+        .into_iter()
+        .map(|k| (k.key.to_string(), k.alias))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            ("H1254".to_string(), true),
+            ("H1254A".to_string(), false),
+            ("בָּרָא".to_string(), false),
+        ]
+    );
+    // The trait's default (every scheme's Keys, filtered) agrees.
+    assert_eq!(
+        Defaults(&r).keys_of_unit(&unit).unwrap(),
+        r.keys_of_unit(&unit).unwrap()
+    );
+    assert!(
+        r.keys_of_unit(&UnitId::new("nowhere").unwrap())
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn strongs_lookup_falls_back_from_an_extended_to_a_base_number() {
     let dir = TempDir::new("strongs");
     let path = dir.path("lex.obr");

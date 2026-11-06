@@ -20,6 +20,9 @@ pub mod bible_search;
 mod bible_search_tests;
 mod builtin;
 pub mod command;
+pub mod command_box;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod command_box_tests;
 pub mod compare;
 pub mod credits;
 pub mod cross_references;
@@ -94,6 +97,7 @@ pub use bible_search::{
     verse_rows,
 };
 pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSpec, Params};
+pub use command_box::{CommandBoxAction, Suggestion};
 pub use compare::{
     Cell, ComparedBible, ComparedCell, Comparison, DEFAULT_BIBLES, Marks, VerseBlock, WordDiff,
     verse_blocks, word_diff,

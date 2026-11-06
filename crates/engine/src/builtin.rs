@@ -114,6 +114,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::word_sections::COMMANDS)
         .chain(crate::favorites::COMMANDS)
         .chain(crate::lookups::COMMANDS)
+        .chain(crate::command_box::COMMANDS)
     {
         // Ids in COMMANDS are unique (checked by a test), so registration cannot fail.
         let _ = r.register(*spec);

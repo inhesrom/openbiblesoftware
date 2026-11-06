@@ -119,6 +119,22 @@ pub trait ResourceStore {
     /// Every Key of one scheme, in key order.
     fn keys(&self, scheme: KeyScheme) -> Result<Vec<KeyEntry>, StoreError>;
 
+    /// Every Key of one unit, of any scheme, in key order. The Command box (#139) reads the
+    /// Strong's number of a Lexicon entry it found by Lemma this way.
+    fn keys_of_unit(&self, unit: &UnitId) -> Result<Vec<KeyEntry>, StoreError> {
+        let mut out = Vec::new();
+        for scheme in [
+            KeyScheme::Passage,
+            KeyScheme::StrongsNumber,
+            KeyScheme::Lemma,
+            KeyScheme::Headword,
+        ] {
+            out.extend(self.keys(scheme)?.into_iter().filter(|k| k.unit == *unit));
+        }
+        out.sort();
+        Ok(out)
+    }
+
     /// Where a retired unit id now lives, if it was aliased.
     fn unit_alias(&self, old: &UnitId) -> Result<Option<UnitId>, StoreError>;
 
