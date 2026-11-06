@@ -2607,6 +2607,7 @@ dependencies = [
  "obs-model",
  "obs-scripture",
  "obs-search",
+ "obs-store",
  "rusqlite",
  "serde",
  "serde_json",

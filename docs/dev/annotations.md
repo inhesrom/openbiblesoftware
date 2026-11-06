@@ -1,7 +1,7 @@
 # Annotation service, storage and undo (#61)
 
 Notebooks, Notes and Highlights live in the User database (`obs_store::UserStore`, schema
-v6). The engine reaches them only through the `UserData` trait; `crates/engine/src/
+v9). The engine reaches them only through the `UserData` trait; `crates/engine/src/
 annotations.rs` holds the service on `Session` and the `annotation.*`, `notebook.*` and
 `edit.*` commands. The origin Bible's UI is #62 and other Bibles #63 (both below); the Notes
 Tool and Notes search are #64 ([notes-tool.md](notes-tool.md)); re-anchoring and Orphaned
@@ -18,7 +18,18 @@ annotations are #65 (below, `crates/engine/src/reanchor.rs`).
 | `notes_fts` | FTS5 over Note bodies in normalized-word form (the Search index's form), keyed by `annotation_id` |
 
 A CHECK makes a stored Text range without its quote, context or content hash impossible
-(ADR 0006). The migration and every launch make the default Notebook if it is missing.
+(ADR 0006), and since schema v9 (#115) one that covers no text too: `end_byte > start_byte`
+and a non-empty quote. `Annotation::problem` refuses such a range first, as
+`StoreError::Rejected`. The v9 migration rebuilds `anchors` for it (SQLite cannot change a
+CHECK in place). The app never wrote such a range, but should a row exist the migration
+makes it valid rather than failing: a Passage anchor drops that origin (it shows as whole
+Verses), a Note's Text-range anchor is removed (the Note is kept), and a Highlight on no text,
+which marks nothing, is deleted; the copy taken before migrating keeps them all. The
+migration and every launch make the default Notebook if it is missing.
+
+`notes_fts.annotation_id` is UNINDEXED, so finding one entry scans the index. Deleting an
+Annotation therefore touches `notes_fts` only when it is a Note: deleting a Notebook full
+of Highlights costs no index scans, whatever the number of Notes.
 
 ## Every edit is a list of row Changes
 
@@ -31,8 +42,10 @@ changed. The default Notebook cannot be deleted or demoted (`StoreError::Rejecte
 Each command builds its list, applies it and pushes it on `Session`'s `UndoHistory` as one
 step. Undo applies `inverse(changes)` (each Change swapped, in reverse order); redo applies
 the list again. Because rows carry their timestamps, both land on byte-identical rows. If a
-step no longer matches the database (something outside the history changed it), nothing is
-written and the history is cleared. `Session::annotations_revision()` changes with every
+step no longer matches the database (something outside the history changed it:
+`StoreError::Conflict`) or breaks a rule (`StoreError::Rejected`), nothing is written and
+the history is cleared. Any other failure (SQLite busy, disk full) may pass, so the step
+goes back on its stack to try again (#115). `Session::annotations_revision()` changes with every
 write, undo or redo, for views to reload.
 
 ## Selection → Anchor
@@ -51,6 +64,23 @@ for just those Verses).
 - Highlight over several units (Bible books) → one Highlight per unit, one undo step.
 - Note over several units → one Passage anchor over the whole selection with no Text range
   (or the first part's Text range when no part maps).
+
+**Mixed selections.** One unit's part can touch both mapped and Unmapped verses (in the
+fixture LXX, from Esth 10:3 into the Greek addition 10:4). It gets a Passage anchor over the
+Standard Passage of just the mapped Verses, and its origin Text range covers the whole part,
+Unmapped words included; `native_ref` is not set, because the Passage says where it is. So
+the origin Bible marks every selected word, and other Bibles show only the mapped Verses
+(the Unmapped ones have no counterpart there). `whole_verses` is worked out over every
+Verse the range touches, so a mixed part that leaves part of the Unmapped verse out shows
+as a margin mark elsewhere.
+
+**Non-Bible Notes across units** keep only the first unit's Text range: a Commentary
+section is its own unit, and a Note dragged across two sections anchors to the part in the
+first. Revisited after #63 and #65 (#115) and kept: a Text range lives in one unit by design
+(re-anchoring matches a quote within its unit; marks are drawn per unit; the `unit_alias`
+table renames one unit at a time), so a range across units would need a new anchor form,
+which is a schema and ADR 0006 change not worth it for this case. A Highlight across units
+already makes one Highlight per unit; a Note to one place is what the Notes Tool lists.
 
 ## Commands
 

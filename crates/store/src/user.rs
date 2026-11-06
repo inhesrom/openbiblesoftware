@@ -18,7 +18,7 @@ use crate::error::StoreError;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 8;
+pub const USER_SCHEMA_VERSION: u32 = 9;
 
 /// How many launch backups are kept.
 pub const ROLLING_BACKUPS: usize = 5;
@@ -44,6 +44,8 @@ const MIGRATIONS: &[&str] = &[
     crate::favorites_store::SCHEMA_7,
     // 7 → 8: Reading plans (#147).
     crate::reading_plans_store::SCHEMA_8,
+    // 8 → 9: a stored Text range must cover some text (#115).
+    crate::annotation_store::SCHEMA_9,
 ];
 
 pub(crate) fn sql(e: rusqlite::Error) -> StoreError {

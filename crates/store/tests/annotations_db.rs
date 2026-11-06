@@ -465,3 +465,246 @@ fn notes_fts_matches_body_edits_immediately() {
     assert!(db.search_notes("\"mercy\"").unwrap().is_empty());
     db.annotation_dump().unwrap();
 }
+
+/// Deleting a Highlight never touches `notes_fts` (#115): finding an entry there scans the
+/// whole index, so deleting a Notebook of N Highlights must not cost N scans. Proved by
+/// dropping the index: Highlights still delete, a Note does not.
+#[test]
+fn deleting_highlights_skips_the_note_index() {
+    let dir = Dir::new("fts-delete");
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    let nb = notebook("Highlights only");
+    let marks: Vec<Annotation> = ["God", "loved", "world"]
+        .into_iter()
+        .map(|q| highlight(&nb.id, Anchor::TextRange { range: range(q) }))
+        .collect();
+    let n = note(&default_of(&db).id, "kept", None);
+    let mut made = vec![
+        Change::insert(Row::Notebook(nb.clone())),
+        Change::insert(Row::Annotation(n.clone())),
+    ];
+    made.extend(
+        marks
+            .iter()
+            .map(|a| Change::insert(Row::Annotation(a.clone()))),
+    );
+    db.apply_changes(&made).unwrap();
+
+    let raw = rusqlite::Connection::open(dir.db()).unwrap();
+    raw.execute_batch("DROP TABLE notes_fts").unwrap();
+    // Delete the Notebook with its Highlights, as `notebook.delete` with `delete` does.
+    let mut gone: Vec<Change> = marks
+        .iter()
+        .map(|a| Change::delete(Row::Annotation(a.clone())))
+        .collect();
+    gone.push(Change::delete(Row::Notebook(nb.clone())));
+    db.apply_changes(&gone).unwrap();
+    assert_eq!(db.annotations(None).unwrap(), vec![n.clone()]);
+    assert_eq!(db.notebook(&nb.id).unwrap(), None);
+    // A Note does have an index entry to delete.
+    let err = db
+        .apply_changes(&[Change::delete(Row::Annotation(n.clone()))])
+        .unwrap_err();
+    assert!(err.to_string().contains("notes_fts"), "{err}");
+    assert_eq!(db.annotation(&n.id).unwrap(), Some(n));
+}
+
+/// A stored Text range covers some text (#115): the model refuses an empty one before SQL,
+/// and the CHECK refuses one written past it (equal offsets, an empty quote, a missing end).
+#[test]
+fn a_text_range_that_covers_no_text_is_refused() {
+    let dir = Dir::new("empty-range");
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    let nb = default_of(&db).id;
+    let empty_quote = TextRange {
+        quote: String::new(),
+        ..range("God")
+    };
+    let no_bytes = TextRange {
+        end: 4,
+        ..range("God")
+    };
+    for bad in [&empty_quote, &no_bytes] {
+        for a in [
+            highlight(&nb, Anchor::TextRange { range: bad.clone() }),
+            note(
+                &nb,
+                "x",
+                Some(Anchor::Passage {
+                    passage: Passage::verse(jn(16)),
+                    origin: Some(bad.clone()),
+                }),
+            ),
+        ] {
+            let err = db
+                .apply_changes(&[Change::insert(Row::Annotation(a))])
+                .unwrap_err();
+            assert!(
+                matches!(&err, StoreError::Rejected(why) if why.contains("cover some text")),
+                "{err}"
+            );
+        }
+    }
+    assert!(db.annotations(None).unwrap().is_empty());
+
+    let ok = highlight(
+        &nb,
+        Anchor::TextRange {
+            range: range("God"),
+        },
+    );
+    db.apply_changes(&[Change::insert(Row::Annotation(ok.clone()))])
+        .unwrap();
+    let raw = rusqlite::Connection::open(dir.db()).unwrap();
+    for (what, set) in [
+        ("equal offsets", "end_byte = start_byte"),
+        ("an empty quote", "quote = ''"),
+        ("no end", "end_byte = NULL"),
+    ] {
+        let err = raw
+            .execute(
+                &format!("UPDATE anchors SET {set} WHERE annotation_id = ?1"),
+                [&ok.id],
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("CHECK"), "{what}: {err}");
+    }
+    assert_eq!(db.annotation(&ok.id).unwrap(), Some(ok));
+}
+
+/// Migration 8 → 9 (#115) rebuilds `anchors` with the stricter CHECK. Good rows are kept as
+/// they were; rows that cover no text, which the app never wrote, are made valid: a Passage
+/// anchor drops that origin, a Note keeps its text without the anchor, and a Highlight on
+/// no text (it marks nothing) is removed.
+#[test]
+fn the_v9_migration_makes_every_text_range_cover_some_text() {
+    let dir = Dir::new("migrate9");
+    let (nb, good, origin_less, note_kept, gone) = {
+        let (v8, _) = UserStore::open_to(&dir.db(), 8).unwrap();
+        assert_eq!(v8.schema_version().unwrap(), 8);
+        let nb = default_of(&v8).id;
+        let good = highlight(
+            &nb,
+            Anchor::Passage {
+                passage: Passage::verse(jn(16)),
+                origin: Some(TextRange {
+                    whole_verses: true,
+                    orphaned: true,
+                    ..range("God")
+                }),
+            },
+        );
+        let good_note = note(
+            &nb,
+            "Grace upon grace",
+            Some(Anchor::TextRange {
+                range: TextRange {
+                    native_ref: Some("Esth.10.4".into()),
+                    ..range("Mardocheus")
+                },
+            }),
+        );
+        v8.apply_changes(&[
+            Change::insert(Row::Annotation(good.clone())),
+            Change::insert(Row::Annotation(good_note.clone())),
+        ])
+        .unwrap();
+        drop(v8);
+        // Rows schema 8 accepted although they cover no text, written past the model.
+        let origin_less = highlight(
+            &nb,
+            Anchor::Passage {
+                passage: Passage::verse(jn(17)),
+                origin: None,
+            },
+        );
+        let note_kept = note(&nb, "", None);
+        let gone = highlight(&nb, Anchor::TextRange { range: range("x") });
+        let c = rusqlite::Connection::open(dir.db()).unwrap();
+        for (a, kind) in [
+            (&origin_less, "highlight"),
+            (&note_kept, "note"),
+            (&gone, "highlight"),
+        ] {
+            c.execute(
+                "INSERT INTO annotations (id, notebook_id, kind, style, body, created_at,
+                     modified_at)
+                 VALUES (?1, ?2, ?3, ?4, '', ?5, ?5)",
+                rusqlite::params![
+                    a.id,
+                    nb,
+                    kind,
+                    (kind == "highlight").then_some("green"),
+                    a.created_at
+                ],
+            )
+            .unwrap();
+        }
+        let r = range("x");
+        for (id, kind, book, end, quote) in [
+            (&origin_less.id, "passage", Some(43), r.end, ""),
+            (&note_kept.id, "text_range", None, r.start, "x"),
+            (&gone.id, "text_range", None, r.end, ""),
+        ] {
+            c.execute(
+                "INSERT INTO anchors (annotation_id, kind, start_book, start_chapter,
+                     start_verse, end_book, end_chapter, end_verse, resource_id, unit_id,
+                     start_byte, end_byte, quote, prefix, suffix, content_hash)
+                 VALUES (?1, ?2, ?3, 3, 17, ?3, 3, 17, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                rusqlite::params![
+                    id,
+                    kind,
+                    book,
+                    r.resource_id,
+                    r.unit.as_str(),
+                    r.start,
+                    end,
+                    quote,
+                    r.prefix,
+                    r.suffix,
+                    r.content_hash
+                ],
+            )
+            .unwrap();
+        }
+        (nb, vec![good, good_note], origin_less, note_kept, gone)
+    };
+    let (db, report) = UserStore::open(&dir.db()).unwrap();
+    assert_eq!(report.found_version, 8);
+    assert!(report.migration_backup.unwrap().is_file());
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
+    for a in &good {
+        assert_eq!(db.annotation(&a.id).unwrap().as_ref(), Some(a));
+    }
+    assert_eq!(db.annotation(&origin_less.id).unwrap(), Some(origin_less));
+    assert_eq!(db.annotation(&note_kept.id).unwrap(), Some(note_kept));
+    assert_eq!(db.annotation(&gone.id).unwrap(), None);
+    assert_eq!(db.annotations(Some(&nb)).unwrap().len(), 4);
+    // The rebuilt table keeps its indexes and enforces the new CHECK.
+    let raw = rusqlite::Connection::open(dir.db()).unwrap();
+    let indexes: Vec<String> = raw
+        .prepare(
+            "SELECT name FROM sqlite_master WHERE tbl_name = 'anchors' AND type = 'index'
+                  AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(indexes, ["anchors_passage", "anchors_resource"]);
+    let err = raw
+        .execute(
+            "UPDATE anchors SET quote = '' WHERE annotation_id = ?1",
+            [&good[0].id],
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("CHECK"), "{err}");
+    // Undo still lands: a migrated row deletes and comes back unchanged.
+    let back = good[1].clone();
+    db.apply_changes(&[Change::delete(Row::Annotation(back.clone()))])
+        .unwrap();
+    db.apply_changes(&[Change::insert(Row::Annotation(back.clone()))])
+        .unwrap();
+    assert_eq!(db.annotation(&back.id).unwrap(), Some(back));
+}

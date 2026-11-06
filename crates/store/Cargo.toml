@@ -20,5 +20,13 @@ obs-search.workspace = true
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rusqlite = { workspace = true, features = ["backup"] }
 
+[features]
+# `UserStore::annotation_dump`, for tests in this and dependent crates.
+test-support = []
+
+[dev-dependencies]
+# This crate's own integration tests use its test-support API.
+obs-store = { path = ".", features = ["test-support"] }
+
 [lints]
 workspace = true

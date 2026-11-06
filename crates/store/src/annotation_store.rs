@@ -4,10 +4,12 @@
 //! one transaction, `notes_fts` included, after checking that each row is still what the
 //! Change expects. Undo applies the inverted list the same way.
 
+#[cfg(feature = "test-support")]
 use std::fmt::Write as _;
 
 use obs_model::UnitId;
 use obs_scripture::{Book, Passage, Verse};
+#[cfg(feature = "test-support")]
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, Row as SqlRow, params};
 
@@ -113,6 +115,66 @@ CREATE TABLE resource_names (
     abbreviation TEXT NOT NULL,
     title TEXT NOT NULL
 );
+";
+
+/// Migration 8 → 9 (#115): a stored Text range must cover some text. The CHECK of schema 4
+/// let `end_byte = start_byte`, an empty quote, and (through NULL comparisons) a missing
+/// `end_byte` through; SQLite cannot change a CHECK in place, so `anchors` is rebuilt.
+///
+/// The app never wrote such a range (a selection part with no text is skipped), so the rows
+/// fixed first should not exist; if one does, it would break the new CHECK. A Passage anchor
+/// loses that origin and shows as whole Verses; a Note's Text-range anchor is removed and the
+/// Note kept; a Highlight on no text, which marks nothing, is deleted. The copy taken before
+/// migrating keeps them all.
+pub(crate) const SCHEMA_9: &str = "
+UPDATE anchors SET resource_id = NULL, unit_id = NULL, start_byte = NULL, end_byte = NULL,
+    quote = NULL, prefix = NULL, suffix = NULL, content_hash = NULL, native_ref = NULL,
+    whole_verses = 0, status = 'ok'
+WHERE kind = 'passage' AND resource_id IS NOT NULL
+    AND NOT coalesce(end_byte > start_byte AND quote <> '', 0);
+DELETE FROM annotations WHERE kind = 'highlight' AND id IN (
+    SELECT annotation_id FROM anchors
+    WHERE kind = 'text_range' AND NOT coalesce(end_byte > start_byte AND quote <> '', 0));
+DELETE FROM anchors
+WHERE kind = 'text_range' AND NOT coalesce(end_byte > start_byte AND quote <> '', 0);
+CREATE TABLE anchors_v9 (
+    annotation_id TEXT PRIMARY KEY
+                  REFERENCES annotations (id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+    kind          TEXT NOT NULL CHECK (kind IN ('passage', 'text_range')),
+    start_book    INTEGER CHECK (start_book BETWEEN 1 AND 66),
+    start_chapter INTEGER,
+    start_verse   INTEGER,
+    end_book      INTEGER CHECK (end_book BETWEEN 1 AND 66),
+    end_chapter   INTEGER,
+    end_verse     INTEGER,
+    resource_id   TEXT,
+    unit_id       TEXT,
+    start_byte    INTEGER,
+    end_byte      INTEGER,
+    quote         TEXT,
+    prefix        TEXT,
+    suffix        TEXT,
+    content_hash  TEXT,
+    native_ref    TEXT,
+    whole_verses  INTEGER NOT NULL DEFAULT 0 CHECK (whole_verses IN (0, 1)),
+    status        TEXT NOT NULL DEFAULT 'ok' CHECK (status IN ('ok', 'orphaned')),
+    CHECK ((kind = 'passage') = (start_book IS NOT NULL AND start_chapter IS NOT NULL
+           AND start_verse IS NOT NULL AND end_book IS NOT NULL AND end_chapter IS NOT NULL
+           AND end_verse IS NOT NULL)),
+    CHECK (kind = 'passage' OR resource_id IS NOT NULL),
+    CHECK (resource_id IS NULL OR (unit_id IS NOT NULL AND start_byte IS NOT NULL
+           AND end_byte IS NOT NULL AND end_byte > start_byte
+           AND quote IS NOT NULL AND quote <> '' AND prefix IS NOT NULL
+           AND suffix IS NOT NULL AND content_hash IS NOT NULL))
+);
+INSERT INTO anchors_v9 SELECT annotation_id, kind, start_book, start_chapter, start_verse,
+    end_book, end_chapter, end_verse, resource_id, unit_id, start_byte, end_byte, quote,
+    prefix, suffix, content_hash, native_ref, whole_verses, status FROM anchors;
+DROP TABLE anchors;
+ALTER TABLE anchors_v9 RENAME TO anchors;
+CREATE INDEX anchors_passage ON anchors (start_book, start_chapter, start_verse)
+    WHERE kind = 'passage';
+CREATE INDEX anchors_resource ON anchors (resource_id) WHERE resource_id IS NOT NULL;
 ";
 
 /// Name of the default Notebook when it is first made. The user may rename it.
@@ -324,8 +386,13 @@ fn write_annotation(
     after: Option<&Annotation>,
 ) -> Result<(), StoreError> {
     let Some(a) = after else {
+        // Only a Note has an index entry. `annotation_id` is not indexed, so finding the entry
+        // scans `notes_fts`; deleting a Notebook full of Highlights must not do that per row.
+        if before.is_some_and(Annotation::is_note) {
+            c.execute("DELETE FROM notes_fts WHERE annotation_id = ?1", [id])
+                .map_err(sql)?;
+        }
         for stmt in [
-            "DELETE FROM notes_fts WHERE annotation_id = ?1",
             "DELETE FROM anchors WHERE annotation_id = ?1",
             "DELETE FROM annotations WHERE id = ?1",
         ] {
@@ -533,7 +600,7 @@ impl UserStore {
     /// Every row of `notebooks`, `annotations`, `anchors` and `notes_fts` as text, after
     /// checking the FTS index against its rows; tests compare these to prove undo and redo
     /// restore the same database.
-    #[doc(hidden)]
+    #[cfg(feature = "test-support")]
     pub fn annotation_dump(&self) -> Result<String, StoreError> {
         self.conn
             .execute(
