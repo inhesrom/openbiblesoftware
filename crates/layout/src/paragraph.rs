@@ -3,6 +3,7 @@
 use obs_model::{NoteKind, UnitId};
 use obs_scripture::Verse;
 
+use crate::interlinear::Interlinear;
 use crate::style::RunStyle;
 
 /// Text the layout adds that is not in the unit (verse numbers, note markers). It sits at an
@@ -18,6 +19,9 @@ pub enum InlineObject {
     },
     /// A footnote or cross-reference marker for a note unit.
     NoteMarker { note: UnitId, kind: NoteKind },
+    /// One interlinear line under a Tagged word (#143), anchored at the word's first byte;
+    /// `row` 0 is the line just under the word.
+    InterlinearCell { row: usize },
 }
 
 /// Where a run's text comes from.
@@ -60,6 +64,8 @@ pub struct Paragraph {
     pub align: Align,
     /// Share of Hebrew line metrics to count (see `TextSettings::hebrew_line_height`).
     pub hebrew_line_height: f32,
+    /// Interlinear lines under its Tagged words (#143), when the Tab shows them.
+    pub interlinear: Option<Interlinear>,
 }
 
 impl Paragraph {

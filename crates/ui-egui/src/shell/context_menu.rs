@@ -495,7 +495,11 @@ impl State {
                     .unwrap_or_else(|| response.rect.left_top() + vec2(40.0, 40.0)),
             );
         }
-        let opened = (out.context_clicked || key).then(|| self.reading_targets(tab, out));
+        if out.cell_clicked {
+            at = response.hover_pos();
+        }
+        let opened = (out.context_clicked || key || out.cell_clicked)
+            .then(|| self.reading_targets(tab, out));
         let Some((action, new_tab)) = self.show_menu(ui, tab, &response, opened, at) else {
             return;
         };

@@ -111,6 +111,12 @@ pub struct TabSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_location: Option<obs_model::Key>,
     pub link: Option<char>,
+    /// A Bible Tab's interlinear lines (#143).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::interlinear::InterlinearLines::is_default"
+    )]
+    pub interlinear: crate::interlinear::InterlinearLines,
 }
 
 /// The Workspace as saved: Tabs, the arrangement of Panels, Link sets, focus and each Tab
@@ -355,6 +361,7 @@ impl Workspace {
                     location: t.history.current(),
                     entry_location: t.entry_history.current(),
                     link: t.link,
+                    interlinear: t.interlinear.clone(),
                 })
                 .collect(),
             layout: self.arrangement.clone(),

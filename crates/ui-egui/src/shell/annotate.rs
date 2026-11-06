@@ -341,6 +341,8 @@ impl State {
             return;
         };
         let doc = Arc::clone(&view.doc);
+        // Copy takes the Tab's interlinear lines along (#143).
+        let copied = matches!(action, Annotate::Copy).then(|| view.copy_text(&sel));
         let Some(target) = selection_params(&doc, &sel) else {
             return;
         };
@@ -349,7 +351,7 @@ impl State {
             Rect::from_min_size(pos2(o[0], o[1] + 40.0), vec2(1.0, 20.0))
         });
         match action {
-            Annotate::Copy => ctx.copy_text(copy_text(&doc, &sel)),
+            Annotate::Copy => ctx.copy_text(copied.unwrap_or_default()),
             Annotate::Highlight(style) => {
                 let mut params = target;
                 params["style"] = json!(style.id());

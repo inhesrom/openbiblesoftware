@@ -121,8 +121,18 @@ pub fn selected_text(doc: &ReadingDoc, sel: &Selection) -> String {
 /// The selection as copied: the text, then its reference and the Resource's abbreviation,
 /// e.g. `John 3:16 (KJV)`. References are in the Bible's own numbering.
 pub fn copy_text(doc: &ReadingDoc, sel: &Selection) -> String {
+    copy_text_with(doc, sel, &[])
+}
+
+/// [`copy_text`] with `rows` (a Tab's interlinear lines, #143) between the text and its
+/// reference.
+pub(crate) fn copy_text_with(doc: &ReadingDoc, sel: &Selection, rows: &[String]) -> String {
     let text = selected_text(doc, sel);
-    let text = text.trim();
+    let mut text = text.trim().to_string();
+    for row in rows {
+        text.push('\n');
+        text.push_str(row);
+    }
     let (a, b) = sel.range(doc);
     let first = doc.verse_containing(a.unit, a.byte);
     let last = doc.verse_containing(b.unit, b.byte.saturating_sub(1).max(a.byte));
@@ -141,10 +151,34 @@ pub fn copy_text(doc: &ReadingDoc, sel: &Selection) -> String {
 /// edge and the viewport top, for the blocks laid out in a viewport `height` tall.
 pub fn selection_rects(view: &ReadingView, sel: &Selection, height: f32) -> Vec<[f32; 4]> {
     let range = sel.range(&view.doc);
-    range_rects(view, &[range], height)
+    let mut rects = range_rects(view, &[range], height)
         .into_iter()
         .next()
-        .unwrap_or_default()
+        .unwrap_or_default();
+    rects.extend(cell_rects(view, range, height));
+    rects
+}
+
+/// The interlinear lines (#143) under the Tagged words a range `[start, end)` reaches into:
+/// they are selected with their words.
+fn cell_rects(view: &ReadingView, (a, b): (DocPos, DocPos), height: f32) -> Vec<[f32; 4]> {
+    let mut out = Vec::new();
+    if view.interlinear().is_none() || a >= b {
+        return out;
+    }
+    for (index, top, laid) in view.laid_in_view(height) {
+        let block = &view.doc.blocks[index];
+        let unit = block.unit;
+        if unit < a.unit || unit > b.unit {
+            continue;
+        }
+        let start = if unit == a.unit { a.byte } else { 0 };
+        let end = if unit == b.unit { b.byte } else { usize::MAX };
+        for c in laid.cells_in(start..end) {
+            out.push([c.x, top + c.top, c.x + c.width, top + c.bottom]);
+        }
+    }
+    out
 }
 
 /// [`selection_rects`] for many document ranges `[start, end)` at once (Highlights, Note
@@ -206,7 +240,9 @@ pub fn range_rects(
                                 if let Some(r) = run.take() {
                                     out[i].push(r);
                                 }
-                                *run = Some([x0, top + line.top, x1, top + line.bottom]);
+                                // The text's own band: interlinear lines under it are
+                                // not part of a range (#143).
+                                *run = Some([x0, top + line.top, x1, top + line.text_bottom]);
                             }
                             (_, false) => {
                                 if let Some(r) = run.take() {

@@ -18,6 +18,8 @@ pub enum ColorRole {
     Accent,
     /// Words of Jesus (red letter, when enabled).
     WordsOfJesus,
+    /// Interlinear lines under Tagged words (#143).
+    Interlinear,
 }
 
 /// How verse numbers are shown (Text settings, #66).

@@ -37,6 +37,9 @@ pub struct BenchConfig {
     pub jumps: usize,
     /// Sleep out each frame interval, so workers get real time between frames.
     pub pace: bool,
+    /// How many of the panes (the last ones) show interlinear lines under their Tagged
+    /// words (#143): a reverse interlinear's Lemma, transliteration and Strong's number.
+    pub interlinear_panes: usize,
 }
 
 impl Default for BenchConfig {
@@ -51,6 +54,7 @@ impl Default for BenchConfig {
             flings: 4,
             jumps: 24,
             pace: true,
+            interlinear_panes: 1,
         }
     }
 }
@@ -214,10 +218,16 @@ impl Bench {
 pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
     let interval = Duration::from_secs_f64(1.0 / f64::from(cfg.refresh_hz));
     let panes = cfg.panes.max(1);
+    let kind = obs_engine::InterlinearKind::Reverse;
+    let interlinear =
+        crate::InterlinearSource::new(kind, kind.default_lines().to_vec(), vec![]).map(Arc::new);
     let mut views: Vec<ReadingView> = (0..panes)
-        .map(|_| {
+        .map(|k| {
             let mut v = ReadingView::new(Arc::clone(&doc), TextSettings::default());
             v.set_width(cfg.viewport.0 - 2.0 * crate::view::MARGIN);
+            if k + cfg.interlinear_panes >= panes {
+                v.set_interlinear(interlinear.clone());
+            }
             v
         })
         .collect();
@@ -354,8 +364,24 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
 
 /// A deterministic Bible-shaped document for CI, where no real Bible is available: Genesis to
 /// Deuteronomy chapter and verse counts, prose paragraphs of 3–8 verses, every fifth chapter
-/// poetry, verses of 12–60 words.
+/// poetry, verses of 12–60 words. About seven words in ten are Tagged words with a Hebrew
+/// Lemma, as in an English Bible with Strong's numbers (for interlinear lines, #143).
 pub fn synthetic_bible() -> Arc<ReadingDoc> {
+    // Strong's number, Lemma and Gloss.
+    const LEMMAS: &[(&str, &str, &str)] = &[
+        ("H1254", "בָּרָא", "to create"),
+        ("H430", "אֱלֹהִים", "God"),
+        ("H776", "אֶרֶץ", "land"),
+        ("H8064", "שָׁמַיִם", "heavens"),
+        ("H120", "אָדָם", "man"),
+        ("H3117", "יוֹם", "day"),
+        ("H216", "אוֹר", "light"),
+        ("H4325", "מַיִם", "water"),
+        ("H559", "אָמַר", "to say"),
+        ("H3068", "יְהוָה", "LORD"),
+        ("H1121", "בֵּן", "son"),
+        ("H3605", "כֹּל", "all"),
+    ];
     // Common words repeat as in real text; the rest are made from syllables, giving a
     // vocabulary of thousands of words so the shape cache sees realistic misses.
     const WORDS: &[&str] = &[
@@ -395,6 +421,7 @@ pub fn synthetic_bible() -> Arc<ReadingDoc> {
         let mut t = TextAccumulator::new();
         let mut verses = Vec::new();
         let mut paras = Vec::new();
+        let mut tagged = Vec::new();
         for chapter in 1..=Standard.chapter_count(book) {
             let last = Standard.last_verse(book, chapter).unwrap_or(1);
             let poetry = chapter % 5 == 0;
@@ -418,6 +445,23 @@ pub fn synthetic_bible() -> Arc<ReadingDoc> {
                     })
                     .collect();
                 let r = t.push(&format!("{}.", text.join(" ")));
+                let mut at = r.start;
+                for w in &text {
+                    // From the word's position, not `rand`: the text stays as it was.
+                    let mix = (at as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 32;
+                    if mix % 10 < 7 {
+                        let (strongs, lemma, gloss) = LEMMAS[(mix / 10) as usize % LEMMAS.len()];
+                        let mut part = obs_model::MorphemePart::new(
+                            strongs
+                                .parse()
+                                .unwrap_or_else(|_| unreachable!("{strongs}")),
+                        );
+                        part.lemma = Some(lemma.into());
+                        part.gloss = Some(gloss.into());
+                        tagged.push((at..at + w.len(), part));
+                    }
+                    at += w.len() + 1;
+                }
                 verses.push((r.clone(), Verse::new(book, chapter, v)));
                 in_para += 1;
                 if poetry || in_para as u64 >= para_len || v == last {
@@ -445,6 +489,9 @@ pub fn synthetic_bible() -> Arc<ReadingDoc> {
         }
         for (r, v) in verses {
             b.add_verse(&id, r, v, v.verse);
+        }
+        for (r, part) in tagged {
+            b.add_span(&id, r, SpanKind::TaggedWord { parts: vec![part] });
         }
     }
     match b.build() {
