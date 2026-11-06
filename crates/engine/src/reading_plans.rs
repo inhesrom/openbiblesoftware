@@ -224,18 +224,29 @@ fn reading_dates(start: PlanDate, span: u32, weekdays: Weekdays) -> Vec<PlanDate
 }
 
 /// For each of `n` groups in order, the day it goes on: spread evenly over `dates` (several
-/// to a day when there are more groups than days, days left free when fewer).
+/// to a day when there are more groups than days, days left free when fewer). The first
+/// group goes on the first date and, when there are several, the last on the last date.
 fn spread(n: usize, dates: &[PlanDate]) -> Vec<PlanDate> {
-    if dates.is_empty() {
+    let d = dates.len();
+    if d == 0 {
         return Vec::new();
     }
-    (0..n).map(|j| dates[j * dates.len() / n]).collect()
+    (0..n)
+        .map(|j| match n {
+            1 => dates[0],
+            _ if n <= d => dates[j * (d - 1) / (n - 1)],
+            _ => dates[j * d / n],
+        })
+        .collect()
 }
 
 // -------------------------------------------------------------------------------- templates
 
 /// The id of a custom plan's template: chosen books over a chosen number of days.
 pub const CUSTOM: &str = "custom";
+
+/// The most days a custom plan may take (ten years): scheduling lays out every day.
+pub const MAX_CUSTOM_DAYS: u32 = 3650;
 
 const TEMPLATE_FILES: &[&str] = &[
     include_str!("../assets/reading-plans/bible-canonical.toml"),
@@ -322,6 +333,11 @@ impl PlanTemplate {
     pub fn custom(books: &str, days: u32) -> Result<Self, String> {
         if days == 0 {
             return Err("A plan needs at least one day".into());
+        }
+        if days > MAX_CUSTOM_DAYS {
+            return Err(format!(
+                "A plan can take at most {MAX_CUSTOM_DAYS} days (ten years)"
+            ));
         }
         let list = parse_standard(books)?;
         let reference = format_passage_list(&list, &Standard, RefStyle::Short);
@@ -589,7 +605,7 @@ impl ReadingPlan {
     }
 
     /// The unread Readings, grouped by the day they are on, in day order.
-    fn unread_by_day(&self) -> Vec<Vec<u32>> {
+    fn unread_by_day(&self) -> Vec<(PlanDate, Vec<u32>)> {
         let mut unread: Vec<&Reading> = self.readings.iter().filter(|r| !r.read).collect();
         unread.sort_by_key(|r| (r.day, r.position));
         let mut groups: Vec<(PlanDate, Vec<u32>)> = Vec::new();
@@ -599,12 +615,12 @@ impl ReadingPlan {
                 _ => groups.push((r.day, vec![r.position])),
             }
         }
-        groups.into_iter().map(|(_, g)| g).collect()
+        groups
     }
 
-    fn moves(&self, groups: &[Vec<u32>], days: &[PlanDate]) -> Vec<(u32, PlanDate)> {
+    fn moves(&self, groups: &[(PlanDate, Vec<u32>)], days: &[PlanDate]) -> Vec<(u32, PlanDate)> {
         let mut out = Vec::new();
-        for (group, day) in groups.iter().zip(days) {
+        for ((_, group), day) in groups.iter().zip(days) {
             for &position in group {
                 if self
                     .readings
@@ -618,13 +634,18 @@ impl ReadingPlan {
         out
     }
 
-    /// The reading days from `from` on, as many as `n`.
-    fn next_reading_days(&self, from: PlanDate, n: usize) -> Vec<PlanDate> {
-        let weekdays = if self.weekdays.is_empty() {
+    /// The days of the week it is read on (every day when none are kept).
+    fn reading_weekdays(&self) -> Weekdays {
+        if self.weekdays.is_empty() {
             Weekdays::ALL
         } else {
             self.weekdays
-        };
+        }
+    }
+
+    /// The reading days from `from` on, as many as `n`.
+    fn next_reading_days(&self, from: PlanDate, n: usize) -> Vec<PlanDate> {
+        let weekdays = self.reading_weekdays();
         (0..)
             .map(|i| from.plus(i))
             .filter(|d| weekdays.contains(*d))
@@ -633,15 +654,31 @@ impl ReadingPlan {
     }
 
     /// Catch up: the unread Readings move on, keeping their spacing, so the first of them is
-    /// on the first reading day from `today`. The plan ends as many reading days later as it
-    /// was behind. Nothing moves when it is not behind.
+    /// on the first reading day from `today`: each moves by the same number of reading days.
+    /// The plan ends that many reading days later. Nothing moves when it is not behind.
     pub fn catch_up(&self, today: PlanDate) -> Vec<(u32, PlanDate)> {
         if self.behind_days(today) == 0 {
             return Vec::new();
         }
         let groups = self.unread_by_day();
-        let days = self.next_reading_days(today, groups.len());
-        self.moves(&groups, &days)
+        let (Some(&(first, _)), Some(&(last, _))) = (groups.first(), groups.last()) else {
+            return Vec::new();
+        };
+        let Some(&target) = self.next_reading_days(today, 1).first() else {
+            return Vec::new();
+        };
+        // The reading days from the first unread Reading's day on, far enough to hold the
+        // last one moved on.
+        let through = last.max(target);
+        let span = u32::try_from(through.0 - first.0 + 1).unwrap_or(0);
+        let mut days = reading_dates(first, span, self.reading_weekdays());
+        let shift = days.partition_point(|d| *d < target);
+        days.extend(self.next_reading_days(through.plus(1), shift + 1));
+        let moved: Vec<PlanDate> = groups
+            .iter()
+            .map(|(day, _)| days[days.partition_point(|d| d < day) + shift])
+            .collect();
+        self.moves(&groups, &moved)
     }
 
     /// Reschedule: the plan keeps its last day, and the unread Readings, in order, are spread
@@ -653,7 +690,7 @@ impl ReadingPlan {
         }
         let end = self.end();
         let span = u32::try_from(end.0 - today.0 + 1).unwrap_or(0);
-        let days = reading_dates(today, span, self.weekdays);
+        let days = reading_dates(today, span, self.reading_weekdays());
         if days.is_empty() {
             return self.catch_up(today);
         }

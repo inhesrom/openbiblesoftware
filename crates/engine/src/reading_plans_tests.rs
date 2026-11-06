@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 use obs_scripture::{Book, Passage, PassageList, Standard, Testament, Verse, Versification};
 use serde_json::json;
 
-use crate::reading_plans::{CUSTOM, PlanDate, PlanTemplate, Weekdays, template, templates};
+use crate::reading_plans::{
+    CUSTOM, MAX_CUSTOM_DAYS, PlanDate, PlanTemplate, Weekdays, template, templates,
+};
 use crate::testing::bibles::{bible, v, write_library};
 use crate::*;
 
@@ -286,6 +288,15 @@ fn a_custom_plan_reads_chosen_books_over_n_days() {
     assert!(PlanTemplate::custom("Rom", 0).is_err());
 }
 
+#[test]
+fn a_custom_plan_longer_than_ten_years_is_refused_before_scheduling() {
+    assert!(PlanTemplate::custom("Jude", MAX_CUSTOM_DAYS).is_ok());
+    for days in [MAX_CUSTOM_DAYS + 1, u32::MAX] {
+        let err = PlanTemplate::custom("Jude", days).unwrap_err();
+        assert!(err.contains("at most 3650 days"), "{err}");
+    }
+}
+
 // -------------------------------------------------------------------------------- Session
 
 fn folder(name: &str) -> PathBuf {
@@ -500,6 +511,68 @@ fn catch_up_moves_the_unread_readings_on_and_the_plan_ends_later() {
     std::fs::remove_dir_all(&root).unwrap();
 }
 
+/// Jude (25 Verses) over 50 days from 5 November: one Verse every other day, untouched.
+fn sparse_jude(name: &str) -> (PathBuf, Session, i64) {
+    let root = folder(name);
+    let mut s = launch(&root, "2026-11-05");
+    let id = s
+        .run(
+            "reading_plan.create",
+            &json!({ "template": "custom", "books": "Jude", "days": 50 }),
+        )
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let start = day("2026-11-05");
+    let days: Vec<PlanDate> = s
+        .reading_plan(id)
+        .unwrap()
+        .readings
+        .iter()
+        .map(|r| r.day)
+        .collect();
+    assert_eq!(days, (0..25).map(|i| start.plus(2 * i)).collect::<Vec<_>>());
+    // The first day goes by unread.
+    s.pretend_today(day("2026-11-06"));
+    assert_eq!(s.reading_plan(id).unwrap().behind_days(s.plan_today()), 1);
+    (root, s, id)
+}
+
+#[test]
+fn catch_up_keeps_a_sparse_plans_spacing() {
+    let (root, mut s, id) = sparse_jude("catch-up-sparse");
+    let before = s.reading_plan(id).unwrap().clone();
+    s.run("reading_plan.catch_up", &json!({ "plan": id }))
+        .unwrap();
+    let plan = s.reading_plan(id).unwrap();
+    // Every Reading moves on one day, still every other day: the plan ends a day later.
+    for (r, was) in plan.readings.iter().zip(&before.readings) {
+        assert_eq!(r.day, was.day.plus(1), "{}", r.label);
+    }
+    assert_eq!(plan.end(), before.end().plus(1));
+    assert_eq!(plan.behind_days(s.plan_today()), 0);
+    drop(s);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn reschedule_keeps_a_sparse_plans_last_day() {
+    let (root, mut s, id) = sparse_jude("reschedule-sparse");
+    let before = s.reading_plan(id).unwrap().clone();
+    s.run("reading_plan.reschedule", &json!({ "plan": id }))
+        .unwrap();
+    let plan = s.reading_plan(id).unwrap();
+    assert_eq!(plan.end(), before.end());
+    assert_eq!(plan.readings[0].day, day("2026-11-06"));
+    assert_eq!(plan.readings[24].day, before.end());
+    for pair in plan.readings.windows(2) {
+        assert!(pair[0].day < pair[1].day);
+    }
+    assert_eq!(plan.behind_days(s.plan_today()), 0);
+    drop(s);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
 #[test]
 fn custom_plans_and_bad_requests() {
     let root = folder("custom");
@@ -525,6 +598,7 @@ fn custom_plans_and_bad_requests() {
     for bad in [
         json!({ "template": "nope" }),
         json!({ "template": "custom", "books": "Rom" }),
+        json!({ "template": "custom", "books": "Rom", "days": 4_294_967_295_i64 }),
         json!({ "template": "bible-canonical", "start": "tomorrow" }),
         json!({ "template": "bible-canonical", "weekdays": "someday" }),
         json!({ "template": "bible-canonical", "bible": "kjv" }),

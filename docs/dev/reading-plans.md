@@ -33,7 +33,8 @@ Each template is a TOML file in `crates/engine/assets/reading-plans/`, credited 
 | Psalms and Proverbs monthly | 31 | 79–204, mean 108 | Ps 1-8 and Prov 1 |
 
 A custom plan (`template: "custom"`) reads `books` (any Bible reference, e.g. `Rom-Gal; Jas`)
-over `days` days. Where the templates come from, and the licence check of chronological
+over `days` days, at most `MAX_CUSTOM_DAYS` (3650, ten years; scheduling lays out every day, so
+a larger number is refused before anything is laid out). Where the templates come from, and the licence check of chronological
 orders, is in [docs/research/reading-plan-templates.md](../research/reading-plan-templates.md).
 
 ## Laying a plan out
@@ -53,12 +54,15 @@ History groups by), checked again with each Last session save.
 
 - **Due today**: Readings whose day is today. **Missed**: unread Readings before today.
 - **Behind by N days**: N distinct days before today with an unread Reading.
-- **Catch up** (`reading_plan.catch_up`): the unread Readings, grouped by their day, move to
-  successive reading days from today; the plan ends N reading days later.
+- **Catch up** (`reading_plan.catch_up`): the unread Readings, grouped by their day, all move
+  on by the same number of reading days, so the first lands on the first reading day from
+  today and the gaps between them stay (a sparse plan stays sparse); the plan ends that many
+  reading days later.
 - **Reschedule** (`reading_plan.reschedule`): the plan keeps its last day; the unread
   Readings, grouped by their day and in order, are spread evenly over the reading days from
-  today to the last day (several on a day when there are more groups than days). With no
-  reading day left before the end it catches up instead.
+  today to the last day, the first group today and the last on the last day (several on a
+  day when there are more groups than days). With no reading day left before the end it
+  catches up instead.
 - Neither moves anything when the plan is not behind; read Readings never move.
 
 `Today's reading` (`Session::toolbar_plan`) shows the first plan with an unread Reading due
