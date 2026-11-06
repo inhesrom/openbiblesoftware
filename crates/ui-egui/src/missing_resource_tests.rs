@@ -528,3 +528,61 @@ fn the_word_study_chooser_without_a_tagged_english_bible_offers_one() {
     settle(&mut h);
     expect_starter_library(&mut h);
 }
+
+/// A Library with only untagged Bibles, English and Greek: Key words and Forms stay empty, so
+/// they still offer the Starter library (its KJV with Strong's and TAGNT would fill them).
+#[test]
+fn untagged_bibles_still_offer_the_starter_library_for_key_words_and_forms() {
+    let john_3_16 = Verse::new(obs_scripture::Book::John, 3, 16);
+    let english = obs_engine::testing::tagged_bible(
+        "plain",
+        "Plain",
+        "PLN",
+        "en",
+        &[(john_3_16, "For God so loved the world")],
+    );
+    let greek = obs_engine::testing::tagged_bible(
+        "plain-grc",
+        "Plain Greek",
+        "PLG",
+        "grc",
+        &[(john_3_16, "Οὕτως γὰρ ἠγάπησεν ὁ θεὸς τὸν κόσμον")],
+    );
+    let (mut h, _lab) = setup("untagged", &[english, greek]);
+    let guide = h
+        .shell
+        .run(
+            "guide.passage_guide",
+            &json!({ "passage": "Jn 3:16", "split": true }),
+        )
+        .unwrap()["tab"]
+        .as_u64()
+        .map(TabId)
+        .unwrap();
+    let key_words = GuideSection::KeyWords;
+    until(&mut h, "Key words' buttons", |h| {
+        find_in(
+            h,
+            guide,
+            "None in your library: no Bible with Strong's numbers has this Passage.",
+        )
+        .is_some()
+            && in_section(h, guide, key_words, ADD_STARTER).is_some()
+    });
+    assert!(in_section(&h, guide, key_words, "Get Bibles…").is_some());
+    click_action(&mut h, guide, key_words, ADD_STARTER);
+    expect_starter_library(&mut h);
+
+    let study = open_word_study(&mut h, "G26");
+    h.shell.run(
+        "guide.collapse_section",
+        &json!({ "guide": "word_study", "section": "forms", "collapsed": false }),
+    );
+    let forms = GuideSection::Forms;
+    until(&mut h, "Forms' buttons", |h| {
+        in_section(h, study, forms, "Get Hebrew & Greek texts…").is_some()
+            && in_section(h, study, forms, ADD_STARTER).is_some()
+    });
+    click_action(&mut h, study, forms, ADD_STARTER);
+    expect_starter_library(&mut h);
+}

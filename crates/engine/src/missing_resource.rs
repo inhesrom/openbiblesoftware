@@ -125,9 +125,40 @@ impl GuideSection {
         }
     }
 
-    /// What would fill the empty section. `has` is [`Self::has_needed`]: when the Library
-    /// already has the kind of Resource, only Get Resources is offered, never the Starter
-    /// library (#135: "no entry for this Strong's number" offers Get Lexicons only).
+    /// Whether the Library has the kind of Resource the section reads with the tagging it
+    /// needs ([`Self::tagging`]), so an empty section means nothing covers the Key. A Bible
+    /// without Tagged words has the type Key words and Forms read ([`Self::has_needed`]) but
+    /// can never fill them. Tagging is read from the rendering indexes the section's job
+    /// loaded (never read here): a Bible whose index is not loaded counts as untagged.
+    pub fn has_needed_tagging(
+        self,
+        library: &Library,
+        indexes: &crate::word_study::RenderingIndexes,
+    ) -> bool {
+        let tagged = |e: &crate::LibraryEntry| {
+            indexes
+                .loaded(e)
+                .is_some_and(|index| !index.totals.is_empty())
+        };
+        let mut bibles = library.of_type(ResourceType::Bible);
+        match self {
+            GuideSection::KeyWords => bibles.any(tagged),
+            // Strong's numbers in a Hebrew or Greek Bible (TAHOT, TAGNT).
+            GuideSection::Forms => bibles.any(|e| {
+                [StrongsLanguage::Hebrew, StrongsLanguage::Greek]
+                    .into_iter()
+                    .any(|l| is_original_language(&e.manifest.language, l))
+                    && tagged(e)
+            }),
+            // Translated as and Occurrences already ask for Strong's numbers.
+            _ => self.has_needed(library, indexes),
+        }
+    }
+
+    /// What would fill the empty section. `has` is [`Self::has_needed_tagging`]: when the
+    /// Library already has the kind of Resource with its tagging, only Get Resources is
+    /// offered, never the Starter library (#135: "no entry for this Strong's number" offers
+    /// Get Lexicons only).
     pub fn missing_resource(
         self,
         has: bool,
@@ -165,14 +196,21 @@ impl Session {
     /// The empty state of `section` for `key`: its "None in your library" text and what would
     /// fill it. Asked for by the UI each frame, so it follows Resources being added.
     pub fn guide_empty_state(&self, key: &Key, section: GuideSection) -> EmptyState {
-        let has = section.has_needed(&self.library, &self.guides.indexes());
+        let indexes = self.guides.indexes();
+        let has = section.has_needed(&self.library, &indexes);
+        let tagged = section.has_needed_tagging(&self.library, &indexes);
         let strongs = match key {
             Key::StrongsNumber(n) => Some(*n),
             _ => None,
         };
         EmptyState {
             message: section.empty_message(has),
-            missing: section.missing_resource(has, strongs, &self.library, self.starter.manifest()),
+            missing: section.missing_resource(
+                tagged,
+                strongs,
+                &self.library,
+                self.starter.manifest(),
+            ),
         }
     }
 }

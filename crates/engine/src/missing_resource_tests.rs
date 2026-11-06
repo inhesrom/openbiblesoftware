@@ -274,3 +274,89 @@ fn the_session_empty_state_follows_the_library_and_the_starter_manifest() {
     drop(s);
     let _ = std::fs::remove_dir_all(&root);
 }
+
+fn settle(s: &mut Session, key: &Key, section: GuideSection) -> std::sync::Arc<SectionData> {
+    for _ in 0..50 {
+        match s.guide_section(key, section) {
+            SectionStatus::Loading => {
+                s.jobs().pump(4);
+                s.poll_imports();
+            }
+            SectionStatus::Ready(d) => return d,
+            SectionStatus::Failed(e) => panic!("{section:?} failed: {e}"),
+        }
+    }
+    panic!("{section:?} never finished");
+}
+
+/// A Bible without Tagged words is a Bible, but it can never fill Key words or Forms: the
+/// Starter Bibles that would are still offered. Once a Strong's-tagged Bible is in, an empty
+/// section means nothing covers the Key, and only Get Resources is left.
+#[test]
+fn an_untagged_bible_does_not_hide_the_starter_bibles_from_key_words_and_forms() {
+    let root = std::env::temp_dir().join(format!("obs-missing-untagged-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let bundle = root.join("starter");
+    let mut set = testing::starter_set();
+    set.push(testing::tagnt_john_3_16());
+    testing::write_starter_bundle(&bundle, &set);
+    let mut s = Session::new(JobMode::Inline);
+    s.starter.set_bundle(&bundle).unwrap();
+    let add = |s: &mut Session, r: &obs_model::Resource| {
+        let path = root.join(format!("{}.obr", r.manifest.resource_id));
+        obs_store::write_obr(r, &path).unwrap();
+        s.library.add_file(&path).unwrap();
+    };
+    let john_3_16 = Verse::new(obs_scripture::Book::John, 3, 16);
+    let text = [(john_3_16, "For God so loved the world")];
+    add(
+        &mut s,
+        &testing::tagged_bible("plain", "Plain", "PLN", "en", &text),
+    );
+    let greek = [(john_3_16, "Οὕτως γὰρ ἠγάπησεν ὁ θεὸς τὸν κόσμον")];
+    add(
+        &mut s,
+        &testing::tagged_bible("plain-grc", "Plain Greek", "PLG", "grc", &greek),
+    );
+
+    let john = Key::Passage(Passage::verse(john_3_16));
+    assert!(settle(&mut s, &john, GuideSection::KeyWords).is_empty());
+    let key_words = s.guide_empty_state(&john, GuideSection::KeyWords);
+    assert_eq!(
+        key_words.message,
+        "None in your library: no Bible with Strong's numbers has this Passage."
+    );
+    assert_eq!(key_words.missing.starter, ids(&["kjv-strongs", "tagnt"]));
+    let g26 = Key::StrongsNumber(n("G26"));
+    assert!(settle(&mut s, &g26, GuideSection::Forms).is_empty());
+    let forms = s.guide_empty_state(&g26, GuideSection::Forms);
+    assert_eq!(
+        forms.message,
+        "None in your library: no Hebrew or Greek Bible with Morphology has this word."
+    );
+    assert_eq!(forms.missing.starter, ids(&["tagnt"]));
+
+    // TAGNT (John 3:16 only) joins: Romans 1:1 and G26 are simply not in it.
+    add(&mut s, &testing::tagnt_john_3_16());
+    let romans = Key::Passage(Passage::verse(Verse::new(
+        obs_scripture::Book::Romans,
+        1,
+        1,
+    )));
+    assert!(settle(&mut s, &romans, GuideSection::KeyWords).is_empty());
+    let key_words = s.guide_empty_state(&romans, GuideSection::KeyWords);
+    assert_eq!(key_words.missing.starter, StarterOffer::None);
+    assert_eq!(
+        key_words.missing.get_label().as_deref(),
+        Some("Get Bibles…")
+    );
+    assert!(settle(&mut s, &g26, GuideSection::Forms).is_empty());
+    let forms = s.guide_empty_state(&g26, GuideSection::Forms);
+    assert_eq!(forms.missing.starter, StarterOffer::None);
+    assert_eq!(
+        forms.missing.get_label().as_deref(),
+        Some("Get Hebrew & Greek texts…")
+    );
+    drop(s);
+    let _ = std::fs::remove_dir_all(&root);
+}

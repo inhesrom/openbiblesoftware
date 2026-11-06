@@ -600,8 +600,15 @@ impl SectionSource for LibrarySections {
                     .map(SectionData::CrossReferences)
             }
             GuideSection::KeyWords => {
-                crate::key_words::library_key_words(library, *passage, &self.bibles)
-                    .map(SectionData::KeyWords)
+                let words = crate::key_words::library_key_words(library, *passage, &self.bibles)?;
+                if words.words.is_empty() {
+                    // The empty state (#135) asks whether any Bible has Strong's numbers; it
+                    // reads only loaded rendering indexes, so load them here, off the UI thread.
+                    for bible in library.of_type(ResourceType::Bible) {
+                        let _ = self.indexes.get(bible);
+                    }
+                }
+                Ok(SectionData::KeyWords(words))
             }
             GuideSection::PeopleAndPlaces => crate::people_places::library_people_and_places(
                 library,
