@@ -1,6 +1,6 @@
-//! Guide Tabs (#53): the Guide's Key (a Passage Guide's Passage, a Word Study's header), then
-//! its sections in the Guide arrangement's order ([`State::guide_page`], shared by every kind
-//! of Guide). Sections come from the engine as pure data computed on the job queue
+//! Guide Tabs (#53): the Guide's Key (a Passage Guide's or Exegetical Guide's Passage, a Word
+//! Study's header), then its sections in the Guide arrangement's order
+//! ([`State::guide_page`], shared by every kind of Guide). Sections come from the engine as pure data computed on the job queue
 //! ([`obs_engine::Session::guide_section`]); a section still computing shows "Loading…" and
 //! the frame goes on. Headers collapse on click and reorder by dragging; the arrangement is
 //! the engine's, per kind of Guide, so every Passage Guide shows the same one.
@@ -76,7 +76,8 @@ struct Drawn {
 }
 
 impl State {
-    pub(super) fn passage_guide_body(&mut self, ui: &mut Ui, tab: TabId) {
+    /// A Passage Guide's or Exegetical Guide's page: the Passage, then the Guide's sections.
+    pub(super) fn passage_keyed_guide_body(&mut self, ui: &mut Ui, tab: TabId, guide: Guide) {
         let at = self
             .session
             .workspace
@@ -104,20 +105,14 @@ impl State {
             t.guide_expanded.clear();
         }
         let title = format_passage(passage, &Standard, RefStyle::Long);
-        self.guide_page(
-            ui,
-            tab,
-            Guide::PassageGuide,
-            &Key::Passage(passage),
-            &mut |_, ui| {
-                ui.label(
-                    RichText::new(title.clone())
-                        .font(theme::display(20.0))
-                        .color(theme::c().ink),
-                );
-                None
-            },
-        );
+        self.guide_page(ui, tab, guide, &Key::Passage(passage), &mut |_, ui| {
+            ui.label(
+                RichText::new(title.clone())
+                    .font(theme::display(20.0))
+                    .color(theme::c().ink),
+            );
+            None
+        });
     }
 
     /// A Guide's page: `head` (the Guide's Key), then its sections in the Guide arrangement's
@@ -417,6 +412,14 @@ impl State {
             SectionData::Related(rows) => self
                 .factbook_related(ui, tab, rows, new_tab)
                 .map(Action::Factbook),
+            SectionData::WordByWord(w) => self.word_by_word_section(ui, tab, w, new_tab),
+            SectionData::LexiconSummaries(rows) => {
+                self.lexicon_summaries_section(ui, tab, rows, new_tab)
+            }
+            SectionData::GrammaticalNotes(notes) => {
+                self.grammatical_notes_section(ui, notes);
+                None
+            }
         }
     }
 

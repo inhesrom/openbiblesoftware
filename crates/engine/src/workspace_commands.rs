@@ -62,6 +62,7 @@ pub const MENUS: &[Menu] = &[
         title: "Guides",
         items: &[
             C("guide.passage_guide"),
+            C("guide.exegetical_guide"),
             C("guide.word_study"),
             C("guide.factbook"),
         ],
@@ -354,7 +355,17 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         shortcut: None,
         params: AT_PASSAGE,
         enabled: always,
-        run: open_passage_guide,
+        run: |s, p| open_passage_keyed_guide(s, p, Guide::PassageGuide, "guide.passage_guide"),
+    },
+    CommandSpec {
+        id: "guide.exegetical_guide",
+        label: "Exegetical Guide",
+        shortcut: None,
+        params: AT_PASSAGE,
+        enabled: always,
+        run: |s, p| {
+            open_passage_keyed_guide(s, p, Guide::ExegeticalGuide, "guide.exegetical_guide")
+        },
     },
     CommandSpec {
         id: "guide.word_study",
@@ -804,11 +815,15 @@ pub(crate) fn open_tab(s: &mut Session, kind: TabKind, req: OpenRequest) -> TabI
     tab
 }
 
-/// A Passage Guide starts where its Link set is; unlinked, at the Passage the focused Tab
-/// shows (like Logos opening a Guide on the active reference).
-fn open_passage_guide(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
-    const ID: &str = "guide.passage_guide";
-    if let Some(out) = open_at_passage(s, &p, TabKind::Guide(Guide::PassageGuide), ID)? {
+/// A Passage Guide or Exegetical Guide starts where its Link set is; unlinked, at the
+/// Passage the focused Tab shows (as a study app opens a Guide on the active reference).
+fn open_passage_keyed_guide(
+    s: &mut Session,
+    p: Params<'_>,
+    guide: Guide,
+    id: &'static str,
+) -> Result<Value, CommandError> {
+    if let Some(out) = open_at_passage(s, &p, TabKind::Guide(guide), id)? {
         return Ok(out);
     }
     let from = s
@@ -822,7 +837,7 @@ fn open_passage_guide(s: &mut Session, p: Params<'_>) -> Result<Value, CommandEr
                 crate::link::ToStandard::Unmapped => None,
             }
         });
-    let out = open(s, p, TabKind::Guide(Guide::PassageGuide))?;
+    let out = open(s, p, TabKind::Guide(guide))?;
     if let Some(v) = from
         && let Some(t) = out["tab"]
             .as_u64()

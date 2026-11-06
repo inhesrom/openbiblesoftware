@@ -44,6 +44,8 @@ pub enum Guide {
     WordStudy,
     /// A hub page for one person, people group or place of a People & places index (#149).
     Factbook,
+    /// A Passage word by word in its original language (#144).
+    ExegeticalGuide,
 }
 
 impl Tool {
@@ -67,6 +69,7 @@ impl Guide {
             Guide::PassageGuide => "Passage Guide",
             Guide::WordStudy => "Word Study",
             Guide::Factbook => "Factbook",
+            Guide::ExegeticalGuide => "Exegetical Guide",
         }
     }
 }
@@ -193,7 +196,7 @@ impl TabKind {
     /// Key schemes a Tab of this kind follows. A Resource's come from its manifest instead.
     pub fn default_key_schemes(&self) -> Vec<KeyScheme> {
         match self {
-            TabKind::Guide(Guide::PassageGuide)
+            TabKind::Guide(Guide::PassageGuide | Guide::ExegeticalGuide)
             | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences)
             | TabKind::Resource(_) => vec![KeyScheme::Passage],
             TabKind::Guide(Guide::WordStudy) => vec![KeyScheme::StrongsNumber],

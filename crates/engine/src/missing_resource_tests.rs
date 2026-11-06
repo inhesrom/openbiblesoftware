@@ -61,7 +61,12 @@ fn starter_manifest() -> StarterManifest {
 
 fn offered(section: GuideSection, strongs: Option<&str>, library: &Library) -> StarterOffer {
     section
-        .missing_resource(false, strongs.map(n), library, Some(&starter_manifest()))
+        .missing_resource(
+            false,
+            strongs.map(|s| n(s).language()),
+            library,
+            Some(&starter_manifest()),
+        )
         .starter
 }
 
@@ -135,6 +140,24 @@ fn each_section_names_its_resource_type_tagging_and_get_resources_filter() {
             Some("Get Dictionaries…"),
         ),
         (Related, ResourceType::PeopleAndPlaces, Tagging::None, None),
+        (
+            WordByWord,
+            ResourceType::Bible,
+            Tagging::Morphology,
+            Some("Get Hebrew & Greek texts…"),
+        ),
+        (
+            LexiconSummaries,
+            ResourceType::Lexicon,
+            Tagging::None,
+            Some("Get Lexicons…"),
+        ),
+        (
+            GrammaticalNotes,
+            ResourceType::Bible,
+            Tagging::Morphology,
+            Some("Get Hebrew & Greek texts…"),
+        ),
     ];
     assert_eq!(cases.len(), GuideSection::ALL.len());
     for (section, ty, tagging, label) in cases {
@@ -195,6 +218,30 @@ fn an_empty_library_is_offered_the_starter_resources_that_fill_each_section() {
         ids(&["kjv-strongs", "tagnt"])
     );
     assert_eq!(offered(Forms, Some("G26"), &empty), ids(&["tagnt"]));
+    // The Exegetical Guide (#144): the original-language Bible of the Passage's testament.
+    let passage = |section: GuideSection, key: &obs_model::Key| {
+        section
+            .missing_resource(
+                false,
+                crate::missing_resource::key_language(key),
+                &empty,
+                Some(&starter_manifest()),
+            )
+            .starter
+    };
+    let john = obs_model::Key::Passage(obs_scripture::Passage::verse(obs_scripture::Verse::new(
+        obs_scripture::Book::John,
+        3,
+        16,
+    )));
+    let psalm = obs_model::Key::Passage(obs_scripture::Passage::verse(obs_scripture::Verse::new(
+        obs_scripture::Book::Psalms,
+        3,
+        1,
+    )));
+    assert_eq!(passage(WordByWord, &john), ids(&["tagnt"]));
+    assert_eq!(passage(WordByWord, &psalm), ids(&["tahot"]));
+    assert_eq!(passage(GrammaticalNotes, &john), ids(&["tagnt"]));
     assert_eq!(offered(Forms, Some("H1254A"), &empty), ids(&["tahot"]));
     // Factbook (#149): TIPNR, and the Dictionaries for their articles (found through
     // TIPNR's names).
@@ -244,7 +291,7 @@ fn no_entry_for_the_number_offers_get_lexicons_only_and_no_manifest_still_offers
     // The Library has a Lexicon, but none has this entry: Get Lexicons, not the Starter.
     let has = GuideSection::LexiconEntries.missing_resource(
         true,
-        Some(n("G26")),
+        Some(n("G26").language()),
         &Library::new(),
         Some(&starter_manifest()),
     );
@@ -252,8 +299,12 @@ fn no_entry_for_the_number_offers_get_lexicons_only_and_no_manifest_still_offers
     assert!(!has.offers_starter());
     assert_eq!(has.get_label().as_deref(), Some("Get Lexicons…"));
     // No bundle and the released list not fetched: the Starter library Tab will fetch it.
-    let unlisted =
-        GuideSection::LexiconEntries.missing_resource(false, Some(n("G26")), &Library::new(), None);
+    let unlisted = GuideSection::LexiconEntries.missing_resource(
+        false,
+        Some(n("G26").language()),
+        &Library::new(),
+        None,
+    );
     assert_eq!(unlisted.starter, StarterOffer::Unlisted);
     assert!(unlisted.offers_starter());
 }

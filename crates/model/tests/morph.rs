@@ -417,3 +417,78 @@ fn oshb_not_applicable_and_tischendorf_shapes_read_as_expected() {
     assert_eq!(m.language, MorphLanguage::Hebrew);
     assert!(parse("HPdqms").is_err());
 }
+
+/// Grammatical notes (#144): every term of every TAHOT and TAGNT code has its own
+/// plain-English explanation; only the rarer stems share the general note on stems.
+#[test]
+fn every_term_in_tahot_and_tagnt_has_a_plain_english_note() {
+    use obs_model::{GrammarTerm, TermKind};
+    let general = |t: &GrammarTerm| {
+        GrammarTerm {
+            name: "(none)",
+            ..*t
+        }
+        .explanation()
+    };
+    let mut missing = std::collections::BTreeSet::new();
+    let mut terms = std::collections::BTreeSet::new();
+    for r in rows(CODES) {
+        for t in parse(r[1]).unwrap().terms() {
+            assert!(!t.explanation().is_empty(), "{t:?}");
+            terms.insert((t.kind, t.name));
+            if t.kind != TermKind::Stem && t.explanation() == general(&t) {
+                missing.insert((t.kind, t.name));
+            }
+        }
+    }
+    assert!(missing.is_empty(), "no note of their own: {missing:?}");
+    assert!(terms.len() > 40, "{terms:?}");
+}
+
+#[test]
+fn terms_follow_the_code_and_explain_hebrew_and_greek_apart() {
+    use obs_model::TermKind;
+    let names = |code: &str| -> Vec<(TermKind, &'static str)> {
+        parse(code)
+            .unwrap()
+            .terms()
+            .into_iter()
+            .map(|t| (t.kind, t.name))
+            .collect()
+    };
+    assert_eq!(
+        names("V-AAI-3S"),
+        [
+            (TermKind::Tense, "aorist"),
+            (TermKind::Voice, "active"),
+            (TermKind::Mood, "indicative"),
+        ]
+    );
+    assert_eq!(
+        names("V-PAP-NSM"),
+        [
+            (TermKind::Tense, "present"),
+            (TermKind::Voice, "active"),
+            (TermKind::Form, "participle"),
+            (TermKind::Case, "nominative"),
+        ]
+    );
+    // Prefix, verb and suffix: the conjunction has no term; each term once.
+    assert_eq!(
+        names("HC/Vqw3ms"),
+        [
+            (TermKind::Stem, "Qal"),
+            (TermKind::Tense, "consecutive imperfect"),
+        ]
+    );
+    assert_eq!(
+        names("HNcmdc"),
+        [(TermKind::State, "construct"), (TermKind::Number, "dual")]
+    );
+    let hebrew = parse("HVqp3ms").unwrap().terms()[1];
+    let greek = parse("V-RAI-3S").unwrap().terms()[0];
+    assert_eq!((hebrew.name, greek.name), ("perfect", "perfect"));
+    assert_ne!(hebrew.explanation(), greek.explanation());
+    assert_eq!(hebrew.kind.label(hebrew.language), "Verb form");
+    assert_eq!(greek.kind.label(greek.language), "Tense");
+}

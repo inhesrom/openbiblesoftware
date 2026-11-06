@@ -53,10 +53,17 @@ pub enum GuideSection {
     DictionaryArticles,
     /// Factbook: people and places linked to them or named with them.
     Related,
+    /// Exegetical Guide (#144): each word of the Passage in its original language
+    /// ([`crate::exegetical_guide`]).
+    WordByWord,
+    /// Exegetical Guide: the preferred Lexicon's short entry for each of its words.
+    LexiconSummaries,
+    /// Exegetical Guide: each Morphology term of its words, explained in plain English.
+    GrammaticalNotes,
 }
 
 impl GuideSection {
-    pub const ALL: [GuideSection; 12] = [
+    pub const ALL: [GuideSection; 15] = [
         GuideSection::Commentaries,
         GuideSection::CrossReferences,
         GuideSection::KeyWords,
@@ -69,6 +76,9 @@ impl GuideSection {
         GuideSection::KeyPassages,
         GuideSection::DictionaryArticles,
         GuideSection::Related,
+        GuideSection::WordByWord,
+        GuideSection::LexiconSummaries,
+        GuideSection::GrammaticalNotes,
     ];
 
     /// Stable id, as stored and as passed to commands.
@@ -86,6 +96,9 @@ impl GuideSection {
             GuideSection::KeyPassages => "key_passages",
             GuideSection::DictionaryArticles => "dictionary_articles",
             GuideSection::Related => "related",
+            GuideSection::WordByWord => "word_by_word",
+            GuideSection::LexiconSummaries => "lexicon_summaries",
+            GuideSection::GrammaticalNotes => "grammatical_notes",
         }
     }
 
@@ -107,6 +120,9 @@ impl GuideSection {
             GuideSection::KeyPassages => "Key Passages",
             GuideSection::DictionaryArticles => "Dictionary articles",
             GuideSection::Related => "Related people and places",
+            GuideSection::WordByWord => "Word by word",
+            GuideSection::LexiconSummaries => "Lexicon summaries",
+            GuideSection::GrammaticalNotes => "Grammatical notes",
         }
     }
 
@@ -117,7 +133,8 @@ impl GuideSection {
             GuideSection::CrossReferences => ResourceType::CrossReferenceSet,
             GuideSection::KeyWords => ResourceType::Bible,
             GuideSection::PeopleAndPlaces => ResourceType::PeopleAndPlaces,
-            GuideSection::LexiconEntries => ResourceType::Lexicon,
+            GuideSection::LexiconEntries | GuideSection::LexiconSummaries => ResourceType::Lexicon,
+            GuideSection::WordByWord | GuideSection::GrammaticalNotes => ResourceType::Bible,
             GuideSection::TranslatedAs | GuideSection::Occurrences | GuideSection::Forms => {
                 ResourceType::Bible
             }
@@ -168,15 +185,18 @@ impl GuideSection {
             GuideSection::Occurrences => {
                 needed.any(|e| indexes.loaded(e).is_some_and(|i| !i.totals.is_empty()))
             }
-            // Forms need a Hebrew or Greek Bible (TAHOT, TAGNT).
-            GuideSection::Forms => needed.any(|e| {
-                [
-                    obs_scripture::StrongsLanguage::Hebrew,
-                    obs_scripture::StrongsLanguage::Greek,
-                ]
-                .into_iter()
-                .any(|l| crate::key_words::is_original_language(&e.manifest.language, l))
-            }),
+            // Forms and the Exegetical Guide's Bible sections need a Hebrew or Greek Bible
+            // (TAHOT, TAGNT).
+            GuideSection::Forms | GuideSection::WordByWord | GuideSection::GrammaticalNotes => {
+                needed.any(|e| {
+                    [
+                        obs_scripture::StrongsLanguage::Hebrew,
+                        obs_scripture::StrongsLanguage::Greek,
+                    ]
+                    .into_iter()
+                    .any(|l| crate::key_words::is_original_language(&e.manifest.language, l))
+                })
+            }
             _ => needed.next().is_some(),
         }
     }
@@ -254,6 +274,30 @@ impl GuideSection {
             (GuideSection::DictionaryArticles, true) => {
                 "None in your library: no Dictionary has an article on them."
             }
+            (GuideSection::WordByWord, false) => {
+                "None in your library. Add a Hebrew or Greek Bible with Morphology to read this \
+                 Passage word by word: TAHOT (Old Testament) and TAGNT (New Testament) come \
+                 with the Starter library, and more are in Get Resources › Hebrew & Greek."
+            }
+            (GuideSection::WordByWord, true) => {
+                "None in your library: no Bible in this Passage's original language has its \
+                 words tagged."
+            }
+            (GuideSection::LexiconSummaries, false) => {
+                "None in your library. Add a Lexicon to read a short entry for each word."
+            }
+            (GuideSection::LexiconSummaries, true) => {
+                "None in your library: no Lexicon has an entry for this Passage's words."
+            }
+            (GuideSection::GrammaticalNotes, false) => {
+                "None in your library. Add a Hebrew or Greek Bible with Morphology to have the \
+                 grammar of this Passage explained: TAHOT and TAGNT come with the Starter \
+                 library."
+            }
+            (GuideSection::GrammaticalNotes, true) => {
+                "None in your library: no Bible in this Passage's original language has \
+                 Morphology for it."
+            }
         }
     }
 }
@@ -265,10 +309,16 @@ impl Guide {
             Guide::PassageGuide => "passage_guide",
             Guide::WordStudy => "word_study",
             Guide::Factbook => "factbook",
+            Guide::ExegeticalGuide => "exegetical_guide",
         }
     }
 
-    pub const ALL: [Guide; 3] = [Guide::PassageGuide, Guide::WordStudy, Guide::Factbook];
+    pub const ALL: [Guide; 4] = [
+        Guide::PassageGuide,
+        Guide::WordStudy,
+        Guide::Factbook,
+        Guide::ExegeticalGuide,
+    ];
 
     pub fn from_id(id: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|g| g.id() == id)
@@ -295,6 +345,11 @@ impl Guide {
                 GuideSection::KeyPassages,
                 GuideSection::DictionaryArticles,
                 GuideSection::Related,
+            ],
+            Guide::ExegeticalGuide => &[
+                GuideSection::WordByWord,
+                GuideSection::LexiconSummaries,
+                GuideSection::GrammaticalNotes,
             ],
         }
     }
@@ -486,6 +541,12 @@ pub enum SectionData {
     DictionaryArticles(Vec<crate::factbook::DictionaryArticle>),
     /// People and places related to one (#149).
     Related(Vec<crate::factbook::RelatedEntity>),
+    /// A Passage's words in its original language, Verse by Verse (#144).
+    WordByWord(crate::exegetical_guide::WordByWord),
+    /// The preferred Lexicon's short entry for each Strong's number of a Passage (#144).
+    LexiconSummaries(Vec<crate::exegetical_guide::LexiconSummary>),
+    /// The Morphology terms of a Passage's words, explained (#144).
+    GrammaticalNotes(Vec<crate::exegetical_guide::GrammarNote>),
 }
 
 impl SectionData {
@@ -504,6 +565,9 @@ impl SectionData {
             SectionData::KeyPassages(p) => p.len(),
             SectionData::DictionaryArticles(a) => a.len(),
             SectionData::Related(r) => r.len(),
+            SectionData::WordByWord(w) => w.word_count(),
+            SectionData::LexiconSummaries(s) => s.len(),
+            SectionData::GrammaticalNotes(n) => n.len(),
         }
     }
 
@@ -586,17 +650,7 @@ impl SectionSource for LibrarySections {
                 GuideSection::Forms => {
                     let forms = ws::forms(library, &self.indexes, &self.concordances, n)?;
                     if forms.forms.is_empty() {
-                        // The empty state (#135) asks whether a Bible in the number's
-                        // original language has Morphology; it reads only gathered
-                        // concordances, so gather them here, off the UI thread.
-                        for bible in library.of_type(ResourceType::Bible).filter(|e| {
-                            crate::key_words::is_original_language(
-                                &e.manifest.language,
-                                n.language(),
-                            )
-                        }) {
-                            let _ = self.concordances.get(bible);
-                        }
+                        self.gather_original_concordances(library, key);
                     }
                     Ok(SectionData::Forms(forms))
                 }
@@ -640,11 +694,49 @@ impl SectionSource for LibrarySections {
             | GuideSection::KeyPassages
             | GuideSection::DictionaryArticles
             | GuideSection::Related => Err(format!("{} needs a person or place", section.title())),
+            GuideSection::WordByWord => {
+                let words =
+                    crate::exegetical_guide::library_word_by_word(library, *passage, &self.bibles)?;
+                if words.verses.is_empty() {
+                    self.gather_original_concordances(library, key);
+                }
+                Ok(SectionData::WordByWord(words))
+            }
+            GuideSection::LexiconSummaries => {
+                let words =
+                    crate::exegetical_guide::library_word_by_word(library, *passage, &self.bibles)?;
+                crate::exegetical_guide::lexicon_summaries(library, &words)
+                    .map(SectionData::LexiconSummaries)
+            }
+            GuideSection::GrammaticalNotes => {
+                let words =
+                    crate::exegetical_guide::library_word_by_word(library, *passage, &self.bibles)?;
+                let notes = crate::exegetical_guide::grammar_notes(&words);
+                if notes.is_empty() {
+                    self.gather_original_concordances(library, key);
+                }
+                Ok(SectionData::GrammaticalNotes(notes))
+            }
         }
     }
 }
 
 impl LibrarySections {
+    /// The empty state (#135) of Forms and the Exegetical Guide asks whether a Bible in the
+    /// Key's original language has Morphology; it reads only gathered concordances, so gather
+    /// them here, off the UI thread.
+    fn gather_original_concordances(&self, library: &Library, key: &Key) {
+        let Some(language) = crate::missing_resource::key_language(key) else {
+            return;
+        };
+        for bible in library
+            .of_type(ResourceType::Bible)
+            .filter(|e| crate::key_words::is_original_language(&e.manifest.language, language))
+        {
+            let _ = self.concordances.get(bible);
+        }
+    }
+
     /// Sections that share `aliases` with the Session (which keeps them current).
     pub fn with_aliases(aliases: Arc<AliasCache>) -> Self {
         Self {
@@ -1129,7 +1221,7 @@ const GUIDE: ParamSpec = ParamSpec {
     name: "guide",
     kind: ParamKind::String,
     required: true,
-    help: "Kind of Guide: `passage_guide`, `word_study` or `factbook`",
+    help: "Kind of Guide: `passage_guide`, `word_study`, `factbook` or `exegetical_guide`",
 };
 const SECTION: ParamSpec = ParamSpec {
     name: "section",

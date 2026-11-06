@@ -315,9 +315,9 @@ impl ResourceListing {
         match self.kind {
             ResourceType::Bible if self.strongs && self.is_hebrew_or_greek() => {
                 Some(if self.morphology {
-                    "Used by Word Info and Word Study › Occurrences and Forms"
+                    "Used by Word Info, Word Study › Occurrences and Forms, and the Exegetical Guide"
                 } else {
-                    "Used by Word Info and Word Study › Occurrences"
+                    "Used by Word Info, Word Study › Occurrences, and the Exegetical Guide"
                 })
             }
             ResourceType::Bible if self.strongs => {

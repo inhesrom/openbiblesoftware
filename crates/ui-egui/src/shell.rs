@@ -31,6 +31,7 @@ mod command_box;
 mod context_menu;
 mod copy_window;
 mod credits_tab;
+mod exegetical_guide;
 mod export;
 mod factbook_tab;
 mod favorites_tab;
@@ -1436,9 +1437,9 @@ impl State {
             TabKind::GetBibles => self.get_bibles_body(&mut body),
             TabKind::StarterLibrary => self.starter_body(&mut body),
             TabKind::Credits => self.credits_body(&mut body, tab),
-            TabKind::Guide(obs_engine::Guide::PassageGuide) => {
-                self.passage_guide_body(&mut body, tab)
-            }
+            TabKind::Guide(
+                g @ (obs_engine::Guide::PassageGuide | obs_engine::Guide::ExegeticalGuide),
+            ) => self.passage_keyed_guide_body(&mut body, tab, g),
             TabKind::Guide(obs_engine::Guide::WordStudy) => self.word_study_body(&mut body, tab),
             TabKind::Guide(obs_engine::Guide::Factbook) => self.factbook_body(&mut body, tab),
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
@@ -2504,6 +2505,7 @@ impl egui_tiles::Behavior<TabId> for State {
             for id in [
                 "library.open",
                 "guide.passage_guide",
+                "guide.exegetical_guide",
                 "guide.word_study",
                 "tool.search",
                 "tool.text_comparison",

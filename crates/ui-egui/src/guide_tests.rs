@@ -909,3 +909,140 @@ fn a_cold_factbook_chooser_loads_the_directory_by_itself() {
     drop(h);
     drop(files);
 }
+
+/// An Exegetical Guide (#144) beside the first of `resources` (a Bible at `reference`, in
+/// Link set A). Returns the Bible and the Guide.
+fn setup_exegetical(
+    h: &mut Harness,
+    name: &str,
+    resources: &[obs_model::Resource],
+    reference: &str,
+) -> (Files, TabId, TabId) {
+    let dir = std::env::temp_dir().join(format!("obs-shell-exeg-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let files = Files(dir);
+    h.shell.st.session.library = Library::new();
+    for r in resources {
+        add_file(h, &files, r);
+    }
+    h.shell.reset_layout();
+    let id = resources[0].manifest.resource_id.clone();
+    let bible = h
+        .shell
+        .st
+        .session
+        .workspace
+        .tabs()
+        .find(|t| t.kind == TabKind::Resource(id.clone()))
+        .unwrap()
+        .id;
+    h.shell
+        .run("tab.go", &json!({ "tab": bible.0, "text": reference }));
+    h.frames(2);
+    let guide = h
+        .shell
+        .run("guide.exegetical_guide", &json!({ "split": true }))
+        .unwrap()["tab"]
+        .as_u64()
+        .unwrap();
+    h.frames(2);
+    (files, bible, TabId(guide))
+}
+
+fn preview(h: &mut Harness, name: &str) {
+    if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews/guide");
+        h.frames(30);
+        h.screenshot(&dir.join(format!("{name}.ppm")));
+    }
+}
+
+#[test]
+fn the_exegetical_guide_lists_john_3_16_word_by_word_and_a_word_opens_its_word_study() {
+    use obs_engine::testing::{greek_lexicon, kjv_john, tagnt_john_3_16};
+    let mut h = Harness::new();
+    let (_files, bible, guide) = setup_exegetical(
+        &mut h,
+        "john",
+        &[kjv_john(), tagnt_john_3_16(), greek_lexicon()],
+        "Jn 3:16",
+    );
+    // It opened at the Bible's Passage and follows the Bible's Link set.
+    let ws = &h.shell.session().workspace;
+    assert_eq!(ws.tab(guide).unwrap().history.current(), Some(john(3, 16)));
+    assert_eq!(ws.tab(guide).unwrap().link, ws.tab(bible).unwrap().link);
+    until(&mut h, "the Word by word rows", |h| {
+        find_in(h, guide, "egapesen").is_some() && find_in(h, guide, "John 3:16 (TAGNT)").is_some()
+    });
+    for _ in 0..20 {
+        h.paced_frame();
+    }
+    // Word by word comes first; the other sections are below the 25 words.
+    assert_eq!(
+        headers(&h, guide).first().map(String::as_str),
+        Some("Word by word")
+    );
+    // Each word in order: transliteration and Gloss, then Strong's number and Morphology.
+    let thus = find_in(&h, guide, "Thus").unwrap();
+    let loved = find_in(&h, guide, "loved").unwrap();
+    let god = find_in(&h, guide, "God").unwrap();
+    assert!(thus.top() < loved.top() && loved.top() < god.top());
+    assert!(
+        has_prefix_in(&h, guide, "G25 · Verb, aorist active indicative"),
+        "{:?}",
+        h.texts()
+    );
+    preview(&mut h, "exegetical-john-3-16");
+
+    // A word opens a Word Study at its Strong's number; the Guide stays put.
+    let tabs = h.shell.session().workspace.tabs().count();
+    let word = find_in(&h, guide, "egapesen").unwrap().center();
+    h.click(word);
+    h.frames(2);
+    let ws = &h.shell.session().workspace;
+    assert_eq!(ws.tabs().count(), tabs + 1);
+    let study = ws.tab(ws.focused().unwrap()).unwrap();
+    assert_eq!(study.kind, TabKind::Guide(Guide::WordStudy));
+    assert_eq!(
+        study.entry_history.current(),
+        Some(Key::StrongsNumber("G25".parse().unwrap()))
+    );
+    assert_eq!(ws.tab(guide).unwrap().history.current(), Some(john(3, 16)));
+
+    // The Bible moves: the Guide follows its Link set.
+    h.shell
+        .run("tab.go", &json!({ "tab": bible.0, "text": "Jn 3:17" }));
+    h.frames(2);
+    assert_eq!(
+        h.shell
+            .session()
+            .workspace
+            .tab(guide)
+            .unwrap()
+            .history
+            .current(),
+        Some(john(3, 17))
+    );
+    drop(h);
+}
+
+#[test]
+fn the_exegetical_guide_at_english_ps_3_1_shows_tahots_ps_3_2() {
+    use obs_engine::testing::bibles::{bsb_psalm_3, tahot_psalms};
+    let mut h = Harness::new();
+    let (_files, _bible, guide) =
+        setup_exegetical(&mut h, "psalm", &[bsb_psalm_3(), tahot_psalms()], "Ps 3:1");
+    until(&mut h, "the Hebrew verse", |h| {
+        find_in(h, guide, "Psalms 3:2 (TAHOT)").is_some() && find_in(h, guide, "O Yahweh").is_some()
+    });
+    assert!(find_in(&h, guide, "Ps 3:1 in English Bibles").is_some());
+    // The Grammatical notes explain the Qal.
+    until(&mut h, "the notes", |h| find_in(h, guide, "Qal").is_some());
+    for _ in 0..20 {
+        h.paced_frame();
+    }
+    preview(&mut h, "exegetical-psalm-3-1");
+    drop(h);
+}
