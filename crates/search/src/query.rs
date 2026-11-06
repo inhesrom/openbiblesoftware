@@ -19,9 +19,9 @@
 //!
 //! Morphology criteria ([`crate::morph`]) start at `@` (or `morph:`) and take the words after
 //! it while they name criteria; they all hold for one morpheme part, and a Strong's number or
-//! Lemma directly before the `@` is that part's too. Which codes meet them depends on the
-//! Search index, so such a query compiles to [`Compiled::Morph`], which each index fills in
-//! from its own codes ([`MorphQuery::expand`]).
+//! Lemma directly before the `@` (no `AND` or parenthesis between them) is that part's too.
+//! Which codes meet them depends on the Search index, so such a query compiles to
+//! [`Compiled::Morph`], which each index fills in from its own codes ([`MorphQuery::expand`]).
 
 use std::fmt;
 use std::ops::Range;
@@ -348,6 +348,9 @@ impl Parser {
     /// and := unary (("AND")? unary)*, up to `)`, `OR` or the end.
     fn and(&mut self, depth: usize) -> Result<Option<Query>, QueryError> {
         let mut all = Vec::new();
+        // Whether the last term was a bare Strong's number or Lemma with nothing (no `AND`, no
+        // group boundary) between it and the next token, so that an `@` there describes it.
+        let mut adjacent = false;
         while let Some(l) = self.peek() {
             if is_op(l, "OR") {
                 break;
@@ -358,19 +361,27 @@ impl Parser {
                 }
                 // A stray `)`: ignore it.
                 self.pos += 1;
+                adjacent = false;
                 continue;
             }
             if is_op(l, "AND") {
                 self.pos += 1;
+                adjacent = false;
                 continue;
             }
+            let group = matches!(l, Lex::Open);
+            let was_adjacent = std::mem::replace(&mut adjacent, false);
             match self.unary(depth)? {
                 // `a (b c)` is `a b c`.
                 Some(Query::And(inner)) => all.extend(inner),
                 Some(q) => {
-                    if let Some(q) = attach_morph(&mut all, q) {
-                        all.push(q);
-                    }
+                    adjacent = !group && matches!(q, Query::Strong { .. } | Query::Lemma { .. });
+                    let q = if was_adjacent {
+                        attach_morph(&mut all, q)
+                    } else {
+                        Some(q)
+                    };
+                    all.extend(q);
                 }
                 None => {}
             }
@@ -560,7 +571,8 @@ impl Parser {
     }
 }
 
-/// `@…` right after a Strong's number or Lemma describes that same word.
+/// `@…` directly after a Strong's number or Lemma (the last of `all`) describes that same
+/// word.
 fn attach_morph(all: &mut [Query], q: Query) -> Option<Query> {
     let Query::Morph {
         strong: None,

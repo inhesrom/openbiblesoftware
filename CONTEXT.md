@@ -178,7 +178,7 @@ What a search runs over: a Passage list and a set of Resources (or Notebooks for
 _Avoid_: Filter, Range (for the scope)
 
 **Morphology criteria**:
-The grammar one Tagged word must have for a Bible search to find it, named in plain English after `@` in the query (`@verb aorist imperative`): a part of speech, tense, voice, mood, case, number, gender, person, stem or state. They all hold for the same word, and a Strong's number or Lemma typed just before the `@` is that word's too (`strong:G26 @noun genitive`).
+The grammar one Tagged word must have for a Bible search to find it, named in plain English after `@` in the query (`@verb aorist imperative`): a part of speech, tense, voice, mood, case, number, gender, person, stem or state. They all hold for the same word, and a Strong's number or Lemma typed just before the `@`, with no `AND` between, is that word's too (`strong:G26 @noun genitive`).
 _Avoid_: Morph codes, Parsing (for the query), Morph search syntax
 
 **Morphology chooser**:

@@ -248,6 +248,11 @@ fn morphology_criteria_match_inside_one_word() {
         ("@aorist indicative", &[]),
         // The aorist imperative of Verse 2 is ἔρχομαι, not ἀγαπάω.
         ("strong:G25 @aorist imperative", &[1]),
+        ("G25 @aorist imperative", &[1]),
+        // An explicit AND joins two criteria of the Verse, in either order.
+        ("G25 AND @aorist imperative", &[1, 2]),
+        ("@aorist imperative AND G25", &[1, 2]),
+        ("lemma:ἀγαπάω AND @aorist imperative", &[1, 2]),
         ("lemma:ἀγαπάω @aorist imperative", &[1]),
         ("lemma:ἀγαπάω @imperative", &[0, 1]),
         ("G25 @indicative", &[2]),

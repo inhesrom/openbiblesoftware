@@ -403,6 +403,25 @@ fn morphology_criteria_compile_to_one_part_phrases() {
             "G26 love @genitive",
             r#"strong : "g26" AND text : "love" AND morph : "morph3""#,
         ),
+        // Nor across an explicit AND or a parenthesis: those join criteria of the Verse.
+        (
+            "G26 AND @genitive",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        (
+            "@genitive AND G26",
+            r#"morph : "morph3" AND strong : "g26""#,
+        ),
+        (
+            "lemma:agape AND @genitive",
+            r#"lemma : "αγαπη" AND morph : "morph3""#,
+        ),
+        ("(G26) @genitive", r#"strong : "g26" AND morph : "morph3""#),
+        (
+            "(love G26) @genitive",
+            r#"text : "love" AND strong : "g26" AND morph : "morph3""#,
+        ),
+        ("(G26 @genitive)", r#"morph : "g26 morph3""#),
         (
             "@verb @noun",
             r#"(morph : "morph1" OR morph : "morph2" OR morph : "morph4" OR morph : "morph5") AND morph : "morph3""#,
