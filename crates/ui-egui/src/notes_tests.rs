@@ -791,6 +791,59 @@ fn a_card_whose_save_fails_keeps_its_text_and_shows_the_error() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A refused save is retried on its own clock (#129): with the Notes Tab covered, its toast
+/// gone and nothing else moving, each failed try still asks for the frame of the next one, so
+/// the words save once the disk has room without the user touching the window.
+#[test]
+fn a_covered_card_whose_save_fails_keeps_retrying_while_the_window_is_idle() {
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+    let dir = folder("idle-retry");
+    let mut h = launch(&dir);
+    let (store, _) = obs_store::UserStore::open(&dir.join("failing.db")).unwrap();
+    let (store, failures) = obs_engine::testing::WritesFail::changes(store);
+    h.shell.st.session.attach_user(Box::new(store));
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Gen 31:49", "body": "The heap" }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    open_notes(&mut h);
+    failures.store(u32::MAX, Ordering::SeqCst);
+    retype(&mut h, &id, "Mizpah, the watchpost");
+    h.shell.run("tool.search", &json!({})).unwrap();
+    h.frames(2);
+    assert!(
+        card_editor(&h).and_then(|(_, e)| e).is_some(),
+        "the first save, as the Tab was covered, failed"
+    );
+    let autosave = Duration::from_secs_f64(crate::shell::notes_tab::AUTOSAVE_SECS);
+    // Each frame comes only when the last one asked for it, long after the toast ran out.
+    for _ in 0..3 {
+        assert!(h.repaint_delay <= autosave, "{:?}", h.repaint_delay);
+        let left = failures.load(Ordering::SeqCst);
+        h.time += 5.0;
+        h.idle_frame();
+        assert!(failures.load(Ordering::SeqCst) < left, "tried again");
+        assert!(h.shell.st.toast.is_none());
+    }
+    assert!(h.repaint_delay <= autosave, "{:?}", h.repaint_delay);
+    failures.store(0, Ordering::SeqCst);
+    h.time += 5.0;
+    h.idle_frame();
+    let body = h.shell.st.session.annotation(&id).unwrap();
+    assert_eq!(body.body(), "Mizpah, the watchpost");
+    assert!(card_editor(&h).is_none(), "saved, and let go");
+    assert_eq!(h.repaint_delay, Duration::MAX, "nothing left to wake for");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// A Note deleted while its card is edited (an undo removed it) is let go: there is nothing
 /// left to save into.
 #[test]

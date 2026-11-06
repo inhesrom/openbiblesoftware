@@ -473,11 +473,27 @@ impl State {
             .editing
             .as_ref()
             .is_some_and(|e| e.error.is_some());
-        if !shown && !failed {
-            self.save_card_edit(true);
-            return;
+        if shown || failed {
+            self.autosave_card(ctx);
         }
-        self.autosave_card(ctx);
+        // Covered, with nothing left unsaved (or a retry just went through): end the pass.
+        let unsaved = self
+            .notes_ui
+            .editing
+            .as_ref()
+            .is_some_and(|e| e.error.is_some());
+        if !shown && !unsaved {
+            self.save_card_edit(true);
+        }
+        // A try that just failed left the card unsaved: ask for the frame of the next one,
+        // since a covered Tab and an idle window would otherwise never draw it.
+        if let Some(ed) = &self.notes_ui.editing
+            && ed.error.is_some()
+            && ed.text != ed.saved
+        {
+            let wait = (AUTOSAVE_SECS - (self.now - ed.changed_at)).max(0.0);
+            ctx.request_repaint_after(std::time::Duration::from_secs_f64(wait));
+        }
     }
 
     /// The Note being edited no longer exists (an undo removed it, or the User database

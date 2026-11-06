@@ -46,6 +46,8 @@ struct Harness {
     /// Floating windows as OS windows of their own, when a test asks for them
     /// ([`Harness::native_windows`]); else egui embeds them in the main window.
     native: Option<std::rc::Rc<std::cell::RefCell<floating_windows::NativeWindows>>>,
+    /// How soon last frame asked for the next one, unprompted (`Duration::MAX`: never).
+    repaint_delay: std::time::Duration,
 }
 
 fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
@@ -162,6 +164,7 @@ impl Harness {
             screen: vec2(1400.0, 900.0),
             root_info: egui::ViewportInfo::default(),
             native: None,
+            repaint_delay: std::time::Duration::MAX,
         };
         if native {
             h.native_windows();
@@ -173,6 +176,17 @@ impl Harness {
     fn frame(&mut self) {
         self.events
             .insert(0, Event::ModifiersChanged(self.modifiers));
+        self.run_frame();
+    }
+
+    /// A frame with no input at all, as when the window is idle: egui asks for no repaint of its
+    /// own, so [`Harness::repaint_delay`] shows only what the app asked for.
+    fn idle_frame(&mut self) {
+        assert!(self.events.is_empty(), "pending input: {:?}", self.events);
+        self.run_frame();
+    }
+
+    fn run_frame(&mut self) {
         let mut viewports = egui::ViewportIdMap::default();
         viewports.insert(egui::ViewportId::ROOT, self.root_info.clone());
         if let Some(n) = &self.native {
@@ -212,6 +226,7 @@ impl Harness {
             }
         }
         out.textures_delta.clear();
+        self.repaint_delay = out.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
         self.last_shapes = out.shapes.clone();
         for c in &out.platform_output.commands {
             match c {
