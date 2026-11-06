@@ -49,14 +49,22 @@ The rules:
   the notes", "no permission to distribute") makes the whole value Unclear, as does a free
   licence beside "all rights reserved". CC's own "No Derivatives" is not a negation. Of the
   66 live values only "No other distribution permitted" carries such a word, in a clause that
-  grants nothing, so no live value changes class.
+  grants nothing, so no live value changes class by this rule.
+- **A free licence that denies sharing is Unclear.** If any clause pairs a sharing word
+  (distribute, redistribution, share, reproduce, republish) with a negation or "prohibited",
+  "forbidden", "restricted" ("Public Domain; no redistribution"), a value that would be Free to
+  share is Unclear; "no restrictions" / "without restriction" is not a denial. One live value
+  changes class: the Kretzmann Popular Commentary's licence says it is public domain, then gives
+  "full permission to replicate and distribute the text ... so long as the content itself is not
+  altered", a no-changes condition the Free to share list does not allow.
 - **Unclear:** everything else. That includes "Copyrighted" with nothing more, publisher names
   with a year, "See README file", "Unrestricted", GFDL, and an empty value. Unclear is never
   shown as free.
 
 Run against the live catalog as Get Resources builds it (2,248 listings after dropping duplicates,
 locked modules and general books; `live_free_to_share_over_the_live_catalog_keeps_only_free_rows`):
-**716 Free to share, 1,453 Free for personal use, 79 Unclear.** 32 of the Unclear rows have no
+**715 Free to share, 1,453 Free for personal use, 80 Unclear** (re-run 2026-11-06 after the
+sharing-denial rule; 716 / 1,453 / 79 before it). 32 of the Unclear rows have no
 `DistributionLicense` at all, and 29 say only "Copyrighted".
 
 Two classes are left Unclear on purpose and would need a person to decide: "Unrestricted" (3

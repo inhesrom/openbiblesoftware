@@ -313,15 +313,12 @@ impl OpenSource {
 }
 
 /// Statements that take away or restrict a free licence wherever they stand in a notice.
+/// Non-commercial and no-derivatives licences are found by words
+/// ([`crate::licence::names_sharing_restriction`]), denials of sharing by clause
+/// ([`crate::licence::denies_sharing`]).
 const RESTRICTIVE_NOTICE: &[&str] = &[
     "all rights reserved",
     "not public domain",
-    "non-commercial",
-    "noncommercial",
-    "non commercial",
-    "no derivatives",
-    "noderivatives",
-    "no derivs",
     "may not be",
     "must not be",
     "not permitted",
@@ -334,13 +331,20 @@ const NOTICE_WINDOW_BEFORE: usize = 5;
 const NOTICE_WINDOW_AFTER: usize = 3;
 
 /// Why a licence notice (plain text, lowercased) that contains `phrase` still does not grant
-/// it: a restrictive statement anywhere, or a negation next to the phrase. eBible's notices
-/// say "not copyrighted" or "no copyright restrictions" in other sentences, so only the
-/// phrase's own neighbourhood is read for negations.
+/// it: a restrictive statement, a non-commercial or no-derivatives licence ("This edition is
+/// CC BY-ND 4.0") or a denial of sharing anywhere, or a negation next to the phrase. eBible's
+/// notices say "not copyrighted" or "no copyright restrictions" in other sentences, so only
+/// the phrase's own neighbourhood is read for negations.
 fn notice_restriction(notice: &str, phrase: &str) -> Option<String> {
-    use crate::licence::{clauses, has_negation, words};
+    use crate::licence::{clauses, denies_sharing, has_negation, names_sharing_restriction, words};
     if let Some(r) = RESTRICTIVE_NOTICE.iter().find(|r| notice.contains(*r)) {
         return Some(format!("says \"{r}\""));
+    }
+    if names_sharing_restriction(notice) {
+        return Some("names a non-commercial or no-derivatives licence".into());
+    }
+    if denies_sharing(notice) {
+        return Some("denies sharing the text".into());
     }
     let phrase = phrase.to_lowercase();
     for (at, _) in notice.match_indices(&phrase) {
@@ -538,6 +542,25 @@ mod tests {
                  original licensor is not necessarily endorsing your changes.</p>",
                 "Creative Commons Attribution Share-Alike license 4.0",
             ),
+            (
+                // LSV's sharing terms, which say "redistribute" beside "not" in other
+                // sentences.
+                "<p>... free to read, distribute, and translate from.</p><p>This translation is \
+                 made available to you under the terms of the <a \
+                 href='http://creativecommons.org/licenses/by-sa/4.0/'>Creative Commons \
+                 Attribution Share-Alike license 4.0.</a></p><p>You have permission to share and \
+                 redistribute this Bible translation in any format and to make reasonable \
+                 revisions and adaptations of this translation, provided that:</p><ul><li>You \
+                 include the above copyright and source information.</li><li>If you make any \
+                 changes to the text, you must indicate that you did so in a way that makes it \
+                 clear that the original licensor is not necessarily endorsing your \
+                 changes.</li><li>If you redistribute this text, you must distribute your \
+                 contributions under the same license as the original.</li></ul><p>Pictures \
+                 included with Scriptures and other documents on this site are licensed just \
+                 for use with those Scriptures and documents.\nFor other uses, please contact the \
+                 respective copyright owners.</p>",
+                "Creative Commons Attribution Share-Alike license 4.0",
+            ),
         ] {
             let text = plain_text(notice).to_lowercase();
             assert!(text.contains(&phrase.to_lowercase()), "{notice}");
@@ -558,6 +581,13 @@ mod tests {
             "<p>Public Domain</p><p>Copyright 2030. All rights reserved.</p>",
             "<p>Public Domain</p><p>Free for non-commercial use.</p>",
             "<p>Public Domain</p><p>This text may not be redistributed.</p>",
+            // #134 review: abbreviated and spelled-out restrictive licences, and denials.
+            "<p>Public Domain.</p><p>This edition is CC BY-ND 4.0.</p>",
+            "<p>Public Domain.</p><p>This edition is CC BY-NC 4.0.</p>",
+            "<p>Public Domain</p><p>Creative Commons Attribution-NoDerivs 3.0</p>",
+            "<p>Public Domain</p><p>Creative Commons Attribution-NonCommercial 4.0</p>",
+            "<p>Public Domain</p><p>No redistribution.</p>",
+            "<p>Public Domain</p><p>Please do not share this file.</p>",
         ] {
             let text = plain_text(notice).to_lowercase();
             assert!(
@@ -565,6 +595,17 @@ mod tests {
                 "{notice}"
             );
         }
+        // The live LSV notice with a no-derivatives sentence added keeps its phrase but is
+        // refused, so nothing is imported under the catalogue's CC-BY-SA-4.0.
+        let lsv = "<p>Creative Commons Attribution Share-Alike license 4.0.</p>\
+                   <p>This edition is CC BY-ND 4.0.</p>";
+        let text = plain_text(lsv).to_lowercase();
+        let phrase = "Creative Commons Attribution Share-Alike license 4.0";
+        assert!(text.contains(&phrase.to_lowercase()));
+        assert_eq!(
+            notice_restriction(&text, phrase).as_deref(),
+            Some("names a non-commercial or no-derivatives licence")
+        );
     }
 
     #[test]

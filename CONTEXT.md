@@ -138,7 +138,7 @@ The curated list of openly licensed Resources that are not SWORD modules, such a
 _Avoid_: Store, Mirror, Extra repository
 
 **Licence class**:
-What a Resource's licence lets the user do. There are three. **Free to share**: Public Domain, CC0, CC BY, CC BY-SA or GPL. **Free for personal use**: permission to distribute granted to a repository, non-commercial, or no derivatives. **Unclear**: no licence, one the rules do not recognise, or one that negates or qualifies its own grant ("Not Public Domain", "Public Domain, except the notes"). Unclear is never shown as free. SWORD's free-text `DistributionLicense` and SPDX ids both map to a Licence class.
+What a Resource's licence lets the user do. There are three. **Free to share**: Public Domain, CC0, CC BY, CC BY-SA or GPL. **Free for personal use**: permission to distribute granted to a repository, non-commercial, or no derivatives. **Unclear**: no licence, one the rules do not recognise, one that negates or qualifies its own grant ("Not Public Domain", "Public Domain, except the notes"), or a free licence beside a statement that denies sharing ("Public Domain; no redistribution"). Unclear is never shown as free. SWORD's free-text `DistributionLicense` and SPDX ids both map to a Licence class.
 _Avoid_: Licence type, Free/Non-free, Open (unqualified, for the class)
 
 **Update available**:

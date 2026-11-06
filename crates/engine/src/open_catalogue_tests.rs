@@ -71,6 +71,11 @@ fn free_to_share_hides_every_resource_whose_licence_is_not_free() {
     no_derivs.id = "noderivs-excerpt".into();
     no_derivs.licence = "Creative Commons Attribution-NoDerivs 3.0 Unported".into();
     sources.push(no_derivs);
+    // A free licence that denies redistribution in another clause is Unclear (#134 review).
+    let mut no_redistribution = sources[0].clone();
+    no_redistribution.id = "no-redistribution-excerpt".into();
+    no_redistribution.licence = "Public Domain; no redistribution".into();
+    sources.push(no_redistribution);
     s.get_bibles.set_open_catalogue(sources);
     let gb = &s.get_bibles;
     let every: Vec<&ResourceListing> = gb
@@ -97,7 +102,7 @@ fn free_to_share_hides_every_resource_whose_licence_is_not_free() {
         .filter(|b| b.licence_class() == LicenceClass::Unclear)
         .map(|b| b.module.as_str())
         .collect();
-    assert_eq!(unclear, ["unclear-excerpt"]);
+    assert_eq!(unclear, ["unclear-excerpt", "no-redistribution-excerpt"]);
 
     for filter in ResourceFilter::CHOICES {
         let shown: Vec<&ResourceListing> = gb
@@ -122,6 +127,11 @@ fn free_to_share_hides_every_resource_whose_licence_is_not_free() {
     let personal = gb.all_listings("", None, ResourceFilter::All, LicenceFilter::PersonalUse);
     assert!(personal.iter().any(|b| b.module == "NASB1995"));
     assert!(personal.iter().any(|b| b.module == "noderivs-excerpt"));
+    assert!(
+        !personal
+            .iter()
+            .any(|b| b.module == "no-redistribution-excerpt")
+    );
     assert!(
         personal
             .iter()
@@ -337,6 +347,42 @@ fn a_download_whose_notice_negates_its_phrase_is_refused() {
     assert!(!root.join(format!("library/{id}.obr")).exists());
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+/// #134 review: a notice that keeps the phrase but names a restrictive licence by its
+/// abbreviation or spelled out, or denies redistribution, is refused before the Import
+/// writes the catalogue's free licence into the manifest.
+#[test]
+fn a_download_whose_notice_names_a_restrictive_licence_is_refused() {
+    for (name, notice) in [
+        (
+            "by-nd",
+            "<p>Public Domain.</p><p>This edition is CC BY-ND 4.0.</p>",
+        ),
+        (
+            "by-nc",
+            "<p>Public Domain.</p><p>This edition is CC BY-NC 4.0.</p>",
+        ),
+        (
+            "noderivs",
+            "<p>Public Domain</p><p>Creative Commons Attribution-NoDerivs 3.0</p>",
+        ),
+        (
+            "no-redistribution",
+            "<p>Public Domain; no redistribution.</p>",
+        ),
+    ] {
+        let (mut s, _repos, root) = session(&format!("restrictive-{name}"), notice);
+        let id = download_open(&mut s, "web-excerpt");
+        let record = s.imports.report(&id).unwrap();
+        assert_eq!(record.phase, ImportPhase::Failed, "{notice}");
+        let error = record.error.clone().unwrap();
+        assert!(error.contains("not imported"), "{notice}: {error}");
+        assert!(s.library.get(&id).is_none(), "{notice}");
+        assert!(!root.join(format!("library/{id}.obr")).exists(), "{notice}");
+        drop(s);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[test]
