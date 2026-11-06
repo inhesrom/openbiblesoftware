@@ -364,6 +364,15 @@ impl<T: Clone + PartialEq> History<T> {
         self.current = Some(at);
     }
 
+    /// Scrolling shows unit `visible` at the top: once that is not the unit the location was
+    /// reached by, the view no longer shows it, though the location may be unchanged (an
+    /// introduction scrolled into the section sharing its first Verse, #176).
+    pub fn scrolled_into(&mut self, visible: &UnitId) {
+        if self.unit.as_ref().is_some_and(|u| &u.unit != visible) {
+            self.unit = None;
+        }
+    }
+
     pub fn can_go_back(&self) -> bool {
         !self.back.is_empty()
     }
@@ -1307,6 +1316,14 @@ impl Workspace {
         }
         t.history.scrolled_to(verse);
         self.broadcast(tab, verse, false);
+    }
+
+    /// The user scrolled a Tab so unit `visible` is at the top of its view: leaving the unit a
+    /// history location was reached by drops it, even where the Verse stays the same.
+    pub fn user_scrolled_into(&mut self, tab: TabId, visible: &UnitId) {
+        if let Some(t) = self.tabs.get_mut(&tab) {
+            t.history.scrolled_into(visible);
+        }
     }
 
     pub fn back(&mut self, tab: TabId) -> Option<Verse> {

@@ -391,6 +391,30 @@ fn back_and_forward_return_to_the_book_introduction_and_the_section_sharing_its_
     step(&mut h, "tab.back", INTRO, "Introduction");
     step(&mut h, "tab.back", "Gen.31.50-Gen.31.54", "Verses 50–54");
     step(&mut h, "tab.forward", INTRO, "Introduction");
+
+    // Scrolled from the introduction into the section sharing its first Verse, the Tab has
+    // left the introduction: Back from a later jump returns to the section.
+    let over = view_point(&h, tc);
+    h.events.push(Event::PointerMoved(over));
+    let mut steps = 0;
+    while shown_unit(&mut h, tc) != FIRST {
+        h.events.push(Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: vec2(0.0, -8.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: Modifiers::NONE,
+        });
+        h.frame();
+        steps += 1;
+        assert!(steps < 200, "stuck in {}", shown_unit(&mut h, tc));
+    }
+    h.frame();
+    assert_eq!(location(&mut h, tc), Some(ge(1, 1)));
+    click_in(&mut h, tc, "Chapter 32");
+    settle_all(&mut h);
+    assert_eq!(shown_unit(&mut h, tc), "Gen.32.5-Gen.32.9");
+    step(&mut h, "tab.back", FIRST, "Verses 1–2");
 }
 
 #[test]

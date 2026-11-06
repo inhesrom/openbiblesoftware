@@ -1753,9 +1753,16 @@ impl State {
             verse_number_tooltip(ui, &view.doc, n);
         }
         let entry = user_moved.then(|| view.current_entry()).flatten();
+        let top_unit = user_moved
+            .then(|| view.top_unit().and_then(|i| view.doc.units.get(i)))
+            .flatten()
+            .map(|u| u.id.clone());
         self.word_hovered(ui, tab, out.hovered_word.clone(), out.clicked_word.clone());
         if let Some(key) = entry {
             self.session.workspace.user_scrolled_entry(tab, key);
+        }
+        if let Some(unit) = top_unit {
+            self.session.workspace.user_scrolled_into(tab, &unit);
         }
         if let Some(at) = at {
             let ws = &mut self.session.workspace;

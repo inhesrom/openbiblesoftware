@@ -30,7 +30,8 @@ without moving the Tab.
 - A history stop reached by its unit keeps it (`History::unit`, a `UnitStop`): Back and Forward
   emit `Effect::NavigateText` to that unit instead of `Navigate` to its Verse, and going between
   the introduction and the section sharing its first Verse is a step of its own. Scrolling on to
-  another Verse drops the unit.
+  another Verse drops the unit, and so does scrolling so another unit is at the top of the view
+  even where the Verse is unchanged (the shell reports it with `Workspace::user_scrolled_into`).
 - `tab.contents {tab, on?}` shows, hides or toggles the pane of a Resource Tab; other Tabs are
   refused. The state is `Tab::contents`, kept in Layouts and the Last session as an optional
   `TabSnapshot.contents` (absent when off, so older snapshots read unchanged).

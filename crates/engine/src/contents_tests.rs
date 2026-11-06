@@ -502,6 +502,26 @@ fn back_and_forward_return_to_an_introduction_reached_by_its_unit() {
     s.run("tab.back", &json!({"tab": commentary.0})).unwrap();
     assert_eq!(history(&s).current(), Some(v(Book::Genesis, 1, 3)));
     assert_eq!(history(&s).unit(), None);
+
+    // Scrolling from the introduction into the section sharing its first Verse leaves the
+    // introduction though the Verse is unchanged: Back from a later jump goes to the section.
+    let section = UnitId::new("Gen.1.1-Gen.1.2").unwrap();
+    go_to(&mut s, BOOK_INTRO);
+    s.workspace
+        .user_scrolled_into(commentary, &UnitId::new(BOOK_INTRO).unwrap());
+    assert!(history(&s).unit().is_some(), "still in the introduction");
+    s.workspace.user_scrolled_into(commentary, &section);
+    assert_eq!(history(&s).current(), Some(ge11));
+    assert_eq!(history(&s).unit(), None);
+    go_to(&mut s, "Gen.2.4-Gen.2.4");
+    s.workspace.take_effects();
+    s.run("tab.back", &json!({"tab": commentary.0})).unwrap();
+    assert_eq!(history(&s).current(), Some(ge11));
+    assert_eq!(history(&s).unit(), None);
+    assert!(s.workspace.take_effects().contains(&Effect::Navigate {
+        tab: commentary,
+        verse: ge11
+    }));
 }
 
 #[test]
