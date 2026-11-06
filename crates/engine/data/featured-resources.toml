@@ -60,3 +60,8 @@ repo = "CrossWire"
 [[dictionary]]
 module = "Hitchcock"
 repo = "CrossWire"
+
+# The second topical index the Topic Guide reads (#148), beside Nave's.
+[[dictionary]]
+module = "Torrey"
+repo = "CrossWire"

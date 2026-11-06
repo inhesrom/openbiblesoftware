@@ -576,14 +576,14 @@ fn featured_resources_data_file_lists_lexicons_commentaries_and_dictionaries() {
     );
     assert_eq!(
         names(ResourceType::Dictionary),
-        ["Easton", "Smith", "ISBE", "Nave", "Hitchcock"]
+        ["Easton", "Smith", "ISBE", "Nave", "Hitchcock", "Torrey"]
     );
     assert!(
         featured(ResourceType::Lexicon)
             .iter()
             .all(|f| f.repo == "CrossWire")
     );
-    assert_eq!(featured_all().len(), 13 + 8 + 3 + 5 + 5);
+    assert_eq!(featured_all().len(), 13 + 8 + 3 + 5 + 6);
     assert!(featured(ResourceType::CrossReferenceSet).is_empty());
 }
 
