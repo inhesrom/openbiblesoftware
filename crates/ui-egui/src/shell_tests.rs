@@ -3109,6 +3109,8 @@ mod context_menu;
 #[path = "parallel_resources_tests.rs"]
 mod parallel_resources;
 
+#[path = "collections_tests.rs"]
+mod collections;
 #[path = "command_box_tests.rs"]
 mod command_box;
 #[path = "copy_export_tests.rs"]

@@ -353,6 +353,32 @@ impl State {
             }
             SectionStatus::Ready(data) => data,
         };
+        // A section filtered to a Collection (#153): the chooser, and its own empty state.
+        let mut filter = None;
+        if section.filterable()
+            && let Some(guide) = Guide::ALL
+                .into_iter()
+                .find(|g| g.sections().contains(&section))
+        {
+            filter = self.session.guide_filter(guide, section);
+            if let Some(a) =
+                collection_filter(ui, &self.session.library, guide, section, filter.as_deref())
+            {
+                return Some(a);
+            }
+        }
+        if data.is_empty()
+            && let Some(name) = filter
+        {
+            ui.label(
+                RichText::new(format!(
+                    "Nothing in the Collection “{name}” covers this. Choose “Every Resource” to \
+                     see the rest of your library."
+                ))
+                .color(theme::c().muted),
+            );
+            return None;
+        }
         if data.is_empty() {
             let empty = self.session.guide_empty_state(key, section);
             return self
@@ -691,4 +717,53 @@ pub(super) fn hint_page(ui: &mut Ui, text: &str) {
             ui.set_min_size(ui.available_size());
             ui.label(RichText::new(text).color(theme::c().muted));
         });
+}
+
+/// A filterable section's Collection chooser (#153), shown once the user has Collections:
+/// "Every Resource" or one Collection, for every Guide of the kind.
+fn collection_filter(
+    ui: &mut Ui,
+    library: &obs_engine::Library,
+    guide: Guide,
+    section: GuideSection,
+    chosen: Option<&str>,
+) -> Option<Action> {
+    if library.collections().is_empty() {
+        return None;
+    }
+    let mut picked: Option<Option<String>> = None;
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Collection").small().color(theme::c().muted));
+        egui::ComboBox::from_id_salt(("guide-collection", guide.id(), section.id()))
+            .selected_text(chosen.unwrap_or("Every Resource"))
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(chosen.is_none(), "Every Resource")
+                    .clicked()
+                {
+                    picked = Some(None);
+                }
+                for c in library.collections() {
+                    let on = chosen == Some(c.name.as_str());
+                    if ui.selectable_label(on, c.name.as_str()).clicked() {
+                        picked = Some(Some(c.name.clone()));
+                    }
+                }
+            })
+            .response
+            .on_hover_text(
+                "Show only the Resources of one Collection, in every Guide of this kind",
+            );
+    });
+    let picked = picked?;
+    (picked.as_deref() != chosen).then(|| {
+        Action::Command(
+            "guide.filter_section",
+            json!({
+                "guide": guide.id(),
+                "section": section.id(),
+                "collection": picked.unwrap_or_default(),
+            }),
+        )
+    })
 }

@@ -1090,14 +1090,14 @@ impl Session {
             .find_map(|g| self.guide_filter(g, section));
         match (status, filter) {
             (SectionStatus::Ready(data), Some(collection)) => match &*data {
-                SectionData::Commentaries(rows) => SectionStatus::Ready(Arc::new(
-                    SectionData::Commentaries(
+                SectionData::Commentaries(rows) => {
+                    SectionStatus::Ready(Arc::new(SectionData::Commentaries(
                         rows.iter()
                             .filter(|r| self.library.in_collection(&collection, &r.resource_id))
                             .cloned()
                             .collect(),
-                    ),
-                )),
+                    )))
+                }
                 _ => SectionStatus::Ready(data),
             },
             (status, _) => status,
@@ -1285,12 +1285,14 @@ fn arrangement_json(a: &GuideArrangement) -> Value {
     Value::Array(
         a.sections
             .iter()
-            .map(|p| json!({
-                "section": p.section.id(),
-                "collapsed": p.collapsed,
-                "hidden": p.hidden,
-                "collection": a.filter(p.section),
-            }))
+            .map(|p| {
+                json!({
+                    "section": p.section.id(),
+                    "collapsed": p.collapsed,
+                    "hidden": p.hidden,
+                    "collection": a.filter(p.section),
+                })
+            })
             .collect(),
     )
 }

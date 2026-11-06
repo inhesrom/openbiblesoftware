@@ -27,6 +27,7 @@ use crate::view::ReadingView;
 use crate::workers::SnippetCache;
 
 mod annotate;
+mod collections_ui;
 mod command_box;
 mod context_menu;
 mod copy_window;
@@ -83,6 +84,10 @@ struct TabUi {
     languages: Vec<String>,
     selected: Option<String>,
     dragging: Option<String>,
+    /// Library Tab: the Collection chip that filters the list (#153).
+    collection: Option<String>,
+    /// About Tab: the Resource tags being edited (#153).
+    tags_edit: Option<String>,
     /// A Text Comparison Tab's view.
     comparison: Option<ComparisonView>,
     /// A Search Tab's results view and its fields being edited.
@@ -190,6 +195,8 @@ pub(crate) struct State {
     plans_ui: reading_plans_tab::PlansUi,
     /// The Copy verses window (#154).
     copy_ui: copy_window::CopyUi,
+    /// The New Collection… / Edit… window (#153).
+    collection_editor: Option<collections_ui::CollectionEditor>,
     /// A Notes export waiting for its save dialog (#154).
     export_ui: export::ExportUi,
     /// The system clipboard for rich text (Copy verses), when the app has one.
@@ -241,6 +248,7 @@ impl Shell {
                 fonts_ui: fonts_window::FontsUi::default(),
                 plans_ui: reading_plans_tab::PlansUi::default(),
                 copy_ui: copy_window::CopyUi::default(),
+                collection_editor: None,
                 export_ui: export::ExportUi::default(),
                 rich_clipboard: None,
             },
@@ -2303,6 +2311,7 @@ impl State {
         self.import_chooser(&ctx);
         self.fonts_window(&ctx);
         self.copy_window(&ctx);
+        self.collection_editor_window(&ctx);
         if let Some((msg, t)) = &self.toast {
             if self.now - t < 4.0 {
                 let screen = ctx.content_rect();

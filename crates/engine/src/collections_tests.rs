@@ -119,8 +119,9 @@ fn cleanup(s: Session, root: PathBuf) {
 
 #[test]
 fn rules_parse_from_text_and_print_back() {
-    let rules = parse_rules(r#"type:commentary lang:en tag:older licence:cc0 title:"Test Covenant""#)
-        .unwrap();
+    let rules =
+        parse_rules(r#"type:commentary lang:en tag:older licence:cc0 title:"Test Covenant""#)
+            .unwrap();
     assert_eq!(
         rules,
         [
@@ -140,7 +141,13 @@ fn rules_parse_from_text_and_print_back() {
         [CollectionRule::ResourceType(ResourceType::Commentary)]
     );
     assert!(parse_rules("").unwrap().is_empty());
-    for bad in ["type:poems", "colour:red", "commentary", "title:\"open", "tag:"] {
+    for bad in [
+        "type:poems",
+        "colour:red",
+        "commentary",
+        "title:\"open",
+        "tag:",
+    ] {
         assert!(parse_rules(bad).is_err(), "{bad}");
     }
 }
@@ -172,7 +179,10 @@ fn rules_of_one_kind_match_any_and_kinds_must_all_match() {
     assert!(c("licence:cc-by").includes(&greek_lexicon, &[]));
     assert!(!c("licence:cc-by").includes(&english_dictionary, &[]));
     assert!(c("title:greek").includes(&greek_lexicon, &[]));
-    assert!(c("title:ebd").includes(&english_dictionary, &[]), "abbreviation");
+    assert!(
+        c("title:ebd").includes(&english_dictionary, &[]),
+        "abbreviation"
+    );
     let tags = ["Older".to_string()];
     assert!(c("tag:older").includes(&english_dictionary, &tags));
     assert!(!c("tag:older").includes(&greek_lexicon, &[]));
@@ -233,10 +243,7 @@ fn library_search(s: &mut Session, text: &str, resources: &str) -> (Vec<String>,
     settle(s);
     let tab = TabId(out["tab"].as_u64().unwrap());
     let r = s.search_tab(tab).unwrap().library_results.clone().unwrap();
-    (
-        r.groups.iter().map(|g| g.id.clone()).collect(),
-        r.searched,
-    )
+    (r.groups.iter().map(|g| g.id.clone()).collect(), r.searched)
 }
 
 #[test]
@@ -264,7 +271,10 @@ fn searching_with_a_collection_as_the_scope_searches_only_its_resources() {
             &json!({ "text": "covenant", "mode": "library", "resources": "collection:Nope" }),
         )
         .unwrap_err();
-    assert!(err.to_string().contains("no Collection named “Nope”"), "{err}");
+    assert!(
+        err.to_string().contains("no Collection named “Nope”"),
+        "{err}"
+    );
     cleanup(s, root);
 }
 
@@ -282,7 +292,10 @@ fn the_search_tools_collection_choice_narrows_and_leaves_resources_out_one_by_on
     )
     .unwrap();
     let out = s
-        .run("search.run", &json!({ "text": "covenant", "mode": "library" }))
+        .run(
+            "search.run",
+            &json!({ "text": "covenant", "mode": "library" }),
+        )
         .unwrap();
     settle(&mut s);
     let tab = out["tab"].as_u64().unwrap();
@@ -348,7 +361,13 @@ fn the_passage_guides_commentaries_filter_to_a_collection_and_it_is_remembered()
         &json!({ "name": "Second", "rules": "title:second" }),
     )
     .unwrap();
-    let genesis = Key::Passage(Passage::new(Verse::new(Book::Genesis, 15, 1), Verse::new(Book::Genesis, 17, 2)).unwrap());
+    let genesis = Key::Passage(
+        Passage::new(
+            Verse::new(Book::Genesis, 15, 1),
+            Verse::new(Book::Genesis, 17, 2),
+        )
+        .unwrap(),
+    );
     assert_eq!(commentary_ids(&mut s, &genesis), ["tcc", "tc2"]);
     let out = s
         .run(
@@ -395,7 +414,11 @@ fn the_passage_guides_commentaries_filter_to_a_collection_and_it_is_remembered()
         &json!({ "name": "Second", "rules": "title:second" }),
     )
     .unwrap();
-    assert_eq!(commentary_ids(&mut s, &genesis), ["tcc", "tc2"], "not filtered again");
+    assert_eq!(
+        commentary_ids(&mut s, &genesis),
+        ["tcc", "tc2"],
+        "not filtered again"
+    );
     cleanup(s, root);
 }
 
@@ -425,8 +448,11 @@ fn collections_by_hand_and_by_tag_filter_the_library_and_are_kept() {
         .unwrap();
     assert_eq!(out["members"], json!(["kjv"]));
     // By Resource tag.
-    s.run("resource.tags", &json!({ "id": "tc2", "tags": "older, Reformed, older" }))
-        .unwrap();
+    s.run(
+        "resource.tags",
+        &json!({ "id": "tc2", "tags": "older, Reformed, older" }),
+    )
+    .unwrap();
     assert_eq!(s.library.tags_of("tc2"), ["older", "Reformed"]);
     s.run(
         "collection.save",

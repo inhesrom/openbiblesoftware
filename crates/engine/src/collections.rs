@@ -338,7 +338,10 @@ fn name_param(command: &'static str, p: &Params<'_>, field: &str) -> Result<Stri
         return Err(failed(command, "a Collection needs a name"));
     }
     if name.contains(',') {
-        return Err(failed(command, "a Collection's name cannot contain a comma"));
+        return Err(failed(
+            command,
+            "a Collection's name cannot contain a comma",
+        ));
     }
     Ok(name)
 }

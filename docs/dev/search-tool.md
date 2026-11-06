@@ -13,7 +13,7 @@ hits. The Search index caches they read are described in [search-index.md](searc
 | `obs-search` | `Highlighter` | Hit highlighting in Rust (#16 rule 7). Surface terms are found by re-tokenizing the display text with the shared normalizer. `strong:`/`lemma:` terms mark the matching `tagged_word` spans. In a Hebrew word of several morphemes, only the matching morphemes are marked. |
 | `obs-engine` | `bible_search` | Per-Tab state (`Tab::search`): mode, query, Scope, chosen Bibles, inline error, results, selection. Also Scope parsing and presets, the mapping from Standard scope to verse ordinals through each Verse map, the Verse list in Standard canonical order, snippet pages, recent queries, and opening hits. Commands: `search.run`, `search.mode`, `search.scope`, `search.bible`, `search.open`. |
 | `obs-engine` | `search_views` | Bible mode's Results views (#146): `ResultsView`, the Results filter (`ResultsFilter`, applied to a copy of the results), `HitGrid`, `chart_bars`, and the Analysis table (`SearchAnalysis`, made by a background job, sorted by `AnalysisSort`, written as CSV). Commands: `search.view`, `search.filter`, `search.chart`, `search.sort`, `search.export_csv` (and `search.open`'s `all`). |
-| `obs-engine` | `library_search` | Library mode on the same Tab state and jobs: the Resource picker's scope (`LibraryScope`), grouping by Resource, excerpts, and opening a hit at its paragraph. Commands: `search.resource`, `search.resource_type` (and `search.run`'s `resources`). |
+| `obs-engine` | `library_search` | Library mode on the same Tab state and jobs: the Resource picker's scope (`LibraryScope`), grouping by Resource, excerpts, and opening a hit at its paragraph. Commands: `search.resource`, `search.resource_type`, `search.collection` (and `search.run`'s `resources`). |
 | `obs-engine` | `Workspace::navigate_text`, `Effect::NavigateText` | A Resource Tab goes to a Key and scrolls a Text range to the top (a Library hit's paragraph). |
 | `obs-ui-egui` | `shell/search_views.rs` | The Verses / Grid / Chart / Analysis switch, the filter chip, the Grid and Chart (egui), the Analysis table (its words, Lemmas and Context through the text pipeline) and the CSV save dialog. |
 | `obs-ui-egui` | `shell/search_tab.rs`, `search_view.rs` | The Tab body: fields, pickers, summary line, and the virtualized results pane drawn by the inline-snippet mode, with the highlights painted under the glyphs. Also ↑/↓/Enter and clicks. |
@@ -118,7 +118,8 @@ Starter library. The `*-kittest.png` previews come from the open test excerpts, 
 ## Library mode (#60)
 
 - **Search scope (#16 rule 10).** The Resource picker chooses whole Resource types
-  (Commentaries, Lexicons, Dictionaries) and single Resources. The default is every
+  (Commentaries, Lexicons, Dictionaries), Collections ([collections.md](collections.md)) and
+  single Resources. The default is every
   Commentary, Lexicon and Dictionary. A chosen type also covers Resources added to the library
   later. The chips under the query box show what is searched (× leaves one out), and
   **Choose…** lists each type with its Resources as checkboxes. Leaving out one Resource of a
@@ -151,8 +152,8 @@ and [a hit opened at its paragraph](../previews/search-library-opened.png). To m
 ## Hand-over from other Tools
 
 `search.run` takes `text`, plus optional `scope`, `bibles` (comma-separated resource ids),
-`resources` (Library mode: comma-separated `commentary`, `lexicon`, `dictionary` and resource
-ids), `mode`, `tab` and `split`. It runs in the most recently active Search Tab, or opens one.
+`resources` (Library mode: comma-separated `commentary`, `lexicon`, `dictionary`,
+`collection:<name>` and resource ids), `mode`, `tab` and `split`. It runs in the most recently active Search Tab, or opens one.
 Without `mode` the search runs in whatever mode that Tab was left in, so a hand-over always
 passes the `mode` it means (`"bible"` for every hand-over below).
 

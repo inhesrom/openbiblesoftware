@@ -241,7 +241,8 @@ impl LibraryScope {
             }
         } else if !leaving_collections.is_empty() {
             let members: Vec<String> = self.resources(library);
-            self.collections.retain(|c| !leaving_collections.contains(c));
+            self.collections
+                .retain(|c| !leaving_collections.contains(c));
             for other in members {
                 if other != id && !self.includes(library, &other) {
                     self.resources.push(other);

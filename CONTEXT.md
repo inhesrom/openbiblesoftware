@@ -121,6 +121,14 @@ _Avoid_: Offset, Selection (for the stored span)
 The user's ranking of Resources within one Resource type. The first Resource in the ranking is used for lookups, and guides follow the ranking.
 _Avoid_: Priority, Top Bibles, Favorites
 
+**Collection**:
+A named set of Resources the user saves in the Library Tab (New Collection…), chosen by hand, by rules (Resource type, language, Resource tag, licence, title contains), or both. A rule-based Collection takes in a Resource as soon as it is downloaded or imported. A Collection can be a Library search's Search scope, the Passage Guide's Commentaries filter, and the Library Tab's filter. Collections are kept in the User database; deleting one never removes its Resources.
+_Avoid_: Set, Group, Shelf, Folder (for Resources)
+
+**Resource tag**:
+A label of the user's own on a Resource, set in its About Tab (such as "older" or "reformed"), so a Collection's rule can gather the Resources that carry it. Kept in the User database.
+_Avoid_: Category, Keyword, Label (as the name)
+
 **Starter library**:
 The set of Resources bundled with the installer, available offline from first launch. They are added to the library on the first launch; an installer without them offers to download them under Library → Starter library…, which also lists each one and adds back any that are missing.
 _Avoid_: Default library, Base package
@@ -158,7 +166,7 @@ A cache built from one Resource so that it can be searched. It is derived data, 
 _Avoid_: Index (unqualified), Search database
 
 **Search scope**:
-What a search runs over: a Passage list and a set of Resources (or Notebooks for notes). It is chosen beside the query, not written inside it.
+What a search runs over: a Passage list and a set of Resources (or Notebooks for notes). A Library search's Resources can be whole Resource types, Collections and single Resources. It is chosen beside the query, not written inside it.
 _Avoid_: Filter, Range (for the scope)
 
 **Results view**:
@@ -398,5 +406,5 @@ A Markdown or HTML file made from a Notebook (or all of them) or from the Notes 
 _Avoid_: Backup, Report, Notes dump
 
 **User database**:
-The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Command box's recent entries, Copy presets and preferences. Resources and Search indexes are never part of it.
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Command box's recent entries, Copy presets, Collections, Resource tags and preferences. Resources and Search indexes are never part of it.
 _Avoid_: Profile, User library, Settings file
