@@ -22,10 +22,15 @@ Every pane is usable without the mouse:
 - Alt+L / Alt+G / Alt+T / Alt+Y open the pane (again: close it). The keyboard goes to the
   pane's field (in Guides, the first Guide's box).
 - Typing searches (Library) or filters (Tools, Layouts). The pick goes back to the top.
-- ↑/↓ move the pick through the rows and on into the footer links; in Layouts ↑/↓ move a row
-  of cards and ←/→ one card (while the filter is empty, so the field keeps its own arrows
-  otherwise). In Guides ↑/↓ move between the Guides' boxes.
-- Enter runs the pick. Ctrl/Cmd+Enter opens a Resource in a new Tab.
+- ↑/↓ move the pick through the rows and on into the footer links. In Layouts, while the
+  filter is empty, ↑/↓ move to the card above or below as drawn (same column, saved cards,
+  then Built-in, then the footer links) and ←/→ one card; while it has text the field keeps
+  ←/→ and ↑/↓ step through every match and footer link one at a time. In Guides ↑/↓ move
+  between the Guides' boxes. A pick the keyboard moves out of view scrolls into it.
+- Enter runs the pick. Ctrl/Cmd+Enter opens a Resource in a new Tab. Text typed in the same
+  frame as Enter counts: the pick is resolved after the field has taken it.
+- The Library rows and the Layout cards scroll inside the pane, which stays inside the
+  window; the footer links stay in view.
 - Layouts: F2 renames the picked saved Layout in place (Enter keeps the name, Esc stops), and
   Delete deletes it.
 - Esc closes the pane. So does a click anywhere outside it.

@@ -5,8 +5,9 @@
 //!
 //! Keyboard first: Alt+L, Alt+G, Alt+T and Alt+Y open them (the `toolbar.*` commands). The
 //! keyboard goes to the pane's field: typing filters (searches, in the Library), ↑/↓ pick a row
-//! (←/→ too between Layout cards while the filter is empty), Enter runs it (Ctrl/Cmd+Enter: a
-//! Resource in a new Tab), Esc closes. In the Layouts pane F2 renames the picked saved Layout
+//! (in the Layout cards, while the filter is empty, the card above or below, and ←/→ too),
+//! Enter runs it (Ctrl/Cmd+Enter: a Resource in a new Tab), Esc closes. Enter is resolved
+//! after the field takes this frame's typing, so text and Enter in one frame run what was typed. In the Layouts pane F2 renames the picked saved Layout
 //! and Delete deletes it. A click outside closes the pane.
 //!
 //! - **Library:** click or Enter opens a Resource in the focused Panel (bringing its Tab to the
@@ -71,6 +72,7 @@ impl ToolbarUi {
             self.query.clear();
             self.selected = 0;
             self.focus = true;
+            self.scroll = true;
             self.cards = None;
             self.renaming = None;
             self.open = Some(which);
@@ -98,6 +100,9 @@ enum Item {
 /// What the user did in a pane this frame.
 enum Action {
     Run(Item, bool),
+    /// Enter (`true`: with Ctrl/Cmd), before this frame's typing is in: resolved to the
+    /// picked row once the pane's field has taken it (see `Shell::submit`).
+    Submit(bool),
     Close,
     Rename(String, String),
     Delete(String),
@@ -168,6 +173,8 @@ impl Shell {
         match action {
             Some(Action::Run(item, new_tab)) => self.run_item(item, new_tab),
             Some(Action::Close) => self.st.toolbar.close(),
+            // Each pane resolves its own Enter; one left over had no row to run.
+            Some(Action::Submit(_)) => {}
             Some(Action::Rename(name, to)) => {
                 let renamed = self.run("layout.rename", &json!({ "name": name, "to": to }));
                 if renamed.is_some() {
@@ -275,25 +282,33 @@ impl Shell {
         self.apply_effects();
     }
 
-    /// Keys every pane shares: ↑/↓ (and `across` for a grid), Enter and Esc. Returns the
-    /// action for Enter or Esc.
+    /// Keys every pane shares: ↑/↓ (in `grid`, rows of item indices, to the row above or
+    /// below; else one item), ←/→ if `arrows_lr`, Enter and Esc. Returns the action for
+    /// Enter ([`Action::Submit`], for the pane to resolve after its field) or Esc. They are
+    /// taken before the pane's field so it does not see them.
     fn pane_keys(
         &mut self,
         ui: &Ui,
-        items: &[Item],
-        across: usize,
+        len: usize,
+        grid: Option<&[Vec<usize>]>,
         arrows_lr: bool,
     ) -> Option<Action> {
         let tb = &mut self.st.toolbar;
-        let last = items.len().saturating_sub(1);
+        let last = len.saturating_sub(1);
         let mut action = None;
         ui.input_mut(|i| {
             let before = tb.selected;
             if i.consume_key(Modifiers::NONE, Key::ArrowDown) {
-                tb.selected = (tb.selected + across).min(last);
+                tb.selected = match grid {
+                    Some(rows) => grid_step(rows, tb.selected, true),
+                    None => (tb.selected + 1).min(last),
+                };
             }
             if i.consume_key(Modifiers::NONE, Key::ArrowUp) {
-                tb.selected = tb.selected.saturating_sub(across);
+                tb.selected = match grid {
+                    Some(rows) => grid_step(rows, tb.selected, false),
+                    None => tb.selected.saturating_sub(1),
+                };
             }
             if arrows_lr {
                 if i.consume_key(Modifiers::NONE, Key::ArrowRight) {
@@ -307,13 +322,9 @@ impl Shell {
                 tb.scroll = true;
             }
             if i.consume_key(Modifiers::COMMAND, Key::Enter) {
-                action = items
-                    .get(tb.selected)
-                    .map(|it| Action::Run(it.clone(), true));
+                action = Some(Action::Submit(true));
             } else if i.consume_key(Modifiers::NONE, Key::Enter) {
-                action = items
-                    .get(tb.selected)
-                    .map(|it| Action::Run(it.clone(), false));
+                action = Some(Action::Submit(false));
             }
             if i.consume_key(Modifiers::NONE, Key::Escape) {
                 action = Some(Action::Close);
@@ -323,6 +334,19 @@ impl Shell {
             tb.selected = last;
         }
         action
+    }
+
+    /// Enter resolved against `items`, the pane's rows as they are after this frame's
+    /// typing (text and Enter can arrive in one frame): the picked row to run.
+    fn submit(&mut self, action: Option<Action>, items: &[Item]) -> Option<Action> {
+        match action {
+            Some(Action::Submit(new_tab)) => {
+                let tb = &mut self.st.toolbar;
+                tb.selected = tb.selected.min(items.len().saturating_sub(1));
+                (items.get(tb.selected)).map(|it| Action::Run(it.clone(), new_tab))
+            }
+            other => other,
+        }
     }
 
     /// The pane's search or filter field; typing in it starts the pick again at the top.
@@ -345,12 +369,12 @@ impl Shell {
         }
     }
 
-    /// The Library pane: search, Recent and Preferred rows, Favorites, footer links.
-    fn library_pane(&mut self, ui: &mut Ui, anchor: Rect) -> Option<Action> {
+    /// The Library pane's sections for `query`: search results or Recent and Preferred rows,
+    /// and the former Library menu's Favorites with nothing typed.
+    fn library_sections(&self, query: &str) -> Vec<(String, Vec<ResourceRow>)> {
         let s = &self.st.session;
-        let query = self.st.toolbar.query.clone();
         let mut sections: Vec<(String, Vec<ResourceRow>)> = s
-            .library_launcher(&query)
+            .library_launcher(query)
             .into_iter()
             .map(|(section, rows)| {
                 let heading = section.heading().to_string();
@@ -369,7 +393,6 @@ impl Shell {
                 (heading, rows)
             })
             .collect();
-        // The former Library menu's Favorites, with nothing typed.
         let favorites: Vec<ResourceRow> = if query.trim().is_empty() {
             s.favorites()
                 .iter()
@@ -388,14 +411,22 @@ impl Shell {
             let at = usize::from(sections.first().is_some_and(|(h, _)| h == "Recent"));
             sections.insert(at, ("Favorites".into(), favorites));
         }
+        sections
+    }
+
+    /// The Library pane: search, Recent and Preferred rows, Favorites, footer links.
+    fn library_pane(&mut self, ui: &mut Ui, anchor: Rect) -> Option<Action> {
+        let query = self.st.toolbar.query.clone();
+        let sections = self.library_sections(&query);
         let footer = self.footer(Launcher::Library);
-        let mut items: Vec<Item> = sections
-            .iter()
-            .flat_map(|(_, rows)| rows.iter().map(|r| r.item.clone()))
-            .collect();
-        items.extend(footer.iter().map(|(id, _, _)| Item::Command(id)));
-        let keys = self.pane_keys(ui, &items, 1, false);
-        let mut action = keys;
+        let library_items = |sections: &[(String, Vec<ResourceRow>)]| -> Vec<Item> {
+            (sections.iter())
+                .flat_map(|(_, rows)| rows.iter().map(|r| r.item.clone()))
+                .chain(footer.iter().map(|(id, _, _)| Item::Command(id)))
+                .collect()
+        };
+        let items = library_items(&sections);
+        let mut action = self.pane_keys(ui, items.len(), None, false);
         let tb_id = egui::Id::unique("launcher-pane");
         let shown = egui::Area::new(tb_id)
             .order(egui::Order::Foreground)
@@ -411,7 +442,8 @@ impl Shell {
                     let scroll = std::mem::take(&mut tb.scroll);
                     let mut index = 0;
                     egui::ScrollArea::vertical()
-                        .max_height(440.0)
+                        .id_salt("library-rows")
+                        .max_height(look::LIBRARY_LIST.min(list_room(ui, look::ROW * 2.0)))
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
                             if sections.is_empty() {
@@ -484,6 +516,11 @@ impl Shell {
                 });
             });
         self.st.toolbar.pane = Some(shown.response.rect);
+        if matches!(action, Some(Action::Submit(_))) {
+            let query = self.st.toolbar.query.clone();
+            let items = library_items(&self.library_sections(&query));
+            action = self.submit(action, &items);
+        }
         action
     }
 
@@ -515,20 +552,24 @@ impl Shell {
             .collect()
     }
 
-    /// The Tools pane: a filter and the Tools menu's commands with their shortcuts.
-    fn tools_pane(&mut self, ui: &mut Ui, anchor: Rect) -> Option<Action> {
-        let needle = self.st.toolbar.query.trim().to_lowercase();
-        let rows: Vec<(&'static str, &'static str, &'static str, bool)> = self
-            .footer(Launcher::Tools)
+    /// The Tools menu's commands whose label holds `query`: id, label, shortcut, enabled.
+    fn tool_rows(&self, query: &str) -> Vec<(&'static str, &'static str, &'static str, bool)> {
+        let needle = query.trim().to_lowercase();
+        self.footer(Launcher::Tools)
             .into_iter()
             .filter_map(|(id, _, enabled)| {
                 let spec = self.st.session.commands().get(id)?;
                 Some((id, spec.label, spec.shortcut.unwrap_or_default(), enabled))
             })
             .filter(|(_, label, _, _)| needle.is_empty() || label.to_lowercase().contains(&needle))
-            .collect();
+            .collect()
+    }
+
+    /// The Tools pane: a filter and the Tools menu's commands with their shortcuts.
+    fn tools_pane(&mut self, ui: &mut Ui, anchor: Rect) -> Option<Action> {
+        let rows = self.tool_rows(&self.st.toolbar.query);
         let items: Vec<Item> = rows.iter().map(|(id, ..)| Item::Command(id)).collect();
-        let mut action = self.pane_keys(ui, &items, 1, false);
+        let mut action = self.pane_keys(ui, items.len(), None, false);
         let shown = egui::Area::new(egui::Id::unique("launcher-pane"))
             .order(egui::Order::Foreground)
             .fixed_pos(pos2(anchor.left(), anchor.bottom() + 6.0))
@@ -561,6 +602,11 @@ impl Shell {
                 });
             });
         self.st.toolbar.pane = Some(shown.response.rect);
+        if matches!(action, Some(Action::Submit(_))) {
+            let rows = self.tool_rows(&self.st.toolbar.query);
+            let items: Vec<Item> = rows.iter().map(|(id, ..)| Item::Command(id)).collect();
+            action = self.submit(action, &items);
+        }
         action
     }
 
@@ -573,7 +619,7 @@ impl Shell {
             .collect();
         let items: Vec<Item> = rows.iter().map(|(id, _)| Item::Command(id)).collect();
         let before = self.st.toolbar.selected;
-        let mut action = self.pane_keys(ui, &items, 1, false);
+        let mut action = self.pane_keys(ui, items.len(), None, false);
         if self.st.toolbar.selected != before {
             self.st.toolbar.focus = true;
         }
@@ -635,7 +681,8 @@ impl Shell {
                 });
             });
         self.st.toolbar.pane = Some(shown.response.rect);
-        action
+        // The Guide's input is read when it runs, so this frame's typing is in.
+        self.submit(action, &items)
     }
 
     /// The Layouts pane: saved and Built-in Layouts as cards, then Save and Reset.
@@ -645,35 +692,31 @@ impl Shell {
         }
         let needle = self.st.toolbar.query.trim().to_lowercase();
         let cards = self.st.toolbar.cards.clone().unwrap_or_default();
-        let shown_cards: Vec<usize> = (0..cards.len())
-            .filter(|i| needle.is_empty() || cards[*i].name.to_lowercase().contains(&needle))
-            .collect();
-        let footer: Vec<(&'static str, String, bool)> =
-            self.footer(Launcher::Layouts).into_iter().collect();
-        let mut items: Vec<Item> = shown_cards.iter().map(|i| Item::Layout(*i)).collect();
-        items.extend(footer.iter().map(|(id, _, _)| Item::Command(id)));
+        let footer = self.footer(Launcher::Layouts);
+        let shown_cards = cards_matching(&cards, &needle);
+        let items = layout_items(&shown_cards, &footer);
         let renaming = self.st.toolbar.renaming.is_some();
         let mut action = None;
+        // Enter while renaming: the new name, read once this frame's typing is in.
+        let mut rename = false;
         if renaming {
             ui.input_mut(|i| {
                 if i.consume_key(Modifiers::NONE, Key::Escape) {
-                    action = Some(Action::Close);
+                    // Esc while renaming only stops renaming.
+                    self.st.toolbar.renaming = None;
+                    self.st.toolbar.focus = true;
                 }
-                if i.consume_key(Modifiers::NONE, Key::Enter)
-                    && let Some((name, to)) = self.st.toolbar.renaming.clone()
-                {
-                    action = Some(Action::Rename(name, to.trim().to_string()));
-                }
+                rename = i.consume_key(Modifiers::NONE, Key::Enter);
             });
-            if matches!(action, Some(Action::Close)) {
-                // Esc while renaming only stops renaming.
-                self.st.toolbar.renaming = None;
-                self.st.toolbar.focus = true;
-                action = None;
-            }
         } else {
-            let lr = needle.is_empty();
-            action = self.pane_keys(ui, &items, look::CARDS_ACROSS, lr);
+            action = if needle.is_empty() {
+                // ↑/↓ keep the column across the rows of cards as drawn.
+                let grid = layout_grid(&cards, &shown_cards, footer.len());
+                self.pane_keys(ui, items.len(), Some(&grid), true)
+            } else {
+                // ←/→ move in the filter text, so ↑/↓ walk every match one at a time.
+                self.pane_keys(ui, items.len(), None, false)
+            };
             let picked = items.get(self.st.toolbar.selected).cloned();
             if let Some(Item::Layout(i)) = picked
                 && !cards[i].builtin
@@ -683,7 +726,10 @@ impl Shell {
                     if inp.consume_key(Modifiers::NONE, Key::F2) {
                         self.st.toolbar.renaming = Some((name.clone(), name.clone()));
                     }
-                    if needle.is_empty() && inp.consume_key(Modifiers::NONE, Key::Delete) {
+                    // Delete edits the filter while it has text, typed this frame too.
+                    let typing = inp.events.iter().any(|e| matches!(e, egui::Event::Text(_)));
+                    if needle.is_empty() && !typing && inp.consume_key(Modifiers::NONE, Key::Delete)
+                    {
                         action = Some(Action::Delete(name.clone()));
                     }
                 });
@@ -702,36 +748,38 @@ impl Shell {
                         self.pane_field(ui, LAYOUTS_HINT, "launcher-filter");
                     }
                     let selected = self.st.toolbar.selected;
-                    let saved: Vec<(usize, usize)> = shown_cards
+                    let scroll = std::mem::take(&mut self.st.toolbar.scroll);
+                    let (saved, builtin): (Vec<_>, Vec<_>) = shown_cards
                         .iter()
+                        .copied()
                         .enumerate()
-                        .filter(|(_, c)| !cards[**c].builtin)
-                        .map(|(pos, c)| (pos, *c))
-                        .collect();
-                    let builtin: Vec<(usize, usize)> = shown_cards
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, c)| cards[**c].builtin)
-                        .map(|(pos, c)| (pos, *c))
-                        .collect();
-                    look::heading(ui, "Saved layouts");
-                    if saved.is_empty() {
-                        ui.label(
-                            egui::RichText::new(if needle.is_empty() {
-                                "None yet: Save layout as… keeps the Workspace as it is now"
-                            } else {
-                                "No saved layout matches"
-                            })
-                            .color(look::look().muted),
-                        );
-                    }
-                    if let Some(a) = self.card_grid(ui, &cards, &saved, selected) {
-                        action = Some(a);
-                    }
-                    look::heading(ui, "Built-in");
-                    if let Some(a) = self.card_grid(ui, &cards, &builtin, selected) {
-                        action = Some(a);
-                    }
+                        .partition(|(_, c)| !cards[*c].builtin);
+                    // Saved Layouts can be many: the cards scroll, the footer stays in view.
+                    egui::ScrollArea::vertical()
+                        .id_salt("layout-cards")
+                        .max_height(list_room(ui, look::CARD.y))
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            look::heading(ui, "Saved layouts");
+                            if saved.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(if needle.is_empty() {
+                                        "None yet: Save layout as… keeps the Workspace as it is now"
+                                    } else {
+                                        "No saved layout matches"
+                                    })
+                                    .color(look::look().muted),
+                                );
+                            }
+                            if let Some(a) = self.card_grid(ui, &cards, &saved, selected, scroll) {
+                                action = Some(a);
+                            }
+                            look::heading(ui, "Built-in");
+                            if let Some(a) = self.card_grid(ui, &cards, &builtin, selected, scroll)
+                            {
+                                action = Some(a);
+                            }
+                        });
                     ui.add_space(4.0);
                     ui.separator();
                     ui.horizontal(|ui| {
@@ -749,16 +797,26 @@ impl Shell {
                 });
             });
         self.st.toolbar.pane = Some(shown.response.rect);
+        if rename && let Some((name, to)) = self.st.toolbar.renaming.clone() {
+            action = Some(Action::Rename(name, to.trim().to_string()));
+        }
+        if matches!(action, Some(Action::Submit(_))) {
+            let needle = self.st.toolbar.query.trim().to_lowercase();
+            let items = layout_items(&cards_matching(&cards, &needle), &footer);
+            action = self.submit(action, &items);
+        }
         action
     }
 
-    /// One grid of Layout cards: `(position in the pane's list, card index)` each.
+    /// One grid of Layout cards: `(position in the pane's list, card index)` each. `scroll`:
+    /// the keyboard moved the pick, so scroll its card into view.
     fn card_grid(
         &mut self,
         ui: &mut Ui,
         cards: &[LayoutCard],
         shown: &[(usize, usize)],
         selected: usize,
+        scroll: bool,
     ) -> Option<Action> {
         let mut action = None;
         for chunk in shown.chunks(look::CARDS_ACROSS) {
@@ -779,6 +837,9 @@ impl Shell {
                         None => resp,
                     };
                     let is_selected = *pos == selected;
+                    if is_selected && scroll {
+                        resp.scroll_to_me(None);
+                    }
                     let slot = look::layout_card(
                         ui,
                         rect,
@@ -920,4 +981,61 @@ fn guide_with(id: &'static str, text: &str) -> (&'static str, Value) {
         "guide.factbook" => (id, json!({ "name": text })),
         _ => (id, json!({})),
     }
+}
+
+/// The item above (`down` false) or below `at` in `rows`, rows of item indices as a pane draws
+/// them: the same column, or the row's last item when that row is shorter. `at` itself at
+/// the top or bottom row.
+fn grid_step(rows: &[Vec<usize>], at: usize, down: bool) -> usize {
+    let Some((row, col)) = rows
+        .iter()
+        .enumerate()
+        .find_map(|(r, items)| items.iter().position(|i| *i == at).map(|c| (r, c)))
+    else {
+        return at;
+    };
+    let to = if down {
+        row.checked_add(1)
+    } else {
+        row.checked_sub(1)
+    };
+    to.and_then(|r| rows.get(r))
+        .and_then(|items| items.get(col.min(items.len().saturating_sub(1))))
+        .copied()
+        .unwrap_or(at)
+}
+
+/// The Layout cards whose name holds `needle` (lower-case), by index.
+fn cards_matching(cards: &[LayoutCard], needle: &str) -> Vec<usize> {
+    (0..cards.len())
+        .filter(|i| needle.is_empty() || cards[*i].name.to_lowercase().contains(needle))
+        .collect()
+}
+
+/// The Layouts pane's items in order: the `shown` cards, then the footer links.
+fn layout_items(shown: &[usize], footer: &[(&'static str, String, bool)]) -> Vec<Item> {
+    (shown.iter().map(|i| Item::Layout(*i)))
+        .chain(footer.iter().map(|(id, _, _)| Item::Command(id)))
+        .collect()
+}
+
+/// The Layouts pane's items as drawn, as rows of item indices: the saved cards, the Built-in
+/// cards, then the footer links.
+fn layout_grid(cards: &[LayoutCard], shown: &[usize], footer: usize) -> Vec<Vec<usize>> {
+    let (saved, builtin): (Vec<usize>, Vec<usize>) =
+        (0..shown.len()).partition(|p| !cards[shown[*p]].builtin);
+    let mut rows: Vec<Vec<usize>> = (saved.chunks(look::CARDS_ACROSS))
+        .chain(builtin.chunks(look::CARDS_ACROSS))
+        .map(<[usize]>::to_vec)
+        .collect();
+    if footer > 0 {
+        rows.push((shown.len()..shown.len() + footer).collect());
+    }
+    rows
+}
+
+/// The height left for a pane's scrolling list from where `ui` is now down to the window's
+/// bottom edge, keeping room for the footer links under it; never less than `least`.
+fn list_room(ui: &Ui, least: f32) -> f32 {
+    (ui.ctx().content_rect().bottom() - ui.cursor().top() - look::BELOW_LIST).max(least)
 }

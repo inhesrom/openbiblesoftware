@@ -27,6 +27,11 @@ pub(super) const ROW: f32 = 30.0;
 pub(super) const LIBRARY_WIDTH: f32 = 500.0;
 pub(super) const GUIDES_WIDTH: f32 = 420.0;
 pub(super) const TOOLS_WIDTH: f32 = 300.0;
+/// The Library pane's list of rows at most, before it scrolls.
+pub(super) const LIBRARY_LIST: f32 = 440.0;
+/// Room kept under a pane's scrolling list, to the window's bottom edge: the footer links,
+/// the frame and a gap.
+pub(super) const BELOW_LIST: f32 = 90.0;
 /// A Layout card, and how many fit across the Layouts drop-down.
 pub(super) const CARD: egui::Vec2 = vec2(150.0, 122.0);
 pub(super) const CARDS_ACROSS: usize = 4;

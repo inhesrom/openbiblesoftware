@@ -42,6 +42,22 @@ fn type_text(h: &mut Harness, text: &str) {
     h.frames(2);
 }
 
+/// `text`, then Enter, in one frame: as a fast typist, or a paste then Enter, delivers them.
+fn type_and_enter(h: &mut Harness, text: &str) {
+    h.events.push(Event::Text(text.into()));
+    let enter = |pressed| Event::Key {
+        key: Key::Enter,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    h.events.push(enter(true));
+    h.frame();
+    h.events.push(enter(false));
+    h.frames(2);
+}
+
 fn open(h: &Harness) -> Option<Launcher> {
     h.shell.st.toolbar.open
 }
@@ -380,8 +396,8 @@ fn layout_cards_load_rename_and_delete_from_the_keyboard() {
     for _ in 0.."Two Bibles".len() {
         key(&mut h, Key::Backspace, Modifiers::NONE);
     }
-    type_text(&mut h, "Desk");
-    key(&mut h, Key::Enter, Modifiers::NONE);
+    // The new name and Enter in one frame: the name as typed.
+    type_and_enter(&mut h, "Desk");
     let user = h.shell.st.session.user.as_ref().unwrap();
     assert_eq!(user.layouts().unwrap(), ["Desk"]);
     assert!(pane_texts(&h).contains(&"Desk"));
@@ -392,6 +408,108 @@ fn layout_cards_load_rename_and_delete_from_the_keyboard() {
     assert!(!pane_texts(&h).contains(&"Desk"));
     key(&mut h, Key::Escape, Modifiers::NONE);
     assert_eq!(open(&h), None);
+}
+
+#[test]
+fn typing_and_enter_in_one_frame_run_the_row_for_what_was_typed() {
+    let mut h = layouts_harness("toolbar-one-frame");
+    // Library: the first match for "hnum", not the first row before it was typed.
+    key(&mut h, Key::L, Modifiers::ALT);
+    type_and_enter(&mut h, "hnum");
+    assert_eq!(focused_kind(&h), Some(TabKind::Resource("heb-num".into())));
+    assert_eq!(open(&h), None);
+    // Tools: the only tool matching "no".
+    key(&mut h, Key::T, Modifiers::ALT);
+    type_and_enter(&mut h, "no");
+    assert_eq!(focused_kind(&h), Some(TabKind::Tool(Tool::Notes)));
+    // Guides: the Passage Guide at the passage typed.
+    key(&mut h, Key::G, Modifiers::ALT);
+    type_and_enter(&mut h, "Gen 31:3");
+    let ws = &h.shell.st.session.workspace;
+    let guide = ws
+        .tabs()
+        .find(|t| t.kind == TabKind::Guide(Guide::PassageGuide))
+        .expect("a Passage Guide");
+    assert_eq!(guide.history.current(), Some(ge(31, 3)));
+    // Layouts: the only Layout matching "reading".
+    key(&mut h, Key::Y, Modifiers::ALT);
+    type_and_enter(&mut h, "reading");
+    settle_all(&mut h);
+    let titles: Vec<Vec<String>> = h.panels().into_iter().map(|(_, t)| t).collect();
+    assert_eq!(titles, [vec!["TB".to_string()]], "Reading only");
+}
+
+#[test]
+fn arrows_reach_every_layout_card_and_footer_link_filtered_or_not() {
+    let mut h = layouts_harness("toolbar-layout-arrows");
+    let selected = |h: &Harness| h.shell.st.toolbar.selected;
+    // Filtered: Two Bibles, Parallel Bibles, Save layout as…, Reset layout; ↓/↑ one at a time.
+    key(&mut h, Key::Y, Modifiers::ALT);
+    type_text(&mut h, "bibles");
+    let mut walked = vec![selected(&h)];
+    for _ in 0..3 {
+        key(&mut h, Key::ArrowDown, Modifiers::NONE);
+        walked.push(selected(&h));
+    }
+    assert_eq!(walked, [0, 1, 2, 3]);
+    key(&mut h, Key::ArrowUp, Modifiers::NONE);
+    key(&mut h, Key::ArrowUp, Modifiers::NONE);
+    assert_eq!(selected(&h), 1);
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle_all(&mut h);
+    let titles: Vec<Vec<String>> = h.panels().into_iter().map(|(_, t)| t).collect();
+    assert_eq!(titles, [vec!["TB".to_string()], vec!["HEB".to_string()]]);
+
+    // Unfiltered, ↓/↑ keep the column across the rows as drawn: the saved card, the first
+    // Built-in under it, Save layout as… under that; → along a row.
+    key(&mut h, Key::Y, Modifiers::ALT);
+    let mut walked = vec![selected(&h)];
+    for _ in 0..2 {
+        key(&mut h, Key::ArrowDown, Modifiers::NONE);
+        walked.push(selected(&h));
+    }
+    key(&mut h, Key::ArrowRight, Modifiers::NONE);
+    walked.push(selected(&h));
+    key(&mut h, Key::ArrowUp, Modifiers::NONE);
+    walked.push(selected(&h));
+    key(&mut h, Key::ArrowUp, Modifiers::NONE);
+    walked.push(selected(&h));
+    // 0 Two Bibles; 1..=4 the Built-ins; 5 Save layout as…, 6 Reset layout.
+    assert_eq!(walked, [0, 1, 5, 6, 2, 0]);
+}
+
+#[test]
+fn many_saved_layouts_scroll_and_the_footer_stays_in_the_window() {
+    let mut h = layouts_harness("toolbar-many-layouts");
+    for n in 1..=24 {
+        h.shell
+            .run("layout.save", &json!({ "name": format!("Desk {n:02}") }));
+    }
+    h.frames(2);
+    key(&mut h, Key::Y, Modifiers::ALT);
+    let pane = h.shell.st.toolbar.pane.unwrap();
+    let window = 900.0;
+    assert!(pane.bottom() <= window, "{pane:?}");
+    let reset = in_pane(&h, "Reset layout");
+    assert!(reset.y < window);
+    // The Built-ins are below the fold, out of the pane.
+    let reading = h.find("Reading only").unwrap().center();
+    assert!(!pane.contains(reading), "{reading:?} in {pane:?}");
+    // ↓ through the seven rows of saved cards to the Built-ins, → to Reading only: scrolled
+    // into view, and Enter loads it.
+    for _ in 0..7 {
+        key(&mut h, Key::ArrowDown, Modifiers::NONE);
+    }
+    for _ in 0..3 {
+        key(&mut h, Key::ArrowRight, Modifiers::NONE);
+    }
+    let pane = h.shell.st.toolbar.pane.unwrap();
+    let reading = in_pane(&h, "Reading only");
+    assert!(reading.y < pane.bottom() && pane.bottom() <= window);
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle_all(&mut h);
+    let titles: Vec<Vec<String>> = h.panels().into_iter().map(|(_, t)| t).collect();
+    assert_eq!(titles, [vec!["TB".to_string()]]);
 }
 
 #[test]
