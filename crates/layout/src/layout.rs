@@ -123,9 +123,18 @@ pub struct LaidBlock {
     pub cells: Vec<LaidCell>,
 }
 
-/// An interlinear cell's text, its shaped pieces (shaped run, style, right to left, text
-/// length) in logical order, and its width.
-type CellPieces = (String, Vec<(Arc<ShapedRun>, RunStyle, bool, usize)>, f32);
+/// A shaped piece of an interlinear cell: one face and one bidi level.
+struct CellPiece {
+    shaped: Arc<ShapedRun>,
+    style: RunStyle,
+    /// Its resolved bidi level (odd: right to left).
+    level: u8,
+    /// Its bytes of the cell's text.
+    bytes: Range<usize>,
+}
+
+/// An interlinear cell's text, its shaped pieces in logical order, and its width.
+type CellPieces = (String, Vec<CellPiece>, f32);
 
 /// An interlinear word as laid out: its paragraph bytes and its lines, shaped.
 struct WordColumn {
@@ -163,17 +172,46 @@ fn para_range(
     (s < e).then_some(s..e)
 }
 
-/// Shape an interlinear cell's runs (one per script and face) in logical order.
+/// Shape an interlinear cell's runs (one per script and face) in logical order. A cell is a
+/// bidi paragraph of its own (its first strong letter sets its direction), split where its
+/// face or resolved level changes, so mixed Hebrew and Latin, digits and punctuation each
+/// read their own way.
 fn shape_cell(runs: &[crate::paragraph::Run], cache: &ShapeCache) -> CellPieces {
     let mut text = String::new();
-    let mut pieces = Vec::with_capacity(runs.len());
-    let mut width = 0.0;
+    let mut run_starts = Vec::with_capacity(runs.len());
     for r in runs {
+        run_starts.push(text.len());
         text.push_str(&r.text);
-        let rtl = obs_fonts::script_of(&r.text) == obs_fonts::Script::Hebrew;
-        if let Ok(shaped) = cache.shape(&r.text, r.style.shape_style(rtl)) {
+    }
+    let n = text.len();
+    let bidi = BidiInfo::new(&text, None);
+    let levels = &bidi.levels;
+    let mut bounds = run_starts.clone();
+    bounds.push(n);
+    for i in 1..n {
+        if text.is_char_boundary(i) && levels[i] != levels[i - 1] {
+            bounds.push(i);
+        }
+    }
+    bounds.sort_unstable();
+    bounds.dedup();
+    let mut pieces = Vec::with_capacity(bounds.len());
+    let mut width = 0.0;
+    for w in bounds.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        if a >= b {
+            continue;
+        }
+        let style = runs[run_starts.partition_point(|&s| s <= a).saturating_sub(1)].style;
+        let level = levels[a];
+        if let Ok(shaped) = cache.shape(&text[a..b], style.shape_style(level.is_rtl())) {
             width += shaped.width;
-            pieces.push((shaped, r.style, rtl, r.text.len()));
+            pieces.push(CellPiece {
+                shaped,
+                style,
+                level: level.number(),
+                bytes: a..b,
+            });
         }
     }
     (text, pieces, width)
@@ -338,8 +376,8 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
             let mut ext = RunStyle::body(size).line_extent(para.hebrew_line_height);
             for c in &columns {
                 if let Some((_, pieces, _)) = c.cells.get(row) {
-                    for (_, style, _, _) in pieces {
-                        let (a, d) = style.line_extent(para.hebrew_line_height);
+                    for piece in pieces {
+                        let (a, d) = piece.style.line_extent(para.hebrew_line_height);
                         ext = (ext.0.max(a), ext.1.max(d));
                     }
                 }
@@ -438,30 +476,23 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
                     }
                     let x0 = centre - cell_width / 2.0;
                     let mut px = x0;
-                    let mut offset = 0;
-                    let mut laid: Vec<LaidItem> = pieces
+                    let logical: Vec<LaidItem> = pieces
                         .iter()
-                        .map(|(shaped, style, rtl, len)| {
-                            let bytes = offset..offset + len;
-                            offset = bytes.end;
-                            LaidItem {
-                                x: 0.0,
-                                width: shaped.width,
-                                run: 0,
-                                rtl: *rtl,
-                                style: *style,
-                                shaped: Arc::clone(shaped),
-                                bytes,
-                                trailing_space: shaped.trailing_space,
-                                breakable_after: false,
-                                word: Some(w),
-                            }
+                        .map(|p| LaidItem {
+                            x: 0.0,
+                            width: p.shaped.width,
+                            run: 0,
+                            rtl: p.level % 2 == 1,
+                            style: p.style,
+                            shaped: Arc::clone(&p.shaped),
+                            bytes: p.bytes.clone(),
+                            trailing_space: p.shaped.trailing_space,
+                            breakable_after: false,
+                            word: Some(w),
                         })
                         .collect();
-                    // A cell of right-to-left text reads from the right.
-                    if laid.iter().all(|i| i.rtl) {
-                        laid.reverse();
-                    }
+                    let cell_levels: Vec<u8> = pieces.iter().map(|p| p.level).collect();
+                    let mut laid = reorder(logical, &cell_levels);
                     for item in &mut laid {
                         item.x = px;
                         px += item.width;

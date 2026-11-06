@@ -491,6 +491,98 @@ fn interlinear_lines_are_selected_and_copied_with_their_words_but_never_anchored
     drop(h);
 }
 
+/// An updated Lexicon keeps its resource id (and maybe its revision): the open Bible's lines
+/// look its words up again, on screen and in what is copied, without the lines being turned
+/// off and on.
+#[test]
+fn a_replaced_lexicon_updates_the_lines_of_open_bibles() {
+    let mut h = Harness::new();
+    let files = setup(&mut h, "replaced");
+    let kjv = open_at(&mut h, "kjv", "Jn 3:16");
+    h.shell
+        .run(
+            "tab.interlinear",
+            &json!({ "tab": kjv.0, "on": true, "line": "gloss" }),
+        )
+        .unwrap();
+    settle_all(&mut h);
+    let verse = verse_range(&h, kjv, Verse::new(Book::John, 3, 16));
+    let loved = word_range(&h, kjv, "loved", verse.start);
+    let rows = |h: &Harness| {
+        let lines = view(h, kjv).interlinear().unwrap().lines.clone();
+        let lemma = lines
+            .iter()
+            .position(|l| *l == InterlinearLine::Lemma)
+            .unwrap();
+        let gloss = lines
+            .iter()
+            .position(|l| *l == InterlinearLine::Gloss)
+            .unwrap();
+        (lemma, gloss)
+    };
+    let shown = |h: &Harness| {
+        let (lemma, gloss) = rows(h);
+        let (_, laid) = block_at(h, kjv, 0, loved.start);
+        (
+            cell(&laid, &loved, lemma).text,
+            cell(&laid, &loved, gloss).text,
+        )
+    };
+    let copied = |h: &Harness| {
+        let v = view(h, kjv);
+        let sel = crate::selection::Selection {
+            anchor: crate::selection::DocPos {
+                unit: 0,
+                byte: loved.start,
+            },
+            head: crate::selection::DocPos {
+                unit: 0,
+                byte: loved.end,
+            },
+            granularity: Default::default(),
+        };
+        v.copy_text(&sel)
+    };
+    assert_eq!(shown(&h), ("ἀγαπάω".into(), "a gloss".into()));
+
+    // The update: the same Lexicon, a new revision with a new Lemma and Gloss for G25,
+    // installed the way an Import or the Starter library replaces one.
+    let replace = |h: &mut Harness, revision: u32, lemma: &str, gloss: &str| {
+        let entries: Vec<(&str, &str, &str)> = JOHN_3_16_LEMMAS
+            .iter()
+            .map(|(_, n, l)| {
+                if *n == "G25" {
+                    (*n, lemma, gloss)
+                } else {
+                    (*n, *l, "a gloss")
+                }
+            })
+            .collect();
+        let mut r = obs_engine::testing::lexicon("greek", "GRK", &entries);
+        r.manifest.revision = revision;
+        let path = files.0.join(format!("greek-{revision}-{gloss}.obr"));
+        obs_store::write_obr(&r, &path).unwrap();
+        let session = &mut h.shell.st.session;
+        session.library.add_file(&path).unwrap();
+        session
+            .workspace
+            .push_effect(obs_engine::Effect::Replaced("greek".into()));
+        settle_all(h);
+    };
+    let before = view(&h, kjv).interlinear().unwrap().clone();
+    replace(&mut h, 2, "ἀγαπῶ", "to love");
+    assert!(view(&h, kjv).interlinear().unwrap().lines == before.lines);
+    assert_eq!(shown(&h), ("ἀγαπῶ".into(), "to love".into()));
+    assert!(copied(&h).contains("loved\tἀγαπῶ\t"), "{}", copied(&h));
+    assert!(copied(&h).contains("\tto love"), "{}", copied(&h));
+
+    // Replaced again without a new revision: still looked up afresh.
+    replace(&mut h, 2, "ἀγαπάω", "to cherish");
+    assert_eq!(shown(&h), ("ἀγαπάω".into(), "to cherish".into()));
+    assert!(copied(&h).contains("\tto cherish"), "{}", copied(&h));
+    drop(h);
+}
+
 fn press(h: &mut Harness, key: egui::Key, modifiers: Modifiers) {
     h.events.push(Event::Key {
         key,

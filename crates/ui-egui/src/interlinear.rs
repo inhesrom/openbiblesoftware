@@ -23,7 +23,9 @@ pub struct InterlinearSource {
     pub kind: InterlinearKind,
     /// The lines shown, top to bottom (never empty).
     pub lines: Vec<InterlinearLine>,
-    /// The library's Lexicons, in Preferred order.
+    /// The library's Lexicons asked for (resource id and revision), in Preferred order.
+    wanted: Vec<(String, u32)>,
+    /// Those of them that loaded, in Preferred order.
     lexicons: Vec<Arc<ReadingDoc>>,
     /// Lexicon answers by number, filled as words are laid out.
     looked_up: Mutex<HashMap<StrongsNumber, Option<LexiconWord>>>,
@@ -41,11 +43,13 @@ impl std::fmt::Debug for InterlinearSource {
 }
 
 impl InterlinearSource {
-    /// `lines` (top to bottom) of a Bible of `kind`, looked up in `lexicons` (Preferred
-    /// order). `None` without lines.
+    /// `lines` (top to bottom) of a Bible of `kind`, looked up in the Lexicons `wanted`
+    /// (resource id and revision, Preferred order), of which `lexicons` loaded. `None`
+    /// without lines.
     pub fn new(
         kind: InterlinearKind,
         lines: Vec<InterlinearLine>,
+        wanted: Vec<(String, u32)>,
         lexicons: Vec<Arc<ReadingDoc>>,
     ) -> Option<Self> {
         if lines.is_empty() {
@@ -54,12 +58,19 @@ impl InterlinearSource {
         let mut h = std::collections::hash_map::DefaultHasher::new();
         (kind as u8, &lines).hash(&mut h);
         for l in &lexicons {
-            (&l.manifest.resource_id, l.manifest.revision).hash(&mut h);
+            // The loaded text itself: a Lexicon replaced in place is a new one.
+            (
+                &l.manifest.resource_id,
+                l.manifest.revision,
+                Arc::as_ptr(l) as usize,
+            )
+                .hash(&mut h);
         }
         Some(Self {
             key: h.finish(),
             kind,
             lines,
+            wanted,
             lexicons,
             looked_up: Mutex::new(HashMap::new()),
         })
@@ -70,22 +81,20 @@ impl InterlinearSource {
         self.key
     }
 
-    /// Whether these are `lines` of a `kind` Bible looked up in the Lexicons `lexicons`
-    /// (resource ids, Preferred order).
+    /// Whether these are `lines` of a `kind` Bible looked up in the Lexicons `wanted`
+    /// (resource id and revision, Preferred order).
     pub fn is_for(
         &self,
         kind: InterlinearKind,
         lines: &[InterlinearLine],
-        lexicons: &[String],
+        wanted: &[(String, u32)],
     ) -> bool {
-        self.kind == kind
-            && self.lines == lines
-            && self.lexicons.len() == lexicons.len()
-            && self
-                .lexicons
-                .iter()
-                .zip(lexicons)
-                .all(|(d, id)| d.manifest.resource_id == *id)
+        self.kind == kind && self.lines == lines && self.wanted == wanted
+    }
+
+    /// Whether the Lexicon `resource_id` is one these lines are looked up in.
+    pub fn looks_up_in(&self, resource_id: &str) -> bool {
+        self.wanted.iter().any(|(id, _)| id == resource_id)
     }
 
     /// Whether `lines` of a `kind` Bible need the Lexicons: an English Bible's words carry

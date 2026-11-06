@@ -220,7 +220,8 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
     let panes = cfg.panes.max(1);
     let kind = obs_engine::InterlinearKind::Reverse;
     let interlinear =
-        crate::InterlinearSource::new(kind, kind.default_lines().to_vec(), vec![]).map(Arc::new);
+        crate::InterlinearSource::new(kind, kind.default_lines().to_vec(), vec![], vec![])
+            .map(Arc::new);
     let mut views: Vec<ReadingView> = (0..panes)
         .map(|k| {
             let mut v = ReadingView::new(Arc::clone(&doc), TextSettings::default());

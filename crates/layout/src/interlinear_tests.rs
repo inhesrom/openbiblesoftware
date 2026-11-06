@@ -362,3 +362,82 @@ fn without_rows_a_paragraph_lays_out_as_before() {
     assert!(a.cells.is_empty());
     assert!(a.lines.iter().all(|l| l.text_bottom == l.bottom));
 }
+
+/// A cell's pieces as `(text, right to left)`, left to right on screen (neighbours shaped in
+/// the same direction, from different faces, taken together).
+fn cell_pieces(laid: &LaidBlock, text: &str) -> Vec<(String, bool)> {
+    let cell = laid
+        .cells
+        .iter()
+        .find(|c| c.text == text)
+        .unwrap_or_else(|| panic!("no cell {text:?}"));
+    let mut x = cell.x;
+    let mut out: Vec<(String, bool)> = Vec::new();
+    for i in &cell.items {
+        assert!((i.x - x).abs() < 0.01, "pieces abut, left to right");
+        x = i.x + i.width;
+        let piece = &cell.text[i.bytes.clone()];
+        match out.last_mut() {
+            Some((t, rtl)) if *rtl == i.rtl && !i.rtl => t.push_str(piece),
+            Some((t, rtl)) if *rtl == i.rtl => t.insert_str(0, piece),
+            _ => out.push((piece.to_string(), i.rtl)),
+        }
+    }
+    out
+}
+
+/// Mixed-direction cells (#143): each cell is resolved as a bidi paragraph of its own, so
+/// Hebrew, Latin, digits and punctuation in one line each read their own way and stand in
+/// visual order.
+#[test]
+fn a_mixed_direction_cell_is_laid_out_in_bidi_order() {
+    // A Lemma with its transliteration, a Hebrew word with a number, and an English gloss
+    // with a Hebrew word and punctuation in it.
+    let table = [
+        ("G1063", "אב (ab)"),
+        ("G2316", "רֵאשִׁית 12"),
+        ("G3779", "of אב, the 3."),
+    ];
+    let unit = kjv_unit();
+    let (_, laid) = interlinear_block(&unit, Direction::Ltr, 900.0, &table, 1);
+
+    // A Hebrew-first cell reads right to left: the transliteration (with its brackets) is
+    // left of the Hebrew, and itself left to right.
+    let lemma = cell_pieces(&laid, "אב (ab)");
+    let hebrew = lemma.iter().position(|(t, _)| t.contains('א')).unwrap();
+    let latin = lemma.iter().position(|(t, _)| t.contains("ab")).unwrap();
+    assert!(latin < hebrew, "{lemma:?}");
+    assert!(lemma[hebrew].1, "the Hebrew is shaped right to left");
+    assert!(
+        !lemma[latin].1,
+        "the Latin is shaped left to right: {lemma:?}"
+    );
+    // Brackets take the direction around them: right to left (so mirrored) at the edges
+    // of a right-to-left cell, ")" drawn first at the left.
+    assert_eq!(
+        lemma,
+        [
+            (")".to_string(), true),
+            ("ab".to_string(), false),
+            ("אב (".to_string(), true)
+        ]
+    );
+
+    // Digits after Hebrew stay left to right (12, not 21), left of the Hebrew.
+    let number = cell_pieces(&laid, "רֵאשִׁית 12");
+    let digits = number.iter().position(|(t, _)| t == "12").unwrap();
+    let word = number.iter().position(|(t, _)| t.contains('ר')).unwrap();
+    assert!(!number[digits].1, "{number:?}");
+    assert!(digits < word, "{number:?}");
+
+    // A Latin-first cell reads left to right; its Hebrew word is right to left in place and
+    // the punctuation and digits after it follow the Latin around them.
+    assert_eq!(
+        cell_pieces(&laid, "of אב, the 3."),
+        [
+            ("of ".to_string(), false),
+            ("אב".to_string(), true),
+            (", the 3.".to_string(), false)
+        ]
+    );
+}

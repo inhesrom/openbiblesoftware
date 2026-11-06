@@ -32,7 +32,9 @@ Info picks it):
 
 The UI's `InterlinearSource` (`crates/ui-egui/src/interlinear.rs`) holds the Lexicons and
 memoizes each number's lookup, so the layout workers look each Strong's number up once. Lexicons
-are loaded only when a reverse interlinear shows a line that needs them.
+are loaded only when a reverse interlinear shows a line that needs them. A source is rebuilt
+when the lines, the Lexicons or their revisions change, and when a Lexicon it uses is replaced
+in place (`Effect::Replaced`, which keeps the resource id and maybe the revision).
 
 ## Layout
 
@@ -41,8 +43,10 @@ runs) to a block's `Paragraph`; `layout` then:
 
 - never breaks a Tagged word, and pads it on both sides so it is as wide as its widest line plus
   a gap, centred in that column;
-- lays each cell out on its own in its own direction, so a Hebrew Lemma under an English word and
-  an English Gloss under a Hebrew word both read correctly while the paragraph's bidi order puts
+- lays each cell out on its own as a bidi paragraph of its own (UAX #9, direction from its first
+  strong letter), split where its face or resolved level changes and reordered by level, so a
+  Hebrew Lemma under an English word, an English Gloss under a Hebrew word, and mixed cells
+  (`אב (ab)`, a Hebrew word with digits) all read correctly while the paragraph's bidi order puts
   the columns right to left in Hebrew;
 - gives every row the height of its tallest cell in the paragraph, so rows line up from line to
   line, and keeps `LaidLine::text_bottom` (the text's own band) apart from `bottom` (with rows).

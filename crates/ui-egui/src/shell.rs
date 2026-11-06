@@ -453,6 +453,7 @@ impl Shell {
                             self.st.opened(tab);
                         }
                     }
+                    self.st.lexicon_replaced(&id);
                 }
                 Effect::Switched(tab) => self.st.switched(tab),
                 Effect::NavigateStandard { tab, verse } => {
@@ -1465,7 +1466,7 @@ impl State {
             ui.ctx().request_repaint();
             return;
         }
-        self.sync_interlinear(tab);
+        self.sync_interlinear(tab, false);
         let palette = self.palette;
         let text = self.session.text;
         let Some(t) = self.tabs.get_mut(&tab) else {
@@ -1561,15 +1562,16 @@ impl State {
     }
 
     /// Give a Bible Tab's view the interlinear lines the Tab shows (#143). They are built
-    /// again only when the lines, or the Lexicons they are looked up in, change.
-    fn sync_interlinear(&mut self, tab: TabId) {
+    /// again only when the lines, or the Lexicons they are looked up in (or their
+    /// revisions), change, or when `rebuild` (a Lexicon was replaced in place).
+    fn sync_interlinear(&mut self, tab: TabId, rebuild: bool) {
         let wanted = self.interlinear_lines(tab);
-        let lexicons: Vec<String> = match &wanted {
+        let lexicons: Vec<(String, u32)> = match &wanted {
             Some((kind, lines)) if InterlinearSource::needs_lexicons(*kind, lines) => self
                 .session
                 .library
                 .of_type(ResourceType::Lexicon)
-                .map(|e| e.manifest.resource_id.clone())
+                .map(|e| (e.manifest.resource_id.clone(), e.manifest.revision))
                 .collect(),
             _ => Vec::new(),
         };
@@ -1581,16 +1583,38 @@ impl State {
             None if current.is_none() => return,
             None => None,
             Some((kind, lines)) => {
-                if current.is_some_and(|s| s.is_for(kind, &lines, &lexicons)) {
+                if !rebuild && current.is_some_and(|s| s.is_for(kind, &lines, &lexicons)) {
                     return;
                 }
                 // A Lexicon that cannot be loaded is left out (its Tab would say why).
-                let docs = lexicons.iter().filter_map(|id| self.doc(id).ok()).collect();
-                InterlinearSource::new(kind, lines, docs).map(Arc::new)
+                let docs = lexicons
+                    .iter()
+                    .filter_map(|(id, _)| self.doc(id).ok())
+                    .collect();
+                InterlinearSource::new(kind, lines, lexicons, docs).map(Arc::new)
             }
         };
         if let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) {
             view.set_interlinear(source);
+        }
+    }
+
+    /// Look a replaced Lexicon's words up again in every Tab whose interlinear lines use it
+    /// (#143): the update keeps its resource id, and maybe its revision.
+    fn lexicon_replaced(&mut self, resource_id: &str) {
+        let using: Vec<TabId> = self
+            .tabs
+            .iter()
+            .filter(|(_, t)| {
+                t.view
+                    .as_ref()
+                    .and_then(|v| v.interlinear())
+                    .is_some_and(|s| s.looks_up_in(resource_id))
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for tab in using {
+            self.sync_interlinear(tab, true);
         }
     }
 
