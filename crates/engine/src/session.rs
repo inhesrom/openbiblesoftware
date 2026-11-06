@@ -69,6 +69,8 @@ pub struct Session {
     pub(crate) places: crate::favorites::FavoritesAndHistory,
     /// The Command box's recent entries (#139).
     pub(crate) command_box: crate::command_box::CommandBox,
+    /// Reading plans as the User database has them, and today's date (#147).
+    pub(crate) plans: crate::reading_plans::ReadingPlans,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
     log: Vec<&'static str>,
     /// The User database, when there is one.
@@ -116,6 +118,7 @@ impl Session {
             notes: crate::notes::NotesTool::default(),
             places: crate::favorites::FavoritesAndHistory::default(),
             command_box: crate::command_box::CommandBox::default(),
+            plans: crate::reading_plans::ReadingPlans::default(),
             log: Vec::new(),
             user: None,
             history: crate::annotations::UndoHistory::default(),
@@ -185,6 +188,7 @@ impl Session {
         self.restore_import_reports();
         self.load_guide_arrangements();
         self.load_favorites_and_history();
+        self.load_reading_plans();
         // Library load: Annotations made against another revision of a Resource move with
         // their text (or are orphaned) before it shows them (#65).
         self.remember_resource_names();
@@ -243,10 +247,11 @@ impl Session {
     }
 
     /// Write the Last session if it changed since the last write (and History's new Visits,
-    /// refreshing its day headings after midnight).
+    /// refreshing its day headings and Reading plans' today after midnight).
     pub fn save_last_session(&mut self) -> Result<(), String> {
         self.record_history();
         self.refresh_history_day();
+        self.refresh_plan_day();
         let Some(user) = &self.user else {
             return Ok(());
         };

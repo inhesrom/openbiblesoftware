@@ -37,6 +37,7 @@ mod guide_words;
 mod import_tab;
 mod library_tab;
 mod notes_tab;
+mod reading_plans_tab;
 #[path = "references.rs"]
 pub(crate) mod references;
 mod search_tab;
@@ -172,6 +173,8 @@ pub(crate) struct State {
     notes_ui: notes_tab::NotesUi,
     /// The Fonts window and the fonts loaded for View → Fonts (#138).
     fonts_ui: fonts_window::FontsUi,
+    /// The Reading plans Tool's New plan form (#147).
+    plans_ui: reading_plans_tab::PlansUi,
 }
 
 /// The app window's content: menus, Command box and the docked Workspace.
@@ -215,6 +218,7 @@ impl Shell {
                 note_editor: None,
                 notes_ui: notes_tab::NotesUi::default(),
                 fonts_ui: fonts_window::FontsUi::default(),
+                plans_ui: reading_plans_tab::PlansUi::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -913,6 +917,11 @@ impl Shell {
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 self.command_box(ui);
+                // Today's reading (#147), left of the Command box.
+                ui.add_space(8.0);
+                if self.st.todays_reading_button(ui) {
+                    self.apply_effects();
+                }
             });
         });
     }
@@ -1488,6 +1497,7 @@ impl State {
             TabKind::Tool(Tool::Notes) => self.notes_body(&mut body, tab),
             TabKind::Tool(Tool::Favorites) => self.favorites_body(&mut body, tab),
             TabKind::Tool(Tool::History) => self.history_body(&mut body, tab),
+            TabKind::Tool(Tool::ReadingPlans) => self.reading_plans_body(&mut body, tab),
         }
     }
 

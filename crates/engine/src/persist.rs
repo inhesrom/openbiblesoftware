@@ -6,7 +6,9 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use obs_scripture::Verse;
-use obs_store::{Annotation, Change, FavoriteRow, Notebook, VisitRow};
+use obs_store::{
+    Annotation, Change, FavoriteRow, Notebook, PlanReadingRow, ReadingPlanRow, VisitRow,
+};
 
 use crate::workspace::{TabKind, Workspace};
 
@@ -187,6 +189,24 @@ pub trait UserData: std::fmt::Debug {
     fn local_day(&self, at: i64) -> Result<String, String>;
     fn clear_history(&self) -> Result<(), String>;
 
+    // Reading plans (#147); see `reading_plans.rs`.
+
+    /// Every Reading plan, oldest first.
+    fn reading_plans(&self) -> Result<Vec<ReadingPlanRow>, String>;
+    /// A Reading plan's Readings, in order.
+    fn plan_readings(&self, plan_id: i64) -> Result<Vec<PlanReadingRow>, String>;
+    /// Add a Reading plan with its Readings, in order; returns its id.
+    fn add_reading_plan(
+        &self,
+        plan: &ReadingPlanRow,
+        readings: &[PlanReadingRow],
+    ) -> Result<i64, String>;
+    /// Mark a Reading read or unread; false if the plan has no such Reading.
+    fn set_reading_read(&self, plan_id: i64, position: u32, read: bool) -> Result<bool, String>;
+    /// Move Readings to other days: `(position, day)` pairs.
+    fn move_readings(&self, plan_id: i64, days: &[(u32, String)]) -> Result<(), String>;
+    fn remove_reading_plan(&self, id: i64) -> Result<bool, String>;
+
     // Annotations (#61). Every edit is [`UserData::apply_changes`]; see `annotations.rs`.
 
     /// Every Notebook, the default first.
@@ -271,6 +291,29 @@ impl UserData for obs_store::UserStore {
     }
     fn clear_history(&self) -> Result<(), String> {
         obs_store::UserStore::clear_history(self).map_err(|e| e.to_string())
+    }
+    fn reading_plans(&self) -> Result<Vec<ReadingPlanRow>, String> {
+        obs_store::UserStore::reading_plans(self).map_err(|e| e.to_string())
+    }
+    fn plan_readings(&self, plan_id: i64) -> Result<Vec<PlanReadingRow>, String> {
+        obs_store::UserStore::plan_readings(self, plan_id).map_err(|e| e.to_string())
+    }
+    fn add_reading_plan(
+        &self,
+        plan: &ReadingPlanRow,
+        readings: &[PlanReadingRow],
+    ) -> Result<i64, String> {
+        obs_store::UserStore::add_reading_plan(self, plan, readings).map_err(|e| e.to_string())
+    }
+    fn set_reading_read(&self, plan_id: i64, position: u32, read: bool) -> Result<bool, String> {
+        obs_store::UserStore::set_reading_read(self, plan_id, position, read)
+            .map_err(|e| e.to_string())
+    }
+    fn move_readings(&self, plan_id: i64, days: &[(u32, String)]) -> Result<(), String> {
+        obs_store::UserStore::move_readings(self, plan_id, days).map_err(|e| e.to_string())
+    }
+    fn remove_reading_plan(&self, id: i64) -> Result<bool, String> {
+        obs_store::UserStore::remove_reading_plan(self, id).map_err(|e| e.to_string())
     }
     fn notebooks(&self) -> Result<Vec<Notebook>, String> {
         obs_store::UserStore::notebooks(self).map_err(|e| e.to_string())

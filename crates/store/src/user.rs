@@ -1,7 +1,7 @@
 //! The User database (#17): one SQLite file in the platform data folder holding everything the
 //! user makes: preferences, the Last session, named Layouts, the Preferred order, the
-//! Notebooks, Annotations and Anchors with the `notes_fts` index of Note bodies (#61), and
-//! Favorites and History (#155).
+//! Notebooks, Annotations and Anchors with the `notes_fts` index of Note bodies (#61),
+//! Favorites and History (#155), and Reading plans (#147).
 //!
 //! Safety rules: WAL journaling; `PRAGMA user_version` with forward-only migrations; a copy of
 //! the file is taken before any migration runs; and at every launch a rolling backup (the
@@ -18,7 +18,7 @@ use crate::error::StoreError;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 7;
+pub const USER_SCHEMA_VERSION: u32 = 8;
 
 /// How many launch backups are kept.
 pub const ROLLING_BACKUPS: usize = 5;
@@ -42,6 +42,8 @@ const MIGRATIONS: &[&str] = &[
     crate::annotation_store::SCHEMA_6,
     // 6 → 7: Favorites and History (#155).
     crate::favorites_store::SCHEMA_7,
+    // 7 → 8: Reading plans (#147).
+    crate::reading_plans_store::SCHEMA_8,
 ];
 
 pub(crate) fn sql(e: rusqlite::Error) -> StoreError {

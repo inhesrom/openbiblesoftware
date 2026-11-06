@@ -1809,6 +1809,28 @@ impl crate::UserData for WritesFail {
     fn clear_history(&self) -> Result<(), String> {
         crate::UserData::clear_history(&self.store)
     }
+    fn reading_plans(&self) -> Result<Vec<obs_store::ReadingPlanRow>, String> {
+        crate::UserData::reading_plans(&self.store)
+    }
+    fn plan_readings(&self, plan_id: i64) -> Result<Vec<obs_store::PlanReadingRow>, String> {
+        crate::UserData::plan_readings(&self.store, plan_id)
+    }
+    fn add_reading_plan(
+        &self,
+        plan: &obs_store::ReadingPlanRow,
+        readings: &[obs_store::PlanReadingRow],
+    ) -> Result<i64, String> {
+        crate::UserData::add_reading_plan(&self.store, plan, readings)
+    }
+    fn set_reading_read(&self, plan_id: i64, position: u32, read: bool) -> Result<bool, String> {
+        crate::UserData::set_reading_read(&self.store, plan_id, position, read)
+    }
+    fn move_readings(&self, plan_id: i64, days: &[(u32, String)]) -> Result<(), String> {
+        crate::UserData::move_readings(&self.store, plan_id, days)
+    }
+    fn remove_reading_plan(&self, id: i64) -> Result<bool, String> {
+        crate::UserData::remove_reading_plan(&self.store, id)
+    }
     fn notebooks(&self) -> Result<Vec<obs_store::Notebook>, String> {
         crate::UserData::notebooks(&self.store)
     }

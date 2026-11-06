@@ -1,0 +1,8 @@
+# Psalms and Proverbs in a month: the Psalms divided into 31 Readings of about equal length,
+# and one chapter of Proverbs, each day. Written for this project.
+
+id = "psalms-proverbs"
+name = "Psalms and Proverbs monthly"
+about = "The Psalms and Proverbs in 31 days: some Psalms and a chapter of Proverbs each day."
+days = 31
+tracks = [["Ps"], ["Prov"]]
