@@ -531,3 +531,192 @@ fn a_quote_whose_resource_went_missing_is_left_out_of_exports() {
         assert!(page.contains(left_out), "{page}");
     }
 }
+
+/// Credits are confirmed to the millisecond: make sure what follows is later than what came
+/// before.
+fn next_millisecond() {
+    std::thread::sleep(std::time::Duration::from_millis(2));
+}
+
+/// Run queued jobs (re-anchoring) and apply their results.
+fn settle(s: &mut Session) {
+    for _ in 0..20 {
+        s.jobs().pump(64);
+        let _ = s.poll_imports();
+        if !s.reanchoring.is_busy() {
+            return;
+        }
+    }
+    panic!("re-anchoring did not finish");
+}
+
+/// The KJV fixture with `from` changed to `to`: a revision with other content.
+fn kjv_changed(from: &str, to: &str) -> obs_model::Resource {
+    use crate::testing::bibles::{LOVE_KJV, bible, verses};
+    let list: Vec<_> = LOVE_KJV
+        .iter()
+        .map(|&(book, chapter, verse, text)| {
+            let text: &'static str = Box::leak(text.replace(from, to).into_boxed_str());
+            (book, chapter, verse, text)
+        })
+        .collect();
+    bible(
+        "kjv",
+        "KJV",
+        &verses(&list),
+        None,
+        &[("love", "H157"), ("neighbour", "H7453")],
+    )
+}
+
+fn cc_by(mut resource: obs_model::Resource) -> obs_model::Resource {
+    resource.manifest.license = "CC-BY-4.0".into();
+    resource.manifest.attribution = "KJV test revision, licensed CC BY 4.0.".into();
+    resource
+}
+
+/// Review of #154: the public-domain KJV's empty credit is saved and quoted; a revision
+/// licensed CC BY is then imported while the User database cannot save preferences, and
+/// quoted; its file goes away outside the app. After a restart the new quote is left out
+/// (its credit was never saved), the public-domain quote still exports, and no export goes
+/// out with the CC BY text uncredited. `changed` picks a revision with other text (another
+/// content hash) or the same text under the new licence.
+fn a_licence_change_that_was_not_saved(name: &str, changed: bool) {
+    let f = Fixture::new(name);
+    let kjv_path = f.root.join("library").join("kjv.obr");
+    {
+        let mut s = f.session();
+        s.run(
+            "annotation.note",
+            &selection("kjv", "ROM", "Love worketh", json!({ "body": "Old." })),
+        )
+        .unwrap();
+    }
+    let revision = if changed {
+        cc_by(kjv_changed("therefore love", "THEREFORE LOVE"))
+    } else {
+        cc_by(kjv())
+    };
+    {
+        let (store, _) = obs_store::UserStore::open(&f.root.join("user.db")).unwrap();
+        let mut s = f.session_with(Box::new(crate::testing::WritesFail::preferences(store)));
+        crate::testing::bibles::write_library(
+            &f.root.join("library"),
+            std::slice::from_ref(&revision),
+        );
+        s.added_to_library(vec![crate::library::LibraryEntry {
+            manifest: revision.manifest.clone(),
+            path: kjv_path.clone(),
+        }]);
+        assert_eq!(s.library.get("kjv").unwrap().manifest.license, "CC-BY-4.0");
+        settle(&mut s);
+        next_millisecond();
+        s.run(
+            "annotation.note",
+            &selection("kjv", "ROM", "Love worketh", json!({ "body": "New." })),
+        )
+        .unwrap();
+    }
+    std::fs::remove_file(&kjv_path).unwrap();
+    let mut s = f.session();
+    assert!(s.library.get("kjv").is_none());
+    let left_out = "Quoted text left out: kjv is not in the library, so the Attribution its \
+                    licence may require is unknown. Import it again to export the quote.";
+    for page in every_export(&mut s) {
+        assert!(page.contains("Old."), "{page}");
+        assert!(page.contains("New."), "{page}");
+        assert!(page.contains(left_out), "{page}");
+        assert!(!page.contains("CC BY"), "{page}");
+        if changed {
+            // Re-anchoring moved the old Note onto the new revision's text: out as well.
+            assert_eq!(page.matches(left_out).count(), 2, "{page}");
+            assert!(!page.contains("Love worketh"), "{page}");
+        } else {
+            // The old Note was quoted while the KJV was public domain, and is kept.
+            assert_eq!(page.matches(left_out).count(), 1, "{page}");
+            assert_eq!(page.matches("Love worketh").count(), 1, "{page}");
+        }
+    }
+}
+
+#[test]
+fn a_licence_change_that_was_not_saved_leaves_later_quotes_out_after_a_restart() {
+    a_licence_change_that_was_not_saved("unsaved-licence", false);
+}
+
+#[test]
+fn a_changed_revision_whose_credit_was_not_saved_leaves_its_quotes_out_after_a_restart() {
+    a_licence_change_that_was_not_saved("unsaved-revision", true);
+}
+
+#[test]
+fn an_orphaned_quote_keeps_the_credit_of_the_revision_it_was_taken_from() {
+    let f = Fixture::new("orphan-credit");
+    let kjv_path = f.root.join("library").join("kjv.obr");
+    let mut s = f.session();
+    // Quoted from a CC BY revision...
+    let quoted = cc_by(kjv());
+    crate::testing::bibles::write_library(&f.root.join("library"), std::slice::from_ref(&quoted));
+    s.added_to_library(vec![crate::library::LibraryEntry {
+        manifest: quoted.manifest.clone(),
+        path: kjv_path.clone(),
+    }]);
+    settle(&mut s);
+    let id = created(
+        s.run(
+            "annotation.note",
+            &selection("kjv", "ROM", "Love worketh", json!({ "body": "Quoted." })),
+        )
+        .unwrap(),
+    );
+    // ...replaced by a public-domain revision without that text: the Note's Text range is
+    // orphaned and keeps its quote, which still needs the CC BY revision's credit.
+    let public = kjv_changed("Love worketh no ill", "Charity hurts none");
+    crate::testing::bibles::write_library(&f.root.join("library"), std::slice::from_ref(&public));
+    s.added_to_library(vec![crate::library::LibraryEntry {
+        manifest: public.manifest.clone(),
+        path: kjv_path,
+    }]);
+    settle(&mut s);
+    let note = s.annotation(&id).unwrap();
+    let range = note.anchor.as_ref().and_then(Anchor::text_range).unwrap();
+    assert!(range.orphaned);
+    assert_eq!(range.content_hash, quoted.manifest.content_hash);
+    let credit = "KJV test revision, licensed CC BY 4.0.";
+    for page in every_export(&mut s) {
+        assert!(page.contains("Love worketh"), "{page}");
+        assert!(page.contains(credit), "{page}");
+    }
+}
+
+#[test]
+fn a_credit_not_confirmed_when_quoted_is_confirmed_at_the_next_library_load() {
+    let f = Fixture::new("late-confirmation");
+    // The library load saves the WEB's credit; then a quote is taken while preferences
+    // cannot be saved, so its credit is not confirmed as of the quote.
+    drop(f.session());
+    {
+        let (store, _) = obs_store::UserStore::open(&f.root.join("user.db")).unwrap();
+        let mut s = f.session_with(Box::new(crate::testing::WritesFail::preferences(store)));
+        next_millisecond();
+        s.run(
+            "annotation.note",
+            &selection("web", "ROM", "Love doesn", json!({ "body": "Later." })),
+        )
+        .unwrap();
+    }
+    // The next library load, with the WEB still there, confirms it; then its file goes.
+    {
+        let s = f.session();
+        std::fs::remove_file(&s.library.get("web").unwrap().path).unwrap();
+    }
+    let mut s = f.session();
+    assert!(s.library.get("web").is_none());
+    for page in every_export(&mut s) {
+        assert!(page.contains("Love doesn"), "{page}");
+        assert!(
+            page.contains("WEB test text, licensed CC BY 4.0."),
+            "{page}"
+        );
+    }
+}

@@ -5,11 +5,13 @@
 //! reads back as a Bible reference in the Standard versification), then its quoted text as a
 //! block quote, then the Note's text (or which Highlight style it is). Notebook exports
 //! list in Bible order; a search result keeps its order (newest change first). After them
-//! comes the Attribution of each quoted Resource whose licence asks for credit. The User
-//! database remembers the credit of the latest revision of every Resource seen in the
-//! library, so a quote from one since removed (or whose file went missing) keeps it; a quote
-//! whose Resource's licence was never seen is left out with a note saying to import it
-//! again, so no quote goes out without its credit.
+//! comes the Attribution of each quoted Resource whose licence asks for credit. A quote's
+//! credit is that of the revision it was quoted from (its content hash). The User database
+//! keeps the credit of every revision seen in the library, confirmed each time it is quoted,
+//! so a quote from one since removed (or whose file went missing) keeps it. A quote whose
+//! revision's credit was never saved, or was not confirmed when the quote was taken (the
+//! write failed), is left out with a note saying why, so no quote goes out without the
+//! credit it may need.
 //!
 //! The Markdown keeps a Note's text as typed: CommonMark's special characters are
 //! backslash-escaped, lines end in a hard line break and leading spaces are written as
@@ -17,9 +19,11 @@
 
 use std::collections::BTreeMap;
 
+use obs_store::annotation::now_ms;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::annotations::{Anchor, Content};
+use crate::annotations::{Anchor, Content, TextRange};
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params};
 use crate::copy_verses::{html_document, html_escape, markdown_escape, markdown_escape_line_start};
 use crate::notes::{Card, NotesFilter};
@@ -273,7 +277,7 @@ impl Session {
             else {
                 continue;
             };
-            match self.quoted_resource_credit(&range.resource_id) {
+            match self.quote_credit(range, card.annotation.created_at) {
                 Some(Some(text)) => {
                     if !attributions.contains(&text) {
                         attributions.push(text);
@@ -283,12 +287,21 @@ impl Session {
                 // Without its licence the quote could go out without the credit it asks for.
                 None => {
                     let name = range.resource_id.clone();
+                    let why = if self.library.get(&name).is_some() {
+                        format!(
+                            "Quoted text left out: it comes from a revision of {name} no longer \
+                             in the library, so the Attribution its licence may require is \
+                             unknown. Re-attach the quote to export it."
+                        )
+                    } else {
+                        format!(
+                            "Quoted text left out: {name} is not in the library, so the \
+                             Attribution its licence may require is unknown. Import it again \
+                             to export the quote."
+                        )
+                    };
                     card.quote = None;
-                    card.missing = Some(format!(
-                        "Quoted text left out: {name} is not in the library, so the \
-                         Attribution its licence may require is unknown. Import it again to \
-                         export the quote."
-                    ));
+                    card.missing = Some(why);
                 }
             }
         }
@@ -299,56 +312,78 @@ impl Session {
         })
     }
 
-    /// The credit a quote from Resource `resource_id` must carry: `Some(Some(text))` its
-    /// Attribution, `Some(None)` none needed, `None` unknown (it left the library without its
-    /// licence being kept).
-    fn quoted_resource_credit(&self, resource_id: &str) -> Option<Option<String>> {
-        if let Some(entry) = self.library.get(resource_id) {
-            return Some(
-                entry
-                    .manifest
-                    .requires_attribution()
-                    .then(|| entry.manifest.attribution.trim().to_string()),
-            );
+    /// The credit a quote taken at `quoted_at` (the Annotation's creation) from `range` must
+    /// carry: `Some(Some(text))` an Attribution, `Some(None)` none needed, `None` unknown.
+    /// The credit is that of the revision quoted (its content hash): the library's while it
+    /// holds that revision, else the one the User database kept for it, trusted only if it
+    /// was confirmed no earlier than the quote was taken (a later licence change that could
+    /// not be saved leaves it unconfirmed).
+    fn quote_credit(&self, range: &TextRange, quoted_at: i64) -> Option<Option<String>> {
+        if let Some(entry) = self
+            .library
+            .get(&range.resource_id)
+            .filter(|e| e.manifest.content_hash == range.content_hash)
+        {
+            return Some(manifest_credit(&entry.manifest));
         }
-        let kept = self
-            .user
-            .as_ref()?
-            .preference(&resource_attribution_key(resource_id))
-            .ok()??;
-        Some(Some(kept.trim().to_string()).filter(|t| !t.is_empty()))
+        let kept = self.kept_attribution(&range.resource_id, &range.content_hash)?;
+        (kept.confirmed_at >= quoted_at).then(|| Some(kept.credit).filter(|t| !t.is_empty()))
     }
 
-    /// Remember in the User database the credit Resource `entry` asks for, so the quotes its
-    /// Annotations hold still export with it once it leaves the library (#154). The latest
-    /// revision seen wins: a re-import under another licence replaces the old credit.
+    fn kept_attribution(&self, resource_id: &str, content_hash: &str) -> Option<KeptAttribution> {
+        let value = self
+            .user
+            .as_ref()?
+            .preference(&resource_attribution_key(resource_id, content_hash))
+            .ok()??;
+        serde_json::from_str(&value).ok()
+    }
+
+    /// Remember in the User database the credit revision `entry` asks for, so the quotes its
+    /// Annotations hold still export with it once it leaves the library (#154). With
+    /// `quoted_at` (a quote of it was just taken) the credit is confirmed as of then even if
+    /// unchanged; otherwise it is written only when new or changed (a re-import under
+    /// another licence).
     pub(crate) fn remember_attribution(
         &self,
         entry: &crate::library::LibraryEntry,
+        quoted_at: Option<i64>,
     ) -> Result<(), String> {
         let Some(user) = &self.user else {
             return Ok(());
         };
-        let credit = if entry.manifest.requires_attribution() {
-            entry.manifest.attribution.trim()
-        } else {
-            ""
-        };
-        let key = resource_attribution_key(&entry.manifest.resource_id);
-        if user.preference(&key)?.as_deref() == Some(credit) {
+        let m = &entry.manifest;
+        let credit = manifest_credit(m).unwrap_or_default();
+        if let Some(kept) = self.kept_attribution(&m.resource_id, &m.content_hash)
+            && kept.credit == credit
+            && quoted_at.is_none_or(|at| kept.confirmed_at >= at)
+        {
             return Ok(());
         }
-        user.set_preference(&key, credit)
+        let kept = KeptAttribution {
+            credit,
+            confirmed_at: now_ms().max(quoted_at.unwrap_or(i64::MIN)),
+        };
+        let value = serde_json::to_string(&kept).map_err(|e| e.to_string())?;
+        user.set_preference(
+            &resource_attribution_key(&m.resource_id, &m.content_hash),
+            &value,
+        )
     }
 
-    /// [`Self::remember_attribution`] for every Resource in the library. Run at library load
-    /// and after Resources are added, with the Resource names.
+    /// [`Self::remember_attribution`] for every Resource in the library, confirmed as of
+    /// the latest quote of each (a confirmation that failed when the quote was taken is
+    /// made now). Run at library load and after Resources are added, with the Resource
+    /// names.
     pub(crate) fn remember_attributions(&mut self) {
-        let failed = self
-            .library
-            .entries()
-            .iter()
-            .find_map(|entry| self.remember_attribution(entry).err());
+        let latest = self.latest_quotes();
+        let failed = self.library.entries().iter().find_map(|entry| {
+            let m = &entry.manifest;
+            let quoted_at = latest
+                .get(&(m.resource_id.clone(), m.content_hash.clone()))
+                .copied();
+            self.remember_attribution(entry, quoted_at).err()
+        });
         if let Some(e) = failed {
             self.workspace
                 .push_effect(crate::workspace::Effect::Message(format!(
@@ -357,12 +392,63 @@ impl Session {
                 )));
         }
     }
+
+    /// When each revision (Resource id, content hash) was last quoted: the newest creation
+    /// time of the Annotations whose Text range is in it.
+    pub(crate) fn latest_quotes(&self) -> BTreeMap<(String, String), i64> {
+        let mut latest = BTreeMap::new();
+        let all = self
+            .user
+            .as_ref()
+            .and_then(|u| u.annotations(None).ok())
+            .unwrap_or_default();
+        for a in all {
+            if let Some(r) = a.anchor.as_ref().and_then(Anchor::text_range) {
+                let at = latest
+                    .entry((r.resource_id.clone(), r.content_hash.clone()))
+                    .or_insert(a.created_at);
+                *at = (*at).max(a.created_at);
+            }
+        }
+        latest
+    }
+
+    /// A quote of Resource `resource_id` was taken at `quoted_at`: confirm its credit in the
+    /// User database, so the quote exports with it once the Resource is gone.
+    pub(crate) fn confirm_quoted_attribution(&mut self, resource_id: &str, quoted_at: i64) {
+        let Some(entry) = self.library.get(resource_id) else {
+            return;
+        };
+        if let Err(e) = self.remember_attribution(entry, Some(quoted_at)) {
+            let name = entry.manifest.abbreviation.clone();
+            self.workspace
+                .push_effect(crate::workspace::Effect::Message(format!(
+                    "Could not save the Attribution of {name}; Notes exports will leave out \
+                     this quote once {name} leaves the library: {e}"
+                )));
+        }
+    }
 }
 
-/// The preference holding the Attribution of the latest revision of a Resource seen in the
-/// library (empty: its licence needs none).
-fn resource_attribution_key(resource_id: &str) -> String {
-    format!("resource-attribution/{resource_id}")
+/// The Attribution text copied from Resource `m` must carry, if its licence asks for one.
+fn manifest_credit(m: &obs_model::Manifest) -> Option<String> {
+    m.requires_attribution()
+        .then(|| m.attribution.trim().to_string())
+}
+
+/// What the User database keeps of the credit of one revision of a Resource.
+#[derive(Debug, Serialize, Deserialize)]
+struct KeptAttribution {
+    /// Its Attribution; empty when its licence asks for none.
+    credit: String,
+    /// When (milliseconds since the Unix epoch) the library last showed this revision with
+    /// this credit. Quotes taken after it were taken under a licence never saved.
+    confirmed_at: i64,
+}
+
+/// The preference holding a [`KeptAttribution`] of revision `content_hash` of a Resource.
+fn resource_attribution_key(resource_id: &str, content_hash: &str) -> String {
+    format!("resource-attribution/{resource_id}/{content_hash}")
 }
 
 // ------------------------------------------------------------------------------ commands

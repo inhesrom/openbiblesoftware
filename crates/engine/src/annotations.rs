@@ -608,6 +608,7 @@ impl Session {
                 .map(|a| Change::insert(Row::Annotation(a.clone())))
                 .collect(),
         )?;
+        self.confirm_quoted_attribution(&sel.resource_id, now);
         self.remember_notebook(notebook_id, &notebook);
         Ok(made)
     }
@@ -641,6 +642,9 @@ impl Session {
             modified_at: now,
         };
         self.commit("Note", vec![Change::insert(Row::Annotation(note.clone()))])?;
+        if let NoteTarget::Selection(sel) = target {
+            self.confirm_quoted_attribution(&sel.resource_id, now);
+        }
         self.remember_notebook(notebook_id, &notebook);
         Ok(note)
     }
@@ -768,10 +772,12 @@ impl Session {
             }
         };
         let anchor = anchor.ok_or("Select some text first")?;
-        self.edit_annotation(id, "Re-attach", true, |a| {
+        let reattached = self.edit_annotation(id, "Re-attach", true, |a| {
             a.anchor = Some(anchor);
             Ok(())
-        })
+        })?;
+        self.confirm_quoted_attribution(&sel.resource_id, reattached.created_at);
+        Ok(reattached)
     }
 
     /// **Keep without anchor** (#17 rule 12): a Note (an Orphaned one, typically) stops

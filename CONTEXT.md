@@ -162,7 +162,7 @@ A corrected release of the same Resource, such as a typo fix in a Bible. It repl
 _Avoid_: Update, Version (for a correction)
 
 **Attribution**:
-The license and credit text that a Resource requires to be shown, displayed in that Resource's About view. Text copied with Copy verses, a Notes export or a print page carries the Attribution of each Resource it quotes whose licence asks for credit (anything but public domain or CC0). The User database remembers the Attribution of the latest revision of each Resource seen in the library, so the quotes its kept Annotations hold still carry it after it is removed (or its file goes missing); a Notes export leaves out a quote whose Resource's licence was never seen and says to import it again.
+The license and credit text that a Resource requires to be shown, displayed in that Resource's About view. Text copied with Copy verses, a Notes export or a print page carries the Attribution of each Resource it quotes whose licence asks for credit (anything but public domain or CC0). A quote carries the Attribution of the revision it was taken from. The User database remembers the Attribution of each revision of a Resource seen in the library, so the quotes its kept Annotations hold still carry it after it is removed (or its file goes missing); a Notes export leaves out a quote whose revision's Attribution was never saved, or not saved as of when the quote was taken, and says why.
 _Avoid_: Credits, Copyright notice
 
 **Credits**:

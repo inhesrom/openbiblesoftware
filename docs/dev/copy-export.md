@@ -90,6 +90,16 @@ Attribution of each quoted Resource that requires one.
 - A Notebook lists in Bible order; a Notes search result keeps its order (newest change
   first) and is titled `Notes matching “…”`.
 
+A quote's Attribution is that of the revision it was quoted from (the Text range's content
+hash): the library's while it holds that revision, otherwise the User database preference
+`resource-attribution/<id>/<content hash>` (`{"credit", "confirmed_at"}`, credit empty when
+the licence asks for none). That record is written when a revision is first seen or its
+licence changes (library load, Imports, `library.remove`), and confirmed each time it is
+quoted (Highlight, Note, Re-attach) and at library load as of the revision's newest quote.
+It vouches only for quotes taken no later than `confirmed_at`, so a quote taken after a
+licence change that could not be saved is left out, with a note saying why, rather than
+exported under the old credit.
+
 HTML exports are a standalone page (`<h1>` title, `<h2>` per Annotation, `<blockquote>`,
 `<p dir="auto">` paragraphs with `<br>` line breaks, `<hr>` before the Attributions).
 
@@ -123,8 +133,11 @@ when the app quits.
 - `crates/engine/src/notes_export_tests.rs`: a Notebook exported to a `.md` file and read back
   (Passages, quotes, Note text with Markdown-special characters); HTML and print pages; a
   Notes search result; the Attribution of a quoted CC BY Resource, kept after the Resource
-  is removed, replaced when a revision under another licence is imported, and a quote left
-  out when its Resource's licence was never seen; Hebrew Note paragraphs as `dir="auto"`.
+  is removed, replaced when a revision under another licence is imported, kept for an
+  orphaned quote of an older revision, confirmed at the next library load when it could not
+  be when quoted, and a quote left out when its revision's licence was never saved (or a
+  licence change could not be saved before the quote was taken); Hebrew Note paragraphs as
+  `dir="auto"`.
 - `crates/ui-egui/src/copy_export_tests.rs`: the window from Tools → Copy verses…, a preset
   saved and chosen again, the preview, the three Copy buttons (rich text through a test
   `RichClipboard`), Print…; a Hebrew Bible's preview laid out right to left in the Hebrew
