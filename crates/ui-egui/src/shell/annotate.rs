@@ -287,17 +287,18 @@ impl State {
             .is_some_and(|v| v.selection.is_some_and(|s| has_text(v, &s)))
     }
 
-    /// Ctrl+1…5 and Ctrl+Shift+N on the focused Tab's selection. Not while a text field has
-    /// focus, and the keys stay unconsumed when there is no selection.
-    pub(super) fn annotation_keys(&mut self, ui: &Ui) {
+    /// Ctrl+1…5 and Ctrl+Shift+N on the selection of `tab`, the Tab focused in the window
+    /// the keys were typed in: whether one ran. Not while a text field has focus, and the
+    /// keys stay unconsumed when there is no selection.
+    pub(super) fn annotation_keys(&mut self, ui: &Ui, tab: Option<TabId>) -> bool {
         if ui.ctx().text_edit_focused() {
-            return;
+            return false;
         }
-        let Some(tab) = self.session.workspace.focused() else {
-            return;
+        let Some(tab) = tab else {
+            return false;
         };
         if !self.has_selection(tab) {
-            return;
+            return false;
         }
         let all = bindings(&self.session);
         // An extra Shift is allowed unless another binding needs it (digits need Shift on
@@ -317,9 +318,11 @@ impl State {
                 }
             }
         });
-        if let Some(a) = action {
-            self.annotate(ui.ctx(), tab, a, None);
-        }
+        let Some(a) = action else {
+            return false;
+        };
+        self.annotate(ui.ctx(), tab, a, None);
+        true
     }
 
     /// Act on `tab`'s selection. `at` is where the selection is drawn (for the Note editor).

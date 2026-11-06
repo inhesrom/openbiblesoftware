@@ -36,7 +36,7 @@ pub use rich_clipboard::RichClipboard;
 pub use selection::{
     DocPos, Granularity, Selection, copy_text, range_rects, selected_text, selection_rects, word_at,
 };
-pub use shell::{Shell, parse_shortcut};
+pub use shell::{DesktopUnits, Shell, parse_shortcut};
 pub use system_fonts::{FontFile, InstalledFamily, NoSystemFonts, SystemFonts};
 pub use view::{Frame, FrameBlock, FrameStats, ReadingView, SYNC_BUDGET, VisibleBlock};
 pub use workers::{LayoutClient, SnippetCache, lay_out, set_layout_slowdown};
@@ -309,11 +309,39 @@ impl eframe::App for App {
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         if !self.styled {
             theme::install(ui.ctx());
             self.styled = true;
         }
+        // Floating windows (#152) are kept on screens that are connected.
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.shell.wants_screens()
+            && let Some(window) = frame.winit_window()
+        {
+            let zoom = ui.ctx().zoom_factor();
+            let units = DesktopUnits::NATIVE;
+            let mut screens: Vec<obs_engine::ScreenRect> = Vec::new();
+            for m in window
+                .current_monitor()
+                .into_iter()
+                .chain(window.available_monitors())
+            {
+                let (at, size) = (m.position(), m.size());
+                let screen = units.screen(
+                    (at.x, at.y),
+                    (size.width, size.height),
+                    m.scale_factor() as f32,
+                    zoom,
+                );
+                if !screens.contains(&screen) {
+                    screens.push(screen);
+                }
+            }
+            self.shell.set_screens(screens);
+        }
+        #[cfg(target_arch = "wasm32")]
+        let _ = frame;
         #[cfg(not(target_arch = "wasm32"))]
         {
             let dropped = ui.ctx().input(|i| {

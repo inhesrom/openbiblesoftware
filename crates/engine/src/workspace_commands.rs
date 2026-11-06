@@ -731,6 +731,35 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         },
     },
     CommandSpec {
+        id: "tab.float",
+        label: "Float in new window",
+        shortcut: None,
+        params: &[TAB],
+        enabled: always,
+        run: |s, p| {
+            let tab = tab_param("tab.float", s, &p)?;
+            let window = s
+                .workspace
+                .float(tab, None)
+                .ok_or_else(|| failed("tab.float", "no such Tab"))?;
+            Ok(json!({ "tab": tab.0, "window": window.0 }))
+        },
+    },
+    CommandSpec {
+        id: "tab.dock",
+        label: "Move to main window",
+        shortcut: None,
+        params: &[TAB],
+        enabled: always,
+        run: |s, p| {
+            let tab = tab_param("tab.dock", s, &p)?;
+            if !s.workspace.dock(tab) {
+                return Err(failed("tab.dock", "this Tab is in the main window"));
+            }
+            Ok(json!({ "tab": tab.0 }))
+        },
+    },
+    CommandSpec {
         id: "tab.link",
         label: "Link set",
         shortcut: None,

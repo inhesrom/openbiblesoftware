@@ -36,6 +36,8 @@ mod exegetical_guide;
 mod export;
 mod factbook_tab;
 mod favorites_tab;
+mod floating;
+pub use floating::DesktopUnits;
 mod fonts_window;
 mod get_bibles_tab;
 mod guide_tab;
@@ -208,6 +210,12 @@ pub struct Shell {
     pub(crate) st: State,
     pub(crate) tree: Tree<TabId>,
     shown: Vec<(PanelId, Vec<TabId>)>,
+    /// The floating windows (#152), oldest first, each with its own dock.
+    pub(crate) floating: Vec<floating::FloatingDock>,
+    /// The screens (monitors) connected, the main window's first, as the app last told.
+    screens: floating::Screens,
+    /// The Tab last focused in each window (none: the main one), for the keys typed there.
+    last_focused: BTreeMap<Option<obs_engine::WindowId>, TabId>,
 }
 
 impl Default for Shell {
@@ -254,6 +262,9 @@ impl Shell {
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
+            floating: Vec::new(),
+            screens: floating::Screens::default(),
+            last_focused: BTreeMap::new(),
         }
     }
 
@@ -290,6 +301,7 @@ impl Shell {
         self.apply_effects();
         self.tree = Tree::empty(egui::Id::unique("workspace"));
         self.st.panels.clear();
+        self.floating.clear();
         let first = self
             .st
             .session
@@ -339,16 +351,30 @@ impl Shell {
                     self.st.opened(tab);
                     self.insert_tab(tab, placement);
                 }
-                Effect::Focus(tab) => {
-                    self.tree
-                        .make_active(|_, t| matches!(t, Tile::Pane(p) if *p == tab));
-                }
+                Effect::Focus(tab) => self.make_active(tab),
                 Effect::Closed(tab) => {
-                    if let Some(id) = self.tree.tiles.find_pane(&tab) {
-                        self.tree.remove_recursively(id);
-                    }
+                    self.remove_pane(tab);
                     self.st.tabs.remove(&tab);
                 }
+                Effect::Float {
+                    tab,
+                    window,
+                    panel,
+                    placement,
+                } => self.float_pane(tab, window, panel, placement),
+                Effect::Dock { tab, panel } => {
+                    self.remove_pane(tab);
+                    insert_pane(
+                        &mut self.tree,
+                        &mut self.st.panels,
+                        tab,
+                        Placement::NewPanel {
+                            panel,
+                            beside: None,
+                        },
+                    );
+                }
+                Effect::DockWindow(window) => self.dock_floating(window),
                 Effect::Navigate { tab, verse } => {
                     let now = self.st.now;
                     if let Some(t) = self.st.tabs.get_mut(&tab)
@@ -511,223 +537,62 @@ impl Shell {
         self.st.session.record_history();
     }
 
-    fn container_of(&self, panel: PanelId) -> Option<TileId> {
-        self.st
-            .panels
-            .iter()
-            .find(|(t, p)| **p == panel && self.tree.tiles.get(**t).is_some())
-            .map(|(t, _)| *t)
-    }
-
     fn insert_tab(&mut self, tab: TabId, placement: Placement) {
-        let pane = self.tree.tiles.insert_pane(tab);
-        if let Placement::Panel(p) = placement
-            && let Some(c) = self.container_of(p)
-            && let Some(Tile::Container(Container::Tabs(tabs))) = self.tree.tiles.get_mut(c)
-        {
-            tabs.add_child(pane);
-            tabs.set_active(pane);
-            return;
-        }
-        let (panel, beside) = match placement {
-            Placement::Panel(p) => (p, None),
-            Placement::NewPanel { panel, beside } => (panel, beside),
+        // Into the window that holds the Panel it goes into or beside (#152).
+        let near = match placement {
+            Placement::Panel(p) => Some(p),
+            Placement::NewPanel { beside, .. } => beside,
         };
-        let container = self.tree.tiles.insert_tab_tile(vec![pane]);
-        self.st.panels.insert(container, panel);
-        let Some(root) = self.tree.root() else {
-            self.tree.root = Some(container);
-            return;
-        };
-        // Split off to the right of `beside` (or of the whole Workspace).
-        let anchor = beside.and_then(|b| self.container_of(b)).unwrap_or(root);
-        let parent = self.tree.tiles.parent_of(anchor);
-        if let Some(parent) = parent
-            && let Some(Tile::Container(Container::Linear(l))) = self.tree.tiles.get_mut(parent)
-            && l.dir == LinearDir::Horizontal
-        {
-            let at = l
-                .children
+        let dock = near.and_then(|p| {
+            self.floating
                 .iter()
-                .position(|c| *c == anchor)
-                .map_or(l.children.len(), |i| i + 1);
-            l.children.insert(at, container);
-            return;
-        }
-        let row = self
-            .tree
-            .tiles
-            .insert_new(Tile::Container(Container::Linear(Linear::new(
-                LinearDir::Horizontal,
-                vec![anchor, container],
-            ))));
-        match parent {
-            None => self.tree.root = Some(row),
-            Some(parent) => {
-                if let Some(Tile::Container(c)) = self.tree.tiles.get_mut(parent) {
-                    replace_child(c, anchor, row);
-                }
+                .position(|d| container_of(&d.tree, &d.panels, p).is_some())
+        });
+        match dock {
+            Some(i) => {
+                let d = &mut self.floating[i];
+                insert_pane(&mut d.tree, &mut d.panels, tab, placement);
             }
+            None => insert_pane(&mut self.tree, &mut self.st.panels, tab, placement),
         }
     }
 
-    /// Tell the engine what the dock now shows (after drags, docks and × closes).
+    /// Tell the engine what the docks now show (after drags, docks and × closes), in the
+    /// main window and every floating window.
     fn record_layout(&mut self) {
         // Right after a drop, egui_tiles can leave a pane outside any Tabs container until its
         // next simplify; do it now so a moved Tab is never mistaken for a closed one.
         let options = egui_tiles::Behavior::simplification_options(&self.st);
         self.tree.simplify(&options);
-        let mut shown = Vec::new();
-        let ids: Vec<TileId> = self.tree.tiles.tile_ids().collect();
-        for id in ids {
-            let Some(Tile::Container(Container::Tabs(t))) = self.tree.tiles.get(id) else {
-                continue;
-            };
-            let tabs: Vec<TabId> = t
-                .children
-                .iter()
-                .filter_map(|c| match self.tree.tiles.get(*c) {
-                    Some(Tile::Pane(p)) => Some(*p),
-                    _ => None,
-                })
-                .collect();
-            let panel = match self.st.panels.get(&id) {
-                Some(p) => *p,
-                None => {
-                    let p = self.st.session.workspace.new_panel_id();
-                    self.st.panels.insert(id, p);
-                    p
-                }
-            };
-            shown.push((panel, tabs));
+        let ws = &mut self.st.session.workspace;
+        let mut shown = shown_panels(&self.tree, &mut self.st.panels, ws);
+        for d in &mut self.floating {
+            d.tree.simplify(&options);
+            shown.extend(shown_panels(&d.tree, &mut d.panels, ws));
         }
+        // A floating window left with no Tabs closes.
+        self.floating.retain(|d| !d.tree.is_empty());
         shown.sort();
-        let tiles = &self.tree.tiles;
-        self.st.panels.retain(|t, _| tiles.get(*t).is_some());
         if shown != self.shown {
             self.st.session.workspace.sync_panels(shown.clone());
             self.shown = shown;
             let live: Vec<TabId> = self.st.session.workspace.tabs().map(|t| t.id).collect();
             self.st.tabs.retain(|t, _| live.contains(t));
         }
-        let arrangement = self.tree.root().and_then(|r| self.node(r));
+        let arrangement = self
+            .tree
+            .root()
+            .and_then(|r| dock_node(&self.tree, &self.st.panels, r));
         self.st.session.workspace.arrangement = arrangement;
-    }
-
-    /// The dock below `tile` as a saved arrangement.
-    fn node(&self, tile: TileId) -> Option<LayoutNode> {
-        match self.tree.tiles.get(tile)? {
-            Tile::Pane(t) => Some(LayoutNode::Panel {
-                panel: 0,
-                tabs: vec![t.0],
-                active: Some(t.0),
-            }),
-            Tile::Container(Container::Tabs(t)) => {
-                let tabs: Vec<u64> = t
-                    .children
-                    .iter()
-                    .filter_map(|c| match self.tree.tiles.get(*c) {
-                        Some(Tile::Pane(p)) => Some(p.0),
-                        _ => None,
-                    })
-                    .collect();
-                let active = t.active.and_then(|a| match self.tree.tiles.get(a) {
-                    Some(Tile::Pane(p)) => Some(p.0),
-                    _ => None,
-                });
-                let panel = self.st.panels.get(&tile).map_or(0, |p| p.0);
-                (!tabs.is_empty()).then_some(LayoutNode::Panel {
-                    panel,
-                    tabs,
-                    active,
-                })
-            }
-            Tile::Container(Container::Linear(l)) => {
-                let children: Vec<(LayoutNode, f32)> = l
-                    .children
-                    .iter()
-                    .filter_map(|c| Some((self.node(*c)?, l.shares[*c])))
-                    .collect();
-                if children.is_empty() {
-                    return None;
-                }
-                Some(match l.dir {
-                    LinearDir::Horizontal => LayoutNode::Row { children },
-                    LinearDir::Vertical => LayoutNode::Column { children },
-                })
-            }
-            Tile::Container(Container::Grid(g)) => {
-                let children: Vec<(LayoutNode, f32)> = g
-                    .children()
-                    .filter_map(|c| Some((self.node(*c)?, 1.0)))
-                    .collect();
-                (!children.is_empty()).then_some(LayoutNode::Row { children })
-            }
-        }
-    }
-
-    /// Insert a saved arrangement into the dock; returns its root tile.
-    fn build(&mut self, node: &LayoutNode) -> Option<TileId> {
-        match node {
-            LayoutNode::Panel {
-                panel,
-                tabs,
-                active,
-            } => {
-                let live: Vec<TabId> = tabs
-                    .iter()
-                    .map(|t| TabId(*t))
-                    .filter(|t| self.st.session.workspace.tab(*t).is_some())
-                    .collect();
-                if live.is_empty() {
-                    return None;
-                }
-                let panes: Vec<TileId> = live
-                    .iter()
-                    .map(|t| self.tree.tiles.insert_pane(*t))
-                    .collect();
-                let container = self.tree.tiles.insert_tab_tile(panes.clone());
-                if let Some(Tile::Container(Container::Tabs(t))) =
-                    self.tree.tiles.get_mut(container)
-                    && let Some(i) = active.and_then(|a| live.iter().position(|t| t.0 == a))
-                {
-                    t.set_active(panes[i]);
-                }
-                let panel = if *panel == 0 {
-                    self.st.session.workspace.new_panel_id()
-                } else {
-                    PanelId(*panel)
-                };
-                self.st.panels.insert(container, panel);
-                Some(container)
-            }
-            LayoutNode::Row { children } | LayoutNode::Column { children } => {
-                let built: Vec<(TileId, f32)> = children
-                    .iter()
-                    .filter_map(|(c, share)| Some((self.build(c)?, *share)))
-                    .collect();
-                if built.len() == 1 {
-                    return built.first().map(|(t, _)| *t);
-                }
-                if built.is_empty() {
-                    return None;
-                }
-                let dir = if matches!(node, LayoutNode::Row { .. }) {
-                    LinearDir::Horizontal
-                } else {
-                    LinearDir::Vertical
-                };
-                let mut linear = Linear::new(dir, built.iter().map(|(t, _)| *t).collect());
-                for (t, share) in &built {
-                    linear.shares.set_share(*t, *share);
-                }
-                Some(
-                    self.tree
-                        .tiles
-                        .insert_new(Tile::Container(Container::Linear(linear))),
-                )
-            }
-        }
+        self.st.session.workspace.floating = self
+            .floating
+            .iter()
+            .map(|d| obs_engine::FloatingWindow {
+                id: d.id,
+                arrangement: d.tree.root().and_then(|r| dock_node(&d.tree, &d.panels, r)),
+                placement: d.placement,
+            })
+            .collect();
     }
 
     /// Rebuild the dock and every Tab's view from the engine's restored Workspace.
@@ -740,12 +605,48 @@ impl Shell {
         for t in ids {
             self.st.opened(t);
         }
-        if let Some(node) = self.st.session.workspace.arrangement.clone() {
-            self.tree.root = self.build(&node);
+        let ws = &mut self.st.session.workspace;
+        if let Some(node) = ws.arrangement.clone() {
+            self.tree.root = build_node(&mut self.tree, &mut self.st.panels, ws, &node);
         }
+        // The floating windows come back where they were (#152).
+        self.floating = ws
+            .floating
+            .clone()
+            .into_iter()
+            .filter_map(|w| {
+                let mut d = floating::FloatingDock::new(w.id, w.placement);
+                let node = w.arrangement?;
+                d.tree.root = build_node(&mut d.tree, &mut d.panels, ws, &node);
+                d.tree.root.map(|_| d)
+            })
+            .collect();
         if let Some(f) = self.st.session.workspace.focused() {
-            self.tree
-                .make_active(|_, t| matches!(t, Tile::Pane(p) if *p == f));
+            self.make_active(f);
+        }
+    }
+
+    /// Show a Tab in its Panel, in whichever window it is.
+    fn make_active(&mut self, tab: TabId) {
+        let is = |_: TileId, t: &Tile<TabId>| matches!(t, Tile::Pane(p) if *p == tab);
+        if !self.tree.make_active(is) {
+            for d in &mut self.floating {
+                if d.tree.make_active(is) {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Take a Tab's pane out of whichever window shows it.
+    fn remove_pane(&mut self, tab: TabId) {
+        if let Some(id) = self.tree.tiles.find_pane(&tab) {
+            self.tree.remove_recursively(id);
+        }
+        for d in &mut self.floating {
+            if let Some(id) = d.tree.tiles.find_pane(&tab) {
+                d.tree.remove_recursively(id);
+            }
         }
     }
 
@@ -831,6 +732,7 @@ impl Shell {
         self.st.references.refresh(&self.st.session.library);
         self.st.now = ui.input(|i| i.time);
         self.st.split_held = ui.input(|i| i.modifiers.command);
+        self.note_main_window(ui.ctx());
         // Poll, never wait: parsing, Resource writes, Search-index hooks and Guide sections
         // live on workers. Without worker threads (wasm), Guide sections and the People &
         // places directory step here, a job a frame.
@@ -853,7 +755,7 @@ impl Shell {
         if let Some(after) = self.background_repaint() {
             ui.ctx().request_repaint_after(after);
         }
-        self.shortcuts(ui);
+        self.shortcuts(ui, None);
         self.st.toolbar.begin_frame();
         let menus = egui::Panel::top("menus")
             .frame(
@@ -883,11 +785,16 @@ impl Shell {
                         );
                     });
                 } else {
+                    self.main_drag_out(ui);
                     self.tree.ui(&mut self.st, ui);
                 }
             });
         self.apply_effects();
-        self.st.overlays(ui);
+        self.show_floating_windows(ui.ctx());
+        // A Note being written on a Tab in a floating OS window is drawn in that window.
+        let note_here =
+            (self.st.note_editor.as_ref()).is_none_or(|ed| self.keys_window(ed.tab).is_none());
+        self.st.overlays(ui, note_here);
         self.customize_window(ui.ctx());
         // A Notes card being edited saves as the user types, and at once once its Tab is not
         // drawn (#64): checked here, since the Notes Tab's own code only runs while drawn.
@@ -907,8 +814,19 @@ impl Shell {
         self.save_session(closing);
     }
 
-    fn shortcuts(&mut self, ui: &mut Ui) {
-        let focused = self.st.session.workspace.focused();
+    /// The keys typed in `window` (none: the main one), on the Tab focused there
+    /// ([`Self::focus_in`]). The window gaining the keyboard, or a key run in it, makes that
+    /// Tab the focused one.
+    fn shortcuts(&mut self, ui: &mut Ui, window: Option<obs_engine::WindowId>) {
+        if let Some(f) = self.st.session.workspace.focused() {
+            self.last_focused.insert(self.keys_window(f), f);
+        }
+        let focused = self.focus_in(window);
+        let gained =
+            ui.input(|i| (i.events.iter()).any(|e| matches!(e, egui::Event::WindowFocused(true))));
+        if gained {
+            self.focus_here(focused);
+        }
         // Keys a text field uses itself (Ctrl+Z, Esc …) are left to it while it has focus.
         let typing = ui.ctx().text_edit_focused();
         let all = bindings(&self.st.session);
@@ -941,11 +859,26 @@ impl Shell {
                 run.push((spec.id, params));
             }
         }
+        if !run.is_empty() {
+            self.focus_here(focused);
+        }
         for (id, p) in run {
             self.run(id, &p);
         }
-        self.st.annotation_keys(ui);
+        if self.st.annotation_keys(ui, focused) {
+            self.focus_here(focused);
+        }
         self.apply_effects();
+    }
+
+    /// The Tab focused in the window whose keys are being read becomes the focused one.
+    fn focus_here(&mut self, tab: Option<TabId>) {
+        let ws = &mut self.st.session.workspace;
+        if let Some(t) = tab
+            && ws.focused() != Some(t)
+        {
+            ws.user_focused(t);
+        }
     }
 
     /// The menu bar: the app's name, the Launchers (#140) when the toolbar is at the Top (#141),
@@ -1109,6 +1042,218 @@ fn replace_child(c: &mut Container, old: TileId, new: TileId) {
     };
     if let Some(slot) = children.iter_mut().find(|c| **c == old) {
         *slot = new;
+    }
+}
+
+/// Which engine Panel each Tabs container of one window's dock shows.
+pub(crate) type PanelTiles = std::collections::HashMap<TileId, PanelId>;
+
+fn container_of(tree: &Tree<TabId>, panels: &PanelTiles, panel: PanelId) -> Option<TileId> {
+    panels
+        .iter()
+        .find(|(t, p)| **p == panel && tree.tiles.get(**t).is_some())
+        .map(|(t, _)| *t)
+}
+
+/// Put a Tab's pane into a window's dock: into Panel `p` there, or as a new Panel split off
+/// to the right of `beside` (or of the whole dock).
+fn insert_pane(tree: &mut Tree<TabId>, panels: &mut PanelTiles, tab: TabId, placement: Placement) {
+    let pane = tree.tiles.insert_pane(tab);
+    if let Placement::Panel(p) = placement
+        && let Some(c) = container_of(tree, panels, p)
+        && let Some(Tile::Container(Container::Tabs(tabs))) = tree.tiles.get_mut(c)
+    {
+        tabs.add_child(pane);
+        tabs.set_active(pane);
+        return;
+    }
+    let (panel, beside) = match placement {
+        Placement::Panel(p) => (p, None),
+        Placement::NewPanel { panel, beside } => (panel, beside),
+    };
+    let container = tree.tiles.insert_tab_tile(vec![pane]);
+    panels.insert(container, panel);
+    let anchor = beside.and_then(|b| container_of(tree, panels, b));
+    attach_beside(tree, container, anchor);
+}
+
+/// Put `tile` to the right of `anchor` (none: of the whole dock), in a row.
+fn attach_beside(tree: &mut Tree<TabId>, tile: TileId, anchor: Option<TileId>) {
+    let Some(root) = tree.root() else {
+        tree.root = Some(tile);
+        return;
+    };
+    let anchor = anchor.unwrap_or(root);
+    let parent = tree.tiles.parent_of(anchor);
+    if let Some(parent) = parent
+        && let Some(Tile::Container(Container::Linear(l))) = tree.tiles.get_mut(parent)
+        && l.dir == LinearDir::Horizontal
+    {
+        let at = l
+            .children
+            .iter()
+            .position(|c| *c == anchor)
+            .map_or(l.children.len(), |i| i + 1);
+        l.children.insert(at, tile);
+        return;
+    }
+    let row = tree
+        .tiles
+        .insert_new(Tile::Container(Container::Linear(Linear::new(
+            LinearDir::Horizontal,
+            vec![anchor, tile],
+        ))));
+    match parent {
+        None => tree.root = Some(row),
+        Some(parent) => {
+            if let Some(Tile::Container(c)) = tree.tiles.get_mut(parent) {
+                replace_child(c, anchor, row);
+            }
+        }
+    }
+}
+
+/// Each Panel a window's dock shows, with its Tabs in order. Tabs containers new since the
+/// last call (made by a drag) get a fresh Panel id; containers gone are forgotten.
+fn shown_panels(
+    tree: &Tree<TabId>,
+    panels: &mut PanelTiles,
+    ws: &mut obs_engine::Workspace,
+) -> Vec<(PanelId, Vec<TabId>)> {
+    let mut shown = Vec::new();
+    for id in tree.tiles.tile_ids() {
+        let Some(Tile::Container(Container::Tabs(t))) = tree.tiles.get(id) else {
+            continue;
+        };
+        let tabs: Vec<TabId> = t
+            .children
+            .iter()
+            .filter_map(|c| match tree.tiles.get(*c) {
+                Some(Tile::Pane(p)) => Some(*p),
+                _ => None,
+            })
+            .collect();
+        let panel = *panels.entry(id).or_insert_with(|| ws.new_panel_id());
+        shown.push((panel, tabs));
+    }
+    panels.retain(|t, _| tree.tiles.get(*t).is_some());
+    shown
+}
+
+/// A window's dock below `tile` as a saved arrangement.
+fn dock_node(tree: &Tree<TabId>, panels: &PanelTiles, tile: TileId) -> Option<LayoutNode> {
+    match tree.tiles.get(tile)? {
+        Tile::Pane(t) => Some(LayoutNode::Panel {
+            panel: 0,
+            tabs: vec![t.0],
+            active: Some(t.0),
+        }),
+        Tile::Container(Container::Tabs(t)) => {
+            let tabs: Vec<u64> = t
+                .children
+                .iter()
+                .filter_map(|c| match tree.tiles.get(*c) {
+                    Some(Tile::Pane(p)) => Some(p.0),
+                    _ => None,
+                })
+                .collect();
+            let active = t.active.and_then(|a| match tree.tiles.get(a) {
+                Some(Tile::Pane(p)) => Some(p.0),
+                _ => None,
+            });
+            let panel = panels.get(&tile).map_or(0, |p| p.0);
+            (!tabs.is_empty()).then_some(LayoutNode::Panel {
+                panel,
+                tabs,
+                active,
+            })
+        }
+        Tile::Container(Container::Linear(l)) => {
+            let children: Vec<(LayoutNode, f32)> = l
+                .children
+                .iter()
+                .filter_map(|c| Some((dock_node(tree, panels, *c)?, l.shares[*c])))
+                .collect();
+            if children.is_empty() {
+                return None;
+            }
+            Some(match l.dir {
+                LinearDir::Horizontal => LayoutNode::Row { children },
+                LinearDir::Vertical => LayoutNode::Column { children },
+            })
+        }
+        Tile::Container(Container::Grid(g)) => {
+            let children: Vec<(LayoutNode, f32)> = g
+                .children()
+                .filter_map(|c| Some((dock_node(tree, panels, *c)?, 1.0)))
+                .collect();
+            (!children.is_empty()).then_some(LayoutNode::Row { children })
+        }
+    }
+}
+
+/// Insert a saved arrangement into a window's dock; returns its root tile. Tabs the
+/// Workspace does not have are left out.
+fn build_node(
+    tree: &mut Tree<TabId>,
+    panels: &mut PanelTiles,
+    ws: &mut obs_engine::Workspace,
+    node: &LayoutNode,
+) -> Option<TileId> {
+    match node {
+        LayoutNode::Panel {
+            panel,
+            tabs,
+            active,
+        } => {
+            let live: Vec<TabId> = tabs
+                .iter()
+                .map(|t| TabId(*t))
+                .filter(|t| ws.tab(*t).is_some())
+                .collect();
+            if live.is_empty() {
+                return None;
+            }
+            let panes: Vec<TileId> = live.iter().map(|t| tree.tiles.insert_pane(*t)).collect();
+            let container = tree.tiles.insert_tab_tile(panes.clone());
+            if let Some(Tile::Container(Container::Tabs(t))) = tree.tiles.get_mut(container)
+                && let Some(i) = active.and_then(|a| live.iter().position(|t| t.0 == a))
+            {
+                t.set_active(panes[i]);
+            }
+            let panel = if *panel == 0 {
+                ws.new_panel_id()
+            } else {
+                PanelId(*panel)
+            };
+            panels.insert(container, panel);
+            Some(container)
+        }
+        LayoutNode::Row { children } | LayoutNode::Column { children } => {
+            let built: Vec<(TileId, f32)> = children
+                .iter()
+                .filter_map(|(c, share)| Some((build_node(tree, panels, ws, c)?, *share)))
+                .collect();
+            if built.len() == 1 {
+                return built.first().map(|(t, _)| *t);
+            }
+            if built.is_empty() {
+                return None;
+            }
+            let dir = if matches!(node, LayoutNode::Row { .. }) {
+                LinearDir::Horizontal
+            } else {
+                LinearDir::Vertical
+            };
+            let mut linear = Linear::new(dir, built.iter().map(|(t, _)| *t).collect());
+            for (t, share) in &built {
+                linear.shares.set_share(*t, *share);
+            }
+            Some(
+                tree.tiles
+                    .insert_new(Tile::Container(Container::Linear(linear))),
+            )
+        }
     }
 }
 
@@ -2240,6 +2385,7 @@ impl State {
                 ui.close();
             }
             self.favorite_folder_menu(ui, tab);
+            self.window_menu(ui, tab);
             if ui
                 .add(egui::Button::new("Close Tab").shortcut_text("Ctrl+W"))
                 .clicked()
@@ -2302,10 +2448,13 @@ impl State {
         }
     }
 
-    /// Toasts and the About/Credits window.
-    fn overlays(&mut self, ui: &Ui) {
+    /// Toasts and the About/Credits window, and the Note editor when `note_here` (its Tab is
+    /// not in a floating OS window, which draws it).
+    fn overlays(&mut self, ui: &Ui, note_here: bool) {
         let ctx = ui.ctx().clone();
-        self.note_editor_ui(&ctx);
+        if note_here {
+            self.note_editor_ui(&ctx);
+        }
         self.layout_prompt(&ctx);
         self.remove_prompt(&ctx);
         self.import_chooser(&ctx);
@@ -2415,6 +2564,24 @@ impl State {
         egui::Popup::menu(&resp).show(|ui| self.link_menu(ui, tab));
     }
 
+    /// Float in new window, or Move to main window for a Tab in a floating window (#152).
+    fn window_menu(&mut self, ui: &mut Ui, tab: TabId) {
+        let ws = &self.session.workspace;
+        let window = ws.window_of(tab);
+        let alone = window.is_some_and(|w| ws.window_tabs(w).len() == 1);
+        let mut run = None;
+        if !alone && ui.button("Float in new window").clicked() {
+            run = Some("tab.float");
+        }
+        if window.is_some() && ui.button("Move to main window").clicked() {
+            run = Some("tab.dock");
+        }
+        if let Some(id) = run {
+            self.run(id, &json!({ "tab": tab.0 }));
+            ui.close();
+        }
+    }
+
     fn link_menu(&mut self, ui: &mut Ui, tab: TabId) {
         let current = self.session.workspace.tab(tab).and_then(|t| t.link);
         let choices = std::iter::once(None).chain(obs_engine::LINK_SETS.iter().copied().map(Some));
@@ -2488,9 +2655,13 @@ impl egui_tiles::Behavior<TabId> for State {
                 .workspace
                 .tab(t)
                 .is_some_and(|tab| tab.kind.has_link_chip());
-            if linkable {
-                resp.context_menu(|ui| self.link_menu(ui, t));
-            }
+            resp.context_menu(|ui| {
+                if linkable {
+                    self.link_menu(ui, t);
+                    ui.separator();
+                }
+                self.window_menu(ui, t);
+            });
         }
         resp
     }

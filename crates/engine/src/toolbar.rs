@@ -473,6 +473,7 @@ impl Session {
             remembered: Vec::new(),
             last_reading_panel: None,
             last_other_panel: None,
+            windows: Vec::new(),
         };
         let mut next = (self.workspace.next_tab_id(), 0u64);
         snap.layout = Some(self.place(&plan, &mut snap, &mut next));
