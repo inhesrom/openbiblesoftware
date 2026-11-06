@@ -592,34 +592,128 @@ fn text_comparison_rows_are_found_and_stepped_through() {
     for k in 1..=expected {
         key(&mut h, Key::Enter, Modifiers::NONE);
         assert_eq!(current(&h, cmp), Some(k % expected));
-        assert_eq!(
-            filled(&h, h.shell.st.palette.search_hit).len(),
-            1,
-            "Enter #{k}: the current hit is in view"
+        let hit = filled(&h, h.shell.st.palette.search_hit);
+        let viewport = h.shell.st.tabs[&cmp]
+            .comparison
+            .as_ref()
+            .unwrap()
+            .viewport();
+        assert_eq!(hit.len(), 1, "Enter #{k}: {hit:?}");
+        assert!(
+            viewport.contains_rect(hit[0]),
+            "Enter #{k}: the current hit {:?} is in the viewport {viewport:?}",
+            hit[0]
         );
     }
 }
 
+/// A Verse block taller than the comparison's viewport: stepping to a match in one of its
+/// lower rows scrolls within the block until that match is inside the viewport (the painter
+/// clips, so a hit painted below the fold would not be seen).
 #[test]
-fn alt_enter_hands_the_find_text_to_the_search_tool() {
+fn text_comparison_steps_scroll_within_a_verse_block_taller_than_the_view() {
     let mut h = Harness::new();
-    let tab = open(&mut h, kjv_john());
+    h.screen = vec2(900.0, 560.0);
+    let tb = h.tab_id("TB");
+    h.shell.st.session.workspace.user_focused(tb);
+    h.shell
+        .run("tool.text_comparison", &json!({ "split": true }));
+    h.frames(2);
+    let cmp = h.tab_id("Text Comparison");
+    h.shell
+        .run("tab.go", &json!({ "tab": cmp.0, "text": "Gen 31:1" }));
+    for _ in 0..4 {
+        key(&mut h, Key::Equals, CTRL);
+    }
+    for _ in 0..200 {
+        h.paced_frame();
+    }
     key(&mut h, Key::F, CTRL);
-    type_text(&mut h, "love one another");
-    key(&mut h, Key::Enter, Modifiers::ALT);
-    h.frames(3);
-    let search = h
+    type_text(&mut h, "Laban");
+    settle(&mut h, cmp);
+    let found = bar(&h, cmp).unwrap().found().matches.to_vec();
+    assert!(found.len() > 10, "{}", found.len());
+    let viewport = h.shell.st.tabs[&cmp]
+        .comparison
+        .as_ref()
+        .unwrap()
+        .viewport();
+    let mut below_the_fold = 0;
+    for k in 1..=found.len() {
+        key(&mut h, Key::Enter, Modifiers::NONE);
+        for _ in 0..20 {
+            h.paced_frame();
+        }
+        let i = k % found.len();
+        assert_eq!(current(&h, cmp), Some(i));
+        let view = h
+            .shell
+            .st
+            .tabs
+            .get_mut(&cmp)
+            .unwrap()
+            .comparison
+            .as_mut()
+            .unwrap();
+        let block = found[i].unit;
+        if view.block_height(block) > viewport.height() && found[i].row > 0 {
+            below_the_fold += 1;
+        }
+        let hit = filled(&h, h.shell.st.palette.search_hit);
+        assert_eq!(hit.len(), 1, "Enter #{k}: {hit:?}");
+        assert!(
+            viewport.contains_rect(hit[0]),
+            "Enter #{k}: the current hit {:?} is inside the viewport {viewport:?}",
+            hit[0]
+        );
+    }
+    assert!(
+        below_the_fold > 0,
+        "some hits sit in lower rows of a tall block"
+    );
+}
+
+/// The only Search Tab.
+fn search_tab(h: &Harness) -> TabId {
+    let tabs: Vec<TabId> = h
         .shell
         .st
         .session
         .workspace
         .tabs()
-        .find(|t| t.kind == TabKind::Tool(Tool::Search))
+        .filter(|t| t.kind == TabKind::Tool(Tool::Search))
         .map(|t| t.id)
-        .expect("a Search Tab");
+        .collect();
+    assert_eq!(tabs.len(), 1, "{tabs:?}");
+    tabs[0]
+}
+
+#[test]
+fn alt_enter_hands_the_find_text_to_the_search_tool() {
+    let mut h = Harness::new();
+    // A Search Tab narrowed earlier to Romans, which the hand-off runs in again.
+    h.shell.run(
+        "search.run",
+        &json!({ "text": "grace", "mode": "bible", "scope": "Romans" }),
+    );
+    h.frames(2);
+    let narrowed = search_tab(&h);
+    assert_eq!(
+        h.shell.st.session.search_tab(narrowed).unwrap().scope,
+        "Romans"
+    );
+    let tab = open(&mut h, kjv_john());
+    key(&mut h, Key::F, CTRL);
+    type_text(&mut h, "love one another");
+    key(&mut h, Key::Enter, Modifiers::ALT);
+    h.frames(3);
+    let search = search_tab(&h);
+    assert_eq!(search, narrowed);
     let st = h.shell.st.session.search_tab(search).unwrap();
     assert_eq!(st.query, "\"love one another\"");
     assert_eq!(st.mode, obs_engine::SearchMode::Bible);
+    assert_eq!(st.scope, "", "the Whole Bible again");
+    assert!(st.error.is_none(), "{:?}", st.error);
     let mut bibles = st.bibles(&h.shell.st.session.library);
     bibles.sort();
     assert!(
@@ -627,6 +721,69 @@ fn alt_enter_hands_the_find_text_to_the_search_tool() {
         "{bibles:?}"
     );
     // The Find bar stays as it was.
+    assert_eq!(bar(&h, tab).unwrap().text, "love one another");
+}
+
+/// A Commentary of one section on John 13:34.
+fn commentary() -> Arc<ReadingDoc> {
+    let mut m = Manifest::new(
+        "find-commentary",
+        "Find Commentary",
+        "FC",
+        ResourceType::Commentary,
+        "en",
+    );
+    m.key_schemes = vec![KeyScheme::Passage];
+    m.license = "CC0-1.0".into();
+    let mut b = ResourceBuilder::new(m);
+    let unit = UnitId::new("JHN.13.34").unwrap();
+    let text = "A new commandment: that ye love one another.";
+    b.add_unit(unit.clone(), UnitKind::Section, None, text.into());
+    b.add_span(
+        &unit,
+        0..text.len(),
+        SpanKind::Para {
+            style: ParaStyle::Prose,
+        },
+    );
+    let v = Verse::new(Book::John, 13, 34);
+    b.add_key(
+        obs_model::Key::Passage(obs_scripture::Passage::verse(v)),
+        &unit,
+        None,
+        false,
+    );
+    Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
+}
+
+#[test]
+fn search_all_resources_from_a_commentary_widens_a_narrowed_library_search() {
+    let mut h = Harness::new();
+    // A Library-mode Search Tab narrowed earlier to Dictionaries.
+    h.shell.run(
+        "search.run",
+        &json!({ "text": "grace", "mode": "library", "resources": "dictionary" }),
+    );
+    h.frames(2);
+    let narrowed = search_tab(&h);
+    let library = &h.shell.st.session.search_tab(narrowed).unwrap().library;
+    assert_eq!(library.types, [ResourceType::Dictionary]);
+    let tab = open(&mut h, commentary());
+    key(&mut h, Key::F, CTRL);
+    type_text(&mut h, "love one another");
+    h.click_text("Search all Resources");
+    h.frames(3);
+    let search = search_tab(&h);
+    assert_eq!(search, narrowed);
+    let st = h.shell.st.session.search_tab(search).unwrap();
+    assert_eq!(st.query, "\"love one another\"");
+    assert_eq!(st.mode, obs_engine::SearchMode::Library);
+    assert_eq!(
+        st.library,
+        obs_engine::LibraryScope::default(),
+        "every Commentary, Lexicon and Dictionary"
+    );
+    assert!(st.error.is_none(), "{:?}", st.error);
     assert_eq!(bar(&h, tab).unwrap().text, "love one another");
 }
 

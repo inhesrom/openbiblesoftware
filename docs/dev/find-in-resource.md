@@ -11,8 +11,10 @@ words in that one Resource; the Search Tool finds them across the library.
 - The count reads "12 of 48" ("Finding…" while the worker runs, "No matches" when none).
   When matches arrive, the current one is the first at or after the top of the view.
 - Enter / ▼ go to the next match, Shift+Enter / ▲ to the previous, wrapping around. A match
-  out of view is scrolled to the top of the pane (a Text Comparison scrolls its Verse block
-  to the top); one already in view is left where it is. The keyboard stays in the field.
+  out of view is scrolled to the top of the pane; one already in view is left where it is.
+  A Text Comparison brings the match's Verse block to the top, then, once the block is laid
+  out, scrolls within it until the match's line is in view (a block with many Bibles can be
+  taller than the pane). The keyboard stays in the field.
 - A Find step that scrolls counts as the user scrolling: the Tab's Link set follows. It
   makes no History Visit.
 - Esc (in the field, or in the focused Tab when nothing else has the keyboard) or × closes the
@@ -20,7 +22,9 @@ words in that one Resource; the Search Tool finds them across the library.
 - Ctrl+F with a short one-line selection in the pane finds the selected words.
 - Alt+Enter or **Search all Resources** runs the text, quoted as a phrase, in the Search
   Tool: Bible mode over every Bible from a Bible or Text Comparison Tab, Library mode (every
-  Commentary, Lexicon and Dictionary) from the others.
+  Commentary, Lexicon and Dictionary) from the others. It reuses the most recent Search Tab
+  but sends the whole scope (Whole Bible; every Commentary, Lexicon and Dictionary), so a
+  scope narrowed there earlier does not carry over.
 - Commands: `tab.find` (Ctrl+F, optional `text`), `tab.find_next`, `tab.find_previous`
   (`OBS_SCRIPT` can drive them: `10 tab.find {"tab":"focused","text":"love"}`).
 

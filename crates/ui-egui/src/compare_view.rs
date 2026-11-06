@@ -121,7 +121,8 @@ pub struct ComparisonView {
     pub blocks: Vec<VerseBlock>,
     heights: HeightIndex,
     width: f32,
-    viewport_height: f32,
+    /// Where the pane was drawn last frame.
+    viewport: Rect,
     settings: TextSettings,
     /// The top of the view: a block, and how far into it.
     anchor: (usize, f32),
@@ -130,6 +131,8 @@ pub struct ComparisonView {
     snippets: SnippetCache,
     /// Bumped whenever the Verse blocks are made again (a Find bar searches them anew, #175).
     generation: u64,
+    /// The Find bar's current match is to be scrolled into view once drawn (#175).
+    revealing: bool,
 }
 
 impl ComparisonView {
@@ -140,12 +143,13 @@ impl ComparisonView {
             blocks: Vec::new(),
             heights: HeightIndex::new(Vec::new()),
             width: 400.0,
-            viewport_height: 400.0,
+            viewport: Rect::from_min_size(Pos2::ZERO, vec2(400.0, 400.0)),
             settings,
             anchor: (0, 0.0),
             synced: None,
             snippets: SnippetCache::default(),
             generation: 0,
+            revealing: false,
         }
     }
 
@@ -260,24 +264,67 @@ impl ComparisonView {
         rows
     }
 
+    /// Where the pane was drawn last frame.
+    #[cfg(test)]
+    pub(crate) fn viewport(&self) -> Rect {
+        self.viewport
+    }
+
+    /// Verse block `i`'s height (measured once drawn, else estimated).
+    #[cfg(test)]
+    pub(crate) fn block_height(&self, i: usize) -> f32 {
+        self.heights.height(i)
+    }
+
     /// The Verse block at the top of the view.
     pub fn top_block(&self) -> usize {
         self.anchor.0
     }
 
-    /// Bring Verse block `i` to the top of the view unless its top already shows in the
-    /// upper three quarters of it (a Find match, #175). True when the view moved.
-    pub fn reveal_block(&mut self, i: usize) -> bool {
+    /// Show the Find bar's current match, in Verse block `i` (#175): bring the block to the
+    /// top unless the pane draws it from where the view is, then let the pane scroll within
+    /// the block until the match's line is in view (a block can be taller than the view).
+    /// True when the view moved.
+    pub(crate) fn reveal_match(&mut self, i: usize) -> bool {
         if i >= self.blocks.len() {
             return false;
         }
+        self.revealing = true;
         let top = self.heights.offset(i)
             - (self.heights.offset(self.anchor.0) + f64::from(self.anchor.1));
-        if top >= 0.0 && top < f64::from(self.viewport_height) * 0.75 {
+        if i == self.anchor.0 || (i > self.anchor.0 && top < f64::from(self.viewport.height())) {
             return false;
         }
         self.anchor = (i, 0.0);
         true
+    }
+
+    /// After a frame drew the current Find match of Verse block `block` at `at` (the block's
+    /// top, the match's top and bottom, in screen points), or did not draw it (`pending`: its
+    /// row is still being laid out): scroll so it is in view. True when the view moved.
+    fn reveal_drawn(&mut self, block: usize, at: Option<(f32, f32, f32)>, pending: bool) -> bool {
+        let to = match at {
+            Some((_, top, bottom))
+                if top >= self.viewport.top() && bottom <= self.viewport.bottom() =>
+            {
+                None
+            }
+            // Its line at the top, below a block heading's worth of context.
+            Some((block_top, top, _)) => Some((block, (top - block_top - BLOCK_HEAD).max(0.0))),
+            // Not laid out yet: try again next frame.
+            None if pending => return false,
+            None => Some((block, 0.0)),
+        };
+        match to {
+            Some(to) if to != self.anchor => {
+                self.anchor = to;
+                true
+            }
+            _ => {
+                self.revealing = false;
+                false
+            }
+        }
     }
 
     /// The Standard Verse whose block is at the top of the view.
@@ -299,7 +346,7 @@ impl ComparisonView {
     fn max_scroll(&mut self) -> f64 {
         self.heights
             .offset(self.blocks.len().saturating_sub(1))
-            .max(self.heights.total() - f64::from(self.viewport_height))
+            .max(self.heights.total() - f64::from(self.viewport.height()))
     }
 
     /// The scroll position and total height, for the scrollbar.
@@ -361,6 +408,8 @@ pub fn paint_star(
 pub struct ComparisonOutput {
     /// The user scrolled the view.
     pub user_moved: bool,
+    /// The view scrolled to bring the current Find match into view (#175).
+    pub find_moved: bool,
     /// The pane's own response (for its right-click menu).
     pub response: Option<egui::Response>,
     /// The Verse block right-clicked this frame (#142).
@@ -452,7 +501,7 @@ pub fn comparison_pane(
     if !rect.is_positive() {
         return out;
     }
-    view.viewport_height = rect.height();
+    view.viewport = rect;
     let response = ui.allocate_rect(rect, Sense::click_and_drag());
     let context_at = response
         .secondary_clicked()
@@ -494,6 +543,18 @@ pub fn comparison_pane(
         view.scroll_by((frac * max - y) as f32);
     }
     out.user_moved = (view.position().0 - before).abs() > 0.01;
+    if out.user_moved {
+        view.revealing = false;
+    }
+    // The current Find match, while it is being scrolled into view: its (Verse block, row).
+    let reveal = found
+        .current
+        .and_then(|k| found.matches.get(k))
+        .filter(|_| view.revealing)
+        .map(|m| (m.unit, m.row));
+    // Where it was drawn (block top, its top and bottom), or whether its row awaits layout.
+    let mut revealed: Option<(f32, f32, f32)> = None;
+    let mut reveal_pending = false;
 
     if view.blocks.is_empty() {
         out.response = Some(response);
@@ -620,6 +681,13 @@ pub fn comparison_pane(
                                     for [x0, y0, x1, y1] in
                                         range_rects(&laid, &found.matches[k].range)
                                     {
+                                        if current && reveal.is_some() {
+                                            let (t, b) = revealed
+                                                .map_or((row_y + y0, row_y + y1), |(_, t, b)| {
+                                                    (t.min(row_y + y0), b.max(row_y + y1))
+                                                });
+                                            revealed = Some((y, t, b));
+                                        }
                                         matches.push((
                                             Rect::from_min_max(
                                                 pos2(text_left + x0, row_y + y0),
@@ -635,6 +703,7 @@ pub fn comparison_pane(
                             }
                             None => {
                                 measured = false;
+                                reveal_pending |= reveal == Some((i, row));
                                 painter.rect_filled(
                                     Rect::from_min_size(
                                         pos2(text_left, row_y + height * 0.3),
@@ -719,6 +788,12 @@ pub fn comparison_pane(
         );
         y += height;
         i += 1;
+    }
+    if let Some((block, _)) = reveal
+        && view.reveal_drawn(block, revealed, reveal_pending)
+    {
+        out.find_moved = true;
+        ui.ctx().request_repaint();
     }
     if view.has_pending() {
         ui.ctx().request_repaint();

@@ -307,6 +307,6 @@ impl FindBar {
             return false;
         };
         self.current = Some(i);
-        view.reveal_block(self.matches[i].unit)
+        view.reveal_match(self.matches[i].unit)
     }
 }

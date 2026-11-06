@@ -1940,7 +1940,7 @@ impl State {
             .map(crate::find::FindBar::found)
             .unwrap_or_default();
         let out = comparison_pane(ui, view, &mut self.atlas, &palette, found);
-        if (out.user_moved || found_moved)
+        if (out.user_moved || found_moved || out.find_moved)
             && let Some(v) = view.current_location()
             && Some(v) != view.synced
         {

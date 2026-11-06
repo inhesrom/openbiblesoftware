@@ -222,7 +222,8 @@ impl State {
     }
 
     /// Hand the Find text to the Search Tool as a phrase: over every Bible from a Bible or Text
-    /// Comparison Tab, else over every Commentary, Lexicon and Dictionary.
+    /// Comparison Tab, else over every Commentary, Lexicon and Dictionary. The whole scope is
+    /// sent, so a Search Tab narrowed earlier (to Romans, or to Dictionaries) is widened again.
     fn search_all(&mut self, tab: TabId, text: &str) {
         let phrase: String = text.chars().filter(|c| *c != '"').collect();
         let bible = match self.session.workspace.tab(tab).map(|t| &t.kind) {
@@ -240,9 +241,19 @@ impl State {
                 .of_type(ResourceType::Bible)
                 .map(|e| e.manifest.resource_id.clone())
                 .collect();
-            json!({ "text": format!("\"{phrase}\""), "mode": "bible", "bibles": bibles.join(",") })
+            json!({
+                "text": format!("\"{phrase}\""),
+                "mode": "bible",
+                "bibles": bibles.join(","),
+                // Empty is the Whole Bible, as the Scope field stores it.
+                "scope": "",
+            })
         } else {
-            json!({ "text": format!("\"{phrase}\""), "mode": "library" })
+            json!({
+                "text": format!("\"{phrase}\""),
+                "mode": "library",
+                "resources": "commentary,lexicon,dictionary",
+            })
         };
         self.run("search.run", &params);
     }
