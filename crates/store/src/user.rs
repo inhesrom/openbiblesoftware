@@ -144,6 +144,10 @@ impl UserStore {
             let step = MIGRATIONS
                 .get(v as usize)
                 .ok_or_else(|| StoreError::Corrupt(format!("no migration from version {v}")))?;
+            // 8 → 9 refuses, rather than drops, rows its stricter CHECK would refuse.
+            if v == 8 {
+                crate::annotation_store::refuse_text_ranges_covering_no_text(&tx)?;
+            }
             tx.execute_batch(step).map_err(sql)?;
         }
         tx.pragma_update(None, "application_id", USER_APPLICATION_ID)

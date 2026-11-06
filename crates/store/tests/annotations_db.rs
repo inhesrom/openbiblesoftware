@@ -572,14 +572,14 @@ fn a_text_range_that_covers_no_text_is_refused() {
     assert_eq!(db.annotation(&ok.id).unwrap(), Some(ok));
 }
 
-/// Migration 8 → 9 (#115) rebuilds `anchors` with the stricter CHECK. Good rows are kept as
-/// they were; rows that cover no text, which the app never wrote, are made valid: a Passage
-/// anchor drops that origin, a Note keeps its text without the anchor, and a Highlight on
-/// no text (it marks nothing) is removed.
+/// Migration 8 → 9 (#115) rebuilds `anchors` with the stricter CHECK. Rows that cover no
+/// text, which the app never wrote, are neither deleted nor repaired (ADR 0006: nothing is
+/// deleted automatically): the migration refuses, names their Annotations and leaves the
+/// database at schema 8 as it was. Once they are fixed it runs and keeps every row.
 #[test]
-fn the_v9_migration_makes_every_text_range_cover_some_text() {
+fn the_v9_migration_refuses_text_ranges_that_cover_no_text_and_keeps_every_row() {
     let dir = Dir::new("migrate9");
-    let (nb, good, origin_less, note_kept, gone) = {
+    let (nb, good, bad) = {
         let (v8, _) = UserStore::open_to(&dir.db(), 8).unwrap();
         assert_eq!(v8.schema_version().unwrap(), 8);
         let nb = default_of(&v8).id;
@@ -611,21 +611,20 @@ fn the_v9_migration_makes_every_text_range_cover_some_text() {
         .unwrap();
         drop(v8);
         // Rows schema 8 accepted although they cover no text, written past the model.
-        let origin_less = highlight(
-            &nb,
-            Anchor::Passage {
-                passage: Passage::verse(jn(17)),
-                origin: None,
-            },
-        );
-        let note_kept = note(&nb, "", None);
-        let gone = highlight(&nb, Anchor::TextRange { range: range("x") });
+        // As read back once fixed by hand: each covers "x".
+        let bad = vec![
+            highlight(
+                &nb,
+                Anchor::Passage {
+                    passage: Passage::verse(jn(17)),
+                    origin: Some(range("x")),
+                },
+            ),
+            note(&nb, "", Some(Anchor::TextRange { range: range("x") })),
+            highlight(&nb, Anchor::TextRange { range: range("x") }),
+        ];
         let c = rusqlite::Connection::open(dir.db()).unwrap();
-        for (a, kind) in [
-            (&origin_less, "highlight"),
-            (&note_kept, "note"),
-            (&gone, "highlight"),
-        ] {
+        for (a, kind) in bad.iter().zip(["highlight", "note", "highlight"]) {
             c.execute(
                 "INSERT INTO annotations (id, notebook_id, kind, style, body, created_at,
                      modified_at)
@@ -642,9 +641,9 @@ fn the_v9_migration_makes_every_text_range_cover_some_text() {
         }
         let r = range("x");
         for (id, kind, book, end, quote) in [
-            (&origin_less.id, "passage", Some(43), r.end, ""),
-            (&note_kept.id, "text_range", None, r.start, "x"),
-            (&gone.id, "text_range", None, r.end, ""),
+            (&bad[0].id, "passage", Some(43), Some(r.end), ""),
+            (&bad[1].id, "text_range", None, Some(r.start), "x"),
+            (&bad[2].id, "text_range", None, None, "x"),
         ] {
             c.execute(
                 "INSERT INTO anchors (annotation_id, kind, start_book, start_chapter,
@@ -667,19 +666,59 @@ fn the_v9_migration_makes_every_text_range_cover_some_text() {
             )
             .unwrap();
         }
-        (nb, vec![good, good_note], origin_less, note_kept, gone)
+        (nb, vec![good, good_note], bad)
     };
+    let dump = |c: &rusqlite::Connection| -> Vec<String> {
+        c.prepare("SELECT annotation_id || ':' || coalesce(end_byte, 'NULL') || ':' || quote FROM anchors ORDER BY 1")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    let raw = rusqlite::Connection::open(dir.db()).unwrap();
+    let before = dump(&raw);
+    assert_eq!(before.len(), 5);
+    let Err(StoreError::Rejected(why)) = UserStore::open(&dir.db()) else {
+        panic!("the migration ran over Text ranges that cover no text");
+    };
+    assert!(
+        why.contains("3 stored Text range(s) cover no text"),
+        "{why}"
+    );
+    assert!(why.contains("Nothing was changed"), "{why}");
+    for a in &bad {
+        assert!(why.contains(&a.id), "{why}");
+    }
+    for a in &good {
+        assert!(!why.contains(&a.id), "{why}");
+    }
+    let version: u32 = raw
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 8);
+    assert_eq!(dump(&raw), before);
+    let rows: i64 = raw
+        .query_row("SELECT count(*) FROM annotations", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(rows, 5);
+    // Fixed as the message says, the migration runs and keeps every row.
+    for a in &bad {
+        raw.execute(
+            "UPDATE anchors SET end_byte = start_byte + 1, quote = 'x' WHERE annotation_id = ?1",
+            [&a.id],
+        )
+        .unwrap();
+    }
     let (db, report) = UserStore::open(&dir.db()).unwrap();
     assert_eq!(report.found_version, 8);
     assert!(report.migration_backup.unwrap().is_file());
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
-    for a in &good {
+    for a in good.iter().chain(&bad) {
         assert_eq!(db.annotation(&a.id).unwrap().as_ref(), Some(a));
     }
-    assert_eq!(db.annotation(&origin_less.id).unwrap(), Some(origin_less));
-    assert_eq!(db.annotation(&note_kept.id).unwrap(), Some(note_kept));
-    assert_eq!(db.annotation(&gone.id).unwrap(), None);
-    assert_eq!(db.annotations(Some(&nb)).unwrap().len(), 4);
+    assert_eq!(db.annotations(Some(&nb)).unwrap().len(), 5);
+    drop(raw);
     // The rebuilt table keeps its indexes and enforces the new CHECK.
     let raw = rusqlite::Connection::open(dir.db()).unwrap();
     let indexes: Vec<String> = raw

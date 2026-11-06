@@ -22,10 +22,12 @@ A CHECK makes a stored Text range without its quote, context or content hash imp
 and a non-empty quote. `Annotation::problem` refuses such a range first, as
 `StoreError::Rejected`. The v9 migration rebuilds `anchors` for it (SQLite cannot change a
 CHECK in place). The app never wrote such a range, but should a row exist the migration
-makes it valid rather than failing: a Passage anchor drops that origin (it shows as whole
-Verses), a Note's Text-range anchor is removed (the Note is kept), and a Highlight on no text,
-which marks nothing, is deleted; the copy taken before migrating keeps them all. The
-migration and every launch make the default Notebook if it is missing.
+refuses before changing anything (`refuse_text_ranges_covering_no_text`): dropping or
+repairing the row would lose its quote, context and offsets, and nothing is deleted
+automatically (ADR 0006). The open fails with `StoreError::Rejected` naming the Annotations,
+the database stays at schema 8, and the app reports it as a problem at startup and runs
+without the User database until the rows are fixed by hand. The migration and every launch
+make the default Notebook if it is missing.
 
 `notes_fts.annotation_id` is UNINDEXED, so finding one entry scans the index. Deleting an
 Annotation therefore touches `notes_fts` only when it is a Note: deleting a Notebook full

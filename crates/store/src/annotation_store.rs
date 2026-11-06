@@ -121,22 +121,10 @@ CREATE TABLE resource_names (
 /// let `end_byte = start_byte`, an empty quote, and (through NULL comparisons) a missing
 /// `end_byte` through; SQLite cannot change a CHECK in place, so `anchors` is rebuilt.
 ///
-/// The app never wrote such a range (a selection part with no text is skipped), so the rows
-/// fixed first should not exist; if one does, it would break the new CHECK. A Passage anchor
-/// loses that origin and shows as whole Verses; a Note's Text-range anchor is removed and the
-/// Note kept; a Highlight on no text, which marks nothing, is deleted. The copy taken before
-/// migrating keeps them all.
+/// The app never wrote such a range (a selection part with no text is skipped). Should a row
+/// exist anyway, [`refuse_text_ranges_covering_no_text`] stops the migration before this
+/// runs: nothing is ever deleted automatically (ADR 0006), so the user fixes the row.
 pub(crate) const SCHEMA_9: &str = "
-UPDATE anchors SET resource_id = NULL, unit_id = NULL, start_byte = NULL, end_byte = NULL,
-    quote = NULL, prefix = NULL, suffix = NULL, content_hash = NULL, native_ref = NULL,
-    whole_verses = 0, status = 'ok'
-WHERE kind = 'passage' AND resource_id IS NOT NULL
-    AND NOT coalesce(end_byte > start_byte AND quote <> '', 0);
-DELETE FROM annotations WHERE kind = 'highlight' AND id IN (
-    SELECT annotation_id FROM anchors
-    WHERE kind = 'text_range' AND NOT coalesce(end_byte > start_byte AND quote <> '', 0));
-DELETE FROM anchors
-WHERE kind = 'text_range' AND NOT coalesce(end_byte > start_byte AND quote <> '', 0);
 CREATE TABLE anchors_v9 (
     annotation_id TEXT PRIMARY KEY
                   REFERENCES annotations (id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
@@ -176,6 +164,45 @@ CREATE INDEX anchors_passage ON anchors (start_book, start_chapter, start_verse)
     WHERE kind = 'passage';
 CREATE INDEX anchors_resource ON anchors (resource_id) WHERE resource_id IS NOT NULL;
 ";
+
+/// Stored Text ranges that cover no text: the rows schema 9's CHECK refuses.
+const TEXT_RANGES_COVERING_NO_TEXT: &str = "SELECT annotation_id FROM anchors
+    WHERE resource_id IS NOT NULL AND NOT coalesce(end_byte > start_byte AND quote <> '', 0)
+    ORDER BY annotation_id";
+
+/// Refuse migration 8 → 9 while any stored Text range covers no text, naming the
+/// Annotations. Dropping or repairing them would lose the quote, context and offsets ADR 0006
+/// keeps, so the migration does not run and the database stays at schema 8, unchanged.
+pub(crate) fn refuse_text_ranges_covering_no_text(c: &Connection) -> Result<(), StoreError> {
+    const SHOWN: usize = 5;
+    let ids: Vec<String> = c
+        .prepare(TEXT_RANGES_COVERING_NO_TEXT)
+        .map_err(sql)?
+        .query_map([], |r| r.get(0))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let named = ids
+        .iter()
+        .take(SHOWN)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    let more = match ids.len().checked_sub(SHOWN) {
+        Some(n) if n > 0 => format!(" and {n} more"),
+        _ => String::new(),
+    };
+    Err(StoreError::Rejected(format!(
+        "cannot update the User database to schema 9: {} stored Text range(s) cover no text \
+         (Annotation {named}{more}). Nothing was changed. Give each a non-empty quote and an \
+         end_byte past its start_byte, or remove its anchor, with an SQLite tool; then start \
+         the app again",
+        ids.len()
+    )))
+}
 
 /// Name of the default Notebook when it is first made. The user may rename it.
 pub const DEFAULT_NOTEBOOK_NAME: &str = "My Notebook";
