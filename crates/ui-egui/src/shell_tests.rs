@@ -39,6 +39,8 @@ struct Harness {
     opened: Vec<String>,
     /// Text the app put on the clipboard, oldest first.
     copied: Vec<String>,
+    /// The window's size in points (1400 × 900 unless a test makes it smaller).
+    screen: egui::Vec2,
 }
 
 fn add_doc(shell: &mut Shell, doc: Arc<ReadingDoc>) {
@@ -142,6 +144,7 @@ impl Harness {
             last_shapes: Vec::new(),
             opened: Vec::new(),
             copied: Vec::new(),
+            screen: vec2(1400.0, 900.0),
         };
         h.frames(3);
         h
@@ -151,7 +154,7 @@ impl Harness {
         self.events
             .insert(0, Event::ModifiersChanged(self.modifiers));
         let input = RawInput {
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1400.0, 900.0))),
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, self.screen)),
             time: Some(self.time),
             events: std::mem::take(&mut self.events),
             system_theme: Some(self.os_theme),
@@ -337,7 +340,7 @@ impl Harness {
     /// Rasterize last frame as the GPU would (premultiplied alpha, nearest texels) into a PPM.
     fn screenshot(&self, path: &std::path::Path) {
         let ppp = 1.0;
-        let (w, h) = (1400usize, 900usize);
+        let (w, h) = (self.screen.x as usize, self.screen.y as usize);
         let prims = self.ctx.tessellate(self.last_shapes.clone(), ppp);
         let mut px = vec![[0.0f32; 3]; w * h];
         for p in &prims {
@@ -3115,6 +3118,8 @@ mod copy_export;
 mod interlinear;
 #[path = "toolbar_tests.rs"]
 mod toolbar;
+#[path = "toolbar_position_tests.rs"]
+mod toolbar_position;
 
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {

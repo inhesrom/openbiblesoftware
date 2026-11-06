@@ -123,6 +123,13 @@ pub const MENUS: &[Menu] = &[
             Separator,
             C("view.highlights"),
             MenuItem::Notebooks,
+            Separator,
+            MenuItem::Choice {
+                title: "Toolbar position",
+                command: "view.toolbar_position",
+            },
+            C("view.toolbar_auto_hide"),
+            C("view.toolbar_customize"),
         ],
     },
     Menu {
@@ -216,6 +223,9 @@ const fn choice(id: &'static str, label: &'static str) -> CommandSpec {
 /// The choices of a `Choice` menu command: (id, label), and the current id.
 pub fn choices(s: &Session, command: &str) -> (Vec<(&'static str, &'static str)>, &'static str) {
     use crate::appearance::*;
+    if let Some(toolbar) = crate::toolbar_settings::choices(s, command) {
+        return toolbar;
+    }
     match command {
         "view.theme" => (
             Theme::ALL.iter().map(|t| (t.1, t.2)).collect(),

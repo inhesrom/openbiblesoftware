@@ -568,6 +568,8 @@ pub enum Effect {
     },
     /// Drop down a toolbar Launcher (Alt+L, Alt+G, Alt+T, Alt+Y, #140).
     OpenLauncher(crate::toolbar::Launcher),
+    /// Open the Customize toolbar window (View → Customize toolbar…, #141).
+    CustomizeToolbar,
 }
 
 /// How the caller asked for a Tab to be opened.

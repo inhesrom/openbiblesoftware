@@ -251,6 +251,10 @@ _Avoid_: Omnibox, Search bar, Command palette (for the box)
 A toolbar button with an icon and a label (Library, Guides, Tools, Layouts) that drops down what it launches, under itself; Alt+L, Alt+G, Alt+T and Alt+Y open them from the keyboard. The Library launcher searches the library by title, abbreviation, Resource type and language, and with nothing typed lists the Resources opened lately (Recent: those of the newest History Visits and of open Tabs) and the top of each type's Preferred order. The Layouts launcher shows saved and Built-in Layouts as cards with a thumbnail of their Panel tiling.
 _Avoid_: Ribbon, Toolbar menu, Pane (for its drop-down)
 
+**Toolbar**:
+The bar holding the Launchers. It sits at the Top of the window (in the menu bar) by default, or at the Bottom, Left or Right: its Toolbar position, chosen in View → Toolbar position, by right-clicking it, or by dragging its grip to that edge. At the Left and Right it shows icons only, with the labels in the tooltips. Customize toolbar… shows or hides each Launcher, orders them, and picks icons and labels, icons only or labels only; a Launcher with no room in a small window goes into its » button. With Auto-hide it is drawn over the Workspace only while the pointer is at its window edge or Alt is held. A hidden Launcher still opens from its shortcut and the Command box. All of this is a preference in the User database, never part of a Layout.
+_Avoid_: Ribbon, Dock, Menu bar (for the toolbar)
+
 **Built-in Layout**:
 One of the Layouts that come with the app: "Bible + Commentary", "Word study desk", "Parallel Bibles" and "Reading only". It is made from the library's Preferred order when it is loaded, at the Passage shown then, and cannot be renamed or deleted. One that needs a Resource the library lacks says so instead.
 _Avoid_: Preset, Template

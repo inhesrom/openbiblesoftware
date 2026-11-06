@@ -49,6 +49,7 @@ mod search_tab;
 mod search_views;
 mod starter_tab;
 mod toolbar;
+mod toolbar_bar;
 mod toolbar_look;
 mod word_info_tab;
 mod word_sections_view;
@@ -422,6 +423,10 @@ impl Shell {
                     self.st.command_box.focus = true;
                 }
                 Effect::OpenLauncher(which) => self.st.toolbar.toggle(which),
+                Effect::CustomizeToolbar => {
+                    self.st.toolbar.close();
+                    self.st.toolbar.customizing = true;
+                }
                 Effect::ShowCopyVerses { passages, bibles } => {
                     self.st.open_copy_verses(passages, bibles);
                 }
@@ -841,13 +846,18 @@ impl Shell {
             ui.ctx().request_repaint_after(after);
         }
         self.shortcuts(ui);
-        egui::Panel::top("menus")
+        self.st.toolbar.begin_frame();
+        let menus = egui::Panel::top("menus")
             .frame(
                 egui::Frame::new()
                     .fill(theme::c().surface)
                     .inner_margin(egui::Margin::symmetric(14, 6)),
             )
             .show(ui, |ui| self.menu_bar(ui));
+        self.st.toolbar.menus_bottom = menus.response.rect.bottom();
+        // The toolbar at the Bottom, Left or Right, or Auto-hidden (#141); then its open pane.
+        self.toolbar_outside_menus(ui);
+        self.launcher_pane(ui);
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -870,6 +880,7 @@ impl Shell {
             });
         self.apply_effects();
         self.st.overlays(ui);
+        self.customize_window(ui.ctx());
         // A Notes card being edited saves as the user types, and at once once its Tab is not
         // drawn (#64): checked here, since the Notes Tab's own code only runs while drawn.
         self.st.notes_after_frame(ui.ctx());
@@ -929,8 +940,8 @@ impl Shell {
         self.apply_effects();
     }
 
-    /// The toolbar: the app's name, the Launchers (#140), the View and Help menus, and the
-    /// Command box on the right.
+    /// The menu bar: the app's name, the Launchers (#140) when the toolbar is at the Top (#141),
+    /// the View and Help menus, and the Command box on the right.
     fn menu_bar(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.label(
@@ -940,8 +951,13 @@ impl Shell {
             );
             ui.add_space(10.0);
             ui.spacing_mut().item_spacing.x = 4.0;
-            self.launchers(ui);
-            ui.add_space(8.0);
+            let toolbar = &self.st.session.toolbar;
+            if toolbar.position == obs_engine::ToolbarPosition::Top && !toolbar.auto_hide {
+                let room = ui.available_width() - self.st.toolbar.reserve;
+                self.launcher_strip(ui, room, false);
+                ui.add_space(8.0);
+            }
+            let rest = ui.cursor().left();
             ui.scope(|ui| {
                 let w = &mut ui.visuals_mut().widgets;
                 w.inactive.bg_stroke = Stroke::NONE;
@@ -959,16 +975,19 @@ impl Shell {
                     });
                 }
             });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let menus = ui.cursor().left() - rest;
+            let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 self.command_box(ui);
                 // Today's reading (#147), left of the Command box.
                 ui.add_space(8.0);
                 if self.st.todays_reading_button(ui) {
                     self.apply_effects();
                 }
+                ui.min_rect().width()
             });
+            // What the Launchers leave room for next frame: the menus, the right side and gaps.
+            self.st.toolbar.reserve = menus + right.inner + 8.0 + 2.0 * ui.spacing().item_spacing.x;
         });
-        self.launcher_pane(ui);
     }
 
     fn menu_item(&mut self, ui: &mut Ui, item: MenuItem) {
@@ -983,6 +1002,9 @@ impl Shell {
                 let label = match id {
                     "view.red_letter" if self.st.session.text.red_letter => "✓ Red letter".into(),
                     "view.highlights" if self.st.session.appearance.show_highlights => {
+                        format!("✓ {}", spec.label)
+                    }
+                    "view.toolbar_auto_hide" if self.st.session.toolbar.auto_hide => {
                         format!("✓ {}", spec.label)
                     }
                     "library.get_resources" => {

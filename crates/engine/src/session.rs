@@ -55,6 +55,8 @@ pub struct Session {
     /// The fonts chosen in View → Fonts (#138), by name. The UI loads them and puts the
     /// reading faces into [`Self::text`].
     pub fonts: crate::appearance::FontChoices,
+    /// Where the toolbar sits and what it shows (#141), an app preference.
+    pub toolbar: crate::toolbar_settings::ToolbarSettings,
     /// What Word Info shows and whether it is pinned (#50).
     pub word_info: crate::word_info::WordInfo,
     /// Guide arrangements and Guide sections computed on the job queue (#53).
@@ -113,6 +115,7 @@ impl Session {
             text: TextSettings::default(),
             appearance: crate::appearance::Appearance::default(),
             fonts: crate::appearance::FontChoices::default(),
+            toolbar: crate::toolbar_settings::ToolbarSettings::default(),
             word_info: crate::word_info::WordInfo::default(),
             guides,
             word_study,
@@ -167,6 +170,11 @@ impl Session {
                 &mut self.text,
                 &mut self.fonts,
             );
+        }
+        if let Ok(Some(v)) = user.preference(crate::toolbar_settings::TOOLBAR_PREF)
+            && let Ok(v) = serde_json::from_str::<serde_json::Value>(&v)
+        {
+            self.toolbar = crate::toolbar_settings::ToolbarSettings::from_json(&v);
         }
         if let Ok(order) = user.preferred_order() {
             self.library.set_preferred_order(order.clone());
