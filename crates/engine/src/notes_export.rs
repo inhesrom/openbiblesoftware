@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 
 use crate::annotations::{Anchor, Content};
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params};
-use crate::copy_verses::{html_document, html_escape, markdown_escape};
+use crate::copy_verses::{html_document, html_escape, markdown_escape, markdown_escape_line_start};
 use crate::notes::{Card, NotesFilter};
 use crate::session::Session;
 use crate::workspace::TabId;
@@ -88,7 +88,7 @@ fn markdown_lines(text: &str, prefix: &str) -> String {
             for c in line[..line.len() - body.len()].chars() {
                 out.push_str(if c == '\t' { "&#9;" } else { "&#32;" });
             }
-            out.push_str(&escape_markers(&markdown_escape(body)));
+            out.push_str(&markdown_escape_line_start(&markdown_escape(body)));
             if lines.get(i + 1).is_some_and(|next| !next.is_empty()) {
                 out.push('\\');
             }
@@ -96,30 +96,6 @@ fn markdown_lines(text: &str, prefix: &str) -> String {
         out.push('\n');
     }
     out.truncate(out.trim_end_matches('\n').len());
-    out
-}
-
-/// Escape what would start a block at the beginning of a line (already inline-escaped):
-/// list and heading markers, thematic breaks, ordered-list numbers and character references.
-fn escape_markers(line: &str) -> String {
-    let mut out = String::with_capacity(line.len() + 2);
-    if line.starts_with(['-', '+', '=']) {
-        out.push('\\');
-    }
-    let digits = line.bytes().take_while(u8::is_ascii_digit).count();
-    let ordered = digits > 0 && line[digits..].starts_with(['.', ')']);
-    for (i, c) in line.char_indices() {
-        if (ordered && i == digits)
-            || (c == '&'
-                && line[i + 1..]
-                    .chars()
-                    .next()
-                    .is_some_and(|n| n.is_alphanumeric() || n == '#'))
-        {
-            out.push('\\');
-        }
-        out.push(c);
-    }
     out
 }
 

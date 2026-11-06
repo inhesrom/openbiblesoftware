@@ -2,12 +2,16 @@
 //! Copy verses options or a Copy preset, previewed, then copied as plain text, rich text
 //! (HTML with its plain-text form) or Markdown, or printed / saved as PDF.
 
+use std::ops::Range;
 use std::sync::Arc;
 
-use egui::text::{LayoutJob, TextFormat};
-use egui::{FontId, RichText, Ui};
+use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Ui, vec2};
 use obs_engine::copy_verses::OPTION_CHOICES;
-use obs_engine::{CopiedBible, CopiedText, CopyFormat, CopyOptions, TabKind, html_document};
+use obs_engine::{
+    CopiedBible, CopiedText, CopyFormat, CopyOptions, ReferencePlacement, TabKind, VerseLayout,
+    html_document,
+};
+use obs_layout::{ColorRole, LaidBlock};
 use obs_model::ResourceType;
 use obs_scripture::{Passage, RefStyle, Standard, format_passage, parse_reference};
 use serde_json::json;
@@ -15,16 +19,31 @@ use serde_json::json;
 use super::State;
 use crate::doc::ReadingDoc;
 use crate::theme;
+use crate::workers::SnippetCache;
 
 /// The Copy verses window's egui id.
 pub(crate) const WINDOW: &str = "copy-verses";
 
-/// What a copy was made from: made again when any of it changes.
+/// What a copy was made from: made again when any of it changes, including a chosen Bible
+/// being updated or removed while the window is open.
 #[derive(Debug, Clone, PartialEq)]
 struct Made {
     passages: String,
     bibles: Vec<String>,
+    /// Each chosen Bible's revision, content hash and file, `None` when not in the library.
+    editions: Vec<Option<(u32, String, std::path::PathBuf)>>,
     options: CopyOptions,
+}
+
+/// One line of the preview, drawn by the text pipeline (ADR 0004): Hebrew lines read right
+/// to left in the Reading font for Hebrew.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PreviewLine {
+    pub(crate) text: String,
+    /// Byte ranges drawn in the verse-number colour (rich text's verse numbers).
+    pub(crate) numbers: Vec<Range<usize>>,
+    /// The line's first strong character reads right to left.
+    pub(crate) rtl: bool,
 }
 
 /// The Copy verses window.
@@ -40,6 +59,31 @@ pub(crate) struct CopyUi {
     /// The name typed for Save preset.
     preset_name: String,
     made: Option<(Made, Result<Arc<CopiedText>, String>)>,
+    /// The preview's lines, laid out by the layout workers.
+    snippets: SnippetCache,
+    /// What the preview drew last frame, with the layouts of the lines laid out by then.
+    pub(crate) shown: Vec<(PreviewLine, Option<Arc<LaidBlock>>)>,
+}
+
+impl CopyUi {
+    /// The Bible `id` is gone from the library: it is no longer chosen.
+    pub(super) fn removed(&mut self, id: &str) {
+        self.bibles.retain(|b| b != id);
+        self.made = None;
+    }
+
+    /// The Bible `id` was updated: copy its new text.
+    pub(super) fn replaced(&mut self, id: &str) {
+        if self.bibles.iter().any(|b| b == id) {
+            self.made = None;
+        }
+    }
+
+    /// Preview lines still being laid out.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn has_pending(&self) -> bool {
+        self.snippets.has_pending()
+    }
 }
 
 /// One button's action.
@@ -103,9 +147,19 @@ impl State {
 
     /// The copy for the window's choices, made again only when they change.
     fn copied(&mut self) -> Result<Arc<CopiedText>, String> {
+        let library = &self.session.library;
+        let editions = (self.copy_ui.bibles.iter())
+            .map(|id| {
+                library.get(id).map(|e| {
+                    let m = &e.manifest;
+                    (m.revision, m.content_hash.clone(), e.path.clone())
+                })
+            })
+            .collect();
         let made = Made {
             passages: self.copy_ui.passages.clone(),
             bibles: self.copy_ui.bibles.clone(),
+            editions,
             options: self.session.copy_verses.options,
         };
         if let Some((from, result)) = &self.copy_ui.made
@@ -277,8 +331,9 @@ impl State {
                             .id_salt("copy-preview")
                             .max_height(max_height)
                             .show(ui, |ui| match &copied {
-                                Ok(copied) => preview(ui, copied, self.copy_ui.preview),
+                                Ok(copied) => self.copy_preview(ui, copied),
                                 Err(e) => {
+                                    self.copy_ui.shown.clear();
                                     ui.label(RichText::new(e).color(theme::c().warn));
                                 }
                             });
@@ -365,86 +420,138 @@ impl State {
     }
 }
 
-/// The copy as it will paste: plain text and Markdown as text, rich text formatted.
-fn preview(ui: &mut Ui, copied: &CopiedText, format: CopyFormat) {
-    match format {
-        CopyFormat::PlainText => {
-            ui.add(egui::Label::new(
-                RichText::new(copied.plain_text()).color(theme::c().ink),
-            ));
+impl State {
+    /// The copy as it will paste, line by line through the text pipeline: plain text and
+    /// Markdown as their text, rich text with its verse numbers marked.
+    fn copy_preview(&mut self, ui: &mut Ui, copied: &CopiedText) {
+        let lines = preview_lines(copied, self.copy_ui.preview);
+        let settings = self.session.text;
+        let width = ui.available_width().max(40.0);
+        let gap = settings.size * 0.6;
+        let mut shown = Vec::with_capacity(lines.len());
+        for line in lines {
+            if line.text.is_empty() {
+                ui.add_space(gap);
+                shown.push((line, None));
+                continue;
+            }
+            let numbers: Vec<(Range<usize>, ColorRole)> = (line.numbers.iter())
+                .map(|r| (r.clone(), ColorRole::VerseNumber))
+                .collect();
+            let laid = self.copy_ui.snippets.get_styled(
+                &line.text,
+                ColorRole::Ink,
+                &numbers,
+                line.rtl,
+                width,
+                &settings,
+            );
+            let height = laid
+                .as_ref()
+                .map_or(settings.size * settings.line_spacing, |l| l.height);
+            let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+            let label = line.text.clone();
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &label));
+            match &laid {
+                Some(laid) if ui.is_rect_visible(rect) => {
+                    let quads = self.atlas.atlas.quads(
+                        laid,
+                        [rect.left(), rect.top()],
+                        ui.ctx().pixels_per_point(),
+                    );
+                    let mut mesh = Mesh::with_texture(self.atlas.sync(ui.ctx()));
+                    for q in quads {
+                        mesh.add_rect_with_uv(
+                            Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
+                            Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
+                            self.palette.color(q.role),
+                        );
+                    }
+                    ui.painter().add(Shape::mesh(mesh));
+                }
+                Some(_) => {}
+                None => ui.ctx().request_repaint(),
+            }
+            shown.push((line, laid));
         }
-        CopyFormat::Markdown => {
-            ui.add(egui::Label::new(
-                RichText::new(copied.markdown())
-                    .monospace()
-                    .color(theme::c().ink),
-            ));
-        }
-        CopyFormat::RichText => {
-            ui.add(egui::Label::new(rich_text(ui, copied)));
-        }
+        self.copy_ui.shown = shown;
     }
 }
 
-/// Rich text as a word processor shows it: verse numbers raised and small, the Attribution
-/// small.
-fn rich_text(ui: &Ui, copied: &CopiedText) -> LayoutJob {
-    let size = ui.style().text_styles[&egui::TextStyle::Body].size;
-    let ink = theme::c().ink;
-    let text = TextFormat::simple(FontId::proportional(size), ink);
-    let small = TextFormat::simple(FontId::proportional(size * 0.8), theme::c().muted);
-    let raised = TextFormat {
-        font_id: FontId::proportional(size * 0.65),
-        color: ink,
-        valign: egui::Align::TOP,
-        ..Default::default()
+/// The preview's lines for `format`; an empty line is a gap between paragraphs.
+pub(crate) fn preview_lines(copied: &CopiedText, format: CopyFormat) -> Vec<PreviewLine> {
+    let plain = |text: &str| PreviewLine {
+        text: text.to_string(),
+        numbers: Vec::new(),
+        rtl: obs_layout::starts_rtl(text),
     };
+    match format {
+        CopyFormat::PlainText | CopyFormat::Markdown => {
+            copied.render(format).split('\n').map(plain).collect()
+        }
+        CopyFormat::RichText => rich_text_lines(copied),
+    }
+}
+
+/// Rich text as a word processor shows it, a line per paragraph: verse numbers marked
+/// (joined to their verse by a no-break space), and the Attributions after the blocks.
+fn rich_text_lines(copied: &CopiedText) -> Vec<PreviewLine> {
     let o = copied.options;
-    let mut job = LayoutJob::default();
-    let gap = |job: &mut LayoutJob| {
-        if !job.text.is_empty() {
-            job.append("\n\n", 0.0, text.clone());
+    let mut lines: Vec<PreviewLine> = Vec::new();
+    let gap = |lines: &mut Vec<PreviewLine>| {
+        if !lines.is_empty() {
+            lines.push(PreviewLine {
+                text: String::new(),
+                numbers: Vec::new(),
+                rtl: false,
+            });
         }
     };
+    let plain = |text: &str| PreviewLine {
+        text: text.to_string(),
+        numbers: Vec::new(),
+        rtl: obs_layout::starts_rtl(text),
+    };
     for block in &copied.blocks {
-        if o.reference == obs_engine::ReferencePlacement::Before {
-            gap(&mut job);
-            job.append(&block.reference, 0.0, text.clone());
+        if o.reference == ReferencePlacement::Before {
+            gap(&mut lines);
+            lines.push(plain(&block.reference));
         }
         let last_paragraph = block.paragraphs.len().saturating_sub(1);
         for (p, paragraph) in block.paragraphs.iter().enumerate() {
-            let together = o.layout == obs_engine::VerseLayout::VersePerLine && p > 0;
-            if together {
-                job.append("\n", 0.0, text.clone());
-            } else {
-                gap(&mut job);
+            if !(o.layout == VerseLayout::VersePerLine && p > 0) {
+                gap(&mut lines);
             }
+            let mut text = String::new();
+            let mut numbers = Vec::new();
             if o.quotation_marks && p == 0 {
-                job.append("“", 0.0, text.clone());
+                text.push('“');
             }
             for (i, verse) in paragraph.iter().enumerate() {
                 if i > 0 {
-                    job.append(" ", 0.0, text.clone());
+                    text.push(' ');
                 }
                 if o.verse_numbers && !verse.number.is_empty() {
-                    job.append(&verse.number, 0.0, raised.clone());
-                    job.append("\u{a0}", 0.0, text.clone());
+                    numbers.push(text.len()..text.len() + verse.number.len());
+                    text.push_str(&verse.number);
+                    text.push('\u{a0}');
                 }
-                job.append(&verse.text, 0.0, text.clone());
+                text.push_str(&verse.text);
             }
             if o.quotation_marks && p == last_paragraph {
-                job.append("”", 0.0, text.clone());
+                text.push('”');
             }
+            let rtl = obs_layout::starts_rtl(&text);
+            lines.push(PreviewLine { text, numbers, rtl });
         }
-        if o.reference == obs_engine::ReferencePlacement::After {
-            gap(&mut job);
-            job.append(&block.reference, 0.0, text.clone());
+        if o.reference == ReferencePlacement::After {
+            gap(&mut lines);
+            lines.push(plain(&block.reference));
         }
     }
     for a in &copied.attributions {
-        gap(&mut job);
-        job.append(a, 0.0, small.clone());
+        gap(&mut lines);
+        lines.push(plain(a));
     }
-    job.wrap.max_width = ui.available_width();
-    job
+    lines
 }

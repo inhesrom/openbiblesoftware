@@ -282,6 +282,88 @@ fn text_is_escaped_for_markdown_and_html() {
 }
 
 #[test]
+fn markdown_keeps_character_references_and_line_start_markers_as_written() {
+    let bible = TestBible::new(
+        "TB",
+        vec![
+            (jn(16), "- item &amp; &#38; AT&T R&D".into()),
+            (jn(17), "1. first + second".into()),
+            (jn(18), "=== 2) +plus".into()),
+        ],
+        Vec::new(),
+    );
+    let bibles = [&bible as &dyn CopiedBible];
+    let mut options = CopyOptions {
+        verse_numbers: false,
+        quotation_marks: false,
+        layout: VerseLayout::VersePerLine,
+        ..CopyOptions::default()
+    };
+    assert_eq!(
+        copy_verses(&passages("Jn 3:16-18"), &bibles, options).markdown(),
+        "\\- item \\&amp; \\&\\#38; AT\\&T R\\&D\\\n\
+         1\\. first + second\\\n\
+         \\=== 2) +plus\n\n\
+         John 3:16-18 (TB)"
+    );
+    options.layout = VerseLayout::Paragraphs;
+    options.reference = ReferencePlacement::Before;
+    assert_eq!(
+        copy_verses(&passages("Jn 3:16"), &bibles, options).markdown(),
+        "John 3:16 (TB)\n\n\\- item \\&amp; \\&\\#38; AT\\&T R\\&D"
+    );
+    // Behind a verse number or a quotation mark nothing starts a block, and nothing changes.
+    options.verse_numbers = true;
+    assert_eq!(
+        copy_verses(&passages("Jn 3:16"), &bibles, options).markdown(),
+        "John 3:16 (TB)\n\n**16** - item \\&amp; \\&\\#38; AT\\&T R\\&D"
+    );
+}
+
+#[test]
+fn a_verse_map_that_swaps_verses_copies_them_in_the_bibles_order_with_its_reference() {
+    // A Greek-numbered Philippians: Standard Phil 1:16 is its 1:17 and 1:17 its 1:16.
+    let php = |v| Verse::new(Book::Philippians, 1, v);
+    let verses: Vec<(Verse, String)> = (15..=18)
+        .map(|n| (php(n), format!("Greek-numbered 1:{n}.")))
+        .collect();
+    let mut bible = TestBible::new("GRK", verses, Vec::new());
+    bible.map = Some(VerseMap::new(
+        (15..=18)
+            .map(|n| VerseMapEntry {
+                verse: php(n),
+                last: n,
+                standard: Some(Passage::verse(php(match n {
+                    16 => 17,
+                    17 => 16,
+                    n => n,
+                }))),
+            })
+            .collect(),
+        Vec::new(),
+        &Standard,
+    ));
+    let copied = copy_verses(
+        &passages("Phil 1:16-17"),
+        &[&bible as &dyn CopiedBible],
+        CopyOptions::default(),
+    );
+    assert_eq!(
+        copied.plain_text(),
+        "16 Greek-numbered 1:16. 17 Greek-numbered 1:17.\nPhilippians 1:16-17 (GRK)"
+    );
+    let one = copy_verses(
+        &passages("Phil 1:16"),
+        &[&bible as &dyn CopiedBible],
+        CopyOptions::default(),
+    );
+    assert_eq!(
+        one.plain_text(),
+        "17 Greek-numbered 1:17.\nPhilippians 1:17 (GRK)"
+    );
+}
+
+#[test]
 fn the_attribution_is_appended_when_a_resources_licence_requires_it() {
     let (kjv, _) = kjv_and_bsb();
     let mut tagnt = john("TAGNT", BSB, Vec::new());

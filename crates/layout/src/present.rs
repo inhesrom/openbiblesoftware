@@ -599,6 +599,12 @@ fn push_run(runs: &mut Vec<Run>, text: &str, unit_start: usize, style: RunStyle)
     }
 }
 
+/// Whether `text` reads right to left as a paragraph of its own: its first strong character
+/// is right-to-left (UAX #9 rules P2-P3), as for a line of copied Hebrew text.
+pub fn starts_rtl(text: &str) -> bool {
+    unicode_bidi::get_base_direction(text) == unicode_bidi::Direction::Rtl
+}
+
 /// A one-off paragraph of plain text in `base`, with the byte ranges in `styled` drawn in
 /// their own colour role (a Note body's Bible references as links, #64). Byte positions map
 /// back to `text` (as unit positions), so hit tests and range rects work on them.

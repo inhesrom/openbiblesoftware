@@ -253,7 +253,9 @@ pub struct CopiedText {
     pub attributions: Vec<String>,
 }
 
-/// The verses of `passage` (Standard) in `bible`, in its own numbering, with their text.
+/// The verses of `passage` (Standard) in `bible`, in its own numbering and in its own
+/// order, with their text. A Verse map may reorder verses (Standard Phil 1:16-17 is Phil
+/// 1:17, 1:16 in some Bibles), so they are collected in Standard order and then sorted.
 fn native_verses(bible: &dyn CopiedBible, passage: Passage) -> Vec<(Verse, u16, String)> {
     let first = passage.start();
     let mut out: Vec<(Verse, u16, String)> = Vec::new();
@@ -268,6 +270,7 @@ fn native_verses(bible: &dyn CopiedBible, passage: Passage) -> Vec<(Verse, u16, 
             }
         }
     }
+    out.sort_by_key(|(native, _, _)| *native);
     out
 }
 
@@ -282,11 +285,17 @@ pub fn copy_verses(
     for passage in passages.iter() {
         for (i, bible) in bibles.iter().enumerate() {
             let verses = native_verses(*bible, *passage);
-            let (Some(first), Some(last)) = (verses.first(), verses.last()) else {
+            let Some(first) = verses.first() else {
                 continue;
             };
             used[i] = true;
-            let end = Verse::new(last.0.book, last.0.chapter, last.1.max(last.0.verse));
+            let end = verses
+                .iter()
+                .map(|(native, last, _)| {
+                    Verse::new(native.book, native.chapter, (*last).max(native.verse))
+                })
+                .max()
+                .unwrap_or(first.0);
             let range = Passage::new(first.0, end).unwrap_or(Passage::verse(first.0));
             let reference = format!(
                 "{} ({})",
@@ -341,17 +350,47 @@ pub fn copy_verses(
     }
 }
 
-/// `text` with Markdown's special characters escaped, so it reads back as written.
+/// `text` with Markdown's special characters escaped, so it reads back as written: the
+/// inline markers, and `&` where it could start a character reference (`&amp;`, `&#38;`).
+/// What starts a block at the beginning of a line is [`markdown_escape_line_start`]'s job.
 pub fn markdown_escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
-    for c in text.chars() {
-        if matches!(
-            c,
-            '\\' | '`' | '*' | '_' | '[' | ']' | '<' | '>' | '#' | '|' | '~'
-        ) {
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        let entity = c == '&'
+            && chars
+                .peek()
+                .is_some_and(|n| n.is_alphanumeric() || *n == '#');
+        if entity
+            || matches!(
+                c,
+                '\\' | '`' | '*' | '_' | '[' | ']' | '<' | '>' | '#' | '|' | '~'
+            )
+        {
             out.push('\\');
         }
         out.push(c);
+    }
+    out
+}
+
+/// `line` (already [`markdown_escape`]d) with what would start a block at the beginning of a
+/// Markdown line escaped: list and setext-heading markers (`-`, `+`, `=`), and the `.` or `)`
+/// of an ordered-list number (`1.`). Headings, quotes and `*`/`_` breaks are inline-escaped.
+pub fn markdown_escape_line_start(line: &str) -> String {
+    let body = line.trim_start_matches(' ');
+    let mut out = String::with_capacity(line.len() + 1);
+    out.push_str(&line[..line.len() - body.len()]);
+    if body.starts_with(['-', '+', '=']) {
+        out.push('\\');
+    }
+    let digits = body.bytes().take_while(u8::is_ascii_digit).count();
+    if digits > 0 && body[digits..].starts_with(['.', ')']) {
+        out.push_str(&body[..digits]);
+        out.push('\\');
+        out.push_str(&body[digits..]);
+    } else {
+        out.push_str(body);
     }
     out
 }
@@ -422,7 +461,12 @@ impl CopiedText {
         match format {
             CopyFormat::PlainText => self.write(&PLAIN),
             CopyFormat::RichText => self.write(&HTML),
-            CopyFormat::Markdown => self.write(&MARKDOWN),
+            CopyFormat::Markdown => self
+                .write(&MARKDOWN)
+                .split('\n')
+                .map(markdown_escape_line_start)
+                .collect::<Vec<_>>()
+                .join("\n"),
         }
     }
 

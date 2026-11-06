@@ -1049,10 +1049,14 @@ impl State {
         width: f32,
     ) -> Option<(Rect, Arc<LaidBlock>)> {
         let settings = self.session.text;
-        let laid =
-            self.notes_ui
-                .snippets
-                .get_styled(text, base, styled, width.max(40.0), &settings);
+        let laid = self.notes_ui.snippets.get_styled(
+            text,
+            base,
+            styled,
+            false,
+            width.max(40.0),
+            &settings,
+        );
         let Some(laid) = laid else {
             ui.allocate_space(vec2(width, settings.size * 1.6));
             ui.ctx().request_repaint();

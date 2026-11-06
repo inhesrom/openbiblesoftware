@@ -413,10 +413,12 @@ impl Shell {
                 Effect::Removed(id) => {
                     self.st.docs.remove(&id);
                     self.st.marks.forget(&id);
+                    self.st.copy_ui.removed(&id);
                 }
                 Effect::Replaced(id) => {
                     self.st.docs.remove(&id);
                     self.st.marks.forget(&id);
+                    self.st.copy_ui.replaced(&id);
                     // Its open Tabs (and every Text Comparison) load the new text, where they
                     // were.
                     let reload: Vec<TabId> = self

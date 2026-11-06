@@ -145,13 +145,100 @@ const NO_ATTRIBUTION_LICENSES: &[&str] = &[
     "Unlicense",
 ];
 
-/// Whether an SPDX expression lets copies go without credit: one of its `OR` alternatives
-/// is public domain or CC0 (`LicenseRef-PD OR CC-BY-3.0` may be used as public domain).
+/// Whether an SPDX expression lets copies go without credit: some way of satisfying it uses
+/// only public-domain or CC0 licences (`LicenseRef-PD OR CC-BY-3.0` may be used as public
+/// domain; `(CC0-1.0 OR MIT) AND CC-BY-4.0` may not). `AND` binds tighter than `OR`, as in
+/// SPDX; an expression that does not parse is taken to require credit.
 pub fn attribution_optional(spdx: &str) -> bool {
-    spdx.split(" OR ").any(|alternative| {
-        let alternative = alternative.trim().trim_matches(['(', ')']).trim();
-        NO_ATTRIBUTION_LICENSES.contains(&alternative)
-    })
+    let tokens = spdx_tokens(spdx);
+    let mut parser = SpdxParser {
+        tokens: &tokens,
+        at: 0,
+    };
+    match parser.or_expression() {
+        Some(optional) if parser.at == tokens.len() => optional,
+        _ => false,
+    }
+}
+
+fn spdx_tokens(spdx: &str) -> Vec<&str> {
+    let mut tokens = Vec::new();
+    let mut start = None;
+    for (i, c) in spdx.char_indices() {
+        if c.is_whitespace() || c == '(' || c == ')' {
+            if let Some(s) = start.take() {
+                tokens.push(&spdx[s..i]);
+            }
+            if c == '(' || c == ')' {
+                tokens.push(&spdx[i..i + 1]);
+            }
+        } else if start.is_none() {
+            start = Some(i);
+        }
+    }
+    if let Some(s) = start {
+        tokens.push(&spdx[s..]);
+    }
+    tokens
+}
+
+/// Recursive-descent evaluation of an SPDX licence expression to "may go without credit".
+struct SpdxParser<'a> {
+    tokens: &'a [&'a str],
+    at: usize,
+}
+
+impl<'a> SpdxParser<'a> {
+    fn peek(&self) -> Option<&'a str> {
+        self.tokens.get(self.at).copied()
+    }
+
+    fn next(&mut self) -> Option<&'a str> {
+        let token = self.peek()?;
+        self.at += 1;
+        Some(token)
+    }
+
+    fn or_expression(&mut self) -> Option<bool> {
+        let mut optional = self.and_expression()?;
+        while self.peek().is_some_and(|t| t.eq_ignore_ascii_case("OR")) {
+            self.at += 1;
+            optional |= self.and_expression()?;
+        }
+        Some(optional)
+    }
+
+    fn and_expression(&mut self) -> Option<bool> {
+        let mut optional = self.license()?;
+        while self.peek().is_some_and(|t| t.eq_ignore_ascii_case("AND")) {
+            self.at += 1;
+            optional &= self.license()?;
+        }
+        Some(optional)
+    }
+
+    fn license(&mut self) -> Option<bool> {
+        let token = self.next()?;
+        let optional = match token {
+            "(" => {
+                let inner = self.or_expression()?;
+                (self.next()? == ")").then_some(inner)?
+            }
+            ")" => return None,
+            _ if ["AND", "OR", "WITH"]
+                .iter()
+                .any(|op| token.eq_ignore_ascii_case(op)) =>
+            {
+                return None;
+            }
+            _ => NO_ATTRIBUTION_LICENSES.contains(&token.trim_end_matches('+')),
+        };
+        if self.peek().is_some_and(|t| t.eq_ignore_ascii_case("WITH")) {
+            self.at += 1;
+            self.next().filter(|t| *t != "(" && *t != ")")?;
+        }
+        Some(optional)
+    }
 }
 
 /// Whether an SPDX expression names a Creative Commons Attribution licence (`CC-BY-4.0`,
@@ -245,6 +332,17 @@ mod tests {
             ("CC0-1.0", false),
             ("LicenseRef-PD OR CC-BY-3.0", false),
             ("MIT AND CC-BY-4.0", true),
+            // Grouping decides: CC BY applies whichever alternative is picked inside the group.
+            ("(CC0-1.0 OR MIT) AND CC-BY-4.0", true),
+            ("CC-BY-4.0 AND (CC0-1.0 OR MIT)", true),
+            ("CC0-1.0 AND CC-BY-4.0 OR MIT", true),
+            ("(CC0-1.0 AND LicenseRef-PD) OR CC-BY-4.0", false),
+            ("CC-BY-4.0 OR (CC0-1.0)", false),
+            ("MIT AND CC0-1.0 OR LicenseRef-PD", false),
+            // Malformed expressions are taken to require credit.
+            ("(CC0-1.0 OR", true),
+            ("CC0-1.0)", true),
+            ("", true),
         ] {
             m.license = license.into();
             assert_eq!(m.requires_attribution(), required, "{license}");

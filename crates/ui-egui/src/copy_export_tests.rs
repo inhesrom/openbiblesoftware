@@ -112,6 +112,7 @@ fn in_window(h: &Harness, text: &str) -> Rect {
 /// Click `text` in the window, long enough after the last click not to be a double click.
 fn click_in_window(h: &mut Harness, text: &str) {
     h.frames(25);
+    settle_preview(h);
     let at = in_window(h, text).center();
     h.click(at);
 }
@@ -120,6 +121,31 @@ fn click_in_window(h: &mut Harness, text: &str) {
 fn field(h: &Harness, label: &str) -> Pos2 {
     let r = in_window(h, label);
     pos2(r.right() + 120.0, r.center().y)
+}
+
+/// Frames until the preview's lines are laid out (the window, centred, stops moving).
+fn settle_preview(h: &mut Harness) {
+    for _ in 0..400 {
+        let ui = &h.shell.st.copy_ui;
+        let laid = (ui.shown.iter()).all(|(line, laid)| line.text.is_empty() || laid.is_some());
+        if !ui.has_pending() && laid {
+            h.frames(2);
+            return;
+        }
+        h.paced_frame();
+    }
+}
+
+/// The preview's text once laid out, a line per preview line.
+fn preview_text(h: &mut Harness) -> String {
+    settle_preview(h);
+    let shown = &h.shell.st.copy_ui.shown;
+    assert!(
+        (shown.iter()).all(|(line, laid)| line.text.is_empty() || laid.is_some()),
+        "the preview settles"
+    );
+    let lines: Vec<&str> = shown.iter().map(|(line, _)| line.text.as_str()).collect();
+    lines.join("\n")
 }
 
 /// The print page the app last opened in the browser (a `file://` URL: `file:///tmp/…`, or
@@ -192,6 +218,7 @@ fn copy_verses_copies_jn_3_16_18_in_kjv_and_bsb_with_a_preset_as_markdown_and_ri
     assert_eq!(h.shell.st.copy_ui.passages, "Gen 30:1");
     assert_eq!(h.shell.st.copy_ui.bibles, ["test-bible"]);
     // Passages and Bibles, as a user picks them.
+    settle_preview(&mut h);
     let passages = field(&h, "Passages");
     type_into(&mut h, passages, "Jn 3:16-18");
     for id in h.shell.st.copy_ui.bibles.clone() {
@@ -212,6 +239,7 @@ fn copy_verses_copies_jn_3_16_18_in_kjv_and_bsb_with_a_preset_as_markdown_and_ri
     assert_eq!(h.shell.st.copy_ui.bibles, ["kjv", "bsb"]);
     // The Handout options, saved as a preset.
     click_in_window(&mut h, "Before the text");
+    settle_preview(&mut h);
     let quotes = in_window(&h, "Quotation marks");
     let on = (h.shapes.iter())
         .filter(|(r, t)| t == "On" && (r.center().y - quotes.center().y).abs() < 6.0)
@@ -219,6 +247,7 @@ fn copy_verses_copies_jn_3_16_18_in_kjv_and_bsb_with_a_preset_as_markdown_and_ri
         .next()
         .unwrap();
     h.click(on);
+    settle_preview(&mut h);
     let name = in_window(&h, "Preset name").center();
     type_into(&mut h, name, "Handout");
     click_in_window(&mut h, "Save preset");
@@ -241,12 +270,21 @@ fn copy_verses_copies_jn_3_16_18_in_kjv_and_bsb_with_a_preset_as_markdown_and_ri
     // The Markdown preview, then Copy Markdown.
     click_in_window(&mut h, "Markdown");
     let markdown = expected_markdown();
-    assert!(h.texts().contains(&markdown.as_str()), "{:?}", h.texts());
+    assert_eq!(preview_text(&mut h), markdown);
+    // Resource text goes through the text pipeline (ADR 0004), not egui labels.
+    assert!(!h.texts().iter().any(|t| t.contains("loved the world")));
     preview(&h, "copy-verses-markdown");
     click_in_window(&mut h, "Copy Markdown");
     assert_eq!(h.copied.last(), Some(&markdown));
     // Rich text: HTML with its plain-text form.
     click_in_window(&mut h, "Rich text");
+    let rich = preview_text(&mut h);
+    assert!(
+        rich.starts_with(&format!("John 3:16-18 (KJV)\n\n“16\u{a0}{}", KJV[0])),
+        "{rich}"
+    );
+    let numbers = &h.shell.st.copy_ui.shown[2].0;
+    assert_eq!(&numbers.text[numbers.numbers[0].clone()], "16");
     preview(&h, "copy-verses-rich-text");
     click_in_window(&mut h, "Copy rich text");
     let (html, plain) = clipboard.0.lock().unwrap().last().cloned().unwrap();
@@ -336,6 +374,158 @@ fn the_notes_tool_exports_its_notebook_to_markdown_and_prints_it() {
     h.click_text("Print / Save as PDF…");
     let page = print_page(&h);
     assert!(page.contains("<h1>Sermon prep</h1>") && page.contains("<h2>John 3:16</h2>"));
+    drop(h);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+const GEN_1_1_2: [&str; 2] = ["בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃", "וְהָאָ֗רֶץ הָיְתָ֥ה תֹ֙הוּ֙ וָבֹ֔הוּ"];
+
+#[test]
+fn a_hebrew_bibles_preview_reads_right_to_left_through_the_text_pipeline() {
+    let dir = folder("hebrew");
+    let verses: Vec<(Verse, &str)> = (1..=2)
+        .zip(GEN_1_1_2)
+        .map(|(n, t)| (v(Book::Genesis, 1, n), t))
+        .collect();
+    write_library(
+        &dir.join("library"),
+        &[paragraphed_bible(
+            "heb-gen",
+            "HGEN",
+            &verses,
+            Direction::Rtl,
+        )],
+    );
+    let mut h = Harness::launch_full(Some(&dir.join("user.db")), JobMode::Inline, Some(&dir));
+    h.shell
+        .st
+        .session
+        .library
+        .add_file(&dir.join("library").join("heb-gen.obr"))
+        .unwrap();
+    h.shell.run(
+        "tool.copy_verses",
+        &json!({ "passages": "Gen 1:1-2", "bibles": "heb-gen" }),
+    );
+    h.frames(2);
+    let first_word = "בְּרֵאשִׁ֖ית";
+    let last_word = "הָאָֽרֶץ׃";
+    for (format, label) in [
+        (obs_engine::CopyFormat::PlainText, "Plain text"),
+        (obs_engine::CopyFormat::RichText, "Rich text"),
+        (obs_engine::CopyFormat::Markdown, "Markdown"),
+    ] {
+        click_in_window(&mut h, label);
+        assert_eq!(h.shell.st.copy_ui.preview, format);
+        let text = preview_text(&mut h);
+        assert!(text.contains(first_word), "{text}");
+        assert!(
+            !h.texts().iter().any(|t| t.contains(first_word)),
+            "{label}: Hebrew is not drawn by egui"
+        );
+        let settings = h.shell.st.session.text;
+        let hebrew_size = settings.size * settings.hebrew_scale;
+        let mut hebrew_lines = 0;
+        for (line, laid) in &h.shell.st.copy_ui.shown {
+            let Some(laid) = laid else { continue };
+            if !line.text.contains(first_word) {
+                assert!(!line.rtl, "{label}: {:?} reads left to right", line.text);
+                continue;
+            }
+            assert!(line.rtl, "{label}: {:?} reads right to left", line.text);
+            // In the Hebrew Reading font's size, the first word to the right of the last.
+            let items: Vec<_> = laid.lines.iter().flat_map(|l| &l.items).collect();
+            let at = |word: &str| {
+                let start = line.text.find(word).unwrap();
+                let item = (items.iter())
+                    .find(|i| i.bytes.contains(&start))
+                    .unwrap_or_else(|| panic!("{label}: no item for {word}"));
+                assert!(item.rtl && (item.style.size - hebrew_size).abs() < 0.01);
+                item.x
+            };
+            assert!(
+                at(first_word) > at(last_word),
+                "{label}: Hebrew runs right to left"
+            );
+            hebrew_lines += 1;
+        }
+        assert!(hebrew_lines > 0, "{label}: a Hebrew line was laid out");
+    }
+    drop(h);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn updating_or_removing_a_chosen_bible_with_the_window_open_copies_the_library_as_it_is() {
+    let dir = folder("library-change");
+    let mut h = launch(&dir);
+    h.shell.run(
+        "tool.copy_verses",
+        &json!({ "passages": "Jn 3:16", "bibles": "kjv,bsb" }),
+    );
+    h.frames(2);
+    click_in_window(&mut h, "Copy plain text");
+    let before = h.copied.last().cloned().unwrap();
+    assert!(
+        before.contains(KJV[0]) && before.contains(BSB[0]),
+        "{before}"
+    );
+    // An update of the KJV comes in while the window is open.
+    let updated = [
+        "UPDATED For God so loved the world.",
+        "UPDATED For God sent not his Son.",
+        "UPDATED He that believeth on him.",
+    ];
+    let mut kjv = bible("kjv", "KJV", &john(updated), None, &[]);
+    kjv.manifest.revision = 2;
+    kjv.manifest.license = "CC-BY-4.0".into();
+    kjv.manifest.attribution = "KJV update, CC BY 4.0.".into();
+    write_library(&dir.join("update"), &[kjv]);
+    h.shell
+        .st
+        .session
+        .library
+        .add_file(&dir.join("update").join("kjv.obr"))
+        .unwrap();
+    h.shell
+        .st
+        .session
+        .workspace
+        .push_effect(obs_engine::Effect::Replaced("kjv".into()));
+    h.frames(3);
+    click_in_window(&mut h, "Copy plain text");
+    let after = h.copied.last().cloned().unwrap();
+    assert_eq!(
+        after,
+        format!(
+            "16 {}\nJohn 3:16 (KJV)\n\n16 {}\nJohn 3:16 (BSB)\n\nKJV update, CC BY 4.0.",
+            updated[0], BSB[0]
+        )
+    );
+    // The BSB is removed: it is no longer chosen, and the copy is the KJV's alone.
+    h.shell
+        .run("library.remove", &json!({ "id": "bsb", "confirm": true }));
+    h.frames(3);
+    assert_eq!(h.shell.st.copy_ui.bibles, ["kjv"]);
+    click_in_window(&mut h, "Copy plain text");
+    assert_eq!(
+        h.copied.last().cloned().unwrap(),
+        format!(
+            "16 {}\nJohn 3:16 (KJV)\n\nKJV update, CC BY 4.0.",
+            updated[0]
+        )
+    );
+    // With no Bible left, nothing is copied.
+    h.shell
+        .run("library.remove", &json!({ "id": "kjv", "confirm": true }));
+    h.frames(3);
+    let copies = h.copied.len();
+    click_in_window(&mut h, "Copy plain text");
+    assert_eq!(
+        h.copied.len(),
+        copies,
+        "a removed Bible's cached copy is gone"
+    );
     drop(h);
     let _ = std::fs::remove_dir_all(&dir);
 }
