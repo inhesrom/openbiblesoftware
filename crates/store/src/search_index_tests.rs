@@ -284,6 +284,30 @@ fn morphology_criteria_match_inside_one_word() {
     }
 }
 
+/// Morphology criteria after a Strong's number stay that word's on either side of
+/// `WITHIN n verses` (#180), and both endpoint Verses are listed.
+#[test]
+fn morphology_criteria_stay_one_word_across_verses() {
+    let dir = TempDir::new("morph-within");
+    let r = greek_with_morphology();
+    let index = SqliteSearchIndex::open(&build(&r, 2, &dir.0), None).unwrap();
+    let table: &[(&str, &[i64])] = &[
+        // G25 is aorist only in Verse 1, next to G240 in Verse 0.
+        ("G25 @aorist WITHIN 2 verses G240", &[0, 1]),
+        ("(G25 @aorist) WITHIN 2 verses G240", &[0, 1]),
+        ("G240 WITHIN 2 verses G25 @aorist", &[0, 1]),
+        ("G240 WITHIN 2 verses (G25 @aorist)", &[0, 1]),
+        // Verse 2's aorist is ἔρχομαι, so G25 there does not count.
+        ("G25 @aorist WITHIN 1 verse G2064", &[]),
+        ("G2064 WITHIN 1 verse G25 @aorist", &[]),
+        // An explicit AND keeps them apart: some aorist word near G2064, and G25.
+        ("G25 AND @aorist WITHIN 1 verse G2064", &[2]),
+    ];
+    for (q, want) in table {
+        assert_eq!(docs(&index, q), *want, "{q}");
+    }
+}
+
 /// A cache from before the `morph` field (still searched while it is rebuilt) finds nothing
 /// for Morphology criteria, and everything else as before.
 #[test]

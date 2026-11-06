@@ -700,6 +700,69 @@ fn within_verses_is_planned_as_a_pass_over_neighbouring_documents() {
     assert_eq!(plan("lemma:zzz WITHIN 2 verses works"), Plan::Nothing);
 }
 
+/// Morphology criteria written directly after a Strong's number or Lemma describe that same
+/// word on either side of a proximity operator: `G26 @noun WITHIN 2 verses love` is
+/// `(G26 @noun) WITHIN 2 verses love`, not `G26 AND (@noun WITHIN 2 verses love)`.
+#[test]
+fn morphology_attaches_before_proximity_joins() {
+    let same = [
+        (
+            "G26 @noun WITHIN 2 verses love",
+            "(G26 @noun) WITHIN 2 verses love",
+        ),
+        (
+            "love WITHIN 2 verses G26 @noun",
+            "love WITHIN 2 verses (G26 @noun)",
+        ),
+        (
+            "strong:G26 @noun genitive WITHIN 3 verses lemma:ἀγάπη @noun",
+            "(strong:G26 @noun genitive) WITHIN 3 verses (lemma:ἀγάπη @noun)",
+        ),
+        (
+            "G26 morph:noun WITHIN 2 verses love",
+            "(G26 @noun) WITHIN 2 verses love",
+        ),
+        (
+            "grace G26 @noun WITHIN 2 verses love -law",
+            "grace ((G26 @noun) WITHIN 2 verses love) -law",
+        ),
+        // Boundaries stay: AND, a parenthesis and a negation keep the criteria apart.
+        (
+            "G26 AND @noun WITHIN 2 verses love",
+            "G26 AND (@noun WITHIN 2 verses love)",
+        ),
+        (
+            "G26 (@noun) WITHIN 2 verses love",
+            "G26 AND ((@noun) WITHIN 2 verses love)",
+        ),
+        (
+            "(G26) @noun WITHIN 2 verses love",
+            "G26 AND (@noun WITHIN 2 verses love)",
+        ),
+        (
+            "NOT NOT G26 @noun WITHIN 2 verses love",
+            "G26 AND (@noun WITHIN 2 verses love)",
+        ),
+    ];
+    for (q, grouped) in same {
+        assert_eq!(plan(q), plan(grouped), "{q}");
+    }
+    assert_ne!(
+        plan("G26 @noun WITHIN 2 verses love"),
+        plan("G26 AND (@noun WITHIN 2 verses love)")
+    );
+    let Query::Within { left, right, .. } = parse("G26 @noun WITHIN 2 verses love").unwrap() else {
+        panic!()
+    };
+    assert!(matches!(*left, Query::Morph { strong: Some(_), ref span, .. } if *span == (0..9)));
+    assert!(matches!(*right, Query::Word { .. }));
+    let Query::Within { left, right, .. } = parse("love WITHIN 2 verses G26 @noun").unwrap() else {
+        panic!()
+    };
+    assert!(matches!(*left, Query::Word { .. }));
+    assert!(matches!(*right, Query::Morph { strong: Some(_), ref span, .. } if *span == (21..30)));
+}
+
 #[test]
 fn proximity_errors_are_positioned() {
     let err = |q: &str| to_fts5(q, &NoLexicon).unwrap_err();

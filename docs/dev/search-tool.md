@@ -112,6 +112,7 @@ excerpt](../previews/search-morphology-chooser-kittest.png) comes from
 | `"by faith" NEAR/3 work*`, `(faith OR hope) NEAR/2 love` | phrases, prefixes and alternatives on either side |
 | `faith WITHIN 2 verses works` | each Verse with one side whose own Verse or a neighbouring one (same Bible book) has the other: a run of at most 2 Verses holds both |
 | `(faith -dead) WITHIN 3 verses G2041` | any query on either side, in parentheses |
+| `G26 @noun WITHIN 2 verses love` | Morphology criteria stay the word before them: `(G26 @noun) WITHIN 2 verses love` |
 | `faith WITHIN 2 paragraphs works` | outside Bibles: neighbouring paragraphs of one text unit (`verses` and `paragraphs` both mean the Resource's own documents) |
 
 - **Grammar.** The operators bind tighter than `AND` and `OR` (`grace faith NEAR/5 works` is
@@ -120,6 +121,9 @@ excerpt](../previews/search-morphology-chooser-kittest.png) comes from
   ignored. `NEAR/n` and `BEFORE/n` join words, phrases and groups of alternatives of them
   (`G26 NEAR/3 love` is an inline error); `WITHIN n verses` joins any two queries.
   `WITHIN 0 verses` means the same Verse, as `WITHIN 1 verse` does.
+  A Strong's number or Lemma and the `@` criteria right after it are one operand, on either
+  side (`love WITHIN 2 verses G26 @noun`); `G26 AND @noun WITHIN 2 verses love` keeps them
+  apart.
 - **How it runs.** `NEAR/n` is an FTS5 `NEAR` group. `BEFORE/n` finds the `NEAR` candidates
   and keeps those whose word positions are in order. `WITHIN n verses` searches each side in
   the Search scope and keeps the Verses with a hit of the other side at most `n - 1`

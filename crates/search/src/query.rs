@@ -16,7 +16,8 @@
 //!
 //! Proximity operators bind tighter than `AND` and `OR` and join two terms (or parenthesized
 //! groups): `NEAR/n` and `BEFORE/n` words and phrases in one Verse or paragraph, `WITHIN n
-//! verses` any two queries. `NEAR`, `BEFORE` and `WITHIN` are operators only in these forms;
+//! verses` any two queries. A Strong's number or Lemma with its Morphology criteria is one
+//! term: `G26 @noun WITHIN 2 verses love` is `(G26 @noun) WITHIN 2 verses love`. `NEAR`, `BEFORE` and `WITHIN` are operators only in these forms;
 //! anywhere else they are words. With Word forms on ([`Query::with_word_forms`]), each bare
 //! English word also matches the other words of its stem ([`crate::stem`]).
 //!
@@ -515,16 +516,48 @@ impl Parser {
             && self.proximity_op(self.pos).is_none()
     }
 
-    /// proximity := unary (proximity-operator unary)*, binding tighter than AND and OR.
+    /// Whether the token at the cursor starts Morphology criteria (`@…` or `morph:`).
+    fn morph_follows(&self) -> bool {
+        match self.peek() {
+            Some(Lex::Raw(r)) => r.starts_with('@'),
+            Some(Lex::Field(name)) => name.eq_ignore_ascii_case("morph"),
+            _ => false,
+        }
+    }
+
+    /// operand := unary morph?: Morphology criteria directly after a Strong's number or Lemma
+    /// describe that same word. Both must be written bare (no parenthesis, `NOT` or `-`
+    /// before either, no `AND` between): `G25 (@aorist)` is G25 and some aorist word in the
+    /// Verse, and `NOT NOT (@aorist)` cancels to `@aorist` but keeps its group. Attaching here,
+    /// below proximity, keeps `G26 @noun WITHIN 2 verses love` one word on the left side.
+    fn operand(&mut self, depth: usize) -> Result<Option<Query>, QueryError> {
+        let bare = self
+            .peek()
+            .is_some_and(|l| !matches!(l, Lex::Open | Lex::Minus) && !is_op(l, "NOT"));
+        let q = self.unary(depth)?;
+        let Some(word @ (Query::Strong { .. } | Query::Lemma { .. })) = q else {
+            return Ok(q);
+        };
+        if !bare || !self.morph_follows() {
+            return Ok(Some(word));
+        }
+        let morph = self.primary(depth)?;
+        Ok(Some(match morph {
+            Some(morph) => attach_morph(word, morph),
+            None => word,
+        }))
+    }
+
+    /// proximity := operand (proximity-operator operand)*, binding tighter than AND and OR.
     fn proximity(&mut self, depth: usize) -> Result<Option<Query>, QueryError> {
-        let mut left = self.unary(depth)?;
+        let mut left = self.operand(depth)?;
         while let Some((op, len)) = self.proximity_op(self.pos) {
             self.pos += len;
             // A dangling operator (`faith NEAR/5`) is ignored.
             if !self.term_follows() {
                 continue;
             }
-            let right = self.unary(depth)?;
+            let right = self.operand(depth)?;
             left = match (left, right) {
                 (Some(l), Some(r)) => Some(op.join(l, r)),
                 (l, r) => l.or(r),
@@ -553,12 +586,9 @@ impl Parser {
         })
     }
 
-    /// and := unary (("AND")? unary)*, up to `)`, `OR` or the end.
+    /// and := proximity (("AND")? proximity)*, up to `)`, `OR` or the end.
     fn and(&mut self, depth: usize) -> Result<Option<Query>, QueryError> {
         let mut all = Vec::new();
-        // Whether the last term was a bare Strong's number or Lemma with nothing (no `AND`, no
-        // group boundary) between it and the next token, so that an `@` there describes it.
-        let mut adjacent = false;
         while let Some(l) = self.peek() {
             if is_op(l, "OR") {
                 break;
@@ -569,38 +599,21 @@ impl Parser {
                 }
                 // A stray `)`: ignore it.
                 self.pos += 1;
-                adjacent = false;
                 continue;
             }
             if is_op(l, "AND") {
                 self.pos += 1;
-                adjacent = false;
                 continue;
             }
             // A proximity operator with nothing before it (`NEAR/5 works`) is ignored.
             if let Some((_, len)) = self.proximity_op(self.pos) {
                 self.pos += len;
-                adjacent = false;
                 continue;
             }
-            // Only a term written bare (no parenthesis, `NOT` or `-` before it) can take or
-            // describe an `@`: `NOT NOT (@aorist)` cancels to `@aorist` but keeps its group.
-            let bare = !matches!(l, Lex::Open | Lex::Minus) && !is_op(l, "NOT");
-            let was_adjacent = std::mem::replace(&mut adjacent, false);
             match self.proximity(depth)? {
                 // `a (b c)` is `a b c`.
                 Some(Query::And(inner)) => all.extend(inner),
-                Some(q) => {
-                    adjacent = bare && matches!(q, Query::Strong { .. } | Query::Lemma { .. });
-                    // A parenthesis or negation is a boundary on either side:
-                    // `G25 (@aorist)` is G25 and some aorist word in the Verse.
-                    let q = if was_adjacent && bare {
-                        attach_morph(&mut all, q)
-                    } else {
-                        Some(q)
-                    };
-                    all.extend(q);
-                }
+                Some(q) => all.push(q),
                 None => {}
             }
         }
@@ -792,40 +805,37 @@ impl Parser {
     }
 }
 
-/// `@…` directly after a Strong's number or Lemma (the last of `all`) describes that same
-/// word.
-fn attach_morph(all: &mut [Query], q: Query) -> Option<Query> {
+/// `word` (a Strong's number or Lemma) with the Morphology criteria `morph` written directly
+/// after it: one Morphology term for that same word.
+fn attach_morph(word: Query, morph: Query) -> Query {
     let Query::Morph {
         strong: None,
         lemma: None,
         criteria,
         span,
-    } = q
+    } = morph
     else {
-        return Some(q);
+        return Query::And(vec![word, morph]);
     };
-    let morph = |strong, lemma, start| Query::Morph {
-        strong,
-        lemma,
-        criteria: criteria.clone(),
-        span: start..span.end,
-    };
-    let attached = match all.last() {
-        Some(Query::Strong { number, span: s }) => morph(Some(*number), None, s.start),
-        Some(Query::Lemma { text, span: s }) => morph(None, Some(text.clone()), s.start),
-        _ => {
-            return Some(Query::Morph {
+    let (strong, lemma, start) = match word {
+        Query::Strong { number, span } => (Some(number), None, span.start),
+        Query::Lemma { text, span } => (None, Some(text), span.start),
+        word => {
+            let morph = Query::Morph {
                 strong: None,
                 lemma: None,
                 criteria,
                 span,
-            });
+            };
+            return Query::And(vec![word, morph]);
         }
     };
-    if let Some(last) = all.last_mut() {
-        *last = attached;
+    Query::Morph {
+        strong,
+        lemma,
+        criteria,
+        span: start..span.end,
     }
-    None
 }
 
 /// A bare token shaped like a Strong's number: uppercase `G` or `H`, 1–5 digits, an optional
