@@ -1,0 +1,774 @@
+{
+  "content_hash": "sha256:22040b9e02365d1cb753c8467df5944dcb319ffec52629eb7ebae81e4f704332",
+  "keys": [
+    [
+      "ENEMY",
+      "ENEMY",
+      false
+    ],
+    [
+      "FORGIVENESS",
+      "FORGIVENESS",
+      false
+    ],
+    [
+      "IMPORTUNITY",
+      "IMPORTUNITY",
+      false
+    ],
+    [
+      "PARDON",
+      "PARDON",
+      false
+    ],
+    [
+      "SIN",
+      "SIN",
+      false
+    ]
+  ],
+  "manifest": {
+    "abbreviation": "ObsNave",
+    "attribution": "Licence: Public Domain\nLicence notes: Abridged from Nave's Topical Bible (1896, public domain) as CrossWire's Nave module lays it out, for the Open Bible Software tests.\nImported from the SWORD module ObsNave.",
+    "key_schemes": [
+      "headword"
+    ],
+    "language": "en",
+    "license": "LicenseRef-PD",
+    "resource_id": "obsnave",
+    "resource_type": "dictionary",
+    "source_file": "ObsNave",
+    "source_format": "sword",
+    "source_url": null,
+    "title": "Open Bible test topical index (TEI, laid out like Nave’s Topical Bible)"
+  },
+  "report": {
+    "books": [],
+    "dropped_markup": {},
+    "entries": 5,
+    "license_missing": false,
+    "notes": 0,
+    "source_format": "sword (TEI)",
+    "tagged_words": 0,
+    "verse_map": null,
+    "verses": 0,
+    "versification_hint": null,
+    "warnings": []
+  },
+  "units": [
+    {
+      "id": "ENEMY",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..35",
+          "kind": "para",
+          "style": "prose",
+          "text": "→ Kindness to Ex 23:4,5; Pr 25:21"
+        },
+        {
+          "at": "16..23",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "EXO",
+                "chapter": 23,
+                "verse": 4
+              },
+              "start": {
+                "book": "EXO",
+                "chapter": 23,
+                "verse": 4
+              }
+            }
+          ],
+          "text": "Ex 23:4"
+        },
+        {
+          "at": "24..25",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "EXO",
+                "chapter": 23,
+                "verse": 5
+              },
+              "start": {
+                "book": "EXO",
+                "chapter": 23,
+                "verse": 5
+              }
+            }
+          ],
+          "text": "5"
+        },
+        {
+          "at": "27..35",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PRO",
+                "chapter": 25,
+                "verse": 21
+              },
+              "start": {
+                "book": "PRO",
+                "chapter": 25,
+                "verse": 21
+              }
+            }
+          ],
+          "text": "Pr 25:21"
+        }
+      ],
+      "text": "→ Kindness to Ex 23:4,5; Pr 25:21",
+      "title": "ENEMY"
+    },
+    {
+      "id": "FORGIVENESS",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..108",
+          "kind": "para",
+          "style": "prose",
+          "text": "→ OF ENEMIES Ex 23:4,5; Pr 19:11; Mt 5:7; 6:12,14,15; 18:21-35; Mr 11:25,26; Lu 17:3,4; Eph 4:32; Col 3:13"
+        },
+        {
+          "at": "15..22",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "EXO",
+                "chapter": 23,
+                "verse": 4
+              },
+              "start": {
+                "book": "EXO",
+                "chapter": 23,
+                "verse": 4
+              }
+            }
+          ],
+          "text": "Ex 23:4"
+        },
+        {
+          "at": "23..24",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "EXO",
+                "chapter": 23,
+                "verse": 5
+              },
+              "start": {
+                "book": "EXO",
+                "chapter": 23,
+                "verse": 5
+              }
+            }
+          ],
+          "text": "5"
+        },
+        {
+          "at": "26..34",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PRO",
+                "chapter": 19,
+                "verse": 11
+              },
+              "start": {
+                "book": "PRO",
+                "chapter": 19,
+                "verse": 11
+              }
+            }
+          ],
+          "text": "Pr 19:11"
+        },
+        {
+          "at": "36..42",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 5,
+                "verse": 7
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 5,
+                "verse": 7
+              }
+            }
+          ],
+          "text": "Mt 5:7"
+        },
+        {
+          "at": "44..48",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 6,
+                "verse": 12
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 6,
+                "verse": 12
+              }
+            }
+          ],
+          "text": "6:12"
+        },
+        {
+          "at": "49..51",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 6,
+                "verse": 14
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 6,
+                "verse": 14
+              }
+            }
+          ],
+          "text": "14"
+        },
+        {
+          "at": "52..54",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 6,
+                "verse": 15
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 6,
+                "verse": 15
+              }
+            }
+          ],
+          "text": "15"
+        },
+        {
+          "at": "56..64",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 18,
+                "verse": 35
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 18,
+                "verse": 21
+              }
+            }
+          ],
+          "text": "18:21-35"
+        },
+        {
+          "at": "66..74",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MRK",
+                "chapter": 11,
+                "verse": 25
+              },
+              "start": {
+                "book": "MRK",
+                "chapter": 11,
+                "verse": 25
+              }
+            }
+          ],
+          "text": "Mr 11:25"
+        },
+        {
+          "at": "75..77",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MRK",
+                "chapter": 11,
+                "verse": 26
+              },
+              "start": {
+                "book": "MRK",
+                "chapter": 11,
+                "verse": 26
+              }
+            }
+          ],
+          "text": "26"
+        },
+        {
+          "at": "79..86",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 17,
+                "verse": 3
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 17,
+                "verse": 3
+              }
+            }
+          ],
+          "text": "Lu 17:3"
+        },
+        {
+          "at": "87..88",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 17,
+                "verse": 4
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 17,
+                "verse": 4
+              }
+            }
+          ],
+          "text": "4"
+        },
+        {
+          "at": "90..98",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "EPH",
+                "chapter": 4,
+                "verse": 32
+              },
+              "start": {
+                "book": "EPH",
+                "chapter": 4,
+                "verse": 32
+              }
+            }
+          ],
+          "text": "Eph 4:32"
+        },
+        {
+          "at": "100..108",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "COL",
+                "chapter": 3,
+                "verse": 13
+              },
+              "start": {
+                "book": "COL",
+                "chapter": 3,
+                "verse": 13
+              }
+            }
+          ],
+          "text": "Col 3:13"
+        },
+        {
+          "at": "109..118",
+          "kind": "para",
+          "style": "list",
+          "text": "See ENEMY"
+        },
+        {
+          "at": "119..135",
+          "kind": "para",
+          "style": "prose",
+          "text": "→ INSTANCES OF"
+        },
+        {
+          "at": "136..166",
+          "kind": "para",
+          "style": "list",
+          "text": "Esau forgives Jacob Ge 33:4,11"
+        },
+        {
+          "at": "156..163",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "GEN",
+                "chapter": 33,
+                "verse": 4
+              },
+              "start": {
+                "book": "GEN",
+                "chapter": 33,
+                "verse": 4
+              }
+            }
+          ],
+          "text": "Ge 33:4"
+        },
+        {
+          "at": "164..166",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "GEN",
+                "chapter": 33,
+                "verse": 11
+              },
+              "start": {
+                "book": "GEN",
+                "chapter": 33,
+                "verse": 11
+              }
+            }
+          ],
+          "text": "11"
+        },
+        {
+          "at": "167..216",
+          "kind": "para",
+          "style": "list",
+          "text": "Joseph forgives his brothers Ge 45:5-15; 50:19-21"
+        },
+        {
+          "at": "196..206",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "GEN",
+                "chapter": 45,
+                "verse": 15
+              },
+              "start": {
+                "book": "GEN",
+                "chapter": 45,
+                "verse": 5
+              }
+            }
+          ],
+          "text": "Ge 45:5-15"
+        },
+        {
+          "at": "208..216",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "GEN",
+                "chapter": 50,
+                "verse": 21
+              },
+              "start": {
+                "book": "GEN",
+                "chapter": 50,
+                "verse": 19
+              }
+            }
+          ],
+          "text": "50:19-21"
+        },
+        {
+          "at": "217..252",
+          "kind": "para",
+          "style": "list",
+          "text": "Jesus forgives his enemies Lu 23:34"
+        },
+        {
+          "at": "244..252",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "LUK",
+                "chapter": 23,
+                "verse": 34
+              },
+              "start": {
+                "book": "LUK",
+                "chapter": 23,
+                "verse": 34
+              }
+            }
+          ],
+          "text": "Lu 23:34"
+        },
+        {
+          "at": "253..264",
+          "kind": "para",
+          "style": "prose",
+          "text": "→ OF SINS"
+        },
+        {
+          "at": "265..288",
+          "kind": "para",
+          "style": "list",
+          "text": "See SIN, FORGIVENESS OF"
+        }
+      ],
+      "text": "→ OF ENEMIES Ex 23:4,5; Pr 19:11; Mt 5:7; 6:12,14,15; 18:21-35; Mr 11:25,26; Lu 17:3,4; Eph 4:32; Col 3:13\nSee ENEMY\n→ INSTANCES OF\nEsau forgives Jacob Ge 33:4,11\nJoseph forgives his brothers Ge 45:5-15; 50:19-21\nJesus forgives his enemies Lu 23:34\n→ OF SINS\nSee SIN, FORGIVENESS OF",
+      "title": "FORGIVENESS"
+    },
+    {
+      "id": "IMPORTUNITY",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..14",
+          "kind": "para",
+          "style": "prose",
+          "text": "→ See PRAYER"
+        }
+      ],
+      "text": "→ See PRAYER",
+      "title": "IMPORTUNITY"
+    },
+    {
+      "id": "PARDON",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..10",
+          "kind": "para",
+          "style": "prose",
+          "text": "→ OF SIN"
+        },
+        {
+          "at": "11..34",
+          "kind": "para",
+          "style": "list",
+          "text": "See SIN, FORGIVENESS OF"
+        }
+      ],
+      "text": "→ OF SIN\nSee SIN, FORGIVENESS OF",
+      "title": "PARDON"
+    },
+    {
+      "id": "SIN",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..34",
+          "kind": "para",
+          "style": "prose",
+          "text": "→ CONFESSION OF Ps 32:5; 1Jo 1:9"
+        },
+        {
+          "at": "18..25",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PSA",
+                "chapter": 32,
+                "verse": 5
+              },
+              "start": {
+                "book": "PSA",
+                "chapter": 32,
+                "verse": 5
+              }
+            }
+          ],
+          "text": "Ps 32:5"
+        },
+        {
+          "at": "27..34",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1JN",
+                "chapter": 1,
+                "verse": 9
+              },
+              "start": {
+                "book": "1JN",
+                "chapter": 1,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "1Jo 1:9"
+        },
+        {
+          "at": "35..102",
+          "kind": "para",
+          "style": "prose",
+          "text": "→ FORGIVENESS OF Ps 32:1,2; 103:12; Mt 6:12,14; Eph 4:32; 1Jo 1:9"
+        },
+        {
+          "at": "54..61",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PSA",
+                "chapter": 32,
+                "verse": 1
+              },
+              "start": {
+                "book": "PSA",
+                "chapter": 32,
+                "verse": 1
+              }
+            }
+          ],
+          "text": "Ps 32:1"
+        },
+        {
+          "at": "62..63",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PSA",
+                "chapter": 32,
+                "verse": 2
+              },
+              "start": {
+                "book": "PSA",
+                "chapter": 32,
+                "verse": 2
+              }
+            }
+          ],
+          "text": "2"
+        },
+        {
+          "at": "65..71",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "PSA",
+                "chapter": 103,
+                "verse": 12
+              },
+              "start": {
+                "book": "PSA",
+                "chapter": 103,
+                "verse": 12
+              }
+            }
+          ],
+          "text": "103:12"
+        },
+        {
+          "at": "73..80",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 6,
+                "verse": 12
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 6,
+                "verse": 12
+              }
+            }
+          ],
+          "text": "Mt 6:12"
+        },
+        {
+          "at": "81..83",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "MAT",
+                "chapter": 6,
+                "verse": 14
+              },
+              "start": {
+                "book": "MAT",
+                "chapter": 6,
+                "verse": 14
+              }
+            }
+          ],
+          "text": "14"
+        },
+        {
+          "at": "85..93",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "EPH",
+                "chapter": 4,
+                "verse": 32
+              },
+              "start": {
+                "book": "EPH",
+                "chapter": 4,
+                "verse": 32
+              }
+            }
+          ],
+          "text": "Eph 4:32"
+        },
+        {
+          "at": "95..102",
+          "kind": "scripture_ref",
+          "targets": [
+            {
+              "end": {
+                "book": "1JN",
+                "chapter": 1,
+                "verse": 9
+              },
+              "start": {
+                "book": "1JN",
+                "chapter": 1,
+                "verse": 9
+              }
+            }
+          ],
+          "text": "1Jo 1:9"
+        }
+      ],
+      "text": "→ CONFESSION OF Ps 32:5; 1Jo 1:9\n→ FORGIVENESS OF Ps 32:1,2; 103:12; Mt 6:12,14; Eph 4:32; 1Jo 1:9",
+      "title": "SIN"
+    }
+  ],
+  "verses": []
+}

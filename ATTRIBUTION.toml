@@ -51,6 +51,14 @@ copyright = "Text: public domain. Tagging and confs: Open Bible Software contrib
 changes = "A few verses with OSIS <w> tagging written for the import tests in the shapes CrossWire's OSHB, Byz, WHNU and MorphGNT use (#133); module files built from src/*.imp by crates/formats/tests/sword_fixture."
 
 [[asset]]
+path = "crates/formats/tests/assets/sword/**/obs{nave,torrey}{.*,/*}"
+name = "Topical index test excerpts as SWORD modules, laid out like Nave's Topical Bible (TEI) and Torrey's New Topical Textbook (ThML)"
+license = "LicenseRef-PD AND CC0-1.0"
+source = "Nave's Topical Bible (Orville J. Nave, 1896) and R. A. Torrey's New Topical Textbook, public domain, as CrossWire's Nave and Torrey modules lay them out; module confs written for this project"
+copyright = "Text: public domain. Confs and markup: Open Bible Software contributors, dedicated to the public domain"
+changes = "A few entries (Forgiveness, Sin, Pardon, Enemy, Importunity; Forgiveness of injuries, Prayer), abridged, for the Topic Guide tests (#148); module files built from src/*.imp by crates/formats/tests/sword_fixture."
+
+[[asset]]
 path = "crates/formats/tests/assets/usfm/synthetic/*"
 name = "Synthetic USFM marker-coverage fixtures"
 license = "MIT OR Apache-2.0"
