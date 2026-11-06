@@ -434,6 +434,33 @@ fn morphology_criteria_compile_to_one_part_phrases() {
             "(G26) (@genitive)",
             r#"strong : "g26" AND morph : "morph3""#,
         ),
+        // A cancelled double negation keeps its parenthesis, and a NOT between them parts
+        // them too.
+        (
+            "G26 NOT NOT (@genitive)",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        (
+            "G26 --(@genitive)",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        (
+            "NOT NOT (G26) @genitive",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        (
+            "--(lemma:agape) @genitive",
+            r#"lemma : "αγαπη" AND morph : "morph3""#,
+        ),
+        (
+            "G26 NOT NOT @genitive",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        (
+            "NOT NOT G26 @genitive",
+            r#"strong : "g26" AND morph : "morph3""#,
+        ),
+        ("--(G26 @genitive)", r#"morph : "g26 morph3""#),
         ("(G26 @genitive)", r#"morph : "g26 morph3""#),
         ("((G26 @genitive))", r#"morph : "g26 morph3""#),
         (

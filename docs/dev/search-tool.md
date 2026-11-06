@@ -77,9 +77,10 @@ In Bible mode a query can ask for grammar in plain English. `@` (or `morph:`) st
 - **Strong's number or Lemma.** A `strong:`, bare `G26` or `lemma:` term directly before the
   `@` belongs to that word: `strong:G26 @noun genitive` is one genitive G26, while
   `G26 love @genitive` is G26, `love` and some genitive word anywhere in the Verse. An
-  explicit `AND` or a parenthesis between them keeps them apart too: `G26 AND @genitive`,
-  `@genitive AND G26`, `(G26) @genitive` and `G26 (@genitive)` all mean G26 and some
-  genitive word in the Verse; `(G26 @genitive)` is still one genitive G26.
+  explicit `AND`, a parenthesis or a `NOT`/`-` between them keeps them apart too:
+  `G26 AND @genitive`, `@genitive AND G26`, `(G26) @genitive`, `G26 (@genitive)` and
+  `G26 NOT NOT (@genitive)` all mean G26 and some genitive word in the Verse;
+  `(G26 @genitive)` is still one genitive G26.
 - **Highlights.** The words (or, in Hebrew, the morphemes) that meet the criteria; the
   Analysis lists them with their Morphology in plain English.
 - **Morphology chooser.** The **Morphology…** button beside the Bible / Library / Notes switch shows a menu for each kind

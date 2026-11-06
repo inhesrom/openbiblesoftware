@@ -369,16 +369,18 @@ impl Parser {
                 adjacent = false;
                 continue;
             }
-            let group = matches!(l, Lex::Open);
+            // Only a term written bare (no parenthesis, `NOT` or `-` before it) can take or
+            // describe an `@`: `NOT NOT (@aorist)` cancels to `@aorist` but keeps its group.
+            let bare = !matches!(l, Lex::Open | Lex::Minus) && !is_op(l, "NOT");
             let was_adjacent = std::mem::replace(&mut adjacent, false);
             match self.unary(depth)? {
                 // `a (b c)` is `a b c`.
                 Some(Query::And(inner)) => all.extend(inner),
                 Some(q) => {
-                    adjacent = !group && matches!(q, Query::Strong { .. } | Query::Lemma { .. });
-                    // A parenthesis is a boundary on either side: `G25 (@aorist)` is G25
-                    // and some aorist word in the Verse.
-                    let q = if was_adjacent && !group {
+                    adjacent = bare && matches!(q, Query::Strong { .. } | Query::Lemma { .. });
+                    // A parenthesis or negation is a boundary on either side:
+                    // `G25 (@aorist)` is G25 and some aorist word in the Verse.
+                    let q = if was_adjacent && bare {
                         attach_morph(&mut all, q)
                     } else {
                         Some(q)

@@ -260,6 +260,12 @@ fn morphology_criteria_match_inside_one_word() {
         ("lemma:ἀγαπάω (@aorist imperative)", &[1, 2]),
         ("(G25) @aorist imperative", &[1, 2]),
         ("(G25 @aorist imperative)", &[1]),
+        // A cancelled double negation keeps the parenthesis on either side.
+        ("G25 NOT NOT (@aorist imperative)", &[1, 2]),
+        ("G25 --(@aorist imperative)", &[1, 2]),
+        ("NOT NOT (G25) @aorist imperative", &[1, 2]),
+        ("--(lemma:ἀγαπάω) @aorist imperative", &[1, 2]),
+        ("--(G25 @aorist imperative)", &[1]),
         ("lemma:ἀγαπάω @aorist imperative", &[1]),
         ("lemma:ἀγαπάω @imperative", &[0, 1]),
         ("G25 @indicative", &[2]),
