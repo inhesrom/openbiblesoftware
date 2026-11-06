@@ -189,6 +189,26 @@ pub fn range_rects(
     ranges: &[(DocPos, DocPos)],
     height: f32,
 ) -> Vec<Vec<[f32; 4]>> {
+    ranges_rects(view, ranges, height, true)
+}
+
+/// [`range_rects`] over the text's own glyphs only: inline objects anchored in a range (a
+/// verse number at a Verse's first byte) are left out, as a Find match (#175) covers only the
+/// letters it matched.
+pub(crate) fn text_range_rects(
+    view: &ReadingView,
+    ranges: &[(DocPos, DocPos)],
+    height: f32,
+) -> Vec<Vec<[f32; 4]>> {
+    ranges_rects(view, ranges, height, false)
+}
+
+fn ranges_rects(
+    view: &ReadingView,
+    ranges: &[(DocPos, DocPos)],
+    height: f32,
+    objects: bool,
+) -> Vec<Vec<[f32; 4]>> {
     let doc = &view.doc;
     let mut out: Vec<Vec<[f32; 4]>> = vec![Vec::new(); ranges.len()];
     if ranges.iter().all(|(a, b)| a >= b) {
@@ -219,15 +239,18 @@ pub fn range_rects(
             for item in &line.items {
                 let mut runs: Vec<Option<[f32; 4]>> = vec![None; active.len()];
                 for (bytes, x0, x1) in item.clusters() {
-                    let byte = match laid.to_unit(bytes.start) {
-                        Some(UnitPos::Text(b)) => b,
-                        Some(UnitPos::Object { anchor, .. }) => anchor,
-                        None => continue,
+                    // A text cluster covers unit bytes `[b, b + len)`: a ligature ("fi") is one
+                    // cluster of several letters, marked when a range reaches into any of them.
+                    // An inline object is marked when its anchor is in the range.
+                    let (first, past) = match laid.to_unit(bytes.start) {
+                        Some(UnitPos::Text(b)) => (b, b + bytes.len()),
+                        Some(UnitPos::Object { anchor, .. }) if objects => (anchor, anchor + 1),
+                        _ => continue,
                     };
-                    let p = DocPos { unit, byte };
+                    let (p, q) = (DocPos { unit, byte: first }, DocPos { unit, byte: past });
                     for (k, &i) in active.iter().enumerate() {
                         let (start, end) = ranges[i];
-                        let inside = start <= p && p < end;
+                        let inside = p < end && start < q;
                         let run = &mut runs[k];
                         match (run.as_mut(), inside) {
                             (Some(r), true)

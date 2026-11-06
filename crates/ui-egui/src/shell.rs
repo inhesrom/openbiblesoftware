@@ -36,6 +36,7 @@ mod exegetical_guide;
 mod export;
 mod factbook_tab;
 mod favorites_tab;
+mod find_bar;
 mod floating;
 pub use floating::DesktopUnits;
 mod fonts_window;
@@ -127,6 +128,8 @@ struct TabUi {
     /// How wide the header's right-hand controls were last frame, so the header box leaves
     /// room for them.
     header_controls: f32,
+    /// A Resource or Text Comparison Tab's Find bar, while it is open (Ctrl+F, #175).
+    find: Option<crate::find::FindBar>,
 }
 
 /// A Resource Tab's location when it switched to a parallel resource (#151), in that
@@ -457,6 +460,8 @@ impl Shell {
                     self.st.command_box.focus = true;
                 }
                 Effect::OpenLauncher(which) => self.st.toolbar.toggle(which),
+                Effect::Find { tab, text } => self.st.open_find(tab, text),
+                Effect::FindStep { tab, forward } => self.st.step_find(tab, forward),
                 Effect::CustomizeToolbar => {
                     self.st.toolbar.close();
                     self.st.toolbar.customizing = true;
@@ -1670,8 +1675,20 @@ impl State {
         } else {
             t.flash = None;
         }
+        // The Find bar (#175) moves the view before the pane draws, like a jump.
+        let viewport = ui.available_rect_before_wrap().height();
+        let found_moved = t
+            .find
+            .as_mut()
+            .is_some_and(|bar| bar.update_reading(view, viewport, ui.ctx()));
+        let found = t
+            .find
+            .as_ref()
+            .map(crate::find::FindBar::found)
+            .unwrap_or_default();
         let marks = self.marks.marks(&self.session, &view.doc);
-        let out = reading_pane(ui, view, &mut self.atlas, &palette, flash, &marks);
+        let out = reading_pane(ui, view, &mut self.atlas, &palette, flash, &marks, found);
+        let user_moved = out.user_moved || found_moved;
         let following = view.is_following();
         let at = view.current_location();
         let reference = out
@@ -1680,14 +1697,14 @@ impl State {
         if let Some(n) = out.hovered_verse_number {
             verse_number_tooltip(ui, &view.doc, n);
         }
-        let entry = out.user_moved.then(|| view.current_entry()).flatten();
+        let entry = user_moved.then(|| view.current_entry()).flatten();
         self.word_hovered(ui, tab, out.hovered_word.clone(), out.clicked_word.clone());
         if let Some(key) = entry {
             self.session.workspace.user_scrolled_entry(tab, key);
         }
         if let Some(at) = at {
             let ws = &mut self.session.workspace;
-            if out.user_moved {
+            if user_moved {
                 ws.user_scrolled(tab, at);
             } else if !following && ws.tab(tab).is_some_and(|t| t.history.current() != Some(at)) {
                 ws.scrolled(tab, at);
@@ -1913,8 +1930,17 @@ impl State {
             }
             view.synced = location;
         }
-        let out = comparison_pane(ui, view, &mut self.atlas, &palette);
-        if out.user_moved
+        let found_moved = tab_ui
+            .find
+            .as_mut()
+            .is_some_and(|bar| bar.update_comparison(view, ui.ctx()));
+        let found = tab_ui
+            .find
+            .as_ref()
+            .map(crate::find::FindBar::found)
+            .unwrap_or_default();
+        let out = comparison_pane(ui, view, &mut self.atlas, &palette, found);
+        if (out.user_moved || found_moved || out.find_moved)
             && let Some(v) = view.current_location()
             && Some(v) != view.synced
         {
@@ -2112,6 +2138,9 @@ impl State {
                 });
                 if let Some(e) = self.tabs.get(&tab).and_then(|t| t.error.clone()) {
                     ui.label(RichText::new(e).small().color(theme::c().warn));
+                }
+                if kind.has_find_bar() && self.tabs.get(&tab).is_some_and(|t| t.find.is_some()) {
+                    self.find_row(ui, tab);
                 }
             });
         let r = frame.response.rect;
@@ -2375,7 +2404,21 @@ impl State {
             Some(TabKind::Guide(g)) if !g.sections().is_empty() => Some(*g),
             _ => None,
         };
+        let findable = self
+            .session
+            .workspace
+            .tab(tab)
+            .is_some_and(|t| t.kind.has_find_bar());
         ui.menu_button(RichText::new("…").color(theme::c().muted), |ui| {
+            if findable
+                && ui
+                    .add(egui::Button::new("Find…").shortcut_text("Ctrl+F"))
+                    .clicked()
+            {
+                self.session.workspace.user_focused(tab);
+                self.run("tab.find", &json!({ "tab": tab.0 }));
+                ui.close();
+            }
             if library && ui.button("Import…").clicked() {
                 self.run("library.import", &json!({}));
                 ui.close();

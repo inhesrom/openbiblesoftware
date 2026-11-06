@@ -7,6 +7,7 @@ mod a11y;
 pub mod bench;
 mod compare_view;
 mod doc;
+mod find;
 mod heights;
 mod interlinear;
 mod marks;
@@ -27,6 +28,7 @@ pub use compare_view::{
     ComparisonContext, ComparisonOutput, ComparisonRow, ComparisonView, comparison_pane,
 };
 pub use doc::{DocBlock, ReadingDoc};
+pub use find::{FindMatch, Found};
 pub use heights::HeightIndex;
 pub use interlinear::InterlinearSource;
 pub use marks::{Mark, MarkKind, marks_for};

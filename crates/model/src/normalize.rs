@@ -31,13 +31,95 @@ fn fold(c: char) -> char {
 
 /// Append the normalized (pre-NFC) form of one character to `out`.
 fn push_folded(c: char, out: &mut String) {
+    push_find_folded(c, false, false, out);
+}
+
+/// Append one character as Find in Resource compares it (#175): the Search normalizer's
+/// steps (NFD, final forms and quotes folded), keeping combining marks only with
+/// `keep_marks` (Ignore diacritics off) and case only with `keep_case` (Match case on). With
+/// both off this is exactly what [`normalize`] does before its final NFC.
+fn push_find_folded(c: char, keep_case: bool, keep_marks: bool, out: &mut String) {
     decompose_canonical(c, |d| {
-        if !is_combining_mark(d) {
+        if is_combining_mark(d) {
+            if keep_marks {
+                out.push(d);
+            }
+        } else if keep_case {
+            out.push(fold(d));
+        } else {
             for l in d.to_lowercase() {
                 out.push(fold(l));
             }
         }
     });
+}
+
+/// Text folded for Find in Resource (#175), with where each of its clusters came from.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FindFolded {
+    /// The folded text.
+    pub text: String,
+    /// One entry per cluster of the original (a character with the combining marks after
+    /// it): where its folding starts in `text` and where it starts in the original, both in
+    /// bytes, in order. A last entry holds both lengths. A match counts only from one
+    /// cluster's start to another's, so it never takes half of a letter with its marks.
+    pub clusters: Vec<(u32, u32)>,
+}
+
+impl FindFolded {
+    /// The original byte range of the folded range `start..end`, if both ends are cluster
+    /// starts. A cluster that folds to nothing is left out at both ends.
+    pub fn original(&self, start: usize, end: usize) -> Option<std::ops::Range<usize>> {
+        let (start, end) = (u32::try_from(start).ok()?, u32::try_from(end).ok()?);
+        // The last cluster starting at `start`, the first starting at `end`.
+        let s = self
+            .clusters
+            .partition_point(|c| c.0 <= start)
+            .checked_sub(1)?;
+        let e = self.clusters.partition_point(|c| c.0 < end);
+        let (fs, os) = *self.clusters.get(s)?;
+        let (fe, oe) = *self.clusters.get(e)?;
+        (fs == start && fe == end).then_some(os as usize..oe as usize)
+    }
+}
+
+/// Fold `text` as Find in Resource compares it (see `push_find_folded`): the Search
+/// normalizer, keeping case with `keep_case` and combining marks with `keep_marks`. Kept
+/// marks are put in canonical order within their cluster, so typed and stored text compare
+/// alike whatever order their marks were written in.
+pub fn fold_for_find(text: &str, keep_case: bool, keep_marks: bool) -> FindFolded {
+    let mut out = FindFolded {
+        text: String::with_capacity(text.len()),
+        clusters: Vec::with_capacity(text.len() / 2),
+    };
+    let offset = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+    let mut chars = text.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        out.clusters.push((offset(out.text.len()), offset(i)));
+        let mut end = i + c.len_utf8();
+        while let Some(&(j, m)) = chars.peek() {
+            if !is_combining_mark(m) {
+                break;
+            }
+            end = j + m.len_utf8();
+            chars.next();
+        }
+        if c.is_ascii() && end == i + 1 {
+            out.text
+                .push(if keep_case { c } else { c.to_ascii_lowercase() });
+        } else if keep_marks && end > i + c.len_utf8() {
+            for d in text[i..end].nfd() {
+                push_find_folded(d, keep_case, true, &mut out.text);
+            }
+        } else {
+            for d in text[i..end].chars() {
+                push_find_folded(d, keep_case, keep_marks, &mut out.text);
+            }
+        }
+    }
+    out.clusters
+        .push((offset(out.text.len()), offset(text.len())));
+    out
 }
 
 /// Normalize text for search: see the module docs.
@@ -149,6 +231,44 @@ mod tests {
             assert_eq!(normalize(&heb[t.range.clone()]), t.text);
         }
         assert_eq!(&heb[tokens[0].range.clone()], "עַל");
+    }
+
+    #[test]
+    fn find_folding_keeps_what_its_options_keep() {
+        // Defaults: exactly the Search normalizer.
+        for s in ["Ἐν ἀρχῇ ἦν ὁ λόγος", "בְּרֵאשִׁ֖ית בָּרָ֣א", "Naïve CAFÉ “x”"]
+        {
+            assert_eq!(
+                fold_for_find(s, false, false).text,
+                normalize(s).nfd().collect::<String>()
+            );
+        }
+        assert_eq!(fold_for_find("Λόγος", true, false).text, "Λογοσ");
+        let kept = fold_for_find("ἀγάπη", false, true).text;
+        assert_eq!(kept, "ἀγάπη".nfd().collect::<String>());
+        // Marks typed in another order compare alike: dagesh and qamats on bet.
+        assert_eq!(
+            fold_for_find("\u{05D1}\u{05B8}\u{05BC}", false, true).text,
+            fold_for_find("\u{05D1}\u{05BC}\u{05B8}", false, true).text
+        );
+    }
+
+    #[test]
+    fn find_folding_maps_clusters_back_to_the_original() {
+        let text = "Ἐν ἀρχῇ ἦν";
+        let f = fold_for_find(text, false, false);
+        assert_eq!(f.text, "εν αρχη ην");
+        let at = f.text.find("αρχη").unwrap();
+        let r = f.original(at, at + "αρχη".len()).unwrap();
+        assert_eq!(&text[r], "ἀρχῇ");
+        // Half a cluster is no match: with marks kept, "ε" ends before ἐ's breathing.
+        let kept = fold_for_find("ἐν", false, true);
+        let e = "ε".len();
+        assert_eq!(kept.original(0, e), None);
+        let heb = "בְּרֵאשִׁ֖ית";
+        let f = fold_for_find(heb, false, false);
+        assert_eq!(f.text, "בראשית");
+        assert_eq!(f.original(0, f.text.len()), Some(0..heb.len()));
     }
 
     #[test]

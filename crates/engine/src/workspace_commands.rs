@@ -730,6 +730,44 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
             Ok(json!({ "closed": s.workspace.close(tab) }))
         },
     },
+    // Find in Resource (#175): the Find bar is the UI's; these open it and step through it.
+    CommandSpec {
+        id: "tab.find",
+        label: "Find in Resource",
+        shortcut: Some("Ctrl+F"),
+        params: &[
+            TAB,
+            ParamSpec {
+                name: "text",
+                kind: ParamKind::String,
+                required: false,
+                help: "What to find (default: the Tab's selection, else what it found last)",
+            },
+        ],
+        enabled: focused_can_find,
+        run: |s, p| {
+            let tab = findable_tab("tab.find", s, &p)?;
+            let text = p.str("text").map(str::to_string);
+            s.workspace.push_effect(Effect::Find { tab, text });
+            Ok(json!({}))
+        },
+    },
+    CommandSpec {
+        id: "tab.find_next",
+        label: "Find next",
+        shortcut: None,
+        params: &[TAB],
+        enabled: focused_can_find,
+        run: |s, p| find_step(s, p, "tab.find_next", true),
+    },
+    CommandSpec {
+        id: "tab.find_previous",
+        label: "Find previous",
+        shortcut: None,
+        params: &[TAB],
+        enabled: focused_can_find,
+        run: |s, p| find_step(s, p, "tab.find_previous", false),
+    },
     CommandSpec {
         id: "tab.float",
         label: "Float in new window",
@@ -1340,6 +1378,36 @@ pub fn parallel_resources(s: &Session, tab: TabId) -> Vec<&crate::LibraryEntry> 
 
 /// The parallel-resource keys are left to other uses unless the focused Tab is a Resource Tab
 /// (with no focused Tab, as from `obs-cli`, they run and report what is wrong).
+/// Ctrl+F is for the focused Tab's Find bar; elsewhere the key is left alone.
+fn focused_can_find(s: &Session) -> bool {
+    s.workspace
+        .focused()
+        .and_then(|t| s.workspace.tab(t))
+        .is_some_and(|t| t.kind.has_find_bar())
+}
+
+fn findable_tab(command: &'static str, s: &Session, p: &Params<'_>) -> Result<TabId, CommandError> {
+    let tab = tab_param(command, s, p)?;
+    match s.workspace.tab(tab) {
+        Some(t) if t.kind.has_find_bar() => Ok(tab),
+        _ => Err(failed(
+            command,
+            "only a Resource or Text Comparison Tab has a Find bar",
+        )),
+    }
+}
+
+fn find_step(
+    s: &mut Session,
+    p: Params<'_>,
+    command: &'static str,
+    forward: bool,
+) -> Result<Value, CommandError> {
+    let tab = findable_tab(command, s, &p)?;
+    s.workspace.push_effect(Effect::FindStep { tab, forward });
+    Ok(json!({}))
+}
+
 fn focused_can_switch(s: &Session) -> bool {
     s.workspace
         .focused()

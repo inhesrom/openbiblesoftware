@@ -50,6 +50,12 @@ pub struct Report {
     pub jump_origin_settle_frames_max: usize,
     pub jump_all_settle_frames_max: usize,
     pub text_gpu_mib: f64,
+    /// Find in Resource (#175): matches drawn over every pane each frame, and the time the
+    /// whole-document find took (reported, not a threshold: it runs on a worker).
+    #[serde(default)]
+    pub find_matches: usize,
+    #[serde(default)]
+    pub find_ms: f64,
 }
 
 /// Every threshold the report breaks, as messages.
@@ -164,6 +170,10 @@ pub fn run(root: &Path) -> Result<()> {
         report.sync_layout_p99_ms,
         report.text_gpu_mib
     );
+    eprintln!(
+        "  find: {} matches drawn over each pane; whole-document find {:.1} ms (worker)",
+        report.find_matches, report.find_ms
+    );
     let v = violations(&report, &thresholds);
     if v.is_empty() {
         eprintln!("bench: all thresholds met");
@@ -209,6 +219,8 @@ mod tests {
             jump_origin_settle_frames_max: 1,
             jump_all_settle_frames_max: 2,
             text_gpu_mib: 4.0,
+            find_matches: 0,
+            find_ms: 0.0,
         }
     }
 

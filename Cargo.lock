@@ -2600,6 +2600,7 @@ version = "0.0.0"
 dependencies = [
  "obs-model",
  "obs-scripture",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -2629,6 +2630,7 @@ dependencies = [
  "obs-model",
  "obs-render",
  "obs-scripture",
+ "obs-search",
  "obs-store",
  "rfd",
  "serde",

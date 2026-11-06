@@ -3161,6 +3161,8 @@ mod collections;
 mod command_box;
 #[path = "copy_export_tests.rs"]
 mod copy_export;
+#[path = "find_tests.rs"]
+mod find_bar;
 
 #[path = "floating_windows_tests.rs"]
 mod floating_windows;

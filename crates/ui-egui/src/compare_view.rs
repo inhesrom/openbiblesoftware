@@ -12,6 +12,7 @@ use obs_model::Direction;
 use obs_scripture::{Verse, VerseMap};
 
 use crate::doc::ReadingDoc;
+use crate::find::Found;
 use crate::heights::HeightIndex;
 use crate::palette::Palette;
 use crate::pane::AtlasTexture;
@@ -120,13 +121,18 @@ pub struct ComparisonView {
     pub blocks: Vec<VerseBlock>,
     heights: HeightIndex,
     width: f32,
-    viewport_height: f32,
+    /// Where the pane was drawn last frame.
+    viewport: Rect,
     settings: TextSettings,
     /// The top of the view: a block, and how far into it.
     anchor: (usize, f32),
     /// The location last taken from or reported to the engine.
     pub synced: Option<Verse>,
     snippets: SnippetCache,
+    /// Bumped whenever the Verse blocks are made again (a Find bar searches them anew, #175).
+    generation: u64,
+    /// The Find bar's current match is to be scrolled into view once drawn (#175).
+    revealing: bool,
 }
 
 impl ComparisonView {
@@ -137,11 +143,13 @@ impl ComparisonView {
             blocks: Vec::new(),
             heights: HeightIndex::new(Vec::new()),
             width: 400.0,
-            viewport_height: 400.0,
+            viewport: Rect::from_min_size(Pos2::ZERO, vec2(400.0, 400.0)),
             settings,
             anchor: (0, 0.0),
             synced: None,
             snippets: SnippetCache::default(),
+            generation: 0,
+            revealing: false,
         }
     }
 
@@ -173,6 +181,7 @@ impl ComparisonView {
             .and_then(|i| docs.get(i))
             .is_some_and(|d| d.doc.is_ok());
         self.blocks = verse_blocks(&key.extent, &bibles, base, differences && base_available);
+        self.generation += 1;
         self.docs = docs;
         self.key = Some(key);
         self.reset_heights();
@@ -235,6 +244,89 @@ impl ComparisonView {
         self.anchor = (i.saturating_sub(1), 0.0);
     }
 
+    /// Which version of its Verse blocks it shows: it changes whenever they are made again.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// The text of every row with text, as (Verse block, row, text), for its Find bar.
+    pub(crate) fn find_rows(&self) -> Vec<(usize, usize, String)> {
+        let mut rows = Vec::new();
+        for (b, block) in self.blocks.iter().enumerate() {
+            for (r, c) in block.cells.iter().enumerate() {
+                if let Cell::Text { text, .. } = &c.cell
+                    && !text.is_empty()
+                {
+                    rows.push((b, r, text.clone()));
+                }
+            }
+        }
+        rows
+    }
+
+    /// Where the pane was drawn last frame.
+    #[cfg(test)]
+    pub(crate) fn viewport(&self) -> Rect {
+        self.viewport
+    }
+
+    /// Verse block `i`'s height (measured once drawn, else estimated).
+    #[cfg(test)]
+    pub(crate) fn block_height(&self, i: usize) -> f32 {
+        self.heights.height(i)
+    }
+
+    /// The Verse block at the top of the view.
+    pub fn top_block(&self) -> usize {
+        self.anchor.0
+    }
+
+    /// Show the Find bar's current match, in Verse block `i` (#175): bring the block to the
+    /// top unless the pane draws it from where the view is, then let the pane scroll within
+    /// the block until the match's line is in view (a block can be taller than the view).
+    /// True when the view moved.
+    pub(crate) fn reveal_match(&mut self, i: usize) -> bool {
+        if i >= self.blocks.len() {
+            return false;
+        }
+        self.revealing = true;
+        let top = self.heights.offset(i)
+            - (self.heights.offset(self.anchor.0) + f64::from(self.anchor.1));
+        if i == self.anchor.0 || (i > self.anchor.0 && top < f64::from(self.viewport.height())) {
+            return false;
+        }
+        self.anchor = (i, 0.0);
+        true
+    }
+
+    /// After a frame drew the current Find match of Verse block `block` at `at` (the block's
+    /// top, the match's top and bottom, in screen points), or did not draw it (`pending`: its
+    /// row is still being laid out): scroll so it is in view. True when the view moved.
+    fn reveal_drawn(&mut self, block: usize, at: Option<(f32, f32, f32)>, pending: bool) -> bool {
+        let to = match at {
+            Some((_, top, bottom))
+                if top >= self.viewport.top() && bottom <= self.viewport.bottom() =>
+            {
+                None
+            }
+            // Its line at the top, below a block heading's worth of context.
+            Some((block_top, top, _)) => Some((block, (top - block_top - BLOCK_HEAD).max(0.0))),
+            // Not laid out yet: try again next frame.
+            None if pending => return false,
+            None => Some((block, 0.0)),
+        };
+        match to {
+            Some(to) if to != self.anchor => {
+                self.anchor = to;
+                true
+            }
+            _ => {
+                self.revealing = false;
+                false
+            }
+        }
+    }
+
     /// The Standard Verse whose block is at the top of the view.
     pub fn current_location(&self) -> Option<Verse> {
         self.blocks.get(self.anchor.0).map(|b| b.verse)
@@ -254,7 +346,7 @@ impl ComparisonView {
     fn max_scroll(&mut self) -> f64 {
         self.heights
             .offset(self.blocks.len().saturating_sub(1))
-            .max(self.heights.total() - f64::from(self.viewport_height))
+            .max(self.heights.total() - f64::from(self.viewport.height()))
     }
 
     /// The scroll position and total height, for the scrollbar.
@@ -316,6 +408,8 @@ pub fn paint_star(
 pub struct ComparisonOutput {
     /// The user scrolled the view.
     pub user_moved: bool,
+    /// The view scrolled to bring the current Find match into view (#175).
+    pub find_moved: bool,
     /// The pane's own response (for its right-click menu).
     pub response: Option<egui::Response>,
     /// The Verse block right-clicked this frame (#142).
@@ -341,15 +435,20 @@ pub struct ComparisonRow {
     pub text: String,
 }
 
-/// Highlight rectangles `[x0, y0, x1, y1]` of the clusters of `laid` whose text bytes fall in
-/// `range`, merged along each line.
+/// Highlight rectangles `[x0, y0, x1, y1]` of the clusters of `laid` whose text bytes reach
+/// into `range` (all of a ligature when the range starts or ends inside it), merged along
+/// each line.
 pub fn range_rects(laid: &LaidBlock, range: &Range<usize>) -> Vec<[f32; 4]> {
     let mut out = Vec::new();
+    if range.is_empty() {
+        return out;
+    }
     for line in &laid.lines {
         for item in &line.items {
             let mut run: Option<[f32; 4]> = None;
             for (bytes, x0, x1) in item.clusters() {
-                let inside = matches!(laid.to_unit(bytes.start), Some(UnitPos::Text(b)) if range.contains(&b));
+                let inside = matches!(laid.to_unit(bytes.start),
+                    Some(UnitPos::Text(b)) if b < range.end && range.start < b + bytes.len());
                 match (&mut run, inside) {
                     (Some(r), true) if (r[2] - x0).abs() < 0.5 || (r[0] - x1).abs() < 0.5 => {
                         r[0] = r[0].min(x0);
@@ -398,6 +497,7 @@ pub fn comparison_pane(
     view: &mut ComparisonView,
     atlas: &mut AtlasTexture,
     palette: &Palette,
+    found: Found<'_>,
 ) -> ComparisonOutput {
     // Navigation can leave only Absent rows (or no Bibles), so `get` may never run.
     view.snippets.drain();
@@ -406,7 +506,7 @@ pub fn comparison_pane(
     if !rect.is_positive() {
         return out;
     }
-    view.viewport_height = rect.height();
+    view.viewport = rect;
     let response = ui.allocate_rect(rect, Sense::click_and_drag());
     let context_at = response
         .secondary_clicked()
@@ -448,6 +548,18 @@ pub fn comparison_pane(
         view.scroll_by((frac * max - y) as f32);
     }
     out.user_moved = (view.position().0 - before).abs() > 0.01;
+    if out.user_moved {
+        view.revealing = false;
+    }
+    // The current Find match, while it is being scrolled into view: its (Verse block, row).
+    let reveal = found
+        .current
+        .and_then(|k| found.matches.get(k))
+        .filter(|_| view.revealing)
+        .map(|m| (m.unit, m.row));
+    // Where it was drawn (block top, its top and bottom), or whether its row awaits layout.
+    let mut revealed: Option<(f32, f32, f32)> = None;
+    let mut reveal_pending = false;
 
     if view.blocks.is_empty() {
         out.response = Some(response);
@@ -470,6 +582,8 @@ pub fn comparison_pane(
     let tint = palette.search_hit.gamma_multiply(0.75);
     let mut quads = Vec::new();
     let mut tints: Vec<Rect> = Vec::new();
+    // Find matches (#175): their rectangles, and whether each is the current one.
+    let mut matches: Vec<(Rect, bool)> = Vec::new();
     let mut carets: Vec<[f32; 3]> = Vec::new();
     let (first, offset) = view.anchor;
     let mut y = rect.top() - offset;
@@ -567,12 +681,34 @@ pub fn comparison_pane(
                                         }
                                     }
                                 }
+                                for k in found.within(i, row, 0..text.len()) {
+                                    let current = found.current == Some(k);
+                                    for [x0, y0, x1, y1] in
+                                        range_rects(&laid, &found.matches[k].range)
+                                    {
+                                        if current && reveal.is_some() {
+                                            let (t, b) = revealed
+                                                .map_or((row_y + y0, row_y + y1), |(_, t, b)| {
+                                                    (t.min(row_y + y0), b.max(row_y + y1))
+                                                });
+                                            revealed = Some((y, t, b));
+                                        }
+                                        matches.push((
+                                            Rect::from_min_max(
+                                                pos2(text_left + x0, row_y + y0),
+                                                pos2(text_left + x1, row_y + y1),
+                                            ),
+                                            current,
+                                        ));
+                                    }
+                                }
                                 quads.extend(atlas.atlas.quads(&laid, [text_left, row_y], ppp));
                                 height = laid.height;
                                 accessible_laid = Some(laid);
                             }
                             None => {
                                 measured = false;
+                                reveal_pending |= reveal == Some((i, row));
                                 painter.rect_filled(
                                     Rect::from_min_size(
                                         pos2(text_left, row_y + height * 0.3),
@@ -658,11 +794,20 @@ pub fn comparison_pane(
         y += height;
         i += 1;
     }
+    if let Some((block, _)) = reveal
+        && view.reveal_drawn(block, revealed, reveal_pending)
+    {
+        out.find_moved = true;
+        ui.ctx().request_repaint();
+    }
     if view.has_pending() {
         ui.ctx().request_repaint();
     }
     for r in tints {
         painter.rect_filled(r, 2.0, tint);
+    }
+    for (r, current) in matches {
+        crate::pane::paint_find_match(&painter, r, current, palette);
     }
     let texture = atlas.sync(ui.ctx());
     let mut mesh = Mesh::with_texture(texture);
@@ -786,7 +931,7 @@ mod tests {
                     ..Default::default()
                 },
                 |ui| {
-                    comparison_pane(ui, &mut view, &mut atlas, &palette);
+                    comparison_pane(ui, &mut view, &mut atlas, &palette, Found::default());
                 },
             );
             output.textures_delta.clear();
@@ -831,7 +976,7 @@ mod tests {
                 let rect = Rect::from_min_size(pos2(10.0, 10.0), vec2(550.0, height));
                 let mut body = ui.new_child(egui::UiBuilder::new().max_rect(rect));
                 body.set_clip_rect(rect);
-                comparison_pane(&mut body, view, atlas, &Palette::PAPER);
+                comparison_pane(&mut body, view, atlas, &Palette::PAPER, Found::default());
             },
         );
         output.textures_delta.clear();
@@ -993,6 +1138,34 @@ mod tests {
         );
         let bounds = run.bounds().unwrap();
         assert!(bounds.y0 >= 10.0 && bounds.y1 <= 130.0, "{bounds:?}");
+    }
+
+    /// A Find match (#175) or a changed range starting or ending inside a ligature marks the
+    /// whole ligature: the shaper gives "fi" one cluster, so testing only its first byte
+    /// would draw nothing for an "i" counted in the Find bar.
+    #[test]
+    fn a_range_inside_a_ligature_marks_the_ligature() {
+        let text = "the first fish";
+        let laid = laid(text, false, 400.0);
+        let fi = text.find("fi").unwrap();
+        let ligature = laid
+            .lines
+            .iter()
+            .flat_map(|l| &l.items)
+            .flat_map(obs_layout::LaidItem::clusters)
+            .find(|(bytes, _, _)| bytes.start == fi)
+            .unwrap();
+        assert_eq!(ligature.0, fi..fi + 2, "the body font forms an fi ligature");
+        let [[x0, _, x1, _]] = range_rects(&laid, &(fi + 1..fi + 2))[..] else {
+            panic!("the \"i\" of \"first\" is marked");
+        };
+        assert!((x0 - ligature.1).abs() < 0.5 && (x1 - ligature.2).abs() < 0.5);
+        // "irst": the ligature and the letters after it, one rectangle.
+        let [[x0, _, x1, _]] = range_rects(&laid, &(fi + 1..fi + 5))[..] else {
+            panic!("one rectangle over \"irst\"");
+        };
+        assert!((x0 - ligature.1).abs() < 0.5 && x1 > ligature.2);
+        assert!(range_rects(&laid, &(fi + 1..fi + 1)).is_empty());
     }
 
     #[test]

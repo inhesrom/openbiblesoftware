@@ -502,3 +502,53 @@ fn font_choices_are_saved_by_name_and_survive_a_restart() {
     drop(again);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn ctrl_f_opens_the_find_bar_of_a_resource_or_text_comparison_tab() {
+    let mut s = session();
+    let find = s.commands().get("tab.find").unwrap();
+    assert_eq!(find.shortcut, Some("Ctrl+F"));
+    // Nothing focused, or a Tab without a Find bar: the key is left alone.
+    assert!(!s.is_enabled("tab.find"));
+    let search = tab(&s.run("tool.search", &json!({})).unwrap());
+    assert!(!s.is_enabled("tab.find"));
+    assert!(s.run("tab.find", &json!({ "tab": search.0 })).is_err());
+
+    let kjv = tab(&s.run("resource.open", &json!({ "id": "kjv" })).unwrap());
+    assert!(s.is_enabled("tab.find"));
+    s.workspace.take_effects();
+    s.run("tab.find", &json!({ "tab": kjv.0, "text": "love" }))
+        .unwrap();
+    s.run("tab.find_next", &json!({ "tab": kjv.0 })).unwrap();
+    s.run("tab.find_previous", &json!({ "tab": kjv.0 }))
+        .unwrap();
+    assert_eq!(
+        s.workspace.take_effects(),
+        [
+            Effect::Find {
+                tab: kjv,
+                text: Some("love".into())
+            },
+            Effect::FindStep {
+                tab: kjv,
+                forward: true
+            },
+            Effect::FindStep {
+                tab: kjv,
+                forward: false
+            },
+        ]
+    );
+
+    let compare = tab(&s.run("tool.text_comparison", &json!({})).unwrap());
+    assert!(s.is_enabled("tab.find"));
+    s.workspace.take_effects();
+    s.run("tab.find", &json!({ "tab": compare.0 })).unwrap();
+    assert_eq!(
+        s.workspace.take_effects(),
+        [Effect::Find {
+            tab: compare,
+            text: None
+        }]
+    );
+}
