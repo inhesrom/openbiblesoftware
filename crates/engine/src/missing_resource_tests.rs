@@ -196,7 +196,8 @@ fn an_empty_library_is_offered_the_starter_resources_that_fill_each_section() {
     );
     assert_eq!(offered(Forms, Some("G26"), &empty), ids(&["tagnt"]));
     assert_eq!(offered(Forms, Some("H1254A"), &empty), ids(&["tahot"]));
-    // Factbook (#149): TIPNR, and the Dictionaries for their articles.
+    // Factbook (#149): TIPNR, and the Dictionaries for their articles (found through
+    // TIPNR's names).
     for section in [Summary, KeyPassages, Related] {
         assert_eq!(
             offered(section, None, &empty),
@@ -206,7 +207,7 @@ fn an_empty_library_is_offered_the_starter_resources_that_fill_each_section() {
     }
     assert_eq!(
         offered(DictionaryArticles, None, &empty),
-        ids(&["easton", "smith"])
+        ids(&["tipnr", "easton", "smith"])
     );
 }
 
@@ -449,6 +450,92 @@ fn a_strongs_only_greek_bible_does_not_hide_tagnt_from_forms() {
     assert_eq!(
         empty.missing.get_label().as_deref(),
         Some("Get Hebrew & Greek texts…")
+    );
+
+    // A TAGNT with G26 and its Morphology joins: Forms reads it, though the Strong's-only
+    // Bible still comes first, and Occurrences counts in the same Bible so its form filter
+    // matches.
+    add(&mut s, &testing::tagnt_love());
+    let SectionData::Forms(forms) = &*settle(&mut s, &g26, GuideSection::Forms) else {
+        panic!("not Forms");
+    };
+    assert_eq!(forms.bible_id, "tagnt-love");
+    let labels: Vec<&str> = forms.forms.iter().map(|f| f.label.as_str()).collect();
+    assert_eq!(labels.len(), 2, "{labels:?}");
+    assert_eq!(forms.without_form, 0);
+    let SectionData::Occurrences(occurrences) = &*settle(&mut s, &g26, GuideSection::Occurrences)
+    else {
+        panic!("not Occurrences");
+    };
+    assert_eq!(occurrences.bible_id, "tagnt-love");
+    let mut occurrence_forms: Vec<&str> = occurrences.forms.iter().map(String::as_str).collect();
+    occurrence_forms.sort_unstable();
+    let mut labels = labels;
+    labels.sort_unstable();
+    assert_eq!(occurrence_forms, labels);
+    drop(s);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Dictionary articles are found through a People & places index: with a Dictionary but no
+/// index the section names TIPNR (from the Starter library; the online repositories offer no
+/// index), never more Dictionaries, and once TIPNR is in the same Factbook fills.
+#[test]
+fn a_dictionary_without_tipnr_asks_for_tipnr_for_dictionary_articles() {
+    let root = std::env::temp_dir().join(format!("obs-missing-no-index-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let bundle = root.join("starter");
+    let mut set = testing::starter_set();
+    set.extend([
+        testing::tipnr(),
+        testing::dictionary("easton"),
+        testing::dictionary("smith"),
+    ]);
+    testing::write_starter_bundle(&bundle, &set);
+    let mut s = Session::new(JobMode::Inline);
+    s.starter.set_bundle(&bundle).unwrap();
+    let add = |s: &mut Session, r: &obs_model::Resource| {
+        let path = root.join(format!("{}.obr", r.manifest.resource_id));
+        obs_store::write_obr(r, &path).unwrap();
+        s.library.add_file(&path).unwrap();
+    };
+    let abraham = Key::Headword("Abraham@Gen.11.26-1Pe".into());
+    let articles = GuideSection::DictionaryArticles;
+
+    // Nothing at all: TIPNR and the Dictionaries, and Get Dictionaries for the latter.
+    let empty = s.guide_empty_state(&abraham, articles);
+    assert_eq!(
+        empty.message,
+        "None in your library. Add a People & places index (TIPNR) and a Dictionary \
+         (Easton's, Smith's) to read about them."
+    );
+    assert_eq!(empty.missing.starter, ids(&["tipnr", "easton", "smith"]));
+    assert_eq!(
+        empty.missing.get_label().as_deref(),
+        Some("Get Dictionaries…")
+    );
+
+    // Easton's is in, TIPNR is not: only TIPNR would help.
+    add(&mut s, &testing::dictionary("easton"));
+    assert!(settle(&mut s, &abraham, articles).is_empty());
+    let empty = s.guide_empty_state(&abraham, articles);
+    assert_eq!(
+        empty.message,
+        "None in your library. Add a People & places index (TIPNR) to find the Dictionary \
+         articles on them."
+    );
+    assert_eq!(empty.missing.resource_type, ResourceType::PeopleAndPlaces);
+    assert_eq!(empty.missing.get_resources, None);
+    assert_eq!(empty.missing.starter, ids(&["tipnr"]));
+
+    // TIPNR joins: the section fills.
+    add(&mut s, &testing::tipnr());
+    let SectionData::DictionaryArticles(found) = &*settle(&mut s, &abraham, articles) else {
+        panic!("not Dictionary articles");
+    };
+    assert!(
+        found.iter().any(|a| a.article.abbreviation == "Easton"),
+        "{found:?}"
     );
     drop(s);
     let _ = std::fs::remove_dir_all(&root);

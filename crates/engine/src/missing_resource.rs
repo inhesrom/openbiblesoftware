@@ -126,6 +126,10 @@ impl GuideSection {
             GuideSection::TranslatedAs => tagged_english,
             GuideSection::Occurrences => tagged_english || original(language),
             GuideSection::Forms => original(language),
+            // Articles are found through the People & places index (TIPNR).
+            GuideSection::DictionaryArticles => {
+                ty == ResourceType::Dictionary || ty == ResourceType::PeopleAndPlaces
+            }
             s => ty == s.resource_type(),
         }
     }
@@ -161,15 +165,30 @@ impl GuideSection {
                     .any(|l| is_original_language(&e.manifest.language, l))
                     && concordances.loaded(e).is_some_and(|c| c.has_morphology())
             }),
+            GuideSection::DictionaryArticles => {
+                self.has_needed(library, indexes) && !self.lacks_people_index(library)
+            }
             // Translated as and Occurrences already ask for Strong's numbers.
             _ => self.has_needed(library, indexes),
         }
     }
 
+    /// Whether the section is empty for want of a People & places index whatever else the
+    /// Library has: Dictionary articles are found through the index's names (#149), so a
+    /// Dictionary alone never fills them.
+    pub fn lacks_people_index(self, library: &Library) -> bool {
+        self == GuideSection::DictionaryArticles
+            && library
+                .of_type(ResourceType::PeopleAndPlaces)
+                .next()
+                .is_none()
+    }
+
     /// What would fill the empty section. `has` is [`Self::has_needed_tagging`]: when the
     /// Library already has the kind of Resource with its tagging, only Get Resources is
     /// offered, never the Starter library (#135: "no entry for this Strong's number" offers
-    /// Get Lexicons only).
+    /// Get Lexicons only). Dictionary articles without a People & places index name the index
+    /// once the Library has a Dictionary, and offer only the kinds the Library lacks.
     pub fn missing_resource(
         self,
         has: bool,
@@ -184,7 +203,13 @@ impl GuideSection {
                 let ids: Vec<String> = manifest
                     .resources
                     .iter()
-                    .filter(|i| self.filled_by(i, strongs) && library.get(&i.resource_id).is_none())
+                    .filter(|i| {
+                        self.filled_by(i, strongs)
+                            && library.get(&i.resource_id).is_none()
+                            && !(self == GuideSection::DictionaryArticles
+                                && i.resource_type
+                                    .is_some_and(|t| library.of_type(t).next().is_some()))
+                    })
                     .map(|i| i.resource_id.clone())
                     .collect();
                 if ids.is_empty() {
@@ -194,10 +219,18 @@ impl GuideSection {
                 }
             }
         };
+        // A Dictionary without the index: the index is what is missing, and the online
+        // repositories offer none.
+        let index_only = self.lacks_people_index(library)
+            && library.of_type(ResourceType::Dictionary).next().is_some();
         MissingResource {
-            resource_type: self.resource_type(),
+            resource_type: if index_only {
+                ResourceType::PeopleAndPlaces
+            } else {
+                self.resource_type()
+            },
             tagging: self.tagging(),
-            get_resources: self.get_resources_filter(),
+            get_resources: self.get_resources_filter().filter(|_| !index_only),
             starter,
         }
     }
@@ -215,8 +248,19 @@ impl Session {
         };
         let has = section.has_needed(&self.library, &indexes);
         let tagged = section.has_needed_tagging(&self.library, &indexes, &concordances, strongs);
+        let message = match (section.lacks_people_index(&self.library), has) {
+            (true, true) => {
+                "None in your library. Add a People & places index (TIPNR) to find the \
+                 Dictionary articles on them."
+            }
+            (true, false) => {
+                "None in your library. Add a People & places index (TIPNR) and a Dictionary \
+                 (Easton's, Smith's) to read about them."
+            }
+            (false, _) => section.empty_message(has),
+        };
         EmptyState {
-            message: section.empty_message(has),
+            message,
             missing: section.missing_resource(
                 tagged,
                 strongs,

@@ -86,8 +86,8 @@ fn cross_references() -> obs_model::Resource {
 }
 
 /// A released Starter library with a Resource for every Guide section: the KJV with Strong's
-/// and the Lexicons of [`starter_set`], a Commentary, the Cross-reference set, TIPNR and a
-/// Greek Bible with Morphology.
+/// and the Lexicons of [`starter_set`], a Commentary, the Cross-reference set, TIPNR and
+/// Greek Bibles with Morphology (G26 in one of them).
 fn release_set() -> Vec<obs_model::Resource> {
     let john = Passage::verse(Verse::new(obs_scripture::Book::John, 3, 16));
     let mut set = starter_set();
@@ -101,6 +101,7 @@ fn release_set() -> Vec<obs_model::Resource> {
         cross_references(),
         obs_engine::testing::tipnr(),
         obs_engine::testing::tagnt_grace(),
+        obs_engine::testing::tagnt_love(),
     ]);
     for r in &mut set {
         r.manifest.origin = obs_model::Origin::Starter;
@@ -588,7 +589,8 @@ fn untagged_bibles_still_offer_the_starter_library_for_key_words_and_forms() {
 }
 
 /// A Greek Bible with Strong's numbers but no Morphology has G26, yet its Forms stay empty:
-/// Forms still offers the Starter library (its TAGNT has Morphology).
+/// Forms still offers the Starter library (its TAGNT has Morphology), and once it is added
+/// the same Word Study shows G26's forms from TAGNT.
 #[test]
 fn a_strongs_only_greek_bible_still_offers_the_starter_library_for_forms() {
     let greek = obs_engine::testing::tagged_bible(
@@ -620,6 +622,28 @@ fn a_strongs_only_greek_bible_still_offers_the_starter_library_for_forms() {
     });
     click_action(&mut h, study, forms, ADD_STARTER);
     expect_starter_library(&mut h);
+    h.shell.run("starter.add", &json!({}));
+    settle(&mut h);
+    // Collapse the sections above Forms so its rows are in view.
+    for section in ["lexicon_entries", "translated_as", "occurrences"] {
+        h.shell.run(
+            "guide.collapse_section",
+            &json!({ "guide": "word_study", "section": section, "collapsed": true }),
+        );
+    }
+    let genitive = format!("{} ×1", obs_engine::word_sections::form_of("N-GSF").0);
+    until(&mut h, "G26's forms from TAGNT", |h| {
+        in_section(
+            h,
+            study,
+            forms,
+            "In the TAGNT. Click a form to list only its occurrences.",
+        )
+        .is_some()
+            && in_section(h, study, forms, &genitive).is_some()
+            && in_section(h, study, forms, ADD_STARTER).is_none()
+    });
+    assert!(h.shell.session().workspace.tab(study).is_some());
 }
 
 /// The Factbook (#149) with an empty Library: its chooser and every section offer the way to
@@ -680,4 +704,44 @@ fn every_factbook_section_and_its_chooser_have_a_working_action() {
         click_action(&mut h, factbook, section, IMPORT);
         expect_import(&mut h);
     }
+}
+
+/// A Factbook with Easton's but no People & places index: Dictionary articles ask for TIPNR
+/// (the Starter library), not for more Dictionaries, and the same Tab fills once it is added.
+#[test]
+fn factbook_dictionary_articles_without_tipnr_offer_tipnr_and_refresh() {
+    let easton = obs_engine::testing::dictionary("easton");
+    let (mut h, _lab) = setup("factbook-no-index", &[easton]);
+    let factbook = h
+        .shell
+        .run(
+            "guide.factbook",
+            &json!({ "entity": "Abraham@Gen.11.26-1Pe", "split": true }),
+        )
+        .unwrap()["tab"]
+        .as_u64()
+        .map(TabId)
+        .unwrap();
+    let articles = GuideSection::DictionaryArticles;
+    until(&mut h, "the Dictionary articles hint", |h| {
+        find_in(
+            h,
+            factbook,
+            "None in your library. Add a People & places index (TIPNR) to find the Dictionary \
+             articles on them.",
+        )
+        .is_some()
+            && in_section(h, factbook, articles, ADD_STARTER).is_some()
+    });
+    assert!(in_section(&h, factbook, articles, "Get Dictionaries…").is_none());
+    click_action(&mut h, factbook, articles, ADD_STARTER);
+    expect_starter_library(&mut h);
+    h.shell.run("starter.add", &json!({}));
+    settle(&mut h);
+    assert!(h.shell.st.session.library.get("tipnr").is_some());
+    until(&mut h, "Easton's article on Abraham", |h| {
+        in_section(h, factbook, articles, "Easton: Abraham").is_some()
+            && in_section(h, factbook, articles, ADD_STARTER).is_none()
+    });
+    assert!(h.shell.session().workspace.tab(factbook).is_some());
 }
