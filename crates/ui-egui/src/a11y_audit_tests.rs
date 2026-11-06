@@ -256,8 +256,9 @@ fn unnamed_in(tree: &TreeUpdate) -> Vec<String> {
 }
 
 /// Open each of `kinds` over the default layout and hand each state of it to `visit`, named:
-/// the Tab as it opens, and the Search Tab also in its Grid, Chart and Analysis views and in
-/// Library mode (the Resource and Collection choosers, #153) and Notes mode.
+/// the Tab as it opens, a Resource Tab also with its Contents pane open (#176), and the Search
+/// Tab also in its Grid, Chart and Analysis views and in Library mode (the Resource and
+/// Collection choosers, #153) and Notes mode.
 fn each_tab_state(
     h: &mut Harness,
     lab: &Lab,
@@ -276,6 +277,16 @@ fn each_tab_state(
             focused_kind(h)
         );
         visit(h, format!("{kind:?}"));
+        if matches!(kind, TabKind::Resource(_)) {
+            let tab = h.shell.session().workspace.focused().unwrap().0;
+            h.shell
+                .run("tab.contents", &json!({ "tab": tab, "on": true }));
+            settle(h);
+            settle_all(h);
+            let ws = &h.shell.session().workspace;
+            assert!(ws.tab(obs_engine::TabId(tab)).is_some_and(|t| t.contents));
+            visit(h, format!("{kind:?} with its Contents pane"));
+        }
         if *kind != TabKind::Tool(Tool::Search) {
             continue;
         }

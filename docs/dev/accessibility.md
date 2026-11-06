@@ -22,7 +22,8 @@ dependency, as decided in `resource-tabs.md`).
 it), each over the default layout, with the Starter library's test Resources and again with
 an empty Library (the Guides' get-the-Resource buttons). The Search Tab is checked in each of
 its Verses, Grid, Chart and Analysis views and in Library mode (the Resource and Collection
-choosers) and Notes mode; the Bible Tab with interlinear lines on.
+choosers) and Notes mode; the Bible Tab with interlinear lines on, and again with its
+Contents pane (#176) open.
 `every_pane_menu_and_window_names_its_interactive_nodes` does the same for the four toolbar
 panes (Library also while searching), the Command box's suggestions, the View and Help menus,
 Customize toolbar…, Fonts…, Copy verses…, the New Collection window and the right-click menu,
