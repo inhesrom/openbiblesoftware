@@ -437,7 +437,14 @@ impl State {
             SectionData::Related(rows) => self
                 .factbook_related(ui, tab, rows, new_tab)
                 .map(Action::Factbook),
-            SectionData::Map(places) => self.factbook_map(ui, places).map(Action::Factbook),
+            SectionData::Map(places) => {
+                // A Factbook's Key is its entity's id.
+                let subject = match key {
+                    Key::Headword(id) => Some(id.as_str()),
+                    _ => None,
+                };
+                self.factbook_map(ui, places, subject).map(Action::Factbook)
+            }
             SectionData::WordByWord(w) => self.word_by_word_section(ui, tab, w, new_tab),
             SectionData::LexiconSummaries(rows) => {
                 self.lexicon_summaries_section(ui, tab, rows, new_tab)

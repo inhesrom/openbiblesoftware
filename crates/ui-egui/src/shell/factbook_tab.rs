@@ -336,12 +336,14 @@ impl State {
 
     /// The Map (#150): a place at every location it may have had, each with how confident
     /// that is; for a person, the places they lived in (click one for its Factbook).
+    /// `subject` is the Factbook's entity: when the map shows it, it is a place's own map.
     pub(super) fn factbook_map(
         &mut self,
         ui: &mut Ui,
         places: &[obs_engine::MapPlace],
+        subject: Option<&str>,
     ) -> Option<FactbookAction> {
-        let one_place = places.len() == 1;
+        let one_place = matches!(places, [p] if Some(p.entity.as_str()) == subject);
         let refs: Vec<&obs_engine::MapPlace> = places.iter().collect();
         let width = ui.available_width().max(120.0);
         let (rect, _) = ui.allocate_exact_size(

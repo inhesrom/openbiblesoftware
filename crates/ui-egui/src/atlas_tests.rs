@@ -185,6 +185,63 @@ fn acts_13_shows_the_first_journey_and_a_place_opens_its_factbook() {
     preview(&h, "factbook-iconium-map-kittest");
 }
 
+/// Pisidia is drawn where Pisidian Antioch is. Picked in the list, its ringed marker is on
+/// top of the city's, and a click on it opens Pisidia's Factbook, not Antioch's.
+#[test]
+fn a_picked_place_sharing_a_spot_is_the_one_clicked() {
+    let (mut h, _files) = harness("coincident", false);
+    let atlas = TabId(
+        h.shell
+            .run(
+                "tool.atlas",
+                &json!({ "passage": "Acts 13", "split": true }),
+            )
+            .unwrap()["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    h.frames(2);
+    until(&mut h, "the place list", |h| {
+        !all_in(h, atlas, "Factbook ›").is_empty()
+    });
+    // Wheel the list down to Pisidia, its last place.
+    let list = all_in(&h, atlas, "Factbook ›")[0].center();
+    h.events.push(Event::PointerMoved(list));
+    for _ in 0..200 {
+        if !all_in(&h, atlas, "Pisidia").is_empty() {
+            break;
+        }
+        h.events.push(Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: vec2(0.0, -40.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.frame();
+    }
+    h.frames(2);
+    // Only the list names Pisidia until it is picked.
+    let row = all_in(&h, atlas, "Pisidia");
+    assert_eq!(row.len(), 1, "{:?}", h.texts());
+    h.click(row[0].center());
+    h.frames(3);
+    until(&mut h, "Pisidia on the map", |h| {
+        all_in(h, atlas, "Pisidia").len() == 2
+    });
+    // Its label is right of its marker.
+    let pisidia = label(&h, atlas, "Pisidia");
+    h.click(pos2(pisidia.left() - 8.0, pisidia.center().y));
+    h.frames(3);
+    let ws = &h.shell.session().workspace;
+    let t = ws.tab(ws.focused().unwrap()).unwrap();
+    assert_eq!(t.kind, TabKind::Guide(Guide::Factbook));
+    assert_eq!(
+        t.entry_history.current(),
+        Some(Key::Headword("Pisidia@Act.13.14-".into()))
+    );
+}
+
 /// The search box finds a place by name; picking it shows it on the map, ringed.
 #[test]
 fn the_search_box_finds_a_place_and_shows_it() {

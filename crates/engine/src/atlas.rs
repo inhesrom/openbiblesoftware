@@ -14,7 +14,7 @@
 //! The Factbook's Map section (a place's locations; for a person, the places TIPNR says they
 //! lived in) reads the same data.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use obs_model::{EntityKind, PlaceLocation};
@@ -225,7 +225,8 @@ pub fn passage_places(
 ) -> Result<Vec<MapPlace>, String> {
     use obs_store::ResourceStore;
     let dir = directory.get(library)?;
-    let mut named: BTreeMap<String, BTreeSet<Verse>> = BTreeMap::new();
+    let mut named: std::collections::BTreeMap<String, BTreeSet<Verse>> =
+        std::collections::BTreeMap::new();
     let mut errors = Vec::new();
     let mut read_any = false;
     for index in library.of_type(obs_model::ResourceType::PeopleAndPlaces) {

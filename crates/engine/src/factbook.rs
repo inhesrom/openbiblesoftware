@@ -215,8 +215,21 @@ impl PeopleDirectory {
     pub fn new(entries: Vec<DirectoryEntry>) -> Self {
         let mut d = Self::default();
         for e in entries {
+            let mut names: BTreeSet<String> = crate::aliases::entity_names(&e.entity)
+                .iter()
+                .map(|n| obs_model::normalize(n))
+                .collect();
+            names.insert(obs_model::normalize(&usual_name(&e.entity)));
+            names.retain(|n| !n.is_empty());
             if let Some(&kept) = d.by_id.get(&e.entity.id) {
-                // A place a later index locates (the geocoding, #150) takes its locations.
+                // A place a later index locates (the geocoding, #150) takes its locations, and
+                // its names find the first record.
+                for n in names {
+                    let found = d.by_name.entry(n).or_default();
+                    if !found.contains(&kept) {
+                        found.push(kept);
+                    }
+                }
                 let kept = &mut d.entries[kept].entity;
                 if kept.locations.is_empty() {
                     kept.locations = e.entity.locations;
@@ -225,12 +238,7 @@ impl PeopleDirectory {
             }
             let i = d.entries.len();
             d.by_id.insert(e.entity.id.clone(), i);
-            let mut names: BTreeSet<String> = crate::aliases::entity_names(&e.entity)
-                .iter()
-                .map(|n| obs_model::normalize(n))
-                .collect();
-            names.insert(obs_model::normalize(&usual_name(&e.entity)));
-            for n in names.into_iter().filter(|n| !n.is_empty()) {
+            for n in names {
                 d.by_name.entry(n).or_default().push(i);
             }
             for r in &e.entity.relations {

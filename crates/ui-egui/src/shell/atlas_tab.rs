@@ -251,7 +251,14 @@ pub(super) fn map_canvas(
             });
         }
     }
-    markers.sort_by_key(|m| (m.strong, m.point == 0));
+    // The picked place last of all: on top of any place at the same spot.
+    markers.sort_by_key(|m| {
+        (
+            Some(m.place.entity.as_str()) == selected,
+            m.strong,
+            m.point == 0,
+        )
+    });
     let ink = theme::c().ink;
     for m in &markers {
         let confidence = m.place.points[m.point].confidence;
@@ -293,13 +300,15 @@ pub(super) fn map_canvas(
         placed.push(at);
     }
 
-    // Hover and click: the nearest marker within reach.
+    // Hover and click: the nearest marker within reach; of markers at the same spot, the one
+    // drawn on top (`min_by` keeps the first of equals, so walk the paint order backwards).
     let pointer = response
         .hover_pos()
         .or_else(|| response.interact_pointer_pos());
     let near = pointer.and_then(|p| {
         markers
             .iter()
+            .rev()
             .map(|m| (m, m.at.distance(p)))
             .filter(|(_, d)| *d <= HIT_RADIUS)
             .min_by(|a, b| a.1.total_cmp(&b.1))
@@ -384,7 +393,16 @@ fn marker(painter: &egui::Painter, at: Pos2, confidence: Confidence, strong: boo
             painter.circle(at, r, ink, Stroke::new(1.5, ch.field));
         }
         Confidence::Medium => {
-            painter.circle(at, r, ink.gamma_multiply(0.45), Stroke::new(1.5, ink));
+            // Lower half filled.
+            painter.circle_filled(at, r, ch.field);
+            let half: Vec<Pos2> = (0..=16u8)
+                .map(|i| {
+                    let a = std::f32::consts::PI * f32::from(i) / 16.0;
+                    at + vec2(a.cos(), a.sin()) * r
+                })
+                .collect();
+            painter.add(Shape::convex_polygon(half, ink, Stroke::NONE));
+            painter.circle_stroke(at, r, Stroke::new(1.5, ink));
         }
         Confidence::Low => {
             painter.circle(at, r, ch.field.gamma_multiply(0.6), Stroke::new(1.5, ink));

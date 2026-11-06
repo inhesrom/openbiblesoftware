@@ -223,6 +223,14 @@ fn the_search_box_finds_located_places_by_name() {
             .collect::<Vec<_>>(),
         ["Iconium"]
     );
+    // A name only the geocoding knows finds TIPNR's record.
+    assert_eq!(
+        search(&mut s, "Antioch of Pisidia")
+            .iter()
+            .map(|p| p.entity.as_str())
+            .collect::<Vec<_>>(),
+        ["Antioch@Act.13.14-2Ti"]
+    );
     // Known, but not located: not offered on the map.
     assert!(search(&mut s, "Zarephath").is_empty());
     assert!(search(&mut s, "").is_empty());
