@@ -176,19 +176,26 @@ impl LibraryScope {
 
     /// Search a Collection, or stop searching it. Choosing one while the scope is the
     /// default (every Commentary, Lexicon and Dictionary) searches just that Collection.
+    /// One already searched stops being searched even if it has since been deleted or
+    /// renamed (a search brought back from Favorites or History keeps the saved name).
     pub fn toggle_collection(&mut self, library: &Library, name: &str) -> Result<(), String> {
+        let name = name.trim();
+        if let Some(i) = self
+            .collections
+            .iter()
+            .position(|c| c.eq_ignore_ascii_case(name))
+        {
+            self.collections.remove(i);
+            return Ok(());
+        }
         let name = library
             .collection(name)
             .map(|c| c.name.clone())
-            .ok_or_else(|| format!("no Collection named “{}”", name.trim()))?;
-        if let Some(i) = self.collections.iter().position(|c| *c == name) {
-            self.collections.remove(i);
-        } else {
-            if self.is_default() {
-                *self = Self::empty();
-            }
-            self.collections.push(name);
+            .ok_or_else(|| format!("no Collection named “{name}”"))?;
+        if self.is_default() {
+            *self = Self::empty();
         }
+        self.collections.push(name);
         Ok(())
     }
 

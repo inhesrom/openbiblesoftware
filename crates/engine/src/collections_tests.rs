@@ -728,3 +728,78 @@ fn changing_or_deleting_a_searched_collection_runs_the_search_again() {
     );
     cleanup(s, root);
 }
+
+#[test]
+fn a_search_brought_back_with_a_deleted_or_renamed_collection_can_stop_searching_it() {
+    let (mut s, root) = fixture("stale");
+    s.run(
+        "collection.save",
+        &json!({ "name": "Pair", "resources": "tcc,tc2" }),
+    )
+    .unwrap();
+    let out = s
+        .run(
+            "search.run",
+            &json!({ "text": "covenant", "mode": "library", "resources": "collection:Pair" }),
+        )
+        .unwrap();
+    let tab = out["tab"].as_u64().unwrap();
+    settle(&mut s);
+    s.record_history();
+    let favorite = s.run("favorite.add", &json!({ "tab": tab })).unwrap()["id"].clone();
+    let visit = s
+        .history()
+        .iter()
+        .find(|v| v.label.contains("covenant"))
+        .unwrap()
+        .id;
+    let collections = |s: &Session, tab: u64| {
+        s.search_tab(TabId(tab))
+            .unwrap()
+            .library
+            .collections
+            .clone()
+    };
+
+    // Renamed: the Favorite still names "Pair", and its chip still comes off.
+    s.run(
+        "collection.save",
+        &json!({ "name": "Duo", "resources": "tcc,tc2", "previous": "Pair" }),
+    )
+    .unwrap();
+    settle(&mut s);
+    assert_eq!(collections(&s, tab), ["Duo"]);
+    let t = s.run("favorite.open", &json!({ "id": favorite })).unwrap()["tab"]
+        .as_u64()
+        .unwrap();
+    settle(&mut s);
+    assert_eq!(collections(&s, t), ["Pair"]);
+    let out = s
+        .run("search.collection", &json!({ "tab": t, "name": "Pair" }))
+        .unwrap();
+    assert_eq!(out["collections"], json!([]));
+    assert!(collections(&s, t).is_empty());
+
+    // Deleted: the History Visit brings "Pair" back, and its chip comes off too.
+    s.run("collection.delete", &json!({ "name": "Duo" }))
+        .unwrap();
+    settle(&mut s);
+    let t = s.run("history.open", &json!({ "id": visit })).unwrap()["tab"]
+        .as_u64()
+        .unwrap();
+    settle(&mut s);
+    assert_eq!(collections(&s, t), ["Pair"]);
+    s.run("search.collection", &json!({ "tab": t, "name": "pair" }))
+        .unwrap();
+    assert!(collections(&s, t).is_empty());
+
+    // Choosing a Collection that does not exist (any more) still says so.
+    let err = s
+        .run("search.collection", &json!({ "tab": t, "name": "Pair" }))
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("no Collection named “Pair”"),
+        "{err}"
+    );
+    cleanup(s, root);
+}
