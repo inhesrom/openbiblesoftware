@@ -420,6 +420,56 @@ fn the_command_opens_at_a_passage_and_the_guide_follows_its_link_set() {
     assert_eq!(second.history.current(), Some(john(3, 17)));
 }
 
+/// A chapter or range from the command (`eg Ps 23`, `eg Jn 3:16-18`) stays whole in the Tab,
+/// and the Tab goes back to one Verse once it moves elsewhere.
+#[test]
+fn a_chapter_or_range_command_keeps_the_whole_passage() {
+    let mut s = Session::new(JobMode::Inline);
+    let psalm_23 = Passage::chapter(&obs_scripture::Standard, Book::Psalms, 23).unwrap();
+    let top = s
+        .command_box_suggestions("eg Ps 23")
+        .into_iter()
+        .next()
+        .unwrap();
+    assert_eq!(top.action, CommandBoxAction::ExegeticalGuide(psalm_23));
+    let out = s.run_command_box_action(&top.action, false).unwrap();
+    assert_eq!(out["passage"], "Psalms 23");
+    let guide = TabId(out["tab"].as_u64().unwrap());
+    let tab = s.workspace.tab(guide).unwrap();
+    assert_eq!(tab.history.current(), Some(psalm_23.start()));
+    assert_eq!(tab.shown_passage(), Some(psalm_23));
+
+    // The same Guide moves to a range.
+    let range = Passage::new(john(3, 16), john(3, 18)).unwrap();
+    let out = s
+        .run(
+            "guide.exegetical_guide",
+            &json!({ "passage": "Jn 3:16-18" }),
+        )
+        .unwrap();
+    assert_eq!(TabId(out["tab"].as_u64().unwrap()), guide);
+    assert_eq!(s.workspace.tab(guide).unwrap().shown_passage(), Some(range));
+
+    // Typed in the Guide's own box, too.
+    s.run("tab.go", &json!({ "tab": guide.0, "text": "Ps 23" }))
+        .unwrap();
+    assert_eq!(
+        s.workspace.tab(guide).unwrap().shown_passage(),
+        Some(psalm_23)
+    );
+
+    // A jump to another Verse leaves the range; Back to its first Verse shows that Verse.
+    s.workspace.navigate(guide, john(3, 17));
+    let tab = s.workspace.tab(guide).unwrap();
+    assert_eq!(tab.passage, None);
+    assert_eq!(tab.shown_passage(), Some(Passage::verse(john(3, 17))));
+    s.workspace.back(guide);
+    assert_eq!(
+        s.workspace.tab(guide).unwrap().shown_passage(),
+        Some(Passage::verse(psalm_23.start()))
+    );
+}
+
 #[test]
 fn the_guides_menu_and_command_box_offer_the_exegetical_guide() {
     let guides = MENUS.iter().find(|m| m.title == "Guides").unwrap();
@@ -467,11 +517,13 @@ fn starter_library_exegetical_guide_for_john_3_16_and_psalm_3_1() {
     let q = JobQueue::inline();
     let job = q.submit_fn("probe", move |ctx| {
         let mut out = Vec::new();
+        let mut counts = Vec::new();
         for passage in [Passage::verse(john(3, 16)), Passage::verse(ps3(1))] {
             let key = Key::Passage(passage);
             for section in Guide::ExegeticalGuide.sections() {
                 let t = std::time::Instant::now();
                 let data = sections.compute(&library, &key, *section, ctx)?;
+                counts.push((format!("{passage:?} {}", section.title()), data.count()));
                 out.push(format!(
                     "{passage:?} {}: {} in {:?}",
                     section.title(),
@@ -520,17 +572,31 @@ fn starter_library_exegetical_guide_for_john_3_16_and_psalm_3_1() {
                 }
             }
         }
-        Ok(out)
+        Ok((out, counts))
     });
     q.pump(1);
-    for e in q.drain_events() {
-        if e.id == job
-            && let JobEventKind::Finished(out) = e.kind
-        {
-            for line in *out.downcast::<Vec<String>>().unwrap() {
-                eprintln!("{line}");
+    let mut lines = None;
+    for e in q.drain_events().into_iter().filter(|e| e.id == job) {
+        match e.kind {
+            JobEventKind::Finished(out) => {
+                lines = Some(
+                    *out.downcast::<(Vec<String>, Vec<(String, usize)>)>()
+                        .unwrap(),
+                );
             }
+            JobEventKind::Failed(e) => panic!("the probe failed: {e}"),
+            JobEventKind::Cancelled => panic!("the probe was cancelled"),
+            _ => {}
         }
+    }
+    let (lines, counts) = lines.expect("the probe finished");
+    for line in &lines {
+        eprintln!("{line}");
+    }
+    // Every section of both Passages has rows: two Passages × three sections.
+    assert_eq!(counts.len(), 6, "{counts:?}");
+    for (section, count) in counts {
+        assert!(count > 0, "{section} is empty");
     }
 }
 

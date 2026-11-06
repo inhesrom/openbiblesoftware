@@ -243,22 +243,18 @@ fn targets(doc: &ReadingDoc, unit: usize, span: usize) -> Targets {
 
 impl State {
     pub(super) fn cross_references_body(&mut self, ui: &mut Ui, tab: TabId) {
-        let at = self
+        let passage = self
             .session
             .workspace
             .tab(tab)
-            .and_then(|t| t.history.current());
-        let Some(at) = at else {
+            .and_then(|t| t.shown_passage());
+        let Some(passage) = passage else {
             ui.label("Enter a Bible reference or join a Link set");
             return;
         };
         let Some(t) = self.tabs.get_mut(&tab) else {
             return;
         };
-        if t.reference_passage.is_some_and(|p| p.start() != at) {
-            t.reference_passage = None;
-        }
-        let passage = t.reference_passage.unwrap_or(Passage::verse(at));
         if t.reference_at != Some(passage) {
             t.reference_at = Some(passage);
             t.expanded_references.clear();

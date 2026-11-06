@@ -548,7 +548,10 @@ fn the_guide_box_takes_a_passage_range() {
     until(&mut h, "the range as the Guide's Passage", |h| {
         find_in(h, guide, "John 3:16-17").is_some()
     });
-    assert_eq!(h.shell.st.tabs[&guide].reference_passage, Some(range));
+    assert_eq!(
+        h.shell.st.session.workspace.tab(guide).unwrap().passage,
+        Some(range)
+    );
     // The range's Commentaries: Beta's 3:16 note and Alpha's 3:1-21 section both overlap.
     until(&mut h, "Commentary rows for the range", |h| {
         find_in(h, guide, "Alpha Commentary").is_some() && find_in(h, guide, "Beta Notes").is_some()
@@ -1044,5 +1047,56 @@ fn the_exegetical_guide_at_english_ps_3_1_shows_tahots_ps_3_2() {
         h.paced_frame();
     }
     preview(&mut h, "exegetical-psalm-3-1");
+    drop(h);
+}
+
+/// `eg Ps 3:1-2` and `eg Ps 3` (#144): the Guide shows the whole range or chapter, not only
+/// its first Verse.
+#[test]
+fn a_chapter_or_range_command_shows_its_later_verses() {
+    use obs_engine::testing::bibles::{bsb_psalm_3, tahot_psalms};
+    let mut h = Harness::new();
+    let (_files, _bible, guide) = setup_exegetical(
+        &mut h,
+        "psalm-range",
+        &[bsb_psalm_3(), tahot_psalms()],
+        "Ps 3:1",
+    );
+    until(&mut h, "the first verse", |h| {
+        find_in(h, guide, "Psalms 3:2 (TAHOT)").is_some()
+    });
+    assert!(find_in(&h, guide, "Psalms 3:3 (TAHOT)").is_none());
+
+    let top = h
+        .shell
+        .st
+        .session
+        .command_box_suggestions("eg Ps 3:1-2")
+        .into_iter()
+        .next()
+        .unwrap();
+    let out = h
+        .shell
+        .st
+        .session
+        .run_command_box_action(&top.action, false)
+        .unwrap();
+    assert_eq!(TabId(out["tab"].as_u64().unwrap()), guide);
+    until(&mut h, "the range's second verse", |h| {
+        find_in(h, guide, "Psalms 3:1-2").is_some()
+            && find_in(h, guide, "Psalms 3:2 (TAHOT)").is_some()
+            && find_in(h, guide, "Psalms 3:3 (TAHOT)").is_some()
+    });
+
+    h.shell
+        .run("guide.exegetical_guide", &json!({ "passage": "Ps 3" }));
+    until(&mut h, "the chapter", |h| {
+        find_in(h, guide, "Psalms 3").is_some()
+    });
+    // All four of the excerpt's verses (6 + 7 + 8 + 6 words, to TAHOT's Ps 3:9) are counted;
+    // the first ones fill the page.
+    until(&mut h, "the chapter's words", |h| {
+        find_in(h, guide, "Psalms 3:1 (TAHOT)").is_some() && find_in(h, guide, "27").is_some()
+    });
     drop(h);
 }

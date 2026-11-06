@@ -89,7 +89,6 @@ struct TabUi {
     search_fields: search_tab::Fields,
     /// Failed selected Bibles are retried only on request (or after removal/reselection).
     comparison_errors: BTreeMap<String, String>,
-    reference_passage: Option<Passage>,
     reference_at: Option<Passage>,
     expanded_references: std::collections::BTreeSet<Verse>,
     /// A Passage Guide section whose header is being dragged.
@@ -2171,13 +2170,6 @@ impl State {
                             .session
                             .run("tab.go", &json!({ "tab": tab.0, "text": text }));
                         if let Some(t) = self.tabs.get_mut(&tab) {
-                            if let Ok(result) = &out {
-                                t.reference_passage = result["text"].as_str().and_then(|text| {
-                                    obs_scripture::parse_reference(text, &Standard, None)
-                                        .ok()
-                                        .and_then(|p| p.passages().first().copied())
-                                });
-                            }
                             t.error = out.err().map(|e| match e {
                                 obs_engine::CommandError::Failed { message, .. } => message,
                                 e => e.to_string(),

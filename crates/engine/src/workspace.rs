@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::resource_navigation::ResourceNavigation;
 use obs_model::{Key, KeyScheme};
-use obs_scripture::{ListedVersification, Verse, VerseMap};
+use obs_scripture::{ListedVersification, Passage, Verse, VerseMap};
 use serde::{Deserialize, Serialize};
 
 use crate::compare::{Comparison, in_range_chapters};
@@ -365,6 +365,10 @@ pub struct Tab {
     pub arriving_at: Option<Verse>,
     /// A Bible Tab's interlinear lines (#143).
     pub interlinear: crate::interlinear::InterlinearLines,
+    /// The whole Passage a Passage Guide, Exegetical Guide or Cross-references Tab shows when
+    /// a command or typed reference gave a chapter or range (Standard numbering). Kept while
+    /// the Tab's location is the Passage's first Verse; otherwise the Tab shows that Verse.
+    pub passage: Option<Passage>,
 }
 
 impl Tab {
@@ -448,13 +452,28 @@ impl Tab {
     }
 
     /// A jump, Back/Forward or follow moved the Tab: a Text Comparison range is cleared once
-    /// the Tab leaves the range's chapters (#18 rule 13).
+    /// the Tab leaves the range's chapters (#18 rule 13), a Guide's [`Self::passage`] once the
+    /// Tab leaves its first Verse.
     fn moved_to(&mut self, verse: Verse) {
         if let Some(r) = self.comparison.range
             && !in_range_chapters(r, verse)
         {
             self.comparison.range = None;
         }
+        if self.passage.is_some_and(|p| p.start() != verse) {
+            self.passage = None;
+        }
+    }
+
+    /// The Passage this Tab shows: its [`Self::passage`] while the Tab is at its first Verse,
+    /// otherwise the Verse it is at.
+    pub fn shown_passage(&self) -> Option<Passage> {
+        let at = self.history.current()?;
+        Some(
+            self.passage
+                .filter(|p| p.start() == at)
+                .unwrap_or(Passage::verse(at)),
+        )
     }
 }
 
@@ -818,6 +837,7 @@ impl Workspace {
                 search: Default::default(),
                 arriving_at: None,
                 interlinear: Default::default(),
+                passage: None,
             },
         );
         // A linked Tool or Guide starts at its Link set's location. (Bibles wait until their
@@ -1093,6 +1113,7 @@ impl Workspace {
                 to_native(t.verse_map.as_deref(), t.versification.as_deref(), standard)
         {
             t.history.visit(native);
+            t.moved_to(native);
             self.effects.push(Effect::Navigate { tab, verse: native });
             self.visited(tab);
         }
@@ -1364,6 +1385,7 @@ impl Workspace {
                     search: Default::default(),
                     arriving_at: None,
                     interlinear: t.interlinear,
+                    passage: None,
                 },
             );
         }

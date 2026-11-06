@@ -864,11 +864,12 @@ fn open_at_passage(
     };
     let list =
         parse_reference(text, &Standard, None).map_err(|e| failed(id, e.kind.to_string()))?;
-    let verse = list
+    let passage = list
         .passages()
         .first()
-        .map(|p| p.start())
+        .copied()
         .ok_or_else(|| failed(id, "no reference"))?;
+    let verse = passage.start();
     let opener = s.workspace.opener_link();
     let new_tab = p.bool("new_tab").unwrap_or(false) || p.bool("split").unwrap_or(false);
     let existing = (!new_tab)
@@ -888,7 +889,15 @@ fn open_at_passage(
         }
     };
     s.workspace.navigate_standard(tab, verse);
-    Ok(Some(json!({ "tab": tab.0, "verse": verse.osis() })))
+    // A chapter or range stays whole (`eg Ps 23`, `pg Jn 3:16-18`).
+    if let Some(t) = s.workspace.tab_mut(tab) {
+        t.passage = Some(passage);
+    }
+    Ok(Some(json!({
+        "tab": tab.0,
+        "verse": verse.osis(),
+        "passage": format_passage(passage, &Standard, RefStyle::Long),
+    })))
 }
 
 /// A Word Study Tab. With `strongs` it is at that number (its Key, kept in the Tab's entry
@@ -1037,6 +1046,12 @@ fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         && let Some(range) = passage.filter(|p| crate::compare::narrows(*p))
     {
         t.comparison.range = Some(range);
+    }
+    // A Guide or Cross-references Tab shows the typed chapter or range whole.
+    if let Some(t) = s.workspace.tab_mut(tab)
+        && t.versification.is_none()
+    {
+        t.passage = passage;
     }
     Ok(json!({ "tab": tab.0, "verse": verse.osis(), "text": own }))
 }

@@ -78,12 +78,12 @@ struct Drawn {
 impl State {
     /// A Passage Guide's or Exegetical Guide's page: the Passage, then the Guide's sections.
     pub(super) fn passage_keyed_guide_body(&mut self, ui: &mut Ui, tab: TabId, guide: Guide) {
-        let at = self
+        let passage = self
             .session
             .workspace
             .tab(tab)
-            .and_then(|t| t.history.current());
-        let Some(at) = at else {
+            .and_then(|t| t.shown_passage());
+        let Some(passage) = passage else {
             hint_page(
                 ui,
                 "Type a Passage in the box above (for example “Jn 3:16-18”), or put this Guide \
@@ -94,11 +94,6 @@ impl State {
         let Some(t) = self.tabs.get_mut(&tab) else {
             return;
         };
-        // A typed range is kept until the Guide moves to another first Verse.
-        if t.reference_passage.is_some_and(|p| p.start() != at) {
-            t.reference_passage = None;
-        }
-        let passage = t.reference_passage.unwrap_or(Passage::verse(at));
         if t.reference_at != Some(passage) {
             t.reference_at = Some(passage);
             t.expanded_references.clear();
