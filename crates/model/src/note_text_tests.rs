@@ -270,7 +270,11 @@ fn offsets_map_shown_text_back_to_the_body() {
     assert_eq!(l.source, 6..body.len());
     let bold = &l.marks[0];
     assert_eq!(&body[l.source_range(bold.range.clone())], "bold");
+    // A mark's source is the parser's: its markup included; back again by `text_range`.
+    assert_eq!(&body[bold.source.clone()], "**bold**");
+    assert_eq!(l.text_range(bold.source.clone()), bold.range);
     let link = &l.marks[1];
+    assert_eq!(&body[link.source.clone()], "[link](<Rom 5:8>)");
     assert_eq!(&body[l.source_range(link.range.clone())], "link");
     let markup: Vec<&str> = l.markup().into_iter().map(|r| &body[r]).collect();
     assert_eq!(markup, ["## ", "**", "**", "[", "](<Rom 5:8>)", "\\"]);

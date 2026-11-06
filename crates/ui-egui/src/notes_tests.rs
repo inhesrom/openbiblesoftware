@@ -1326,6 +1326,54 @@ fn the_note_editor_formats_with_shortcuts_and_its_toolbar_and_undoes() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A card's Note is saved as typed (#186 review): white space is CommonMark, so none of it
+/// is trimmed or normalized, and undo and redo give the same bytes back.
+#[test]
+fn a_card_edit_saves_its_text_byte_for_byte() {
+    let dir = folder("editor-verbatim");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    h.shell.run("tab.close", &json!({ "tab": tb.0 }));
+    settle_all(&mut h);
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Gen 32:24", "body": "wrestled" }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    open_notes(&mut h);
+    let body = card_body(&h, &id);
+    h.click(body.center());
+    assert!(h.ctx.text_edit_focused());
+    press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+    let typed = "\n    **code, not bold**  \n\n\t``faith\n hope``  \n";
+    h.events.push(Event::Text(typed.into()));
+    h.frame();
+    press_key(&mut h, egui::Key::Enter, Modifiers::COMMAND);
+    h.frames(2);
+    assert!(h.shell.st.notes_ui.editing.is_none());
+    let saved = |h: &Harness| {
+        h.shell
+            .st
+            .session
+            .annotation(&id)
+            .unwrap()
+            .body()
+            .to_string()
+    };
+    assert_eq!(saved(&h), typed);
+    h.shell.run("edit.undo", &json!({})).unwrap();
+    assert_eq!(saved(&h), "wrestled");
+    h.shell.run("edit.redo", &json!({})).unwrap();
+    assert_eq!(saved(&h), typed);
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// The Note editor's link button (#186) makes no link across lines: `[faith\nhope](…)`
 /// would show as typed, since a Note's link ends with its line. On one line it links.
 #[test]

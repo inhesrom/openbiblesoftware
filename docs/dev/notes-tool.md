@@ -153,8 +153,10 @@ Used by the cards and by the popup Note editor. Above the field a toolbar: **B**
 (cycles `#`, `##`, `###`, text), •, 1., “” and 🔗 (inserts `[selection](<>)` with the cursor
 between `<` and `>`, so a Bible reference's spaces are part of the target; off, with a hover
 saying why, while the selection spans lines). Ctrl+B and Ctrl+I (Cmd on macOS) bold and
-italicise the selection, or take it off when it is already so (written with `*` or `_`, as
-the parse reads it); each selected line gets its own
+italicise the selection, or take it off when it is already so (written with `*` or `_`):
+the toolbar never scans for markers itself, it takes off the delimiters of the span
+pulldown-cmark found (`NoteMark::source`), and Enter continues the list item or quote the
+parse found. Each selected line gets its own
 marks, after its heading, list or quote marker, empty lines skipped (a span cannot run over a
 blank line or a list item's marker). Typing `- `, `1. ` or `> `
 at a line's start starts a list or quote; Enter at the end of an item continues it (with the
@@ -169,6 +171,10 @@ bold text strong, italics slanted, markup dimmed, links and Bible references in 
 and underlined. Each toolbar or shortcut change is one step of the field's own undo (Ctrl+Z,
 Ctrl+Shift+Z), and pressing the toolbar does not end the card's editing pass (the field gets
 the keys back). The saves of an editing pass are still one `annotation.edit` undo step.
+
+Every save (a card's editing pass, the popup Note editor, undo and redo) stores the field's
+text byte for byte: white space is CommonMark (four spaces start a code block), so nothing is
+trimmed or normalized; only a Note that is all white space is not made.
 
 Exports keep the formatting: the Markdown is the text as typed, the HTML pulldown-cmark's;
 see [copy-export.md](copy-export.md) and `notes_export.rs` (`note_markdown`, `note_html`).

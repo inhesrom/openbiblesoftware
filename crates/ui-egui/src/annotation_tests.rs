@@ -469,12 +469,13 @@ fn the_note_editor_saves_white_space_as_typed() {
     let (_, _, _, r) = word_in_view(&h, tb, 120.0);
     double_click(&mut h, r.center());
     press_key(&mut h, egui::Key::N, cmd_shift());
-    h.events.push(Event::Text("    **faith**  ".into()));
+    let typed = "    **faith**  \n\n\t_hope_  \n";
+    h.events.push(Event::Text(typed.into()));
     h.frame();
     press_key(&mut h, egui::Key::Escape, Modifiers::NONE);
     let notes = h.shell.st.session.annotations(None).unwrap();
     assert_eq!(notes.len(), 1);
-    assert_eq!(notes[0].body(), "    **faith**  ");
+    assert_eq!(notes[0].body(), typed);
     let shown = obs_model::parse_note_text(notes[0].body());
     assert_eq!(shown[0].text, "**faith**  ");
     assert!(shown[0].marks.is_empty(), "{:?}", shown[0].marks);

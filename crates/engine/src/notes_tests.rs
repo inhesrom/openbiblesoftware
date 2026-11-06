@@ -716,3 +716,36 @@ fn formatting_a_note_is_one_annotation_edit_that_undoes() {
         "# Love\nGod commendeth **his love**"
     );
 }
+
+/// Every write of a Note's text (#186 review) keeps it byte for byte: making it, editing it
+/// (a first edit and a continued one), undo, redo and reading it back from the User
+/// database. White space is CommonMark (four spaces start a code block, two before a line
+/// break make a hard break), so none of it is trimmed, normalized or written again.
+#[test]
+fn every_write_of_a_note_keeps_its_text_byte_for_byte() {
+    let f = Fixture::new("verbatim");
+    let mut s = f.session();
+    let made = "    **code, not bold**  \n\n\t- tab\r\n  trailing  \n\n";
+    let first = "\n  ``faith\n hope``  \r\n> _quote_ \n";
+    let continued = "   \u{a0}nbsp  \n1) one\n3) three\n\n\n";
+    let id = note(&mut s, "Rom 5:8", made, None);
+    let body = |s: &Session| s.annotation(&id).unwrap().body().to_string();
+    assert_eq!(body(&s), made);
+    s.run("annotation.edit", &json!({ "id": id, "body": first }))
+        .unwrap();
+    assert_eq!(body(&s), first);
+    s.run(
+        "annotation.edit",
+        &json!({ "id": id, "body": continued, "continue": true }),
+    )
+    .unwrap();
+    assert_eq!(body(&s), continued);
+    // The continued edit is part of the first's undo step.
+    s.run("edit.undo", &Value::Null).unwrap();
+    assert_eq!(body(&s), made);
+    s.run("edit.redo", &Value::Null).unwrap();
+    assert_eq!(body(&s), continued);
+    drop(s);
+    let s = f.session();
+    assert_eq!(s.annotation(&id).unwrap().body(), continued);
+}

@@ -62,6 +62,9 @@ pub enum NoteMarkKind {
 pub struct NoteMark {
     pub range: Range<usize>,
     pub kind: NoteMarkKind,
+    /// The whole span in the body, its markup (`**`, `[…](…)`) included, as the parser read
+    /// it; the same on each line a span over lines covers.
+    pub source: Range<usize>,
 }
 
 /// One line of a Note, as shown.
@@ -90,6 +93,21 @@ impl NoteLine {
             _ => start,
         };
         start..end.max(start)
+    }
+
+    /// The part of [`Self::text`] shown from body bytes `source`: from the first shown byte
+    /// typed in it to the last (empty, at the end of the text, when none is).
+    pub fn text_range(&self, source: Range<usize>) -> Range<usize> {
+        let mut inside = self
+            .offsets
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| source.contains(o))
+            .map(|(i, _)| i);
+        match inside.next() {
+            Some(first) => first..inside.last().unwrap_or(first) + 1,
+            None => self.text.len()..self.text.len(),
+        }
     }
 
     /// Which bytes of the line in the body are markup rather than shown text, as ranges.
@@ -156,8 +174,8 @@ struct Builder<'a> {
     quotes: Vec<Range<usize>>,
     /// Open lists, innermost last: the number the next item gets if numbered.
     lists: Vec<Option<u64>>,
-    /// Open spans: what, and the line and byte of its text they start at.
-    open: Vec<(NoteMarkKind, usize, usize)>,
+    /// Open spans: what, its source, and the line and byte of its text they start at.
+    open: Vec<(NoteMarkKind, Range<usize>, usize, usize)>,
 }
 
 impl Builder<'_> {
@@ -235,7 +253,7 @@ impl Builder<'_> {
                 };
                 let line = self.line_of(r.start);
                 let at = self.lines[line].text.len();
-                self.open.push((kind, line, at));
+                self.open.push((kind, r, line, at));
             }
             Tag::Image { .. } => self.inline_at(r.start),
             _ => {}
@@ -250,7 +268,7 @@ impl Builder<'_> {
                 self.lists.pop();
             }
             TagEnd::Emphasis | TagEnd::Strong | TagEnd::Link => {
-                let Some((kind, first, at)) = self.open.pop() else {
+                let Some((kind, source, first, at)) = self.open.pop() else {
                     return;
                 };
                 // Its text is the last added: it ends on the last line that took text.
@@ -265,6 +283,7 @@ impl Builder<'_> {
                         self.lines[i].marks.push(NoteMark {
                             range: from..to,
                             kind: kind.clone(),
+                            source: source.clone(),
                         });
                     }
                 }

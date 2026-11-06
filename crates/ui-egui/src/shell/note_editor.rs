@@ -5,8 +5,11 @@
 //!   block quote and link. Each acts on the selection (or the lines it touches) and keeps the
 //!   keys in the field; pressing one does not end the editing pass. Bold and italic mark each
 //!   selected line on its own (empty lines skipped), since a span cannot run over a blank line
-//!   or a list item's marker; the link button is off while the selection spans lines. Lists
-//!   are read from the whole Note's parse, and a nested item is written under its parent's
+//!   or a list item's marker; the link button is off while the selection spans lines. What is
+//!   bold, italic, a list item or a quote is read from the Note's CommonMark parse
+//!   ([`obs_model::parse_note_text`], the one Markdown reader), never by scanning for markers
+//!   here: Bold/Italic take off the delimiters of the span the parse found, and Enter
+//!   continues the item the parse found. A nested item is written under its parent's
 //!   text, as CommonMark nests it. A link target goes between `<` and `>`.
 //! - **Shortcuts**: Ctrl+B and Ctrl+I (Cmd on macOS). Typing `- `, `1. ` or `> ` at the start
 //!   of a line starts a list or quote; Enter in an item continues it (the next number), and
@@ -229,47 +232,34 @@ fn byte_at(s: &str, c: usize) -> usize {
     s.char_indices().nth(c).map_or(s.len(), |(b, _)| b)
 }
 
-/// The list or quote marker a line starts with: (its byte length, the marker the next line
-/// gets). `None` for any other line.
-fn line_marker(line: &str) -> Option<(usize, String)> {
-    let lead = line.len() - line.trim_start_matches(' ').len();
-    let indent = &line[..lead];
-    let body = &line[lead..];
-    if lead == 0 && body.starts_with('>') {
-        let len = if body.starts_with("> ") { 2 } else { 1 };
-        return Some((len, "> ".into()));
-    }
-    for bullet in ["- ", "* ", "+ "] {
-        if body.starts_with(bullet) {
-            return Some((lead + 2, format!("{indent}{bullet}")));
-        }
-    }
-    let digits = body.bytes().take_while(u8::is_ascii_digit).count();
-    if (1..=9).contains(&digits)
-        && let Some(delim) = body[digits..]
-            .chars()
-            .next()
-            .filter(|c| matches!(c, '.' | ')'))
-        && body[digits + 1..].starts_with(' ')
-        && let Ok(n) = body[..digits].parse::<u32>()
-    {
-        return Some((lead + digits + 2, format!("{indent}{}{delim} ", n + 1)));
-    }
-    None
-}
-
-/// What Enter does at char `at` of `text`, if it is in a list item or quote line past its
-/// marker: the new text and cursor.
+/// What Enter does at char `at` of `text`, if it is in a list item or quote line (as the
+/// Note's CommonMark parse reads it) past its marker: the new text and cursor. The next line
+/// gets the line's marker as typed, a numbered item's number one more.
 pub(super) fn list_continuation(text: &str, at: usize) -> Option<(String, Range<usize>)> {
     let b = byte_at(text, at);
-    let start = text[..b].rfind('\n').map_or(0, |i| i + 1);
-    let end = text[b..].find('\n').map_or(text.len(), |i| b + i);
-    let line = &text[start..end];
-    let (marker_len, next) = line_marker(line)?;
-    if b < start + marker_len {
+    let lines = obs_model::parse_note_text(text);
+    let line = lines
+        .iter()
+        .find(|l| l.source.start <= b && b <= l.source.end)?;
+    let (start, end) = (line.source.start, line.source.end);
+    let marker = &text[start..line.content];
+    let next = match line.kind {
+        NoteLineKind::Bullet { .. } => marker.to_string(),
+        NoteLineKind::Numbered { number, .. } => {
+            let digits = marker.find(|c: char| c.is_ascii_digit())?;
+            let len = marker[digits..]
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(marker.len() - digits);
+            let n = number.saturating_add(1);
+            format!("{}{n}{}", &marker[..digits], &marker[digits + len..])
+        }
+        NoteLineKind::Quote => format!("{} ", marker.trim_end()),
+        _ => return None,
+    };
+    if b < line.content {
         return None;
     }
-    if line[marker_len..].trim().is_empty() {
+    if text[line.content..end].trim().is_empty() {
         // An empty item: Enter ends the list, leaving an empty line.
         let new = format!("{}{}", &text[..start], &text[end..]);
         let c = text[..start].chars().count();
@@ -294,8 +284,10 @@ pub(super) fn apply_format(text: &str, sel: Range<usize>, f: Format) -> (String,
 
 /// Put `mark` around the selected part of each line the selection touches (past the line's
 /// heading, list or quote marker, its outer spaces left outside, empty lines skipped), or
-/// take it away when every part already has it, written with `*` or `_`
-/// (`**`/`__` for bold). With nothing selected the marks go in with the cursor between them.
+/// take it away when every part already has it. A part has it when the Note's CommonMark
+/// parse marks exactly the part's shown text bold (or italic) with a span on its line that
+/// the part is in or around: that span's own delimiters (`**`/`__`, `*`/`_`) are what is
+/// taken away. With nothing selected the marks go in with the cursor between them.
 fn wrap(text: &str, sel: Range<usize>, mark: &str) -> (String, Range<usize>) {
     let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
     let n = mark.len();
@@ -305,60 +297,33 @@ fn wrap(text: &str, sel: Range<usize>, mark: &str) -> (String, Range<usize>) {
         NoteMarkKind::Italic
     };
     let lines = obs_model::parse_note_text(text);
-    let delimiter = |c: u8| c == b'*' || c == b'_';
-    // Whether a run of `run` marks is the edge of a bold (two or more) or an italic (one or
-    // three: the outer one of a bold italic).
-    let opens = |run: usize| if n == 2 { run >= 2 } else { run % 2 == 1 };
-    let run_before = |at: usize, c: u8| {
-        text.as_bytes()[..at]
-            .iter()
-            .rev()
-            .take_while(|x| **x == c)
-            .count()
-    };
-    let run_after = |at: usize, c: u8| {
-        text.as_bytes()[at..]
-            .iter()
-            .take_while(|x| **x == c)
-            .count()
-    };
-    // The marks around part `p` that make it bold (or italic), as where the `n` bytes before
-    // and the `n` after it to take away start: runs of `*` or `_` around it, read from the
-    // inside out (past an italic's when looking for a bold), and only where the parse marks
-    // the part so (`snake_case_name` has no italic).
-    let marks_around = |p: &Range<usize>| -> Option<(usize, usize)> {
-        if p.end <= p.start {
+    // The span marking part `p` so: where its `n` opening and `n` closing delimiter bytes
+    // start, and the part of `p` inside them.
+    let marked = |p: &Range<usize>| -> Option<(usize, usize, Range<usize>)> {
+        let line = lines.iter().find(|l| l.source.contains(&p.start))?;
+        let shown = line.text_range(p.clone());
+        if shown.is_empty() {
             return None;
         }
-        let bytes = text.as_bytes();
-        let (mut s, mut e) = (p.start, p.end);
-        let found = loop {
-            let c = *bytes.get(s.checked_sub(1)?)?;
-            if !delimiter(c) || bytes.get(e) != Some(&c) {
-                return None;
-            }
-            let (before, after) = (run_before(s, c), run_after(e, c));
-            if opens(before) && opens(after) {
-                break (s - n, e);
-            }
-            (s, e) = (s - before, e + after);
-        };
-        // The part without marks inside it at its edges, which the mark must cover.
-        let part = &text[p.clone()];
-        let core = p.end - part.trim_start_matches(['*', '_']).len()
-            ..p.start + part.trim_end_matches(['*', '_']).len();
-        let line = lines.iter().find(|l| l.source.contains(&p.start))?;
         line.marks
             .iter()
-            .any(|m| {
-                let r = line.source_range(m.range.clone());
+            .find(|m| {
                 m.kind == kind
-                    && p.start <= r.start
-                    && r.end <= p.end
-                    && r.start <= core.start
-                    && core.end <= r.end
+                    && m.range == shown
+                    && line.source.start <= m.source.start
+                    && m.source.end <= line.source.end
+                    && m.source.len() >= 2 * n
+                    && m.source.start < p.end
+                    && p.start < m.source.end
             })
-            .then_some(found)
+            .map(|m| {
+                let (open, close) = (m.source.start, m.source.end - n);
+                (
+                    open,
+                    close,
+                    p.start.clamp(open + n, close)..p.end.clamp(open + n, close),
+                )
+            })
     };
     let mut parts: Vec<Range<usize>> = Vec::new();
     if a < b {
@@ -372,28 +337,15 @@ fn wrap(text: &str, sel: Range<usize>, mark: &str) -> (String, Range<usize>) {
                 s + (part.len() - part.trim_start().len()),
                 e - (part.len() - part.trim_end().len()),
             );
-            if s >= e {
-                continue;
+            if s < e {
+                parts.push(s..e);
             }
-            // Marks selected with what they mark (as after the last press): the part is what
-            // is inside them.
-            let (first, last) = (text.as_bytes()[s], text.as_bytes()[e - 1]);
-            let opening = delimiter(first) && opens(run_after(s, first).min(e - s));
-            let closing = delimiter(last) && opens(run_before(e, last).min(e - s));
-            let inner = s + if opening { n } else { 0 }..e - if closing { n } else { 0 };
-            parts.push(
-                if inner.start < inner.end && inner != (s..e) && marks_around(&inner).is_some() {
-                    inner
-                } else {
-                    s..e
-                },
-            );
         }
     }
     if parts.is_empty() {
         parts.push(b..b);
     }
-    let found: Vec<Option<(usize, usize)>> = parts.iter().map(marks_around).collect();
+    let found: Vec<_> = parts.iter().map(marked).collect();
     let remove = found.iter().all(Option::is_some);
     let mut new = String::with_capacity(text.len() + parts.len() * 2 * n);
     let mut at = 0;
@@ -401,13 +353,13 @@ fn wrap(text: &str, sel: Range<usize>, mark: &str) -> (String, Range<usize>) {
     let mut first = None;
     let mut last = 0;
     for (p, found) in parts.iter().zip(&found) {
-        if let (true, Some((open, close))) = (remove, *found) {
-            new.push_str(&text[at..open]);
-            new.push_str(&text[open + n..p.start]);
+        if let (true, Some((open, close, inner))) = (remove, found) {
+            new.push_str(&text[at..*open]);
+            new.push_str(&text[open + n..inner.start]);
             first.get_or_insert(new.len());
-            new.push_str(&text[p.clone()]);
+            new.push_str(&text[inner.clone()]);
             last = new.len();
-            new.push_str(&text[p.end..close]);
+            new.push_str(&text[inner.end..*close]);
             at = close + n;
             continue;
         }
@@ -970,5 +922,13 @@ mod tests {
         // Not in a list, or before the marker: Enter is Enter.
         assert!(list_continuation("text", 4).is_none());
         assert!(list_continuation("- faith", 1).is_none());
+        // The parse decides what is a list: an indented code line is not one, a list in a
+        // quote continues with both markers, and a list item's marker is kept as typed.
+        assert!(list_continuation("    - code", 10).is_none());
+        assert!(list_continuation("`- a`", 5).is_none());
+        let (new, _) = list_continuation("> - faith", 9).unwrap();
+        assert_eq!(new, "> - faith\n> - ");
+        let (new, _) = list_continuation("* faith", 7).unwrap();
+        assert_eq!(new, "* faith\n* ");
     }
 }
