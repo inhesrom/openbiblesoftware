@@ -414,13 +414,26 @@ fn touched_lines(text: &str, a: usize, b: usize) -> Vec<Range<usize>> {
 }
 
 /// Heading, list or quote: on every line the selection touches, each read in its place in
-/// the Note (a nested item is one under the item above it).
+/// the Note (a nested item is one under the item above it). A heading changes as a whole:
+/// a setext heading (text over a `===` or `---` underline) touched anywhere has each of its
+/// lines written with `#` markers and its underline dropped, so the shown text stays the same.
 fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize>) {
     let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
     let lines = obs_model::parse_note_text(text);
     let touched = touched_lines(text, a, b);
-    let first = text[..touched[0].start].matches('\n').count();
-    let chosen = &lines[first..first + touched.len()];
+    let mut first = text[..touched[0].start].matches('\n').count();
+    let mut last = first + touched.len() - 1;
+    if f == Format::Heading {
+        let same =
+            |i: usize, j: usize| lines[i].heading.is_some() && lines[i].heading == lines[j].heading;
+        while first > 0 && same(first - 1, first) {
+            first -= 1;
+        }
+        while last + 1 < lines.len() && same(last + 1, last) {
+            last += 1;
+        }
+    }
+    let chosen = &lines[first..=last];
     let all = |p: fn(NoteLineKind) -> bool| chosen.iter().all(|l| p(l.kind));
     let remove = match f {
         Format::Bullet => all(|k| matches!(k, NoteLineKind::Bullet { .. })),
@@ -450,6 +463,13 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
     let mut cols = parent_columns(text, &lines[..first]);
     let mut out: Vec<String> = Vec::new();
     for l in chosen {
+        // A setext heading's underline: its lines get `#` markers instead.
+        if f == Format::Heading
+            && l.heading.is_some()
+            && !matches!(l.kind, NoteLineKind::Heading(_))
+        {
+            continue;
+        }
         let rest = &text[l.content..l.source.end];
         // Text's leading spaces are its own; a marker goes before what it says.
         let rest = match l.kind {
@@ -500,7 +520,7 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
     // the last line stops being a list item, they move out a level: without an item above
     // they would read as text.
     let still_list = !remove && matches!(f, Format::Bullet | Format::Numbered);
-    let after = first + touched.len();
+    let after = last + 1;
     let mut moved: Vec<String> = Vec::new();
     if let Some(depth) = lines
         .get(after)
@@ -523,9 +543,9 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
             moved.push(format!("{}{marker}{rest}", " ".repeat(indent)));
         }
     }
-    let from = touched[0].start;
+    let from = lines[first].source.start;
     let to = match moved.len() {
-        0 => touched[touched.len() - 1].end,
+        0 => lines[last].source.end,
         k => lines[after + k - 1].source.end,
     };
     let tail = moved.iter().map(|m| format!("\n{m}")).collect::<String>();
@@ -723,6 +743,49 @@ mod tests {
             t = apply_format(&t, 0..0, Format::Heading).0;
             assert_eq!(t, want);
         }
+    }
+
+    #[test]
+    fn heading_on_a_setext_heading_drops_its_underline_and_keeps_its_text() {
+        // (kind, shown text) of each line that shows something.
+        let shown = |t: &str| {
+            obs_model::parse_note_text(t)
+                .into_iter()
+                .filter(|l| l.kind != NoteLineKind::Blank)
+                .map(|l| (l.kind, l.text))
+                .collect::<Vec<_>>()
+        };
+        let h = |n: u8, s: &str| (NoteLineKind::Heading(n), s.to_string());
+        let text_line = |s: &str| (NoteLineKind::Text, s.to_string());
+        // Cursor in the text, on the underline, or the whole heading selected.
+        let text = "Grace\n===\nafter";
+        for at in [2..2, 7..7, 0..5, 0..9] {
+            let (new, r) = apply_format(text, at.clone(), Format::Heading);
+            assert_eq!((new.as_str(), r), ("## Grace\nafter", 0..8), "{at:?}");
+            assert_eq!(shown(&new), [h(2, "Grace"), text_line("after")]);
+        }
+        let (new, r) = apply_format("Grace\n---", 9..9, Format::Heading);
+        assert_eq!((new.as_str(), r), ("### Grace", 0..9));
+        assert_eq!(shown(&new), [h(3, "Grace")]);
+        // A heading over lines: each line keeps its text, at the next level.
+        let text = "intro\n\nby grace\nalone\n===";
+        for at in [
+            chars(text, "by"),
+            chars(text, "alone"),
+            chars(text, "by grace\nalone\n==="),
+        ] {
+            let (new, r) = apply_format(text, at, Format::Heading);
+            assert_eq!(new, "intro\n\n## by grace\n## alone");
+            assert_eq!(
+                shown(&new),
+                [text_line("intro"), h(2, "by grace"), h(2, "alone")]
+            );
+            let selected: String = new.chars().skip(r.start).take(r.len()).collect();
+            assert_eq!(selected, "## by grace\n## alone");
+        }
+        // An ATX heading followed by a rule keeps the rule.
+        let (new, _) = apply_format("# Grace\n---", 0..0, Format::Heading);
+        assert_eq!(new, "## Grace\n---");
     }
 
     #[test]

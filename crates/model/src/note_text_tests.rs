@@ -60,6 +60,37 @@ fn line_kinds_follow_their_markers() {
 }
 
 #[test]
+fn each_line_of_a_heading_knows_the_heading_underline_included() {
+    let body = "# One\nGrace\nalone\n===\nText\n---\n\n---";
+    let lines = parse_note_text(body);
+    let kinds: Vec<(NoteLineKind, &str)> =
+        lines.iter().map(|l| (l.kind, l.text.as_str())).collect();
+    assert_eq!(
+        kinds,
+        [
+            (NoteLineKind::Heading(1), "One"),
+            (NoteLineKind::Heading(1), "Grace"),
+            (NoteLineKind::Heading(1), "alone"),
+            // A setext underline shows nothing.
+            (NoteLineKind::Blank, ""),
+            (NoteLineKind::Heading(2), "Text"),
+            (NoteLineKind::Blank, ""),
+            (NoteLineKind::Blank, ""),
+            // A rule after a gap is no underline.
+            (NoteLineKind::Blank, ""),
+        ]
+    );
+    let heading = |i: usize| lines[i].heading.clone().map(|h| body[h].trim_end());
+    assert_eq!(heading(0), Some("# One"));
+    for i in 1..=3 {
+        assert_eq!(heading(i), Some("Grace\nalone\n==="));
+    }
+    assert_eq!(heading(4), Some("Text\n---"));
+    assert_eq!(heading(5), Some("Text\n---"));
+    assert_eq!((heading(6), heading(7)), (None, None));
+}
+
+#[test]
 fn lists_nest_and_number_as_commonmark_reads_them() {
     let lines = parse_note_text("- a\n  - b\n    - c\n  1. d\n- e\n\n  more of e\n- f\n5. g\n7. h");
     let kinds: Vec<NoteLineKind> = lines.iter().map(|l| l.kind).collect();

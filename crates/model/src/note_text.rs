@@ -79,6 +79,9 @@ pub struct NoteLine {
     pub source: Range<usize>,
     /// Where its content starts in the body, after its heading, list or quote marker.
     pub content: usize,
+    /// The heading this line is part of, as the parser read it in the body: for a setext
+    /// heading its underline too (a line of `=` or `-`, itself shown as a gap).
+    pub heading: Option<Range<usize>>,
     /// For each byte of `text`, its byte in the body.
     offsets: Vec<usize>,
 }
@@ -137,6 +140,7 @@ pub fn parse_note_text(body: &str) -> Vec<NoteLine> {
             marks: Vec::new(),
             content: source.end,
             source,
+            heading: None,
             offsets: Vec::new(),
         });
         start += raw.len() + 1;
@@ -147,6 +151,7 @@ pub fn parse_note_text(body: &str) -> Vec<NoteLine> {
         first_inline: vec![None; lines.len()],
         lines,
         heading: None,
+        headings: Vec::new(),
         quote_depth: 0,
         quotes: Vec::new(),
         lists: Vec::new(),
@@ -168,6 +173,8 @@ struct Builder<'a> {
     first_inline: Vec<Option<usize>>,
     /// The level of the heading being read.
     heading: Option<u8>,
+    /// Every heading's source in the body.
+    headings: Vec<Range<usize>>,
     quote_depth: usize,
     quotes: Vec<Range<usize>>,
     /// Open lists, innermost last: the number the next item gets if numbered.
@@ -221,6 +228,7 @@ impl Builder<'_> {
             Tag::Heading { level, .. } => {
                 let n = level as u8;
                 self.heading = Some(n);
+                self.headings.push(r.clone());
                 self.set_kind(r.start, NoteLineKind::Heading(n));
             }
             Tag::BlockQuote(_) => {
@@ -353,6 +361,11 @@ impl Builder<'_> {
                 .or(line.offsets.first().copied())
                 .filter(|c| line.source.contains(c))
                 .unwrap_or(line.source.end);
+            line.heading = self
+                .headings
+                .iter()
+                .find(|h| h.start <= line.source.end && line.source.start < h.end)
+                .cloned();
             line.marks
                 .sort_by_key(|m| (m.range.start, std::cmp::Reverse(m.range.end)));
         }
