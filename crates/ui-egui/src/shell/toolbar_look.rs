@@ -8,7 +8,7 @@
 
 use egui::{
     Align2, Color32, CornerRadius, FontId, Painter, Rect, Response, Sense, Stroke, StrokeKind, Ui,
-    pos2, vec2,
+    Vec2, pos2, vec2,
 };
 use obs_engine::{Launcher, LayoutThumbnail};
 
@@ -78,20 +78,50 @@ fn small_font() -> FontId {
     FontId::proportional(11.5)
 }
 
-/// Draw a launcher button: icon, label and (for the Library) a count of updates. Returns its
-/// response; the caller adds the accessible name and tooltip.
-pub(super) fn launcher_button(ui: &mut Ui, which: Launcher, open: bool, badge: usize) -> Response {
-    let lk = look();
-    let galley = ui
+/// What a launcher button draws: its icon, its label, or both (Customize toolbar…).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) struct ButtonShows {
+    pub icon: bool,
+    pub label: bool,
+}
+
+/// A launcher button's size: icon, label and (for the Library) a count of updates. Icons
+/// only, the count sits on the icon's corner.
+pub(super) fn launcher_size(ui: &Ui, which: Launcher, shows: ButtonShows, badge: usize) -> Vec2 {
+    if !shows.label {
+        return vec2(BUTTON_PAD * 2.0 + ICON, BUTTON_HEIGHT);
+    }
+    let label = ui
         .painter()
-        .layout_no_wrap(which.title().to_string(), label_font(), lk.ink);
-    let badge_text = (badge > 0).then(|| {
+        .layout_no_wrap(which.title().to_string(), label_font(), Color32::WHITE)
+        .size()
+        .x;
+    let badge_w = if badge > 0 {
         ui.painter()
             .layout_no_wrap(badge.to_string(), small_font(), Color32::WHITE)
-    });
-    let badge_w = badge_text.as_ref().map_or(0.0, |g| g.size().x + 10.0 + 5.0);
-    let width = BUTTON_PAD * 2.0 + ICON + ICON_GAP + galley.size().x + badge_w;
-    let (rect, resp) = ui.allocate_exact_size(vec2(width, BUTTON_HEIGHT), Sense::click());
+            .size()
+            .x
+            + 10.0
+            + 5.0
+    } else {
+        0.0
+    };
+    let icon = if shows.icon { ICON + ICON_GAP } else { 0.0 };
+    vec2(BUTTON_PAD * 2.0 + icon + label + badge_w, BUTTON_HEIGHT)
+}
+
+/// Draw a launcher button: icon, label and (for the Library) a count of updates, as `shows`
+/// asks. Returns its response; the caller adds the accessible name and tooltip.
+pub(super) fn launcher_button(
+    ui: &mut Ui,
+    which: Launcher,
+    open: bool,
+    badge: usize,
+    shows: ButtonShows,
+) -> Response {
+    let lk = look();
+    let size = launcher_size(ui, which, shows, badge);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     let p = ui.painter();
     if open {
         p.rect_filled(rect, RADIUS, lk.selected);
@@ -106,20 +136,42 @@ pub(super) fn launcher_button(ui: &mut Ui, which: Launcher, open: bool, badge: u
             StrokeKind::Inside,
         );
     }
-    let icon = Rect::from_center_size(
-        pos2(rect.left() + BUTTON_PAD + ICON / 2.0, rect.center().y),
-        vec2(ICON, ICON),
-    );
-    paint_icon(p, which, icon, &lk);
-    let text_x = icon.right() + ICON_GAP;
+    let mut x = rect.left() + BUTTON_PAD;
+    if shows.icon {
+        let icon = Rect::from_center_size(pos2(x + ICON / 2.0, rect.center().y), vec2(ICON, ICON));
+        paint_icon(p, which, icon, &lk);
+        x = icon.right() + ICON_GAP;
+    }
+    let badge_text = (badge > 0).then(|| {
+        ui.painter()
+            .layout_no_wrap(badge.to_string(), small_font(), Color32::WHITE)
+    });
+    if !shows.label {
+        if let Some(g) = badge_text {
+            let pill = Rect::from_min_size(
+                pos2(rect.right() - g.size().x - 8.0, rect.top()),
+                vec2(g.size().x + 8.0, 14.0),
+            );
+            p.rect_filled(pill, 7, lk.badge);
+            p.galley(
+                pos2(pill.left() + 4.0, pill.center().y - g.size().y / 2.0),
+                g,
+                Color32::WHITE,
+            );
+        }
+        return resp;
+    }
     let color = if open { lk.accent } else { lk.ink };
+    let galley = ui
+        .painter()
+        .layout_no_wrap(which.title().to_string(), label_font(), color);
     p.galley(
-        pos2(text_x, rect.center().y - galley.size().y / 2.0),
+        pos2(x, rect.center().y - galley.size().y / 2.0),
         galley.clone(),
         color,
     );
     if let Some(g) = badge_text {
-        let x = text_x + galley.size().x + 5.0;
+        let x = x + galley.size().x + 5.0;
         let pill = Rect::from_min_size(
             pos2(x, rect.center().y - 8.0),
             vec2(g.size().x + 10.0, 16.0),
@@ -132,6 +184,99 @@ pub(super) fn launcher_button(ui: &mut Ui, which: Launcher, open: bool, badge: u
         );
     }
     resp
+}
+
+const BAR_MARGIN: f32 = 6.0;
+
+/// How thick a toolbar is across, with its frame: a launcher button (icons only when
+/// `vertical`), the margins and the outline.
+pub(super) fn bar_thickness(vertical: bool) -> f32 {
+    let button = if vertical {
+        BUTTON_PAD * 2.0 + ICON
+    } else {
+        BUTTON_HEIGHT
+    };
+    button + 2.0 * BAR_MARGIN + 2.0
+}
+/// The grip's length along the toolbar.
+const GRIP: f32 = 12.0;
+
+/// The frame of a toolbar outside the menu bar (Bottom, Left, Right, or Auto-hide).
+pub(super) fn bar_frame() -> egui::Frame {
+    let lk = look();
+    egui::Frame::new()
+        .fill(lk.surface)
+        .stroke(Stroke::new(1.0, lk.rule))
+        .inner_margin(egui::Margin::same(BAR_MARGIN as i8))
+}
+
+/// The grip's size: across the toolbar as thick as a button.
+pub(super) fn grip_size(vertical: bool) -> Vec2 {
+    if vertical {
+        vec2(BUTTON_PAD * 2.0 + ICON, GRIP)
+    } else {
+        vec2(GRIP, BUTTON_HEIGHT)
+    }
+}
+
+/// The grip handle at the toolbar's start: two rows of dots to drag it to another edge. It is
+/// not a Tab stop: from the keyboard, View → Toolbar position moves the toolbar.
+pub(super) fn grip(ui: &mut Ui, vertical: bool) -> Response {
+    let lk = look();
+    let (rect, resp) = ui.allocate_exact_size(grip_size(vertical), Sense::CLICK | Sense::DRAG);
+    let color = if resp.hovered() || resp.dragged() {
+        lk.accent
+    } else {
+        lk.muted
+    };
+    let c = rect.center();
+    for i in -1..=1 {
+        for j in [-1.0, 1.0] {
+            let (dx, dy) = if vertical {
+                (i as f32 * 4.0, j * 2.0)
+            } else {
+                (j * 2.0, i as f32 * 4.0)
+            };
+            ui.painter()
+                .circle_filled(pos2(c.x + dx, c.y + dy), 1.2, color);
+        }
+    }
+    resp
+}
+
+/// The size of the » button holding the Launchers a small window has no room for.
+pub(super) fn overflow_size() -> Vec2 {
+    vec2(BUTTON_PAD * 2.0 + ICON, BUTTON_HEIGHT)
+}
+
+/// The » button holding the Launchers a small window has no room for.
+pub(super) fn overflow_button(ui: &mut Ui, open: bool) -> Response {
+    let lk = look();
+    let (rect, resp) = ui.allocate_exact_size(overflow_size(), Sense::click());
+    if open {
+        ui.painter().rect_filled(rect, RADIUS, lk.selected);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(rect, RADIUS, lk.hover);
+    }
+    ui.painter().text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        "»",
+        FontId::proportional(18.0),
+        lk.accent,
+    );
+    resp
+}
+
+/// Where the toolbar would go if the grip were let go now.
+pub(super) fn drop_edge(ctx: &egui::Context, r: Rect) {
+    let lk = look();
+    let p = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::unique("toolbar-drop-edge"),
+    ));
+    p.rect_filled(r, 4, lk.accent.gamma_multiply(0.22));
+    p.rect_stroke(r, 4, Stroke::new(2.0, lk.accent), StrokeKind::Inside);
 }
 
 /// A launcher's icon inside `r`.

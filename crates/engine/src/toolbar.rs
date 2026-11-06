@@ -52,6 +52,20 @@ impl Launcher {
         }
     }
 
+    /// Its id in commands and the saved toolbar preferences: "library", "guides" …
+    pub fn id(self) -> &'static str {
+        match self {
+            Launcher::Library => "library",
+            Launcher::Guides => "guides",
+            Launcher::Tools => "tools",
+            Launcher::Layouts => "layouts",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|l| l.id() == id)
+    }
+
     /// The command that opens it (its shortcut is that command's).
     pub fn command(self) -> &'static str {
         match self {

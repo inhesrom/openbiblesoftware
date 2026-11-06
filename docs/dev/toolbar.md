@@ -1,7 +1,8 @@
 # The toolbar Launchers (#140)
 
 The top bar is the app's name, four **Launchers** (Library, Guides, Tools, Layouts), the View
-and Help menus, and the Command box (#139) on the right. Each Launcher is an icon-and-label
+and Help menus, and the Command box (#139) on the right. The Launchers can move to another edge
+of the window, auto-hide and be customized (#141, below). Each Launcher is an icon-and-label
 button that drops down a pane anchored under it; the panes replace the Library, Guides, Tools
 and Layouts text menus, and still offer every command those menus had.
 
@@ -89,10 +90,55 @@ Passage-keyed) Tab shows; their Bible's Link set A carries the others there:
 A Built-in Layout whose Resources the library lacks shows its card greyed with what it needs
 ("Needs a Commentary in the library"); clicking it says so and changes nothing.
 
+## Position and customization (#141)
+
+The Launchers can sit on any edge of the window. The engine keeps where and what
+(`ToolbarSettings`, `crates/engine/src/toolbar_settings.rs`); the UI draws it
+(`crates/ui-egui/src/shell/toolbar_bar.rs`). The settings are an app preference in the User
+database (the `toolbar` preference), read when the User database is attached; they are not in
+the Workspace snapshot, so loading a Layout never moves the toolbar.
+
+| Position | Where | Buttons | A pane opens |
+|---|---|---|---|
+| Top (default) | in the menu bar, after the app's name | icons and labels (or as customized) | under its button |
+| Bottom | a bar along the window's bottom | icons and labels (or as customized) | over its button |
+| Left | a column at the left, under the menu bar | icons only, labels in the tooltips | to its right |
+| Right | a column at the right, under the menu bar | icons only, labels in the tooltips | to its left |
+
+The menu bar keeps the app's name, View, Help, Today's reading and the Command box wherever the
+Launchers are, so View → Toolbar position is always reachable.
+
+Ways to change it:
+
+- **View → Toolbar position ▸ Top / Bottom / Left / Right** (`view.toolbar_position {value}`).
+  From the keyboard: Tab to View, Enter, Tab to Toolbar position, Enter, Tab to the edge, Enter.
+- **Right-click the toolbar** (a Launcher, the grip or the bar between them): Position ▸,
+  Auto-hide, Customize….
+- **Drag the grip** (the dots at the toolbar's start): the window edge nearest the pointer is
+  marked while dragging; letting go moves the toolbar there. The grip is not a Tab stop.
+- **View → Auto-hide toolbar** (`view.toolbar_auto_hide`): the Launchers leave their place and
+  are drawn over the Workspace, at their edge, only while the pointer is at that window edge
+  (within 6 points) or on the toolbar, Alt is held, or one of its panes or menus is open. At the
+  Top they show under the menu bar when the pointer reaches the window's top edge.
+- **View → Customize toolbar…** (`view.toolbar_customize`): a checkbox per Launcher to show or
+  hide it (`toolbar.show_launcher`), Move up / Move down to order them
+  (`toolbar.move_launcher`), Buttons show: Icons and labels, Icons only, Labels only
+  (`toolbar.labels`), Position, Auto-hide, and Reset (`toolbar.reset`).
+
+A hidden Launcher keeps its shortcut (Alt+L, Alt+G, Alt+T, Alt+Y) and is listed by Help → List
+commands; the Command box suggests it by name ("Guides launcher", or just "guides"). Its pane
+drops down from the toolbar's start.
+
+**Small windows.** The Launchers that do not fit along the toolbar (beside the View and Help
+menus and the Command box at the Top; the window's height at Left and Right) go into a »
+button at the toolbar's end, in toolbar order; choosing one there drops its pane down from ».
+Nothing is clipped.
+
 ## Restyling
 
 The look lives in one file, `crates/ui-egui/src/shell/toolbar_look.rs`: sizes, the colour
-roles (taken from the chrome theme, so Light and Dark follow), the launcher button, the four
+roles (taken from the chrome theme, so Light and Dark follow), the launcher button (icons,
+labels or both), the grip, the » button, the docked bar's frame and the drop-edge mark, the four
 icons (our own line drawings: three books on a shelf, a compass, a two-by-two grid, a tiled
 window), rows, headings, footer links, Layout cards and thumbnails, and the drag ghost and drop
 target. `toolbar.rs` only decides what is listed and what happens.
@@ -104,3 +150,10 @@ Theme (Light, Dark), like the rest of the chrome.
 
 Rendered headlessly by `toolbar_tests::previews` (`UPDATE_PREVIEWS=1`), light and dark:
 `docs/previews/toolbar-{library,library-search,guides,tools,layouts}-{light,dark}.png`.
+
+Positions and customization (#141), by `toolbar_position_tests` (`UPDATE_PREVIEWS=1`):
+`docs/previews/toolbar-{bottom,left,right}.png` (each with the Library pane open),
+`toolbar-view-menu.png`, `toolbar-customize.png` and `toolbar-overflow.png` (a 760-point window).
+The real app (macOS, `OBS_SCRIPT` with `view.toolbar_position` then `toolbar.library`,
+`toolbar.layouts` or `toolbar.guides`): `toolbar-real-left.png`, `toolbar-real-bottom-dark.png`,
+`toolbar-real-right.png`.

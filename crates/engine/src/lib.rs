@@ -93,6 +93,9 @@ mod starter_tests;
 #[doc(hidden)]
 pub mod testing;
 pub mod toolbar;
+pub mod toolbar_settings;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod toolbar_settings_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod toolbar_tests;
 pub mod word_info;
@@ -186,6 +189,7 @@ pub use toolbar::{
     BUILTIN_LAYOUTS, Launcher, LayoutCard, LayoutThumbnail, LibraryLauncherRow,
     LibraryLauncherSection,
 };
+pub use toolbar_settings::{LauncherLabels, ToolbarPosition, ToolbarSettings};
 pub use word_info::{LemmaCard, LexiconGloss, PartRole, ShownWord, WordInfo, WordPart};
 pub use word_sections::{
     FilteredOccurrences, Form, Forms, OCCURRENCE_ROWS, OccurrenceList, OccurrencePreview,

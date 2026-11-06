@@ -1,5 +1,5 @@
 //! The toolbar Launchers (#140): Library, Guides, Tools and Layouts as icon-and-label buttons
-//! left of the View and Help menus, each dropping down a pane anchored under it. What the
+//! left of the View and Help menus, each dropping down a pane anchored to it. What the
 //! panes list comes from the engine ([`obs_engine::toolbar`]); how they look is
 //! `toolbar_look.rs`.
 //!
@@ -18,6 +18,11 @@
 //! - **Tools:** the Tools menu's commands.
 //! - **Layouts:** saved and Built-in Layouts as cards with a thumbnail of their tiling; one
 //!   click loads one; Rename and Delete in place.
+//!
+//! The toolbar can sit on any window edge (#141, `toolbar_bar.rs`): a pane drops down under its
+//! button at the Top, up from it at the Bottom, and out to the side at Left and Right. A
+//! Launcher hidden in Customize toolbar… (or in the » button of a small window) drops its pane
+//! from the toolbar's start (or the » button).
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -61,6 +66,29 @@ pub(crate) struct ToolbarUi {
     pub(crate) pane: Option<Rect>,
     /// A Resource being dragged out of the Library pane: its id and abbreviation.
     pub(crate) dragging: Option<(String, String)>,
+    /// Where the toolbar's Launchers were drawn this frame (none: not drawn, Auto-hide), and
+    /// the » button holding those a small window has no room for (#141).
+    pub(crate) bar: Option<Rect>,
+    pub(crate) overflow: Option<Rect>,
+    /// The bottom of the menu bar, where the Workspace starts.
+    pub(crate) menus_bottom: f32,
+    /// Top position: the menu bar's width besides the Launchers (View, Help, the Command box …),
+    /// measured last frame, so the Launchers know their room.
+    pub(crate) reserve: f32,
+    /// The edge the toolbar's grip is being dragged to.
+    pub(crate) grip_target: Option<obs_engine::ToolbarPosition>,
+    /// Where the toolbar was drawn last frame.
+    pub(crate) last_bar: Option<Rect>,
+    /// Auto-hide: the toolbar is showing.
+    pub(crate) revealed: bool,
+    /// A menu of the toolbar (right-click, ») is open this frame, and was last frame.
+    pub(crate) menu_open: bool,
+    pub(crate) menu_was_open: bool,
+    /// The Customize toolbar window is open.
+    pub(crate) customizing: bool,
+    /// Where the open pane is placed (its corner `pivot` at `at`), and how tall it may grow.
+    pub(crate) pane_at: Option<(egui::Pos2, egui::Align2)>,
+    pub(crate) pane_span: f32,
 }
 
 impl ToolbarUi {
@@ -77,6 +105,20 @@ impl ToolbarUi {
             self.renaming = None;
             self.open = Some(which);
         }
+    }
+
+    /// Forget where the toolbar was drawn: each frame draws it again.
+    pub(crate) fn begin_frame(&mut self) {
+        self.buttons.clear();
+        self.last_bar = self.bar.take();
+        self.overflow = None;
+        self.menu_was_open = std::mem::take(&mut self.menu_open);
+    }
+
+    /// Where the open pane goes: its corner `pivot` at a point.
+    fn pane_place(&self) -> (egui::Pos2, egui::Align2) {
+        self.pane_at
+            .unwrap_or((egui::Pos2::ZERO, egui::Align2::LEFT_TOP))
     }
 
     pub(crate) fn close(&mut self) {
@@ -118,31 +160,7 @@ struct ResourceRow {
 }
 
 impl Shell {
-    /// The four launcher buttons, left to right.
-    pub(super) fn launchers(&mut self, ui: &mut Ui) {
-        let updates = self.st.session.resource_updates().updates.len();
-        for which in Launcher::ALL {
-            let open = self.st.toolbar.open == Some(which);
-            let badge = if which == Launcher::Library {
-                updates
-            } else {
-                0
-            };
-            let resp = look::launcher_button(ui, which, open, badge);
-            let shortcut = (self.st.session.commands().get(which.command()))
-                .and_then(|c| c.shortcut)
-                .unwrap_or_default();
-            let name = which.title();
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
-            let resp = resp.on_hover_text(format!("{} ({shortcut})", hint(which)));
-            self.st.toolbar.buttons.insert(which, resp.rect);
-            if resp.clicked() {
-                self.st.toolbar.toggle(which);
-            }
-        }
-    }
-
-    /// The open launcher's pane, under its button; and a Resource being dragged out of it.
+    /// The open launcher's pane, by its button; and a Resource being dragged out of it.
     pub(super) fn launcher_pane(&mut self, ui: &mut Ui) {
         self.library_drag(ui);
         let Some(which) = self.st.toolbar.open else {
@@ -161,14 +179,13 @@ impl Shell {
             self.st.toolbar.close();
             return;
         }
-        let Some(anchor) = self.st.toolbar.buttons.get(&which).copied() else {
-            return;
-        };
+        let anchor = self.pane_anchor(ui, which);
+        self.place_pane(ui, anchor);
         let action = match which {
-            Launcher::Library => self.library_pane(ui, anchor),
-            Launcher::Guides => self.guides_pane(ui, anchor),
-            Launcher::Tools => self.tools_pane(ui, anchor),
-            Launcher::Layouts => self.layouts_pane(ui, anchor),
+            Launcher::Library => self.library_pane(ui),
+            Launcher::Guides => self.guides_pane(ui),
+            Launcher::Tools => self.tools_pane(ui),
+            Launcher::Layouts => self.layouts_pane(ui),
         };
         match action {
             Some(Action::Run(item, new_tab)) => self.run_item(item, new_tab),
@@ -415,7 +432,8 @@ impl Shell {
     }
 
     /// The Library pane: search, Recent and Preferred rows, Favorites, footer links.
-    fn library_pane(&mut self, ui: &mut Ui, anchor: Rect) -> Option<Action> {
+    fn library_pane(&mut self, ui: &mut Ui) -> Option<Action> {
+        let span = self.st.toolbar.pane_span;
         let query = self.st.toolbar.query.clone();
         let sections = self.library_sections(&query);
         let footer = self.footer(Launcher::Library);
@@ -430,7 +448,8 @@ impl Shell {
         let tb_id = egui::Id::unique("launcher-pane");
         let shown = egui::Area::new(tb_id)
             .order(egui::Order::Foreground)
-            .fixed_pos(pos2(anchor.left(), anchor.bottom() + 6.0))
+            .pivot(self.st.toolbar.pane_place().1)
+            .fixed_pos(self.st.toolbar.pane_place().0)
             .fade_in(false)
             .show(ui.ctx(), |ui| {
                 look::dropdown_frame(ui).show(ui, |ui| {
@@ -443,7 +462,7 @@ impl Shell {
                     let mut index = 0;
                     egui::ScrollArea::vertical()
                         .id_salt("library-rows")
-                        .max_height(look::LIBRARY_LIST.min(list_room(ui, look::ROW * 2.0)))
+                        .max_height(look::LIBRARY_LIST.min(list_room(ui, look::ROW * 2.0, span)))
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
                             if sections.is_empty() {
@@ -566,13 +585,14 @@ impl Shell {
     }
 
     /// The Tools pane: a filter and the Tools menu's commands with their shortcuts.
-    fn tools_pane(&mut self, ui: &mut Ui, anchor: Rect) -> Option<Action> {
+    fn tools_pane(&mut self, ui: &mut Ui) -> Option<Action> {
         let rows = self.tool_rows(&self.st.toolbar.query);
         let items: Vec<Item> = rows.iter().map(|(id, ..)| Item::Command(id)).collect();
         let mut action = self.pane_keys(ui, items.len(), None, false);
         let shown = egui::Area::new(egui::Id::unique("launcher-pane"))
             .order(egui::Order::Foreground)
-            .fixed_pos(pos2(anchor.left(), anchor.bottom() + 6.0))
+            .pivot(self.st.toolbar.pane_place().1)
+            .fixed_pos(self.st.toolbar.pane_place().0)
             .fade_in(false)
             .show(ui.ctx(), |ui| {
                 look::dropdown_frame(ui).show(ui, |ui| {
@@ -611,7 +631,7 @@ impl Shell {
     }
 
     /// The Guides pane: each Guide with an input box for its Key.
-    fn guides_pane(&mut self, ui: &mut Ui, anchor: Rect) -> Option<Action> {
+    fn guides_pane(&mut self, ui: &mut Ui) -> Option<Action> {
         let rows: Vec<(&'static str, String)> = self
             .footer(Launcher::Guides)
             .into_iter()
@@ -625,7 +645,8 @@ impl Shell {
         }
         let shown = egui::Area::new(egui::Id::unique("launcher-pane"))
             .order(egui::Order::Foreground)
-            .fixed_pos(pos2(anchor.left(), anchor.bottom() + 6.0))
+            .pivot(self.st.toolbar.pane_place().1)
+            .fixed_pos(self.st.toolbar.pane_place().0)
             .fade_in(false)
             .show(ui.ctx(), |ui| {
                 look::dropdown_frame(ui).show(ui, |ui| {
@@ -686,7 +707,8 @@ impl Shell {
     }
 
     /// The Layouts pane: saved and Built-in Layouts as cards, then Save and Reset.
-    fn layouts_pane(&mut self, ui: &mut Ui, anchor: Rect) -> Option<Action> {
+    fn layouts_pane(&mut self, ui: &mut Ui) -> Option<Action> {
+        let span = self.st.toolbar.pane_span;
         if self.st.toolbar.cards.is_none() {
             self.st.toolbar.cards = Some(self.st.session.layout_cards());
         }
@@ -743,7 +765,8 @@ impl Shell {
         }
         let shown = egui::Area::new(egui::Id::unique("launcher-pane"))
             .order(egui::Order::Foreground)
-            .fixed_pos(pos2(anchor.left(), anchor.bottom() + 6.0))
+            .pivot(self.st.toolbar.pane_place().1)
+            .fixed_pos(self.st.toolbar.pane_place().0)
             .fade_in(false)
             .show(ui.ctx(), |ui| {
                 look::dropdown_frame(ui).show(ui, |ui| {
@@ -763,7 +786,7 @@ impl Shell {
                     // Saved Layouts can be many: the cards scroll, the footer stays in view.
                     egui::ScrollArea::vertical()
                         .id_salt("layout-cards")
-                        .max_height(list_room(ui, look::CARD.y))
+                        .max_height(list_room(ui, look::CARD.y, span))
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
                             look::heading(ui, "Saved layouts");
@@ -957,8 +980,8 @@ impl Shell {
     }
 }
 
-/// A launcher's tooltip.
-fn hint(which: Launcher) -> &'static str {
+/// What a launcher offers, for its tooltip.
+pub(super) fn hint(which: Launcher) -> &'static str {
     match which {
         Launcher::Library => "Find and open a Resource",
         Launcher::Guides => "Passage Guide, Word Study, Factbook",
@@ -1041,8 +1064,10 @@ fn layout_grid(cards: &[LayoutCard], shown: &[usize], footer: usize) -> Vec<Vec<
     rows
 }
 
-/// The height left for a pane's scrolling list from where `ui` is now down to the window's
-/// bottom edge, keeping room for the footer links under it; never less than `least`.
-fn list_room(ui: &Ui, least: f32) -> f32 {
-    (ui.ctx().content_rect().bottom() - ui.cursor().top() - look::BELOW_LIST).max(least)
+/// The height left for a pane's scrolling list from where `ui` is now in the pane, when the
+/// whole pane may be `span` tall, keeping room for the footer links under it; never less than
+/// `least`.
+fn list_room(ui: &Ui, least: f32, span: f32) -> f32 {
+    let above = ui.cursor().top() - ui.min_rect().top();
+    (span - above - look::BELOW_LIST).max(least)
 }

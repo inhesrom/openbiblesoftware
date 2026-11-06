@@ -430,13 +430,15 @@ impl Session {
         if needle.chars().count() < 3 {
             return;
         }
+        // The Launchers too (#141), so one hidden from the toolbar is still a few keys away.
         let ids = crate::workspace_commands::MENUS
             .iter()
             .flat_map(|m| m.items)
             .filter_map(|i| match i {
                 crate::MenuItem::Command(id) => Some(*id),
                 _ => None,
-            });
+            })
+            .chain(crate::Launcher::ALL.iter().map(|l| l.command()));
         for id in ids {
             let Some(spec) = self.commands().get(id) else {
                 continue;
