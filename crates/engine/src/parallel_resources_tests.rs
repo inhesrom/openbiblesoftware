@@ -388,3 +388,36 @@ fn real_bsb_ps_3_1_switches_to_real_tahot_ps_3_2() {
         ("bsb".into(), Some(ps(3, 1)))
     );
 }
+
+#[test]
+fn a_switch_and_back_across_it_are_visits_for_history() {
+    let (bsb, tahot) = (bsb_psalm_3(), tahot_psalms());
+    let mut s = session(&[&bsb, &tahot]);
+    let tab = open(&mut s, "bsb");
+    load(&mut s, tab, &bsb);
+    s.run("tab.go", &json!({ "tab": tab.0, "text": "Ps 3:1" }))
+        .unwrap();
+    s.workspace.take_visits();
+
+    // The switch is placed by the UI later, so its Visit is read then (#155).
+    s.run("tab.parallel_next", &json!({ "tab": tab.0 }))
+        .unwrap();
+    assert_eq!(
+        s.workspace.take_visits(),
+        vec![workspace::PendingVisit { tab, at: None }]
+    );
+    load(&mut s, tab, &tahot);
+    let (location, label) = s.location_of(tab).unwrap();
+    assert_eq!(
+        (location.kind, location.verse),
+        (TabKind::Resource("tahot".into()), Some(ps(3, 2)))
+    );
+    assert!(label.ends_with("· TAHOT"), "{label}");
+
+    // Back across the switch is a Visit of the BSB at Ps 3:1.
+    s.run("tab.back", &json!({ "tab": tab.0 })).unwrap();
+    let visits = s.workspace.take_visits();
+    assert_eq!(visits.len(), 1);
+    assert_eq!(visits[0].at.as_ref().unwrap().verse, Some(ps(3, 1)));
+    assert_eq!(shows(&s, tab), "bsb");
+}

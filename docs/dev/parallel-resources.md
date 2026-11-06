@@ -35,6 +35,9 @@ same place.
   anchor rather than to the location's start, so a reader halfway through a long
   Commentary section is halfway through it again. A fresh switch (▶, ◀, dropdown) still
   lands on the mapped place and flashes it.
+- History (#155): a switch queues a Visit read once the UI has placed the new Resource,
+  as for a Tab just opened; Back or Forward across a switch is a Visit like any other
+  Back/Forward.
 - The header box shrinks to leave room for the controls on its right (measured the frame
   before), and the dropdown is narrower in a narrow Panel, so nothing overlaps.
 - The Tab keeps its id, Panel, Link set and history. A switch, and Back/Forward across
