@@ -44,6 +44,7 @@ mod reading_plans_tab;
 #[path = "references.rs"]
 pub(crate) mod references;
 mod search_tab;
+mod search_views;
 mod starter_tab;
 mod toolbar;
 mod toolbar_look;
@@ -155,6 +156,8 @@ pub(crate) struct State {
     /// The Get Bibles Tab's search and language filter.
     get_bibles_ui: get_bibles_tab::GetBiblesUi,
     picker: Option<std::sync::mpsc::Receiver<Option<std::path::PathBuf>>>,
+    /// The Search Analysis's CSV save dialog, for its Tab (#146).
+    csv_picker: Option<(TabId, std::sync::mpsc::Receiver<Option<std::path::PathBuf>>)>,
     /// When the Last session was last checked for saving.
     last_save: f64,
     /// This frame's Page-tone palette.
@@ -219,6 +222,7 @@ impl Shell {
                 pick_import: false,
                 get_bibles_ui: get_bibles_tab::GetBiblesUi::default(),
                 picker: None,
+                csv_picker: None,
                 last_save: 0.0,
                 palette: Palette::PAPER,
                 command_box: command_box::CommandBoxUi::default(),
@@ -828,6 +832,7 @@ impl Shell {
         self.st.session.load_starter_manifest_for_open_tab();
         self.st.poll_picker();
         self.st.poll_export();
+        self.st.poll_csv_picker();
         self.apply_effects();
         if let Some(after) = self.background_repaint() {
             ui.ctx().request_repaint_after(after);

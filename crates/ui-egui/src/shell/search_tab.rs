@@ -10,7 +10,7 @@
 use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, pos2, vec2};
 use obs_engine::bible_search::{ErrorField, InlineError, PAGE_ROWS, SearchMode, scope_presets};
 use obs_engine::library_search::{LIBRARY_TYPES, type_id, type_plural};
-use obs_engine::{SearchTab, TabId};
+use obs_engine::{ResultsView, SearchTab, TabId};
 use obs_layout::ColorRole;
 use obs_model::ResourceType;
 use serde_json::{Value, json};
@@ -381,9 +381,15 @@ impl State {
         });
     }
 
-    /// The summary line, notices about Resources not searched, and the results.
+    /// The summary line, notices about Resources not searched, and the results: in Bible
+    /// mode, in the chosen results view (#146).
     fn search_results(&mut self, ui: &mut Ui, tab: TabId, st: &SearchTab) {
-        let summary = match (&st.results, &st.library_results) {
+        // The Grid, Chart and Analysis count every result; the Verse list may be filtered.
+        let shown = match st.view {
+            ResultsView::Verses => st.results.as_ref(),
+            _ => st.all_results(),
+        };
+        let summary = match (shown, &st.library_results) {
             (Some(r), _) => Some((
                 r.summary(),
                 r.indexing.clone(),
@@ -427,7 +433,23 @@ impl State {
                                 .color(theme::c().warn),
                         );
                     }
+                    if st.all_results().is_some() {
+                        self.results_view_switch(ui, tab, st);
+                    }
                 });
+        }
+        if st.all_results().is_some() {
+            if st.view != ResultsView::Verses
+                && let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.search.as_mut())
+            {
+                view.drain();
+            }
+            match st.view {
+                ResultsView::Verses => {}
+                ResultsView::Grid => return self.results_grid(ui, tab, st),
+                ResultsView::Chart => return self.results_chart(ui, tab, st),
+                ResultsView::Analysis => return self.results_analysis(ui, tab, st),
+            }
         }
         let focused = self.session.workspace.focused() == Some(tab);
         let typing = ui.memory(|m| m.focused().is_some());

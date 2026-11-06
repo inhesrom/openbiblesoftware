@@ -76,6 +76,9 @@ pub mod resource_navigation;
 pub mod search;
 #[cfg(test)]
 mod search_tests;
+pub mod search_views;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod search_views_tests;
 mod session;
 pub mod starter;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -161,6 +164,10 @@ pub use search::CacheIndexer;
 pub use search::{
     INDEX_VERSION, IndexStatus, ResourceHits, SearchIndexes, SearchRequest, SearchResults,
     default_search_cache_dir,
+};
+pub use search_views::{
+    AnalysisColumn, AnalysisRow, AnalysisSort, ChartBar, ChartBy, HitGrid, ResultsFilter,
+    ResultsView, SearchAnalysis, chart_bars,
 };
 pub use session::{JobMode, Session};
 pub use toolbar::{

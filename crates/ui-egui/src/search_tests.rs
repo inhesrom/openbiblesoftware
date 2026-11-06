@@ -694,3 +694,275 @@ fn real_library_search_timing() {
     }
     drop(h);
 }
+
+/// Visual evidence for `docs/previews/<name>.png` when `UPDATE_PREVIEWS` is set.
+fn preview(h: &Harness, name: &str) {
+    if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+        std::fs::create_dir_all(&dir).unwrap();
+        h.screenshot(&dir.join(format!("{name}.ppm")));
+    }
+}
+
+/// KJV (★, Strong's numbers only) and TGNT (Lemma and Morphology), both with `strong:G26`
+/// four times in John and 1 John, and the Test Lexicon; `strong:G26` searched in both.
+fn agape_search(name: &str) -> (Harness, Files, TabId) {
+    use obs_engine::testing::{greek_agape, kjv_agape, study};
+    let (mut h, files) = harness_of(name, &[kjv_agape(), greek_agape(), study::tlx()]);
+    h.shell.run("tool.search", &json!({}));
+    h.frames(2);
+    h.click_text("+ Bible");
+    h.click_text("TGNT — Tagged Greek New Testament (test)");
+    type_query(&mut h, "strong:G26");
+    settle(&mut h);
+    let tab = search_tab(&h);
+    // The Search Tab alone in the window, for room to show the views.
+    let others: Vec<TabId> = h
+        .shell
+        .st
+        .session
+        .workspace
+        .tabs()
+        .filter(|t| t.id != tab)
+        .map(|t| t.id)
+        .collect();
+    for t in others {
+        h.shell.run("tab.close", &json!({ "tab": t.0 }));
+    }
+    h.frames(3);
+    assert!(
+        h.find("10 verses · 13 hits · KJV 10 · TGNT 3").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    (h, files, tab)
+}
+
+/// The lowest text of that name (below the menus, tab bars and Bible chips).
+fn lowest(h: &Harness, text: &str) -> Rect {
+    h.shapes
+        .iter()
+        .filter(|(_, t)| t == text)
+        .map(|(r, _)| *r)
+        .max_by(|a, b| a.top().total_cmp(&b.top()))
+        .unwrap_or_else(|| panic!("{text:?} not on screen: {:?}", h.texts()))
+}
+
+/// Draw until the text pipeline's layouts have arrived.
+fn draw_laid(h: &mut Harness) {
+    for _ in 0..40 {
+        h.frame();
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+#[test]
+fn strong_g26_grid_shows_john_and_1_john_hottest_and_a_cell_filters_the_verse_list() {
+    let (mut h, files, tab) = agape_search("grid");
+    for view in ["Verses", "Grid", "Chart", "Analysis"] {
+        assert!(h.find(view).is_some(), "{view} switch: {:?}", h.texts());
+    }
+    switch_mode(&mut h, "Grid");
+    let st = h.shell.st.session.search_tab(tab).unwrap();
+    assert_eq!(st.view, obs_engine::ResultsView::Grid);
+    for text in [
+        "Bible book",
+        "John",
+        "Romans",
+        "1 Corinthians",
+        "1 John",
+        "TGNT",
+    ] {
+        assert!(h.find(text).is_some(), "{text} not drawn: {:?}", h.texts());
+    }
+    // John × KJV and 1 John × KJV are the two hottest cells.
+    let below = lowest(&h, "Bible book").top();
+    let hottest: Vec<Rect> = rects_of(&h, super::super::search_views::heat_fill(1.0))
+        .into_iter()
+        .filter(|r| r.top() > below)
+        .collect();
+    assert_eq!(hottest.len(), 2, "{hottest:?}");
+    let kjv = lowest(&h, "KJV");
+    let john = lowest(&h, "John");
+    let first_john = lowest(&h, "1 John");
+    for (row, r) in [(john, hottest[0]), (first_john, hottest[1])] {
+        assert!(
+            (r.center().y - row.center().y).abs() < 4.0,
+            "{r:?} not on {row:?}"
+        );
+        assert!(
+            (r.center().x - kjv.center().x).abs() < 4.0,
+            "{r:?} not under KJV"
+        );
+    }
+    preview(&h, "search-grid-g26");
+
+    // Click 1 John × KJV: the Verse list shows 1 John's KJV Verses only.
+    h.click(egui::pos2(kjv.center().x, first_john.center().y));
+    settle(&mut h);
+    let st = h.shell.st.session.search_tab(tab).unwrap();
+    assert_eq!(st.view, obs_engine::ResultsView::Verses);
+    assert_eq!(st.row_count(), 4);
+    for text in [
+        "Only 1 John · KJV",
+        "4 verses · 4 hits · KJV 4 · TGNT 0",
+        "1 John 4:7",
+        "1 John 4:8",
+        "1 John 4:16",
+        "1 John 4:18",
+    ] {
+        assert!(h.find(text).is_some(), "{text} not drawn: {:?}", h.texts());
+    }
+    assert!(h.find("John 13:35").is_none());
+    let view = h.shell.st.tabs[&tab].search.as_ref().unwrap();
+    assert_eq!(view.last.visible, 0..4);
+    preview(&h, "search-grid-filtered");
+    // × on the chip shows every result again.
+    let chip = h.find("Only 1 John · KJV").unwrap();
+    let x = h
+        .shapes
+        .iter()
+        .filter(|(r, t)| {
+            t == "×" && r.left() > chip.right() && (r.center().y - chip.center().y).abs() < 6.0
+        })
+        .map(|(r, _)| r.center())
+        .next()
+        .expect("the chip's ×");
+    h.click(x);
+    settle(&mut h);
+    assert_eq!(h.shell.st.session.search_tab(tab).unwrap().row_count(), 10);
+    assert!(h.find("John 13:35").is_some(), "{:?}", h.texts());
+    drop(h);
+    drop(files);
+}
+
+#[test]
+fn chart_bars_by_book_and_by_chapter_and_a_bar_filters_the_verse_list() {
+    let (mut h, files, tab) = agape_search("chart");
+    switch_mode(&mut h, "Chart");
+    for text in ["By book", "John", "Romans", "1 Corinthians", "1 John"] {
+        assert!(h.find(text).is_some(), "{text} not drawn: {:?}", h.texts());
+    }
+    // The bars: John and 1 John (4 Verses each) twice as long as… four times Romans'.
+    let lapis = crate::theme::c().lapis;
+    let below = lowest(&h, "By book").bottom();
+    let bars_of = |h: &Harness| -> Vec<Rect> {
+        rects_of(h, lapis)
+            .into_iter()
+            .filter(|r| r.top() > below)
+            .collect()
+    };
+    let mut bars = bars_of(&h);
+    bars.sort_by(|a, b| a.top().total_cmp(&b.top()));
+    assert_eq!(bars.len(), 4, "{bars:?}");
+    let w: Vec<f32> = bars.iter().map(|r| r.width()).collect();
+    assert!(
+        (w[0] - w[3]).abs() < 0.5 && (w[0] - 4.0 * w[1]).abs() < 1.0,
+        "{w:?}"
+    );
+    preview(&h, "search-chart-g26");
+    // Chapters of John: 21 bars, three of them with Verses.
+    h.shell
+        .run("search.chart", &json!({ "tab": tab.0, "value": "John" }));
+    h.frames(3);
+    assert!(h.find("Chapters of John").is_some(), "{:?}", h.texts());
+    assert!(h.find("John 21").is_some(), "{:?}", h.texts());
+    assert_eq!(bars_of(&h).iter().filter(|r| r.width() > 0.5).count(), 3);
+    h.click_text("John 15");
+    settle(&mut h);
+    let st = h.shell.st.session.search_tab(tab).unwrap();
+    assert_eq!(st.view, obs_engine::ResultsView::Verses);
+    assert!(h.find("Only John 15").is_some(), "{:?}", h.texts());
+    assert!(h.find("John 15:9").is_some() && h.find("John 15:13").is_some());
+    assert!(h.find("John 13:35").is_none());
+    drop(h);
+    drop(files);
+}
+
+#[test]
+fn analysis_table_sorts_by_each_column_header_and_opens_a_row() {
+    let (mut h, files, tab) = agape_search("analysis");
+    switch_mode(&mut h, "Analysis");
+    settle(&mut h);
+    draw_laid(&mut h);
+    for text in [
+        "17 matched words",
+        "Export CSV…",
+        "Reference",
+        "Bible",
+        "Word",
+        "Lemma",
+        "Morphology",
+        "Context",
+        "John 13:35",
+        "noun, acc. fem. sing.",
+    ] {
+        assert!(h.find(text).is_some(), "{text} not drawn: {:?}", h.texts());
+    }
+    // The words, Lemmas and Context are Resource text, drawn by the text pipeline.
+    assert!(!h.glyphs.is_empty());
+    preview(&h, "search-analysis-g26");
+    let sort = |h: &Harness| h.shell.st.session.search_tab(tab).unwrap().analysis_sort;
+    assert_eq!(sort(&h), obs_engine::AnalysisSort::default());
+    for column in obs_engine::AnalysisColumn::ALL {
+        // Click the header: ascending (Reference, already ascending, turns round) …
+        let at = lowest(&h, column.label()).center();
+        h.click(at);
+        let reference = column == obs_engine::AnalysisColumn::Reference;
+        assert_eq!(sort(&h).column, column);
+        assert_eq!(sort(&h).descending, reference, "{column:?}");
+        // … and again: the other way.
+        h.click(at);
+        assert_eq!(sort(&h).column, column);
+        assert_eq!(sort(&h).descending, !reference, "{column:?}");
+    }
+    // Morphology in plain English, descending: nominative rows above dative above
+    // accusative. No raw code is drawn in the table.
+    let at = lowest(&h, "Morphology").center();
+    h.click(at);
+    h.click(at);
+    assert!(sort(&h).descending);
+    let (nom, dat, acc) = (
+        "noun, nom. fem. sing.",
+        "noun, dat. fem. sing.",
+        "noun, acc. fem. sing.",
+    );
+    let top = |t: &str| h.find(t).map(|r| r.top()).unwrap();
+    assert!(top(nom) < top(dat) && top(dat) < top(acc));
+    for code in ["N-NSF", "N-DSF", "N-ASF"] {
+        assert!(h.find(code).is_none(), "raw {code} drawn");
+    }
+    // Resting on the Morphology cell (a second of frames) shows the code as the Bible tags
+    // it.
+    let p = h.at(dat);
+    h.events.push(egui::Event::PointerMoved(p));
+    h.frames(60);
+    assert!(
+        h.texts()
+            .iter()
+            .any(|t| t.contains("Morphology code: N-DSF")),
+        "no code tooltip: {:?}",
+        h.texts()
+    );
+    // Clicking a row opens its Verse.
+    h.click_text(dat);
+    h.frames(3);
+    let tgnt = h.tab_id("TGNT");
+    assert_eq!(
+        h.shell
+            .st
+            .session
+            .workspace
+            .tab(tgnt)
+            .unwrap()
+            .history
+            .current(),
+        Some(obs_scripture::Verse::new(
+            obs_scripture::Book::FirstJohn,
+            4,
+            16
+        ))
+    );
+    drop(h);
+    drop(files);
+}

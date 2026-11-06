@@ -1,4 +1,4 @@
-# The Search Tool: Bible mode (#59) and Library mode (#60)
+# The Search Tool: Bible mode (#59), its Results views (#146) and Library mode (#60)
 
 The Search Tool is one Tab with a **Bible / Library / Notes** switch (#16 rule 9). Bible and
 Library modes are described here; Notes mode (#64) is described in [notes-tool.md](notes-tool.md).
@@ -12,8 +12,10 @@ hits. The Search index caches they read are described in [search-index.md](searc
 |---|---|---|
 | `obs-search` | `Highlighter` | Hit highlighting in Rust (#16 rule 7). Surface terms are found by re-tokenizing the display text with the shared normalizer. `strong:`/`lemma:` terms mark the matching `tagged_word` spans. In a Hebrew word of several morphemes, only the matching morphemes are marked. |
 | `obs-engine` | `bible_search` | Per-Tab state (`Tab::search`): mode, query, Scope, chosen Bibles, inline error, results, selection. Also Scope parsing and presets, the mapping from Standard scope to verse ordinals through each Verse map, the Verse list in Standard canonical order, snippet pages, recent queries, and opening hits. Commands: `search.run`, `search.mode`, `search.scope`, `search.bible`, `search.open`. |
+| `obs-engine` | `search_views` | Bible mode's Results views (#146): `ResultsView`, the Results filter (`ResultsFilter`, applied to a copy of the results), `HitGrid`, `chart_bars`, and the Analysis table (`SearchAnalysis`, made by a background job, sorted by `AnalysisSort`, written as CSV). Commands: `search.view`, `search.filter`, `search.chart`, `search.sort`, `search.export_csv` (and `search.open`'s `all`). |
 | `obs-engine` | `library_search` | Library mode on the same Tab state and jobs: the Resource picker's scope (`LibraryScope`), grouping by Resource, excerpts, and opening a hit at its paragraph. Commands: `search.resource`, `search.resource_type` (and `search.run`'s `resources`). |
 | `obs-engine` | `Workspace::navigate_text`, `Effect::NavigateText` | A Resource Tab goes to a Key and scrolls a Text range to the top (a Library hit's paragraph). |
+| `obs-ui-egui` | `shell/search_views.rs` | The Verses / Grid / Chart / Analysis switch, the filter chip, the Grid and Chart (egui), the Analysis table (its words, Lemmas and Context through the text pipeline) and the CSV save dialog. |
 | `obs-ui-egui` | `shell/search_tab.rs`, `search_view.rs` | The Tab body: fields, pickers, summary line, and the virtualized results pane drawn by the inline-snippet mode, with the highlights painted under the glyphs. Also ↑/↓/Enter and clicks. |
 | `obs-ui-egui` | `ReadingView::jump_to_text`, `pane::Flash::Text` | Scrolling a Resource Tab to a paragraph and flashing it. |
 
@@ -57,6 +59,61 @@ again until the library changes; a search over that Bible then reports the error
   active Tab of that Bible goes to the Verse in the Bible's own numbering. If there is no such
   Tab, a new Tab opens there. An Unmapped verse never moves a Link set.
 - **Ctrl/Cmd-click** (or Ctrl/Cmd+Enter) always opens a new Tab, split off to the right.
+
+## Results views (#146)
+
+Above Bible mode's results a switch shows them four ways. The choice stays with the Tab across
+searches.
+
+- **Verses**: the Verse list.
+- **Grid**: a row for each Bible book with a hit (canonical order) and a column for each
+  searched Bible. A cell holds that Bible's matching Verses in the book, shaded by its count
+  over the largest cell's count. Clicking a cell sets the **Results filter** to that book and
+  Bible. Clicking a book name sets it to the book in every Bible.
+- **Chart**: a bar for each Bible book with a hit, or (**By chapter of…**) a bar for each
+  chapter of one book, empty chapters included. A bar counts rows of the Verse list, so a
+  Verse matched in two Bibles counts once. Clicking a bar sets the filter to that book or
+  chapter.
+- **Analysis**: one row per matched word of every hit. Columns: Reference (the row's Standard
+  reference), Bible, the word, its Lemma, its Morphology and a short Context. The word is
+  the whole Tagged word(s) a highlight touches, so a Hebrew root highlighted without its
+  prefix is still one word, and KJV+Strong's `the love` is the span it tags. Lemma and
+  Morphology come from the parts the query matched (all parts for a plain word search). A
+  part without a Lemma (KJV+Strong's) borrows the headword of the first Lexicon in Preferred
+  order that has its number, as Word Info does. Morphology reads in plain English through the
+  same decoder as Word Info (`noun, acc. fem. sing.`); the code as tagged (`N-ASF`) is the
+  cell's tooltip, and a code the decoder cannot read stays as written. A background job makes
+  the table the first time it is shown for a search, and again after a new search while it is
+  shown. If a searched Bible has since been removed from the Library, or its file or tags
+  cannot be read, the job fails with that message under the search box instead of making a
+  table (and an export) without that Bible's hits. Rows open their Verse like a hit.
+  - **Sorting**: click a header to sort by it, and again to reverse. Text compares
+    case-insensitively and empty cells go last either way. Reference is canonical order;
+    reversed, the Verses turn round but a Verse's words and Bibles keep canonical order.
+    Context compares the words after the match, then before it, as a concordance does. Ties
+    keep canonical order.
+  - **Export CSV…** saves the table in the order shown: a header row, then six fields per
+    row (the Context field is the whole hit text). It is UTF-8 with a byte-order mark and
+    CRLF line ends (RFC 4180), so spreadsheets read Greek and Hebrew correctly. A field
+    starting with `=`, `+`, `-` or `@` gets a leading `'`, so it is never read as a formula.
+
+The **Results filter** applies to a copy of the results, held in `SearchTab::results`; the
+whole set stays in `SearchTab::unfiltered`, which the Grid, Chart and Analysis read. Setting
+the filter switches to Verses. The filter shows as an `Only 1 John · KJV ×` chip by the
+switch. A new search, or the chip's ×, clears it. Snippet pages are fetched again for the
+filtered rows. The summary line counts the filtered rows in Verses and every result in the
+other views.
+
+With the real Starter KJV+Strong's and TAGNT, `strong:G26` (ἀγάπη, the noun) finds 106
+Verses in each. 1 John stands out with 14, then 1 Corinthians (11) and Ephesians (10); John
+has 6. John and 1 John stand out together for the verb, `strong:G25` (John 27, 1 John 17).
+`real_starter_g26_grid_and_analysis` checks both.
+
+Previews: [Grid](../previews/search-grid-g26-real.png), [Chart](../previews/search-chart-g26-real.png),
+[a Grid cell's Verses](../previews/search-grid-filtered-real.png) and
+[Analysis by Morphology](../previews/search-analysis-g26-real.png), from the real app and the
+Starter library. The `*-kittest.png` previews come from the open test excerpts, made with
+`UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui --lib search::`.
 
 ## Library mode (#60)
 
