@@ -207,6 +207,22 @@ impl State {
                     .max_height(260.0)
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
+                        // Chosen by hand before they left the library: kept unless unticked.
+                        let absent: Vec<String> = ed
+                            .resources
+                            .iter()
+                            .filter(|id| library.get(id).is_none())
+                            .cloned()
+                            .collect();
+                        if !absent.is_empty() {
+                            ui.label(RichText::new("Not in the Library now").strong());
+                            for id in absent {
+                                let mut on = true;
+                                if ui.checkbox(&mut on, id.as_str()).changed() && !on {
+                                    ed.resources.retain(|r| *r != id);
+                                }
+                            }
+                        }
                         for ty in RESOURCE_TYPES {
                             let entries: Vec<_> = library.of_type(ty).collect();
                             if entries.is_empty() {

@@ -206,9 +206,10 @@ impl LibraryScope {
         }
     }
 
-    /// Search a Resource, or stop searching it. Leaving out one Resource of a whole type or
-    /// a Collection keeps the type's or Collection's others, one by one; choosing every
-    /// Resource of a type one by one makes it the whole type again.
+    /// Search a Resource, or stop searching it. Leaving out one Resource drops everything
+    /// that covered it (its whole type, the Collections it is in, its own choice) and keeps
+    /// the others those covered, one by one; choosing every Resource of a type one by one
+    /// makes it the whole type again.
     pub fn toggle_resource(&mut self, library: &Library, id: &str) -> Result<(), String> {
         let ty = library
             .get(id)
@@ -217,42 +218,22 @@ impl LibraryScope {
             .ok_or_else(|| {
                 format!("{id} is not a Commentary, Lexicon or Dictionary in the library")
             })?;
-        let ids_of_type = || {
-            library
-                .of_type(ty)
-                .map(|e| e.manifest.resource_id.clone())
-                .collect::<Vec<_>>()
-        };
-        let leaving_collections: Vec<String> = if self.types.contains(&ty) {
-            Vec::new()
-        } else {
-            self.collections
-                .iter()
-                .filter(|c| library.in_collection(c, id))
-                .cloned()
-                .collect()
-        };
-        if let Some(i) = self.types.iter().position(|t| *t == ty) {
-            self.types.remove(i);
-            for other in ids_of_type() {
-                if other != id && !self.resources.contains(&other) {
-                    self.resources.push(other);
-                }
-            }
-        } else if !leaving_collections.is_empty() {
-            let members: Vec<String> = self.resources(library);
-            self.collections
-                .retain(|c| !leaving_collections.contains(c));
-            for other in members {
+        if self.includes(library, id) {
+            let searched = self.resources(library);
+            self.types.retain(|t| *t != ty);
+            self.collections.retain(|c| !library.in_collection(c, id));
+            self.resources.retain(|r| r != id);
+            for other in searched {
                 if other != id && !self.includes(library, &other) {
                     self.resources.push(other);
                 }
             }
-        } else if let Some(i) = self.resources.iter().position(|r| r == id) {
-            self.resources.remove(i);
         } else {
             self.resources.push(id.to_string());
-            let all = ids_of_type();
+            let all: Vec<String> = library
+                .of_type(ty)
+                .map(|e| e.manifest.resource_id.clone())
+                .collect();
             if all.iter().all(|r| self.resources.contains(r)) {
                 self.resources.retain(|r| !all.contains(r));
                 self.types.push(ty);

@@ -19,10 +19,11 @@ use obs_model::{Manifest, ResourceType};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::bible_search::{SearchMode, rerun};
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
 use crate::library::{Library, language_name};
 use crate::session::Session;
-use crate::workspace::{Effect, TabKind, Tool};
+use crate::workspace::{Effect, TabId, TabKind, Tool};
 
 /// One rule of a rule-based Collection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -312,6 +313,32 @@ impl Session {
         }
         self.rename_guide_filters(from, to);
     }
+
+    /// The Search Tabs in Library mode whose scope names one of these Collections (any case).
+    fn library_searches_of(&self, names: &[&str]) -> Vec<TabId> {
+        self.workspace
+            .tabs()
+            .filter(|t| t.kind == TabKind::Tool(Tool::Search))
+            .filter(|t| {
+                t.search.mode == SearchMode::Library
+                    && t.search
+                        .library
+                        .collections
+                        .iter()
+                        .any(|c| names.iter().any(|n| c.eq_ignore_ascii_case(n)))
+            })
+            .map(|t| t.id)
+            .collect()
+    }
+
+    /// Run these Search Tabs' searches again after a Collection they search changed, so their
+    /// results show its Resources now. Jobs still running for the old scope are cancelled and
+    /// their results dropped.
+    fn rerun_searches(&mut self, tabs: Vec<TabId>) {
+        for tab in tabs {
+            rerun(self, tab);
+        }
+    }
 }
 
 fn collection_json(library: &Library, c: &Collection) -> Value {
@@ -466,9 +493,6 @@ fn run_save(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let name = name_param(CMD, &p, "name")?;
     let rules = parse_rules(p.str("rules").unwrap_or_default()).map_err(|e| failed(CMD, e))?;
     let resources = ids_param(&p, "resources");
-    if let Some(id) = resources.iter().find(|id| s.library.get(id).is_none()) {
-        return Err(failed(CMD, format!("{id} is not in the library")));
-    }
     let previous = p
         .str("previous")
         .map(str::trim)
@@ -483,6 +507,16 @@ fn run_save(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     if previous.is_some() && at.is_none() {
         return Err(failed(CMD, format!("no Collection named “{replaces}”")));
     }
+    // A Resource chosen by hand stays chosen after it leaves the library, so an edit may keep
+    // it; only a Resource newly chosen must be in the library.
+    let kept = at.map_or(&[][..], |i| set.collections[i].resources.as_slice());
+    if let Some(id) = resources
+        .iter()
+        .find(|id| s.library.get(id).is_none() && !kept.contains(id))
+    {
+        return Err(failed(CMD, format!("{id} is not in the library")));
+    }
+    let affected = s.library_searches_of(&[replaces, &name]);
     if set
         .collections
         .iter()
@@ -513,6 +547,7 @@ fn run_save(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     {
         s.collection_renamed(&old, Some(&name));
     }
+    s.rerun_searches(affected);
     let lib = &s.library;
     Ok(lib
         .collection(&name)
@@ -524,9 +559,6 @@ fn run_toggle(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const CMD: &str = "collection.toggle";
     let name = name_param(CMD, &p, "name")?;
     let id = p.str("id").unwrap_or_default().trim().to_string();
-    if s.library.get(&id).is_none() {
-        return Err(failed(CMD, format!("{id} is not in the library")));
-    }
     let mut set = s.library.collection_set().clone();
     let c = set
         .collections
@@ -535,11 +567,15 @@ fn run_toggle(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         .ok_or_else(|| failed(CMD, format!("no Collection named “{name}”")))?;
     if let Some(i) = c.resources.iter().position(|r| *r == id) {
         c.resources.remove(i);
+    } else if s.library.get(&id).is_none() {
+        return Err(failed(CMD, format!("{id} is not in the library")));
     } else {
         c.resources.push(id);
     }
+    let affected = s.library_searches_of(&[&name]);
     s.library.set_collection_set(set);
     s.save_collections();
+    s.rerun_searches(affected);
     let lib = &s.library;
     Ok(lib
         .collection(&name)
@@ -557,9 +593,11 @@ fn run_delete(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         .position(|c| c.name.eq_ignore_ascii_case(&name))
         .ok_or_else(|| failed(CMD, format!("no Collection named “{name}”")))?;
     let gone = set.collections.remove(i);
+    let affected = s.library_searches_of(&[&gone.name]);
     s.library.set_collection_set(set);
     s.save_collections();
     s.collection_renamed(&gone.name, None);
+    s.rerun_searches(affected);
     Ok(json!({ "deleted": gone.name }))
 }
 
@@ -587,7 +625,17 @@ fn run_tags(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     } else {
         set.tags.insert(id.clone(), tags.clone());
     }
+    // Collections with `tag:` rules may gain or lose the Resource.
+    let by_tag: Vec<String> = set
+        .collections
+        .iter()
+        .filter(|c| c.rules.iter().any(|r| matches!(r, CollectionRule::Tag(_))))
+        .map(|c| c.name.clone())
+        .collect();
+    let by_tag: Vec<&str> = by_tag.iter().map(String::as_str).collect();
+    let affected = s.library_searches_of(&by_tag);
     s.library.set_collection_set(set);
     s.save_collections();
+    s.rerun_searches(affected);
     Ok(json!({ "id": id, "tags": tags }))
 }

@@ -313,3 +313,64 @@ fn a_rows_collections_submenu_adds_by_hand_and_the_guide_filters_commentaries() 
         h.texts()
     );
 }
+
+#[test]
+fn edit_keeps_a_removed_resource_chosen_by_hand_until_it_is_unticked() {
+    let (mut h, _files) = harness("removed");
+    h.shell.run(
+        "collection.save",
+        &json!({ "name": "Pair", "resources": "tcc,beta" }),
+    );
+    h.shell
+        .run("library.remove", &json!({ "id": "tcc", "confirm": true }));
+    settle(&mut h);
+    assert!(h.shell.st.session.library.get("tcc").is_none());
+    let edit = |h: &mut Harness| {
+        h.frames(25);
+        let chip = (h.shapes.iter())
+            .filter(|(r, t)| t == "Pair" && panel_of(h, "Library").contains(r.center()))
+            .map(|(r, _)| r.center())
+            .next()
+            .unwrap();
+        h.click(chip);
+        h.frames(3);
+        h.click_text("Edit…");
+        assert!(h.find("Edit Collection").is_some(), "{:?}", h.texts());
+        h.frames(25);
+    };
+    let by_hand = |h: &Harness| {
+        h.shell
+            .st
+            .session
+            .library
+            .collection("Pair")
+            .map(|c| c.resources.clone())
+            .unwrap()
+    };
+    // Saved as it was: the removed Resource stays chosen.
+    edit(&mut h);
+    assert!(
+        h.find("Not in the Library now").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    h.click_text("Save");
+    assert!(
+        h.find("Edit Collection").is_none(),
+        "saved: {:?}",
+        h.texts()
+    );
+    assert_eq!(by_hand(&h), ["tcc", "beta"]);
+    // Unticked: it leaves the Collection.
+    h.click_text("All");
+    edit(&mut h);
+    h.click_text("tcc");
+    h.frames(3);
+    h.click_text("Save");
+    assert!(
+        h.find("Edit Collection").is_none(),
+        "saved: {:?}",
+        h.texts()
+    );
+    assert_eq!(by_hand(&h), ["beta"]);
+}

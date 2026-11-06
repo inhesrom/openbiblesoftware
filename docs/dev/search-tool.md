@@ -123,7 +123,8 @@ Starter library. The `*-kittest.png` previews come from the open test excerpts, 
   Commentary, Lexicon and Dictionary. A chosen type also covers Resources added to the library
   later. The chips under the query box show what is searched (× leaves one out), and
   **Choose…** lists each type with its Resources as checkboxes. Leaving out one Resource of a
-  whole type keeps the type's other Resources, one by one. Choosing every Resource of a type
+  whole type or Collection drops every part of the scope that
+  covered it and keeps the others those covered, one by one. Choosing every Resource of a type
   one by one makes it the whole type again. Bibles are searched in Bible mode; Cross-reference
   sets and People & places indexes have no prose to search.
 - **Results (#16 rule 12).** Groups by Resource: Commentaries, then Lexicons, then

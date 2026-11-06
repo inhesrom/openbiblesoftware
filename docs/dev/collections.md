@@ -42,9 +42,12 @@ imported joins `type:commentary` at once.
   Collection while every Commentary, Lexicon and Dictionary is searched (the default)
   searches just that Collection; otherwise it adds to the scope. Its Bibles, Cross-reference
   sets and People & places indexes are left out (Library mode searches Commentaries, Lexicons
-  and Dictionaries). Leaving one of its Resources out (×, or unticking it) keeps the
-  Collection's others one by one, as for a whole type. Saved searches (Favorites, History)
-  keep the Collections.
+  and Dictionaries). Leaving one of its Resources out (×, or unticking it) drops everything
+  that covered it (its whole type, every Collection it is in, its own choice) and keeps the
+  others those covered one by one. Saving, editing, deleting a Collection, adding or taking
+  out a Resource, or changing a Resource tag a `tag:` rule uses, runs again every Library
+  search whose scope names that Collection (cancelling a search still running for the old
+  scope). Saved searches (Favorites, History) keep the Collections.
 - **Passage Guide filter.** Once the user has a Collection, the Commentaries section shows a
   Collection chooser (`Every Resource` or one Collection). The choice is part of the Guide
   arrangement (every Passage Guide, kept across restarts; Reset arrangement clears it). A
@@ -54,7 +57,9 @@ imported joins `type:commentary` at once.
 
 Renaming a Collection (Edit…) follows it in open Search Tabs and Guide filters; deleting it
 drops it from them. A Resource removed from the library stays in a by-hand Collection's list
-and is back in it if imported again.
+and is back in it if imported again. Edit… lists it under "Not in the Library now" to keep or
+untick; `collection.save` accepts such ids only for the Collection that already holds them
+(a newly chosen id must be in the library), and `collection.toggle` can take one out.
 
 ## Storage
 

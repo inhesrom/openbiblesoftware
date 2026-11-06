@@ -494,3 +494,237 @@ fn collections_by_hand_and_by_tag_filter_the_library_and_are_kept() {
     assert!(members(&mut s, "Older").is_empty());
     cleanup(s, root);
 }
+
+/// The Search Tab's Library scope as `search.resource` reports it, and the groups of its
+/// search once run.
+fn scope_and_groups(
+    s: &mut Session,
+    tab: u64,
+    out: &serde_json::Value,
+) -> (Vec<String>, Vec<String>) {
+    settle(s);
+    let ids = out["resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    let groups = s
+        .search_tab(TabId(tab))
+        .unwrap()
+        .library_results
+        .as_ref()
+        .map(|r| r.groups.iter().map(|g| g.id.clone()).collect())
+        .unwrap_or_default();
+    (ids, groups)
+}
+
+#[test]
+fn leaving_out_a_resource_drops_every_part_of_the_scope_that_covered_it() {
+    let (mut s, root) = fixture("overlap");
+    s.run(
+        "collection.save",
+        &json!({ "name": "Notes", "rules": "type:commentary" }),
+    )
+    .unwrap();
+    s.run(
+        "collection.save",
+        &json!({ "name": "Words", "resources": "tlx,tbd" }),
+    )
+    .unwrap();
+    // A Resource type and a Collection both cover TCC.
+    let out = s
+        .run(
+            "search.run",
+            &json!({ "text": "covenant", "mode": "library", "resources": "collection:Notes" }),
+        )
+        .unwrap();
+    let tab = out["tab"].as_u64().unwrap();
+    s.run(
+        "search.resource_type",
+        &json!({ "tab": tab, "value": "commentary" }),
+    )
+    .unwrap();
+    let out = s
+        .run("search.resource", &json!({ "tab": tab, "id": "tcc" }))
+        .unwrap();
+    assert_eq!(out["types"], json!([]));
+    assert_eq!(out["collections"], json!([]));
+    let (ids, groups) = scope_and_groups(&mut s, tab, &out);
+    assert_eq!(ids, ["tc2"]);
+    assert_eq!(groups, ["tc2"]);
+    assert!(
+        !s.search_tab(TabId(tab))
+            .unwrap()
+            .library
+            .includes(&s.library, "tcc")
+    );
+
+    // A Resource chosen one by one and a Collection both cover TLX; the unrelated TCC stays.
+    let out = s
+        .run(
+            "search.run",
+            &json!({ "tab": tab, "text": "covenant", "mode": "library",
+                     "resources": "tcc,tlx,collection:Words" }),
+        )
+        .unwrap();
+    assert!(out["error"].is_null(), "{out}");
+    let out = s
+        .run("search.resource", &json!({ "tab": tab, "id": "tlx" }))
+        .unwrap();
+    assert_eq!(out["collections"], json!([]));
+    let (ids, groups) = scope_and_groups(&mut s, tab, &out);
+    assert_eq!(ids, ["tcc", "tbd"]);
+    assert_eq!(groups, ["tcc", "tbd"]);
+    // Choosing it again adds it back on its own.
+    let out = s
+        .run("search.resource", &json!({ "tab": tab, "id": "tlx" }))
+        .unwrap();
+    let (ids, _) = scope_and_groups(&mut s, tab, &out);
+    assert_eq!(ids, ["tcc", "tlx", "tbd"]);
+    cleanup(s, root);
+}
+
+#[test]
+fn a_collection_keeps_a_removed_resource_and_can_still_be_edited_after_a_restart() {
+    let (mut s, root) = fixture("removed");
+    s.run(
+        "collection.save",
+        &json!({ "name": "Pair", "resources": "tcc,tc2" }),
+    )
+    .unwrap();
+    s.run("library.remove", &json!({ "id": "tcc", "confirm": true }))
+        .unwrap();
+    settle(&mut s);
+    assert!(s.library.get("tcc").is_none());
+    assert_eq!(members(&mut s, "Pair"), ["tc2"]);
+    // The editor sends back what was chosen by hand, the removed Resource with it.
+    let out = s
+        .run(
+            "collection.save",
+            &json!({ "name": "Both", "previous": "Pair", "resources": "tcc,tc2",
+                     "rules": "type:lexicon" }),
+        )
+        .unwrap();
+    assert_eq!(out["resources"], json!(["tcc", "tc2"]));
+    assert_eq!(out["members"], json!(["tc2", "tlx"]));
+    // A Resource newly chosen must still be in the library.
+    let err = s
+        .run(
+            "collection.save",
+            &json!({ "name": "Both", "resources": "tcc,tc2,nope" }),
+        )
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("nope is not in the library"),
+        "{err}"
+    );
+    let err = s
+        .run(
+            "collection.save",
+            &json!({ "name": "Other", "resources": "tcc" }),
+        )
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("tcc is not in the library"),
+        "{err}"
+    );
+
+    drop(s);
+    let mut s = open(&root);
+    assert_eq!(
+        s.library.collection("Both").unwrap().resources,
+        ["tcc", "tc2"]
+    );
+    s.run(
+        "collection.save",
+        &json!({ "name": "Both", "resources": "tcc,tc2" }),
+    )
+    .unwrap();
+    // Taken out by hand, though it is not in the library.
+    let out = s
+        .run("collection.toggle", &json!({ "name": "Both", "id": "tcc" }))
+        .unwrap();
+    assert_eq!(out["resources"], json!(["tc2"]));
+    assert!(
+        s.run("collection.toggle", &json!({ "name": "Both", "id": "tcc" }))
+            .is_err(),
+        "not added back while it is not in the library"
+    );
+    cleanup(s, root);
+}
+
+/// The groups the Search Tab shows, without letting its jobs run.
+fn shown_groups(s: &Session, tab: u64) -> Option<Vec<String>> {
+    s.search_tab(TabId(tab))
+        .unwrap()
+        .library_results
+        .as_ref()
+        .map(|r| r.groups.iter().map(|g| g.id.clone()).collect())
+}
+
+#[test]
+fn changing_or_deleting_a_searched_collection_runs_the_search_again() {
+    let (mut s, root) = fixture("rerun");
+    s.run(
+        "collection.save",
+        &json!({ "name": "Pair", "resources": "tcc,tc2" }),
+    )
+    .unwrap();
+    let out = s
+        .run(
+            "search.run",
+            &json!({ "text": "covenant", "mode": "library", "resources": "collection:Pair" }),
+        )
+        .unwrap();
+    let tab = out["tab"].as_u64().unwrap();
+    settle(&mut s);
+    assert_eq!(shown_groups(&s, tab).unwrap(), ["tcc", "tc2"]);
+
+    // Taking TC2 out runs the search again over TCC alone.
+    s.run("collection.toggle", &json!({ "name": "Pair", "id": "tc2" }))
+        .unwrap();
+    settle(&mut s);
+    assert_eq!(shown_groups(&s, tab).unwrap(), ["tcc"]);
+
+    // A change while the search is still running: its results are dropped for the new run's.
+    s.run("collection.toggle", &json!({ "name": "Pair", "id": "tc2" }))
+        .unwrap();
+    assert!(s.search_tab(TabId(tab)).unwrap().running);
+    s.run(
+        "collection.save",
+        &json!({ "name": "Pair", "resources": "tc2" }),
+    )
+    .unwrap();
+    settle(&mut s);
+    assert_eq!(shown_groups(&s, tab).unwrap(), ["tc2"]);
+
+    // A rule on a Resource tag: tagging TCC brings it in.
+    s.run(
+        "collection.save",
+        &json!({ "name": "Pair", "rules": "tag:mine" }),
+    )
+    .unwrap();
+    settle(&mut s);
+    assert_eq!(
+        shown_groups(&s, tab),
+        None,
+        "nothing in it yet: nothing searched"
+    );
+    s.run("resource.tags", &json!({ "id": "tcc", "tags": "mine" }))
+        .unwrap();
+    settle(&mut s);
+    assert_eq!(shown_groups(&s, tab).unwrap(), ["tcc"]);
+
+    // Deleting the Collection leaves nothing to search: no results, and the Resources error.
+    s.run("collection.delete", &json!({ "name": "Pair" }))
+        .unwrap();
+    settle(&mut s);
+    let st = s.search_tab(TabId(tab)).unwrap();
+    assert!(st.library_results.is_none());
+    assert_eq!(
+        st.error.as_ref().map(|e| e.field),
+        Some(ErrorField::Resources)
+    );
+    cleanup(s, root);
+}
