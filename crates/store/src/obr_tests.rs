@@ -340,6 +340,7 @@ fn people_and_places_round_trip_and_answer_by_passage() {
         name: "Abraham".into(),
         kind: EntityKind::Male,
         strongs: Some("H0085".parse().unwrap()),
+        other_strongs: vec!["H0087".parse().unwrap(), "G0011".parse().unwrap()],
         other_names: vec!["Abram".into()],
         region: None,
         relations: vec![EntityRelation {
@@ -353,6 +354,7 @@ fn people_and_places_round_trip_and_answer_by_passage() {
         name: "Terah".into(),
         kind: EntityKind::Male,
         strongs: Some("H8646G".parse().unwrap()),
+        other_strongs: Vec::new(),
         other_names: Vec::new(),
         region: Some("Mesopotamia".into()),
         relations: Vec::new(),
@@ -387,6 +389,53 @@ fn people_and_places_round_trip_and_answer_by_passage() {
     let all = r.entities().unwrap();
     assert_eq!(all, resource.entities);
     assert_eq!(Defaults(&r).entities().unwrap(), all);
+    // One entity's mentions in Bible order, and every entity's count (the Factbook, #149),
+    // like the generic versions.
+    let abraham_at: Vec<Passage> = r
+        .mentions_of(&abraham.id)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.passage)
+        .collect();
+    assert_eq!(
+        abraham_at,
+        [verse(Book::Genesis, 11, 26), verse(Book::Genesis, 12, 1)]
+    );
+    assert_eq!(
+        Defaults(&r).mentions_of(&abraham.id).unwrap(),
+        r.mentions_of(&abraham.id).unwrap()
+    );
+    assert!(r.mentions_of("Nobody@Gen.1.1").unwrap().is_empty());
+    let stats = r.mention_stats().unwrap();
+    let gn = |c, v| Verse::new(Book::Genesis, c, v);
+    assert_eq!(
+        stats,
+        [
+            crate::MentionStats {
+                entity: abraham.id.clone(),
+                count: 2,
+                first: gn(11, 26),
+                last: gn(12, 1),
+            },
+            crate::MentionStats {
+                entity: "Terah@Gen.11.24-Luk".into(),
+                count: 1,
+                first: gn(11, 26),
+                last: gn(11, 26),
+            },
+        ]
+    );
+    assert_eq!(Defaults(&r).mention_stats().unwrap(), stats);
+    drop(r);
+    // A file written before entities had other Strong's numbers (#149) still opens.
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("DROP TABLE entity_strongs;").unwrap();
+    }
+    let r = ObrReader::open(&path).unwrap();
+    let old = r.entity(&abraham.id).unwrap().unwrap();
+    assert!(old.other_strongs.is_empty());
+    assert_eq!(old.strongs, abraham.strongs);
 }
 
 /// Tagged words read straight from the span table match a walk over every unit (#54).

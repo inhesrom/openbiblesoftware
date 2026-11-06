@@ -58,7 +58,11 @@ pub const MENUS: &[Menu] = &[
     },
     Menu {
         title: "Guides",
-        items: &[C("guide.passage_guide"), C("guide.word_study")],
+        items: &[
+            C("guide.passage_guide"),
+            C("guide.word_study"),
+            C("guide.factbook"),
+        ],
     },
     Menu {
         title: "Tools",
@@ -950,6 +954,9 @@ fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     if t.header_box() == crate::HeaderBox::Word {
         return crate::word_study::go(s, tab, text);
     }
+    if t.header_box() == crate::HeaderBox::Name {
+        return crate::factbook::go(s, tab, text);
+    }
     if matches!(
         t.header_box(),
         crate::HeaderBox::Lexicon | crate::HeaderBox::Headword
@@ -1017,6 +1024,7 @@ fn history(s: &mut Session, p: Params<'_>, back: bool) -> Result<Value, CommandE
     let shown = s.workspace.tab(tab).map(|t| t.kind.clone());
     let mut out = if s.workspace.tab(tab).is_some_and(|t| t.keeps_entries()) {
         s.stop_choosing(tab);
+        s.stop_choosing_factbook(tab);
         json!({ "key": s.workspace.entry_history(tab, back) })
     } else {
         let to: Option<Verse> = if back {

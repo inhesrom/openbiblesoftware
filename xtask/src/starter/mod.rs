@@ -528,6 +528,7 @@ fn import(source: &Source, files: &[Vec<u8>]) -> Result<(Resource, ImportReport)
         "tagnt" => return import_stepbible(source, files, StepbibleText::Tagnt),
         "openbible-cross-references" => return import_openbible_zip(source, &files[0]),
         "tipnr" => return import_tipnr_text(source, &files[0]),
+        "sword-zip" => return import_sword_zip(source, &files[0]),
         "wikisource-mhc" | "jfb-html" | "easton-zld" | "smith-rawld" => {
             return study::import(source, &files[0]);
         }
@@ -680,6 +681,60 @@ fn import_openbible_zip(source: &Source, bytes: &[u8]) -> Result<(Resource, Impo
 }
 
 /// STEPBible's TIPNR text file → a People & places index.
+/// A CrossWire `rawzip` package (`mods.d/<name>.conf` plus its `modules/` files) → its one
+/// module through the app's SWORD Import, as Library → Import would read it. The package is
+/// unpacked into a scratch folder, removed afterwards.
+fn import_sword_zip(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportReport)> {
+    let dir = std::env::temp_dir().join(format!(
+        "obs-starter-sword-{}-{}",
+        source.resource_id,
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    let result = unpack_and_import_sword(source, bytes, &dir);
+    let _ = std::fs::remove_dir_all(&dir);
+    result
+}
+
+fn unpack_and_import_sword(
+    source: &Source,
+    bytes: &[u8],
+    dir: &Path,
+) -> Result<(Resource, ImportReport)> {
+    let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).context("not a zip archive")?;
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).context("cannot read the zip directory")?;
+        // Only paths that stay inside the scratch folder.
+        let Some(name) = entry.enclosed_name() else {
+            bail!("zip entry {:?} leaves the package", entry.name().ok());
+        };
+        let path = dir.join(name);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&path)?;
+            continue;
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut out = Vec::new();
+        entry.read_to_end(&mut out)?;
+        std::fs::write(&path, out).with_context(|| format!("cannot write {}", path.display()))?;
+    }
+    let sword = obs_formats::SwordSource::open(dir).map_err(|e| anyhow!("{e}"))?;
+    let module = sword
+        .default_module()
+        .context("the package must hold exactly one SWORD module")?;
+    let options = obs_formats::SwordOptions {
+        resource_id: source.resource_id.clone(),
+        title: source.title.clone(),
+        abbreviation: source.abbreviation.clone(),
+        language: source.language.clone(),
+        source_file: source_file_name(source),
+        tool_version: format!("xtask starter {}", env!("CARGO_PKG_VERSION")),
+    };
+    obs_formats::import_sword(&sword, &module, &options).map_err(|e| anyhow!("{e}"))
+}
+
 fn import_tipnr_text(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportReport)> {
     let text = std::str::from_utf8(bytes).context("the TIPNR file is not UTF-8 text")?;
     import_tipnr(text, &dataset_options(source)).map_err(|e| anyhow!("{e}"))

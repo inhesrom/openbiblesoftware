@@ -287,6 +287,7 @@ fn the_real_lock_passes_the_provenance_gate() {
             "jfb",
             "easton",
             "smith",
+            "hitchcock",
         ]
     );
     // STEPBible splits TAHOT over four files and TAGNT over two.
@@ -1504,4 +1505,95 @@ fn alias_caches_are_prebuilt_per_pair_with_overrides_checked() {
     // The committed overrides parse (the full Starter build applies them).
     Overrides::parse(obs_engine::aliases::STARTER_OVERRIDES).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `sword-zip` (#149): a CrossWire rawzip package — `mods.d/` plus `modules/` — builds its one
+/// module through the app's SWORD Import, with the lock's Starter metadata. The package here
+/// is the formats tests' CC0 RawLD Dictionary module, zipped as CrossWire zips them.
+#[test]
+fn a_sword_rawzip_package_builds_its_module_through_sword_import() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let sword = root.join("crates/formats/tests/assets/sword");
+    let dir = scratch("sword-zip");
+    let package = dir.join("ObsTopics.zip");
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&package).unwrap());
+    let opts = zip::write::SimpleFileOptions::default();
+    for name in [
+        "mods.d/obstopics.conf",
+        "modules/lexdict/rawld/obstopics/obstopics.idx",
+        "modules/lexdict/rawld/obstopics/obstopics.dat",
+    ] {
+        zip.start_file(name, opts).unwrap();
+        zip.write_all(&std::fs::read(sword.join(name)).unwrap())
+            .unwrap();
+    }
+    zip.finish().unwrap();
+    let sha = sha256_hex(&std::fs::read(&package).unwrap());
+    let starter = dir.join("starter");
+    std::fs::create_dir_all(starter.join("evidence")).unwrap();
+    std::fs::write(
+        starter.join("evidence/names.md"),
+        format!("CC0 test module.\nsha256 {sha}\n"),
+    )
+    .unwrap();
+    let lock = format!(
+        r#"size_budget_mb = 400
+
+[[source]]
+resource_id = "names"
+importer = "sword-zip"
+url = "file://{}"
+sha256 = "{sha}"
+title = "Test Names"
+abbreviation = "Names"
+language = "en"
+spdx = "CC0-1.0"
+attribution = "Written for the Open Bible Software tests."
+changes = "Converted through SWORD Import."
+provenance = "The conf in the package."
+evidence = "evidence/names.md"
+"#,
+        package.display().to_string().replace('\\', "/")
+    );
+    std::fs::write(starter.join("sources.toml"), lock).unwrap();
+    let config = Config {
+        lock: starter.join("sources.toml"),
+        id_changes: starter.join("id-changes.toml"),
+        previous: None,
+        out: dir.join("out"),
+        cache: dir.join("cache"),
+        goldens: dir.join("goldens"),
+        update_goldens: false,
+    };
+    build(&config).unwrap();
+    let reader = ObrReader::open(&config.out.join("names.obr")).unwrap();
+    let m = reader.manifest();
+    assert_eq!(m.resource_type, obs_model::ResourceType::Dictionary);
+    assert_eq!(
+        (
+            m.title.as_str(),
+            m.abbreviation.as_str(),
+            m.license.as_str()
+        ),
+        ("Test Names", "Names", "CC0-1.0")
+    );
+    assert_eq!(m.origin, obs_model::Origin::Starter);
+    assert_eq!(m.source_file.as_deref(), Some("ObsTopics.zip"));
+    let abraham = reader
+        .lookup_key(&obs_model::Key::Headword("Abraham".into()))
+        .unwrap();
+    assert!(!abraham.is_empty());
+    let (_, text) = reader.unit_text(&abraham[0].unit).unwrap().unwrap();
+    assert!(text.contains("Father of many nations"), "{text}");
+    // The scratch folder the package was unpacked into is gone.
+    let leftovers: Vec<_> = std::fs::read_dir(std::env::temp_dir())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with(&format!("obs-starter-sword-names-{}", std::process::id()))
+        })
+        .collect();
+    assert!(leftovers.is_empty());
 }

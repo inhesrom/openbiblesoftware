@@ -4,7 +4,8 @@
 # prints, run `cargo xtask starter --update-goldens` and commit the rewritten files.
 #
 # `passage` is a Bible reference in the Standard versification (`Ps 3:title` is the title slot).
-# `strongs` opens a Lexicon; `headword` opens a Dictionary.
+# `strongs` opens a Lexicon; `headword` opens a Dictionary (spelled as the Dictionary spells it:
+# Hitchcock's headwords are upper case).
 
 [[golden]]
 resource_id = "kjv-strongs"
@@ -169,3 +170,11 @@ passage = "Gen 12:1"
 [[golden]]
 resource_id = "tipnr"
 passage = "John 3:1"
+
+[[golden]]
+resource_id = "hitchcock"
+headword = "ABRAHAM"
+
+[[golden]]
+resource_id = "hitchcock"
+headword = "JOHN"

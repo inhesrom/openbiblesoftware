@@ -17,6 +17,7 @@
 //! | place: founder, people living there | `relations` (Founder, Inhabitant) |
 //! | person: tribe/nation; place: geographical area | `region` |
 //! | `– Total` line, all names | `other_names` |
+//! | `– Total` line, all dStrongs other than the unified one | `other_strongs` (Abram's `H0087`, Greek `G0011` for Abraham) |
 //! | each sub-record's references | mentions, one per Verse (Standard versification) |
 //!
 //! **Never kept:** the `Description` and `#Summary description` columns and the `@Briefest`,
@@ -77,6 +78,7 @@ const COL_TYPE: usize = 8;
 const SUB_UNIQUE_NAME: usize = 1;
 const SUB_REFS: usize = 4;
 const TOTAL_NAMES: usize = 1;
+const TOTAL_STRONGS: usize = 3;
 
 const DESCRIPTION_LINES: [(&str, &str); 4] = [
     ("@Briefest=", "description: @Briefest"),
@@ -288,6 +290,7 @@ fn entity(
         r => Some(nfc(r)),
     };
     let mut other_names: Vec<String> = Vec::new();
+    let mut other_strongs: Vec<StrongsNumber> = Vec::new();
     if let Some(total) = record
         .subs
         .iter()
@@ -299,12 +302,28 @@ fn entity(
                 other_names.push(n);
             }
         }
+        for s in field(total, TOTAL_STRONGS).split(',').map(str::trim) {
+            if s.is_empty() || placeholder(s) {
+                continue;
+            }
+            match s.parse::<StrongsNumber>() {
+                Ok(n) if Some(n) != strongs && !other_strongs.contains(&n) => {
+                    other_strongs.push(n);
+                }
+                Ok(_) => {}
+                Err(_) => report.warnings.push(format!(
+                    "line {}: `{id}` has an unreadable Strong's number `{s}`",
+                    record.line
+                )),
+            }
+        }
     }
     Some(Entity {
         id: nfc(id),
         name: nfc(name),
         kind,
         strongs,
+        other_strongs,
         other_names,
         region,
         relations,

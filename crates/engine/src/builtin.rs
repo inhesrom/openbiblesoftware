@@ -109,6 +109,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::guide::COMMANDS)
         .chain(crate::bible_search::COMMANDS)
         .chain(crate::word_study::COMMANDS)
+        .chain(crate::factbook::COMMANDS)
         .chain(crate::library_search::COMMANDS)
         .chain(crate::word_sections::COMMANDS)
         .chain(crate::favorites::COMMANDS)

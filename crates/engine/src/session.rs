@@ -61,6 +61,8 @@ pub struct Session {
     pub guides: crate::guide::Guides,
     /// Word Study headers and English-word choosers computed on the job queue (#55).
     pub word_study: crate::word_study::WordStudies,
+    /// Factbook choosers and the People & places directory load (#149).
+    pub factbooks: crate::factbook::Factbooks,
     /// The Notes Tool's Notebook choice, card order and card to reveal (#64).
     pub notes: crate::notes::NotesTool,
     /// Favorites and History as the User database has them (#155).
@@ -108,6 +110,7 @@ impl Session {
             word_info: crate::word_info::WordInfo::default(),
             guides,
             word_study,
+            factbooks: crate::factbook::Factbooks::default(),
             notes: crate::notes::NotesTool::default(),
             places: crate::favorites::FavoritesAndHistory::default(),
             log: Vec::new(),

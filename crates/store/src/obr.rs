@@ -16,6 +16,7 @@
 //! | `xrefs` | Cross-references: Standard `from_start`, `from_end`, `to_start`, `to_end` (verse numbers), `votes` |
 //! | `entities` | People & places: `ord`, `id`, `name`, `kind`, `strongs`, `region`, `other_names` (JSON), `relations` (JSON) |
 //! | `mentions` | `entity` (→ `entities.ord`), Standard `start`, `end` (verse numbers) |
+//! | `entity_strongs` | An entity's other Strong's numbers: `entity` (→ `entities.ord`), `seq`, `strongs` |
 //!
 //! Dataset Verses are stored as verse numbers `BBCCCVVV` (book 1-66, chapter, verse), so a
 //! Passage overlap is an integer range query.
@@ -28,6 +29,9 @@
 //! [`ObrReader::load`] leaves `Resource::renderings` empty (it does not derive the index:
 //! Search index builds load every Bible and never use it). A caller that needs the index
 //! derives it from the text.
+//!
+//! `entity_strongs` arrived after format 3 was first shipped (#149). A file without it still
+//! opens; its entities read with no other Strong's numbers.
 //!
 //! Files are written once, deterministically (same Resource ⇒ byte-identical file), and opened
 //! read-only. `PRAGMA application_id` marks the file type and `PRAGMA user_version` holds the
@@ -51,7 +55,7 @@ use crate::codec::{
     verse_number, verse_text,
 };
 use crate::error::StoreError;
-use crate::resource_store::{ResourceStore, Summary};
+use crate::resource_store::{MentionStats, ResourceStore, Summary};
 use crate::span_codec::{span_columns, span_from};
 
 /// `PRAGMA application_id` of every `.obr` file: ASCII `OBR1`.
@@ -159,6 +163,12 @@ CREATE TABLE mentions (
     end INTEGER NOT NULL
 );
 CREATE INDEX mentions_start ON mentions (start);
+CREATE TABLE entity_strongs (
+    entity INTEGER NOT NULL,
+    seq INTEGER NOT NULL,
+    strongs TEXT NOT NULL,
+    PRIMARY KEY (entity, seq)
+) WITHOUT ROWID;
 CREATE TABLE transliterations (
     transliteration TEXT NOT NULL,
     lemma TEXT NOT NULL,
@@ -404,6 +414,16 @@ fn insert_datasets(tx: &rusqlite::Transaction<'_>, r: &Resource) -> Result<(), S
             ])
             .map_err(sql)?;
     }
+    let mut strongs_stmt = tx
+        .prepare("INSERT INTO entity_strongs (entity, seq, strongs) VALUES (?1, ?2, ?3)")
+        .map_err(sql)?;
+    for (ord, e) in r.entities.iter().enumerate() {
+        for (seq, n) in e.other_strongs.iter().enumerate() {
+            strongs_stmt
+                .execute(params![ord as i64, seq as i64, n.to_string()])
+                .map_err(sql)?;
+        }
+    }
     let mut mention_stmt = tx
         .prepare("INSERT INTO mentions (entity, start, end) VALUES (?1, ?2, ?3)")
         .map_err(sql)?;
@@ -583,7 +603,7 @@ impl ObrReader {
         args: &[&dyn rusqlite::ToSql],
     ) -> Result<Vec<Entity>, StoreError> {
         let query = format!(
-            "SELECT id, name, kind, strongs, region, other_names, relations FROM entities {filter} ORDER BY ord"
+            "SELECT id, name, kind, strongs, region, other_names, relations, ord FROM entities {filter} ORDER BY ord"
         );
         let mut stmt = self.conn.prepare_cached(&query).map_err(sql)?;
         let rows = stmt
@@ -596,12 +616,19 @@ impl ObrReader {
                     r.get::<_, Option<String>>(4)?,
                     r.get::<_, String>(5)?,
                     r.get::<_, String>(6)?,
+                    r.get::<_, i64>(7)?,
                 ))
             })
             .map_err(sql)?;
+        let rows = rows.collect::<Result<Vec<_>, _>>().map_err(sql)?;
+        let has_other_strongs = self.has_table("entity_strongs")?;
         let mut out = Vec::new();
-        for row in rows {
-            let (id, name, kind, strongs, region, other_names, relations) = row.map_err(sql)?;
+        for (id, name, kind, strongs, region, other_names, relations, ord) in rows {
+            let other_strongs = if has_other_strongs {
+                self.entity_strongs(ord)?
+            } else {
+                Vec::new()
+            };
             out.push(Entity {
                 id,
                 name,
@@ -612,10 +639,42 @@ impl ObrReader {
                             .map_err(|_| corrupt(format!("bad Strong's `{s}`")))
                     })
                     .transpose()?,
+                other_strongs,
                 region,
                 other_names: json_from::<Vec<String>>("entity names", &other_names)?,
                 relations: json_from::<Vec<EntityRelation>>("entity relations", &relations)?,
             });
+        }
+        Ok(out)
+    }
+
+    fn has_table(&self, name: &str) -> Result<bool, StoreError> {
+        self.conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                [name],
+                |r| r.get::<_, i64>(0),
+            )
+            .map(|n| n > 0)
+            .map_err(sql)
+    }
+
+    /// The other Strong's numbers of the entity with ordinal `ord`.
+    fn entity_strongs(&self, ord: i64) -> Result<Vec<obs_scripture::StrongsNumber>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT strongs FROM entity_strongs WHERE entity = ?1 ORDER BY seq")
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map([ord], |r| r.get::<_, String>(0))
+            .map_err(sql)?;
+        let mut out = Vec::new();
+        for s in rows {
+            let s = s.map_err(sql)?;
+            out.push(
+                s.parse()
+                    .map_err(|_| corrupt(format!("bad Strong's `{s}`")))?,
+            );
         }
         Ok(out)
     }
@@ -1185,6 +1244,52 @@ impl ResourceStore for ObrReader {
 
     fn entities(&self) -> Result<Vec<Entity>, StoreError> {
         self.entity_rows("", &[])
+    }
+
+    fn mentions_of(&self, entity: &str) -> Result<Vec<Mention>, StoreError> {
+        let ord: Option<i64> = self
+            .conn
+            .prepare_cached("SELECT ord FROM entities WHERE id = ?1")
+            .map_err(sql)?
+            .query_row([entity], |r| r.get(0))
+            .optional()
+            .map_err(sql)?;
+        match ord {
+            Some(ord) => self.mention_rows("WHERE m.entity = ?1", &[ord]),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    fn mention_stats(&self) -> Result<Vec<MentionStats>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT e.id, count(*), min(m.start), max(m.end)
+                 FROM mentions m JOIN entities e ON e.ord = m.entity
+                 GROUP BY e.id ORDER BY e.id",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
+            })
+            .map_err(sql)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (entity, n, first, last) = row.map_err(sql)?;
+            out.push(MentionStats {
+                entity,
+                count: to_u32(n, "mention count")?,
+                first: passage_from_numbers(first, first)?.start(),
+                last: passage_from_numbers(last, last)?.start(),
+            });
+        }
+        Ok(out)
     }
 
     fn for_each_tagged_word(

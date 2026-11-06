@@ -742,8 +742,11 @@ fn import_dictionary(
     };
     let mut links: Vec<(String, String)> = Vec::new();
     let mut by_key: HashMap<String, UnitId> = HashMap::new();
-    let mut ids: HashSet<UnitId> = HashSet::new();
     let mut skipped: BTreeMap<&'static str, usize> = BTreeMap::new();
+    // Entries by unit, in module order. A module may list one headword twice (Hitchcock's
+    // two Abels, a city and Adam's son): both senses go into one entry, as paragraphs.
+    let mut units: Vec<(UnitId, String, Key, Vec<sword_modules::Entry>)> = Vec::new();
+    let mut unit_of: HashMap<UnitId, usize> = HashMap::new();
     for i in 0..module.len() {
         let key = module.key_at(i)?;
         if let Some(target) = module.link_at(i)? {
@@ -772,11 +775,26 @@ fn import_dictionary(
             *skipped.entry("keys that cannot be unit ids").or_default() += 1;
             continue;
         };
-        if !ids.insert(id.clone()) {
-            w.warn(format!("{key}: a second entry for `{id}`; skipped"));
-            continue;
+        match unit_of.get(&id) {
+            Some(&at) => {
+                w.warn(format!(
+                    "{key}: a second entry for `{id}`; combined with the first"
+                ));
+                units[at].3.push(entry);
+            }
+            None => {
+                unit_of.insert(id.clone(), units.len());
+                units.push((id, key, entry_key, vec![entry]));
+            }
         }
-        feed(entry.markup, &entry.raw, w);
+    }
+    for (id, key, entry_key, entries) in units {
+        for (n, entry) in entries.iter().enumerate() {
+            if n > 0 {
+                w.para_break(None);
+            }
+            feed(entry.markup, &entry.raw, w);
+        }
         let out = w.finish_unit();
         add_unit(builder, &id, UnitKind::Entry, id.to_string(), out, report);
         builder.add_key(entry_key, &id, None, false);

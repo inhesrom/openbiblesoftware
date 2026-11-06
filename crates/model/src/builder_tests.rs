@@ -382,6 +382,7 @@ fn person(id: &str, name: &str) -> crate::Entity {
         name: name.into(),
         kind: crate::EntityKind::Male,
         strongs: None,
+        other_strongs: Vec::new(),
         other_names: Vec::new(),
         region: None,
         relations: Vec::new(),

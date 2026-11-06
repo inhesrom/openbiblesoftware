@@ -161,6 +161,11 @@ fn tipnr_people_and_places_keep_only_structured_fields() {
     let abraham = get("Abraham@Gen.11.26-1Pe");
     assert_eq!(abraham.kind, EntityKind::Male);
     assert_eq!(abraham.strongs, Some("H85".parse().unwrap()));
+    // The Total line's other dStrongs: Greek Abraham and Hebrew Abram.
+    assert_eq!(
+        abraham.other_strongs,
+        ["G11".parse().unwrap(), "H87".parse().unwrap()]
+    );
     assert_eq!(abraham.other_names, ["Abram"]);
     assert_eq!(abraham.region.as_deref(), Some("Early Patriarch"));
     let rel = |e: &obs_model::Entity, relation| -> Vec<String> {

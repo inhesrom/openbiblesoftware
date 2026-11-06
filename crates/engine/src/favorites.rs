@@ -314,6 +314,18 @@ impl Session {
                 let label = format!("{key} · {}", Guide::WordStudy.title());
                 Some((entry(key), label))
             }
+            TabKind::Guide(Guide::Factbook) => {
+                let key = entry_key.clone()?;
+                let Key::Headword(id) = &key else {
+                    return None;
+                };
+                let label = format!(
+                    "{} · {}",
+                    crate::factbook::label(self, id),
+                    Guide::Factbook.title()
+                );
+                Some((entry(key), label))
+            }
             TabKind::Guide(Guide::PassageGuide)
             | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences) => {
                 let v = verse?;
@@ -365,6 +377,12 @@ impl Session {
                 return Err("This Word Study has no Strong's number".into());
             };
             return Ok(crate::word_study::open_at(self, n, req, false));
+        }
+        if kind == TabKind::Guide(Guide::Factbook) {
+            let Some(Key::Headword(id)) = &location.key else {
+                return Err("This Factbook has no person or place".into());
+            };
+            return Ok(self.open_factbook_at(id, req, false));
         }
         let keyed = matches!(
             kind,

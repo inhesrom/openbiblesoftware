@@ -677,6 +677,7 @@ mod tests {
             name: id.split('@').next().unwrap().into(),
             kind: EntityKind::Male,
             strongs: None,
+            other_strongs: Vec::new(),
             other_names: others.iter().map(|s| s.to_string()).collect(),
             region: None,
             relations: Vec::new(),

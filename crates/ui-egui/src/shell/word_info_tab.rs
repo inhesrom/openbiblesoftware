@@ -176,6 +176,10 @@ impl State {
         };
         let mut run: Option<&'static str> = None;
         let settings = self.session.text;
+        // People and places this Strong's number names (#149): a Factbook link.
+        let strongs = word.strongs();
+        let named = self.session.factbook_entities_for(strongs);
+        let mut factbook: Option<bool> = None;
         egui::Frame::new()
             .fill(theme::c().field)
             .inner_margin(egui::Margin::symmetric(18, 12))
@@ -219,6 +223,30 @@ impl State {
                                     r.on_disabled_hover_text(super::not_yet(id));
                                 }
                             }
+                            if let Some(first) = named.first() {
+                                let (label, tip) = match named.len() {
+                                    1 => (
+                                        format!("Factbook: {}", first.name),
+                                        format!("Open the Factbook on {}", first.title()),
+                                    ),
+                                    n => (
+                                        format!("Factbook: {} ({n})", first.name),
+                                        format!(
+                                            "Choose among the {n} people and places with {strongs}"
+                                        ),
+                                    ),
+                                };
+                                if ui
+                                    .button(label)
+                                    .on_hover_text(format!(
+                                        "{tip} · Ctrl/Cmd-click opens a new Tab"
+                                    ))
+                                    .clicked()
+                                {
+                                    factbook =
+                                        Some(ui.input(|i| i.modifiers.command || i.modifiers.ctrl));
+                                }
+                            }
                             if ui
                                 .button("Copy")
                                 .on_hover_text("Copy the word, its reference and its cards")
@@ -242,6 +270,12 @@ impl State {
                         }
                     });
             });
+        if let Some(new_tab) = factbook {
+            self.run(
+                "guide.factbook",
+                &json!({ "strongs": strongs.to_string(), "new_tab": new_tab }),
+            );
+        }
         if let Some(id) = run
             && let Some(out) = self.run(id, &json!({}))
             && id == "word_info.copy"

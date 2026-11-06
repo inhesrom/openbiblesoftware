@@ -1,9 +1,14 @@
 {
-  "content_hash": "sha256:146f3e4a870af9adfd882b7c408071ed00c6ee16e73d2fcf5c047b398aba035d",
+  "content_hash": "sha256:fce938a8d767f4ecf720730e96aaba51f1260652e5cc4a61daf17ff9e019d823",
   "keys": [
     [
       "AARON",
       "AARON",
+      false
+    ],
+    [
+      "ABEL",
+      "ABEL",
       false
     ],
     [
@@ -37,7 +42,7 @@
     "dropped_markup": {
       "<index>": 1
     },
-    "entries": 2,
+    "entries": 3,
     "license_missing": false,
     "notes": 0,
     "source_format": "sword (OSIS)",
@@ -45,7 +50,9 @@
     "verse_map": null,
     "verses": 0,
     "versification_hint": null,
-    "warnings": []
+    "warnings": [
+      "ABEL: a second entry for `ABEL`; combined with the first"
+    ]
   },
   "units": [
     {
@@ -85,6 +92,26 @@
       ],
       "text": "Aaron, the brother of Moses; see Exod 4:14.",
       "title": "AARON"
+    },
+    {
+      "id": "ABEL",
+      "kind": "entry",
+      "spans": [
+        {
+          "at": "0..19",
+          "kind": "para",
+          "style": "prose",
+          "text": "A city of Naphtali."
+        },
+        {
+          "at": "20..38",
+          "kind": "para",
+          "style": "prose",
+          "text": "Adam's second son."
+        }
+      ],
+      "text": "A city of Naphtali.\nAdam's second son.",
+      "title": "ABEL"
     },
     {
       "id": "ABRAHAM",

@@ -1,0 +1,21 @@
+{
+  "resource_id": "hitchcock",
+  "resource_type": "dictionary",
+  "key": "JOHN",
+  "units": [
+    {
+      "id": "JOHN",
+      "kind": "entry",
+      "title": "JOHN",
+      "text": "the grace or mercy of the Lord",
+      "spans": [
+        {
+          "start": 0,
+          "end": 30,
+          "kind": "para",
+          "style": "prose"
+        }
+      ]
+    }
+  ]
+}

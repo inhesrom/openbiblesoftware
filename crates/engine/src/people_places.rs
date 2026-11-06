@@ -73,7 +73,7 @@ pub fn kind_name(kind: EntityKind) -> &'static str {
     }
 }
 
-fn relation_label(r: Relation) -> &'static str {
+pub fn relation_label(r: Relation) -> &'static str {
     match r {
         Relation::Father => "Father",
         Relation::Mother => "Mother",
@@ -347,6 +347,7 @@ mod tests {
             name: "Abraham".into(),
             kind: EntityKind::Male,
             strongs: None,
+            other_strongs: Vec::new(),
             other_names: vec!["Abram".into()],
             region: Some("Early Patriarch".into()),
             relations: vec![

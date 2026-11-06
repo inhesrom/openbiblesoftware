@@ -27,6 +27,7 @@ use crate::workers::SnippetCache;
 mod annotate;
 mod context_menu;
 mod credits_tab;
+mod factbook_tab;
 mod favorites_tab;
 mod fonts_window;
 mod get_bibles_tab;
@@ -754,6 +755,7 @@ impl Shell {
             || self.st.session.bible_search_running()
             || self.st.session.word_study.is_busy()
             || self.st.session.reanchoring.is_busy()
+            || self.st.session.factbooks.is_busy()
         {
             Some(std::time::Duration::from_millis(16))
         } else if self.st.session.search.is_building() {
@@ -771,12 +773,13 @@ impl Shell {
         self.st.now = ui.input(|i| i.time);
         self.st.split_held = ui.input(|i| i.modifiers.command);
         // Poll, never wait: parsing, Resource writes, Search-index hooks and Guide sections
-        // live on workers. Without worker threads (wasm), Guide sections step here, a job a
-        // frame.
+        // live on workers. Without worker threads (wasm), Guide sections and the People &
+        // places directory step here, a job a frame.
         if !self.st.session.jobs().is_threaded()
             && (self.st.session.guides.is_busy()
                 || self.st.session.word_study.is_busy()
-                || self.st.session.reanchoring.is_busy())
+                || self.st.session.reanchoring.is_busy()
+                || self.st.session.factbooks.is_busy())
         {
             self.st.session.jobs().pump(1);
         }
@@ -1417,6 +1420,22 @@ impl State {
         {
             return words.to_string();
         }
+        if t.header_box() == HeaderBox::Name {
+            if let Some(name) = self.session.factbooks.choosing(tab) {
+                return name.to_string();
+            }
+            // The entity's name, not its id.
+            let Some(obs_model::Key::Headword(id)) = t.entry_history.current() else {
+                return String::new();
+            };
+            return self
+                .session
+                .guides
+                .directory()
+                .current(&self.session.library)
+                .and_then(|d| d.card(&id))
+                .map_or_else(|| obs_engine::people_places::display_name(&id), |c| c.name);
+        }
         if matches!(
             t.header_box(),
             HeaderBox::Lexicon | HeaderBox::Headword | HeaderBox::Word
@@ -1470,6 +1489,7 @@ impl State {
                 self.passage_guide_body(&mut body, tab)
             }
             TabKind::Guide(obs_engine::Guide::WordStudy) => self.word_study_body(&mut body, tab),
+            TabKind::Guide(obs_engine::Guide::Factbook) => self.factbook_body(&mut body, tab),
             TabKind::Tool(Tool::TextComparison) => self.comparison_body(&mut body, tab),
             TabKind::Tool(Tool::CrossReferences) => self.cross_references_body(&mut body, tab),
             TabKind::Tool(Tool::WordInfo) => self.word_info_body(&mut body, tab),
@@ -1796,6 +1816,7 @@ impl State {
                             | HeaderBox::Lexicon
                             | HeaderBox::Headword
                             | HeaderBox::Word
+                            | HeaderBox::Name
                     ) {
                         self.history_buttons(ui, tab);
                     }
@@ -1965,7 +1986,7 @@ impl State {
         let (back, fwd) = self.session.workspace.tab(tab).map_or((false, false), |t| {
             if matches!(
                 t.header_box(),
-                HeaderBox::Lexicon | HeaderBox::Headword | HeaderBox::Word
+                HeaderBox::Lexicon | HeaderBox::Headword | HeaderBox::Word | HeaderBox::Name
             ) {
                 (
                     t.entry_history.can_go_back(),
@@ -2033,10 +2054,15 @@ impl State {
                     }
                 }
             }
-            HeaderBox::Word | HeaderBox::Reference | HeaderBox::Lexicon | HeaderBox::Headword => {
+            HeaderBox::Word
+            | HeaderBox::Name
+            | HeaderBox::Reference
+            | HeaderBox::Lexicon
+            | HeaderBox::Headword => {
                 let shown = self.location_text(tab);
                 let hint = match kind {
                     HeaderBox::Word => "Strong's number or word",
+                    HeaderBox::Name => "Person or place",
                     HeaderBox::Lexicon => "Strong's number or Lemma",
                     HeaderBox::Headword => "Headword",
                     _ => "Go to passage",

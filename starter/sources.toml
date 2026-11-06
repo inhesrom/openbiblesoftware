@@ -122,7 +122,7 @@ publisher = "STEP Bible (Tyndale House Cambridge)"
 homepage = "https://github.com/STEPBible/STEPBible-Data"
 spdx = "CC-BY-4.0"
 attribution = "TIPNR data by STEP Bible (https://www.STEPBible.org), created by STEPBible.org based on work at Tyndale House Cambridge, licensed under CC BY 4.0."
-changes = "Converted to the Open Bible resource format. Kept only people, groups and places (PERSON, PLACE and PLACE+PERSON records): their names, type, unified Strong's number, parent, sibling, partner, offspring, founder and inhabitant links, tribe/nation or geographical area, and one mention per referenced Verse. Omitted: OTHER records (deities, months, titles, languages), every description (Description, Summary, Briefest, Brief, Short and Article, partly AI-written), map links and coordinates, Septuagint-only references, and links that do not name another person or place."
+changes = "Converted to the Open Bible resource format. Kept only people, groups and places (PERSON, PLACE and PLACE+PERSON records): their names, type, unified Strong's number and the Strong's numbers of their other names, parent, sibling, partner, offspring, founder and inhabitant links, tribe/nation or geographical area, and one mention per referenced Verse. Omitted: OTHER records (deities, months, titles, languages), every description (Description, Summary, Briefest, Brief, Short and Article, partly AI-written), map links and coordinates, Septuagint-only references, and links that do not name another person or place."
 provenance = "STEPBible-Data README and the licence block inside the pinned file (commit 5de0a47): CC BY 4.0, credit \"STEP Bible\" linked to www.STEPBible.org, record changes."
 evidence = "evidence/tipnr.md"
 # Lexicons (#41). Each is keyed by Strong's number (extended numbers as they are, with the
@@ -355,3 +355,22 @@ attribution = "William Smith, Bible Dictionary (1884). CrossWire edition. Public
 changes = "Converted ThML to plain NFC text and spans. Added Abram as a headword alias for Abraham, retaining the original Abram entry. Duplicate headword senses combined; identical repeats removed. Unsupported presentation markup dropped and counted."
 provenance = "The configuration inside the pinned zip declares DistributionLicense=Public Domain and repeats that grant in About."
 evidence = "evidence/smith.md"
+
+# The meaning of each name, for the Factbook's Summary (#149). CrossWire's rawzip package is
+# read by the app's own SWORD Import, as Library → Import would read it.
+[[source]]
+resource_id = "hitchcock"
+importer = "sword-zip"
+url = "https://www.crosswire.org/ftpmirror/pub/sword/packages/rawzip/Hitchcock.zip"
+sha256 = "1c22a6482246274f463a5365232de8f79b445971f2de336b670a9b4d73fc74e4"
+title = "Hitchcock's Bible Names Dictionary"
+abbreviation = "Hitchcock"
+language = "en"
+edition = "Late 1800s, CrossWire 2.0 (2022-06-04)"
+publisher = "CrossWire Bible Society (host)"
+homepage = "https://www.crosswire.org/sword/modules/ModInfo.jsp?modName=Hitchcock"
+spdx = "LicenseRef-PublicDomain"
+attribution = "Roswell D. Hitchcock, Bible Names Dictionary, from Hitchcock's New and Complete Analysis of the Holy Bible (late 1800s). Out of copyright; public domain. CrossWire TEI edition; upstream text credited to Christian Classics Ethereal Library."
+changes = "Converted TEI to plain NFC text through the app's SWORD Import: one entry per name, keyed by its headword. Names the source lists twice (Abel, Eli, Noah, Rahab) keep both meanings, as two paragraphs of one entry. Unsupported markup dropped and counted."
+provenance = "The configuration inside the pinned zip declares DistributionLicense=Public Domain, and its About says the work is out of copyright and free to copy and distribute."
+evidence = "evidence/hitchcock.md"
