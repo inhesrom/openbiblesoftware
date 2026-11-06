@@ -135,8 +135,10 @@ excerpt](../previews/search-morphology-chooser-kittest.png) comes from
   `seeth` → `seeing`, `lieth` → `lies`), `-edst` as `-ed`, and `hath`, `hast`, `doth`, `dost`,
   `saith`, `didst`, `wouldst` and the like as their modern verbs; nouns that only end like
   that (`priest`, `forest`, `harvest`, `teeth`, `Nazareth`) and ordinals (`twentieth`) are left
-  alone. Quoted words (even one), prefixes, Strong's numbers and Lemmas stay exact; Greek and
-  Hebrew use `lemma:`. Highlights mark every word of the stem. Turning it on or off saves the
+  alone. Short words count too (`do` → `doth`, `doest`; `go` → `goeth`). Quoted words (even
+  one, also as `text:"love"`), prefixes, Strong's numbers and Lemmas stay exact; Greek and
+  Hebrew use `lemma:`. A cache whose words cannot be read fails the search with an error
+  rather than finding nothing. Highlights mark every word of the stem. Turning it on or off saves the
   setting (`search.word_forms`) and runs the Tab's search again.
 - **No rebuild.** Each index finds the words of a stem in its own vocabulary when a stemmed
   query first runs, through an `fts5vocab` table in the connection's `temp` schema, looking
@@ -147,9 +149,10 @@ excerpt](../previews/search-morphology-chooser-kittest.png) comes from
   `kjv_search_timing`): `~love` 0.8–1.7 ms (421 Verses; 281 without Word forms), `~the`
   14–25 ms, `faith NEAR/5 works` 0.4 ms, `faith BEFORE/3 works` 0.7 ms, `the BEFORE/3 lord`
   31 ms (6,078 Verses), `faith WITHIN 2 verses works` 1.3 ms, `the WITHIN 2 verses and`
-  57 ms (27,261 Verses), `~love NEAR/3 ~god` 9–11 ms; #19's targets are 100 ms for words and
+  57 ms (27,261 Verses), `~love NEAR/3 ~god` 9–11 ms, `~a` 6 ms (6,320 Verses), `~go` 6 ms; #19's targets are 100 ms for words and
   250 ms for phrases. The same test checks that `faith WITHIN 2 verses works` finds James
-  2:17, 2:18 and 2:21 and that `love` finds John 3:35 ("loveth") only with Word forms.
+  2:17, 2:18 and 2:21 and that, only with Word forms, `love` finds John 3:35 ("loveth"),
+  `go` John 10:4 ("goeth") and `do` John 3:21 ("doeth").
 
 Previews, from the real app and the Starter KJV: [`faith WITHIN 2 verses works` in James 2](../previews/search-within-verses-james-app.png)
 and [`love` in 1 John 4 with Word forms](../previews/search-word-forms-1-john-4-app.png) (the app's

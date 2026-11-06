@@ -743,6 +743,32 @@ fn word_forms_find_the_other_words_of_a_stem() {
     );
     // No forms in this index: nothing.
     assert_eq!(docs_with_word_forms(&index, "loveth"), Vec::<i64>::new());
-    // Exact as quoted.
+    // Exact as quoted, with or without `text:`.
     assert_eq!(docs_with_word_forms(&index, r#""work""#), [0, 2]);
+    assert_eq!(docs_with_word_forms(&index, r#"text:"work""#), [0, 2]);
+    assert_eq!(
+        docs_with_word_forms(&index, "text:work"),
+        [0, 1, 2, 3, 4, 6, 7, 8]
+    );
+    // Short words too: "do" (Hebrews 13:21) finds "doest" (James 2:19).
+    assert_eq!(docs(&index, "do"), [0]);
+    assert_eq!(docs_with_word_forms(&index, "do"), [0, 5]);
+    assert_eq!(docs_with_word_forms(&index, "doth"), [0, 5]);
+}
+
+/// A cache whose words cannot be read fails a Word forms search instead of finding nothing.
+#[test]
+fn unreadable_words_are_a_search_error() {
+    let dir = TempDir::new("stems-damaged");
+    let path = build(&james(), 1, &dir.0);
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch("DROP TABLE search;").unwrap();
+    drop(conn);
+    let index = SqliteSearchIndex::open(&path, None).unwrap();
+    let parsed = obs_search::parse("work").unwrap().with_word_forms();
+    let compiled = obs_search::compile(&parsed, &NoLexicon).unwrap();
+    assert!(
+        index.search(&compiled, &SearchOptions::default()).is_err(),
+        "a damaged cache must not look like no hits"
+    );
 }

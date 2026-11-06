@@ -17,8 +17,8 @@ struct Codes(&'static [(&'static str, &'static str)]);
 
 /// The words of the test index, for stemming.
 const WORDS: &[&str] = &[
-    "faith", "live", "lived", "liveth", "love", "loved", "lovest", "loveth", "loving", "work",
-    "works", "worketh",
+    "do", "doest", "doth", "faith", "go", "goeth", "live", "lived", "liveth", "love", "loved",
+    "lovest", "loveth", "loving", "work", "works", "worketh",
 ];
 
 impl IndexVocabulary for Codes {
@@ -748,6 +748,8 @@ fn word_forms_match_every_word_of_the_stem_in_the_index() {
     assert_eq!(fts("love"), r#"text : "love""#);
     // Quoted words, prefixes, Strong's numbers and Lemmas are exact.
     assert_eq!(forms(r#""love""#), r#"text : "love""#);
+    assert_eq!(forms(r#"text:"love""#), r#"text : "love""#);
+    assert_eq!(forms(r#"text:"love one""#), r#"text : "love one""#);
     assert_eq!(forms("lov*"), r#"text : "lov" *"#);
     assert_eq!(forms("G26"), r#"strong : "g26""#);
     assert_eq!(forms("lemma:agape"), r#"lemma : "αγαπη""#);
@@ -760,6 +762,14 @@ fn word_forms_match_every_word_of_the_stem_in_the_index() {
         forms("faith NEAR/3 works"),
         r#"text : NEAR("faith" "work", 3) OR text : NEAR("faith" "works", 3) OR text : NEAR("faith" "worketh", 3)"#
     );
+    // Short words have forms too.
+    assert_eq!(
+        forms("do"),
+        r#"text : "do" OR text : "doest" OR text : "doth""#
+    );
+    assert_eq!(forms("goeth"), r#"text : "go" OR text : "goeth""#);
+    // A field-qualified bare word is stemmed like a bare word.
+    assert_eq!(forms("text:loveth"), love);
     // A word with no forms in this index matches nothing there.
     assert_eq!(forms("grace"), "<nothing>");
     assert_eq!(forms("grace OR love"), format!("({love})"));

@@ -207,9 +207,10 @@ impl Query {
     }
 }
 
-/// Whether stemming can change a word: English words of three letters or more.
+/// Whether a word has a stem: English words of any length ("do" finds "doth", "go" finds
+/// "goeth").
 fn stemmable(word: &str) -> bool {
-    word.len() >= 3 && word.bytes().all(|b| b.is_ascii_lowercase())
+    !word.is_empty() && word.bytes().all(|b| b.is_ascii_lowercase())
 }
 
 /// What is wrong with a query.
@@ -654,15 +655,7 @@ impl Parser {
                 Ok(inner)
             }
             Lex::Close | Lex::Minus => Ok(None),
-            // Quoted words are exact: a phrase, even of one word, is never stemmed.
-            Lex::Quoted(text, prefix) => Ok(match words(&text, prefix, span) {
-                Some(Query::Word { word, prefix, span }) => Some(Query::Phrase {
-                    words: vec![word],
-                    prefix,
-                    span,
-                }),
-                q => q,
-            }),
+            Lex::Quoted(text, prefix) => Ok(quoted(&text, prefix, span)),
             Lex::Raw(raw) if raw.starts_with('@') => self.morph(&raw[1..], span),
             Lex::Raw(raw) => Ok(raw_term(&raw, span)),
             Lex::Field(name) => self.field(&name, span),
@@ -682,14 +675,17 @@ impl Parser {
                 ));
             }
         };
+        // The value, and for a quoted one whether it ends in `*`.
         let value = match self.toks.get(self.pos) {
-            Some((Lex::Raw(r), s)) if s.start == name_span.end => Some((r.clone(), s.clone())),
-            Some((Lex::Quoted(r, _), s)) if s.start == name_span.end => {
-                Some((r.clone(), s.clone()))
+            Some((Lex::Raw(r), s)) if s.start == name_span.end => {
+                Some((r.clone(), s.clone(), None))
+            }
+            Some((Lex::Quoted(r, prefix), s)) if s.start == name_span.end => {
+                Some((r.clone(), s.clone(), Some(*prefix)))
             }
             _ => None,
         };
-        let Some((value, vspan)) = value else {
+        let Some((value, vspan, quoted_prefix)) = value else {
             let label = match field {
                 Field::Strong => "strong",
                 Field::Lemma => "lemma",
@@ -717,7 +713,10 @@ impl Parser {
                     span,
                 }))
             }
-            Field::Text => Ok(raw_term(&value, span)),
+            Field::Text => Ok(match quoted_prefix {
+                Some(prefix) => quoted(&value, prefix, span),
+                None => raw_term(&value, span),
+            }),
             Field::Morph => self.morph(&value, span),
         }
     }
@@ -859,6 +858,18 @@ fn raw_term(raw: &str, span: Range<usize>) -> Option<Query> {
         return Some(Query::Strong { number, span });
     }
     words(trimmed, prefix, span)
+}
+
+/// The words of a quoted `text`: a phrase, even of one word, so it is exact and never stemmed.
+fn quoted(text: &str, prefix: bool, span: Range<usize>) -> Option<Query> {
+    match words(text, prefix, span) {
+        Some(Query::Word { word, prefix, span }) => Some(Query::Phrase {
+            words: vec![word],
+            prefix,
+            span,
+        }),
+        q => q,
+    }
 }
 
 /// Normalized words of `text`: one word, a phrase, or nothing (punctuation only).

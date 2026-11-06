@@ -37,6 +37,7 @@
 //!
 //! Builds are deterministic: the same Resource and version give a byte-identical file.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -45,8 +46,8 @@ use obs_model::{
 };
 use obs_scripture::{Passage, Verse};
 use obs_search::{
-    Compiled, DocumentKind, HitOrder, IndexVocabulary, MorphCriteria, Pattern, Plan, SearchError,
-    SearchHit, SearchIndex, SearchOptions,
+    Compiled, DocumentKind, HitOrder, IndexQuery, IndexVocabulary, MorphCriteria, Pattern, Plan,
+    SearchError, SearchHit, SearchIndex, SearchOptions,
 };
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
@@ -671,17 +672,41 @@ impl IndexCodes {
     }
 }
 
-/// An open index's codes and words, for [`obs_search::IndexQuery::plan`].
-struct Vocabulary<'a>(&'a SqliteSearchIndex);
+/// An open index's codes and words, for [`obs_search::IndexQuery::plan`], and the first
+/// error reading its words: the search reports it rather than finding nothing.
+struct Vocabulary<'a> {
+    index: &'a SqliteSearchIndex,
+    error: RefCell<Option<StoreError>>,
+}
+
+impl<'a> Vocabulary<'a> {
+    fn new(index: &'a SqliteSearchIndex) -> Self {
+        Self {
+            index,
+            error: RefCell::new(None),
+        }
+    }
+
+    /// How `query` runs on the index, or why its words could not be read.
+    fn plan(self, query: &IndexQuery) -> Result<Plan, SearchError> {
+        let plan = query.plan(&self);
+        match self.error.into_inner() {
+            Some(e) => Err(SearchError(e.to_string())),
+            None => Ok(plan),
+        }
+    }
+}
 
 impl IndexVocabulary for Vocabulary<'_> {
     fn morph_tokens(&self, criteria: &MorphCriteria) -> Vec<String> {
-        self.0.codes.tokens(criteria)
+        self.index.codes.tokens(criteria)
     }
 
     fn words_with_stem(&self, stem: &str) -> Vec<String> {
-        // A word the index cannot read means no forms: the stemmed word matches nothing.
-        self.0.words_with_stem(stem).unwrap_or_default()
+        self.index.words_with_stem(stem).unwrap_or_else(|e| {
+            self.error.borrow_mut().get_or_insert(e);
+            Vec::new()
+        })
     }
 }
 
@@ -1135,7 +1160,7 @@ impl SearchIndex for SqliteSearchIndex {
     ) -> Result<Vec<SearchHit>, SearchError> {
         let plan = match query {
             Compiled::Match(expr) => return self.run_match(expr, options),
-            Compiled::PerIndex(q) => q.plan(&Vocabulary(self)),
+            Compiled::PerIndex(q) => Vocabulary::new(self).plan(q)?,
             Compiled::Nothing => return Ok(Vec::new()),
         };
         match plan {

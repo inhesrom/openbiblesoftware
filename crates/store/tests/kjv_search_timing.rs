@@ -68,6 +68,8 @@ fn whole_bible_searches_meet_the_targets() {
         ("~love", 100, 400),
         ("~believe", 100, 250),
         ("~the", 100, 20_000),
+        ("~a", 100, 6_000),
+        ("~go", 100, 1_000),
         ("faith NEAR/5 works", 250, 5),
         ("faith BEFORE/3 works", 250, 1),
         ("the BEFORE/3 lord", 250, 100),
@@ -166,5 +168,13 @@ fn proximity_and_word_forms_on_the_real_kjv() {
     assert!(!off.contains(&john_3_35));
     assert!(on.contains(&john_3_35));
     assert!(off.iter().all(|v| on.contains(v)));
+
+    // Short words have forms too: "go" finds "goeth", "do" finds "doeth".
+    let john_10_4 = (Book::John, 10, 4); // "he goeth before them"
+    assert!(!verses(&index, "go").contains(&john_10_4));
+    assert!(verses(&index, "~go").contains(&john_10_4));
+    let john_3_21 = (Book::John, 3, 21); // "he that doeth truth"
+    assert!(!verses(&index, "do").contains(&john_3_21));
+    assert!(verses(&index, "~do").contains(&john_3_21));
     let _ = std::fs::remove_dir_all(&dir);
 }
