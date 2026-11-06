@@ -313,11 +313,10 @@ impl State {
             .on_hover_text("Read it in the ★ Bible (Ctrl/Cmd-click: in a new split)")
             .clicked()
         {
-            let mut p = json!({ "passage": votd.label, "split": self.split_held });
-            if let Some(b) = &votd.bible {
-                p["bible"] = json!(b);
-            }
-            *run = Some(("notes.show_passage", p));
+            *run = Some((
+                "home.read_verse_of_the_day",
+                json!({ "split": self.split_held }),
+            ));
         }
         if votd.bible.is_some() {
             self.preview(ui, votd.passage, false);

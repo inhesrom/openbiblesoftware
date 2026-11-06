@@ -488,6 +488,34 @@ impl Session {
         Ok(("new", t))
     }
 
+    /// Show a Passage in Bible `bible` itself (a Reading plan's Bible, Home's ★ Bible): its
+    /// most recent Tab moves there (unless `split`), else a new Tab of it opens; another
+    /// open Bible never stands in for it. A Bible no longer in the library gives way to
+    /// [`Session::show_passage`]. Returns how (`tab` or `new`) and the Tab.
+    pub(crate) fn show_passage_in(
+        &mut self,
+        passage: Passage,
+        bible: &str,
+        split: bool,
+    ) -> Result<(&'static str, TabId), String> {
+        if self.library.get(bible).is_none() {
+            return self.show_passage(passage, None, split);
+        }
+        let kind = TabKind::Resource(bible.to_string());
+        if !split && let Some(t) = self.workspace.most_recent(|t| t.kind == kind) {
+            self.workspace.focus(t);
+            self.workspace.navigate_standard(t, passage.start());
+            return Ok(("tab", t));
+        }
+        let t = self.open_resource_tab(bible, split)?;
+        // The new Tab's Verse map is known once the UI has loaded it.
+        self.workspace.push_effect(Effect::NavigateStandard {
+            tab: t,
+            verse: passage.start(),
+        });
+        Ok(("new", t))
+    }
+
     fn open_resource_tab(&mut self, id: &str, split: bool) -> Result<TabId, String> {
         let out = self
             .run("resource.open", &json!({ "id": id, "split": split }))

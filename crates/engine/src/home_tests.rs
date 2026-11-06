@@ -411,3 +411,89 @@ fn a_visit_to_a_removed_resource_is_not_offered_to_continue() {
     drop(s);
     std::fs::remove_dir_all(&root).unwrap();
 }
+
+#[test]
+fn the_verse_of_the_day_opens_in_the_star_bible_even_when_only_another_bible_is_open() {
+    let root = folder("votd-bible");
+    let mut s = launch(&root);
+    let day = PlanDate::parse("2026-11-05").unwrap();
+    s.pretend_today(day);
+    let votd = verse_of_the_day_on(day).start();
+    // Only WEB is open; BSB is the ★ Bible.
+    let web = open(&mut s, "web");
+    go(&mut s, web, "Gen 1:1");
+    s.run("home.open", &json!({})).unwrap();
+    s.workspace.take_effects();
+
+    let out = s.run("home.read_verse_of_the_day", &json!({})).unwrap();
+    assert_eq!(
+        (out["how"].as_str(), out["bible"].as_str()),
+        (Some("new"), Some("bsb"))
+    );
+    let bsb = tab(&out);
+    assert_eq!(
+        s.workspace.tab(bsb).unwrap().kind,
+        TabKind::Resource("bsb".into())
+    );
+    assert!(
+        s.workspace
+            .take_effects()
+            .contains(&Effect::NavigateStandard {
+                tab: bsb,
+                verse: votd
+            })
+    );
+    // WEB stays where it was.
+    assert_eq!(at(&s, web), Some(v(Book::Genesis, 1, 1)));
+
+    // Again, with WEB the most recent Tab: BSB's Tab moves, no new Tab.
+    s.workspace.focus(web);
+    let out = s.run("home.read_verse_of_the_day", &json!({})).unwrap();
+    assert_eq!((out["how"].as_str(), tab(&out)), (Some("tab"), bsb));
+    assert_eq!(s.workspace.focused(), Some(bsb));
+    assert_eq!(at(&s, web), Some(v(Book::Genesis, 1, 1)));
+    // Ctrl/Cmd: a new ★ Bible Tab.
+    let out = s
+        .run("home.read_verse_of_the_day", &json!({ "split": true }))
+        .unwrap();
+    assert_eq!(out["how"].as_str(), Some("new"));
+    assert_ne!(tab(&out), bsb);
+    drop(s);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn every_unfinished_reading_plan_is_on_home_even_after_three_that_start_later() {
+    let root = folder("plans");
+    let mut s = launch(&root);
+    let today = PlanDate::parse("2026-11-05").unwrap();
+    s.pretend_today(today);
+    for (template, start) in [
+        ("bible-canonical", "2026-12-01"),
+        ("nt-90-days", "2026-12-02"),
+        ("psalms-proverbs", "2027-01-01"),
+    ] {
+        s.run(
+            "reading_plan.create",
+            &json!({ "template": template, "bible": "bsb", "start": start }),
+        )
+        .unwrap();
+    }
+    s.run(
+        "reading_plan.create",
+        &json!({ "template": "mcheyne", "bible": "web" }),
+    )
+    .unwrap();
+
+    let plans = s.home_plans();
+    assert_eq!(plans.len(), 4);
+    for p in &plans[..3] {
+        assert!(p.readings.is_empty(), "{}", p.name);
+        assert!(p.next.is_some(), "{}", p.name);
+    }
+    // The fourth, created last, is due today and is listed with its Readings.
+    assert!(!plans[3].readings.is_empty());
+    assert_eq!(plans[3].next, None);
+    drop(s);
+    std::fs::remove_dir_all(&root).unwrap();
+}

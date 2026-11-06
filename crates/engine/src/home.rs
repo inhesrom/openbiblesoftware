@@ -378,8 +378,6 @@ pub struct StarterSummary {
 pub const HOME_HISTORY_ROWS: usize = 5;
 /// Favorites the History and Favorites card lists.
 pub const HOME_FAVORITE_ROWS: usize = 6;
-/// Reading plans the Today's reading card lists.
-pub const HOME_PLAN_ROWS: usize = 3;
 
 impl Session {
     /// Load the Home arrangement from the User database.
@@ -415,14 +413,13 @@ impl Session {
         home_json(&self.home)
     }
 
-    /// The Today's reading card: each unfinished Reading plan (the first few), with the
-    /// Readings due today.
+    /// The Today's reading card: every unfinished Reading plan (Home scrolls; none is left
+    /// out), with the Readings due today.
     pub fn home_plans(&self) -> Vec<HomePlan> {
         let today = self.plan_today();
         self.reading_plans()
             .iter()
             .filter(|p| !p.is_finished())
-            .take(HOME_PLAN_ROWS)
             .map(|p| {
                 let due = p.due_on(today);
                 let behind = p.behind_days(today);
@@ -617,6 +614,29 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
             };
             let tab = s.open_home(req);
             Ok(json!({ "tab": tab.0 }))
+        },
+    },
+    CommandSpec {
+        id: "home.read_verse_of_the_day",
+        label: "Read the Verse of the day",
+        shortcut: None,
+        params: &[ParamSpec {
+            name: "split",
+            kind: ParamKind::Boolean,
+            required: false,
+            help: "Open a new ★ Bible Tab split off to the right",
+        }],
+        enabled: always,
+        run: |s, p| {
+            const ID: &str = "home.read_verse_of_the_day";
+            let votd = s.verse_of_the_day();
+            let bible = votd
+                .bible
+                .ok_or_else(|| failed(ID, "Add a Bible to your library to read it"))?;
+            let (how, tab) = s
+                .show_passage_in(votd.passage, &bible, p.bool("split").unwrap_or(false))
+                .map_err(|e| failed(ID, e))?;
+            Ok(json!({ "tab": tab.0, "how": how, "bible": bible }))
         },
     },
     CommandSpec {

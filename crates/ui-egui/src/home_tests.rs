@@ -326,6 +326,104 @@ fn with_a_reading_plan_and_favorites_home_shows_todays_reading_and_places_each_o
     );
 }
 
+/// BSB (the ★ Bible) and WEB in the library, Home open, and only WEB open at Genesis 1:1.
+fn launch_bsb_with_only_web_open(lab: &Lab, today: &str) -> (Harness, TabId) {
+    let mut h = launch_bsb(lab, today);
+    let votd = verse_of_the_day_on(PlanDate::parse(today).unwrap()).start();
+    let verses = [
+        (
+            v(Book::Genesis, 1, 1),
+            "In the beginning God created the heavens.",
+        ),
+        (votd, "God is our refuge and strength, a very present help."),
+    ];
+    write_library(&lab.root, &[bible("web", "WEB", &verses, None, &[])]);
+    let session = &mut h.shell.st.session;
+    session.library.add_file(&lab.root.join("web.obr")).unwrap();
+    session
+        .library
+        .set_preferred_order(vec!["bsb".into(), "web".into()]);
+    if let Some(bsb) = tab_of(&h, &TabKind::Resource("bsb".into())) {
+        h.shell.run("tab.close", &json!({ "tab": bsb.0 }));
+    }
+    let out = h
+        .shell
+        .run("resource.open", &json!({ "id": "web" }))
+        .unwrap();
+    let web = TabId(out["tab"].as_u64().unwrap());
+    settle(&mut h);
+    h.shell
+        .run("tab.go", &json!({ "tab": web.0, "text": "Gen 1:1" }));
+    settle(&mut h);
+    assert!(tab_of(&h, &TabKind::Resource("bsb".into())).is_none());
+    click_home_button(&mut h);
+    (h, web)
+}
+
+#[test]
+fn the_verse_of_the_day_opens_in_the_star_bible_not_in_another_open_bible() {
+    let lab = Lab::new("votd-bible");
+    let (mut h, web) = launch_bsb_with_only_web_open(&lab, "2026-11-05");
+    let votd = h.shell.st.session.verse_of_the_day();
+    assert_eq!(votd.bible.as_deref(), Some("bsb"));
+    // Home previews it in the ★ Bible, and one click reads it there.
+    assert!(h.texts().contains(&"★ BSB"), "{:?}", h.texts());
+    h.click_text(&votd.label);
+    settle(&mut h);
+    let bsb = bsb_tab(&h);
+    assert_eq!(h.shell.st.session.workspace.focused(), Some(bsb));
+    assert_eq!(location(&mut h, bsb), Some(votd.passage.start()));
+    assert_eq!(location(&mut h, web), Some(v(Book::Genesis, 1, 1)));
+
+    // Again from Home, with WEB the most recent Bible Tab: BSB's Tab moves there.
+    h.shell
+        .run("tab.go", &json!({ "tab": bsb.0, "text": "Jn 3:16" }));
+    h.shell.st.session.workspace.focus(web);
+    settle(&mut h);
+    click_home_button(&mut h);
+    h.click_text(&votd.label);
+    settle(&mut h);
+    assert_eq!(bsb_tab(&h), bsb);
+    assert_eq!(h.shell.st.session.workspace.focused(), Some(bsb));
+    assert_eq!(location(&mut h, bsb), Some(votd.passage.start()));
+    assert_eq!(location(&mut h, web), Some(v(Book::Genesis, 1, 1)));
+}
+
+#[test]
+fn todays_reading_lists_every_plan_even_after_three_that_start_later() {
+    let lab = Lab::new("four-plans");
+    let mut h = launch_bsb(&lab, "2026-11-05");
+    for (template, start) in [
+        ("bible-chronological", "2026-12-01"),
+        ("nt-90-days", "2026-12-02"),
+        ("psalms-proverbs", "2027-01-01"),
+        ("bible-canonical", "2026-11-05"),
+    ] {
+        h.shell.run(
+            "reading_plan.create",
+            &json!({ "template": template, "bible": "bsb", "start": start }),
+        );
+    }
+    settle(&mut h);
+    click_home_button(&mut h);
+    let plans = h.shell.st.session.home_plans();
+    assert_eq!(plans.len(), 4);
+    let reading = plans[3].readings[0].label.clone();
+    for t in [
+        "Bible in a year (canonical)",
+        "Next reading: Tue 1 Dec",
+        reading.as_str(),
+    ] {
+        assert!(h.texts().contains(&t), "{t:?} missing: {:?}", h.texts());
+    }
+    // The fourth plan's Reading, due today, opens with one click.
+    h.click_text(&reading);
+    settle(&mut h);
+    let bsb = bsb_tab(&h);
+    assert_eq!(h.shell.st.session.workspace.focused(), Some(bsb));
+    assert_eq!(location(&mut h, bsb), Some(v(Book::Genesis, 1, 1)));
+}
+
 #[test]
 fn cards_move_and_hide_from_their_headers_and_home_can_open_at_every_launch() {
     let lab = Lab::new("arrange");
