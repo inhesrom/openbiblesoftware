@@ -185,8 +185,8 @@ fn expected_markdown() -> String {
 fn expected_html() -> String {
     let n = |n: u16| format!("<sup>{n}</sup>\u{a0}");
     format!(
-        "<p>John 3:16-18 (KJV)</p>\n<p>“{}{}</p>\n<p>{}{}</p>\n<p>{}{}”</p>\n\
-         <p>John 3:16-18 (BSB)</p>\n<p>“{}{} {}{} {}{}”</p>",
+        "<p dir=\"auto\">John 3:16-18 (KJV)</p>\n<p dir=\"auto\">“{}{}</p>\n<p dir=\"auto\">{}{}</p>\n<p dir=\"auto\">{}{}”</p>\n\
+         <p dir=\"auto\">John 3:16-18 (BSB)</p>\n<p dir=\"auto\">“{}{} {}{} {}{}”</p>",
         n(16),
         KJV[0],
         n(17),

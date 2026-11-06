@@ -449,7 +449,9 @@ const HTML: Writer = Writer {
     escape: html_escape,
     number: |n| format!("<sup>{n}</sup>\u{a0}"),
     line_break: "<br>\n",
-    paragraph: |p| format!("<p>{p}</p>"),
+    // Each paragraph takes its direction from its first letter, so a Hebrew one reads
+    // right to left (verse number on the right) in a left-to-right page, like the preview.
+    paragraph: |p| format!("<p dir=\"auto\">{p}</p>"),
     paragraph_gap: "\n",
     block_gap: "\n",
     attribution: |a| format!("<p><small>{a}</small></p>"),

@@ -5,10 +5,11 @@
 //! reads back as a Bible reference in the Standard versification), then its quoted text as a
 //! block quote, then the Note's text (or which Highlight style it is). Notebook exports
 //! list in Bible order; a search result keeps its order (newest change first). After them
-//! comes the Attribution of each quoted Resource whose licence asks for credit. A Resource
-//! removed from the library leaves that credit in the User database for the quotes its kept
-//! Annotations hold; a quote whose Resource's licence is unknown (its file went missing) is
-//! left out with a note saying to import it again, so no quote goes out without its credit.
+//! comes the Attribution of each quoted Resource whose licence asks for credit. The User
+//! database remembers the credit of the latest revision of every Resource seen in the
+//! library, so a quote from one since removed (or whose file went missing) keeps it; a quote
+//! whose Resource's licence was never seen is left out with a note saying to import it
+//! again, so no quote goes out without its credit.
 //!
 //! The Markdown keeps a Note's text as typed: CommonMark's special characters are
 //! backslash-escaped, lines end in a hard line break and leading spaces are written as
@@ -107,7 +108,8 @@ fn html_lines(text: &str) -> String {
         .filter(|p| !p.trim().is_empty())
         .map(|p| {
             let lines: Vec<String> = p.lines().map(html_escape).collect();
-            format!("<p>{}</p>", lines.join("<br>\n"))
+            // Its direction from its first letter: a Hebrew quote or Note reads right to left.
+            format!("<p dir=\"auto\">{}</p>", lines.join("<br>\n"))
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -312,14 +314,15 @@ impl Session {
         let kept = self
             .user
             .as_ref()?
-            .preference(&removed_attribution_key(resource_id))
+            .preference(&resource_attribution_key(resource_id))
             .ok()??;
         Some(Some(kept.trim().to_string()).filter(|t| !t.is_empty()))
     }
 
-    /// Keep the credit Resource `entry` asks for in the User database as it is removed, so
-    /// the quotes its kept Annotations hold still export with it (#154).
-    pub(crate) fn keep_removed_attribution(
+    /// Remember in the User database the credit Resource `entry` asks for, so the quotes its
+    /// Annotations hold still export with it once it leaves the library (#154). The latest
+    /// revision seen wins: a re-import under another licence replaces the old credit.
+    pub(crate) fn remember_attribution(
         &self,
         entry: &crate::library::LibraryEntry,
     ) -> Result<(), String> {
@@ -331,16 +334,35 @@ impl Session {
         } else {
             ""
         };
-        user.set_preference(
-            &removed_attribution_key(&entry.manifest.resource_id),
-            credit,
-        )
+        let key = resource_attribution_key(&entry.manifest.resource_id);
+        if user.preference(&key)?.as_deref() == Some(credit) {
+            return Ok(());
+        }
+        user.set_preference(&key, credit)
+    }
+
+    /// [`Self::remember_attribution`] for every Resource in the library. Run at library load
+    /// and after Resources are added, with the Resource names.
+    pub(crate) fn remember_attributions(&mut self) {
+        let failed = self
+            .library
+            .entries()
+            .iter()
+            .find_map(|entry| self.remember_attribution(entry).err());
+        if let Some(e) = failed {
+            self.workspace
+                .push_effect(crate::workspace::Effect::Message(format!(
+                    "Could not save the Attributions of the library's Resources; Notes \
+                     exports will leave out quotes from Resources removed later: {e}"
+                )));
+        }
     }
 }
 
-/// The preference holding a removed Resource's Attribution (empty: its licence needs none).
-fn removed_attribution_key(resource_id: &str) -> String {
-    format!("removed-attribution/{resource_id}")
+/// The preference holding the Attribution of the latest revision of a Resource seen in the
+/// library (empty: its licence needs none).
+fn resource_attribution_key(resource_id: &str) -> String {
+    format!("resource-attribution/{resource_id}")
 }
 
 // ------------------------------------------------------------------------------ commands

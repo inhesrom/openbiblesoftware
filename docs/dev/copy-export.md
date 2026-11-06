@@ -10,7 +10,7 @@ Formatted verses for handouts and studies, Notes out of the app, and printing. T
 | `obs-engine` | `copy_verses.rs` | `CopyOptions`, `CopyPreset`, `copy_verses` → `CopiedText` rendered as plain text, HTML or Markdown; `html_document` (print pages); commands `tool.copy_verses`, `copy.option`, `copy.preset_save`, `copy.preset_apply`, `copy.preset_delete`. Options and presets live in the User database preferences `copy.options` and `copy.presets`. |
 | `obs-engine` | `notes_export.rs` | `Session::notes_export` (a Notebook, all Notebooks, or a Search Tab's Notes results) → `NotesExport` rendered as Markdown, HTML or a print page; command `notes.export` (`format`, `notebook` or `tab`, optional `path`). |
 | `obs-ui-egui` | `shell/copy_window.rs` | The Copy verses window: Passages, Bibles, preset, options, preview, Copy plain text / rich text / Markdown, Print…. `ReadingDoc` implements `CopiedBible`. The preview is Resource text, so it is drawn line by line through the text pipeline (ADR 0004: bidi, Reading fonts, glyph atlas), each line's direction from its first strong character (`obs_layout::starts_rtl`). The copy is made again when a chosen Bible's revision, content hash or file changes; a removed Bible is no longer chosen. |
-| `obs-ui-egui` | `shell/export.rs` | The save dialog for Export (on its own thread), print pages written to `<temp>/openbible-print/` and opened in the browser. |
+| `obs-ui-egui` | `shell/export.rs` | The save dialog for Export (on its own thread), print pages written to a private `<temp>/openbible-print-<random>/` folder and opened in the browser. |
 | `obs-ui-egui` | `rich_clipboard.rs` | `RichClipboard`: HTML plus its plain-text form. The desktop app (`apps/openbible/src/clipboard.rs`) implements it with `arboard`, which eframe already links; without one, rich text is copied as plain text. |
 
 ## Copy verses
@@ -36,9 +36,9 @@ How each format writes them:
 | | Plain text | Markdown | Rich text (HTML) |
 |---|---|---|---|
 | Verse number | `16 ` | `**16** ` | `<sup>16</sup>&nbsp;` |
-| Paragraphs | one per line | blank line between | `<p>` each |
-| One verse per line | newline | `\` hard line break | `<br>` in one `<p>` |
-| Reference | its own line | its own paragraph | `<p>` |
+| Paragraphs | one per line | blank line between | `<p dir="auto">` each |
+| One verse per line | newline | `\` hard line break | `<br>` in one `<p dir="auto">` |
+| Reference | its own line | its own paragraph | `<p dir="auto">` |
 | Attribution | after a blank line | its own paragraph | `<p><small>` |
 
 Verse text is copied as the Resource has it (white space collapsed), so the KJV's ¶ marks
@@ -48,7 +48,10 @@ the start of each line a block marker (`-`, `+`, `=`, the `.`/`)` of `1.`); HTML
 `<`, `>` and `"`.
 
 Rich text goes on the clipboard as HTML with the plain text alongside, so word processors
-paste it formatted and plain editors get the text.
+paste it formatted and plain editors get the text. Each text paragraph (verses, reference,
+and in Notes exports each quote and Note paragraph) is `<p dir="auto">`: it takes its
+direction from its first letter, so a Hebrew paragraph reads right to left, verse number on
+the right, in a left-to-right page, as the preview shows it.
 
 ## Notes export
 
@@ -88,7 +91,7 @@ Attribution of each quoted Resource that requires one.
   first) and is titled `Notes matching “…”`.
 
 HTML exports are a standalone page (`<h1>` title, `<h2>` per Annotation, `<blockquote>`,
-`<p>` paragraphs with `<br>` line breaks, `<hr>` before the Attributions).
+`<p dir="auto">` paragraphs with `<br>` line breaks, `<hr>` before the Attributions).
 
 The Notes Tool's **Export…** menu (in the Notebook column, under + New notebook) exports the
 Notebook chosen there (All and Needs attention export every Notebook); the Search Tool's Notes
@@ -98,8 +101,14 @@ mode has the same menu for its results.
 
 The app has no printing of its own. **Print…** in Copy verses and **Print / Save as PDF…** in
 the Export menus write an HTML page (a print stylesheet, and a script that opens the print
-dialog once loaded) to `<temp>/openbible-print/<name>.html` and open it in the system browser;
-its print dialog prints it or saves it as a PDF. On the web build printing is not offered.
+dialog once loaded) to `<name>.html` in the app's print folder and open it in the system
+browser; its print dialog prints it or saves it as a PDF. On the web build printing is not
+offered. The print folder is made at the first print, in the temporary folder, as a new
+directory with an unguessable name (`openbible-print-<random>`) that only the user can open
+(`0700` on Unix); each page is a new file (`<name> 2.html` when printed again, mode `0600`),
+never an existing one. On a shared `/tmp` another user can therefore neither read the
+printed Notes nor plant a symlink for a page to be written through. The folder is deleted
+when the app quits.
 
 ## Tests
 
@@ -110,13 +119,17 @@ its print dialog prints it or saves it as a PDF. On the web build printing is no
   as exact Markdown and HTML; every option; escaping, including character references and
   line-start block markers with verse numbers and quotation marks off; Attribution for a CC BY
   Bible only; a Bible numbered differently; a Verse map that swaps verses; presets kept
-  across a restart.
+  across a restart; a Hebrew Bible's HTML and print-page paragraphs resolving right to left.
 - `crates/engine/src/notes_export_tests.rs`: a Notebook exported to a `.md` file and read back
   (Passages, quotes, Note text with Markdown-special characters); HTML and print pages; a
-  Notes search result; the Attribution of a quoted CC BY Resource.
+  Notes search result; the Attribution of a quoted CC BY Resource, kept after the Resource
+  is removed, replaced when a revision under another licence is imported, and a quote left
+  out when its Resource's licence was never seen; Hebrew Note paragraphs as `dir="auto"`.
 - `crates/ui-egui/src/copy_export_tests.rs`: the window from Tools → Copy verses…, a preset
   saved and chosen again, the preview, the three Copy buttons (rich text through a test
   `RichClipboard`), Print…; a Hebrew Bible's preview laid out right to left in the Hebrew
   Reading font size by the text pipeline in every format; a chosen Bible updated and removed
   with the window open; the Notes Tool's Export → Markdown file and Print page.
+- `crates/ui-egui/src/shell/export.rs`: the print folder is new, private and unique, and a
+  print page is never written through a planted symlink or over an earlier page.
 - `crates/layout/src/tests.rs`: `a_line_reads_right_to_left_when_its_first_strong_character_does`.

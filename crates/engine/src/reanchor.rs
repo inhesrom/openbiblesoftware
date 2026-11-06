@@ -608,6 +608,8 @@ impl Session {
                 "Could not save the Resource names: {e}"
             )));
         }
+        // And the credit each asks for, for quotes exported once it is gone (#154).
+        self.remember_attributions();
     }
 
     /// Check every library Resource and re-anchor, in the background, those with Annotations

@@ -3,8 +3,8 @@
 //! - **Export** (Markdown or HTML) asks where to save with the native save dialog, on its own
 //!   thread like Import's picker, then runs `notes.export` with that path.
 //! - **Print / Save as PDF** writes a print page (an HTML document that opens the print
-//!   dialog when loaded) to the temporary folder and opens it in the system browser, whose
-//!   print dialog prints it or saves it as a PDF. The app has no printing of its own.
+//!   dialog when loaded) to a [`PrintDir`] and opens it in the system browser, whose print
+//!   dialog prints it or saves it as a PDF. The app has no printing of its own.
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
@@ -25,6 +25,10 @@ pub(crate) struct ExportUi {
     pub(super) save_dialog: SaveDialog,
     /// The `notes.export` params and the dialog's answer.
     waiting: Option<Receiver<(Value, Option<PathBuf>)>>,
+    /// Where print pages go, made at the first print; it lives as long as the app, so the
+    /// browser can load (and reload) the pages.
+    #[cfg(not(target_arch = "wasm32"))]
+    print_dir: Option<PrintDir>,
 }
 
 impl Default for ExportUi {
@@ -32,6 +36,8 @@ impl Default for ExportUi {
         Self {
             save_dialog: Arc::new(native_save_dialog),
             waiting: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            print_dir: None,
         }
     }
 }
@@ -73,9 +79,86 @@ pub(crate) fn file_url(path: &Path) -> String {
     url
 }
 
-/// Where print pages are written: `<temp>/openbible-print/<name>.html`.
+/// A folder of this run's print pages, in the temporary folder, that no one else can read
+/// or write: a new, uniquely named directory made only for the owner (`0700` on Unix), never
+/// an existing one, so another user of a shared `/tmp` can neither read the Notes printed
+/// nor plant a symlink there for a page to be written through. Deleted with the app.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn print_path(name: &str) -> PathBuf {
+pub(crate) struct PrintDir {
+    path: PathBuf,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl PrintDir {
+    /// Make a new print folder in `parent`.
+    pub(crate) fn create(parent: &Path) -> std::io::Result<Self> {
+        use std::hash::{BuildHasher, RandomState};
+        let mut builder = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        for attempt in 0u32..100 {
+            // A name others cannot guess (std's hasher keys are random per process).
+            let token = RandomState::new().hash_one((std::process::id(), attempt));
+            let path = parent.join(format!("openbible-print-{token:016x}"));
+            match builder.create(&path) {
+                Ok(()) => return Ok(Self { path }),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("no free print folder name in {}", parent.display()),
+        ))
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Write print page `page` as a new file named after `name` (`<name>.html`, or
+    /// `<name> 2.html` and so on when printed again), readable only by the owner.
+    pub(crate) fn write_page(&self, name: &str, page: &str) -> std::io::Result<PathBuf> {
+        use std::io::Write;
+        let stem = print_stem(name);
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        for n in 1u32..=1000 {
+            let file = if n == 1 {
+                format!("{stem}.html")
+            } else {
+                format!("{stem} {n}.html")
+            };
+            let path = self.path.join(file);
+            match options.open(&path) {
+                Ok(mut f) => {
+                    f.write_all(page.as_bytes())?;
+                    return Ok(path);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("too many print pages named {stem}"),
+        ))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for PrintDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+/// A print page's file name (without extension) for `name`: characters file systems or
+/// URLs could trip on become spaces.
+#[cfg(not(target_arch = "wasm32"))]
+fn print_stem(name: &str) -> String {
     let stem: String = name
         .chars()
         .map(|c| {
@@ -87,14 +170,13 @@ pub(crate) fn print_path(name: &str) -> PathBuf {
         })
         .collect();
     let stem = stem.split_whitespace().collect::<Vec<_>>().join(" ");
-    let stem = if stem.is_empty() {
+    // No `.`, `..` or hidden file from a name starting or ending in dots.
+    let stem = stem.trim_matches(['.', ' ']);
+    if stem.is_empty() {
         "print".into()
     } else {
-        stem
-    };
-    std::env::temp_dir()
-        .join("openbible-print")
-        .join(format!("{stem}.html"))
+        stem.into()
+    }
 }
 
 impl State {
@@ -179,17 +261,110 @@ impl State {
     /// Write a print page and open it in the system browser.
     #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn open_print_page(&mut self, ctx: &egui::Context, name: &str, page: &str) {
-        let path = print_path(name);
-        let written = path
-            .parent()
-            .map_or(Ok(()), std::fs::create_dir_all)
-            .and_then(|()| std::fs::write(&path, page));
-        match written {
-            Ok(()) => {
+        let dir = match &mut self.export_ui.print_dir {
+            Some(dir) => dir,
+            empty @ None => match PrintDir::create(&std::env::temp_dir()) {
+                Ok(dir) => empty.insert(dir),
+                Err(e) => {
+                    let temp = std::env::temp_dir();
+                    self.toast(format!(
+                        "Could not make a print folder in {}: {e}",
+                        temp.display()
+                    ));
+                    return;
+                }
+            },
+        };
+        match dir.write_page(name, page) {
+            Ok(path) => {
                 ctx.open_url(egui::OpenUrl::new_tab(file_url(&path)));
                 self.toast("Opened in your browser: print it, or choose Save as PDF");
             }
-            Err(e) => self.toast(format!("Could not write {}: {e}", path.display())),
+            Err(e) => {
+                let at = dir.path().display().to_string();
+                self.toast(format!("Could not write a print page in {at}: {e}"));
+            }
         }
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::PrintDir;
+
+    /// A scratch folder standing in for the shared temporary folder.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("obs-print-dir-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn print_pages_go_to_a_new_private_folder_and_never_through_a_planted_symlink() {
+        let tmp = scratch("symlink");
+        let victim = tmp.join("victim.txt");
+        std::fs::write(&victim, "precious").unwrap();
+        // Another user planted the old fixed folder, with a symlink named for the Notebook.
+        let planted = tmp.join("openbible-print");
+        std::fs::create_dir(&planted).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&victim, planted.join("My Notes.html")).unwrap();
+
+        let dir = PrintDir::create(&tmp).unwrap();
+        assert_ne!(dir.path(), planted);
+        assert_eq!(dir.path().parent(), Some(tmp.as_path()));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(dir.path()).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o700, "{mode:o}");
+        }
+        let page = dir.write_page("My Notes", "<p>Private</p>").unwrap();
+        assert_eq!(page, dir.path().join("My Notes.html"));
+        assert_eq!(std::fs::read_to_string(&page).unwrap(), "<p>Private</p>");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&page).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600, "{mode:o}");
+            // Even a symlink inside the folder is not written through: pages are new files.
+            std::os::unix::fs::symlink(&victim, dir.path().join("Again.html")).unwrap();
+            let again = dir.write_page("Again", "<p>Second</p>").unwrap();
+            assert_eq!(again, dir.path().join("Again 2.html"));
+        }
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "precious");
+
+        // Printing the same Notebook again keeps the first page (the browser may show it).
+        let second = dir.write_page("My Notes", "<p>Later</p>").unwrap();
+        assert_eq!(second, dir.path().join("My Notes 2.html"));
+        assert_eq!(std::fs::read_to_string(&page).unwrap(), "<p>Private</p>");
+
+        // A second app gets its own folder; each goes away with its app.
+        let other = PrintDir::create(&tmp).unwrap();
+        assert_ne!(other.path(), dir.path());
+        let path = dir.path().to_path_buf();
+        drop(dir);
+        assert!(!path.exists());
+        drop(other);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn print_page_names_cannot_leave_the_print_folder() {
+        let tmp = scratch("names");
+        let dir = PrintDir::create(&tmp).unwrap();
+        for (name, file) in [
+            ("../../etc/passwd", "etc passwd.html"),
+            ("..", "print.html"),
+            ("Notes matching “grace”", "Notes matching grace.html"),
+        ] {
+            let page = dir.write_page(name, "x").unwrap();
+            assert_eq!(page, dir.path().join(file), "{name}");
+        }
+        drop(dir);
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 }

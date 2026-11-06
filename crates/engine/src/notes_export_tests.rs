@@ -29,10 +29,14 @@ impl Fixture {
     }
 
     fn session(&self) -> Session {
+        let (store, _) = obs_store::UserStore::open(&self.root.join("user.db")).unwrap();
+        self.session_with(Box::new(store))
+    }
+
+    fn session_with(&self, user: Box<dyn UserData>) -> Session {
         let mut s = Session::new(JobMode::Inline);
         assert!(s.library.scan(&self.root.join("library")).is_empty());
-        let (store, _) = obs_store::UserStore::open(&self.root.join("user.db")).unwrap();
-        s.attach_user(Box::new(store));
+        s.attach_user(user);
         s
     }
 }
@@ -277,8 +281,8 @@ fn html_and_print_exports_are_pages_with_each_passage_quote_and_note() {
     assert!(text.starts_with("<!DOCTYPE html>"), "{text}");
     assert!(text.contains("<h1>All Notebooks</h1>"));
     assert!(text.contains("<h2>Romans 13:10 (KJV)</h2>"));
-    assert!(text.contains("<blockquote><p>Love worketh no ill</p></blockquote>"));
-    assert!(text.contains("<p>Line one &lt;b&gt;<br>\nLine two &amp; more</p>"));
+    assert!(text.contains("<blockquote><p dir=\"auto\">Love worketh no ill</p></blockquote>"));
+    assert!(text.contains("<p dir=\"auto\">Line one &lt;b&gt;<br>\nLine two &amp; more</p>"));
     assert!(!text.contains("window.print()"));
     assert_eq!(html["file_name"], "All Notebooks.html");
     let print = s
@@ -289,6 +293,34 @@ fn html_and_print_exports_are_pages_with_each_passage_quote_and_note() {
         .unwrap();
     assert!(print["text"].as_str().unwrap().contains("window.print()"));
     assert!(s.run("notes.export", &json!({ "format": "pdf" })).is_err());
+}
+
+#[test]
+fn quotes_and_note_paragraphs_take_their_direction_from_their_text() {
+    let f = Fixture::new("direction");
+    let mut s = f.session();
+    s.run(
+        "annotation.note",
+        &selection(
+            "kjv",
+            "ROM",
+            "Love worketh",
+            json!({ "body": "שָׁלוֹם — peace.\n\nIn English." }),
+        ),
+    )
+    .unwrap();
+    let [_, html, print] = every_export(&mut s);
+    for page in [html, print] {
+        assert!(
+            page.contains("<blockquote><p dir=\"auto\">Love worketh"),
+            "{page}"
+        );
+        // A Hebrew paragraph of a Note reads right to left, the next left to right.
+        assert!(
+            page.contains("<p dir=\"auto\">שָׁלוֹם — peace.</p>\n<p dir=\"auto\">In English.</p>"),
+            "{page}"
+        );
+    }
 }
 
 #[test]
@@ -407,7 +439,10 @@ fn removing_a_quoted_resource_keeps_its_attribution_in_exports_after_a_restart()
         "{markdown}"
     );
     for page in [html, print] {
-        assert!(page.contains("<blockquote><p>Love doesn"), "{page}");
+        assert!(
+            page.contains("<blockquote><p dir=\"auto\">Love doesn"),
+            "{page}"
+        );
         assert!(
             page.contains("<hr>\n<p><small>WEB test text, licensed CC BY 4.0.</small></p>"),
             "{page}"
@@ -418,10 +453,65 @@ fn removing_a_quoted_resource_keeps_its_attribution_in_exports_after_a_restart()
 }
 
 #[test]
+fn a_reimport_under_another_licence_replaces_the_remembered_attribution() {
+    let f = Fixture::new("reimported-attribution");
+    let kjv_path = f.root.join("library").join("kjv.obr");
+    {
+        let mut s = f.session();
+        // Quoted from the public-domain revision, which is then removed: no credit kept.
+        s.run(
+            "annotation.note",
+            &selection("kjv", "ROM", "Love worketh", json!({ "body": "Old." })),
+        )
+        .unwrap();
+        s.run("library.remove", &json!({ "id": "kjv", "confirm": true }))
+            .unwrap();
+        // A revision licensed CC BY is imported, and quoted.
+        let mut cc_by = kjv();
+        cc_by.manifest.license = "CC-BY-4.0".into();
+        cc_by.manifest.attribution = "KJV test revision, licensed CC BY 4.0.".into();
+        crate::testing::bibles::write_library(&f.root.join("library"), &[cc_by.clone()]);
+        s.added_to_library(vec![crate::library::LibraryEntry {
+            manifest: cc_by.manifest,
+            path: kjv_path.clone(),
+        }]);
+        s.run(
+            "annotation.note",
+            &selection("kjv", "ROM", "Love worketh", json!({ "body": "New." })),
+        )
+        .unwrap();
+    }
+    // Its file goes away outside the app; after a restart the credit comes from the User
+    // database, and it is the CC BY revision's, not the public-domain one's.
+    std::fs::remove_file(&kjv_path).unwrap();
+    let mut s = f.session();
+    assert!(s.library.get("kjv").is_none());
+    let credit = "KJV test revision, licensed CC BY 4.0.";
+    let [markdown, html, print] = every_export(&mut s);
+    assert!(markdown.contains("\n> Love worketh"), "{markdown}");
+    assert!(
+        markdown.ends_with(&format!("\n---\n\n{credit}\n")),
+        "{markdown}"
+    );
+    for page in [html, print] {
+        assert!(
+            page.contains("<blockquote><p dir=\"auto\">Love worketh"),
+            "{page}"
+        );
+        assert!(
+            page.contains(&format!("<hr>\n<p><small>{credit}</small></p>")),
+            "{page}"
+        );
+    }
+}
+
+#[test]
 fn a_quote_whose_resource_went_missing_is_left_out_of_exports() {
     let f = Fixture::new("missing-licence");
     {
-        let mut s = f.session();
+        // A User database that could not remember the Resource's credit.
+        let (store, _) = obs_store::UserStore::open(&f.root.join("user.db")).unwrap();
+        let mut s = f.session_with(Box::new(crate::testing::WritesFail::preferences(store)));
         s.run(
             "annotation.note",
             &selection("web", "ROM", "Love doesn", json!({ "body": "Still mine." })),

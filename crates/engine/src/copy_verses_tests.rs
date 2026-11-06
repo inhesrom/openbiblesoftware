@@ -175,11 +175,11 @@ John 3:16-18 (BSB)
     assert_eq!(copied.markdown(), markdown);
 
     let html = "\
-<p>John 3:16-18 (KJV)</p>
-<p>“<sup>16</sup>\u{a0}¶ For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life. <sup>17</sup>\u{a0}For God sent not his Son into the world to condemn the world; but that the world through him might be saved.</p>
-<p><sup>18</sup>\u{a0}¶ He that believeth on him is not condemned: but he that believeth not is condemned already, because he hath not believed in the name of the only begotten Son of God.”</p>
-<p>John 3:16-18 (BSB)</p>
-<p>“<sup>16</sup>\u{a0}For God so loved the world that He gave His one and only Son, that everyone who believes in Him shall not perish but have eternal life. <sup>17</sup>\u{a0}For God did not send His Son into the world to condemn the world, but to save the world through Him. <sup>18</sup>\u{a0}Whoever believes in Him is not condemned, but whoever does not believe has already been condemned, because he has not believed in the name of God’s one and only Son.”</p>";
+<p dir=\"auto\">John 3:16-18 (KJV)</p>
+<p dir=\"auto\">“<sup>16</sup>\u{a0}¶ For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life. <sup>17</sup>\u{a0}For God sent not his Son into the world to condemn the world; but that the world through him might be saved.</p>
+<p dir=\"auto\"><sup>18</sup>\u{a0}¶ He that believeth on him is not condemned: but he that believeth not is condemned already, because he hath not believed in the name of the only begotten Son of God.”</p>
+<p dir=\"auto\">John 3:16-18 (BSB)</p>
+<p dir=\"auto\">“<sup>16</sup>\u{a0}For God so loved the world that He gave His one and only Son, that everyone who believes in Him shall not perish but have eternal life. <sup>17</sup>\u{a0}For God did not send His Son into the world to condemn the world, but to save the world through Him. <sup>18</sup>\u{a0}Whoever believes in Him is not condemned, but whoever does not believe has already been condemned, because he has not believed in the name of God’s one and only Son.”</p>";
     assert_eq!(copied.html(), html);
     assert_eq!(copied.render(CopyFormat::RichText), html);
 
@@ -233,7 +233,7 @@ fn every_option_changes_the_copy() {
     assert_eq!(
         copy(lines).html(),
         format!(
-            "<p>{}<br>\n{}</p>\n<p>John 3:16-17 (KJV)</p>",
+            "<p dir=\"auto\">{}<br>\n{}</p>\n<p dir=\"auto\">John 3:16-17 (KJV)</p>",
             KJV[0], KJV[1]
         )
     );
@@ -277,7 +277,85 @@ fn text_is_escaped_for_markdown_and_html() {
     );
     assert_eq!(
         copied.html(),
-        "<p><sup>16</sup>\u{a0}The *word* &lt;of&gt; [God] &amp; #1_ok</p>\n<p>John 3:16 (TB)</p>"
+        "<p dir=\"auto\"><sup>16</sup>\u{a0}The *word* &lt;of&gt; [God] &amp; #1_ok</p>\n<p dir=\"auto\">John 3:16 (TB)</p>"
+    );
+}
+
+/// The `<p …>` paragraphs of an HTML document: (attributes, text with tags left out).
+fn html_paragraphs(html: &str) -> Vec<(String, String)> {
+    html.split("<p")
+        .skip(1)
+        .filter(|rest| rest.starts_with(['>', ' ']))
+        .map(|rest| {
+            let (attributes, rest) = rest.split_once('>').unwrap();
+            let inner = rest.split("</p>").next().unwrap();
+            let mut text = String::new();
+            let mut in_tag = false;
+            for c in inner.chars() {
+                match c {
+                    '<' => in_tag = true,
+                    '>' => in_tag = false,
+                    _ if !in_tag => text.push(c),
+                    _ => {}
+                }
+            }
+            (attributes.trim().to_string(), text)
+        })
+        .collect()
+}
+
+/// The direction a browser gives a `dir="auto"` paragraph: that of its first strong
+/// character (verse numbers, punctuation and spaces are not), left to right if none.
+fn auto_direction(text: &str) -> &'static str {
+    let hebrew =
+        |c: char| ('\u{0590}'..='\u{05FF}').contains(&c) || ('\u{FB1D}'..='\u{FB4F}').contains(&c);
+    text.chars()
+        .find(|c| hebrew(*c) || c.is_alphabetic())
+        .map_or("ltr", |c| if hebrew(c) { "rtl" } else { "ltr" })
+}
+
+#[test]
+fn a_hebrew_bibles_paragraphs_read_right_to_left_in_rich_text_and_print_pages() {
+    let genesis = |v: u16| Verse::new(Book::Genesis, 1, v);
+    let mut bible = TestBible::new(
+        "HEB",
+        vec![
+            (genesis(1), "בְּרֵאשִׁית בָּרָא אֱלֹהִים אֵת הַשָּׁמַיִם וְאֵת הָאָֽרֶץ׃".into()),
+            (genesis(2), "וְהָאָרֶץ הָיְתָה תֹהוּ וָבֹהוּ".into()),
+            (genesis(3), "וַיֹּאמֶר אֱלֹהִים יְהִי אוֹר".into()),
+        ],
+        vec![genesis(1), genesis(2)],
+    );
+    bible.manifest.language = "hbo".into();
+    let options = CopyOptions {
+        quotation_marks: true,
+        ..CopyOptions::default()
+    };
+    let copied = copy_verses(
+        &passages("Gen 1:1-2"),
+        &[&bible as &dyn CopiedBible],
+        options,
+    );
+    let html = copied.html();
+    let page = html_document("Genesis 1:1-2 (HEB)", &html, true);
+    for doc in [&html, &page] {
+        let paragraphs = html_paragraphs(doc);
+        assert_eq!(paragraphs.len(), 3, "{doc}");
+        for (attributes, text) in &paragraphs {
+            assert_eq!(attributes, "dir=\"auto\"", "{doc}");
+            // Each verse paragraph, which starts with its verse number (and a quotation
+            // mark), reads right to left; the English reference left to right.
+            let expected = if text == "Genesis 1:1-2 (HEB)" {
+                "ltr"
+            } else {
+                "rtl"
+            };
+            assert_eq!(auto_direction(text), expected, "{text}");
+        }
+    }
+    assert!(
+        html.starts_with("<p dir=\"auto\">“<sup>1</sup>\u{a0}בְּרֵאשִׁית"),
+        "{html}"
     );
 }
 
