@@ -98,6 +98,7 @@ pub fn registry() -> CommandRegistry {
         .iter()
         .chain(crate::workspace_commands::COMMANDS)
         .chain(crate::library_commands::COMMANDS)
+        .chain(crate::collections::COMMANDS)
         .chain(crate::import::COMMANDS)
         .chain(crate::get_bibles::COMMANDS)
         .chain(crate::starter::COMMANDS)

@@ -341,6 +341,7 @@ fn locations_round_trip_through_json() {
             bibles: None,
             types: vec![obs_model::ResourceType::Lexicon],
             resources: vec!["tcc".into()],
+            collections: vec!["Older commentaries".into()],
             notebook: None,
         }),
     };

@@ -86,13 +86,16 @@ fn type_rank(ty: ResourceType) -> usize {
 
 // ----------------------------------------------------------------------------------- scope
 
-/// Library mode's Search scope (#16 rule 10): whole Resource types, plus single Resources of
-/// the other types. A type in `types` covers every Resource of it, including ones added to the
-/// library later.
+/// Library mode's Search scope (#16 rule 10): whole Resource types, Collections (#153), plus
+/// single Resources of the other types. A type in `types` covers every Resource of it, and a
+/// Collection every Resource in it, including ones added to the library later.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LibraryScope {
     /// In [`LIBRARY_TYPES`] order.
     pub types: Vec<ResourceType>,
+    /// Collection names, in the order chosen. Their Bibles and other types Library mode does
+    /// not search are left out.
+    pub collections: Vec<String>,
     /// Resource ids chosen one by one (none of a type in `types`).
     pub resources: Vec<String>,
 }
@@ -102,6 +105,7 @@ impl Default for LibraryScope {
     fn default() -> Self {
         Self {
             types: LIBRARY_TYPES.to_vec(),
+            collections: Vec::new(),
             resources: Vec::new(),
         }
     }
@@ -112,6 +116,7 @@ impl LibraryScope {
     pub fn empty() -> Self {
         Self {
             types: Vec::new(),
+            collections: Vec::new(),
             resources: Vec::new(),
         }
     }
@@ -125,8 +130,17 @@ impl LibraryScope {
         library.get(id).is_some_and(|e| {
             let ty = e.manifest.resource_type;
             LIBRARY_TYPES.contains(&ty)
-                && (self.types.contains(&ty) || self.resources.iter().any(|r| r == id))
+                && (self.types.contains(&ty)
+                    || self.resources.iter().any(|r| r == id)
+                    || self.in_collection(library, id))
         })
+    }
+
+    /// Whether a library Resource is in one of the scope's Collections.
+    fn in_collection(&self, library: &Library, id: &str) -> bool {
+        self.collections
+            .iter()
+            .any(|c| library.in_collection(c, id))
     }
 
     /// The library Resources searched, in result order: Commentaries, Lexicons, then
@@ -160,8 +174,48 @@ impl LibraryScope {
         }
     }
 
-    /// Search a Resource, or stop searching it. Leaving out one Resource of a whole type
-    /// keeps the type's others, one by one; choosing every Resource of a type one by one
+    /// Search a Collection, or stop searching it. Choosing one while the scope is the
+    /// default (every Commentary, Lexicon and Dictionary) searches just that Collection.
+    /// One already searched stops being searched even if it has since been deleted or
+    /// renamed (a search brought back from Favorites or History keeps the saved name).
+    pub fn toggle_collection(&mut self, library: &Library, name: &str) -> Result<(), String> {
+        let name = name.trim();
+        if let Some(i) = self
+            .collections
+            .iter()
+            .position(|c| c.eq_ignore_ascii_case(name))
+        {
+            self.collections.remove(i);
+            return Ok(());
+        }
+        let name = library
+            .collection(name)
+            .map(|c| c.name.clone())
+            .ok_or_else(|| format!("no Collection named “{name}”"))?;
+        if self.is_default() {
+            *self = Self::empty();
+        }
+        self.collections.push(name);
+        Ok(())
+    }
+
+    /// Follow a Collection renamed (`to: Some`) or deleted.
+    pub fn rename_collection(&mut self, from: &str, to: Option<&str>) {
+        match to {
+            Some(to) => {
+                for c in &mut self.collections {
+                    if c.eq_ignore_ascii_case(from) {
+                        *c = to.to_string();
+                    }
+                }
+            }
+            None => self.collections.retain(|c| !c.eq_ignore_ascii_case(from)),
+        }
+    }
+
+    /// Search a Resource, or stop searching it. Leaving out one Resource drops everything
+    /// that covered it (its whole type, the Collections it is in, its own choice) and keeps
+    /// the others those covered, one by one; choosing every Resource of a type one by one
     /// makes it the whole type again.
     pub fn toggle_resource(&mut self, library: &Library, id: &str) -> Result<(), String> {
         let ty = library
@@ -171,24 +225,22 @@ impl LibraryScope {
             .ok_or_else(|| {
                 format!("{id} is not a Commentary, Lexicon or Dictionary in the library")
             })?;
-        let ids_of_type = || {
-            library
-                .of_type(ty)
-                .map(|e| e.manifest.resource_id.clone())
-                .collect::<Vec<_>>()
-        };
-        if let Some(i) = self.types.iter().position(|t| *t == ty) {
-            self.types.remove(i);
-            for other in ids_of_type() {
-                if other != id && !self.resources.contains(&other) {
+        if self.includes(library, id) {
+            let searched = self.resources(library);
+            self.types.retain(|t| *t != ty);
+            self.collections.retain(|c| !library.in_collection(c, id));
+            self.resources.retain(|r| r != id);
+            for other in searched {
+                if other != id && !self.includes(library, &other) {
                     self.resources.push(other);
                 }
             }
-        } else if let Some(i) = self.resources.iter().position(|r| r == id) {
-            self.resources.remove(i);
         } else {
             self.resources.push(id.to_string());
-            let all = ids_of_type();
+            let all: Vec<String> = library
+                .of_type(ty)
+                .map(|e| e.manifest.resource_id.clone())
+                .collect();
             if all.iter().all(|r| self.resources.contains(r)) {
                 self.resources.retain(|r| !all.contains(r));
                 self.types.push(ty);
@@ -199,11 +251,18 @@ impl LibraryScope {
     }
 
     /// Read `search.run`'s `resources`: comma-separated type ids (`commentary`, `lexicon`,
-    /// `dictionary`, singular or plural) and resource ids.
+    /// `dictionary`, singular or plural), `collection:<name>` and resource ids.
     pub fn parse(text: &str, library: &Library) -> Result<Self, String> {
         let mut out = Self::empty();
         for part in text.split(',').map(str::trim).filter(|p| !p.is_empty()) {
-            if let Some(ty) = type_from_id(part) {
+            if let Some(name) = part.strip_prefix("collection:") {
+                let c = library
+                    .collection(name)
+                    .ok_or_else(|| format!("no Collection named “{}”", name.trim()))?;
+                if !out.collections.contains(&c.name) {
+                    out.collections.push(c.name.clone());
+                }
+            } else if let Some(ty) = type_from_id(part) {
                 out.types.push(ty);
             } else if library
                 .get(part)
@@ -823,6 +882,22 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         enabled: always,
         run: search_resource_type,
     },
+    CommandSpec {
+        id: "search.collection",
+        label: "Search this Collection",
+        shortcut: None,
+        params: &[
+            TAB,
+            ParamSpec {
+                name: "name",
+                kind: ParamKind::String,
+                required: true,
+                help: "A Collection: added to the Library search (alone, if every type was searched), or removed",
+            },
+        ],
+        enabled: always,
+        run: search_collection,
+    },
 ];
 
 /// The Tab's Library scope after `change`, then the search run again.
@@ -844,6 +919,7 @@ fn change_scope(
     change(&mut st.library, library).map_err(|e| failed(command, e))?;
     let resources = st.library.resources(library);
     let types: Vec<&str> = st.library.types.iter().map(|t| type_id(*t)).collect();
+    let collections = st.library.collections.clone();
     if st
         .error
         .as_ref()
@@ -862,6 +938,7 @@ fn change_scope(
     Ok(json!({
         "tab": tab.0,
         "types": types,
+        "collections": collections,
         "resources": resources,
         "error": error_json(error.as_ref()),
     }))
@@ -889,5 +966,14 @@ fn search_resource_type(s: &mut Session, p: Params<'_>) -> Result<Value, Command
     change_scope(ID, s, tab, |scope, library| {
         scope.toggle_type(library, ty);
         Ok(())
+    })
+}
+
+fn search_collection(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "search.collection";
+    let tab = tab_param(ID, s, &p)?;
+    let name = p.str("name").unwrap_or_default().to_string();
+    change_scope(ID, s, tab, |scope, library| {
+        scope.toggle_collection(library, &name)
     })
 }

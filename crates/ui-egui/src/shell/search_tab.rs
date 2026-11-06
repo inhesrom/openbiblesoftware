@@ -331,6 +331,15 @@ impl State {
                     ));
                 }
             }
+            for name in &scope.collections {
+                if chip(
+                    ui,
+                    &format!("Collection: {name}"),
+                    "Do not search this Collection",
+                ) {
+                    run.push(("search.collection", json!({ "tab": tab.0, "name": name })));
+                }
+            }
             for id in &scope.resources {
                 let Some(e) = library.get(id) else {
                     continue;
@@ -341,6 +350,29 @@ impl State {
             }
             ui.menu_button(RichText::new("Choose…").size(12.5), |ui| {
                 let mut any = false;
+                // Collections (#153): chosen while every type is searched, one narrows the
+                // search to just it.
+                if !library.collections().is_empty() {
+                    ui.label(RichText::new("Collections").small().color(theme::c().muted));
+                    for c in library.collections() {
+                        let mut on = scope.collections.contains(&c.name);
+                        if ui
+                            .checkbox(&mut on, c.name.as_str())
+                            .on_hover_text(if c.rules.is_empty() {
+                                "Chosen by hand".to_string()
+                            } else {
+                                obs_engine::rules_text(&c.rules)
+                            })
+                            .clicked()
+                        {
+                            run.push((
+                                "search.collection",
+                                json!({ "tab": tab.0, "name": c.name }),
+                            ));
+                        }
+                    }
+                    ui.separator();
+                }
                 for ty in LIBRARY_TYPES {
                     let entries: Vec<_> = library.of_type(ty).collect();
                     if entries.is_empty() {
@@ -377,7 +409,7 @@ impl State {
                 }
             })
             .response
-            .on_hover_text("Choose Resource types or single Resources to search");
+            .on_hover_text("Choose Resource types, Collections or single Resources to search");
         });
     }
 

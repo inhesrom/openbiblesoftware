@@ -201,6 +201,7 @@ impl Session {
         self.load_favorites_and_history();
         self.load_reading_plans();
         self.load_copy_verses();
+        self.load_collections();
         // Library load: Annotations made against another revision of a Resource move with
         // their text (or are orphaned) before it shows them (#65).
         self.remember_resource_names();

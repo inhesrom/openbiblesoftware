@@ -19,6 +19,9 @@ pub mod bible_search;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod bible_search_tests;
 mod builtin;
+pub mod collections;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod collections_tests;
 pub mod command;
 pub mod command_box;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -123,6 +126,7 @@ pub use bible_search::{
     SearchRequestFields, SearchTab, SearchedBible, Snippet, VerseRow, parse_scope, scope_presets,
     verse_rows,
 };
+pub use collections::{Collection, CollectionRule, CollectionSet, parse_rules, rules_text};
 pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSpec, Params};
 pub use command_box::{CommandBoxAction, Suggestion};
 pub use compare::{

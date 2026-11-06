@@ -35,6 +35,9 @@ pub struct SavedSearch {
     pub types: Vec<ResourceType>,
     #[serde(default)]
     pub resources: Vec<String>,
+    /// Library mode's Collections (#153).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collections: Vec<String>,
     /// Notes mode's Notebook (none: all).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notebook: Option<String>,
@@ -50,6 +53,7 @@ impl SavedSearch {
             bibles: st.bibles.clone(),
             types: st.library.types.clone(),
             resources: st.library.resources.clone(),
+            collections: st.library.collections.clone(),
             notebook: st.notebook.clone(),
         })
     }
@@ -446,6 +450,7 @@ impl Session {
                 bibles: search.bibles.clone(),
                 library: Some(crate::library_search::LibraryScope {
                     types: search.types.clone(),
+                    collections: search.collections.clone(),
                     resources: search.resources.clone(),
                 }),
             },
