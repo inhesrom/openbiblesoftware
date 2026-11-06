@@ -27,7 +27,9 @@ use crate::workers::SnippetCache;
 mod annotate;
 mod command_box;
 mod context_menu;
+mod copy_window;
 mod credits_tab;
+mod export;
 mod factbook_tab;
 mod favorites_tab;
 mod fonts_window;
@@ -176,6 +178,12 @@ pub(crate) struct State {
     fonts_ui: fonts_window::FontsUi,
     /// The Reading plans Tool's New plan form (#147).
     plans_ui: reading_plans_tab::PlansUi,
+    /// The Copy verses window (#154).
+    copy_ui: copy_window::CopyUi,
+    /// A Notes export waiting for its save dialog (#154).
+    export_ui: export::ExportUi,
+    /// The system clipboard for rich text (Copy verses), when the app has one.
+    rich_clipboard: Option<Arc<dyn crate::RichClipboard>>,
 }
 
 /// The app window's content: menus, Command box and the docked Workspace.
@@ -220,6 +228,9 @@ impl Shell {
                 notes_ui: notes_tab::NotesUi::default(),
                 fonts_ui: fonts_window::FontsUi::default(),
                 plans_ui: reading_plans_tab::PlansUi::default(),
+                copy_ui: copy_window::CopyUi::default(),
+                export_ui: export::ExportUi::default(),
+                rich_clipboard: None,
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -238,6 +249,11 @@ impl Shell {
     /// bundled fonts can be chosen.
     pub fn set_system_fonts(&mut self, fonts: Arc<dyn crate::SystemFonts>) {
         self.st.fonts_ui.set_source(fonts);
+    }
+
+    /// The system clipboard, for copying rich text (Copy verses, #154).
+    pub fn set_rich_clipboard(&mut self, clipboard: Arc<dyn crate::RichClipboard>) {
+        self.st.rich_clipboard = Some(clipboard);
     }
 
     /// Run a command and apply what it changed. Failures become a toast.
@@ -391,13 +407,18 @@ impl Shell {
                 Effect::PickImport => self.st.pick_import = true,
                 Effect::ShowFonts => self.st.fonts_ui.open = true,
                 Effect::FocusCommandBox => self.st.command_box.focus = true,
+                Effect::ShowCopyVerses { passages, bibles } => {
+                    self.st.open_copy_verses(passages, bibles);
+                }
                 Effect::Removed(id) => {
                     self.st.docs.remove(&id);
                     self.st.marks.forget(&id);
+                    self.st.copy_ui.removed(&id);
                 }
                 Effect::Replaced(id) => {
                     self.st.docs.remove(&id);
                     self.st.marks.forget(&id);
+                    self.st.copy_ui.replaced(&id);
                     // Its open Tabs (and every Text Comparison) load the new text, where they
                     // were.
                     let reload: Vec<TabId> = self
@@ -759,6 +780,7 @@ impl Shell {
             || self.st.session.starter.download().is_some()
             || self.st.session.starter.is_checking()
             || self.st.picker.is_some()
+            || self.st.export_waiting()
             || self.st.session.guides.is_busy()
             || self.st.session.bible_search_running()
             || self.st.session.word_study.is_busy()
@@ -796,6 +818,7 @@ impl Shell {
         // here, not at restore, so it comes through the app's transport.
         self.st.session.load_starter_manifest_for_open_tab();
         self.st.poll_picker();
+        self.st.poll_export();
         self.apply_effects();
         if let Some(after) = self.background_repaint() {
             ui.ctx().request_repaint_after(after);
@@ -2208,6 +2231,7 @@ impl State {
         self.remove_prompt(&ctx);
         self.import_chooser(&ctx);
         self.fonts_window(&ctx);
+        self.copy_window(&ctx);
         if let Some((msg, t)) = &self.toast {
             if self.now - t < 4.0 {
                 let screen = ctx.content_rect();

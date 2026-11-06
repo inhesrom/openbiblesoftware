@@ -75,6 +75,8 @@ pub const MENUS: &[Menu] = &[
             C("tool.favorites"),
             C("tool.history"),
             C("tool.reading_plans"),
+            Separator,
+            C("tool.copy_verses"),
         ],
     },
     Menu {

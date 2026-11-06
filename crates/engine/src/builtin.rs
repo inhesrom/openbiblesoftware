@@ -116,6 +116,8 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::reading_plans::COMMANDS)
         .chain(crate::lookups::COMMANDS)
         .chain(crate::command_box::COMMANDS)
+        .chain(crate::copy_verses::COMMANDS)
+        .chain(crate::notes_export::COMMANDS)
     {
         // Ids in COMMANDS are unique (checked by a test), so registration cannot fail.
         let _ = r.register(*spec);

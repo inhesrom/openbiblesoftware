@@ -18,8 +18,12 @@ serde_json.workspace = true
 # View → Fonts (#138): installed fonts are enumerated and read here, in the app, so the
 # libraries stay WASM-clean. No memory maps: chosen files are read once into memory.
 fontdb = { version = "0.24", default-features = false, features = ["std", "fs", "fontconfig"] }
+# Copy verses (#154) puts HTML on the clipboard as rich text; eframe's own clipboard copies
+# plain text only. The same arboard eframe's `clipboard` feature links.
+arboard = { version = "3.6", default-features = false }
 # `links` opens hyperlinks (Credits, About's change record) in the system browser.
-eframe = { workspace = true, features = ["wayland", "x11", "accesskit", "links"] }
+# `clipboard` copies to the system clipboard; without it egui keeps copies inside the app.
+eframe = { workspace = true, features = ["wayland", "x11", "accesskit", "links", "clipboard"] }
 
 [dev-dependencies]
 obs-engine.workspace = true

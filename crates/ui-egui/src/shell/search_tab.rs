@@ -506,11 +506,19 @@ impl State {
             .inner_margin(egui::Margin::symmetric(12, 4))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.label(
-                    RichText::new(results.summary())
-                        .strong()
-                        .color(theme::c().ink),
-                );
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(results.summary())
+                            .strong()
+                            .color(theme::c().ink),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let any = !results.hits.is_empty();
+                        if let Some(format) = super::notes_tab::export_menu(ui, "Export…", any) {
+                            self.export_or_print(ui.ctx(), json!({ "tab": tab.0 }), format);
+                        }
+                    });
+                });
             });
         let rows = results.hits.len();
         if rows == 0 {

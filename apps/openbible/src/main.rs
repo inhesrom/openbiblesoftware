@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use obs_ui_egui::bench::{BenchConfig, run, synthetic_bible};
 
+mod clipboard;
 mod fetch;
 mod fonts;
 #[cfg(test)]
@@ -81,6 +82,7 @@ fn main() -> ExitCode {
                 obs_ui_egui::App::with_file(file)
                     .with_fetch(Arc::new(fetch::HttpFetch::new()))
                     .with_system_fonts(Arc::new(fonts::FontdbFonts::system()))
+                    .with_rich_clipboard(Arc::new(clipboard::SystemClipboard::default()))
                     .with_automation_from_env(),
             ))
         }),

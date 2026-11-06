@@ -65,6 +65,8 @@ pub struct Session {
     pub factbooks: crate::factbook::Factbooks,
     /// The Notes Tool's Notebook choice, card order and card to reveal (#64).
     pub notes: crate::notes::NotesTool,
+    /// Copy verses' options and Copy presets (#154).
+    pub copy_verses: crate::copy_verses::CopyVerses,
     /// Favorites and History as the User database has them (#155).
     pub(crate) places: crate::favorites::FavoritesAndHistory,
     /// The Command box's recent entries (#139).
@@ -116,6 +118,7 @@ impl Session {
             word_study,
             factbooks: crate::factbook::Factbooks::default(),
             notes: crate::notes::NotesTool::default(),
+            copy_verses: crate::copy_verses::CopyVerses::default(),
             places: crate::favorites::FavoritesAndHistory::default(),
             command_box: crate::command_box::CommandBox::default(),
             plans: crate::reading_plans::ReadingPlans::default(),
@@ -189,6 +192,7 @@ impl Session {
         self.load_guide_arrangements();
         self.load_favorites_and_history();
         self.load_reading_plans();
+        self.load_copy_verses();
         // Library load: Annotations made against another revision of a Resource move with
         // their text (or are orphaned) before it shows them (#65).
         self.remember_resource_names();

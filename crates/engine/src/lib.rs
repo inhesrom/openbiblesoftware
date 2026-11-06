@@ -24,6 +24,9 @@ pub mod command_box;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod command_box_tests;
 pub mod compare;
+pub mod copy_verses;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod copy_verses_tests;
 pub mod credits;
 pub mod cross_references;
 pub mod factbook;
@@ -56,6 +59,9 @@ pub mod missing_resource;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod missing_resource_tests;
 pub mod notes;
+pub mod notes_export;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod notes_export_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod notes_tests;
 pub mod people_places;
@@ -108,6 +114,10 @@ pub use compare::{
     Cell, ComparedBible, ComparedCell, Comparison, DEFAULT_BIBLES, Marks, VerseBlock, WordDiff,
     verse_blocks, word_diff,
 };
+pub use copy_verses::{
+    BookNames, CopiedBible, CopiedBlock, CopiedText, CopiedVerse, CopyFormat, CopyOptions,
+    CopyPreset, CopyVerses, ReferencePlacement, VerseLayout, copy_verses, html_document,
+};
 pub use factbook::{
     DictionaryArticle, DirectoryEntry, EntityCard, EntityLink, FactbookChooser, FactbookSummary,
     FamilyFact, NameMeaning, PeopleDirectory, RelatedEntity,
@@ -136,6 +146,7 @@ pub use library_search::{
 pub use link::LINK_SETS;
 pub use missing_resource::{EmptyState, MissingResource, StarterOffer, Tagging};
 pub use notes::{Card, CardOrder, NoteHit, NotesFilter, NotesResults, NotesTool, body_references};
+pub use notes_export::{NotesExport, NotesFormat, NotesSource};
 pub use people_places::{ArticleLink, Fact, PersonOrPlace};
 pub use persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, UserData, WorkspaceSnapshot};
 pub use reading_plans::{
