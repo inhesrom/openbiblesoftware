@@ -1,6 +1,6 @@
 # The Starter library in the Library (#131)
 
-`cargo xtask starter` builds the Starter library into `dist/starter/` and the release workflow publishes it. This page covers the other half: how the app finds it, puts it in the user's Library, and keeps it there. The decision is recorded in [ADR 0007](../adr/0007-starter-library-is-copied-into-the-library-from-a-bundle-or-the-release.md).
+`cargo xtask starter` builds the Starter library into `dist/starter/` and the `release` workflow publishes it ([releasing](releasing.md)). This page covers the other half: how the app finds it, puts it in the user's Library, and keeps it there. The decision is recorded in [ADR 0007](../adr/0007-starter-library-is-copied-into-the-library-from-a-bundle-or-the-release.md).
 
 ## How it fits together
 
@@ -22,7 +22,7 @@ The first folder that holds `starter-manifest.json`, in this order:
 3. `../Resources/starter/` from the executable (a macOS app bundle: `Contents/MacOS/openbible` → `Contents/Resources/starter/`).
 4. Debug builds only: `dist/starter/` in the workspace, so `cargo run -p openbible` works after `cargo xtask starter`.
 
-**What an installer must bundle:** the whole of `dist/starter/` (the manifest, every `.obr`, `search/`, `aliases/` and the `CHANGES-<id>.md` records) in one of those places.
+**What an installer must bundle:** the whole of `dist/starter/` (the manifest, every `.obr`, `search/`, `aliases/` and the `CHANGES-<id>.md` records) in one of those places. The Release archives each release publishes put it in `starter/` beside the executable ([releasing](releasing.md)).
 
 ## What happens at launch
 
