@@ -53,6 +53,9 @@ pub enum GuideSection {
     DictionaryArticles,
     /// Factbook: people and places linked to them or named with them.
     Related,
+    /// Factbook (#150): a place on the map with every location it may have had, or the places
+    /// a person lived in ([`crate::atlas`]).
+    Map,
     /// Exegetical Guide (#144): each word of the Passage in its original language
     /// ([`crate::exegetical_guide`]).
     WordByWord,
@@ -72,7 +75,7 @@ pub enum GuideSection {
 }
 
 impl GuideSection {
-    pub const ALL: [GuideSection; 19] = [
+    pub const ALL: [GuideSection; 20] = [
         GuideSection::Commentaries,
         GuideSection::CrossReferences,
         GuideSection::KeyWords,
@@ -85,6 +88,7 @@ impl GuideSection {
         GuideSection::KeyPassages,
         GuideSection::DictionaryArticles,
         GuideSection::Related,
+        GuideSection::Map,
         GuideSection::WordByWord,
         GuideSection::LexiconSummaries,
         GuideSection::GrammaticalNotes,
@@ -109,6 +113,7 @@ impl GuideSection {
             GuideSection::KeyPassages => "key_passages",
             GuideSection::DictionaryArticles => "dictionary_articles",
             GuideSection::Related => "related",
+            GuideSection::Map => "map",
             GuideSection::WordByWord => "word_by_word",
             GuideSection::LexiconSummaries => "lexicon_summaries",
             GuideSection::GrammaticalNotes => "grammatical_notes",
@@ -137,6 +142,7 @@ impl GuideSection {
             GuideSection::KeyPassages => "Key Passages",
             GuideSection::DictionaryArticles => "Dictionary articles",
             GuideSection::Related => "Related people and places",
+            GuideSection::Map => "Map",
             GuideSection::WordByWord => "Word by word",
             GuideSection::LexiconSummaries => "Lexicon summaries",
             GuideSection::GrammaticalNotes => "Grammatical notes",
@@ -159,9 +165,10 @@ impl GuideSection {
             GuideSection::TranslatedAs | GuideSection::Occurrences | GuideSection::Forms => {
                 ResourceType::Bible
             }
-            GuideSection::Summary | GuideSection::KeyPassages | GuideSection::Related => {
-                ResourceType::PeopleAndPlaces
-            }
+            GuideSection::Summary
+            | GuideSection::KeyPassages
+            | GuideSection::Related
+            | GuideSection::Map => ResourceType::PeopleAndPlaces,
             GuideSection::DictionaryArticles
             | GuideSection::TopicalEntries
             | GuideSection::TopicArticles
@@ -235,6 +242,10 @@ impl GuideSection {
             GuideSection::TopicArticles => {
                 needed.any(|e| !crate::topic_guide::is_topical_index(&e.manifest.resource_id))
             }
+            // An index that locates places (the geocoding, #150).
+            GuideSection::Map => {
+                needed.any(|e| crate::atlas::is_geocoding_index(&e.manifest.resource_id))
+            }
             _ => needed.next().is_some(),
         }
     }
@@ -294,6 +305,10 @@ impl GuideSection {
             (GuideSection::Forms, true) => {
                 "None in your library: no Hebrew or Greek Bible with Morphology has this word."
             }
+            (GuideSection::Map, false) => {
+                "None in your library. Add a People & places index with locations (the \
+                 OpenBible.info geocoding in the Starter library) to see this on a map."
+            }
             (GuideSection::Summary | GuideSection::KeyPassages | GuideSection::Related, false) => {
                 "None in your library. Add a People & places index (TIPNR) to see this."
             }
@@ -302,6 +317,10 @@ impl GuideSection {
             }
             (GuideSection::KeyPassages, true) => {
                 "None in your library: no Passage is listed for this person or place."
+            }
+            (GuideSection::Map, true) => {
+                "None in your library: no location is known for this place, or for any place \
+                 they lived in."
             }
             (GuideSection::Related, true) => {
                 "None in your library: no person or place is linked or named with them."
@@ -398,9 +417,10 @@ impl Guide {
                 GuideSection::Occurrences,
                 GuideSection::Forms,
             ],
-            // The Atlas (#150) adds Map for places.
+            // Map: the Atlas's data (#150).
             Guide::Factbook => &[
                 GuideSection::Summary,
+                GuideSection::Map,
                 GuideSection::KeyPassages,
                 GuideSection::DictionaryArticles,
                 GuideSection::Related,
@@ -633,6 +653,8 @@ pub enum SectionData {
     DictionaryArticles(Vec<crate::factbook::DictionaryArticle>),
     /// People and places related to one (#149).
     Related(Vec<crate::factbook::RelatedEntity>),
+    /// A place and where it may have been, or the places a person lived in (#150).
+    Map(Vec<crate::atlas::MapPlace>),
     /// A Passage's words in its original language, Verse by Verse (#144).
     WordByWord(crate::exegetical_guide::WordByWord),
     /// The preferred Lexicon's short entry for each Strong's number of a Passage (#144).
@@ -663,6 +685,7 @@ impl SectionData {
             SectionData::KeyPassages(p) => p.len(),
             SectionData::DictionaryArticles(a) => a.len(),
             SectionData::Related(r) => r.len(),
+            SectionData::Map(places) => places.len(),
             SectionData::WordByWord(w) => w.word_count(),
             SectionData::LexiconSummaries(s) => s.len(),
             SectionData::GrammaticalNotes(n) => n.len(),
@@ -808,7 +831,8 @@ impl SectionSource for LibrarySections {
             GuideSection::Summary
             | GuideSection::KeyPassages
             | GuideSection::DictionaryArticles
-            | GuideSection::Related => Err(format!("{} needs a person or place", section.title())),
+            | GuideSection::Related
+            | GuideSection::Map => Err(format!("{} needs a person or place", section.title())),
             GuideSection::TopicalEntries
             | GuideSection::TopicArticles
             | GuideSection::TopicPassages

@@ -36,6 +36,8 @@ pub enum Tool {
     Favorites,
     History,
     ReadingPlans,
+    /// An offline map of the places a Passage names (#150).
+    Atlas,
 }
 
 /// The Guides.
@@ -62,6 +64,7 @@ impl Tool {
             Tool::Favorites => "Favorites",
             Tool::History => "History",
             Tool::ReadingPlans => "Reading plans",
+            Tool::Atlas => "Atlas",
         }
     }
 }
@@ -212,7 +215,7 @@ impl TabKind {
     pub fn default_key_schemes(&self) -> Vec<KeyScheme> {
         match self {
             TabKind::Guide(Guide::PassageGuide | Guide::ExegeticalGuide)
-            | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences)
+            | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences | Tool::Atlas)
             | TabKind::Resource(_) => vec![KeyScheme::Passage],
             TabKind::Guide(Guide::WordStudy) => vec![KeyScheme::StrongsNumber],
             // A Topic Guide follows (and moves) its Link set's Dictionary headwords.

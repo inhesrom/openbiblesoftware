@@ -79,6 +79,7 @@ pub const MENUS: &[Menu] = &[
             C("tool.favorites"),
             C("tool.history"),
             C("tool.reading_plans"),
+            C("tool.atlas"),
             Separator,
             C("tool.copy_verses"),
         ],
@@ -448,6 +449,21 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         run: |s, p| {
             const ID: &str = "tool.cross_references";
             let kind = TabKind::Tool(Tool::CrossReferences);
+            match open_at_passage(s, &p, kind.clone(), ID)? {
+                Some(out) => Ok(out),
+                None => open(s, p, kind),
+            }
+        },
+    },
+    CommandSpec {
+        id: "tool.atlas",
+        label: "Atlas",
+        shortcut: None,
+        params: AT_PASSAGE,
+        enabled: always,
+        run: |s, p| {
+            const ID: &str = "tool.atlas";
+            let kind = TabKind::Tool(Tool::Atlas);
             match open_at_passage(s, &p, kind.clone(), ID)? {
                 Some(out) => Ok(out),
                 None => open(s, p, kind),

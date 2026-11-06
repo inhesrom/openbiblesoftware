@@ -1,0 +1,99 @@
+{
+  "resource_id": "openbible-geo",
+  "resource_type": "people_and_places",
+  "key": "Acts 13:14",
+  "entities": [
+    {
+      "id": "Antioch@Act.13.14-2Ti",
+      "name": "Antioch",
+      "kind": "place",
+      "other_names": [
+        "Antioch of Pisidia"
+      ],
+      "locations": [
+        {
+          "name": "Antioch in Pisidia",
+          "lon_e6": 31189167,
+          "lat_e6": 38306111,
+          "score": 1000
+        }
+      ]
+    },
+    {
+      "id": "Perga@Act.13.13-",
+      "name": "Perga",
+      "kind": "place",
+      "locations": [
+        {
+          "name": "Perga",
+          "lon_e6": 30853686,
+          "lat_e6": 36960353,
+          "score": 1000
+        }
+      ]
+    },
+    {
+      "id": "Pisidia@Act.13.14-",
+      "name": "Pisidia",
+      "kind": "place",
+      "other_names": [
+        "Pisidian"
+      ],
+      "locations": [
+        {
+          "name": "Antioch in Pisidia",
+          "lon_e6": 31189167,
+          "lat_e6": 38306111,
+          "score": 1000
+        }
+      ]
+    }
+  ],
+  "mentions": [
+    {
+      "entity": "Antioch@Act.13.14-2Ti",
+      "passage": {
+        "start": {
+          "book": "ACT",
+          "chapter": 13,
+          "verse": 14
+        },
+        "end": {
+          "book": "ACT",
+          "chapter": 13,
+          "verse": 14
+        }
+      }
+    },
+    {
+      "entity": "Perga@Act.13.13-",
+      "passage": {
+        "start": {
+          "book": "ACT",
+          "chapter": 13,
+          "verse": 14
+        },
+        "end": {
+          "book": "ACT",
+          "chapter": 13,
+          "verse": 14
+        }
+      }
+    },
+    {
+      "entity": "Pisidia@Act.13.14-",
+      "passage": {
+        "start": {
+          "book": "ACT",
+          "chapter": 13,
+          "verse": 14
+        },
+        "end": {
+          "book": "ACT",
+          "chapter": 13,
+          "verse": 14
+        }
+      }
+    }
+  ]
+}

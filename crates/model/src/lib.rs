@@ -32,7 +32,9 @@ mod translit;
 mod unit;
 
 pub use builder::{Resource, ResourceBuilder, ValidationError, ValidationErrors};
-pub use dataset::{CrossReference, Entity, EntityKind, EntityRelation, Mention, Relation};
+pub use dataset::{
+    CrossReference, Entity, EntityKind, EntityRelation, Mention, PlaceLocation, Relation,
+};
 pub use key::{Key, KeyEntry};
 pub use manifest::{
     Direction, FORMAT_VERSION, KeyScheme, LICENSE_UNKNOWN, Manifest, OLDEST_FORMAT_VERSION, Origin,

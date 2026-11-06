@@ -9,7 +9,9 @@ use obs_model::{Manifest, ResourceType};
 /// user ranks anything (decision #15): the KJV with Strong's numbers is the ★ Bible, the
 /// tagged English Bible Word Study and Key words read; the Lexicons go TBESH/TBESG, BDB,
 /// Abbott-Smith, Strong's, so the ★ Lexicon and a Word Study's Lexicon entries lead with the
-/// modern lexicons. Other Starter Resources keep the library's file order.
+/// modern lexicons; TIPNR leads the People & places indexes, so where the geocoding (#150)
+/// lists a place under TIPNR's id, the Factbook and the Passage Guide show TIPNR's record.
+/// Other Starter Resources keep the library's file order.
 pub const STARTER_PREFERRED_ORDER: &[&str] = &[
     "kjv-strongs",
     "tbesh",
@@ -18,6 +20,8 @@ pub const STARTER_PREFERRED_ORDER: &[&str] = &[
     "abbott-smith",
     "strongs-hebrew",
     "strongs-greek",
+    "tipnr",
+    "openbible-geo",
 ];
 
 /// One Resource in the library.

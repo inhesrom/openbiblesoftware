@@ -832,6 +832,44 @@ pub fn tipnr() -> obs_model::Resource {
     obs_formats::import_tipnr(&text, &options).unwrap().0
 }
 
+/// TIPNR's records of the places Acts 13 names, and of Acco and Zarephath (STEPBible, CC BY),
+/// as a People & places index (#150).
+pub fn tipnr_acts_13() -> obs_model::Resource {
+    let text = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../formats/tests/assets/tipnr/tipnr-acts-13-excerpt.txt"),
+    )
+    .unwrap();
+    let options = obs_formats::DatasetOptions {
+        resource_id: "tipnr".into(),
+        title: "Translators Individualised Proper Names".into(),
+        abbreviation: "TIPNR".into(),
+        ..Default::default()
+    };
+    obs_formats::import_tipnr(&text, &options).unwrap().0
+}
+
+/// The OpenBible.info geocoding excerpt of the format tests (CC BY) as a People & places index
+/// with Place locations, its places matched to `tipnr` when given (#150).
+pub fn openbible_geo(tipnr: Option<&obs_model::Resource>) -> obs_model::Resource {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/openbible-geo");
+    let read = |name: &str| std::fs::read_to_string(dir.join(name)).unwrap();
+    let options = obs_formats::DatasetOptions {
+        resource_id: "openbible-geo".into(),
+        title: "OpenBible.info Bible Geocoding Data".into(),
+        abbreviation: "OpenBible Geo".into(),
+        ..Default::default()
+    };
+    obs_formats::import_openbible_geocoding(
+        &read("ancient-excerpt.jsonl"),
+        &read("modern-excerpt.jsonl"),
+        tipnr,
+        &options,
+    )
+    .unwrap()
+    .0
+}
+
 /// Easton's or Smith's Bible Dictionary, reduced to the public-domain Abraham and Abram
 /// entries of the #44 study fixtures (with the converter's Abram → Abraham alias).
 pub fn dictionary(id: &str) -> obs_model::Resource {
@@ -890,6 +928,7 @@ fn person(
                 uncertain: false,
             })
             .collect(),
+        locations: Vec::new(),
     }
 }
 

@@ -394,6 +394,7 @@ fn person(id: &str, name: &str) -> crate::Entity {
         other_names: Vec::new(),
         region: None,
         relations: Vec::new(),
+        locations: Vec::new(),
     }
 }
 

@@ -3127,6 +3127,8 @@ mod import {
 #[path = "word_info_tests.rs"]
 mod word_info;
 
+#[path = "atlas_tests.rs"]
+mod atlas;
 #[path = "credits_tests.rs"]
 mod credits;
 #[path = "guide_tests.rs"]

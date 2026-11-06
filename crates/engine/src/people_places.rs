@@ -356,6 +356,7 @@ mod tests {
                 rel(Relation::Partner, "Sarah@Gen.11.29-1Pe", false),
                 rel(Relation::Offspring, "Ishmael@Gen.16.11-Psa", true),
             ],
+            locations: Vec::new(),
         }
     }
 

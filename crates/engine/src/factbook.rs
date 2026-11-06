@@ -7,7 +7,8 @@
 //!   Zebedee"), its kind and region, and where the Bible first and last names it.
 //! - **Sections:** Summary (other names, the meaning of the name from a names Dictionary such
 //!   as Hitchcock's, and family), Key Passages (every Passage that mentions it), Dictionary
-//!   articles, and Related people and places. The Map section arrives with the Atlas (#150).
+//!   articles, Related people and places, and Map (#150: a place's locations, or the places a
+//!   person lived in, from [`crate::atlas`]).
 //! - **Chooser:** a name typed into the header box (or one name shared by several entities)
 //!   lists every entity with that name, each told apart by its structured facts.
 //!
@@ -56,7 +57,7 @@ pub struct DirectoryEntry {
 }
 
 /// Every entity of the library's People & places indexes, in Preferred order (an entity two
-/// indexes list is kept from the first).
+/// indexes list is kept from the first, with the Place locations of the first that has some).
 #[derive(Debug, Default)]
 pub struct PeopleDirectory {
     entries: Vec<DirectoryEntry>,
@@ -214,17 +215,30 @@ impl PeopleDirectory {
     pub fn new(entries: Vec<DirectoryEntry>) -> Self {
         let mut d = Self::default();
         for e in entries {
-            if d.by_id.contains_key(&e.entity.id) {
-                continue;
-            }
-            let i = d.entries.len();
-            d.by_id.insert(e.entity.id.clone(), i);
             let mut names: BTreeSet<String> = crate::aliases::entity_names(&e.entity)
                 .iter()
                 .map(|n| obs_model::normalize(n))
                 .collect();
             names.insert(obs_model::normalize(&usual_name(&e.entity)));
-            for n in names.into_iter().filter(|n| !n.is_empty()) {
+            names.retain(|n| !n.is_empty());
+            if let Some(&kept) = d.by_id.get(&e.entity.id) {
+                // A place a later index locates (the geocoding, #150) takes its locations, and
+                // its names find the first record.
+                for n in names {
+                    let found = d.by_name.entry(n).or_default();
+                    if !found.contains(&kept) {
+                        found.push(kept);
+                    }
+                }
+                let kept = &mut d.entries[kept].entity;
+                if kept.locations.is_empty() {
+                    kept.locations = e.entity.locations;
+                }
+                continue;
+            }
+            let i = d.entries.len();
+            d.by_id.insert(e.entity.id.clone(), i);
+            for n in names {
                 d.by_name.entry(n).or_default().push(i);
             }
             for r in &e.entity.relations {
@@ -303,6 +317,27 @@ impl PeopleDirectory {
             return Some(format!("descended from {a}"));
         }
         e.region.clone()
+    }
+
+    /// The places whose records list `id` as someone who lived there, most often named
+    /// first.
+    pub fn places_lived_in(&self, id: &str) -> Vec<String> {
+        let mut places: Vec<&DirectoryEntry> = self
+            .listed_by
+            .get(id)
+            .into_iter()
+            .flatten()
+            .filter(|(_, r)| *r == Relation::Inhabitant)
+            .map(|(i, _)| &self.entries[*i])
+            .filter(|e| e.entity.kind == EntityKind::Place)
+            .collect();
+        places.sort_by(|a, b| {
+            b.passages
+                .cmp(&a.passages)
+                .then_with(|| a.entity.id.cmp(&b.entity.id))
+        });
+        places.dedup_by(|a, b| a.entity.id == b.entity.id);
+        places.into_iter().map(|e| e.entity.id.clone()).collect()
     }
 
     pub fn card(&self, id: &str) -> Option<EntityCard> {
@@ -637,6 +672,7 @@ pub fn section(
             GuideSection::KeyPassages => Ok(SectionData::KeyPassages(Vec::new())),
             GuideSection::DictionaryArticles => Ok(SectionData::DictionaryArticles(Vec::new())),
             GuideSection::Related => Ok(SectionData::Related(Vec::new())),
+            GuideSection::Map => Ok(SectionData::Map(Vec::new())),
             other => Err(format!(
                 "{} needs a Passage or a Strong's number",
                 other.title()
@@ -689,6 +725,7 @@ pub fn section(
                 .collect();
             Ok(SectionData::Related(dir.related(id, &together)))
         }
+        GuideSection::Map => Ok(SectionData::Map(crate::atlas::factbook_map(&dir, id))),
         other => Err(format!(
             "{} needs a Passage or a Strong's number",
             other.title()

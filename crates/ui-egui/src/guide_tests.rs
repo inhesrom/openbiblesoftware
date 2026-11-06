@@ -807,7 +807,6 @@ fn abram_opens_his_factbook_and_the_john_chooser_lists_the_johns() {
             && find_in(h, factbook, "Terah").is_some()
             && find_in(h, factbook, "“father of a great multitude”").is_some()
             && has_prefix_in(h, factbook, "Genesis · ")
-            && find_in(h, factbook, "Easton: Abraham").is_some()
     });
     assert!(
         find_in(&h, factbook, "Abraham").is_some(),
@@ -818,9 +817,14 @@ fn abram_opens_his_factbook_and_the_john_chooser_lists_the_johns() {
     assert!(find_in(&h, factbook, "Married to").is_some());
     assert!(find_in(&h, factbook, "Abram").is_some(), "Also called");
     let titles = headers(&h, factbook);
+    // Map (#150) sits under the Summary.
     assert_eq!(
-        titles[..2],
-        ["Summary".to_string(), "Key Passages".to_string()],
+        titles[..3],
+        [
+            "Summary".to_string(),
+            "Map".to_string(),
+            "Key Passages".to_string()
+        ],
         "{titles:?}"
     );
     if std::env::var_os("UPDATE_PREVIEWS").is_some() {
@@ -829,6 +833,27 @@ fn abram_opens_his_factbook_and_the_john_chooser_lists_the_johns() {
         h.frames(30);
         h.screenshot(&dir.join("factbook-abraham.ppm"));
     }
+    // The Dictionary articles are further down (the Map sits above them): wheel down to them.
+    h.events
+        .push(Event::PointerMoved(pane(&h, factbook).center()));
+    for _ in 0..200 {
+        if find_in(&h, factbook, "Easton: Abraham").is_some() {
+            break;
+        }
+        h.events.push(Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: vec2(0.0, -40.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.paced_frame();
+    }
+    assert!(
+        find_in(&h, factbook, "Easton: Abraham").is_some(),
+        "{:?}",
+        h.texts()
+    );
 
     // A name several people share: the chooser lists each John, told apart by his facts.
     h.shell

@@ -444,7 +444,7 @@ fn a_factbook_without_an_index_says_what_to_add_and_reloads_with_the_library() {
     let out = s.run("guide.factbook", &json!({})).unwrap();
     let tab = TabId(out["tab"].as_u64().unwrap());
     assert_eq!(s.workspace.tab(tab).unwrap().entry_history.current(), None);
-    // The arrangement is the Factbook's own; Map comes with the Atlas (#150).
+    // The arrangement is the Factbook's own; Map came with the Atlas (#150).
     let ids: Vec<&str> = s
         .guides
         .arrangement(Guide::Factbook)
@@ -454,7 +454,13 @@ fn a_factbook_without_an_index_says_what_to_add_and_reloads_with_the_library() {
         .collect();
     assert_eq!(
         ids,
-        ["summary", "key_passages", "dictionary_articles", "related"]
+        [
+            "summary",
+            "map",
+            "key_passages",
+            "dictionary_articles",
+            "related"
+        ]
     );
     // An index added later is read on the next ask.
     write(&t.lib(), &johns());

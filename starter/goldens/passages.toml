@@ -171,6 +171,12 @@ passage = "Gen 12:1"
 resource_id = "tipnr"
 passage = "John 3:1"
 
+# Paul and Barnabas reach Pisidian Antioch from Perga (#150): two places with TIPNR's ids and
+# their locations.
+[[golden]]
+resource_id = "openbible-geo"
+passage = "Acts 13:14"
+
 [[golden]]
 resource_id = "hitchcock"
 headword = "ABRAHAM"

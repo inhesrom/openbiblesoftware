@@ -15,6 +15,7 @@ globset = "0.4"
 obs-engine.workspace = true
 obs-formats.workspace = true
 obs-scripture.workspace = true
+earcut = "0.4"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 obs-model.workspace = true
 obs-store.workspace = true

@@ -334,6 +334,75 @@ impl State {
         action
     }
 
+    /// The Map (#150): a place at every location it may have had, each with how confident
+    /// that is; for a person, the places they lived in (click one for its Factbook).
+    /// `subject` is the Factbook's entity: when the map shows it, it is a place's own map.
+    pub(super) fn factbook_map(
+        &mut self,
+        ui: &mut Ui,
+        places: &[obs_engine::MapPlace],
+        subject: Option<&str>,
+    ) -> Option<FactbookAction> {
+        let one_place = matches!(places, [p] if Some(p.entity.as_str()) == subject);
+        let refs: Vec<&obs_engine::MapPlace> = places.iter().collect();
+        let width = ui.available_width().max(120.0);
+        let (rect, _) = ui.allocate_exact_size(
+            egui::vec2(width, super::atlas_tab::MINI_MAP_HEIGHT),
+            Sense::hover(),
+        );
+        let mut view =
+            super::atlas_tab::fit(&refs, rect, one_place, super::atlas_tab::MINI_MAP_SPAN);
+        let description = format!(
+            "Map: {}",
+            places
+                .iter()
+                .map(obs_engine::MapPlace::describe)
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
+        let mut child = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .id_salt("factbook-map"),
+        );
+        let input = super::atlas_tab::map_canvas(
+            &mut child,
+            rect,
+            &mut view,
+            &super::atlas_tab::MapScene {
+                places: &refs,
+                selected: None,
+                emphasized: &|_| false,
+                all_points: one_place,
+                interactive: false,
+                description: &description,
+            },
+        );
+        let mut action = input
+            .clicked
+            .filter(|_| !one_place)
+            .map(|(entity, new_tab)| FactbookAction::Entity(entity, new_tab));
+        ui.add_space(4.0);
+        for place in places {
+            if one_place {
+                for point in &place.points {
+                    ui.label(
+                        RichText::new(format!("{} · {}", point.location, point.confidence.label()))
+                            .color(theme::c().muted),
+                    );
+                }
+            } else if ui
+                .link(place.describe())
+                .on_hover_text(format!("Open {}'s Factbook", place.name))
+                .clicked()
+            {
+                let new_tab = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
+                action = Some(FactbookAction::Entity(place.entity.clone(), new_tab));
+            }
+        }
+        action
+    }
+
     /// Related people and places: each as a chooser-like row, with how they relate.
     pub(super) fn factbook_related(
         &mut self,

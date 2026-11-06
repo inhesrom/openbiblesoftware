@@ -374,3 +374,33 @@ attribution = "Roswell D. Hitchcock, Bible Names Dictionary, from Hitchcock's Ne
 changes = "Converted TEI to plain NFC text through the app's SWORD Import: one entry per name, keyed by its headword. Names the source lists twice (Abel, Eli, Noah, Rahab) keep both meanings, as two paragraphs of one entry. Unsupported markup dropped and counted."
 provenance = "The configuration inside the pinned zip declares DistributionLicense=Public Domain, and its About says the work is out of copyright and free to copy and distribute."
 evidence = "evidence/hitchcock.md"
+
+# Where each place was (#150): OpenBible.info's Bible geocoding, matched to TIPNR's places so
+# the Atlas, the Factbook and the Passage Guide see one place. GitHub raw files at a fixed
+# commit never change, so they are pinned directly. The third file is TIPNR itself (the same
+# pin as the `tipnr` entry), read only to match places.
+[[source]]
+resource_id = "openbible-geo"
+importer = "openbible-geocoding"
+url = "https://raw.githubusercontent.com/openbibleinfo/Bible-Geocoding-Data/7eb18a5ee62f27b9b93bd6689ea272d76dd23b8f/data/ancient.jsonl"
+origin_url = "https://github.com/openbibleinfo/Bible-Geocoding-Data/raw/main/data/ancient.jsonl"
+sha256 = "b8187aa4737e8517ccc090f765d2be11da4c548cd2a59d3cdcb62e952cb8c0f2"
+title = "OpenBible.info Bible Geocoding Data"
+abbreviation = "OpenBible Geo"
+language = "en"
+edition = "Bible-Geocoding-Data commit 7eb18a5 (2021-10-31): ancient.jsonl and modern.jsonl"
+publisher = "OpenBible.info"
+homepage = "https://www.openbible.info/geo/"
+spdx = "CC-BY-4.0"
+attribution = "Bible geocoding data from OpenBible.info (https://www.openbible.info/geo/), licensed under a Creative Commons Attribution 4.0 License (CC BY 4.0). Places matched to TIPNR by STEP Bible (https://www.STEPBible.org), CC BY 4.0."
+changes = "Converted from ancient.jsonl and modern.jsonl to the Open Bible resource format as a People & places index. Kept for each place the Bible names in a Verse: the Verses (the KJV's verse where it differs), the spellings English Bibles use, and each modern location it has been identified with, with its name, coordinates and confidence score (capped at 1000). Each place takes the id and name of the TIPNR place with its name that shares the most Verses with it; places TIPNR counts as one are merged. Omitted: coordinates from OpenStreetMap (ODbL), identifications scored 0 or below, places named in no Verse, places with neither a TIPNR match nor a location, geometry, images, comments, descriptions and links to other sources."
+provenance = "Bible-Geocoding-Data README and LICENSE at the pinned commit: the data is CC BY 4.0; OpenStreetMap data is ODbL 1.0 and is not shipped."
+evidence = "evidence/openbible-geo.md"
+
+[[source.extra_file]]
+url = "https://raw.githubusercontent.com/openbibleinfo/Bible-Geocoding-Data/7eb18a5ee62f27b9b93bd6689ea272d76dd23b8f/data/modern.jsonl"
+sha256 = "da731f6e110bac4ea66a9f037a0a31cfb11c4f1efc1206aa9e109092b2c60087"
+
+[[source.extra_file]]
+url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Proper%20Nouns/TIPNR%20-%20Translators%20Individualised%20Proper%20Names%20with%20all%20References%20-%20STEPBible.org%20CC%20BY.txt"
+sha256 = "d595b9163d32a400bb0ef96b27a6de58335a63da840b82531fe9f5e1d16a318c"

@@ -140,6 +140,7 @@ fn each_section_names_its_resource_type_tagging_and_get_resources_filter() {
             Some("Get Dictionaries…"),
         ),
         (Related, ResourceType::PeopleAndPlaces, Tagging::None, None),
+        (Map, ResourceType::PeopleAndPlaces, Tagging::None, None),
         (
             WordByWord,
             ResourceType::Bible,

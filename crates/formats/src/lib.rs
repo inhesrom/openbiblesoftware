@@ -9,6 +9,7 @@ mod dataset;
 mod error;
 mod lexicon;
 mod openbible;
+mod openbible_geo;
 mod report;
 mod stepbible;
 mod sword;
@@ -30,6 +31,7 @@ pub use lexicon::{
     import_strongs_hebrew, import_tbes,
 };
 pub use openbible::{DROPPED_NOT_STANDARD, OPENBIBLE_FORMAT, import_openbible_cross_references};
+pub use openbible_geo::{OPENBIBLE_GEO_FORMAT, import_openbible_geocoding};
 pub use report::{BookReport, ImportReport, VerseMapCounts};
 pub use stepbible::{StepbibleImport, StepbibleOptions, StepbibleText};
 pub use sword::repo as sword_repo;

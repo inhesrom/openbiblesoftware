@@ -91,6 +91,7 @@ impl GuideSection {
             | GuideSection::KeyPassages
             | GuideSection::DictionaryArticles
             | GuideSection::Related
+            | GuideSection::Map
             | GuideSection::LexiconSummaries
             | GuideSection::TopicalEntries
             | GuideSection::TopicArticles
@@ -140,6 +141,8 @@ impl GuideSection {
             GuideSection::DictionaryArticles => {
                 ty == ResourceType::Dictionary || ty == ResourceType::PeopleAndPlaces
             }
+            // Places are located by the geocoding (#150), not by TIPNR.
+            GuideSection::Map => crate::atlas::is_geocoding_index(&item.resource_id),
             // The Starter library has no topical index (ADR 0009): Get Resources has them.
             GuideSection::TopicalEntries | GuideSection::TopicPassages => {
                 crate::topic_guide::is_topical_index(&item.resource_id)

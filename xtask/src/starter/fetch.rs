@@ -30,7 +30,8 @@ pub fn fetch(source: &Source, cache: &Path) -> Result<Vec<Vec<u8>>> {
         .collect()
 }
 
-fn fetch_file(resource_id: &str, file: &PinnedFile, cache: &Path) -> Result<Vec<u8>> {
+/// One pinned file's bytes, from the cache or freshly downloaded, after checking its sha256.
+pub fn fetch_file(resource_id: &str, file: &PinnedFile, cache: &Path) -> Result<Vec<u8>> {
     std::fs::create_dir_all(cache)
         .with_context(|| format!("cannot create the cache {}", cache.display()))?;
     let cached = cache.join(&file.sha256);
