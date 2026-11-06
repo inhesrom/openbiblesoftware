@@ -7,9 +7,9 @@ with. It opens from the menu bar's **Home** button (left of Today's reading) or 
 | Layer | Piece | Role |
 |---|---|---|
 | `obs-engine` | `home.rs` | `TabKind::Home` (keyless, single instance, no Link set); `HomeCard`, `HomeSettings` (the Home arrangement and "Open Home at launch", one preference `home` in the User database); what each card lists (`Session::home_plans`, `home_continue`, `home_history`, `home_favorites`, `verse_of_the_day`, `quick_start_params`, `library_summary`, `starter_summary`); commands `home.open`, `home.read_verse_of_the_day`, `home.move_card`, `home.hide_card`, `home.reset_cards`, `home.open_at_launch`. |
-| `obs-engine` | `workspace.rs` | A new Home Tab goes to the last reading Panel (over the ★ Bible) unless a Panel is remembered for it, so it has room. |
+| `obs-engine` | `workspace.rs` | A new Home Tab goes to the last reading Panel (over the ★ Bible) unless a Panel is remembered for it, so it has room; focusing Home makes its Panel the last reading Panel, never the last non-reading one, so Tools and the Starter library still open beside it (`TabKind::opens_in_reading_panel`). Home is not Bible content (`is_reading` stays false). |
 | `obs-ui-egui` | `shell/home_tab.rs` | The cards (two columns when the Tab is at least 760 points wide), their headers (⏶ ⏷ ×), the line under the title (Open Home at launch, Reset cards, Show for each hidden card), and the menu bar's Home button. |
-| `obs-ui-egui` | `shell.rs` | `Shell::restore_at_launch`: the Last session (else the default layout), then Home on top when there was no Last session or "Open Home at launch" is on. `App::with_file` calls it. |
+| `obs-ui-egui` | `shell.rs` | `Shell::restore_at_launch`: the Last session (else the default layout), then Home on top when there was no Last session or "Open Home at launch" is on. `App::with_file` calls it, then `Shell::show_startup_resource` for a file given on the command line: its open Tab (the ★ Bible of the default layout) is focused over Home, else it opens. |
 
 ## Cards
 
@@ -53,14 +53,18 @@ Passage says so.
 ## At launch
 
 - **First run** (no Last session): the default layout, then Home over the ★ Bible, focused.
-  When the Starter library is offered for download (no bundle), its Tab opens beside it.
+  When the Starter library is offered for download (no bundle), its Tab opens beside it,
+  in the non-reading Panel, and Home stays shown.
 - **Later launches**: the Last session as left. Home is there only if it was open, unless
   **Open Home at launch** is on (the checkbox under Home's title, `home.open_at_launch`):
   then Home opens on top of the Last session.
+- **A file given on the command line** shows on top of both: its Tab is focused if open
+  (the ★ Bible on a first run), else it opens.
 
 ## Evidence
 
-- `crates/engine/src/home_tests.rs`: the Tab and its placement, the arrangement kept after a
+- `crates/engine/src/home_tests.rs`: the Tab and its placement (a Tool still opens beside a focused Home; with no Bible, the
+  Starter library offer opens beside Home), the arrangement kept after a
   restart, the stored form, the Verse of the day (read in the ★ Bible even when only another
   Bible is open), the fresh-install summary, every unfinished Reading plan listed (three
   starting later do not hide a fourth due today), and one command per row opening a Reading,
@@ -69,7 +73,9 @@ Passage says so.
   a fresh install opens on Home with Quick start and the Starter library summary; a Reading
   plan, a Favorite and Visits each open with one click; the Verse of the day opens the ★ Bible
   (BSB) with only WEB open; a fourth plan after three starting later is listed and opens;
-  ⏶, × and Show; Open Home at launch across a relaunch.
+  ⏶, × and Show; Open Home at launch across a relaunch; without a bundle the Starter library
+  offer opens beside Home with Home still shown; a startup file that is the ★ Bible is
+  focused over Home, one not open yet opens over it.
 - `crates/ui-egui/src/a11y_audit_tests.rs`: Home in every-Tab-kind naming and contrast, and
   `keyboard_only_home`.
 - Real app (macOS, `OBS_SCRIPT` + `OBS_SHOT`, fresh User database): `docs/previews/home-first-run.png`

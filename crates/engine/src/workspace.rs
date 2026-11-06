@@ -172,9 +172,11 @@ impl TabKind {
         matches!(self, TabKind::Resource(_))
     }
 
-    /// Whether a new Tab of this kind goes to the last reading Panel when no Panel is
-    /// remembered for it: Resources, and Home, which wants the room (#178).
-    fn opens_in_reading_panel(&self) -> bool {
+    /// Whether Tabs of this kind belong with reading Panels: a new one goes to the last
+    /// reading Panel when no Panel is remembered for it, and focusing one makes its Panel the
+    /// last reading Panel. Resources, and Home, which wants the room (#178) but is not Bible
+    /// content ([`TabKind::is_reading`]).
+    pub(crate) fn opens_in_reading_panel(&self) -> bool {
         matches!(self, TabKind::Resource(_) | TabKind::Home)
     }
 
@@ -1031,7 +1033,7 @@ impl Workspace {
         self.activity.insert(tab, self.clock);
         if let Some(p) = self.panel_of(tab) {
             self.remembered.insert(kind.slot(), p);
-            if kind.is_reading() {
+            if kind.opens_in_reading_panel() {
                 self.last_reading_panel = Some(p);
             } else {
                 self.last_other_panel = Some(p);

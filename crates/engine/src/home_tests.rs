@@ -91,6 +91,13 @@ fn home_is_one_keyless_tab_that_opens_over_the_bible() {
     // It wants the room: the reading Panel, over the ★ Bible, not the Library's.
     assert_eq!(s.workspace.panel_of(home), s.workspace.panel_of(bsb));
     assert_eq!(s.workspace.focused(), Some(home));
+    // Focusing Home leaves the non-reading Panel as it was: a Tool still opens beside it.
+    let notes = tab(&s.run("tool.notes", &json!({})).unwrap());
+    assert_ne!(s.workspace.panel_of(notes), s.workspace.panel_of(home));
+    assert_eq!(
+        s.workspace.active_in(s.workspace.panel_of(home).unwrap()),
+        Some(home)
+    );
     // One Home: opening it again focuses it.
     s.workspace.focus(bsb);
     assert_eq!(tab(&s.run("home.open", &json!({})).unwrap()), home);
@@ -103,6 +110,28 @@ fn home_is_one_keyless_tab_that_opens_over_the_bible() {
     s.save_last_session().unwrap();
     assert!(s.location_of(home).is_none());
     assert!(s.history().iter().all(|v| v.location.kind != TabKind::Home));
+    drop(s);
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn without_a_bible_home_gets_its_own_panel_and_the_starter_offer_opens_beside_it() {
+    let root = std::env::temp_dir().join(format!("obs-home-empty-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let mut s = Session::new(JobMode::Inline);
+    let (store, _) = obs_store::UserStore::open(&root.join("user.db")).unwrap();
+    s.attach_user(Box::new(store));
+    // The default layout with no Bible, Home on top, then the first frame's Starter offer.
+    let library = tab(&s.run("library.open", &json!({})).unwrap());
+    s.run("tool.word_info", &json!({})).unwrap();
+    s.workspace.focus(library);
+    let home = tab(&s.run("home.open", &json!({})).unwrap());
+    assert_ne!(s.workspace.panel_of(home), s.workspace.panel_of(library));
+    let starter = tab(&s.run("library.starter", &json!({})).unwrap());
+    assert_eq!(s.workspace.panel_of(starter), s.workspace.panel_of(library));
+    let home_panel = s.workspace.panel_of(home).unwrap();
+    assert_eq!(s.workspace.active_in(home_panel), Some(home));
     drop(s);
     std::fs::remove_dir_all(&root).unwrap();
 }

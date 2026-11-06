@@ -208,6 +208,92 @@ fn a_fresh_install_opens_on_home_with_quick_starts_and_the_starter_library_summa
     );
 }
 
+#[test]
+fn without_a_bundle_the_starter_library_offer_opens_beside_home_not_over_it() {
+    let lab = Lab::new("no-bundle");
+    let mut session = Session::new(JobMode::Inline);
+    session.library.set_directory(lab.root.join("library"));
+    session.set_search_cache_dir(lab.root.join("cache"));
+    let (store, _) = obs_store::UserStore::open(&lab.db()).unwrap();
+    session.attach_user(Box::new(store));
+    let sync = session.sync_starter_library(None);
+    assert!(sync.offer_download);
+    let mut shell = Shell::new(session);
+    shell.restore_at_launch();
+    // What `App` runs on its first frame when the Starter library is offered.
+    shell.run("library.starter", &json!({}));
+    let mut h = Harness::from_shell(shell);
+    settle(&mut h);
+    let ws = &h.shell.st.session.workspace;
+    let home = home_tab(&h).expect("Home is open");
+    let starter = tab_of(&h, &TabKind::StarterLibrary).expect("the Starter library is offered");
+    assert_ne!(ws.panel_of(home), ws.panel_of(starter), "{:?}", h.panels());
+    assert_eq!(ws.active_in(ws.panel_of(home).unwrap()), Some(home));
+    assert_eq!(ws.active_in(ws.panel_of(starter).unwrap()), Some(starter));
+    for t in ["Today's reading", "Quick start", "Starter library"] {
+        assert!(h.texts().contains(&t), "{t:?} missing: {:?}", h.texts());
+    }
+}
+
+#[test]
+fn a_file_given_at_startup_shows_over_home_even_when_it_is_the_star_bible() {
+    let lab = Lab::new("startup-file");
+    write_bsb(&lab.root);
+    let verses = [(
+        v(Book::Genesis, 1, 1),
+        "In the beginning God created the heavens.",
+    )];
+    write_library(&lab.root, &[bible("web", "WEB", &verses, None, &[])]);
+    let launch_with = |file: &str| {
+        let mut session = Session::new(JobMode::Inline);
+        // As `App::with_file` does: the file joins the library, then the User database.
+        session.library.add_file(&lab.root.join("bsb.obr")).unwrap();
+        session.library.add_file(&lab.root.join("web.obr")).unwrap();
+        session
+            .library
+            .set_preferred_order(vec!["bsb".into(), "web".into()]);
+        let (store, _) = obs_store::UserStore::open(&lab.db()).unwrap();
+        session.attach_user(Box::new(store));
+        let mut shell = Shell::new(session);
+        shell.restore_at_launch();
+        let ws = &shell.st.session.workspace;
+        let focused = ws.focused().and_then(|t| ws.tab(t)).map(|t| t.kind.clone());
+        assert_eq!(
+            focused,
+            Some(TabKind::Home),
+            "Home is on top before the file"
+        );
+        shell.show_startup_resource(file);
+        let mut h = Harness::from_shell(shell);
+        settle(&mut h);
+        h
+    };
+    // First run: the default layout already shows the ★ Bible (BSB), under Home.
+    let mut h = launch_with("bsb");
+    let bsb = bsb_tab(&h);
+    let ws = &h.shell.st.session.workspace;
+    assert_eq!(focused_kind(&h), Some(TabKind::Resource("bsb".into())));
+    assert_eq!(ws.active_in(ws.panel_of(bsb).unwrap()), Some(bsb));
+    assert!(home_tab(&h).is_some(), "Home stays open behind it");
+    assert_eq!(
+        (ws.tabs())
+            .filter(|t| t.kind == TabKind::Resource("bsb".into()))
+            .count(),
+        1,
+        "the open Tab is shown, not a second one"
+    );
+    // With Open Home at launch on, a file not open yet opens over Home.
+    h.shell.run("home.open_at_launch", &json!({ "on": true }));
+    h.shell.save_session(true);
+    drop(h);
+    let h = launch_with("web");
+    assert_eq!(focused_kind(&h), Some(TabKind::Resource("web".into())));
+    let web = tab_of(&h, &TabKind::Resource("web".into())).unwrap();
+    let ws = &h.shell.st.session.workspace;
+    assert_eq!(ws.active_in(ws.panel_of(web).unwrap()), Some(web));
+    assert!(home_tab(&h).is_some());
+}
+
 /// BSB with Genesis 1-3, Psalm 46:1 (the Verse of the day on 5 November 2026), John 3:16
 /// and Romans 8:28.
 fn write_bsb(dir: &Path) {

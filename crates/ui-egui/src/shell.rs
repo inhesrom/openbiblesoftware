@@ -718,6 +718,22 @@ impl Shell {
         self.st.palette = Palette::for_tone(tone);
     }
 
+    /// Show the Resource `id` given at startup (a file on the command line) on top of what
+    /// [`Self::restore_at_launch`] opened, Home included: its most recently active Tab is
+    /// focused, else it opens.
+    pub fn show_startup_resource(&mut self, id: &str) {
+        let kind = TabKind::Resource(id.to_string());
+        match self.st.session.workspace.most_recent(|t| t.kind == kind) {
+            Some(tab) => {
+                self.st.session.workspace.focus(tab);
+                self.apply_effects();
+            }
+            None => {
+                self.run("resource.open", &json!({ "id": id }));
+            }
+        }
+    }
+
     /// Save the Last session now (on quit), or at most once a second while running.
     pub fn save_session(&mut self, now: bool) {
         if !now && self.st.now - self.st.last_save < 1.0 {
