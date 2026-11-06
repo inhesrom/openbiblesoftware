@@ -360,3 +360,70 @@ fn an_untagged_bible_does_not_hide_the_starter_bibles_from_key_words_and_forms()
     drop(s);
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// A Greek Bible with Strong's numbers but no Morphology tags G26, yet Forms stays empty: it
+/// still offers TAGNT from the Starter library, as does a Hebrew Bible's Morphology (the
+/// wrong half of the Strong's system for G26). Once a Greek Bible with Morphology is in,
+/// only Get Resources is left.
+#[test]
+fn a_strongs_only_greek_bible_does_not_hide_tagnt_from_forms() {
+    let root =
+        std::env::temp_dir().join(format!("obs-missing-strongs-only-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let bundle = root.join("starter");
+    let mut set = testing::starter_set();
+    set.push(testing::tagnt_john_3_16());
+    testing::write_starter_bundle(&bundle, &set);
+    let mut s = Session::new(JobMode::Inline);
+    s.starter.set_bundle(&bundle).unwrap();
+    let add = |s: &mut Session, r: &obs_model::Resource| {
+        let path = root.join(format!("{}.obr", r.manifest.resource_id));
+        obs_store::write_obr(r, &path).unwrap();
+        s.library.add_file(&path).unwrap();
+    };
+    let john_15_13 = Verse::new(obs_scripture::Book::John, 15, 13);
+    add(
+        &mut s,
+        &testing::tagged_bible(
+            "strongs-grc",
+            "Greek with Strong's",
+            "GRS",
+            "grc",
+            &[(
+                john_15_13,
+                "μείζονα{G3187} ταύτης{G3778} ἀγάπης{G26} οὐδεὶς{G3762} ἔχει{G2192}",
+            )],
+        ),
+    );
+    add(&mut s, &testing::hebrew_bara());
+
+    // The Hebrew Bible's Forms (Morphology) are gathered first.
+    let h1254 = Key::StrongsNumber(n("H1254"));
+    assert!(!settle(&mut s, &h1254, GuideSection::Forms).is_empty());
+    let g26 = Key::StrongsNumber(n("G26"));
+    let SectionData::Forms(forms) = &*settle(&mut s, &g26, GuideSection::Forms) else {
+        panic!("not Forms");
+    };
+    assert_eq!(forms.bible_id, "strongs-grc");
+    assert!(forms.forms.is_empty());
+    assert_eq!(forms.without_form, 1);
+    let empty = s.guide_empty_state(&g26, GuideSection::Forms);
+    assert_eq!(
+        empty.message,
+        "None in your library: no Hebrew or Greek Bible with Morphology has this word."
+    );
+    assert_eq!(empty.missing.tagging, Tagging::Morphology);
+    assert_eq!(empty.missing.starter, ids(&["tagnt"]));
+
+    // TAGNT (John 3:16 only, with Morphology) joins: G26 is simply not in it.
+    add(&mut s, &testing::tagnt_john_3_16());
+    assert!(settle(&mut s, &g26, GuideSection::Forms).is_empty());
+    let empty = s.guide_empty_state(&g26, GuideSection::Forms);
+    assert_eq!(empty.missing.starter, StarterOffer::None);
+    assert_eq!(
+        empty.missing.get_label().as_deref(),
+        Some("Get Hebrew & Greek texts…")
+    );
+    drop(s);
+    let _ = std::fs::remove_dir_all(&root);
+}

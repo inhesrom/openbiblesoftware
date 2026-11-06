@@ -311,6 +311,12 @@ impl Concordance {
     fn code(&self, id: u32) -> Option<&str> {
         self.codes.get(id as usize).map(String::as_str)
     }
+
+    /// Whether any Tagged word carries a Morphology code, so the Bible can fill Forms. A
+    /// Bible with Strong's numbers only cannot.
+    pub fn has_morphology(&self) -> bool {
+        !self.codes.is_empty()
+    }
 }
 
 /// Each Bible Verse (own numbering) with its Standard Verse (`None`: Unmapped), as the
@@ -385,6 +391,21 @@ impl Concordances {
     #[cfg(target_arch = "wasm32")]
     pub fn get(&self, _: &LibraryEntry) -> Result<Arc<Concordance>, String> {
         Err("Opening Resources is not supported here".into())
+    }
+
+    /// A Bible's concordance if a job has already gathered it; never reads, nor waits for a
+    /// job gathering it (for the UI thread).
+    pub fn loaded(&self, entry: &LibraryEntry) -> Option<Arc<Concordance>> {
+        let identity = crate::key_words::identity(&entry.manifest);
+        let slot = {
+            let loaded = self.loaded.lock().unwrap_or_else(|p| p.into_inner());
+            Arc::clone(loaded.get(&identity)?)
+        };
+        match slot.try_lock() {
+            Ok(c) => c.clone(),
+            Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner().clone(),
+            Err(std::sync::TryLockError::WouldBlock) => None,
+        }
     }
 }
 

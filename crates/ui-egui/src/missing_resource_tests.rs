@@ -586,3 +586,38 @@ fn untagged_bibles_still_offer_the_starter_library_for_key_words_and_forms() {
     click_action(&mut h, study, forms, ADD_STARTER);
     expect_starter_library(&mut h);
 }
+
+/// A Greek Bible with Strong's numbers but no Morphology has G26, yet its Forms stay empty:
+/// Forms still offers the Starter library (its TAGNT has Morphology).
+#[test]
+fn a_strongs_only_greek_bible_still_offers_the_starter_library_for_forms() {
+    let greek = obs_engine::testing::tagged_bible(
+        "strongs-grc",
+        "Greek with Strong's",
+        "GRS",
+        "grc",
+        &[(
+            Verse::new(obs_scripture::Book::John, 15, 13),
+            "μείζονα{G3187} ταύτης{G3778} ἀγάπης{G26} οὐδεὶς{G3762} ἔχει{G2192}",
+        )],
+    );
+    let (mut h, _lab) = setup("strongs-only", &[greek]);
+    let study = open_word_study(&mut h, "G26");
+    h.shell.run(
+        "guide.collapse_section",
+        &json!({ "guide": "word_study", "section": "forms", "collapsed": false }),
+    );
+    let forms = GuideSection::Forms;
+    until(&mut h, "Forms' buttons", |h| {
+        find_in(
+            h,
+            study,
+            "None in your library: no Hebrew or Greek Bible with Morphology has this word.",
+        )
+        .is_some()
+            && in_section(h, study, forms, "Get Hebrew & Greek texts…").is_some()
+            && in_section(h, study, forms, ADD_STARTER).is_some()
+    });
+    click_action(&mut h, study, forms, ADD_STARTER);
+    expect_starter_library(&mut h);
+}

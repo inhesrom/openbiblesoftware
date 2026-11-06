@@ -128,12 +128,17 @@ impl GuideSection {
     /// Whether the Library has the kind of Resource the section reads with the tagging it
     /// needs ([`Self::tagging`]), so an empty section means nothing covers the Key. A Bible
     /// without Tagged words has the type Key words and Forms read ([`Self::has_needed`]) but
-    /// can never fill them. Tagging is read from the rendering indexes the section's job
-    /// loaded (never read here): a Bible whose index is not loaded counts as untagged.
+    /// can never fill them, nor can a Hebrew or Greek Bible with Strong's numbers but no
+    /// Morphology fill Forms. Forms needs Morphology in the original language of `strongs`
+    /// (`None`: Hebrew or Greek). Tagging is read from what the section's job loaded (never
+    /// read here): a Bible whose rendering index (Strong's numbers) or concordance
+    /// (Morphology) is not loaded counts as lacking it.
     pub fn has_needed_tagging(
         self,
         library: &Library,
         indexes: &crate::word_study::RenderingIndexes,
+        concordances: &crate::word_sections::Concordances,
+        strongs: Option<StrongsNumber>,
     ) -> bool {
         let tagged = |e: &crate::LibraryEntry| {
             indexes
@@ -143,12 +148,13 @@ impl GuideSection {
         let mut bibles = library.of_type(ResourceType::Bible);
         match self {
             GuideSection::KeyWords => bibles.any(tagged),
-            // Strong's numbers in a Hebrew or Greek Bible (TAHOT, TAGNT).
+            // Morphology in a Hebrew or Greek Bible (TAHOT, TAGNT) of the number's language.
             GuideSection::Forms => bibles.any(|e| {
                 [StrongsLanguage::Hebrew, StrongsLanguage::Greek]
                     .into_iter()
+                    .filter(|l| strongs.is_none_or(|n| n.language() == *l))
                     .any(|l| is_original_language(&e.manifest.language, l))
-                    && tagged(e)
+                    && concordances.loaded(e).is_some_and(|c| c.has_morphology())
             }),
             // Translated as and Occurrences already ask for Strong's numbers.
             _ => self.has_needed(library, indexes),
@@ -197,12 +203,13 @@ impl Session {
     /// fill it. Asked for by the UI each frame, so it follows Resources being added.
     pub fn guide_empty_state(&self, key: &Key, section: GuideSection) -> EmptyState {
         let indexes = self.guides.indexes();
-        let has = section.has_needed(&self.library, &indexes);
-        let tagged = section.has_needed_tagging(&self.library, &indexes);
+        let concordances = self.guides.concordances();
         let strongs = match key {
             Key::StrongsNumber(n) => Some(*n),
             _ => None,
         };
+        let has = section.has_needed(&self.library, &indexes);
+        let tagged = section.has_needed_tagging(&self.library, &indexes, &concordances, strongs);
         EmptyState {
             message: section.empty_message(has),
             missing: section.missing_resource(

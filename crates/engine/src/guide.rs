@@ -544,7 +544,8 @@ pub struct LibrarySections {
     aliases: Arc<AliasCache>,
     /// Bibles' rendering indexes, shared with the Word Study header and chooser.
     indexes: Arc<crate::word_study::RenderingIndexes>,
-    concordances: crate::word_sections::Concordances,
+    /// Bibles' concordances, shared with the Session for the Forms empty state.
+    concordances: Arc<crate::word_sections::Concordances>,
     /// The People & places directory, shared with the Session's Factbooks (#149).
     directory: Arc<crate::factbook::DirectoryCache>,
 }
@@ -583,7 +584,21 @@ impl SectionSource for LibrarySections {
                         .map(SectionData::Occurrences)
                 }
                 GuideSection::Forms => {
-                    ws::forms(library, &self.indexes, &self.concordances, n).map(SectionData::Forms)
+                    let forms = ws::forms(library, &self.indexes, &self.concordances, n)?;
+                    if forms.forms.is_empty() {
+                        // The empty state (#135) asks whether a Bible in the number's
+                        // original language has Morphology; it reads only gathered
+                        // concordances, so gather them here, off the UI thread.
+                        for bible in library.of_type(ResourceType::Bible).filter(|e| {
+                            crate::key_words::is_original_language(
+                                &e.manifest.language,
+                                n.language(),
+                            )
+                        }) {
+                            let _ = self.concordances.get(bible);
+                        }
+                    }
+                    Ok(SectionData::Forms(forms))
                 }
                 _ => Err(format!("{} needs a Passage", section.title())),
             };
@@ -638,16 +653,18 @@ impl LibrarySections {
         }
     }
 
-    /// Sections that share `aliases`, the Bibles' rendering `indexes` and the People &
-    /// places `directory` with the Session.
+    /// Sections that share `aliases`, the Bibles' rendering `indexes` and `concordances`,
+    /// and the People & places `directory` with the Session.
     pub fn with_shared(
         aliases: Arc<AliasCache>,
         indexes: Arc<crate::word_study::RenderingIndexes>,
+        concordances: Arc<crate::word_sections::Concordances>,
         directory: Arc<crate::factbook::DirectoryCache>,
     ) -> Self {
         Self {
             aliases,
             indexes,
+            concordances,
             directory,
             ..Self::default()
         }
@@ -857,6 +874,8 @@ pub struct Guides {
     indexes: Arc<crate::word_study::RenderingIndexes>,
     /// The People & places directory, shared with the default source and the Factbook.
     directory: Arc<crate::factbook::DirectoryCache>,
+    /// Bibles' concordances, shared with the default source.
+    concordances: Arc<crate::word_sections::Concordances>,
 }
 
 impl Default for Guides {
@@ -864,6 +883,7 @@ impl Default for Guides {
         let aliases = Arc::new(AliasCache::default());
         let indexes = Arc::new(crate::word_study::RenderingIndexes::default());
         let directory = Arc::new(crate::factbook::DirectoryCache::default());
+        let concordances = Arc::new(crate::word_sections::Concordances::default());
         Self {
             arrangements: BTreeMap::new(),
             results: BTreeMap::new(),
@@ -873,12 +893,14 @@ impl Default for Guides {
             source: Arc::new(LibrarySections::with_shared(
                 Arc::clone(&aliases),
                 Arc::clone(&indexes),
+                Arc::clone(&concordances),
                 Arc::clone(&directory),
             )),
             aliases,
             alias_job: None,
             indexes,
             directory,
+            concordances,
         }
     }
 }
@@ -911,6 +933,11 @@ impl Guides {
     /// The Bibles' rendering indexes the default source reads.
     pub fn indexes(&self) -> Arc<crate::word_study::RenderingIndexes> {
         Arc::clone(&self.indexes)
+    }
+
+    /// The Bibles' concordances the default source gathers.
+    pub fn concordances(&self) -> Arc<crate::word_sections::Concordances> {
+        Arc::clone(&self.concordances)
     }
 
     /// The arrangement for a kind of Guide.
