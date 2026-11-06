@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use obs_scripture::{Book, StrongsNumber, Verse};
 use serde_json::json;
 
-use crate::command_box::{CommandBoxAction, parse_passage};
+use crate::command_box::{CommandBoxAction, SUGGESTION_LIMIT, parse_passage};
 use crate::testing::bibles::{bible, v, write_library};
 use crate::*;
 
@@ -177,6 +177,13 @@ fn the_parser_reads_references_verbs_lemmas_and_falls_back_to_search() {
             "search love one another",
             CommandBoxAction::Search("love one another".into()),
         ),
+        // Text whose lowercase is longer than itself (`İ` → `i̇`) keeps its own rest.
+        ("search İ", CommandBoxAction::Search("İ".into())),
+        (
+            "SEARCH İstanbul",
+            CommandBoxAction::Search("İstanbul".into()),
+        ),
+        ("ws ἀγάπη", CommandBoxAction::WordStudy(strongs("G26"))),
     ] {
         assert_eq!(top(&mut s, text).0, want, "{text}");
     }
@@ -234,6 +241,29 @@ fn the_parser_reads_references_verbs_lemmas_and_falls_back_to_search() {
         .unwrap();
     assert_eq!(out[0]["kind"], "word_study");
     assert_eq!(out[0]["label"], "G26");
+}
+
+#[test]
+fn search_keeps_the_last_slot_when_the_list_is_full() {
+    let t = Temp::new("full");
+    let mut s = launch(&t);
+    for n in 1..=SUGGESTION_LIMIT {
+        s.run("layout.save", &json!({ "name": format!("Study {n}") }))
+            .unwrap();
+    }
+    let list = s.command_box_suggestions("Study");
+    assert_eq!(list.len(), SUGGESTION_LIMIT, "{list:?}");
+    assert_eq!(
+        list.last().unwrap().action,
+        CommandBoxAction::Search("Study".into()),
+        "{list:?}"
+    );
+    assert!(
+        list[..SUGGESTION_LIMIT - 1]
+            .iter()
+            .all(|x| matches!(x.action, CommandBoxAction::RestoreLayout(_))),
+        "{list:?}"
+    );
 }
 
 #[test]

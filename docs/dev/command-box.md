@@ -2,7 +2,8 @@
 
 The box at the right of the menu bar. It replaced the toolbar's Search field, which only ran
 `search.run`: typing now shows a dropdown of suggestions, best first, and Enter runs the
-highlighted one. Searching is still there, as the last suggestion for any text.
+highlighted one. Searching is still there for any text: the list holds at most eight
+suggestions, and when it is full Search keeps the last slot.
 
 ## What text suggests
 

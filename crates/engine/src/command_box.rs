@@ -190,15 +190,18 @@ pub fn parse_passage(text: &str) -> Option<Passage> {
 
 /// The leading word or words naming a Guide, Tool or action, and the rest of the text.
 fn split_verb(text: &str) -> Option<(Verb, &str)> {
-    let lower = text.to_lowercase();
     VERBS.iter().find_map(|(word, verb)| {
-        let rest = lower.strip_prefix(word)?;
-        if !rest.starts_with(char::is_whitespace) || rest.trim().is_empty() {
+        // Compare the verbs (ASCII) in place: lowercasing the whole text can change byte
+        // lengths (`İ`), which would misplace where the rest starts.
+        let head = text.get(..word.len())?;
+        let rest = text.get(word.len()..)?;
+        if !head.eq_ignore_ascii_case(word)
+            || !rest.starts_with(char::is_whitespace)
+            || rest.trim().is_empty()
+        {
             return None;
         }
-        // Same byte length: lowercasing these ASCII verbs changes nothing before `rest`.
-        let at = text.len() - rest.len();
-        text.get(at..).map(|r| (*verb, r.trim()))
+        Some((*verb, rest.trim()))
     })
 }
 
@@ -298,6 +301,14 @@ impl Session {
             if !out.iter().any(|o| o.action == s.action) {
                 out.push(s);
             }
+        }
+        // Search is always offered: when the list is full, it keeps the last slot.
+        let search = CommandBoxAction::Search(text.to_string());
+        let search_at = out.iter().position(|s| s.action == search);
+        if let Some(i) = search_at.filter(|&i| i >= SUGGESTION_LIMIT) {
+            let kept = out.remove(i);
+            out.truncate(SUGGESTION_LIMIT - 1);
+            out.push(kept);
         }
         out.truncate(SUGGESTION_LIMIT);
         out
