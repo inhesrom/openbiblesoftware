@@ -76,4 +76,7 @@ words in that one Resource; the Search Tool finds them across the library.
   is 363 of 646), Enter visits all 646 in order.
 - `cargo xtask bench` draws a Find bar's matches ("the", tens of thousands) over every pane
   each frame.
-- Previews: `docs/previews/find-*-kittest.png`.
+- Previews: `docs/previews/find-*-kittest.png` (headless shell harness) and, from the real
+  app on macOS through `OBS_SCRIPT`/`OBS_SHOT`, `find-kjv-john-app.png` (KJV, "love", 366 of
+  646 at John 5:20) and `find-tagnt-agape-app.png` (TAGNT, "αγαπη" typed without accents, 171
+  of 199 at 1 John 4:7).
