@@ -340,6 +340,7 @@ fn people_and_places_round_trip_and_answer_by_passage() {
         name: "Abraham".into(),
         kind: EntityKind::Male,
         strongs: Some("H0085".parse().unwrap()),
+        other_strongs: vec!["H0087".parse().unwrap(), "G0011".parse().unwrap()],
         other_names: vec!["Abram".into()],
         region: None,
         relations: vec![EntityRelation {
@@ -353,6 +354,7 @@ fn people_and_places_round_trip_and_answer_by_passage() {
         name: "Terah".into(),
         kind: EntityKind::Male,
         strongs: Some("H8646G".parse().unwrap()),
+        other_strongs: Vec::new(),
         other_names: Vec::new(),
         region: Some("Mesopotamia".into()),
         relations: Vec::new(),
@@ -424,6 +426,16 @@ fn people_and_places_round_trip_and_answer_by_passage() {
         ]
     );
     assert_eq!(Defaults(&r).mention_stats().unwrap(), stats);
+    drop(r);
+    // A file written before entities had other Strong's numbers (#149) still opens.
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("DROP TABLE entity_strongs;").unwrap();
+    }
+    let r = ObrReader::open(&path).unwrap();
+    let old = r.entity(&abraham.id).unwrap().unwrap();
+    assert!(old.other_strongs.is_empty());
+    assert_eq!(old.strongs, abraham.strongs);
 }
 
 /// Tagged words read straight from the span table match a walk over every unit (#54).

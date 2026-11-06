@@ -879,6 +879,7 @@ fn person(
         name: id.split('@').next().unwrap().into(),
         kind,
         strongs: None,
+        other_strongs: Vec::new(),
         other_names: Vec::new(),
         region: None,
         relations: relations

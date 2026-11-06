@@ -321,6 +321,24 @@ fn word_info_strongs_numbers_lead_to_the_factbook() {
     );
 }
 
+/// Word Info on Abram (`H87`) or Greek Abraham (`G11`) leads to the same Factbook as on
+/// Abraham (`H85`): TIPNR lists every name's Strong's number on its Total line.
+#[test]
+fn every_strongs_number_of_abrahams_names_leads_to_his_factbook() {
+    let t = Temp::new("abram");
+    let mut s = session(&t, &[tipnr()]);
+    directory(&mut s);
+    for n in ["H85", "H0087", "G11"] {
+        let named = s.factbook_entities_for(n.parse().unwrap());
+        let ids: Vec<&str> = named.iter().map(|c| c.entity.as_str()).collect();
+        assert_eq!(ids, [ABRAHAM], "{n}");
+        let out = s
+            .run("guide.factbook", &json!({ "strongs": n, "new_tab": true }))
+            .unwrap();
+        assert_eq!(out["key"], json!(ABRAHAM), "{n}");
+    }
+}
+
 #[test]
 fn related_people_and_places_come_from_links_both_ways_and_shared_verses() {
     let t = Temp::new("related");
@@ -474,6 +492,15 @@ fn starter_library_abraham_factbook_and_john_chooser() {
     let passages = key_passages(&mut s, ABRAHAM);
     eprintln!("{} Key Passages", passages.len());
     assert!(passages.len() > 100);
+    // Word Info on Abraham, Abram or the Greek Abraham.
+    for n in ["H85", "H87", "G11"] {
+        let named = s.factbook_entities_for(n.parse().unwrap());
+        assert_eq!(
+            named.first().map(|c| c.entity.as_str()),
+            Some(ABRAHAM),
+            "{n}"
+        );
+    }
     let rows = related(&mut s, ABRAHAM);
     for r in &rows {
         eprintln!("related: {} — {}", r.card.title(), r.why);

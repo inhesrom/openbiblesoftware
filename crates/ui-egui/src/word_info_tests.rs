@@ -291,6 +291,91 @@ fn a_kjv_strongs_word_shows_the_english_word_and_the_lemma_card() {
     );
 }
 
+/// A KJV-style Bible at Gen 12:1 whose `Abram` carries Abram's own Strong's number, `H87`
+/// (Abraham is `H85`).
+fn kjv_abram_doc() -> Arc<ReadingDoc> {
+    use obs_model::{ResourceType, TextAccumulator, UnitId, UnitKind};
+    use obs_scripture::{Book, Verse};
+    let mut m = Manifest::new("kjv-abram", "KJV Abram", "KJVA", ResourceType::Bible, "en");
+    m.key_schemes = vec![KeyScheme::Passage];
+    m.license = "LicenseRef-PD".into();
+    let mut b = ResourceBuilder::new(m);
+    let genesis = UnitId::book(Book::Genesis);
+    let mut t = TextAccumulator::new();
+    let v1 = t.push("Now the LORD had said unto Abram, Get thee out of thy country.");
+    let end = t.pos();
+    let text = t.into_string();
+    b.add_unit(genesis.clone(), UnitKind::BibleBook, None, text.clone());
+    b.add_span(
+        &genesis,
+        0..end,
+        SpanKind::Para {
+            style: ParaStyle::Prose,
+        },
+    );
+    let start = text.find("Abram").unwrap();
+    b.add_span(
+        &genesis,
+        start..start + "Abram".len(),
+        SpanKind::TaggedWord {
+            parts: vec![MorphemePart {
+                strongs: "H87".parse().unwrap(),
+                lemma: None,
+                morph: None,
+                gloss: None,
+            }],
+        },
+    );
+    b.add_verse(&genesis, v1, Verse::new(Book::Genesis, 12, 1), 1);
+    Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
+}
+
+/// #149: Word Info on Abram (`H87`, not Abraham's unified `H85`) offers Abraham's Factbook,
+/// with nothing else running: the People & places directory loads by itself on a cold
+/// start, and the link opens his Factbook.
+#[test]
+fn word_info_on_abram_offers_abrahams_factbook_from_a_cold_start() {
+    let dir = std::env::temp_dir().join(format!("obs-word-info-abram-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut h = Harness::new();
+    let path = dir.join("tipnr.obr");
+    obs_store::write_obr(&obs_engine::testing::tipnr(), &path).unwrap();
+    h.shell.st.session.library.add_file(&path).unwrap();
+    add_doc(&mut h.shell, kjv_abram_doc());
+    h.shell.run("resource.open", &json!({ "id": "kjv-abram" }));
+    h.frames(4);
+    h.click(h.tab_at("Word Info"));
+    let kjv = h.tab_id("KJVA");
+    let spot = word_spot(&h, kjv, "Abram");
+    h.events.push(Event::PointerMoved(spot));
+    h.frames(14);
+    let shown = h.shell.st.session.word_info.shown.clone().unwrap();
+    assert_eq!(shown.main.strongs.to_string(), "H87");
+    assert!(!h.shell.st.session.guides.is_busy());
+    assert!(!h.shell.st.session.word_study.is_busy());
+    for _ in 0..20 {
+        if h.find("Factbook: Abraham").is_some() {
+            break;
+        }
+        h.frame();
+    }
+    let link = h
+        .find("Factbook: Abraham")
+        .unwrap_or_else(|| panic!("no Factbook link: {:?}", h.texts()));
+    h.click(link.center());
+    h.frames(3);
+    let ws = &h.shell.st.session.workspace;
+    let t = ws.tab(ws.focused().unwrap()).unwrap();
+    assert_eq!(t.kind, TabKind::Guide(obs_engine::Guide::Factbook));
+    assert_eq!(
+        t.entry_history.current(),
+        Some(Key::Headword("Abraham@Gen.11.26-1Pe".into()))
+    );
+    drop(h);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Every horizontal line segment painted last frame, as (x0, x1, y).
 fn horizontal_lines(h: &Harness) -> Vec<(f32, f32, f32)> {
     fn walk(shape: &Shape, out: &mut Vec<(f32, f32, f32)>) {

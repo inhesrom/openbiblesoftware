@@ -347,6 +347,7 @@ mod tests {
             name: "Abraham".into(),
             kind: EntityKind::Male,
             strongs: None,
+            other_strongs: Vec::new(),
             other_names: vec!["Abram".into()],
             region: Some("Early Patriarch".into()),
             relations: vec![

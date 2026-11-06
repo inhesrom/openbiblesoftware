@@ -68,6 +68,10 @@ pub struct Entity {
     /// The Strong's number that identifies this individual (TIPNR's unified Strong's).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strongs: Option<StrongsNumber>,
+    /// The Strong's numbers of its other names and languages (TIPNR's dStrongs other than
+    /// [`Entity::strongs`]): Abraham's are `H87` (Abram) and `G11` (Greek).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub other_strongs: Vec<StrongsNumber>,
     /// Other names and spellings, e.g. `Abram` for Abraham.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub other_names: Vec<String>,

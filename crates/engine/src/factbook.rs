@@ -370,21 +370,32 @@ impl PeopleDirectory {
         }
     }
 
-    /// The entities with Strong's number `n`: the exact (extended) number when one has it,
-    /// else every entity under the same base number.
+    /// The entities with Strong's number `n`, as their unified number or the number of another
+    /// of their names (Abram `H87`, Greek Abraham `G11`): the exact (extended) number when one
+    /// has it, those whose unified number it is first; else every entity under the same base
+    /// number.
     pub fn with_strongs(&self, n: StrongsNumber) -> Vec<&DirectoryEntry> {
-        let exact: Vec<&DirectoryEntry> = self
+        let numbers = |e: &DirectoryEntry| {
+            let other = e.entity.other_strongs.iter().copied();
+            e.entity
+                .strongs
+                .into_iter()
+                .chain(other)
+                .collect::<Vec<_>>()
+        };
+        let mut exact: Vec<&DirectoryEntry> = self
             .entries
             .iter()
-            .filter(|e| e.entity.strongs == Some(n))
+            .filter(|e| numbers(e).contains(&n))
             .collect();
         if !exact.is_empty() {
+            exact.sort_by_key(|e| e.entity.strongs != Some(n));
             return exact;
         }
         let mut base: Vec<&DirectoryEntry> = self
             .entries
             .iter()
-            .filter(|e| e.entity.strongs.is_some_and(|s| s.base() == n.base()))
+            .filter(|e| numbers(e).iter().any(|s| s.base() == n.base()))
             .collect();
         base.sort_by_key(|a| std::cmp::Reverse(a.passages));
         base
@@ -684,6 +695,7 @@ pub fn key_passages(passages: impl IntoIterator<Item = Passage>) -> Vec<Passage>
 }
 
 /// The article headword one Dictionary gives entity `id`, from the alias cache.
+#[cfg(not(target_arch = "wasm32"))]
 fn headword(
     aliases: &crate::aliases::AliasCache,
     index: &crate::LibraryEntry,
@@ -733,6 +745,7 @@ fn entry_text(dictionary: &crate::LibraryEntry, headword: &str) -> Option<String
     unit.text.get(range).map(str::to_string)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn article_link(dictionary: &crate::LibraryEntry, headword: String) -> ArticleLink {
     ArticleLink {
         resource_id: dictionary.manifest.resource_id.clone(),
