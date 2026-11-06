@@ -54,8 +54,45 @@ const NEGATIONS: &[&str] = &[
     "withdrawn",
 ];
 
-/// Creative Commons restriction names that contain a negation word but are not one.
-const RESTRICTION_NAMES: &[&str] = &["no derivatives", "no derivative works", "no derivs"];
+/// The words after "no" in a Creative Commons no-derivatives restriction ("No Derivatives",
+/// "No Derivative Works", "No-Derivs"): that "no" is the restriction's name, not a negation.
+const DERIVATIVE_WORDS: &[&str] = &["derivative", "derivatives", "derivs"];
+
+/// One-word spellings of the no-derivatives restriction ("Attribution-NoDerivs 3.0").
+const NO_DERIVATIVES_WORDS: &[&str] = &[
+    "noderivs",
+    "noderivatives",
+    "noderivative",
+    "noderivativeworks",
+];
+
+/// Whether `words` spell out the Creative Commons no-derivatives restriction (not its "ND"
+/// abbreviation, which is one only inside a Creative Commons licence).
+fn names_no_derivatives<S: AsRef<str>>(words: &[S]) -> bool {
+    words.iter().enumerate().any(|(i, w)| {
+        let w = w.as_ref();
+        NO_DERIVATIVES_WORDS.contains(&w)
+            || (w == "no"
+                && words
+                    .get(i + 1)
+                    .is_some_and(|next| DERIVATIVE_WORDS.contains(&next.as_ref())))
+    })
+}
+
+/// `words` without the "no" of each no-derivatives restriction name.
+fn without_restriction_names(words: &[String]) -> Vec<&str> {
+    words
+        .iter()
+        .enumerate()
+        .filter(|(i, w)| {
+            !(w.as_str() == "no"
+                && words
+                    .get(i + 1)
+                    .is_some_and(|next| DERIVATIVE_WORDS.contains(&next.as_str())))
+        })
+        .map(|(_, w)| w.as_str())
+        .collect()
+}
 
 /// The words of `text`, lowercased: runs of letters and digits.
 pub(crate) fn words(text: &str) -> Vec<String> {
@@ -98,11 +135,9 @@ pub(crate) fn clauses(text: &str) -> Vec<&str> {
 pub fn licence_class(licence: &str) -> LicenceClass {
     let l = licence.to_lowercase();
     let negated_grant = clauses(&l).into_iter().any(|clause| {
-        let mut clause = clause.to_string();
-        for name in RESTRICTION_NAMES {
-            clause = clause.replace(name, " ");
-        }
-        has_negation(&words(&clause)) && class_ignoring_negation(&clause) != LicenceClass::Unclear
+        let clause_words = words(clause);
+        let kept = without_restriction_names(&clause_words);
+        has_negation(&kept) && class_ignoring_negation(&kept.join(" ")) != LicenceClass::Unclear
     });
     if negated_grant {
         return LicenceClass::Unclear;
@@ -143,8 +178,9 @@ fn class_ignoring_negation(l: &str) -> LicenceClass {
         ]
         .iter()
         .any(|p| phrase(p));
-    let no_derivatives =
-        creative_commons && (word("nd") || phrase("noderivatives") || phrase("no derivatives"));
+    // "ND" alone is a no-derivatives clause only inside a Creative Commons licence; the
+    // spelled-out names ("NoDerivs", "No Derivative Works") are one wherever they stand.
+    let no_derivatives = (creative_commons && word("nd")) || names_no_derivatives(&words);
     if non_commercial || no_derivatives {
         return LicenceClass::PersonalUse;
     }
@@ -473,6 +509,39 @@ mod tests {
         ] {
             assert_eq!(licence_class(value), class, "{value}");
         }
+    }
+
+    /// #134 review: every published spelling of the no-derivatives restriction makes a
+    /// licence Free for personal use, never Free to share, even beside "Attribution".
+    #[test]
+    fn no_derivatives_spellings_are_personal_use() {
+        for value in [
+            "Creative Commons Attribution-NoDerivs 3.0 Unported",
+            "Creative Commons Attribution No Derivative Works 2.0",
+            "Creative Commons Attribution-NoDerivatives 4.0 International",
+            "Creative Commons Attribution-No Derivative Works 3.0",
+            "Creative Commons Attribution-No-Derivs 2.5",
+            "Creative Commons Attribution No Derivatives 4.0",
+            "Creative Commons Attribution-NoDerivativeWorks 2.0",
+            "CC BY-ND 4.0",
+            "Attribution-NoDerivs",
+            "Public Domain; no derivative works",
+        ] {
+            assert_eq!(licence_class(value), PersonalUse, "{value}");
+            assert!(
+                !LicenceFilter::FreeToShare.accepts(licence_class(value)),
+                "{value}"
+            );
+            assert!(
+                LicenceFilter::PersonalUse.accepts(licence_class(value)),
+                "{value}"
+            );
+        }
+        // "Derivative" without the restriction's "no" is not one.
+        assert_eq!(
+            licence_class("Creative Commons Attribution 4.0; derivative works welcome"),
+            FreeToShare
+        );
     }
 
     #[test]

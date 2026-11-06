@@ -66,6 +66,11 @@ fn free_to_share_hides_every_resource_whose_licence_is_not_free() {
     unclear.id = "unclear-excerpt".into();
     unclear.licence = "Copyrighted".into();
     sources.push(unclear);
+    // A spelled-out no-derivatives licence beside "Attribution" is not free (#134 review).
+    let mut no_derivs = sources[0].clone();
+    no_derivs.id = "noderivs-excerpt".into();
+    no_derivs.licence = "Creative Commons Attribution-NoDerivs 3.0 Unported".into();
+    sources.push(no_derivs);
     s.get_bibles.set_open_catalogue(sources);
     let gb = &s.get_bibles;
     let every: Vec<&ResourceListing> = gb
@@ -86,6 +91,7 @@ fn free_to_share_hides_every_resource_whose_licence_is_not_free() {
     assert_eq!(class_of("NASB1995"), LicenceClass::PersonalUse);
     assert_eq!(class_of("ObsKjvOsis"), LicenceClass::FreeToShare);
     assert_eq!(class_of("web-excerpt"), LicenceClass::FreeToShare);
+    assert_eq!(class_of("noderivs-excerpt"), LicenceClass::PersonalUse);
     let unclear: Vec<&str> = every
         .iter()
         .filter(|b| b.licence_class() == LicenceClass::Unclear)
@@ -115,6 +121,7 @@ fn free_to_share_hides_every_resource_whose_licence_is_not_free() {
     // Free for personal use adds the permission and non-commercial ones; Unclear only under All.
     let personal = gb.all_listings("", None, ResourceFilter::All, LicenceFilter::PersonalUse);
     assert!(personal.iter().any(|b| b.module == "NASB1995"));
+    assert!(personal.iter().any(|b| b.module == "noderivs-excerpt"));
     assert!(
         personal
             .iter()
