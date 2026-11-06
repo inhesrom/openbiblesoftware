@@ -205,6 +205,34 @@ fn binding_a_key_in_use_shows_the_conflict_and_offers_swap_or_cancel() {
     std::fs::remove_dir_all(db.parent().unwrap()).unwrap();
 }
 
+/// Swap keys is offered only when the other binding may take the old key: Unpin Word Info's
+/// Esc stays its own, so Ctrl+F for it says why and leaves both keys as they were.
+#[test]
+fn swap_keys_never_hands_esc_to_another_command() {
+    let db = temp_db("keys-reserved-swap");
+    let mut h = Harness::launch(Some(&db));
+    let tab = open_keys(&mut h, "unpin");
+    click_in_tab(&mut h, tab, "Escape");
+    key(&mut h, Key::F, CTRL);
+    let conflict = "Ctrl+F is already the key of “Find in Resource”.";
+    assert!(in_tab(&h, tab, conflict).is_some(), "{:?}", h.texts());
+    let why = "“Find in Resource” cannot take Escape: Esc is kept for closing and cancelling; \
+               pick another key.";
+    assert!(in_tab(&h, tab, why).is_some(), "{:?}", h.texts());
+    click_in_tab(&mut h, tab, "Swap keys");
+    let s = &h.shell.st.session;
+    assert_eq!(s.shortcut("word_info.unpin"), Some("Escape"));
+    assert_eq!(s.shortcut("tab.find"), Some("Ctrl+F"));
+    assert!(in_tab(&h, tab, conflict).is_some());
+    click_in_tab(&mut h, tab, "Cancel");
+    assert!(in_tab(&h, tab, conflict).is_none());
+    drop(h);
+    let h = Harness::launch(Some(&db));
+    assert_eq!(h.shell.st.session.shortcut("tab.find"), Some("Ctrl+F"));
+    drop(h);
+    std::fs::remove_dir_all(db.parent().unwrap()).unwrap();
+}
+
 /// Esc cancels recording; Enter and keys without Ctrl or Alt are refused with the reason;
 /// Clear leaves the command without a key.
 #[test]

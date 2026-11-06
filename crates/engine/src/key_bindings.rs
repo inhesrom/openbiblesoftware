@@ -12,7 +12,8 @@
 //!
 //! - `help.keyboard_shortcuts` opens the Keyboard shortcuts Tab.
 //! - `keys.set {command, key, swap}` binds a key. A key another binding has is refused, naming
-//!   it, unless `swap` is true: then that binding takes this one's old key.
+//!   it, unless `swap` is true: then that binding takes this one's old key. A swap never moves
+//!   a reserved key (Esc, Unpin Word Info's default) off the binding it is the default of.
 //! - `keys.clear {command}` leaves a binding without a key.
 //! - `keys.reset {command, swap}` restores the default key (refused like `keys.set` when
 //!   another binding has it now), and `keys.reset_all` every default.
@@ -441,8 +442,23 @@ impl Session {
         }
     }
 
+    /// Why `other` cannot take `id`'s key in a swap, if it cannot: a key kept for closing,
+    /// confirming or typing (Esc, the default of Unpin Word Info, say) stays with the binding
+    /// it is the default of.
+    pub fn swap_refused(&self, id: &str, other: &str) -> Option<String> {
+        let old = self.shortcut(id)?;
+        if self.default_shortcut(other) == Some(old) {
+            return None;
+        }
+        let why = not_bindable(&canonical_key(old).ok()?)?;
+        let label = (self.key_bindings().into_iter())
+            .find(|b| b.id == other)
+            .map_or(other, |b| b.label);
+        Some(format!("“{label}” cannot take {old}: {why}"))
+    }
+
     /// Bind `key` (`None`: clear) to `id`; with `swap`, a binding that has the key takes `id`'s
-    /// old key, else it refuses.
+    /// old key (refused when [`Self::swap_refused`]), else it refuses.
     fn bind(
         &mut self,
         command: &'static str,
@@ -463,6 +479,9 @@ impl Session {
                     c.label
                 ),
             ));
+        }
+        if let Some(why) = (conflict.as_ref()).and_then(|c| self.swap_refused(id, c.id)) {
+            return Err(failed(command, format!("{why}; pick another key")));
         }
         self.put_key(id, key.clone());
         if let Some(c) = &conflict {

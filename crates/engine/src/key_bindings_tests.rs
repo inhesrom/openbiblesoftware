@@ -149,6 +149,49 @@ fn binding_a_key_in_use_names_the_conflict_and_swap_trades_the_keys() {
     assert_eq!(c.id, "selection.highlight_yellow");
 }
 
+/// Swapping never hands a reserved key away: Unpin Word Info's default Esc stays with it, so
+/// rebinding it to Find's Ctrl+F with swap is refused and both keep their keys, then and after
+/// a restart.
+#[test]
+fn a_swap_never_moves_esc_off_unpin_word_info() {
+    let t = Temp::new("reserved-swap");
+    let mut s = launch(&t.db());
+    assert_eq!(s.shortcut("word_info.unpin"), Some("Escape"));
+    assert_eq!(s.swap_refused("view.text_larger", "tab.find"), None);
+    let why = s.swap_refused("word_info.unpin", "tab.find").unwrap();
+    assert!(
+        why.contains("“Find in Resource” cannot take Escape"),
+        "{why}"
+    );
+    let err = s
+        .run(
+            "keys.set",
+            &json!({ "command": "word_info.unpin", "key": "Ctrl+F", "swap": true }),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("cannot take Escape: Esc is kept"), "{err}");
+    assert_eq!(s.shortcut("word_info.unpin"), Some("Escape"));
+    assert_eq!(s.shortcut("tab.find"), Some("Ctrl+F"));
+    drop(s);
+    let mut s = launch(&t.db());
+    assert_eq!(s.shortcut("word_info.unpin"), Some("Escape"));
+    assert_eq!(s.shortcut("tab.find"), Some("Ctrl+F"));
+    // Once Unpin Word Info has a key of its own, it can swap that one.
+    s.run(
+        "keys.set",
+        &json!({ "command": "word_info.unpin", "key": "Alt+U" }),
+    )
+    .unwrap();
+    s.run(
+        "keys.set",
+        &json!({ "command": "word_info.unpin", "key": "Ctrl+F", "swap": true }),
+    )
+    .unwrap();
+    assert_eq!(s.shortcut("word_info.unpin"), Some("Ctrl+F"));
+    assert_eq!(s.shortcut("tab.find"), Some("Alt+U"));
+}
+
 #[test]
 fn clear_and_reset_all_survive_a_restart() {
     let t = Temp::new("clear");

@@ -26,7 +26,7 @@ use obs_engine::{
 use obs_model::ResourceType;
 use serde_json::{Value, json};
 
-use super::{State, bindings, consume_key, extra_held, parse_shortcut};
+use super::{State, bindings, consume_key, extra_held, parse_shortcut, pressed_as};
 use crate::doc::ReadingDoc;
 use crate::marks::{Mark, marks_for};
 use crate::palette::{HIGHLIGHT_STYLES, Palette};
@@ -35,12 +35,14 @@ use crate::selection::{Selection, copy_text, selected_text};
 use crate::theme;
 
 /// The Selection keys as the user has them (Ctrl+Shift+N and Ctrl+1…5 by default), with what
-/// each does.
+/// each does: each as every key report that presses it ([`pressed_as`]), so one bound to
+/// Ctrl+Plus runs on Ctrl+= too, as a command's does.
 fn selection_keys(
     session: &Session,
 ) -> impl Iterator<Item = (&'static SelectionKey, egui::KeyboardShortcut)> + '_ {
     (SELECTION_KEYS.iter())
         .filter_map(|k| Some((k, session.shortcut(k.id).and_then(parse_shortcut)?)))
+        .flat_map(|(k, sc)| pressed_as(sc).map(move |sc| (k, sc)))
 }
 
 /// The Selection keys' shortcuts.

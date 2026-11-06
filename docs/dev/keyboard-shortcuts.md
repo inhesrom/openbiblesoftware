@@ -31,7 +31,9 @@ stored and rebound like commands.
   `keys.clear {command}`, `keys.reset {command, swap}`, `keys.reset_all`. A key in use is
   refused, naming the other binding, unless `swap` is true: then the other binding takes this
   one's old key (none if it had none). Reset to a default another binding has now is the
-  same conflict.
+  same conflict. A swap never moves a refused key off the binding it is the default of
+  (`Session::swap_refused`): rebinding Unpin Word Info to Ctrl+F with swap is refused, since
+  Find in Resource would get Esc.
 - Keys are written in egui notation and stored one way (`canonical_key`): Ctrl, Shift, Alt in
   that order, then egui's key name (`Ctrl+Up`, `Ctrl+OpenBracket`). Ctrl+Plus drops Shift and
   is the same key as Ctrl+= (#137), so they conflict.
@@ -50,7 +52,10 @@ stored and rebound like commands.
   keys alone are ignored. Recording stops on Esc, on a click elsewhere, and when the Tab is
   not drawn (another Tab chosen, the Tab closed).
 - A recorded key in use shows "Ctrl+F is already the key of “Find in Resource”." with
-  **Swap keys** and **Cancel**; nothing is saved until one is chosen.
+  **Swap keys** and **Cancel**; nothing is saved until one is chosen. When the other binding
+  may not take the old key (`swap_refused`), the row says why and Swap keys is disabled.
+- Selection keys match like commands' keys: each is also pressed as its `pressed_as`
+  reports, so a Selection key on Ctrl+Plus runs on Ctrl+= too.
 - Every shortcut's button is named "*Command* shortcut: *key*", and Clear and Reset are named
   for their command, so screen readers and `tab_to` tell rows apart.
 
@@ -60,5 +65,7 @@ stored and rebound like commands.
   reserved keys, one spelling per key, every binding listed once with no conflicting
   defaults, flagged conflicts).
 - UI: `keyboard_shortcuts_tests.rs` (the acceptance criteria with real key events and a
-  restart), `annotation_tests::a_rebound_selection_key_highlights_and_its_old_key_does_not`,
+  restart, and Swap keys never handing Esc away),
+  `annotation_tests::a_rebound_selection_key_highlights_and_its_old_key_does_not` and
+  `a_selection_key_on_ctrl_plus_also_runs_on_ctrl_equals`,
   and the accessibility audit (`keyboard_only_keyboard_shortcuts`, every Tab kind named).

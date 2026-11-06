@@ -301,6 +301,46 @@ fn a_rebound_selection_key_highlights_and_its_old_key_does_not() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A Selection key swapped onto Ctrl+Plus (#177) runs on Ctrl+= too, as a command's does
+/// (#137): Larger text rebound to Ctrl+1 and swapped with yellow Highlight.
+#[test]
+fn a_selection_key_on_ctrl_plus_also_runs_on_ctrl_equals() {
+    let dir = folder("plus-equals");
+    let mut h = launch(&dir);
+    h.shell.run(
+        "keys.set",
+        &json!({ "command": "view.text_larger", "key": "Ctrl+1", "swap": true }),
+    );
+    assert_eq!(
+        h.shell.st.session.shortcut("selection.highlight_yellow"),
+        Some("Ctrl+Plus")
+    );
+    let size = h.shell.st.session.text.size;
+    let tb = h.tab_id("TB");
+    let yellow = Content::Highlight {
+        style: HighlightStyle::Yellow,
+    };
+    for (key, mods) in [
+        (egui::Key::Plus, cmd_shift()),
+        (egui::Key::Equals, Modifiers::COMMAND),
+    ] {
+        let (_, _, _, r) = word_in_view(&h, tb, 200.0);
+        double_click(&mut h, r.center());
+        assert!(h.shell.st.has_selection(tb));
+        press_key(&mut h, key, mods);
+        h.frame();
+        let stored = h.shell.st.session.annotations(None).unwrap();
+        assert_eq!(stored.len(), 1, "{key:?}");
+        assert_eq!(stored[0].content, yellow, "{key:?}");
+        assert_eq!(h.shell.st.session.text.size, size, "{key:?}");
+        // Undo it so the next key highlights afresh.
+        press_key(&mut h, egui::Key::Z, Modifiers::COMMAND);
+        assert!(h.shell.st.session.annotations(None).unwrap().is_empty());
+    }
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn toolbar_swatches_and_right_click_apply_styles_and_the_newest_is_drawn_on_top() {
     let dir = folder("toolbar");

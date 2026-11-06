@@ -222,8 +222,17 @@ impl State {
                     Some(old) => format!("“{}” gets {old}", p.conflict.label),
                     None => format!("“{}” is left without a key", p.conflict.label),
                 };
+                // A reserved key (Esc) stays with the binding it is the default of.
+                let refused = self.session.swap_refused(p.id, p.conflict.id);
+                if let Some(why) = &refused {
+                    ui.colored_label(theme::c().warn, format!("{why}; pick another key."));
+                }
                 ui.horizontal(|ui| {
-                    if ui.button("Swap keys").on_hover_text(swap_tip).clicked() {
+                    if ui
+                        .add_enabled(refused.is_none(), egui::Button::new("Swap keys"))
+                        .on_hover_text(swap_tip)
+                        .clicked()
+                    {
                         self.keys_ui.pending = None;
                         act = Some(if p.reset {
                             ("keys.reset", json!({ "command": p.id, "swap": true }))
