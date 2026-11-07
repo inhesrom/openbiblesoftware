@@ -12,11 +12,14 @@
 //!   here: Bold/Italic take off the delimiters of the span the parse found, a heading is
 //!   rewritten whole from its source and inline content as parsed (any ATX or setext form),
 //!   and Enter continues the item the parse found. A nested item is written under its parent's
-//!   text, as CommonMark nests it. Bold or italic over lines that become blocks of their own
-//!   is cut into one span per line, so each line keeps its formatting. A code span, link,
-//!   image or autolink is not cut: while list, quote or heading would put a block boundary
-//!   inside one, those buttons are off ([`SPAN_ACROSS_LINES`]) and the change is not made. A
-//!   link target goes between `<` and `>`.
+//!   text, as CommonMark nests it. Bold or italic over lines that the change cuts (into a mark
+//!   on each line, or blocks of their own) is cut into one span per line first, so each line
+//!   keeps its formatting. A code span, link, image or autolink is opaque, never cut or
+//!   re-aligned: one the selection takes in whole is copied as typed; while the selection (or
+//!   the cursor) is partly in one, every button is off ([`PARTLY_COVERS_SPAN`]), and while a
+//!   change would cut one at a line break, that button is off ([`SPAN_ACROSS_LINES`]). Then the
+//!   text stays as it is, byte for byte ([`format_blocked`]). A link target goes between `<`
+//!   and `>`.
 //! - **Shortcuts**: Ctrl+B and Ctrl+I (Cmd on macOS). Typing `- `, `1. ` or `> ` at the start
 //!   of a line starts a list or quote; Enter in an item continues it (the next number), and
 //!   Enter in an empty item ends it.
@@ -105,16 +108,7 @@ pub(super) fn note_editor(
     let mut action = None;
     let sel = selection(ui.ctx(), id, text);
     // Why a button is off for this selection, if it is.
-    let off = |f: Format| match f {
-        // A link is one line's text: a selection across lines cannot be one.
-        Format::Link => text
-            .chars()
-            .skip(sel.start)
-            .take(sel.len())
-            .any(|c| c == '\n')
-            .then_some(LINK_ONE_LINE),
-        _ => line_format_blocked(text, sel.clone(), f).then_some(SPAN_ACROSS_LINES),
-    };
+    let off = |f: Format| format_blocked(text, sel.clone(), f);
     let toolbar = ui
         .horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
@@ -287,8 +281,12 @@ pub(super) fn list_continuation(text: &str, at: usize) -> Option<(String, Range<
     Some((new, c..c))
 }
 
-/// `text` with `f` applied to the selection `sel` (char indices), and the selection after.
+/// `text` with `f` applied to the selection `sel` (char indices), and the selection after;
+/// `text` as it is while `f` is off for `sel` ([`format_blocked`]).
 pub(super) fn apply_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize>) {
+    if format_blocked(text, sel.clone(), f).is_some() {
+        return (text.to_string(), sel);
+    }
     match f {
         Format::Bold => wrap(text, sel, "**"),
         Format::Italic => wrap(text, sel, "*"),
@@ -299,42 +297,149 @@ pub(super) fn apply_format(text: &str, sel: Range<usize>, f: Format) -> (String,
     }
 }
 
-/// Put `mark` around the selected part of each line the selection touches (past the line's
-/// heading, list or quote marker, its outer spaces left outside, empty lines skipped), or
-/// take it away when every part already has it. A part has it when the Note's CommonMark
-/// parse marks exactly the part's shown text bold (or italic) with a span on its line that
-/// the part is in or around: that span's own delimiters (`**`/`__`, `*`/`_`) are what is
-/// taken away. With nothing selected the marks go in with the cursor between them.
+/// Why every format is off while the selection (or the cursor) is partly in a code span,
+/// link, image or autolink: they are moved whole or not at all.
+pub(super) const PARTLY_COVERS_SPAN: &str = "Selection partly covers a code span or link";
+
+/// Why `f` is off for the selection `sel` (char indices) of `text`, if it is; then
+/// [`apply_format`] leaves the text as it is, byte for byte. A code span, link, image or
+/// autolink ([`obs_model::NoteSpan::delimiter`] `None`) is opaque: a selection that touches
+/// one without taking it in whole, or a cursor inside one, turns every format off
+/// ([`PARTLY_COVERS_SPAN`]). One taken in whole is copied as typed. A format that would cut
+/// one at a line break (Bold or Italic, a mark on each line; list, quote or heading, a block
+/// boundary) is off too ([`SPAN_ACROSS_LINES`]), as is a link over lines.
+pub(super) fn format_blocked(text: &str, sel: Range<usize>, f: Format) -> Option<&'static str> {
+    let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
+    let spans = obs_model::note_spans(text);
+    let partly = spans.iter().filter(|s| s.delimiter.is_none()).any(|s| {
+        let r = &s.source;
+        if a == b {
+            r.start < a && a < r.end
+        } else {
+            r.start < b && a < r.end && !(a <= r.start && r.end <= b)
+        }
+    });
+    if partly {
+        return Some(PARTLY_COVERS_SPAN);
+    }
+    match f {
+        // A link is one line's text: a selection across lines cannot be one.
+        Format::Link => text[a..b].contains('\n').then_some(LINK_ONE_LINE),
+        // A mark goes on each selected line: one taken in whole over lines would be cut.
+        Format::Bold | Format::Italic => spans
+            .iter()
+            .filter(|s| s.delimiter.is_none() && a < s.source.end && s.source.start < b)
+            .any(|s| text[s.source.clone()].contains('\n'))
+            .then_some(SPAN_ACROSS_LINES),
+        _ => line_format_blocked(text, sel, f).then_some(SPAN_ACROSS_LINES),
+    }
+}
+
+/// The selected part of each line the selection `a..b` (bytes) touches, by line of `lines`
+/// (the parse of `text`): past the line's heading, list or quote marker, its outer spaces
+/// left outside, empty lines skipped.
+fn emphasis_parts(
+    text: &str,
+    lines: &[obs_model::NoteLine],
+    a: usize,
+    b: usize,
+) -> Vec<(usize, Range<usize>)> {
+    let mut parts = Vec::new();
+    if a >= b {
+        return parts;
+    }
+    for (i, line) in lines.iter().enumerate() {
+        let (s, e) = (a.max(line.content), b.min(line.source.end));
+        if s >= e {
+            continue;
+        }
+        let part = &text[s..e];
+        let (s, e) = (
+            s + (part.len() - part.trim_start().len()),
+            e - (part.len() - part.trim_end().len()),
+        );
+        if s < e {
+            parts.push((i, s..e));
+        }
+    }
+    parts
+}
+
+/// Put `mark` around the selected part of each line ([`emphasis_parts`]), since a span
+/// cannot run over a blank line or a list item's marker, or take it away when every part
+/// already has it. Bold or italic that runs over a line break between those lines is first
+/// cut there into one span per line ([`spans_cut_at`]), so each line's part is its own. A
+/// part has the mark when a bold (or italic) span of the Note's CommonMark parse
+/// ([`obs_model::note_spans`]) around or in it shows exactly the part's text: that span's own
+/// delimiters (`**`/`__`, `*`/`_`) are what is taken away. With nothing selected the marks go
+/// in with the cursor between them. A code span or link is never cut ([`format_blocked`]).
 fn wrap(text: &str, sel: Range<usize>, mark: &str) -> (String, Range<usize>) {
     let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
-    let n = mark.len();
-    let kind = if n == 2 {
-        NoteMarkKind::Bold
-    } else {
-        NoteMarkKind::Italic
-    };
     let lines = obs_model::parse_note_text(text);
+    let parts = emphasis_parts(text, &lines, a, b);
+    let breaks: Vec<usize> = match (parts.first(), parts.last()) {
+        (Some((first, _)), Some((last, _))) => (*first..*last).collect(),
+        _ => Vec::new(),
+    };
+    let edits = span_cuts(text, &lines, &breaks);
+    if edits.is_empty() {
+        return wrap_parts(text, &lines, parts, b, mark);
+    }
+    // The cut text, the selection moved past the delimiters put in before its ends.
+    let shift = |x: usize, with_at: bool| {
+        x + edits
+            .iter()
+            .filter(|(at, _)| *at < x || (with_at && *at == x))
+            .map(|(_, d)| d.len())
+            .sum::<usize>()
+    };
+    let (a, b) = (shift(a, false), shift(b, true));
+    let cut = apply_edits(text, &edits);
+    let lines = obs_model::parse_note_text(&cut);
+    let parts = emphasis_parts(&cut, &lines, a, b);
+    wrap_parts(&cut, &lines, parts, b, mark)
+}
+
+/// [`wrap`] on `parts` of `text` (`lines` its parse), or at the cursor `b` (bytes) when there
+/// are none.
+fn wrap_parts(
+    text: &str,
+    lines: &[obs_model::NoteLine],
+    parts: Vec<(usize, Range<usize>)>,
+    b: usize,
+    mark: &str,
+) -> (String, Range<usize>) {
+    let n = mark.len();
+    let spans = obs_model::note_spans(text);
+    // The text `r` shows, line by line.
+    let shown = |r: &Range<usize>| -> Vec<&str> {
+        lines
+            .iter()
+            .filter_map(|l| {
+                let on = r.start.max(l.source.start)..r.end.min(l.source.end);
+                (on.start < on.end).then(|| &l.text[l.text_range(on)])
+            })
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
     // The span marking part `p` so: where its `n` opening and `n` closing delimiter bytes
     // start, and the part of `p` inside them.
     let marked = |p: &Range<usize>| -> Option<(usize, usize, Range<usize>)> {
-        let line = lines.iter().find(|l| l.source.contains(&p.start))?;
-        let shown = line.text_range(p.clone());
-        if shown.is_empty() {
+        let want = shown(p);
+        if want.is_empty() {
             return None;
         }
-        line.marks
+        spans
             .iter()
-            .find(|m| {
-                m.kind == kind
-                    && m.range == shown
-                    && line.source.start <= m.source.start
-                    && m.source.end <= line.source.end
-                    && m.source.len() >= 2 * n
-                    && m.source.start < p.end
-                    && p.start < m.source.end
+            .find(|s| {
+                s.delimiter.as_ref().is_some_and(|d| d.len() == n)
+                    && s.source.len() >= 2 * n
+                    && s.source.start < p.end
+                    && p.start < s.source.end
+                    && shown(&(s.source.start + n..s.source.end - n)) == want
             })
-            .map(|m| {
-                let (open, close) = (m.source.start, m.source.end - n);
+            .map(|s| {
+                let (open, close) = (s.source.start, s.source.end - n);
                 (
                     open,
                     close,
@@ -342,23 +447,7 @@ fn wrap(text: &str, sel: Range<usize>, mark: &str) -> (String, Range<usize>) {
                 )
             })
     };
-    let mut parts: Vec<Range<usize>> = Vec::new();
-    if a < b {
-        for line in &lines {
-            let (s, e) = (a.max(line.content), b.min(line.source.end));
-            if s >= e {
-                continue;
-            }
-            let part = &text[s..e];
-            let (s, e) = (
-                s + (part.len() - part.trim_start().len()),
-                e - (part.len() - part.trim_end().len()),
-            );
-            if s < e {
-                parts.push(s..e);
-            }
-        }
-    }
+    let mut parts: Vec<Range<usize>> = parts.into_iter().map(|(_, p)| p).collect();
     if parts.is_empty() {
         parts.push(b..b);
     }
@@ -402,13 +491,10 @@ fn wrap(text: &str, sel: Range<usize>, mark: &str) -> (String, Range<usize>) {
 }
 
 /// `[selection](<…>)` with the cursor where the target goes (between `<` and `>`, so a
-/// Bible reference's spaces are part of it); `[](<>)` with it in the brackets. A selection
-/// across lines is left as it is: the toolbar keeps a link on one line.
+/// Bible reference's spaces are part of it); `[](<>)` with it in the brackets. Off for a
+/// selection across lines ([`format_blocked`]): the toolbar keeps a link on one line.
 fn link(text: &str, sel: Range<usize>) -> (String, Range<usize>) {
     let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
-    if text[a..b].contains('\n') {
-        return (text.to_string(), sel);
-    }
     let new = format!("{}[{}](<>)", &text[..a], &text[a..b]);
     let new = format!("{new}{}", &text[b..]);
     let c = if a == b { sel.start + 1 } else { sel.end + 4 };
@@ -462,7 +548,8 @@ fn rewritten_lines(
     (first, last, breaks)
 }
 
-/// Why a list, quote or heading change is off for the selection.
+/// Why a change that would cut a code span or link at a line break is off: a mark on each
+/// line (Bold, Italic) or a block of its own (list, quote, heading).
 pub(super) const SPAN_ACROSS_LINES: &str = "Selection has a code span or link that crosses lines";
 
 /// Whether list, quote or heading `f` on `sel` (char indices) would put a block boundary
@@ -494,11 +581,8 @@ pub(super) fn line_format_blocked(text: &str, sel: Range<usize>, f: Format) -> b
 /// new marker, so the shown text stays the same. Bold or italic over a line break that may
 /// become a block boundary is cut there first ([`spans_cut_at`]), so each line keeps its
 /// formatting; a code span, link, image or autolink over one leaves the text as it is
-/// ([`line_format_blocked`]).
+/// ([`format_blocked`]).
 fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize>) {
-    if line_format_blocked(text, sel.clone(), f) {
-        return (text.to_string(), sel);
-    }
     let lines = obs_model::parse_note_text(text);
     let (first, last, breaks) = rewritten_lines(text, &lines, sel, f);
     let cut = spans_cut_at(text, &lines, &breaks);
@@ -655,6 +739,11 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
 /// line's formatting, where the whole span would come apart into literal `*`s. A span is
 /// cut only where it shows text on both sides of the break.
 fn spans_cut_at(text: &str, lines: &[obs_model::NoteLine], breaks: &[usize]) -> String {
+    apply_edits(text, &span_cuts(text, lines, breaks))
+}
+
+/// The delimiters [`spans_cut_at`] puts in: where, and which, by where.
+fn span_cuts(text: &str, lines: &[obs_model::NoteLine], breaks: &[usize]) -> Vec<(usize, String)> {
     let spans: Vec<(Range<usize>, String)> = obs_model::note_spans(text)
         .into_iter()
         .filter_map(|s| Some((s.source, s.delimiter?)))
@@ -664,7 +753,7 @@ fn spans_cut_at(text: &str, lines: &[obs_model::NoteLine], breaks: &[usize]) -> 
         let r = s.start.max(l.source.start)..s.end.min(l.source.end);
         r.start < r.end && !l.text_range(r).is_empty()
     };
-    let mut edits: Vec<(usize, &str)> = Vec::new();
+    let mut edits: Vec<(usize, String)> = Vec::new();
     for &i in breaks {
         let (line, next) = (&lines[i], &lines[i + 1]);
         let crossing: Vec<&(Range<usize>, String)> = spans
@@ -679,22 +768,24 @@ fn spans_cut_at(text: &str, lines: &[obs_model::NoteLine], breaks: &[usize]) -> 
         let end = part_end(text, line);
         // Inner spans close first and open last.
         for (_, d) in crossing.iter().rev() {
-            edits.push((end, d));
+            edits.push((end, d.clone()));
         }
         for (_, d) in &crossing {
-            edits.push((next.content, d));
+            edits.push((next.content, d.clone()));
         }
     }
-    if edits.is_empty() {
-        return text.to_string();
-    }
     edits.sort_by_key(|(at, _)| *at);
+    edits
+}
+
+/// `text` with each of `edits` (by where) put in.
+fn apply_edits(text: &str, edits: &[(usize, String)]) -> String {
     let mut out = String::with_capacity(text.len() + edits.len() * 2);
     let mut at = 0;
     for (to, d) in edits {
-        out.push_str(&text[at..to]);
+        out.push_str(&text[at..*to]);
         out.push_str(d);
-        at = to;
+        at = *to;
     }
     out.push_str(&text[at..]);
     out
@@ -1409,8 +1500,122 @@ mod tests {
             7..7,
             Format::Bullet
         ));
-        // Bold and italic are not changes that put a block boundary anywhere.
+        // Bold and italic put no block boundary anywhere; they are off over it because a
+        // mark would go on each line ([`format_blocked`]).
         assert!(!line_format_blocked("`a\nb`", 0..5, Format::Bold));
+        assert_eq!(
+            format_blocked("`a\nb`", 0..5, Format::Bold),
+            Some(SPAN_ACROSS_LINES)
+        );
+    }
+
+    #[test]
+    fn a_code_span_or_link_is_moved_whole_or_every_format_is_off() {
+        // A code span, link, image or autolink is opaque: no format cuts one or puts a mark
+        // inside it (#186 review). `(Note, selection, why off)`: the text stays byte for byte.
+        let all = |t: &str| 0..t.chars().count();
+        let partly = Some(PARTLY_COVERS_SPAN);
+        let across = Some(SPAN_ACROSS_LINES);
+        let every = [
+            Format::Bold,
+            Format::Italic,
+            Format::Heading,
+            Format::Bullet,
+            Format::Numbered,
+            Format::Quote,
+            Format::Link,
+        ];
+        let cases: &[(&str, Range<usize>, Format, Option<&str>)] = &[
+            // Review repro: a mark on each line would land inside the code span.
+            ("`a\nb`", 0..5, Format::Bold, across),
+            ("`a\nb`", 0..5, Format::Italic, across),
+            ("> `a\n> b`", 0..9, Format::Bold, across),
+            ("[x\ny](u)", 0..8, Format::Italic, across),
+            ("**a `b\nc` d**", 0..14, Format::Bold, across),
+        ];
+        for (text, sel, f, why) in cases {
+            assert_eq!(
+                format_blocked(text, sel.clone(), *f),
+                *why,
+                "{text:?} {f:?}"
+            );
+            assert_eq!(
+                apply_format(text, sel.clone(), *f),
+                (text.to_string(), sel.clone())
+            );
+        }
+        // Partly covered (review repro: a code span whose stripped edge spaces moved its
+        // indent), or the cursor inside one: every format is off.
+        for (text, sel) in [
+            ("` \n hope `", 4..8),
+            ("` \n hope `", 0..4),
+            ("see `a b` now", 7..13),
+            ("see `a b` now", 6..6),
+            ("[x\ny](u)", 1..4),
+            ("[faith](<Rom 5:8>) now", 0..5),
+            ("<https://a.org> x", 4..4),
+            ("![a](u) b", 2..9),
+        ] {
+            for f in every {
+                assert_eq!(
+                    format_blocked(text, sel.clone(), f),
+                    partly,
+                    "{text:?} {f:?}"
+                );
+                assert_eq!(apply_format(text, sel.clone(), f).0, text, "{text:?} {f:?}");
+            }
+        }
+        // Taken in whole, on one line, it is copied as typed and the format is made.
+        for (text, f, want) in [
+            ("see `a b` now", Format::Bold, "**see `a b` now**"),
+            ("x [a](<Rom 5:8>) y", Format::Italic, "*x [a](<Rom 5:8>) y*"),
+            ("`a b`\nc", Format::Bold, "**`a b`**\n**c**"),
+            ("`a b`\nc", Format::Bullet, "- `a b`\n- c"),
+            ("`a b`", Format::Link, "[`a b`](<>)"),
+        ] {
+            assert_eq!(format_blocked(text, all(text), f), None, "{text:?} {f:?}");
+            let (new, r) = apply_format(text, all(text), f);
+            assert_eq!(new, want, "{text:?} {f:?}");
+            if f != Format::Link {
+                assert_eq!(apply_format(&new, r, f).0, text, "{text:?} {f:?}");
+            }
+        }
+        // At its edges, the cursor is not in it.
+        assert_eq!(format_blocked("`ab`", 0..0, Format::Bold), None);
+        assert_eq!(format_blocked("`ab`", 4..4, Format::Bold), None);
+    }
+
+    #[test]
+    fn bold_and_italic_over_lines_cut_a_span_over_them_into_one_per_line() {
+        // Bold or italic that runs over the lines is cut at each break first, so each line's
+        // part is its own: marked on each line, or taken off each (#186 review).
+        for (text, f, want) in [
+            ("**faith\nhope**", Format::Bold, "faith\nhope"),
+            ("*a\nb*", Format::Bold, "***a***\n***b***"),
+            ("*a\nb*", Format::Italic, "a\nb"),
+            ("__a\nb__", Format::Bold, "a\nb"),
+            ("> **a\n> b**", Format::Bold, "> a\n> b"),
+        ] {
+            let sel = 0..text.chars().count();
+            let (new, r) = apply_format(text, sel.clone(), f);
+            assert_eq!(new, want, "{text:?} {f:?}");
+            let kind = if f == Format::Bold {
+                NoteMarkKind::Bold
+            } else {
+                NoteMarkKind::Italic
+            };
+            let added = new.len() > text.len();
+            for (line, marks) in shown_formatting(&new) {
+                let whole = marks
+                    .iter()
+                    .any(|(m, k)| *k == kind && *m == (0..line.len()));
+                assert_eq!(whole, added, "{text:?} {f:?}: {line:?} {marks:?}");
+            }
+            assert!(r.end <= new.chars().count());
+        }
+        // The selected text of the bold, too.
+        let (new, r) = apply_format("**faith\nhope**", 2..12, Format::Bold);
+        assert_eq!((new.as_str(), r), ("faith\nhope", 0..10));
     }
 
     #[test]

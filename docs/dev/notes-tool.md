@@ -155,10 +155,17 @@ between `<` and `>`, so a Bible reference's spaces are part of the target; off, 
 saying why, while the selection spans lines). Ctrl+B and Ctrl+I (Cmd on macOS) bold and
 italicise the selection, or take it off when it is already so (written with `*` or `_`):
 the toolbar never scans for markers itself, it takes off the delimiters of the span
-pulldown-cmark found (`NoteMark::source`), and Enter continues the list item or quote the
+pulldown-cmark found (`note_spans`), and Enter continues the list item or quote the
 parse found. Each selected line gets its own
 marks, after its heading, list or quote marker, empty lines skipped (a span cannot run over a
-blank line or a list item's marker). Typing `- `, `1. ` or `> `
+blank line or a list item's marker); bold or italic already running over those lines is cut
+into one span per line first. A code span, link, image or autolink is opaque: one the
+selection takes in whole is copied as typed, but while the selection (or the cursor) is partly
+in one every button is off ("Selection partly covers a code span or link"), and while a change
+would cut one at a line break (a mark on each line, a list item or quote of its own) that
+button is off; Ctrl+B and Ctrl+I then leave the text as it is, byte for byte. A code span over
+lines shows its whole text (line breaks read as spaces) on the line it starts on: no position
+inside a code span is worked out. Typing `- `, `1. ` or `> `
 at a line's start starts a list or quote; Enter at the end of an item continues it (with the
 next number) and Enter in an empty item ends it. List, quote and heading changes apply to
 every line the selection touches, each read in its place in the Note's parse: numbering goes

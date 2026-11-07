@@ -1426,7 +1426,7 @@ fn the_note_editor_link_button_does_not_link_across_lines() {
 /// pointer and to a screen reader, and the Note keeps its bytes; bold over lines is cut so
 /// each line keeps it.
 #[test]
-fn the_note_editor_line_buttons_are_off_over_a_code_span_or_link_across_lines() {
+fn the_note_editor_buttons_are_off_over_a_code_span_or_link_across_lines_or_partly_selected() {
     let dir = folder("editor-span-lines");
     let mut h = launch(&dir);
     h.ctx.enable_accesskit();
@@ -1459,7 +1459,8 @@ fn the_note_editor_line_buttons_are_off_over_a_code_span_or_link_across_lines() 
     };
     press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
     h.frames(2);
-    let buttons = |h: &Harness| -> Vec<(String, bool, Option<String>)> {
+    // (label, disabled, AccessKit description) of the toolbar's buttons named.
+    let buttons = |h: &Harness, named: &[&str]| -> Vec<(String, bool, Option<String>)> {
         h.tree
             .as_ref()
             .unwrap()
@@ -1468,22 +1469,49 @@ fn the_note_editor_line_buttons_are_off_over_a_code_span_or_link_across_lines() 
             .filter(|(_, n)| n.role() == egui::accesskit::Role::Button)
             .filter_map(|(_, n)| {
                 let label = n.label()?.to_string();
-                ["H", "•", "1.", "“”"]
+                named
                     .contains(&label.as_str())
                     .then(|| (label, n.is_disabled(), n.description().map(str::to_string)))
             })
             .collect()
     };
-    let off = buttons(&h);
-    assert_eq!(off.len(), 4, "{off:?}");
+    // The whole Note: a mark on each line, or a block of its own, would cut the code span
+    // and the link at their line breaks.
+    let cutting = ["B", "I", "H", "•", "1.", "“”"];
+    let off = buttons(&h, &cutting);
+    assert_eq!(off.len(), 6, "{off:?}");
     const SPAN_ACROSS_LINES: &str = "Selection has a code span or link that crosses lines";
     for (label, disabled, description) in &off {
         assert!(disabled, "{label}");
         assert_eq!(description.as_deref(), Some(SPAN_ACROSS_LINES), "{label}");
     }
-    for b in ["•", "1.", "“”", "H"] {
+    for b in ["•", "1.", "“”", "H", "B", "I"] {
+        press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
         h.click_text(b);
         assert_eq!(text(&h), body, "{b}");
+    }
+    for key in [egui::Key::B, egui::Key::I] {
+        press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+        press_key(&mut h, key, Modifiers::COMMAND);
+        assert_eq!(text(&h), body, "{key:?}");
+    }
+    // The selection ending inside the link (before its `)`): every button is off.
+    press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+    press_key(&mut h, egui::Key::ArrowLeft, Modifiers::SHIFT);
+    h.frames(2);
+    let every = ["B", "I", "H", "•", "1.", "“”", "🔗"];
+    let off = buttons(&h, &every);
+    assert_eq!(off.len(), 7, "{off:?}");
+    const PARTLY_COVERS_SPAN: &str = "Selection partly covers a code span or link";
+    for (label, disabled, description) in &off {
+        assert!(disabled, "{label}");
+        assert_eq!(description.as_deref(), Some(PARTLY_COVERS_SPAN), "{label}");
+    }
+    for key in [egui::Key::B, egui::Key::I] {
+        press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+        press_key(&mut h, egui::Key::ArrowLeft, Modifiers::SHIFT);
+        press_key(&mut h, key, Modifiers::COMMAND);
+        assert_eq!(text(&h), body, "{key:?}");
     }
     assert!(h.shell.st.notes_ui.editing.is_some(), "still editing");
     // Bold over lines: the buttons are on, and each line keeps it.
@@ -1492,11 +1520,15 @@ fn the_note_editor_line_buttons_are_off_over_a_code_span_or_link_across_lines() 
     h.frame();
     press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
     h.frames(2);
-    let on = buttons(&h);
-    assert_eq!(on.len(), 4, "{on:?}");
+    let on = buttons(&h, &cutting);
+    assert_eq!(on.len(), 6, "{on:?}");
     for (label, disabled, description) in on {
         assert!(!disabled, "{label}");
-        assert_ne!(description.as_deref(), Some(SPAN_ACROSS_LINES), "{label}");
+        assert!(
+            ![SPAN_ACROSS_LINES, PARTLY_COVERS_SPAN]
+                .contains(&description.as_deref().unwrap_or_default()),
+            "{label}"
+        );
     }
     h.click_text("•");
     assert_eq!(text(&h), "- **faith**\n- **hope**");

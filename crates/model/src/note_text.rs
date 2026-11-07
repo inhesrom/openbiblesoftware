@@ -4,7 +4,9 @@
 //! bulleted and numbered lists (numbered as CommonMark numbers them), block quotes,
 //! `**bold**`/`__bold__`, `*italic*`/`_italic_`, `[text](target)` links (a target with
 //! spaces, such as a Bible reference, in `<…>`), autolinks and `\` escapes follow the spec.
-//! Code spans and blocks show their text; raw HTML shows as typed (it is never run).
+//! Code spans and blocks show their text; raw HTML shows as typed (it is never run). A code
+//! span is opaque: one over lines shows its whole text (line breaks read as spaces, as
+//! CommonMark reads them) on the line it starts on.
 //!
 //! What is shown is laid out **per line of the text**: a line break inside a paragraph (a
 //! CommonMark soft line break) is a line break where the Note is shown, as it was when Notes
@@ -208,6 +210,19 @@ impl Builder<'_> {
         self.kind_set[i] = true;
     }
 
+    /// Line `i` takes text in the block being read: unless a block starting on it decided
+    /// its kind, it is that block's (heading, quote or text).
+    fn mark_kind(&mut self, i: usize) {
+        if !self.kind_set[i] {
+            self.kind_set[i] = true;
+            self.lines[i].kind = match (self.heading, self.quote_depth) {
+                (Some(n), _) => NoteLineKind::Heading(n),
+                (None, 0) => NoteLineKind::Text,
+                _ => NoteLineKind::Quote,
+            };
+        }
+    }
+
     /// An inline read from body bytes `r` (from `r.start` on its line).
     fn inline_at(&mut self, r: Range<usize>) {
         let i = self.line_of(r.start);
@@ -238,7 +253,12 @@ impl Builder<'_> {
             }
             Event::Code(t) => {
                 self.inline_at(r.clone());
-                self.text(&t, r, true);
+                self.text(&t, r.clone(), true);
+                // The lines a code span runs on to are its block's, though its text shows
+                // on the first.
+                for i in self.line_of(r.start) + 1..=self.line_of(r.end.saturating_sub(1)) {
+                    self.mark_kind(i);
+                }
             }
             _ => {}
         }
@@ -323,19 +343,23 @@ impl Builder<'_> {
     }
 
     /// Shown text `t`, read from body bytes `r`: each character goes to the line it was
-    /// typed on, and a line break (a space in a code span) shows as the break itself.
+    /// typed on, and a line break shows as the break itself. A code span is opaque (`code`).
     fn text(&mut self, t: &str, r: Range<usize>, code: bool) {
         let src = &self.body[r.clone()];
         // For each byte of `t`, its byte in the body.
         let map: Option<Vec<usize>> = if src == t {
             Some(r.clone().collect())
         } else if code {
-            // A span the alignment cannot follow stays whole on its first line, mapped onto
-            // its opening backtick, rather than split where a guessed offset falls.
-            Some(code_text_offsets(src, t).map_or_else(
-                || vec![r.start; t.len()],
-                |m| m.into_iter().map(|o| r.start + o).collect(),
-            ))
+            // A code span is opaque: its text is where it is typed when that is one run of
+            // its source (`` ` a ` `` shows `a`); otherwise (over lines) the whole text stays
+            // on its first line, mapped onto its opening backtick. No position inside the
+            // span is worked out from what CommonMark stripped.
+            Some(match src.find(t) {
+                Some(i) if !t.is_empty() && !src.contains(['\n', '\r']) => {
+                    (r.start + i..r.start + i + t.len()).collect()
+                }
+                _ => vec![r.start; t.len()],
+            })
         } else {
             src.find(t)
                 .map(|i| (r.start + i..r.start + i + t.len()).collect())
@@ -345,8 +369,7 @@ impl Builder<'_> {
             // Text that is not in the body as shown (a character reference) maps onto it.
             let at = |j: usize| map.as_ref().map_or((r.start + j).min(last), |m| m[j]);
             let o = at(k);
-            // A line break (or the space a code span reads it as) is the break itself;
-            // anything else is kept, on the line it maps to.
+            // A line break is the break itself; anything else is kept, on the line it maps to.
             let bytes = self.body.as_bytes();
             let line_break = bytes.get(o) == Some(&b'\n')
                 || (bytes.get(o) == Some(&b'\r') && bytes.get(o + 1) == Some(&b'\n'));
@@ -354,14 +377,7 @@ impl Builder<'_> {
                 continue;
             }
             let i = self.line_of(o);
-            if !self.kind_set[i] {
-                self.kind_set[i] = true;
-                self.lines[i].kind = match (self.heading, self.quote_depth) {
-                    (Some(n), _) => NoteLineKind::Heading(n),
-                    (None, 0) => NoteLineKind::Text,
-                    _ => NoteLineKind::Quote,
-                };
-            }
+            self.mark_kind(i);
             let line = &mut self.lines[i];
             line.text.push(c);
             line.offsets.extend((k..k + c.len_utf8()).map(at));
@@ -441,30 +457,6 @@ pub fn note_spans(body: &str) -> Vec<NoteSpan> {
     }
     out.sort_by_key(|s| (s.source.start, std::cmp::Reverse(s.source.end)));
     out
-}
-
-/// Where each byte of a code span's text `t` is in its source `src` (backticks included).
-/// The text is the source with bytes taken out, never added or reordered: CommonMark strips
-/// the backticks and one space each side when both are there, and the parser takes the next
-/// line's container prefix (block-quote markers, list indent) off before reading the span,
-/// keeping any white space after it as typed. A line break reads as a space (pulldown-cmark
-/// reads each of `\r\n` as one), which maps onto the break. So each byte of `t` maps onto
-/// the first byte after the last one mapped that it can be, skipping what was taken out
-/// (white space or `>` before a line's content, so literal indent is kept as shown text).
-/// `None` when `t` does not fit `src` so.
-fn code_text_offsets(src: &str, t: &str) -> Option<Vec<usize>> {
-    let s = src.as_bytes();
-    let ticks = s.len() - src.trim_start_matches('`').len();
-    let end = s.len().checked_sub(ticks)?;
-    let mut at = ticks;
-    let mut out = Vec::with_capacity(t.len());
-    for &c in t.as_bytes() {
-        let fits = |b: u8| b == c || (c == b' ' && matches!(b, b'\n' | b'\r'));
-        at += s.get(at..end)?.iter().position(|&b| fits(b))?;
-        out.push(at);
-        at += 1;
-    }
-    Some(out)
 }
 
 /// The text a Note shows, markup removed: one line per line (for search and filtering).

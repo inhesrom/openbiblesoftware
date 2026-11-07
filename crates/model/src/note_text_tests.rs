@@ -260,65 +260,54 @@ fn what_is_not_markup_shows_as_typed() {
 }
 
 #[test]
-fn a_code_span_over_lines_keeps_every_character_on_its_line() {
-    // CommonMark reads the line break as a space and takes the quote markers, list indent
-    // and a CRLF's `\r` off the next line before reading the span.
+fn a_code_span_over_lines_is_opaque_and_shows_whole_on_its_first_line() {
+    // No position inside a code span is worked out from what CommonMark took out of it (its
+    // edge spaces, container prefixes, line breaks): its text, as CommonMark reads it, shows
+    // on the line it starts on, mapped onto its opening backtick (#186 review).
     for (body, shown) in [
-        ("`a\nb`", "a\nb"),
-        ("> `a\n> b`", "a\nb"),
-        ("> > `ab\n> > cd`", "ab\ncd"),
-        ("- `a\n  b`", "a\nb"),
-        ("> `a\r\n> b`", "a\nb"),
-        ("`a  \nb`", "a  \nb"),
-        ("` a\nb `", "a\nb"),
+        ("`a\nb`", "a b\n"),
+        ("> `a\n> b`", "a b\n"),
+        ("- `a\n  b`", "a b\n"),
+        ("``faith\n hope``", "faith  hope\n"),
+        // Review repro: the edge spaces CommonMark strips are not re-aligned onto the
+        // indent typed after the break, in a paragraph, a quote, a list item or with CRLF.
+        ("` \n hope `", "  hope\n"),
+        ("> ` \n>  hope `", "  hope\n"),
+        ("- ` \n   hope `", "  hope\n"),
+        // pulldown-cmark reads each of `\r\n` as a space.
+        ("` \r\n hope `", "   hope\n"),
+        ("> ` \r\n>  hope `", "   hope\n"),
+        ("`a\nb` c", "a b\n c"),
     ] {
-        let lines = parse_note_text(body);
-        let text: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
-        assert_eq!(text.join("\n"), shown, "{body:?}");
         assert_eq!(note_plain_text(body), shown, "{body:?}");
-        // Each shown character maps onto itself in the body.
-        for l in &lines {
-            let r = l.source_range(0..l.text.len());
-            let typed: String = body[r]
-                .chars()
-                .filter(|c| !"`> \r\n".contains(*c))
-                .collect();
-            let seen: String = l.text.chars().filter(|c| !"> ".contains(*c)).collect();
-            assert_eq!(typed, seen, "{body:?}");
-        }
+        // The text shown is the parser's own code text (what the export shows), whole.
+        let code: Vec<String> = Parser::new_ext(body, Options::empty())
+            .filter_map(|e| match e {
+                Event::Code(t) => Some(t.to_string()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(code.len(), 1, "{body:?}");
+        assert_eq!(shown.split('\n').next(), Some(code[0].as_str()), "{body:?}");
+        let lines = parse_note_text(body);
+        let first = &lines[0];
+        let code = first.text.trim_end_matches(" c");
+        let tick = body.find('`').unwrap();
+        assert_eq!(
+            first.source_range(0..code.len()),
+            tick..tick + 1,
+            "{body:?}"
+        );
+        // The lines it runs on to stay in its block.
+        assert_ne!(lines[1].kind, NoteLineKind::Blank, "{body:?}");
     }
     let quoted = parse_note_text("> `a\n> b`");
     assert_eq!(quoted[1].kind, NoteLineKind::Quote);
-    assert_eq!(quoted[1].content, 7);
-}
-
-#[test]
-fn a_code_span_over_lines_keeps_the_indent_typed_after_a_line_break() {
-    // Only the container prefix is taken off the next line; white space after it is the
-    // span's own text and shows as typed (#186 review).
-    for (body, shown) in [
-        ("``faith\n hope``", "faith\n hope"),
-        ("`faith\n hope`", "faith\n hope"),
-        ("> `a\n>   b`", "a\n  b"),
-        ("- `a\n     b`", "a\n   b"),
-        ("`a\r\n b`", "a\n b"),
-        ("`a\n\tb`", "a\n\tb"),
-    ] {
-        assert_eq!(note_plain_text(body), shown, "{body:?}");
-        let lines = parse_note_text(body);
-        let last = lines.last().unwrap();
-        let word = last.text.trim_start();
-        let at = last.text.len() - word.len();
-        assert_eq!(
-            &body[last.source_range(at..last.text.len())],
-            word,
-            "{body:?}"
-        );
-    }
-    let lines = parse_note_text("``faith\n hope``");
-    assert_eq!(lines[0].text, "faith");
-    assert_eq!(lines[1].text, " hope");
-    assert_eq!(lines[1].kind, NoteLineKind::Text);
+    // On one line, its text is where it is typed.
+    let body = "x ` a ` y";
+    let l = &parse_note_text(body)[0];
+    assert_eq!(l.text, "x a y");
+    assert_eq!(&body[l.source_range(2..3)], "a");
 }
 
 #[test]
