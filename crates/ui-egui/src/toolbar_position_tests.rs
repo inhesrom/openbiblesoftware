@@ -433,7 +433,7 @@ fn hidden_launchers_stay_reachable_by_shortcut_and_the_command_box() {
 #[test]
 fn a_small_window_puts_the_launchers_it_has_no_room_for_in_a_more_button() {
     let mut h = Harness::new();
-    h.screen = vec2(800.0, 600.0);
+    h.screen = vec2(860.0, 600.0);
     h.frames(4);
     let tb = &h.shell.st.toolbar;
     let more = tb.overflow.expect("a » button");

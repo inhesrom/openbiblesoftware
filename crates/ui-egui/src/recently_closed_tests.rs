@@ -71,8 +71,7 @@ fn ge(c: u16, v: u16) -> Verse {
 }
 
 fn go(h: &mut Harness, t: TabId, text: &str) {
-    h.shell
-        .run("tab.go", &json!({ "tab": t.0, "text": text }));
+    h.shell.run("tab.go", &json!({ "tab": t.0, "text": text }));
     settle_all(h);
 }
 
@@ -130,7 +129,15 @@ fn three_closed_tabs_come_back_newest_first_with_ctrl_shift_t_where_they_were() 
     settle_all(&mut h);
     link(&mut h, hn, Some('B'));
     go(&mut h, hn, "Gen 32:5");
-    let view = h.shell.st.tabs.get_mut(&tb2).unwrap().view.as_mut().unwrap();
+    let view = h
+        .shell
+        .st
+        .tabs
+        .get_mut(&tb2)
+        .unwrap()
+        .view
+        .as_mut()
+        .unwrap();
     view.scroll_by(9.0);
     settle_all(&mut h);
     let before_dock = dock(&h);
@@ -139,7 +146,11 @@ fn three_closed_tabs_come_back_newest_first_with_ctrl_shift_t_where_they_were() 
     assert_eq!((before[1].1, before[1].2), (Some(ge(32, 5)), Some('B')));
     assert_eq!((before[2].1, before[2].2), (Some(ge(31, 10)), Some('A')));
     let tb2_anchor = anchor(&mut h, tb2);
-    assert!(tb2_anchor.into > 0.0, "scrolled into a line: {tb2_anchor:?}");
+    assert!(
+        tb2_anchor.into > 0.0,
+        "scrolled into a line: {tb2_anchor:?}"
+    );
+    preview(&h, "recently-closed-1-before-closing");
 
     // Close: the second TB with Ctrl+W, HNUM with a middle click on its Tab, then TB from
     // its ⋯ menu as the last Tab of its Panel.
@@ -153,19 +164,29 @@ fn three_closed_tabs_come_back_newest_first_with_ctrl_shift_t_where_they_were() 
     settle_all(&mut h);
     assert!(h.shell.st.session.workspace.tab(tb).is_none());
     assert_eq!(dock(&h).len(), before_dock.len() - 2, "two Panels closed");
+    preview(&h, "recently-closed-2-after-closing");
 
     // Window → Recently closed lists them newest first.
     h.open_menu("Window");
     h.click_text("Recently closed");
-    for label in ["Genesis 31:10 · TB", "Genesis 32:5 · HNUM", "Genesis 30:20 · TB"] {
+    for label in [
+        "Genesis 31:10 · TB",
+        "Genesis 32:5 · HNUM",
+        "Genesis 30:20 · TB",
+    ] {
         assert!(h.find(label).is_some(), "{label} in {:?}", h.texts());
     }
-    let order: Vec<f32> = ["Genesis 31:10 · TB", "Genesis 32:5 · HNUM", "Genesis 30:20 · TB"]
-        .iter()
-        .map(|l| h.find(l).unwrap().top())
-        .collect();
+    let order: Vec<f32> = [
+        "Genesis 31:10 · TB",
+        "Genesis 32:5 · HNUM",
+        "Genesis 30:20 · TB",
+    ]
+    .iter()
+    .map(|l| h.find(l).unwrap().top())
+    .collect();
     assert!(order.is_sorted(), "{order:?}");
-    preview(&h, "recently-closed-menu");
+    h.frames(20);
+    preview(&h, "recently-closed-3-window-menu");
     key(&mut h, Key::Escape, Modifiers::NONE);
 
     // Ctrl+Shift+T three times: TB, then HNUM, then the second TB.
@@ -173,7 +194,10 @@ fn three_closed_tabs_come_back_newest_first_with_ctrl_shift_t_where_they_were() 
         key(&mut h, Key::T, CTRL_SHIFT);
         let t = h.shell.st.session.workspace.focused().unwrap();
         let now = seen(&mut h, t);
-        assert_eq!((&now.0, now.1, now.2), (&expected.0, expected.1, expected.2));
+        assert_eq!(
+            (&now.0, now.1, now.2),
+            (&expected.0, expected.1, expected.2)
+        );
         if now.0 == "TB" && now.1 == Some(ge(30, 20)) {
             // The text that was at the top of the view is again, as far into its line.
             let view = h.shell.st.tabs.get_mut(&t).unwrap().view.as_mut().unwrap();
@@ -183,7 +207,7 @@ fn three_closed_tabs_come_back_newest_first_with_ctrl_shift_t_where_they_were() 
     }
     // Every Panel is back where it was, with its Tabs in their order.
     assert_eq!(dock(&h), before_dock);
-    preview(&h, "recently-closed-reopened");
+    preview(&h, "recently-closed-4-reopened");
     assert!(!h.shell.st.session.is_enabled("tab.reopen_closed"));
 }
 
@@ -206,7 +230,10 @@ fn close_panel_and_a_click_in_recently_closed_bring_a_panel_back_whole() {
     h.click_text("Recently closed");
     h.click_text("Panel: Library, Word Info");
     settle_all(&mut h);
-    assert_eq!(dock(&h), [vec!["Library".to_string(), "Word Info".to_string()]]);
+    assert_eq!(
+        dock(&h),
+        [vec!["Library".to_string(), "Word Info".to_string()]]
+    );
     key(&mut h, Key::T, CTRL_SHIFT);
     assert_eq!(dock(&h), before);
     let tb = h.tab_id("TB");

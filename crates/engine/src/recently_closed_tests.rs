@@ -240,8 +240,13 @@ fn recently_closed_lists_the_last_twenty_newest_first_and_reopens_any_of_them() 
     assert_eq!(labels[0].1, "Psalms 25:1 · KJV");
     assert_eq!(labels[19].1, "Psalms 6:1 · KJV");
     // Window → Recently closed → "Psalms 10:1 · KJV".
-    let (id, _) = labels.iter().find(|(_, l)| l == "Psalms 10:1 · KJV").unwrap();
-    let out = s.run("tab.reopen_closed", &json!({ "closed": id })).unwrap();
+    let (id, _) = labels
+        .iter()
+        .find(|(_, l)| l == "Psalms 10:1 · KJV")
+        .unwrap();
+    let out = s
+        .run("tab.reopen_closed", &json!({ "closed": id }))
+        .unwrap();
     let t = TabId(out["tabs"][0].as_u64().unwrap());
     assert_eq!(state(&s, t).1, Some(v(Book::Psalms, 10, 1)));
     assert_eq!(s.recently_closed_labels().len(), 19);
