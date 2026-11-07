@@ -75,8 +75,12 @@ A short English meaning for a Lemma or a Tagged word.
 _Avoid_: Definition, Translation
 
 **Interlinear lines**:
-Short lines stacked under each Tagged word in a Bible Tab, toggled from the Tab header; the user picks which lines show, and the choice is kept per Tab and saved in Layouts. In an English Bible with Strong's numbers they form a **reverse interlinear** (Lemma, transliteration, Strong's number, Morphology, Gloss: the Hebrew or Greek behind each English word); in a Hebrew, Aramaic or Greek Bible they form an **interlinear** (Gloss, transliteration, Morphology, Strong's number under the original text). The lines are not text of the Resource: Annotations never anchor in them.
+Short lines stacked under each Tagged word in a Bible Tab, toggled from the Tab header; the user picks which lines show, and the choice is kept per Tab and saved in Layouts. In an English Bible with Strong's numbers they form a **reverse interlinear** (Lemma, transliteration, Strong's number, Morphology, Gloss: the Hebrew or Greek behind each English word); in a Hebrew, Aramaic or Greek Bible they form an **interlinear** (Gloss, transliteration, Morphology, Strong's number under the original text). The lines are not text of the Resource: Annotations never anchor in them. A reverse interlinear shows the Lemma, transliteration and Gloss by default (the Strong's number is a line the user can add). A line reads the Bible's own tagging first, then the library's Lexicons in Preferred order, then the **Built-in Strong's index**; a line still empty under every word brings a hint on the Tab, which the user can close for that Tab.
 _Avoid_: Interlinear text, Interlinear Bible (it is the same Bible with lines under it), Glosses row
+
+**Built-in Strong's index**:
+The compact table shipped inside the app (built from STEPBible's TBESH and TBESG, CC BY 4.0, credited in Help → Credits) that gives every Strong's number, extended ones included, a Lemma and a short Gloss, so Interlinear lines read with only a Bible with Strong's numbers installed. It is not a Resource: it is not in the library, and an installed Lexicon always comes first.
+_Avoid_: Built-in lexicon, Strong's dictionary
 
 ### Library
 

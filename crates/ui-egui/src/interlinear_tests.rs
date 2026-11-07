@@ -180,7 +180,8 @@ fn kjv_john_3_16_shows_greek_lemmas_under_its_english_words_aligned() {
     let _files = setup(&mut h, "kjv");
     let kjv = open_at(&mut h, "kjv", "Jn 3:16");
     assert!(view(&h, kjv).interlinear().is_none());
-    // The Tab header's toggle turns the lines on: the reverse interlinear's default lines.
+    // The Tab header's toggle turns the lines on: the reverse interlinear's default lines,
+    // the Greek word and its Gloss without the number (#243).
     click_header(&mut h, kjv, "Interlinear");
     settle_all(&mut h);
     let source = view(&h, kjv).interlinear().expect("lines shown").clone();
@@ -189,21 +190,21 @@ fn kjv_john_3_16_shows_greek_lemmas_under_its_english_words_aligned() {
         [
             InterlinearLine::Lemma,
             InterlinearLine::Transliteration,
-            InterlinearLine::Strongs
+            InterlinearLine::Gloss
         ]
     );
     let verse = verse_range(&h, kjv, Verse::new(Book::John, 3, 16));
     let (top, laid) = block_at(&h, kjv, 0, verse.start);
     let mut from = verse.start;
     let mut last_x = (usize::MAX, f32::MIN);
-    for (word, number, lemma) in JOHN_3_16_LEMMAS {
+    for (word, _, lemma) in JOHN_3_16_LEMMAS {
         let range = word_range(&h, kjv, word, from);
         from = range.end;
         let [x0, y0, x1, y1] = word_box(&h, kjv, &range);
-        // The Lemma, its transliteration and the number, stacked under the word.
+        // The Lemma, its transliteration and the Gloss, stacked under the word.
         let lemma_cell = cell(&laid, &range, 0);
         assert_eq!(lemma_cell.text, *lemma, "under {word}");
-        assert_eq!(cell(&laid, &range, 2).text, *number, "under {word}");
+        assert_eq!(cell(&laid, &range, 2).text, "a gloss", "under {word}");
         assert!(!cell(&laid, &range, 1).text.is_empty(), "under {word}");
         // Aligned: each line is centred under its word, below it, and the words' columns
         // never overlap.
@@ -219,7 +220,14 @@ fn kjv_john_3_16_shows_greek_lemmas_under_its_english_words_aligned() {
                 "row {row} under {word} is below it"
             );
             if c.line == last_x.0 {
-                assert!(c.x >= last_x.1, "{word}'s column overlaps the one before");
+                assert!(
+                    c.x >= last_x.1,
+                    "{word}'s column overlaps the one before: row {row} {} at {} w {} vs {}",
+                    c.text,
+                    c.x,
+                    c.width,
+                    last_x.1
+                );
             }
         }
         assert!(y0 < top + lemma_cell.top);
@@ -243,14 +251,16 @@ fn kjv_john_3_16_shows_greek_lemmas_under_its_english_words_aligned() {
             .join("../../target/previews/interlinear");
         h.screenshot(&dir.join("interlinear-kjv-john-3-16.ppm"));
     }
-    // The lines menu (a chevron) picks the lines: adding Gloss puts it at the bottom.
+    // The lines menu (a chevron) picks the lines: adding the Strong's number puts it in
+    // its place, above the Gloss.
     click_header(&mut h, kjv, "[chevron-down]");
-    h.click_text("Gloss");
+    h.click_text("Strong's number");
     settle_all(&mut h);
     let source = view(&h, kjv).interlinear().unwrap();
-    assert_eq!(source.lines.last(), Some(&InterlinearLine::Gloss));
+    assert_eq!(source.lines[2], InterlinearLine::Strongs);
     let (_, laid) = block_at(&h, kjv, 0, verse.start);
     let loved = word_range(&h, kjv, "loved", verse.start);
+    assert_eq!(cell(&laid, &loved, 2).text, "G25");
     assert_eq!(cell(&laid, &loved, 3).text, "a gloss");
     // And off again: no lines.
     h.events.push(Event::Key {
@@ -539,8 +549,8 @@ fn interlinear_lines_are_selected_and_copied_with_their_words_but_never_anchored
     let copied = h.copied.last().cloned().unwrap_or_default();
     let lines: Vec<&str> = copied.lines().collect();
     assert!(lines[0].starts_with("For God so lov"), "{copied}");
-    assert!(lines.contains(&"For\tγάρ\tgar\tG1063"), "{copied}");
-    assert!(lines.contains(&"God\tθεός\ttheos\tG2316"), "{copied}");
+    assert!(lines.contains(&"For\tγάρ\tgar\ta gloss"), "{copied}");
+    assert!(lines.contains(&"God\tθεός\ttheos\ta gloss"), "{copied}");
     assert_eq!(lines.last(), Some(&"John 3:16 (KJV)"), "{copied}");
     // A Highlight made from it anchors on the text only.
     press(&mut h, egui::Key::Num2, Modifiers::ALT);
@@ -782,4 +792,330 @@ fn real_starter_interlinear() {
         h.screenshot(&dir.join("interlinear-real-tahot-genesis-1-1.ppm"));
     }
     drop(h);
+}
+
+/// A library with only the BSB (Gen 1:1-5 and John 1:1 as CrossWire's module tags them): no
+/// Lexicon, no Hebrew or Greek text (#243).
+fn setup_bsb_only(h: &mut Harness, name: &str) -> Files {
+    let dir = std::env::temp_dir().join(format!(
+        "obs-shell-interlinear-bsb-{name}-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let files = Files(dir);
+    h.shell.st.session.library = Library::new();
+    let r = obs_engine::testing::bsb_gen_1_john_1();
+    let path = files.0.join("bsb.obr");
+    obs_store::write_obr(&r, &path).unwrap();
+    h.shell.st.session.library.add_file(&path).unwrap();
+    h.shell.reset_layout();
+    h.frames(2);
+    files
+}
+
+/// The lines under each Tagged word of a laid block, in text order: (word, its lines).
+fn rows_of(h: &Harness, tab: TabId, laid: &LaidBlock) -> Vec<(String, Vec<String>)> {
+    let text = &view(h, tab).doc.units[0].text;
+    let mut cells: Vec<&LaidCell> = laid.cells.iter().collect();
+    cells.sort_by_key(|c| (c.word.start, c.row));
+    let mut rows: Vec<(String, Vec<String>)> = Vec::new();
+    for c in cells {
+        let word = text[c.word.clone()].to_string();
+        match rows.last_mut() {
+            Some((w, lines)) if *w == word && lines.len() == c.row => lines.push(c.text.clone()),
+            _ => rows.push((word, vec![c.text.clone()])),
+        }
+    }
+    rows
+}
+
+/// #243 acceptance: with only the BSB installed, Gen 1:1 shows בְּרֵאשִׁית / bᵊrēʾšîṯ /
+/// "beginning" under "In the beginning" — the default lines, the Hebrew word and its Gloss,
+/// read from the Bible and the built-in Strong's index — and no hint, since every line reads.
+#[test]
+fn bsb_alone_shows_the_hebrew_word_its_transliteration_and_gloss_under_in_the_beginning() {
+    let mut h = Harness::new();
+    let _files = setup_bsb_only(&mut h, "alone");
+    let bsb = open_at(&mut h, "bsb", "Gn 1:1");
+    click_header(&mut h, bsb, "Interlinear");
+    settle_all(&mut h);
+    let verse = verse_range(&h, bsb, Verse::new(Book::Genesis, 1, 1));
+    let (_, laid) = block_at(&h, bsb, 0, verse.start);
+    let rows = rows_of(&h, bsb, &laid);
+    assert_eq!(
+        rows[0],
+        (
+            "In the beginning".to_string(),
+            vec!["בְּרֵאשִׁית".into(), "bᵊrēʾšîṯ".into(), "beginning".into()]
+        )
+    );
+    let created = rows.iter().find(|(w, _)| w == "created").unwrap();
+    assert_eq!(created.1, ["בָּרָא", "bārāʾ", "to create"]);
+    let earth = rows.iter().find(|(w, _)| w == "the earth").unwrap();
+    assert_eq!(
+        earth.1,
+        ["הָאָרֶץ", "hāʾāreṣ", "land"],
+        "no sof pasuq in the word"
+    );
+    for (word, lines) in &rows {
+        assert!(lines.iter().all(|l| !l.is_empty()), "{word}: {lines:?}");
+    }
+    h.frames(2);
+    assert!(
+        !h.texts().iter().any(|t| t.contains("line is empty")),
+        "no hint when every line reads"
+    );
+    if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+        h.frames(80);
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/previews/interlinear");
+        h.screenshot(&dir.join("interlinear-bsb-genesis-1-1-after.ppm"));
+    }
+    drop(h);
+}
+
+/// #243: a line with nothing to show under any word (Morphology: the BSB's words carry
+/// none) brings a hint with the #135 buttons; Close keeps it closed on that Tab.
+#[test]
+fn an_empty_line_brings_a_hint_that_closes_for_good() {
+    let mut h = Harness::launch(Some(&temp_db("interlinear-hint")));
+    let _files = setup_bsb_only(&mut h, "hint");
+    let bsb = open_at(&mut h, "bsb", "Gn 1:1");
+    h.shell
+        .run(
+            "tab.interlinear",
+            &json!({ "tab": bsb.0, "line": "morphology" }),
+        )
+        .unwrap();
+    settle_all(&mut h);
+    h.frames(2);
+    let hint = |h: &Harness| {
+        h.shapes
+            .iter()
+            .find(|(_, t)| t.starts_with("The Morphology line is empty"))
+            .map(|(r, _)| *r)
+    };
+    let message = hint(&h).unwrap_or_else(|| panic!("no hint: {:?}", h.texts()));
+    assert!(
+        h.find("Get Hebrew & Greek texts…").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    // The text moved down under it, and the lines still read.
+    let [_, oy] = view(&h, bsb).text_origin;
+    assert!(oy > message.bottom(), "{oy} vs {message:?}");
+    if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+        h.frames(80);
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/previews/interlinear");
+        h.screenshot(&dir.join("interlinear-bsb-morphology-hint.ppm"));
+    }
+    // Get Hebrew & Greek texts… opens Get Resources at that filter.
+    h.click_text("Get Hebrew & Greek texts…");
+    settle_all(&mut h);
+    assert!(
+        h.shell
+            .st
+            .session
+            .workspace
+            .tabs()
+            .any(|t| t.kind == obs_engine::TabKind::GetBibles),
+        "Get Resources opened"
+    );
+    assert_eq!(
+        h.shell.st.session.get_bibles.filter(),
+        obs_engine::get_bibles::ResourceFilter::HebrewAndGreek
+    );
+    // Back in the Bible: Close.
+    h.shell.st.session.workspace.focus(bsb);
+    h.frames(3);
+    let message = hint(&h).expect("the hint is still there");
+    let close = h
+        .shapes
+        .iter()
+        .rev()
+        .find(|(r, t)| t == "[x]" && (r.center().y - message.center().y).abs() < 40.0)
+        .map(|(r, _)| r.center())
+        .unwrap_or_else(|| panic!("no Close by the hint: {:?}", h.texts()));
+    h.click(close);
+    settle_all(&mut h);
+    assert!(hint(&h).is_none(), "closed");
+    assert!(
+        h.shell
+            .st
+            .session
+            .workspace
+            .tab(bsb)
+            .unwrap()
+            .interlinear
+            .hint_dismissed
+    );
+    // Turning the lines off and on again does not bring it back.
+    for on in [false, true] {
+        h.shell
+            .run("tab.interlinear", &json!({ "tab": bsb.0, "on": on }))
+            .unwrap();
+        settle_all(&mut h);
+    }
+    h.frames(2);
+    assert!(hint(&h).is_none(), "it stays closed on this Tab");
+    drop(h);
+}
+
+/// One laid block as a spacing snapshot: each line's items (text and x) and its cells (row,
+/// text, x and width), in px rounded to 0.1.
+fn spacing_snapshot(laid: &LaidBlock) -> serde_json::Value {
+    let r = |v: f32| (v * 10.0).round() / 10.0;
+    let lines: Vec<serde_json::Value> = laid
+        .lines
+        .iter()
+        .enumerate()
+        .map(|(li, l)| {
+            let items: Vec<serde_json::Value> = l
+                .items
+                .iter()
+                .map(|i| json!([&laid.text[i.bytes.clone()], r(i.x), r(i.width)]))
+                .collect();
+            let mut cells: Vec<&LaidCell> = laid.cells.iter().filter(|c| c.line == li).collect();
+            cells.sort_by(|a, b| (a.row, a.x).partial_cmp(&(b.row, b.x)).unwrap());
+            let cells: Vec<serde_json::Value> = cells
+                .iter()
+                .map(|c| json!([c.row, c.text, r(c.x), r(c.width)]))
+                .collect();
+            json!({ "items": items, "cells": cells })
+        })
+        .collect();
+    json!(lines)
+}
+
+/// The spacing rules every interlinear line keeps (#243): punctuation stays against its
+/// word, a gap opens between two pieces of text only beside a word with a line wider than
+/// itself, and cells never come closer than the column gap.
+fn check_spacing(laid: &LaidBlock, size: f32) {
+    // Each Tagged word on each line: its x extent and whether a line under it is wider.
+    for (li, line) in laid.lines.iter().enumerate() {
+        let mut words: Vec<(f32, f32, bool)> = Vec::new();
+        let mut seen: Vec<std::ops::Range<usize>> = Vec::new();
+        for c in laid.cells.iter().filter(|c| c.line == li) {
+            if seen.contains(&c.word) {
+                continue;
+            }
+            seen.push(c.word.clone());
+            let p = laid.from_unit(c.word.start).unwrap()..laid.from_unit(c.word.end).unwrap();
+            let (l, r) = line
+                .items
+                .iter()
+                .filter(|i| i.bytes.start >= p.start && i.bytes.end <= p.end)
+                .fold((f32::MAX, f32::MIN), |(l, r), i| {
+                    (l.min(i.x), r.max(i.x + i.width))
+                });
+            let widest = laid
+                .cells
+                .iter()
+                .filter(|o| o.line == li && o.word == c.word)
+                .map(|o| o.width)
+                .fold(0.0, f32::max);
+            words.push((l, r, widest > r - l + 0.01));
+        }
+        for pair in line.items.windows(2) {
+            let (a, b) = (&pair[0], &pair[1]);
+            let gap = b.x - (a.x + a.width);
+            let text = &laid.text[b.bytes.clone()];
+            if text.starts_with([',', '.', '”', '’', ';', ':', '!', '?', '—']) {
+                assert!(gap.abs() < 0.01, "{text:?} is pushed {gap} from its word");
+            }
+            if gap > 0.01 {
+                let at = a.x + a.width;
+                let left = words
+                    .iter()
+                    .filter(|w| w.1 <= at + 0.01)
+                    .max_by(|x, y| x.1.total_cmp(&y.1));
+                let right = words
+                    .iter()
+                    .filter(|w| w.0 >= b.x - 0.01)
+                    .min_by(|x, y| x.0.total_cmp(&y.0));
+                assert!(
+                    left.is_some_and(|w| w.2) || right.is_some_and(|w| w.2),
+                    "a {gap} px gap before {text:?} with no wide line beside it: line {li} at {at} words {words:?}",
+                );
+            }
+        }
+        for row in 0..3 {
+            let mut cells: Vec<&LaidCell> = laid
+                .cells
+                .iter()
+                .filter(|c| c.line == li && c.row == row)
+                .collect();
+            cells.sort_by(|a, b| a.x.total_cmp(&b.x));
+            for w in cells.windows(2) {
+                let gap = w[1].x - (w[0].x + w[0].width);
+                assert!(
+                    gap >= size * 0.6 - 0.05,
+                    "{} / {}: {gap}",
+                    w[0].text,
+                    w[1].text
+                );
+            }
+        }
+    }
+}
+
+/// #243 spacing goldens: the BSB's Gen 1:1-5 and John 1:1 with the default lines from the
+/// built-in Strong's index, laid out at a reading width. Rerun with `UPDATE_GOLDEN=1` and
+/// review the diff when the layout changes on purpose.
+#[test]
+fn bsb_interlinear_spacing_goldens() {
+    use obs_engine::InterlinearKind;
+    let doc = crate::doc::ReadingDoc::from_resource(obs_engine::testing::bsb_gen_1_john_1());
+    let kind = InterlinearKind::Reverse;
+    let source =
+        crate::InterlinearSource::new(kind, kind.default_lines().to_vec(), vec![], vec![]).unwrap();
+    let settings = obs_layout::TextSettings::default();
+    let size = settings.size * obs_layout::INTERLINEAR_SCALE;
+    for (name, book) in [
+        ("interlinear-bsb-gen-1-1-5", "GEN"),
+        ("interlinear-bsb-john-1-1", "JHN"),
+    ] {
+        let unit = doc
+            .units
+            .iter()
+            .position(|u| u.id.as_str() == book)
+            .unwrap();
+        let mut blocks = Vec::new();
+        for (i, b) in doc.blocks.iter().enumerate() {
+            if b.unit != unit {
+                continue;
+            }
+            let para = source.paragraph(&doc, i, &settings, false).unwrap();
+            let laid = obs_layout::layout(&para, 620.0, obs_fonts::ShapeCache::shared());
+            if laid.cells.is_empty() {
+                continue;
+            }
+            check_spacing(&laid, size);
+            blocks.push(spacing_snapshot(&laid));
+        }
+        assert!(!blocks.is_empty(), "{name}");
+        check_golden(name, &json!(blocks));
+    }
+}
+
+fn check_golden(name: &str, actual: &serde_json::Value) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden")
+        .join(format!("{name}.json"));
+    let text = serde_json::to_string_pretty(actual).unwrap() + "\n";
+    if std::env::var_os("UPDATE_GOLDEN").is_some() || !path.exists() {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &text).unwrap();
+        return;
+    }
+    let expected = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("\r\n", "\n");
+    assert!(
+        expected == text,
+        "golden {} differs; rerun with UPDATE_GOLDEN=1 and review",
+        path.display()
+    );
 }

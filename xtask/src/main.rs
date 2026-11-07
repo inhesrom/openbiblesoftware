@@ -7,6 +7,7 @@ mod layers;
 mod licenses;
 mod release;
 mod starter;
+mod strongs_index;
 mod tvtms;
 
 use std::path::{Path, PathBuf};
@@ -40,7 +41,8 @@ releases (docs/dev/releasing.md):
 
 maintenance:
   tvtms <TVTMS.txt>   regenerate the embedded STEPBible TVTMS rules
-  atlas-basemap       regenerate the Atlas's built-in base map from Natural Earth (`--help`)";
+  atlas-basemap       regenerate the Atlas's built-in base map from Natural Earth (`--help`)
+  strongs-index       regenerate the built-in Strong's index from STEPBible TBESH/TBESG (`--help`)";
 
 fn main() {
     if let Err(err) = run() {
@@ -81,6 +83,10 @@ fn run() -> Result<()> {
         "atlas-basemap" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             atlas_basemap::run(&root, &rest)
+        }
+        "strongs-index" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            strongs_index::run(&root, &rest)
         }
         "tvtms" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();

@@ -6,16 +6,22 @@
 //!
 //! The engine keeps which lines each Tab shows (saved in Layouts and the Last session) and
 //! says what each line reads for a word; the UI looks the words up and lays the lines out.
+//! What the Bible and the library's Lexicons lack comes from the built-in Strong's index
+//! (#243), so the lines read with only a Bible with Strong's numbers installed; a line still
+//! empty gets a hint on the Tab ([`missing_lines_hint`]).
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use obs_model::{MorphemePart, ResourceType, morph, transliterate};
+use obs_model::{MorphemePart, ResourceType, morph, transliterate_academic, without_cantillation};
 use obs_scripture::StrongsNumber;
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
+use crate::guide::GuideSection;
 use crate::key_words::is_original_language;
+use crate::missing_resource::EmptyState;
 use crate::session::Session;
+use crate::strongs_index;
 use crate::word_info::{AFFIX_NUMBERS_FROM, has_original_script};
 use crate::workspace::{TabId, TabKind};
 
@@ -111,13 +117,14 @@ impl InterlinearKind {
         }
     }
 
-    /// The lines shown until the user picks others.
+    /// The lines shown until the user picks others: the Hebrew or Greek word and its Gloss
+    /// (#243), not the Strong's number.
     pub fn default_lines(self) -> &'static [InterlinearLine] {
         match self {
             InterlinearKind::Reverse => &[
                 InterlinearLine::Lemma,
                 InterlinearLine::Transliteration,
-                InterlinearLine::Strongs,
+                InterlinearLine::Gloss,
             ],
             InterlinearKind::Interlinear => {
                 &[InterlinearLine::Gloss, InterlinearLine::Transliteration]
@@ -134,6 +141,10 @@ pub struct InterlinearLines {
     /// The lines the user picked; `None`: the Bible's default lines.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chosen: Option<Vec<InterlinearLine>>,
+    /// The user closed the hint about lines with nothing to show (#243): it does not come
+    /// back on this Tab.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hint_dismissed: bool,
 }
 
 impl InterlinearLines {
@@ -239,8 +250,10 @@ pub fn cell_gloss<'a>(excerpts: impl IntoIterator<Item = &'a str>) -> Option<Str
 }
 
 /// What each of `lines` reads under one Tagged word: `written` as it is in the Bible, its
-/// `parts` (morphemes), and a Lexicon lookup for numbers whose Lemma or Gloss the Bible does
-/// not carry. A line with nothing to show is empty.
+/// `parts` (morphemes), and a Lexicon lookup (the library's, in Preferred order) for numbers
+/// whose Lemma or Gloss the Bible does not carry; what they all lack comes from the built-in
+/// Strong's index (#243). A Lemma shows without its accents; a transliteration is the
+/// academic one ([`transliterate_academic`]). A line with nothing to show is empty.
 pub fn cell_texts(
     lines: &[InterlinearLine],
     kind: InterlinearKind,
@@ -263,7 +276,29 @@ pub fn cell_texts(
     };
     let looked_up = std::cell::OnceCell::new();
     let lexicon_word = || looked_up.get_or_init(|| lexicon(main.strongs).unwrap_or_default());
-    let lemma = || trimmed(&main.lemma).or_else(|| lexicon_word().lemma.clone());
+    let indexed = std::cell::OnceCell::new();
+    let index_word = || {
+        indexed
+            .get_or_init(|| strongs_index::builtin().word(main.strongs, written))
+            .as_ref()
+    };
+    let from_index = |pick: fn(&strongs_index::IndexWord) -> &String| {
+        index_word()
+            .map(pick)
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    let lemma = || {
+        trimmed(&main.lemma)
+            .or_else(|| lexicon_word().lemma.clone())
+            .or_else(|| from_index(|w| &w.lemma))
+            // A verse's last word may carry sof pasuq and a paragraph mark (הָאָֽרֶץ׃,
+            // אֶחָֽד׃פ): neither is part of the word.
+            .map(|l| without_cantillation(l.split('\u{05C3}').next().unwrap_or_default()))
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+    };
     lines
         .iter()
         .map(|line| {
@@ -272,10 +307,10 @@ pub fn cell_texts(
                 InterlinearLine::Transliteration => match kind {
                     InterlinearKind::Interlinear => Some(written)
                         .filter(|w| has_original_script(w))
-                        .map(transliterate),
+                        .map(transliterate_academic),
                     InterlinearKind::Reverse => lemma()
                         .filter(|l| has_original_script(l))
-                        .map(|l| transliterate(&l)),
+                        .map(|l| transliterate_academic(&l)),
                 },
                 InterlinearLine::Strongs => Some(main.strongs.to_string()),
                 InterlinearLine::Morphology => main
@@ -289,11 +324,13 @@ pub fn cell_texts(
                     InterlinearKind::Interlinear => {
                         let glosses: Vec<String> =
                             parts.iter().filter_map(|p| trimmed(&p.gloss)).collect();
-                        (!glosses.is_empty()).then(|| glosses.join(" "))
+                        (!glosses.is_empty())
+                            .then(|| glosses.join(" "))
+                            .or_else(|| from_index(|w| &w.gloss))
                     }
-                    InterlinearKind::Reverse => {
-                        trimmed(&main.gloss).or_else(|| lexicon_word().gloss.clone())
-                    }
+                    InterlinearKind::Reverse => trimmed(&main.gloss)
+                        .or_else(|| lexicon_word().gloss.clone())
+                        .or_else(|| from_index(|w| &w.gloss)),
                 },
             };
             text.unwrap_or_default()
@@ -309,6 +346,62 @@ pub fn tab_kind(s: &Session, tab: TabId) -> Option<InterlinearKind> {
     let entry = s.library.get(id)?;
     (entry.manifest.resource_type == ResourceType::Bible)
         .then(|| InterlinearKind::for_language(&entry.manifest.language))
+}
+
+/// What a Bible Tab says when some of the lines it shows have nothing to show for any of
+/// its words (`empty`, #243), with the #135 buttons that would fill them; `None` when every
+/// line has something. Morphology comes only from the Bible's own tagging, so for it the
+/// hint points at Hebrew and Greek Bibles tagged with it; a Lemma or Gloss the built-in
+/// index lacks points at Lexicons.
+pub fn missing_lines_hint(
+    s: &Session,
+    kind: InterlinearKind,
+    empty: &[InterlinearLine],
+) -> Option<EmptyState> {
+    let starter = s.starter.manifest();
+    if empty.contains(&InterlinearLine::Morphology) {
+        let has_original = s.library.of_type(ResourceType::Bible).any(|e| {
+            [
+                obs_scripture::StrongsLanguage::Hebrew,
+                obs_scripture::StrongsLanguage::Greek,
+            ]
+            .into_iter()
+            .any(|l| is_original_language(&e.manifest.language, l))
+        });
+        let message = match kind {
+            InterlinearKind::Reverse => {
+                "The Morphology line is empty: this Bible's words carry none. Hebrew and Greek \
+                 texts tagged with Morphology show it in their own Interlinear lines."
+            }
+            InterlinearKind::Interlinear => {
+                "The Morphology line is empty: this Bible's words carry none. Hebrew and Greek \
+                 texts tagged with Morphology show it."
+            }
+        };
+        return Some(EmptyState {
+            message,
+            missing: GuideSection::Forms.missing_resource(has_original, None, &s.library, starter),
+        });
+    }
+    if empty.iter().any(|l| {
+        matches!(
+            l,
+            InterlinearLine::Lemma | InterlinearLine::Transliteration | InterlinearLine::Gloss
+        )
+    }) {
+        let has_lexicon = s.library.of_type(ResourceType::Lexicon).next().is_some();
+        return Some(EmptyState {
+            message: "Some lines are empty: neither your Lexicons nor the built-in Strong's \
+                      index has these words. A Lexicon for this Bible's numbers fills them.",
+            missing: GuideSection::LexiconEntries.missing_resource(
+                has_lexicon,
+                None,
+                &s.library,
+                starter,
+            ),
+        });
+    }
+    None
 }
 
 fn failed(command: &'static str, message: impl ToString) -> CommandError {
@@ -338,6 +431,11 @@ fn set_interlinear(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError
     let Some(t) = s.workspace.tab_mut(tab) else {
         return Err(failed(ID, format!("no Tab {}", tab.0)));
     };
+    if p.bool("dismiss_hint") == Some(true) {
+        t.interlinear.hint_dismissed = true;
+        let shown: Vec<&str> = t.interlinear.shown(kind).iter().map(|l| l.id()).collect();
+        return Ok(json!({ "on": t.interlinear.on, "lines": shown }));
+    }
     if let Some(line) = line {
         t.interlinear
             .set_line(kind, line, p.bool("shown").unwrap_or(true));
@@ -380,6 +478,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[CommandSpec {
             kind: ParamKind::Boolean,
             required: false,
             help: "With `line`: pick it (true, the default) or drop it (false)",
+        },
+        ParamSpec {
+            name: "dismiss_hint",
+            kind: ParamKind::Boolean,
+            required: false,
+            help: "true: close the Tab's hint about empty lines for good (nothing else changes)",
         },
     ],
     enabled: always,

@@ -50,6 +50,11 @@ const EMBEDDED_USE: &[(&str, &str)] = &[
         "Built into the app: the templates Tools → Reading plans makes plans from.",
     ),
     (
+        "crates/engine/assets/strongs/",
+        "Built into the app: the Hebrew or Greek word and gloss of each Strong's number in a \
+         Bible's Interlinear lines when no installed Lexicon has them.",
+    ),
+    (
         "crates/ui-egui/assets/icons/",
         "Built into the app: the icons of the toolbar, menus, Tab headers, Guides and Tools.",
     ),
@@ -545,6 +550,25 @@ mod tests {
         assert_eq!(icons.texts.len(), 1);
         assert!(icons.texts[0].1.starts_with("ISC License"));
         assert!(icons.texts[0].1.contains("Cole Bemis"));
+    }
+
+    /// #243: the built-in Strong's index credits STEPBible under CC BY with its changes.
+    #[test]
+    fn the_builtin_strongs_index_is_credited() {
+        let embedded = &credits().sections[1];
+        let index = embedded
+            .credits
+            .iter()
+            .find(|c| c.asset.as_deref() == Some("crates/engine/assets/strongs/*"))
+            .unwrap();
+        assert_eq!(index.license, "CC-BY-4.0");
+        assert!(index.credit.contains("STEP Bible"));
+        assert!(index.changes.as_deref().unwrap().contains("Meaning"));
+        assert!(index.note.as_deref().unwrap().contains("Interlinear"));
+        assert_eq!(
+            index.license_url.as_deref(),
+            Some("https://creativecommons.org/licenses/by/4.0/")
+        );
     }
 
     #[test]
