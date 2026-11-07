@@ -376,7 +376,15 @@ fn scripture_ref_and_zero_width_xref_hover_draw_worker_previews() {
             }),
             "reference has its own accessible Link around its glyph"
         );
-        assert!(h.find("★ KJV").is_some(), "{:?}", h.texts());
+        // The preview names its Bible after a filled star: the first in Preferred order.
+        let star = h.find("[star-filled]").expect("a star by the Bible's name");
+        assert!(
+            h.shapes.iter().any(|(r, t)| t == "KJV"
+                && r.left() > star.right()
+                && (r.center().y - star.center().y).abs() < 6.0),
+            "{:?}",
+            h.texts()
+        );
         assert!(h.meshes.contains(&h.shell.st.palette.ink));
         assert!(preview_shown(&h), "popup exposes laid-out preview text");
         click_reference(&mut h, spot);

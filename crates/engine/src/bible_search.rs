@@ -1672,7 +1672,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 name: "bibles",
                 kind: ParamKind::String,
                 required: false,
-                help: "Comma-separated Bible resource ids (default: the Tab's choice, else the ★ Bible)",
+                help: "Comma-separated Bible resource ids (default: the Tab's choice, else the first Bible in Preferred order)",
             },
             ParamSpec {
                 name: "resources",

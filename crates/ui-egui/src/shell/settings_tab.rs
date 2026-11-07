@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 
 use super::State;
 use super::library_tab::section;
+use crate::icons::{self, Icon};
 use crate::theme;
 
 /// A command a row asked for.
@@ -178,8 +179,10 @@ impl State {
             SettingKind::Toggle { .. } => {}
             SettingKind::TextSize => {
                 ui.horizontal(|ui| {
+                    let ink = theme::c().ink;
+                    let smaller = icons::image(ui.ctx(), Icon::Remove, icons::BODY, ink);
                     if ui
-                        .button("−")
+                        .add(egui::Button::new(smaller))
                         .accessible_name("Smaller text")
                         .on_hover_text(super::with_key(
                             &self.session,
@@ -194,8 +197,9 @@ impl State {
                         RichText::new(format!("{:.0} pt", self.session.text.size))
                             .color(theme::c().ink),
                     );
+                    let larger = icons::image(ui.ctx(), Icon::Add, icons::BODY, ink);
                     if ui
-                        .button("+")
+                        .add(egui::Button::new(larger))
                         .accessible_name("Larger text")
                         .on_hover_text(super::with_key(
                             &self.session,

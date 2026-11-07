@@ -388,13 +388,14 @@ fn a_marker_click_opens_the_note_in_notes_and_show_in_text_hides_markers() {
     h.frame();
     assert!(h.shell.st.notes_ui.editing.is_none());
 
-    // 👁 hides the Notebook's Annotations in the text, and shows them again.
-    let eye = leftmost(&h, "👁");
+    // The eye hides the Notebook's Annotations in the text (it shows crossed out), and shows
+    // them again.
+    let eye = leftmost(&h, "[eye]");
     h.click(eye);
     assert!(markers(&h).is_empty(), "hidden");
     let default = h.shell.st.session.default_notebook().unwrap().id;
     assert!(h.shell.st.session.hidden_in_text().contains(&default));
-    let eye = leftmost(&h, "👁");
+    let eye = leftmost(&h, "[eye-off]");
     h.click(eye);
     assert_eq!(markers(&h).len(), 1);
     drop(h);
@@ -662,11 +663,13 @@ fn following_a_card_with_no_bible_open_opens_one_at_the_verse() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// The Notes Tool's text symbols are in the chrome fonts; its eye, pencil and warning are
+/// icons (#220).
 #[test]
 fn the_notes_symbols_are_in_the_chrome_fonts() {
     let h = Harness::new();
     h.ctx.fonts_mut(|f| {
-        let missing: Vec<&str> = ["👁", "…", "✏", "“”", "⚠"]
+        let missing: Vec<&str> = ["…", "“”"]
             .into_iter()
             .filter(|s| !f.has_glyphs(&egui::FontId::proportional(14.0), s))
             .collect();

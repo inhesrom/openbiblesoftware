@@ -830,9 +830,9 @@ fn the_tab_menu_offers_find_with_its_shortcut() {
         .shapes
         .iter()
         .rev()
-        .find(|(r, t)| t == "…" && pane.contains(r.center()))
+        .find(|(r, t)| t == "[ellipsis]" && pane.contains(r.center()))
         .map(|(r, _)| r.center())
-        .expect("the Tab's ⋯ menu");
+        .expect("the Tab's More menu");
     h.click(dots);
     assert!(h.find("Ctrl+F").is_some(), "{:?}", h.texts());
     h.click_text("Find…");

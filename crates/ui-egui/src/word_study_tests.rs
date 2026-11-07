@@ -263,7 +263,7 @@ fn word_info_and_strongs_links_open_word_study() {
     let info = h.tab_at("Word Info");
     h.click(info);
     h.frames(2);
-    h.click_text("Word Study ›");
+    h.click_text("Word Study");
     h.frames(2);
     let ws = &h.shell.session().workspace;
     let study = ws.focused().unwrap();

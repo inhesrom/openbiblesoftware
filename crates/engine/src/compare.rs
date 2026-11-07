@@ -391,7 +391,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "compare.base",
-        label: "Make the ★ base Bible",
+        label: "Make the base Bible",
         shortcut: None,
         params: &[TAB, ID],
         enabled: always,

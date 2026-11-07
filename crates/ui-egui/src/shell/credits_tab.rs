@@ -77,13 +77,13 @@ impl State {
 /// One credited work: name, licence, source, credit, edition, use, changes and texts.
 fn credit_row(ui: &mut Ui, c: &Credit, library: &Library) {
     ui.label(RichText::new(&c.name).strong().color(theme::c().ink));
+    // The deed's link on a line of its own: a link wrapped across lines is not one
+    // accessible node.
     field(ui, "Licence", |ui| {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(&c.license);
-            if let Some(url) = &c.license_url {
-                ui.hyperlink_to("licence deed", url).on_hover_text(url);
-            }
-        });
+        ui.label(&c.license);
+        if let Some(url) = &c.license_url {
+            ui.hyperlink_to("licence deed", url).on_hover_text(url);
+        }
     });
     field(ui, "Source", |ui| linked_text(ui, &c.source));
     field(ui, "Attribution", |ui| linked_text(ui, &c.credit));

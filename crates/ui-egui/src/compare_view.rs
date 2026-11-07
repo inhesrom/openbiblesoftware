@@ -5,7 +5,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use egui::{Align2, Color32, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
+use egui::{Align2, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
 use obs_engine::{Cell, ComparedBible, CopiedBible, Marks, VerseBlock, verse_blocks};
 use obs_layout::{ColorRole, LaidBlock, TextSettings, UnitPos};
 use obs_model::Direction;
@@ -373,36 +373,6 @@ impl ComparisonView {
     }
 }
 
-/// A five-pointed star (the chrome fonts have no ★): filled for the base Bible, outlined
-/// elsewhere.
-pub fn paint_star(
-    painter: &egui::Painter,
-    center: Pos2,
-    radius: f32,
-    filled: bool,
-    color: Color32,
-) {
-    let points: Vec<Pos2> = (0..10)
-        .map(|i| {
-            let r = if i % 2 == 0 { radius } else { radius * 0.45 };
-            let a = std::f32::consts::PI * (i as f32 / 5.0 - 0.5);
-            center + vec2(a.cos(), a.sin()) * r
-        })
-        .collect();
-    let stroke = Stroke::new(1.2, color);
-    if filled {
-        // Convex fan pieces: the star is not convex, so fill each point's triangle and the core.
-        let inner: Vec<Pos2> = points.iter().skip(1).step_by(2).copied().collect();
-        painter.add(Shape::convex_polygon(inner, color, Stroke::NONE));
-        for i in (0..10).step_by(2) {
-            let tri = vec![points[(i + 9) % 10], points[i], points[i + 1]];
-            painter.add(Shape::convex_polygon(tri, color, Stroke::NONE));
-        }
-    } else {
-        painter.add(Shape::closed_line(points, stroke));
-    }
-}
-
 /// What happened in the comparison pane this frame.
 #[derive(Debug, Clone, Default)]
 pub struct ComparisonOutput {
@@ -611,7 +581,7 @@ pub fn comparison_pane(
             let mut accessible_laid = None;
             let mut accessible_text = String::new();
             let mut accessible_label = format!("{} — {reference}", view.abbreviation(row));
-            // The label column: abbreviation (★ for the base), the Bible's own number where it
+            // The label column: abbreviation (a star for the base), the Bible's own number where it
             // differs, and "not compared".
             let label = painter.text(
                 pos2(left, row_y + 2.0),
@@ -623,12 +593,16 @@ pub fn comparison_pane(
             let is_base = view.key.as_ref().is_some_and(|k| k.base == Some(row));
             if is_base {
                 accessible_label.push_str(" — base Bible");
-                paint_star(
+                let at = Rect::from_center_size(
+                    pos2(label.right() + 10.0, label.center().y),
+                    vec2(12.0, 12.0),
+                );
+                crate::icons::paint(
                     &painter,
-                    pos2(label.right() + 9.0, label.center().y),
-                    5.5,
-                    true,
-                    palette.verse_number,
+                    crate::icons::Icon::StarFilled,
+                    at,
+                    crate::icons::SMALL,
+                    crate::icons::page_muted(palette),
                 );
             }
             let mut label_h = 18.0;

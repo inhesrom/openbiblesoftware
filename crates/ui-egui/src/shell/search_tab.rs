@@ -363,7 +363,13 @@ impl State {
                             json!({ "tab": tab.0, "value": scope.clone() }),
                         ));
                     }
-                    ui.menu_button("▾", |ui| {
+                    let presets = crate::icons::image(
+                        ui.ctx(),
+                        crate::icons::Icon::ChevronDown,
+                        crate::icons::SMALL,
+                        theme::c().muted,
+                    );
+                    ui.menu_button(presets, |ui| {
                         for p in scope_presets(context) {
                             if ui.button(&p.label).clicked() {
                                 run.push((
@@ -427,12 +433,7 @@ impl State {
                                 ui.horizontal(|ui| {
                                     ui.spacing_mut().item_spacing.x = 2.0;
                                     ui.label(RichText::new(abbreviation).size(12.5));
-                                    let x = egui::Button::new(RichText::new("×").size(12.0))
-                                        .frame(false)
-                                        .min_size(vec2(16.0, 20.0));
-                                    if ui
-                                        .add(x)
-                                        .on_hover_text("Do not search this Bible")
+                                    if crate::icons::chip_close(ui, "Do not search this Bible")
                                         .clicked()
                                     {
                                         run.push((
@@ -508,10 +509,7 @@ impl State {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
                         ui.label(RichText::new(label).size(12.5));
-                        let x = egui::Button::new(RichText::new("×").size(12.0))
-                            .frame(false)
-                            .min_size(vec2(16.0, 20.0));
-                        clicked = ui.add(x).on_hover_text(hover).clicked();
+                        clicked = crate::icons::chip_close(ui, hover).clicked();
                     });
                 });
             clicked
