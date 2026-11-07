@@ -133,23 +133,15 @@ fn assert_on_tone(h: &Harness, surface: &str, region: Rect, want: &Palette) {
     }
 }
 
-/// Where in the Tab's reading pane a Scripture reference or Cross-reference is drawn.
-fn reference_spot(h: &Harness, tab: TabId) -> Pos2 {
+/// Where in the Tab's reading pane its cross-reference note's `↗` marker (#208) is drawn.
+fn cross_reference_marker(h: &Harness, tab: TabId) -> Pos2 {
     let view = h.shell.st.tabs[&tab].view.as_ref().unwrap();
     let [ox, oy] = view.text_origin;
-    for (_, top, laid) in view.laid_in_view(900.0) {
-        for line in &laid.lines {
-            for item in &line.items {
-                for (_, x0, x1) in item.clusters() {
-                    let (x, y) = ((x0 + x1) / 2.0, top + (line.top + line.bottom) / 2.0);
-                    if view.reference_at(x, y).is_some() {
-                        return pos2(ox + x, oy + y);
-                    }
-                }
-            }
-        }
-    }
-    panic!("no reference laid out on screen");
+    let m = (view.footnote_markers(900.0).into_iter())
+        .find(|m| m.kind == obs_model::NoteKind::CrossReference)
+        .expect("a cross-reference note's marker on screen");
+    let [x0, y0, x1, y1] = m.rect;
+    pos2(ox + (x0 + x1) / 2.0, oy + (y0 + y1) / 2.0)
 }
 
 /// Acceptance (#240): with Page tone Auto, an open BSB Tab is on the dark page in dark ink on
@@ -263,8 +255,20 @@ fn every_reading_surface() -> Vec<Surface> {
         }),
         ("reference-popover", |h| {
             let bsb = open_bsb(h);
-            let spot = reference_spot(h, bsb);
-            h.events.push(Event::PointerMoved(spot));
+            // The cross-reference note's popover (#208), pinned; then its "Genesis 1:3" link.
+            h.click(cross_reference_marker(h, bsb));
+            let mut link = None;
+            for _ in 0..600 {
+                h.paced_frame();
+                if let Some((_, f)) = h.shell.st.footnotes.shown()
+                    && let Some(r) = f.link_rects.first()
+                {
+                    link = Some(r.center());
+                    break;
+                }
+            }
+            let link = link.expect("the cross-reference note's popover shows its link");
+            h.events.push(Event::PointerMoved(link));
             for _ in 0..600 {
                 h.paced_frame();
                 if h.find("Gen 1:3").is_some() && h.meshes.len() > 4 {
