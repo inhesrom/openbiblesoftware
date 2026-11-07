@@ -106,6 +106,7 @@ fn junk_values() -> Vec<Value> {
         json!(0),
         json!(-1),
         json!(i64::MAX),
+        json!(i64::MIN),
         json!(1.5),
         json!(""),
         json!(" "),
