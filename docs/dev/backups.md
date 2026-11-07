@@ -1,7 +1,7 @@
 # Back up, restore and export all user data (#217)
 
 Everything the user makes or chooses is in the User database (#17), so a **Backup** is a copy of
-it and a restore puts one back. ADR 0012 records why. **Tools → Back up & restore…**
+it and a restore puts one back. ADR 0013 records why. **Tools → Back up & restore…**
 (`data.backups`), or Backups in Settings → Privacy and data (#213), opens a keyless,
 single-instance Tab with all of it.
 
@@ -82,7 +82,7 @@ uses):
 | `manifest.json` | App and version, `export_version` (`DATA_EXPORT_VERSION`), the User database version, when. |
 | `README.md` | What each file is, and that the app does not read the zip back. |
 | `notes/<Notebook>.md` | Each Notebook's Notes export (Markdown, Bible order, Attributions). |
-| `annotations.json` | Every Notebook and Annotation with its Anchor, as `obs_store` serializes them. |
+| `annotations.json` | Every Notebook, Highlight palette and style (#181) and Annotation with its Anchor, as `obs_store` serializes them. |
 | `layouts.json`, `last-session.json` | Layouts by name with their Workspace snapshots; the Last session. |
 | `favorites.json`, `history.json`, `reading-plans.json` | With their locations as JSON. |
 | `preferred-order.json`, `settings.json` | Resource ids best first; every preference, JSON values parsed. |

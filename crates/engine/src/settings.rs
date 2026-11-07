@@ -258,6 +258,7 @@ pub const SETTINGS: &[Setting] = &[
         "highlight styles palette palettes colour color custom underline box promises",
         SettingKind::Action {
             command: "view.highlight_styles",
+            confirm: false,
         },
     ),
     setting(

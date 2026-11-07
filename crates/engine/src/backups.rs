@@ -307,6 +307,8 @@ impl Session {
             "annotations.json".to_string(),
             pretty(&json!({
                 "notebooks": notebooks,
+                "highlight_palettes": user.highlight_palettes()?,
+                "highlight_styles": user.highlight_styles()?,
                 "annotations": user.annotations(None)?,
             })),
         ));
@@ -403,7 +405,8 @@ const README: &str = "# Your Open Bible data\n\n\
 This zip is a copy of everything you made in Open Bible Software, for reading or keeping \
 elsewhere:\n\n\
 - `notes/`: each Notebook's Notes and Highlights as Markdown, in Bible order.\n\
-- `annotations.json`: every Notebook and Annotation with its anchor.\n\
+- `annotations.json`: every Notebook, Highlight style and palette, and Annotation with its \
+anchor.\n\
 - `layouts.json` and `last-session.json`: your Layouts and the Workspace as you left it.\n\
 - `favorites.json`, `history.json` and `reading-plans.json`.\n\
 - `preferred-order.json` and `settings.json`: your Preferred order and every setting.\n\

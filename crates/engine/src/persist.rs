@@ -9,8 +9,7 @@ use serde::{Deserialize, Serialize};
 use obs_scripture::Verse;
 use obs_store::{
     Annotation, BackupContents, BackupFile, Change, FavoriteRow, HighlightPalette, HighlightStyle,
-    Notebook, PlanReadingRow,
-    ReadingPlanRow, VisitRow,
+    Notebook, PlanReadingRow, ReadingPlanRow, VisitRow,
 };
 
 use crate::floating_windows::WindowSnapshot;
