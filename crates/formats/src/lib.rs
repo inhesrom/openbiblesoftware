@@ -23,7 +23,7 @@ mod verse_map;
 
 pub use commentary::{
     DictionaryData, StudyImport, import_dictionary, import_jfb_book, import_mhc,
-    scripture_references,
+    scripture_references, scripture_references_in,
 };
 pub use dataset::{DatasetError, DatasetOptions};
 pub use error::ImportError;

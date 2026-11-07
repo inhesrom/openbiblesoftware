@@ -17,16 +17,24 @@ pipeline like the text it annotates (italic `\fqa` stays italic). The popover st
 pointer is on the marker or on the popover. Clicking the marker (Enter from the keyboard) pins
 it; a pinned popover closes on Esc (focus goes back to the marker), its ×, a click outside it,
 or another click on the marker; resting the pointer on another marker, in any pane, leaves it
-(clicking that marker replaces it). Pinned from the keyboard, focus moves to its first link (its
-× when it has none) as soon as the note's text is laid out, even when Enter came before the dwell.
+(clicking that marker replaces it). Pinned from the keyboard (Enter or Space on the focused
+marker, or a screen reader's click: the marker widget reports it, wherever the pointer rests),
+focus moves to its first link (its × when it has none) as soon as the note's text is laid out,
+even when Enter came before the dwell. A popover belongs to its Tab and Resource: it closes when
+its Tab closes, shows another Resource, or the Workspace is rebuilt (a Layout loaded), and a
+marker is the same only in the same Resource (two Resources share unit, anchor and note ids).
 
 Bible references in a Footnote are links: the `scripture_ref` and `xref` spans the importer
-made, plus written references found in its text when it is shown (`obs_engine::body_references`,
-the Notes Tool's finder; "Cited in Hebrews 4:4", BSB's `\ref Isaiah 40:3|ISA 40:3\ref*`, whose
-text the USFM importer keeps). Found and `scripture_ref` targets are read in the Resource's own
-numbering and go through its Verse map, like a reference in its text. Hovering (or focusing) a
-link shows the reference popup with the ★ Bible's text; clicking it goes there
-(`reference_navigate`, as a reference in the text does) and closes the popover.
+made, plus written references found in its text when it is shown (the Notes Tool's finder read
+in the Bible's own numbering, `obs_engine::body_references_in(text, &doc.versification)`; "Cited
+in Hebrews 4:4", BSB's `\ref Isaiah 40:3|ISA 40:3\ref*`, whose text the USFM importer keeps).
+Found and `scripture_ref` targets are read in the Resource's own numbering and go through its
+Verse map, like a reference in its text: Hebrew-numbered "Ps 3:9" is the Standard's Ps 3:8. A
+found reference to a book the Resource does not have (an Old Testament verse in a New Testament's
+note, or any reference in a Resource without Verses) has no own numbering and is read in the
+Standard (`obs_engine::body_references`). Hovering (or focusing) a link shows the reference popup
+with the ★ Bible's text; clicking it goes there (`reference_navigate`, as a reference in the text
+does) and closes the popover.
 
 **View → Footnote markers** (`view.footnote_markers`, params `tab` and `on`) shows or hides the
 markers of the focused Resource Tab only. `Tab::footnote_markers` is on by default; a Tab that
@@ -45,7 +53,9 @@ footnote_markers`, part of the settings key, so views lay out again).
 - `ReadingView::footnote_markers(height)` lists the markers laid out in view with their boxes;
   the reading pane makes each one a small click widget with an AccessKit name ("Footnote a",
   "Cross-reference note") and the note as its description, and reports `hovered_footnote` (the
-  pointer's, else the focused one) and `clicked_footnote`.
+  pointer's, else the focused one), `clicked_footnote` and `footnote_by_keyboard` (that click
+  was not the pointer's: `Response::clicked_by(Primary)` is false). A `FootnoteHit` names its
+  Resource.
 - `shell/footnotes.rs` owns the dwell, pinning and drawing; the popover's text, × and links
   have AccessKit names.
 

@@ -91,10 +91,12 @@ pub struct WordHit {
     pub range: std::ops::Range<usize>,
 }
 
-/// A Footnote marker the pointer or the keyboard is on (#208): which note, where its marker
-/// is in the unit, its label as drawn and its box on screen.
+/// A Footnote marker the pointer or the keyboard is on (#208): which Resource and note, where
+/// its marker is in the unit, its label as drawn and its box on screen.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FootnoteHit {
+    /// The Resource whose note it is: two Resources can share unit, anchor and note id.
+    pub resource: String,
     pub unit: usize,
     pub anchor: usize,
     pub note: obs_model::UnitId,
@@ -156,6 +158,9 @@ pub struct PaneOutput {
     pub hovered_footnote: Option<FootnoteHit>,
     /// The Footnote marker clicked (or Enter pressed on it) this frame: its popover pins.
     pub clicked_footnote: Option<FootnoteHit>,
+    /// `clicked_footnote` came from the keyboard (or a screen reader), not the pointer: focus
+    /// moves into its popover.
+    pub footnote_by_keyboard: bool,
 }
 
 /// Draw the reading pane into all the space `ui` has, and handle its input. `flash` marks a
@@ -610,6 +615,7 @@ fn footnote_markers(
             .with(("footnote", m.unit, m.anchor, m.note.as_str()));
         let response = ui.interact(r.expand(3.0).intersect(rect), id, Sense::click());
         let hit = FootnoteHit {
+            resource: view.doc.manifest.resource_id.clone(),
             unit: m.unit,
             anchor: m.anchor,
             note: m.note,
@@ -639,6 +645,7 @@ fn footnote_markers(
             out.hovered_footnote = Some(hit.clone());
         }
         if response.clicked() {
+            out.footnote_by_keyboard = !response.clicked_by(egui::PointerButton::Primary);
             out.clicked_footnote = Some(hit);
         }
     }

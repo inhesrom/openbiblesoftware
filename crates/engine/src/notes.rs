@@ -154,6 +154,15 @@ pub fn body_references(body: &str) -> Vec<(Range<usize>, PassageList)> {
     obs_formats::scripture_references(body)
 }
 
+/// [`body_references`] read in `v11n`: a Bible's own numbering, for the references written in
+/// its Footnotes (#208, ADR 0002).
+pub fn body_references_in(
+    body: &str,
+    v11n: &dyn obs_scripture::Versification,
+) -> Vec<(Range<usize>, PassageList)> {
+    obs_formats::scripture_references_in(body, v11n)
+}
+
 /// A Bible's own reference as `native_ref` stores it (`Esth.10.4`, `Esth.10.4-Esth.10.6`).
 fn native_passage(native: &str) -> Option<Passage> {
     let verse = |s: &str| {

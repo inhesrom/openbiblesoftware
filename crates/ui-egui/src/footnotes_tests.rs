@@ -22,20 +22,52 @@ impl Drop for Files {
 
 /// A library of the BSB excerpt alone (Isaiah 40:1-3, John 1:1-23), its Tab at `at`.
 fn bsb(name: &str, at: &str) -> (Harness, Files, TabId) {
+    library(name, &[obs_engine::testing::bibles::bsb_john_1()], at)
+}
+
+/// A library of `resources`, the first one's Tab at `at`.
+fn library(name: &str, resources: &[obs_model::Resource], at: &str) -> (Harness, Files, TabId) {
     let mut h = Harness::new();
     let dir = std::env::temp_dir().join(format!("obs-footnotes-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let files = Files(dir);
-    let path = files.0.join("bsb.obr");
-    obs_store::write_obr(&obs_engine::testing::bibles::bsb_john_1(), &path).unwrap();
     h.shell.st.session.library = obs_engine::Library::new();
-    h.shell.st.session.library.add_file(&path).unwrap();
+    for r in resources {
+        let path = files.0.join(format!("{}.obr", r.manifest.resource_id));
+        obs_store::write_obr(r, &path).unwrap();
+        h.shell.st.session.library.add_file(&path).unwrap();
+    }
     h.shell.reset_layout();
-    let tab = h.tab_id("BSB");
+    let tab = h.tab_id(&resources[0].manifest.abbreviation);
     h.shell.run("tab.go", &json!({ "tab": tab.0, "text": at }));
     h.frames(6);
     (h, files, tab)
+}
+
+/// Open Resource `id` in a pane beside the focused one, at `at`: its Tab.
+fn split(h: &mut Harness, beside: TabId, id: &str, at: &str) -> TabId {
+    h.shell.st.session.workspace.focus(beside);
+    h.shell
+        .run("resource.open", &json!({ "id": id, "split": true }));
+    h.frames(6);
+    let other = h.shell.st.session.workspace.focused().unwrap();
+    assert_ne!(other, beside);
+    h.shell
+        .run("tab.go", &json!({ "tab": other.0, "text": at }));
+    h.frames(6);
+    other
+}
+
+/// Press Tab until the keyboard focus is on `widget` (a Footnote marker).
+fn tab_to(h: &mut Harness, widget: egui::Id) {
+    for _ in 0..80 {
+        if h.ctx.memory(|mem| mem.focused()) == Some(widget) {
+            return;
+        }
+        press(h, Key::Tab);
+    }
+    panic!("Tab never reached the marker");
 }
 
 fn markers(h: &Harness, tab: TabId) -> Vec<FootnoteMarker> {
@@ -318,15 +350,7 @@ fn enter_before_the_dwell_moves_focus_to_the_first_link_once_it_is_drawn() {
 #[test]
 fn a_pinned_popover_stays_when_hovering_a_marker_in_another_pane() {
     let (mut h, _files, tab) = bsb("split-pin", "Jn 1:1");
-    h.shell.st.session.workspace.focus(tab);
-    h.shell
-        .run("resource.open", &json!({ "id": "bsb", "split": true }));
-    h.frames(6);
-    let other = h.shell.st.session.workspace.focused().unwrap();
-    assert_ne!(other, tab);
-    h.shell
-        .run("tab.go", &json!({ "tab": other.0, "text": "Jn 1:1" }));
-    h.frames(6);
+    let other = split(&mut h, tab, "bsb", "Jn 1:1");
     let (_, at) = marker(&h, tab, "Or comprehended");
     h.click(at);
     assert!(popover(&h).is_some_and(|p| p.pinned && p.tab == tab));
@@ -342,6 +366,221 @@ fn a_pinned_popover_stays_when_hovering_a_marker_in_another_pane() {
     h.click(there);
     let p = popover(&h).expect("replaced");
     assert!(p.pinned && p.tab == other && p.hit.rect.contains(there));
+}
+
+/// Closing the Tab of a pinned popover takes the popover with it: hovering a marker in the
+/// pane left shows that marker's popover. Rebuilding the Workspace (a Layout loaded) does too.
+#[test]
+fn a_pinned_popover_goes_with_its_closed_tab() {
+    let (mut h, _files, tab) = bsb("close-pin", "Jn 1:1");
+    let other = split(&mut h, tab, "bsb", "Jn 1:1");
+    let (_, at) = marker(&h, tab, "Or comprehended");
+    h.click(at);
+    assert!(popover(&h).is_some_and(|p| p.pinned && p.tab == tab));
+    h.events
+        .push(Event::PointerMoved(pos2(at.x + 200.0, at.y + 300.0)));
+    h.frames(2);
+    assert!(popover(&h).is_some_and(|p| p.pinned && p.tab == tab));
+    h.shell.run("tab.close", &json!({ "tab": tab.0 }));
+    h.frames(3);
+    assert!(h.shell.st.footnotes.popover.is_none(), "gone with its Tab");
+    let (_, there) = marker(&h, other, "Or comprehended");
+    h.events.push(Event::PointerMoved(there));
+    h.frames(14);
+    let p = popover(&h).expect("the hovered marker's popover");
+    assert!(!p.pinned && p.tab == other);
+    h.click(there);
+    assert!(popover(&h).is_some_and(|p| p.pinned));
+    h.shell.rebuild();
+    assert!(
+        h.shell.st.footnotes.popover.is_none(),
+        "gone when the Tabs are rebuilt"
+    );
+}
+
+/// Two Resources whose text is the same can have different Footnotes under the same marker:
+/// pinning one, then the other's, shows the other's note, not the first one's again.
+#[test]
+fn a_marker_in_another_resource_shows_that_resources_note() {
+    let first = obs_engine::testing::bibles::bsb_john_1();
+    let mut second = first.clone();
+    second.manifest.resource_id = "bsb-copy".into();
+    second.manifest.title = "BSB copy (test)".into();
+    second.manifest.abbreviation = "BSBC".into();
+    let note = second
+        .units
+        .iter_mut()
+        .find(|u| u.kind == obs_model::UnitKind::Note && u.text == "Or comprehended")
+        .unwrap();
+    note.text = "Or grasped".into();
+    note.spans.clear();
+    let (mut h, _files, tab) = library("two-resources", &[first, second], "Jn 1:1");
+    let other = split(&mut h, tab, "bsb-copy", "Jn 1:1");
+    let (m, at) = marker(&h, tab, "Or comprehended");
+    let (n, there) = marker(&h, other, "Or grasped");
+    assert_eq!((m.unit, m.anchor, &m.note), (n.unit, n.anchor, &n.note));
+    h.click(at);
+    assert_eq!(shown_text(&h).as_deref(), Some("Or comprehended"));
+    h.click(there);
+    let p = popover(&h).expect("replaced");
+    assert!(p.pinned && p.tab == other);
+    let second_marker = p.hit.widget;
+    assert_eq!(shown_text(&h).as_deref(), Some("Or grasped"));
+    // The first pinned again, then the second's marker from the keyboard.
+    h.click(at);
+    assert_eq!(shown_text(&h).as_deref(), Some("Or comprehended"));
+    tab_to(&mut h, second_marker);
+    press(&mut h, Key::Enter);
+    h.frames(4);
+    let p = popover(&h).expect("replaced from the keyboard");
+    assert!(p.pinned && p.tab == other);
+    assert_eq!(shown_text(&h).as_deref(), Some("Or grasped"));
+}
+
+/// Enter on a focused marker moves focus into its popover even with the pointer resting on
+/// that marker: where the activation came from decides, not where the pointer is.
+#[test]
+fn enter_on_a_marker_under_the_pointer_moves_focus_into_its_popover() {
+    let (mut h, _files, tab) = bsb("keys-hovered", "Jn 1:19");
+    let (_, at) = marker(&h, tab, "Isaiah 40:3");
+    h.click(pos2(at.x - 40.0, at.y + 4.0));
+    h.events.push(Event::PointerMoved(at));
+    h.frames(14);
+    let widget = popover(&h).expect("shown on hover").hit.widget;
+    tab_to(&mut h, widget);
+    press(&mut h, Key::Enter);
+    h.frames(6);
+    assert!(popover(&h).is_some_and(|p| p.pinned));
+    let focused = h.ctx.memory(|mem| mem.focused());
+    assert!(
+        focused.is_some() && focused != Some(widget),
+        "focus moved into the popover"
+    );
+    assert!(h.find("Isa 40:3").is_some(), "the focused link previews");
+}
+
+/// A Bible numbered its own way (Hebrew Psalms: the superscription is verse 1) reads the
+/// references written in its Footnotes in that numbering: "Ps 3:9", a verse the Standard
+/// lacks, is a link to the Standard's Ps 3:8, previews it and goes there. A book the Bible
+/// does not have is read in the Standard.
+#[test]
+fn a_footnote_reference_is_read_in_its_bibles_own_numbering() {
+    let texts = [
+        "A Psalm of David, when he fled from Absalom his son.",
+        "LORD, how are they increased that trouble me!",
+        "Many there be which say of my soul,",
+        "But thou, O LORD, art a shield for me;",
+        "I cried unto the LORD with my voice,",
+        "I laid me down and slept;",
+        "I will not be afraid of ten thousands of people,",
+        "Arise, O LORD; save me, O my God:",
+        "Salvation belongeth unto the LORD: thy blessing is upon thy people. Selah.",
+    ];
+    let verses: Vec<(Verse, &str)> = (1..)
+        .zip(texts)
+        .map(|(n, t)| (Verse::new(Book::Psalms, 3, n), t))
+        .collect();
+    let standard: Vec<Option<Verse>> = (0..)
+        .take(texts.len())
+        .map(|n| Some(Verse::new(Book::Psalms, 3, n)))
+        .collect();
+    let mut bible =
+        obs_engine::testing::bibles::bible("heb-ps", "HPS", &verses, Some(&standard), &[]);
+    let note = obs_model::UnitId::note(1);
+    let text = "Cited in Ps 3:9; see Rom 3:4.";
+    bible.units.push(obs_model::TextUnit {
+        id: note.clone(),
+        kind: obs_model::UnitKind::Note,
+        title: None,
+        text: text.into(),
+        spans: Vec::new(),
+    });
+    let psalms = bible
+        .units
+        .iter_mut()
+        .find(|u| u.kind == obs_model::UnitKind::BibleBook)
+        .unwrap();
+    let end = u32::try_from(psalms.text.len()).unwrap();
+    psalms.spans.push(obs_model::Span {
+        start: end,
+        end,
+        kind: obs_model::SpanKind::NoteRef {
+            note,
+            note_kind: obs_model::NoteKind::Footnote,
+        },
+    });
+    let (mut h, _files, tab) = library("native", &[bible], "Ps 3:1");
+    let (_, at) = marker(&h, tab, "Cited in");
+    h.click(at);
+    h.frames(4);
+    let body = popover(&h).unwrap().body.clone().unwrap();
+    let shown: Vec<(&str, Vec<String>)> = body
+        .links
+        .iter()
+        .map(|(r, targets)| {
+            (
+                &text[r.clone()],
+                targets
+                    .iter()
+                    .map(|l| {
+                        obs_scripture::format_passage_list(
+                            l,
+                            &obs_scripture::Standard,
+                            obs_scripture::RefStyle::Short,
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            ("Ps 3:9", vec!["Ps 3:8".to_string()]),
+            ("Rom 3:4", vec!["Rom 3:4".to_string()]),
+        ]
+    );
+    let native = Verse::new(Book::Psalms, 3, 9);
+    assert_ne!(
+        h.shell
+            .st
+            .session
+            .workspace
+            .tab(tab)
+            .unwrap()
+            .history
+            .current(),
+        Some(native)
+    );
+    let link = popover(&h).unwrap().link_rects[0];
+    h.events.push(Event::PointerMoved(link.center()));
+    h.frames(8);
+    assert!(h.find("Ps 3:8").is_some(), "{:?}", h.texts());
+    h.click(link.center());
+    h.frames(6);
+    assert!(popover(&h).is_none(), "following the link closes it");
+    let standard = Verse::new(Book::Psalms, 3, 8);
+    let went = h
+        .shell
+        .st
+        .session
+        .workspace
+        .tabs()
+        .any(|t| t.history.current() == Some(native))
+        || h.shell
+            .st
+            .references
+            .pending_navigation
+            .values()
+            .any(|v| *v == standard);
+    let histories: Vec<_> = (h.shell.st.session.workspace.tabs())
+        .map(|t| t.history.current())
+        .collect();
+    assert!(
+        went,
+        "a Tab goes to Standard Ps 3:8, the Bible's Ps 3:9: {histories:?} {:?}",
+        h.shell.st.references.pending_navigation
+    );
 }
 
 /// Acceptance: View → Footnote markers hides and shows them in the focused Tab only, and a

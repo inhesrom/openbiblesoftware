@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, pos2, vec2};
 use obs_model::{Direction, Span, SpanKind, TextUnit};
-use obs_scripture::{Passage, PassageList, RefStyle, format_passage};
+use obs_scripture::{Passage, PassageList, RefStyle, Versification, format_passage};
 
 use super::references::{Targets, standard_targets};
 use super::{HOVER_DWELL_SECS, State, TabId};
@@ -55,9 +55,22 @@ pub(crate) struct Footnotes {
     snippets: SnippetCache,
 }
 
+impl Footnotes {
+    /// A Tab closed, or now shows another Resource: its popover goes with it (pinned, it
+    /// would otherwise keep every other marker from showing one).
+    pub(crate) fn tab_gone(&mut self, tab: TabId) {
+        if self.popover.as_ref().is_some_and(|p| p.tab == tab) {
+            self.popover = None;
+        }
+    }
+}
+
 /// A Footnote's text with its Bible references as links. References the importer marked are
 /// kept; the rest of the text is searched for written references ("Cited in Hebrews 4:4"),
-/// which are read in the Bible's own numbering, like a reference in its text (ADR 0002).
+/// which are read in the Bible's own numbering and go through its Verse map, like a
+/// reference in its text (ADR 0002). A reference to a book the Bible does not have (an
+/// Old Testament verse cited in a New Testament) has no own numbering: it is read in the
+/// Standard.
 pub(crate) fn footnote_body(doc: &ReadingDoc, hit: &FootnoteHit) -> Option<FootnoteBody> {
     let mut unit = doc.footnote(&hit.note)?.clone();
     let mut links: Vec<(Range<usize>, Targets)> = Vec::new();
@@ -73,8 +86,16 @@ pub(crate) fn footnote_body(doc: &ReadingDoc, hit: &FootnoteHit) -> Option<Footn
             _ => {}
         }
     }
+    let own = &doc.versification;
+    let in_own = obs_engine::body_references_in(&unit.text, own)
+        .into_iter()
+        .map(|(range, list)| (range, list, true));
+    let elsewhere = obs_engine::body_references(&unit.text)
+        .into_iter()
+        .filter(|(_, list)| list.iter().all(|p| own.chapter_count(p.start().book) == 0))
+        .map(|(range, list)| (range, list, false));
     let mut found = Vec::new();
-    for (range, list) in obs_engine::body_references(&unit.text) {
+    for (range, list, native) in in_own.chain(elsewhere) {
         if links
             .iter()
             .any(|(r, _)| r.start < range.end && range.start < r.end)
@@ -88,7 +109,7 @@ pub(crate) fn footnote_body(doc: &ReadingDoc, hit: &FootnoteHit) -> Option<Footn
                 targets: list.clone(),
             },
         });
-        links.push((range, standard_targets(doc, &list, true)));
+        links.push((range, standard_targets(doc, &list, native)));
     }
     if !found.is_empty() {
         unit.spans.extend(found);
@@ -112,7 +133,7 @@ pub(crate) fn footnote_body(doc: &ReadingDoc, hit: &FootnoteHit) -> Option<Footn
 }
 
 fn same_marker(a: &FootnoteHit, b: &FootnoteHit) -> bool {
-    a.unit == b.unit && a.anchor == b.anchor && a.note == b.note
+    a.resource == b.resource && a.unit == b.unit && a.anchor == b.anchor && a.note == b.note
 }
 
 impl State {
@@ -146,14 +167,16 @@ impl State {
             if again {
                 *popover = None;
             } else {
-                let keyboard = pointer.is_none_or(|p| !hit.rect.expand(3.0).contains(p));
                 let mut p = fresh(hit, true);
+                // The note already built for this marker of this Tab (shown on hover) is
+                // kept, so a keyboard pin can focus its first link at once.
                 if let Some(old) = popover.take()
+                    && old.tab == tab
                     && same_marker(&old.hit, hit)
                 {
                     p.body = old.body;
                 }
-                p.focus_inside = keyboard;
+                p.focus_inside = out.footnote_by_keyboard;
                 *popover = Some(p);
             }
         } else if let Some(hit) = &out.hovered_footnote {
@@ -200,6 +223,7 @@ impl State {
                 .tabs
                 .get(&tab)
                 .and_then(|t| t.view.as_ref())
+                .filter(|view| view.doc.manifest.resource_id == p.hit.resource)
                 .and_then(|view| {
                     let [ox, oy] = view.text_origin;
                     view.footnote_markers(height)
