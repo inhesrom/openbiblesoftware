@@ -415,6 +415,19 @@ fn export_everything_writes_markdown_notes_and_json_of_every_table() {
     let annotations = json("annotations.json", &mut read);
     assert_eq!(annotations["annotations"].as_array().unwrap().len(), 3);
     assert_eq!(annotations["notebooks"].as_array().unwrap().len(), 2);
+    assert!(
+        !annotations["highlight_styles"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "{annotations}"
+    );
+    assert!(
+        !annotations["highlight_palettes"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     let layouts = json("layouts.json", &mut read);
     assert_eq!(layouts[0]["name"], "Study");
     assert!(layouts[0]["snapshot"]["tabs"].is_array(), "{layouts}");

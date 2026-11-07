@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use obs_scripture::{Book, Passage, Verse};
 use obs_store::annotation::new_id;
 use obs_store::{
-    Anchor, Annotation, BackupKind, Change, Content, HighlightStyle, Notebook, Row, SAFETY_BACKUPS,
-    StoreError, USER_SCHEMA_VERSION, UserStore,
+    Anchor, Annotation, BackupKind, Change, Content, Notebook, Row, SAFETY_BACKUPS, StoreError,
+    USER_SCHEMA_VERSION, UserStore,
 };
 
 struct Dir(PathBuf);
@@ -67,7 +67,7 @@ fn highlight(notebook: &str, v: u16) -> Annotation {
         id: new_id(),
         notebook_id: notebook.into(),
         content: Content::Highlight {
-            style: HighlightStyle::Yellow,
+            style: "yellow".into(),
         },
         anchor: Some(passage(v)),
         created_at: 30,
