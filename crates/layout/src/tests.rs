@@ -815,7 +815,7 @@ fn object_runs(p: &Paragraph) -> Vec<(String, InlineObject)> {
 }
 
 /// #208: Footnote markers are raised italic letters counted from each chapter's first; a
-/// cross-reference note shows as its Cross-reference's ↗ only.
+/// cross-reference note and its Cross-reference show as one ↗, the note's marker.
 #[test]
 fn footnote_markers_are_letters_counted_from_each_chapters_first() {
     let unit = footnoted_unit();
@@ -843,9 +843,61 @@ fn footnote_markers_are_letters_counted_from_each_chapters_first() {
     let second = object_runs(&blocks[1].1);
     let labels: Vec<&str> = second.iter().map(|(t, _)| t.as_str()).collect();
     assert_eq!(labels, ["a", "↗"], "chapter 2 starts again at a");
+    assert_eq!(
+        second[1].1,
+        InlineObject::NoteMarker {
+            note: UnitId::note(5),
+            kind: NoteKind::CrossReference
+        },
+        "the ↗ is the cross-reference note's marker, not a second reference"
+    );
     assert_eq!(footnote_label(25), "z");
     assert_eq!(footnote_label(26), "aa");
     assert_eq!(footnote_label(27), "ab");
+}
+
+/// #208: a cross-reference note with no Cross-reference beside it is a `‡`; a zero-width
+/// reference with no cross-reference note stays a reference's own `↗`.
+#[test]
+fn a_cross_reference_note_without_targets_is_a_double_dagger() {
+    let mut unit = footnoted_unit();
+    let v1_end = unit.text.find(" He was").unwrap();
+    let v2_end = unit.text.find('\n').unwrap();
+    unit.spans.push(span(
+        v1_end..v1_end,
+        SpanKind::ScriptureRef {
+            targets: PassageList::from(vec![Passage::verse(Verse::new(Book::Genesis, 1, 1))]),
+        },
+    ));
+    unit.spans.push(span(
+        v2_end..v2_end,
+        SpanKind::NoteRef {
+            note: UnitId::note(6),
+            note_kind: NoteKind::CrossReference,
+        },
+    ));
+    unit.spans.sort_by(|a, b| {
+        (a.start, std::cmp::Reverse(a.end), a.kind.name() != "verse").cmp(&(
+            b.start,
+            std::cmp::Reverse(b.end),
+            b.kind.name() != "verse",
+        ))
+    });
+    let blocks = laid(&unit, Direction::Ltr, 600.0);
+    let first = object_runs(&blocks[0].1);
+    let labels: Vec<&str> = first.iter().map(|(t, _)| t.as_str()).collect();
+    assert_eq!(labels, ["a", "↗", "b", "c", "‡"]);
+    assert!(matches!(
+        first[1].1,
+        InlineObject::ScriptureReference { .. }
+    ));
+    assert_eq!(
+        first[4].1,
+        InlineObject::NoteMarker {
+            note: UnitId::note(6),
+            kind: NoteKind::CrossReference
+        }
+    );
 }
 
 /// #208: with the markers off nothing but the text (and verse numbers) is laid out, and the

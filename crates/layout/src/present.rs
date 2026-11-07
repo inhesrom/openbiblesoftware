@@ -14,7 +14,7 @@
 //! | `tagged_word` in an `entry` unit (a Lexicon's Strong's link) | `Link` role |
 //! | `verse` start | verse number object, superscript; verse 1 shows the chapter number |
 //! | zero-width `note_ref` (footnote) | Footnote marker object: a raised italic letter, a … z then aa …, counted from each chapter's first (#208) |
-//! | zero-width `note_ref` (cross-reference) | the `↗` of its zero-width `xref` beside it, else a raised `‡` |
+//! | zero-width `note_ref` (cross-reference) | Footnote marker object: `↗` when its zero-width `xref` is beside it (that `xref` then draws nothing of its own), else a raised `‡` |
 //!
 //! With `footnote_markers` off, no zero-width `note_ref`, `xref` or `scripture_ref` is laid out.
 //!
@@ -330,17 +330,36 @@ struct Objects<'a> {
     rtl: bool,
 }
 
-/// Whether a zero-width Scripture reference or Cross-reference sits at byte `a`: its `↗`
-/// stands for a cross-reference note there.
-fn reference_marker_at(spans: &[(usize, &Span)], a: usize) -> bool {
-    spans.iter().any(|(_, s)| {
-        s.start as usize == a
-            && s.start == s.end
-            && matches!(
-                s.kind,
-                SpanKind::ScriptureRef { .. } | SpanKind::Xref { .. }
-            )
+/// The zero-width Scripture references or Cross-references at byte `a`, and its
+/// cross-reference notes, as span indices in text order.
+fn zero_width_references_at(spans: &[(usize, &Span)], a: usize) -> Vec<usize> {
+    zero_width_at(spans, a, |k| {
+        matches!(k, SpanKind::ScriptureRef { .. } | SpanKind::Xref { .. })
     })
+}
+
+fn cross_reference_notes_at(spans: &[(usize, &Span)], a: usize) -> Vec<usize> {
+    zero_width_at(spans, a, |k| {
+        matches!(
+            k,
+            SpanKind::NoteRef {
+                note_kind: NoteKind::CrossReference,
+                ..
+            }
+        )
+    })
+}
+
+fn zero_width_at(
+    spans: &[(usize, &Span)],
+    a: usize,
+    kind: impl Fn(&SpanKind) -> bool,
+) -> Vec<usize> {
+    spans
+        .iter()
+        .filter(|(_, s)| s.start as usize == a && s.start == s.end && kind(&s.kind))
+        .map(|(i, _)| *i)
+        .collect()
 }
 
 /// Verse numbers and Footnote markers anchored at byte `a`.
@@ -376,6 +395,14 @@ fn push_objects(
             SpanKind::ScriptureRef { .. } | SpanKind::Xref { .. }
                 if s.start == s.end && settings.footnote_markers && owns_marker(unit, block, a) =>
             {
+                // The `n`th reference beside the `n`th cross-reference note is that note's
+                // `↗`, drawn as its Footnote marker (an importer adds both for one note).
+                let nth = zero_width_references_at(objects.spans, a)
+                    .iter()
+                    .position(|&i| i == span);
+                if nth.is_some_and(|n| n < cross_reference_notes_at(objects.spans, a).len()) {
+                    continue;
+                }
                 runs.push(marker(
                     "↗".into(),
                     FaceId::Regular,
@@ -398,8 +425,18 @@ fn push_objects(
                         }
                         (label, FaceId::Italic)
                     }
-                    NoteKind::CrossReference if reference_marker_at(objects.spans, a) => continue,
-                    NoteKind::CrossReference => ("‡".to_string(), FaceId::Regular),
+                    NoteKind::CrossReference => {
+                        let nth = cross_reference_notes_at(objects.spans, a)
+                            .iter()
+                            .position(|&i| i == span);
+                        let references = zero_width_references_at(objects.spans, a).len();
+                        let glyph = if nth.is_some_and(|n| n < references) {
+                            "↗"
+                        } else {
+                            "‡"
+                        };
+                        (glyph.to_string(), FaceId::Regular)
+                    }
                 };
                 runs.push(marker(
                     text,

@@ -338,6 +338,95 @@ fn the_keyboard_reaches_markers_and_the_popovers_links() {
     assert!(popover(&h).is_some_and(|p| p.pinned));
 }
 
+/// 2 Kings 12:4-5 of the WEB from its USFM download: 12:4 has a cross-reference note
+/// (`\x + \xo 12:4 \xt Exodus 30:12\x*`), imported as a note and its zero-width
+/// Cross-reference.
+fn web_2_kings_12() -> obs_model::Resource {
+    let mut import = obs_formats::UsfmImport::new(obs_formats::UsfmOptions {
+        resource_id: "web".into(),
+        title: "World English Bible (test)".into(),
+        abbreviation: "WEB".into(),
+        language: "en".into(),
+        source_file: "eng-web_usfm.zip".into(),
+        tool_version: "test".into(),
+        ..Default::default()
+    });
+    import
+        .add_book(
+            "2KI.usfm",
+            include_str!("../../formats/tests/assets/usfm/web/2KI.usfm").into(),
+        )
+        .unwrap();
+    import.finish().unwrap().0
+}
+
+/// A cross-reference note is one `↗` marker that works like a Footnote's: its popover
+/// (header "Cross-reference note · 2 Kgs 12:4") shows after the dwell with its `\xt`
+/// target as a link, a click pins it, and the keyboard reaches it by its AccessKit name.
+#[test]
+fn a_cross_reference_note_is_a_marker_with_its_own_popover() {
+    let (mut h, _files, tab) = library("xref-note", &[web_2_kings_12()], "2 Kings 12:4");
+    h.ctx.enable_accesskit();
+    let (m, at) = marker(&h, tab, "Exodus 30:12");
+    assert_eq!(m.kind, obs_model::NoteKind::CrossReference);
+    assert_eq!(
+        m.label, "↗",
+        "one marker for the note and its Cross-reference"
+    );
+    let view = h.shell.st.tabs[&tab].view.as_ref().unwrap();
+    let [ox, oy] = view.text_origin;
+    assert_eq!(
+        view.reference_at(at.x - ox, at.y - oy),
+        None,
+        "the ↗ is not a second, reference-only marker"
+    );
+    // Hover: the popover after the dwell, with the note's reference as a link.
+    h.events.push(Event::PointerMoved(at));
+    h.frames(2);
+    assert!(shown_text(&h).is_none(), "not before the dwell");
+    h.frames(12);
+    assert_eq!(shown_text(&h).as_deref(), Some("Exodus 30:12"));
+    assert!(
+        h.find("Cross-reference note · 2 Kgs 12:4").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    assert_eq!(
+        popover_links(&h, "Exodus 30:12"),
+        [("Exodus 30:12".to_string(), vec!["Exod 30:12".to_string()])]
+    );
+    // Click: pinned, it stays when the pointer leaves; Esc closes it.
+    h.click(at);
+    assert!(popover(&h).is_some_and(|p| p.pinned));
+    h.events
+        .push(Event::PointerMoved(pos2(at.x + 200.0, at.y + 300.0)));
+    h.frames(4);
+    assert_eq!(shown_text(&h).as_deref(), Some("Exodus 30:12"));
+    press(&mut h, Key::Escape);
+    h.frames(2);
+    assert!(popover(&h).is_none());
+    // Keyboard: Tab reaches it, Enter pins it and moves focus to its link.
+    let (_, widget) = focus_marker(&mut h, tab, "Exodus 30:12");
+    let tree = h.tree.clone().expect("an AccessKit tree");
+    let names: Vec<String> = tree
+        .nodes
+        .iter()
+        .filter_map(|(_, n)| n.label().map(str::to_string))
+        .collect();
+    assert!(
+        names.iter().any(|n| n == "Cross-reference note"),
+        "{names:?}"
+    );
+    press(&mut h, Key::Enter);
+    wait_for_focus_inside(&mut h, widget);
+    assert!(popover(&h).is_some_and(|p| p.pinned && p.hit.note == m.note));
+    let focused = h.ctx.memory(|mem| mem.focused());
+    assert!(
+        focused.is_some() && focused != Some(widget),
+        "focus moved to the note's link"
+    );
+}
+
 /// Esc also closes a popover shown on hover, and it stays closed while the pointer rests on
 /// the marker; it shows again once the pointer has left and come back.
 #[test]
@@ -363,7 +452,7 @@ fn esc_closes_a_hover_popover_until_the_pointer_leaves_its_marker() {
 fn focus_marker(h: &mut Harness, tab: TabId, text: &str) -> (FootnoteMarker, egui::Id) {
     let (m, at) = marker(h, tab, text);
     h.click(pos2(at.x - 40.0, at.y + 4.0));
-    for _ in 0..20 {
+    for _ in 0..40 {
         if pending(h).is_some_and(|p| p.note == m.note) {
             break;
         }
@@ -885,7 +974,8 @@ fn enter_before_the_dwell_moves_focus_to_the_first_link_once_it_is_drawn() {
     );
     press(&mut h, Key::Enter);
     assert!(popover(&h).is_some_and(|p| p.pinned));
-    h.frames(8);
+    wait_for_focus_inside(&mut h, marker_focus);
+    h.frames(2);
     let link = popover(&h).unwrap().link_rects[0];
     assert!(link.is_positive(), "the link is drawn");
     let focused = h.ctx.memory(|mem| mem.focused());
@@ -1007,13 +1097,10 @@ fn enter_on_a_marker_under_the_pointer_moves_focus_into_its_popover() {
     assert!(h.find("Isa 40:3").is_some(), "the focused link previews");
 }
 
-/// A Bible numbered its own way (Hebrew Psalms: the superscription is verse 1) reads the
-/// references written in its Footnotes in that numbering: "Ps 3:9", a verse the Standard
-/// lacks, is a link to the Standard's Ps 3:8, previews it and goes there. A book the Bible
-/// does not have is read in the Standard, item by item: a list naming both ("Ps 3:8; Rom
-/// 3:4; Ps 3:9") keeps every item, each in its own numbering.
-#[test]
-fn a_footnote_reference_is_read_in_its_bibles_own_numbering() {
+/// A Bible with Hebrew-numbered Psalm 3 (the superscription is verse 1, so its Ps 3:9 is
+/// the Standard's Ps 3:8) and no other book, with one Footnote of `text` and `spans` after
+/// its last verse.
+fn hebrew_psalter(text: &str, spans: Vec<obs_model::Span>) -> obs_model::Resource {
     let texts = [
         "A Psalm of David, when he fled from Absalom his son.",
         "LORD, how are they increased that trouble me!",
@@ -1036,13 +1123,12 @@ fn a_footnote_reference_is_read_in_its_bibles_own_numbering() {
     let mut bible =
         obs_engine::testing::bibles::bible("heb-ps", "HPS", &verses, Some(&standard), &[]);
     let note = obs_model::UnitId::note(1);
-    let text = "Cited in Ps 3:9; see Rom 3:4. Also Ps 3:8; Rom 3:4; Ps 3:9.";
     bible.units.push(obs_model::TextUnit {
         id: note.clone(),
         kind: obs_model::UnitKind::Note,
         title: None,
         text: text.into(),
-        spans: Vec::new(),
+        spans,
     });
     let psalms = bible
         .units
@@ -1058,17 +1144,17 @@ fn a_footnote_reference_is_read_in_its_bibles_own_numbering() {
             note_kind: obs_model::NoteKind::Footnote,
         },
     });
-    let (mut h, _files, tab) = library("native", &[bible], "Ps 3:1");
-    let (_, at) = marker(&h, tab, "Cited in");
-    h.click(at);
-    h.frames(4);
-    let body = popover(&h).unwrap().body.clone().unwrap();
-    let shown: Vec<(&str, Vec<String>)> = body
-        .links
+    bible
+}
+
+/// The open popover's links: each one's text in `text` and its Standard targets.
+fn popover_links(h: &Harness, text: &str) -> Vec<(String, Vec<String>)> {
+    let body = popover(h).unwrap().body.clone().unwrap();
+    body.links
         .iter()
         .map(|(r, targets)| {
             (
-                &text[r.clone()],
+                text[r.clone()].to_string(),
                 targets
                     .iter()
                     .map(|l| {
@@ -1081,14 +1167,29 @@ fn a_footnote_reference_is_read_in_its_bibles_own_numbering() {
                     .collect(),
             )
         })
-        .collect();
+        .collect()
+}
+
+/// A Bible numbered its own way (Hebrew Psalms: the superscription is verse 1) reads the
+/// references written in its Footnotes in that numbering: "Ps 3:9", a verse the Standard
+/// lacks, is a link to the Standard's Ps 3:8, previews it and goes there. A book the Bible
+/// does not have is read in the Standard, item by item: a list naming both ("Ps 3:8; Rom
+/// 3:4; Ps 3:9") keeps every item, each in its own numbering.
+#[test]
+fn a_footnote_reference_is_read_in_its_bibles_own_numbering() {
+    let text = "Cited in Ps 3:9; see Rom 3:4. Also Ps 3:8; Rom 3:4; Ps 3:9.";
+    let bible = hebrew_psalter(text, Vec::new());
+    let (mut h, _files, tab) = library("native", &[bible], "Ps 3:1");
+    let (_, at) = marker(&h, tab, "Cited in");
+    h.click(at);
+    h.frames(4);
     assert_eq!(
-        shown,
+        popover_links(&h, text),
         [
-            ("Ps 3:9", vec!["Ps 3:8".to_string()]),
-            ("Rom 3:4", vec!["Rom 3:4".to_string()]),
+            ("Ps 3:9".to_string(), vec!["Ps 3:8".to_string()]),
+            ("Rom 3:4".to_string(), vec!["Rom 3:4".to_string()]),
             (
-                "Ps 3:8; Rom 3:4; Ps 3:9",
+                "Ps 3:8; Rom 3:4; Ps 3:9".to_string(),
                 vec![
                     "Ps 3:7".to_string(),
                     "Rom 3:4".to_string(),
@@ -1137,6 +1238,52 @@ fn a_footnote_reference_is_read_in_its_bibles_own_numbering() {
         went,
         "a Tab goes to Standard Ps 3:8, the Bible's Ps 3:9: {histories:?} {:?}",
         h.shell.st.references.pending_navigation
+    );
+}
+
+/// References the importer marked in a Footnote (`scripture_ref` spans) are read the same
+/// way as the ones found in its text: a book the Bible does not have is Standard, item by
+/// item, so a marked "Rom 3:4" in a Hebrew Psalter stays a live link instead of an empty one.
+#[test]
+fn a_marked_footnote_reference_to_a_book_the_bible_lacks_stays_a_link() {
+    use obs_scripture::{Passage, PassageList};
+    let text = "See Rom 3:4. Also Ps 3:9; Rom 3:4.";
+    let verse = |b, c, v| Passage::verse(Verse::new(b, c, v));
+    let marked = |range: std::ops::Range<usize>, passages: Vec<Passage>| obs_model::Span {
+        start: u32::try_from(range.start).unwrap(),
+        end: u32::try_from(range.end).unwrap(),
+        kind: obs_model::SpanKind::ScriptureRef {
+            targets: PassageList::from(passages),
+        },
+    };
+    let rom = text.find("Rom 3:4").unwrap();
+    let list = text.find("Ps 3:9").unwrap();
+    let spans = vec![
+        marked(rom..rom + "Rom 3:4".len(), vec![verse(Book::Romans, 3, 4)]),
+        marked(
+            list..text.len() - 1,
+            vec![verse(Book::Psalms, 3, 9), verse(Book::Romans, 3, 4)],
+        ),
+    ];
+    let bible = hebrew_psalter(text, spans);
+    let (mut h, _files, tab) = library("marked", &[bible], "Ps 3:1");
+    let (_, at) = marker(&h, tab, "See Rom");
+    h.click(at);
+    h.frames(4);
+    assert_eq!(
+        popover_links(&h, text),
+        [
+            ("Rom 3:4".to_string(), vec!["Rom 3:4".to_string()]),
+            (
+                "Ps 3:9; Rom 3:4".to_string(),
+                vec!["Ps 3:8".to_string(), "Rom 3:4".to_string()]
+            ),
+        ]
+    );
+    assert_eq!(
+        popover(&h).unwrap().link_rects.len(),
+        2,
+        "both are drawn as links"
     );
 }
 

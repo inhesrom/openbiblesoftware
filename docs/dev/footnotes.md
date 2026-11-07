@@ -8,7 +8,7 @@ one as a **Footnote marker**:
 | `note_ref` | Marker |
 |---|---|
 | footnote | a raised italic letter in the Page tone's marker colour: a, b, c… counted from each chapter's first Footnote (aa after z; a unit without Verses counts from its start) |
-| cross-reference, with its zero-width `xref` beside it | the `↗` of that Cross-reference only (its hover already previews the Passages) |
+| cross-reference, with its zero-width `xref` beside it | a raised `↗`: one marker for the note and its Cross-reference (that `xref` draws nothing of its own), with the same popover as a footnote; its `\xt` targets are the popover's links |
 | cross-reference without one | a raised `‡` |
 
 Hovering a marker for Word Info's dwell (`HOVER_DWELL_SECS`), or giving it keyboard focus with
@@ -55,10 +55,11 @@ in the Bible's own numbering, `obs_engine::body_references_in(text, &doc.versifi
 in Hebrews 4:4", BSB's `\ref Isaiah 40:3|ISA 40:3\ref*`, whose text the USFM importer keeps).
 Found and `scripture_ref` targets are read in the Resource's own numbering and go through its
 Verse map, like a reference in its text: Hebrew-numbered "Ps 3:9" is the Standard's Ps 3:8. A
-found reference to a book the Resource does not have (an Old Testament verse in a New Testament's
+found or `scripture_ref` reference to a book the Resource does not have (an Old Testament verse in a New Testament's
 note, or any reference in a Resource without Verses) has no own numbering and is read in the
 Standard. The choice is made per item of a reference list, not per list: the finder reads the
-text in the Resource's numbering for its books and the Standard for the rest (`OwnElseStandard`),
+text, and each marked target is mapped, in the Resource's numbering for its books and the
+Standard for the rest (`OwnElseStandard`),
 so "Ps 3:8; Rom 3:4; Ps 3:9" in a Hebrew Psalter is one link to Standard Ps 3:7, Rom 3:4 and
 Ps 3:8. A link that wraps onto a second line is one widget per line, so it never covers the
 links beside it. Hovering (or focusing) a link shows the reference popup

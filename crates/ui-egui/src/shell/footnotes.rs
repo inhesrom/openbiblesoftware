@@ -362,12 +362,22 @@ impl Versification for OwnElseStandard<'_> {
 /// Standard, item by item within a list that also names the Bible's books.
 pub(crate) fn footnote_body(doc: &ReadingDoc, hit: &FootnoteHit) -> Option<FootnoteBody> {
     let mut unit = doc.footnote(&hit.note)?.clone();
+    let numbering = OwnElseStandard(&doc.versification);
+    // Item by item: a book the Bible has goes through its Verse map, another is Standard.
+    let own_else_standard = |list: &PassageList| -> Targets {
+        list.iter()
+            .flat_map(|p| {
+                let native = numbering.has(p.start().book);
+                standard_targets(doc, &vec![*p].into(), native)
+            })
+            .collect()
+    };
     let mut links: Vec<(Range<usize>, Targets)> = Vec::new();
     for s in &unit.spans {
         let range = s.range();
         match &s.kind {
             SpanKind::ScriptureRef { targets } if !range.is_empty() => {
-                links.push((range, standard_targets(doc, targets, true)));
+                links.push((range, own_else_standard(targets)));
             }
             SpanKind::Xref { targets } if !range.is_empty() => {
                 links.push((range, standard_targets(doc, targets, false)));
@@ -375,7 +385,6 @@ pub(crate) fn footnote_body(doc: &ReadingDoc, hit: &FootnoteHit) -> Option<Footn
             _ => {}
         }
     }
-    let numbering = OwnElseStandard(&doc.versification);
     let mut found = Vec::new();
     for (range, list) in obs_engine::body_references_in(&unit.text, &numbering) {
         if links
@@ -391,14 +400,7 @@ pub(crate) fn footnote_body(doc: &ReadingDoc, hit: &FootnoteHit) -> Option<Footn
                 targets: list.clone(),
             },
         });
-        let targets = list
-            .iter()
-            .flat_map(|p| {
-                let native = numbering.has(p.start().book);
-                standard_targets(doc, &vec![*p].into(), native)
-            })
-            .collect();
-        links.push((range, targets));
+        links.push((range, own_else_standard(&list)));
     }
     if !found.is_empty() {
         unit.spans.extend(found);
