@@ -408,3 +408,59 @@ fn plain_text_that_reads_as_typed_is_left_alone() {
     }
     assert_eq!(escape_note_text("# x\n1. y\n*z*"), "\\# x\n1\\. y\n\\*z\\*");
 }
+
+#[test]
+fn spans_know_the_markup_that_opens_and_closes_each_part() {
+    // Each span as (its source, open, close, its closing markup).
+    type Spans = &'static [(&'static str, &'static str, &'static str, &'static str)];
+    let cases: &[(&str, Spans)] = &[
+        ("**a\nb**", &[("**a\nb**", "**", "**", "**")]),
+        ("_a_", &[("_a_", "_", "_", "_")]),
+        ("``a`b``", &[("``a`b``", "``", "``", "``")]),
+        (
+            "**a *b\nc* d**",
+            &[
+                ("**a *b\nc* d**", "**", "**", "**"),
+                ("*b\nc*", "*", "*", "*"),
+            ],
+        ),
+        (
+            "[*x*\ny](<Rom 5:8> \"t\")",
+            &[
+                (
+                    "[*x*\ny](<Rom 5:8> \"t\")",
+                    "[",
+                    "](<Rom 5:8> \"t\")",
+                    "](<Rom 5:8> \"t\")",
+                ),
+                ("*x*", "*", "*", "*"),
+            ],
+        ),
+        ("[x][r]\n\n[r]: u", &[("[x][r]", "[", "][r]", "][r]")]),
+        // Labelled by its text: each part gets the target written out.
+        (
+            "[x]\n\n[x]: <a\\>b> \"t\\\"\"",
+            &[("[x]", "[", "](<a\\>b> \"t\\\"\")", "]")],
+        ),
+        // Autolinks are left out.
+        ("<https://example.org>", &[]),
+    ];
+    for &(body, want) in cases {
+        let got: Vec<_> = note_spans(body)
+            .into_iter()
+            .map(|s| {
+                (
+                    body[s.source].to_string(),
+                    s.open,
+                    s.close,
+                    body[s.closing].to_string(),
+                )
+            })
+            .collect();
+        let want: Vec<_> = want
+            .iter()
+            .map(|&(a, b, c, d)| (a.into(), b.into(), c.into(), d.into()))
+            .collect::<Vec<(String, String, String, String)>>();
+        assert_eq!(got, want, "{body:?}");
+    }
+}

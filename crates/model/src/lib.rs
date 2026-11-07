@@ -46,8 +46,8 @@ pub use manifest::{
 pub use morph::{GrammarTerm, Morph, MorphError, MorphLanguage, MorphPart, PartOfSpeech, TermKind};
 pub use normalize::{FindFolded, NORMALIZER_VERSION, Token, fold_for_find, normalize, tokenize};
 pub use note_text::{
-    NoteHeading, NoteLine, NoteLineKind, NoteMark, NoteMarkKind, escape_note_text, note_plain_text,
-    parse_note_text,
+    NoteHeading, NoteLine, NoteLineKind, NoteMark, NoteMarkKind, NoteSpan, escape_note_text,
+    note_plain_text, note_spans, parse_note_text,
 };
 pub use renderings::{Rendering, RenderingIndex, StrongsTotal, rendering_key};
 pub use translit::{
