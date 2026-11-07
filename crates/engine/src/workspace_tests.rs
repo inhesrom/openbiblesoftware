@@ -554,3 +554,46 @@ fn ctrl_f_opens_the_find_bar_of_a_resource_or_text_comparison_tab() {
         }]
     );
 }
+
+/// #240: the Page tone hint is due when the theme turns dark only for a light tone the user
+/// chose (Paper or Sepia), and only once per User database, across restarts.
+#[test]
+fn the_page_tone_hint_is_due_once_per_user_database_for_a_chosen_light_tone() {
+    let dir = std::env::temp_dir().join(format!("obs-page-tone-hint-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = dir.join("user.db");
+    let launch = || {
+        let mut s = session();
+        let (store, _) = obs_store::UserStore::open(&db).unwrap();
+        s.attach_user(Box::new(store));
+        s
+    };
+    let mut s = launch();
+    // Auto and Dark follow or suit a dark theme: nothing to offer.
+    assert!(!s.page_tone_hint_due());
+    s.run("view.page_tone", &json!({ "value": "dark" }))
+        .unwrap();
+    assert!(!s.page_tone_hint_due());
+    s.run("view.page_tone", &json!({ "value": "paper" }))
+        .unwrap();
+    assert!(PageTone::Paper.is_chosen_light() && PageTone::Sepia.is_chosen_light());
+    assert_eq!(PageTone::Paper.label(), "Paper");
+    assert!(s.page_tone_hint_due(), "Paper in a dark theme: offer Auto");
+    assert!(!s.page_tone_hint_due(), "offered once");
+    s.run("view.page_tone", &json!({ "value": "sepia" }))
+        .unwrap();
+    assert!(!s.page_tone_hint_due(), "once, whatever light tone");
+    drop(s);
+    let mut s = launch();
+    assert_eq!(
+        s.appearance.page_tone,
+        PageTone::Sepia,
+        "the choice is kept"
+    );
+    assert!(
+        !s.page_tone_hint_due(),
+        "once per User database, not per launch"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

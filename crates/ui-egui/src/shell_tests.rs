@@ -3310,6 +3310,8 @@ mod interlinear;
 mod keyboard_navigation;
 #[path = "keyboard_shortcuts_tests.rs"]
 mod keyboard_shortcuts;
+#[path = "page_tone_tests.rs"]
+mod page_tone;
 #[path = "recently_closed_tests.rs"]
 mod recently_closed;
 #[path = "settings_tests.rs"]

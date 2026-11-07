@@ -64,6 +64,14 @@ impl PageTone {
         Self::ALL.iter().find(|t| t.1 == id).map(|t| t.0)
     }
 
+    /// The tone's name in the View menu and Settings.
+    pub fn label(self) -> &'static str {
+        Self::ALL
+            .iter()
+            .find(|t| t.0 == self)
+            .map_or("Auto", |t| t.2)
+    }
+
     /// The tone actually shown, given whether the chrome is dark.
     pub fn resolve(self, dark_chrome: bool) -> PageTone {
         match self {
@@ -72,7 +80,16 @@ impl PageTone {
             t => t,
         }
     }
+
+    /// A light page the user chose (Paper or Sepia): it stays light in a dark theme (#240).
+    pub fn is_chosen_light(self) -> bool {
+        matches!(self, PageTone::Paper | PageTone::Sepia)
+    }
 }
+
+/// Preference key remembering that the Page tone hint was offered (#240): it is offered once
+/// per User database.
+pub(crate) const PAGE_TONE_HINT_PREF: &str = "page-tone-hint";
 
 /// How large the app chrome is drawn (#137): menus, Tabs, headers and dialogs, as one zoom on
 /// the whole window (Resource text scales along). Text size is separate, and its keys never
