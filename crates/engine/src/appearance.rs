@@ -127,10 +127,16 @@ impl InterfaceSize {
     }
 }
 
-/// Text size limits and step, in points (View → Larger text, Smaller text).
-pub const TEXT_SIZE_MIN: f32 = 10.0;
+/// Text size limits and step, in points (View → Larger text, Smaller text). Below the
+/// minimum text is too small to read; a saved size under it is reset on load (#241).
+pub const TEXT_SIZE_MIN: f32 = 12.0;
 pub const TEXT_SIZE_MAX: f32 = 40.0;
 pub const TEXT_SIZE_STEP: f32 = 1.0;
+/// The Text size of a fresh install and of Reset text size (Ctrl+0).
+pub const TEXT_SIZE_DEFAULT: f32 = TextSettings::DEFAULT_SIZE;
+/// The default before #241. A View record saved without `text_size_default` was saved under
+/// it, and any View change saved the size too, so a size equal to it was not chosen.
+const TEXT_SIZE_OLD_DEFAULT: f32 = 17.0;
 
 /// Line spacing choices, as multiples of the tallest font on a line.
 pub const LINE_SPACINGS: [(&str, &str, f32); 4] = [
@@ -313,6 +319,7 @@ pub(crate) fn to_json(a: &Appearance, t: &TextSettings, f: &FontChoices) -> Valu
         "page_tone": a.page_tone.id(),
         "interface_size": a.interface_size.id(),
         "text_size": t.size,
+        "text_size_default": TEXT_SIZE_DEFAULT,
         "line_spacing": t.line_spacing,
         "red_letter": t.red_letter,
         "verse_numbers": verse_numbers_id(t.verse_numbers),
@@ -322,8 +329,14 @@ pub(crate) fn to_json(a: &Appearance, t: &TextSettings, f: &FontChoices) -> Valu
 }
 
 /// Apply a saved preference record; unknown or missing values keep their defaults. Records
-/// from #37 (a `dark_page` flag and a boolean `verse_numbers`) are read too.
-pub(crate) fn apply_json(v: &Value, a: &mut Appearance, t: &mut TextSettings, f: &mut FontChoices) {
+/// from #37 (a `dark_page` flag and a boolean `verse_numbers`) are read too. Returns the
+/// saved Text size when it was too small to read and the default was used instead.
+pub(crate) fn apply_json(
+    v: &Value,
+    a: &mut Appearance,
+    t: &mut TextSettings,
+    f: &mut FontChoices,
+) -> Option<f32> {
     f.apply_json(&v["fonts"]);
     if let Some(x) = v["theme"].as_str().and_then(Theme::from_id) {
         a.theme = x;
@@ -339,8 +352,19 @@ pub(crate) fn apply_json(v: &Value, a: &mut Appearance, t: &mut TextSettings, f:
     {
         a.interface_size = x;
     }
-    if let Some(size) = v["text_size"].as_f64() {
-        t.size = (size as f32).clamp(TEXT_SIZE_MIN, TEXT_SIZE_MAX);
+    let mut too_small = None;
+    if let Some(size) = v["text_size"].as_f64().map(|s| s as f32) {
+        let saved_under = v["text_size_default"]
+            .as_f64()
+            .map_or(TEXT_SIZE_OLD_DEFAULT, |d| d as f32);
+        t.size = if size < TEXT_SIZE_MIN {
+            too_small = Some(size);
+            TEXT_SIZE_DEFAULT
+        } else if size == saved_under {
+            TEXT_SIZE_DEFAULT
+        } else {
+            size.min(TEXT_SIZE_MAX)
+        };
     }
     if let Some(ls) = v["line_spacing"].as_f64() {
         t.line_spacing = (ls as f32).clamp(1.0, 2.0);
@@ -360,4 +384,5 @@ pub(crate) fn apply_json(v: &Value, a: &mut Appearance, t: &mut TextSettings, f:
         Value::Bool(false) => t.verse_numbers = VerseNumbers::Hidden,
         _ => {}
     }
+    too_small
 }

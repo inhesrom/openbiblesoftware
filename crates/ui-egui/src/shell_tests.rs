@@ -391,8 +391,12 @@ impl Harness {
 
     /// Rasterize last frame as the GPU would (premultiplied alpha, nearest texels) into a PPM.
     fn screenshot(&self, path: &std::path::Path) {
-        let ppp = 1.0;
-        let (w, h) = (self.screen.x as usize, self.screen.y as usize);
+        // In device pixels: a 2× window (`root_info.native_pixels_per_point`) shoots at 2×.
+        let ppp = self.ctx.pixels_per_point();
+        let (w, h) = (
+            (self.screen.x * ppp).round() as usize,
+            (self.screen.y * ppp).round() as usize,
+        );
         let prims = self.ctx.tessellate(self.last_shapes.clone(), ppp);
         let mut px = vec![[0.0f32; 3]; w * h];
         for p in &prims {
@@ -400,11 +404,14 @@ impl Harness {
                 continue;
             };
             let tex = self.textures.get(&m.texture_id);
-            let clip = p
-                .clip_rect
+            let clip = Rect::from_min_max(p.clip_rect.min * ppp, p.clip_rect.max * ppp)
                 .intersect(Rect::from_min_size(Pos2::ZERO, vec2(w as f32, h as f32)));
             for tri in m.indices.chunks(3) {
-                let [a, b, c] = [0, 1, 2].map(|i| m.vertices[tri[i] as usize]);
+                let [a, b, c] = [0, 1, 2].map(|i| {
+                    let mut v = m.vertices[tri[i] as usize];
+                    v.pos = (v.pos.to_vec2() * ppp).to_pos2();
+                    v
+                });
                 let lo = a.pos.min(b.pos).min(c.pos).max(clip.min);
                 let hi = a.pos.max(b.pos).max(c.pos).min(clip.max);
                 let area =
@@ -839,7 +846,8 @@ fn menu_items_are_dispatched_through_the_command_registry() {
 #[test]
 fn reading_text_keeps_a_comfortable_measure() {
     let h = Harness::new();
-    // The TB Panel is far wider than 38 ems of 17 pt; no text line runs past the measure.
+    // The TB Panel is wider than 38 ems of the default Text size; no text line runs past the
+    // measure.
     let (left, _) = h.panels()[0].clone();
     assert!(left.width() > 800.0, "{left:?}");
     let laid = h
@@ -850,7 +858,7 @@ fn reading_text_keeps_a_comfortable_measure() {
         .find_map(|t| t.view.as_ref())
         .unwrap();
     assert!(
-        laid.width() <= crate::MEASURE_EMS * 17.0 + 0.5,
+        laid.width() <= crate::MEASURE_EMS * obs_layout::TextSettings::DEFAULT_SIZE + 0.5,
         "{}",
         laid.width()
     );
@@ -1516,7 +1524,12 @@ mod a11y {
             .filter_map(|x| x.value())
             .collect();
         assert_ne!(all_text, old);
-        assert!(all_text.contains("Romans 8:28"));
+        // The reference may wrap across two runs; its Link is one node.
+        assert!(
+            n2.values()
+                .any(|x| x.role() == Role::Link && x.description() == Some("Go to Romans 8:28")),
+            "{all_text}"
+        );
     }
 
     #[test]
