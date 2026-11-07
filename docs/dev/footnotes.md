@@ -16,7 +16,9 @@ Tab, shows its popover under it: "Footnote a · John 1:5" and the note, drawn wi
 pipeline like the text it annotates (italic `\fqa` stays italic). The popover stays while the
 pointer is on the marker or on the popover. Clicking the marker (Enter from the keyboard) pins
 it; a pinned popover closes on Esc (focus goes back to the marker), its ×, a click outside it,
-or another click on the marker; resting the pointer on another marker, in any pane, leaves it
+or another click on the marker. Esc closes a hover popover too, and a marker whose popover Esc
+closed shows none while the pointer or focus stays on it (`Footnotes::dismissed`): it shows
+again once both have left it, or at once on a click (Enter); resting the pointer on another marker, in any pane, leaves it
 (clicking that marker replaces it). Pinned from the keyboard (Enter or Space on the focused
 marker, or a screen reader's click: the marker widget reports it, wherever the pointer rests),
 focus moves to its first link (its × when it has none) as soon as the note's text is laid out,
@@ -32,7 +34,11 @@ Found and `scripture_ref` targets are read in the Resource's own numbering and g
 Verse map, like a reference in its text: Hebrew-numbered "Ps 3:9" is the Standard's Ps 3:8. A
 found reference to a book the Resource does not have (an Old Testament verse in a New Testament's
 note, or any reference in a Resource without Verses) has no own numbering and is read in the
-Standard (`obs_engine::body_references`). Hovering (or focusing) a link shows the reference popup
+Standard. The choice is made per item of a reference list, not per list: the finder reads the
+text in the Resource's numbering for its books and the Standard for the rest (`OwnElseStandard`),
+so "Ps 3:8; Rom 3:4; Ps 3:9" in a Hebrew Psalter is one link to Standard Ps 3:7, Rom 3:4 and
+Ps 3:8. A link that wraps onto a second line is one widget per line, so it never covers the
+links beside it. Hovering (or focusing) a link shows the reference popup
 with the ★ Bible's text; clicking it goes there (`reference_navigate`, as a reference in the text
 does) and closes the popover.
 

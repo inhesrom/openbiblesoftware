@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, pos2, vec2};
 use obs_model::{Direction, Span, SpanKind, TextUnit};
-use obs_scripture::{Passage, PassageList, RefStyle, Versification, format_passage};
+use obs_scripture::{
+    Book, Passage, PassageList, RefStyle, Standard, Versification, format_passage,
+};
 
 use super::references::{Targets, standard_targets};
 use super::{HOVER_DWELL_SECS, State, TabId};
@@ -52,6 +54,9 @@ pub(crate) struct FootnotePopover {
 #[derive(Debug, Default)]
 pub(crate) struct Footnotes {
     pub(crate) popover: Option<FootnotePopover>,
+    /// The marker whose popover Esc closed: hovered or focused, it shows none until the
+    /// pointer and focus have left it, or it is clicked (Enter).
+    pub(crate) dismissed: Option<(TabId, FootnoteHit)>,
     snippets: SnippetCache,
 }
 
@@ -62,6 +67,46 @@ impl Footnotes {
         if self.popover.as_ref().is_some_and(|p| p.tab == tab) {
             self.popover = None;
         }
+        if self.dismissed.as_ref().is_some_and(|(t, _)| *t == tab) {
+            self.dismissed = None;
+        }
+    }
+}
+
+/// A Bible's own numbering for the books it has, the Standard for the others: how a
+/// reference written in its Footnote is read, item by item, so a list naming both ("Ps 3:9;
+/// Rom 3:4" in a Hebrew Psalter) keeps every item.
+struct OwnElseStandard<'a>(&'a dyn Versification);
+
+impl OwnElseStandard<'_> {
+    fn has(&self, book: Book) -> bool {
+        self.0.chapter_count(book) > 0
+    }
+}
+
+impl Versification for OwnElseStandard<'_> {
+    fn chapter_count(&self, book: Book) -> u16 {
+        if self.has(book) {
+            self.0.chapter_count(book)
+        } else {
+            Standard.chapter_count(book)
+        }
+    }
+
+    fn last_verse(&self, book: Book, chapter: u16) -> Option<u16> {
+        if self.has(book) {
+            self.0.last_verse(book, chapter)
+        } else {
+            Standard.last_verse(book, chapter)
+        }
+    }
+
+    fn has_title(&self, book: Book, chapter: u16) -> bool {
+        if self.has(book) {
+            self.0.has_title(book, chapter)
+        } else {
+            Standard.has_title(book, chapter)
+        }
     }
 }
 
@@ -70,7 +115,7 @@ impl Footnotes {
 /// which are read in the Bible's own numbering and go through its Verse map, like a
 /// reference in its text (ADR 0002). A reference to a book the Bible does not have (an
 /// Old Testament verse cited in a New Testament) has no own numbering: it is read in the
-/// Standard.
+/// Standard, item by item within a list that also names the Bible's books.
 pub(crate) fn footnote_body(doc: &ReadingDoc, hit: &FootnoteHit) -> Option<FootnoteBody> {
     let mut unit = doc.footnote(&hit.note)?.clone();
     let mut links: Vec<(Range<usize>, Targets)> = Vec::new();
@@ -86,16 +131,9 @@ pub(crate) fn footnote_body(doc: &ReadingDoc, hit: &FootnoteHit) -> Option<Footn
             _ => {}
         }
     }
-    let own = &doc.versification;
-    let in_own = obs_engine::body_references_in(&unit.text, own)
-        .into_iter()
-        .map(|(range, list)| (range, list, true));
-    let elsewhere = obs_engine::body_references(&unit.text)
-        .into_iter()
-        .filter(|(_, list)| list.iter().all(|p| own.chapter_count(p.start().book) == 0))
-        .map(|(range, list)| (range, list, false));
+    let numbering = OwnElseStandard(&doc.versification);
     let mut found = Vec::new();
-    for (range, list, native) in in_own.chain(elsewhere) {
+    for (range, list) in obs_engine::body_references_in(&unit.text, &numbering) {
         if links
             .iter()
             .any(|(r, _)| r.start < range.end && range.start < r.end)
@@ -109,7 +147,14 @@ pub(crate) fn footnote_body(doc: &ReadingDoc, hit: &FootnoteHit) -> Option<Footn
                 targets: list.clone(),
             },
         });
-        links.push((range, standard_targets(doc, &list, native)));
+        let targets = list
+            .iter()
+            .flat_map(|p| {
+                let native = numbering.has(p.start().book);
+                standard_targets(doc, &vec![*p].into(), native)
+            })
+            .collect();
+        links.push((range, targets));
     }
     if !found.is_empty() {
         unit.spans.extend(found);
@@ -160,7 +205,20 @@ impl State {
             body: None,
         };
         let popover = &mut self.footnotes.popover;
+        let dismissed = &mut self.footnotes.dismissed;
+        // A dismissed marker shows again once neither the pointer nor focus is on it.
+        if dismissed.as_ref().is_some_and(|(t, hit)| {
+            *t == tab
+                && out.clicked_footnote.is_none()
+                && !out
+                    .hovered_footnote
+                    .as_ref()
+                    .is_some_and(|h| same_marker(h, hit))
+        }) {
+            *dismissed = None;
+        }
         if let Some(hit) = &out.clicked_footnote {
+            *dismissed = None;
             let again = popover
                 .as_ref()
                 .is_some_and(|p| p.tab == tab && p.pinned && same_marker(&p.hit, hit));
@@ -181,11 +239,15 @@ impl State {
             }
         } else if let Some(hit) = &out.hovered_footnote {
             // A pinned popover stays whichever pane's marker the pointer rests on; only a
-            // click (or Enter) on a marker replaces it.
+            // click (or Enter) on a marker replaces it. A marker whose popover Esc closed
+            // stays closed while it is still pointed at or focused.
             let keep = popover
                 .as_ref()
                 .is_some_and(|p| p.pinned || (p.tab == tab && same_marker(&p.hit, hit)));
-            if !keep {
+            let quiet = dismissed
+                .as_ref()
+                .is_some_and(|(t, d)| *t == tab && same_marker(d, hit));
+            if !keep && !quiet {
                 *popover = Some(fresh(hit, false));
             }
         } else if let Some(p) = popover.as_ref()
@@ -202,17 +264,22 @@ impl State {
         }
         if let Some(p) = popover.as_ref()
             && p.tab == tab
-            && p.pinned
+            && (p.pinned || p.shown)
             && out.clicked_footnote.is_none()
         {
             let outside = pointer.is_some_and(|at| {
                 !p.hit.rect.expand(3.0).contains(at) && !p.rect.is_some_and(|r| r.contains(at))
             });
-            if escape || (pressed && outside) {
-                if escape {
+            if escape {
+                // Focus goes back to the marker it was pinned from; the marker stays quiet
+                // until the pointer and focus leave it.
+                if p.pinned {
                     let marker = p.hit.widget;
                     ui.ctx().memory_mut(|m| m.request_focus(marker));
                 }
+                *dismissed = Some((tab, p.hit.clone()));
+                *popover = None;
+            } else if p.pinned && pressed && outside {
                 *popover = None;
             }
         }
@@ -420,11 +487,11 @@ impl State {
                 .get(range.clone())
                 .unwrap_or_default()
                 .to_string();
-            let link = ui.interact(
-                area,
-                ui.scope_id().with(("footnote-link", i)),
-                Sense::click(),
-            );
+            // One widget per line the link wraps over (only the first takes focus), so a
+            // wrapped link's bounding box never covers the links beside it.
+            let id = ui.scope_id().with(("footnote-link", i));
+            let first = rects.first().copied().unwrap_or(area);
+            let link = ui.interact(first, id, Sense::click());
             link.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, &written));
             if focus == LinkFocus::NoLink {
                 focus = LinkFocus::Link;
@@ -432,25 +499,28 @@ impl State {
                     link.request_focus();
                 }
             }
-            let pointed = link.hovered()
-                && rects
-                    .iter()
-                    .any(|r| link.hover_pos().is_some_and(|p| r.contains(p)));
+            let mut pointed = link.hovered();
+            let mut clicked = link.clicked();
+            for (j, r) in rects.iter().enumerate().skip(1) {
+                let line = ui.interact(*r, id.with(j), Sense::CLICK);
+                pointed |= line.hovered();
+                clicked |= line.clicked();
+            }
             if link.has_focus() {
-                painter.rect_stroke(
-                    area.expand(1.0),
-                    2.0,
-                    ui.visuals().selection.stroke,
-                    egui::StrokeKind::Outside,
-                );
+                for r in &rects {
+                    painter.rect_stroke(
+                        r.expand(1.0),
+                        2.0,
+                        ui.visuals().selection.stroke,
+                        egui::StrokeKind::Outside,
+                    );
+                }
             }
             if pointed || link.has_focus() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                 self.reference_popup(ui, targets);
             }
-            if link.clicked()
-                && let Some(passage) = targets.iter().flat_map(PassageList::iter).next()
-            {
+            if clicked && let Some(passage) = targets.iter().flat_map(PassageList::iter).next() {
                 let new_tab = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
                 go = Some((*passage, new_tab));
             }

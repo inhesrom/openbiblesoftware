@@ -681,6 +681,7 @@ impl Shell {
         self.st.panels.clear();
         self.st.tabs.clear();
         self.st.footnotes.popover = None;
+        self.st.footnotes.dismissed = None;
         self.shown.clear();
         let ids: Vec<TabId> = self.st.session.workspace.tabs().map(|t| t.id).collect();
         for t in ids {

@@ -233,8 +233,8 @@ fn clicking_a_marker_pins_its_popover_until_esc_or_another_click() {
     );
     let (_, at) = marker(&h, tab, "Or comprehended");
     press(&mut h, Key::Escape);
-    h.frames(2);
-    assert!(popover(&h).is_none(), "Esc closes it");
+    h.frames(30);
+    assert!(popover(&h).is_none(), "Esc closes it, past the dwell");
     h.click(at);
     assert!(popover(&h).is_some());
     h.click(at);
@@ -302,6 +302,34 @@ fn the_keyboard_reaches_markers_and_the_popovers_links() {
     h.frames(2);
     assert!(popover(&h).is_none());
     assert_eq!(widget(&h), Some(focused), "focus is back on the marker");
+    // The focused marker does not bring it back after the dwell.
+    h.frames(30);
+    assert!(popover(&h).is_none(), "Esc keeps it closed past the dwell");
+    assert_eq!(widget(&h), Some(focused), "the marker keeps its focus");
+    // Enter on the marker opens it again.
+    press(&mut h, Key::Enter);
+    h.frames(3);
+    assert!(popover(&h).is_some_and(|p| p.pinned));
+}
+
+/// Esc also closes a popover shown on hover, and it stays closed while the pointer rests on
+/// the marker; it shows again once the pointer has left and come back.
+#[test]
+fn esc_closes_a_hover_popover_until_the_pointer_leaves_its_marker() {
+    let (mut h, _files, tab) = bsb("esc-hover", "Jn 1:1");
+    let (_, at) = marker(&h, tab, "Or comprehended");
+    h.events.push(Event::PointerMoved(at));
+    h.frames(14);
+    assert!(popover(&h).is_some_and(|p| !p.pinned), "shown on hover");
+    press(&mut h, Key::Escape);
+    h.frames(30);
+    assert!(popover(&h).is_none(), "Esc keeps it closed past the dwell");
+    h.events
+        .push(Event::PointerMoved(pos2(at.x + 200.0, at.y + 300.0)));
+    h.frames(2);
+    h.events.push(Event::PointerMoved(at));
+    h.frames(14);
+    assert_eq!(shown_text(&h).as_deref(), Some("Or comprehended"));
 }
 
 /// Enter on a marker whose popover has not been laid out yet (pressed before the dwell, the
@@ -462,7 +490,8 @@ fn enter_on_a_marker_under_the_pointer_moves_focus_into_its_popover() {
 /// A Bible numbered its own way (Hebrew Psalms: the superscription is verse 1) reads the
 /// references written in its Footnotes in that numbering: "Ps 3:9", a verse the Standard
 /// lacks, is a link to the Standard's Ps 3:8, previews it and goes there. A book the Bible
-/// does not have is read in the Standard.
+/// does not have is read in the Standard, item by item: a list naming both ("Ps 3:8; Rom
+/// 3:4; Ps 3:9") keeps every item, each in its own numbering.
 #[test]
 fn a_footnote_reference_is_read_in_its_bibles_own_numbering() {
     let texts = [
@@ -487,7 +516,7 @@ fn a_footnote_reference_is_read_in_its_bibles_own_numbering() {
     let mut bible =
         obs_engine::testing::bibles::bible("heb-ps", "HPS", &verses, Some(&standard), &[]);
     let note = obs_model::UnitId::note(1);
-    let text = "Cited in Ps 3:9; see Rom 3:4.";
+    let text = "Cited in Ps 3:9; see Rom 3:4. Also Ps 3:8; Rom 3:4; Ps 3:9.";
     bible.units.push(obs_model::TextUnit {
         id: note.clone(),
         kind: obs_model::UnitKind::Note,
@@ -538,6 +567,14 @@ fn a_footnote_reference_is_read_in_its_bibles_own_numbering() {
         [
             ("Ps 3:9", vec!["Ps 3:8".to_string()]),
             ("Rom 3:4", vec!["Rom 3:4".to_string()]),
+            (
+                "Ps 3:8; Rom 3:4; Ps 3:9",
+                vec![
+                    "Ps 3:7".to_string(),
+                    "Rom 3:4".to_string(),
+                    "Ps 3:8".to_string()
+                ]
+            ),
         ]
     );
     let native = Verse::new(Book::Psalms, 3, 9);
