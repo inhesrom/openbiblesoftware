@@ -247,3 +247,85 @@ fn the_whole_timeline_opens_without_a_passage_and_says_when_it_has_no_events() {
             .any(|t| t.starts_with("None in your library."))
     });
 }
+
+/// Fit shows the whole Timeline across the whole axis, as the Timeline opens without a
+/// Passage: its first and last years 24 points in from the axis's ends, not squeezed into
+/// what the controls left of their row.
+#[test]
+fn fit_shows_the_whole_timeline_across_the_whole_axis() {
+    let (mut h, _files) = harness("fit");
+    h.ctx.enable_accesskit();
+    let bible = h
+        .shell
+        .st
+        .session
+        .workspace
+        .tabs()
+        .find(|t| t.kind == TabKind::Resource("kjv".into()))
+        .unwrap()
+        .id;
+    h.shell
+        .run("tab.link", &json!({ "tab": bible.0, "set": "" }));
+    let tab = TabId(
+        h.shell
+            .run("tool.timeline", &json!({ "split": true }))
+            .unwrap()["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    h.frames(2);
+    until(&mut h, "the whole Timeline", |h| {
+        !all_in(h, tab, "3000 BC").is_empty() && !all_in(h, tab, "Fit").is_empty()
+    });
+    let view = |h: &Harness| {
+        (h.shell.st.tabs.get(&tab))
+            .and_then(|t| t.timeline.as_ref())
+            .and_then(|t| t.view())
+            .expect("the Timeline's view")
+    };
+    let axis_width = |h: &Harness| {
+        let tree = h.tree.as_ref().expect("the AccessKit tree");
+        let node = (tree.nodes.iter().map(|(_, n)| n))
+            .find(|n| {
+                n.role() == egui::accesskit::Role::Image
+                    && n.label().is_some_and(|l| l.starts_with("Timeline from"))
+            })
+            .expect("the Timeline's axis");
+        let b = node.bounds().unwrap();
+        b.x1 - b.x0
+    };
+    let st = &mut h.shell.st;
+    let timeline = st
+        .references
+        .timeline(&st.session.library)
+        .unwrap()
+        .unwrap();
+    let bounds = timeline.bounds().unwrap();
+    let opened = view(&h);
+    let width = axis_width(&h);
+    let ends = |v: obs_engine::timeline::TimelineView| (v.x(bounds.0, width), v.x(bounds.1, width));
+    let (first, last) = ends(opened);
+    assert!(
+        (first - 24.0).abs() < 1.0 && (width - 24.0 - last).abs() < 1.0,
+        "the Timeline opened on {first}..{last} of an axis {width} wide"
+    );
+
+    // Zoom in, then Fit: the same view as on opening.
+    let plus = all_in(&h, tab, "+")[0];
+    h.click(plus.center());
+    h.frames(3);
+    assert!(view(&h).scale > opened.scale * 1.5, "+ did not zoom in");
+    let fit = all_in(&h, tab, "Fit")[0];
+    h.click(fit.center());
+    h.frames(3);
+    let fitted = view(&h);
+    let (first, last) = ends(fitted);
+    assert!(
+        (fitted.scale - opened.scale).abs() < opened.scale * 1e-6,
+        "Fit showed {fitted:?}, not the whole Timeline as it opened: {opened:?}"
+    );
+    assert!(
+        (first - 24.0).abs() < 1.0 && (width - 24.0 - last).abs() < 1.0,
+        "Fit put the Timeline on {first}..{last} of an axis {width} wide"
+    );
+}

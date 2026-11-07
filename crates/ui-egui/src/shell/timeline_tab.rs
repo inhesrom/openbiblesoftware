@@ -33,6 +33,14 @@ pub(super) struct TimelineUi {
     moved: bool,
 }
 
+#[cfg(test)]
+impl TimelineUi {
+    /// Where the Tab looked last frame.
+    pub(super) fn view(&self) -> Option<TimelineView> {
+        self.view
+    }
+}
+
 /// Years shown around a short focus Event: its reign and the decades either side.
 const FOCUS_YEARS: f64 = 160.0;
 /// Heights of the parts of the axis, in points.
@@ -109,6 +117,8 @@ impl State {
             .unwrap_or_default();
         let mut refit = state.fitted != Some(shown);
         let mut zoom: Option<f64> = None;
+        // Fit was pressed: fit the whole Timeline once the axis's width is known.
+        let mut fit_all = false;
         // A pan by this share of the axis's width (positive: earlier years).
         let mut pan: Option<f64> = None;
         let mut go: Option<(Passage, bool)> = None;
@@ -142,13 +152,7 @@ impl State {
                 .on_hover_text("Show the whole Timeline")
                 .clicked()
             {
-                state.view = Some(TimelineView::fit(
-                    bounds.0,
-                    bounds.1,
-                    f64::from(ui.available_width().max(100.0)),
-                    24.0,
-                ));
-                state.moved = true;
+                fit_all = true;
                 refit = false;
             }
             if let Some(f) = focus
@@ -209,6 +213,10 @@ impl State {
             state.fitted = Some(shown);
             state.fitted_width = Some(axis_rect.width());
             state.moved = false;
+        }
+        if fit_all {
+            state.view = Some(TimelineView::fit(bounds.0, bounds.1, width, 24.0));
+            state.moved = true;
         }
         let mut view = state
             .view
