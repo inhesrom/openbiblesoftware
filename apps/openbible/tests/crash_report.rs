@@ -32,7 +32,8 @@ fn a_forced_panic_writes_a_crash_report_the_next_launch_offers() {
     assert_eq!(reports.len(), 1, "{reports:?}");
     let report = &reports[0];
     assert!(report.is_new);
-    let text = &report.text;
+    // Windows writes source paths with backslashes.
+    let text = &report.text.replace('\\', "/");
     assert!(
         text.starts_with("Open Bible Software crash report\n"),
         "{text}"
@@ -58,7 +59,7 @@ fn a_forced_panic_writes_a_crash_report_the_next_launch_offers() {
         text.contains("panicked at apps/openbible/src/main.rs"),
         "{text}"
     );
-    assert!(!text.contains(home.to_str().unwrap()), "{text}");
+    assert!(!report.text.contains(home.to_str().unwrap()), "{text}");
     // The log file has the launch and the panic too.
     let log = std::fs::read_to_string(logs.join(obs_engine::diagnostics::LOG_FILE)).unwrap();
     assert!(
