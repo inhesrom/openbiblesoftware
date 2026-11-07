@@ -1,7 +1,8 @@
 //! Open Bible Software desktop app.
 //!
 //! `openbible [file.obr]` opens the app. `openbible --bench [--obr FILE] [--hz N] [--json OUT]
-//! [--interlinear-panes N] [--quick]` runs the headless scroll/fling/jump benchmark (`cargo xtask bench`).
+//! [--interlinear-panes N] [--quick] [--no-shell-scenarios]` runs the headless
+//! scroll/fling/jump benchmark and its feature scenarios (`cargo xtask bench`).
 
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -31,7 +32,10 @@ fn bench(args: &[String]) -> ExitCode {
                 cfg.steady_frames = 120;
                 cfg.flings = 1;
                 cfg.jumps = 4;
+                cfg.tool_frames = 30;
+                cfg.tool_steps = 2;
             }
+            "--no-shell-scenarios" => cfg.shell_scenarios = false,
             _ => {}
         }
     }
@@ -42,6 +46,22 @@ fn bench(args: &[String]) -> ExitCode {
     {
         obs_ui_egui::set_layout_slowdown(std::time::Duration::from_secs_f64(ms / 1000.0));
         eprintln!("bench: seeded slowdown of {ms} ms per layout");
+    }
+    // Seeded synchronous feature work that fits in a frame: only the 2 ms budget catches it.
+    if let Some(ms) = std::env::var("OBS_BENCH_FEATURE_SLOWDOWN_MS")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+    {
+        cfg.feature_slowdown = std::time::Duration::from_secs_f64(ms / 1000.0);
+        eprintln!("bench: seeded slowdown of {ms} ms per frame in each feature's Tab");
+    }
+    // Seeded synchronous work only in each action's frame (a catalog query changing, say).
+    if let Some(ms) = std::env::var("OBS_BENCH_ACTION_SLOWDOWN_MS")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+    {
+        cfg.action_slowdown = std::time::Duration::from_secs_f64(ms / 1000.0);
+        eprintln!("bench: seeded slowdown of {ms} ms in each feature action's own frame");
     }
     let doc = match obr {
         Some(p) => match obs_ui_egui::ReadingDoc::open(std::path::Path::new(&p)) {

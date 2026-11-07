@@ -52,6 +52,11 @@ impl State {
             for (i, word) in verse.words.iter().enumerate() {
                 let width = ui.available_width();
                 let (rect, _) = ui.allocate_exact_size(vec2(width, row_h * 2.0), Sense::hover());
+                // A chapter has over a thousand words: only the rows in view are drawn, the
+                // rest keep their place (#183: 8 ms a frame for Genesis 24 before).
+                if !ui.is_rect_visible(rect) {
+                    continue;
+                }
                 let top = Rect::from_min_size(rect.min, vec2(width, row_h));
                 let bottom =
                     Rect::from_min_size(pos2(rect.left(), top.bottom()), vec2(width, row_h));

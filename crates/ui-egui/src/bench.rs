@@ -5,6 +5,29 @@
 //! doing what the UI thread does per frame (apply worker layouts, lay out within the budget,
 //! build glyph-atlas quads) and timing it. GPU submission and egui tessellation are not
 //! included; the prototype measured those as a small, constant share of the frame.
+//!
+//! Feature scenarios (#183) follow the reading ones: `interlinear` (every pane with
+//! interlinear lines) and `find` (stepping a Find bar through matches far apart) on the same
+//! panes, and the Shell-driven ones of [`tools`] (Atlas, Search Grid and Chart, Exegetical and
+//! Topic Guides, Get Resources), each with its own settle-frame count.
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod library;
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod tools;
+
+/// The Shell-driven feature scenarios, in report order.
+pub const SHELL_SCENARIOS: [&str; 6] = [
+    "atlas",
+    "search-grid",
+    "search-chart",
+    "exegetical-guide",
+    "topic-guide",
+    "get-resources",
+];
+
+/// Most frames an action may take to show its result before the bench gives up on it.
+pub(crate) const SETTLE_LIMIT: usize = 600;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -40,6 +63,19 @@ pub struct BenchConfig {
     /// How many of the panes (the last ones) show interlinear lines under their Tagged
     /// words (#143): a reverse interlinear's Lemma, transliteration and Strong's number.
     pub interlinear_panes: usize,
+    /// Run the Shell-driven feature scenarios ([`tools`], #183) after the reading ones.
+    pub shell_scenarios: bool,
+    /// Frames of each feature scenario's main interaction (scrolling, panning).
+    pub tool_frames: usize,
+    /// Actions of each feature scenario (Link-set moves, view switches, Find steps, keys).
+    pub tool_steps: usize,
+    /// Extra work in each Shell-driven scenario's feature Tab every frame, for checking that
+    /// the gate catches synchronous work over budget that still fits in a frame (0 normally).
+    pub feature_slowdown: Duration,
+    /// Extra work in each Shell-driven scenario's feature Tab in each action's own frame only
+    /// (a key typed into Get Resources' search, say), for checking that the gate catches
+    /// synchronous work done only when an action is taken (0 normally).
+    pub action_slowdown: Duration,
 }
 
 impl Default for BenchConfig {
@@ -55,6 +91,11 @@ impl Default for BenchConfig {
             jumps: 24,
             pace: true,
             interlinear_panes: 1,
+            shell_scenarios: true,
+            tool_frames: 120,
+            tool_steps: 6,
+            feature_slowdown: Duration::ZERO,
+            action_slowdown: Duration::ZERO,
         }
     }
 }
@@ -71,9 +112,14 @@ pub struct ScenarioReport {
     pub placeholder_frames: usize,
     pub cpu_p50_ms: f64,
     pub cpu_p99_ms: f64,
+    /// Synchronous work per frame (#19: ≤ 2 ms): the reading panes' UI-thread layout, or for
+    /// a Shell-driven scenario its feature Tab's drawing ([`tools`]).
     pub sync_layout_p50_ms: f64,
     pub sync_layout_p99_ms: f64,
     pub sync_layout_max_ms: f64,
+    /// Feature scenarios: most frames any action took to show its result (0: its own frame).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settle_frames_max: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -95,13 +141,17 @@ pub struct BenchReport {
     /// draws over each pane, and how long finding them took on one thread.
     pub find_matches: usize,
     pub find_ms: f64,
+    /// Feature scenarios that could not be set up or run (the gate fails on any).
+    pub feature_errors: Vec<String>,
 }
 
 #[derive(Default)]
-struct Samples {
+pub(crate) struct Samples {
     cpu: Vec<f64>,
     sync: Vec<f64>,
     placeholder_frames: usize,
+    /// Settle frames of each action of a feature scenario.
+    settle: Vec<usize>,
 }
 
 fn percentile(v: &[f64], p: f64) -> f64 {
@@ -115,7 +165,7 @@ fn percentile(v: &[f64], p: f64) -> f64 {
 }
 
 impl Samples {
-    fn report(&self, name: &str, interval_ms: f64) -> ScenarioReport {
+    pub(crate) fn report(&self, name: &str, interval_ms: f64) -> ScenarioReport {
         let missed = self.cpu.iter().filter(|&&c| c > interval_ms).count();
         ScenarioReport {
             name: name.into(),
@@ -128,6 +178,7 @@ impl Samples {
             sync_layout_p50_ms: percentile(&self.sync, 0.5),
             sync_layout_p99_ms: percentile(&self.sync, 0.99),
             sync_layout_max_ms: self.sync.iter().copied().fold(0.0, f64::max),
+            settle_frames_max: self.settle.iter().copied().max(),
         }
     }
 }
@@ -375,27 +426,115 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         all_max = all_max.max(all.unwrap_or(60));
     }
 
-    let all_sync: Vec<f64> = [&steady, &fling, &jumps]
+    let mut scenarios = vec![
+        steady.report("steady", interval_ms),
+        fling.report("fling", interval_ms),
+        jumps.report("jumps", interval_ms),
+    ];
+    let mut all_sync: Vec<f64> = [&steady, &fling, &jumps]
         .iter()
         .flat_map(|s| s.sync.iter().copied())
         .collect();
+    let lines = interlinear_scenario(&mut bench, interlinear.as_ref());
+    let find = find_scenario(&mut bench);
+    all_sync.extend(lines.sync.iter().chain(&find.sync).copied());
+    scenarios.push(lines.report("interlinear", interval_ms));
+    scenarios.push(find.report("find", interval_ms));
+    let mut feature_errors = Vec::new();
+    if cfg.shell_scenarios {
+        // The reading panes' layouts are dropped first: the Shell lays out its own.
+        bench.views.clear();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let (reports, errors) = tools::run(&cfg);
+            scenarios.extend(reports);
+            feature_errors = errors;
+        }
+        #[cfg(target_arch = "wasm32")]
+        feature_errors.push("the Shell scenarios write a library to disk".into());
+    }
     BenchReport {
         refresh_hz: cfg.refresh_hz,
         sync_layout_p99_ms: percentile(&all_sync, 0.99),
         panes,
         blocks: doc.blocks.len(),
-        scenarios: vec![
-            steady.report("steady", interval_ms),
-            fling.report("fling", interval_ms),
-            jumps.report("jumps", interval_ms),
-        ],
+        scenarios,
         jump_origin_settle_frames_max: origin_max,
         jump_all_settle_frames_max: all_max,
         text_gpu_mib: (bench.atlas.bytes() * 4) as f64 / (1024.0 * 1024.0),
         shape_cache_hit_rate: obs_fonts::ShapeCache::shared().stats().hit_rate(),
         find_matches: bench.found.len(),
         find_ms,
+        feature_errors,
     }
+}
+
+/// Interlinear lines (#143) under every pane's Tagged words: steady scrolling, as in
+/// `steady`, with twice the lines to lay out.
+fn interlinear_scenario(
+    bench: &mut Bench,
+    interlinear: Option<&Arc<crate::InterlinearSource>>,
+) -> Samples {
+    for v in &mut bench.views {
+        v.set_interlinear(interlinear.cloned());
+    }
+    bench.settle();
+    let mut s = Samples::default();
+    let dy = bench.cfg.steady_px;
+    for _ in 0..bench.cfg.steady_frames / 2 {
+        bench.frame(&mut s, |views| {
+            views.iter_mut().for_each(|v| v.scroll_by(dy))
+        });
+    }
+    for v in &mut bench.views {
+        v.set_interlinear(None);
+    }
+    s
+}
+
+/// A word the synthetic Bible has a few dozen times, far apart: each Find step jumps.
+pub(crate) const FIND_SPARSE: &str = "moses";
+
+/// Find in Resource (#175) in the first pane: typing the word, then Find next through the
+/// matches, each far from the last. A step's settle frames count until the pane has no
+/// placeholders, as a jump's origin (#19: ≤ 1 frame).
+fn find_scenario(bench: &mut Bench) -> Samples {
+    let ctx = egui::Context::default();
+    let viewport = bench.cfg.viewport.1;
+    let mut find = crate::find::FindBar::default();
+    find.text = FIND_SPARSE.into();
+    bench.settle();
+    let mut s = Samples::default();
+    // Typing: the whole document is searched on a worker (like a search, not a jump: its
+    // time is `find_ms`), then the pane goes to the first match.
+    for _ in 0..SETTLE_LIMIT {
+        let placeholders = bench.frame(&mut s, |views| {
+            find.update_reading(&mut views[0], viewport, &ctx);
+        });
+        if find.current.is_some() && placeholders[0] == 0 {
+            break;
+        }
+    }
+    if find.current.is_none() {
+        s.settle.push(SETTLE_LIMIT);
+        return s;
+    }
+    for _ in 0..bench.cfg.tool_steps.max(bench.cfg.jumps) {
+        bench.settle();
+        find.step = Some(true);
+        let mut placeholders = bench.frame(&mut s, |views| {
+            find.update_reading(&mut views[0], viewport, &ctx);
+        });
+        let mut frames = 0;
+        while placeholders[0] > 0 && frames < SETTLE_LIMIT {
+            frames += 1;
+            placeholders = bench.frame(&mut s, |views| {
+                find.update_reading(&mut views[0], viewport, &ctx);
+            });
+        }
+        s.settle.push(frames);
+    }
+    s
 }
 
 /// A deterministic Bible-shaped document for CI, where no real Bible is available: Genesis to
@@ -403,6 +542,14 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
 /// poetry, verses of 12–60 words. About seven words in ten are Tagged words with a Hebrew
 /// Lemma, as in an English Bible with Strong's numbers (for interlinear lines, #143).
 pub fn synthetic_bible() -> Arc<ReadingDoc> {
+    match synthetic_bible_resource() {
+        Some(r) => Arc::new(ReadingDoc::from_resource(r)),
+        None => unreachable!("synthetic bible is invalid"),
+    }
+}
+
+/// [`synthetic_bible`] as a Resource (`bench-bible`), for the feature scenarios' libraries.
+pub(crate) fn synthetic_bible_resource() -> Option<obs_model::Resource> {
     // Strong's number, Lemma and Gloss.
     const LEMMAS: &[(&str, &str, &str)] = &[
         ("H1254", "בָּרָא", "to create"),
@@ -530,10 +677,7 @@ pub fn synthetic_bible() -> Arc<ReadingDoc> {
             b.add_span(&id, r, SpanKind::TaggedWord { parts: vec![part] });
         }
     }
-    match b.build() {
-        Ok(r) => Arc::new(ReadingDoc::from_resource(r)),
-        Err(e) => unreachable!("synthetic bible is invalid: {e}"),
-    }
+    b.build().ok()
 }
 
 /// Small readable fixture with a full-size native Verse map and whole-Bible references.
