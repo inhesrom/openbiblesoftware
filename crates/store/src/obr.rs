@@ -20,6 +20,8 @@
 //! | `entity_locations` | A place's Place locations: `entity` (→ `entities.ord`), `seq`, `name`, `lon_e6`, `lat_e6`, `score` |
 //! | `events` | A People & places index's Events dataset (#185): `ord`, `id`, `title`, `kind`, `start_year`, `start_month`, `start_day`, `end_year`, `end_month`, `end_day` (end columns null for a single day or year), `approximate`, `part_of` (event id), `people` (JSON), `places` (JSON) |
 //! | `event_passages` | An Event's Passages: `event` (→ `events.ord`), `seq`, Standard `start`, `end` (verse numbers) |
+//! | `parallel_sections` | A Cross-reference set's Parallel passages (#212): `ord`, the section's Standard `start`, `end` (verse numbers), `title` (its heading) |
+//! | `parallel_passages` | A section's parallels: `section` (→ `parallel_sections.ord`), `seq`, Standard `start`, `end` (verse numbers) |
 //!
 //! Dataset Verses are stored as verse numbers `BBCCCVVV` (book 1-66, chapter, verse), so a
 //! Passage overlap is an integer range query.
@@ -36,7 +38,9 @@
 //! `entity_strongs` arrived after format 3 was first shipped (#149). A file without it still
 //! opens; its entities read with no other Strong's numbers. Likewise `entity_locations` (#150):
 //! without it, places read with no Place locations. And `events` with `event_passages`
-//! (#185): without them, an index reads with no Events.
+//! (#185): without them, an index reads with no Events. And `parallel_sections` with
+//! `parallel_passages` (#212): without them, a Cross-reference set reads with no Parallel
+//! passages.
 //!
 //! | `volumes` | A Commentary's volumes (#176): `book` (USFM code) → `title` of the volume its sections are printed in |
 //!
@@ -60,8 +64,9 @@ use std::path::{Path, PathBuf};
 use obs_model::{
     BibleVerse, CrossReference, Direction, Entity, EntityKind, EntityRelation, Event, EventEntity,
     FORMAT_VERSION, HistoricalDate, Key, KeyEntry, KeyScheme, LemmaTransliteration, Manifest,
-    Mention, OLDEST_FORMAT_VERSION, Origin, PartOfSpeech, PlaceLocation, Rendering, RenderingIndex,
-    Resource, ResourceType, Span, StrongsTotal, TextUnit, UnitId, UnitKind,
+    Mention, OLDEST_FORMAT_VERSION, Origin, ParallelSection, PartOfSpeech, PlaceLocation,
+    Rendering, RenderingIndex, Resource, ResourceType, Span, StrongsTotal, TextUnit, UnitId,
+    UnitKind,
 };
 use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, VerseMapEntry};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
@@ -219,6 +224,19 @@ CREATE TABLE event_passages (
     start INTEGER NOT NULL,
     end INTEGER NOT NULL,
     PRIMARY KEY (event, seq)
+) WITHOUT ROWID;
+CREATE TABLE parallel_sections (
+    ord INTEGER PRIMARY KEY,
+    start INTEGER NOT NULL,
+    end INTEGER NOT NULL,
+    title TEXT NOT NULL
+);
+CREATE TABLE parallel_passages (
+    section INTEGER NOT NULL,
+    seq INTEGER NOT NULL,
+    start INTEGER NOT NULL,
+    end INTEGER NOT NULL,
+    PRIMARY KEY (section, seq)
 ) WITHOUT ROWID;
 CREATE TABLE transliterations (
     transliteration TEXT NOT NULL,
@@ -503,6 +521,7 @@ fn insert_datasets(tx: &rusqlite::Transaction<'_>, r: &Resource) -> Result<(), S
         }
     }
     insert_events(tx, &r.events)?;
+    insert_parallel_sections(tx, &r.parallel_sections)?;
     let mut mention_stmt = tx
         .prepare("INSERT INTO mentions (entity, start, end) VALUES (?1, ?2, ?3)")
         .map_err(sql)?;
@@ -553,6 +572,40 @@ fn insert_events(tx: &rusqlite::Transaction<'_>, events: &[Event]) -> Result<(),
             ])
             .map_err(sql)?;
         for (seq, p) in e.passages.iter().enumerate() {
+            passage_stmt
+                .execute(params![
+                    ord,
+                    seq as i64,
+                    verse_number(p.start()),
+                    verse_number(p.end())
+                ])
+                .map_err(sql)?;
+        }
+    }
+    Ok(())
+}
+
+fn insert_parallel_sections(
+    tx: &rusqlite::Transaction<'_>,
+    sections: &[ParallelSection],
+) -> Result<(), StoreError> {
+    let mut section_stmt = tx
+        .prepare("INSERT INTO parallel_sections (ord, start, end, title) VALUES (?1, ?2, ?3, ?4)")
+        .map_err(sql)?;
+    let mut passage_stmt = tx
+        .prepare("INSERT INTO parallel_passages (section, seq, start, end) VALUES (?1, ?2, ?3, ?4)")
+        .map_err(sql)?;
+    for (ord, s) in sections.iter().enumerate() {
+        let ord = ord as i64;
+        section_stmt
+            .execute(params![
+                ord,
+                verse_number(s.passage.start()),
+                verse_number(s.passage.end()),
+                s.title
+            ])
+            .map_err(sql)?;
+        for (seq, p) in s.parallels.iter().enumerate() {
             passage_stmt
                 .execute(params![
                     ord,
@@ -913,6 +966,54 @@ impl ObrReader {
                 people: json_from::<Vec<EventEntity>>("event people", &people)?,
                 places: json_from::<Vec<EventEntity>>("event places", &places)?,
                 passages: passages.remove(&ord).unwrap_or_default(),
+            });
+        }
+        Ok(out)
+    }
+
+    /// Every section of a Cross-reference set's Parallel passages (#212), ordered by section
+    /// Passage; none in a file that predates the `parallel_sections` table.
+    pub fn parallel_sections(&self) -> Result<Vec<ParallelSection>, StoreError> {
+        if !self.has_table("parallel_sections")? {
+            return Ok(Vec::new());
+        }
+        let mut parallels: HashMap<i64, Vec<Passage>> = HashMap::new();
+        {
+            let mut stmt = self
+                .conn
+                .prepare_cached(
+                    "SELECT section, start, end FROM parallel_passages ORDER BY section, seq",
+                )
+                .map_err(sql)?;
+            let rows = stmt
+                .query_map([], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, i64>(2)?,
+                    ))
+                })
+                .map_err(sql)?;
+            for row in rows {
+                let (ord, start, end) = row.map_err(sql)?;
+                parallels
+                    .entry(ord)
+                    .or_default()
+                    .push(passage_from_numbers(start, end)?);
+            }
+        }
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT ord, start, end, title FROM parallel_sections ORDER BY ord")
+            .map_err(sql)?;
+        let mut rows = stmt.query([]).map_err(sql)?;
+        let mut out = Vec::new();
+        while let Some(r) = rows.next().map_err(sql)? {
+            let ord: i64 = r.get(0).map_err(sql)?;
+            out.push(ParallelSection {
+                passage: passage_from_numbers(r.get(1).map_err(sql)?, r.get(2).map_err(sql)?)?,
+                title: r.get(3).map_err(sql)?,
+                parallels: parallels.remove(&ord).unwrap_or_default(),
             });
         }
         Ok(out)
@@ -1737,6 +1838,7 @@ impl ResourceStore for ObrReader {
             entities: self.entity_rows("", &[])?,
             mentions: self.mention_rows("", &[])?,
             events: self.events()?,
+            parallel_sections: self.parallel_sections()?,
             transliterations,
             renderings,
             volumes: self.volumes()?,

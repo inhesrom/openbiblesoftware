@@ -909,6 +909,52 @@ pub fn theographic(tipnr: Option<&obs_model::Resource>) -> obs_model::Resource {
     .0
 }
 
+/// The BSB's parallel passages (#212) from the excerpt of the format tests (public domain:
+/// Mark 1:1-15, Matthew 3, Luke 3:1-22, John 1:1-34, Isaiah 40:1-5, 2 Samuel 24, 1 Chronicles
+/// 21) as the Starter's `bsb-parallels` Cross-reference set.
+pub fn bsb_parallels() -> obs_model::Resource {
+    let books = bsb_parallels_books();
+    let options = obs_formats::DatasetOptions {
+        resource_id: "bsb-parallels".into(),
+        title: "Berean Standard Bible Parallel Passages".into(),
+        abbreviation: "BSB Parallels".into(),
+        ..Default::default()
+    };
+    obs_formats::import_usfm_parallel_passages(&books, &options)
+        .unwrap()
+        .0
+}
+
+/// The same BSB excerpt as a Bible (`bsb`), for the text of the Parallel passages (#212).
+pub fn bsb_parallels_bible() -> obs_model::Resource {
+    let mut import = obs_formats::UsfmImport::new(obs_formats::UsfmOptions {
+        resource_id: "bsb".into(),
+        title: "Berean Standard Bible".into(),
+        abbreviation: "BSB".into(),
+        language: "en".into(),
+        ..Default::default()
+    });
+    for (name, text) in bsb_parallels_books() {
+        import.add_book(&name, text).unwrap();
+    }
+    import.finish().unwrap().0
+}
+
+/// The BSB excerpt's USFM books: (file name, text).
+fn bsb_parallels_books() -> Vec<(String, String)> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/bsb-parallels");
+    let mut books: Vec<(String, String)> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| {
+            let path = e.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            (name, std::fs::read_to_string(path).unwrap())
+        })
+        .collect();
+    books.sort();
+    books
+}
+
 /// Easton's or Smith's Bible Dictionary, reduced to the public-domain Abraham and Abram
 /// entries of the #44 study fixtures (with the converter's Abram → Abraham alias).
 pub fn dictionary(id: &str) -> obs_model::Resource {

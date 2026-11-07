@@ -106,7 +106,8 @@ pub struct IdChange {
 /// `stepbible-tbes` (TBESH/TBESG TSV), `strongs-hebrew` / `strongs-greek`
 /// (openscriptures/strongs XML), `oshb-bdb` (BDB XML plus the lexical index as an extra file),
 /// `abbott-smith` (TEI XML), and `sword-zip` (one module in a CrossWire `rawzip` package, read
-/// by the app's own SWORD Import; Hitchcock's Bible Names, #149).
+/// by the app's own SWORD Import; Hitchcock's Bible Names, #149), and
+/// `usfm-parallel-passages` (a USFM Bible's `\r` parallel passage lines, #212).
 pub const IMPORTERS: &[&str] = &[
     "usfm",
     "tahot",
@@ -125,6 +126,7 @@ pub const IMPORTERS: &[&str] = &[
     "sword-zip",
     "openbible-geocoding",
     "theographic-events",
+    "usfm-parallel-passages",
 ];
 
 /// Hosts whose site terms restrict republishing (#20 decision 3).

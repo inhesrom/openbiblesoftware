@@ -567,6 +567,58 @@ fn events_round_trip_and_older_files_read_none() {
     assert!(r.events().unwrap().is_empty());
 }
 
+/// A Cross-reference set's Parallel passages (#212) round-trip with their headings and the
+/// parallels in source order, and a file written before them still opens with none.
+#[test]
+fn parallel_sections_round_trip_and_older_files_read_none() {
+    use obs_model::{ParallelSection, ResourceBuilder, ResourceType};
+    let dir = TempDir::new("parallels");
+    let path = dir.path("parallels.obr");
+    let range = |book, chapter, from, to| {
+        Passage::new(
+            Verse::new(book, chapter, from),
+            Verse::new(book, chapter, to),
+        )
+        .unwrap()
+    };
+    let baptism = ParallelSection {
+        passage: range(Book::Mark, 1, 9, 11),
+        title: "The Baptism of Jesus".into(),
+        parallels: vec![
+            range(Book::Matthew, 3, 13, 17),
+            range(Book::Luke, 3, 21, 22),
+            range(Book::John, 1, 29, 34),
+        ],
+    };
+    let census = ParallelSection {
+        passage: range(Book::SecondSamuel, 24, 1, 9),
+        title: "David's Military Census".into(),
+        parallels: vec![
+            range(Book::Exodus, 30, 11, 16),
+            range(Book::FirstChronicles, 21, 1, 6),
+        ],
+    };
+    let mut b = ResourceBuilder::new(dataset_manifest(
+        "parallels",
+        ResourceType::CrossReferenceSet,
+    ));
+    b.add_parallel_section(baptism.clone());
+    b.add_parallel_section(census.clone());
+    let resource = b.build().unwrap();
+    write_obr(&resource, &path).unwrap();
+    let r = ObrReader::open(&path).unwrap();
+    assert_eq!(r.parallel_sections().unwrap(), [census, baptism]);
+    assert_eq!(r.load().unwrap(), resource);
+    drop(r);
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("DROP TABLE parallel_sections; DROP TABLE parallel_passages;")
+            .unwrap();
+    }
+    let r = ObrReader::open(&path).unwrap();
+    assert!(r.parallel_sections().unwrap().is_empty());
+}
+
 /// Tagged words read straight from the span table match a walk over every unit (#54).
 #[test]
 fn every_tagged_word_is_visited_like_the_generic_walk() {

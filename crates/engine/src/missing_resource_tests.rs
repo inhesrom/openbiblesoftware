@@ -39,6 +39,7 @@ fn starter_manifest() -> StarterManifest {
         ("web", Bible, "en"),
         ("asv", Bible, "en"),
         ("openbible-xrefs", CrossReferenceSet, "en"),
+        ("bsb-parallels", CrossReferenceSet, "en"),
         ("tipnr", PeopleAndPlaces, "en"),
         ("tbesh", Lexicon, "en"),
         ("tbesg", Lexicon, "en"),
@@ -86,6 +87,12 @@ fn each_section_names_its_resource_type_tagging_and_get_resources_filter() {
         ),
         (
             CrossReferences,
+            ResourceType::CrossReferenceSet,
+            Tagging::None,
+            None,
+        ),
+        (
+            ParallelPassages,
             ResourceType::CrossReferenceSet,
             Tagging::None,
             None,
@@ -216,6 +223,11 @@ fn an_empty_library_is_offered_the_starter_resources_that_fill_each_section() {
     assert_eq!(
         offered(CrossReferences, None, &empty),
         ids(&["openbible-xrefs"])
+    );
+    // #212: the BSB's parallel passages, a Cross-reference set with none of its own.
+    assert_eq!(
+        offered(ParallelPassages, None, &empty),
+        ids(&["bsb-parallels"])
     );
     assert_eq!(
         offered(KeyWords, None, &empty),

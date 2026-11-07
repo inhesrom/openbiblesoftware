@@ -427,6 +427,7 @@ fn arrangement_commands_change_every_guide_of_the_kind_and_persist_across_restar
         [
             ("commentaries", false, false),
             ("cross_references", false, false),
+            ("parallel_passages", false, false),
             ("key_words", false, false),
             ("people_and_places", false, false)
         ]
@@ -448,6 +449,7 @@ fn arrangement_commands_change_every_guide_of_the_kind_and_persist_across_restar
     let changed = vec![
         ("cross_references", true, false),
         ("commentaries", false, true),
+        ("parallel_passages", false, false),
         ("key_words", false, false),
         ("people_and_places", false, false),
     ];
@@ -481,6 +483,7 @@ fn arrangement_commands_change_every_guide_of_the_kind_and_persist_across_restar
         [
             ("commentaries", false, false),
             ("cross_references", false, false),
+            ("parallel_passages", false, false),
             ("key_words", false, false),
             ("people_and_places", false, false)
         ]
@@ -503,12 +506,14 @@ fn a_saved_arrangement_tolerates_unknown_missing_and_repeated_sections() {
         [
             ("commentaries", false),
             ("cross_references", true),
+            ("parallel_passages", false),
             ("key_words", false),
             ("people_and_places", false)
         ]
     );
-    // An arrangement saved before #54 added Key words and People & places gets them at
-    // their default places, after Cross-references, keeping the user's order.
+    // An arrangement saved before #54 added Key words and People & places (and #212 Parallel
+    // passages) gets them at their default places, after Cross-references, keeping the
+    // user's order.
     let a = GuideArrangement::from_json(
         Guide::PassageGuide,
         r#"{"sections":[{"id":"cross_references"},{"id":"commentaries","hidden":true}]}"#,
@@ -522,6 +527,7 @@ fn a_saved_arrangement_tolerates_unknown_missing_and_repeated_sections() {
         ids,
         [
             ("cross_references", false),
+            ("parallel_passages", false),
             ("key_words", false),
             ("people_and_places", false),
             ("commentaries", true)
@@ -534,8 +540,8 @@ fn a_saved_arrangement_tolerates_unknown_missing_and_repeated_sections() {
     let mut a = GuideArrangement::default_for(Guide::PassageGuide);
     assert!(a.move_to(GuideSection::Commentaries, 99));
     // Clamped to the end.
-    assert_eq!(a.sections[3].section, GuideSection::Commentaries);
-    assert!(!a.move_to(GuideSection::Commentaries, 3));
+    assert_eq!(a.sections[4].section, GuideSection::Commentaries);
+    assert!(!a.move_to(GuideSection::Commentaries, 4));
     assert_eq!(
         GuideArrangement::from_json(Guide::PassageGuide, &a.to_json()),
         a

@@ -284,6 +284,7 @@ mod tests {
             entities: vec![],
             mentions: vec![],
             events: vec![],
+            parallel_sections: vec![],
             transliterations: vec![],
             renderings: Default::default(),
             volumes: Default::default(),

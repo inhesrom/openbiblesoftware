@@ -610,6 +610,75 @@ fn events_are_ordered_hashed_and_validated() {
     }));
 }
 
+fn passage(book: Book, chapter: u16, from: u16, to: u16) -> Passage {
+    Passage::new(
+        Verse::new(book, chapter, from),
+        Verse::new(book, chapter, to),
+    )
+    .unwrap()
+}
+
+/// Parallel passages (#212) live only in a Cross-reference set, sort by section, count in the
+/// content hash and must each have a heading, a parallel and Standard Passages.
+#[test]
+fn parallel_sections_are_ordered_hashed_and_validated() {
+    let baptism = crate::ParallelSection {
+        passage: passage(Book::Mark, 1, 9, 11),
+        title: "The Baptism of Jesus".into(),
+        parallels: vec![
+            passage(Book::Matthew, 3, 13, 17),
+            passage(Book::Luke, 3, 21, 22),
+        ],
+    };
+    let census = crate::ParallelSection {
+        passage: passage(Book::SecondSamuel, 24, 1, 9),
+        title: "David's Military Census".into(),
+        parallels: vec![passage(Book::FirstChronicles, 21, 1, 6)],
+    };
+    let mut b = ResourceBuilder::new(dataset_manifest(ResourceType::CrossReferenceSet));
+    b.add_parallel_section(baptism.clone());
+    b.add_parallel_section(census.clone());
+    b.add_parallel_section(baptism.clone());
+    let r = b.build().unwrap();
+    assert_eq!(r.parallel_sections, [census.clone(), baptism.clone()]);
+    let empty = ResourceBuilder::new(dataset_manifest(ResourceType::CrossReferenceSet))
+        .build()
+        .unwrap();
+    assert_ne!(r.manifest.content_hash, empty.manifest.content_hash);
+
+    let mut b = ResourceBuilder::new(manifest());
+    b.add_parallel_section(baptism);
+    assert!(errors(b).contains(&ValidationError::DatasetInWrongType {
+        what: "parallel passages",
+        resource_type: ResourceType::Bible
+    }));
+
+    let mut b = ResourceBuilder::new(dataset_manifest(ResourceType::CrossReferenceSet));
+    let bad_target = v(Book::ThirdJohn, 1, 15);
+    b.add_parallel_section(crate::ParallelSection {
+        passage: passage(Book::Mark, 1, 1, 8),
+        title: " ".into(),
+        parallels: Vec::new(),
+    });
+    b.add_parallel_section(crate::ParallelSection {
+        passage: census.passage,
+        title: census.title,
+        parallels: vec![bad_target],
+    });
+    let errs = errors(b);
+    let mark = passage(Book::Mark, 1, 1, 8);
+    for why in ["empty heading", "no parallel Passage"] {
+        assert!(
+            errs.contains(&ValidationError::InvalidParallelSection { passage: mark, why }),
+            "{why}: {errs:?}"
+        );
+    }
+    assert!(errs.contains(&ValidationError::NotStandardPassage {
+        what: "parallel passage",
+        passage: bad_target
+    }));
+}
+
 #[test]
 fn build_indexes_lemma_transliterations_outside_the_content_hash() {
     let lexicon = |lemma: Option<&str>| {

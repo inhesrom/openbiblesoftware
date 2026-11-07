@@ -164,6 +164,8 @@ pub fn for_section(section: obs_engine::GuideSection) -> Icon {
     match section {
         S::Commentaries => Icon::Commentaries,
         S::CrossReferences => Icon::CrossReferences,
+        // Parallel accounts side by side, as Text Comparison shows them (#212).
+        S::ParallelPassages => Icon::TextComparison,
         S::KeyWords => Icon::KeyWords,
         S::PeopleAndPlaces => Icon::People,
         S::Related => Icon::Related,

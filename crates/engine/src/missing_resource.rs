@@ -85,6 +85,7 @@ impl GuideSection {
             }
             GuideSection::Commentaries
             | GuideSection::CrossReferences
+            | GuideSection::ParallelPassages
             | GuideSection::PeopleAndPlaces
             | GuideSection::LexiconEntries
             | GuideSection::Summary
@@ -140,6 +141,15 @@ impl GuideSection {
             // Articles are found through the People & places index (TIPNR).
             GuideSection::DictionaryArticles => {
                 ty == ResourceType::Dictionary || ty == ResourceType::PeopleAndPlaces
+            }
+            // Parallel passages ride on their own Cross-reference set (#212), which has no
+            // Cross-references.
+            GuideSection::ParallelPassages => {
+                crate::parallel_passages::is_parallel_set(&item.resource_id)
+            }
+            GuideSection::CrossReferences => {
+                ty == ResourceType::CrossReferenceSet
+                    && !crate::parallel_passages::is_parallel_set(&item.resource_id)
             }
             // Places are located by the geocoding (#150), not by TIPNR.
             GuideSection::Map => crate::atlas::is_geocoding_index(&item.resource_id),

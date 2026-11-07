@@ -38,7 +38,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use obs_formats::{
     DatasetOptions, ImportReport, LexiconOptions, StepbibleImport, StepbibleOptions, StepbibleText,
     UsfmImport, UsfmOptions, import_abbott_smith, import_bdb, import_openbible_cross_references,
-    import_strongs_greek, import_strongs_hebrew, import_tbes, import_tipnr, usfm_book_code,
+    import_strongs_greek, import_strongs_hebrew, import_tbes, import_tipnr,
+    import_usfm_parallel_passages, usfm_book_code, usfm_zip_books,
 };
 use obs_model::{Origin, Resource, UnitId};
 use obs_store::write_obr;
@@ -553,6 +554,7 @@ fn import(source: &Source, files: &[Vec<u8>]) -> Result<(Resource, ImportReport)
         "tahot" => return import_stepbible(source, files, StepbibleText::Tahot),
         "tagnt" => return import_stepbible(source, files, StepbibleText::Tagnt),
         "openbible-cross-references" => return import_openbible_zip(source, &files[0]),
+        "usfm-parallel-passages" => return import_usfm_parallels(source, &files[0]),
         "tipnr" => return import_tipnr_text(source, &files[0]),
         "sword-zip" => return import_sword_zip(source, &files[0]),
         "openbible-geocoding" => return import_openbible_geo(source, files),
@@ -706,6 +708,13 @@ fn import_openbible_zip(source: &Source, bytes: &[u8]) -> Result<(Resource, Impo
         .read_to_string(&mut text)
         .context("cross_references.txt is not UTF-8 text")?;
     import_openbible_cross_references(&text, &dataset_options(source)).map_err(|e| anyhow!("{e}"))
+}
+
+/// A zip of USFM books (the BSB's) → a Cross-reference set of their parallel passage
+/// references (`\r`, #212). The Bible's own Starter entry pins the same zip.
+fn import_usfm_parallels(source: &Source, bytes: &[u8]) -> Result<(Resource, ImportReport)> {
+    let books = usfm_zip_books(bytes).map_err(|e| anyhow!("{e}"))?;
+    import_usfm_parallel_passages(&books, &dataset_options(source)).map_err(|e| anyhow!("{e}"))
 }
 
 /// STEPBible's TIPNR text file → a People & places index.

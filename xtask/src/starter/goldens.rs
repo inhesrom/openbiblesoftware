@@ -25,7 +25,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use obs_model::{
-    CrossReference, Entity, Event, Key, Mention, Resource, ResourceType, Span, SpanKind, TextUnit,
+    CrossReference, Entity, Event, Key, Mention, ParallelSection, Resource, ResourceType, Span,
+    SpanKind, TextUnit,
 };
 use obs_scripture::{Passage, Standard, StrongsNumber, parse_reference};
 use serde::{Deserialize, Serialize};
@@ -165,6 +166,9 @@ enum Body<'a> {
     },
     CrossReferences {
         cross_references: Vec<&'a CrossReference>,
+        /// Sections whose Passage or parallels overlap the Key (#212).
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        parallel_sections: Vec<&'a ParallelSection>,
     },
     People {
         entities: Vec<&'a Entity>,
@@ -212,6 +216,15 @@ pub fn snapshot(golden: &Golden, resource: &Resource) -> Result<String> {
                 .iter()
                 .filter(|x| x.from.overlaps(*p))
                 .collect(),
+            parallel_sections: resource
+                .parallel_sections
+                .iter()
+                .filter(|s| {
+                    std::iter::once(&s.passage)
+                        .chain(&s.parallels)
+                        .any(|q| q.overlaps(*p))
+                })
+                .collect(),
         },
         (ResourceType::PeopleAndPlaces, GoldenKey::Passage(p)) => {
             let mentions: Vec<&Mention> = resource
@@ -242,7 +255,10 @@ pub fn snapshot(golden: &Golden, resource: &Resource) -> Result<String> {
     let empty = match &body {
         Body::Verses { verses, .. } => verses.is_empty(),
         Body::Units { units } => units.is_empty(),
-        Body::CrossReferences { cross_references } => cross_references.is_empty(),
+        Body::CrossReferences {
+            cross_references,
+            parallel_sections,
+        } => cross_references.is_empty() && parallel_sections.is_empty(),
         Body::People {
             mentions, events, ..
         } => mentions.is_empty() && events.is_empty(),
