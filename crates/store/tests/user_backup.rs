@@ -326,6 +326,17 @@ fn a_backup_missing_part_of_the_format_or_with_unreadable_rows_is_refused() {
             ),
             "it is damaged (database error: Invalid column type Text",
         ),
+        (
+            // Seven characters pass the table's own check; only reading the colour fails.
+            "bad-style-colour",
+            "UPDATE highlight_styles SET color = '#zzzzzz' WHERE id = 'yellow'",
+            "it is damaged",
+        ),
+        (
+            "bad-palette-row",
+            "UPDATE highlight_palettes SET position = 'first' WHERE id = 'standard'",
+            "it is damaged",
+        ),
     ] {
         let backup = dir.0.join(format!("{name}.obsbackup"));
         db.back_up(&backup).unwrap();
@@ -399,4 +410,82 @@ fn back_up_refuses_the_user_database_and_its_sidecar_files() {
     let (db, _) = UserStore::open(&dir.db()).unwrap();
     assert_eq!(db.annotation_dump().unwrap(), before);
     assert_eq!(db.layouts().unwrap(), ["After", "Study"]);
+}
+
+/// Opened through a symbolic link, SQLite keeps its `-wal`, `-shm` and `-journal` files beside
+/// the link's target: Back up now refuses those too, and the database goes on working.
+#[cfg(unix)]
+#[test]
+fn back_up_refuses_the_sidecar_files_of_a_database_opened_through_a_link() {
+    let dir = Dir::new("own-file-link");
+    std::fs::create_dir_all(dir.0.join("real")).unwrap();
+    std::fs::create_dir_all(dir.0.join("alias")).unwrap();
+    let real = dir.0.join("real").join("real.db");
+    let alias = dir.0.join("alias").join("alias.db");
+    UserStore::open(&real).unwrap();
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let (db, _) = UserStore::open(&alias).unwrap();
+    filled(&db);
+    let before = db.annotation_dump().unwrap();
+    assert!(dir.0.join("real").join("real.db-wal").exists());
+    for dest in [
+        real.clone(),
+        alias.clone(),
+        dir.0.join("real").join("real.db-wal"),
+        dir.0.join("real").join("real.db-shm"),
+        dir.0.join("real").join("real.db-journal"),
+        dir.0.join("alias").join("alias.db-wal"),
+    ] {
+        let err = (db.back_up(&dest).err())
+            .unwrap_or_else(|| panic!("{} was written over", dest.display()));
+        assert!(
+            matches!(&err, StoreError::Rejected(m) if m.contains("where your data is kept")),
+            "{}: {err}",
+            dest.display()
+        );
+    }
+    assert_eq!(db.annotation_dump().unwrap(), before);
+    db.save_layout("After", "{}").unwrap();
+    drop(db);
+    let (db, _) = UserStore::open(&alias).unwrap();
+    assert_eq!(db.annotation_dump().unwrap(), before);
+    assert_eq!(db.layouts().unwrap(), ["After", "Study"]);
+}
+
+/// Back up now writes beside its destination under a name of its own: a file already there
+/// (here, the User database itself, named as a scratch file might be) is never removed or
+/// written over.
+#[test]
+fn back_up_never_removes_a_file_named_like_its_scratch_file() {
+    let dir = Dir::new("scratch-name");
+    let names = [
+        ".mine.obsbackup.partial".to_string(),
+        format!(".mine.obsbackup.{}-0.partial", std::process::id()),
+    ];
+    for name in names {
+        let live = dir.0.join(&name);
+        let (db, _) = UserStore::open(&live).unwrap();
+        filled(&db);
+        let before = db.annotation_dump().unwrap();
+        let dest = dir.0.join("mine.obsbackup");
+        db.back_up(&dest).unwrap();
+        assert_eq!(UserStore::backup_contents(&dest).unwrap().favorites, 1);
+        assert!(live.is_file(), "{name} was removed");
+        assert_eq!(db.annotation_dump().unwrap(), before, "{name}");
+        db.save_layout("After", "{}").unwrap();
+        drop(db);
+        let (db, _) = UserStore::open(&live).unwrap();
+        assert_eq!(db.annotation_dump().unwrap(), before, "{name}");
+        assert_eq!(db.layouts().unwrap(), ["After", "Study"], "{name}");
+        drop(db);
+        std::fs::remove_file(&dest).unwrap();
+    }
+    // No scratch file is left behind.
+    let left: Vec<String> = std::fs::read_dir(&dir.0)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.contains("mine") && n.ends_with(".partial"))
+        .filter(|n| !n.ends_with("-0.partial") && n != ".mine.obsbackup.partial")
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
 }

@@ -333,6 +333,43 @@ fn back_up_and_export_refuse_the_user_database_itself() {
     assert_eq!(s.annotations(None).unwrap().len(), 4);
 }
 
+/// A User database opened through a symbolic link keeps SQLite's files beside the link's
+/// target: Back up now and Export everything refuse those as well.
+#[cfg(unix)]
+#[test]
+fn back_up_and_export_refuse_the_real_files_of_a_linked_user_database() {
+    let f = Fixture::new("own-file-link");
+    std::fs::create_dir_all(f.file("real")).unwrap();
+    let real = f.file("real").join("real.db");
+    obs_store::UserStore::open(&real).unwrap();
+    std::os::unix::fs::symlink(&real, f.file("user.db")).unwrap();
+    let mut s = f.session();
+    romans(&mut s);
+    let before = dump(&s);
+    for dest in [
+        real.clone(),
+        f.file("real").join("real.db-wal"),
+        f.file("real").join("real.db-shm"),
+        f.file("real").join("real.db-journal"),
+    ] {
+        for command in ["data.back_up", "data.export"] {
+            let err = s.run(command, &path(&dest)).unwrap_err().to_string();
+            assert!(
+                err.contains("where your data is kept"),
+                "{command} {}: {err}",
+                dest.display()
+            );
+        }
+    }
+    assert_eq!(dump(&s), before);
+    s.run("annotation.note", &json!({ "body": "still saving" }))
+        .unwrap();
+    let after = dump(&s);
+    drop(s);
+    let s = f.session();
+    assert_eq!(dump(&s), after);
+}
+
 #[test]
 fn a_refused_restore_changes_nothing_and_keeps_undo() {
     let f = Fixture::new("refused");
