@@ -134,13 +134,15 @@ fn matches(b: &KeyBinding, filter: &str) -> bool {
 
 impl State {
     pub(super) fn keys_body(&mut self, ui: &mut Ui, tab: TabId) {
-        self.keys_ui.drawn = true;
-        self.record_key(ui);
+        self.begin_key_bindings(ui);
         let filter = (self.tabs.get(&tab))
             .map(|t| t.filter.trim().to_lowercase())
             .unwrap_or_default();
-        let bindings = self.session.key_bindings();
-        let conflicts = self.session.key_conflicts();
+        let any_custom = self
+            .session
+            .key_bindings()
+            .iter()
+            .any(KeyBinding::is_custom);
         let mut act: Option<(&'static str, Value)> = None;
         egui::Frame::new()
             .fill(theme::c().field)
@@ -163,7 +165,6 @@ impl State {
                             )
                             .color(theme::c().muted),
                         );
-                        let any_custom = bindings.iter().any(KeyBinding::is_custom);
                         if ui
                             .add_enabled(any_custom, egui::Button::new("Reset all"))
                             .on_hover_text("Every shortcut back to its default")
@@ -171,25 +172,9 @@ impl State {
                         {
                             act = Some(("keys.reset_all", json!({})));
                         }
-                        let mut shown = 0;
-                        // The command column narrows in a narrow Panel, then goes above.
-                        let room = ui.available_width() - KEY_W - REST_W;
-                        let label_w = (room >= MIN_LABEL_W).then_some(room.min(LABEL_W));
-                        for group in key_binding_groups() {
-                            let rows: Vec<&KeyBinding> = (bindings.iter())
-                                .filter(|b| b.group == group && matches(b, &filter))
-                                .collect();
-                            if rows.is_empty() {
-                                continue;
-                            }
-                            ui.add_space(14.0);
-                            section(ui, group);
-                            for b in rows {
-                                shown += 1;
-                                if let Some(a) = self.key_row(ui, b, conflicts.get(b.id), label_w) {
-                                    act = Some(a);
-                                }
-                            }
+                        let (shown, a) = self.key_binding_rows(ui, &filter);
+                        if a.is_some() {
+                            act = a;
                         }
                         if shown == 0 {
                             ui.add_space(14.0);
@@ -201,9 +186,59 @@ impl State {
                     });
             });
         if let Some((id, params)) = act {
-            self.keys_ui.message = None;
-            self.run(id, &params);
+            self.run_key_action(id, &params);
         }
+    }
+
+    /// Whether any binding's name, key or menu has every word of `filter` (lowercase).
+    pub(super) fn any_binding_matches(&self, filter: &str) -> bool {
+        (self.session.key_bindings().iter()).any(|b| matches(b, filter))
+    }
+
+    /// Run what a binding's row asked for, forgetting the last refused key.
+    pub(super) fn run_key_action(&mut self, id: &'static str, params: &Value) {
+        self.keys_ui.message = None;
+        self.run(id, params);
+    }
+
+    /// Start drawing bindings this frame (the Keyboard shortcuts Tab, or Settings with them
+    /// embedded, #213): recording goes on, and the key pressed is taken.
+    pub(super) fn begin_key_bindings(&mut self, ui: &Ui) {
+        self.keys_ui.drawn = true;
+        self.record_key(ui);
+    }
+
+    /// The bindings `filter` (lowercase) matches, under their menus' headings. Returns how
+    /// many are shown and what a row asked for.
+    pub(super) fn key_binding_rows(
+        &mut self,
+        ui: &mut Ui,
+        filter: &str,
+    ) -> (usize, Option<(&'static str, Value)>) {
+        let bindings = self.session.key_bindings();
+        let conflicts = self.session.key_conflicts();
+        let mut act = None;
+        let mut shown = 0;
+        // The command column narrows in a narrow Panel, then goes above.
+        let room = ui.available_width() - KEY_W - REST_W;
+        let label_w = (room >= MIN_LABEL_W).then_some(room.min(LABEL_W));
+        for group in key_binding_groups() {
+            let rows: Vec<&KeyBinding> = (bindings.iter())
+                .filter(|b| b.group == group && matches(b, filter))
+                .collect();
+            if rows.is_empty() {
+                continue;
+            }
+            ui.add_space(14.0);
+            section(ui, group);
+            for b in rows {
+                shown += 1;
+                if let Some(a) = self.key_row(ui, b, conflicts.get(b.id), label_w) {
+                    act = Some(a);
+                }
+            }
+        }
+        (shown, act)
     }
 
     /// One binding: its name, its shortcut (click to record), Clear and Reset, and under it

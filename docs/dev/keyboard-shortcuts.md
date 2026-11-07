@@ -3,7 +3,8 @@
 **Help → Keyboard shortcuts** opens one Keyboard shortcuts Tab: every Keyboard shortcut,
 grouped by menu, with a Filter box in the Tab's header. Clicking a shortcut records the next
 key pressed; Clear leaves the command without a key; Reset restores its default; Reset all
-restores every default. The user's own keys are kept in the User database and apply at once:
+restores every default. The same list is embedded in Settings (#213, `docs/dev/settings.md`),
+filtered by its search, with Reset beside the section running Reset all. The user's own keys are kept in the User database and apply at once:
 the menus, tooltips, the Launchers and the key handling all read them.
 
 ## What is listed
