@@ -465,17 +465,84 @@ fn spans_know_their_delimiter_and_code_and_links_have_none() {
 }
 
 #[test]
-fn note_code_blocks_are_read_from_indent_and_fences() {
-    let cases: &[(&str, &[&str])] = &[
-        ("    **faith**", &["**faith**"]),
-        ("-     **faith**", &["**faith**"]),
-        ("- a\n\n      **x**\n      y", &["**x**\ny"]),
-        ("```\n**x**\n```", &["**x**\n"]),
-        ("> ```\n> a\n>\n> b\n> ```", &["a\n\nb\n"]),
-        ("a\n    b", &[]),
-        ("`a` **b**", &[]),
-    ];
-    for &(body, want) in cases {
-        assert_eq!(note_code_blocks(body), want, "{body:?}");
+fn note_shown_reads_text_and_marks_between_breaks() {
+    let text = |t: &str, marks: &[NoteShownMark]| NoteShown::Text {
+        text: t.into(),
+        marks: marks.to_vec(),
+    };
+    let br = NoteShown::Break;
+    use NoteShownMark::{Bold, CodeBlock, CodeSpan, Italic, Link};
+    assert_eq!(
+        note_shown("a **b *c***\n\n- [d](<Rom 5:8>) `e`"),
+        [
+            text("a ", &[]),
+            text("b ", &[Bold]),
+            text("c", &[Bold, Italic]),
+            br.clone(),
+            text("d", &[Link("Rom 5:8".into())]),
+            text(" ", &[]),
+            text("e", &[CodeSpan]),
+        ]
+    );
+    // Bold cut at a line break, or a paragraph made items: the same runs.
+    for body in [
+        "**a\nb**",
+        "**a**\n**b**",
+        "- **a**\n- **b**",
+        "> **a**\n>\n> **b**",
+    ] {
+        assert_eq!(
+            note_shown(body),
+            [text("a", &[Bold]), br.clone(), text("b", &[Bold])],
+            "{body:?}"
+        );
+    }
+    // Indented code is code: its `**` shows as typed.
+    assert_eq!(
+        note_shown("-     **faith**"),
+        [text("**faith**", &[CodeBlock])]
+    );
+    assert_ne!(note_shown("-     **faith**"), note_shown("1. **faith**"));
+    // A link reference definition shows nothing, but its link has its target.
+    assert_eq!(
+        note_shown("[x]\n\n[x]: u"),
+        [text("x", &[Link("u".into())])]
+    );
+}
+
+#[test]
+fn note_unformattable_is_every_block_that_is_not_simple() {
+    let parts = |body: &str| -> Vec<String> {
+        note_unformattable(body)
+            .into_iter()
+            .map(|r| body[r].to_string())
+            .collect()
+    };
+    let none: &[&str] = &[];
+    for body in [
+        "a\nb",
+        "# a\n\nb\n===",
+        "> a\n> b",
+        "- a\n  - b\n\n    more\n- c",
+        "1. a\n\n   b",
+        "`a` **b** [c](u) <i>d</i>",
+    ] {
+        assert_eq!(parts(body), none, "{body:?}");
+    }
+    for (body, want) in [
+        ("-     **faith**", &["-     **faith**"][..]),
+        ("a\n\n    code", &["code"]),
+        ("```\nx\n```\na", &["```\nx\n```"]),
+        ("<div>\nx\n</div>", &["<div>\nx\n</div>"]),
+        ("a\n\n***", &["***"]),
+        ("> - a", &["> - a"]),
+        ("> > a", &["> > a"]),
+        ("- # a", &["- # a"]),
+        ("- > a", &["- > a"]),
+        ("- a\n  - b\n    - c", &["- a\n  - b\n    - c"]),
+        ("[x]\n\n[x]: u", &["[x]: u"]),
+        ("[x]: u\n[x]: v", &["[x]: u", "[x]: v"]),
+    ] {
+        assert_eq!(parts(body), want, "{body:?}");
     }
 }

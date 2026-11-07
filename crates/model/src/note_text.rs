@@ -466,25 +466,302 @@ pub fn note_spans(body: &str) -> Vec<NoteSpan> {
     out
 }
 
-/// The text of each code block (indented or fenced) of `body`, in order: what it shows, as
-/// typed. Whether a code block's line is code is read from its indent or fences, so a change
-/// to the blocks around it can change what it shows; the Note editor makes no change that
-/// changes this list.
-pub fn note_code_blocks(body: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut open: Option<String> = None;
+/// A run of what a Note shows, as its CommonMark parse reads it: the Note editor's check
+/// that a change shows the same text, formatted the same ([`note_shown`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NoteShown {
+    /// Text, with what it is in or marked with (sorted, each once).
+    Text {
+        text: String,
+        marks: Vec<NoteShownMark>,
+    },
+    /// A line break, or a block's start or end.
+    Break,
+}
+
+/// What a [`NoteShown`] run of text is in, or marked with.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum NoteShownMark {
+    Bold,
+    Italic,
+    /// A link to its target, as the parser read it.
+    Link(String),
+    /// An image's text, the image's address.
+    Image(String),
+    /// A code span's text.
+    CodeSpan,
+    /// A code block's text (indented or fenced).
+    CodeBlock,
+    /// Raw HTML, shown as typed.
+    Html,
+}
+
+/// What `body` shows, as runs of text with their marks between breaks: adjacent text
+/// marked the same is one run, breaks next to each other are one, and white space at a
+/// break (outside code and HTML) is left out, as a block's edges do not show it. Two bodies
+/// with the same runs show the same text, formatted the same, line breaks and blocks
+/// (lists, quotes, headings) aside.
+pub fn note_shown(body: &str) -> Vec<NoteShown> {
+    note_shown_except(body, |_| false)
+}
+
+/// [`note_shown`] with the marks `except` picks taken off first (text marked only so is
+/// plain text, joined with the text around it): what a change that puts in or takes off
+/// such marks must keep.
+pub fn note_shown_except(body: &str, except: impl Fn(&NoteShownMark) -> bool) -> Vec<NoteShown> {
+    let mut raw: Vec<NoteShown> = Vec::new();
+    // What the text being read is in, innermost last; `None` for a block or a tag that
+    // marks nothing.
+    let mut open: Vec<Option<NoteShownMark>> = Vec::new();
+    let marks = |open: &[Option<NoteShownMark>], with: Option<NoteShownMark>| {
+        let mut m: Vec<NoteShownMark> = open
+            .iter()
+            .flatten()
+            .cloned()
+            .chain(with)
+            .filter(|m| !except(m))
+            .collect();
+        m.sort();
+        m.dedup();
+        m
+    };
     for event in Parser::new_ext(body, Options::empty()) {
-        match event {
-            Event::Start(Tag::CodeBlock(_)) => open = Some(String::new()),
-            Event::End(TagEnd::CodeBlock) => out.extend(open.take()),
-            Event::Text(t) => {
-                if let Some(code) = open.as_mut() {
-                    code.push_str(&t);
+        let run = match event {
+            Event::Start(tag) => {
+                let (mark, block) = match tag {
+                    Tag::Emphasis => (Some(NoteShownMark::Italic), false),
+                    Tag::Strong => (Some(NoteShownMark::Bold), false),
+                    Tag::Link { dest_url, .. } => {
+                        (Some(NoteShownMark::Link(dest_url.to_string())), false)
+                    }
+                    Tag::Image { dest_url, .. } => {
+                        (Some(NoteShownMark::Image(dest_url.to_string())), false)
+                    }
+                    Tag::CodeBlock(_) => (Some(NoteShownMark::CodeBlock), true),
+                    Tag::HtmlBlock => (Some(NoteShownMark::Html), true),
+                    _ => (None, true),
+                };
+                open.push(mark);
+                if block {
+                    raw.push(NoteShown::Break);
                 }
+                continue;
             }
-            _ => {}
+            Event::End(tag) => {
+                open.pop();
+                if !matches!(
+                    tag,
+                    TagEnd::Emphasis | TagEnd::Strong | TagEnd::Link | TagEnd::Image
+                ) {
+                    raw.push(NoteShown::Break);
+                }
+                continue;
+            }
+            Event::Text(t) => (t, None),
+            Event::Code(t) => (t, Some(NoteShownMark::CodeSpan)),
+            Event::Html(t) | Event::InlineHtml(t) => (t, Some(NoteShownMark::Html)),
+            _ => {
+                raw.push(NoteShown::Break);
+                continue;
+            }
+        };
+        raw.push(NoteShown::Text {
+            text: run.0.to_string(),
+            marks: marks(&open, run.1),
+        });
+    }
+    shown_runs(raw)
+}
+
+/// [`note_shown`]'s runs: merged, white space at breaks left out, one break between runs.
+fn shown_runs(raw: Vec<NoteShown>) -> Vec<NoteShown> {
+    let verbatim = |m: &[NoteShownMark]| {
+        m.iter().any(|m| {
+            matches!(
+                m,
+                NoteShownMark::CodeSpan | NoteShownMark::CodeBlock | NoteShownMark::Html
+            )
+        })
+    };
+    // Merged, with one break between runs of text.
+    let mut merged: Vec<NoteShown> = Vec::new();
+    for r in raw {
+        match (merged.last_mut(), r) {
+            (Some(NoteShown::Break), NoteShown::Break) | (None, NoteShown::Break) => {}
+            (Some(NoteShown::Text { text, marks }), NoteShown::Text { text: t, marks: m })
+                if *marks == m =>
+            {
+                text.push_str(&t)
+            }
+            (_, r) => merged.push(r),
         }
     }
+    // White space at a break, outside code and HTML, is not shown.
+    let n = merged.len();
+    for i in 0..n {
+        let before = i == 0 || merged[i - 1] == NoteShown::Break;
+        let after = i + 1 == n || merged[i + 1] == NoteShown::Break;
+        if let NoteShown::Text { text, marks } = &mut merged[i]
+            && !verbatim(marks)
+        {
+            if after {
+                text.truncate(text.trim_end().len());
+            }
+            if before {
+                *text = text.trim_start().to_string();
+            }
+        }
+    }
+    let mut out: Vec<NoteShown> = Vec::new();
+    for r in merged {
+        match r {
+            NoteShown::Text { text, .. } if text.is_empty() => {}
+            NoteShown::Break if matches!(out.last(), None | Some(NoteShown::Break)) => {}
+            r => out.push(r),
+        }
+    }
+    if out.last() == Some(&NoteShown::Break) {
+        out.pop();
+    }
+    out
+}
+
+/// A block of a Note, as its CommonMark parse reads it ([`note_outline`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NoteBlockKind {
+    Paragraph,
+    Heading(u8),
+    Quote,
+    /// A list: numbered from its first number, or bulleted (`None`).
+    List(Option<u64>),
+    Item,
+    Code,
+    Html,
+    Rule,
+}
+
+/// Every block of `body` in order, each with how deep it is (0 for a top-level block): the
+/// blocks a change that only marks text (bold, italic, a link) must leave as they are.
+pub fn note_outline(body: &str) -> Vec<(usize, NoteBlockKind)> {
+    let mut out = Vec::new();
+    // Whether each open tag is a block.
+    let mut open: Vec<bool> = Vec::new();
+    for event in Parser::new_ext(body, Options::empty()) {
+        let depth = open.iter().filter(|b| **b).count();
+        let kind = match event {
+            Event::Start(tag) => {
+                let kind = match tag {
+                    Tag::Paragraph => Some(NoteBlockKind::Paragraph),
+                    Tag::Heading { level, .. } => Some(NoteBlockKind::Heading(level as u8)),
+                    Tag::BlockQuote(_) => Some(NoteBlockKind::Quote),
+                    Tag::List(first) => Some(NoteBlockKind::List(first)),
+                    Tag::Item => Some(NoteBlockKind::Item),
+                    Tag::CodeBlock(_) => Some(NoteBlockKind::Code),
+                    Tag::HtmlBlock => Some(NoteBlockKind::Html),
+                    _ => None,
+                };
+                open.push(kind.is_some());
+                kind
+            }
+            Event::End(_) => {
+                open.pop();
+                None
+            }
+            Event::Rule => Some(NoteBlockKind::Rule),
+            _ => None,
+        };
+        out.extend(kind.map(|k| (depth, k)));
+    }
+    out
+}
+
+/// The parts of `body` the Note editor's formats do not act on: each top-level block that
+/// is not simple, and each line that is no block's (a link reference definition). Simple
+/// is a paragraph or heading; a block quote of paragraphs; a list whose items hold
+/// paragraphs and, one level down, a list whose items hold paragraphs. Anything else (an
+/// indented or fenced code block, raw HTML, a rule, a quote or heading inside a list or
+/// quote, a list nested deeper) reads its lines in ways a marker put in or taken out could
+/// change, so the formats leave it as it is.
+pub fn note_unformattable(body: &str) -> Vec<Range<usize>> {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Block {
+        Quote,
+        List,
+        Item,
+        Leaf,
+        Inline,
+    }
+    let parser = Parser::new_ext(body, Options::empty());
+    let definitions: Vec<Range<usize>> = parser
+        .reference_definitions()
+        .iter()
+        .map(|(_, d)| d.span.clone())
+        .collect();
+    let mut out = Vec::new();
+    let mut tops: Vec<Range<usize>> = Vec::new();
+    let mut open: Vec<Block> = Vec::new();
+    for (event, r) in parser.into_offset_iter() {
+        let blocks: Vec<Block> = open
+            .iter()
+            .copied()
+            .filter(|b| *b != Block::Inline)
+            .collect();
+        let (simple, kind) = match &event {
+            Event::Start(tag) => match tag {
+                Tag::Paragraph => (
+                    matches!(
+                        blocks.as_slice(),
+                        [] | [Block::Quote]
+                            | [Block::List, Block::Item]
+                            | [Block::List, Block::Item, Block::List, Block::Item]
+                    ),
+                    Block::Leaf,
+                ),
+                Tag::Heading { .. } => (blocks.is_empty(), Block::Leaf),
+                Tag::BlockQuote(_) => (blocks.is_empty(), Block::Quote),
+                Tag::List(_) => (
+                    matches!(blocks.as_slice(), [] | [Block::List, Block::Item]),
+                    Block::List,
+                ),
+                Tag::Item => (true, Block::Item),
+                Tag::Emphasis | Tag::Strong | Tag::Link { .. } | Tag::Image { .. } => {
+                    (true, Block::Inline)
+                }
+                _ => (false, Block::Leaf),
+            },
+            Event::End(_) => {
+                open.pop();
+                continue;
+            }
+            Event::Rule => (false, Block::Leaf),
+            _ => (true, Block::Inline),
+        };
+        if blocks.is_empty() && kind != Block::Inline {
+            tops.push(r.clone());
+        }
+        if !simple {
+            out.push(tops.last().filter(|t| t.end >= r.end).cloned().unwrap_or(r));
+        }
+        if matches!(event, Event::Start(_)) {
+            open.push(kind);
+        }
+    }
+    // A link reference definition: the block it is in, or its own lines.
+    for d in definitions {
+        let top = tops.iter().find(|t| t.start <= d.start && d.end <= t.end);
+        out.push(top.cloned().unwrap_or(d));
+    }
+    // A line with text that no block reads (one of several definitions with one label).
+    let mut start = 0;
+    for line in body.split('\n') {
+        let r = start..start + line.len();
+        start = r.end + 1;
+        if !line.trim().is_empty() && !tops.iter().any(|t| t.start < r.end && r.start < t.end) {
+            out.push(r);
+        }
+    }
+    out.sort_by_key(|r| (r.start, r.end));
+    out.dedup();
     out
 }
 

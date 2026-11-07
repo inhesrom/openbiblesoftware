@@ -1603,7 +1603,7 @@ fn the_note_editor_buttons_are_off_over_a_code_span_or_link_across_lines_or_part
 }
 
 #[test]
-fn the_note_editor_buttons_are_off_where_they_would_change_a_code_block() {
+fn the_note_editor_buttons_are_off_in_a_block_that_is_not_simple() {
     // Review repro (#186): the item's text is indented code showing `**faith**` as typed; a
     // `1. ` marker in its place would make it bold `faith`.
     let dir = folder("editor-code-block");
@@ -1638,7 +1638,7 @@ fn the_note_editor_buttons_are_off_where_they_would_change_a_code_block() {
     };
     press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
     h.frames(2);
-    const CHANGES_CODE_BLOCK: &str = "Selection touches a code block this would change";
+    const FORMAT_NOT_HERE: &str = "This formatting can't be applied here";
     let every = ["B", "I", "H", "•", "1.", "“”", "🔗"];
     let off: Vec<_> = h
         .tree
@@ -1656,7 +1656,7 @@ fn the_note_editor_buttons_are_off_where_they_would_change_a_code_block() {
     assert_eq!(off.len(), 7, "{off:?}");
     for (label, disabled, description) in &off {
         assert!(disabled, "{label}");
-        assert_eq!(description.as_deref(), Some(CHANGES_CODE_BLOCK), "{label}");
+        assert_eq!(description.as_deref(), Some(FORMAT_NOT_HERE), "{label}");
     }
     for b in ["1.", "•", "“”", "H"] {
         press_key(&mut h, egui::Key::A, Modifiers::COMMAND);

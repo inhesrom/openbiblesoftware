@@ -19,10 +19,14 @@
 //!   re-aligned: one the selection takes in whole is copied as typed; while the selection (or
 //!   the cursor) is partly in one, every button is off ([`PARTLY_COVERS_SPAN`]), and while a
 //!   change would cut one at a line break, that button is off ([`SPAN_ACROSS_LINES`]). Then the
-//!   text stays as it is, byte for byte ([`format_blocked`]). A code block is opaque too: a
-//!   button whose change would make a code block show other text, or turn its code into
-//!   formatted text (a list marker on an indented code line), is off
-//!   ([`CHANGES_CODE_BLOCK`]). A link target goes between `<` and `>`.
+//!   text stays as it is, byte for byte ([`format_blocked`]). A link target goes between `<`
+//!   and `>`.
+//! - **Safety net** around every change the toolbar or a shortcut makes: it acts only on
+//!   simple blocks (paragraphs, headings, quotes of paragraphs, lists of paragraphs one level
+//!   deep, [`obs_model::note_unformattable`]), and the change is made only when the Note,
+//!   read again, shows the same text, formatted the same, but for the mark asked for
+//!   ([`shows_as_intended`]). Otherwise the button is off ([`FORMAT_NOT_HERE`]) and the text
+//!   stays as it is, byte for byte.
 //! - **Shortcuts**: Ctrl+B and Ctrl+I (Cmd on macOS). Typing `- `, `1. ` or `> ` at the start
 //!   of a line starts a list or quote; Enter in an item continues it (the next number), and
 //!   Enter in an empty item ends it.
@@ -266,8 +270,40 @@ fn byte_at(s: &str, c: usize) -> usize {
 
 /// What Enter does at char `at` of `text`, if it is in a list item or quote line (as the
 /// Note's CommonMark parse reads it) past its marker: the new text and cursor. The next line
-/// gets the line's marker as typed, a numbered item's number one more.
+/// gets the line's marker as typed, a numbered item's number one more. Behind the safety net
+/// (module docs): not in a block that is not simple, and only when the Note, read again,
+/// shows the same text, formatted the same, line breaks and white space aside (Enter puts
+/// in a line break); otherwise Enter is the field's own.
 pub(super) fn list_continuation(text: &str, at: usize) -> Option<(String, Range<usize>)> {
+    let b = byte_at(text, at);
+    let line = touched_lines(text, b, b).remove(0);
+    if in_unformattable(&obs_model::note_unformattable(text), &line) {
+        return None;
+    }
+    let (new, sel) = continued(text, at)?;
+    (shown_chars(text) == shown_chars(&new)).then_some((new, sel))
+}
+
+/// What `text` shows, character by character with its marks, line breaks and white space
+/// left out.
+fn shown_chars(text: &str) -> Vec<(char, Vec<obs_model::NoteShownMark>)> {
+    obs_model::note_shown(text)
+        .into_iter()
+        .filter_map(|r| match r {
+            obs_model::NoteShown::Text { text, marks } => Some((text, marks)),
+            obs_model::NoteShown::Break => None,
+        })
+        .flat_map(|(text, marks)| {
+            text.chars()
+                .filter(|c| !c.is_whitespace())
+                .map(|c| (c, marks.clone()))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// [`list_continuation`] before the safety net.
+fn continued(text: &str, at: usize) -> Option<(String, Range<usize>)> {
     let b = byte_at(text, at);
     let lines = obs_model::parse_note_text(text);
     let line = lines
@@ -328,11 +364,12 @@ fn formatted(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize>)
 /// link, image or autolink: they are moved whole or not at all.
 pub(super) const PARTLY_COVERS_SPAN: &str = "Selection partly covers a code span or link";
 
-/// Why a format is off when it would change what a code block shows: a code block's lines
-/// are code by their indent or fences, so a list, quote or heading marker put on one (or one
-/// taken off a block around it), or a mark typed in it, would turn code into formatted text
-/// or change its text.
-pub(super) const CHANGES_CODE_BLOCK: &str = "Selection touches a code block this would change";
+/// Why a format is off where the safety net stops it: the selection touches a block that
+/// is not simple ([`obs_model::note_unformattable`]: code, raw HTML, a rule, a link
+/// reference definition, a quote or heading inside a list or quote, a list nested deeper
+/// than one level), or the change would show other text or formatting than asked for
+/// ([`shows_as_intended`]).
+pub(super) const FORMAT_NOT_HERE: &str = "This formatting can't be applied here";
 
 /// Why `f` is off for the selection `sel` (char indices) of `text`, if it is; then
 /// [`apply_format`] leaves the text as it is, byte for byte. A code span, link, image or
@@ -340,10 +377,10 @@ pub(super) const CHANGES_CODE_BLOCK: &str = "Selection touches a code block this
 /// one without taking it in whole, or a cursor inside one, turns every format off
 /// ([`PARTLY_COVERS_SPAN`]). One taken in whole is copied as typed. A format that would cut
 /// one at a line break (Bold or Italic, a mark on each line; list, quote or heading, a block
-/// boundary) is off too ([`SPAN_ACROSS_LINES`]), as is a link over lines. A code block is
-/// opaque as well: a format whose change would make any code block of the Note
-/// ([`obs_model::note_code_blocks`]) show other text, or no longer be code, is off
-/// ([`CHANGES_CODE_BLOCK`]).
+/// boundary) is off too ([`SPAN_ACROSS_LINES`]), as is a link over lines. Past those, the
+/// safety net: `f` is off ([`FORMAT_NOT_HERE`]) where the lines it acts on touch a block that
+/// is not simple ([`touches_unformattable`]), or where its change, read again, does not show
+/// as intended ([`shows_as_intended`]).
 pub(super) fn format_blocked(text: &str, sel: Range<usize>, f: Format) -> Option<&'static str> {
     let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
     let spans = obs_model::note_spans(text);
@@ -372,9 +409,162 @@ pub(super) fn format_blocked(text: &str, sel: Range<usize>, f: Format) -> Option
     if why.is_some() {
         return why;
     }
-    let (new, _) = formatted(text, sel, f);
-    (obs_model::note_code_blocks(&new) != obs_model::note_code_blocks(text))
-        .then_some(CHANGES_CODE_BLOCK)
+    if touches_unformattable(text, sel.clone(), f) {
+        return Some(FORMAT_NOT_HERE);
+    }
+    let (new, r) = formatted(text, sel.clone(), f);
+    let shows = if sel.is_empty() && matches!(f, Format::Bold | Format::Italic | Format::Link) {
+        // Marks (or a link) with nothing in them yet, the cursor between: read as if a
+        // character were typed there, as it will be.
+        let typed = |t: &str, at: usize| {
+            let at = byte_at(t, at);
+            format!("{}x{}", &t[..at], &t[at..])
+        };
+        shows_as_intended(&typed(text, sel.start), &typed(&new, r.start), f)
+    } else {
+        shows_as_intended(text, &new, f)
+            && lines_as_intended(text, sel, f, &new, r.clone())
+            && marked_as_intended(&new, r, f)
+    };
+    (!shows).then_some(FORMAT_NOT_HERE)
+}
+
+/// Whether Bold or Italic left the selection `r` (char indices) of `new` all marked so, or
+/// (taken off) none of it: each character it shows, white space aside. Delimiters next to
+/// `*` or `_` typed as text can read otherwise: `**a` made italic reads as `**` then *a*.
+fn marked_as_intended(new: &str, r: Range<usize>, f: Format) -> bool {
+    let kind = match f {
+        Format::Bold => NoteMarkKind::Bold,
+        Format::Italic => NoteMarkKind::Italic,
+        _ => return true,
+    };
+    let (a, b) = (byte_at(new, r.start), byte_at(new, r.end));
+    let mut marked = Vec::new();
+    for line in obs_model::parse_note_text(new) {
+        let on = a.max(line.source.start)..b.min(line.source.end);
+        if on.start >= on.end {
+            continue;
+        }
+        let shown = line.text_range(on);
+        for (k, c) in line.text[shown.clone()].char_indices() {
+            if !c.is_whitespace() {
+                let at = shown.start + k;
+                marked.push(
+                    line.marks
+                        .iter()
+                        .any(|m| m.kind == kind && m.range.contains(&at)),
+                );
+            }
+        }
+    }
+    marked.iter().all(|m| *m) || marked.iter().all(|m| !*m)
+}
+
+/// Whether the lines a list, quote or heading change `f` on `sel` of `old` rewrote (`r` of
+/// `new`, char indices) read, parsed again, as `f` asks: each one an item of the list, or
+/// a quote, or none when `f` took it off (every line already was); the heading's line one
+/// level smaller (`#` after text, text after `###`). A line can read otherwise: a line
+/// taken out of a quote reads as the quote's text when it follows on from it.
+fn lines_as_intended(old: &str, sel: Range<usize>, f: Format, new: &str, r: Range<usize>) -> bool {
+    let is = |k: NoteLineKind| match f {
+        Format::Bullet => matches!(k, NoteLineKind::Bullet { .. }),
+        Format::Numbered => matches!(k, NoteLineKind::Numbered { .. }),
+        Format::Quote => k == NoteLineKind::Quote,
+        _ => false,
+    };
+    let before = obs_model::parse_note_text(old);
+    let after = obs_model::parse_note_text(new);
+    let (a, b) = (byte_at(new, r.start), byte_at(new, r.end));
+    if f == Format::Heading {
+        // A heading's kind is its first line's (a setext heading's underline is a gap).
+        let line = |lines: &[obs_model::NoteLine], at: usize| {
+            let l = lines
+                .iter()
+                .find(|l| l.source.start <= at && at <= l.source.end)?;
+            let from = l.heading.as_ref().map_or(at, |h| h.source.start);
+            lines
+                .iter()
+                .find(|l| l.source.start <= from && from <= l.source.end)
+                .map(|l| l.kind)
+        };
+        let want = match line(&before, byte_at(old, sel.start)) {
+            Some(NoteLineKind::Heading(n)) if n < 3 => NoteLineKind::Heading(n + 1),
+            Some(NoteLineKind::Heading(_)) => NoteLineKind::Text,
+            _ => NoteLineKind::Heading(1),
+        };
+        let got = line(&after, a);
+        return got == Some(want)
+            || (want == NoteLineKind::Text && got == Some(NoteLineKind::Blank));
+    }
+    if !matches!(f, Format::Bullet | Format::Numbered | Format::Quote) {
+        return true;
+    }
+    let (first, last, _) = rewritten_lines(old, &before, sel, f);
+    let off = before[first..=last].iter().all(|l| is(l.kind));
+    after
+        .iter()
+        .filter(|l| l.kind != NoteLineKind::Blank && l.source.start <= b && a <= l.source.end)
+        .all(|l| is(l.kind) != off)
+}
+
+/// Whether the lines `f` on `sel` (char indices) acts on touch a part of `text` that is not
+/// a simple block ([`obs_model::note_unformattable`]): Bold, Italic and Link, each line the
+/// selection touches; a list, quote or heading, the lines it rewrites.
+fn touches_unformattable(text: &str, sel: Range<usize>, f: Format) -> bool {
+    let unformattable = obs_model::note_unformattable(text);
+    if unformattable.is_empty() {
+        return false;
+    }
+    let lines: Vec<Range<usize>> = match f {
+        Format::Bold | Format::Italic | Format::Link => {
+            touched_lines(text, byte_at(text, sel.start), byte_at(text, sel.end))
+        }
+        _ => {
+            let parsed = obs_model::parse_note_text(text);
+            let (first, last, _) = rewritten_lines(text, &parsed, sel, f);
+            parsed[first..=last]
+                .iter()
+                .map(|l| l.source.clone())
+                .collect()
+        }
+    };
+    lines.iter().any(|l| in_unformattable(&unformattable, l))
+}
+
+/// Whether the line `line` (bytes, without its line break) is in any of `unformattable`.
+fn in_unformattable(unformattable: &[Range<usize>], line: &Range<usize>) -> bool {
+    unformattable
+        .iter()
+        .any(|u| u.start < line.end.max(line.start + 1) && line.start < u.end)
+}
+
+/// Whether `new`, `f` made on `old`, shows what `f` asks for and nothing else, read again
+/// by the parser ([`obs_model::note_shown`]): a list, quote or heading change shows the same
+/// text, formatted the same (only its blocks and line breaks change); Bold, Italic or Link
+/// the same but for bold, italic or a link with no target yet, in the same blocks
+/// ([`obs_model::note_outline`]).
+pub(super) fn shows_as_intended(old: &str, new: &str, f: Format) -> bool {
+    use obs_model::NoteShownMark as M;
+    let asked = |m: &M| match f {
+        Format::Bold => *m == M::Bold,
+        Format::Italic => *m == M::Italic,
+        Format::Link => matches!(m, M::Link(t) if t.is_empty()),
+        _ => false,
+    };
+    let inline = matches!(f, Format::Bold | Format::Italic | Format::Link);
+    if obs_model::note_shown_except(old, asked) != obs_model::note_shown_except(new, asked) {
+        return false;
+    }
+    if !inline {
+        return true;
+    }
+    // The mark asked for goes on, or comes off, but not both: bold put on around text that
+    // was bold and italic must not take its bold off.
+    let has = |c: &(char, Vec<M>)| c.1.iter().any(asked);
+    let (before, after) = (shown_chars(old), shown_chars(new));
+    let gained = before.iter().zip(&after).any(|(o, n)| !has(o) && has(n));
+    let lost = before.iter().zip(&after).any(|(o, n)| has(o) && !has(n));
+    !(gained && lost) && obs_model::note_outline(old) == obs_model::note_outline(new)
 }
 
 /// The selected part of each line the selection `a..b` (bytes) touches, by line of `lines`
@@ -1139,10 +1329,15 @@ mod tests {
                 assert_eq!(back, text, "{new:?} {sel:?} {f:?}");
             }
         }
-        // Inside a word the reference is still wrapped whole, never cut (CommonMark reads
-        // `**` before the `&` there as literal, as before any punctuation inside a word).
-        let (new, _) = applied("caf&eacute;", "acu", Format::Bold);
-        assert_eq!(new, "caf**&eacute;**");
+        // Inside a word, `**` before the `&` would read as literal (as before any
+        // punctuation inside a word): read again, it would not show bold, so Bold is off
+        // and the reference is never cut.
+        let text = "caf&eacute;";
+        assert_eq!(
+            format_blocked(text, chars(text, "acu"), Format::Bold),
+            Some(FORMAT_NOT_HERE)
+        );
+        assert_eq!(applied(text, "acu", Format::Bold).0, text);
     }
 
     #[test]
@@ -1484,9 +1679,12 @@ mod tests {
         let (new, _) = applied("1. x\n   - y\nz", "z", Format::Numbered);
         assert_eq!(new, "1. x\n   - y\n2. z");
         // A parent that stops being an item: its nested items move out, not to text.
-        let text = "- a\n  - b\n    - c\n  - d\n- e";
+        let text = "- a\n  - b\n  - c\n- d";
         let (new, _) = applied(text, "a", Format::Bullet);
-        assert_eq!(new, "a\n- b\n  - c\n- d\n- e");
+        assert_eq!(new, "a\n- b\n- c\n- d");
+        // Nested deeper than one level, the list is not a simple block: off.
+        let text = "- a\n  - b\n    - c\n  - d\n- e";
+        assert_eq!(applied(text, "a", Format::Bullet).0, text);
         let (new, _) = applied("- a\n  - b", "a", Format::Quote);
         assert_eq!(new, "> a\n- b");
         let levels: Vec<_> = obs_model::parse_note_text(&new)
@@ -1696,10 +1894,12 @@ mod tests {
     }
 
     #[test]
-    fn a_format_that_would_change_a_code_block_is_off() {
-        // A code block's lines are code by their indent or fences: a marker put on one, or
-        // a block around it changed, could turn its code into formatted text (#186 review).
-        let off = Some(CHANGES_CODE_BLOCK);
+    fn formats_act_only_on_simple_blocks() {
+        // The safety net (#186 review): a code block, raw HTML, a rule, a link reference
+        // definition, a quote or heading inside a list or quote, or a list nested deeper
+        // than one level, reads its lines in ways a marker put in or taken out could
+        // change; every format that touches one is off and the Note stays as it is.
+        let off = Some(FORMAT_NOT_HERE);
         // Review repro: the item's text is an indented code block showing `**faith**` as
         // typed; a `1. ` marker in place of `- ` would make it bold `faith`.
         let text = "-     **faith**";
@@ -1710,7 +1910,6 @@ mod tests {
         );
         let line = obs_model::parse_note_text(text).remove(0);
         assert_eq!((line.text.as_str(), line.marks.len()), ("**faith**", 0));
-        assert_eq!(obs_model::note_code_blocks(text), ["**faith**"]);
         // (Note, selection, format): each off, the Note left byte for byte.
         let cases: &[(&str, Range<usize>, Format)] = &[
             ("-     **faith**", 3..3, Format::Bullet),
@@ -1718,20 +1917,36 @@ mod tests {
             ("-     **faith**", 3..3, Format::Heading),
             ("    **faith**", 0..0, Format::Bullet),
             ("    **faith**", 0..0, Format::Quote),
-            // The text above it becoming an item would take it in as the item's paragraph.
+            // Read again, the text above becoming an item would take the code in as the
+            // item's paragraph.
             ("a\n\n    **x**", 0..0, Format::Bullet),
             ("a\n\n    **x**", 0..0, Format::Numbered),
             // Fences are lines of their own: a marker on one ends the block.
             ("```\n**x**\n```", 0..0, Format::Bullet),
             ("```\n**x**\n```", 0..13, Format::Numbered),
             ("```\n**x**\n```", 4..4, Format::Heading),
-            // Inside its item a fenced block keeps its place only as the item's.
+            // Items and quotes holding code.
             ("- a\n  ```\n  **x**\n  ```", 2..2, Format::Numbered),
+            ("- a\n\n      **x**", 2..2, Format::Numbered),
+            ("- a\n\n      **x**", 2..2, Format::Quote),
+            ("> a\n>\n>     **x**", 0..0, Format::Bullet),
             // A mark or link typed in code shows as typed: its text would change.
             ("```\n**x**\n```", 4..9, Format::Bold),
             ("    faith", 4..9, Format::Italic),
             ("    faith", 6..6, Format::Bold),
             ("    faith", 4..9, Format::Link),
+            // Raw HTML, a rule, a link reference definition.
+            ("<div>\nfaith\n</div>", 6..11, Format::Bold),
+            ("<div>\nfaith\n</div>", 6..6, Format::Bullet),
+            ("faith\n\n***", 7..7, Format::Heading),
+            ("[x]\n\n[x]: u", 5..5, Format::Quote),
+            // A list in a quote, a quote or heading in an item, a list three levels deep.
+            ("> - faith", 4..9, Format::Bold),
+            ("> - faith", 4..4, Format::Numbered),
+            ("- > faith", 4..4, Format::Bullet),
+            ("- # faith", 4..9, Format::Italic),
+            ("- a\n  - b\n    - c", 0..0, Format::Bullet),
+            ("- a\n  - b\n    - c", 18..18, Format::Quote),
         ];
         for (text, sel, f) in cases {
             assert_eq!(format_blocked(text, sel.clone(), *f), off, "{text:?} {f:?}");
@@ -1741,36 +1956,16 @@ mod tests {
                 "{text:?} {f:?}"
             );
         }
-        // A change that leaves every code block as it shows is made: one nested under the
-        // item moves under the new marker's text, still code, still `**x**`.
+        // Outside those blocks the formats work: a paragraph above code, a list one level
+        // deep with paragraphs.
         for (text, sel, f, want) in [
-            (
-                "- a\n\n      **x**",
-                2..2,
-                Format::Numbered,
-                "1. a\n\n       **x**",
-            ),
-            (
-                "1. a\n\n       **x**",
-                0..0,
-                Format::Bullet,
-                "- a\n\n      **x**",
-            ),
-            (
-                "> a\n>\n>     **x**",
-                0..0,
-                Format::Bullet,
-                "- a\n>\n>     **x**",
-            ),
             ("a\n\n    **x**", 0..1, Format::Bold, "**a**\n\n    **x**"),
+            ("- a\n  - b", 8..8, Format::Numbered, "- a\n  1. b"),
+            ("- a\n\n  more", 2..2, Format::Numbered, "1. a\n\n   more"),
         ] {
             assert_eq!(format_blocked(text, sel.clone(), f), None, "{text:?} {f:?}");
             let (new, _) = apply_format(text, sel, f);
             assert_eq!(new, want, "{text:?} {f:?}");
-            assert_eq!(
-                obs_model::note_code_blocks(&new),
-                obs_model::note_code_blocks(text)
-            );
         }
     }
 
@@ -1915,13 +2110,17 @@ mod tests {
         // Not in a list, or before the marker: Enter is Enter.
         assert!(list_continuation("text", 4).is_none());
         assert!(list_continuation("- faith", 1).is_none());
-        // The parse decides what is a list: an indented code line is not one, a list in a
-        // quote continues with both markers, and a list item's marker is kept as typed.
+        // The parse decides what is a list: an indented code line is not one, and a list
+        // item's marker is kept as typed.
         assert!(list_continuation("    - code", 10).is_none());
         assert!(list_continuation("`- a`", 5).is_none());
-        let (new, _) = list_continuation("> - faith", 9).unwrap();
-        assert_eq!(new, "> - faith\n> - ");
+        // A list in a quote is not a simple block: Enter is the field's own.
+        assert!(list_continuation("> - faith", 9).is_none());
         let (new, _) = list_continuation("* faith", 7).unwrap();
         assert_eq!(new, "* faith\n* ");
     }
 }
+
+#[cfg(test)]
+#[path = "note_editor_corpus_tests.rs"]
+mod corpus_tests;

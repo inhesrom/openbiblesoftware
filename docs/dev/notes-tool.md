@@ -165,11 +165,23 @@ in one every button is off ("Selection partly covers a code span or link"), and 
 would cut one at a line break (a mark on each line, a list item or quote of its own) that
 button is off; Ctrl+B and Ctrl+I then leave the text as it is, byte for byte. A code span over
 lines shows its whole text (line breaks read as spaces) on the line it starts on: no position
-inside a code span is worked out. A code block (indented or fenced) is opaque too: its lines
-are code by their indent or fences, so a button whose change would make any code block show
-other text or stop being code (a `1. ` in place of the `- ` of an item whose text is indented
-code, a list marker on a fence, a mark typed in code) is off ("Selection touches a code block
-this would change"), checked against `note_code_blocks` before and after. A character reference (`&#233;`, `&eacute;`) is one
+inside a code span is worked out. Around every toolbar or shortcut change sits a safety net. It acts only on simple blocks
+(`note_unformattable`): paragraphs, headings, quotes holding paragraphs, and lists whose items
+hold paragraphs, one nested level deep. A selection touching anything else (indented or fenced
+code, raw HTML, a rule, a link reference definition, a quote or heading inside a list or quote,
+a list nested deeper) turns the button off with "This formatting can't be applied here", and
+Enter there is the field's own. Then the change is worked out and read again by the parser
+before it is made: what it shows (`note_shown`: text, code and marks, line breaks and blocks
+aside) must be the same, but for the mark asked for (Bold, Italic, a link with no target yet),
+and that mark only put on or only taken off, over the whole selection; Bold, Italic and Link
+must leave every block as it was (`note_outline`); a list, quote or heading change must leave
+its lines reading as asked (a line taken out of a quote that would read as the quote's lazy
+text is not). Marks put in with nothing selected are read as if a character were typed
+between them. Where the check fails the button is off with the same words and the Note stays
+byte for byte. `note_editor_corpus_tests.rs` runs every toolbar action, over every cursor
+place and many selections, on 135 tricky Notes (each review repro, and samples written after
+each section of the CommonMark spec) and checks each either shows as intended or leaves the
+Note as it was. A character reference (`&#233;`, `&eacute;`) is one
 character both ways: bold or italic on a selection that ends inside one takes in the whole
 reference. Typing `- `, `1. ` or `> `
 at a line's start starts a list or quote; Enter at the end of an item continues it (with the
