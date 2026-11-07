@@ -37,6 +37,13 @@ and is saved in the User database as before.
 | Search | Word forms | `search.word_forms {value}` | `value: false` |
 | Privacy and data | Clear History, Clear Search history | `history.clear`, `search.clear_history`, after a confirmation | — (actions) |
 
+Under the Page tone choices a line says which tone the pages are in now (#240): "Showing Dark
+pages now: Auto follows the theme." for Auto, "Showing Sepia pages in every theme. Choose Auto to
+follow the theme." for a chosen tone (`shell/page_tone.rs`, `effective_text`). The first time the
+theme turns dark over a chosen Paper or Sepia, a one-time hint offers Auto (Use Auto runs
+`view.page_tone {value: auto}`); `Session::page_tone_hint_due` remembers it was offered in the
+User database (preference `page-tone-hint`), so it never comes back, even after a restart.
+
 Actions and the library folder are not values, so they have no Reset; every other row has one,
 greyed out while the Setting is at its default.
 
@@ -66,3 +73,9 @@ or toolbar field has no Setting.
   size) and each Reset link restores the default after a restart; the embedded Keyboard
   shortcuts; Clear History asks first; keyboard-only use and AccessKit names
   (`keyboard_only_settings`, `every_tab_kind_names_its_interactive_nodes`).
+- Page tone (`page_tone_tests.rs`, #240): an open BSB Tab is on the Dark page the frame after
+  Theme → Dark (and Follow system with the OS turning dark) and on Paper the frame after
+  Light; every reading surface (Bible and Resource panes, Text Comparison, Passage Guide, Notes
+  cards, the reference popover, interlinear lines, footnote markers) in Light and Dark with
+  `UPDATE_PREVIEWS` snapshots; a chosen Paper is kept and its hint appears once; Settings shows
+  the tone in effect. Engine: `the_page_tone_hint_is_due_once_per_user_database_for_a_chosen_light_tone`.

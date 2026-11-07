@@ -16,6 +16,7 @@ use crate::floating_windows::{FloatingWindow, WindowId, WindowPlacement};
 use crate::link::{ToStandard, to_native, to_standard};
 use crate::persist::{LayoutNode, ScrollPosition, TabSnapshot, WorkspaceSnapshot};
 
+mod panel_order;
 mod recently_closed;
 pub use recently_closed::{CameBackBeside, ClosedTabs, RECENTLY_CLOSED_LIMIT, RecentlyClosed};
 
@@ -871,6 +872,14 @@ pub enum Effect {
     RestoreScroll {
         tab: TabId,
         at: ScrollPosition,
+    },
+    /// Put the keyboard on a Tab, already focused, in its Panel (Ctrl+1…9, Ctrl+Tab, #215),
+    /// where the focus ring shows it.
+    KeyboardToTab(TabId),
+    /// Move the keyboard to the next area of the window the keys were typed in (F6), or the
+    /// previous one (Shift+F6), #215.
+    NextArea {
+        forward: bool,
     },
 }
 

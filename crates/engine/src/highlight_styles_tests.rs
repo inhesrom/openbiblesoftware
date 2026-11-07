@@ -281,7 +281,7 @@ fn renaming_recolouring_and_reordering_are_undo_steps_and_the_order_is_the_key_o
         pink.appearance,
         StyleAppearance::new(HighlightLook::Underline, Rgb::new(0xff, 0x88, 0xaa))
     );
-    // Move it first: Ctrl+1 is now Sin.
+    // Move it first: Alt+1 is now Sin.
     run(
         &mut s,
         "highlight_style.move",

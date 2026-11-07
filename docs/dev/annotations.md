@@ -114,7 +114,7 @@ or deleted).
 - **Making them.** Releasing a selection (drag, double- or triple-click) shows a floating
   toolbar above it: the active Highlight palette's swatches, `…` (Highlight styles…), ✏ Note,
   Copy and Search this. Right-click shows the same actions as a menu (on the selection under
-  the pointer, else on the clicked word). Keys: Ctrl+1…9 (the active palette's styles in its
+  the pointer, else on the clicked word). Keys: Alt+1…9 (the active palette's styles in its
   order, #181; see "Highlight styles and palettes" below), Ctrl+Shift+N
   (Note), Ctrl+Z / Ctrl+Shift+Z (undo, redo). The style and Note keys are the Selection
   keys; these are their defaults, which Help → Keyboard shortcuts changes (#177,
@@ -124,10 +124,14 @@ or deleted).
   fields use themselves (Ctrl+Z, Ctrl+Shift+Z, Esc, Alt+←/→) and the annotation keys.
   Like egui, a shortcut still matches with an extra Shift or Alt held, because some layouts
   need them for the key (Ctrl+Plus is Ctrl+Shift+= on a US keyboard; digits need Shift on
-  AZERTY). The exception is a key bound more than once with different modifiers: then Shift
-  and Alt must match exactly (`shell::extra_held`, `shell::consume_key`). So Ctrl+Shift+Z
-  never undoes, even when there is nothing to redo. The style keys Ctrl+1…9 accept an
-  extra Shift but not Alt, because Ctrl+Alt is AltGr on Windows.
+  AZERTY). The exception is a key bound more than once with the same Ctrl (or Cmd) and
+  different Shift or Alt: then Shift and Alt must match exactly (`shell::extra_held`,
+  `shell::consume_key`). So Ctrl+Shift+Z never undoes, even when there is nothing to redo.
+  Bindings that differ in Ctrl are told apart by Ctrl itself: Ctrl+1 goes to Panel 1 and
+  Alt+1 highlights (#215). The style keys Alt+1…9 accept an extra Shift, and no key on
+  Ctrl+digit (Ctrl+1…9, the Panels) accepts an extra Alt, because Ctrl+Alt is AltGr on
+  Windows, which types { [ ] } on the digits of some layouts. The style keys were Ctrl+1…9
+  until #215 gave those to the Panels.
   A Ctrl+Plus binding is also pressed as Ctrl+= (`shell::pressed_as`), so Larger text works
   without Shift; egui's own whole-window zoom keys are off, and the window zoom is the
   Interface size only (#137).

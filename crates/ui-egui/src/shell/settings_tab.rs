@@ -175,6 +175,11 @@ impl State {
                         }
                     }
                 });
+                // The tone the pages are in now, which Auto leaves to the theme (#240).
+                if command == "view.page_tone" {
+                    let tone = self.session.appearance.page_tone;
+                    muted(ui, &super::page_tone::effective_text(tone, theme::c().dark));
+                }
             }
             SettingKind::Toggle { .. } => {}
             SettingKind::TextSize => {

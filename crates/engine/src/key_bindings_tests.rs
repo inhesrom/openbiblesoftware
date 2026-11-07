@@ -145,7 +145,7 @@ fn binding_a_key_in_use_names_the_conflict_and_swap_trades_the_keys() {
     assert_eq!(s.shortcut("tab.find"), Some("Ctrl+F"));
 
     // A Selection key conflicts like a command.
-    let c = s.key_conflict("view.text_larger", "Ctrl+1").unwrap();
+    let c = s.key_conflict("view.text_larger", "Alt+1").unwrap();
     assert_eq!(c.id, "selection.highlight_1");
 }
 
@@ -361,7 +361,7 @@ fn a_saved_key_that_meets_a_default_is_flagged_on_both_bindings() {
     assert!(Session::new(JobMode::Inline).key_conflicts().is_empty());
 }
 
-/// The Highlight Selection keys follow the active palette's order (#181): Ctrl+1…9 by
+/// The Highlight Selection keys follow the active palette's order (#181): Alt+1…9 by
 /// default, and a key saved for one of the five v0.1 styles' old ids applies to its slot.
 #[test]
 fn highlight_keys_are_nine_palette_slots_and_old_saved_keys_carry_over() {
@@ -371,7 +371,7 @@ fn highlight_keys_are_nine_palette_slots_and_old_saved_keys_carry_over() {
         .map(|k| (k.default, k.action))
         .collect();
     let want: Vec<(String, SelectionAction)> = (0..STYLE_SLOTS)
-        .map(|i| (format!("Ctrl+{}", i + 1), SelectionAction::Highlight(i)))
+        .map(|i| (format!("Alt+{}", i + 1), SelectionAction::Highlight(i)))
         .collect();
     assert_eq!(
         defaults
@@ -393,7 +393,7 @@ fn highlight_keys_are_nine_palette_slots_and_old_saved_keys_carry_over() {
     let s = launch(&t.db());
     assert_eq!(s.shortcut("selection.highlight_2"), Some("F7"));
     assert_eq!(s.shortcut("selection.highlight_5"), None);
-    assert_eq!(s.shortcut("selection.highlight_1"), Some("Ctrl+1"));
-    assert_eq!(s.shortcut("selection.highlight_9"), Some("Ctrl+9"));
+    assert_eq!(s.shortcut("selection.highlight_1"), Some("Alt+1"));
+    assert_eq!(s.shortcut("selection.highlight_9"), Some("Alt+9"));
     assert!(s.key_conflicts().is_empty());
 }
