@@ -233,10 +233,11 @@ impl State {
                         }
                     }
                 }
-                Err(_) => muted(
+                Err(_) if self.session.user.is_none() => muted(
                     ui,
                     "Notebooks are kept in the User database, which is not open.",
                 ),
+                Err(e) => muted(ui, &format!("The Notebooks could not be read: {e}")),
             },
             SettingKind::HomeCards => {
                 let home = self.session.home_settings();

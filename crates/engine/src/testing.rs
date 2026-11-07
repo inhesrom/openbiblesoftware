@@ -1978,10 +1978,11 @@ pub fn tagnt_grace() -> obs_model::Resource {
     r
 }
 
-/// A User database whose preference writes, its next few History Visit writes, or its next
-/// few annotation change lists fail ("disk full"); everything else is the real `store`. For
-/// checking that a failed save is reported, not hidden, that History keeps what it could not
-/// write, and that undo keeps a step it could not write.
+/// A User database whose preference writes, its next few History Visit writes, its next
+/// few annotation change lists, or its Notebook reads fail ("disk full", "disk I/O error");
+/// everything else is the real `store`. For checking that a failed save is reported, not
+/// hidden, that History keeps what it could not write, that undo keeps a step it could not
+/// write, and that a failed read is not taken for a default.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug)]
 pub struct WritesFail {
@@ -1993,6 +1994,8 @@ pub struct WritesFail {
     /// How many annotation change lists still fail before they work again; shared, so a
     /// test can set it after the Session owns the store.
     pub changes: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    /// Every Notebook read fails.
+    pub notebooks: bool,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -2004,6 +2007,7 @@ impl WritesFail {
             preferences: true,
             visits: std::cell::Cell::new(0),
             changes: std::sync::Arc::default(),
+            notebooks: false,
         }
     }
 
@@ -2014,6 +2018,7 @@ impl WritesFail {
             preferences: false,
             visits: std::cell::Cell::new(failures),
             changes: std::sync::Arc::default(),
+            notebooks: false,
         }
     }
 
@@ -2026,9 +2031,21 @@ impl WritesFail {
             preferences: false,
             visits: std::cell::Cell::new(0),
             changes: std::sync::Arc::default(),
+            notebooks: false,
         };
         let failures = std::sync::Arc::clone(&s.changes);
         (s, failures)
+    }
+
+    /// Every Notebook read fails.
+    pub fn notebook_reads(store: obs_store::UserStore) -> Self {
+        Self {
+            store,
+            preferences: false,
+            visits: std::cell::Cell::new(0),
+            changes: std::sync::Arc::default(),
+            notebooks: true,
+        }
     }
 }
 
@@ -2128,6 +2145,9 @@ impl crate::UserData for WritesFail {
         crate::UserData::remove_reading_plan(&self.store, id)
     }
     fn notebooks(&self) -> Result<Vec<obs_store::Notebook>, String> {
+        if self.notebooks {
+            return Err("disk I/O error".into());
+        }
         crate::UserData::notebooks(&self.store)
     }
     fn notebook_counts(&self) -> Result<Vec<(String, u64)>, String> {

@@ -198,7 +198,8 @@ fn settings_are_grouped_in_section_order_with_unique_ids() {
 /// The defaults Settings resets to are the app's own defaults.
 #[test]
 fn choice_defaults_are_the_app_defaults() {
-    let mut s = Session::new(JobMode::Inline);
+    let t = Temp::new("defaults");
+    let mut s = launch(&t.db());
     for setting in SETTINGS {
         if let SettingKind::Choice { command, default } = setting.kind {
             let (choices, current) = choices(&s, command);
@@ -331,7 +332,8 @@ fn reset_restores_each_default_and_it_survives_a_restart() {
 /// Resetting a Setting already at its default changes nothing (a toggle is not flipped).
 #[test]
 fn resetting_a_default_setting_keeps_it() {
-    let mut s = Session::new(JobMode::Inline);
+    let t = Temp::new("keep");
+    let mut s = launch(&t.db());
     for setting in SETTINGS.iter().filter(|s| s.has_reset()) {
         s.run("settings.reset", &json!({ "setting": setting.id }))
             .unwrap_or_else(|e| panic!("{}: {e}", setting.id));
@@ -342,6 +344,38 @@ fn resetting_a_default_setting_keeps_it() {
             setting.id
         );
     }
+}
+
+/// Show in text's Reset reads the Notebooks: when that read fails (or there is no User
+/// database) the Reset is an error, not a success that restored nothing, and the Setting is
+/// not taken for its default.
+#[test]
+fn a_failed_notebook_read_is_not_a_default_or_a_reset() {
+    let t = Temp::new("notebook-read");
+    {
+        let mut s = launch(&t.db());
+        change(&mut s, "notebooks_in_text");
+    }
+    let (store, _) = obs_store::UserStore::open(&t.db()).unwrap();
+    let mut s = Session::new(JobMode::Inline);
+    s.attach_user(Box::new(crate::testing::WritesFail::notebook_reads(store)));
+    assert_eq!(s.setting_is_default("notebooks_in_text"), None);
+    let err = s
+        .run("settings.reset", &json!({ "setting": "notebooks_in_text" }))
+        .unwrap_err();
+    assert!(err.to_string().contains("disk I/O error"), "{err}");
+    drop(s);
+    // Nothing was restored behind the error.
+    assert_eq!(
+        launch(&t.db()).setting_is_default("notebooks_in_text"),
+        Some(false)
+    );
+    let mut none = Session::new(JobMode::Inline);
+    assert_eq!(none.setting_is_default("notebooks_in_text"), None);
+    let err = none
+        .run("settings.reset", &json!({ "setting": "notebooks_in_text" }))
+        .unwrap_err();
+    assert!(err.to_string().contains("no User database"), "{err}");
 }
 
 #[test]

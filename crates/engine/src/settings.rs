@@ -432,7 +432,8 @@ pub fn settings_matching(s: &Session, query: &str) -> Vec<&'static Setting> {
 
 impl Session {
     /// Whether a Setting has its default value, so its Reset has nothing to do. `None` for an
-    /// unknown id and for Settings without a Reset.
+    /// unknown id, for Settings without a Reset, and when the value cannot be read (Show in
+    /// text with no User database, or a failed Notebook read): unknown is not the default.
     pub fn setting_is_default(&mut self, id: &str) -> Option<bool> {
         let setting = setting_by_id(id)?;
         Some(match setting.kind {
@@ -440,9 +441,7 @@ impl Session {
             SettingKind::Toggle { default, get, .. } => get(self) == default,
             SettingKind::TextSize => self.text.size == obs_layout::TextSettings::default().size,
             SettingKind::Font(slot) => self.fonts.get(slot).is_none(),
-            SettingKind::NotebooksInText => {
-                (self.notebooks().unwrap_or_default().iter()).all(|n| n.show_in_text)
-            }
+            SettingKind::NotebooksInText => (self.notebooks().ok()?.iter()).all(|n| n.show_in_text),
             SettingKind::HomeCards => self.home.cards == crate::home::HomeSettings::default().cards,
             SettingKind::GuideSections => (Guide::ALL.into_iter()).all(|g| {
                 self.guides.arrangement(g) == crate::guide::GuideArrangement::default_for(g)
@@ -500,7 +499,8 @@ fn reset(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             s.run("view.font", &json!({ "slot": slot.id() }))?;
         }
         SettingKind::NotebooksInText => {
-            for n in s.notebooks().unwrap_or_default() {
+            // A failed read is an error, not a Reset with nothing to do.
+            for n in s.notebooks().map_err(failed)? {
                 if !n.show_in_text {
                     s.run(
                         "notebook.show_in_text",
