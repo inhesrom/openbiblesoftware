@@ -292,6 +292,9 @@ pub struct Shell {
     pub(crate) switcher: Option<keyboard_nav::TabSwitcher>,
     /// F6 (true) or Shift+F6 asked to move the keyboard to another area (#215).
     next_area: Option<bool>,
+    /// A Tab the keyboard was sent to (#215), whose OS window is brought to the front at the
+    /// end of the frame.
+    os_focus_to: Option<TabId>,
 }
 
 impl Default for Shell {
@@ -352,6 +355,7 @@ impl Shell {
             last_focused: BTreeMap::new(),
             switcher: None,
             next_area: None,
+            os_focus_to: None,
         }
     }
 
@@ -451,6 +455,7 @@ impl Shell {
                 Effect::KeyboardToTab(tab) => {
                     self.make_active(tab);
                     self.st.keyboard_to(tab);
+                    self.os_focus_to = Some(tab);
                 }
                 Effect::NextArea { forward } => self.next_area = Some(forward),
                 Effect::Float {
@@ -954,6 +959,7 @@ impl Shell {
         // drawn (#64): checked here, since the Notes Tab's own code only runs while drawn.
         self.st.notes_after_frame(ui.ctx());
         self.apply_effects();
+        self.focus_os_window(ui.ctx());
         let closing = ui.input(|i| i.viewport().close_requested());
         if closing {
             // A Note being written is saved, as if focus had left it. One that cannot be saved

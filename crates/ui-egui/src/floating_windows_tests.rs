@@ -30,6 +30,8 @@ pub(super) struct NativeWindows {
     os_theme: Option<egui::Theme>,
     /// The scale factor a new window opens at (that of the screen the system opens it on).
     open_scale: Option<f32>,
+    /// What the app asked of the main window, oldest first.
+    pub(super) root_commands: Vec<egui::ViewportCommand>,
 }
 
 /// One floating OS window.
@@ -42,7 +44,7 @@ pub(super) struct NativeWindow {
     /// How the app last asked for it to be made.
     builder: egui::ViewportBuilder,
     /// What the app asked of its window, oldest first.
-    commands: Vec<egui::ViewportCommand>,
+    pub(super) commands: Vec<egui::ViewportCommand>,
     /// The text it painted last frame.
     shapes: Vec<(Rect, String)>,
     /// What it painted last frame, and its last AccessKit tree update (when AccessKit is on).
@@ -165,16 +167,43 @@ impl NativeWindows {
 
     /// After the main window's frame, which carries what each floating window asked of its OS
     /// window: a move is made as egui-winit makes it, in points at the window's own scale.
-    pub(super) fn end_frame(&mut self, out: &egui::OrderedViewportIdMap<egui::ViewportOutput>) {
+    /// Returns the window the app brought to the front, if it asked to: that window gains the
+    /// keyboard and every other loses it, as the window system tells them.
+    pub(super) fn end_frame(
+        &mut self,
+        out: &egui::OrderedViewportIdMap<egui::ViewportOutput>,
+    ) -> Option<egui::ViewportId> {
+        let asked = |id: &egui::ViewportId| out.get(id).map(|v| v.commands.clone());
+        let mut front = None;
+        for c in asked(&egui::ViewportId::ROOT).unwrap_or_default() {
+            if c == egui::ViewportCommand::Focus {
+                front = Some(egui::ViewportId::ROOT);
+            }
+            self.root_commands.push(c);
+        }
         for (id, w) in &mut self.windows {
-            for c in out.get(id).map(|v| v.commands.clone()).unwrap_or_default() {
-                if let egui::ViewportCommand::OuterPosition(at) = c {
-                    let size = w.size();
-                    w.place(at, size);
+            for c in asked(id).unwrap_or_default() {
+                match c {
+                    egui::ViewportCommand::OuterPosition(at) => {
+                        let size = w.size();
+                        w.place(at, size);
+                    }
+                    egui::ViewportCommand::Focus => front = Some(*id),
+                    _ => {}
                 }
                 w.commands.push(c);
             }
         }
+        if let Some(front) = front {
+            for (id, w) in &mut self.windows {
+                let now = *id == front;
+                if w.info.focused != Some(now) {
+                    w.events.push(Event::WindowFocused(now));
+                }
+                w.info.focused = Some(now);
+            }
+        }
+        front
     }
 }
 

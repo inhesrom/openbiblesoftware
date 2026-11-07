@@ -88,6 +88,40 @@ fn ctrl_tab_goes_back_to_the_tab_used_before_and_walks_the_panel_most_recent_fir
 }
 
 #[test]
+fn ctrl_tab_steps_at_the_integer_extremes_wrap_without_overflow() {
+    let mut s = session();
+    let a = open(&mut s, "kjv", false);
+    open(&mut s, "web", false);
+    open(&mut s, "asv", false);
+    for id in ["tab.next_in_panel", "tab.previous_in_panel"] {
+        for steps in [i64::MIN, i64::MIN + 1, -1, i64::MAX] {
+            let focused = s.workspace.focused().unwrap_or(a);
+            let order = s.workspace.tab_switcher_order(focused);
+            let n = i64::try_from(order.len()).unwrap();
+            let down = steps.rem_euclid(n);
+            let at = if id == "tab.next_in_panel" {
+                down
+            } else {
+                (n - down) % n
+            };
+            let want = order[usize::try_from(at).unwrap()];
+            let to = focused_by_key(&mut s, id, json!({ "tab": focused.0, "steps": steps }));
+            assert_eq!(to, want, "{id} steps {steps}");
+        }
+    }
+    // i64::MIN is 1 mod 3: down the list by it is one down, up it one up.
+    let order = vec![TabId(1), TabId(2), TabId(3)];
+    assert_eq!(
+        keyboard_navigation::tab_switcher_pick(&order, i64::MIN, true),
+        Some(TabId(2))
+    );
+    assert_eq!(
+        keyboard_navigation::tab_switcher_pick(&order, i64::MIN, false),
+        Some(TabId(3))
+    );
+}
+
+#[test]
 fn ctrl_tab_stays_in_the_focused_panel() {
     let mut s = session();
     let a = open(&mut s, "kjv", false);

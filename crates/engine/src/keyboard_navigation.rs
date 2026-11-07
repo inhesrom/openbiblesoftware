@@ -34,7 +34,9 @@ fn failed(command: &'static str, message: impl ToString) -> CommandError {
 /// `steps` down it (up it without `forward`), wrapping round: the Tab to show.
 pub fn tab_switcher_pick(order: &[TabId], steps: i64, forward: bool) -> Option<TabId> {
     let n = i64::try_from(order.len()).ok().filter(|n| *n > 0)?;
-    let at = if forward { steps } else { -steps }.rem_euclid(n);
+    // Reduced before going up the list: negating `i64::MIN` would overflow.
+    let down = steps.rem_euclid(n);
+    let at = if forward { down } else { (n - down) % n };
     order.get(usize::try_from(at).ok()?).copied()
 }
 

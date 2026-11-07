@@ -72,6 +72,29 @@ impl State {
 }
 
 impl Shell {
+    /// The keyboard was sent to a Tab (Ctrl+1…9, the Tab switcher): when floating windows are
+    /// OS windows of their own, the window showing it is brought to the front and takes the
+    /// keyboard, so the keys typed next reach it. Asked once all of the frame's windows are
+    /// drawn; the main window included, for the way back.
+    pub(super) fn focus_os_window(&mut self, ctx: &egui::Context) {
+        let Some(tab) = self.os_focus_to.take() else {
+            return;
+        };
+        // Only one OS window (the web, floating windows drawn inside the main one): it has the
+        // keyboard already.
+        if !self.floating.iter().any(|d| d.native) {
+            return;
+        }
+        let viewport = match self.keys_window(tab) {
+            None => egui::ViewportId::ROOT,
+            Some(w) => match self.floating.iter().find(|d| d.id == w) {
+                Some(d) => d.viewport_id(),
+                None => return,
+            },
+        };
+        ctx.send_viewport_cmd_to(viewport, egui::ViewportCommand::Focus);
+    }
+
     /// The Tab switcher's part of the keys typed in `window`: let go of its key's modifier and
     /// it shows the Tab picked; Esc closes it. Before the window's other keys are read.
     pub(super) fn tab_switcher_keys(&mut self, ui: &Ui, window: Option<WindowId>) {

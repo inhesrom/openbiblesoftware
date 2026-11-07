@@ -222,6 +222,62 @@ fn ctrl_1_to_9_put_the_keyboard_on_the_nth_panel_in_screen_order() {
     assert_keyboard_on(&h, active(&h, 0));
 }
 
+/// Ctrl+1…9 to a Panel in a floating OS window brings that window to the front, so the keys
+/// typed next reach it, and back again to the main window.
+#[test]
+fn ctrl_digit_to_a_panel_in_another_os_window_brings_that_window_to_the_front() {
+    let mut h = harness();
+    h.native_windows();
+    h.shell.run("resource.open", &json!({ "id": "heb-test" }));
+    let (tb, heb) = (h.tab_id("TB"), h.tab_id("HEB"));
+    h.shell.run("tab.float", &json!({ "tab": heb.0 }));
+    h.frames(3);
+    let w = h.shell.floating[0].id;
+    assert!(h.shell.floating[0].native, "an OS window of its own");
+    let order = h.shell.st.session.workspace.panels_in_order();
+    assert_eq!(order.len(), 3);
+    assert_eq!(h.shell.st.session.workspace.panel_of(heb), Some(order[2]));
+    let focus = egui::ViewportCommand::Focus;
+    let root_asked = |h: &Harness| {
+        let n = h.native.as_ref().unwrap().borrow();
+        n.root_commands.iter().filter(|c| **c == focus).count()
+    };
+    let window_asked = |h: &Harness| {
+        let win = h.window(w);
+        win.commands.iter().filter(|c| **c == focus).count()
+    };
+    // In the main window, on TB.
+    h.root_info.focused = Some(true);
+    key(&mut h, Key::Num1, CTRL);
+    assert_eq!(focused_tab(&h), Some(tb));
+    assert_eq!(window_asked(&h), 0, "the floating window stays behind");
+
+    // Ctrl+3: HEB's Panel, in the floating window, which comes to the front.
+    key(&mut h, Key::Num3, CTRL);
+    assert_eq!(focused_tab(&h), Some(heb));
+    assert_eq!(window_asked(&h), 1, "HEB's window brought to the front");
+    assert_eq!(
+        h.root_info.focused,
+        Some(false),
+        "the main window lost the keyboard"
+    );
+    // The keys typed next are typed there, on HEB.
+    assert_eq!(h.shell.focus_in(Some(w)), Some(heb));
+
+    // Ctrl+1 typed in the floating window: back to TB, and the main window to the front.
+    let before = root_asked(&h);
+    h.key_in(w, Key::Num1, CTRL);
+    assert_eq!(focused_tab(&h), Some(tb));
+    assert_eq!(
+        root_asked(&h),
+        before + 1,
+        "the main window brought to the front"
+    );
+    assert_eq!(h.root_info.focused, Some(true));
+    assert_eq!(window_asked(&h), 1, "not asked again");
+    assert_eq!(h.shell.focus_in(None), Some(tb));
+}
+
 fn at(h: &Harness, tab: TabId) -> Verse {
     h.shell
         .st
