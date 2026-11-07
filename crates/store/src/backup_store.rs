@@ -1,0 +1,286 @@
+//! Back up, list and restore the User database (#217).
+//!
+//! - **Back up now** copies the whole database with SQLite's online backup API into one
+//!   self-contained file (rollback journal, so no `-wal` file belongs with it), written beside
+//!   its destination and renamed into place, so a failed write never leaves half a Backup.
+//! - **Restore** first reads the Backup into memory, checks it is a User database this build
+//!   can read (a newer format is refused) and runs the migrations on it, so nothing is touched
+//!   if the file is unusable. Then it takes a Safety backup of the database as it is, and
+//!   copies the Backup's pages over the live database in one step (rebuilding the copy with
+//!   the live database's page size first, if they differ).
+
+use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
+
+use rusqlite::{Connection, OpenFlags, params};
+
+use crate::backup::{BackupContents, BackupFile, BackupKind, SAFETY_BACKUPS};
+use crate::error::StoreError;
+use crate::user::{USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore, backups_in, migrate, sql};
+
+/// The part of a Safety backup's file name after the database's stem.
+const SAFETY_INFIX: &str = "safety-";
+
+impl UserStore {
+    /// Write a Backup of the whole database to `dest`, replacing a file there.
+    pub fn back_up(&self, dest: &Path) -> Result<(), StoreError> {
+        let name = dest
+            .file_name()
+            .map_or_else(|| "backup".into(), |n| n.to_string_lossy().into_owned());
+        let partial = dest.with_file_name(format!(".{name}.partial"));
+        let _ = std::fs::remove_file(&partial);
+        let written = self.backup_to(&partial).and_then(|()| {
+            let out = Connection::open(&partial).map_err(sql)?;
+            // One file: a WAL database would want its `-wal` and `-shm` beside it.
+            out.pragma_update(None, "journal_mode", "DELETE")
+                .map_err(sql)?;
+            drop(out);
+            std::fs::rename(&partial, dest).map_err(StoreError::Io)
+        });
+        if written.is_err() {
+            let _ = std::fs::remove_file(&partial);
+        }
+        written
+    }
+
+    /// Read the Backup at `path` into memory and migrate it to this build's format. Returns
+    /// it with the format version it was written in. The file itself is never changed.
+    pub fn open_backup(path: &Path) -> Result<(UserStore, u32), StoreError> {
+        let not_a_backup = |why: &str| {
+            StoreError::Corrupt(format!(
+                "{} is not a backup of your data: {why}",
+                path.display()
+            ))
+        };
+        if !path.is_file() {
+            return Err(StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("{} not found", path.display()),
+            )));
+        }
+        let src = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(sql)?;
+        let mut conn = Connection::open_in_memory().map_err(sql)?;
+        rusqlite::backup::Backup::new(&src, &mut conn)
+            .and_then(|b| b.run_to_completion(256, std::time::Duration::ZERO, None))
+            .map_err(|e| not_a_backup(&e.to_string()))?;
+        drop(src);
+        conn.pragma_update(None, "foreign_keys", true)
+            .map_err(sql)?;
+        let app_id: i32 = conn
+            .query_row("PRAGMA application_id", [], |r| r.get(0))
+            .map_err(sql)?;
+        let found: u32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .map_err(sql)?;
+        if app_id != USER_APPLICATION_ID || found == 0 {
+            return Err(not_a_backup("it was not made by Open Bible"));
+        }
+        if found > USER_SCHEMA_VERSION {
+            return Err(StoreError::NewerFormat {
+                found,
+                supported: USER_SCHEMA_VERSION,
+            });
+        }
+        if found < USER_SCHEMA_VERSION {
+            migrate(&mut conn, found, USER_SCHEMA_VERSION)?;
+        }
+        let store = UserStore {
+            conn,
+            path: path.to_path_buf(),
+        };
+        store.ensure_default_notebook()?;
+        Ok((store, found))
+    }
+
+    /// What the Backup at `path` holds, read as [`UserStore::open_backup`] reads it.
+    pub fn backup_contents(path: &Path) -> Result<BackupContents, StoreError> {
+        let (backup, found) = Self::open_backup(path)?;
+        Ok(BackupContents {
+            version: found,
+            ..backup.contents()?
+        })
+    }
+
+    /// Replace everything in this database with the Backup at `path`, migrated to this
+    /// build's format. A Safety backup of the database as it was is taken first; its path is
+    /// returned. An unreadable or newer Backup changes nothing.
+    pub fn restore(&mut self, path: &Path) -> Result<PathBuf, StoreError> {
+        let (backup, _) = Self::open_backup(path)?;
+        let page_size = |c: &Connection| -> Result<i64, StoreError> {
+            c.query_row("PRAGMA page_size", [], |r| r.get(0))
+                .map_err(sql)
+        };
+        let live = page_size(&self.conn)?;
+        // Pages copy only between databases of one page size. A Backup made with another is
+        // rebuilt with this database's in a file beside it (an in-memory database cannot
+        // change its page size).
+        let rebuilt = if page_size(&backup.conn)? == live {
+            None
+        } else {
+            let file = self
+                .backup_dir()
+                .join(format!(".{}-restoring.db", self.stem()));
+            std::fs::create_dir_all(self.backup_dir()).map_err(StoreError::Io)?;
+            let _ = std::fs::remove_file(&file);
+            backup.backup_to(&file)?;
+            let c = Connection::open(&file).map_err(sql)?;
+            c.pragma_update(None, "journal_mode", "DELETE")
+                .map_err(sql)?;
+            c.pragma_update(None, "page_size", live).map_err(sql)?;
+            c.execute_batch("VACUUM").map_err(sql)?;
+            Some((c, file))
+        };
+        let source = rebuilt.as_ref().map_or(&backup.conn, |(c, _)| c);
+        let safety = self.safety_backup()?;
+        let copied = rusqlite::backup::Backup::new(source, &mut self.conn)
+            .and_then(|b| b.run_to_completion(256, std::time::Duration::ZERO, None))
+            .map_err(sql);
+        if let Some((c, file)) = rebuilt {
+            drop(c);
+            let _ = std::fs::remove_file(file);
+        }
+        copied?;
+        Ok(safety)
+    }
+
+    /// What this database holds.
+    pub fn contents(&self) -> Result<BackupContents, StoreError> {
+        let count = |table: &str, filter: &str| -> Result<u64, StoreError> {
+            self.conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table} {filter}"), [], |r| {
+                    r.get::<_, i64>(0)
+                })
+                .map(|n| u64::try_from(n).unwrap_or(0))
+                .map_err(sql)
+        };
+        let names = |query: &str| -> Result<Vec<String>, StoreError> {
+            let mut stmt = self.conn.prepare(query).map_err(sql)?;
+            let rows = stmt.query_map([], |r| r.get(0)).map_err(sql)?;
+            rows.collect::<Result<Vec<String>, _>>().map_err(sql)
+        };
+        Ok(BackupContents {
+            version: self.schema_version()?,
+            notebooks: self.notebooks()?.into_iter().map(|n| n.name).collect(),
+            notes: count("annotations", "WHERE kind = 'note'")?,
+            highlights: count("annotations", "WHERE kind = 'highlight'")?,
+            layouts: self.layouts()?,
+            reading_plans: names("SELECT name FROM reading_plan ORDER BY id")?,
+            favorites: count("favorite", "")?,
+            visits: count("history", "")?,
+            settings: count("preference", "")?,
+        })
+    }
+
+    /// Every saved preference, `(key, value)`, by key.
+    pub fn preferences(&self) -> Result<Vec<(String, String)>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT key, value FROM preference ORDER BY key")
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(sql)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(sql)
+    }
+
+    /// The local date and time of `at` (Unix seconds), `YYYY-MM-DD HH:MM`.
+    pub fn local_time(&self, at: i64) -> Result<String, StoreError> {
+        self.conn
+            .query_row(
+                "SELECT strftime('%Y-%m-%d %H:%M', ?1, 'unixepoch', 'localtime')",
+                params![at],
+                |r| r.get(0),
+            )
+            .map_err(sql)
+    }
+
+    /// The Backups the app keeps by itself, newest first: the launch backups, the Safety
+    /// backups and the copies taken before an upgrade.
+    pub fn backups(&self) -> Result<Vec<BackupFile>, StoreError> {
+        let stem = self.stem();
+        let mut out = Vec::new();
+        let dir = self.backup_dir();
+        if dir.is_dir() {
+            for (_, path) in backups_in(&dir, &stem)? {
+                out.push(backup_file(path, BackupKind::Launch));
+            }
+            for (_, path) in safety_backups_in(&dir, &stem)? {
+                out.push(backup_file(path, BackupKind::Safety));
+            }
+        }
+        // Before-upgrade copies sit beside the database: `user.v8-<time>.bak`.
+        let folder = self.path.parent().unwrap_or_else(|| Path::new("."));
+        let prefix = format!("{stem}.v");
+        if let Ok(entries) = std::fs::read_dir(folder) {
+            for e in entries.filter_map(Result::ok) {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if name.starts_with(&prefix) && name.ends_with(".bak") {
+                    out.push(backup_file(e.path(), BackupKind::BeforeUpgrade));
+                }
+            }
+        }
+        out.sort_by(|a, b| b.taken_at.cmp(&a.taken_at).then(b.path.cmp(&a.path)));
+        Ok(out)
+    }
+
+    /// The database file's name without its extension (`user`).
+    fn stem(&self) -> String {
+        self.path
+            .file_stem()
+            .map_or_else(|| "user".to_string(), |s| s.to_string_lossy().into_owned())
+    }
+
+    /// Take a Safety backup and delete all but the newest [`SAFETY_BACKUPS`].
+    fn safety_backup(&self) -> Result<PathBuf, StoreError> {
+        let dir = self.backup_dir();
+        std::fs::create_dir_all(&dir).map_err(StoreError::Io)?;
+        let stem = self.stem();
+        let existing = safety_backups_in(&dir, &stem)?;
+        let next = existing.last().map_or(1, |(n, _)| n + 1);
+        let dest = dir.join(format!("{stem}-{SAFETY_INFIX}{next:06}.db"));
+        self.back_up(&dest)?;
+        let mut all = safety_backups_in(&dir, &stem)?;
+        while all.len() > SAFETY_BACKUPS {
+            let (_, oldest) = all.remove(0);
+            std::fs::remove_file(&oldest).map_err(StoreError::Io)?;
+        }
+        Ok(dest)
+    }
+}
+
+fn backup_file(path: PathBuf, kind: BackupKind) -> BackupFile {
+    let taken_at = std::fs::metadata(&path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
+    BackupFile {
+        path,
+        kind,
+        taken_at,
+    }
+}
+
+/// Safety backups of `stem` in `dir`, oldest first, with their sequence numbers.
+fn safety_backups_in(dir: &Path, stem: &str) -> Result<Vec<(u64, PathBuf)>, StoreError> {
+    let prefix = format!("{stem}-{SAFETY_INFIX}");
+    let mut out: Vec<(u64, PathBuf)> = std::fs::read_dir(dir)
+        .map_err(StoreError::Io)?
+        .filter_map(Result::ok)
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let n = name
+                .strip_prefix(&prefix)?
+                .strip_suffix(".db")?
+                .parse()
+                .ok()?;
+            Some((n, e.path()))
+        })
+        .collect();
+    out.sort();
+    Ok(out)
+}

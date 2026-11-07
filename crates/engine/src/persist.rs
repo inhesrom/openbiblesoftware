@@ -2,12 +2,14 @@
 //! [`WorkspaceSnapshot`]s, stored as JSON in the User database through [`UserData`].
 
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use obs_scripture::Verse;
 use obs_store::{
-    Annotation, Change, FavoriteRow, HighlightPalette, HighlightStyle, Notebook, PlanReadingRow,
+    Annotation, BackupContents, BackupFile, Change, FavoriteRow, HighlightPalette, HighlightStyle,
+    Notebook, PlanReadingRow,
     ReadingPlanRow, VisitRow,
 };
 
@@ -259,6 +261,25 @@ pub trait UserData: std::fmt::Debug {
     /// The annotation tables as text, for tests comparing database states.
     #[cfg(any(test, feature = "test-support"))]
     fn annotation_dump(&self) -> Result<String, String>;
+
+    // Backups (#217); see `backups.rs`.
+
+    /// Write a Backup of everything to `dest`, replacing a file there.
+    fn back_up(&self, dest: &Path) -> Result<(), String>;
+    /// The Backups the app keeps by itself (at launch, Safety backups, before an upgrade),
+    /// newest first.
+    fn backups(&self) -> Result<Vec<BackupFile>, String>;
+    /// What the User database holds now.
+    fn contents(&self) -> Result<BackupContents, String>;
+    /// What the Backup at `path` holds, migrated to this build's format; the file is only read.
+    fn backup_contents(&self, path: &Path) -> Result<BackupContents, String>;
+    /// Replace everything with the Backup at `path`, after taking a Safety backup, whose path
+    /// is returned. An unreadable or newer Backup changes nothing.
+    fn restore(&mut self, path: &Path) -> Result<PathBuf, String>;
+    /// Every saved preference, `(key, value)`, by key.
+    fn preferences(&self) -> Result<Vec<(String, String)>, String>;
+    /// The local date and time of `at` (Unix seconds), `YYYY-MM-DD HH:MM`.
+    fn local_time(&self, at: i64) -> Result<String, String>;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -382,6 +403,27 @@ impl UserData for obs_store::UserStore {
     #[cfg(any(test, feature = "test-support"))]
     fn annotation_dump(&self) -> Result<String, String> {
         obs_store::UserStore::annotation_dump(self).map_err(|e| e.to_string())
+    }
+    fn back_up(&self, dest: &Path) -> Result<(), String> {
+        obs_store::UserStore::back_up(self, dest).map_err(|e| e.to_string())
+    }
+    fn backups(&self) -> Result<Vec<BackupFile>, String> {
+        obs_store::UserStore::backups(self).map_err(|e| e.to_string())
+    }
+    fn contents(&self) -> Result<BackupContents, String> {
+        obs_store::UserStore::contents(self).map_err(|e| e.to_string())
+    }
+    fn backup_contents(&self, path: &Path) -> Result<BackupContents, String> {
+        obs_store::UserStore::backup_contents(path).map_err(|e| e.to_string())
+    }
+    fn restore(&mut self, path: &Path) -> Result<PathBuf, String> {
+        obs_store::UserStore::restore(self, path).map_err(|e| e.to_string())
+    }
+    fn preferences(&self) -> Result<Vec<(String, String)>, String> {
+        obs_store::UserStore::preferences(self).map_err(|e| e.to_string())
+    }
+    fn local_time(&self, at: i64) -> Result<String, String> {
+        obs_store::UserStore::local_time(self, at).map_err(|e| e.to_string())
     }
 }
 

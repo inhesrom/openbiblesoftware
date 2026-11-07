@@ -9,6 +9,9 @@
 pub mod annotation;
 #[cfg(not(target_arch = "wasm32"))]
 mod annotation_store;
+mod backup;
+#[cfg(not(target_arch = "wasm32"))]
+mod backup_store;
 // Pure column encodings; the wasm backend will use them too once it exists.
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 mod codec;
@@ -39,6 +42,9 @@ pub use annotation::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use annotation_store::DEFAULT_NOTEBOOK_NAME;
+pub use backup::{
+    BACKUP_EXTENSION, BackupContents, BackupFile, BackupKind, ROLLING_BACKUPS, SAFETY_BACKUPS,
+};
 pub use error::StoreError;
 pub use favorites::{FavoriteRow, HISTORY_DAYS, HISTORY_LIMIT, VisitRow};
 pub use highlight_style::{
@@ -57,4 +63,4 @@ pub use search_index::{
     remove_search_indexes, search_index_files, write_search_index,
 };
 #[cfg(not(target_arch = "wasm32"))]
-pub use user::{OpenReport, ROLLING_BACKUPS, USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore};
+pub use user::{OpenReport, USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore};

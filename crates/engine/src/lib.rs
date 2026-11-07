@@ -18,6 +18,9 @@ pub mod appearance;
 pub mod atlas;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod atlas_tests;
+pub mod backups;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod backups_tests;
 pub mod base_map;
 pub mod bible_search;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -159,6 +162,7 @@ pub use appearance::{
     Appearance, FontChoice, FontChoices, FontSlot, InterfaceSize, PageTone, Theme,
 };
 pub use atlas::{Confidence, MapPlace, PlacePoint};
+pub use backups::{DataExport, LastRestore, RestoreLine, RestorePreview};
 pub use base_map::{BaseMap, GeoBounds, MapView};
 pub use bible_search::{
     BibleOutline, BibleResults, ErrorField, InlineError, RowHit, Scope, ScopePreset, SearchMode,
@@ -273,7 +277,7 @@ pub use workspace::{
     Effect, Guide, HeaderBox, History, OpenRequest, PanelId, Placement, Tab, TabId, TabKind, Tool,
     Workspace,
 };
-pub use workspace_commands::{MENUS, Menu, MenuItem, choices, parallel_resources};
+pub use workspace_commands::{BACKUPS_TITLE, MENUS, Menu, MenuItem, choices, parallel_resources};
 
 #[cfg(test)]
 mod tests;

@@ -3281,6 +3281,8 @@ mod parallel_resources;
 #[path = "icon_previews_tests.rs"]
 mod icon_previews;
 
+#[path = "backups_tests.rs"]
+mod backups;
 #[path = "collections_tests.rs"]
 mod collections;
 #[path = "command_box_tests.rs"]

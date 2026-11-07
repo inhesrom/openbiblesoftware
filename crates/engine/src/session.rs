@@ -95,6 +95,8 @@ pub struct Session {
     pub(crate) annotations_revision: u64,
     /// The Last session as last written, to skip writes that change nothing.
     saved_session: Option<String>,
+    /// The last restore of a Backup, which Undo restore takes back (#217).
+    pub(crate) last_restore: Option<crate::backups::LastRestore>,
     /// How SWORD repositories are reached (#91). The app installs its network transport;
     /// until then only local `file://` repositories answer.
     fetch: std::sync::Arc<dyn obs_formats::sword_repo::Fetch>,
@@ -143,6 +145,7 @@ impl Session {
             reanchoring: crate::reanchor::Reanchoring::default(),
             annotations_revision: 0,
             saved_session: None,
+            last_restore: None,
             fetch: std::sync::Arc::new(obs_formats::sword_repo::LocalFetch),
         }
     }
@@ -290,6 +293,12 @@ impl Session {
         user.save_last_session(&json)?;
         self.saved_session = Some(json);
         Ok(())
+    }
+
+    /// Forget which Last session was written: the next save writes it whatever it holds (the
+    /// User database was replaced by a restore, #217).
+    pub(crate) fn forget_saved_session(&mut self) {
+        self.saved_session = None;
     }
 
     /// Restore the Last session, dropping Tabs whose Resource is gone. Returns whether there
