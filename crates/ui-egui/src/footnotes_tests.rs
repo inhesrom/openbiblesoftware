@@ -1291,8 +1291,8 @@ fn a_native_floating_window_leaves_the_main_windows_footnote_widgets_alone() {
         register_footnote_widget(ui.ctx(), r.id);
         r
     };
-    let main_marker = egui::Id::new("main-window-marker");
-    let floating_marker = egui::Id::new("floating-window-marker");
+    let main_marker = egui::Id::unique("main-window-marker");
+    let floating_marker = egui::Id::unique("floating-window-marker");
     for pass in 0..100 {
         pass_in(egui::ViewportId::ROOT, &mut |ui| {
             let r = marker(ui, main_marker);

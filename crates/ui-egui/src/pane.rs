@@ -624,7 +624,7 @@ impl FootnoteWidgets {
     /// One set per viewport: pass numbers and keyboard focus are each viewport's own, and a
     /// floating window's native viewport draws within the main window's frame.
     fn key(ctx: &egui::Context) -> egui::Id {
-        egui::Id::new("footnote-widgets").with(ctx.viewport_id())
+        egui::Id::unique(("footnote-widgets", ctx.viewport_id()))
     }
 
     /// Move to `pass`: this pass's widgets become the last pass's, or are dropped when no
