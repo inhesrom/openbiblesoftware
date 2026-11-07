@@ -146,7 +146,7 @@ fn binding_a_key_in_use_names_the_conflict_and_swap_trades_the_keys() {
 
     // A Selection key conflicts like a command.
     let c = s.key_conflict("view.text_larger", "Ctrl+1").unwrap();
-    assert_eq!(c.id, "selection.highlight_yellow");
+    assert_eq!(c.id, "selection.highlight_1");
 }
 
 /// Swapping never hands a reserved key away: Unpin Word Info's default Esc stays with it, so
@@ -307,7 +307,7 @@ fn every_binding_is_listed_once_by_menu_and_the_defaults_do_not_conflict() {
     let group = |id: &str| all.iter().find(|b| b.id == id).map(|b| b.group);
     assert_eq!(group("view.text_larger"), Some("View"));
     assert_eq!(group("help.keyboard_shortcuts"), Some("Help"));
-    assert_eq!(group("selection.highlight_pink"), Some(SELECTION_GROUP));
+    assert_eq!(group("selection.highlight_4"), Some(SELECTION_GROUP));
     assert_eq!(group("tab.find"), Some(OTHER_GROUP));
     assert_eq!(group("tab.go"), None);
     // Every command with a default key is listed.
@@ -359,4 +359,41 @@ fn a_saved_key_that_meets_a_default_is_flagged_on_both_bindings() {
     assert_eq!(conflicts["tab.find"].id, "view.text_smaller");
     assert_eq!(conflicts["tab.find"].key, "Ctrl+F");
     assert!(Session::new(JobMode::Inline).key_conflicts().is_empty());
+}
+
+/// The Highlight Selection keys follow the active palette's order (#181): Ctrl+1…9 by
+/// default, and a key saved for one of the five v0.1 styles' old ids applies to its slot.
+#[test]
+fn highlight_keys_are_nine_palette_slots_and_old_saved_keys_carry_over() {
+    let defaults: Vec<(&str, SelectionAction)> = SELECTION_KEYS
+        .iter()
+        .skip(1)
+        .map(|k| (k.default, k.action))
+        .collect();
+    let want: Vec<(String, SelectionAction)> = (0..STYLE_SLOTS)
+        .map(|i| (format!("Ctrl+{}", i + 1), SelectionAction::Highlight(i)))
+        .collect();
+    assert_eq!(
+        defaults
+            .iter()
+            .map(|(k, a)| ((*k).to_string(), *a))
+            .collect::<Vec<_>>(),
+        want
+    );
+    let t = Temp::new("renamed");
+    {
+        let (store, _) = obs_store::UserStore::open(&t.db()).unwrap();
+        store
+            .set_preference(
+                KEY_BINDINGS_PREF,
+                r#"{"selection.highlight_green": "F7", "selection.highlight_red_underline": null}"#,
+            )
+            .unwrap();
+    }
+    let s = launch(&t.db());
+    assert_eq!(s.shortcut("selection.highlight_2"), Some("F7"));
+    assert_eq!(s.shortcut("selection.highlight_5"), None);
+    assert_eq!(s.shortcut("selection.highlight_1"), Some("Ctrl+1"));
+    assert_eq!(s.shortcut("selection.highlight_9"), Some("Ctrl+9"));
+    assert!(s.key_conflicts().is_empty());
 }

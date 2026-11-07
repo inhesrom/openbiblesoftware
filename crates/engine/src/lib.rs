@@ -59,6 +59,9 @@ pub mod guide;
 mod guide_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod guide_words_tests;
+pub mod highlight_styles;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod highlight_styles_tests;
 pub mod home;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod home_tests;
@@ -149,8 +152,8 @@ pub use obs_formats::sword_repo;
 mod workspace_commands;
 
 pub use annotations::{
-    Anchor, Annotation, Change, Content, HighlightStyle, NoteTarget, Notebook, NotebookDeletion,
-    Row, Selection, TextPos, TextRange, UndoHistory, UndoStep,
+    Anchor, Annotation, Change, Content, NoteTarget, Notebook, NotebookDeletion, Row, Selection,
+    TextPos, TextRange, UndoHistory, UndoStep,
 };
 pub use appearance::{
     Appearance, FontChoice, FontChoices, FontSlot, InterfaceSize, PageTone, Theme,
@@ -185,6 +188,11 @@ pub use floating_windows::{FloatingWindow, ScreenRect, WindowId, WindowPlacement
 pub use guide::{
     CommentaryRow, GuideArrangement, GuideSection, Guides, LibrarySections, SectionData,
     SectionPlace, SectionSource, SectionStatus,
+};
+pub use highlight_styles::{
+    ACTIVE_PALETTE_PREF, HighlightLook, HighlightPalette, HighlightStyle, PaletteFile,
+    PaletteFileStyle, Rgb, STANDARD_PALETTE_ID, STYLE_SLOTS, StyleAppearance, StyleEdit, StyleTone,
+    style_label,
 };
 pub use home::{
     CardPlace, HOME_PREF, HomeCard, HomePlan, HomeReading, HomeSettings, LibraryCount,

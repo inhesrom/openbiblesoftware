@@ -707,6 +707,8 @@ pub enum Effect {
     PickImport,
     /// Open the Fonts window (View → Fonts…, #138).
     ShowFonts,
+    /// Open the Highlight styles window (View → Highlight styles…, #181).
+    ShowHighlightStyles,
     /// A Resource Tab now shows another Resource (a parallel resource, or Back/Forward across
     /// a switch, #151): load it, at the Tab's location.
     Switched(TabId),

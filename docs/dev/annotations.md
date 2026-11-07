@@ -111,9 +111,10 @@ or deleted).
 `crates/ui-egui/src/marks.rs` and the reading pane (`pane.rs`) draw what is stored.
 
 - **Making them.** Releasing a selection (drag, double- or triple-click) shows a floating
-  toolbar above it: 5 style swatches, ✏ Note, Copy and Search this (disabled until #59).
-  Right-click shows the same actions as a menu (on the selection under the pointer, else on
-  the clicked word). Keys: Ctrl+1…5 (styles, in `HighlightStyle::ALL` order), Ctrl+Shift+N
+  toolbar above it: the active Highlight palette's swatches, `…` (Highlight styles…), ✏ Note,
+  Copy and Search this. Right-click shows the same actions as a menu (on the selection under
+  the pointer, else on the clicked word). Keys: Ctrl+1…9 (the active palette's styles in its
+  order, #181; see "Highlight styles and palettes" below), Ctrl+Shift+N
   (Note), Ctrl+Z / Ctrl+Shift+Z (undo, redo). The style and Note keys are the Selection
   keys; these are their defaults, which Help → Keyboard shortcuts changes (#177,
   `keyboard-shortcuts.md`). A Highlight clears the selection so its colour shows at once.
@@ -124,7 +125,7 @@ or deleted).
   need them for the key (Ctrl+Plus is Ctrl+Shift+= on a US keyboard; digits need Shift on
   AZERTY). The exception is a key bound more than once with different modifiers: then Shift
   and Alt must match exactly (`shell::extra_held`, `shell::consume_key`). So Ctrl+Shift+Z
-  never undoes, even when there is nothing to redo. The style keys Ctrl+1…5 accept an
+  never undoes, even when there is nothing to redo. The style keys Ctrl+1…9 accept an
   extra Shift but not Alt, because Ctrl+Alt is AltGr on Windows.
   A Ctrl+Plus binding is also pressed as Ctrl+= (`shell::pressed_as`), so Larger text works
   without Shift; egui's own whole-window zoom keys are off, and the window zoom is the
@@ -244,3 +245,48 @@ background job; the Notes Tool's side is in [notes-tool.md](notes-tool.md).
   (the abbreviation the User database's `resource_names` last knew, also after a restart;
   the id only for a Resource never seen with a User database). Importing it again runs the
   same re-anchoring.
+
+## Highlight styles and palettes (#181, ADR 0012)
+
+`crates/engine/src/highlight_styles.rs` keeps them; `crates/ui-egui/src/palette.rs` turns a
+style into colours per Page tone; `crates/ui-egui/src/shell/highlight_styles_window.rs` is
+View → Highlight styles….
+
+- **Rows.** `highlight_palettes` and `highlight_styles` (User database schema 10) are rows of
+  the annotation tables: every edit is row `Change`s through `UserStore::apply_changes`, one
+  undo step each. Migration 9 → 10 seeds the Standard palette with the five v0.1 styles under
+  their old ids (`yellow` … `red_underline`), with v0.1's hand-tuned Sepia and Dark colours as
+  their tone adjustments, so every earlier Highlight keeps its look. `annotations.style` stays
+  a free id; the store refuses a Highlight whose style does not exist and the deletion of a
+  style a Highlight still uses.
+- **Deleting** a used style (or a palette) needs a replacement style: its Highlights move
+  there and the style goes in one step, so Ctrl+Z brings back both. Nothing is dropped.
+- **Colours per tone.** A style stores one colour, its look and optional `paper`, `sepia` and
+  `dark` adjustments. `Palette::paint` draws an adjustment that passes `Palette::check`, else
+  derives one: a background fades toward the page until every ink reads on it at 4.5:1; an
+  underline or box deepens toward the ink to 3:1 against the page, a text colour to 4.5:1
+  against the page and every overlay. A background's margin mark (#63) is its colour deepened
+  to 3:1. The window refuses an adjustment that fails, saying why.
+- **Drawing.** `marks_for` carries each style's look in the `Mark`, and the pane draws a
+  background under the glyphs, a text colour on the glyphs it covers, and a line or box over
+  them. Style edits move the annotation revision, so Marks are remade.
+- **The active palette** is the preference `highlights.palette` (not undone). The Selection
+  keys `selection.highlight_1` … `_9` are places in it; keys saved under the v0.1 ids
+  (`selection.highlight_yellow` …) apply to places 1–5.
+- **Export / import.** `highlight_palette.export {id, path?}` writes
+  `{"format": "openbible-highlight-palette", "version": 1, "name", "styles": [{"name", "look",
+  "color", "paper"?, "sepia"?, "dark"?}]}` (no ids); `highlight_palette.import {path | text}`
+  always makes a new palette ("Standard (2)" when the name is taken), as one undo step.
+
+| Command | Params |
+|---|---|
+| `highlight_style.list` | `palette`? (default: the active one): its styles with labels and use counts |
+| `highlight_style.create` | `palette`?, `name`?, `look`? (`background`, `underline`, `box`, `text_color`), `color` (`#rrggbb`) |
+| `highlight_style.edit` | `id`, `name`?, `look`?, `color`? (drops the tone adjustments), `paper`? `sepia`? `dark`? (`#rrggbb`, or empty to derive) |
+| `highlight_style.move` | `id`, `position` (0 first) |
+| `highlight_style.delete` | `id`, `replacement`? (needed when Highlights use it) |
+| `highlight_palette.create` / `.rename` / `.delete` | `name` / `id`, `name` / `id`, `replacement`? |
+| `highlight_palette.activate` | `id` |
+| `highlight_palette.export` / `.import` | `id`, `path`? / `path` or `text` |
+| `view.highlight_styles` | opens the window |
+

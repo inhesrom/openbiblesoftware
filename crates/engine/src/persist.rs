@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use obs_scripture::Verse;
 use obs_store::{
-    Annotation, Change, FavoriteRow, Notebook, PlanReadingRow, ReadingPlanRow, VisitRow,
+    Annotation, Change, FavoriteRow, HighlightPalette, HighlightStyle, Notebook, PlanReadingRow,
+    ReadingPlanRow, VisitRow,
 };
 
 use crate::floating_windows::WindowSnapshot;
@@ -246,6 +247,15 @@ pub trait UserData: std::fmt::Debug {
     /// error says why: undo tells a Conflict or Rejected list (the history no longer fits the
     /// database) from a failure that may pass (a busy or full disk).
     fn apply_changes(&self, changes: &[Change]) -> Result<(), obs_store::StoreError>;
+
+    // Highlight styles and palettes (#181); see `highlight_styles.rs`. Edits are row Changes.
+
+    /// Every Highlight palette, in order.
+    fn highlight_palettes(&self) -> Result<Vec<HighlightPalette>, String>;
+    /// Every Highlight style, by palette and then in order within it.
+    fn highlight_styles(&self) -> Result<Vec<HighlightStyle>, String>;
+    /// How many Highlights use each style (unused styles left out).
+    fn highlight_style_uses(&self) -> Result<Vec<(String, u64)>, String>;
     /// The annotation tables as text, for tests comparing database states.
     #[cfg(any(test, feature = "test-support"))]
     fn annotation_dump(&self) -> Result<String, String>;
@@ -359,6 +369,15 @@ impl UserData for obs_store::UserStore {
     }
     fn apply_changes(&self, changes: &[Change]) -> Result<(), obs_store::StoreError> {
         obs_store::UserStore::apply_changes(self, changes)
+    }
+    fn highlight_palettes(&self) -> Result<Vec<HighlightPalette>, String> {
+        obs_store::UserStore::highlight_palettes(self).map_err(|e| e.to_string())
+    }
+    fn highlight_styles(&self) -> Result<Vec<HighlightStyle>, String> {
+        obs_store::UserStore::highlight_styles(self).map_err(|e| e.to_string())
+    }
+    fn highlight_style_uses(&self) -> Result<Vec<(String, u64)>, String> {
+        obs_store::UserStore::highlight_style_uses(self).map_err(|e| e.to_string())
     }
     #[cfg(any(test, feature = "test-support"))]
     fn annotation_dump(&self) -> Result<String, String> {

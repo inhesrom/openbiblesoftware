@@ -492,7 +492,13 @@ fn collect_glyphs(shape: &Shape, out: &mut Vec<Rect>) {
 fn collect_rects(shape: &Shape, out: &mut Vec<(Rect, egui::Color32)>) {
     match shape {
         Shape::Vec(v) => v.iter().for_each(|s| collect_rects(s, out)),
-        Shape::Rect(r) => out.push((r.rect, r.fill)),
+        Shape::Rect(r) => {
+            out.push((r.rect, r.fill));
+            // An outline (a Box Highlight style, #181) counts in its stroke's colour too.
+            if r.fill == egui::Color32::TRANSPARENT && r.stroke.width > 0.0 {
+                out.push((r.rect, r.stroke.color));
+            }
+        }
         Shape::LineSegment { points, stroke } => {
             out.push((Rect::from_two_pos(points[0], points[1]), stroke.color));
         }
@@ -2724,6 +2730,9 @@ mod annotations_across;
 
 #[path = "notes_tests.rs"]
 mod notes;
+
+#[path = "highlight_styles_tests.rs"]
+mod highlight_styles;
 
 /// Import from the Library menu and the live Import report Tab (#47).
 mod import {

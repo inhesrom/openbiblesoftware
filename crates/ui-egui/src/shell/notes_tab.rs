@@ -35,8 +35,7 @@ use std::sync::Arc;
 
 use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, UiBuilder, pos2, vec2};
 use obs_engine::{
-    Card, CardOrder, Content, HighlightStyle, Notebook, NotesFilter, NotesFormat, TabId,
-    body_references,
+    Card, CardOrder, Content, Notebook, NotesFilter, NotesFormat, TabId, body_references,
 };
 use obs_layout::{ColorRole, LaidBlock};
 use obs_scripture::{PassageList, RefStyle, Standard, format_passage};
@@ -856,11 +855,14 @@ impl State {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
-                    match a.content {
+                    match &a.content {
                         Content::Highlight { style } => {
-                            let (rect, _) =
+                            let (rect, r) =
                                 ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
-                            paint_swatch(ui, rect, style, &self.palette, false);
+                            let book = self.marks.styles(&self.session);
+                            let look = book.appearance(style);
+                            r.on_hover_text(book.label(style));
+                            paint_swatch(ui, rect, &look, &self.palette, false);
                         }
                         Content::Note { .. } => {
                             ui.label(RichText::new("✏").color(theme::c().muted));
@@ -1188,15 +1190,17 @@ impl State {
                 ui.label(RichText::new("No other Notebook").color(theme::c().muted));
             }
         });
-        if let Content::Highlight { style } = a.content {
-            let palette = self.palette;
+        if let Content::Highlight { style } = &a.content {
+            // The active palette's styles (#181).
+            let book = self.marks.styles(&self.session).clone();
             ui.menu_button("Highlight style", |ui| {
-                for s in HighlightStyle::ALL {
+                for s in book.active_styles() {
+                    let label = menu_label(ui, &book.label(&s.id), &s.appearance);
                     if ui
-                        .add_enabled(s != style, egui::Button::new(menu_label(ui, s, &palette)))
+                        .add_enabled(s.id != *style, egui::Button::new(label))
                         .clicked()
                     {
-                        run.push(("annotation.style", json!({ "id": a.id, "style": s.id() })));
+                        run.push(("annotation.style", json!({ "id": a.id, "style": s.id })));
                         ui.close();
                     }
                 }

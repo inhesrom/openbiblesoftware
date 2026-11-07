@@ -128,6 +128,7 @@ pub const MENUS: &[Menu] = &[
             C("view.fonts"),
             Separator,
             C("view.highlights"),
+            C("view.highlight_styles"),
             MenuItem::Notebooks,
             Separator,
             MenuItem::Choice {
@@ -635,6 +636,16 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         s.workspace.push_effect(Effect::ShowFonts);
         Ok(Value::Null)
     }),
+    simple(
+        "view.highlight_styles",
+        "Highlight styles…",
+        None,
+        |s| s.user.is_some(),
+        |s, _| {
+            s.workspace.push_effect(Effect::ShowHighlightStyles);
+            Ok(Value::Null)
+        },
+    ),
     CommandSpec {
         id: "view.font",
         label: "Choose a font",

@@ -2,7 +2,7 @@
 //!
 //! Every binding the user can change is a command a key can run (one that needs no parameter
 //! but its Tab) or one of the Selection keys the Shell binds itself on the reading-pane
-//! selection (Ctrl+Shift+N and Ctrl+1…5, #62). Each has a default key, its command's
+//! selection (Ctrl+Shift+N and Ctrl+1…9, #62, #181). Each has a default key, its command's
 //! [`CommandSpec::shortcut`]; the user's own keys override it by command id and are kept in
 //! the User database (`key_bindings`), applying at once.
 //!
@@ -25,8 +25,8 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value, json};
 
-use crate::annotations::HighlightStyle;
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
+use crate::highlight_styles::STYLE_SLOTS;
 use crate::session::Session;
 use crate::workspace_commands::{MENUS, MenuItem};
 
@@ -37,7 +37,8 @@ pub(crate) const KEY_BINDINGS_PREF: &str = "key_bindings";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelectionAction {
     Note,
-    Highlight(HighlightStyle),
+    /// Highlight with the active Highlight palette's style at this place (0 first, #181).
+    Highlight(usize),
 }
 
 /// A key the Shell binds itself on the reading-pane selection (#62): not a registered command,
@@ -50,44 +51,93 @@ pub struct SelectionKey {
     pub action: SelectionAction,
 }
 
-/// The Selection keys: Note, then the 5 Highlight styles in [`HighlightStyle::ALL`] order.
-pub const SELECTION_KEYS: [SelectionKey; 6] = [
+const fn highlight_key(
+    id: &'static str,
+    label: &'static str,
+    default: &'static str,
+    slot: usize,
+) -> SelectionKey {
+    SelectionKey {
+        id,
+        label,
+        default,
+        action: SelectionAction::Highlight(slot),
+    }
+}
+
+/// The Selection keys: Note, then the first nine styles of the active Highlight palette, in
+/// its order (#181).
+pub const SELECTION_KEYS: [SelectionKey; 1 + STYLE_SLOTS] = [
     SelectionKey {
         id: "selection.note",
         label: "Note on the selection",
         default: "Ctrl+Shift+N",
         action: SelectionAction::Note,
     },
-    SelectionKey {
-        id: "selection.highlight_yellow",
-        label: "Highlight the selection yellow",
-        default: "Ctrl+1",
-        action: SelectionAction::Highlight(HighlightStyle::Yellow),
-    },
-    SelectionKey {
-        id: "selection.highlight_green",
-        label: "Highlight the selection green",
-        default: "Ctrl+2",
-        action: SelectionAction::Highlight(HighlightStyle::Green),
-    },
-    SelectionKey {
-        id: "selection.highlight_blue",
-        label: "Highlight the selection blue",
-        default: "Ctrl+3",
-        action: SelectionAction::Highlight(HighlightStyle::Blue),
-    },
-    SelectionKey {
-        id: "selection.highlight_pink",
-        label: "Highlight the selection pink",
-        default: "Ctrl+4",
-        action: SelectionAction::Highlight(HighlightStyle::Pink),
-    },
-    SelectionKey {
-        id: "selection.highlight_red_underline",
-        label: "Highlight the selection with a red underline",
-        default: "Ctrl+5",
-        action: SelectionAction::Highlight(HighlightStyle::RedUnderline),
-    },
+    highlight_key(
+        "selection.highlight_1",
+        "Highlight with the palette's style 1",
+        "Ctrl+1",
+        0,
+    ),
+    highlight_key(
+        "selection.highlight_2",
+        "Highlight with the palette's style 2",
+        "Ctrl+2",
+        1,
+    ),
+    highlight_key(
+        "selection.highlight_3",
+        "Highlight with the palette's style 3",
+        "Ctrl+3",
+        2,
+    ),
+    highlight_key(
+        "selection.highlight_4",
+        "Highlight with the palette's style 4",
+        "Ctrl+4",
+        3,
+    ),
+    highlight_key(
+        "selection.highlight_5",
+        "Highlight with the palette's style 5",
+        "Ctrl+5",
+        4,
+    ),
+    highlight_key(
+        "selection.highlight_6",
+        "Highlight with the palette's style 6",
+        "Ctrl+6",
+        5,
+    ),
+    highlight_key(
+        "selection.highlight_7",
+        "Highlight with the palette's style 7",
+        "Ctrl+7",
+        6,
+    ),
+    highlight_key(
+        "selection.highlight_8",
+        "Highlight with the palette's style 8",
+        "Ctrl+8",
+        7,
+    ),
+    highlight_key(
+        "selection.highlight_9",
+        "Highlight with the palette's style 9",
+        "Ctrl+9",
+        8,
+    ),
+];
+
+/// The ids the five Highlight Selection keys had before palettes (#177), and the slot each
+/// became: keys the user set for them carry over.
+const RENAMED_SELECTION_KEYS: [(&str, &str); 5] = [
+    ("selection.highlight_yellow", "selection.highlight_1"),
+    ("selection.highlight_green", "selection.highlight_2"),
+    ("selection.highlight_blue", "selection.highlight_3"),
+    ("selection.highlight_pink", "selection.highlight_4"),
+    ("selection.highlight_red_underline", "selection.highlight_5"),
 ];
 
 /// The group of the Selection keys in the Keyboard shortcuts Tab.
@@ -138,10 +188,14 @@ impl KeyBindings {
     }
 
     /// The keys of a saved record; a key that no longer reads is dropped (its default
-    /// applies).
+    /// applies). Keys saved under a Selection key's old id apply to its new one.
     fn from_json(v: &Value) -> Self {
         let mut overrides = BTreeMap::new();
         for (id, key) in v.as_object().into_iter().flatten() {
+            let id = &RENAMED_SELECTION_KEYS
+                .iter()
+                .find(|(old, _)| old == id)
+                .map_or_else(|| id.clone(), |(_, new)| (*new).to_string());
             match key {
                 Value::Null => {
                     overrides.insert(id.clone(), None);

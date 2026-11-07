@@ -5,6 +5,7 @@ use egui::{
     Color32, ColorImage, Mesh, Pos2, Rect, Sense, Shape, TextureHandle, TextureOptions, Ui, pos2,
     vec2,
 };
+use obs_engine::HighlightLook;
 use obs_render::GlyphAtlas;
 
 use crate::find::Found;
@@ -276,12 +277,24 @@ pub fn reading_pane(
     let size = view.settings().size;
     let ranges: Vec<(DocPos, DocPos)> = marks.iter().map(|m| (m.start, m.end)).collect();
     let mark_rects = range_rects(view, &ranges, rect.height());
+    // Each style's colours in this tone, worked out once per frame (#181).
+    let mut paints = std::collections::HashMap::new();
+    let mut paint =
+        |a: obs_engine::StyleAppearance| *paints.entry(a).or_insert_with(|| palette.paint(&a));
+    // Text-colour Highlights recolour the glyphs inside their rects, the newest on top.
+    let mut recolour: Vec<(Rect, Color32)> = Vec::new();
     for (mark, rects) in marks.iter().zip(&mark_rects) {
-        if let MarkKind::Highlight(style) = mark.kind
-            && let Some(fill) = palette.highlight(style)
-        {
+        if let MarkKind::Highlight(a) = mark.kind {
+            let p = paint(a);
             for r in rects {
-                painter.rect_filled(to_screen(text_band(*r, size)), 1.5, fill);
+                let r = to_screen(text_band(*r, size));
+                match p.look {
+                    HighlightLook::Background => {
+                        painter.rect_filled(r, 1.5, p.color);
+                    }
+                    HighlightLook::TextColor => recolour.push((r, p.color)),
+                    HighlightLook::Underline | HighlightLook::Box => {}
+                }
             }
         }
     }
@@ -358,10 +371,14 @@ pub fn reading_pane(
     mesh.reserve_vertices(quads.len() * 4);
     mesh.reserve_triangles(quads.len() * 2);
     for q in quads {
+        let glyph = Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max));
+        let color = (recolour.iter().rev())
+            .find(|(r, _)| r.contains(glyph.center()))
+            .map_or_else(|| palette.color(q.role), |(_, c)| *c);
         mesh.add_rect_with_uv(
-            Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
+            glyph,
             Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-            palette.color(q.role),
+            color,
         );
     }
     painter.add(Shape::mesh(mesh));
@@ -393,14 +410,29 @@ pub fn reading_pane(
     );
     for (mark, rects) in marks.iter().zip(&mark_rects) {
         match mark.kind {
-            MarkKind::Highlight(style) if palette.highlight(style).is_none() => {
-                for r in rects {
-                    let r = to_screen(text_band(*r, size));
-                    let y = r.bottom() - (size * 0.1).max(1.5);
-                    painter.line_segment(
-                        [pos2(r.left(), y), pos2(r.right(), y)],
-                        egui::Stroke::new((size * 0.09).max(1.5), palette.underline),
-                    );
+            MarkKind::Highlight(a) => {
+                let p = paint(a);
+                // A line or box runs unbroken along each line of the range (#181).
+                for r in line_runs(rects, size * 0.6) {
+                    let r = to_screen(text_band(r, size));
+                    match p.look {
+                        HighlightLook::Underline => {
+                            let y = r.bottom() - (size * 0.1).max(1.5);
+                            painter.line_segment(
+                                [pos2(r.left(), y), pos2(r.right(), y)],
+                                egui::Stroke::new((size * 0.09).max(1.5), p.color),
+                            );
+                        }
+                        HighlightLook::Box => {
+                            painter.rect_stroke(
+                                r,
+                                2.0,
+                                egui::Stroke::new((size * 0.08).max(1.5), p.color),
+                                egui::StrokeKind::Outside,
+                            );
+                        }
+                        HighlightLook::Background | HighlightLook::TextColor => {}
+                    }
                 }
             }
             MarkKind::Note => {
@@ -438,8 +470,8 @@ pub fn reading_pane(
                 *used += w + gap;
                 let r = to_screen([x, band[1], x + w, band[1] + h]);
                 match mark.kind {
-                    MarkKind::Margin(style) => {
-                        painter.rect_filled(r, round, palette.mark(style));
+                    MarkKind::Margin(a) => {
+                        painter.rect_filled(r, round, paint(a).mark);
                     }
                     _ => {
                         paint_note_marker(&painter, r, palette);
@@ -449,7 +481,6 @@ pub fn reading_pane(
                     }
                 }
             }
-            MarkKind::Highlight(_) => {}
         }
     }
 
@@ -547,6 +578,26 @@ pub(crate) fn paint_find_match(painter: &egui::Painter, r: Rect, current: bool, 
 
 /// The part of a line rectangle `[x0, y0, x1, y1]` that text of `size` occupies: a band
 /// about 1.4 em tall around the line's middle (all of it in tight lines).
+/// `rects` (in order) with neighbours on the same line and at most `gap` apart joined into
+/// one, so a box or underline over several words is one, not one per word.
+fn line_runs(rects: &[[f32; 4]], gap: f32) -> Vec<[f32; 4]> {
+    let mut out: Vec<[f32; 4]> = Vec::new();
+    for &[x0, y0, x1, y1] in rects {
+        if let Some(last) = out.last_mut()
+            && (last[1] - y0).abs() < 0.5
+            && (last[3] - y1).abs() < 0.5
+            && x0 <= last[2] + gap
+            && x1 >= last[0] - gap
+        {
+            last[0] = last[0].min(x0);
+            last[2] = last[2].max(x1);
+        } else {
+            out.push([x0, y0, x1, y1]);
+        }
+    }
+    out
+}
+
 fn text_band([x0, y0, x1, y1]: [f32; 4], size: f32) -> [f32; 4] {
     let inset = ((y1 - y0 - size * 1.4) / 2.0).max(0.0);
     [x0, y0 + inset, x1, y1 - inset]

@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use obs_engine::{HighlightStyle, TabId};
+use obs_engine::TabId;
 use obs_scripture::{Book, Verse};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -894,7 +894,7 @@ fn a_highlight_card_shows_its_style_swatch() {
             .map(|(r, _)| *r)
             .collect()
     };
-    let green = palette.highlight(HighlightStyle::Green).unwrap();
+    let green = palette.built_in_color("green");
     let swatch = painted(&h, &ids[0], green);
     assert_eq!(swatch.len(), 1, "{swatch:?}");
     assert!(
@@ -914,7 +914,7 @@ fn a_highlight_card_shows_its_style_swatch() {
         )
         .unwrap();
     settle_notes(&mut h);
-    let pink = palette.highlight(HighlightStyle::Pink).unwrap();
+    let pink = palette.built_in_color("pink");
     assert_eq!(painted(&h, &ids[0], pink).len(), 1);
     assert!(painted(&h, &ids[0], green).is_empty());
     drop(h);

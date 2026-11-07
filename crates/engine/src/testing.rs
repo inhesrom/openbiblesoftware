@@ -2176,6 +2176,15 @@ impl crate::UserData for WritesFail {
         }
         crate::UserData::apply_changes(&self.store, changes)
     }
+    fn highlight_palettes(&self) -> Result<Vec<obs_store::HighlightPalette>, String> {
+        crate::UserData::highlight_palettes(&self.store)
+    }
+    fn highlight_styles(&self) -> Result<Vec<obs_store::HighlightStyle>, String> {
+        crate::UserData::highlight_styles(&self.store)
+    }
+    fn highlight_style_uses(&self) -> Result<Vec<(String, u64)>, String> {
+        crate::UserData::highlight_style_uses(&self.store)
+    }
     fn annotation_dump(&self) -> Result<String, String> {
         crate::UserData::annotation_dump(&self.store)
     }
