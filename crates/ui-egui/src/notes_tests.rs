@@ -1158,7 +1158,15 @@ fn a_formatted_note_renders_its_heading_list_and_a_live_reference() {
     settle_notes(&mut h);
     hover(&mut h, on + vec2(0.5, 0.0));
     assert!(h.find("Rom 5:8").is_some(), "{:?}", h.texts());
-    assert!(h.find("★ KJV").is_some(), "{:?}", h.texts());
+    // The preview names its Bible after a filled star: the first in Preferred order.
+    let star = h.find("[star-filled]").expect("a star by the Bible's name");
+    assert!(
+        h.shapes.iter().any(|(r, t)| t == "KJV"
+            && r.left() > star.right()
+            && (r.center().y - star.center().y).abs() < 6.0),
+        "{:?}",
+        h.texts()
+    );
     preview(&h, "notes-formatted-reference-popup-kittest");
     // Clicking it goes there in the most recent Bible Tab, and is not an edit.
     let at_now = |h: &Harness| {
@@ -1283,7 +1291,7 @@ fn the_note_editor_formats_with_shortcuts_and_its_toolbar_and_undoes() {
     h.frame();
     assert_eq!(text(&h), "**wrestled until dawn**");
     // The toolbar's bulleted list: the editor keeps the keys and stays open.
-    h.click_text("•");
+    h.click_text(&crate::icons::Icon::BulletList.marker());
     assert_eq!(text(&h), "- **wrestled until dawn**");
     assert!(h.shell.st.notes_ui.editing.is_some(), "still editing");
     assert!(h.ctx.text_edit_focused(), "the field kept the keys");
@@ -1412,13 +1420,13 @@ fn the_note_editor_link_button_does_not_link_across_lines() {
     // Both lines selected: the link button does nothing, and the editor stays open.
     press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
     h.frame();
-    h.click_text("🔗");
+    h.click_text(&crate::icons::Icon::Link.marker());
     assert_eq!(text(&h), "faith\nhope");
     assert!(h.shell.st.notes_ui.editing.is_some(), "still editing");
     // The cursor on one line: it links there.
     press_key(&mut h, egui::Key::End, Modifiers::COMMAND);
     h.frame();
-    h.click_text("🔗");
+    h.click_text(&crate::icons::Icon::Link.marker());
     assert_eq!(text(&h), "faith\nhope[](<>)");
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
@@ -1546,7 +1554,7 @@ fn the_note_editor_buttons_are_off_over_a_code_span_or_link_across_lines_or_part
     };
     // The whole Note: a mark on each line, or a block of its own, would cut the code span
     // and the link at their line breaks.
-    let cutting = ["B", "I", "H", "•", "1.", "“”"];
+    let cutting = ["B", "I", "H", "Bulleted list", "1.", "“”"];
     let off = buttons(&h, &cutting);
     assert_eq!(off.len(), 6, "{off:?}");
     const SPAN_ACROSS_LINES: &str = "Selection has a code span or link that crosses lines";
@@ -1554,7 +1562,7 @@ fn the_note_editor_buttons_are_off_over_a_code_span_or_link_across_lines_or_part
         assert!(disabled, "{label}");
         assert_eq!(description.as_deref(), Some(SPAN_ACROSS_LINES), "{label}");
     }
-    for b in ["•", "1.", "“”", "H", "B", "I"] {
+    for b in ["[list]", "1.", "“”", "H", "B", "I"] {
         press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
         h.click_text(b);
         assert_eq!(text(&h), body, "{b}");
@@ -1568,7 +1576,7 @@ fn the_note_editor_buttons_are_off_over_a_code_span_or_link_across_lines_or_part
     press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
     press_key(&mut h, egui::Key::ArrowLeft, Modifiers::SHIFT);
     h.frames(2);
-    let every = ["B", "I", "H", "•", "1.", "“”", "🔗"];
+    let every = ["B", "I", "H", "Bulleted list", "1.", "“”", "Link"];
     let off = buttons(&h, &every);
     assert_eq!(off.len(), 7, "{off:?}");
     const PARTLY_COVERS_SPAN: &str = "Selection partly covers a code span or link";
@@ -1599,7 +1607,7 @@ fn the_note_editor_buttons_are_off_over_a_code_span_or_link_across_lines_or_part
             "{label}"
         );
     }
-    h.click_text("•");
+    h.click_text(&crate::icons::Icon::BulletList.marker());
     assert_eq!(text(&h), "- **faith**\n- **hope**");
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
@@ -1642,7 +1650,7 @@ fn the_note_editor_buttons_are_off_in_a_block_that_is_not_simple() {
     press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
     h.frames(2);
     const FORMAT_NOT_HERE: &str = "This formatting can't be applied here";
-    let every = ["B", "I", "H", "•", "1.", "“”", "🔗"];
+    let every = ["B", "I", "H", "Bulleted list", "1.", "“”", "Link"];
     let off: Vec<_> = h
         .tree
         .as_ref()
@@ -1661,7 +1669,7 @@ fn the_note_editor_buttons_are_off_in_a_block_that_is_not_simple() {
         assert!(disabled, "{label}");
         assert_eq!(description.as_deref(), Some(FORMAT_NOT_HERE), "{label}");
     }
-    for b in ["1.", "•", "“”", "H"] {
+    for b in ["1.", "[list]", "“”", "H"] {
         press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
         h.click_text(b);
         assert_eq!(text(&h), body, "{b}");
@@ -1682,7 +1690,7 @@ fn the_note_editor_buttons_are_off_in_a_block_that_is_not_simple() {
 fn the_note_editor_symbols_are_in_the_chrome_fonts_and_bullets_in_the_reading_font() {
     let h = Harness::new();
     h.ctx.fonts_mut(|f| {
-        let missing: Vec<&str> = ["•", "“”", "🔗"]
+        let missing: Vec<&str> = ["“”"]
             .into_iter()
             .filter(|s| !f.has_glyphs(&egui::FontId::proportional(14.0), s))
             .collect();

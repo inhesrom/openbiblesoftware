@@ -43,6 +43,7 @@ use egui::text::{CCursor, CCursorRange, LayoutJob, TextFormat};
 use egui::{Color32, FontId, Key, Modifiers, RichText, Stroke, Ui};
 use obs_model::{NoteLineKind, NoteMarkKind};
 
+use crate::icons::{self, Icon};
 use crate::theme;
 
 /// A change the toolbar or a shortcut makes.
@@ -70,15 +71,16 @@ impl Format {
         Format::Link,
     ];
 
-    fn label(self) -> RichText {
+    /// The button's text, or its icon and the name a screen reader reads for it.
+    fn label(self) -> Result<RichText, (Icon, &'static str)> {
         match self {
-            Format::Bold => RichText::new("B").strong(),
-            Format::Italic => RichText::new("I").italics(),
-            Format::Heading => RichText::new("H"),
-            Format::Bullet => RichText::new("•"),
-            Format::Numbered => RichText::new("1."),
-            Format::Quote => RichText::new("“”"),
-            Format::Link => RichText::new("🔗"),
+            Format::Bold => Ok(RichText::new("B").strong()),
+            Format::Italic => Ok(RichText::new("I").italics()),
+            Format::Heading => Ok(RichText::new("H")),
+            Format::Bullet => Err((Icon::BulletList, "Bulleted list")),
+            Format::Numbered => Ok(RichText::new("1.")),
+            Format::Quote => Ok(RichText::new("“”")),
+            Format::Link => Err((Icon::Link, "Link")),
         }
     }
 
@@ -125,12 +127,20 @@ pub(super) fn note_editor(
         .horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             for f in Format::TOOLBAR {
-                let b = egui::Button::new(f.label())
-                    .frame(false)
-                    .min_size(egui::vec2(24.0, 20.0));
+                let (b, name) = match f.label() {
+                    Ok(text) => (egui::Button::new(text), None),
+                    Err((icon, name)) => {
+                        let img = icons::image(ui.ctx(), icon, icons::BODY, theme::c().ink);
+                        (egui::Button::new(img), Some(name))
+                    }
+                };
+                let b = b.frame(false).min_size(egui::vec2(24.0, 20.0));
                 let why = off(f);
-                let response = ui
-                    .add_enabled(why.is_none(), b)
+                let mut response = ui.add_enabled(why.is_none(), b);
+                if let Some(name) = name {
+                    response = response.accessible_name(name);
+                }
+                let response = response
                     .on_hover_text(f.hint())
                     .on_disabled_hover_text(why.unwrap_or_default());
                 if let Some(why) = why {

@@ -1119,7 +1119,8 @@ impl State {
                 (*scale, ColorRole::Accent, None, 0.0)
             }
             NoteLineKind::Bullet { level } => {
-                let bullet = ["•", "○", "–"][usize::from(level) % 3];
+                // List markers in the reading font, as the text of the Note shows them.
+                let bullet = ['•', '○', '–'][usize::from(level) % 3];
                 let at = f32::from(level) * LEVEL;
                 (
                     1.0,
