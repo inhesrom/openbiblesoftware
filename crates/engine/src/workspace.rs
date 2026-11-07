@@ -464,6 +464,8 @@ pub struct Tab {
     pub arriving_at: Option<Verse>,
     /// A Bible Tab's interlinear lines (#143).
     pub interlinear: crate::interlinear::InterlinearLines,
+    /// The Visual filters this Resource Tab switched on or off (#211).
+    pub visual_filters: crate::visual_filters::TabFilters,
     /// A Resource Tab shows its Contents pane (#176).
     pub contents: bool,
     /// The text unit at the top of the Tab's view, as the UI reports it from the live view
@@ -508,6 +510,7 @@ impl Tab {
             search: Default::default(),
             arriving_at: None,
             interlinear: t.interlinear,
+            visual_filters: t.visual_filters,
             contents: t.contents,
             view_unit: None,
             passage: None,
@@ -820,6 +823,8 @@ pub enum Effect {
     ShowFonts,
     /// Open the Highlight styles window (View → Highlight styles…, #181).
     ShowHighlightStyles,
+    /// Open the Visual filters window (View → Visual filters…, #211).
+    ShowVisualFilters,
     /// A Resource Tab now shows another Resource (a parallel resource, or Back/Forward across
     /// a switch, #151): load it, at the Tab's location.
     Switched(TabId),
@@ -1157,6 +1162,7 @@ impl Workspace {
                 search: Default::default(),
                 arriving_at: None,
                 interlinear: Default::default(),
+                visual_filters: Default::default(),
                 contents: false,
                 view_unit: None,
                 passage: None,

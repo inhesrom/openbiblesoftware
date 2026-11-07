@@ -120,6 +120,12 @@ pub struct TabSnapshot {
         skip_serializing_if = "crate::interlinear::InterlinearLines::is_default"
     )]
     pub interlinear: crate::interlinear::InterlinearLines,
+    /// The Visual filters a Resource Tab switched on or off (#211).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::visual_filters::TabFilters::is_default"
+    )]
+    pub visual_filters: crate::visual_filters::TabFilters,
     /// A Resource Tab shows its Contents pane (#176).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub contents: bool,
@@ -141,6 +147,7 @@ impl TabSnapshot {
             entry_location: t.entry_history.current(),
             link: t.link,
             interlinear: t.interlinear.clone(),
+            visual_filters: t.visual_filters.clone(),
             contents: t.contents,
             scroll: None,
         }

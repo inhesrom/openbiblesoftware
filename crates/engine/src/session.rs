@@ -83,6 +83,8 @@ pub struct Session {
     pub(crate) plans: crate::reading_plans::ReadingPlans,
     /// The Home arrangement and "Open Home at launch" (#178).
     pub(crate) home: crate::home::HomeSettings,
+    /// The Visual filters (#211).
+    pub(crate) visual_filters: crate::visual_filters::VisualFilters,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
     log: Vec<&'static str>,
     /// The User database, when there is one.
@@ -139,6 +141,7 @@ impl Session {
             saved_searches: crate::saved_searches::SavedSearches::default(),
             plans: crate::reading_plans::ReadingPlans::default(),
             home: crate::home::HomeSettings::default(),
+            visual_filters: crate::visual_filters::VisualFilters::default(),
             log: Vec::new(),
             user: None,
             history: crate::annotations::UndoHistory::default(),
@@ -218,6 +221,7 @@ impl Session {
         self.load_home();
         self.load_copy_verses();
         self.load_collections();
+        self.load_visual_filters();
         self.load_saved_searches();
         self.load_key_bindings();
         // Library load: Annotations made against another revision of a Resource move with

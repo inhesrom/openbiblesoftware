@@ -1358,6 +1358,104 @@ pub fn tagnt_romans() -> obs_model::Resource {
     r
 }
 
+/// Romans 12:2, 12:13, 12:14 and 13:14 as STEPBible's TAGNT tags them (CC BY), for Visual
+/// filters (#211). The imperatives of Romans 12 here: συσχηματίζεσθε and μεταμορφοῦσθε
+/// (12:2), εὐλογεῖτε twice and καταρᾶσθε (12:14); 12:13 has only participles, and 13:14's
+/// ἐνδύσασθε and ποιεῖσθε are outside Romans 12.
+pub fn tagnt_romans_12() -> obs_model::Resource {
+    use obs_scripture::{Book, Verse};
+    let rom = |c, v| Verse::new(Book::Romans, c, v);
+    let mut r = tagged_bible(
+        "tagnt",
+        "Translators Amalgamated Greek NT",
+        "TAGNT",
+        "grc",
+        &[
+            (
+                rom(12, 2),
+                "καὶ{G2532|καί|CONJ|And} μὴ{G3361|μή|PRT-N|not} \
+                 συσχηματίζεσθε{G4964|συσχηματίζω|V-PEM-2P|do_be_conformed} τῷ{G3588|ὁ|T-DSM|to_the} \
+                 αἰῶνι{G165G|αἰών|N-DSM|age} τούτῳ{G3778|οὗτος|D-DSM|this}, ἀλλὰ{G235|ἀλλά|CONJ|but} \
+                 μεταμορφοῦσθε{G3339|μεταμορφόω|V-PPM-2P|do_be_transformed} τῇ{G3588|ὁ|T-DSF|by_the} \
+                 ἀνακαινώσει{G342|ἀνακαίνωσις|N-DSF|renewing} τοῦ{G3588|ὁ|T-GSM|of_the} \
+                 νοὸς{G3563|νοῦς|N-GSM|mind} εἰς{G1519|εἰς|PREP|for} τὸ{G3588|ὁ|T-ASN|the} \
+                 δοκιμάζειν{G1381|δοκιμάζω|V-PAN|to_prove} ὑμᾶς{G4771|σύ|P-2AP|by_you} \
+                 τί{G5101|τίς|I-NSN|what_is} τὸ{G3588|ὁ|T-NSN|the} θέλημα{G2307|θέλημα|N-NSN|will} \
+                 τοῦ{G3588|ὁ|T-GSM|the} θεοῦ{G2316|θεός|N-GSM-T|of_God} τὸ{G3588|ὁ|T-NSN|the} \
+                 ἀγαθὸν{G18|ἀγαθός|A-NSN|good} καὶ{G2532|καί|CONJ|and} \
+                 εὐάρεστον{G2101|εὐάρεστος|A-NSN|well-pleasing} καὶ{G2532|καί|CONJ|and} \
+                 τέλειον{G5046|τέλειος|A-NSN|perfect}.",
+            ),
+            (
+                rom(12, 13),
+                "ταῖς{G3588|ὁ|T-DPF|to_the} χρείαις{G5532|χρεία|N-DPF|needs} \
+                 τῶν{G3588|ὁ|T-GPM|of_the} ἁγίων{G40H|ἅγιος|A-GPM|saints} \
+                 κοινωνοῦντες{G2841|κοινωνέω|V-PAP-NPM|contributing}, τὴν{G3588|ὁ|T-ASF|the} \
+                 φιλοξενίαν{G5381|φιλοξενία|N-ASF|hospitality} \
+                 διώκοντες{G1377|διώκω|V-PAP-NPM|pursuing}.",
+            ),
+            (
+                rom(12, 14),
+                "εὐλογεῖτε{G2127|εὐλογέω|V-PAM-2P|do_bless} τοὺς{G3588|ὁ|T-APM|those} \
+                 διώκοντας{G1377|διώκω|V-PAP-APM|persecuting} ὑμᾶς{G4771|σύ|P-2AP|you}· \
+                 εὐλογεῖτε{G2127|εὐλογέω|V-PAM-2P|do_bless} καὶ{G2532|καί|CONJ|and} \
+                 μὴ{G3361|μή|PRT-N|not} καταρᾶσθε{G2672|καταράομαι|V-PNM-2P|do_curse}.",
+            ),
+            (
+                rom(13, 14),
+                "ἀλλ᾽{G235|ἀλλά|CONJ|But} ἐνδύσασθε{G1746|ἐνδύω|V-AMM-2P|do_put_on} \
+                 τὸν{G3588|ὁ|T-ASM|the} κύριον{G2962G|κύριος|N-ASM-T|Lord} \
+                 Ἰησοῦν{G2424G|Ἰησοῦς|N-ASM-P|Jesus} Χριστὸν{G5547|Χριστός|N-ASM-T|Christ} \
+                 καὶ{G2532|καί|CONJ|and} τῆς{G3588|ὁ|T-GSF|of_the} σαρκὸς{G4561|σάρξ|N-GSF|flesh} \
+                 πρόνοιαν{G4307|πρόνοια|N-ASF|provision} μὴ{G3361|μή|PRT-N|not} \
+                 ποιεῖσθε{G4160G|ποιέω|V-PMM-2P|do_make} εἰς{G1519|εἰς|PREP|for} \
+                 ἐπιθυμίας{G1939|ἐπιθυμία|N-APF|desires}.",
+            ),
+        ],
+    );
+    r.manifest.license = "CC-BY-4.0".into();
+    r
+}
+
+/// The KJV (public domain) at the Verses of [`tagnt_romans_12`], with the Strong's numbers
+/// of KJV+Strong's and no Morphology, as the Starter KJV tags them.
+pub fn kjv_romans_12() -> obs_model::Resource {
+    use obs_scripture::{Book, Verse};
+    let rom = |c, v| Verse::new(Book::Romans, c, v);
+    tagged_bible(
+        "kjv",
+        "King James Version",
+        "KJV",
+        "en",
+        &[
+            (
+                rom(12, 2),
+                "And{G2532} be{G4964} not{G3361} conformed{G4964} to this{G5129} world{G165}: \
+                 but{G235} be ye transformed{G3339} by the renewing{G342} of your{G5216} \
+                 mind{G3563}, that{G1519} ye{G5209} may prove{G1381} what{G5101} is \
+                 that{G2307} good{G18}, and{G2532} acceptable{G2101}, and{G2532} \
+                 perfect{G5046}, will{G2307} of God{G2316}.",
+            ),
+            (
+                rom(12, 13),
+                "Distributing{G2841} to the necessity{G5532} of saints{G40}; given to{G1377} \
+                 hospitality{G5381}.",
+            ),
+            (
+                rom(12, 14),
+                "Bless{G2127} them which persecute{G1377} you{G5209}: bless{G2127}, \
+                 and{G2532} curse{G2672} not{G3361}.",
+            ),
+            (
+                rom(13, 14),
+                "But{G235} put{G1746} ye on{G1746} the Lord{G2962} Jesus{G2424} \
+                 Christ{G5547}, and{G2532} make{G4160} not{G3361} provision{G4307} for the \
+                 flesh{G4561}, to fulfil the lusts{G1939} thereof.",
+            ),
+        ],
+    )
+}
+
 /// KJV Genesis 12:1 (public domain) with Strong's numbers.
 pub fn kjv_genesis_12() -> obs_model::Resource {
     tagged_bible(
