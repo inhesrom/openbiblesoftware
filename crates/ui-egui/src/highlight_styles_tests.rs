@@ -1,7 +1,7 @@
 //! Custom Highlight styles and palettes (#181) through the headless harness: a real `.obr`
 //! with Rom 8:27-29 and a real User database. "Promises" (a gold box) on Rom 8:28 survives a
 //! restart and is drawn in every Page tone; deleting a used style in View → Highlight
-//! styles… moves its Highlight and Ctrl+Z brings both back; Ctrl+1…9 and the menus follow the
+//! styles… moves its Highlight and Ctrl+Z brings both back; Alt+1…9 and the menus follow the
 //! active palette; tone adjustments that fail WCAG AA are refused.
 
 use std::path::{Path, PathBuf};
@@ -272,8 +272,8 @@ fn deleting_a_used_style_in_the_window_moves_its_highlight_and_ctrl_z_restores_b
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
-/// Ctrl+6 is the sixth style of the active palette; the right-click menu lists the active
-/// palette; switching to an empty palette leaves Ctrl+1 to nothing.
+/// Alt+6 is the sixth style of the active palette; the right-click menu lists the active
+/// palette; switching to an empty palette leaves Alt+1 to nothing.
 #[test]
 fn the_keys_and_the_right_click_menu_follow_the_active_palette() {
     let dir = folder("keys");
@@ -289,7 +289,7 @@ fn the_keys_and_the_right_click_menu_follow_the_active_palette() {
     let at = word.unwrap_or_else(|| verse[0].left_center() + vec2(60.0, 0.0));
     super::annotation::double_click(&mut h, at);
     assert!(h.shell.st.has_selection(tab));
-    press_key(&mut h, egui::Key::Num6, Modifiers::COMMAND);
+    press_key(&mut h, egui::Key::Num6, Modifiers::ALT);
     let made = h.shell.st.session.annotations(None).unwrap();
     assert_eq!(made.len(), 1);
     assert_eq!(
@@ -324,7 +324,7 @@ fn the_keys_and_the_right_click_menu_follow_the_active_palette() {
     assert!(swatches >= 3, "{:?}", h.texts());
     press_key(&mut h, egui::Key::Escape, Modifiers::NONE);
 
-    // A new palette, made active: no styles, so Ctrl+1 highlights nothing.
+    // A new palette, made active: no styles, so Alt+1 highlights nothing.
     let out = h
         .shell
         .run("highlight_palette.create", &json!({ "name": "Themes" }))
@@ -332,7 +332,7 @@ fn the_keys_and_the_right_click_menu_follow_the_active_palette() {
     h.shell
         .run("highlight_palette.activate", &json!({ "id": out["id"] }));
     super::annotation::double_click(&mut h, at);
-    press_key(&mut h, egui::Key::Num1, Modifiers::COMMAND);
+    press_key(&mut h, egui::Key::Num1, Modifiers::ALT);
     assert_eq!(h.shell.st.session.annotations(None).unwrap().len(), 1);
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
@@ -399,7 +399,7 @@ fn a_tone_adjustment_that_fails_aa_is_refused_and_never_drawn() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
-/// The name field on the row whose key reads `key` ("Ctrl+1"): the text just right of it.
+/// The name field on the row whose key reads `key` ("Alt+1"): the text just right of it.
 fn name_field(h: &Harness, key: &str) -> Option<(Rect, String)> {
     let k = h.find(key)?;
     (h.shapes.iter())
@@ -418,7 +418,7 @@ fn undoing_a_rename_typed_in_the_window_refreshes_the_field_and_keeps_redo() {
     let mut h = launch(&dir);
     h.shell.run("view.highlight_styles", &json!({}));
     h.frames(3);
-    let (field, text) = name_field(&h, "Ctrl+1").unwrap();
+    let (field, text) = name_field(&h, "Alt+1").unwrap();
     assert_eq!(text, "Yellow");
     h.click(field.right_center() + vec2(2.0, 0.0));
     press_key(&mut h, egui::Key::End, Modifiers::NONE);
@@ -427,17 +427,17 @@ fn undoing_a_rename_typed_in_the_window_refreshes_the_field_and_keeps_redo() {
     press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
     let name = |h: &Harness| h.shell.st.session.highlight_style("yellow").unwrap().name;
     assert_eq!(name(&h), "Yellowish");
-    assert_eq!(name_field(&h, "Ctrl+1").unwrap().1, "Yellowish");
+    assert_eq!(name_field(&h, "Alt+1").unwrap().1, "Yellowish");
 
     press_key(&mut h, egui::Key::Z, Modifiers::COMMAND);
     assert_eq!(name(&h), "Yellow");
-    assert_eq!(name_field(&h, "Ctrl+1").unwrap().1, "Yellow");
+    assert_eq!(name_field(&h, "Alt+1").unwrap().1, "Yellow");
     assert_eq!(
         h.shell.st.session.undo_history().redo_label(),
         Some("Edit Highlight style")
     );
     // In and out of the field without typing: nothing is saved, redo still there.
-    let (field, _) = name_field(&h, "Ctrl+1").unwrap();
+    let (field, _) = name_field(&h, "Alt+1").unwrap();
     h.click(field.center());
     press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
     assert_eq!(name(&h), "Yellow");
@@ -448,7 +448,7 @@ fn undoing_a_rename_typed_in_the_window_refreshes_the_field_and_keeps_redo() {
     h.shell.run("edit.redo", &json!({}));
     h.frames(2);
     assert_eq!(name(&h), "Yellowish");
-    assert_eq!(name_field(&h, "Ctrl+1").unwrap().1, "Yellowish");
+    assert_eq!(name_field(&h, "Alt+1").unwrap().1, "Yellowish");
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -656,7 +656,7 @@ fn previews() {
     h.shell.run("view.highlight_styles", &json!({}));
     h.frames(30);
     // Promises' swatch, left of its key: its colours in each tone below.
-    let swatch = h.at("Ctrl+6") - vec2(48.0, 0.0);
+    let swatch = h.at("Alt+6") - vec2(48.0, 0.0);
     h.click(swatch);
     h.frames(30);
     h.screenshot(&out.join("highlight-styles-window.ppm"));

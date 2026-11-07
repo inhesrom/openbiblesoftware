@@ -252,12 +252,16 @@ An OS window of its own holding Panels and Tabs of the Workspace, so they can si
 _Avoid_: Popout, Undocked window, Detached Panel
 
 **Panel**:
-A dockable, resizable region of the Workspace that holds one or more Tabs.
+A dockable, resizable region of the Workspace that holds one or more Tabs. Ctrl+1…9 put the keyboard in the first nine Panels, in their order on screen (the main window's left to right and top to bottom, then each Floating window's); F6 and Shift+F6 move the keyboard round the window's areas: the menu bar, the Toolbar, then each Panel.
 _Avoid_: Pane, Window, Dock
 
 **Drop target**:
 Where something dragged across the Workspace would land, highlighted while dragging. A Bible reference or selected text dropped on a Tab's text takes that Tab there (a Passage Tab to the Passage, as a jump its Link set follows; a Lexicon, Dictionary, Word Study, Factbook or Topic Guide looks the word up; a Search Tab searches for it, a reference as written); on a Panel's tab bar it opens a new Tab in that Panel, and on a Panel's right edge a new Panel beside it (a Bible at the Passage, else a Search for the word). A Tab is docked by dragging its title onto another Panel or a Panel's edge, a Resource is dragged in from the Library, and a Note is moved by dragging its card onto a Resource's text (only text, but wherever it is, a Panel's right edge too), which asks first.
 _Avoid_: Drop zone, Dock zone
+
+**Tab switcher**:
+The list of a Panel's Tabs, the focused one first and then the others most recently used first, that Ctrl+Tab shows while Ctrl is held: each Tab moves the pick down it (Ctrl+Shift+Tab up), letting go of Ctrl shows the Tab picked, and Esc leaves things as they were. A quick Ctrl+Tab goes back to the Tab used before. Ctrl is the Control key on macOS too, where Cmd+Tab switches apps.
+_Avoid_: MRU list, Tab picker, Recent tabs
 
 **Tab**:
 One open thing in a Panel: a Resource, a Guide, or a Tool.
@@ -296,7 +300,7 @@ Something that happened, on a day, in a year or over years (a reign, a journey),
 _Avoid_: Incident, Happening
 
 **Current location**:
-The Key that a Tab is showing right now.
+The Key that a Tab is showing right now. Ctrl+Page Down and Ctrl+Page Up move it to the next or previous chapter, in the Tab's own numbering (a Commentary's next or previous section, a Lexicon's or Dictionary's next or previous entry), as a jump its Link set follows; Alt+← and Alt+→ are its Back and Forward.
 _Avoid_: Position, Cursor
 
 **Contents**:
@@ -344,7 +348,7 @@ The bar holding the Launchers. It sits at the Top of the window (in the menu bar
 _Avoid_: Ribbon, Dock, Menu bar (for the toolbar)
 
 **Keyboard shortcut**:
-A key that runs a command, or does something to the reading-pane selection (a Selection key). Each has a default key; Help → Keyboard shortcuts lists them all, grouped by menu and searchable, and there the user clicks one to record a new key, Clears it or Resets it to its default (Reset all restores every default). A key another Keyboard shortcut already has is not saved until the user swaps the two keys or cancels. Esc, Enter and Tab are never Keyboard shortcuts, and a key needs Ctrl or Alt unless it is a function key. Ctrl means Cmd on macOS. The user's own keys are a preference in the User database and apply at once.
+A key that runs a command, or does something to the reading-pane selection (a Selection key). Each has a default key; Help → Keyboard shortcuts lists them all, grouped by menu and searchable, and there the user clicks one to record a new key, Clears it or Resets it to its default (Reset all restores every default). A key another Keyboard shortcut already has is not saved until the user swaps the two keys or cancels. Esc, Enter, and Tab without Ctrl are never Keyboard shortcuts (Ctrl+Tab is the Tab switcher's), and a key needs Ctrl or Alt unless it is a function key. Ctrl means Cmd on macOS. The user's own keys are a preference in the User database and apply at once.
 _Avoid_: Hotkey, Key map, Accelerator, Key binding (in the UI)
 
 **Settings**:
@@ -352,7 +356,7 @@ The Tab (Ctrl+, or View → Settings) where every preference is in one place, un
 _Avoid_: Preferences (as the Tab's name), Options, Program settings, Settings file
 
 **Selection key**:
-A Keyboard shortcut that acts on the selection in a reading pane: Note (Ctrl+Shift+N) and the first nine Highlight styles of the active Highlight palette, in its order (Ctrl+1…9), by default. It is listed under Selection in Help → Keyboard shortcuts.
+A Keyboard shortcut that acts on the selection in a reading pane: Note (Ctrl+Shift+N) and the first nine Highlight styles of the active Highlight palette, in its order (Alt+1…9; Ctrl+1…9 go to the Panels), by default. It is listed under Selection in Help → Keyboard shortcuts.
 _Avoid_: Annotation key
 
 **Built-in Layout**:
@@ -490,7 +494,7 @@ A look a Highlight is drawn in: a colour with a look (background, underline, box
 _Avoid_: Color, Tag, Label
 
 **Highlight palette**:
-A named, ordered set of Highlight styles, made, renamed, deleted, exported and imported (as a small JSON file) in View → Highlight styles…. One is active: the selection toolbar, the right-click menu and Ctrl+1…9 offer its styles in its order. A Highlight in a style of another palette still shows. The first palette is **Standard**, with the five built-in styles.
+A named, ordered set of Highlight styles, made, renamed, deleted, exported and imported (as a small JSON file) in View → Highlight styles…. One is active: the selection toolbar, the right-click menu and Alt+1…9 offer its styles in its order. A Highlight in a style of another palette still shows. The first palette is **Standard**, with the five built-in styles.
 _Avoid_: Theme, Colour set
 
 **Notebook**:

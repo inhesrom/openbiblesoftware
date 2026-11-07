@@ -2,6 +2,7 @@
 //! entry lookups use the same normalization and Strong's fallback as the Resource store.
 
 use std::collections::BTreeMap;
+use std::ops::Bound;
 
 use obs_model::{Key, KeyEntry, UnitId, normalize, transliteration_key};
 use obs_scripture::Verse;
@@ -70,6 +71,21 @@ impl ResourceNavigation {
     pub fn section(&self, verse: Verse) -> Option<&KeyEntry> {
         let (_, i) = self.sections.range(..=verse).next_back()?;
         self.keys.get(*i)
+    }
+
+    /// The start of the section after the one at `verse` (`forward`), or before it: the
+    /// Commentary's next or previous unit for Ctrl+Page Down / Page Up (#215).
+    pub fn adjacent_section(&self, verse: Verse, forward: bool) -> Option<Verse> {
+        let at = self.sections.range(..=verse).next_back().map(|(v, _)| *v);
+        if forward {
+            let after = at.unwrap_or(verse);
+            (self.sections)
+                .range((Bound::Excluded(after), Bound::Unbounded))
+                .next()
+                .map(|(v, _)| *v)
+        } else {
+            self.sections.range(..at?).next_back().map(|(v, _)| *v)
+        }
     }
 
     pub fn lookup(&self, key: &Key) -> Option<&KeyEntry> {

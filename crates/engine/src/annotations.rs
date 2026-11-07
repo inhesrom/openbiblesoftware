@@ -1023,7 +1023,7 @@ fn can_redo(s: &Session) -> bool {
 
 /// Ctrl+Z and Ctrl+Shift+Z are the undo keys of text fields too, so the Shell leaves them to a
 /// focused text field (a Note being written, a reference box) instead of running these
-/// commands (#62). Ctrl+1…9 and Ctrl+Shift+N act on the reading-pane selection, which only the
+/// commands (#62). Alt+1…9 and Ctrl+Shift+N act on the reading-pane selection, which only the
 /// Shell knows, so the Shell binds them itself.
 pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {

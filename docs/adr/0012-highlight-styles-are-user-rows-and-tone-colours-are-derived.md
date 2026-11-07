@@ -16,5 +16,5 @@ A style stores one colour, a look (background, underline, box or text colour) an
 ## Consequences
 
 - Colours of Highlights are no longer part of the Page-tone palettes: those hold the page, inks and overlays, and a style's colour comes from the style and the tone at draw time. Switching tone still never re-lays out text.
-- The Selection keys for Highlights become slots: Ctrl+1…9 highlight with the active palette's first nine styles. Keys the user had rebound for the old five styles move to slots 1–5.
+- The Selection keys for Highlights become slots: Ctrl+1…9 highlight with the active palette's first nine styles. Keys the user had rebound for the old five styles move to slots 1–5. (Since #215 the slots' default keys are Alt+1…9: Ctrl+1…9 go to the Panels. Keys the user set for a slot are kept.)
 - Exported palettes (a small JSON file) carry names, colours, looks and adjustments, never ids; importing one always makes a new palette, so it can never rewrite styles that Highlights use.

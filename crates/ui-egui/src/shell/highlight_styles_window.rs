@@ -1,7 +1,7 @@
 //! View → Highlight styles… (#181, ADR 0012): the user's own Highlight styles and palettes.
 //!
 //! - The palette row switches the active palette (the selection toolbar, right-click menu and
-//!   Ctrl+1…9 follow it), makes, renames and deletes palettes, and exports or imports one as
+//!   Alt+1…9 follow it), makes, renames and deletes palettes, and exports or imports one as
 //!   a small JSON file through the native file dialogs.
 //! - Each style of the active palette is a row: its swatch and key, name, look, colour (a hex
 //!   field or a preset), ⏶ ⏷ to reorder, and Delete. Deleting a style that Highlights use asks
@@ -388,7 +388,7 @@ impl State {
         let n = styles.len();
         ui.label(
             RichText::new(
-                "Ctrl+1…9 highlight with the first nine styles, in this order. A colour is \
+                "Alt+1…9 highlight with the first nine styles, in this order. A colour is \
                  adjusted for each page tone so text stays readable.",
             )
             .small()

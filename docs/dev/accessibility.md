@@ -124,8 +124,9 @@ text on every Link set chip and badge, and the Grid view's heat cells at every h
   or a screen reader's selection.
 - **Library rows** reorder by drag or the row's right-click menu; the rows themselves have no
   Shift+F10 menu, and each row's drag handle is a Tab stop.
-- **Tab order is long** (toolbar, Command box, then each Panel's tab bar and header) and there
-  is no shortcut to move between Panels (F6 in many apps).
+- **Tab order is long** (toolbar, Command box, then each Panel's tab bar and header). F6 and
+  Shift+F6 now move between the menu bar, the Toolbar and the Panels, and Ctrl+1…9 go straight
+  to a Panel (#215, `keyboard-navigation.md`).
 - **What is checked** is text drawn as text shapes against solid fills. Launcher icons and
   other line drawings are checked only through the chrome colour test, not as drawn.
 - **Surfaces not built yet**: the Atlas (#150) and the Home Tab (#178) are open tickets.

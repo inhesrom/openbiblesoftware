@@ -543,7 +543,7 @@ fn interlinear_lines_are_selected_and_copied_with_their_words_but_never_anchored
     assert!(lines.contains(&"God\tθεός\ttheos\tG2316"), "{copied}");
     assert_eq!(lines.last(), Some(&"John 3:16 (KJV)"), "{copied}");
     // A Highlight made from it anchors on the text only.
-    press(&mut h, egui::Key::Num2, Modifiers::COMMAND);
+    press(&mut h, egui::Key::Num2, Modifiers::ALT);
     let stored = h.shell.st.session.annotations(None).unwrap();
     assert_eq!(stored.len(), 1);
     let range = stored[0].anchor.as_ref().unwrap().text_range().unwrap();

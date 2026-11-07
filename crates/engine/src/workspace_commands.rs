@@ -1163,7 +1163,11 @@ fn open_resource(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> 
     open(s, p, TabKind::Resource(id.to_string()))
 }
 
-fn tab_param(command: &'static str, s: &Session, p: &Params<'_>) -> Result<TabId, CommandError> {
+pub(crate) fn tab_param(
+    command: &'static str,
+    s: &Session,
+    p: &Params<'_>,
+) -> Result<TabId, CommandError> {
     let tab = p
         .i64("tab")
         .and_then(|n| u64::try_from(n).ok())
