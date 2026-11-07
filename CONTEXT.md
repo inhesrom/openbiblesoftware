@@ -255,6 +255,10 @@ _Avoid_: Popout, Undocked window, Detached Panel
 A dockable, resizable region of the Workspace that holds one or more Tabs.
 _Avoid_: Pane, Window, Dock
 
+**Drop target**:
+Where something dragged across the Workspace would land, highlighted while dragging. A Bible reference or selected text dropped on a Tab's text takes that Tab there (a Passage Tab to the Passage, as a jump its Link set follows; a Lexicon, Dictionary, Word Study, Factbook or Topic Guide looks the word up; a Search Tab searches for it); on a Panel's tab bar it opens a new Tab in that Panel, and on a Panel's right edge a new Panel beside it (a Bible at the Passage, else a Search for the word). A Tab is docked by dragging its title onto another Panel or a Panel's edge, a Resource is dragged in from the Library, and a Note is moved by dragging its card onto a Resource's text, which asks first.
+_Avoid_: Drop zone, Dock zone
+
 **Tab**:
 One open thing in a Panel: a Resource, a Guide, or a Tool.
 _Avoid_: View, Document

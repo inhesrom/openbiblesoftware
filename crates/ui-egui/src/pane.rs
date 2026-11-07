@@ -91,6 +91,15 @@ pub struct WordHit {
     pub range: std::ops::Range<usize>,
 }
 
+/// What a drag that starts on the text carries out of the pane (#216).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DragOut {
+    /// The Scripture reference it started on: unit and span indexes.
+    Reference { unit: usize, span: usize },
+    /// The selection it started inside.
+    Selection,
+}
+
 /// What happened in the reading pane this frame.
 #[derive(Debug, Clone, Default)]
 pub struct PaneOutput {
@@ -128,6 +137,9 @@ pub struct PaneOutput {
     /// An interlinear line (#143) was clicked: the right-click menu opens for its word, which
     /// is now the selection.
     pub cell_clicked: bool,
+    /// A drag started this frame on a Scripture reference or inside the selection: it carries
+    /// that out of the pane instead of selecting (#216).
+    pub drag_out: Option<DragOut>,
 }
 
 /// Draw the reading pane into all the space `ui` has, and handle its input. `flash` marks a
@@ -158,6 +170,7 @@ pub fn reading_pane(
     let text_rect = Rect::from_min_max(pos2(left, rect.top()), pos2(left + measure, rect.bottom()));
     view.set_width(text_rect.width());
     view.text_origin = [text_rect.left(), rect.top()];
+    view.pane_rect = [rect.left(), rect.top(), rect.right(), rect.bottom()];
     let before = view.position().0;
 
     // Input: wheel and trackpad, keys, scrollbar drag.
@@ -200,6 +213,7 @@ pub fn reading_pane(
     let made = handle_selection(ui, &response, view, rect, text_rect);
     out.selection_made = made.selection_made;
     out.context_clicked = made.context_clicked;
+    out.drag_out = made.drag_out;
     out.user_moved = (view.position().0 - before).abs() > 0.01;
 
     let ppp = ui.ctx().pixels_per_point();
@@ -689,10 +703,13 @@ fn paint_note_marker(painter: &egui::Painter, r: Rect, palette: &Palette) {
 struct SelectionInput {
     selection_made: bool,
     context_clicked: bool,
+    drag_out: Option<DragOut>,
 }
 
 /// Drag to select (auto-scrolling past the pane's edges), double-click a word, triple-click a
-/// verse, click to clear; Copy puts the text with its reference on the clipboard.
+/// verse, click to clear; Copy puts the text with its reference on the clipboard. A drag that
+/// starts on a Scripture reference, or inside the selection, carries it out of the pane
+/// instead (#216): the selection stays as it is.
 fn handle_selection(
     ui: &Ui,
     response: &egui::Response,
@@ -703,6 +720,7 @@ fn handle_selection(
     let mut input = SelectionInput {
         selection_made: false,
         context_clicked: false,
+        drag_out: None,
     };
     let pos_at = |view: &mut ReadingView, p: Pos2| {
         let y = p.y.clamp(rect.top(), rect.bottom() - 1.0) - rect.top();
@@ -724,7 +742,14 @@ fn handle_selection(
                 input.selection_made = true;
             }
         } else if response.drag_started() {
-            view.selection = pointer.and_then(|p| pos_at(view, p)).map(Selection::caret);
+            let origin = ui.input(|i| i.pointer.press_origin()).or(pointer);
+            input.drag_out = origin.and_then(|p| drag_out_at(view, p, rect, text_rect));
+            view.dragging_out = input.drag_out.is_some();
+            if !view.dragging_out {
+                view.selection = pointer.and_then(|p| pos_at(view, p)).map(Selection::caret);
+            }
+        } else if view.dragging_out {
+            // Carrying a reference or the selection: the Shell draws where it would drop.
         } else if response.dragged()
             && let Some(p) = pointer
         {
@@ -752,9 +777,15 @@ fn handle_selection(
             }
             input.context_clicked = true;
         }
-        if response.drag_stopped() && view.selection.is_some_and(|s| has_text(view, &s)) {
+        if response.drag_stopped()
+            && !view.dragging_out
+            && view.selection.is_some_and(|s| has_text(view, &s))
+        {
             input.selection_made = true;
         }
+    }
+    if response.drag_stopped() || !response.dragged() {
+        view.dragging_out = false;
     }
     if response.drag_stopped() {
         view.dragging_scrollbar = false;
@@ -768,6 +799,21 @@ fn handle_selection(
         ui.ctx().copy_text(view.copy_text(&sel));
     }
     input
+}
+
+/// What a drag pressed at `p` (screen points) carries out of the pane: the Scripture reference
+/// there, else the selection when `p` is inside it; `None` selects as usual.
+fn drag_out_at(view: &mut ReadingView, p: Pos2, rect: Rect, text_rect: Rect) -> Option<DragOut> {
+    if !rect.contains(p) {
+        return None;
+    }
+    let (x, y) = (p.x - text_rect.left(), p.y - rect.top());
+    if let Some((unit, span)) = view.reference_at(x, y) {
+        return Some(DragOut::Reference { unit, span });
+    }
+    let sel = view.selection.filter(|s| has_text(view, s))?;
+    let at = view.pos_at(x, y)?;
+    sel.contains(&view.doc, at).then_some(DragOut::Selection)
 }
 
 /// Shift+F10 or the Menu key: open the right-click menu from the keyboard (#142).
