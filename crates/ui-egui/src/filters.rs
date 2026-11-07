@@ -1,11 +1,12 @@
 //! Visual filters (#211) in a reading pane: the words of each visible block that a Tab's
-//! filters match, found on a worker thread and drawn as [`Mark`]s in the filters' styles.
+//! filters match, found on a worker thread and drawn in the filters' looks.
 //!
 //! - Matching is [`obs_engine::block_hits`] (the Search Tool's highlighter on the block's
 //!   text and Tagged words). A pane asks for the blocks it shows and a few on either side;
-//!   each block is matched once per set of filters and kept, so scrolling back costs nothing
-//!   and the UI thread only turns ready matches into rectangles, as for Highlights.
-//! - A Mark carries its filter's [`obs_engine::StyleAppearance`]: the painter resolves its
+//!   each block is matched once per set of filters and kept while it is near the view.
+//! - Each block's match rectangles are taken from its layout once (and again only when it is
+//!   laid out again), so a scrolling frame only moves them.
+//! - A match carries its filter's [`obs_engine::StyleAppearance`]: the painter resolves its
 //!   colour from the Page tone's palette each frame, so a theme switch needs no relayout.
 //! - Strong's alignment (ADR 0015): a Bible not in Hebrew, Aramaic or Greek takes the `@…`
 //!   and `lemma:` terms from the first original-language Bible in Preferred order that has
@@ -16,12 +17,14 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use obs_engine::{AlignedWords, FilterMatcher, VerseSlice, VisualFilter, block_hits};
+use obs_engine::{
+    AlignedWords, FilterMatcher, StyleAppearance, VerseSlice, VisualFilter, block_hits,
+};
 use obs_model::{ResourceType, SpanKind};
 use obs_scripture::{Passage, StrongsLanguage, Testament, Verse};
 
 use crate::doc::ReadingDoc;
-use crate::marks::{Mark, MarkKind};
+use crate::pane::FilterRects;
 use crate::selection::DocPos;
 use crate::view::ReadingView;
 
@@ -248,8 +251,11 @@ fn verse_slices(doc: &ReadingDoc, unit: usize, bytes: &std::ops::Range<usize>) -
     out
 }
 
-/// The Marks `source`'s filters make in block `index` of `doc`.
-fn block_marks(doc: &ReadingDoc, index: usize, source: &FilterSource) -> Vec<Mark> {
+/// One match in a block: the look it is drawn in and the bytes it covers.
+type BlockMatch = (StyleAppearance, DocPos, DocPos);
+
+/// What `source`'s filters match in block `index` of `doc`.
+fn block_matches(doc: &ReadingDoc, index: usize, source: &FilterSource) -> Vec<BlockMatch> {
     let matchers = source.matchers();
     let Some(block) = doc.blocks.get(index) else {
         return Vec::new();
@@ -271,33 +277,33 @@ fn block_marks(doc: &ReadingDoc, index: usize, source: &FilterSource) -> Vec<Mar
         .into_iter()
         .filter_map(|h| {
             let m = matchers.get(h.filter)?;
-            Some(Mark {
-                id: format!("filter:{}", m.id),
-                start: DocPos {
-                    unit: block.unit,
-                    byte: h.range.start,
-                },
-                end: DocPos {
-                    unit: block.unit,
-                    byte: h.range.end,
-                },
-                kind: MarkKind::Highlight(m.appearance),
-            })
+            let at = |byte| DocPos {
+                unit: block.unit,
+                byte,
+            };
+            Some((m.appearance, at(h.range.start), at(h.range.end)))
         })
         .collect()
 }
+
+/// A block's matches, for one generation of a painter's filters.
+type Reply = (u64, usize, Arc<Vec<BlockMatch>>);
 
 /// One pane's Visual filters: the matches of each block found so far, and those being found.
 pub struct FilterPainter {
     /// What the matches are for (the filters, the Bibles aligned through, the document).
     key: Option<u64>,
     source: Option<Arc<FilterSource>>,
-    done: HashMap<usize, Arc<Vec<Mark>>>,
+    done: HashMap<usize, Arc<Vec<BlockMatch>>>,
+    /// Each block's match rectangles (its top at 0), for the layout they were taken from.
+    rects: HashMap<usize, (usize, Arc<Vec<FilterRects>>)>,
     pending: HashSet<usize>,
     /// Bumped by each new key, so replies for an older one are dropped.
     generation: u64,
-    tx: Sender<(u64, usize, Arc<Vec<Mark>>)>,
-    rx: Receiver<(u64, usize, Arc<Vec<Mark>>)>,
+    /// Blocks drawn last time [`Self::marks`] ran whose matches were not found yet.
+    missing: usize,
+    tx: Sender<Reply>,
+    rx: Receiver<Reply>,
 }
 
 impl Default for FilterPainter {
@@ -307,8 +313,10 @@ impl Default for FilterPainter {
             key: None,
             source: None,
             done: HashMap::new(),
+            rects: HashMap::new(),
             pending: HashSet::new(),
             generation: 0,
+            missing: 0,
             tx,
             rx,
         }
@@ -336,6 +344,7 @@ impl FilterPainter {
         self.key = key;
         self.generation += 1;
         self.done.clear();
+        self.rects.clear();
         self.pending.clear();
         self.source = wanted.map(|(_, source)| Arc::new(source));
     }
@@ -345,39 +354,44 @@ impl FilterPainter {
         !self.pending.is_empty()
     }
 
-    /// The Marks of the blocks in view (a viewport `height` tall), asking for the matches of
-    /// those not found yet and of a few blocks beyond the view. `ctx` repaints when a job is
-    /// done.
-    pub fn marks(
+    /// How many blocks in view were drawn without their matches the last time.
+    pub fn missing(&self) -> usize {
+        self.missing
+    }
+
+    /// The rectangles of every match in the blocks in view (a viewport `height` tall), in
+    /// text coordinates, asking for the matches of the blocks not matched yet and of a few
+    /// beyond the view. `ctx` repaints when a block's matches are found. A block's rectangles
+    /// are worked out once for each layout of it, so scrolling only moves them.
+    pub fn rects(
         &mut self,
         view: &ReadingView,
         height: f32,
         ctx: Option<&egui::Context>,
-    ) -> Vec<Mark> {
-        for (generation, block, marks) in self.rx.try_iter() {
+    ) -> Vec<FilterRects> {
+        for (generation, block, found) in self.rx.try_iter() {
             if generation == self.generation {
                 self.pending.remove(&block);
-                self.done.insert(block, marks);
+                self.done.insert(block, found);
             }
         }
+        self.missing = 0;
         let Some(source) = self.source.clone() else {
             return Vec::new();
         };
-        let shown: Vec<usize> = view
-            .laid_in_view(height)
-            .iter()
-            .map(|(i, _, _)| *i)
-            .collect();
-        let (Some(&first), Some(&last)) = (shown.first(), shown.last()) else {
+        let shown = view.laid_in_view(height);
+        let (Some(first), Some(last)) = (shown.first().map(|s| s.0), shown.last().map(|s| s.0))
+        else {
             return Vec::new();
         };
         let blocks = view.doc.blocks.len();
-        let wanted = first.saturating_sub(READ_AHEAD_BLOCKS)..(last + 1 + READ_AHEAD_BLOCKS).min(blocks);
+        let around =
+            first.saturating_sub(READ_AHEAD_BLOCKS)..(last + 1 + READ_AHEAD_BLOCKS).min(blocks);
         // The blocks in view first, then the ones around them.
         let order = shown
             .iter()
-            .copied()
-            .chain(wanted.clone().filter(|i| !shown.contains(i)));
+            .map(|s| s.0)
+            .chain(around.filter(|i| !(first..=last).contains(i)));
         for block in order {
             if self.done.contains_key(&block) || !self.pending.insert(block) {
                 continue;
@@ -388,8 +402,8 @@ impl FilterPainter {
             let generation = self.generation;
             let ctx = ctx.cloned();
             submit(Box::new(move || {
-                let marks = Arc::new(block_marks(&doc, block, &source));
-                if tx.send((generation, block, marks)).is_ok()
+                let found = Arc::new(block_matches(&doc, block, &source));
+                if tx.send((generation, block, found)).is_ok()
                     && let Some(ctx) = ctx
                 {
                     ctx.request_repaint();
@@ -399,10 +413,42 @@ impl FilterPainter {
         // Keep only the blocks near the view: a whole Bible's matches are never held.
         let keep = first.saturating_sub(4 * READ_AHEAD_BLOCKS)..last + 1 + 4 * READ_AHEAD_BLOCKS;
         self.done.retain(|i, _| keep.contains(i));
-        shown
-            .iter()
-            .filter_map(|i| self.done.get(i))
-            .flat_map(|m| m.iter().cloned())
-            .collect()
+        self.rects.retain(|i, _| keep.contains(i));
+        let mut out = Vec::new();
+        for (index, top, laid) in &shown {
+            let Some(found) = self.done.get(index) else {
+                self.missing += 1;
+                continue;
+            };
+            let layout = Arc::as_ptr(laid) as usize;
+            let rects = match self.rects.get(index) {
+                Some((l, r)) if *l == layout => Arc::clone(r),
+                _ => {
+                    let ranges: Vec<(DocPos, DocPos)> =
+                        found.iter().map(|(_, a, b)| (*a, *b)).collect();
+                    let rects =
+                        crate::selection::block_range_rects(&view.doc, *index, laid, &ranges);
+                    let r: Arc<Vec<FilterRects>> = Arc::new(
+                        found
+                            .iter()
+                            .zip(rects)
+                            .map(|((look, _, _), rects)| (*look, rects))
+                            .collect(),
+                    );
+                    self.rects.insert(*index, (layout, Arc::clone(&r)));
+                    r
+                }
+            };
+            out.extend(rects.iter().map(|(look, rects)| {
+                (
+                    *look,
+                    rects
+                        .iter()
+                        .map(|[x0, y0, x1, y1]| [*x0, y0 + top, *x1, y1 + top])
+                        .collect(),
+                )
+            }));
+        }
+        out
     }
 }

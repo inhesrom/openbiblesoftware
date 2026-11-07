@@ -193,6 +193,8 @@ struct Bench {
     reference_frame: usize,
     /// Every pane's Find bar has these matches (#175); a frame draws those in view.
     found: Vec<crate::FindMatch>,
+    /// Each pane's Visual filters (#211), in the `filters` scenario; none otherwise.
+    filters: Vec<crate::filters::FilterPainter>,
     interval: Duration,
     budget: Duration,
 }
@@ -226,6 +228,16 @@ impl Bench {
                 current: Some(k),
             };
             std::hint::black_box(crate::pane::found_rects(v, found, self.cfg.viewport.1));
+            // Visual filters (#211): the rectangles of the blocks in view's matches, as the
+            // pane draws them; matching itself is on a worker.
+            if let Some(painter) = self.filters.get_mut(k) {
+                let started = Instant::now();
+                std::hint::black_box(painter.rects(v, self.cfg.viewport.1, None));
+                sync += started.elapsed();
+                if painter.missing() > 0 {
+                    placeholders[k] += 1;
+                }
+            }
         }
         // Real native-target translation: a whole-Bible Passage against >31k map entries.
         // Switch spans periodically to include cold submission as well as cached hover polls.
@@ -269,7 +281,9 @@ impl Bench {
         let mut scratch = Samples::default();
         for _ in 0..600 {
             self.frame(&mut scratch, |_| {});
-            if self.views.iter().all(|v| !v.has_pending()) {
+            if self.views.iter().all(|v| !v.has_pending())
+                && self.filters.iter().all(|f| !f.is_pending())
+            {
                 return;
             }
         }
@@ -332,6 +346,7 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         reference_doc: large_reference_doc(),
         reference_frame: 0,
         found,
+        filters: Vec::new(),
         interval,
         budget: SYNC_BUDGET,
     };
@@ -437,9 +452,16 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         .collect();
     let lines = interlinear_scenario(&mut bench, interlinear.as_ref());
     let find = find_scenario(&mut bench);
-    all_sync.extend(lines.sync.iter().chain(&find.sync).copied());
+    let filters = filters_scenario(&mut bench);
+    all_sync.extend(
+        (lines.sync.iter())
+            .chain(&find.sync)
+            .chain(&filters.sync)
+            .copied(),
+    );
     scenarios.push(lines.report("interlinear", interval_ms));
     scenarios.push(find.report("find", interval_ms));
+    scenarios.push(filters.report("filters", interval_ms));
     let mut feature_errors = Vec::new();
     if cfg.shell_scenarios {
         // The reading panes' layouts are dropped first: the Shell lays out its own.
@@ -489,6 +511,43 @@ fn interlinear_scenario(
     for v in &mut bench.views {
         v.set_interlinear(None);
     }
+    s
+}
+
+/// Three Visual filters (#211) on every pane, scrolling as in `steady`: Divine names (about
+/// one Tagged word in six), Imperatives (aligned through Strong's numbers: the synthetic Bible
+/// is English) and a phrase in Background. Each block's matches are found on a worker; a frame
+/// that draws a block in view without its matches counts as a placeholder frame.
+fn filters_scenario(bench: &mut Bench) -> Samples {
+    let mut filters = obs_engine::built_in_filters();
+    filters.retain(|f| f.id != "words-of-christ");
+    filters.push(obs_engine::VisualFilter {
+        id: "said-unto".into(),
+        name: "Said unto".into(),
+        query: "\"said unto\"".into(),
+        marked: None,
+        scope: String::new(),
+        look: obs_engine::HighlightLook::Background,
+        color: obs_engine::Rgb::new(255, 236, 140),
+        all_tabs: true,
+    });
+    bench.filters = (0..bench.views.len())
+        .map(|k| {
+            let mut painter = crate::filters::FilterPainter::default();
+            let source = crate::filters::FilterSource::new(filters.clone(), vec![], vec![]);
+            painter.set(Some((k as u64, source)));
+            painter
+        })
+        .collect();
+    bench.settle();
+    let mut s = Samples::default();
+    let dy = bench.cfg.steady_px;
+    for _ in 0..bench.cfg.steady_frames / 2 {
+        bench.frame(&mut s, |views| {
+            views.iter_mut().for_each(|v| v.scroll_by(dy))
+        });
+    }
+    bench.filters.clear();
     s
 }
 

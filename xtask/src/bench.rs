@@ -339,6 +339,7 @@ mod tests {
             "exegetical-guide",
             "topic-guide",
             "find",
+            "filters",
             "get-resources",
         ] {
             assert!(

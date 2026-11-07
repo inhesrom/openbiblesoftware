@@ -22,10 +22,7 @@ impl Drop for Files {
 /// A User database and a library of real `.obr` files: the KJV and TAGNT at Romans 12:2,
 /// 12:13, 12:14 and 13:14.
 fn setup(name: &str) -> (Harness, Files) {
-    let dir = std::env::temp_dir().join(format!(
-        "obs-shell-filters-{name}-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("obs-shell-filters-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let mut h = Harness::launch(Some(&dir.join("user.db")));
@@ -134,10 +131,12 @@ fn painted_words(h: &Harness, tab: TabId, color: Color32) -> Vec<String> {
                     byte: b,
                 },
             );
-            let covered = range_rects(v, &[range], 900.0)[0].iter().any(|[x0, y0, x1, y1]| {
-                let c = pos2(ox + (x0 + x1) / 2.0, oy + (y0 + y1) / 2.0);
-                painted.iter().any(|p| p.contains(c))
-            });
+            let covered = range_rects(v, &[range], 900.0)[0]
+                .iter()
+                .any(|[x0, y0, x1, y1]| {
+                    let c = pos2(ox + (x0 + x1) / 2.0, oy + (y0 + y1) / 2.0);
+                    painted.iter().any(|p| p.contains(c))
+                });
             if covered {
                 out.push(unit.text[a..b].to_string());
             }
@@ -167,10 +166,20 @@ fn imperatives_in_romans_12_are_painted_in_tagnt_and_through_strongs_alignment_i
     let id = made["id"].as_str().unwrap().to_string();
     let kjv = open_at(&mut h, "kjv", "Rom 12:2");
     let tagnt = open_at(&mut h, "tagnt", "Rom 12:2");
-    let appearance = h.shell.st.session.visual_filters().last().unwrap().appearance();
+    let appearance = h
+        .shell
+        .st
+        .session
+        .visual_filters()
+        .last()
+        .unwrap()
+        .appearance();
     let colour = |h: &Harness| h.shell.st.palette.paint(&appearance).color;
     settle_filters(&mut h);
-    assert!(painted_words(&h, kjv, colour(&h)).is_empty(), "off until switched on");
+    assert!(
+        painted_words(&h, kjv, colour(&h)).is_empty(),
+        "off until switched on"
+    );
 
     for tab in [tagnt, kjv] {
         assert!(h.shell.st.session.tab_visual_filters(tab).is_empty());
@@ -192,7 +201,13 @@ fn imperatives_in_romans_12_are_painted_in_tagnt_and_through_strongs_alignment_i
         h.frame();
     }
     settle_filters(&mut h);
-    let greek = ["συσχηματίζεσθε", "μεταμορφοῦσθε", "εὐλογεῖτε", "εὐλογεῖτε", "καταρᾶσθε"];
+    let greek = [
+        "συσχηματίζεσθε",
+        "μεταμορφοῦσθε",
+        "εὐλογεῖτε",
+        "εὐλογεῖτε",
+        "καταρᾶσθε",
+    ];
     let english = ["be", "conformed", "transformed", "Bless", "bless", "curse"];
     assert_eq!(painted_words(&h, tagnt, colour(&h)), greek);
     assert_eq!(
@@ -200,7 +215,11 @@ fn imperatives_in_romans_12_are_painted_in_tagnt_and_through_strongs_alignment_i
         english,
         "the KJV words carrying the Greek imperatives' Strong's numbers, in Romans 12 only"
     );
-    assert!(h.find("Filt. 1").is_some(), "the header counts them: {:?}", h.texts());
+    assert!(
+        h.find("Filt. 1").is_some(),
+        "the header counts them: {:?}",
+        h.texts()
+    );
 
     // A Page tone switch recolours them at once, without laying the text out again.
     let laid: Vec<usize> = view(&h, kjv)
@@ -282,13 +301,21 @@ fn the_visual_filters_window_makes_a_filter_and_says_why_it_refuses_one() {
         "the refusal shows under the form: {:?}",
         h.texts()
     );
-    assert_eq!(h.shell.st.session.visual_filters().len(), 3, "nothing saved");
+    assert_eq!(
+        h.shell.st.session.visual_filters().len(),
+        3,
+        "nothing saved"
+    );
     type_into(&mut h, "Hezekiah 3", "Rom 12", true);
     h.click_text("Save");
     h.frames(2);
     let saved = h.shell.st.session.visual_filters().last().unwrap().clone();
     assert_eq!(
-        (saved.name.as_str(), saved.query.as_str(), saved.scope.as_str()),
+        (
+            saved.name.as_str(),
+            saved.query.as_str(),
+            saved.scope.as_str()
+        ),
         ("Blessing", "strong:G2127", "Rom 12")
     );
     assert!(saved.all_tabs);

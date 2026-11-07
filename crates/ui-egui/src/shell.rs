@@ -50,7 +50,6 @@ mod guide_parallels;
 mod guide_tab;
 mod guide_words;
 mod highlight_styles_window;
-mod visual_filters_window;
 mod home_tab;
 mod import_tab;
 mod keys_tab;
@@ -72,6 +71,7 @@ mod toolbar;
 mod toolbar_bar;
 mod toolbar_look;
 mod topic_guide_tab;
+mod visual_filters_window;
 mod word_info_tab;
 mod word_sections_view;
 mod word_study_tab;
@@ -2062,14 +2062,19 @@ impl State {
         let doc_key = Arc::as_ptr(&view.doc) as usize as u64;
         t.filters
             .set(filters.map(|(key, source)| (key ^ doc_key.rotate_left(17), source)));
-        // Visual filters (#211) under the Annotations, so a Highlight shows over them.
-        let filtered = t.filters.marks(view, viewport, Some(ui.ctx()));
-        let marks = if filtered.is_empty() {
-            marks
-        } else {
-            Arc::new(filtered.into_iter().chain(marks.iter().cloned()).collect())
+        let pane_marks = crate::pane::PaneMarks {
+            annotations: &marks,
+            filters: Some(&mut t.filters),
         };
-        let out = reading_pane(ui, view, &mut self.atlas, &palette, flash, &marks, found);
+        let out = reading_pane(
+            ui,
+            view,
+            &mut self.atlas,
+            &palette,
+            flash,
+            pane_marks,
+            found,
+        );
         let user_moved = out.user_moved || found_moved;
         // A reopened Tab's scroll position (#214) goes back once the pane has drawn at its
         // width; the view keeps it across later relayouts until the user scrolls or it jumps.
