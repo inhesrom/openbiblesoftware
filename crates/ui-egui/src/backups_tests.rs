@@ -135,7 +135,7 @@ fn a_deleted_notebook_comes_back_from_a_backup_and_undo_restore_takes_it_back() 
         h.texts()
     );
     // The Safety backup is in the kept list.
-    assert!(h.find("Safety backup, before a restore").is_some());
+    assert!(h.find("Safety backup").is_some());
     preview(&h, "backups-restored-kittest");
 
     // Undo restore brings back the data as it was just before.

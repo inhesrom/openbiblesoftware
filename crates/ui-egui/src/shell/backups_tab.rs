@@ -191,24 +191,21 @@ impl State {
         if kept.is_empty() {
             ui.label(RichText::new("None yet.").color(muted));
         }
+        // Restore… first on each row, so a narrow Panel never cuts it off.
         let mut chosen = None;
-        egui::Grid::new("kept-backups")
-            .num_columns(3)
-            .spacing(vec2(16.0, 6.0))
-            .show(ui, |ui| {
-                for b in &kept {
-                    ui.label(self.session.backup_time(b));
-                    ui.label(RichText::new(b.kind.label()).color(muted));
-                    if ui
-                        .add_enabled(!busy, egui::Button::new("Restore…"))
-                        .on_hover_text(b.path.display().to_string())
-                        .clicked()
-                    {
-                        chosen = Some(b.path.clone());
-                    }
-                    ui.end_row();
+        for b in &kept {
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .add_enabled(!busy, egui::Button::new("Restore…"))
+                    .on_hover_text(b.path.display().to_string())
+                    .clicked()
+                {
+                    chosen = Some(b.path.clone());
                 }
+                ui.label(self.session.backup_time(b));
+                ui.label(RichText::new(b.kind.label()).color(muted));
             });
+        }
         if let Some(path) = chosen {
             self.preview_restore(&path);
         }
