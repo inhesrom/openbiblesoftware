@@ -192,7 +192,9 @@ fn every_menu_item_is_a_registered_command() {
     let titles: Vec<&str> = MENUS.iter().map(|m| m.title).collect();
     assert_eq!(
         titles,
-        ["Library", "Guides", "Tools", "Layouts", "View", "Help"]
+        [
+            "Library", "Guides", "Tools", "Layouts", "View", "Window", "Help"
+        ]
     );
     // Import needs a local filesystem; not-yet-built items show but are disabled.
     assert_eq!(

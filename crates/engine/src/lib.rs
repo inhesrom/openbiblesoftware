@@ -227,7 +227,9 @@ pub use notes_export::{NotesExport, NotesFormat, NotesSource};
 /// The Morphology chooser's menus and choices (#145).
 pub use obs_search::{MorphCategory, MorphCriteria};
 pub use people_places::{ArticleLink, Fact, PersonOrPlace};
-pub use persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, UserData, WorkspaceSnapshot};
+pub use persist::{
+    LayoutNode, SNAPSHOT_VERSION, ScrollPosition, TabSnapshot, UserData, WorkspaceSnapshot,
+};
 pub use reading_plans::{
     PlanDate, PlanTemplate, Reading, ReadingPlan, ReadingPlans, WEEKDAY_NAMES, Weekdays,
 };
@@ -267,8 +269,8 @@ pub use word_study::{
     WordStudyInput,
 };
 pub use workspace::{
-    Effect, Guide, HeaderBox, History, OpenRequest, PanelId, Placement, Tab, TabId, TabKind, Tool,
-    Workspace,
+    ClosedTabs, Effect, Guide, HeaderBox, History, OpenRequest, PanelId, Placement,
+    RECENTLY_CLOSED_LIMIT, Side, Tab, TabId, TabKind, Tool, Workspace,
 };
 pub use workspace_commands::{MENUS, Menu, MenuItem, choices, parallel_resources};
 
@@ -277,6 +279,9 @@ mod tests;
 
 #[cfg(test)]
 mod workspace_tests;
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod recently_closed_tests;
 
 #[cfg(test)]
 mod link_tests;

@@ -3298,6 +3298,8 @@ mod floating_windows;
 mod interlinear;
 #[path = "keyboard_shortcuts_tests.rs"]
 mod keyboard_shortcuts;
+#[path = "recently_closed_tests.rs"]
+mod recently_closed;
 #[path = "settings_tests.rs"]
 mod settings;
 #[path = "toolbar_tests.rs"]
