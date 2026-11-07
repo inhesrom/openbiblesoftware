@@ -283,3 +283,66 @@ fn a_panel_closed_from_a_column_comes_back_above_the_one_it_was_over() {
     key(&mut h, Key::T, CTRL_SHIFT);
     assert_eq!(column(&h), stacked);
 }
+
+#[test]
+fn a_reopened_tab_not_yet_drawn_shows_where_its_link_set_went_since_not_where_it_closed() {
+    let mut h = Harness::new();
+    settle_all(&mut h);
+    // Two TBs in one Panel, both in Link set A, at Gen 30:20; the second scrolled a little
+    // past it, then the first made the Panel's active Tab.
+    let tb = h.tab_id("TB");
+    go(&mut h, tb, "Gen 30:20");
+    let tb_panel = h.shell.st.session.workspace.panel_of(tb).unwrap();
+    let out = h.shell.run(
+        "resource.open",
+        &json!({ "id": "test-bible", "panel": tb_panel.0 }),
+    );
+    let tb2 = TabId(out.unwrap()["tab"].as_u64().unwrap());
+    settle_all(&mut h);
+    link(&mut h, tb2, Some('A'));
+    go(&mut h, tb2, "Gen 30:20");
+    scroll(&mut h, tb2, 9.0);
+    assert!(anchor(&mut h, tb2).into > 0.0);
+    h.shell.st.session.workspace.focus(tb);
+    h.shell.apply_effects();
+    settle_all(&mut h);
+    assert_eq!(
+        (seen(&mut h, tb).2, seen(&mut h, tb2).2),
+        (Some('A'), Some('A'))
+    );
+
+    // Close the Panel and bring it back: the first TB active, the second behind it, its
+    // scroll position waiting for it to draw.
+    h.shell.run("panel.close", &json!({ "tab": tb.0 }));
+    settle_all(&mut h);
+    key(&mut h, Key::T, CTRL_SHIFT);
+    let tb = h.shell.st.session.workspace.focused().unwrap();
+    let tb_panel = h.shell.st.session.workspace.panel_of(tb).unwrap();
+    let tb2 = (h.shell.st.session.workspace.tabs())
+        .find(|t| t.id != tb && h.shell.st.session.workspace.panel_of(t.id) == Some(tb_panel))
+        .map(|t| t.id)
+        .unwrap();
+
+    // The first TB goes to Gen 33:5; the second follows it before it is ever drawn, and its
+    // text shows Gen 33:5 when it is, not the Gen 30 it was scrolled in when it closed.
+    go(&mut h, tb, "Gen 33:5");
+    h.shell.st.session.workspace.focus(tb2);
+    h.shell.apply_effects();
+    settle_all(&mut h);
+    assert_eq!(location(&mut h, tb2), Some(ge(33, 5)));
+    let view = h
+        .shell
+        .st
+        .tabs
+        .get_mut(&tb2)
+        .unwrap()
+        .view
+        .as_mut()
+        .unwrap();
+    let top = view.text_anchor().unwrap();
+    let shown = view.doc.verse_containing(top.unit, top.byte).unwrap();
+    assert!(
+        (ge(33, 1)..=ge(33, 5)).contains(&shown),
+        "text at the top is {shown}"
+    );
+}

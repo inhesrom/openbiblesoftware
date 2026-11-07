@@ -416,6 +416,10 @@ impl Shell {
     /// Apply queued engine effects to the dock.
     pub fn apply_effects(&mut self) {
         for e in self.st.session.workspace.take_effects() {
+            // A reopened Tab not drawn yet (#214) that is sent elsewhere first stays there.
+            if let Some(t) = moved_view(&e).and_then(|tab| self.st.tabs.get_mut(&tab)) {
+                t.restore_scroll = None;
+            }
             match e {
                 Effect::Opened { tab, placement } => {
                     self.st.opened(tab);
@@ -1191,6 +1195,19 @@ impl Shell {
 }
 
 /// Which ticket a not-yet-built menu item arrives with.
+/// The Tab whose view `e` sends somewhere else, if it does.
+fn moved_view(e: &Effect) -> Option<TabId> {
+    match e {
+        Effect::Navigate { tab, .. }
+        | Effect::NavigateEntry { tab, .. }
+        | Effect::Follow { tab, .. }
+        | Effect::NavigateText { tab, .. }
+        | Effect::ShowUnit { tab, .. }
+        | Effect::RevealText { tab, .. } => Some(*tab),
+        _ => None,
+    }
+}
+
 fn not_yet(id: &str) -> &'static str {
     match id {
         "library.import" => "Import a local USFM file or folder",

@@ -357,6 +357,13 @@ fn recently_closed_lists_the_last_twenty_newest_first_and_reopens_any_of_them() 
         s.run("tab.reopen_closed", &json!({ "closed": id }))
             .is_err()
     );
+    // A closing id that is no closing's (a negative one too) reopens nothing.
+    assert!(
+        s.run("tab.reopen_closed", &json!({ "closed": -1 }))
+            .is_err()
+    );
+    assert_eq!(s.recently_closed_labels().len(), 19);
+    assert_eq!(s.recently_closed_labels()[0].1, "Psalms 25:1 · KJV");
     // The Window menu holds Reopen closed Tab, Recently closed and Close Panel.
     let window = MENUS.iter().find(|m| m.title == "Window").unwrap();
     assert_eq!(
