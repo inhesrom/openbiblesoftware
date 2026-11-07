@@ -3420,10 +3420,7 @@ impl State {
                 let screen = ctx.content_rect();
                 egui::Area::new(egui::Id::unique("toast"))
                     .order(egui::Order::Foreground)
-                    .anchor(
-                        egui::Align2::CENTER_BOTTOM,
-                        vec2(0.0, -(space::XXXL + space::XL)),
-                    )
+                    .anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -size::TOAST_RISE))
                     .show(&ctx, |ui| {
                         ui.set_max_width(screen.width() * share::DIALOG);
                         crate::components::popover_frame().show(ui, |ui| {

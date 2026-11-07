@@ -169,6 +169,8 @@ pub mod size {
     pub const PROSE: f32 = 460.0;
     /// A hover card or a preview pop-up.
     pub const POPOVER: f32 = 360.0;
+    /// How far a toast floats above the window's bottom edge.
+    pub const TOAST_RISE: f32 = super::space::XXXL + super::space::XL;
     /// A dialog window's width.
     pub const DIALOG_WIDTH: f32 = 480.0;
     /// A scrolling list inside a dialog or a pop-up, at most.
