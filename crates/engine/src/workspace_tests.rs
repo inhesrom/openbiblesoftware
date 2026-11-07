@@ -409,6 +409,12 @@ fn word_info_commands_follow_the_pin_state() {
     assert!(!s.is_enabled("word_info.unpin"));
     let out = s.run("word_info.copy", &json!({})).unwrap();
     assert_eq!(out["text"], word.copy_text());
+    // The clipboard is the UI's: it is handed the text as an Effect, wherever Copy ran from.
+    assert!(
+        s.workspace
+            .take_effects()
+            .contains(&Effect::CopyText(word.copy_text()))
+    );
     s.word_info.pin(word);
     assert!(s.is_enabled("word_info.unpin"));
     assert_eq!(

@@ -668,6 +668,24 @@ impl Session {
         self.command_box.recent = Some(recent);
     }
 
+    /// The command `command_box.run` runs for suggestion `choice` of `text` when that
+    /// suggestion runs a command by name (a recent entry: its text's best suggestion), so the
+    /// UI can guard it as it guards the command run from a menu or a key (Undo restore, #226).
+    pub fn command_box_command(&mut self, text: &str, choice: usize) -> Option<&'static str> {
+        let mut action = self
+            .command_box_suggestions(text)
+            .into_iter()
+            .nth(choice)?
+            .action;
+        if let CommandBoxAction::Recent(t) = &action {
+            action = self.command_box_suggestions(t).into_iter().next()?.action;
+        }
+        match action {
+            CommandBoxAction::Command(id) => Some(id),
+            _ => None,
+        }
+    }
+
     /// Run what a suggestion does. `new_tab` (Alt+Enter) opens a new Tab instead of moving
     /// an open one.
     pub fn run_command_box_action(

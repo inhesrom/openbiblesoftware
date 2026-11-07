@@ -641,6 +641,53 @@ fn all_commands_lists_them_in_the_command_box_and_runs_one() {
     );
 }
 
+/// All commands run from the Command box keeps the list it asked for: the box is not emptied
+/// after it, and keeps the keyboard.
+#[test]
+fn all_commands_run_from_the_command_box_keeps_its_list() {
+    let mut h = Harness::new();
+    key(&mut h, Key::P, CTRL_SHIFT);
+    type_text(&mut h, "all commands");
+    let first = &h.shell.st.command_box.suggestions[0];
+    assert_eq!(first.label, "All commands");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert_eq!(h.shell.st.command_box.text, COMMANDS_PREFIX);
+    assert!(h.ctx.memory(|m| m.has_focus(egui::Id::unique(BOX_ID))));
+    assert!(h.shell.st.command_box.suggestions.len() > 60);
+    assert!(h.find("Close Tab").is_some(), "{:?}", h.texts());
+    // Typing filters the list again.
+    type_text(&mut h, "close tab");
+    assert_eq!(h.shell.st.command_box.text, ">close tab");
+    assert_eq!(
+        h.shell.st.command_box.suggestions[0].action,
+        CommandBoxAction::Command("tab.close")
+    );
+}
+
+/// Word Info's Copy run from the Command box puts the shown word's cards on the clipboard, as
+/// its button does.
+#[test]
+fn copy_from_the_command_box_writes_the_clipboard() {
+    let (mut h, heb) = super::word_info::hebrew_harness();
+    let bara = super::word_info::word_spot(&h, heb, "בָּרָ֣א");
+    h.click(bara);
+    assert!(h.shell.st.session.word_info.pinned);
+    let cards = (h.shell.st.session.word_info.shown.as_ref())
+        .unwrap()
+        .copy_text();
+    h.click_text("Copy");
+    assert_eq!(h.copied.last(), Some(&cards), "the button");
+    h.copied.clear();
+
+    key(&mut h, Key::P, CTRL_SHIFT);
+    type_text(&mut h, "copy");
+    let first = &h.shell.st.command_box.suggestions[0];
+    assert_eq!(first.action, CommandBoxAction::Command("word_info.copy"));
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert_eq!(h.copied, vec![cards], "the Command box");
+    assert!(h.find("Copied").is_some(), "{:?}", h.texts());
+}
+
 /// Visual evidence for docs/previews/ when `UPDATE_PREVIEWS` is set.
 fn preview(h: &Harness, name: &str) {
     if std::env::var_os("UPDATE_PREVIEWS").is_some() {

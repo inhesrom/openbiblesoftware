@@ -308,6 +308,9 @@ pub struct Shell {
     /// A Tab the keyboard was sent to (#215), whose OS window is brought to the front at the
     /// end of the frame.
     os_focus_to: Option<TabId>,
+    /// Text a command asked to put on the clipboard (Word Info's Copy), written at the end of
+    /// the frame.
+    copy_out: Option<String>,
 }
 
 impl Default for Shell {
@@ -373,6 +376,7 @@ impl Shell {
             switcher: None,
             next_area: None,
             os_focus_to: None,
+            copy_out: None,
         }
     }
 
@@ -591,6 +595,10 @@ impl Shell {
                 Effect::ListCommands => {
                     self.st.toolbar.close();
                     self.st.command_box.list_commands();
+                }
+                Effect::CopyText(text) => {
+                    self.copy_out = Some(text);
+                    self.st.toast("Copied");
                 }
                 Effect::OpenLauncher(which) => self.st.toolbar.toggle(which),
                 Effect::Find { tab, text } => self.st.open_find(tab, text),
@@ -1006,6 +1014,9 @@ impl Shell {
         self.st.notes_after_frame(ui.ctx());
         self.apply_effects();
         self.focus_os_window(ui.ctx());
+        if let Some(text) = self.copy_out.take() {
+            ui.ctx().copy_text(text);
+        }
         let closing = ui.input(|i| i.viewport().close_requested());
         if closing {
             // A Note being written is saved, as if focus had left it. One that cannot be saved
@@ -1742,7 +1753,8 @@ impl State {
     /// restore or its undo (#217) always saves the Notes being written first and forgets the
     /// Notes Tab's drafts after.
     fn run(&mut self, id: &str, params: &Value) -> Option<Value> {
-        let replaces_user_data = backups_tab::replaces_user_data(id);
+        let replaces_user_data = backups_tab::replaces_user_data(id)
+            || (id == "command_box.run" && self.command_box_replaces_user_data(params));
         if replaces_user_data && !self.settle_note_editors() {
             return None;
         }
@@ -1757,6 +1769,17 @@ impl State {
             self.forget_notes_drafts();
         }
         out
+    }
+
+    /// Whether `command_box.run` with `params` runs a restore or its undo (`>Undo restore`,
+    /// #226), so it is guarded as from a menu or a key.
+    fn command_box_replaces_user_data(&mut self, params: &Value) -> bool {
+        let text = params["text"].as_str().unwrap_or_default().trim();
+        let choice = (params["choice"].as_u64())
+            .and_then(|c| usize::try_from(c).ok())
+            .unwrap_or(0);
+        (self.session.command_box_command(text, choice))
+            .is_some_and(backups_tab::replaces_user_data)
     }
 
     /// Report where Resource Tab `tab`'s view, just drawn, is scrolled to the Workspace,

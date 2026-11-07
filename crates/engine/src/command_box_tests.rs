@@ -477,6 +477,10 @@ fn all_commands_lists_every_command_and_runs_a_tab_command_on_the_focused_tab() 
 
     let bsb = tab(&s.run("resource.open", &json!({ "id": "bsb" })).unwrap());
     assert_eq!(s.workspace.focused(), Some(bsb));
+    // The UI asks which command a suggestion runs before running it (its guards, #226).
+    assert_eq!(s.command_box_command("> close tab", 0), Some("tab.close"));
+    assert_eq!(s.command_box_command("> close tab", 99), None);
+    assert_eq!(s.command_box_command("jn 3:16", 0), None);
     s.run("command_box.run", &json!({ "text": "> close tab" }))
         .unwrap();
     assert!(s.workspace.tab(bsb).is_none());

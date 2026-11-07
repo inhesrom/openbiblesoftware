@@ -59,6 +59,17 @@ shortcut. **Help → All commands** (`app.commands`, Ctrl+Shift+P) puts the keyb
 box with `>` typed and the caret after it (`Effect::ListCommands`). A `>` text is not kept as
 a recent entry. `docs/dev/menus.md` says where every command is.
 
+A command run from the box behaves as from its menu, button or key:
+
+- The box empties before the command runs, so one that puts the keyboard back in it (All
+  commands, Command box) keeps what it put there; a failed run puts the text back.
+- Undo restore (`data.undo_restore`) is guarded as everywhere else (#217): the UI asks
+  `Session::command_box_command` which command the chosen suggestion runs and, for a restore
+  or its undo, saves the Notes being written first (holding the undo back if the database
+  refuses them) and forgets the Notes Tab's drafts after.
+- Word Info's Copy (`word_info.copy`) hands its text to the UI as `Effect::CopyText`, which
+  writes the clipboard, so the box, a key and the Copy button all copy.
+
 ## Keyboard and mouse
 
 - **Ctrl+L** (`command_box.focus`, Cmd+L on macOS) puts the keyboard in the box and selects its

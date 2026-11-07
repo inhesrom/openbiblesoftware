@@ -840,6 +840,9 @@ pub enum Effect {
     /// Put the keyboard in the Command box listing every command it can run (Help → All
     /// commands, Ctrl+Shift+P, #226).
     ListCommands,
+    /// Put this text on the clipboard (Word Info's Copy, from its button, a key or the
+    /// Command box, #226).
+    CopyText(String),
     /// Open the Copy verses window (Edit → Copy verses…, #154), with these Passages (a Bible
     /// reference) and Bibles (resource ids) when given; otherwise at the Current location of
     /// the most recent Bible Tab.

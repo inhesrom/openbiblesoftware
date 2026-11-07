@@ -132,7 +132,7 @@ pub(super) fn word_spot(h: &Harness, tab: TabId, word: &str) -> Pos2 {
 }
 
 /// Open the Hebrew Bible, make Word Info the Tools Panel's active Tab, and let layout settle.
-fn hebrew_harness() -> (Harness, TabId) {
+pub(super) fn hebrew_harness() -> (Harness, TabId) {
     let mut h = Harness::new();
     h.shell.run("resource.open", &json!({ "id": "heb-test" }));
     h.frames(4);

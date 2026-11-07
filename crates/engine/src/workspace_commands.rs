@@ -629,6 +629,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 .as_ref()
                 .map(crate::word_info::ShownWord::copy_text)
                 .ok_or_else(|| failed("word_info.copy", "nothing is shown"))?;
+            s.workspace.push_effect(Effect::CopyText(text.clone()));
             Ok(json!({ "text": text }))
         },
     ),

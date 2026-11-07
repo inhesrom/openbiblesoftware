@@ -206,23 +206,30 @@ impl Shell {
     }
 
     /// Run suggestion `choice` for the box's text; on success the box empties and lets the
-    /// keyboard go back to the Workspace.
+    /// keyboard go back to the Workspace, unless the command put it back in the box (All
+    /// commands, Command box, #226). On failure the text stays, to be corrected.
     fn run_choice(&mut self, ui: &Ui, choice: usize, new_tab: bool) {
-        let cb = &self.st.command_box;
+        let cb = &mut self.st.command_box;
         if choice >= cb.suggestions.len() {
             return;
         }
-        let text = cb.text.trim().to_string();
+        // Emptied before the command runs, so what the command puts in the box stays.
+        let typed = std::mem::take(&mut cb.text);
+        let suggestions = std::mem::take(&mut cb.suggestions);
+        let for_text = cb.for_text.take();
         let ran = self.run(
             "command_box.run",
-            &json!({ "text": text, "choice": choice, "new_tab": new_tab }),
+            &json!({ "text": typed.trim(), "choice": choice, "new_tab": new_tab }),
         );
-        if ran.is_some() {
-            let cb = &mut self.st.command_box;
-            cb.text.clear();
-            cb.for_text = None;
-            cb.dropdown = None;
-            cb.suggestions.clear();
+        let cb = &mut self.st.command_box;
+        if ran.is_none() {
+            cb.text = typed;
+            cb.suggestions = suggestions;
+            cb.for_text = for_text;
+            return;
+        }
+        cb.dropdown = None;
+        if !cb.focus {
             ui.memory_mut(|m| m.surrender_focus(egui::Id::unique(BOX_ID)));
         }
     }
