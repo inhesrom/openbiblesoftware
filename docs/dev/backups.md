@@ -2,7 +2,8 @@
 
 Everything the user makes or chooses is in the User database (#17), so a **Backup** is a copy of
 it and a restore puts one back. ADR 0012 records why. **Tools → Back up & restore…**
-(`data.backups`) opens a keyless, single-instance Tab with all of it.
+(`data.backups`), or Backups in Settings → Privacy and data (#213), opens a keyless,
+single-instance Tab with all of it.
 
 | Layer | Piece | Role |
 |---|---|---|
