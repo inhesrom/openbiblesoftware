@@ -2,7 +2,7 @@
 //! user makes: preferences, the Last session, named Layouts, the Preferred order, the
 //! Notebooks, Annotations and Anchors with the `notes_fts` index of Note bodies (#61),
 //! Favorites and History (#155), Reading plans (#147), and Highlight styles and palettes
-//! (#181).
+//! (#181). Backups the user makes and restores are `backup_store.rs` (#217).
 //!
 //! Safety rules: WAL journaling; `PRAGMA user_version` with forward-only migrations; a copy of
 //! the file is taken before any migration runs; and at every launch a rolling backup (the
@@ -21,8 +21,7 @@ pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 /// Schema version this build writes.
 pub const USER_SCHEMA_VERSION: u32 = 10;
 
-/// How many launch backups are kept.
-pub const ROLLING_BACKUPS: usize = 5;
+pub use crate::backup::ROLLING_BACKUPS;
 
 /// Forward-only migrations; entry `n` upgrades version `n` to `n + 1`.
 const MIGRATIONS: &[&str] = &[
@@ -76,7 +75,7 @@ pub struct OpenReport {
 #[derive(Debug)]
 pub struct UserStore {
     pub(crate) conn: Connection,
-    path: PathBuf,
+    pub(crate) path: PathBuf,
 }
 
 impl UserStore {
@@ -129,7 +128,7 @@ impl UserStore {
         if found < target {
             if existed && found > 0 {
                 let backup = path.with_extension(format!("v{found}-{}.bak", now()));
-                store.backup_to(&backup)?;
+                store.back_up(&backup)?;
                 report.migration_backup = Some(backup);
             }
             store.migrate(found, target)?;
@@ -142,21 +141,7 @@ impl UserStore {
     }
 
     fn migrate(&mut self, from: u32, to: u32) -> Result<(), StoreError> {
-        let tx = self.conn.transaction().map_err(sql)?;
-        for v in from..to {
-            let step = MIGRATIONS
-                .get(v as usize)
-                .ok_or_else(|| StoreError::Corrupt(format!("no migration from version {v}")))?;
-            // 8 → 9 refuses, rather than drops, rows its stricter CHECK would refuse.
-            if v == 8 {
-                crate::annotation_store::refuse_text_ranges_covering_no_text(&tx)?;
-            }
-            tx.execute_batch(step).map_err(sql)?;
-        }
-        tx.pragma_update(None, "application_id", USER_APPLICATION_ID)
-            .map_err(sql)?;
-        tx.pragma_update(None, "user_version", to).map_err(sql)?;
-        tx.commit().map_err(sql)
+        migrate(&mut self.conn, from, to)
     }
 
     pub fn path(&self) -> &Path {
@@ -198,7 +183,7 @@ impl UserStore {
         let existing = backups_in(&dir, &stem)?;
         let next = existing.last().map_or(1, |(n, _)| n + 1);
         let dest = dir.join(format!("{stem}-{next:06}.db"));
-        self.backup_to(&dest)?;
+        self.back_up(&dest)?;
         let mut all = backups_in(&dir, &stem)?;
         while all.len() > ROLLING_BACKUPS {
             let (_, oldest) = all.remove(0);
@@ -379,8 +364,28 @@ impl UserStore {
     }
 }
 
+/// Run the migrations from version `from` to `to` in one transaction (a User database or a
+/// Backup being restored, #217).
+pub(crate) fn migrate(conn: &mut Connection, from: u32, to: u32) -> Result<(), StoreError> {
+    let tx = conn.transaction().map_err(sql)?;
+    for v in from..to {
+        let step = MIGRATIONS
+            .get(v as usize)
+            .ok_or_else(|| StoreError::Corrupt(format!("no migration from version {v}")))?;
+        // 8 → 9 refuses, rather than drops, rows its stricter CHECK would refuse.
+        if v == 8 {
+            crate::annotation_store::refuse_text_ranges_covering_no_text(&tx)?;
+        }
+        tx.execute_batch(step).map_err(sql)?;
+    }
+    tx.pragma_update(None, "application_id", USER_APPLICATION_ID)
+        .map_err(sql)?;
+    tx.pragma_update(None, "user_version", to).map_err(sql)?;
+    tx.commit().map_err(sql)
+}
+
 /// Rolling backups of `stem` in `dir`, oldest first, with their sequence numbers.
-fn backups_in(dir: &Path, stem: &str) -> Result<Vec<(u64, PathBuf)>, StoreError> {
+pub(crate) fn backups_in(dir: &Path, stem: &str) -> Result<Vec<(u64, PathBuf)>, StoreError> {
     let prefix = format!("{stem}-");
     let mut out: Vec<(u64, PathBuf)> = std::fs::read_dir(dir)
         .map_err(StoreError::Io)?
