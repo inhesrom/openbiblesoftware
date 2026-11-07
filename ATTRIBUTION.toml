@@ -161,6 +161,14 @@ copyright = "Robert Rouse (Viz.Bible) and Theographic contributors"
 changes = "Only 25 events kept (the Eras' anchors, Abraham, Joshua, David, Solomon's reign and temple, Holy Week) and the 11 people they name most; events.json cut to each kept event's id, title, eventID, startDate, duration and rangeFlag; People.csv's dictText (Easton's dictionary text) emptied."
 
 [[asset]]
+path = "crates/formats/tests/assets/bsb-parallels/*"
+name = "Berean Standard Bible (bsb_usfm.zip, files dated 2026-03-08), test excerpts"
+license = "LicenseRef-PD"
+source = "https://bereanbible.com/bsb_usfm.zip"
+copyright = "Public domain (dedicated by the Berean Bible Translation Committee, 2023)"
+changes = "Only Mark 1:1-15, Matthew 3, Luke 3:1-22, John 1:1-34, Isaiah 40:1-5, 2 Samuel 24 and 1 Chronicles 21 kept, with their headings and parallel passage lines, as Parallel passages fixtures (#212)."
+
+[[asset]]
 path = "crates/formats/tests/assets/openbible/*"
 name = "OpenBible.info Bible cross references (cross_references.txt, 2026-10-19), test excerpt"
 license = "CC-BY-4.0"

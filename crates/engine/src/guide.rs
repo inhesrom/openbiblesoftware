@@ -72,10 +72,12 @@ pub enum GuideSection {
     TopicPassages,
     /// Topic Guide: a Library search for the topic.
     TopicSearch,
+    /// Passage Guide (#212): other accounts of the Passage ([`crate::parallel_passages`]).
+    ParallelPassages,
 }
 
 impl GuideSection {
-    pub const ALL: [GuideSection; 20] = [
+    pub const ALL: [GuideSection; 21] = [
         GuideSection::Commentaries,
         GuideSection::CrossReferences,
         GuideSection::KeyWords,
@@ -96,6 +98,7 @@ impl GuideSection {
         GuideSection::TopicArticles,
         GuideSection::TopicPassages,
         GuideSection::TopicSearch,
+        GuideSection::ParallelPassages,
     ];
 
     /// Stable id, as stored and as passed to commands.
@@ -121,6 +124,7 @@ impl GuideSection {
             GuideSection::TopicArticles => "topic_articles",
             GuideSection::TopicPassages => "topic_passages",
             GuideSection::TopicSearch => "topic_search",
+            GuideSection::ParallelPassages => "parallel_passages",
         }
     }
 
@@ -150,6 +154,7 @@ impl GuideSection {
             GuideSection::TopicArticles => "Dictionary articles",
             GuideSection::TopicPassages => "Key Passages",
             GuideSection::TopicSearch => "Search",
+            GuideSection::ParallelPassages => "Parallel passages",
         }
     }
 
@@ -157,7 +162,9 @@ impl GuideSection {
     pub fn resource_type(self) -> ResourceType {
         match self {
             GuideSection::Commentaries => ResourceType::Commentary,
-            GuideSection::CrossReferences => ResourceType::CrossReferenceSet,
+            GuideSection::CrossReferences | GuideSection::ParallelPassages => {
+                ResourceType::CrossReferenceSet
+            }
             GuideSection::KeyWords => ResourceType::Bible,
             GuideSection::PeopleAndPlaces => ResourceType::PeopleAndPlaces,
             GuideSection::LexiconEntries | GuideSection::LexiconSummaries => ResourceType::Lexicon,
@@ -242,6 +249,14 @@ impl GuideSection {
             GuideSection::TopicArticles => {
                 needed.any(|e| !crate::topic_guide::is_topical_index(&e.manifest.resource_id))
             }
+            // A Cross-reference set with Parallel passages (#212); one with only those has no
+            // Cross-references.
+            GuideSection::ParallelPassages => {
+                needed.any(|e| crate::parallel_passages::is_parallel_set(&e.manifest.resource_id))
+            }
+            GuideSection::CrossReferences => {
+                needed.any(|e| !crate::parallel_passages::is_parallel_set(&e.manifest.resource_id))
+            }
             // An index that locates places (the geocoding, #150).
             GuideSection::Map => {
                 needed.any(|e| crate::atlas::is_geocoding_index(&e.manifest.resource_id))
@@ -264,6 +279,13 @@ impl GuideSection {
             }
             (GuideSection::CrossReferences, true) => {
                 "None in your library: no Cross-references start in this Passage."
+            }
+            (GuideSection::ParallelPassages, false) => {
+                "None in your library. Add a set of parallel passages (the BSB Parallel Passages \
+                 in the Starter library) to see the other accounts of this Passage."
+            }
+            (GuideSection::ParallelPassages, true) => {
+                "None in your library: no parallel passage is listed for this Passage."
             }
             (GuideSection::KeyWords, false) => {
                 "None in your library. Add a Bible with Strong's numbers to see the Passage's key words."
@@ -408,6 +430,7 @@ impl Guide {
             Guide::PassageGuide => &[
                 GuideSection::Commentaries,
                 GuideSection::CrossReferences,
+                GuideSection::ParallelPassages,
                 GuideSection::KeyWords,
                 GuideSection::PeopleAndPlaces,
             ],
@@ -667,6 +690,8 @@ pub enum SectionData {
     TopicPassages(Vec<crate::topic_guide::CitedPassage>),
     /// The topic to search the library for (#148).
     TopicSearch(String),
+    /// Other accounts of the Passage, grouped by the part they are parallel to (#212).
+    ParallelPassages(crate::parallel_passages::ParallelPassages),
 }
 
 impl SectionData {
@@ -692,6 +717,7 @@ impl SectionData {
             SectionData::TopicalEntries(e) => e.len(),
             SectionData::TopicPassages(p) => p.len(),
             SectionData::TopicSearch(q) => usize::from(!q.is_empty()),
+            SectionData::ParallelPassages(p) => p.count(),
         }
     }
 
@@ -805,6 +831,10 @@ impl SectionSource for LibrarySections {
             GuideSection::CrossReferences => {
                 crate::cross_references::library_references(library, *passage)
                     .map(SectionData::CrossReferences)
+            }
+            GuideSection::ParallelPassages => {
+                crate::parallel_passages::library_parallels(library, *passage)
+                    .map(SectionData::ParallelPassages)
             }
             GuideSection::KeyWords => {
                 let words = crate::key_words::library_key_words(library, *passage, &self.bibles)?;

@@ -207,3 +207,16 @@ pub struct Event {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub passages: Vec<Passage>,
 }
+
+/// One section of a Bible book with its Parallel passages (#212, ADR 0014), as a Cross-reference
+/// set carries them: the section's Passage and heading, and the Passages its source lists as
+/// telling the same thing (the other Gospels' accounts of an event, Chronicles beside Kings, a
+/// Psalm beside the song in Samuel). All in the Standard versification.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ParallelSection {
+    pub passage: Passage,
+    /// The section's heading in its source, e.g. `The Baptism of Jesus`.
+    pub title: String,
+    /// The Passages parallel to it, in the source's order.
+    pub parallels: Vec<Passage>,
+}

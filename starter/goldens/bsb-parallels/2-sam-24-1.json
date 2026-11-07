@@ -1,0 +1,131 @@
+{
+  "resource_id": "bsb-parallels",
+  "resource_type": "cross_reference_set",
+  "key": "2 Sam 24:1",
+  "cross_references": [],
+  "parallel_sections": [
+    {
+      "passage": {
+        "start": {
+          "book": "EXO",
+          "chapter": 30,
+          "verse": 11
+        },
+        "end": {
+          "book": "EXO",
+          "chapter": 30,
+          "verse": 16
+        }
+      },
+      "title": "The Census Offering",
+      "parallels": [
+        {
+          "start": {
+            "book": "2SA",
+            "chapter": 24,
+            "verse": 1
+          },
+          "end": {
+            "book": "2SA",
+            "chapter": 24,
+            "verse": 9
+          }
+        },
+        {
+          "start": {
+            "book": "1CH",
+            "chapter": 21,
+            "verse": 1
+          },
+          "end": {
+            "book": "1CH",
+            "chapter": 21,
+            "verse": 6
+          }
+        }
+      ]
+    },
+    {
+      "passage": {
+        "start": {
+          "book": "2SA",
+          "chapter": 24,
+          "verse": 1
+        },
+        "end": {
+          "book": "2SA",
+          "chapter": 24,
+          "verse": 9
+        }
+      },
+      "title": "David’s Military Census",
+      "parallels": [
+        {
+          "start": {
+            "book": "EXO",
+            "chapter": 30,
+            "verse": 11
+          },
+          "end": {
+            "book": "EXO",
+            "chapter": 30,
+            "verse": 16
+          }
+        },
+        {
+          "start": {
+            "book": "1CH",
+            "chapter": 21,
+            "verse": 1
+          },
+          "end": {
+            "book": "1CH",
+            "chapter": 21,
+            "verse": 6
+          }
+        }
+      ]
+    },
+    {
+      "passage": {
+        "start": {
+          "book": "1CH",
+          "chapter": 21,
+          "verse": 1
+        },
+        "end": {
+          "book": "1CH",
+          "chapter": 21,
+          "verse": 6
+        }
+      },
+      "title": "David’s Military Census",
+      "parallels": [
+        {
+          "start": {
+            "book": "EXO",
+            "chapter": 30,
+            "verse": 11
+          },
+          "end": {
+            "book": "EXO",
+            "chapter": 30,
+            "verse": 16
+          }
+        },
+        {
+          "start": {
+            "book": "2SA",
+            "chapter": 24,
+            "verse": 1
+          },
+          "end": {
+            "book": "2SA",
+            "chapter": 24,
+            "verse": 9
+          }
+        }
+      ]
+    }
+  ]
+}

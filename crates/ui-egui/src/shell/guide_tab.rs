@@ -34,6 +34,9 @@ pub(super) enum Action {
     Move(GuideSection, usize),
     Reference(Passage, bool),
     Commentary(CommentaryRow, bool),
+    /// Parallel passages (#212): compare a parallel in Text Comparison (a new one when
+    /// Ctrl/Cmd is held).
+    CompareParallel(Passage, bool),
     /// Key words and People & places (#54).
     Words(WordsAction),
     /// Word Study (#55): open a Strong's number (a new Tab when Ctrl/Cmd is held).
@@ -292,6 +295,15 @@ impl State {
             }
             Action::Reference(passage, new_tab) => self.reference_navigate(tab, passage, new_tab),
             Action::Commentary(row, new_tab) => self.open_commentary(tab, &row, new_tab),
+            Action::CompareParallel(passage, new_tab) => {
+                self.run(
+                    "compare.parallel",
+                    &json!({
+                        "passage": format_passage(passage, &Standard, RefStyle::Short),
+                        "new_tab": new_tab,
+                    }),
+                );
+            }
             Action::Words(a) => self.words_action(tab, a),
             Action::Factbook(a) => self.factbook_action(tab, a),
             Action::Topic(a) => self.topic_action(tab, a),
@@ -395,6 +407,14 @@ impl State {
             SectionData::CrossReferences(groups) => self
                 .reference_groups(ui, tab, groups)
                 .map(|p| Action::Reference(p, new_tab)),
+            SectionData::ParallelPassages(found) => {
+                // Parallel passages is a Passage Guide section: its Key is a Passage.
+                let Key::Passage(passage) = key else {
+                    return None;
+                };
+                self.parallel_passages_section(ui, found, *passage)
+                    .map(|p| Action::CompareParallel(p, new_tab))
+            }
             SectionData::Commentaries(rows) => {
                 let mut clicked = None;
                 for row in rows {

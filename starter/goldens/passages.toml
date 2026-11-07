@@ -190,3 +190,13 @@ headword = "JOHN"
 [[golden]]
 resource_id = "theographic"
 passage = "1 Kgs 6:1"
+
+# The BSB's parallel passages (#212): Mark 1:9-11 is in Mark's section 1:1-11 and named by
+# Matthew's, Luke's and John's baptism sections; 2 Samuel 24 beside 1 Chronicles 21.
+[[golden]]
+resource_id = "bsb-parallels"
+passage = "Mark 1:9-11"
+
+[[golden]]
+resource_id = "bsb-parallels"
+passage = "2 Sam 24:1"

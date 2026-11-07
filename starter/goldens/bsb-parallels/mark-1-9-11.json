@@ -1,0 +1,232 @@
+{
+  "resource_id": "bsb-parallels",
+  "resource_type": "cross_reference_set",
+  "key": "Mark 1:9-11",
+  "cross_references": [],
+  "parallel_sections": [
+    {
+      "passage": {
+        "start": {
+          "book": "MAT",
+          "chapter": 3,
+          "verse": 13
+        },
+        "end": {
+          "book": "MAT",
+          "chapter": 3,
+          "verse": 17
+        }
+      },
+      "title": "The Baptism of Jesus",
+      "parallels": [
+        {
+          "start": {
+            "book": "MRK",
+            "chapter": 1,
+            "verse": 9
+          },
+          "end": {
+            "book": "MRK",
+            "chapter": 1,
+            "verse": 11
+          }
+        },
+        {
+          "start": {
+            "book": "LUK",
+            "chapter": 3,
+            "verse": 21
+          },
+          "end": {
+            "book": "LUK",
+            "chapter": 3,
+            "verse": 22
+          }
+        },
+        {
+          "start": {
+            "book": "JHN",
+            "chapter": 1,
+            "verse": 29
+          },
+          "end": {
+            "book": "JHN",
+            "chapter": 1,
+            "verse": 34
+          }
+        }
+      ]
+    },
+    {
+      "passage": {
+        "start": {
+          "book": "MRK",
+          "chapter": 1,
+          "verse": 1
+        },
+        "end": {
+          "book": "MRK",
+          "chapter": 1,
+          "verse": 11
+        }
+      },
+      "title": "The Mission of John the Baptist",
+      "parallels": [
+        {
+          "start": {
+            "book": "ISA",
+            "chapter": 40,
+            "verse": 1
+          },
+          "end": {
+            "book": "ISA",
+            "chapter": 40,
+            "verse": 5
+          }
+        },
+        {
+          "start": {
+            "book": "MAT",
+            "chapter": 3,
+            "verse": 1
+          },
+          "end": {
+            "book": "MAT",
+            "chapter": 3,
+            "verse": 17
+          }
+        },
+        {
+          "start": {
+            "book": "LUK",
+            "chapter": 3,
+            "verse": 1
+          },
+          "end": {
+            "book": "LUK",
+            "chapter": 3,
+            "verse": 22
+          }
+        },
+        {
+          "start": {
+            "book": "JHN",
+            "chapter": 1,
+            "verse": 19
+          },
+          "end": {
+            "book": "JHN",
+            "chapter": 1,
+            "verse": 34
+          }
+        }
+      ]
+    },
+    {
+      "passage": {
+        "start": {
+          "book": "LUK",
+          "chapter": 3,
+          "verse": 21
+        },
+        "end": {
+          "book": "LUK",
+          "chapter": 3,
+          "verse": 22
+        }
+      },
+      "title": "The Baptism of Jesus",
+      "parallels": [
+        {
+          "start": {
+            "book": "MAT",
+            "chapter": 3,
+            "verse": 13
+          },
+          "end": {
+            "book": "MAT",
+            "chapter": 3,
+            "verse": 17
+          }
+        },
+        {
+          "start": {
+            "book": "MRK",
+            "chapter": 1,
+            "verse": 9
+          },
+          "end": {
+            "book": "MRK",
+            "chapter": 1,
+            "verse": 11
+          }
+        },
+        {
+          "start": {
+            "book": "JHN",
+            "chapter": 1,
+            "verse": 29
+          },
+          "end": {
+            "book": "JHN",
+            "chapter": 1,
+            "verse": 34
+          }
+        }
+      ]
+    },
+    {
+      "passage": {
+        "start": {
+          "book": "JHN",
+          "chapter": 1,
+          "verse": 29
+        },
+        "end": {
+          "book": "JHN",
+          "chapter": 1,
+          "verse": 34
+        }
+      },
+      "title": "Jesus the Lamb of God",
+      "parallels": [
+        {
+          "start": {
+            "book": "MAT",
+            "chapter": 3,
+            "verse": 13
+          },
+          "end": {
+            "book": "MAT",
+            "chapter": 3,
+            "verse": 17
+          }
+        },
+        {
+          "start": {
+            "book": "MRK",
+            "chapter": 1,
+            "verse": 9
+          },
+          "end": {
+            "book": "MRK",
+            "chapter": 1,
+            "verse": 11
+          }
+        },
+        {
+          "start": {
+            "book": "LUK",
+            "chapter": 3,
+            "verse": 21
+          },
+          "end": {
+            "book": "LUK",
+            "chapter": 3,
+            "verse": 22
+          }
+        }
+      ]
+    }
+  ]
+}

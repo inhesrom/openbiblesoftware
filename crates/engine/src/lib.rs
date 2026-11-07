@@ -104,6 +104,9 @@ mod notes_tests;
 pub mod open_catalogue;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod open_catalogue_tests;
+pub mod parallel_passages;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod parallel_passages_tests;
 pub mod people_places;
 pub mod persist;
 pub mod reading_plans;
@@ -236,6 +239,7 @@ pub use notes::{
 pub use notes_export::{NotesExport, NotesFormat, NotesSource};
 /// The Morphology chooser's menus and choices (#145).
 pub use obs_search::{MorphCategory, MorphCriteria};
+pub use parallel_passages::{ParallelGroup, ParallelPassages, ParallelRow};
 pub use people_places::{ArticleLink, Fact, PersonOrPlace};
 pub use persist::{
     LayoutNode, SNAPSHOT_VERSION, ScrollPosition, TabSnapshot, UserData, WorkspaceSnapshot,

@@ -48,6 +48,10 @@ An ordered list of Passages, used where a single location is not required (for e
 A link from one Passage to a related Passage, supplied by a Cross-reference set.
 _Avoid_: Xref, Related verse, Reference (unqualified)
 
+**Parallel passage**:
+A Passage that tells the same event or gives the same text as another: the accounts of Jesus' baptism in Matthew 3:13-17, Mark 1:9-11 and Luke 3:21-22, David's census in 2 Samuel 24 and 1 Chronicles 21, Psalm 18 and 2 Samuel 22. A Cross-reference set may carry them, as sections of a Bible book (a Passage with its heading) each with the Passages parallel to it (the BSB's own `\r` lines, in the Starter library's BSB Parallel Passages); the Passage Guide's Parallel passages section lists them, and clicking one opens Text Comparison on it.
+_Avoid_: Parallel (unqualified), Harmony (for one Passage), Synoptic parallel, Parallel resource (that is a Tab's other Resources)
+
 ### Original-language words
 
 **Tagged word**:
@@ -104,7 +108,7 @@ A Dictionary whose entries are Passage lists: each headword's subtopics ("Of ene
 _Avoid_: Topical Bible (as the kind), Concordance, Topic list
 
 **Cross-reference set**:
-A Resource made of Cross-references.
+A Resource made of Cross-references. It may also carry Parallel passages (ADR 0014); the Starter library's BSB Parallel Passages carries only those.
 
 **People & places index**:
 A Resource that identifies people and places and lists the Passages that mention them. Its places may carry Place locations (the Starter library's OpenBible.info geocoding does, under TIPNR's ids, so the two indexes describe one place, not two). It may also carry the Eras, Lifespans and Events the Timeline shows (the Starter library's Theographic timeline does, naming people and places by TIPNR's ids).
@@ -452,7 +456,7 @@ One block of a Guide that gathers related results (for example commentaries or C
 _Avoid_: Panel, Card, Widget
 
 **Passage Guide**:
-The Guide whose Key is a Passage. Its sections in v0.1 are Commentaries, Cross-references, Key words, and People & places.
+The Guide whose Key is a Passage. Its sections in v0.1 are Commentaries, Cross-references, Key words, and People & places; Parallel passages came later, after Cross-references.
 _Avoid_: Exegetical Guide
 
 **Exegetical Guide**:

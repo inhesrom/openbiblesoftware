@@ -99,6 +99,7 @@ pub(super) fn release_set() -> Vec<obs_model::Resource> {
             &[(john, None, "God so loved the world.")],
         ),
         cross_references(),
+        obs_engine::testing::bsb_parallels(),
         obs_engine::testing::tipnr(),
         obs_engine::testing::tagnt_grace(),
         obs_engine::testing::tagnt_love(),
@@ -372,6 +373,10 @@ fn every_passage_guide_section_empty_state_has_a_working_action() {
             "None in your library. Add a Cross-reference set",
         ),
         (
+            ParallelPassages,
+            "None in your library. Add a set of parallel passages",
+        ),
+        (
             KeyWords,
             "None in your library. Add a Bible with Strong's numbers",
         ),
@@ -400,7 +405,13 @@ fn every_passage_guide_section_empty_state_has_a_working_action() {
     expect_get_resources(&mut h, ResourceFilter::Type(ResourceType::Commentary));
     click_action(&mut h, guide, KeyWords, "Get Bibles…");
     expect_get_resources(&mut h, ResourceFilter::Type(ResourceType::Bible));
-    for section in [Commentaries, CrossReferences, KeyWords, PeopleAndPlaces] {
+    for section in [
+        Commentaries,
+        CrossReferences,
+        ParallelPassages,
+        KeyWords,
+        PeopleAndPlaces,
+    ] {
         click_action(&mut h, guide, section, ADD_STARTER);
         expect_starter_library(&mut h);
         click_action(&mut h, guide, section, IMPORT);

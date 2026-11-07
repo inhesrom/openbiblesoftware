@@ -380,6 +380,21 @@ const ID: ParamSpec = ParamSpec {
     help: "Resource id of a Bible in the library",
 };
 
+const PARALLEL: &[ParamSpec] = &[
+    ParamSpec {
+        name: "passage",
+        kind: ParamKind::String,
+        required: true,
+        help: "Bible reference in the Standard versification, e.g. `Mt 3:13-17`",
+    },
+    ParamSpec {
+        name: "new_tab",
+        kind: ParamKind::Boolean,
+        required: false,
+        help: "Always open a new Text Comparison (Ctrl/Cmd-click)",
+    },
+];
+
 pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "compare.bible",
@@ -412,6 +427,14 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         params: &[TAB],
         enabled: always,
         run: clear_range,
+    },
+    CommandSpec {
+        id: "compare.parallel",
+        label: "Compare a parallel passage",
+        shortcut: None,
+        params: PARALLEL,
+        enabled: always,
+        run: compare_parallel,
     },
 ];
 
@@ -514,6 +537,55 @@ fn clear_range(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let tab = comparison_tab("compare.clear_range", s, &p)?;
     if let Some(t) = s.workspace.tab_mut(tab) {
         t.comparison.range = None;
+    }
+    Ok(state(s, tab))
+}
+
+/// Text Comparison aligned on a Parallel passage (#212), clicked in a Passage Guide: the
+/// compared Bibles in Verse-aligned rows over exactly that Passage (its range chip). It opens
+/// outside the focused Tab's Link set, so the Guide and the Bible it follows stay where they
+/// are: the most recent Text Comparison in no Link set and not in the Guide's Panel (where
+/// showing it would hide the Guide) moves there, else a new one opens in a Panel of its own
+/// beside the Guide (`new_tab`: always a new one), so both stay in view.
+fn compare_parallel(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const CMD: &str = "compare.parallel";
+    let text = p.str("passage").unwrap_or_default();
+    let list = obs_scripture::parse_reference(text, &Standard, None)
+        .map_err(|e| failed(CMD, e.kind.to_string()))?;
+    let passage = list
+        .passages()
+        .first()
+        .copied()
+        .ok_or_else(|| failed(CMD, "no reference"))?;
+    let kind = TabKind::Tool(Tool::TextComparison);
+    let guide_panel = s.workspace.focused().and_then(|g| s.workspace.panel_of(g));
+    let existing = if p.bool("new_tab").unwrap_or(false) {
+        None
+    } else {
+        s.workspace.most_recent(|t| {
+            t.kind == kind
+                && t.link.is_none()
+                && (guide_panel.is_none() || s.workspace.panel_of(t.id) != guide_panel)
+        })
+    };
+    let tab = match existing {
+        Some(tab) => {
+            s.workspace.focus(tab);
+            tab
+        }
+        None => {
+            let beside = crate::workspace::OpenRequest {
+                split: true,
+                ..Default::default()
+            };
+            let tab = crate::workspace_commands::open_tab(s, kind, beside);
+            s.workspace.set_link(tab, None);
+            tab
+        }
+    };
+    s.workspace.navigate_standard(tab, passage.start());
+    if let Some(t) = s.workspace.tab_mut(tab) {
+        t.comparison.range = narrows(passage).then_some(passage);
     }
     Ok(state(s, tab))
 }
