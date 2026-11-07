@@ -299,6 +299,14 @@ _Avoid_: Position, Cursor
 The outline of a Resource that a Resource Tab shows beside its text when its header's Contents button is on: a Bible's Bible books and chapters; a Commentary's volumes (when it names them), Bible books, chapters and sections, each introduction first; a Lexicon's or Dictionary's entries A–Z, under their first letter, with a filter box. The line of the Tab's Current location is highlighted, and follows the text as it scrolls; clicking a line takes the Tab there, as a jump its Link set follows. It is made from the Resource itself, the first time its Contents are shown.
 _Avoid_: TOC, Outline, Index, Navigator
 
+**Footnote**:
+A note that is part of a Resource's own text, as its translators or editors wrote it: a translation note ("Or *comprehended*"), a textual note, or a cross-reference note listing related Passages. It is shown at its Footnote marker, never inline in the text, and it is not an Annotation: the user's own Notes are something else. Bible references in it are read in that Resource's numbering.
+_Avoid_: Note (that is the user's), Translator note, Comment
+
+**Footnote marker**:
+The small raised letter in a Resource Tab's text where a Footnote belongs (a, b, c… from each chapter's first; aa after z), or the ↗ of a cross-reference note. Resting the pointer on it as long as Word Info waits (or reaching it with Tab) shows the Footnote in a popover beside it; clicking it (or Enter) pins the popover until Esc, its × or a click elsewhere. Its Bible references are links that preview the Passage on hover and go there on click. View → Footnote markers shows or hides them in the focused Tab; the choice is kept per Tab and saved in Layouts. Markers are not text: selecting across one, Copy, Copy verses and Annotation anchors leave it and its Footnote out.
+_Avoid_: Note marker (that marks a Note), Footnote caller, Superscript
+
 **Link set**:
 A lettered group of Tabs (A, B, C…) that share a Current location. When one Tab navigates, every other member whose Resource has that Key scheme follows, translating through Verse maps. A Tab belongs to at most one Link set.
 _Avoid_: Sync group, Linked panels

@@ -122,6 +122,9 @@ pub struct TabSnapshot {
     /// A Resource Tab shows its Contents pane (#176).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub contents: bool,
+    /// The user hid the Tab's Footnote markers (#208).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub footnote_markers_hidden: bool,
 }
 
 /// The Workspace as saved: Tabs, the arrangement of Panels, Link sets, focus and each Tab
@@ -402,6 +405,7 @@ impl Workspace {
                     link: t.link,
                     interlinear: t.interlinear.clone(),
                     contents: t.contents,
+                    footnote_markers_hidden: !t.footnote_markers,
                 })
                 .collect(),
             layout: self.arrangement.clone(),

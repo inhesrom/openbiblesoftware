@@ -54,6 +54,9 @@ pub struct ReadingDoc {
     tagged: OnceLock<bool>,
     /// A Commentary's volume per Bible book, for its Contents (#176).
     pub volumes: std::collections::BTreeMap<obs_scripture::Book, String>,
+    /// The Resource's note units (its Footnotes, #208), by id: shown when their marker is
+    /// hovered, never part of the reading text.
+    notes: std::collections::HashMap<UnitId, TextUnit>,
 }
 
 /// Bible Verses by the Standard Passage they map to (ADR 0002), for finding where a Passage
@@ -73,11 +76,14 @@ impl ReadingDoc {
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         let reader = ObrReader::open(path)?;
         let mut units = Vec::new();
+        let mut notes = std::collections::HashMap::new();
         for id in reader.unit_ids()? {
-            if let Some(u) = reader.unit(&id)?
-                && u.kind != UnitKind::Note
-            {
-                units.push(u);
+            match reader.unit(&id)? {
+                Some(u) if u.kind == UnitKind::Note => {
+                    notes.insert(u.id.clone(), u);
+                }
+                Some(u) => units.push(u),
+                None => {}
             }
         }
         let mut keys = Vec::new();
@@ -87,19 +93,20 @@ impl ReadingDoc {
         let mut doc = Self::build(reader.manifest().clone(), units, reader.verses()?, keys);
         doc.verse_map = reader.verse_map()?.map(std::sync::Arc::new);
         doc.volumes = reader.volumes()?;
+        doc.notes = notes;
         Ok(doc)
     }
 
     /// From a Resource in memory (tests, imports in progress).
     pub fn from_resource(resource: Resource) -> Self {
-        let units = resource
+        let (notes, units): (Vec<TextUnit>, Vec<TextUnit>) = resource
             .units
             .into_iter()
-            .filter(|u| u.kind != UnitKind::Note)
-            .collect();
+            .partition(|u| u.kind == UnitKind::Note);
         let mut doc = Self::build(resource.manifest, units, resource.verses, resource.keys);
         doc.verse_map = resource.verse_map.map(std::sync::Arc::new);
         doc.volumes = resource.volumes;
+        doc.notes = notes.into_iter().map(|u| (u.id.clone(), u)).collect();
         doc
     }
 
@@ -169,7 +176,13 @@ impl ReadingDoc {
             standard_index: OnceLock::new(),
             tagged: OnceLock::new(),
             volumes: Default::default(),
+            notes: Default::default(),
         }
+    }
+
+    /// The body of one of the Resource's Footnotes (a note unit, #208).
+    pub fn footnote(&self, note: &UnitId) -> Option<&TextUnit> {
+        self.notes.get(note)
     }
 
     fn standard_index(&self) -> &StandardIndex {

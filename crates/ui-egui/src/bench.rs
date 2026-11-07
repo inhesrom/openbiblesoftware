@@ -540,7 +540,8 @@ fn find_scenario(bench: &mut Bench) -> Samples {
 /// A deterministic Bible-shaped document for CI, where no real Bible is available: Genesis to
 /// Deuteronomy chapter and verse counts, prose paragraphs of 3–8 verses, every fifth chapter
 /// poetry, verses of 12–60 words. About seven words in ten are Tagged words with a Hebrew
-/// Lemma, as in an English Bible with Strong's numbers (for interlinear lines, #143).
+/// Lemma, as in an English Bible with Strong's numbers (for interlinear lines, #143). Every
+/// sixth verse ends with a Footnote marker, about as often as in the BSB (#208).
 pub fn synthetic_bible() -> Arc<ReadingDoc> {
     match synthetic_bible_resource() {
         Some(r) => Arc::new(ReadingDoc::from_resource(r)),
@@ -586,6 +587,7 @@ pub(crate) fn synthetic_bible_resource() -> Option<obs_model::Resource> {
     m.key_schemes = vec![KeyScheme::Passage];
     m.license = "LicenseRef-PD".into();
     let mut b = ResourceBuilder::new(m);
+    let mut notes = 0u32;
     let mut seed: u64 = 0x5eed;
     let mut rand = move |n: u64| {
         seed ^= seed << 13;
@@ -605,6 +607,7 @@ pub(crate) fn synthetic_bible_resource() -> Option<obs_model::Resource> {
         let mut verses = Vec::new();
         let mut paras = Vec::new();
         let mut tagged = Vec::new();
+        let mut footnotes = Vec::new();
         for chapter in 1..=Standard.chapter_count(book) {
             let last = Standard.last_verse(book, chapter).unwrap_or(1);
             let poetry = chapter % 5 == 0;
@@ -645,6 +648,10 @@ pub(crate) fn synthetic_bible_resource() -> Option<obs_model::Resource> {
                     }
                     at += w.len() + 1;
                 }
+                if v % 6 == 0 {
+                    notes += 1;
+                    footnotes.push((r.end, UnitId::note(notes)));
+                }
                 verses.push((r.clone(), Verse::new(book, chapter, v)));
                 in_para += 1;
                 if poetry || in_para as u64 >= para_len || v == last {
@@ -675,6 +682,22 @@ pub(crate) fn synthetic_bible_resource() -> Option<obs_model::Resource> {
         }
         for (r, part) in tagged {
             b.add_span(&id, r, SpanKind::TaggedWord { parts: vec![part] });
+        }
+        for (at, note) in footnotes {
+            b.add_unit(
+                note.clone(),
+                UnitKind::Note,
+                None,
+                "Or the word; Hebrew uncertain".into(),
+            );
+            b.add_span(
+                &id,
+                at..at,
+                SpanKind::NoteRef {
+                    note,
+                    note_kind: obs_model::NoteKind::Footnote,
+                },
+            );
         }
     }
     b.build().ok()

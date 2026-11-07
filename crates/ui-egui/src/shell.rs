@@ -40,6 +40,7 @@ mod factbook_tab;
 mod favorites_tab;
 mod find_bar;
 mod floating;
+mod footnotes;
 pub use floating::DesktopUnits;
 mod fonts_window;
 mod get_bibles_tab;
@@ -248,6 +249,8 @@ pub(crate) struct State {
     settings_ui: settings_tab::SettingsUi,
     /// The bench's feature scenarios (#183): one Tab's UI-thread work, timed each frame.
     pub(crate) timed_tab: TimedTab,
+    /// The Footnote popover (#208).
+    footnotes: footnotes::Footnotes,
 }
 
 /// A Tab whose drawing is timed each frame, for the bench's synchronous-work budget (#183,
@@ -320,6 +323,7 @@ impl Shell {
                 keys_ui: Default::default(),
                 settings_ui: Default::default(),
                 timed_tab: TimedTab::default(),
+                footnotes: Default::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -1060,6 +1064,17 @@ impl Shell {
                 };
                 let label = match id {
                     "view.red_letter" if self.st.session.text.red_letter => "✓ Red letter".into(),
+                    "view.footnote_markers"
+                        if self.st.session.workspace.focused().is_some_and(|t| {
+                            self.st
+                                .session
+                                .workspace
+                                .tab(t)
+                                .is_some_and(|t| t.footnote_markers)
+                        }) && self.st.session.is_enabled(id) =>
+                    {
+                        format!("✓ {}", spec.label)
+                    }
                     "view.highlights" if self.st.session.appearance.show_highlights => {
                         format!("✓ {}", spec.label)
                     }
@@ -1871,7 +1886,12 @@ impl State {
         }
         self.sync_interlinear(tab, false);
         let palette = self.palette;
-        let text = self.session.text;
+        let mut text = self.session.text;
+        text.footnote_markers = self
+            .session
+            .workspace
+            .tab(tab)
+            .is_none_or(|t| t.footnote_markers);
         let Some(t) = self.tabs.get_mut(&tab) else {
             return;
         };
@@ -1965,6 +1985,7 @@ impl State {
                 }
             }
         }
+        self.footnote_frame(ui, tab, &out);
         self.after_reading_pane(ui, tab, &out);
     }
 

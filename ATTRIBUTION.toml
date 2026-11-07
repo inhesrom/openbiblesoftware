@@ -28,6 +28,14 @@ copyright = "Public domain; \"World English Bible\" is a trademark of eBible.org
 changes = "Only a few verses of Gen, 2 Kgs, Ps, Mt and 3 Jn kept, as import test fixtures."
 
 [[asset]]
+path = "crates/formats/tests/assets/usfm/bsb/*"
+name = "Berean Standard Bible (official bsb_usfm.zip), test excerpts"
+license = "LicenseRef-PD"
+source = "https://bereanbible.com/bsb_usfm.zip (files dated 2026-03-08)"
+copyright = "Public domain (dedicated by the Berean Bible Translation Committee)"
+changes = "Only Isaiah 40:1-3 and John 1:1-23, with their footnotes, kept as test fixtures."
+
+[[asset]]
 path = "crates/formats/tests/assets/sword/**/obskjv*"
 name = "King James Version (1769), test excerpts as SWORD modules (OSIS and GBF)"
 license = "LicenseRef-PD"

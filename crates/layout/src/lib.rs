@@ -30,8 +30,8 @@ pub use interlinear::{
 pub use layout::{Hit, LaidBlock, LaidCell, LaidItem, LaidLine, UnitPos, layout};
 pub use paragraph::{Align, InlineObject, Paragraph, Run, RunSource};
 pub use present::{
-    BlockKind, BlockSource, SYNTHETIC_SMALL_CAPS, block_paragraph, snippet_paragraph, starts_rtl,
-    styled_snippet_paragraph, unit_blocks,
+    BlockKind, BlockSource, SYNTHETIC_SMALL_CAPS, block_paragraph, footnote_label,
+    snippet_paragraph, starts_rtl, styled_snippet_paragraph, unit_blocks,
 };
 pub use spans::SpanIndex;
 pub use style::{ColorRole, RunStyle, TextSettings, VerseNumbers};

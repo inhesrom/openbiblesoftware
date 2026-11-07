@@ -34,6 +34,18 @@ const PREFETCH: f32 = 1.5;
 /// Horizontal margin inside the pane, in points.
 pub const MARGIN: f32 = 24.0;
 
+/// A Footnote marker in view (#208): the note it stands for, where it sits in the unit, its
+/// label as drawn and its box (`x` from the text's left edge, `y` from the viewport top).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FootnoteMarker {
+    pub unit: usize,
+    pub anchor: usize,
+    pub note: obs_model::UnitId,
+    pub kind: obs_model::NoteKind,
+    pub label: String,
+    pub rect: [f32; 4],
+}
+
 /// One block in view: its index, its top relative to the viewport top, and its layout.
 #[derive(Debug, Clone)]
 pub struct VisibleBlock {
@@ -359,6 +371,54 @@ impl ReadingView {
             }
             top += self.height_of(i);
             i += 1;
+        }
+        out
+    }
+
+    /// The Footnote markers in the laid blocks of a viewport `height` tall, in text order.
+    pub fn footnote_markers(&self, height: f32) -> Vec<FootnoteMarker> {
+        let mut out: Vec<FootnoteMarker> = Vec::new();
+        for (index, top, laid) in self.laid_in_view(height) {
+            let unit = self.doc.blocks[index].unit;
+            let first = out.len();
+            for line in &laid.lines {
+                for item in &line.items {
+                    for (bytes, x0, x1) in item.clusters() {
+                        let Some(UnitPos::Object {
+                            anchor,
+                            object: obs_layout::InlineObject::NoteMarker { note, kind },
+                        }) = laid.to_unit(bytes.start)
+                        else {
+                            continue;
+                        };
+                        let text = laid.text.get(bytes).unwrap_or_default();
+                        let (y0, y1) = (top + line.top, top + line.text_bottom);
+                        // A label of several letters is one marker.
+                        if let Some(m) = out[first..]
+                            .iter_mut()
+                            .find(|m| m.anchor == anchor && m.note == note)
+                        {
+                            m.label.push_str(text);
+                            m.rect[0] = m.rect[0].min(x0);
+                            m.rect[2] = m.rect[2].max(x1);
+                            continue;
+                        }
+                        out.push(FootnoteMarker {
+                            unit,
+                            anchor,
+                            note,
+                            kind,
+                            label: text.to_string(),
+                            rect: [x0, y0, x1, y1],
+                        });
+                    }
+                }
+            }
+        }
+        for m in &mut out {
+            m.label.retain(|c| !c.is_control() && c != '\u{200F}');
+            // The glyph sits high in the line: its box is the line's upper half.
+            m.rect[3] = m.rect[1] + (m.rect[3] - m.rect[1]) * 0.6;
         }
         out
     }
