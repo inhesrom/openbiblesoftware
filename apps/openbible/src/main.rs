@@ -1,7 +1,8 @@
 //! Open Bible Software desktop app.
 //!
 //! `openbible [file.obr]` opens the app. `openbible --bench [--obr FILE] [--hz N] [--json OUT]
-//! [--interlinear-panes N] [--quick]` runs the headless scroll/fling/jump benchmark (`cargo xtask bench`).
+//! [--interlinear-panes N] [--quick] [--no-shell-scenarios]` runs the headless
+//! scroll/fling/jump benchmark and its feature scenarios (`cargo xtask bench`).
 
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -31,7 +32,10 @@ fn bench(args: &[String]) -> ExitCode {
                 cfg.steady_frames = 120;
                 cfg.flings = 1;
                 cfg.jumps = 4;
+                cfg.tool_frames = 30;
+                cfg.tool_steps = 2;
             }
+            "--no-shell-scenarios" => cfg.shell_scenarios = false,
             _ => {}
         }
     }

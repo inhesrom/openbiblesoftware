@@ -29,7 +29,7 @@ tasks:
            without `--check`, regenerate it (`cargo xtask licenses --help`)
 
 performance:
-  bench    headless reading-pane benchmark; fails past the thresholds in xtask/bench.toml
+  bench    headless reading-pane and feature benchmark; fails past the thresholds in xtask/bench.toml
 
 starter library:
   starter  build dist/starter/*.obr from starter/sources.toml (`cargo xtask starter --help`)

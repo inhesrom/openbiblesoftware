@@ -454,16 +454,73 @@ fn bench_runs_and_reports_every_scenario() {
         jumps: 2,
         panes: 2,
         pace: false,
+        shell_scenarios: false,
         ..bench::BenchConfig::default()
     };
     let report = bench::run(bench::synthetic_bible(), cfg);
     let names: Vec<&str> = report.scenarios.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(names, ["steady", "fling", "jumps"]);
+    assert_eq!(names, ["steady", "fling", "jumps", "interlinear", "find"]);
     assert_eq!(report.scenarios[0].frames, 20);
     assert!(report.blocks > 1000);
     assert!(report.text_gpu_mib > 0.0);
     // Every pane draws a Find bar's matches (#175).
     assert!(report.find_matches > 10_000, "{}", report.find_matches);
+    // Interlinear lines (#143) on every pane, scrolled for half the steady frames.
+    assert_eq!(report.scenarios[3].frames, 10);
+    // Find next (#175, #183): every step measured, each a jump that settles.
+    let find = &report.scenarios[4];
+    assert!(find.settle_frames_max.is_some_and(|n| n <= 2), "{find:?}");
+    assert!(
+        report.feature_errors.is_empty(),
+        "{:?}",
+        report.feature_errors
+    );
+}
+
+/// The word the Find scenario steps through is in the bench Bible a few dozen times, far
+/// apart, so each Find next jumps (#183).
+#[test]
+fn the_find_scenarios_word_is_sparse() {
+    let doc = bench::synthetic_bible();
+    let finder = obs_search::Finder::new(bench::FIND_SPARSE, Default::default()).unwrap();
+    let found: Vec<(usize, usize)> = doc
+        .units
+        .iter()
+        .enumerate()
+        .flat_map(|(u, unit)| {
+            finder
+                .find(&unit.text)
+                .into_iter()
+                .map(move |r| (u, r.start))
+        })
+        .collect();
+    assert!((12..200).contains(&found.len()), "{}", found.len());
+    let books: std::collections::BTreeSet<usize> = found.iter().map(|(u, _)| *u).collect();
+    assert!(books.len() >= 3, "{books:?}");
+}
+
+/// Every Shell-driven feature scenario (#183) sets up, shows its feature with realistic data
+/// and measures it: the Atlas on a chapter of 120 places, a whole-Bible search's Grid and
+/// Chart, the Exegetical Guide on Genesis 24, the Topic Guide on Prayer with every subtopic,
+/// and Get Resources over 3,000 rows. Each waits for what it must show, so a scenario that
+/// shows nothing fails here rather than measuring an empty Tab.
+#[test]
+fn every_shell_scenario_shows_its_feature_and_measures_it() {
+    let cfg = bench::BenchConfig {
+        pace: false,
+        tool_frames: 8,
+        tool_steps: 2,
+        ..bench::BenchConfig::default()
+    };
+    let (reports, errors) = bench::tools::run(&cfg);
+    assert!(errors.is_empty(), "{errors:?}");
+    let names: Vec<&str> = reports.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, bench::SHELL_SCENARIOS);
+    for r in &reports {
+        assert!(r.frames >= 8, "{r:?}");
+        let settle = r.settle_frames_max.expect("settle frames");
+        assert!(settle < bench::SETTLE_LIMIT, "{r:?}");
+    }
 }
 
 #[test]

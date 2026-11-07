@@ -1,0 +1,639 @@
+//! The bench's feature scenarios that drive the whole Shell (#183): the Atlas map, the Search
+//! Tool's Grid and Chart views, the Exegetical and Topic Guides and Get Resources' catalog
+//! filtering. Each builds a library of synthetic Resources ([`super::library`]) in a temporary
+//! folder, opens the feature as a user would (commands, pointer and keys through a headless
+//! egui context), waits untimed until it has its data, then times what the user does with it
+//! frame by frame at the display refresh rate.
+//!
+//! A frame's time is the UI thread's: the Shell's whole frame (`Shell::ui`, every Panel) and
+//! egui's tessellation, as eframe does them before handing the GPU its meshes. GPU work is not
+//! included. Settle frames count frames after an action (a Link set moving, a view switched,
+//! a key typed) until the feature shows its result; 0 is the action's own frame.
+
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use egui::{Event, Modifiers, Pos2, RawInput, Rect, Shape, Vec2, pos2, vec2};
+use obs_engine::{JobMode, Library, Session, TabId, TabKind};
+use obs_model::Resource;
+use obs_scripture::{Book, Passage, RefStyle, Standard, format_passage};
+use serde_json::json;
+
+use super::library;
+use super::{BenchConfig, SETTLE_LIMIT, Samples, ScenarioReport};
+use crate::Shell;
+
+/// The window, in points (the shell tests' size).
+const SCREEN: Vec2 = vec2(1400.0, 900.0);
+
+/// Device pixels per point, as in the reading bench.
+const PIXELS_PER_POINT: f32 = 2.0;
+
+/// Longest a scenario's untimed setup may take (Search indexes, first loads).
+const SETUP_LIMIT: Duration = Duration::from_secs(180);
+
+/// Removes the scenario's library folder when the scenario ends.
+struct Folder(PathBuf);
+
+impl Drop for Folder {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The Shell in a headless egui context, timed frame by frame.
+struct ShellBench {
+    ctx: egui::Context,
+    shell: Shell,
+    time: f64,
+    events: Vec<Event>,
+    interval: Duration,
+    pace: bool,
+    /// Texts painted last frame, with where.
+    texts: Vec<(Rect, String)>,
+    /// Kept until the Shell is dropped (it may hold its files open).
+    _folder: Folder,
+}
+
+fn collect_texts(shape: &Shape, out: &mut Vec<(Rect, String)>) {
+    match shape {
+        Shape::Vec(v) => v.iter().for_each(|s| collect_texts(s, out)),
+        Shape::Text(t) => out.push((t.visual_bounding_rect(), t.galley.text().to_string())),
+        _ => {}
+    }
+}
+
+impl ShellBench {
+    /// A Shell over a library of `resources` (in this Preferred order) written to a fresh
+    /// folder named for the scenario, in the default layout.
+    fn new(
+        cfg: &BenchConfig,
+        name: &str,
+        resources: &[Resource],
+        session: impl FnOnce(&mut Session, &Path),
+    ) -> Result<Self, String> {
+        let root = std::env::temp_dir().join(format!("obs-bench-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let folder = Folder(root.clone());
+        let dir = root.join("library");
+        library::write_library(&dir, resources)?;
+        let mut s = Session::new(JobMode::default_for_host());
+        s.library = Library::new();
+        if let Some((path, e)) = s.library.scan(&dir).into_iter().next() {
+            return Err(format!("{}: {e}", path.display()));
+        }
+        s.library.set_preferred_order(
+            resources
+                .iter()
+                .map(|r| r.manifest.resource_id.clone())
+                .collect(),
+        );
+        session(&mut s, &root);
+        let mut shell = Shell::new(s);
+        shell.reset_layout();
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx);
+        let mut b = Self {
+            ctx,
+            shell,
+            time: 0.0,
+            events: Vec::new(),
+            interval: Duration::from_secs_f64(1.0 / f64::from(cfg.refresh_hz)),
+            pace: cfg.pace,
+            texts: Vec::new(),
+            _folder: folder,
+        };
+        for _ in 0..3 {
+            b.frame(None, |_| {});
+        }
+        Ok(b)
+    }
+
+    /// One frame, with `action` (a command, say) done first, inside the timed work; timed into
+    /// `samples` when given. Paced to the refresh rate when the bench is.
+    fn frame(&mut self, samples: Option<&mut Samples>, action: impl FnOnce(&mut Shell)) {
+        let mut viewports = egui::ViewportIdMap::default();
+        viewports.insert(
+            egui::ViewportId::ROOT,
+            egui::ViewportInfo {
+                native_pixels_per_point: Some(PIXELS_PER_POINT),
+                ..Default::default()
+            },
+        );
+        let input = RawInput {
+            viewports,
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SCREEN)),
+            time: Some(self.time),
+            events: std::mem::take(&mut self.events),
+            ..Default::default()
+        };
+        self.time += self.interval.as_secs_f64();
+        let start = Instant::now();
+        action(&mut self.shell);
+        let shell = &mut self.shell;
+        let mut out = self.ctx.run_ui(input, |ui| shell.ui(ui));
+        let ui_time = start.elapsed();
+        // No GPU: texture uploads are dropped.
+        out.textures_delta.clear();
+        self.texts.clear();
+        for c in &out.shapes {
+            collect_texts(&c.shape, &mut self.texts);
+        }
+        let start = Instant::now();
+        std::hint::black_box(self.ctx.tessellate(out.shapes, out.pixels_per_point));
+        let elapsed = ui_time + start.elapsed();
+        if let Some(s) = samples {
+            s.cpu.push(elapsed.as_secs_f64() * 1000.0);
+        }
+        if self.pace && elapsed < self.interval {
+            std::thread::sleep(self.interval - elapsed);
+        }
+    }
+
+    /// Timed frames until `ready`, after `action`: how many frames after the action's own
+    /// ([`SETTLE_LIMIT`] if never).
+    fn settle(
+        &mut self,
+        samples: &mut Samples,
+        action: impl FnOnce(&mut Shell),
+        ready: impl Fn(&Self) -> bool,
+    ) -> usize {
+        self.frame(Some(samples), action);
+        for frame in 0..SETTLE_LIMIT {
+            if ready(self) {
+                return frame;
+            }
+            self.frame(Some(samples), |_| {});
+        }
+        SETTLE_LIMIT
+    }
+
+    /// Untimed frames until `ready` (the scenario's setup).
+    fn wait(&mut self, what: &str, ready: impl Fn(&Self) -> bool) -> Result<(), String> {
+        let start = Instant::now();
+        while start.elapsed() < SETUP_LIMIT {
+            self.frame(None, |_| {});
+            if ready(self) {
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(4));
+        }
+        let shown: Vec<&str> = self.texts.iter().map(|(_, t)| t.as_str()).collect();
+        Err(format!("never saw {what}; showing {shown:?}"))
+    }
+
+    fn has_text(&self, text: &str) -> bool {
+        self.texts.iter().any(|(_, t)| t == text)
+    }
+
+    fn has_text_starting(&self, prefix: &str) -> bool {
+        self.texts.iter().any(|(_, t)| t.starts_with(prefix))
+    }
+
+    fn text_at(&self, text: &str) -> Option<Pos2> {
+        self.texts
+            .iter()
+            .find(|(_, t)| t == text)
+            .map(|(r, _)| r.center())
+    }
+
+    /// Where Tab `tab`'s pane is drawn.
+    fn pane(&self, tab: TabId) -> Option<Rect> {
+        let tiles = &self.shell.tree.tiles;
+        tiles.find_pane(&tab).and_then(|id| tiles.rect(id))
+    }
+
+    /// The first Tab of `kind`.
+    fn tab_of(&self, kind: &TabKind) -> Option<TabId> {
+        self.shell
+            .session()
+            .workspace
+            .tabs()
+            .find(|t| t.kind == *kind)
+            .map(|t| t.id)
+    }
+
+    /// Run a command whose answer names a Tab (`{"tab": n}`).
+    fn open(&mut self, command: &str, params: &serde_json::Value) -> Result<TabId, String> {
+        self.shell
+            .run(command, params)
+            .and_then(|v| v["tab"].as_u64())
+            .map(TabId)
+            .ok_or_else(|| format!("{command} opened no Tab"))
+    }
+
+    /// `frames` timed frames of the wheel over `at`, `dy` points a frame (negative: down).
+    fn wheel(&mut self, samples: &mut Samples, at: Pos2, dy: f32, frames: usize) {
+        for _ in 0..frames {
+            self.events.push(Event::PointerMoved(at));
+            self.events.push(Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(0.0, dy),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers: Modifiers::NONE,
+            });
+            self.frame(Some(samples), |_| {});
+        }
+    }
+
+    /// Click `text` over untimed frames, once scrolling has come to rest.
+    fn click_text(&mut self, text: &str) -> Result<(), String> {
+        for _ in 0..30 {
+            self.frame(None, |_| {});
+        }
+        let at = self.text_at(text).ok_or_else(|| format!("no {text:?}"))?;
+        self.click(at);
+        Ok(())
+    }
+
+    /// A click at `at` over untimed frames (focusing a field, say).
+    fn click(&mut self, at: Pos2) {
+        self.events.push(Event::PointerMoved(at));
+        self.frame(None, |_| {});
+        for pressed in [true, false] {
+            self.events.push(Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+            self.frame(None, |_| {});
+        }
+    }
+}
+
+/// Run every feature scenario: the reports of those that ran, and why the others could not
+/// (the gate fails on any: it must not pass on a scenario that measured nothing).
+pub(crate) fn run(cfg: &BenchConfig) -> (Vec<ScenarioReport>, Vec<String>) {
+    let interval_ms = 1000.0 / f64::from(cfg.refresh_hz);
+    let mut reports = Vec::new();
+    let mut errors = Vec::new();
+    let mut add = |name: &str, s: Result<Samples, String>| match s {
+        Ok(s) => reports.push(s.report(name, interval_ms)),
+        Err(e) => errors.push(format!("{name}: {e}")),
+    };
+    add("atlas", atlas(cfg));
+    match search_views(cfg) {
+        Ok((grid, chart)) => {
+            add("search-grid", Ok(grid));
+            add("search-chart", Ok(chart));
+        }
+        Err(e) => {
+            add("search-grid", Err(e.clone()));
+            add("search-chart", Err(e));
+        }
+    }
+    add("exegetical-guide", exegetical_guide(cfg));
+    add("topic-guide", topic_guide(cfg));
+    add("get-resources", get_resources(cfg));
+    (reports, errors)
+}
+
+fn built(r: Option<Resource>, what: &str) -> Result<Resource, String> {
+    r.ok_or_else(|| format!("the synthetic {what} is invalid"))
+}
+
+/// The reading bench's Bible as a Resource (Genesis to Deuteronomy, Tagged words).
+fn torah_bible() -> Result<Resource, String> {
+    built(super::synthetic_bible_resource(), "Bible")
+}
+
+fn chapter_label(book: Book, chapter: u16) -> String {
+    Passage::chapter(&Standard, book, chapter)
+        .map(|p| format_passage(p, &Standard, RefStyle::Short))
+        .unwrap_or_default()
+}
+
+/// The Atlas beside a Bible in Link set A, on a chapter naming 120 places: the map panned with
+/// the pointer and zoomed with the wheel, then the Bible moved to other chapters (the Atlas
+/// follows, finding each chapter's places on a worker).
+fn atlas(cfg: &BenchConfig) -> Result<Samples, String> {
+    let resources = [torah_bible()?, built(library::places(), "places")?];
+    let mut b = ShellBench::new(cfg, "atlas", &resources, |_, _| {})?;
+    let bible = b
+        .tab_of(&TabKind::Resource("bench-bible".into()))
+        .ok_or("no Bible Tab")?;
+    let busy = library::BUSY_CHAPTER;
+    b.shell.run(
+        "tab.go",
+        &json!({ "tab": bible.0, "text": format!("Gen {busy}:1") }),
+    );
+    let atlas = b.open("tool.atlas", &json!({ "split": true }))?;
+    b.shell
+        .run("tab.link", &json!({ "tab": atlas.0, "set": "A" }));
+    let status = format!("{} · ", chapter_label(Book::Genesis, busy));
+    b.wait("the Atlas's places", |b| b.has_text_starting(&status))?;
+    let map = b.pane(atlas).ok_or("the Atlas is not drawn")?;
+    let center = pos2(map.left() + map.width() * 0.35, map.center().y);
+    let mut s = Samples::default();
+    // Pan: drag across the map and back.
+    b.events.push(Event::PointerMoved(center));
+    b.events.push(Event::PointerButton {
+        pos: center,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    b.frame(Some(&mut s), |_| {});
+    let mut at = center;
+    for f in 0..cfg.tool_frames {
+        let step = if (f / 30) % 2 == 0 { 3.0 } else { -3.0 };
+        at += vec2(step, step * 0.5);
+        b.events.push(Event::PointerMoved(at));
+        b.frame(Some(&mut s), |_| {});
+    }
+    b.events.push(Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    b.frame(Some(&mut s), |_| {});
+    // Zoom in and out with the wheel.
+    let half = cfg.tool_frames / 4;
+    b.wheel(&mut s, center, 40.0, half);
+    b.wheel(&mut s, center, -40.0, half);
+    // Follow the Link set to other chapters.
+    let chapters = [
+        (Book::Genesis, 1),
+        (Book::Exodus, busy),
+        (Book::Leviticus, 3),
+        (Book::Numbers, busy),
+        (Book::Deuteronomy, 2),
+        (Book::Genesis, busy),
+    ];
+    for &(book, chapter) in chapters.iter().cycle().take(cfg.tool_steps) {
+        let status = format!("{} · ", chapter_label(book, chapter));
+        let go = format!("{} {chapter}:1", book.name());
+        let frames = b.settle(
+            &mut s,
+            |shell| {
+                shell.run("tab.go", &json!({ "tab": bible.0, "text": go }));
+            },
+            |b| b.has_text_starting(&status),
+        );
+        s.settle.push(frames);
+    }
+    Ok(s)
+}
+
+/// A whole-Bible search across three Bibles (every book has hits), shown as the Grid (books ×
+/// Bibles) and the Chart (bars by book, then by chapter of Psalms), each scrolled.
+fn search_views(cfg: &BenchConfig) -> Result<(Samples, Samples), String> {
+    let ids = ["bench-a", "bench-b", "bench-c"];
+    let resources = ids
+        .iter()
+        .zip(["BA", "BB", "BC"])
+        .zip(1u64..)
+        .map(|((id, abbreviation), seed)| {
+            built(
+                library::english_bible(id, abbreviation, &Book::ALL, seed),
+                "whole Bible",
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut b = ShellBench::new(cfg, "search", &resources, |s, root| {
+        s.set_search_cache_dir(root.join("cache"));
+        s.refresh_search_indexes();
+    })?;
+    b.wait("the Search indexes", |b| {
+        let s = b.shell.session();
+        !s.search.is_building() && ids.iter().all(|id| s.search.is_ready(id))
+    })?;
+    let tab = b.open(
+        "search.run",
+        &json!({
+            "text": "LORD",
+            "bibles": ids.join(","),
+            "scope": "Whole Bible",
+            "split": true,
+        }),
+    )?;
+    b.wait("the search results", |b| {
+        let s = b.shell.session();
+        !s.bible_search_running()
+            && s.search_tab(tab)
+                .is_some_and(|t| t.all_results().is_some_and(|r| !r.rows.is_empty()))
+    })?;
+    let pane = b.pane(tab).ok_or("the Search Tab is not drawn")?;
+    let over = pos2(pane.center().x, pane.top() + pane.height() * 0.7);
+    let half = cfg.tool_frames / 2;
+
+    let mut grid = Samples::default();
+    for _ in 0..cfg.tool_steps.div_ceil(2) {
+        let frames = b.settle(
+            &mut grid,
+            |shell| {
+                shell.run("search.view", &json!({ "tab": tab.0, "value": "grid" }));
+            },
+            |b| b.has_text("Bible book"),
+        );
+        grid.settle.push(frames);
+        b.wheel(&mut grid, over, -30.0, half);
+        b.wheel(&mut grid, over, 30.0, half);
+        // Away and back: each switch draws the view afresh.
+        b.shell
+            .run("search.view", &json!({ "tab": tab.0, "value": "verses" }));
+        b.frame(None, |_| {});
+    }
+
+    let mut chart = Samples::default();
+    for _ in 0..cfg.tool_steps.div_ceil(2) {
+        let frames = b.settle(
+            &mut chart,
+            |shell| {
+                shell.run("search.view", &json!({ "tab": tab.0, "value": "chart" }));
+                shell.run("search.chart", &json!({ "tab": tab.0, "value": "books" }));
+            },
+            |b| b.has_text("By book"),
+        );
+        chart.settle.push(frames);
+        b.wheel(&mut chart, over, -30.0, half / 2);
+        b.wheel(&mut chart, over, 30.0, half / 2);
+        let frames = b.settle(
+            &mut chart,
+            |shell| {
+                shell.run("search.chart", &json!({ "tab": tab.0, "value": "Psalms" }));
+            },
+            |b| b.has_text("Chapters of Psalms"),
+        );
+        chart.settle.push(frames);
+        b.wheel(&mut chart, over, -30.0, half / 2);
+        b.wheel(&mut chart, over, 30.0, half / 2);
+        b.shell
+            .run("search.view", &json!({ "tab": tab.0, "value": "verses" }));
+        b.frame(None, |_| {});
+    }
+    Ok((grid, chart))
+}
+
+/// The Exegetical Guide on a whole chapter of the Hebrew Torah (Genesis 24: 67 verses, about
+/// 1,300 words) scrolled from top to bottom, then moved to other chapters.
+fn exegetical_guide(cfg: &BenchConfig) -> Result<Samples, String> {
+    let hebrew = built(library::hebrew_bible(), "Hebrew Bible")?;
+    let chapters = [
+        (Book::Numbers, 7),
+        (Book::Exodus, 20),
+        (Book::Genesis, 1),
+        (Book::Deuteronomy, 28),
+    ];
+    // What the Word by word header counts, chapter by chapter: it shows once the words are in.
+    let counts: Vec<String> = chapters
+        .iter()
+        .map(|&(book, chapter)| library::tagged_words(&hebrew, book, chapter).to_string())
+        .collect();
+    let resources = [
+        torah_bible()?,
+        hebrew,
+        built(library::lexicon(), "Lexicon")?,
+    ];
+    let mut b = ShellBench::new(cfg, "exegetical", &resources, |_, _| {})?;
+    let bible = b
+        .tab_of(&TabKind::Resource("bench-bible".into()))
+        .ok_or("no Bible Tab")?;
+    b.shell
+        .run("tab.go", &json!({ "tab": bible.0, "text": "Gen 24:1" }));
+    let guide = b.open(
+        "guide.exegetical_guide",
+        &json!({ "passage": "Gen 24", "split": true }),
+    )?;
+    b.wait("Genesis 24 word by word", |b| {
+        !b.shell.session().guides.is_busy() && b.has_text("Genesis 24:1 (BHOT)")
+    })?;
+    let pane = b.pane(guide).ok_or("the Guide is not drawn")?;
+    let over = pane.center();
+    let mut s = Samples::default();
+    b.wheel(&mut s, over, -60.0, cfg.tool_frames);
+    b.wheel(&mut s, over, 60.0, cfg.tool_frames / 2);
+    for k in 0..cfg.tool_steps {
+        let (book, chapter) = chapters[k % chapters.len()];
+        let count = &counts[k % chapters.len()];
+        let label = format!("{} {chapter}", book.name());
+        let go = chapter_label(book, chapter);
+        let frames = b.settle(
+            &mut s,
+            |shell| {
+                shell.run("tab.go", &json!({ "tab": guide.0, "text": go }));
+            },
+            |b| !b.shell.session().guides.is_busy() && b.has_text(&label) && b.has_text(count),
+        );
+        s.settle.push(frames);
+        b.wheel(&mut s, over, -60.0, cfg.tool_frames / 4);
+    }
+    Ok(s)
+}
+
+/// The Topic Guide on a long topic (Prayer: 60 subtopics, 1,200 Passages in each of two
+/// topical indexes) scrolled, then moved between topics.
+fn topic_guide(cfg: &BenchConfig) -> Result<Samples, String> {
+    let resources = [
+        torah_bible()?,
+        built(library::topical_index("nave"), "Nave's")?,
+        built(library::topical_index("torrey"), "Torrey's")?,
+        built(library::dictionary(), "Dictionary")?,
+    ];
+    let mut b = ShellBench::new(cfg, "topic", &resources, |_, _| {})?;
+    let (first, _, _) = library::LONG_TOPICS[0];
+    let guide = b.open(
+        "guide.topic_guide",
+        &json!({ "topic": first, "split": true }),
+    )?;
+    b.wait("the Prayer topic", |b| {
+        !b.shell.session().guides.is_busy() && b.has_text(first)
+    })?;
+    let pane = b.pane(guide).ok_or("the Guide is not drawn")?;
+    let over = pane.center();
+    let mut s = Samples::default();
+    b.wheel(&mut s, over, -60.0, cfg.tool_frames / 2);
+    b.wheel(&mut s, over, 60.0, cfg.tool_frames / 2);
+    // Show every subtopic (two entries of 60, 1,200 Passages each), then scroll through them.
+    let (_, subtopics, _) = library::LONG_TOPICS[0];
+    let show_all = format!("Show all {subtopics} subtopics");
+    for _ in 0..SETTLE_LIMIT {
+        if b.has_text(&show_all) {
+            break;
+        }
+        b.wheel(&mut s, over, -60.0, 1);
+    }
+    b.click_text(&show_all)?;
+    // The button now reads "Show fewer", far below.
+    b.wait("every subtopic", |b| !b.has_text(&show_all))?;
+    b.wheel(&mut s, over, 120.0, cfg.tool_frames / 2);
+    b.wheel(&mut s, over, -60.0, cfg.tool_frames);
+    for k in 0..cfg.tool_steps {
+        let (topic, _, _) = library::LONG_TOPICS[(k + 1) % library::LONG_TOPICS.len()];
+        let frames = b.settle(
+            &mut s,
+            |shell| {
+                shell.run("guide.topic_guide", &json!({ "topic": topic }));
+            },
+            |b| !b.shell.session().guides.is_busy() && b.has_text(topic),
+        );
+        s.settle.push(frames);
+        b.wheel(&mut s, over, -60.0, cfg.tool_frames / 4);
+    }
+    Ok(s)
+}
+
+/// Get Resources over a catalog of 3,000 modules: a search typed a key at a time and erased,
+/// the type filter changed, and the list scrolled.
+fn get_resources(cfg: &BenchConfig) -> Result<Samples, String> {
+    let resources = [torah_bible()?];
+    let fetched_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let mut b = ShellBench::new(cfg, "get-resources", &resources, |s, root| {
+        let cache = root.join("catalog.json");
+        if let Ok(json) = serde_json::to_string(&library::catalog(fetched_at)) {
+            let _ = std::fs::write(&cache, json);
+        }
+        s.get_bibles.set_cache_path(cache);
+    })?;
+    let tab = b.open(
+        "library.get_resources",
+        &json!({ "type": "all", "split": true }),
+    )?;
+    b.wait("the catalog", |b| {
+        b.shell.session().get_bibles.catalog().is_some()
+            && b.has_text("Search by name or abbreviation")
+    })?;
+    b.click_text("Search by name or abbreviation")?;
+    let pane = b.pane(tab).ok_or("Get Resources is not drawn")?;
+    let over = pos2(pane.center().x, pane.top() + pane.height() * 0.7);
+    let mut s = Samples::default();
+    // Each key filters and sorts the whole catalog in the frame it is typed (the field shows
+    // the query from that frame on).
+    let query = "rabe";
+    let key = |key| Event::Key {
+        key,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    };
+    for _ in 0..cfg.tool_steps.div_ceil(2) {
+        for n in 1..=query.len() {
+            b.events.push(Event::Text(query[n - 1..n].into()));
+            let typed = &query[..n];
+            let frames = b.settle(&mut s, |_| {}, |b| b.has_text(typed));
+            s.settle.push(frames);
+        }
+        for n in (1..query.len()).rev() {
+            b.events.push(key(egui::Key::Backspace));
+            let typed = &query[..n];
+            let frames = b.settle(&mut s, |_| {}, |b| b.has_text(typed));
+            s.settle.push(frames);
+        }
+        b.events.push(key(egui::Key::Backspace));
+        let frames = b.settle(
+            &mut s,
+            |_| {},
+            |b| b.has_text("Search by name or abbreviation"),
+        );
+        s.settle.push(frames);
+    }
+    b.wheel(&mut s, over, -50.0, cfg.tool_frames);
+    b.wheel(&mut s, over, 50.0, cfg.tool_frames / 2);
+    Ok(s)
+}
