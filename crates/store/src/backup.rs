@@ -31,7 +31,7 @@ impl BackupKind {
     pub fn label(self) -> &'static str {
         match self {
             BackupKind::Launch => "At launch",
-            BackupKind::Safety => "Safety backup, before a restore",
+            BackupKind::Safety => "Safety backup",
             BackupKind::BeforeUpgrade => "Before an app upgrade",
         }
     }
