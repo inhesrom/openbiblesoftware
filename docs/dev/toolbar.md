@@ -49,7 +49,8 @@ and Enter.
   focused one, as Ctrl/Cmd does for every other way of opening a Tab.
 - Drag a row out of the pane onto the Workspace: dropped on a Panel, it becomes a Tab there;
   dropped on the right quarter of a Panel, it opens in a new Panel beside it. The target is
-  marked while dragging.
+  marked while dragging. A row of the Library Tab drags the same way (#216, see
+  `drag-and-drop.md`).
 
 Search ranking (`Session::library_launcher`): every word typed must match the abbreviation or
 title (anywhere), or start a word of the Resource type's name or the language's name or tag.

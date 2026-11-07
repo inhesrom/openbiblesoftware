@@ -68,6 +68,7 @@ impl State {
         let mut bar = None;
         let mut drag_start: Option<String> = None;
         let mut drag_end = false;
+        let mut open_drag: Option<(String, String)> = None;
         let mut rows: Vec<Row> = Vec::new();
         let mut drop_region = Rect::NOTHING;
         let enter_pressed =
@@ -144,6 +145,10 @@ impl State {
                                 }
                                 if row.handle.drag_stopped() {
                                     drag_end = true;
+                                }
+                                // The row itself drags the Resource into the Workspace (#216).
+                                if row.body.drag_started() {
+                                    open_drag = Some((id.clone(), m.abbreviation.clone()));
                                 }
                                 if row.body.clicked() || row.body.secondary_clicked() {
                                     select = Some(id.clone());
@@ -228,6 +233,9 @@ impl State {
                 t.selected = Some(id.clone());
                 t.dragging = Some(id);
             }
+        }
+        if open_drag.is_some() {
+            self.toolbar.dragging = open_drag;
         }
         if drag_end || action.is_some() || bar.is_some() {
             self.session.workspace.user_focused(tab);
@@ -473,7 +481,7 @@ fn library_row(
     dragging: bool,
 ) -> RowResponse {
     let width = ui.available_width();
-    let (rect, body) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
+    let (rect, body) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click_and_drag());
     let handle_rect = Rect::from_min_size(rect.min, vec2(HANDLE_W, ROW_H));
     let handle = ui
         .interact(
@@ -555,7 +563,8 @@ fn library_row(
         );
     }
     let body = body.on_hover_text(format!(
-        "{} · {} · {} — double-click or Enter to open; right-click for more",
+        "{} · {} · {} — double-click or Enter to open, or drag it onto a Panel; right-click \
+         for more",
         m.title, m.language, m.license
     ));
     RowResponse { body, handle }

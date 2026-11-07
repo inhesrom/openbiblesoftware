@@ -267,6 +267,23 @@ impl App {
         &mut self.shell
     }
 
+    /// Files dropped on the window from the system this frame (a `.obr`) join the library and
+    /// open; drags inside the Workspace (#216) never carry files, so this is unaffected by them.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn files_dropped(&mut self, ctx: &egui::Context) {
+        let dropped = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .filter(|p| !p.as_os_str().is_empty())
+                .collect::<Vec<_>>()
+        });
+        for p in dropped {
+            self.dropped(p);
+        }
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     fn dropped(&mut self, path: PathBuf) {
         let added = self
@@ -341,19 +358,7 @@ impl eframe::App for App {
         #[cfg(target_arch = "wasm32")]
         let _ = frame;
         #[cfg(not(target_arch = "wasm32"))]
-        {
-            let dropped = ui.ctx().input(|i| {
-                i.raw
-                    .dropped_files
-                    .iter()
-                    .map(|f| f.path().to_path_buf())
-                    .filter(|p| !p.as_os_str().is_empty())
-                    .collect::<Vec<_>>()
-            });
-            for p in dropped {
-                self.dropped(p);
-            }
-        }
+        self.files_dropped(ui.ctx());
         if std::mem::take(&mut self.offer_starter) {
             self.shell.run("library.starter", &serde_json::json!({}));
         }

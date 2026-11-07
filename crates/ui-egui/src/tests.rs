@@ -39,6 +39,56 @@ fn automation_injects_input_before_its_scheduled_ui_frame() {
     }
 }
 
+/// A file dropped on the window from the system: its path.
+#[derive(Debug)]
+struct SystemFile(std::path::PathBuf);
+
+impl egui::DroppedFile for SystemFile {
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|e| e.to_string())
+    }
+}
+
+#[test]
+fn a_resource_file_dropped_on_the_window_from_the_system_joins_the_library_and_opens() {
+    let dir = std::env::temp_dir().join(format!("obs-system-drop-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("dropped.obr");
+    let r = numbered_bible_resource("dropped-bible", "Dropped Bible", "DB", false);
+    obs_store::write_obr(&r, &path).unwrap();
+    let mut app = App {
+        shell: Shell::new(obs_engine::Session::new(obs_engine::JobMode::Inline)),
+        styled: false,
+        frame: 0,
+        script: Vec::new(),
+        input_script: Vec::new(),
+        shot: None,
+        offer_starter: false,
+    };
+    let ctx = egui::Context::default();
+    let input = egui::RawInput {
+        dropped_files: vec![Arc::new(SystemFile(path.clone())) as egui::DroppedFileHandle],
+        ..Default::default()
+    };
+    let mut out = ctx.run_ui(input, |ui| app.files_dropped(ui.ctx()));
+    out.textures_delta.clear();
+    let session = app.shell.session();
+    assert!(session.library.get("dropped-bible").is_some());
+    assert!(
+        session
+            .workspace
+            .tabs()
+            .any(|t| t.kind == obs_engine::TabKind::Resource("dropped-bible".into())),
+        "it opens"
+    );
+    drop(app);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 const WORDS: &[&str] = &[
     "And", "Laban", "said", "to", "Jacob", "behold", "this", "heap", "and", "pillar", "which", "I",
     "have", "cast", "betwixt", "me", "and", "thee", "is", "a", "witness",
