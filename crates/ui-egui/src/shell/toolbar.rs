@@ -42,7 +42,7 @@ pub(crate) const LAYOUTS_HINT: &str = "Filter layouts";
 
 /// How far into a Panel's right edge a dropped Resource splits off a new Panel, as a share
 /// of its width.
-const DROP_EDGE: f32 = 0.25;
+pub(super) const DROP_EDGE: f32 = 0.25;
 
 /// The toolbar's state between frames.
 #[derive(Default)]

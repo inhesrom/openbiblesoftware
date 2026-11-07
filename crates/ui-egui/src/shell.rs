@@ -36,6 +36,7 @@ mod contents_pane;
 mod context_menu;
 mod copy_window;
 mod credits_tab;
+mod drag_drop;
 mod exegetical_guide;
 mod export;
 mod factbook_tab;
@@ -259,6 +260,8 @@ pub(crate) struct State {
     pub(crate) timed_tab: TimedTab,
     /// The Footnote popover (#208).
     footnotes: footnotes::Footnotes,
+    /// A reference, text or Note card being dragged across the Workspace (#216).
+    pub(crate) drag: drag_drop::DragDropUi,
 }
 
 /// A Tab whose drawing is timed each frame, for the bench's synchronous-work budget (#183,
@@ -333,6 +336,7 @@ impl Shell {
                 backups_ui: Default::default(),
                 timed_tab: TimedTab::default(),
                 footnotes: Default::default(),
+                drag: drag_drop::DragDropUi::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -907,11 +911,18 @@ impl Shell {
                             .color(theme::c().muted),
                         );
                     });
+                    self.st.workspace_drag(ui, &[]);
                 } else {
                     self.main_drag_out(ui);
                     let before = tile_handles::widgets_so_far(ui);
                     self.tree.ui(&mut self.st, ui);
                     tile_handles::after_tree(ui, &mut self.tree, before);
+                    let panels = drag_drop::drop_panels(
+                        &self.tree,
+                        &self.st.panels,
+                        &self.st.session.workspace,
+                    );
+                    self.st.workspace_drag(ui, &panels);
                 }
             });
         self.apply_effects();
@@ -919,7 +930,10 @@ impl Shell {
         // A Note being written on a Tab in a floating OS window is drawn in that window.
         let note_here =
             (self.st.note_editor.as_ref()).is_none_or(|ed| self.keys_window(ed.tab).is_none());
-        self.st.overlays(ui, note_here);
+        // So is the Move Note box for a Note dropped on a Tab there.
+        let reanchor_here =
+            (self.st.drag.confirm.as_ref()).is_none_or(|r| self.keys_window(r.tab).is_none());
+        self.st.overlays(ui, note_here, reanchor_here);
         self.customize_window(ui.ctx());
         focus_ring(ui.ctx());
         // A Notes card being edited saves as the user types, and at once once its Tab is not
@@ -2132,6 +2146,9 @@ impl State {
             }
         }
         self.footnote_frame(ui, tab, &out);
+        if let Some(drag) = out.drag_out {
+            self.text_drag_started(ui, tab, drag);
+        }
         self.after_reading_pane(ui, tab, &out);
     }
 
@@ -2964,15 +2981,18 @@ impl State {
         }
     }
 
-    /// Toasts and the About/Credits window, and the Note editor when `note_here` (its Tab is
-    /// not in a floating OS window, which draws it).
-    fn overlays(&mut self, ui: &Ui, note_here: bool) {
+    /// Toasts and the About/Credits window, the Note editor when `note_here` and the Move Note
+    /// box when `reanchor_here` (their Tab is not in a floating OS window, which draws them).
+    fn overlays(&mut self, ui: &Ui, note_here: bool, reanchor_here: bool) {
         let ctx = ui.ctx().clone();
         if note_here {
             self.note_editor_ui(&ctx);
         }
         self.layout_prompt(&ctx);
         self.remove_prompt(&ctx);
+        if reanchor_here {
+            self.reanchor_prompt(&ctx);
+        }
         self.import_chooser(&ctx);
         self.fonts_window(&ctx);
         self.highlight_styles_window(&ctx);

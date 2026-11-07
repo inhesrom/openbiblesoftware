@@ -3289,6 +3289,8 @@ mod collections;
 mod command_box;
 #[path = "copy_export_tests.rs"]
 mod copy_export;
+#[path = "drag_drop_tests.rs"]
+mod drag_drop;
 #[path = "find_tests.rs"]
 mod find_bar;
 
