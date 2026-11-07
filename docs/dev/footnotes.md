@@ -18,20 +18,27 @@ pointer is on the marker or on the popover. Clicking the marker (Enter from the 
 it; a pinned popover closes on Esc (focus goes back to the marker), its ×, a click outside it,
 or another click on the marker. Esc closes a hover popover too. A marker whose popover was
 dismissed (Esc, another click on it, a click elsewhere, its ×, a link followed) shows none while
-the pointer or focus stays on it, however long it rests there: it shows again once both have
-left it, or at once on a click (Enter). Resting the pointer on another marker, in any pane, leaves
+the pointer or focus stays on it, however long it rests there, even after another marker's
+popover has shown meanwhile (the pointer on another marker, the focus still on this one): it
+shows again once both have left it, or at once on a click (Enter). Resting the pointer on another marker, in any pane, leaves
 a pinned popover (clicking that marker replaces it). A shown popover has first refusal on Esc: a
 command bound to Esc (Unpin Word Info) waits for the next Esc while one is on screen in that
 window, and the popover consumes the Esc it closes on, so no floating window behind it closes too.
-Space on a focused marker activates it; the reading pane does not page on that Space. A note
+Space on a focused marker activates it; no reading pane pages on that Space, neither the
+marker's nor another one under the pointer. A note
 taller than `MAX_BODY_HEIGHT` (or than the window allows) scrolls inside the popover, which stays
 in the window; a link given keyboard focus is scrolled into view.
 
-Each Tab's popover is one state machine, `FootnotePhase` in `crates/ui-egui/src/shell/footnotes.rs`:
-`Closed`, `Dwelling` (waiting for the dwell), `Open` (shown on hover), `Pinned` and `Suppressed`
-(dismissed, until the pointer and focus leave its marker). The reading pane's frame turns what
-the pointer, keyboard and text did into `FootnoteEvent`s, and every change goes through
-`next(phase, event)`, whose unit test covers each phase with each event. `Footnotes::send` keeps
+Each Tab's popover is one state machine, `FootnoteState` in `crates/ui-egui/src/shell/footnotes.rs`:
+its `FootnotePhase` (`Closed`, `Dwelling` waiting for the dwell, `Open` shown on hover, `Pinned`)
+and, apart from it, the set of `dismissed` markers, each kept until the pointer is off it and it
+does not have the keyboard focus (hovering another marker never clears it). The reading pane's
+frame turns what the pointer, keyboard and text did into `FootnoteEvent`s, and every change goes
+through `next(state, event)`, whose unit test covers each phase with each event, with a marker
+dismissed and while another one's popover shows; a second table walks two panes' Tabs through a
+focused marker in one and the pointer in the other. Which marker has the keyboard focus, in any
+pane, is noted where every pane reads it (`footnote_marker_focused`), so Space is routed to the
+marker before any pane would page on it. `Footnotes::send` keeps
 one popover pinned at a time across Tabs. Pinned from the keyboard (Enter or Space on the focused
 marker, or a screen reader's click: the marker widget reports it, wherever the pointer rests),
 focus moves to its first link (its × when it has none) as soon as the note's text is laid out,

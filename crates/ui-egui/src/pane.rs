@@ -154,8 +154,10 @@ pub struct PaneOutput {
     /// An interlinear line (#143) was clicked: the right-click menu opens for its word, which
     /// is now the selection.
     pub cell_clicked: bool,
-    /// The Footnote marker under the pointer, else the one with keyboard focus (#208).
+    /// The Footnote marker under the pointer (#208).
     pub hovered_footnote: Option<FootnoteHit>,
+    /// The Footnote marker with the keyboard focus.
+    pub focused_footnote: Option<FootnoteHit>,
     /// The Footnote marker clicked (or Enter pressed on it) this frame: its popover pins.
     pub clicked_footnote: Option<FootnoteHit>,
     /// `clicked_footnote` came from the keyboard (or a screen reader), not the pointer: focus
@@ -200,13 +202,10 @@ pub fn reading_pane(
     }
     if response.has_focus() || response.hovered() {
         let page = rect.height() * 0.9;
-        // Space on a focused Footnote marker (#208) activates it: the text does not page
-        // first and carry the marker out of view.
-        let marker_focused = ui.memory(|m| m.focused()).is_some_and(|f| {
-            f != response.id
-                && (view.footnote_markers(rect.height()).iter())
-                    .any(|m| footnote_marker_id(response.id, m) == f)
-        });
+        // Space on a focused Footnote marker (#208) activates it, and is for no pane: not
+        // this one (paging would carry the marker out of view), nor another under the
+        // pointer, whichever pane the marker is in.
+        let marker_focused = footnote_marker_focused(ui.ctx());
         ui.input(|i| {
             if i.key_pressed(egui::Key::PageDown)
                 || (i.key_pressed(egui::Key::Space) && !marker_focused)
@@ -597,6 +596,20 @@ pub fn reading_pane(
     out
 }
 
+/// Where the reading panes note the Footnote marker widget that last had the keyboard focus,
+/// in any pane.
+fn focused_footnote_marker_key() -> egui::Id {
+    egui::Id::unique("focused-footnote-marker")
+}
+
+/// Whether the keyboard focus is on a Footnote marker, in any reading pane: its activation
+/// keys (Space, Enter) are for it, so no pane pages on Space.
+pub(crate) fn footnote_marker_focused(ctx: &egui::Context) -> bool {
+    let marker = ctx.data(|d| d.get_temp::<egui::Id>(focused_footnote_marker_key()));
+    ctx.memory(|m| m.focused())
+        .is_some_and(|f| Some(f) == marker)
+}
+
 /// The widget of Footnote marker `m` in the reading pane `pane`.
 fn footnote_marker_id(pane: egui::Id, m: &FootnoteMarker) -> egui::Id {
     pane.with(("footnote", m.unit, m.anchor, m.note.as_str()))
@@ -650,6 +663,7 @@ fn footnote_markers(
                 ui.visuals().selection.stroke,
                 egui::StrokeKind::Outside,
             );
+            ui.data_mut(|d| d.insert_temp(focused_footnote_marker_key(), id));
             focused = Some(hit.clone());
         }
         if response.hovered() {
@@ -661,9 +675,7 @@ fn footnote_markers(
             out.clicked_footnote = Some(hit);
         }
     }
-    if out.hovered_footnote.is_none() {
-        out.hovered_footnote = focused;
-    }
+    out.focused_footnote = focused;
 }
 
 /// The Find matches (#175) in the blocks laid out in a viewport `height` tall, by index, with

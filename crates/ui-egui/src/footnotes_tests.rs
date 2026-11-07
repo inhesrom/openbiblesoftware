@@ -109,8 +109,8 @@ fn popover(h: &Harness) -> Option<Shown> {
     let (tab, f) = h.shell.st.footnotes.shown()?;
     Some(Shown {
         tab,
-        hit: f.phase.marker()?.clone(),
-        pinned: f.phase.pinned(),
+        hit: f.state.phase.marker()?.clone(),
+        pinned: f.state.phase.pinned(),
         rect: f.rect,
         link_rects: f.link_rects.clone(),
         body: f.body().cloned(),
@@ -445,6 +445,118 @@ fn space_on_a_focused_marker_pins_it_without_paging_the_text() {
         shown_text(&h).as_deref(),
         Some("Isaiah 40:3 (see also LXX)")
     );
+}
+
+/// The scroll position of `tab`'s text.
+fn scrolled(h: &mut Harness, tab: TabId) -> f64 {
+    let view = h
+        .shell
+        .st
+        .tabs
+        .get_mut(&tab)
+        .unwrap()
+        .view
+        .as_mut()
+        .unwrap();
+    view.position().0
+}
+
+/// Review repro: Space on a focused marker with the pointer resting on another pane's text
+/// pins the marker's Footnote, and neither pane pages.
+#[test]
+fn space_on_a_focused_marker_pages_no_pane_under_the_pointer() {
+    let (mut h, _files, tab) = bsb("split-space", "Jn 1:1");
+    let other = split(&mut h, tab, "bsb", "Jn 1:1");
+    let (m, _) = focus_marker(&mut h, tab, "Or comprehended");
+    assert_eq!(
+        h.shell.st.footnotes.pending().map(|(t, _)| t),
+        Some(tab),
+        "the marker focused is in the first pane"
+    );
+    // The pointer on the other pane's text, away from its markers.
+    let [left, top] = h.shell.st.tabs[&other].view.as_ref().unwrap().text_origin;
+    h.events
+        .push(Event::PointerMoved(pos2(left + 20.0, top + 60.0)));
+    h.frames(2);
+    let before = (scrolled(&mut h, tab), scrolled(&mut h, other));
+    press(&mut h, Key::Space);
+    h.frames(3);
+    let p = popover(&h).expect("Space pins it");
+    assert!(p.pinned && p.tab == tab && p.hit.note == m.note);
+    let after = (scrolled(&mut h, tab), scrolled(&mut h, other));
+    assert!(
+        (after.0 - before.0).abs() < 0.01 && (after.1 - before.1).abs() < 0.01,
+        "no pane paged: {before:?} → {after:?}"
+    );
+    // With no marker focused, Space pages the pane under the pointer.
+    press(&mut h, Key::Escape);
+    h.frames(2);
+    if let Some(focused) = h.ctx.memory(|mem| mem.focused()) {
+        h.ctx.memory_mut(|mem| mem.surrender_focus(focused));
+    }
+    h.frames(2);
+    let before = scrolled(&mut h, other);
+    press(&mut h, Key::Space);
+    h.frames(2);
+    assert!(scrolled(&mut h, other) > before + 1.0, "the pane pages");
+}
+
+/// Review repro: a marker whose popover was dismissed while it keeps the keyboard focus
+/// stays dismissed after the pointer has shown another marker's popover (in its pane, or
+/// another pane) and left it for the text, however long the focus rests on it.
+#[test]
+fn a_focused_marker_stays_dismissed_after_hovering_another() {
+    focused_marker_dismissed_after_hovering_b("focus-dismissed", false);
+    focused_marker_dismissed_after_hovering_b("focus-dismissed-split", true);
+}
+
+/// Dismiss focused marker a, then hover marker b of the same pane or, with `split_pane`,
+/// the marker of a second pane's Tab (the same Footnote, another marker).
+fn focused_marker_dismissed_after_hovering_b(name: &str, split_pane: bool) {
+    let (mut h, _files, tab) = bsb(name, "Jn 1:1");
+    let hovered = if split_pane {
+        split(&mut h, tab, "bsb", "Jn 1:1")
+    } else {
+        tab
+    };
+    let (_, widget) = focus_marker(&mut h, tab, "Or comprehended");
+    press(&mut h, Key::Enter);
+    h.frames(3);
+    assert_eq!(shown_text(&h).as_deref(), Some("Or comprehended"));
+    press(&mut h, Key::Escape);
+    h.frames(2);
+    assert!(popover(&h).is_none(), "Esc closes it");
+    assert_eq!(
+        h.ctx.memory(|mem| mem.focused()),
+        Some(widget),
+        "focus is back on a"
+    );
+    // The pointer onto marker b: its popover shows; a keeps the focus.
+    let view = h.shell.st.tabs[&hovered].view.as_ref().unwrap();
+    let [ox, oy] = view.text_origin;
+    // In a second pane, the same Footnote's marker there is another marker.
+    let label = if split_pane { "a" } else { "b" };
+    let b = (markers(&h, hovered).into_iter())
+        .find(|m| m.label == label)
+        .expect("marker b");
+    let b_note = view.doc.footnote(&b.note).unwrap().text.clone();
+    let [x0, y0, x1, y1] = b.rect;
+    let at = pos2(ox + (x0 + x1) / 2.0, oy + (y0 + y1) / 2.0);
+    h.events.push(Event::PointerMoved(at));
+    h.frames(14);
+    assert_eq!(shown_text(&h), Some(b_note), "b's popover shows on hover");
+    assert_eq!(popover(&h).unwrap().tab, hovered);
+    assert_eq!(h.ctx.memory(|mem| mem.focused()), Some(widget));
+    // Off b, onto the text: b's goes, and a's does not come back with the dwell.
+    h.events.push(Event::PointerMoved(pos2(at.x, at.y + 300.0)));
+    h.frames(30);
+    assert!(popover(&h).is_none(), "the focused marker stays dismissed");
+    assert!(pending(&h).is_none(), "no dwell either");
+    assert_eq!(h.ctx.memory(|mem| mem.focused()), Some(widget));
+    // Enter on it opens it again.
+    press(&mut h, Key::Enter);
+    h.frames(3);
+    assert!(popover(&h).is_some_and(|p| p.pinned));
 }
 
 /// A Footnote taller than the window scrolls inside its popover, which stays on screen: its
