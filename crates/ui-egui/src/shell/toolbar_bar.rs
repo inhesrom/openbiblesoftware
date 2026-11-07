@@ -139,6 +139,8 @@ impl Shell {
                     self.st.toolbar.buttons.insert(*w, more.rect);
                 }
                 self.st.toolbar.overflow = Some(more.rect);
+                // When every Launcher overflows, F6 lands on "More launchers" instead.
+                first = first.or(Some(more.id));
                 egui::Popup::menu(&more).show(|ui| {
                     menu_open = true;
                     for w in &rest {
@@ -150,7 +152,7 @@ impl Shell {
             }
         });
         self.st.toolbar.bar = Some(strip.response.rect);
-        // F6 puts the keyboard on the first Launcher (#215).
+        // F6 puts the keyboard on the first Launcher, or the overflow button (#215).
         self.st.areas.toolbar = first.map(|id| (id, strip.response.rect));
         self.st.toolbar.menu_open |= menu_open;
         if let Some(which) = toggle {

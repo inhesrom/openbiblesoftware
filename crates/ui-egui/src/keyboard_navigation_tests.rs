@@ -363,6 +363,38 @@ fn f6_and_shift_f6_move_the_keyboard_round_the_menu_bar_the_toolbar_and_the_pane
 }
 
 #[test]
+fn f6_stops_on_more_launchers_when_every_launcher_overflows() {
+    let mut h = harness();
+    h.screen = egui::vec2(560.0, 600.0);
+    h.frames(4);
+    let tb = &h.shell.st.toolbar;
+    let more = tb.overflow.expect("a » button");
+    assert!(
+        obs_engine::Launcher::ALL
+            .iter()
+            .all(|w| tb.buttons.get(w).is_none_or(|r| *r == more)),
+        "every Launcher overflows: {:?}",
+        tb.buttons
+    );
+    let order = h.shell.st.session.workspace.panels_in_order();
+    let first_panel = title(
+        &h,
+        h.shell.st.session.workspace.active_in(order[0]).unwrap(),
+    );
+    // From the last Panel: the menu bar, then the Toolbar's » button, then the first Panel.
+    key(&mut h, Key::Num2, CTRL);
+    let round = f6_round(&mut h, Modifiers::NONE, 3);
+    assert_eq!(
+        round,
+        vec![
+            "View".to_string(),
+            "More launchers".to_string(),
+            first_panel
+        ]
+    );
+}
+
+#[test]
 fn every_navigation_key_shows_in_help_keyboard_shortcuts() {
     let mut h = harness();
     h.shell.run("help.keyboard_shortcuts", &json!({}));
