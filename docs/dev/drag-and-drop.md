@@ -37,7 +37,9 @@ on the Tab it came from, nothing happens; Esc cancels any drag.
 
 Selected text is read where it was written (CONTEXT.md, Bible reference): "Genesis 32:1"
 selected in a Bible numbered the Hebrew way is that Bible's 32:1, the Standard Genesis 31:55,
-so an English Bible it is dropped on goes to 31:55. Selected anywhere else it is Standard.
+so an English Bible it is dropped on goes to 31:55. Selected anywhere else it is Standard. A
+verse with no Standard equivalent (Unmapped) has nowhere to go in a Passage Tab, but a Search
+Tab or a lookup Tab still takes the text as typed.
 
 A Note drops only on a Resource's text, under the pointer: on the selection when dropped
 inside it, else on the Verse under the pointer (a Bible) or the word (any other Resource). The

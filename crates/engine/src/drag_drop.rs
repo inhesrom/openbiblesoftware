@@ -126,9 +126,7 @@ fn run_drop(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     if text.is_empty() {
         return Err(failed("Nothing was dropped"));
     }
-    let from = number("from").map(TabId);
-    let passage = as_passage(s, text, from)?;
-    drop_text(s, text, passage, bible, at)
+    drop_text(s, text, number("from").map(TabId), bible, at)
 }
 
 fn live_panel(s: &Session, n: u64) -> Result<PanelId, CommandError> {
@@ -238,11 +236,13 @@ fn drop_passage(
     }
 }
 
-/// Dropped `text`, which is `passage` when it is a Bible reference (`as_passage`).
+/// Dropped `text`, dragged out of Tab `from`. A Tab that looks words up or searches takes the
+/// text as typed; only elsewhere is it read as a Passage (`as_passage`), so a reference with no
+/// Standard equivalent can still be searched for.
 fn drop_text(
     s: &mut Session,
     text: &str,
-    passage: Option<Passage>,
+    from: Option<TabId>,
     bible: Option<&str>,
     at: DropAt,
 ) -> Result<Value, CommandError> {
@@ -258,11 +258,15 @@ fn drop_text(
             s.workspace.focus(tab);
             return s.run("search.run", &json!({ "tab": tab.0, "text": text }));
         }
-        if t.header_box() == HeaderBox::Reference && follows_passages(s, tab) {
-            let passage =
-                passage.ok_or_else(|| failed(format!("“{text}” is not a Bible reference")))?;
-            return drop_passage(s, passage, bible, at);
-        }
+    }
+    let passage = as_passage(s, text, from)?;
+    if let DropAt::Tab(tab) = at
+        && s.workspace.tab(tab).map(|t| t.header_box()) == Some(HeaderBox::Reference)
+        && follows_passages(s, tab)
+    {
+        let passage =
+            passage.ok_or_else(|| failed(format!("“{text}” is not a Bible reference")))?;
+        return drop_passage(s, passage, bible, at);
     }
     if let Some(passage) = passage {
         return drop_passage(s, passage, bible, at);

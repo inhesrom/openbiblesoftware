@@ -333,6 +333,39 @@ fn a_reference_selected_in_a_bible_is_read_in_that_bibles_numbering() {
 }
 
 #[test]
+fn an_unmapped_reference_is_still_searched_for_as_typed() {
+    let (mut s, kjv, mhc) = session();
+    let heb = hebrew_numbered_bible(&mut s);
+    let out = s
+        .run(
+            "workspace.drop",
+            &json!({ "text": "love", "panel": panel_of(&s, mhc).0 }),
+        )
+        .unwrap();
+    let search = TabId(out["tab"].as_u64().unwrap());
+    // A Search Tab searches for the text as typed, Unmapped or not.
+    s.run(
+        "workspace.drop",
+        &json!({ "text": "Gen 50:27", "from": heb.0, "tab": search.0 }),
+    )
+    .unwrap();
+    assert_eq!(s.search_tab(search).unwrap().query, "Gen 50:27");
+    assert_eq!(s.workspace.focused(), Some(search));
+    // A Bible still has nowhere to go with it.
+    let err = s
+        .run(
+            "workspace.drop",
+            &json!({ "text": "Gen 50:27", "from": heb.0, "tab": kjv.0 }),
+        )
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("“Gen 50:27” has no Standard equivalent"),
+        "{err}"
+    );
+}
+
+#[test]
 fn a_range_from_a_bible_whose_map_swaps_verses_keeps_every_verse_it_covers() {
     let (mut s, kjv, _) = session();
     // GRK numbers Philippians 1 the Greek way: its 1:16 is the Standard 1:17 and its 1:17
