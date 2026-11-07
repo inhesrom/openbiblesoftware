@@ -297,6 +297,42 @@ fn a_backup_with_another_page_size_is_restored_too() {
     assert_eq!(db.layouts().unwrap(), ["Study"]);
 }
 
+/// A restore that fails after rebuilding a Backup of another page size in a scratch file
+/// beside the Backups (here: the Safety backup cannot drop the oldest, a folder) leaves no
+/// scratch file behind and the data as it was.
+#[test]
+fn a_failed_restore_leaves_no_scratch_file() {
+    let dir = Dir::new("scratch");
+    let other = dir.0.join("other").join("user.db");
+    std::fs::create_dir_all(other.parent().unwrap()).unwrap();
+    {
+        let c = rusqlite::Connection::open(&other).unwrap();
+        c.pragma_update(None, "page_size", 8192).unwrap();
+        c.execute_batch("VACUUM").unwrap();
+    }
+    let backup = dir.0.join("other.obsbackup");
+    {
+        let (db, _) = UserStore::open(&other).unwrap();
+        filled(&db);
+        db.back_up(&backup).unwrap();
+    }
+    let (mut db, _) = UserStore::open(&dir.db()).unwrap();
+    let before = db.annotation_dump().unwrap();
+    // Folders named like the kept Safety backups: removing the oldest fails.
+    for n in 1..=SAFETY_BACKUPS {
+        std::fs::create_dir_all(db.backup_dir().join(format!("user-safety-{n:06}.db"))).unwrap();
+    }
+    assert!(db.restore(&backup).is_err());
+    assert_eq!(db.annotation_dump().unwrap(), before);
+    let scratch: Vec<String> = std::fs::read_dir(db.backup_dir())
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".user-restoring"))
+        .collect();
+    assert!(scratch.is_empty(), "{scratch:?}");
+}
+
 /// A Backup this build cannot use (a table or index missing, a row of the wrong type) is
 /// refused by the preview and by restore, before anything is touched: the live data, its
 /// undo (the Safety backups) and the next launch are as they were.

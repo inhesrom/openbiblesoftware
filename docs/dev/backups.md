@@ -52,7 +52,7 @@ single-instance Tab with all of it.
    step. The live database stays in WAL mode. Pages copy only between databases of one page
    size: a copy with another is first rebuilt in a new scratch file
    `backups/.user-restoring.<pid>-<n>.db` with the live
-   page size (`VACUUM`), then deleted.
+   page size (`VACUUM`), then deleted, however the restore ends (a `ScratchFile` guard).
 
 `Session::restore_backup(path)` then sets the preferences `attach_user` only overwrites when the
 database has them (View settings and fonts, toolbar, Guide arrangements, Copy verses, Import
@@ -70,6 +70,13 @@ undo history included, and no Safety backup is taken.
 
 **Undo restore** (`data.undo_restore`, enabled after a restore in this run) restores the last
 restore's Safety backup, taking a Safety backup of its own.
+
+Before the Tab runs either, it saves the Note being written and the Notes card being edited
+(`settle_note_editors`, as closing the window does), so text typed before the restore is in
+the Safety backup and no later autosave or retry writes it over the restored Note. A save the
+database refuses holds the restore back: its card is shown with why, and the preview stays
+open. After a restore, the Notes Tab forgets what it was in the middle of (a Notebook name
+being typed, Delete Notebook's question, a Re-attach).
 
 ## The preview
 
@@ -89,7 +96,7 @@ uses):
 | `manifest.json` | App and version, `export_version` (`DATA_EXPORT_VERSION`), the User database version, when. |
 | `README.md` | What each file is, and that the app does not read the zip back. |
 | `notes/<Notebook>.md` | Each Notebook's Notes export (Markdown, Bible order, Attributions). |
-| `annotations.json` | Every Notebook, Highlight palette and style (#181) and Annotation with its Anchor, as `obs_store` serializes them. |
+| `annotations.json` | Every Notebook, Highlight palette and style (#181) and Annotation with its Anchor, as `obs_store` serializes them, and `resource_names`: the remembered abbreviation and title of every Resource seen (`resource_id`, `abbreviation`, `title`), so Annotations on a since-removed Resource still name it. |
 | `layouts.json`, `last-session.json` | Layouts by name with their Workspace snapshots; the Last session. |
 | `favorites.json`, `history.json`, `reading-plans.json` | With their locations as JSON. |
 | `preferred-order.json`, `settings.json` | Resource ids best first; every preference, JSON values parsed. |
@@ -100,13 +107,18 @@ uses):
   Notebook and its Safety backup undoes it; an older Backup is migrated; newer, foreign and
   missing files are refused with no Safety backup; a Backup missing a table, index or column
   or with an unreadable row is refused by preview and restore with nothing changed; Back up now
-  refuses the database and its sidecar files by any path; the kept list; another page size.
+  refuses the database and its sidecar files by any path; the kept list; another page size;
+  no scratch file left by a restore that fails.
 - `crates/engine/src/backups_tests.rs`: the #217 acceptance through commands (back up, delete a
   Notebook, preview, restore, Undo restore, restart); reloading settings and Layouts and
   writing the Workspace after a restore; every preference the Backup lacks back at its
   default (compared with a Session launched on the Backup), font choices included; Back up now
   and Export everything refusing the User database; a refused restore keeping undo; Export
-  everything's files.
+  everything's files, remembered Resource names of a removed Resource included.
 - `crates/ui-egui/src/backups_tests.rs`: the Tab from the Tools menu, with injected dialogs:
   Back up now, preview, Restore, Undo restore, a kept Backup's Restore…, Export everything and
   a cancelled dialog. `UPDATE_PREVIEWS=1` writes `backups-*.ppm` to `target/previews/`.
+- `crates/ui-egui/src/notes_tests.rs`
+  (`a_card_being_edited_is_saved_before_a_restore_and_never_written_over_it`): a card whose
+  save is refused holds back Restore and Undo restore; once saved, its words are in the
+  Safety backup and no retry writes them over the restored Note.
