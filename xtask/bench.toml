@@ -28,8 +28,10 @@ max_sync_layout_p99_ms = 2.0
 max_text_gpu_mib = 32.0
 
 # Feature scenarios (#183), each from the #19 targets: at most 1% missed frames while the
-# feature is used (as steady scrolling), and how many frames an action may take to show its
-# result (0: its own frame).
+# feature is used (as steady scrolling), at most 2 ms of synchronous work a frame (p99: the
+# reading panes' layout, or the feature Tab's drawing in a Shell-driven scenario; frames
+# showing an action's result are exempt, as a jump's are), and how many frames an action may
+# take to show its result (0: its own frame).
 # - A synchronous action (a Find step, a Search view switched, a key typed in Get Resources)
 #   is a jump's origin: at most 1 frame.
 # - A feature that reads the library on a worker when its Link set moves (the Atlas's places,
@@ -37,32 +39,40 @@ max_text_gpu_mib = 32.0
 
 [features.interlinear]      # every pane with interlinear lines, scrolling
 max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
 max_placeholder_frames = 0
 
 [features.find]             # Find next through matches far apart
 max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
 max_settle_frames = 1
 
 [features.atlas]            # panning, zooming, following chapters of 8-120 places
 max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
 max_settle_frames = 6
 
 [features.search-grid]      # whole-Bible search over 3 Bibles: Grid shown and scrolled
 max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
 max_settle_frames = 1
 
 [features.search-chart]     # Chart by book and by chapter, scrolled
 max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
 max_settle_frames = 1
 
 [features.exegetical-guide] # a chapter word by word, scrolled and moved
 max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
 max_settle_frames = 6
 
 [features.topic-guide]      # a long topic, every subtopic shown, scrolled and switched
 max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
 max_settle_frames = 6
 
 [features.get-resources]    # a 3,000-row catalog filtered as the search is typed, scrolled
 max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
 max_settle_frames = 1

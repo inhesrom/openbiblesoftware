@@ -503,13 +503,17 @@ fn the_find_scenarios_word_is_sparse() {
 /// and measures it: the Atlas on a chapter of 120 places, a whole-Bible search's Grid and
 /// Chart, the Exegetical Guide on Genesis 24, the Topic Guide on Prayer with every subtopic,
 /// and Get Resources over 3,000 rows. Each waits for what it must show, so a scenario that
-/// shows nothing fails here rather than measuring an empty Tab.
+/// shows nothing fails here rather than measuring an empty Tab. Each times its feature Tab's
+/// synchronous work every frame: a seeded 3 ms there (within a 60 Hz frame, over #19's 2 ms
+/// budget) shows in every scenario's p99, where the gate catches it.
 #[test]
 fn every_shell_scenario_shows_its_feature_and_measures_it() {
+    let slowdown = std::time::Duration::from_millis(3);
     let cfg = bench::BenchConfig {
         pace: false,
         tool_frames: 8,
         tool_steps: 2,
+        feature_slowdown: slowdown,
         ..bench::BenchConfig::default()
     };
     let (reports, errors) = bench::tools::run(&cfg);
@@ -520,6 +524,8 @@ fn every_shell_scenario_shows_its_feature_and_measures_it() {
         assert!(r.frames >= 8, "{r:?}");
         let settle = r.settle_frames_max.expect("settle frames");
         assert!(settle < bench::SETTLE_LIMIT, "{r:?}");
+        assert!(r.sync_layout_p50_ms >= 3.0, "{r:?}");
+        assert!(r.sync_layout_p99_ms >= 3.0, "{r:?}");
     }
 }
 

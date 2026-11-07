@@ -47,6 +47,14 @@ fn bench(args: &[String]) -> ExitCode {
         obs_ui_egui::set_layout_slowdown(std::time::Duration::from_secs_f64(ms / 1000.0));
         eprintln!("bench: seeded slowdown of {ms} ms per layout");
     }
+    // Seeded synchronous feature work that fits in a frame: only the 2 ms budget catches it.
+    if let Some(ms) = std::env::var("OBS_BENCH_FEATURE_SLOWDOWN_MS")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+    {
+        cfg.feature_slowdown = std::time::Duration::from_secs_f64(ms / 1000.0);
+        eprintln!("bench: seeded slowdown of {ms} ms per frame in each feature's Tab");
+    }
     let doc = match obr {
         Some(p) => match obs_ui_egui::ReadingDoc::open(std::path::Path::new(&p)) {
             Ok(d) => Arc::new(d),

@@ -23,6 +23,9 @@ pub struct Thresholds {
 #[derive(Debug, Deserialize)]
 pub struct FeatureLimits {
     pub max_missed_pct: f64,
+    /// Synchronous work per frame, p99 (#19: 2 ms): the feature's UI-thread work, which can
+    /// be over budget while every frame still fits in the refresh interval.
+    pub max_sync_p99_ms: f64,
     /// Frames an action may take to show its result (0: its own frame).
     pub max_settle_frames: Option<usize>,
     pub max_placeholder_frames: Option<usize>,
@@ -55,6 +58,10 @@ pub struct Scenario {
     pub cpu_p99_ms: f64,
     #[serde(default)]
     pub cpu_p50_ms: f64,
+    /// Synchronous work per frame, p99: the reading panes' layout, or a Shell-driven
+    /// scenario's feature Tab.
+    #[serde(default)]
+    pub sync_layout_p99_ms: Option<f64>,
     /// Feature scenarios: most frames an action took to show its result.
     #[serde(default)]
     pub settle_frames_max: Option<usize>,
@@ -156,6 +163,16 @@ pub fn violations(report: &Report, t: &Thresholds) -> Vec<String> {
                 s.missed_pct, limits.max_missed_pct
             ),
         );
+        match s.sync_layout_p99_ms {
+            Some(ms) => check(
+                ms <= limits.max_sync_p99_ms,
+                format!(
+                    "{name}: synchronous work p99 {ms:.2} ms a frame (max {})",
+                    limits.max_sync_p99_ms
+                ),
+            ),
+            None => check(false, format!("{name}: no synchronous work measured")),
+        }
         if let Some(max) = limits.max_settle_frames {
             match s.settle_frames_max {
                 Some(n) => check(
@@ -215,8 +232,11 @@ pub fn run(root: &Path) -> Result<()> {
         let settle = s
             .settle_frames_max
             .map_or(String::new(), |n| format!("  settle {n} frames"));
+        let sync = s
+            .sync_layout_p99_ms
+            .map_or(String::new(), |ms| format!("  sync p99 {ms:>5.2} ms"));
         eprintln!(
-            "  {:<16} missed {:>5.2}%  placeholder frames {:>3}  frame CPU p50 {:>5.2} ms, p99 {:>5.2} ms{settle}",
+            "  {:<16} missed {:>5.2}%  placeholder frames {:>3}  frame CPU p50 {:>5.2} ms, p99 {:>5.2} ms{sync}{settle}",
             s.name, s.missed_pct, s.placeholder_frames, s.cpu_p50_ms, s.cpu_p99_ms
         );
     }
@@ -262,6 +282,7 @@ mod tests {
             placeholder_frames: placeholders,
             cpu_p50_ms: 1.0,
             cpu_p99_ms: 2.0,
+            sync_layout_p99_ms: Some(1.0),
             settle_frames_max: settle,
         }
     }
@@ -325,6 +346,7 @@ mod tests {
                 "{feature} has no budget: {names:?}"
             );
             assert!(t.features[feature].max_missed_pct <= 1.0, "{feature}");
+            assert!(t.features[feature].max_sync_p99_ms <= 2.0, "{feature}");
         }
     }
 
@@ -356,5 +378,28 @@ mod tests {
             );
         }
         assert_eq!(v.len(), 5, "{v:?}");
+    }
+
+    /// 3 ms of synchronous work in every frame fits a 60 Hz frame (no missed frames) but is
+    /// over #19's 2 ms budget, so it fails the gate; a feature that did not measure its
+    /// synchronous work fails too.
+    #[test]
+    fn sync_work_over_budget_within_a_frame_fails_the_gate() {
+        let mut r = report(0.0, 0, 1.2);
+        for s in &mut r.scenarios {
+            match s.name.as_str() {
+                "atlas" => s.sync_layout_p99_ms = Some(3.0),
+                "get-resources" => s.sync_layout_p99_ms = None,
+                _ => {}
+            }
+        }
+        let v = violations(&r, &thresholds());
+        assert_eq!(
+            v,
+            [
+                "atlas: synchronous work p99 3.00 ms a frame (max 2)",
+                "get-resources: no synchronous work measured",
+            ],
+        );
     }
 }

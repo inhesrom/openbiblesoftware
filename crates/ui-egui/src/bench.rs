@@ -12,7 +12,7 @@
 //! Topic Guides, Get Resources), each with its own settle-frame count.
 
 #[cfg(not(target_arch = "wasm32"))]
-mod library;
+pub(crate) mod library;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod tools;
 
@@ -69,6 +69,9 @@ pub struct BenchConfig {
     pub tool_frames: usize,
     /// Actions of each feature scenario (Link-set moves, view switches, Find steps, keys).
     pub tool_steps: usize,
+    /// Extra work in each Shell-driven scenario's feature Tab every frame, for checking that
+    /// the gate catches synchronous work over budget that still fits in a frame (0 normally).
+    pub feature_slowdown: Duration,
 }
 
 impl Default for BenchConfig {
@@ -87,6 +90,7 @@ impl Default for BenchConfig {
             shell_scenarios: true,
             tool_frames: 120,
             tool_steps: 6,
+            feature_slowdown: Duration::ZERO,
         }
     }
 }
@@ -103,6 +107,8 @@ pub struct ScenarioReport {
     pub placeholder_frames: usize,
     pub cpu_p50_ms: f64,
     pub cpu_p99_ms: f64,
+    /// Synchronous work per frame (#19: ≤ 2 ms): the reading panes' UI-thread layout, or for
+    /// a Shell-driven scenario its feature Tab's drawing ([`tools`]).
     pub sync_layout_p50_ms: f64,
     pub sync_layout_p99_ms: f64,
     pub sync_layout_max_ms: f64,

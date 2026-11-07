@@ -53,6 +53,14 @@ pub(super) struct SubtopicId {
 }
 
 impl State {
+    /// Forget every Topic Guide's subtopic row heights, measured in faces no longer in use
+    /// (the interface font changed): rows out of view are measured again as they come in.
+    pub(super) fn forget_topic_row_heights(&mut self) {
+        for t in self.tabs.values_mut() {
+            t.topic_rows.clear();
+        }
+    }
+
     pub(super) fn topic_guide_body(&mut self, ui: &mut Ui, tab: TabId) {
         if let Some(text) = self.session.topic_guides.choosing(tab).map(str::to_string) {
             self.topic_chooser_page(ui, tab, &text);

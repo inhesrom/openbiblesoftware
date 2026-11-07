@@ -2,7 +2,7 @@
 
 `cargo xtask bench` runs `openbible --bench` in release mode and fails if any number is past
 its threshold in `xtask/bench.toml`. CI runs it on every pull request (the `xtask bench` job),
-then runs it again with a seeded 3 ms layout slowdown that must fail. The budgets are the #19
+then again with seeded slowdowns that must fail it (below). The budgets are the #19
 performance targets.
 
 ## Scenarios
@@ -39,6 +39,23 @@ budget counts frames from an action until the feature shows its result (0: its o
 synchronous action is a jump's origin (≤ 1 frame); work read from the library on a worker has
 the #19 search budget, 100 ms (6 frames at 60 Hz). A feature scenario that cannot be set up,
 or one listed in `bench.toml` but missing from the report, fails the gate.
+
+Every feature scenario also has the #19 synchronous-work budget: at most 2 ms a frame (p99).
+Work that fits in a frame but takes longer than that still fails the gate, though no frame is
+missed at 60 Hz.
+
+- `interlinear` and `find` measure the reading panes' UI-thread layout, as the reading
+  scenarios do.
+- The Shell-driven scenarios measure the feature Tab's own drawing (its body, egui text
+  layout included). Every timed frame must draw it. The frames from an action until its
+  result shows are exempt, as #19 exempts the block a jump lands in. Those frames are held to
+  the settle and missed-frame budgets instead.
+
+CI runs the gate twice more, each with a seeded slowdown that must fail it:
+
+- `OBS_BENCH_SLOWDOWN_MS=3` adds 3 ms to every reading layout.
+- `OBS_BENCH_FEATURE_SLOWDOWN_MS=3` adds 3 ms to every frame of each feature Tab, which still
+  fits in a 60 Hz frame.
 
 ## Running it
 

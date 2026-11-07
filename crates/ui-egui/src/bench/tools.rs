@@ -9,6 +9,12 @@
 //! egui's tessellation, as eframe does them before handing the GPU its meshes. GPU work is not
 //! included. Settle frames count frames after an action (a Link set moving, a view switched,
 //! a key typed) until the feature shows its result; 0 is the action's own frame.
+//!
+//! A frame's synchronous feature work (its `sync` sample, held to #19's 2 ms per frame) is
+//! the feature Tab's own drawing on the UI thread: its body, egui text layout included, timed
+//! in the Shell's pane drawing ([`crate::shell::TimedTab`]). Every timed frame must draw the
+//! Tab. The frames from an action until its result shows are exempt, as #19 exempts the block
+//! a jump lands in: they are held to the settle and missed-frame budgets instead.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -51,6 +57,13 @@ struct ShellBench {
     pace: bool,
     /// Texts painted last frame, with where.
     texts: Vec<(Rect, String)>,
+    /// Seeded extra work in the feature Tab's body ([`BenchConfig::feature_slowdown`]).
+    slowdown: Duration,
+    /// Timed frames in which the feature Tab was not drawn.
+    undrawn_frames: usize,
+    /// The frames from an action until its result shows ([`Self::settle`]): like a jump's,
+    /// exempt from the synchronous-work budget (#19), held to the settle budget instead.
+    in_action: bool,
     /// Kept until the Shell is dropped (it may hold its files open).
     _folder: Folder,
 }
@@ -101,6 +114,9 @@ impl ShellBench {
             interval: Duration::from_secs_f64(1.0 / f64::from(cfg.refresh_hz)),
             pace: cfg.pace,
             texts: Vec::new(),
+            slowdown: cfg.feature_slowdown,
+            undrawn_frames: 0,
+            in_action: false,
             _folder: folder,
         };
         for _ in 0..3 {
@@ -128,6 +144,7 @@ impl ShellBench {
             ..Default::default()
         };
         self.time += self.interval.as_secs_f64();
+        self.shell.st.timed_tab.took = None;
         let start = Instant::now();
         action(&mut self.shell);
         let shell = &mut self.shell;
@@ -142,12 +159,37 @@ impl ShellBench {
         let start = Instant::now();
         std::hint::black_box(self.ctx.tessellate(out.shapes, out.pixels_per_point));
         let elapsed = ui_time + start.elapsed();
+        let feature = self.shell.st.timed_tab.took.take();
         if let Some(s) = samples {
             s.cpu.push(elapsed.as_secs_f64() * 1000.0);
+            match feature {
+                Some(_) if self.in_action => {}
+                Some(d) => s.sync.push(d.as_secs_f64() * 1000.0),
+                None => self.undrawn_frames += 1,
+            }
         }
         if self.pace && elapsed < self.interval {
             std::thread::sleep(self.interval - elapsed);
         }
+    }
+
+    /// Time Tab `tab`'s drawing from now on: the scenario's synchronous feature work.
+    fn time_tab(&mut self, tab: TabId) {
+        self.shell.st.timed_tab.tab = Some(tab);
+        self.shell.st.timed_tab.slowdown = self.slowdown;
+    }
+
+    /// The scenario's samples, once every timed frame drew the feature Tab: a scenario whose
+    /// synchronous work went unmeasured must not pass.
+    fn measured(&self, s: Samples) -> Result<Samples, String> {
+        if self.undrawn_frames > 0 || s.sync.is_empty() {
+            return Err(format!(
+                "the feature's Tab was not drawn in {} of {} timed frames",
+                self.undrawn_frames,
+                s.cpu.len()
+            ));
+        }
+        Ok(s)
     }
 
     /// Timed frames until `ready`, after `action`: how many frames after the action's own
@@ -158,14 +200,18 @@ impl ShellBench {
         action: impl FnOnce(&mut Shell),
         ready: impl Fn(&Self) -> bool,
     ) -> usize {
+        self.in_action = true;
         self.frame(Some(samples), action);
+        let mut frames = SETTLE_LIMIT;
         for frame in 0..SETTLE_LIMIT {
             if ready(self) {
-                return frame;
+                frames = frame;
+                break;
             }
             self.frame(Some(samples), |_| {});
         }
-        SETTLE_LIMIT
+        self.in_action = false;
+        frames
     }
 
     /// Untimed frames until `ready` (the scenario's setup).
@@ -320,6 +366,7 @@ fn atlas(cfg: &BenchConfig) -> Result<Samples, String> {
         &json!({ "tab": bible.0, "text": format!("Gen {busy}:1") }),
     );
     let atlas = b.open("tool.atlas", &json!({ "split": true }))?;
+    b.time_tab(atlas);
     b.shell
         .run("tab.link", &json!({ "tab": atlas.0, "set": "A" }));
     let status = format!("{} · ", chapter_label(Book::Genesis, busy));
@@ -375,7 +422,7 @@ fn atlas(cfg: &BenchConfig) -> Result<Samples, String> {
         );
         s.settle.push(frames);
     }
-    Ok(s)
+    b.measured(s)
 }
 
 /// A whole-Bible search across three Bibles (every book has hits), shown as the Grid (books ×
@@ -410,6 +457,7 @@ fn search_views(cfg: &BenchConfig) -> Result<(Samples, Samples), String> {
             "split": true,
         }),
     )?;
+    b.time_tab(tab);
     b.wait("the search results", |b| {
         let s = b.shell.session();
         !s.bible_search_running()
@@ -465,7 +513,8 @@ fn search_views(cfg: &BenchConfig) -> Result<(Samples, Samples), String> {
             .run("search.view", &json!({ "tab": tab.0, "value": "verses" }));
         b.frame(None, |_| {});
     }
-    Ok((grid, chart))
+    let grid = b.measured(grid)?;
+    Ok((grid, b.measured(chart)?))
 }
 
 /// The Exegetical Guide on a whole chapter of the Hebrew Torah (Genesis 24: 67 verses, about
@@ -498,6 +547,7 @@ fn exegetical_guide(cfg: &BenchConfig) -> Result<Samples, String> {
         "guide.exegetical_guide",
         &json!({ "passage": "Gen 24", "split": true }),
     )?;
+    b.time_tab(guide);
     b.wait("Genesis 24 word by word", |b| {
         !b.shell.session().guides.is_busy() && b.has_text("Genesis 24:1 (BHOT)")
     })?;
@@ -521,7 +571,7 @@ fn exegetical_guide(cfg: &BenchConfig) -> Result<Samples, String> {
         s.settle.push(frames);
         b.wheel(&mut s, over, -60.0, cfg.tool_frames / 4);
     }
-    Ok(s)
+    b.measured(s)
 }
 
 /// The Topic Guide on a long topic (Prayer: 60 subtopics, 1,200 Passages in each of two
@@ -539,6 +589,7 @@ fn topic_guide(cfg: &BenchConfig) -> Result<Samples, String> {
         "guide.topic_guide",
         &json!({ "topic": first, "split": true }),
     )?;
+    b.time_tab(guide);
     b.wait("the Prayer topic", |b| {
         !b.shell.session().guides.is_busy() && b.has_text(first)
     })?;
@@ -573,7 +624,7 @@ fn topic_guide(cfg: &BenchConfig) -> Result<Samples, String> {
         s.settle.push(frames);
         b.wheel(&mut s, over, -60.0, cfg.tool_frames / 4);
     }
-    Ok(s)
+    b.measured(s)
 }
 
 /// Get Resources over a catalog of 3,000 modules: a search typed a key at a time and erased,
@@ -594,6 +645,7 @@ fn get_resources(cfg: &BenchConfig) -> Result<Samples, String> {
         "library.get_resources",
         &json!({ "type": "all", "split": true }),
     )?;
+    b.time_tab(tab);
     b.wait("the catalog", |b| {
         b.shell.session().get_bibles.catalog().is_some()
             && b.has_text("Search by name or abbreviation")
@@ -635,5 +687,5 @@ fn get_resources(cfg: &BenchConfig) -> Result<Samples, String> {
     }
     b.wheel(&mut s, over, -50.0, cfg.tool_frames);
     b.wheel(&mut s, over, 50.0, cfg.tool_frames / 2);
-    Ok(s)
+    b.measured(s)
 }

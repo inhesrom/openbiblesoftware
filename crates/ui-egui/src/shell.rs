@@ -243,6 +243,19 @@ pub(crate) struct State {
     keys_ui: keys_tab::KeysUi,
     /// The Settings Tab's confirmations and search focus (#213).
     settings_ui: settings_tab::SettingsUi,
+    /// The bench's feature scenarios (#183): one Tab's UI-thread work, timed each frame.
+    pub(crate) timed_tab: TimedTab,
+}
+
+/// A Tab whose drawing is timed each frame, for the bench's synchronous-work budget (#183,
+/// #19: ≤ 2 ms per frame). Off (no Tab) outside the bench.
+#[derive(Default)]
+pub(crate) struct TimedTab {
+    pub(crate) tab: Option<TabId>,
+    /// Time the Tab's body took since last taken.
+    pub(crate) took: Option<std::time::Duration>,
+    /// Extra work added to the Tab's body, for the bench's seeded-slowdown check.
+    pub(crate) slowdown: std::time::Duration,
 }
 
 /// The app window's content: menus, Command box and the docked Workspace.
@@ -302,6 +315,7 @@ impl Shell {
                 contents: Default::default(),
                 keys_ui: Default::default(),
                 settings_ui: Default::default(),
+                timed_tab: TimedTab::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -2908,7 +2922,17 @@ fn load(path: &std::path::Path) -> Result<Arc<ReadingDoc>, String> {
 
 impl egui_tiles::Behavior<TabId> for State {
     fn pane_ui(&mut self, ui: &mut Ui, _tile: TileId, tab: &mut TabId) -> UiResponse {
+        if self.timed_tab.tab != Some(*tab) {
+            self.tab_body(ui, *tab);
+            return UiResponse::None;
+        }
+        let start = std::time::Instant::now();
         self.tab_body(ui, *tab);
+        if !self.timed_tab.slowdown.is_zero() {
+            std::thread::sleep(self.timed_tab.slowdown);
+        }
+        let took = self.timed_tab.took.unwrap_or_default() + start.elapsed();
+        self.timed_tab.took = Some(took);
         UiResponse::None
     }
 
