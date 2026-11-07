@@ -11,9 +11,9 @@ the menus, tooltips, the Launchers and the key handling all read them.
 
 | Group | Bindings |
 |---|---|
-| Each menu (Library, Guides, Tools, Layouts, View, Window, Help), in menu order | the menu's commands that a key can run |
+| Each menu (File, Edit, View, Go, Tools, Window, Help, #226), in menu order | the menu's commands that a key can run, submenus included |
 | Selection | the Selection keys (`obs_engine::SELECTION_KEYS`): Note and Alt+1…9, the first nine styles of the active Highlight palette (#181) |
-| Other commands | every other command a key can run (Back, Forward, Find, Close Tab, the Launchers, the keyboard navigation keys of #215 …), in registration order |
+| Other commands | every other command a key can run (the Launchers, Unpin Word Info, Search this word …), in registration order |
 
 A command can run from a key when it needs no parameter except its Tab
 (`key_bindings::runs_from_a_key`); the Shell gives such a command the focused Tab. The

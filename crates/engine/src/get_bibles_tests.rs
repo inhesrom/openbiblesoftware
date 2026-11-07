@@ -853,16 +853,9 @@ fn get_bibles_opens_the_tab_filtered_to_bibles_and_get_resources_to_all_or_a_typ
         s.run("library.get_resources", &json!({"type": "maps"}))
             .is_err()
     );
-    let library = crate::MENUS.iter().find(|m| m.title == "Library").unwrap();
-    let ids: Vec<&str> = library
-        .items
-        .iter()
-        .filter_map(|i| match i {
-            crate::MenuItem::Command(id) => Some(*id),
-            _ => None,
-        })
-        .collect();
-    assert!(ids.contains(&"library.get_resources") && ids.contains(&"library.get_bibles"));
+    // File → Get Resources… and Get Bibles… (#226).
+    assert_eq!(crate::menu_of("library.get_resources"), Some("File"));
+    assert_eq!(crate::menu_of("library.get_bibles"), Some("File"));
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }

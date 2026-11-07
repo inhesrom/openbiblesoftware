@@ -155,7 +155,7 @@ fn the_library_pane_lists_recent_and_preferred_rows_and_its_links_work_from_the_
         "Import…",
         "Get Resources…",
         "Get Bibles…",
-        "Starter library…",
+        "Starter library",
     ] {
         assert!(texts.contains(&t), "{t} missing: {texts:?}");
     }
@@ -387,8 +387,8 @@ fn the_layouts_pane_shows_thumbnails_and_loads_a_layout_in_one_click() {
         "Parallel Bibles",
         "Reading only",
         "Needs a Commentary in the library",
-        "Save layout as…",
-        "Reset layout",
+        "Save Layout as…",
+        "Reset Layout",
     ] {
         assert!(texts.contains(&t), "{t}: {texts:?}");
     }
@@ -538,7 +538,7 @@ fn typing_and_enter_in_one_frame_run_the_row_for_what_was_typed() {
 fn arrows_reach_every_layout_card_and_footer_link_filtered_or_not() {
     let mut h = layouts_harness("toolbar-layout-arrows");
     let selected = |h: &Harness| h.shell.st.toolbar.selected;
-    // Filtered: Two Bibles, Parallel Bibles, Save layout as…, Reset layout; ↓/↑ one at a time.
+    // Filtered: Two Bibles, Parallel Bibles, Save Layout as…, Reset Layout; ↓/↑ one at a time.
     key(&mut h, Key::Y, Modifiers::ALT);
     type_text(&mut h, "bibles");
     let mut walked = vec![selected(&h)];
@@ -556,7 +556,7 @@ fn arrows_reach_every_layout_card_and_footer_link_filtered_or_not() {
     assert_eq!(titles, [vec!["TB".to_string()], vec!["HEB".to_string()]]);
 
     // Unfiltered, ↓/↑ keep the column across the rows as drawn: the saved card, the first
-    // Built-in under it, Save layout as… under that; → along a row.
+    // Built-in under it, Save Layout as… under that; → along a row.
     key(&mut h, Key::Y, Modifiers::ALT);
     let mut walked = vec![selected(&h)];
     for _ in 0..2 {
@@ -569,7 +569,7 @@ fn arrows_reach_every_layout_card_and_footer_link_filtered_or_not() {
     walked.push(selected(&h));
     key(&mut h, Key::ArrowUp, Modifiers::NONE);
     walked.push(selected(&h));
-    // 0 Two Bibles; 1..=4 the Built-ins; 5 Save layout as…, 6 Reset layout.
+    // 0 Two Bibles; 1..=4 the Built-ins; 5 Save Layout as…, 6 Reset Layout.
     assert_eq!(walked, [0, 1, 5, 6, 2, 0]);
 }
 
@@ -585,7 +585,7 @@ fn many_saved_layouts_scroll_and_the_footer_stays_in_the_window() {
     let pane = h.shell.st.toolbar.pane.unwrap();
     let window = 900.0;
     assert!(pane.bottom() <= window, "{pane:?}");
-    let reset = in_pane(&h, "Reset layout");
+    let reset = in_pane(&h, "Reset Layout");
     assert!(reset.y < window);
     // The Built-ins are below the fold, out of the pane.
     let reading = h.find("Reading only").unwrap().center();

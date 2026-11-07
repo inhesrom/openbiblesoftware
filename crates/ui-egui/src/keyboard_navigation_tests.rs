@@ -341,7 +341,7 @@ fn f6_and_shift_f6_move_the_keyboard_round_the_menu_bar_the_toolbar_and_the_pane
     assert_eq!(
         round,
         vec![
-            "View".to_string(),
+            "File".to_string(),
             "Library".to_string(),
             panels[0].clone(),
             panels[1].clone()
@@ -358,7 +358,7 @@ fn f6_and_shift_f6_move_the_keyboard_round_the_menu_bar_the_toolbar_and_the_pane
     let back = f6_round(&mut h, Modifiers::SHIFT, 3);
     assert_eq!(
         back,
-        vec!["Library".to_string(), "View".to_string(), panels[1].clone()]
+        vec!["Library".to_string(), "File".to_string(), panels[1].clone()]
     );
 }
 
@@ -387,7 +387,7 @@ fn f6_stops_on_more_launchers_when_every_launcher_overflows() {
     assert_eq!(
         round,
         vec![
-            "View".to_string(),
+            "File".to_string(),
             "More launchers".to_string(),
             first_panel
         ]

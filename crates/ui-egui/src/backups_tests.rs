@@ -72,8 +72,8 @@ fn a_deleted_notebook_comes_back_from_a_backup_and_undo_restore_takes_it_back() 
 
     // Tools → Back up & restore…
     h.frames(2);
-    h.open_menu("Tools");
-    preview(&h, "backups-tools-menu-kittest");
+    h.open_menu("File");
+    preview(&h, "backups-file-menu-kittest");
     h.click_text("Back up & restore…");
     let tab = h.tab_id(BACKUPS_TITLE);
     assert_eq!(

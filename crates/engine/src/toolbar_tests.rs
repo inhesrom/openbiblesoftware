@@ -248,7 +248,7 @@ fn each_launcher_has_a_shortcut_command() {
     {
         let spec = s.commands().get(launcher.command()).unwrap();
         assert_eq!(spec.shortcut, Some(key));
-        assert_eq!(launcher.menu().title, launcher.title());
+        assert!(!launcher.items().is_empty());
         s.workspace.take_effects();
         s.run(launcher.command(), &json!({})).unwrap();
         assert_eq!(s.workspace.take_effects(), [Effect::OpenLauncher(launcher)]);

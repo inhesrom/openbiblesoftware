@@ -57,7 +57,7 @@ pub struct App {
     script: Vec<(u32, String, serde_json::Value)>,
     input_script: Vec<(u32, egui::Event)>,
     shot: Option<(u32, PathBuf)>,
-    /// Open Library → Starter library… on the first frame, to offer the download (#131).
+    /// Open Library → Starter library on the first frame, to offer the download (#131).
     /// Not at construction: its list comes through the transport [`Self::with_fetch`] sets.
     offer_starter: bool,
 }

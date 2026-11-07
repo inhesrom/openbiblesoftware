@@ -440,3 +440,57 @@ fn ctrl_l_asks_the_ui_to_focus_the_command_box() {
             .contains(&Effect::FocusCommandBox)
     );
 }
+
+/// All commands (#226): `>` lists only commands, every listed one, each with its key; a
+/// command that needs a Tab runs on the focused one; scripting commands are never listed;
+/// a `>` text is not kept as a recent entry; `app.commands` asks the UI to list them.
+#[test]
+fn all_commands_lists_every_command_and_runs_a_tab_command_on_the_focused_tab() {
+    let t = Temp::new("all-commands");
+    let mut s = launch(&t);
+    let listed: Vec<&str> = s.listed_commands().iter().map(|c| c.id).collect();
+    for id in crate::SCRIPTING_COMMANDS
+        .iter()
+        .chain(crate::IN_PLACE_COMMANDS)
+    {
+        assert!(!listed.contains(id), "{id} is listed");
+    }
+    // Menu commands first, in menu order: File's Library leads.
+    assert_eq!(listed.first(), Some(&"library.open"));
+    assert!(listed.contains(&"tab.close") && listed.contains(&"toolbar.library"));
+    let all = s.command_box_suggestions(">");
+    assert!(
+        all.len() > SUGGESTION_LIMIT,
+        "no limit of eight: {}",
+        all.len()
+    );
+    assert!(
+        (all.iter()).all(|x| matches!(x.action, CommandBoxAction::Command(_))),
+        "{all:?}"
+    );
+    let close = &s.command_box_suggestions("> close tab")[0];
+    assert_eq!(close.action, CommandBoxAction::Command("tab.close"));
+    assert_eq!(
+        (close.label.as_str(), close.detail.as_str()),
+        ("Close Tab", "Command · Ctrl+W")
+    );
+
+    let bsb = tab(&s.run("resource.open", &json!({ "id": "bsb" })).unwrap());
+    assert_eq!(s.workspace.focused(), Some(bsb));
+    s.run("command_box.run", &json!({ "text": "> close tab" }))
+        .unwrap();
+    assert!(s.workspace.tab(bsb).is_none());
+    assert!(s.command_box_recent().is_empty(), "a > text is not kept");
+    // With no Tab open, it says so instead of failing on a missing parameter.
+    while let Some(t) = s.workspace.focused() {
+        s.workspace.close(t);
+    }
+    let err = s
+        .run("command_box.run", &json!({ "text": "> close tab" }))
+        .unwrap_err();
+    assert!(err.to_string().contains("Open a Tab first"), "{err}");
+
+    s.workspace.take_effects();
+    s.run("app.commands", &json!({})).unwrap();
+    assert!(s.workspace.take_effects().contains(&Effect::ListCommands));
+}

@@ -1,17 +1,19 @@
 # The toolbar Launchers (#140)
 
-The top bar is the app's name, four **Launchers** (Library, Guides, Tools, Layouts), the View
-and Help menus, and the Command box (#139) on the right. The Launchers can move to another edge
+The top bar is the app's name, the menus (File · Edit · View · Go · Tools · Window · Help,
+#226, `docs/dev/menus.md`), four **Launchers** (Library, Guides, Tools, Layouts), and the
+Command box (#139) on the right. The Launchers can move to another edge
 of the window, auto-hide and be customized (#141, below). Each Launcher is an icon-and-label
-button that drops down a pane anchored under it; the panes replace the Library, Guides, Tools
-and Layouts text menus, and still offer every command those menus had.
+button that drops down a pane anchored under it; the panes replaced the Library, Guides, Tools
+and Layouts text menus, and keep their own lists (`Launcher::items`) since the menu audit
+(#226) brought those commands back into File, Edit and Tools.
 
 | Launcher | Shortcut | Pane |
 |---|---|---|
-| Library | Alt+L | Search field (title, abbreviation, Resource type, language). With nothing typed: Recent, Favorites (up to four), then the top three of each type's Preferred order. Footer: Open full Library, Import…, Get Resources… (with its update count), Get Bibles…, Starter library… |
+| Library | Alt+L | Search field (title, abbreviation, Resource type, language). With nothing typed: Recent, Favorites (up to four), then the top three of each type's Preferred order. Footer: Open full Library, Import…, Get Resources… (with its update count), Get Bibles…, Starter library |
 | Guides | Alt+G | Passage Guide, Word Study and Factbook, each with an input box |
-| Tools | Alt+T | Filter field, then the Tools menu's commands with their shortcuts |
-| Layouts | Alt+Y | Filter field, saved Layouts and Built-in Layouts as cards with a thumbnail of their Panel tiling; Rename and Delete on a saved card; footer: Save layout as…, Reset layout |
+| Tools | Alt+T | Filter field, then the Tools Launcher's commands with their shortcuts |
+| Layouts | Alt+Y | Filter field, saved Layouts and Built-in Layouts as cards with a thumbnail of their Panel tiling; Rename and Delete on a saved card; footer: Save Layout as…, Reset Layout |
 
 The Library launcher shows the number of downloaded Resources with an update as a badge, as
 the Library menu's title did (#136).

@@ -386,7 +386,7 @@ impl State {
                             }
                             None => {
                                 if ui
-                                    .link("Starter library…")
+                                    .link("Starter library")
                                     .on_hover_text("These come with the Starter library")
                                     .clicked()
                                 {
@@ -416,7 +416,7 @@ impl State {
                 ui,
                 &format!("Starter library: {}{of} Resources", starter.in_library),
             );
-            if ui.link("Starter library…").clicked() {
+            if ui.link("Starter library").clicked() {
                 *run = Some(("library.starter", json!({})));
             }
         }

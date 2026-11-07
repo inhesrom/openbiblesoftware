@@ -33,6 +33,11 @@ pub enum MenuItem {
     /// "Recently closed": a submenu of Recently closed, newest first, each running
     /// `tab.reopen_closed` with its id (#214).
     RecentlyClosed,
+    /// A submenu of commands, for items used rarely (#226).
+    Submenu {
+        title: &'static str,
+        items: &'static [MenuItem],
+    },
     /// A submenu of exclusive choices: one `command` run with `{ "value": id }` per choice,
     /// the current one checked.
     Choice {
@@ -42,64 +47,75 @@ pub enum MenuItem {
     Separator,
 }
 
-use MenuItem::{Command as C, Layouts, Resources, Separator};
+use MenuItem::{Command as C, Separator};
 
-/// The top menu bar (#18 rule 3). The Command box (#139) sits to the right of it. Library,
-/// Guides, Tools and Layouts are drawn as toolbar Launchers (#140, [`crate::toolbar`]) whose
-/// panes offer these items.
+impl MenuItem {
+    /// The commands this item runs: its own, a Choice's, a submenu's (#226).
+    pub fn commands(&self) -> Vec<&'static str> {
+        match self {
+            MenuItem::Command(id) | MenuItem::Choice { command: id, .. } => vec![*id],
+            MenuItem::Notebooks => vec!["notebook.show_in_text"],
+            MenuItem::RecentlyClosed => vec!["tab.reopen_closed"],
+            MenuItem::Favorites => vec!["favorite.open"],
+            MenuItem::Layouts => vec!["layout.restore", "layout.rename", "layout.delete"],
+            MenuItem::Resources => vec!["resource.open"],
+            MenuItem::Submenu { items, .. } => items.iter().flat_map(|i| i.commands()).collect(),
+            MenuItem::Separator => Vec::new(),
+        }
+    }
+}
+
+impl Menu {
+    /// Every command the menu runs, in menu order, submenus included.
+    pub fn commands(&self) -> Vec<&'static str> {
+        self.items.iter().flat_map(|i| i.commands()).collect()
+    }
+}
+
+/// The menu that runs `id`, if any.
+pub fn menu_of(id: &str) -> Option<&'static str> {
+    MENUS
+        .iter()
+        .find(|m| m.commands().contains(&id))
+        .map(|m| m.title)
+}
+
 /// The Back up & restore Tab's title (#217).
 pub const BACKUPS_TITLE: &str = "Back up & restore";
 
+/// The menu bar (#18 rule 3, #226): File · Edit · View · Go · Tools · Window · Help, as
+/// mapped in `docs/dev/menus.md`. The Command box (#139) sits to the right of it; the
+/// toolbar's Launchers (#140, [`crate::toolbar`]) offer their own lists. A command that
+/// needs a Tab runs on the focused one.
 pub const MENUS: &[Menu] = &[
     Menu {
-        title: "Library",
+        title: "File",
         items: &[
             C("library.open"),
             C("library.import"),
             C("library.get_resources"),
             C("library.get_bibles"),
             C("library.starter"),
-            MenuItem::Favorites,
             Separator,
-            Resources,
-        ],
-    },
-    Menu {
-        title: "Guides",
-        items: &[
-            C("guide.passage_guide"),
-            C("guide.exegetical_guide"),
-            C("guide.word_study"),
-            C("guide.factbook"),
-            C("guide.topic_guide"),
-        ],
-    },
-    Menu {
-        title: "Tools",
-        items: &[
-            C("tool.search"),
-            C("tool.text_comparison"),
-            C("tool.notes"),
-            C("tool.word_info"),
-            C("tool.cross_references"),
-            C("tool.favorites"),
-            C("tool.history"),
-            C("tool.reading_plans"),
-            C("tool.atlas"),
-            C("tool.timeline"),
+            C("layout.save"),
+            C("layout.reset"),
             Separator,
-            C("tool.copy_verses"),
             C("data.backups"),
         ],
     },
     Menu {
-        title: "Layouts",
+        title: "Edit",
         items: &[
-            C("layout.save"),
+            C("edit.undo"),
+            C("edit.redo"),
             Separator,
-            Layouts,
+            C("tool.copy_verses"),
             Separator,
-            C("layout.reset"),
+            C("tab.find"),
+            C("tab.find_next"),
+            C("tab.find_previous"),
+            Separator,
+            C("favorite.add"),
         ],
     },
     Menu {
@@ -148,23 +164,86 @@ pub const MENUS: &[Menu] = &[
         ],
     },
     Menu {
+        title: "Go",
+        items: &[
+            C("tab.back"),
+            C("tab.forward"),
+            Separator,
+            C("tab.previous_chapter"),
+            C("tab.next_chapter"),
+            C("tab.previous_entry"),
+            C("tab.next_entry"),
+            C("tab.parallel_previous"),
+            C("tab.parallel_next"),
+            Separator,
+            C("home.open"),
+            C("command_box.focus"),
+        ],
+    },
+    Menu {
+        title: "Tools",
+        items: &[
+            C("guide.passage_guide"),
+            C("guide.exegetical_guide"),
+            C("guide.word_study"),
+            C("guide.factbook"),
+            C("guide.topic_guide"),
+            Separator,
+            C("tool.search"),
+            C("tool.text_comparison"),
+            C("tool.notes"),
+            C("tool.word_info"),
+            C("tool.cross_references"),
+            C("tool.favorites"),
+            C("tool.history"),
+            C("tool.reading_plans"),
+            C("tool.atlas"),
+            C("tool.timeline"),
+        ],
+    },
+    Menu {
         title: "Window",
         items: &[
             C("tab.reopen_closed"),
             MenuItem::RecentlyClosed,
             Separator,
+            C("tab.close"),
             C("panel.close"),
+            Separator,
+            C("tab.next_in_panel"),
+            C("tab.previous_in_panel"),
+            MenuItem::Submenu {
+                title: "Go to Panel",
+                items: &[
+                    C("panel.focus_1"),
+                    C("panel.focus_2"),
+                    C("panel.focus_3"),
+                    C("panel.focus_4"),
+                    C("panel.focus_5"),
+                    C("panel.focus_6"),
+                    C("panel.focus_7"),
+                    C("panel.focus_8"),
+                    C("panel.focus_9"),
+                ],
+            },
+            C("window.next_area"),
+            C("window.previous_area"),
+            Separator,
+            C("tab.float"),
+            C("tab.dock"),
         ],
     },
     Menu {
         title: "Help",
         items: &[
-            C("help.about"),
-            C("help.credits"),
+            C("app.commands"),
             C("help.keyboard_shortcuts"),
             Separator,
             C("help.report_problem"),
             C("help.open_log_folder"),
+            Separator,
+            C("help.credits"),
+            C("help.about"),
         ],
     },
 ];
@@ -373,7 +452,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "library.starter",
-        label: "Starter library…",
+        label: "Starter library",
         shortcut: None,
         params: OPEN,
         enabled: always,
@@ -555,7 +634,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     ),
     CommandSpec {
         id: "word_info.word_study",
-        label: "Word Study",
+        label: "Word Study of this word",
         shortcut: None,
         params: OPEN,
         enabled: |s| crate::word_study::word_info_number(s).is_some(),
@@ -575,7 +654,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     ),
     CommandSpec {
         id: "layout.save",
-        label: "Save layout as…",
+        label: "Save Layout as…",
         shortcut: None,
         params: &[ParamSpec {
             name: "name",
@@ -588,7 +667,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "layout.restore",
-        label: "Restore layout",
+        label: "Restore Layout",
         shortcut: None,
         params: &[NAME],
         enabled: has_user,
@@ -596,7 +675,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "layout.rename",
-        label: "Rename layout…",
+        label: "Rename Layout…",
         shortcut: None,
         params: &[
             NAME,
@@ -612,13 +691,13 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "layout.delete",
-        label: "Delete layout",
+        label: "Delete Layout",
         shortcut: None,
         params: &[NAME],
         enabled: has_user,
         run: layout_delete,
     },
-    simple("layout.reset", "Reset layout", None, always, |s, _| {
+    simple("layout.reset", "Reset Layout", None, always, |s, _| {
         s.workspace.push_effect(Effect::ResetLayout);
         Ok(Value::Null)
     }),
@@ -640,7 +719,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     ),
     simple(
         "view.text_reset",
-        "Reset text size",
+        "Reset Text size",
         Some("Ctrl+0"),
         always,
         |s, _| set_text_size(s, obs_layout::TextSettings::default().size),
@@ -675,13 +754,13 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         enabled: focused_resource_tab,
         run: set_footnote_markers,
     },
-    simple("view.fonts", "Fonts…", None, always, |s, _| {
+    simple("view.fonts", "Fonts", None, always, |s, _| {
         s.workspace.push_effect(Effect::ShowFonts);
         Ok(Value::Null)
     }),
     simple(
         "view.highlight_styles",
-        "Highlight styles…",
+        "Highlight styles",
         None,
         |s| s.user.is_some(),
         |s, _| {

@@ -100,7 +100,7 @@ pub enum TabKind {
     ImportReport(String),
     /// Get Bibles (#91): download Bibles from SWORD repositories. Keyless, single instance.
     GetBibles,
-    /// Library → Starter library… (#131): which Starter Resources are in the Library, with
+    /// Library → Starter library (#131): which Starter Resources are in the Library, with
     /// Add back and the download. Keyless, single instance.
     StarterLibrary,
     /// Help → Credits (#67): Starter Resources, data built into the app, fonts and
@@ -823,21 +823,24 @@ pub enum Effect {
     },
     /// Host opens a native picker off the UI thread, then runs `import.start`.
     PickImport,
-    /// Open the Fonts window (View → Fonts…, #138).
+    /// Open the Fonts window (View → Fonts, #138).
     ShowFonts,
     /// Show a folder in the system file manager (Help → Open log folder, #219).
     OpenFolder(std::path::PathBuf),
     /// Open the Report a problem window on the newest Crash report, or a problem report made
     /// now (Help → Report a problem…, #219).
     ReportProblem,
-    /// Open the Highlight styles window (View → Highlight styles…, #181).
+    /// Open the Highlight styles window (View → Highlight styles, #181).
     ShowHighlightStyles,
     /// A Resource Tab now shows another Resource (a parallel resource, or Back/Forward across
     /// a switch, #151): load it, at the Tab's location.
     Switched(TabId),
     /// Put the keyboard in the Command box (Ctrl+L, #139).
     FocusCommandBox,
-    /// Open the Copy verses window (Tools → Copy verses…, #154), with these Passages (a Bible
+    /// Put the keyboard in the Command box listing every command it can run (Help → All
+    /// commands, Ctrl+Shift+P, #226).
+    ListCommands,
+    /// Open the Copy verses window (Edit → Copy verses…, #154), with these Passages (a Bible
     /// reference) and Bibles (resource ids) when given; otherwise at the Current location of
     /// the most recent Bible Tab.
     ShowCopyVerses {

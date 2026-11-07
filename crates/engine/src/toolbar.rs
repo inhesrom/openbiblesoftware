@@ -5,7 +5,8 @@
 //! - **Library:** a search over title, abbreviation, Resource type and language
 //!   ([`Session::library_launcher`]); with nothing typed, the Recent Resources and the top of
 //!   each type's Preferred order. Choosing one runs `toolbar.open_resource`.
-//! - **Guides** and **Tools:** the commands of the menu of the same title ([`Launcher::menu`]).
+//! - **Guides** and **Tools:** their commands ([`Launcher::items`]); the menu bar's Tools menu
+//!   holds both (#226).
 //! - **Layouts:** the saved Layouts and the Built-in Layouts as cards, each with a thumbnail
 //!   of its Panel tiling read from the stored arrangement ([`Session::layout_cards`]).
 //!   A Built-in Layout is made from the library's Preferred order when it is loaded
@@ -22,7 +23,7 @@ use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, al
 use crate::persist::{LayoutNode, SNAPSHOT_VERSION, TabSnapshot, WorkspaceSnapshot};
 use crate::session::Session;
 use crate::workspace::{Effect, Guide, OpenRequest, PanelId, TabId, TabKind, Tool};
-use crate::workspace_commands::{MENUS, Menu};
+use crate::workspace_commands::MenuItem::{self, Command as C, Separator};
 
 /// A toolbar button that drops down what it launches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -76,10 +77,49 @@ impl Launcher {
         }
     }
 
-    /// The menu whose items it offers.
-    pub fn menu(self) -> &'static Menu {
-        let title = self.title();
-        MENUS.iter().find(|m| m.title == title).unwrap_or(&MENUS[0])
+    /// What its drop-down offers, in order.
+    pub fn items(self) -> &'static [MenuItem] {
+        match self {
+            Launcher::Library => &[
+                C("library.open"),
+                C("library.import"),
+                C("library.get_resources"),
+                C("library.get_bibles"),
+                C("library.starter"),
+                MenuItem::Favorites,
+                Separator,
+                MenuItem::Resources,
+            ],
+            Launcher::Guides => &[
+                C("guide.passage_guide"),
+                C("guide.exegetical_guide"),
+                C("guide.word_study"),
+                C("guide.factbook"),
+                C("guide.topic_guide"),
+            ],
+            Launcher::Tools => &[
+                C("tool.search"),
+                C("tool.text_comparison"),
+                C("tool.notes"),
+                C("tool.word_info"),
+                C("tool.cross_references"),
+                C("tool.favorites"),
+                C("tool.history"),
+                C("tool.reading_plans"),
+                C("tool.atlas"),
+                C("tool.timeline"),
+                Separator,
+                C("tool.copy_verses"),
+                C("data.backups"),
+            ],
+            Launcher::Layouts => &[
+                C("layout.save"),
+                Separator,
+                MenuItem::Layouts,
+                Separator,
+                C("layout.reset"),
+            ],
+        }
     }
 }
 

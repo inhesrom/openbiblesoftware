@@ -580,8 +580,13 @@ fn tools_copy_verses_opens_the_window() {
                 bibles: vec!["kjv-strongs".into(), "bsb".into()]
             })
     );
-    let tools = MENUS.iter().find(|m| m.title == "Tools").unwrap();
-    assert!(tools.items.contains(&MenuItem::Command("tool.copy_verses")));
+    // Edit → Copy verses… (#226), and the Tools Launcher.
+    assert_eq!(crate::menu_of("tool.copy_verses"), Some("Edit"));
+    assert!(
+        crate::Launcher::Tools
+            .items()
+            .contains(&MenuItem::Command("tool.copy_verses"))
+    );
 }
 
 #[test]

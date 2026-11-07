@@ -253,7 +253,7 @@ fn h1254a_shows_tbesh_then_bdb_then_strongs_with_the_first_expanded() {
 fn word_info_and_strongs_links_open_word_study() {
     let mut h = Harness::new();
     let _files = setup(&mut h, "ways-in");
-    // Word Info shows a word: its Word Study › button opens a Word Study at its number.
+    // Word Info shows a word: its Word Study of this word button opens a Word Study at its number.
     let mut part = obs_model::MorphemePart::new(n("H1254A"));
     part.gloss = Some("he created".into());
     let word =
@@ -263,7 +263,7 @@ fn word_info_and_strongs_links_open_word_study() {
     let info = h.tab_at("Word Info");
     h.click(info);
     h.frames(2);
-    h.click_text("Word Study");
+    h.click_text("Word Study of this word");
     h.frames(2);
     let ws = &h.shell.session().workspace;
     let study = ws.focused().unwrap();

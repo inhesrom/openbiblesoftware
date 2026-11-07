@@ -183,7 +183,11 @@ fn every_menu_item_is_a_registered_command() {
         for item in m.items {
             if let MenuItem::Command(id) = item {
                 let spec = s.commands().get(id).unwrap_or_else(|| panic!("{id}"));
-                assert!(spec.params.iter().all(|p| !p.required), "{id} needs params");
+                // A command that needs a Tab runs on the focused one (#226).
+                assert!(
+                    spec.params.iter().all(|p| !p.required || p.name == "tab"),
+                    "{id} needs params"
+                );
                 n += 1;
             }
         }
@@ -192,9 +196,7 @@ fn every_menu_item_is_a_registered_command() {
     let titles: Vec<&str> = MENUS.iter().map(|m| m.title).collect();
     assert_eq!(
         titles,
-        [
-            "Library", "Guides", "Tools", "Layouts", "View", "Window", "Help"
-        ]
+        ["File", "Edit", "View", "Go", "Tools", "Window", "Help"]
     );
     // Import needs a local filesystem; not-yet-built items show but are disabled.
     assert_eq!(

@@ -2,7 +2,7 @@
 //! closed Tab (Ctrl+Shift+T) brings them back in their old Panel at their Current location,
 //! in their Link set and scrolled where they were. Each closing is taken once, as the user
 //! closes it, as the same [`TabSnapshot`] a Layout saves plus where its view was scrolled,
-//! and is never changed after: what happens to the Workspace later (a Layout, Reset layout,
+//! and is never changed after: what happens to the Workspace later (a Layout, Reset Layout,
 //! another Tab taking its id) is kept beside the list, not written into it. The list lives
 //! for the session and is saved with the Last session, never with a Layout.
 
@@ -24,7 +24,7 @@ pub struct ClosedTabs {
     /// Which of `tabs` was the Panel's active Tab (its saved id).
     pub active: Option<u64>,
     /// Which Panels `panel` and `beside` name: the [`RecentlyClosed::generation`] they were
-    /// closed in. Once a Layout or Reset layout has replaced the Panels, those ids name others.
+    /// closed in. Once a Layout or Reset Layout has replaced the Panels, those ids name others.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub generation: u64,
     /// The Panel they were in.
@@ -58,7 +58,7 @@ impl ClosedTabs {
 pub struct RecentlyClosed {
     /// The closings, oldest first, at most [`RECENTLY_CLOSED_LIMIT`].
     pub closed: Vec<ClosedTabs>,
-    /// Counts the times a Layout or Reset layout replaced the Panels; a closing's Panel ids
+    /// Counts the times a Layout or Reset Layout replaced the Panels; a closing's Panel ids
     /// stand for Panels only while it is the generation they were closed in.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub generation: u64,
@@ -266,7 +266,7 @@ impl Workspace {
 
     /// Where the first Tab of a closing goes: its old Panel while it is open, else that Panel
     /// again (by its old id, so Tabs closed from it one by one come back together), beside
-    /// the one it was next to; after a Layout or Reset layout replaced the Panels, wherever a
+    /// the one it was next to; after a Layout or Reset Layout replaced the Panels, wherever a
     /// Tab of its kind opens.
     fn closed_placement(&mut self, snap: &TabSnapshot, closed: &ClosedTabs) -> Placement {
         let Some((p, beside)) = self.closed_panels(closed) else {
@@ -324,7 +324,7 @@ impl Workspace {
         self.next_panel = panel_ids.fold(self.next_panel, u64::max);
     }
 
-    /// A Layout or Reset layout replaced the Panels: the ones Recently closed names are gone,
+    /// A Layout or Reset Layout replaced the Panels: the ones Recently closed names are gone,
     /// so its Tabs reopen where Tabs of their kind open.
     pub(super) fn panels_replaced(&mut self) {
         self.closed.generation += 1;

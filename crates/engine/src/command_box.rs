@@ -13,12 +13,13 @@
 //! | a Bible reference (`jn 3:16`, also `jn 3 16`) | go there in the focused Bible (else the most recent Bible Tab, else the first Bible in Preferred order) |
 //! | a Strong's number (`G26`) | Word Study |
 //! | a Lemma (`ἀγάπη`) or its transliteration (`agape`) in a Lexicon | Word Study at the entry's Strong's number |
-//! | a menu command's name (`notes`) | run it |
+//! | a command's name (`notes`, `close tab`) | run it (on the focused Tab if it needs one) |
 //! | part of a Resource's abbreviation or title, a Layout's name, a Saved search, a Favorite | open or run it |
 //! | anything | Search (today's toolbar behaviour); when nothing else matched, also Word Study for English words |
 //!
 //! An empty box lists the recent entries: texts run from the box, newest first, kept in the
-//! User database. Running a recent entry runs that text's best suggestion again.
+//! User database. Running a recent entry runs that text's best suggestion again. `>` lists
+//! the commands only (#226): every one the box can run, each with its Keyboard shortcut.
 
 use obs_model::ResourceType;
 use obs_scripture::{Passage, RefStyle, Standard, StrongsNumber, format_passage, parse_reference};
@@ -34,8 +35,51 @@ pub const RECENT_PREF: &str = "command-box.recent";
 /// How many recent entries are kept.
 pub const RECENT_LIMIT: usize = 20;
 
-/// How many suggestions the box shows at most.
+/// How many suggestions the box shows at most (except for [`COMMANDS_PREFIX`]).
 pub const SUGGESTION_LIMIT: usize = 8;
+
+/// A text starting with this lists every command whose label holds the rest (#226): Help →
+/// All commands (Ctrl+Shift+P) opens the box with it.
+pub const COMMANDS_PREFIX: &str = ">";
+
+/// Commands that answer scripts and `obs-cli` with data or text and change nothing on
+/// screen; no menu or Command box lists them (#226).
+pub const SCRIPTING_COMMANDS: &[&str] = &[
+    "app.version",
+    "reference.parse",
+    "text.normalize",
+    "morph.expand",
+    "text.transliterate",
+    "collection.list",
+    "getbibles.list",
+    "starter.list",
+    "annotation.get",
+    "annotation.list",
+    "annotation.search_notes",
+    "notebook.list",
+    "highlight_style.list",
+    "search.indexes",
+    "search.list_saved",
+    "command_box.suggest",
+];
+
+/// Commands that need no parameter but act on what only their own place gives them (the
+/// reading-pane selection, a drop, a file picked in a window, an Annotation's Open in Notes
+/// beside it); the Command box does not list them (#226).
+pub const IN_PLACE_COMMANDS: &[&str] = &[
+    "annotation.note",
+    "workspace.drop",
+    "notes.open",
+    "highlight_palette.import",
+];
+
+/// Whether the Command box lists `spec` (#226): it runs with no parameter but the focused
+/// Tab, and it is neither a [`SCRIPTING_COMMANDS`] nor an [`IN_PLACE_COMMANDS`] one.
+pub fn is_listed(spec: &CommandSpec) -> bool {
+    crate::key_bindings::runs_from_a_key(spec)
+        && !SCRIPTING_COMMANDS.contains(&spec.id)
+        && !IN_PLACE_COMMANDS.contains(&spec.id)
+}
 
 /// What running a [`Suggestion`] does.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,7 +101,7 @@ pub enum CommandBoxAction {
     OpenFavorite(i64),
     /// Run a Saved search (#179), by name.
     OpenSavedSearch(String),
-    /// Run a menu command with no parameters.
+    /// Run a command with no parameters but the focused Tab.
     Command(&'static str),
     Search(String),
     /// A recent entry: run this text's best suggestion.
@@ -256,7 +300,8 @@ fn word_prefix(hay: &str, needle: &str) -> bool {
 
 impl Session {
     /// What the Command box suggests for `text`, best first (at most [`SUGGESTION_LIMIT`]).
-    /// An empty text lists the recent entries.
+    /// An empty text lists the recent entries; a text starting with [`COMMANDS_PREFIX`] lists
+    /// the commands only, as many as match.
     pub fn command_box_suggestions(&mut self, text: &str) -> Vec<Suggestion> {
         let text = text.trim();
         if text.is_empty() {
@@ -266,6 +311,9 @@ impl Session {
                 .take(SUGGESTION_LIMIT)
                 .map(|t| Suggestion::new(CommandBoxAction::Recent(t.clone()), t, "Recent"))
                 .collect();
+        }
+        if let Some(rest) = text.strip_prefix(COMMANDS_PREFIX) {
+            return self.all_command_suggestions(rest);
         }
         let mut ranked: Vec<(u8, Suggestion)> = Vec::new();
         self.layout_suggestions(text, &mut ranked);
@@ -459,20 +507,8 @@ impl Session {
         if needle.chars().count() < 3 {
             return;
         }
-        // The Launchers too (#141), so one hidden from the toolbar is still a few keys away.
-        let ids = crate::workspace_commands::MENUS
-            .iter()
-            .flat_map(|m| m.items)
-            .filter_map(|i| match i {
-                crate::MenuItem::Command(id) => Some(*id),
-                _ => None,
-            })
-            .chain(crate::Launcher::ALL.iter().map(|l| l.command()));
-        for id in ids {
-            let Some(spec) = self.commands().get(id) else {
-                continue;
-            };
-            if spec.params.iter().any(|p| p.required) || !self.is_enabled(id) {
+        for spec in self.listed_commands() {
+            if !self.is_enabled(spec.id) {
                 continue;
             }
             let label = spec.label.trim_end_matches('…');
@@ -483,11 +519,58 @@ impl Session {
             } else {
                 continue;
             };
-            out.push((
-                r,
-                Suggestion::new(CommandBoxAction::Command(spec.id), spec.label, "Command"),
-            ));
+            out.push((r, self.command_suggestion(&spec)));
         }
+    }
+
+    fn command_suggestion(&self, spec: &CommandSpec) -> Suggestion {
+        let detail = match self.shortcut(spec.id) {
+            Some(key) => format!("Command · {key}"),
+            None => "Command".to_string(),
+        };
+        Suggestion::new(CommandBoxAction::Command(spec.id), spec.label, detail)
+    }
+
+    /// The commands the Command box lists (#226): every command that runs with no parameter
+    /// but the focused Tab, except [`SCRIPTING_COMMANDS`] and [`IN_PLACE_COMMANDS`]; the menu
+    /// bar's in menu order first, then the rest in registration order.
+    pub fn listed_commands(&self) -> Vec<CommandSpec> {
+        let menus = crate::workspace_commands::MENUS
+            .iter()
+            .flat_map(|m| m.commands())
+            .filter_map(|id| self.commands().get(id).copied());
+        let mut out: Vec<CommandSpec> = Vec::new();
+        for spec in menus.chain(self.commands().iter().copied()) {
+            if is_listed(&spec) && out.iter().all(|o| o.id != spec.id) {
+                out.push(spec);
+            }
+        }
+        out
+    }
+
+    /// `>` in the Command box (#226): every listed command whose label holds `rest`'s words
+    /// (all of them for an empty `rest`), label matches first, disabled ones left out.
+    fn all_command_suggestions(&self, rest: &str) -> Vec<Suggestion> {
+        let needle = rest.trim().to_lowercase();
+        let mut ranked: Vec<(u8, Suggestion)> = Vec::new();
+        for spec in self.listed_commands() {
+            if !self.is_enabled(spec.id) {
+                continue;
+            }
+            let label = spec.label.trim_end_matches('…').to_lowercase();
+            let r = if needle.is_empty() || label == needle {
+                3
+            } else if word_prefix(&label, &needle) {
+                2
+            } else if needle.split_whitespace().all(|w| label.contains(w)) {
+                1
+            } else {
+                continue;
+            };
+            ranked.push((r, self.command_suggestion(&spec)));
+        }
+        ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
+        ranked.into_iter().map(|(_, s)| s).collect()
     }
 
     /// Word Study suggestions for a Strong's number, a Lemma or a Lemma's transliteration.
@@ -634,7 +717,18 @@ impl Session {
                 "search.open_saved",
                 &json!({ "name": name, "split": new_tab }),
             ),
-            CommandBoxAction::Command(id) => self.run(id, &json!({})),
+            CommandBoxAction::Command(id) => {
+                let needs_tab = (self.commands().get(id))
+                    .is_some_and(|c| c.params.iter().any(|p| p.name == "tab" && p.required));
+                if !needs_tab {
+                    return self.run(id, &json!({}));
+                }
+                let tab = self
+                    .workspace
+                    .focused()
+                    .ok_or_else(|| failed(RUN, "Open a Tab first"))?;
+                self.run(id, &json!({ "tab": tab.0 }))
+            }
             CommandBoxAction::Search(text) => {
                 self.run("search.run", &json!({ "text": text, "split": new_tab }))
             }
@@ -836,6 +930,9 @@ fn run_from_box(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     };
     let action = chosen.action.clone();
     let out = s.run_command_box_action(&action, new_tab)?;
-    s.remember_command_box(&kept);
+    // The command list is a way in, not an entry worth keeping.
+    if !kept.starts_with(COMMANDS_PREFIX) {
+        s.remember_command_box(&kept);
+    }
     Ok(json!({ "kind": action.kind(), "out": out }))
 }

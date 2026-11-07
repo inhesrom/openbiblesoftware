@@ -1179,9 +1179,9 @@ fn a_layout_round_trips_and_can_be_renamed_and_deleted_from_the_layouts_launcher
         .run("tab.go", &json!({ "tab": tb.0, "text": "Gen 31:20" }));
     h.frames(3);
     let saved = workspace_state(&mut h);
-    // Layouts → Save layout as… asks for a name.
+    // Layouts → Save Layout as… asks for a name.
     h.open_menu("Layouts");
-    h.click_text("Save layout as…");
+    h.click_text("Save Layout as…");
     assert!(h.find("Save layout as").is_some(), "{:?}", h.texts());
     h.events.push(Event::Text("Two Bibles".into()));
     h.frame();
@@ -3506,6 +3506,8 @@ mod key_labels;
 mod keyboard_navigation;
 #[path = "keyboard_shortcuts_tests.rs"]
 mod keyboard_shortcuts;
+#[path = "menu_audit_tests.rs"]
+mod menu_audit;
 #[path = "page_tone_tests.rs"]
 mod page_tone;
 #[path = "recently_closed_tests.rs"]

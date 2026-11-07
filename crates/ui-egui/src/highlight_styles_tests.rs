@@ -212,7 +212,7 @@ fn promises_as_a_gold_box_on_rom_8_28_renders_in_every_page_tone_after_a_restart
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
-/// Acceptance criterion 2, in View → Highlight styles…: Delete on a used style asks where its
+/// Acceptance criterion 2, in View → Highlight styles: Delete on a used style asks where its
 /// Highlights go, moves them there and deletes it; Ctrl+Z brings back both.
 #[test]
 fn deleting_a_used_style_in_the_window_moves_its_highlight_and_ctrl_z_restores_both() {
@@ -312,7 +312,7 @@ fn the_keys_and_the_right_click_menu_follow_the_active_palette() {
         h.frame();
     }
     h.frame();
-    for label in ["Yellow", "Red underline", "Promises", "Highlight styles…"] {
+    for label in ["Yellow", "Red underline", "Promises", "Highlight styles"] {
         assert!(h.find(label).is_some(), "{label}: {:?}", h.texts());
     }
     // Each style after its swatch.

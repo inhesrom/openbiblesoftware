@@ -4,8 +4,9 @@
 //!
 //! Keyboard first: Ctrl+L (the `command_box.focus` command) puts the keyboard in the box and
 //! selects its text; ↑/↓ pick a suggestion; Enter runs it; Alt+Enter runs it in a new Tab; Esc
-//! leaves the box. An empty box lists the recent entries. A click on a suggestion runs it
-//! (Alt held: in a new Tab).
+//! leaves the box. An empty box lists the recent entries; `>` lists every command it can run
+//! (Help → All commands, Ctrl+Shift+P, #226). A click on a suggestion runs it (Alt held: in
+//! a new Tab).
 
 use egui::{Align2, Key, Modifiers, Rect, Sense, Ui, pos2, vec2};
 use obs_engine::Suggestion;
@@ -23,6 +24,9 @@ pub(crate) const HINT: &str = "Go to, study, open or search";
 /// Height of one suggestion row.
 const ROW: f32 = 26.0;
 
+/// Rows the dropdown shows before it scrolls.
+const MAX_ROWS: usize = 12;
+
 /// The Command box's text and dropdown.
 #[derive(Default)]
 pub(crate) struct CommandBoxUi {
@@ -32,11 +36,26 @@ pub(crate) struct CommandBoxUi {
     for_text: Option<String>,
     /// The highlighted suggestion.
     pub(crate) selected: usize,
+    /// ↑/↓ moved the highlight: scroll it into view.
+    scroll_to_selected: bool,
     /// Ctrl+L asked for the keyboard.
     pub(crate) focus: bool,
+    /// The keyboard goes in with the caret after the text instead of the text selected (All
+    /// commands, #226).
+    caret_at_end: bool,
     /// Where the dropdown was drawn last frame, so a click on it is not lost to the box
     /// losing focus at the press.
     pub(super) dropdown: Option<Rect>,
+}
+
+impl CommandBoxUi {
+    /// Help → All commands (Ctrl+Shift+P, #226): the keyboard in the box, which lists every
+    /// command it can run; typing filters them.
+    pub(crate) fn list_commands(&mut self) {
+        self.text = obs_engine::COMMANDS_PREFIX.to_string();
+        self.focus = true;
+        self.caret_at_end = true;
+    }
 }
 
 impl Shell {
@@ -49,12 +68,15 @@ impl Shell {
         if had_focus {
             let cb = &mut self.st.command_box;
             let last = cb.suggestions.len().saturating_sub(1);
+            cb.scroll_to_selected = false;
             ui.input_mut(|i| {
                 if i.consume_key(Modifiers::NONE, Key::ArrowDown) {
                     cb.selected = (cb.selected + 1).min(last);
+                    cb.scroll_to_selected = true;
                 }
                 if i.consume_key(Modifiers::NONE, Key::ArrowUp) {
                     cb.selected = cb.selected.saturating_sub(1);
+                    cb.scroll_to_selected = true;
                 }
                 if i.consume_key(Modifiers::ALT, Key::Enter) {
                     picked = Some((cb.selected, true));
@@ -74,9 +96,12 @@ impl Shell {
         let r = egui::Response::clone(&out.response).accessible_name("Command box");
         if std::mem::take(&mut cb.focus) {
             r.request_focus();
-            out.state
-                .cursor
-                .set_char_range(Some(egui::text::CCursorRange::select_all_str(&cb.text)));
+            let range = if std::mem::take(&mut cb.caret_at_end) {
+                egui::text::CCursorRange::one(egui::text::CCursor::new(cb.text.chars().count()))
+            } else {
+                egui::text::CCursorRange::select_all_str(&cb.text)
+            };
+            out.state.cursor.set_char_range(Some(range));
             out.state.store(ui.ctx(), id);
             cb.for_text = None;
         }
@@ -123,44 +148,57 @@ impl Shell {
                 egui::Frame::popup(ui.style())
                     .inner_margin(egui::Margin::same(4))
                     .show(ui, |ui| {
-                        let c = theme::c();
-                        for (i, s) in cb.suggestions.iter().enumerate() {
-                            let (rect, resp) =
-                                ui.allocate_exact_size(vec2(width, ROW), Sense::click());
-                            let painter = ui.painter();
-                            if i == cb.selected {
-                                painter.rect_filled(rect, 4.0, c.selection);
-                            } else if resp.hovered() {
-                                painter.rect_filled(rect, 4.0, c.hover);
-                            }
-                            let font = egui::TextStyle::Body.resolve(ui.style());
-                            let detail = painter.text(
-                                pos2(rect.right() - 8.0, rect.center().y),
-                                Align2::RIGHT_CENTER,
-                                &s.detail,
-                                font.clone(),
-                                c.muted,
-                            );
-                            let label = painter.layout_no_wrap(s.label.clone(), font, c.ink);
-                            let room = (detail.left() - rect.left() - 24.0).max(0.0);
-                            let clip = Rect::from_min_size(rect.min, vec2(room + 8.0, ROW));
-                            painter.with_clip_rect(clip).galley(
-                                pos2(rect.left() + 8.0, rect.center().y - label.size().y / 2.0),
-                                label,
-                                c.ink,
-                            );
-                            resp.widget_info(|| {
-                                egui::WidgetInfo::selected(
-                                    egui::Role::ListBoxOption,
-                                    true,
-                                    i == cb.selected,
-                                    format!("{} · {}", s.label, s.detail),
-                                )
+                        // All commands (#226) can be more rows than fit: they scroll, keeping
+                        // the highlighted one in view.
+                        egui::ScrollArea::vertical()
+                            .max_height(ROW * (MAX_ROWS as f32 + 0.5))
+                            .show(ui, |ui| {
+                                let c = theme::c();
+                                for (i, s) in cb.suggestions.iter().enumerate() {
+                                    let (rect, resp) =
+                                        ui.allocate_exact_size(vec2(width, ROW), Sense::click());
+                                    if i == cb.selected && cb.scroll_to_selected {
+                                        ui.scroll_to_rect(rect, None);
+                                    }
+                                    let painter = ui.painter();
+                                    if i == cb.selected {
+                                        painter.rect_filled(rect, 4.0, c.selection);
+                                    } else if resp.hovered() {
+                                        painter.rect_filled(rect, 4.0, c.hover);
+                                    }
+                                    let font = egui::TextStyle::Body.resolve(ui.style());
+                                    let detail = painter.text(
+                                        pos2(rect.right() - 8.0, rect.center().y),
+                                        Align2::RIGHT_CENTER,
+                                        &s.detail,
+                                        font.clone(),
+                                        c.muted,
+                                    );
+                                    let label =
+                                        painter.layout_no_wrap(s.label.clone(), font, c.ink);
+                                    let room = (detail.left() - rect.left() - 24.0).max(0.0);
+                                    let clip = Rect::from_min_size(rect.min, vec2(room + 8.0, ROW));
+                                    painter.with_clip_rect(clip).galley(
+                                        pos2(
+                                            rect.left() + 8.0,
+                                            rect.center().y - label.size().y / 2.0,
+                                        ),
+                                        label,
+                                        c.ink,
+                                    );
+                                    resp.widget_info(|| {
+                                        egui::WidgetInfo::selected(
+                                            egui::Role::ListBoxOption,
+                                            true,
+                                            i == cb.selected,
+                                            format!("{} · {}", s.label, s.detail),
+                                        )
+                                    });
+                                    if resp.clicked() {
+                                        clicked = Some((i, ui.input(|i| i.modifiers.alt)));
+                                    }
+                                }
                             });
-                            if resp.clicked() {
-                                clicked = Some((i, ui.input(|i| i.modifiers.alt)));
-                            }
-                        }
                     });
             });
         cb.dropdown = Some(shown.response.rect);

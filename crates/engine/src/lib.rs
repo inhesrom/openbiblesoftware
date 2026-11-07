@@ -184,7 +184,9 @@ pub use bible_search::{
 };
 pub use collections::{Collection, CollectionRule, CollectionSet, parse_rules, rules_text};
 pub use command::{CommandError, CommandRegistry, CommandSpec, ParamKind, ParamSpec, Params};
-pub use command_box::{CommandBoxAction, Suggestion};
+pub use command_box::{
+    COMMANDS_PREFIX, CommandBoxAction, IN_PLACE_COMMANDS, SCRIPTING_COMMANDS, Suggestion, is_listed,
+};
 pub use compare::{
     Cell, ComparedBible, ComparedCell, Comparison, DEFAULT_BIBLES, Marks, VerseBlock, WordDiff,
     verse_blocks, word_diff,
@@ -294,7 +296,9 @@ pub use workspace::{
     CameBackBeside, ClosedTabs, Effect, Guide, HeaderBox, History, OpenRequest, PanelId, Placement,
     RECENTLY_CLOSED_LIMIT, RecentlyClosed, Side, Tab, TabId, TabKind, Tool, Workspace,
 };
-pub use workspace_commands::{BACKUPS_TITLE, MENUS, Menu, MenuItem, choices, parallel_resources};
+pub use workspace_commands::{
+    BACKUPS_TITLE, MENUS, Menu, MenuItem, choices, menu_of, parallel_resources,
+};
 
 #[cfg(test)]
 mod tests;

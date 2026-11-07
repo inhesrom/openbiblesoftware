@@ -1,4 +1,4 @@
-//! Library → Starter library… (#131) through the shell's real-event headless harness: the
+//! Library → Starter library (#131) through the shell's real-event headless harness: the
 //! rows with type, size, licence and features; Add back after a removal; and the one-click
 //! download, verified, when there is no bundle.
 
@@ -61,7 +61,7 @@ fn settle(h: &mut Harness) {
 
 fn open_starter_library(h: &mut Harness) {
     h.open_menu("Library");
-    h.click_text("Starter library…");
+    h.click_text("Starter library");
     settle(h);
     assert!(
         h.panels()

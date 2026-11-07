@@ -513,12 +513,5 @@ fn back_up_and_restore_need_the_user_database() {
     let t = s.workspace.tab(TabId(tab)).unwrap();
     assert_eq!(t.kind, TabKind::Backups);
     assert_eq!(t.title, BACKUPS_TITLE);
-    assert!(
-        MENUS
-            .iter()
-            .find(|m| m.title == "Tools")
-            .unwrap()
-            .items
-            .contains(&MenuItem::Command("data.backups"))
-    );
+    assert_eq!(crate::menu_of("data.backups"), Some("File"));
 }

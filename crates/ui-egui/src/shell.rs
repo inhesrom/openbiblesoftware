@@ -240,7 +240,7 @@ pub(crate) struct State {
     notes_ui: notes_tab::NotesUi,
     /// The Fonts window and the fonts loaded for View → Fonts (#138).
     fonts_ui: fonts_window::FontsUi,
-    /// The Highlight styles window (View → Highlight styles…, #181).
+    /// The Highlight styles window (View → Highlight styles, #181).
     styles_ui: highlight_styles_window::StylesUi,
     /// The Reading plans Tool's New plan form (#147).
     plans_ui: reading_plans_tab::PlansUi,
@@ -587,6 +587,10 @@ impl Shell {
                 Effect::FocusCommandBox => {
                     self.st.toolbar.close();
                     self.st.command_box.focus = true;
+                }
+                Effect::ListCommands => {
+                    self.st.toolbar.close();
+                    self.st.command_box.list_commands();
                 }
                 Effect::OpenLauncher(which) => self.st.toolbar.toggle(which),
                 Effect::Find { tab, text } => self.st.open_find(tab, text),
@@ -967,7 +971,7 @@ impl Shell {
                     ui.centered_and_justified(|ui| {
                         ui.label(
                             RichText::new(
-                                "Nothing is open. Use the Library menu, or drop a .obr file here.",
+                                "Nothing is open. Use File → Library, or drop a .obr file here.",
                             )
                             .color(theme::c().muted),
                         );
@@ -1126,9 +1130,9 @@ impl Shell {
         }
     }
 
-    /// The menu bar: the app's name, the Launchers (#140) when the toolbar is at the Top (#141),
-    /// the View and Help menus, and the Command box on the right.
-    /// The menu bar; the first menu's id, where F6 puts the keyboard (#215).
+    /// The menu bar: the app's name, the menus (File · Edit · View · Go · Tools · Window · Help,
+    /// #226), the Launchers (#140) when the toolbar is at the Top (#141), and the Command box
+    /// on the right. Returns the first menu's id, where F6 puts the keyboard (#215).
     fn menu_bar(&mut self, ui: &mut Ui) -> Option<egui::Id> {
         let mut first = None;
         ui.horizontal(|ui| {
@@ -1139,23 +1143,12 @@ impl Shell {
             );
             ui.add_space(10.0);
             ui.spacing_mut().item_spacing.x = 4.0;
-            let toolbar = &self.st.session.toolbar;
-            if toolbar.position == obs_engine::ToolbarPosition::Top && !toolbar.auto_hide {
-                let room = ui.available_width() - self.st.toolbar.reserve;
-                self.launcher_strip(ui, room, false);
-                ui.add_space(8.0);
-            }
-            let rest = ui.cursor().left();
             ui.scope(|ui| {
                 let w = &mut ui.visuals_mut().widgets;
                 w.inactive.bg_stroke = Stroke::NONE;
                 w.inactive.weak_bg_fill = Color32::TRANSPARENT;
                 w.hovered.bg_stroke = Stroke::NONE;
-                let launched: Vec<&str> = obs_engine::Launcher::ALL
-                    .iter()
-                    .map(|l| l.title())
-                    .collect();
-                for menu in MENUS.iter().filter(|m| !launched.contains(&m.title)) {
+                for menu in MENUS {
                     let r = ui.menu_button(menu.title, |ui| {
                         for item in menu.items {
                             self.menu_item(ui, *item);
@@ -1164,7 +1157,12 @@ impl Shell {
                     first = first.or(Some(r.response.id));
                 }
             });
-            let menus = ui.cursor().left() - rest;
+            let toolbar = &self.st.session.toolbar;
+            if toolbar.position == obs_engine::ToolbarPosition::Top && !toolbar.auto_hide {
+                ui.add_space(8.0);
+                let room = ui.available_width() - self.st.toolbar.reserve;
+                self.launcher_strip(ui, room, false);
+            }
             let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 self.command_box(ui);
                 // Today's reading (#147), left of the Command box, and Home (#178).
@@ -1177,8 +1175,8 @@ impl Shell {
                 }
                 ui.min_rect().width()
             });
-            // What the Launchers leave room for next frame: the menus, the right side and gaps.
-            self.st.toolbar.reserve = menus + right.inner + 8.0 + 2.0 * ui.spacing().item_spacing.x;
+            // What the Launchers leave room for next frame: the right side and gaps.
+            self.st.toolbar.reserve = right.inner + 8.0 + 2.0 * ui.spacing().item_spacing.x;
         });
         first
     }
@@ -1229,18 +1227,28 @@ impl Shell {
                 if let Some(sc) = self.st.session.shortcut(id) {
                     b = b.shortcut_text(crate::key_labels::label(sc));
                 }
-                let enabled = self.st.session.is_enabled(id);
+                // A command that needs a Tab runs on the focused one (#226).
+                let needs_tab = spec.params.iter().any(|p| p.name == "tab" && p.required);
+                let focused = self.st.session.workspace.focused();
+                let has_tab = !needs_tab || focused.is_some();
+                let enabled = self.st.session.is_enabled(id) && has_tab;
                 let r = ui.add_enabled(enabled, b);
                 if let Some(on) = checked {
                     icons::announce_toggled(&r, on);
                 }
                 let r = if enabled {
                     r
-                } else {
+                } else if has_tab {
                     r.on_disabled_hover_text(not_yet(id))
+                } else {
+                    r.on_disabled_hover_text("Open a Tab first")
                 };
                 if r.clicked() {
-                    self.run(id, &json!({}));
+                    let params = match focused {
+                        Some(t) if needs_tab => json!({ "tab": t.0 }),
+                        _ => json!({}),
+                    };
+                    self.run(id, &params);
                     ui.close();
                 }
             }
@@ -1307,7 +1315,14 @@ impl Shell {
                     ui.close();
                 }
             }
-            // The Library and Layouts menus are the Library and Layouts Launchers' panes now.
+            MenuItem::Submenu { title, items } => {
+                ui.menu_button((icons::blank(), title), |ui| {
+                    for item in items {
+                        self.menu_item(ui, *item);
+                    }
+                });
+            }
+            // Only the Library and Layouts Launchers' panes list these.
             MenuItem::Favorites | MenuItem::Layouts | MenuItem::Resources => {}
         }
     }
@@ -3133,7 +3148,7 @@ impl State {
         .accessible_name("Tab menu");
     }
 
-    /// Ask for a Layout name (Save layout as…, Rename…).
+    /// Ask for a Layout name (Save Layout as…, Rename…).
     fn layout_prompt(&mut self, ctx: &egui::Context) {
         let Some((rename, mut text)) = self.prompt.take() else {
             return;

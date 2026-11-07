@@ -391,7 +391,8 @@ fn every_binding_is_listed_once_by_menu_and_the_defaults_do_not_conflict() {
     assert_eq!(group("view.text_larger"), Some("View"));
     assert_eq!(group("help.keyboard_shortcuts"), Some("Help"));
     assert_eq!(group("selection.highlight_4"), Some(SELECTION_GROUP));
-    assert_eq!(group("tab.find"), Some(OTHER_GROUP));
+    assert_eq!(group("tab.find"), Some("Edit"));
+    assert_eq!(group("toolbar.library"), Some(OTHER_GROUP));
     assert_eq!(group("tab.go"), None);
     // Every command with a default key is listed.
     for spec in s.commands().iter().filter(|c| c.shortcut.is_some()) {
