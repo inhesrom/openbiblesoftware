@@ -376,6 +376,19 @@ fn focus_marker(h: &mut Harness, tab: TabId, text: &str) -> (FootnoteMarker, egu
     (m, widget)
 }
 
+/// Run frames until the keyboard focus has left `marker` for its pinned popover (a link, or
+/// the ×): the note is laid out off-thread, slower on some CI runners.
+fn wait_for_focus_inside(h: &mut Harness, marker: egui::Id) {
+    for _ in 0..300 {
+        let focused = h.ctx.memory(|mem| mem.focused());
+        if focused.is_some() && focused != Some(marker) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        h.frame();
+    }
+}
+
 /// A shown Footnote has first refusal on Esc: with Word Info pinned too, Esc closes the
 /// Footnote and gives its marker the focus back, leaving Word Info pinned; the next Esc
 /// unpins Word Info.
@@ -525,6 +538,7 @@ fn space_on_a_focused_popover_link_follows_it_and_pages_no_pane() {
         let (m, marker_widget) = focus_marker(&mut h, tab, "Isaiah 40:3");
         press(&mut h, Key::Enter);
         h.frames(3);
+        wait_for_focus_inside(&mut h, marker_widget);
         let p = popover(&h).expect("Enter pins it");
         assert!(p.pinned && p.tab == tab && p.hit.note == m.note);
         let focused = h.ctx.memory(|mem| mem.focused());
@@ -568,6 +582,7 @@ fn space_on_a_focused_popover_close_closes_it_and_pages_no_pane() {
     let (_, marker_widget) = focus_marker(&mut h, tab, "Or comprehended");
     press(&mut h, Key::Enter);
     h.frames(3);
+    wait_for_focus_inside(&mut h, marker_widget);
     assert!(popover(&h).is_some_and(|p| p.pinned && p.tab == tab));
     let focused = h.ctx.memory(|mem| mem.focused());
     assert!(
@@ -601,6 +616,7 @@ fn space_right_after_esc_returns_focus_to_the_marker_pages_no_pane() {
         let (m, marker_widget) = focus_marker(&mut h, tab, "Isaiah 40:3");
         press(&mut h, Key::Enter);
         h.frames(3);
+        wait_for_focus_inside(&mut h, marker_widget);
         assert!(popover(&h).is_some_and(|p| p.pinned && p.tab == tab));
         assert_ne!(
             h.ctx.memory(|mem| mem.focused()),
@@ -662,9 +678,10 @@ fn space_after_clicking_another_panes_text_pages_that_pane() {
         h.shell.st.session.workspace.set_link(t, None);
     }
     h.frames(2);
-    focus_marker(&mut h, tab, "Isaiah 40:3");
+    let (_, marker_widget) = focus_marker(&mut h, tab, "Isaiah 40:3");
     press(&mut h, Key::Enter);
     h.frames(3);
+    wait_for_focus_inside(&mut h, marker_widget);
     assert!(popover(&h).is_some_and(|p| p.pinned && p.tab == tab));
     let [left, top] = h.shell.st.tabs[&other].view.as_ref().unwrap().text_origin;
     h.click(pos2(left + 20.0, top + 60.0));
