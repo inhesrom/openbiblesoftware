@@ -49,8 +49,7 @@ fn tahot_bereshit_reads_its_gloss_transliteration_morphology_and_number() {
     assert_eq!(lines, &[Gloss, Transliteration, Morphology, Strongs]);
     let cells = cell_texts(lines, kind, "בְּרֵאשִׁ֖ית", &parts, &no_lexicon);
     assert_eq!(cells[0], "in beginning", "every morpheme's gloss, in order");
-    assert_eq!(cells[1], obs_model::transliterate("בְּרֵאשִׁ֖ית"));
-    assert!(!cells[1].is_empty());
+    assert_eq!(cells[1], "bᵊrēʾšîṯ", "the academic transliteration (#243)");
     assert_eq!(
         cells[2],
         obs_model::morph::parse("HNcfsa").unwrap().short(),
@@ -88,7 +87,7 @@ fn kjv_loved_reads_the_lexicon_lemma_its_transliteration_and_gloss() {
         &[part("G25", None, None, None)],
         &lexicon,
     );
-    assert_eq!(cells, ["ἀγαπάω", "agapao", "G25", "", "to love"]);
+    assert_eq!(cells, ["ἀγαπάω", "agapaō", "G25", "", "to love"]);
     assert_eq!(calls.get(), 1);
     // An unreadable code (KJV's TH-style tags) shows no Morphology rather than the code.
     let cells = cell_texts(
@@ -132,8 +131,12 @@ fn a_tab_picks_its_lines_and_keeps_at_least_one() {
     let mut lines = InterlinearLines::default();
     assert!(lines.shown(kind).is_empty(), "off by default");
     lines.on = true;
-    assert_eq!(lines.shown(kind), [Lemma, Transliteration, Strongs]);
-    lines.set_line(kind, Gloss, true);
+    assert_eq!(
+        lines.shown(kind),
+        [Lemma, Transliteration, Gloss],
+        "the Hebrew or Greek word and its Gloss, not the number (#243)"
+    );
+    lines.set_line(kind, Strongs, true);
     lines.set_line(kind, Transliteration, false);
     assert_eq!(
         lines.shown(kind),
@@ -190,7 +193,7 @@ fn tab_interlinear_toggles_lines_per_tab_and_layouts_keep_them() {
     let out = s.run("tab.interlinear", &json!({ "tab": kjv.0 })).unwrap();
     assert_eq!(
         out,
-        json!({ "on": true, "lines": ["lemma", "transliteration", "strongs"] })
+        json!({ "on": true, "lines": ["lemma", "transliteration", "gloss"] })
     );
     assert!(!lines(&s, tahot).on, "only that Tab");
     let out = s
@@ -236,7 +239,7 @@ fn tab_interlinear_toggles_lines_per_tab_and_layouts_keep_them() {
     };
     assert_eq!(
         by_kind(&s, "kjv").shown(InterlinearKind::Reverse),
-        [Lemma, Transliteration, Strongs]
+        [Lemma, Transliteration, Gloss]
     );
     assert_eq!(
         by_kind(&s, "tahot").shown(InterlinearKind::Interlinear),
@@ -276,7 +279,7 @@ fn a_lemma_only_choice_reads_as_the_hebrew_or_greek_defaults() {
     let interlinear = InterlinearKind::Interlinear;
     lines.set_line(reverse, Lemma, true);
     lines.set_line(reverse, Transliteration, false);
-    lines.set_line(reverse, Strongs, false);
+    lines.set_line(reverse, Gloss, false);
     assert_eq!(lines.shown(reverse), [Lemma]);
     // A Hebrew or Greek Bible has no Lemma line: its defaults show instead of nothing.
     assert_eq!(lines.shown(interlinear), [Gloss, Transliteration]);
@@ -298,7 +301,7 @@ fn switching_a_tab_to_a_hebrew_bible_keeps_its_lines_showing() {
     let (mut s, _t) = launch("switch-kind");
     let tab = open(&mut s, "kjv", false);
     s.run("tab.interlinear", &json!({ "tab": tab.0 })).unwrap();
-    for line in ["transliteration", "strongs"] {
+    for line in ["transliteration", "gloss"] {
         s.run(
             "tab.interlinear",
             &json!({ "tab": tab.0, "line": line, "shown": false }),
@@ -322,5 +325,141 @@ fn switching_a_tab_to_a_hebrew_bible_keeps_its_lines_showing() {
     assert_eq!(
         out,
         json!({ "on": true, "lines": ["gloss", "transliteration"] })
+    );
+}
+
+/// The Berean Standard Bible as CrossWire tags it (`lemma.BSBlex:בְּרֵאשִׁ֖ית strong:H7225`): the
+/// word's own Hebrew, with its accents, and a base number.
+fn bsb_in_the_beginning() -> MorphemePart {
+    part("H7225", Some("בְּרֵאשִׁ֖ית"), None, None)
+}
+
+/// #243 acceptance: with only the BSB installed (no Lexicon), Gen 1:1 shows בְּרֵאשִׁית /
+/// bᵊrēʾšîṯ / "beginning" under "In the beginning", the default lines.
+#[test]
+fn bsb_in_the_beginning_reads_the_hebrew_its_transliteration_and_gloss_with_no_lexicon() {
+    let kind = InterlinearKind::Reverse;
+    let lines = InterlinearLines {
+        on: true,
+        ..Default::default()
+    }
+    .shown(kind);
+    assert_eq!(lines, [Lemma, Transliteration, Gloss]);
+    let cells = cell_texts(
+        &lines,
+        kind,
+        "In the beginning",
+        &[bsb_in_the_beginning()],
+        &no_lexicon,
+    );
+    assert_eq!(cells, ["בְּרֵאשִׁית", "bᵊrēʾšîṯ", "beginning"]);
+}
+
+/// #243 acceptance: a Bible that carries only numbers, extended ones included (H1254A), reads
+/// the lemma and gloss from the built-in index.
+#[test]
+fn numbers_alone_read_from_the_built_in_index() {
+    let kind = InterlinearKind::Reverse;
+    let all = kind.lines();
+    let cells = cell_texts(
+        all,
+        kind,
+        "created",
+        &[part("H1254A", None, None, None)],
+        &no_lexicon,
+    );
+    assert_eq!(cells, ["בָּרָא", "bārāʾ", "H1254A", "", "to create"]);
+    let cells = cell_texts(
+        all,
+        kind,
+        "loved",
+        &[part("G25", None, None, None)],
+        &no_lexicon,
+    );
+    assert_eq!(cells, ["ἀγαπάω", "agapaō", "G25", "", "to love"]);
+    // A number nobody lists stays blank but for itself.
+    let cells = cell_texts(
+        all,
+        kind,
+        "x",
+        &[part("H99999", None, None, None)],
+        &no_lexicon,
+    );
+    assert_eq!(cells, ["", "", "H99999", "", ""]);
+}
+
+/// #243: the library's Lexicons (Preferred order, as the lookup gives them) come before the
+/// built-in index; the index fills only what they lack.
+#[test]
+fn installed_lexicons_come_before_the_built_in_index() {
+    let kind = InterlinearKind::Reverse;
+    let lexicon = |_: StrongsNumber| {
+        Some(LexiconWord {
+            lemma: None,
+            gloss: Some("to bring into being".into()),
+        })
+    };
+    let cells = cell_texts(
+        &[Lemma, Gloss],
+        kind,
+        "created",
+        &[part("H1254A", None, None, None)],
+        &lexicon,
+    );
+    assert_eq!(cells, ["בָּרָא", "to bring into being"]);
+}
+
+/// #243: a Hebrew or Greek Bible whose words carry no Gloss (CrossWire's OSHB) reads the
+/// built-in index's.
+#[test]
+fn an_original_text_without_glosses_reads_the_index_gloss() {
+    let kind = InterlinearKind::Interlinear;
+    let cells = cell_texts(
+        &[Gloss, Transliteration],
+        kind,
+        "בָּרָ֣א",
+        &[part("H1254", None, Some("HVqp3ms"), None)],
+        &no_lexicon,
+    );
+    assert_eq!(cells, ["to create", "bārāʾ"]);
+}
+
+/// #243: an empty Morphology line points at Hebrew and Greek texts (#135's Get Hebrew & Greek
+/// texts…), and the hint closes for good on that Tab.
+#[test]
+fn an_empty_morphology_line_offers_hebrew_and_greek_texts_and_can_be_dismissed() {
+    let (mut s, _t) = launch("hint");
+    let kjv = open(&mut s, "kjv", false);
+    let hint = crate::interlinear::missing_lines_hint(&s, InterlinearKind::Reverse, &[Morphology])
+        .unwrap();
+    assert!(hint.message.contains("Morphology"), "{}", hint.message);
+    assert_eq!(
+        hint.missing.get_label().as_deref(),
+        Some("Get Hebrew & Greek texts…")
+    );
+    assert!(
+        crate::interlinear::missing_lines_hint(&s, InterlinearKind::Reverse, &[]).is_none(),
+        "nothing to say when every line reads"
+    );
+    let lexicon = crate::interlinear::missing_lines_hint(&s, InterlinearKind::Reverse, &[Gloss])
+        .unwrap();
+    assert_eq!(lexicon.missing.get_label().as_deref(), Some("Get Lexicons…"));
+
+    s.run("tab.interlinear", &json!({ "tab": kjv.0 })).unwrap();
+    let out = s
+        .run(
+            "tab.interlinear",
+            &json!({ "tab": kjv.0, "dismiss_hint": true }),
+        )
+        .unwrap();
+    assert_eq!(out["on"], json!(true), "closing the hint changes nothing else");
+    assert!(lines(&s, kjv).hint_dismissed);
+    let snap = s.workspace.snapshot();
+    let back = WorkspaceSnapshot::from_json(&snap.to_json()).unwrap();
+    assert!(
+        back.tabs
+            .iter()
+            .any(|t| t.interlinear.hint_dismissed && t.interlinear.on),
+        "kept in Layouts and the Last session"
     );
 }

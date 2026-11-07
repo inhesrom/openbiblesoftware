@@ -5031,6 +5031,7 @@ dependencies = [
  "sha2",
  "tar",
  "toml 1.1.8+spec-1.1.0",
+ "unicode-normalization",
  "walkdir",
  "zip 9.3.0",
 ]

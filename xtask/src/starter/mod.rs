@@ -48,8 +48,8 @@ pub use fetch::fetch_file;
 use fetch::{fetch, sha256_hex};
 use goldens::{GoldenList, Status};
 use ids::{IdDiff, MANIFEST_FORMAT, ReleaseManifest, ReleaseResource};
-pub use lock::PinnedFile;
-use lock::{IdChanges, Lock, Source};
+pub use lock::{Lock, PinnedFile};
+use lock::{IdChanges, Source};
 
 pub const MANIFEST_FILE: &str = "starter-manifest.json";
 pub const REPORT_FILE: &str = "starter-build-report.md";
