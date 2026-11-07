@@ -2691,6 +2691,7 @@ dependencies = [
  "arboard",
  "eframe",
  "fontdb",
+ "log",
  "obs-engine",
  "obs-fonts",
  "obs-formats",

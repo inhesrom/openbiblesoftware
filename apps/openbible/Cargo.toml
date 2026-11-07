@@ -12,6 +12,8 @@ publish.workspace = true
 obs-ui-egui.workspace = true
 # Log files and Crash reports (#219): the logger and panic hook are installed in `main`.
 obs-engine.workspace = true
+# The debug build's forced panic logs as a windowing library would (#219's end-to-end test).
+log.workspace = true
 obs-formats.workspace = true
 # Get Bibles (#91): the only network client. Apps alone may use one (`cargo xtask layers`);
 # the engine reaches SWORD repositories through the `Fetch` this app hands it.

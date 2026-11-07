@@ -1,7 +1,8 @@
 //! Report a problem (#219) through the headless harness: a Crash report left by the last run
 //! is offered at launch; the user reads the whole report before anything leaves the computer,
-//! and only Copy report or Open GitHub issue… (which the user then submits in the browser)
-//! takes it anywhere. Not now is not offered again; Help → Report a problem… shows the newest
+//! and only Copy report or Open GitHub issue… (which sends it to GitHub in the new-issue
+//! form's address, as the window says first; submitting the form publishes it) takes it
+//! anywhere. Not now is not offered again; Help → Report a problem… shows the newest
 //! report (or a problem report made now) and Help → Open log folder shows the Log folder. The
 //! Last session is saved within a second of a change, so a crash keeps the Workspace.
 
@@ -82,6 +83,14 @@ fn a_crash_report_is_offered_at_launch_and_read_before_anything_leaves_the_compu
     assert!(h.find("Report a problem").is_some());
     assert!(shows_report(&h, &report), "{:?}", h.texts());
     assert!(h.opened.is_empty() && h.copied.is_empty());
+    // Before either button is clicked, the window says what each does with the report.
+    assert!(
+        h.find(crate::shell::report_problem::REVIEW_NOTE).is_some(),
+        "{:?}",
+        h.texts()
+    );
+    assert!(crate::shell::report_problem::REVIEW_NOTE.contains("sends it to GitHub"));
+    assert!(crate::shell::report_problem::REVIEW_NOTE.contains("public issue only if you submit"));
     preview(&h, "report-problem-review-kittest");
     // Offered once: it is no longer new.
     let reports = h.shell.st.session.crash_reports();
@@ -103,6 +112,11 @@ fn a_crash_report_is_offered_at_launch_and_read_before_anything_leaves_the_compu
     assert!(
         url.contains("Panic%3A%20index%20out%20of%20bounds"),
         "{url}"
+    );
+    let toast = h.shell.st.toast.as_ref().map(|t| t.0.clone()).unwrap();
+    assert!(
+        toast.starts_with("Sent to GitHub's new-issue form") && toast.contains("public"),
+        "{toast}"
     );
 
     h.click_text("Close");
@@ -181,7 +195,7 @@ fn help_open_log_folder_shows_the_log_folder() {
     let log = Arc::clone(&shown);
     h.shell.st.report_ui.open_folder = Arc::new(move |p: &Path| {
         log.lock().unwrap().push(p.to_path_buf());
-        Ok(())
+        Ok(None)
     });
     h.open_menu("Help");
     h.click_text("Open log folder");
@@ -193,7 +207,57 @@ fn help_open_log_folder_shows_the_log_folder() {
     h.frames(1);
     let toast = h.shell.st.toast.as_ref().map(|t| t.0.clone()).unwrap();
     assert!(toast.contains(&logs.display().to_string()), "{toast}");
+
+    // A file manager that starts but then fails says so too, without holding up the window.
+    h.shell.st.toast = None;
+    let (tx, rx) = std::sync::mpsc::channel();
+    let rx = Mutex::new(Some(rx));
+    h.shell.st.report_ui.open_folder = Arc::new(move |_: &Path| Ok(rx.lock().unwrap().take()));
+    h.shell.run("help.open_log_folder", &json!({}));
+    h.frames(2);
+    assert!(h.shell.st.toast.is_none(), "still running");
+    assert!(
+        h.repaint_delay < std::time::Duration::MAX,
+        "a frame is asked for to see it exit"
+    );
+    tx.send(Err("xdg-open failed: exit status: 4".into()))
+        .unwrap();
+    h.frames(1);
+    let toast = h.shell.st.toast.as_ref().map(|t| t.0.clone()).unwrap();
+    assert!(
+        toast.contains("exit status: 4") && toast.contains(&logs.display().to_string()),
+        "{toast}"
+    );
+    assert!(h.shell.st.report_ui.opening.is_none());
     drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_file_manager_that_exits_with_an_error_is_reported() {
+    let dir = folder("opener-exit");
+    let rx = crate::shell::report_problem::open_folder_with("false", &dir, true)
+        .unwrap()
+        .unwrap();
+    let outcome = rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+    assert!(
+        outcome
+            .as_ref()
+            .is_err_and(|e| e.starts_with("false failed: exit status: 1")),
+        "{outcome:?}"
+    );
+    let rx = crate::shell::report_problem::open_folder_with("true", &dir, true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap(),
+        Ok(())
+    );
+    assert!(
+        crate::shell::report_problem::open_folder_with("obs-no-such-file-manager", &dir, true)
+            .is_err()
+    );
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

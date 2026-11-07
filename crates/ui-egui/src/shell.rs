@@ -874,7 +874,7 @@ impl Shell {
             || self.st.session.topic_guides.is_busy()
         {
             Some(std::time::Duration::from_millis(16))
-        } else if self.st.session.search.is_building() {
+        } else if self.st.session.search.is_building() || self.st.folder_opening() {
             Some(std::time::Duration::from_millis(250))
         } else {
             None
@@ -910,6 +910,7 @@ impl Shell {
         self.st.poll_export();
         self.st.poll_data_dialog();
         self.st.poll_csv_picker();
+        self.st.poll_folder_opening();
         self.apply_effects();
         if let Some(after) = self.background_repaint() {
             ui.ctx().request_repaint_after(after);

@@ -1,6 +1,7 @@
 //! A forced panic in a test build writes a Crash report to the Log folder (#219): the panic,
 //! where it happened, a backtrace, the app version, the OS and the recent log lines, with the
-//! home folder written as `~`. The next launch finds it as a new report to offer
+//! home folder written as `~`; neither a library's log message quoting typed text nor quoted
+//! text in the panic message reaches it. The next launch finds it as a new report to offer
 //! (`ui-egui`'s `report_problem_tests` show the offer and the review).
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -45,7 +46,7 @@ fn a_forced_panic_writes_a_crash_report_the_next_launch_offers() {
     )));
     assert!(text.contains("Thread: main\n"), "{text}");
     assert!(
-        text.contains("Panic: forced panic (OBS_FORCE_PANIC)\n"),
+        text.contains("Panic: forced panic (OBS_FORCE_PANIC) of `…`\n"),
         "{text}"
     );
     assert!(text.contains("At: apps/openbible/src/main.rs:"), "{text}");
@@ -60,12 +61,19 @@ fn a_forced_panic_writes_a_crash_report_the_next_launch_offers() {
         "{text}"
     );
     assert!(!report.text.contains(home.to_str().unwrap()), "{text}");
-    // The log file has the launch and the panic too.
+    // The windowing library's warning is there, where it was logged from, without the text.
+    assert!(
+        text.contains("WARN  egui_winit: (message withheld; logged at main.rs:"),
+        "{text}"
+    );
+    assert!(!text.contains("PRIVATE_NOTE"), "{text}");
+    // The log file has the launch and the panic too, and not the typed text.
     let log = std::fs::read_to_string(logs.join(obs_engine::diagnostics::LOG_FILE)).unwrap();
     assert!(
         log.contains("started on") && log.contains("panicked at"),
         "{log}"
     );
+    assert!(!log.contains("PRIVATE_NOTE"), "{log}");
     // Nothing else was made: no User database, no library (it stopped before them).
     assert!(!root.join("user.db").exists());
     std::fs::remove_dir_all(&root).unwrap();

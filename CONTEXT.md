@@ -566,13 +566,13 @@ The folder on this computer where the app keeps its log files and Crash reports.
 _Avoid_: Logs directory, Diagnostics folder
 
 **Log level**:
-How much the app writes to its log files: Errors only, Warnings, Normal (the default) or Detailed, chosen in Settings → Privacy and data. Log files name what the app did (launches, commands, background jobs, problems), never Notes, Highlights or Resource text; each is rotated at 1 MB and the last three old ones are kept.
+How much the app writes to its log files: Errors only, Warnings, Normal (the default) or Detailed, chosen in Settings → Privacy and data. Log files name what the app did (launches, commands, background jobs, problems), never Notes, Highlights or Resource text (another library's message, which could quote what the user typed, is written only as where it was logged from); each is rotated at 1 MB and the last three old ones are kept.
 _Avoid_: Verbosity, Debug mode
 
 **Crash report**:
-A text file the app writes to the Log folder when it hits a bug it cannot recover from: what failed and where in the program, a backtrace, the app version, the operating system and the recent log lines, with the home folder written as `~`. It holds none of the user's content. The next launch offers Report a problem for it, once; the last ten are kept.
+A text file the app writes to the Log folder when it hits a bug it cannot recover from: what failed and where in the program, a backtrace, the app version, the operating system and the recent log lines, with the home folder written as `~` and any quoted text in the failure message withheld. It holds none of the user's content. The next launch offers Report a problem for it, once; the last ten are kept.
 _Avoid_: Crash dump, Telemetry, Error log
 
 **Report a problem**:
-The window that shows a Crash report (offered at the launch after a crash, or the newest one from Help → Report a problem…), or with none a problem report made now (app version, operating system, recent log lines), for the user to read first. Copy report copies it; Open GitHub issue… opens the project's new-issue form in the browser filled in with it, which the user may submit there; Delete report removes it. Nothing is ever sent automatically.
+The window that shows a Crash report (offered at the launch after a crash, or the newest one from Help → Report a problem…), or with none a problem report made now (app version, operating system, recent log lines), for the user to read first. Copy report copies it; Open GitHub issue… opens the project's new-issue form in the browser with the report in its web address, which sends the report to GitHub; it becomes a public issue only if the user submits the form there. The window says so before either is clicked. Delete report removes it. Nothing is ever sent automatically.
 _Avoid_: Send feedback, Bug reporter, Crash reporter
