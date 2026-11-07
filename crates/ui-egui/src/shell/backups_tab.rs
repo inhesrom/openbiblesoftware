@@ -168,8 +168,10 @@ impl State {
                     file_name(&last.from)
                 ));
                 if ui.button("Undo restore").clicked()
+                    && self.settle_note_editors()
                     && self.run("data.undo_restore", &json!({})).is_some()
                 {
+                    self.forget_notes_drafts();
                     self.toast("Restore undone: your data is back as it was before it");
                 }
             });
@@ -314,11 +316,16 @@ impl State {
             });
         match act {
             Some(true) => {
+                // Unsaved Note text keeps the preview open, for Restore once it is saved.
+                if !self.settle_note_editors() {
+                    return;
+                }
                 let Some(Ok(p)) = self.backups_ui.preview.take() else {
                     return;
                 };
                 let path = p.path.to_string_lossy().into_owned();
                 if self.run("data.restore", &json!({ "path": path })).is_some() {
+                    self.forget_notes_drafts();
                     self.toast(format!(
                         "Restored from {}. Undo restore takes it back.",
                         file_name(&p.path)
@@ -328,6 +335,27 @@ impl State {
             Some(false) => self.backups_ui.preview = None,
             None => {}
         }
+    }
+
+    /// Before a restore (or its undo) replaces the User database: save the Note being written
+    /// and the Notes card being edited, as closing the window does, so neither writes text
+    /// typed before the restore over the restored Notes later (a card's failed save is
+    /// retried by itself). False if one cannot be saved: it is shown with why, and nothing is
+    /// restored until it is saved or its changes discarded.
+    fn settle_note_editors(&mut self) -> bool {
+        self.save_note();
+        self.save_card_edit(true);
+        if let Some(id) = self.notes_ui.editing.as_ref().map(|e| e.id.clone()) {
+            self.run("notes.open", &json!({ "id": id }));
+        }
+        if self.note_editor.is_some() || self.notes_ui.editing.is_some() {
+            self.toast(
+                "Nothing was restored: a Note you are writing could not be saved. Save it or \
+                 discard its changes, then restore.",
+            );
+            return false;
+        }
+        true
     }
 
     /// Show what restoring the Backup at `path` would change.

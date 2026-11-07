@@ -422,6 +422,17 @@ impl State {
         });
     }
 
+    /// After a restore replaced the User database: forget what the Notes Tab was in the
+    /// middle of (a Notebook name being typed, Delete Notebook's question, a Re-attach, a
+    /// card's editor), all of it about the data before.
+    pub(super) fn forget_notes_drafts(&mut self) {
+        self.notes_ui.editing = None;
+        self.notes_ui.renaming = None;
+        self.notes_ui.creating = None;
+        self.notes_ui.deleting = None;
+        self.notes_ui.reattach = None;
+    }
+
     /// Save the card being edited if its text changed; `finished` ends the editing pass. A save
     /// the database refuses keeps the editor open, with its text and the error, whatever
     /// `finished` says.
