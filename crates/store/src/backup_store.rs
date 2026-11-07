@@ -214,33 +214,28 @@ impl UserStore {
             None
         } else {
             std::fs::create_dir_all(self.backup_dir()).map_err(StoreError::Io)?;
-            let file = self.new_scratch_file(
-                &self
-                    .backup_dir()
-                    .join(format!(".{}-restoring", self.stem())),
-                "db",
-            )?;
-            if let Err(e) = backup.backup_to(&file) {
-                let _ = std::fs::remove_file(&file);
-                return Err(e);
-            }
-            let c = Connection::open(&file).map_err(sql)?;
+            let file = ScratchFile(
+                self.new_scratch_file(
+                    &self
+                        .backup_dir()
+                        .join(format!(".{}-restoring", self.stem())),
+                    "db",
+                )?,
+            );
+            backup.backup_to(&file.0)?;
+            let c = Connection::open(&file.0).map_err(sql)?;
             c.pragma_update(None, "journal_mode", "DELETE")
                 .map_err(sql)?;
             c.pragma_update(None, "page_size", live).map_err(sql)?;
             c.execute_batch("VACUUM").map_err(sql)?;
+            // The connection is closed before the file is removed: fields drop in order.
             Some((c, file))
         };
         let source = rebuilt.as_ref().map_or(&backup.conn, |(c, _)| c);
         let safety = self.safety_backup()?;
-        let copied = rusqlite::backup::Backup::new(source, &mut self.conn)
+        rusqlite::backup::Backup::new(source, &mut self.conn)
             .and_then(|b| b.run_to_completion(256, std::time::Duration::ZERO, None))
-            .map_err(sql);
-        if let Some((c, file)) = rebuilt {
-            drop(c);
-            let _ = std::fs::remove_file(file);
-        }
-        copied?;
+            .map_err(sql)?;
         Ok(safety)
     }
 
@@ -346,6 +341,16 @@ impl UserStore {
             std::fs::remove_file(&oldest).map_err(StoreError::Io)?;
         }
         Ok(dest)
+    }
+}
+
+/// A file [`UserStore::new_scratch_file`] created, removed when dropped however the work on
+/// it ended, so an error part way never leaves it behind.
+struct ScratchFile(PathBuf);
+
+impl Drop for ScratchFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
     }
 }
 
