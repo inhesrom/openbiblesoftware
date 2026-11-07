@@ -16,7 +16,9 @@ Tab, shows its popover under it: "Footnote a · John 1:5" and the note, drawn wi
 pipeline like the text it annotates (italic `\fqa` stays italic). The popover stays while the
 pointer is on the marker or on the popover. Clicking the marker (Enter from the keyboard) pins
 it; a pinned popover closes on Esc (focus goes back to the marker), its ×, a click outside it,
-or another click on the marker. Pinned from the keyboard, focus moves to its first link.
+or another click on the marker; resting the pointer on another marker, in any pane, leaves it
+(clicking that marker replaces it). Pinned from the keyboard, focus moves to its first link (its
+× when it has none) as soon as the note's text is laid out, even when Enter came before the dwell.
 
 Bible references in a Footnote are links: the `scripture_ref` and `xref` spans the importer
 made, plus written references found in its text when it is shown (`obs_engine::body_references`,

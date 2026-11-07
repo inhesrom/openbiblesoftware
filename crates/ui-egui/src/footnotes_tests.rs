@@ -272,6 +272,78 @@ fn the_keyboard_reaches_markers_and_the_popovers_links() {
     assert_eq!(widget(&h), Some(focused), "focus is back on the marker");
 }
 
+/// Enter on a marker whose popover has not been laid out yet (pressed before the dwell, the
+/// note's text still with the layout worker) still moves focus to its first link once the
+/// text is drawn.
+#[test]
+fn enter_before_the_dwell_moves_focus_to_the_first_link_once_it_is_drawn() {
+    let (mut h, _files, tab) = bsb("keys-cold", "Jn 1:19");
+    let (m, at) = marker(&h, tab, "Isaiah 40:3");
+    h.click(pos2(at.x - 40.0, at.y + 4.0));
+    for _ in 0..20 {
+        if h.shell
+            .st
+            .footnotes
+            .popover
+            .as_ref()
+            .is_some_and(|p| p.hit.note == m.note)
+        {
+            break;
+        }
+        press(&mut h, Key::Tab);
+    }
+    let marker_focus = h
+        .ctx
+        .memory(|mem| mem.focused())
+        .expect("a marker has focus");
+    assert!(
+        popover(&h).is_none(),
+        "not shown yet: Enter comes before the dwell"
+    );
+    press(&mut h, Key::Enter);
+    assert!(popover(&h).is_some_and(|p| p.pinned));
+    h.frames(8);
+    let link = popover(&h).unwrap().link_rects[0];
+    assert!(link.is_positive(), "the link is drawn");
+    let focused = h.ctx.memory(|mem| mem.focused());
+    assert!(
+        focused.is_some() && focused != Some(marker_focus),
+        "focus moved into the popover"
+    );
+    assert!(h.find("Isa 40:3").is_some(), "the focused link previews");
+}
+
+/// A pinned popover stays when the pointer rests on a marker in another pane; clicking that
+/// marker replaces it.
+#[test]
+fn a_pinned_popover_stays_when_hovering_a_marker_in_another_pane() {
+    let (mut h, _files, tab) = bsb("split-pin", "Jn 1:1");
+    h.shell.st.session.workspace.focus(tab);
+    h.shell
+        .run("resource.open", &json!({ "id": "bsb", "split": true }));
+    h.frames(6);
+    let other = h.shell.st.session.workspace.focused().unwrap();
+    assert_ne!(other, tab);
+    h.shell
+        .run("tab.go", &json!({ "tab": other.0, "text": "Jn 1:1" }));
+    h.frames(6);
+    let (_, at) = marker(&h, tab, "Or comprehended");
+    h.click(at);
+    assert!(popover(&h).is_some_and(|p| p.pinned && p.tab == tab));
+    // The same Footnote's marker in the other pane: only its Tab tells them apart.
+    let (_, there) = marker(&h, other, "Or comprehended");
+    h.events.push(Event::PointerMoved(there));
+    h.frames(14);
+    let p = popover(&h).expect("still shown");
+    assert!(
+        p.pinned && p.tab == tab && p.hit.rect.contains(at),
+        "hovering another pane's marker leaves the pinned popover"
+    );
+    h.click(there);
+    let p = popover(&h).expect("replaced");
+    assert!(p.pinned && p.tab == other && p.hit.rect.contains(there));
+}
+
 /// Acceptance: View → Footnote markers hides and shows them in the focused Tab only, and a
 /// Layout keeps the choice.
 #[test]

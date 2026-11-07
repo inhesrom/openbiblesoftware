@@ -39,7 +39,8 @@ pub(crate) struct FootnotePopover {
     since: f64,
     pub(crate) shown: bool,
     pub(crate) pinned: bool,
-    /// Pinned from the keyboard: focus moves into it once it is drawn.
+    /// Pinned from the keyboard: focus moves into it once it is drawn. Kept until a link (or
+    /// its ×) has been given focus, which waits for the note's text to be laid out.
     focus_inside: bool,
     /// Where it was drawn last frame: the pointer may rest on it without closing it.
     pub(crate) rect: Option<Rect>,
@@ -156,9 +157,11 @@ impl State {
                 *popover = Some(p);
             }
         } else if let Some(hit) = &out.hovered_footnote {
+            // A pinned popover stays whichever pane's marker the pointer rests on; only a
+            // click (or Enter) on a marker replaces it.
             let keep = popover
                 .as_ref()
-                .is_some_and(|p| p.tab == tab && (p.pinned || same_marker(&p.hit, hit)));
+                .is_some_and(|p| p.pinned || (p.tab == tab && same_marker(&p.hit, hit)));
             if !keep {
                 *popover = Some(fresh(hit, false));
             }
@@ -252,8 +255,10 @@ impl State {
         };
         let (marker, pinned, focus_inside) = (p.hit.rect, p.pinned, p.focus_inside);
         let mut close = false;
+        let mut close_id = None;
         let mut go: Option<(Passage, bool)> = None;
         let mut links = Vec::new();
+        let mut focus = LinkFocus::NotLaidOut;
         let shown = egui::Area::new(egui::Id::unique(("footnote-popover", tab)))
             .order(egui::Order::Foreground)
             .fixed_pos(pos2(marker.left() - 8.0, marker.bottom() + 2.0))
@@ -281,15 +286,13 @@ impl State {
                                             "Close footnote",
                                         )
                                     });
-                                    if focus_inside && body.links.is_empty() {
-                                        r.request_focus();
-                                    }
+                                    close_id = Some(r.id);
                                     close |= r.clicked();
                                 },
                             );
                         }
                     });
-                    (go, links) = self.footnote_text(ui, &body, focus_inside);
+                    (go, links, focus) = self.footnote_text(ui, &body, focus_inside);
                     if !pinned {
                         ui.label(
                             RichText::new("Click the marker to keep this open")
@@ -299,10 +302,23 @@ impl State {
                     }
                 });
             });
+        // No link to focus once the text is drawn: the × takes focus instead.
+        let focus_moved = match focus {
+            LinkFocus::NotLaidOut => false,
+            LinkFocus::Link => true,
+            LinkFocus::NoLink => {
+                if focus_inside && let Some(id) = close_id {
+                    ui.ctx().memory_mut(|m| m.request_focus(id));
+                }
+                true
+            }
+        };
         if let Some(p) = self.footnotes.popover.as_mut() {
             p.rect = Some(shown.response.rect);
             p.link_rects = links;
-            p.focus_inside = false;
+            if focus_moved {
+                p.focus_inside = false;
+            }
         }
         if close {
             self.footnotes.popover = None;
@@ -314,14 +330,14 @@ impl State {
     }
 
     /// The Footnote's text through the text pipeline, its references underlined as links.
-    /// Returns the Passage of a link clicked (and whether Ctrl/Cmd was held), and where each
-    /// link is.
+    /// Returns the Passage of a link clicked (and whether Ctrl/Cmd was held), where each
+    /// link is, and whether a link could take focus (`focus_first` gives it to the first).
     fn footnote_text(
         &mut self,
         ui: &mut Ui,
         body: &FootnoteBody,
         focus_first: bool,
-    ) -> (Option<(Passage, bool)>, Vec<Rect>) {
+    ) -> (Option<(Passage, bool)>, Vec<Rect>, LinkFocus) {
         let settings = self.session.text;
         let laid = self
             .footnotes
@@ -330,7 +346,7 @@ impl State {
         let Some(laid) = laid else {
             ui.allocate_space(vec2(WIDTH, settings.size * 1.6));
             ui.ctx().request_repaint();
-            return (None, Vec::new());
+            return (None, Vec::new(), LinkFocus::NotLaidOut);
         };
         let height = laid.lines.last().map_or(laid.height, |l| l.bottom);
         let (rect, response) = ui.allocate_exact_size(vec2(WIDTH, height), Sense::hover());
@@ -354,6 +370,7 @@ impl State {
         painter.add(Shape::mesh(mesh));
         let mut go = None;
         let mut drawn = Vec::new();
+        let mut focus = LinkFocus::NoLink;
         for (i, (range, targets)) in body.links.iter().enumerate() {
             let rects: Vec<Rect> = crate::compare_view::range_rects(&laid, range)
                 .into_iter()
@@ -385,8 +402,11 @@ impl State {
                 Sense::click(),
             );
             link.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, &written));
-            if focus_first && i == 0 {
-                link.request_focus();
+            if focus == LinkFocus::NoLink {
+                focus = LinkFocus::Link;
+                if focus_first {
+                    link.request_focus();
+                }
             }
             let pointed = link.hovered()
                 && rects
@@ -411,6 +431,15 @@ impl State {
                 go = Some((*passage, new_tab));
             }
         }
-        (go, drawn)
+        (go, drawn, focus)
     }
+}
+
+/// Whether the popover's text has a link that can take keyboard focus this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LinkFocus {
+    /// The text is still with the layout worker: nothing to focus yet.
+    NotLaidOut,
+    NoLink,
+    Link,
 }
