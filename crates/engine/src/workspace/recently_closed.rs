@@ -6,8 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{Effect, OpenRequest, PanelId, PendingVisit, Placement, Tab, TabId, Workspace};
-use crate::persist::{ScrollPosition, TabSnapshot};
+use super::{Effect, OpenRequest, PanelId, PendingVisit, Placement, Side, Tab, TabId, Workspace};
+use crate::persist::{LayoutNode, ScrollPosition, TabSnapshot};
 
 /// Recently closed keeps at most this many closings.
 pub const RECENTLY_CLOSED_LIMIT: usize = 20;
@@ -24,12 +24,21 @@ pub struct ClosedTabs {
     /// The Panel they were in; `None` once the Workspace was replaced by a Layout, whose
     /// Panels are others.
     pub panel: Option<u64>,
-    /// The Panel next to theirs (the one before it in its window, else the one after), for a
-    /// Panel that closed with them: it comes back beside that one.
+    /// For a Panel that closed with them, what it was next to in its row or column (the
+    /// Panel or the rows and columns before it, else after it): it comes back beside that,
+    /// on the same side. This is that one's Panel nearest theirs.
     pub beside: Option<u64>,
-    /// Their Panel was the first in its window: it comes back before `beside`, not after.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub before: bool,
+    /// Which side of `beside` their Panel was on.
+    #[serde(default, skip_serializing_if = "Side::is_right")]
+    pub side: Side,
+    /// How many rows and columns out from `beside` what their Panel was next to is: 0 when
+    /// that is the Panel `beside` itself.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub levels: u8,
+}
+
+fn is_zero(n: &u8) -> bool {
+    *n == 0
 }
 
 impl ClosedTabs {
@@ -98,9 +107,9 @@ impl Workspace {
             .and_then(|(_, a)| *a)
             .filter(|a| tabs.contains(a))
             .map(|a| a.0);
-        let (beside, before) = match self.neighbour(panel) {
-            Some((p, before)) => (Some(p.0), before),
-            None => (None, false),
+        let (beside, side, levels) = match self.neighbour(panel) {
+            Some((p, side, levels)) => (Some(p), side, levels),
+            None => (None, Side::Right, 0),
         };
         self.next_closed += 1;
         self.closed.push(ClosedTabs {
@@ -109,28 +118,21 @@ impl Workspace {
             active,
             panel: Some(panel.0),
             beside,
-            before,
+            side,
+            levels,
         });
         if self.closed.len() > RECENTLY_CLOSED_LIMIT {
             self.closed.remove(0);
         }
     }
 
-    /// The Panel before `panel` in its window's arrangement, else the one after it (`true`).
-    fn neighbour(&self, panel: PanelId) -> Option<(PanelId, bool)> {
-        let windows = std::iter::once(self.arrangement.as_ref())
+    /// What `panel` is next to in its window's arrangement: see [`ClosedTabs::beside`].
+    fn neighbour(&self, panel: PanelId) -> Option<(u64, Side, u8)> {
+        std::iter::once(self.arrangement.as_ref())
             .chain(self.floating.iter().map(|w| w.arrangement.as_ref()))
-            .flatten();
-        for arrangement in windows {
-            let order: Vec<u64> = arrangement.panels().into_iter().map(|p| p.0).collect();
-            if let Some(i) = order.iter().position(|p| *p == panel.0) {
-                if let Some(b) = i.checked_sub(1) {
-                    return Some((PanelId(order[b]), false));
-                }
-                return order.get(i + 1).map(|n| (PanelId(*n), true));
-            }
-        }
-        None
+            .flatten()
+            .find_map(|a| neighbour_in(a, panel.0))
+            .flatten()
     }
 
     /// Where a closed Tab's view was scrolled, as the UI reads it while the Tab closes: kept
@@ -147,7 +149,8 @@ impl Workspace {
     /// Reopen a closing from Recently closed (`id`, or the newest): its Tabs come back in
     /// their old Panel, or in a Panel of their own where theirs closed with them, each at its
     /// Current location and in its Link set, the active one focused. A single-instance Tab
-    /// already open again is focused instead. Returns the Tabs reopened.
+    /// already open again is focused instead (when it was the active one, or the first).
+    /// Returns the Tabs reopened.
     pub fn reopen_closed(&mut self, id: Option<u64>) -> Option<Vec<TabId>> {
         let i = match id {
             Some(id) => self.closed.iter().position(|c| c.id == id)?,
@@ -158,10 +161,13 @@ impl Workspace {
         let mut reopened = Vec::new();
         let mut focus = None;
         for snap in std::mem::take(&mut closed.tabs) {
+            let was_active = closed.active == Some(snap.id);
             if snap.kind.single_instance()
                 && let Some(open) = self.existing(&snap.kind)
             {
-                focus = focus.or(Some(open));
+                if was_active || focus.is_none() {
+                    focus = Some(open);
+                }
                 continue;
             }
             let here = match placement {
@@ -178,7 +184,6 @@ impl Workspace {
             placement = Some(Placement::Panel(panel));
             self.next_tab += 1;
             let tab = TabId(self.next_tab);
-            let was_active = closed.active == Some(snap.id);
             let scroll = snap.scroll.clone();
             let entry = self.panels.entry(panel).or_default();
             entry.0.push(tab);
@@ -220,7 +225,8 @@ impl Workspace {
         for i in unplaced {
             let c = &mut self.closed[i];
             c.beside = Some(panel.0);
-            c.before = !closed.before;
+            c.side = closed.side.opposite();
+            c.levels = 0;
         }
     }
 
@@ -232,14 +238,15 @@ impl Workspace {
         let live = |p: &PanelId| self.panels.contains_key(p);
         match closed.panel.map(PanelId) {
             Some(p) if live(&p) => Placement::Panel(p),
-            Some(p) => {
-                let beside = closed.beside.map(PanelId).filter(live);
-                Placement::NewPanel {
+            Some(p) => match closed.beside.map(PanelId).filter(live) {
+                Some(beside) => Placement::NewPanel {
                     panel: p,
-                    beside,
-                    before: closed.before && beside.is_some(),
-                }
-            }
+                    beside: Some(beside),
+                    side: closed.side,
+                    levels: closed.levels,
+                },
+                None => Placement::right_of(p, None),
+            },
             None => self.placement_for(&snap.kind, OpenRequest::default()),
         }
     }
@@ -278,12 +285,55 @@ impl Workspace {
         for c in &mut self.closed {
             c.panel = None;
             c.beside = None;
-            c.before = false;
+            c.side = Side::Right;
+            c.levels = 0;
         }
     }
 
     /// Recently closed as the Last session saves it.
     pub(crate) fn closed_snapshot(&self) -> Vec<ClosedTabs> {
         self.closed.clone()
+    }
+}
+
+/// Within `node`: `None` when it does not hold Panel `panel`, else what that Panel is next to
+/// in the innermost row or column holding it with others (none: it is alone).
+fn neighbour_in(node: &LayoutNode, panel: u64) -> Option<Option<(u64, Side, u8)>> {
+    let (children, row) = match node {
+        LayoutNode::Panel { panel: p, .. } => return (*p == panel).then_some(None),
+        LayoutNode::Row { children } => (children, true),
+        LayoutNode::Column { children } => (children, false),
+    };
+    let (i, inner) = (children.iter().enumerate())
+        .find_map(|(i, (c, _))| neighbour_in(c, panel).map(|n| (i, n)))?;
+    if inner.is_some() {
+        return Some(inner);
+    }
+    let (side, next) = match i.checked_sub(1) {
+        Some(b) => (if row { Side::Right } else { Side::Below }, b),
+        None => (if row { Side::Left } else { Side::Above }, i + 1),
+    };
+    Some(children.get(next).map(|(c, _)| {
+        let (p, levels) = nearest_panel(c, side.before());
+        (p, side, levels)
+    }))
+}
+
+/// The Panel of `node` nearest its start (`first`) or end, and how many rows and columns
+/// deep it is in `node`.
+fn nearest_panel(node: &LayoutNode, first: bool) -> (u64, u8) {
+    match node {
+        LayoutNode::Panel { panel, .. } => (*panel, 0),
+        LayoutNode::Row { children } | LayoutNode::Column { children } => {
+            let c = if first {
+                children.first()
+            } else {
+                children.last()
+            };
+            c.map_or((0, 0), |(c, _)| {
+                let (p, l) = nearest_panel(c, first);
+                (p, l.saturating_add(1))
+            })
+        }
     }
 }

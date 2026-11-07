@@ -9,8 +9,8 @@ use std::sync::Arc;
 use egui::{Color32, RichText, Stroke, Ui, pos2, vec2};
 use egui_tiles::{Container, Linear, LinearDir, Tile, TileId, Tiles, Tree, UiResponse};
 use obs_engine::{
-    Effect, HeaderBox, JobMode, LayoutNode, MENUS, MenuItem, PanelId, Placement, Session, TabId,
-    TabKind, Tool,
+    Effect, HeaderBox, JobMode, LayoutNode, MENUS, MenuItem, PanelId, Placement, Session, Side,
+    TabId, TabKind, Tool,
     interlinear::{InterlinearKind, InterlinearLine},
 };
 use obs_model::{Key, ResourceType};
@@ -128,8 +128,8 @@ struct TabUi {
     lexicon_open: BTreeMap<String, bool>,
     lexicon_entries_for: Option<obs_scripture::StrongsNumber>,
     /// A reopened Tab's scroll position (#214), put back once its pane has drawn at its real
-    /// width (a relayout keeps only the line), with the width it was put back at.
-    restore_scroll: Option<(crate::view::TextAnchor, Option<f32>)>,
+    /// width.
+    restore_scroll: Option<crate::view::TextAnchor>,
     /// Word Study (#56): the form filtering Occurrences (a [`obs_engine::Form::label`]) and
     /// whether Translated as shows every rendering, for `lexicon_entries_for`.
     occurrence_form: Option<String>,
@@ -440,11 +440,7 @@ impl Shell {
                         &mut self.tree,
                         &mut self.st.panels,
                         tab,
-                        Placement::NewPanel {
-                            panel,
-                            beside: None,
-                            before: false,
-                        },
+                        Placement::right_of(panel, None),
                     );
                 }
                 Effect::DockWindow(window) => self.dock_floating(window),
@@ -1229,7 +1225,7 @@ fn container_of(tree: &Tree<TabId>, panels: &PanelTiles, panel: PanelId) -> Opti
 }
 
 /// Put a Tab's pane into a window's dock: into Panel `p` there, or as a new Panel split off
-/// to the right of `beside` (or of the whole dock).
+/// on its side of `beside` (or of the whole dock).
 fn insert_pane(tree: &mut Tree<TabId>, panels: &mut PanelTiles, tab: TabId, placement: Placement) {
     let pane = tree.tiles.insert_pane(tab);
     if let Placement::Panel(p) = placement
@@ -1240,57 +1236,75 @@ fn insert_pane(tree: &mut Tree<TabId>, panels: &mut PanelTiles, tab: TabId, plac
         tabs.set_active(pane);
         return;
     }
-    let (panel, beside, before) = match placement {
-        Placement::Panel(p) => (p, None, false),
+    let (panel, beside, side, levels) = match placement {
+        Placement::Panel(p) => (p, None, Side::Right, 0),
         Placement::NewPanel {
             panel,
             beside,
-            before,
-        } => (panel, beside, before),
+            side,
+            levels,
+        } => (panel, beside, side, levels),
     };
     let container = tree.tiles.insert_tab_tile(vec![pane]);
     panels.insert(container, panel);
     let anchor = beside.and_then(|b| container_of(tree, panels, b));
-    attach_beside(tree, container, anchor, before);
+    attach_beside(tree, container, anchor, side, levels);
 }
 
-/// Put `tile` to the right of `anchor` (none: of the whole dock), or to its left when
-/// `before`, in a row.
-fn attach_beside(tree: &mut Tree<TabId>, tile: TileId, anchor: Option<TileId>, before: bool) {
+/// Put `tile` on `side` of `anchor` (none: of the whole dock), or of the row or column
+/// `levels` out from it: into the row or column holding that when it runs the same way,
+/// else in a new one with it.
+fn attach_beside(
+    tree: &mut Tree<TabId>,
+    tile: TileId,
+    anchor: Option<TileId>,
+    side: Side,
+    levels: u8,
+) {
     let Some(root) = tree.root() else {
         tree.root = Some(tile);
         return;
     };
-    let anchor = anchor.unwrap_or(root);
+    let mut anchor = anchor.unwrap_or(root);
+    for _ in 0..levels {
+        match tree.tiles.parent_of(anchor) {
+            Some(p) => anchor = p,
+            None => break,
+        }
+    }
+    let dir = if side.in_row() {
+        LinearDir::Horizontal
+    } else {
+        LinearDir::Vertical
+    };
     let parent = tree.tiles.parent_of(anchor);
     if let Some(parent) = parent
         && let Some(Tile::Container(Container::Linear(l))) = tree.tiles.get_mut(parent)
-        && l.dir == LinearDir::Horizontal
+        && l.dir == dir
     {
         let at = l
             .children
             .iter()
             .position(|c| *c == anchor)
-            .map_or(l.children.len(), |i| if before { i } else { i + 1 });
+            .map_or(l.children.len(), |i| if side.before() { i } else { i + 1 });
         l.children.insert(at, tile);
         return;
     }
-    let children = if before {
+    let children = if side.before() {
         vec![tile, anchor]
     } else {
         vec![anchor, tile]
     };
-    let row = tree
+    let split = tree
         .tiles
         .insert_new(Tile::Container(Container::Linear(Linear::new(
-            LinearDir::Horizontal,
-            children,
+            dir, children,
         ))));
     match parent {
-        None => tree.root = Some(row),
+        None => tree.root = Some(split),
         Some(parent) => {
             if let Some(Tile::Container(c)) = tree.tiles.get_mut(parent) {
-                replace_child(c, anchor, row);
+                replace_child(c, anchor, split);
             }
         }
     }
@@ -1576,7 +1590,7 @@ impl State {
     }
 
     /// A reopened Tab (#214), loaded at its Current location, scrolls back to where its view
-    /// was when it closed, once its pane has drawn ([`Self::restore_scroll_drawn`]).
+    /// was when it closed, once its pane has drawn.
     fn restore_scroll(&mut self, tab: TabId, at: &obs_engine::ScrollPosition) {
         let Some(t) = self.tabs.get_mut(&tab) else {
             return;
@@ -1592,7 +1606,7 @@ impl State {
             byte: at.byte,
             into: at.into,
         };
-        t.restore_scroll = Some((anchor, None));
+        t.restore_scroll = Some(anchor);
     }
 
     /// A Tab was opened: load its Resource if it has one.
@@ -2026,16 +2040,13 @@ impl State {
         let marks = self.marks.marks(&self.session, &view.doc);
         let out = reading_pane(ui, view, &mut self.atlas, &palette, flash, &marks, found);
         let user_moved = out.user_moved || found_moved;
-        // A reopened Tab's scroll position (#214) goes back at the width the pane drew at, and
-        // again if that changes before the user scrolls.
-        if let Some((anchor, width)) = t.restore_scroll {
-            if user_moved || width == Some(view.width()) {
-                t.restore_scroll = None;
-            } else {
-                view.restore_text_anchor(anchor, restoring_at);
-                t.restore_scroll = Some((anchor, Some(view.width())));
-                ui.ctx().request_repaint();
-            }
+        // A reopened Tab's scroll position (#214) goes back once the pane has drawn at its
+        // width; the view keeps it across later relayouts until the user scrolls or it jumps.
+        if let Some(anchor) = t.restore_scroll.take()
+            && !user_moved
+        {
+            view.restore_text_anchor(anchor, restoring_at);
+            ui.ctx().request_repaint();
         }
         let following = view.is_following();
         let at = view.current_location();
