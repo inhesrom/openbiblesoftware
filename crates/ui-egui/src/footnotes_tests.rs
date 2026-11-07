@@ -498,7 +498,15 @@ fn a_long_footnote_scrolls_to_its_last_reference() {
     h.frames(4);
     let (_, at) = marker(&h, tab, "Many words");
     h.click(at);
-    h.frames(6);
+    // The long note is laid out off-thread: wait until its link is drawn.
+    for _ in 0..300 {
+        if popover(&h).is_some_and(|p| !p.link_rects.is_empty()) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        h.frame();
+    }
+    h.frames(2);
     let p = popover(&h).expect("pinned");
     let area = p.rect.unwrap();
     assert!(
