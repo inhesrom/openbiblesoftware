@@ -139,21 +139,20 @@ pub fn parallels_for(
             .iter()
             .any(|p| *p != o.offered && o.offered.contains(*p))
     });
-    offers.sort_by(|a, b| {
-        (a.evidence.start(), a.evidence.end(), a.offered, a.set).cmp(&(
-            b.evidence.start(),
-            b.evidence.end(),
-            b.offered,
-            b.set,
-        ))
-    });
-    let mut groups: Vec<ParallelGroup> = Vec::new();
+    // One offer per offered Passage, credited to the first set (Preferred order) that offers
+    // it, before ordering for display.
+    offers.sort_by_key(|o| (o.set, o.evidence.start(), o.evidence.end()));
     let mut seen: Vec<Passage> = Vec::new();
-    for o in offers {
+    offers.retain(|o| {
         if seen.contains(&o.offered) {
-            continue;
+            return false;
         }
         seen.push(o.offered);
+        true
+    });
+    offers.sort_by_key(|o| (o.evidence.start(), o.evidence.end(), o.offered, o.set));
+    let mut groups: Vec<ParallelGroup> = Vec::new();
+    for o in &offers {
         let (id, title, _) = &sets[o.set];
         let row = ParallelRow {
             passage: o.offered,

@@ -147,6 +147,35 @@ fn a_wider_passage_lists_each_part_and_drops_coarse_parallels() {
     );
 }
 
+/// A parallel two sets both offer is credited to the first set in Preferred order, even when
+/// the second set's evidence sorts first and neither evidence is narrower than the other.
+#[test]
+fn a_parallel_two_sets_offer_is_credited_to_the_preferred_set() {
+    let set = |id: &str, part: Passage| {
+        (
+            id.to_string(),
+            id.to_uppercase(),
+            vec![obs_model::ParallelSection {
+                passage: part,
+                title: format!("{id} heading"),
+                parallels: vec![passage(Book::Matthew, 3, 13, 17)],
+            }],
+        )
+    };
+    let sets = [
+        set("first", passage(Book::Mark, 1, 5, 11)),
+        set("second", passage(Book::Mark, 1, 1, 8)),
+    ];
+    let found = parallels_for(passage(Book::Mark, 1, 1, 11), &sets);
+    assert_eq!(rows(&found), ["Mark 1:5-11: Matt 3:13-17 (first heading)"]);
+    let row = found.rows().next().unwrap();
+    assert_eq!(
+        (row.source_id.as_str(), row.source_title.as_str()),
+        ("first", "FIRST")
+    );
+    assert_eq!(found.all, [passage(Book::Matthew, 3, 13, 17)]);
+}
+
 struct Temp(PathBuf);
 impl Temp {
     fn new(name: &str) -> Self {
@@ -356,6 +385,43 @@ fn compare_parallel_opens_text_comparison_on_the_parallel_without_moving_the_gui
         s.run("compare.parallel", &json!({ "passage": "nowhere" }))
             .is_err()
     );
+}
+
+/// A Text Comparison in no Link set but docked in the Guide's own Panel is not reused: showing
+/// it there would hide the Guide, so the parallel opens in a new Panel beside it instead.
+#[test]
+fn compare_parallel_does_not_reuse_a_text_comparison_in_the_guides_panel() {
+    let t = Temp::new("same-panel");
+    let mut s = session(&t.0, &[testing::bsb_parallels()]);
+    let guide = open(
+        &mut s,
+        "guide.passage_guide",
+        json!({ "passage": "Mark 1:9-11" }),
+    );
+    let docked = open(&mut s, "tool.text_comparison", json!({}));
+    s.workspace.set_link(docked, None);
+    let guide_panel = s.workspace.panel_of(guide).unwrap();
+    let tabs: Vec<TabId> = s.workspace.tabs().map(|t| t.id).collect();
+    s.workspace.sync_panels(vec![(guide_panel, tabs)]);
+    assert_eq!(s.workspace.panel_of(docked), Some(guide_panel));
+    s.workspace.focus(guide);
+    assert_eq!(s.workspace.active_in(guide_panel), Some(guide));
+
+    let out = s
+        .run("compare.parallel", &json!({ "passage": "Matt 3:13-17" }))
+        .unwrap();
+    let tc = TabId(out["tab"].as_u64().unwrap());
+    assert_ne!(
+        tc, docked,
+        "the comparison sharing the Guide's Panel is left alone"
+    );
+    assert_ne!(s.workspace.panel_of(tc), Some(guide_panel));
+    assert_eq!(
+        s.workspace.active_in(guide_panel),
+        Some(guide),
+        "the Guide stays in view"
+    );
+    assert_eq!(s.workspace.tab(docked).unwrap().comparison.range, None);
 }
 
 /// Manual check against the built Starter set (`cargo xtask starter` writes `dist/starter`;

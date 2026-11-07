@@ -544,8 +544,9 @@ fn clear_range(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
 /// Text Comparison aligned on a Parallel passage (#212), clicked in a Passage Guide: the
 /// compared Bibles in Verse-aligned rows over exactly that Passage (its range chip). It opens
 /// outside the focused Tab's Link set, so the Guide and the Bible it follows stay where they
-/// are: the most recent Text Comparison in no Link set moves there, else a new one opens in a
-/// Panel of its own beside the Guide (`new_tab`: always a new one), so both stay in view.
+/// are: the most recent Text Comparison in no Link set and not in the Guide's Panel (where
+/// showing it would hide the Guide) moves there, else a new one opens in a Panel of its own
+/// beside the Guide (`new_tab`: always a new one), so both stay in view.
 fn compare_parallel(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const CMD: &str = "compare.parallel";
     let text = p.str("passage").unwrap_or_default();
@@ -557,11 +558,15 @@ fn compare_parallel(s: &mut Session, p: Params<'_>) -> Result<Value, CommandErro
         .copied()
         .ok_or_else(|| failed(CMD, "no reference"))?;
     let kind = TabKind::Tool(Tool::TextComparison);
+    let guide_panel = s.workspace.focused().and_then(|g| s.workspace.panel_of(g));
     let existing = if p.bool("new_tab").unwrap_or(false) {
         None
     } else {
-        s.workspace
-            .most_recent(|t| t.kind == kind && t.link.is_none())
+        s.workspace.most_recent(|t| {
+            t.kind == kind
+                && t.link.is_none()
+                && (guide_panel.is_none() || s.workspace.panel_of(t.id) != guide_panel)
+        })
     };
     let tab = match existing {
         Some(tab) => {
