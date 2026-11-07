@@ -1261,3 +1261,42 @@ fn footnote_previews() {
     h.frames(4);
     h.screenshot(&dir.join("footnotes-hidden.ppm"));
 }
+
+/// Review repro: a floating window's native viewport draws within the main window's frame,
+/// its own pass count far behind the main window's. The Footnote widgets it draws leave the
+/// main window's alone, so Space on a marker still focused there is still the marker's.
+#[test]
+fn a_native_floating_window_leaves_the_main_windows_footnote_widgets_alone() {
+    use crate::pane::{footnote_widget_focused, register_footnote_widget};
+    let ctx = egui::Context::default();
+    let floating = egui::ViewportId::from_hash_of("floating-window");
+    let pass_in = |viewport: egui::ViewportId, f: &mut dyn FnMut(&egui::Context)| {
+        let input = egui::RawInput {
+            viewport_id: viewport,
+            ..Default::default()
+        };
+        let _ = ctx.run_ui(input, |ui| f(ui.ctx()));
+    };
+    let main_marker = egui::Id::new("main-window-marker");
+    let floating_marker = egui::Id::new("floating-window-marker");
+    for _ in 0..100 {
+        pass_in(egui::ViewportId::ROOT, &mut |ctx| {
+            register_footnote_widget(ctx, main_marker);
+            ctx.memory_mut(|m| m.request_focus(main_marker));
+        });
+    }
+    for _ in 0..3 {
+        pass_in(floating, &mut |ctx| register_footnote_widget(ctx, floating_marker));
+    }
+    assert_ne!(
+        ctx.cumulative_pass_nr_for(egui::ViewportId::ROOT),
+        ctx.cumulative_pass_nr_for(floating),
+        "the two viewports count their passes apart"
+    );
+    let mut focused = false;
+    pass_in(egui::ViewportId::ROOT, &mut |ctx| {
+        assert_eq!(ctx.memory(|m| m.focused()), Some(main_marker));
+        focused = footnote_widget_focused(ctx);
+    });
+    assert!(focused, "the main window's marker still holds Space");
+}
