@@ -20,6 +20,7 @@
 //! ([`ActionWork`]).
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use egui::{Event, Modifiers, Pos2, RawInput, Rect, Shape, Vec2, pos2, vec2};
@@ -44,6 +45,23 @@ const SETUP_LIMIT: Duration = Duration::from_secs(180);
 
 /// Removes the scenario's library folder when the scenario ends.
 struct Folder(PathBuf);
+
+/// Numbers the scenario folders made in this process, so scenarios run at once (tests in
+/// parallel threads, one scenario twice) never share, and so never delete, each other's folder.
+static FOLDERS_MADE: AtomicU64 = AtomicU64::new(0);
+
+impl Folder {
+    /// A fresh folder of its own for a run of the scenario `name`: named for the scenario,
+    /// this process and this run.
+    fn new(name: &str) -> Self {
+        let run = FOLDERS_MADE.fetch_add(1, Ordering::Relaxed);
+        let root =
+            std::env::temp_dir().join(format!("obs-bench-{name}-{}-{run}", std::process::id()));
+        // A leftover from an earlier process that reused this PID.
+        let _ = std::fs::remove_dir_all(&root);
+        Self(root)
+    }
+}
 
 impl Drop for Folder {
     fn drop(&mut self) {
@@ -87,16 +105,15 @@ fn collect_texts(shape: &Shape, out: &mut Vec<(Rect, String)>) {
 
 impl ShellBench {
     /// A Shell over a library of `resources` (in this Preferred order) written to a fresh
-    /// folder named for the scenario, in the default layout.
+    /// folder of its own ([`Folder::new`]), in the default layout.
     fn new(
         cfg: &BenchConfig,
         name: &str,
         resources: &[Resource],
         session: impl FnOnce(&mut Session, &Path),
     ) -> Result<Self, String> {
-        let root = std::env::temp_dir().join(format!("obs-bench-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let folder = Folder(root.clone());
+        let folder = Folder::new(name);
+        let root = folder.0.clone();
         let dir = root.join("library");
         library::write_library(&dir, resources)?;
         let mut s = Session::new(JobMode::default_for_host());
@@ -745,4 +762,44 @@ pub(crate) fn get_resources(cfg: &BenchConfig) -> Result<Samples, String> {
     b.wheel(&mut s, over, -50.0, cfg.tool_frames);
     b.wheel(&mut s, over, 50.0, cfg.tool_frames / 2);
     b.measured(s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Folder;
+
+    /// Runs of one scenario at once (the shell tests share a process and run in parallel
+    /// threads) each get a folder of their own, and ending one run leaves the others' library
+    /// in place.
+    #[test]
+    fn a_scenario_run_at_once_never_shares_or_removes_another_runs_folder() {
+        let folders: Vec<Folder> = std::thread::scope(|s| {
+            let runs: Vec<_> = (0..8)
+                .map(|_| s.spawn(|| Folder::new("same-scenario")))
+                .collect();
+            runs.into_iter().map(|r| r.join().unwrap()).collect()
+        });
+        let mut paths: Vec<_> = folders.iter().map(|f| f.0.clone()).collect();
+        paths.sort();
+        paths.dedup();
+        assert_eq!(paths.len(), folders.len(), "{paths:?}");
+        for f in &folders {
+            std::fs::create_dir_all(f.0.join("library")).unwrap();
+        }
+        let mut folders = folders.into_iter();
+        let first = folders.next().unwrap();
+        let first_path = first.0.clone();
+        drop(first);
+        assert!(!first_path.exists());
+        let rest: Vec<Folder> = folders.collect();
+        for f in &rest {
+            assert!(f.0.join("library").is_dir(), "{}", f.0.display());
+        }
+        // A run starting now leaves the running ones' folders alone too.
+        let late = Folder::new("same-scenario");
+        for f in &rest {
+            assert!(f.0.join("library").is_dir(), "{}", f.0.display());
+        }
+        drop(late);
+    }
 }
