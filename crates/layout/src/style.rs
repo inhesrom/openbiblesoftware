@@ -56,7 +56,7 @@ pub struct TextSettings {
 impl Default for TextSettings {
     fn default() -> Self {
         Self {
-            size: 17.0,
+            size: Self::DEFAULT_SIZE,
             hebrew_scale: 1.3,
             line_spacing: 1.25,
             hebrew_line_height: 0.82,
@@ -68,6 +68,10 @@ impl Default for TextSettings {
 }
 
 impl TextSettings {
+    /// The reading size of a fresh install, in points (#241): comfortably readable at 1× and
+    /// on 2× displays (glyphs are rastered at `size × pixels per point`).
+    pub const DEFAULT_SIZE: f32 = 20.0;
+
     /// A key that changes whenever layout output would (part of the height-index key).
     pub fn key(&self) -> u64 {
         let mut h: u64 = 0xcbf2_9ce4_8422_2325;

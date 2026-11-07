@@ -269,11 +269,11 @@ fn text_size_steps_undo_exactly_reset_to_the_default_and_show_the_size() {
     for _ in 0..60 {
         s.run("view.text_larger", &json!({})).unwrap();
     }
-    assert_eq!(s.text.size, 40.0);
+    assert_eq!(s.text.size, crate::appearance::TEXT_SIZE_MAX);
     for _ in 0..60 {
         s.run("view.text_smaller", &json!({})).unwrap();
     }
-    assert_eq!(s.text.size, 10.0);
+    assert_eq!(s.text.size, crate::appearance::TEXT_SIZE_MIN);
     // Its keys: Ctrl+0 resets; the shell also takes Ctrl+= and the numpad keys (#137).
     let key = |id: &str| s.commands().get(id).unwrap().shortcut;
     assert_eq!(key("view.text_larger"), Some("Ctrl+Plus"));

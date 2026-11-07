@@ -179,10 +179,11 @@ impl Session {
 
     /// Attach the User database and apply the preferences and Preferred order saved in it.
     pub fn attach_user(&mut self, user: Box<dyn UserData>) {
+        let mut too_small_text = None;
         if let Ok(Some(v)) = user.preference(VIEW_PREF)
             && let Ok(v) = serde_json::from_str::<serde_json::Value>(&v)
         {
-            crate::appearance::apply_json(
+            too_small_text = crate::appearance::apply_json(
                 &v,
                 &mut self.appearance,
                 &mut self.text,
@@ -212,6 +213,9 @@ impl Session {
             }
         }
         self.user = Some(user);
+        if let Some(size) = too_small_text {
+            self.reset_too_small_text(size);
+        }
         self.reload_starter_state();
         self.bible_search.forget_recent();
         self.command_box.forget_recent();
@@ -270,6 +274,20 @@ impl Session {
     }
 
     /// Save the View preferences.
+    /// The saved Text size was too small to read and the default is used (#241): say so, and
+    /// save the default so the notice shows once.
+    fn reset_too_small_text(&mut self, saved: f32) {
+        let default = crate::appearance::TEXT_SIZE_DEFAULT;
+        let message = match self.save_view_preferences() {
+            Ok(()) => format!(
+                "Text size {saved} pt was too small to read; it is back to the default {default} pt"
+            ),
+            Err(e) => format!("Could not save the default Text size: {e}"),
+        };
+        self.workspace
+            .push_effect(crate::workspace::Effect::Message(message));
+    }
+
     pub(crate) fn save_view_preferences(&self) -> Result<(), String> {
         let Some(user) = &self.user else {
             return Ok(());

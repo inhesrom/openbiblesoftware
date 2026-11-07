@@ -160,7 +160,11 @@ fn laid(
     direction: Direction,
     width: f32,
 ) -> Vec<(BlockSource, Paragraph, LaidBlock)> {
-    let settings = TextSettings::default();
+    // The goldens were recorded at 17 pt: they pin the layout, not the default Text size (#241).
+    let settings = TextSettings {
+        size: 17.0,
+        ..TextSettings::default()
+    };
     unit_blocks(unit)
         .into_iter()
         .map(|b| {

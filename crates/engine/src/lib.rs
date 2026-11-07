@@ -138,6 +138,8 @@ mod starter_tests;
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub mod testing;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod text_size_tests;
 pub mod timeline;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod timeline_tests;

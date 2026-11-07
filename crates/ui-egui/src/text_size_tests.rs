@@ -276,3 +276,61 @@ fn a_text_size_that_cannot_be_saved_shows_the_error_not_the_size() {
     drop(h);
     std::fs::remove_dir_all(db.parent().unwrap()).unwrap();
 }
+
+/// A User database left with a tiny Text size (#241) opens with the text at the default size
+/// in the reading view, and says so once.
+#[test]
+fn a_tiny_saved_text_size_opens_at_the_default_with_a_one_time_toast() {
+    let db = temp_db("text-size-tiny");
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    {
+        let (store, _) = obs_store::UserStore::open(&db).unwrap();
+        store
+            .set_preference("view", r#"{"text_size":9.0}"#)
+            .unwrap();
+    }
+    let default = obs_layout::TextSettings::DEFAULT_SIZE;
+    let notice =
+        format!("Text size 9 pt was too small to read; it is back to the default {default} pt");
+    let mut h = Harness::launch(Some(&db));
+    h.frames(2);
+    assert_eq!(h.shell.st.session.text.size, default);
+    let view = (h.shell.st.tabs.values())
+        .find_map(|t| t.view.as_ref())
+        .unwrap();
+    assert_eq!(view.settings().size, default);
+    assert!(h.find(&notice).is_some(), "no notice in {:?}", h.texts());
+    drop(h);
+
+    let mut h = Harness::launch(Some(&db));
+    h.frames(2);
+    assert_eq!(h.shell.st.session.text.size, default);
+    assert!(h.find(&notice).is_none(), "the notice shows once");
+    drop(h);
+    std::fs::remove_dir_all(db.parent().unwrap()).unwrap();
+}
+
+/// Fresh-install reading text at 1× and on a 2× display, before (the old 17 pt default) and
+/// after (#241), for the PR: `UPDATE_PREVIEWS=1` writes them to `target/previews`.
+#[test]
+fn previews() {
+    if std::env::var_os("UPDATE_PREVIEWS").is_none() {
+        return;
+    }
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+    for (scale, name) in [(1.0, "1x"), (2.0, "2x")] {
+        for (size, when) in [
+            (17.0, "before"),
+            (obs_layout::TextSettings::DEFAULT_SIZE, "after"),
+        ] {
+            let mut h = Harness::new();
+            h.screen = vec2(1000.0, 640.0);
+            h.root_info.native_pixels_per_point = Some(scale);
+            h.shell.st.session.text.size = size;
+            settle_all(&mut h);
+            h.frames(3);
+            assert_eq!(h.ctx.pixels_per_point(), scale);
+            h.screenshot(&dir.join(format!("text-size-{when}-{name}-kittest.ppm")));
+        }
+    }
+}
