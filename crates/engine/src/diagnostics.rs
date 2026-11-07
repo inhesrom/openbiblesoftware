@@ -436,7 +436,9 @@ pub fn without_panic_frames(backtrace: &str) -> String {
         "rust_begin_unwind",
         "install_panic_hook",
         "std::panic::PanicHookInfo",
-        "std::backtrace::Backtrace::",
+        // Capturing the backtrace itself (macOS and Windows list these frames).
+        "std::backtrace",
+        "Backtrace>::create",
     ];
     let mut frames: Vec<String> = Vec::new();
     for line in backtrace.lines() {
@@ -861,7 +863,11 @@ mod tests {
 
     #[test]
     fn a_crash_reports_backtrace_starts_where_the_panic_was_raised() {
-        let bt = "   0: obs_engine::diagnostics::install_panic_hook::{closure#0}
+        let bt = "   0: std::backtrace_rs::backtrace::libunwind::trace
+             at /rustc/x/library/std/src/../../backtrace/src/backtrace/libunwind.rs:117:9
+   0: <std::backtrace::Backtrace>::create
+   0: std::backtrace::Backtrace::force_capture
+   0: obs_engine::diagnostics::install_panic_hook::{closure#0}
              at ./crates/engine/src/diagnostics.rs:402:24
    1: <alloc::boxed::Box<dyn for<'a, 'b> core::ops::function::Fn<(&'a std::panic::PanicHookInfo<'b>,), Output = ()>> as core::ops::function::Fn<(&std::panic::PanicHookInfo,)>>::call
              at /rustc/x/library/alloc/src/boxed.rs:2334:9
