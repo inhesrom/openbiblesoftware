@@ -96,12 +96,18 @@ fn start_diagnostics() {
         eprintln!("openbible: no log file: {e}");
     }
     diagnostics::install_panic_hook(dir);
-    // A test build panics here on request, to check the Crash report end to end.
+    // A test build panics here on request, to check the Crash report end to end: after a
+    // windowing-library warning quoting typed text, as egui-winit's for an IME event it
+    // ignores, and with quoted text in the panic message. Neither text may reach the report.
     #[cfg(debug_assertions)]
     if std::env::var_os("OBS_FORCE_PANIC").is_some() {
+        log::warn!(
+            target: "egui_winit",
+            "ignoring Preedit(\"PRIVATE_NOTE\", Some((0, 99)))'s range because it is invalid"
+        );
         #[allow(clippy::panic)]
         {
-            panic!("forced panic (OBS_FORCE_PANIC)");
+            panic!("forced panic (OBS_FORCE_PANIC) of `PRIVATE_NOTE`");
         }
     }
 }

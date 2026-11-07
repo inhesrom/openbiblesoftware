@@ -4,14 +4,17 @@
 //!   rotated at [`LOG_FILE_BYTES`] into `openbible.1.log` … (the last [`LOG_FILES_KEPT`]
 //!   kept), at the **Log level** the user chooses in Settings → Privacy and data
 //!   (`app.log_level`). [`start_logging`] installs it as the process's `log` logger; log lines
-//!   name commands, jobs and problems, never Notes, Highlights or Resource text.
+//!   name commands, jobs and problems, never Notes, Highlights or Resource text: another
+//!   library's message is withheld unless it is vetted ([`log_line`]).
 //! - A panic writes a **Crash report** there ([`install_panic_hook`]): what panicked and
-//!   where, a backtrace, the app version, the OS and the recent log lines, with the home
-//!   folder written as `~`. It is a plain text file; nothing is ever sent.
+//!   where (quoted text in the message withheld, [`withhold_quoted`]), a backtrace, the app
+//!   version, the OS and the recent log lines, with the home folder written as `~`. It is a
+//!   plain text file; nothing is sent automatically.
 //! - At the next launch the app offers **Report a problem** for a new Crash report
-//!   ([`CrashReport::is_new`]): the user reads it, then may copy it or open a GitHub issue
-//!   prefilled with it ([`issue_url`]) and submit that themselves. Help → Report a problem…
-//!   shows the newest report, or a problem report made now ([`problem_report`]).
+//!   ([`CrashReport::is_new`]): the user reads it, then may copy it or open GitHub's new-issue
+//!   form with it in the web address ([`issue_url`]; opening it sends the report to GitHub,
+//!   submitting the issue publishes it). Help → Report a problem… shows the newest report, or
+//!   a problem report made now ([`problem_report`]).
 //! - Help → Open log folder (`help.open_log_folder`) shows the folder in the file manager.
 
 use std::collections::VecDeque;
@@ -45,6 +48,13 @@ pub const NEW_ISSUE_URL: &str = "https://github.com/inhesrom/openbiblesoftware/i
 const ISSUE_URL_MAX: usize = 7_000;
 /// The User database preference holding the Log level.
 pub(crate) const LOG_LEVEL_PREF: &str = "log_level";
+
+/// Libraries whose log messages are written as they are: the graphics crates, which see GPU
+/// objects and pixels but never text (egui turns text into glyph images before they get it).
+/// Vetted against the locked versions (#219); any other library's message is withheld.
+const VETTED_TARGETS: &[&str] = &["wgpu", "naga", "egui_wgpu"];
+/// A panic message longer than this is cut.
+const PANIC_MESSAGE_CHARS: usize = 300;
 
 const CRASH_PREFIX: &str = "crash-";
 const SEEN_SUFFIX: &str = ".seen.txt";
@@ -115,13 +125,60 @@ impl LogLevel {
     /// Whether a record at `level` from `target` is written. Other crates' (the windowing
     /// and graphics libraries') records are written from Warn up unless the level is Debug.
     pub fn writes(self, level: log::Level, target: &str) -> bool {
-        let ours = target.starts_with("obs_") || target.starts_with("openbible");
-        let wanted = if ours || self == LogLevel::Debug {
+        let wanted = if is_ours(target) || self == LogLevel::Debug {
             self.filter()
         } else {
             self.filter().min(log::LevelFilter::Warn)
         };
         level <= wanted
+    }
+}
+
+/// A record from this app's own crates, whose messages name commands, jobs and failures and
+/// never quote the user's text.
+fn is_ours(target: &str) -> bool {
+    target.starts_with("obs_") || target.starts_with("openbible")
+}
+
+/// The log line for `record`, at `when` (seconds since 1970). The app's own messages and
+/// those of [`VETTED_TARGETS`] are written as they are. Another library's message could
+/// quote what the user typed (egui-winit logs a whole text-input event when it ignores its
+/// range), so only where it was logged from is written: the source file in that library and
+/// the line.
+pub fn log_line(record: &log::Record<'_>, when: u64) -> String {
+    let target = record.target();
+    let vetted = VETTED_TARGETS.iter().any(|t| {
+        target
+            .strip_prefix(t)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(['_', ':']))
+    });
+    let message = if is_ours(target) || vetted {
+        record.args().to_string()
+    } else {
+        format!(
+            "(message withheld; logged at {})",
+            call_site(record.file(), record.line())
+        )
+    };
+    format!(
+        "{} {:<5} {target}: {message}",
+        utc_stamp(when),
+        record.level()
+    )
+}
+
+/// A library's source file from where it was built: `egui-winit-0.37.0/src/lib.rs:809` for a
+/// crates.io dependency, else the file name.
+fn call_site(file: Option<&str>, line: Option<u32>) -> String {
+    let file = file.unwrap_or("?").replace('\\', "/");
+    let short = match file.split_once("/registry/src/") {
+        // After the registry's index folder.
+        Some((_, rest)) => rest.split_once('/').map_or(rest, |(_, r)| r),
+        None => file.rsplit('/').next().unwrap_or(&file),
+    };
+    match line {
+        Some(n) => format!("{short}:{n}"),
+        None => short.to_string(),
     }
 }
 
@@ -236,13 +293,7 @@ impl log::Log for AppLog {
         if !self.enabled(record.metadata()) {
             return;
         }
-        let line = format!(
-            "{} {:<5} {}: {}",
-            utc_stamp(now_secs()),
-            record.level(),
-            record.target(),
-            record.args()
-        );
+        let line = log_line(record, now_secs());
         // A panic while the log is held must not hang the hook (or a later line): skip.
         if let Ok(mut log) = self.log.try_lock() {
             log.write_line(&line);
@@ -369,19 +420,31 @@ pub fn home_dir() -> Option<String> {
 }
 
 /// Write a Crash report into the Log folder `dir`, as a new report, keeping the newest
-/// [`CRASH_REPORTS_KEPT`]. Returns its path.
+/// [`CRASH_REPORTS_KEPT`]. Returns its path. Each report gets a file of its own, even when
+/// threads panic in the same second: the name is taken by creating the file, never by
+/// checking first.
 pub fn write_crash_report(dir: &Path, when: u64, text: &str) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
-    let mut path = dir.join(format!("{CRASH_PREFIX}{}{NEW_SUFFIX}", file_stamp(when)));
+    let stamp = file_stamp(when);
     let mut n = 1;
-    while path.exists() || seen_path(&path).exists() {
+    let (path, mut file) = loop {
+        let path = if n == 1 {
+            dir.join(format!("{CRASH_PREFIX}{stamp}{NEW_SUFFIX}"))
+        } else {
+            dir.join(format!("{CRASH_PREFIX}{stamp}-{n}{NEW_SUFFIX}"))
+        };
         n += 1;
-        path = dir.join(format!(
-            "{CRASH_PREFIX}{}-{n}{NEW_SUFFIX}",
-            file_stamp(when)
-        ));
-    }
-    std::fs::write(&path, text)?;
+        if seen_path(&path).exists() {
+            continue;
+        }
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(file) => break (path, file),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    };
+    file.write_all(text.as_bytes())?;
+    drop(file);
     for old in crash_reports(dir).into_iter().skip(CRASH_REPORTS_KEPT) {
         let _ = std::fs::remove_file(&old.path);
     }
@@ -394,7 +457,7 @@ pub fn install_panic_hook(dir: PathBuf) {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let facts = PanicFacts {
-            message: panic_message(info.payload()),
+            message: withhold_quoted(&panic_message(info.payload())),
             location: info
                 .location()
                 .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column())),
@@ -476,6 +539,62 @@ pub fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
         .unwrap_or_else(|| "(no message)".into())
 }
 
+/// A panic message without the text it quotes, which may be the user's: the standard
+/// library quotes a whole string it could not slice (`` of `…` ``), and an error's details
+/// are often in double quotes. A span in backticks is kept when it names code
+/// (`Result::unwrap()`, `Err`); a span in double quotes, or a single character in single
+/// quotes, is written `…`. The message is cut at [`PANIC_MESSAGE_CHARS`].
+pub fn withhold_quoted(message: &str) -> String {
+    const CODE_WORDS: &[&str] = &["Err", "Ok", "None", "Some"];
+    let chars: Vec<char> = message.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let close = |q: char| {
+            chars[i + 1..]
+                .iter()
+                .position(|&d| d == q)
+                .map(|p| i + 1 + p)
+        };
+        match c {
+            '`' | '"' => {
+                let end = close(c);
+                let inner: String = chars[i + 1..end.unwrap_or(chars.len())].iter().collect();
+                let code = c == '`' && (inner.contains("::") || CODE_WORDS.contains(&&*inner));
+                out.push(c);
+                out.push_str(if code { &inner } else { "…" });
+                if let Some(end) = end {
+                    out.push(c);
+                    i = end + 1;
+                } else {
+                    i = chars.len();
+                }
+            }
+            // A char's debug form: 'é', '\n', '\u{301}' (not an apostrophe in words).
+            '\'' => match close('\'') {
+                Some(end) if end == i + 2 || (chars.get(i + 1) == Some(&'\\') && end - i <= 11) => {
+                    out.push_str("'…'");
+                    i = end + 1;
+                }
+                _ => {
+                    out.push(c);
+                    i += 1;
+                }
+            },
+            _ => {
+                out.push(c);
+                i += 1;
+            }
+        }
+    }
+    if out.chars().count() > PANIC_MESSAGE_CHARS {
+        out = out.chars().take(PANIC_MESSAGE_CHARS).collect();
+        out.push('…');
+    }
+    out
+}
+
 /// One Crash report in the Log folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CrashReport {
@@ -543,8 +662,9 @@ pub fn mark_seen(report: &CrashReport) -> std::io::Result<PathBuf> {
 }
 
 /// The GitHub new-issue address with `report` as the body (shortened to fit a URL; the full
-/// report is what Copy report copies). Opening it shows the issue form in the browser;
-/// nothing is sent unless the user submits it.
+/// report is what Copy report copies). The report is in the address, so opening it in the
+/// browser sends the report to GitHub; it becomes a public issue only if the user submits
+/// the form.
 pub fn issue_url(report: &str) -> String {
     let title = report
         .lines()
@@ -842,6 +962,116 @@ mod tests {
             assert_eq!(LogLevel::from_id(id), Some(l));
             assert_eq!(LogLevel::from_u8(l.to_u8()), l);
         }
+    }
+
+    #[test]
+    fn another_librarys_message_is_withheld_so_typed_text_never_reaches_a_log_or_report() {
+        // egui-winit 0.37 logs a whole IME event (with the text being typed) when it
+        // ignores the event's range: src/lib.rs:809, at Warn, so even at Normal.
+        let ime = "Preedit(\"PRIVATE_NOTE\", Some((0, 99)))";
+        let file = "/home/reader/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/egui-winit-0.37.0/src/lib.rs";
+        let line = log_line(
+            &log::Record::builder()
+                .level(log::Level::Warn)
+                .target("egui_winit")
+                .file(Some(file))
+                .line(Some(809))
+                .args(format_args!("ignoring {ime}'s range because it is invalid"))
+                .build(),
+            1_700_000_000,
+        );
+        assert_eq!(
+            line,
+            "2023-11-14 22:13:20 UTC WARN  egui_winit: (message withheld; logged at \
+             egui-winit-0.37.0/src/lib.rs:809)"
+        );
+        assert!(LogLevel::Info.writes(log::Level::Warn, "egui_winit"));
+        let dir = folder("withheld");
+        let mut log = RotatingLog::open(&dir).unwrap();
+        log.write_line(&line);
+        let on_disk = std::fs::read_to_string(dir.join(LOG_FILE)).unwrap();
+        let report = problem_report(&log.recent(REPORT_LOG_LINES), None);
+        let crash = crash_report_text(&facts("boom", 0), &log.recent(REPORT_LOG_LINES), None);
+        for text in [&on_disk, &report, &crash, &issue_url(&report)] {
+            assert!(!text.contains("PRIVATE_NOTE"), "{text}");
+        }
+        assert!(report.contains("egui_winit: (message withheld"), "{report}");
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        // Our own messages, and the vetted graphics libraries', are written as they are.
+        let ours = |target: &str| {
+            log_line(
+                &log::Record::builder()
+                    .level(log::Level::Error)
+                    .target(target)
+                    .args(format_args!("job Import failed"))
+                    .build(),
+                0,
+            )
+        };
+        assert!(ours("obs_engine::jobs").ends_with("obs_engine::jobs: job Import failed"));
+        assert!(ours("wgpu_core::device").ends_with(": job Import failed"));
+        assert!(ours("egui_wgpu::renderer").ends_with(": job Import failed"));
+        assert!(ours("wgpuish").ends_with("(message withheld; logged at ?)"));
+        assert_eq!(call_site(Some(r"C:\src\other\lib.rs"), Some(3)), "lib.rs:3");
+    }
+
+    #[test]
+    fn quoted_text_in_a_panic_message_is_withheld() {
+        // The standard library quotes the whole string it could not slice.
+        assert_eq!(
+            withhold_quoted(
+                "byte index 5 is not a char boundary; it is inside 'é' (bytes 4..6) of \
+                 `my PRIVATE_NOTE text`"
+            ),
+            "byte index 5 is not a char boundary; it is inside '…' (bytes 4..6) of `…`"
+        );
+        assert_eq!(
+            withhold_quoted(
+                "called `Result::unwrap()` on an `Err` value: Error { msg: \"PRIVATE_NOTE\" }"
+            ),
+            "called `Result::unwrap()` on an `Err` value: Error { msg: \"…\" }"
+        );
+        assert_eq!(
+            withhold_quoted("char '\\u{301}' and \"open"),
+            "char '…' and \"…"
+        );
+        assert_eq!(
+            withhold_quoted("index out of bounds: the len is 3 but the index is 7"),
+            "index out of bounds: the len is 3 but the index is 7"
+        );
+        assert_eq!(withhold_quoted("can't open it's"), "can't open it's");
+        let long = withhold_quoted(&"x".repeat(1000));
+        assert_eq!(long.chars().count(), PANIC_MESSAGE_CHARS + 1);
+    }
+
+    #[test]
+    fn threads_panicking_in_the_same_second_each_get_a_report() {
+        let dir = folder("concurrent");
+        std::fs::create_dir_all(&dir).unwrap();
+        let threads = 8;
+        let start = std::sync::Arc::new(std::sync::Barrier::new(threads));
+        let written: Vec<PathBuf> = (0..threads)
+            .map(|i| {
+                let (dir, start) = (dir.clone(), std::sync::Arc::clone(&start));
+                std::thread::spawn(move || {
+                    start.wait();
+                    write_crash_report(&dir, 1_700_000_000, &format!("report {i}")).unwrap()
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|t| t.join().unwrap())
+            .collect();
+        let mut names = written.clone();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), threads, "{written:?}");
+        let mut texts: Vec<String> = crash_reports(&dir).into_iter().map(|r| r.text).collect();
+        texts.sort();
+        let want: Vec<String> = (0..threads).map(|i| format!("report {i}")).collect();
+        assert_eq!(texts, want);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
