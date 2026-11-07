@@ -1,8 +1,10 @@
 //! `workspace.drop` (#216): what a Bible reference or a word dropped on the Workspace does.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use std::sync::Arc;
+
 use obs_model::{KeyScheme, Manifest, ResourceType};
-use obs_scripture::{Book, Passage, Verse};
+use obs_scripture::{Book, ListedVersification, Passage, Standard, Verse, VerseMap, VerseMapEntry};
 use serde_json::json;
 
 use crate::*;
@@ -233,6 +235,105 @@ fn dropped_text_that_is_a_reference_navigates_and_a_word_is_looked_up_or_searche
         s.workspace.tab(tab).unwrap().kind,
         TabKind::Tool(Tool::Search)
     );
+}
+
+fn ge(chapter: u16, verse: u16) -> Verse {
+    Verse::new(Book::Genesis, chapter, verse)
+}
+
+/// HEB, a Bible numbering Genesis 31-32 the Hebrew way (its 32:1 is the Standard 31:55, its
+/// 32:n the Standard 32:n-1; its 50:27 is Unmapped), open in its own Panel.
+fn hebrew_numbered_bible(s: &mut Session) -> TabId {
+    s.library.add(entry(
+        "heb",
+        "HEB",
+        ResourceType::Bible,
+        vec![KeyScheme::Passage],
+    ));
+    let heb = open(s, json!({ "id": "heb", "split": true }));
+    let at = |native: Verse, standard: Option<Verse>| VerseMapEntry {
+        verse: native,
+        last: native.verse,
+        standard: standard.map(Passage::verse),
+    };
+    let mut entries: Vec<_> = (1..=54).map(|v| at(ge(31, v), Some(ge(31, v)))).collect();
+    entries.push(at(ge(32, 1), Some(ge(31, 55))));
+    entries.extend((2..=33).map(|v| at(ge(32, v), Some(ge(32, v - 1)))));
+    entries.push(at(ge(50, 27), None));
+    let map = VerseMap::new(entries, vec![], &Standard);
+    let t = s.workspace.tab_mut(heb).unwrap();
+    t.versification = Some(Arc::new(ListedVersification::new(
+        map.entries().iter().map(|e| (e.verse, e.last)),
+    )));
+    t.verse_map = Some(Arc::new(map));
+    s.workspace.take_effects();
+    heb
+}
+
+#[test]
+fn a_reference_selected_in_a_bible_is_read_in_that_bibles_numbering() {
+    let (mut s, kjv, mhc) = session();
+    let heb = hebrew_numbered_bible(&mut s);
+    // "Genesis 32:1" selected in HEB is the Standard Genesis 31:55: KJV goes there.
+    let out = s
+        .run(
+            "workspace.drop",
+            &json!({ "text": "Genesis 32:1", "from": heb.0, "tab": kjv.0 }),
+        )
+        .unwrap();
+    assert_eq!(out["verse"], "Gen.31.55");
+    assert_eq!(at(&s, kjv), Some(ge(31, 55)));
+    // A range keeps both ends, each through the map: HEB 32:2-3 is the Standard 32:1-2.
+    let out = s.run("guide.passage_guide", &json!({})).unwrap();
+    let guide = TabId(out["tab"].as_u64().unwrap());
+    s.run(
+        "workspace.drop",
+        &json!({ "text": "Gen 32:2-3", "from": heb.0, "tab": guide.0 }),
+    )
+    .unwrap();
+    assert_eq!(
+        s.workspace.tab(guide).unwrap().shown_passage(),
+        Passage::new(ge(32, 1), ge(32, 2)).ok()
+    );
+    // On a tab bar, the new Tab of HEB opens at its own 32:1 (the Standard 31:55).
+    s.workspace.take_effects();
+    let out = s
+        .run(
+            "workspace.drop",
+            &json!({
+                "text": "Genesis 32:1",
+                "from": heb.0,
+                "bible": "heb",
+                "panel": panel_of(&s, mhc).0,
+            }),
+        )
+        .unwrap();
+    assert_eq!(out["bible"], "heb");
+    assert_eq!(out["verse"], "Gen.31.55");
+    // The same words in a Commentary (no `from` Bible) are Standard numbering.
+    s.run(
+        "workspace.drop",
+        &json!({ "text": "Genesis 32:1", "from": mhc.0, "tab": kjv.0 }),
+    )
+    .unwrap();
+    assert_eq!(at(&s, kjv), Some(ge(32, 1)));
+    // An Unmapped verse has nowhere to go.
+    let err = s
+        .run(
+            "workspace.drop",
+            &json!({ "text": "Gen 50:27", "from": heb.0, "tab": kjv.0 }),
+        )
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("“Gen 50:27” has no Standard equivalent"),
+        "{err}"
+    );
+    assert_eq!(at(&s, kjv), Some(ge(32, 1)));
+}
+
+fn at(s: &Session, tab: TabId) -> Option<Verse> {
+    s.workspace.tab(tab).unwrap().history.current()
 }
 
 #[test]

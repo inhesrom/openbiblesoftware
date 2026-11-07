@@ -170,6 +170,7 @@ pub fn reading_pane(
     let text_rect = Rect::from_min_max(pos2(left, rect.top()), pos2(left + measure, rect.bottom()));
     view.set_width(text_rect.width());
     view.text_origin = [text_rect.left(), rect.top()];
+    view.pane_rect = [rect.left(), rect.top(), rect.right(), rect.bottom()];
     let before = view.position().0;
 
     // Input: wheel and trackpad, keys, scrollbar drag.

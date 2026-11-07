@@ -1218,6 +1218,28 @@ impl State {
                 ui.label(RichText::new("No other Notebook").color(theme::c().muted));
             }
         });
+        if a.is_note() {
+            // The keyboard and click way to drag the card onto text (#216): the same Move
+            // Note box.
+            let target = self.reattach_target();
+            let hint = match &target {
+                Some((_, _, at)) => format!("Anchor it on the text selected in {at}"),
+                None => "Select the text in a reading pane first".to_string(),
+            };
+            let r = ui
+                .add_enabled(
+                    target.is_some(),
+                    egui::Button::new("Move to selected text…"),
+                )
+                .on_hover_text(&hint)
+                .on_disabled_hover_text(&hint);
+            if r.clicked()
+                && let Some((tab, params, to)) = target
+            {
+                self.confirm_reanchor(a.id.clone(), card.reference.clone(), tab, params, to);
+                ui.close();
+            }
+        }
         if let Content::Highlight { style } = &a.content {
             // The active palette's styles (#181).
             let book = self.marks.styles(&self.session).clone();

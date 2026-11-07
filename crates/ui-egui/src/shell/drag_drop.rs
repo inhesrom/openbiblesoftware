@@ -4,9 +4,10 @@
 //! - **From text:** a drag that starts on a Scripture reference carries its Passage; one that
 //!   starts inside the selection carries the selected text (a word, or a reference written
 //!   plainly). `pane.rs` tells the drag apart from selecting ([`crate::pane::DragOut`]).
-//! - **A Note card** is dragged by its ✏ grip onto a Resource's text: on confirmation it is
-//!   re-anchored there (`annotation.reattach`, one undo step), on the selection when it was
-//!   dropped inside it, else on the Verse (in a Bible) or word under the pointer.
+//! - **A Note card** is dragged by its Note icon (the grip) onto a Resource's text: on
+//!   confirmation it is re-anchored there (`annotation.reattach`, one undo step), on the
+//!   selection when it was dropped inside it, else on the Verse (in a Bible) or word under the
+//!   pointer. Only text takes it: not the pane's margins, the Tab's header or Contents.
 //! - **Drop targets** (CONTEXT.md), highlighted while dragging: a Tab's text (it goes there:
 //!   `workspace.drop` with `tab`), a Panel's tab bar (a new Tab in it), a Panel's right edge
 //!   (a new Panel beside it). Dropped back on the Tab it came from, nothing happens; Esc
@@ -48,15 +49,17 @@ pub(crate) enum Dragged {
         from: TabId,
         bible: Option<String>,
     },
-    /// A Note card, by the Note's id, labelled with its reference.
-    Note { id: String, label: String },
+    /// A Note card, by the Note's id, with the reference it is anchored at.
+    Note { id: String, reference: String },
 }
 
 impl Dragged {
-    fn label(&self) -> &str {
+    /// What the ghost following the pointer reads.
+    fn label(&self) -> String {
         match self {
-            Dragged::Reference { label, .. } | Dragged::Note { label, .. } => label,
-            Dragged::Text { text, .. } => text,
+            Dragged::Reference { label, .. } => label.clone(),
+            Dragged::Text { text, .. } => text.clone(),
+            Dragged::Note { reference, .. } => format!("Note: {reference}"),
         }
     }
 
@@ -242,11 +245,11 @@ impl State {
     }
 
     /// A Note card's grip started a drag.
-    pub(super) fn note_drag_started(&mut self, ui: &Ui, id: &str, label: &str) {
+    pub(super) fn note_drag_started(&mut self, ui: &Ui, id: &str, reference: &str) {
         self.drag.dragging = Some((
             Dragged::Note {
                 id: id.to_string(),
-                label: format!("✏ {label}"),
+                reference: reference.to_string(),
             },
             ui.ctx().viewport_id(),
         ));
@@ -270,8 +273,9 @@ impl State {
         let pos = ui.input(|i| i.pointer.latest_pos());
         let released = ui.input(|i| i.pointer.any_released() || !i.pointer.any_down());
         let target = pos
-            .and_then(|p| target_at(panels, p))
-            .filter(|(t, _)| self.takes(what, *t));
+            .and_then(|p| Some((target_at(panels, p)?, p)))
+            .filter(|((t, _), p)| self.takes(what, *t, *p))
+            .map(|(target, _)| target);
         if released {
             if let (Some((what, _)), Some((target, _)), Some(p)) =
                 (self.drag.dragging.take(), target, pos)
@@ -282,7 +286,7 @@ impl State {
             return;
         }
         if let Some(p) = pos {
-            look::drag_ghost(ui.ctx(), p, &one_line(what.label(), 40));
+            look::drag_ghost(ui.ctx(), p, &one_line(&what.label(), 40));
         }
         if let Some((_, rect)) = target {
             look::drop_target(ui.ctx(), rect);
@@ -290,19 +294,16 @@ impl State {
         ui.ctx().request_repaint();
     }
 
-    /// Whether `what` can drop on `target`: never back on the Tab it came from; a Note only
-    /// on a Resource's text.
-    fn takes(&self, what: &Dragged, target: DropTarget) -> bool {
+    /// Whether `what` can drop on `target` with the pointer at `p`: never back on the Tab it
+    /// came from; a Note only on a Resource's text, under the pointer.
+    fn takes(&self, what: &Dragged, target: DropTarget, p: Pos2) -> bool {
         match (what, target) {
             (Dragged::Note { .. }, DropTarget::Tab(t)) => {
-                self.tabs
-                    .get(&t)
-                    .is_some_and(|t| t.view.is_some() && t.error.is_none())
-                    && self
-                        .session
-                        .workspace
-                        .tab(t)
-                        .is_some_and(|t| matches!(t.kind, TabKind::Resource(_)))
+                self.session
+                    .workspace
+                    .tab(t)
+                    .is_some_and(|t| matches!(t.kind, TabKind::Resource(_)))
+                    && self.text_under(t, p).is_some()
             }
             (Dragged::Note { .. }, _) => false,
             (_, DropTarget::Tab(t)) => what.from() != Some(t),
@@ -315,17 +316,19 @@ impl State {
             Dragged::Reference { key, bible, .. } => {
                 self.drag.pending = Some((key, target, bible));
             }
-            Dragged::Text { text, bible, .. } => {
+            Dragged::Text { text, from, bible } => {
                 let mut params = target.params();
                 params["text"] = json!(text);
+                // A Bible reference selected in a Bible is in its numbering.
+                params["from"] = json!(from.0);
                 if let Some(b) = bible {
                     params["bible"] = json!(b);
                 }
                 self.run("workspace.drop", &params);
             }
-            Dragged::Note { id, label } => {
+            Dragged::Note { id, reference } => {
                 if let DropTarget::Tab(tab) = target {
-                    self.note_dropped(id, label, tab, p);
+                    self.note_dropped(id, reference, tab, p);
                 }
             }
         }
@@ -360,13 +363,19 @@ impl State {
         self.run("workspace.drop", &params);
     }
 
+    /// The text of Tab `tab`'s reading pane under the screen point `p`, if the Tab shows a
+    /// Resource without an error.
+    fn text_under(&self, tab: TabId, p: Pos2) -> Option<crate::selection::DocPos> {
+        let t = self.tabs.get(&tab).filter(|t| t.error.is_none())?;
+        t.view.as_ref()?.text_under(p.x, p.y)
+    }
+
     /// A Note dropped at `p` on Tab `tab`'s text: where it would go, to confirm.
-    fn note_dropped(&mut self, id: String, label: String, tab: TabId, p: Pos2) {
-        let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) else {
+    fn note_dropped(&mut self, id: String, reference: String, tab: TabId, p: Pos2) {
+        let Some(at) = self.text_under(tab, p) else {
             return;
         };
-        let [ox, oy] = view.text_origin;
-        let Some(at) = view.pos_at(p.x - ox, p.y - oy) else {
+        let Some(view) = self.tabs.get(&tab).and_then(|t| t.view.as_ref()) else {
             return;
         };
         let doc = &view.doc;
@@ -399,7 +408,19 @@ impl State {
                 doc.manifest.abbreviation
             )
         };
-        let from = label.trim_start_matches("✏ ").to_string();
+        self.confirm_reanchor(id, reference, tab, params, to);
+    }
+
+    /// Ask before moving Note `id` (anchored at `from`) onto the text of Tab `tab` that
+    /// `params` select (`to`): the Move Note box.
+    pub(super) fn confirm_reanchor(
+        &mut self,
+        id: String,
+        from: String,
+        tab: TabId,
+        params: Value,
+        to: String,
+    ) {
         self.drag.confirm = Some(Reanchor {
             id,
             tab,
