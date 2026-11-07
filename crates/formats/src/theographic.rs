@@ -568,10 +568,14 @@ pub(crate) fn end_of(start: HistoricalDate, d: Duration) -> Option<HistoricalDat
         _ => {
             let years =
                 f64::from(d.years) + f64::from(d.months) / 12.0 + f64::from(d.days) / 365.25;
+            // Under a year stays within the given year (220 days must not round up to one).
+            if years < 1.0 {
+                return None;
+            }
             // A few thousand years at most.
             #[allow(clippy::cast_possible_truncation)]
             let whole = years.round() as i32;
-            (whole >= 1).then(|| HistoricalDate::year(start.year + whole))
+            Some(HistoricalDate::year(start.year + whole))
         }
     }
 }
@@ -959,6 +963,15 @@ mod tests {
         );
         assert_eq!(
             end_of(HistoricalDate::bc(598), parse_duration("3M10D").unwrap()),
+            None
+        );
+        // "The flood subsides" (event 41): -2346 for 220 days stays 2347 BC, not 2347–2346 BC.
+        assert_eq!(
+            end_of(HistoricalDate::bc(2347), parse_duration("220D").unwrap()),
+            None
+        );
+        assert_eq!(
+            end_of(HistoricalDate::bc(2347), parse_duration("11M29D").unwrap()),
             None
         );
         // Holy Week: eight days from 31 March AD 30 runs to 7 April.
