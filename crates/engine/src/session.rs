@@ -83,6 +83,8 @@ pub struct Session {
     pub(crate) plans: crate::reading_plans::ReadingPlans,
     /// The Home arrangement and "Open Home at launch" (#178).
     pub(crate) home: crate::home::HomeSettings,
+    /// The Page tone hint was offered already (#240): it is offered once.
+    page_tone_hinted: bool,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
     log: Vec<&'static str>,
     /// The User database, when there is one.
@@ -139,6 +141,7 @@ impl Session {
             saved_searches: crate::saved_searches::SavedSearches::default(),
             plans: crate::reading_plans::ReadingPlans::default(),
             home: crate::home::HomeSettings::default(),
+            page_tone_hinted: false,
             log: Vec::new(),
             user: None,
             history: crate::annotations::UndoHistory::default(),
@@ -191,6 +194,9 @@ impl Session {
         {
             self.toolbar = crate::toolbar_settings::ToolbarSettings::from_json(&v);
         }
+        if let Ok(Some(_)) = user.preference(crate::appearance::PAGE_TONE_HINT_PREF) {
+            self.page_tone_hinted = true;
+        }
         if let Ok(order) = user.preferred_order() {
             self.library.set_preferred_order(order.clone());
             // Pin the initial order too: a later Import must not sort ahead of Resources
@@ -237,6 +243,7 @@ impl Session {
             ..TextSettings::default()
         };
         self.appearance = crate::appearance::Appearance::default();
+        self.page_tone_hinted = false;
         self.fonts = crate::appearance::FontChoices::default();
         self.toolbar = crate::toolbar_settings::ToolbarSettings::default();
         self.guides.forget_arrangements();
@@ -282,6 +289,20 @@ impl Session {
         }
         c.missing_noticed = true;
         let _ = self.save_view_preferences();
+        true
+    }
+
+    /// The theme just turned dark (#240). Returns whether to offer Auto now, because the Page
+    /// tone is a light one the user chose and so stays light: once per User database (the
+    /// offer is remembered there).
+    pub fn page_tone_hint_due(&mut self) -> bool {
+        if self.page_tone_hinted || !self.appearance.page_tone.is_chosen_light() {
+            return false;
+        }
+        self.page_tone_hinted = true;
+        if let Some(user) = &self.user {
+            let _ = user.set_preference(crate::appearance::PAGE_TONE_HINT_PREF, "shown");
+        }
         true
     }
 
