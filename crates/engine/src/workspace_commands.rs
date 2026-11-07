@@ -1186,7 +1186,8 @@ impl Session {
                 let label = match c.tabs.as_slice() {
                     [one] => {
                         let tab = crate::workspace::Tab::from_snapshot(TabId(one.id), one.clone());
-                        self.location_label(&tab).unwrap_or_else(|| one.title.clone())
+                        self.location_label(&tab)
+                            .unwrap_or_else(|| one.title.clone())
                     }
                     tabs => {
                         let titles: Vec<&str> = tabs.iter().map(|t| t.title.as_str()).collect();

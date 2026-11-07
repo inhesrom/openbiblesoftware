@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{Effect, OpenRequest, PanelId, Placement, PendingVisit, Tab, TabId, Workspace};
+use super::{Effect, OpenRequest, PanelId, PendingVisit, Placement, Tab, TabId, Workspace};
 use crate::persist::{ScrollPosition, TabSnapshot};
 
 /// Recently closed keeps at most this many closings.
@@ -206,7 +206,9 @@ impl Workspace {
     /// Panel `panel` came back without the Panel it was next to, which closed after it: that
     /// Panel's closing learns it is to come back beside this one, on the other side.
     fn came_back(&mut self, panel: PanelId, closed: &ClosedTabs) {
-        let Some(missing) = closed.beside.filter(|b| !self.panels.contains_key(&PanelId(*b)))
+        let Some(missing) = closed
+            .beside
+            .filter(|b| !self.panels.contains_key(&PanelId(*b)))
         else {
             return;
         };
@@ -263,7 +265,10 @@ impl Workspace {
         // New Tabs and Panels never take ids the list still names.
         let tab_ids = self.closed.iter().flat_map(|c| c.tabs.iter().map(|t| t.id));
         self.next_tab = tab_ids.fold(self.next_tab, u64::max);
-        let panel_ids = self.closed.iter().flat_map(|c| c.panel.into_iter().chain(c.beside));
+        let panel_ids = self
+            .closed
+            .iter()
+            .flat_map(|c| c.panel.into_iter().chain(c.beside));
         self.next_panel = panel_ids.fold(self.next_panel, u64::max);
     }
 

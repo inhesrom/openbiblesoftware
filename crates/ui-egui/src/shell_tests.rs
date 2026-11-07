@@ -3300,14 +3300,14 @@ mod floating_windows;
 mod interlinear;
 #[path = "keyboard_shortcuts_tests.rs"]
 mod keyboard_shortcuts;
+#[path = "recently_closed_tests.rs"]
+mod recently_closed;
 #[path = "settings_tests.rs"]
 mod settings;
 #[path = "toolbar_tests.rs"]
 mod toolbar;
 #[path = "toolbar_position_tests.rs"]
 mod toolbar_position;
-#[path = "recently_closed_tests.rs"]
-mod recently_closed;
 
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {
