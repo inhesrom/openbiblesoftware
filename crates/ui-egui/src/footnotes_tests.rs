@@ -95,14 +95,35 @@ fn marker(h: &Harness, tab: TabId, text: &str) -> (FootnoteMarker, Pos2) {
     (m, at)
 }
 
-fn popover(h: &Harness) -> Option<&crate::shell::footnotes::FootnotePopover> {
-    h.shell.st.footnotes.popover.as_ref().filter(|p| p.shown)
+/// The Footnote popover drawn, as a test looks at it.
+struct Shown {
+    tab: TabId,
+    hit: crate::pane::FootnoteHit,
+    pinned: bool,
+    rect: Option<egui::Rect>,
+    link_rects: Vec<egui::Rect>,
+    body: Option<std::sync::Arc<crate::shell::footnotes::FootnoteBody>>,
+}
+
+fn popover(h: &Harness) -> Option<Shown> {
+    let (tab, f) = h.shell.st.footnotes.shown()?;
+    Some(Shown {
+        tab,
+        hit: f.phase.marker()?.clone(),
+        pinned: f.phase.pinned(),
+        rect: f.rect,
+        link_rects: f.link_rects.clone(),
+        body: f.body().cloned(),
+    })
+}
+
+/// The marker whose popover shows or waits for its dwell.
+fn pending(h: &Harness) -> Option<crate::pane::FootnoteHit> {
+    h.shell.st.footnotes.pending().map(|(_, m)| m.clone())
 }
 
 fn shown_text(h: &Harness) -> Option<String> {
-    popover(h)
-        .and_then(|p| p.body.as_ref())
-        .map(|b| b.unit.text.clone())
+    popover(h).and_then(|p| p.body).map(|b| b.unit.text.clone())
 }
 
 fn press(h: &mut Harness, key: Key) {
@@ -242,6 +263,17 @@ fn clicking_a_marker_pins_its_popover_until_esc_or_another_click() {
         popover(&h).is_none(),
         "a second click on the marker closes it"
     );
+    h.frames(30);
+    assert!(
+        pending(&h).is_none(),
+        "it stays closed past the dwell with the pointer still on the marker"
+    );
+    h.click(at);
+    assert!(
+        popover(&h).is_some_and(|p| p.pinned),
+        "a further click pins it again"
+    );
+    h.click(at);
     h.click(at);
     let area = popover(&h).unwrap().rect.unwrap();
     let close = (h.shapes.iter())
@@ -267,13 +299,7 @@ fn the_keyboard_reaches_markers_and_the_popovers_links() {
         h.ctx.memory(|mem| mem.focused())
     };
     for _ in 0..20 {
-        if h.shell
-            .st
-            .footnotes
-            .popover
-            .as_ref()
-            .is_some_and(|p| p.hit.note == m.note)
-        {
+        if pending(&h).is_some_and(|p| p.note == m.note) {
             break;
         }
         press(&mut h, Key::Tab);
@@ -341,13 +367,7 @@ fn enter_before_the_dwell_moves_focus_to_the_first_link_once_it_is_drawn() {
     let (m, at) = marker(&h, tab, "Isaiah 40:3");
     h.click(pos2(at.x - 40.0, at.y + 4.0));
     for _ in 0..20 {
-        if h.shell
-            .st
-            .footnotes
-            .popover
-            .as_ref()
-            .is_some_and(|p| p.hit.note == m.note)
-        {
+        if pending(&h).is_some_and(|p| p.note == m.note) {
             break;
         }
         press(&mut h, Key::Tab);
@@ -411,7 +431,7 @@ fn a_pinned_popover_goes_with_its_closed_tab() {
     assert!(popover(&h).is_some_and(|p| p.pinned && p.tab == tab));
     h.shell.run("tab.close", &json!({ "tab": tab.0 }));
     h.frames(3);
-    assert!(h.shell.st.footnotes.popover.is_none(), "gone with its Tab");
+    assert!(pending(&h).is_none(), "gone with its Tab");
     let (_, there) = marker(&h, other, "Or comprehended");
     h.events.push(Event::PointerMoved(there));
     h.frames(14);
@@ -420,10 +440,7 @@ fn a_pinned_popover_goes_with_its_closed_tab() {
     h.click(there);
     assert!(popover(&h).is_some_and(|p| p.pinned));
     h.shell.rebuild();
-    assert!(
-        h.shell.st.footnotes.popover.is_none(),
-        "gone when the Tabs are rebuilt"
-    );
+    assert!(pending(&h).is_none(), "gone when the Tabs are rebuilt");
 }
 
 /// Two Resources whose text is the same can have different Footnotes under the same marker:

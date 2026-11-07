@@ -420,7 +420,7 @@ impl Shell {
                 Effect::Closed(tab) => {
                     self.remove_pane(tab);
                     self.st.tabs.remove(&tab);
-                    self.st.footnotes.tab_gone(tab);
+                    self.st.footnotes.tab_closed(tab);
                 }
                 Effect::Float {
                     tab,
@@ -653,11 +653,7 @@ impl Shell {
             self.shown = shown;
             let live: Vec<TabId> = self.st.session.workspace.tabs().map(|t| t.id).collect();
             self.st.tabs.retain(|t, _| live.contains(t));
-            if let Some(p) = &self.st.footnotes.popover
-                && !live.contains(&p.tab)
-            {
-                self.st.footnotes.popover = None;
-            }
+            self.st.footnotes.retain_tabs(&live);
         }
         let arrangement = self
             .tree
@@ -680,8 +676,7 @@ impl Shell {
         self.tree = Tree::empty(egui::Id::unique("workspace"));
         self.st.panels.clear();
         self.st.tabs.clear();
-        self.st.footnotes.popover = None;
-        self.st.footnotes.dismissed = None;
+        self.st.footnotes.tabs.clear();
         self.shown.clear();
         let ids: Vec<TabId> = self.st.session.workspace.tabs().map(|t| t.id).collect();
         for t in ids {
@@ -1512,7 +1507,8 @@ impl State {
     /// and load the new one in a pane as wide, where Back or Forward scrolls it back to
     /// where it was parked.
     fn switched(&mut self, tab: TabId) {
-        self.footnotes.tab_gone(tab);
+        self.footnotes
+            .send(tab, footnotes::FootnoteEvent::ResourceChanged);
         let Some(mut old) = self.tabs.remove(&tab) else {
             return;
         };

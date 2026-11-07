@@ -16,10 +16,18 @@ Tab, shows its popover under it: "Footnote a · John 1:5" and the note, drawn wi
 pipeline like the text it annotates (italic `\fqa` stays italic). The popover stays while the
 pointer is on the marker or on the popover. Clicking the marker (Enter from the keyboard) pins
 it; a pinned popover closes on Esc (focus goes back to the marker), its ×, a click outside it,
-or another click on the marker. Esc closes a hover popover too, and a marker whose popover Esc
-closed shows none while the pointer or focus stays on it (`Footnotes::dismissed`): it shows
-again once both have left it, or at once on a click (Enter); resting the pointer on another marker, in any pane, leaves it
-(clicking that marker replaces it). Pinned from the keyboard (Enter or Space on the focused
+or another click on the marker. Esc closes a hover popover too. A marker whose popover was
+dismissed (Esc, another click on it, a click elsewhere, its ×, a link followed) shows none while
+the pointer or focus stays on it, however long it rests there: it shows again once both have
+left it, or at once on a click (Enter). Resting the pointer on another marker, in any pane, leaves
+a pinned popover (clicking that marker replaces it).
+
+Each Tab's popover is one state machine, `FootnotePhase` in `crates/ui-egui/src/shell/footnotes.rs`:
+`Closed`, `Dwelling` (waiting for the dwell), `Open` (shown on hover), `Pinned` and `Suppressed`
+(dismissed, until the pointer and focus leave its marker). The reading pane's frame turns what
+the pointer, keyboard and text did into `FootnoteEvent`s, and every change goes through
+`next(phase, event)`, whose unit test covers each phase with each event. `Footnotes::send` keeps
+one popover pinned at a time across Tabs. Pinned from the keyboard (Enter or Space on the focused
 marker, or a screen reader's click: the marker widget reports it, wherever the pointer rests),
 focus moves to its first link (its × when it has none) as soon as the note's text is laid out,
 even when Enter came before the dwell. A popover belongs to its Tab and Resource: it closes when
