@@ -2012,6 +2012,7 @@ impl State {
             return;
         }
         self.sync_interlinear(tab, false);
+        self.interlinear_hint(ui, tab);
         let palette = self.palette;
         let text = self.session.text;
         let restoring_at = (self.session.workspace.tab(tab))
@@ -2169,6 +2170,70 @@ impl State {
         };
         if let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) {
             view.set_interlinear(source);
+        }
+    }
+
+    /// The hint over a Bible Tab's text when some of the interlinear lines it shows have shown
+    /// nothing under any word (#243): what is missing, the buttons that would fill it (#135),
+    /// and Close, which keeps it closed on this Tab.
+    fn interlinear_hint(&mut self, ui: &mut Ui, tab: TabId) {
+        let Some(kind) = obs_engine::interlinear::tab_kind(&self.session, tab) else {
+            return;
+        };
+        if self
+            .session
+            .workspace
+            .tab(tab)
+            .is_none_or(|t| !t.interlinear.on || t.interlinear.hint_dismissed)
+        {
+            return;
+        }
+        let empty = (self.tabs.get(&tab))
+            .and_then(|t| t.view.as_ref())
+            .and_then(|v| v.interlinear())
+            .map(|source| source.empty_lines())
+            .unwrap_or_default();
+        let Some(hint) = obs_engine::interlinear::missing_lines_hint(&self.session, kind, &empty)
+        else {
+            return;
+        };
+        let mut action = None;
+        let mut close = false;
+        egui::Frame::new()
+            .fill(theme::c().surface)
+            .stroke(egui::Stroke::new(1.0, theme::c().rule))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(10, 6))
+            .outer_margin(egui::Margin {
+                bottom: 6,
+                ..Default::default()
+            })
+            .show(ui, |ui| {
+                ui.horizontal_top(|ui| {
+                    let width = (ui.available_width() - 28.0).max(120.0);
+                    ui.vertical(|ui| {
+                        ui.set_max_width(width);
+                        action = self.missing_resource_ui(ui, hint.message, &hint.missing);
+                    });
+                    close = icons::button(
+                        ui,
+                        icons::Icon::Close,
+                        icons::SMALL,
+                        theme::c().muted,
+                        "Close this hint",
+                    )
+                    .on_hover_text("Close this hint (it stays closed on this Tab)")
+                    .clicked();
+                });
+            });
+        if close {
+            self.run(
+                "tab.interlinear",
+                &json!({ "tab": tab.0, "dismiss_hint": true }),
+            );
+        }
+        if let Some((id, params)) = action {
+            self.run(id, &params);
         }
     }
 
