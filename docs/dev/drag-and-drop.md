@@ -14,7 +14,7 @@ look. Every drag has a keyboard or click equivalent (listed last).
   word, or a reference written plainly). A drag that starts outside it selects, as before.
 - **Resources**: drag a row out of the Library launcher's pane, or a row of the Library Tab
   (by the row itself; its ≡ handle still reorders the Preferred order).
-- **Note cards**: drag a Note card's ✏ grip onto a Resource's text. A **Move Note** box asks
+- **Note cards**: drag a Note card's grip (its Note icon) onto a Resource's text. A **Move Note** box asks
   "Move this Note from Genesis 30:1 (TB) to Genesis 30:5 (TB)?"; Move re-anchors it (Edit →
   Undo moves it back), Cancel or Esc leaves it.
 
@@ -34,8 +34,13 @@ Search for it. Text counts as a Bible reference when it parses as one and has a 
 verse number ("Rom 8:28", "Ps 23"); a bare book name ("Job", "Mark") is a word. Dropped back
 on the Tab it came from, nothing happens; Esc cancels any drag.
 
-A Note drops only on a Resource's text: on the selection when dropped inside it, else on the
-Verse under the pointer (a Bible) or the word (any other Resource).
+Selected text is read where it was written (CONTEXT.md, Bible reference): "Genesis 32:1"
+selected in a Bible numbered the Hebrew way is that Bible's 32:1, the Standard Genesis 31:55,
+so an English Bible it is dropped on goes to 31:55. Selected anywhere else it is Standard.
+
+A Note drops only on a Resource's text, under the pointer: on the selection when dropped
+inside it, else on the Verse under the pointer (a Bible) or the word (any other Resource). The
+Tab's header, its Contents, the pane's margins and the space after the text are no target.
 
 Resources keep the Library launcher's targets (#140): a Panel (a Tab there) or its right
 quarter (a new Panel).
@@ -46,7 +51,9 @@ Files dragged onto the window from the system (a `.obr`) still join the library 
 ## Contract
 
 - Engine: `workspace.drop` (`crates/engine/src/drag_drop.rs`) takes `passage` (a Standard
-  reference) or `text`, an optional `bible`, and where: `tab`, `panel` (its tab bar) or
+  reference) or `text` (with `from`, the Tab it was dragged from: a Bible reference in a
+  Bible's text is parsed in its Versification and translated through its Verse map; an
+  Unmapped verse fails), an optional `bible`, and where: `tab`, `panel` (its tab bar) or
   `beside` (its right edge); none, a new Tab where its kind opens. A new Bible Tab gets
   `Effect::NavigateStandard`, so it moves once its Verse map is loaded.
 - UI, `pane.rs`: a drag whose press was on a Scripture reference, or inside a selection with
@@ -57,8 +64,10 @@ Files dragged onto the window from the system (a `.obr`) still join the library 
   (`drop_panels`: that window's Panels and front Tabs), highlights it and drops on release. A
   reference's Passage comes from the reference target cache (the same Standard targets a
   click uses); a drop made before the worker has them waits in `pending`.
-- Notes: `annotation.reattach` with the selection params of where the Note was dropped, after
-  the Move Note box (`reanchor_prompt`).
+- Notes: a Tab takes a Note only where `ReadingView::text_under` finds text (inside the pane
+  last drawn, `pane_rect`, on a laid-out line, never clamped as `pos_at` does). Then
+  `annotation.reattach` with the selection params of where it was dropped, after the Move
+  Note box (`reanchor_prompt`, also opened by the card menu's Move to selected text).
 - Library Tab rows sense click-and-drag; a drag of the row sets `ToolbarUi::dragging`, the
   same Resource drag as the Library launcher's (`Shell::library_drag`).
 
@@ -70,7 +79,7 @@ Files dragged onto the window from the system (a `.obr`) still join the library 
 | a reference onto an edge | Ctrl/Cmd-click it (a new Tab) |
 | a word onto a Lexicon or Search | type it in the box, or the right-click menu's Search this / Look up in Dictionary |
 | a Resource | Enter, double-click or Ctrl/Cmd-click in the Library |
-| a Note card | select the text, then the card's Re-attach here (Needs attention) |
+| a Note card | select the text, then the card's menu (… or right-click), Move to selected text (the same Move Note box); an Orphaned card's Re-attach here |
 | a Tab | Float in new window / Move to main window (docking itself has no keyboard way yet) |
 
 ## Tests

@@ -12,14 +12,17 @@
 //! - **nowhere in particular** (an empty Workspace): a new Tab where Tabs of its kind go.
 //!
 //! A new Tab for a Passage is a Bible (the one dragged from, else the ★ Bible); for a word
-//! that is not a Bible reference, a Search for it.
+//! that is not a Bible reference, a Search for it. Dropped text that is a Bible reference is
+//! read in the numbering of where it was written (CONTEXT.md, Bible reference): the Bible's
+//! own when it was dragged out of a Bible Tab (`from`), translated through its Verse map.
 
 use obs_model::ResourceType;
-use obs_scripture::{Passage, RefStyle, Standard, format_passage, parse_reference};
+use obs_scripture::{Passage, RefStyle, Standard, VerseMap, format_passage, parse_reference};
 use serde_json::{Value, json};
 
 use crate::bible_search::SearchRequestFields;
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
+use crate::link::{ToStandard, to_standard};
 use crate::session::Session;
 use crate::workspace::{Effect, HeaderBox, OpenRequest, PanelId, TabId, TabKind, Tool};
 
@@ -46,7 +49,13 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[CommandSpec {
             name: "bible",
             kind: ParamKind::String,
             required: false,
-            help: "The Bible a new Tab for a Passage shows (default: the ★ Bible)",
+            help: "The Bible a new Tab for a Passage shows (default: the first Bible in Preferred order)",
+        },
+        ParamSpec {
+            name: "from",
+            kind: ParamKind::Integer,
+            required: false,
+            help: "The Tab `text` was dragged from: a Bible reference in a Bible's text is read in its numbering",
         },
         ParamSpec {
             name: "tab",
@@ -115,7 +124,9 @@ fn run_drop(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     if text.is_empty() {
         return Err(failed("Nothing was dropped"));
     }
-    drop_text(s, text, bible, at)
+    let from = number("from").map(TabId);
+    let passage = as_passage(s, text, from)?;
+    drop_text(s, text, passage, bible, at)
 }
 
 fn live_panel(s: &Session, n: u64) -> Result<PanelId, CommandError> {
@@ -127,15 +138,56 @@ fn live_panel(s: &Session, n: u64) -> Result<PanelId, CommandError> {
     }
 }
 
-/// `text` as a Passage when it is a Bible reference with a chapter or verse number ("Rom
-/// 8:28", "Ps 23"). A bare book name ("Job", "Mark") is a word: dragged words are names more
-/// often than whole books.
-fn as_passage(text: &str) -> Option<Passage> {
+/// `text` as a Standard Passage when it is a Bible reference with a chapter or verse number
+/// ("Rom 8:28", "Ps 23"). A bare book name ("Job", "Mark") is a word: dragged words are names
+/// more often than whole books. Text dragged out of a Bible Tab (`from`) is read in that
+/// Bible's numbering and translated through its Verse map; a reference to an Unmapped verse
+/// fails, as it has nowhere to go.
+fn as_passage(
+    s: &Session,
+    text: &str,
+    from: Option<TabId>,
+) -> Result<Option<Passage>, CommandError> {
     if !text.chars().any(|c| c.is_ascii_digit()) {
-        return None;
+        return Ok(None);
     }
-    let list = parse_reference(text, &Standard, None).ok()?;
-    list.passages().first().copied()
+    let bible = from
+        .and_then(|t| s.workspace.tab(t))
+        .filter(|t| match &t.kind {
+            TabKind::Resource(id) => s
+                .library
+                .get(id)
+                .is_some_and(|e| e.manifest.resource_type == ResourceType::Bible),
+            _ => false,
+        });
+    let own = bible.and_then(|t| t.versification.as_deref());
+    let list = match own {
+        Some(v) => parse_reference(text, v, None),
+        None => parse_reference(text, &Standard, None),
+    };
+    let Some(native) = list.ok().and_then(|l| l.passages().first().copied()) else {
+        return Ok(None);
+    };
+    match bible.and_then(|t| t.verse_map.as_deref()) {
+        None => Ok(Some(native)),
+        Some(map) => standard_passage(map, native)
+            .map(Some)
+            .ok_or_else(|| failed(format!("“{text}” has no Standard equivalent"))),
+    }
+}
+
+/// A Passage in a Bible's own numbering → the Standard Passage it covers: from where its
+/// first Verse maps to, to the end of where its last does. `None` when its first Verse is
+/// Unmapped.
+fn standard_passage(map: &VerseMap, native: Passage) -> Option<Passage> {
+    let ToStandard::Verse(start) = to_standard(Some(map), native.start()) else {
+        return None;
+    };
+    let end = match map.entry(native.end()) {
+        Some(e) => e.standard.map_or(start, |p| p.end()),
+        None => native.end(),
+    };
+    Some(Passage::new(start, end).unwrap_or(Passage::verse(start)))
 }
 
 fn drop_passage(
@@ -171,9 +223,11 @@ fn drop_passage(
     }
 }
 
+/// Dropped `text`, which is `passage` when it is a Bible reference (`as_passage`).
 fn drop_text(
     s: &mut Session,
     text: &str,
+    passage: Option<Passage>,
     bible: Option<&str>,
     at: DropAt,
 ) -> Result<Value, CommandError> {
@@ -190,12 +244,12 @@ fn drop_text(
             return s.run("search.run", &json!({ "tab": tab.0, "text": text }));
         }
         if t.header_box() == HeaderBox::Reference && follows_passages(s, tab) {
-            let passage = as_passage(text)
-                .ok_or_else(|| failed(format!("“{text}” is not a Bible reference")))?;
+            let passage =
+                passage.ok_or_else(|| failed(format!("“{text}” is not a Bible reference")))?;
             return drop_passage(s, passage, bible, at);
         }
     }
-    if let Some(passage) = as_passage(text) {
+    if let Some(passage) = passage {
         return drop_passage(s, passage, bible, at);
     }
     // A word on a Panel: search for it there.

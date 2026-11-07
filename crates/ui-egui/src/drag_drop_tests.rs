@@ -342,6 +342,47 @@ fn a_drag_started_inside_the_selection_moves_it_and_one_outside_selects_anew() {
 }
 
 #[test]
+fn a_reference_selected_in_a_hebrew_numbered_bible_moves_an_english_one_to_the_same_verse() {
+    let mut h = Harness::new();
+    let tb = h.tab_id("TB");
+    let out = h
+        .shell
+        .run("resource.open", &json!({ "id": "heb-num", "split": true }))
+        .unwrap();
+    let hn = TabId(out["tab"].as_u64().unwrap());
+    h.shell.run("tab.link", &json!({ "tab": hn.0, "set": "" }));
+    settle_all(&mut h);
+    assert!(
+        h.shell
+            .session()
+            .workspace
+            .tab(hn)
+            .unwrap()
+            .verse_map
+            .is_some()
+    );
+    // "Genesis 32:1" selected in HNUM's text and dragged onto TB's text.
+    h.shell.st.drag.dragging = Some((
+        super::super::drag_drop::Dragged::Text {
+            text: "Genesis 32:1".into(),
+            from: hn,
+            bible: Some("heb-num".into()),
+        },
+        egui::ViewportId::ROOT,
+    ));
+    let (left, _) = h.panels()[0].clone();
+    let body = pos2(left.left() + 120.0, left.center().y);
+    h.events.push(Event::PointerMoved(body));
+    h.button(body, true);
+    h.frame();
+    release(&mut h, body);
+    settle_drop(&mut h);
+    // HNUM's 32:1 is the Standard (and TB's) 31:55.
+    let ws = &h.shell.session().workspace;
+    assert_eq!(ws.tab(tb).unwrap().history.current(), Some(ge(31, 55)));
+}
+
+#[test]
 fn a_resource_dragged_out_of_the_library_tab_opens_where_it_is_dropped() {
     let mut h = Harness::new();
     let (left, _) = h.panels()[0].clone();
@@ -359,6 +400,21 @@ fn note_folder(name: &str) -> PathBuf {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+/// The grip (its Note icon) of the Note card showing `reference`: on the reference's line,
+/// before it.
+fn note_grip(h: &Harness, reference: &str) -> Pos2 {
+    let r = h.find(reference).unwrap();
+    h.shapes
+        .iter()
+        .find(|(icon, t)| {
+            t == "[pencil]"
+                && (icon.center().y - r.center().y).abs() < 8.0
+                && icon.right() <= r.left()
+        })
+        .map(|(icon, _)| icon.center())
+        .unwrap_or_else(|| panic!("no grip by {reference:?}: {:?}", h.texts()))
 }
 
 fn ge(chapter: u16, verse: u16) -> Verse {
@@ -411,7 +467,7 @@ fn a_note_card_dragged_onto_a_verse_moves_there_after_confirming() {
             .unwrap_or_default()
     };
     assert_eq!(reference(&h), "Genesis 30:1 (TB)");
-    let grip = h.at("✏");
+    let grip = note_grip(&h, "Genesis 30:1 (TB)");
     let (unit, byte) = {
         let doc = &h.shell.st.tabs[&tb].view.as_ref().unwrap().doc;
         doc.verse_position(ge(30, 5)).unwrap()
@@ -431,7 +487,7 @@ fn a_note_card_dragged_onto_a_verse_moves_there_after_confirming() {
     assert_eq!(reference(&h), "Genesis 30:1 (TB)");
 
     // Move: anchored on Genesis 30:5, as one undo step.
-    let grip = h.at("✏");
+    let grip = note_grip(&h, "Genesis 30:1 (TB)");
     h.drag(grip, target);
     h.click_text("Move");
     for _ in 0..300 {
@@ -458,6 +514,30 @@ fn a_note_card_dragged_onto_a_verse_moves_there_after_confirming() {
     }
     assert_eq!(reference(&h), "Genesis 30:1 (TB)");
     assert!(h.shell.session().workspace.tab(notes).is_some());
+
+    // The click way (no drag): select the text, then the card's menu, Move to selected text:
+    // the same Move Note box.
+    double_click(&mut h, target);
+    let menu = h
+        .shapes
+        .iter()
+        .find(|(r, t)| {
+            t == "…" && (r.center().y - h.find("Genesis 30:1 (TB)").unwrap().center().y).abs() < 8.0
+        })
+        .map(|(r, _)| r.center())
+        .unwrap();
+    h.click(menu);
+    h.frame();
+    h.click_text("Move to selected text…");
+    h.frame();
+    assert!(
+        h.find("Move this Note from Genesis 30:1 (TB) to Genesis 30:5 (TB)?")
+            .is_some(),
+        "{:?}",
+        h.texts()
+    );
+    h.click_text("Cancel");
+    assert_eq!(reference(&h), "Genesis 30:1 (TB)");
     drop(h);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -467,28 +547,76 @@ fn a_note_card_drops_only_on_a_resources_text() {
     let dir = note_folder("note-targets");
     let mut h = Harness::launch_full(Some(&dir.join("user.db")), JobMode::Inline, Some(&dir));
     settle_all(&mut h);
+    let tb = h.tab_id("TB");
     h.shell.st.drag.dragging = Some((
         super::super::drag_drop::Dragged::Note {
             id: "n".into(),
-            label: "✏ Genesis 30:1 (TB)".into(),
+            reference: "Genesis 30:1 (TB)".into(),
         },
         egui::ViewportId::ROOT,
     ));
     let (left, _) = h.panels()[0].clone();
     let (right, _) = h.panels()[1].clone();
-    // The Library's Panel and any tab bar or edge: no target, so no highlight.
+    let view = h.shell.st.tabs[&tb].view.as_ref().unwrap();
+    let [pane_left, pane_top, _, pane_bottom] = view.pane_rect;
+    let [text_left, _] = view.text_origin;
+    // The Tab's header (its reference box) lies between the tab bar and the text.
+    assert!(pane_top > left.top() + 31.0 + 8.0, "{pane_top} {left:?}");
+    let wash = crate::theme::c().lapis.gamma_multiply(0.18);
+    let over = |h: &mut Harness, p: Pos2| {
+        h.events.push(Event::PointerMoved(p));
+        h.button(p, true);
+        h.frame();
+        h.rects.iter().any(|(_, c)| *c == wash)
+    };
+    // The Library's Panel, any tab bar or edge, the Tab's header and the pane's margin beside
+    // the text: no target, so no highlight.
     for p in [
         right.center(),
         pos2(left.center().x, left.top() + 15.0),
         pos2(left.right() - 10.0, left.center().y),
+        pos2(text_left + 20.0, pane_top - 6.0),
+        pos2(
+            (pane_left + text_left) / 2.0,
+            (pane_top + pane_bottom) / 2.0,
+        ),
     ] {
-        h.events.push(Event::PointerMoved(p));
-        h.button(p, true);
-        h.frame();
-        let wash = crate::theme::c().lapis.gamma_multiply(0.18);
-        assert!(!h.rects.iter().any(|(_, c)| *c == wash), "{p:?}");
+        assert!(!over(&mut h, p), "{p:?}");
     }
-    h.button(right.center(), false);
+    // Released there, nothing is offered.
+    h.button(pos2(text_left + 20.0, pane_top - 6.0), false);
+    h.frames(2);
+    assert!(h.shell.st.drag.confirm.is_none());
+    // With its Contents open, the Contents pane is no target either.
+    h.shell
+        .run("tab.contents", &json!({ "tab": tb.0, "on": true }))
+        .unwrap();
+    settle_all(&mut h);
+    h.shell.st.drag.dragging = Some((
+        super::super::drag_drop::Dragged::Note {
+            id: "n".into(),
+            reference: "Genesis 30:1 (TB)".into(),
+        },
+        egui::ViewportId::ROOT,
+    ));
+    let contents = h.shell.st.tabs[&tb].contents.rect.unwrap();
+    assert!(!over(&mut h, contents.center()), "{contents:?}");
+    // On the words themselves it is a target.
+    let (unit, byte) = {
+        let doc = &h.shell.st.tabs[&tb].view.as_ref().unwrap().doc;
+        doc.verse_position(ge(30, 5)).unwrap()
+    };
+    let word = text_spot(&h, tb, unit, byte + 2);
+    assert!(over(&mut h, word), "{word:?}");
+    h.events.push(Event::Key {
+        key: egui::Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    });
+    h.frame();
+    h.button(word, false);
     h.frames(2);
     assert!(h.shell.st.drag.confirm.is_none());
     drop(h);
@@ -552,7 +680,7 @@ fn previews() {
             break;
         }
     }
-    let grip = h.at("✏");
+    let grip = note_grip(&h, "Genesis 30:1 (TB)");
     let (unit, byte) = {
         let doc = &h.shell.st.tabs[&tb].view.as_ref().unwrap().doc;
         doc.verse_position(ge(30, 5)).unwrap()

@@ -114,6 +114,8 @@ pub struct ReadingView {
     pub(crate) dragging_out: bool,
     /// Where the pane last drew the text's top-left corner, in screen points.
     pub(crate) text_origin: [f32; 2],
+    /// The pane last drawn, in screen points: left, top, right, bottom.
+    pub(crate) pane_rect: [f32; 4],
     /// The interlinear lines under its Tagged words, when the Tab shows them (#143).
     interlinear: Option<Arc<InterlinearSource>>,
 }
@@ -158,6 +160,7 @@ impl ReadingView {
             dragging_scrollbar: false,
             dragging_out: false,
             text_origin: [0.0, 0.0],
+            pane_rect: [0.0; 4],
             interlinear: None,
         };
         view.set_width(600.0);
@@ -392,6 +395,22 @@ impl ReadingView {
             top += h;
             i += 1;
         }
+    }
+
+    /// The text under a screen point in the pane as last drawn (a Note dropped on it, #216):
+    /// `None` off the pane or off the text, where [`Self::pos_at`] would clamp to it.
+    pub(crate) fn text_under(&self, x: f32, y: f32) -> Option<DocPos> {
+        let [left, top, right, bottom] = self.pane_rect;
+        if x < left || x >= right || y < top || y >= bottom {
+            return None;
+        }
+        let [ox, oy] = self.text_origin;
+        let (unit, pos) = self.hit_in_unit_at(x - ox, y - oy)?;
+        let byte = match pos {
+            UnitPos::Text(b) => b,
+            UnitPos::Object { anchor, .. } => anchor,
+        };
+        Some(DocPos { unit, byte })
     }
 
     /// What is under a point (`x` from the text's left edge, `y` from the viewport top), if

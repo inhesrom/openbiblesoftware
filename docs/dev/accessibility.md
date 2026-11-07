@@ -115,8 +115,8 @@ text on every Link set chip and badge, and the Grid view's heat cells at every h
   and the tab-bar background (drag to move the whole Panel) is still a Tab stop that does
   nothing from the keyboard; it is named so a screen reader says what it is.
   The other drags (#216: references, selected text, Resources, Note cards) each have a click
-  or keyboard way to do the same; `drag-and-drop.md` lists them. A Note card's ✏ grip is a
-  Tab stop named *Drag to move this Note* that does nothing from the keyboard.
+  or keyboard way to do the same; `drag-and-drop.md` lists them. A Note card's grip (its Note
+  icon) is a Tab stop named *Drag to move this Note* that does nothing from the keyboard.
 - **egui_tiles' tab close buttons** are named *Close*, not *Close KJV*.
 - **Reading pane caret.** There is no keyboard caret or Shift+arrow selection in Resource text,
   so the keyboard-only right-click menu acts on the Verse at the top of the view (and on
