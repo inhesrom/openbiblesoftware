@@ -1,4 +1,4 @@
-//! The Favorites and History Tools (#155), and the ☆ in each Tab header that adds the Tab's
+//! The Favorites and History Tools (#155), and the star in each Tab header that adds the Tab's
 //! Current location to Favorites. Opening a Favorite or a Visit runs `favorite.open` or
 //! `history.open`: the most recent Tab of that kind moves there, else a new one opens.
 
@@ -7,7 +7,7 @@ use obs_engine::TabId;
 use serde_json::{Value, json};
 
 use super::State;
-use crate::compare_view::paint_star;
+use crate::icons::{self, Icon};
 use crate::theme;
 
 /// Height of one History row (Visits and day headings alike).
@@ -24,7 +24,7 @@ enum HistoryLine {
 }
 
 impl State {
-    /// The header's ☆ (★ when the Tab's Current location is a Favorite). Nothing for Tabs
+    /// The header's star (filled when the Tab's Current location is a Favorite). Nothing for Tabs
     /// without a location.
     pub(super) fn favorite_star(&mut self, ui: &mut Ui, tab: TabId) {
         if self.session.user.is_none() || self.session.location_of(tab).is_none() {
@@ -40,7 +40,12 @@ impl State {
             (false, true) => theme::c().lapis,
             (false, false) => theme::c().muted,
         };
-        paint_star(ui.painter(), rect.center(), 7.0, favorite.is_some(), color);
+        let icon = if favorite.is_some() {
+            Icon::StarFilled
+        } else {
+            Icon::Star
+        };
+        icons::paint(ui.painter(), icon, rect, icons::BODY, color);
         let label = if favorite.is_some() {
             "Remove from Favorites".to_string()
         } else {
@@ -107,7 +112,7 @@ impl State {
                 if self.session.favorites().is_empty() {
                     let star = super::with_key(
                         &self.session,
-                        "No Favorites yet. Click the ☆ in a Tab's header",
+                        "No Favorites yet. Click the star in a Tab's header",
                         "favorite.add",
                     );
                     muted(ui, &format!("{star} to add the place it shows."));

@@ -151,7 +151,8 @@ fn bible_in_a_year_from_today_shows_todays_passages_ticks_them_off_and_reschedul
     let plan = h.shell.st.session.reading_plans()[0].clone();
     assert_eq!(plan.read_count(), 1);
     assert!(plan.readings[0].read);
-    assert!(h.texts().contains(&"✓ Today's reading"), "{:?}", h.texts());
+    assert!(h.texts().contains(&"Today's reading"), "{:?}", h.texts());
+    assert!(h.texts().contains(&"[circle-check]"), "{:?}", h.texts());
     let tomorrow = plan.readings[1].label.clone();
     assert!(h.texts().contains(&tomorrow.as_str()));
     preview(&h, "reading-plans-ticked");

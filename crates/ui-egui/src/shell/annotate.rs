@@ -30,6 +30,7 @@ use serde_json::{Value, json};
 
 use super::{State, bindings, consume_key, extra_held, parse_shortcut, pressed_as};
 use crate::doc::ReadingDoc;
+use crate::icons::{Icon, with_icon};
 use crate::marks::{HighlightLooks, Mark, marks_for};
 use crate::palette::Palette;
 use crate::pane::{PaneOutput, has_text};
@@ -387,21 +388,28 @@ fn toolbar_row(
         }
         ui.separator();
         if ui
-            .add_enabled(can_annotate, egui::Button::new("✏ Note"))
+            .add_enabled(
+                can_annotate,
+                egui::Button::new(with_icon(ui, Icon::Note, "Note")),
+            )
             .on_hover_text(with_key_text("Write a Note on the selection", keys.note()))
             .clicked()
         {
             picked = Some(Annotate::Note);
         }
         if ui
-            .button("Copy")
+            .add(egui::Button::new(with_icon(ui, Icon::Copy, "Copy")))
             .on_hover_text("Copy the text with its reference (Ctrl+C)")
             .clicked()
         {
             picked = Some(Annotate::Copy);
         }
         if ui
-            .button("🔎 Search this")
+            .add(egui::Button::new(with_icon(
+                ui,
+                Icon::Search,
+                "Search this",
+            )))
             .on_hover_text("Search for the selected words")
             .clicked()
         {
@@ -411,9 +419,13 @@ fn toolbar_row(
     picked
 }
 
-/// "■ Yellow": the style's name after a square of its colour; an underline style's name is
-/// underlined in its colour.
-pub(super) fn menu_label(ui: &Ui, name: &str, style: &StyleAppearance) -> egui::text::LayoutJob {
+/// A swatch of the style's colour, then its name; an underline style's name is underlined in
+/// its colour.
+pub(super) fn menu_label(
+    ui: &Ui,
+    name: &str,
+    style: &StyleAppearance,
+) -> (egui::Image<'static>, egui::text::LayoutJob) {
     use egui::text::TextFormat;
     let font = egui::TextStyle::Button.resolve(ui.style());
     let ink = ui.visuals().text_color();
@@ -426,13 +438,13 @@ pub(super) fn menu_label(ui: &Ui, name: &str, style: &StyleAppearance) -> egui::
         Palette::PAPER
     };
     let paint = chrome.paint(style);
-    job.append("■", 0.0, TextFormat::simple(font.clone(), paint.mark));
+    let swatch = crate::icons::image(ui.ctx(), Icon::Swatch, crate::icons::SMALL, paint.mark);
     let mut text = TextFormat::simple(font, ink);
     if paint.look == HighlightLook::Underline {
         text.underline = Stroke::new(2.0, paint.mark);
     }
-    job.append(name, 6.0, text);
-    job
+    job.append(name, 0.0, text);
+    (swatch, job)
 }
 
 impl State {
@@ -814,7 +826,12 @@ impl State {
             .show(ctx, |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.set_width(340.0);
-                    ui.label(RichText::new(format!("✏ Note · {}", ed.label)).strong());
+                    crate::icons::label(
+                        ui,
+                        Icon::Note,
+                        theme::c().muted,
+                        RichText::new(format!("Note · {}", ed.label)).strong(),
+                    );
                     if !ed.quote.is_empty() {
                         ui.label(
                             RichText::new(format!("“{}”", ed.quote))

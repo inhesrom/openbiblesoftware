@@ -8,7 +8,7 @@
 //! ringed in gilt; the rest is quieter. Drag pans, the wheel or a pinch zooms. A click on an
 //! Event opens its Passage, on a Lifespan its person's Factbook, on an Era fits the view to it.
 //! Each entry on the axis is a button of its own, so Tab reaches it and Enter opens it, and
-//! `Earlier`, `Later`, `−`, `+` and `Fit` move the view without a pointer.
+//! `Earlier`, `Later`, Zoom out, Zoom in and `Fit` move the view without a pointer.
 
 use std::sync::Arc;
 
@@ -141,10 +141,10 @@ impl State {
             {
                 pan = Some(-PAN_SHARE);
             }
-            if ui.small_button("−").on_hover_text("Zoom out").clicked() {
+            if crate::icons::small_button(ui, crate::icons::Icon::ZoomOut, "Zoom out").clicked() {
                 zoom = Some(0.5);
             }
-            if ui.small_button("+").on_hover_text("Zoom in").clicked() {
+            if crate::icons::small_button(ui, crate::icons::Icon::ZoomIn, "Zoom in").clicked() {
                 zoom = Some(2.0);
             }
             if ui
@@ -348,8 +348,7 @@ fn event_row(ui: &mut Ui, e: &TimelineEntry, focus: bool) -> Option<RowAction> {
             }
         }
         for person in e.people.iter().filter(|p| p.entity.is_some()).take(6) {
-            if ui
-                .small_button(format!("{} ›", person.name))
+            if crate::icons::onward(ui, &person.name)
                 .on_hover_text(format!("Open {}'s Factbook", person.name))
                 .clicked()
             {

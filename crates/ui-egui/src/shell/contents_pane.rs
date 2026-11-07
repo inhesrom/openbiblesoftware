@@ -18,6 +18,7 @@ use obs_model::ResourceType;
 
 use super::State;
 use crate::doc::ReadingDoc;
+use crate::icons::{self, Icon};
 use crate::theme;
 
 /// Height of one line of the outline.
@@ -153,17 +154,7 @@ impl State {
         } else {
             theme::c().muted
         };
-        // An outline: a heading line and two indented lines under it.
-        let c = rect.center();
-        for (dy, indent) in [(-4.5, 0.0), (0.0, 3.0), (4.5, 3.0)] {
-            ui.painter().line_segment(
-                [
-                    egui::pos2(c.x - 6.0 + indent, c.y + dy),
-                    egui::pos2(c.x + 6.0, c.y + dy),
-                ],
-                egui::Stroke::new(1.5, color),
-            );
-        }
+        icons::paint(ui.painter(), Icon::Contents, rect, icons::BODY, color);
         r.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, "Contents"));
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.contents.button = Some(rect);

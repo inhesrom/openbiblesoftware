@@ -321,7 +321,7 @@ fn a_kjv_highlight_of_john_3_16_shows_in_web_bsb_and_tagnt() {
 
     // View → Show Highlights hides them everywhere, and shows them again.
     h.open_menu("View");
-    h.click_text("✓ Show Highlights");
+    h.click_text("Show Highlights");
     for t in ["KJV", "WEB", "BSB", "TAGNT"] {
         assert!(
             painted_in(&h, t, yellow).is_empty(),

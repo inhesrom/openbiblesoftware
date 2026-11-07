@@ -345,16 +345,15 @@ impl State {
             ui.spacing_mut().item_spacing.x = 6.0;
             ui.add_space(16.0 * f32::from(sub.level.saturating_sub(1)));
             if !sub.passages.is_empty() {
-                let arrow = if open { "▼" } else { "▶" };
-                if ui
-                    .small_button(arrow)
-                    .on_hover_text(if open {
-                        "Hide the Passages' text"
-                    } else {
-                        "Show the Passages' text here"
-                    })
-                    .clicked()
-                {
+                let (arrow, what) = if open {
+                    (crate::icons::Icon::ChevronDown, "Hide the Passages' text")
+                } else {
+                    (
+                        crate::icons::Icon::ChevronRight,
+                        "Show the Passages' text here",
+                    )
+                };
+                if crate::icons::small_button(ui, arrow, what).clicked() {
                     *action = Some(TopicAction::TogglePreview(id.clone()));
                 }
             }

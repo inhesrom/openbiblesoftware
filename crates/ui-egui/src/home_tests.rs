@@ -84,7 +84,8 @@ fn click_home_button(h: &mut Harness) {
     settle(h);
 }
 
-/// The control `symbol` (⏶ ⏷ ×) in the header of the card titled `title`.
+/// The control `symbol` (an icon's marker: `[arrow-up]`, `[arrow-down]`, `[x]`) in the
+/// header of the card titled `title`.
 fn card_control(h: &Harness, title: &str, symbol: &str) -> Pos2 {
     let head = h
         .find(title)
@@ -97,6 +98,21 @@ fn card_control(h: &Harness, title: &str, symbol: &str) -> Pos2 {
         .min_by(|a, b| a.0.left().total_cmp(&b.0.left()))
         .map(|(r, _)| r.center())
         .unwrap_or_else(|| panic!("no {symbol} by {title:?}"))
+}
+
+/// Whether `text` is drawn just after a filled star (a Favorite, the first Bible).
+fn starred(h: &Harness, text: &str) -> bool {
+    h.shapes
+        .iter()
+        .filter(|(_, t)| t == "[star-filled]")
+        .any(|(star, _)| {
+            h.shapes.iter().any(|(r, t)| {
+                t == text
+                    && r.left() >= star.right()
+                    && r.left() - star.right() < 12.0
+                    && (r.center().y - star.center().y).abs() < 6.0
+            })
+        })
 }
 
 fn order(h: &Harness) -> Vec<HomeCard> {
@@ -371,10 +387,11 @@ fn with_a_reading_plan_and_favorites_home_shows_todays_reading_and_places_each_o
         "Bible in a year (canonical)",
         "John 3:16 · BSB",
         "Genesis 2:4 · BSB",
-        "★ Romans 8:28 · BSB",
+        "Romans 8:28 · BSB",
     ] {
         assert!(h.texts().contains(&t), "{t:?} missing: {:?}", h.texts());
     }
+    assert!(starred(&h, "Romans 8:28 · BSB"), "{:?}", h.texts());
     preview(&h, "home-reading-plan-and-favorites");
 
     // Today's reading: one click opens it in the plan's Bible.
@@ -386,7 +403,7 @@ fn with_a_reading_plan_and_favorites_home_shows_todays_reading_and_places_each_o
 
     // A Favorite: one click.
     click_home_button(&mut h);
-    h.click_text("★ Romans 8:28 · BSB");
+    h.click_text("Romans 8:28 · BSB");
     settle(&mut h);
     assert_eq!(h.shell.st.session.workspace.focused(), Some(bsb));
     assert_eq!(location(&mut h, bsb), Some(v(Book::Romans, 8, 28)));
@@ -453,7 +470,7 @@ fn the_verse_of_the_day_opens_in_the_star_bible_not_in_another_open_bible() {
     let votd = h.shell.st.session.verse_of_the_day();
     assert_eq!(votd.bible.as_deref(), Some("bsb"));
     // Home previews it in the ★ Bible, and one click reads it there.
-    assert!(h.texts().contains(&"★ BSB"), "{:?}", h.texts());
+    assert!(starred(&h, "BSB"), "{:?}", h.texts());
     h.click_text(&votd.label);
     settle(&mut h);
     let bsb = bsb_tab(&h);
@@ -518,8 +535,8 @@ fn cards_move_and_hide_from_their_headers_and_home_can_open_at_every_launch() {
     let home = home_tab(&h).unwrap();
     assert_eq!(order(&h), HomeCard::ALL);
 
-    // ⏶ on Quick start: it goes before the Verse of the day.
-    let up = card_control(&h, "Quick start", "⏶");
+    // Move up on Quick start: it goes before the Verse of the day.
+    let up = card_control(&h, "Quick start", "[arrow-up]");
     h.click(up);
     settle(&mut h);
     assert_eq!(
@@ -533,8 +550,8 @@ fn cards_move_and_hide_from_their_headers_and_home_can_open_at_every_launch() {
             HomeCard::LibrarySummary,
         ]
     );
-    // × hides the Verse of the day; Show brings it back.
-    let hide = card_control(&h, "Verse of the day", "×");
+    // Close hides the Verse of the day; Show brings it back.
+    let hide = card_control(&h, "Verse of the day", "[x]");
     h.click(hide);
     settle(&mut h);
     assert!(!h.texts().contains(&"Verse of the day"));
@@ -542,7 +559,7 @@ fn cards_move_and_hide_from_their_headers_and_home_can_open_at_every_launch() {
     h.click_text("Show Verse of the day");
     settle(&mut h);
     assert!(h.texts().contains(&"Verse of the day"));
-    h.click(card_control(&h, "Verse of the day", "×"));
+    h.click(card_control(&h, "Verse of the day", "[x]"));
     settle(&mut h);
 
     // Open Home at launch, then quit with Home closed.
@@ -574,14 +591,4 @@ fn cards_move_and_hide_from_their_headers_and_home_can_open_at_every_launch() {
     assert!(!order(&h).contains(&HomeCard::VerseOfTheDay));
     assert_eq!(order(&h)[3], HomeCard::QuickStart);
     assert!(h.texts().contains(&"Show Verse of the day"));
-}
-
-#[test]
-fn card_controls_are_in_the_chrome_fonts() {
-    let h = Harness::new();
-    h.ctx.fonts_mut(|f| {
-        for s in ["⏶", "⏷", "×", "★", "☆"] {
-            assert!(f.has_glyphs(&egui::FontId::proportional(14.0), s), "{s}");
-        }
-    });
 }

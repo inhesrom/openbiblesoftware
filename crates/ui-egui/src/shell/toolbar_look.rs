@@ -3,8 +3,9 @@
 //! ([`crate::theme::c`], so Light and Dark follow), the launcher buttons, the four icons,
 //! drop-down rows and headings, and the Layout thumbnails.
 //!
-//! The icons are our own line drawings, painted with the theme's colours: Library is three
-//! books on a shelf, Guides a compass, Tools a two-by-two grid, Layouts a tiled window.
+//! The icons come from the interface's icon set ([`crate::icons`]), in the theme's accent:
+//! Library is books on a shelf, Guides a compass, Tools a two-by-two grid, Layouts a tiled
+//! window.
 
 use egui::{
     Align2, Color32, CornerRadius, FontId, Painter, Rect, Response, Sense, Stroke, StrokeKind, Ui,
@@ -12,6 +13,7 @@ use egui::{
 };
 use obs_engine::{Launcher, LayoutThumbnail};
 
+use crate::icons::{self, Icon};
 use crate::theme;
 
 /// The launcher buttons' height and icon size.
@@ -44,8 +46,6 @@ pub(super) struct Look {
     pub muted: Color32,
     /// Icons, the open launcher's label and the selected row's marker.
     pub accent: Color32,
-    /// The second icon colour (pages, needles).
-    pub accent2: Color32,
     pub hover: Color32,
     pub selected: Color32,
     pub rule: Color32,
@@ -60,7 +60,6 @@ pub(super) fn look() -> Look {
         ink: c.ink,
         muted: c.muted,
         accent: c.lapis,
-        accent2: c.verdigris,
         hover: c.hover,
         selected: c.selection,
         rule: c.rule,
@@ -249,7 +248,7 @@ pub(super) fn overflow_size() -> Vec2 {
     vec2(BUTTON_PAD * 2.0 + ICON, BUTTON_HEIGHT)
 }
 
-/// The » button holding the Launchers a small window has no room for.
+/// The overflow button (a double chevron) holding the Launchers a small window has no room for.
 pub(super) fn overflow_button(ui: &mut Ui, open: bool) -> Response {
     let lk = look();
     let (rect, resp) = ui.allocate_exact_size(overflow_size(), Sense::click());
@@ -258,13 +257,7 @@ pub(super) fn overflow_button(ui: &mut Ui, open: bool) -> Response {
     } else if resp.hovered() {
         ui.painter().rect_filled(rect, RADIUS, lk.hover);
     }
-    ui.painter().text(
-        rect.center(),
-        Align2::CENTER_CENTER,
-        "»",
-        FontId::proportional(18.0),
-        lk.accent,
-    );
+    icons::paint(ui.painter(), Icon::Overflow, rect, icons::LARGE, lk.accent);
     resp
 }
 
@@ -281,77 +274,13 @@ pub(super) fn drop_edge(ctx: &egui::Context, r: Rect) {
 
 /// A launcher's icon inside `r`.
 pub(super) fn paint_icon(p: &Painter, which: Launcher, r: Rect, lk: &Look) {
-    let s = Stroke::new(1.6, lk.accent);
-    match which {
-        Launcher::Library => {
-            // Three books of different heights on a shelf; the middle one leans.
-            let base = r.bottom() - 2.0;
-            let books = [(r.left() + 2.0, 4.0, 13.0), (r.left() + 7.0, 4.0, 11.0)];
-            for (x, w, h) in books {
-                let b = Rect::from_min_max(pos2(x, base - h), pos2(x + w, base));
-                p.rect_stroke(b, 1, s, StrokeKind::Middle);
-            }
-            let lean = [
-                pos2(r.left() + 12.0, base),
-                pos2(r.left() + 15.5, base - 0.8),
-                pos2(r.left() + 17.5, base - 12.0),
-                pos2(r.left() + 14.0, base - 11.2),
-            ];
-            p.add(egui::Shape::closed_line(lean.to_vec(), s));
-            p.line_segment(
-                [pos2(r.left(), base + 1.2), pos2(r.right(), base + 1.2)],
-                Stroke::new(1.6, lk.accent2),
-            );
-        }
-        Launcher::Guides => {
-            // A compass: a ring and a two-colour needle.
-            let c = r.center();
-            p.circle_stroke(c, r.width() / 2.0 - 1.0, s);
-            let n = r.height() / 2.0 - 3.5;
-            let w = 2.6;
-            p.add(egui::Shape::convex_polygon(
-                vec![pos2(c.x, c.y - n), pos2(c.x + w, c.y), pos2(c.x - w, c.y)],
-                lk.accent,
-                Stroke::NONE,
-            ));
-            p.add(egui::Shape::convex_polygon(
-                vec![pos2(c.x, c.y + n), pos2(c.x - w, c.y), pos2(c.x + w, c.y)],
-                lk.accent2,
-                Stroke::NONE,
-            ));
-        }
-        Launcher::Tools => {
-            // A two-by-two grid of rounded squares, one filled.
-            let g = 2.5;
-            let side = (r.width() - g) / 2.0 - 1.0;
-            for (i, (dx, dy)) in [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
-                .into_iter()
-                .enumerate()
-            {
-                let min = pos2(
-                    r.left() + 1.0 + dx * (side + g),
-                    r.top() + 1.0 + dy * (side + g),
-                );
-                let sq = Rect::from_min_size(min, vec2(side, side));
-                if i == 3 {
-                    p.rect_filled(sq, 2, lk.accent2);
-                } else {
-                    p.rect_stroke(sq, 2, s, StrokeKind::Middle);
-                }
-            }
-        }
-        Launcher::Layouts => {
-            // A window tiled into one tall Panel and two stacked ones.
-            let w = r.shrink(1.0);
-            p.rect_stroke(w, 2, s, StrokeKind::Middle);
-            let split = w.left() + w.width() * 0.55;
-            p.line_segment([pos2(split, w.top()), pos2(split, w.bottom())], s);
-            p.line_segment(
-                [pos2(split, w.center().y), pos2(w.right(), w.center().y)],
-                Stroke::new(1.6, lk.accent2),
-            );
-        }
-    }
+    let icon = match which {
+        Launcher::Library => Icon::Library,
+        Launcher::Guides => Icon::Guides,
+        Launcher::Tools => Icon::Tools,
+        Launcher::Layouts => Icon::Layouts,
+    };
+    icons::paint(p, icon, r, ICON, lk.accent);
 }
 
 /// A drop-down's section heading ("Recent", "Bibles").
@@ -378,34 +307,39 @@ pub(super) fn row_background(ui: &Ui, rect: Rect, selected: bool, hovered: bool)
     }
 }
 
-/// A Resource row: its abbreviation in a chip, its title, and its type and language on the
-/// right.
-pub(super) fn resource_row(ui: &Ui, rect: Rect, abbreviation: &str, title: &str, detail: &str) {
+/// A Resource row: its abbreviation in a chip (a Favorite's star when `chip` is `None`), its
+/// title, and its type and language on the right.
+pub(super) fn resource_row(ui: &Ui, rect: Rect, chip: Option<&str>, title: &str, detail: &str) {
     let lk = look();
     let p = ui.painter();
     // A fixed-width chip, so titles line up; a long abbreviation ends in "…".
     let chip_w = 58.0;
-    let chip_text = elided(
-        p,
-        abbreviation.to_string(),
-        FontId::proportional(12.0),
-        chip_w - 8.0,
-        lk.accent,
-    );
-    let chip = Rect::from_min_size(
+    let chip_rect = Rect::from_min_size(
         pos2(rect.left() + 10.0, rect.center().y - 10.0),
         vec2(chip_w, 20.0),
     );
-    p.rect_filled(chip, 4, lk.surface);
-    p.rect_stroke(chip, 4, Stroke::new(1.0, lk.rule), StrokeKind::Inside);
-    p.galley(
-        pos2(
-            chip.center().x - chip_text.size().x / 2.0,
-            chip.center().y - chip_text.size().y / 2.0,
-        ),
-        chip_text,
-        lk.accent,
-    );
+    p.rect_filled(chip_rect, 4, lk.surface);
+    p.rect_stroke(chip_rect, 4, Stroke::new(1.0, lk.rule), StrokeKind::Inside);
+    match chip {
+        Some(abbreviation) => {
+            let chip_text = elided(
+                p,
+                abbreviation.to_string(),
+                FontId::proportional(12.0),
+                chip_w - 8.0,
+                lk.accent,
+            );
+            p.galley(
+                pos2(
+                    chip_rect.center().x - chip_text.size().x / 2.0,
+                    chip_rect.center().y - chip_text.size().y / 2.0,
+                ),
+                chip_text,
+                lk.accent,
+            );
+        }
+        None => icons::paint(p, Icon::StarFilled, chip_rect, icons::SMALL, lk.badge),
+    }
     let right = p.text(
         pos2(rect.right() - 10.0, rect.center().y),
         Align2::RIGHT_CENTER,
@@ -413,7 +347,7 @@ pub(super) fn resource_row(ui: &Ui, rect: Rect, abbreviation: &str, title: &str,
         small_font(),
         lk.muted,
     );
-    let left = chip.right() + 10.0;
+    let left = chip_rect.right() + 10.0;
     let clip = Rect::from_min_max(
         pos2(left, rect.top()),
         pos2((right.left() - 10.0).max(left), rect.bottom()),
@@ -427,12 +361,34 @@ pub(super) fn resource_row(ui: &Ui, rect: Rect, abbreviation: &str, title: &str,
     );
 }
 
-/// A plain row: a label, and a muted note (a shortcut) on the right.
-pub(super) fn plain_row(ui: &Ui, rect: Rect, label: &str, note: &str, enabled: bool) {
+/// A plain row: the command's icon, a label, and a muted note (a shortcut) on the right.
+pub(super) fn plain_row(
+    ui: &Ui,
+    rect: Rect,
+    icon: Option<Icon>,
+    label: &str,
+    note: &str,
+    enabled: bool,
+) {
     let lk = look();
     let p = ui.painter();
+    let mut x = rect.left() + 12.0;
+    if let Some(icon) = icon {
+        let at = Rect::from_min_size(
+            pos2(x, rect.center().y - icons::BODY / 2.0),
+            vec2(icons::BODY, icons::BODY),
+        );
+        icons::paint(
+            p,
+            icon,
+            at,
+            icons::BODY,
+            if enabled { lk.accent } else { lk.muted },
+        );
+        x = at.right() + 10.0;
+    }
     p.text(
-        pos2(rect.left() + 12.0, rect.center().y),
+        pos2(x, rect.center().y),
         Align2::LEFT_CENTER,
         label,
         label_font(),

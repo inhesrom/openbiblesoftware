@@ -1,10 +1,10 @@
 //! The Notes Tool's Tab (#64; #18 rules 7 and 10, #17 rules 7, 13, 18 and 19): a Notebook
 //! column beside a card list.
 //!
-//! - **Column**: All, each Notebook (its 👁 Show-in-text toggle, its count; right-click or
+//! - **Column**: All, each Notebook (its eye Show-in-text toggle, its count; right-click or
 //!   double-click to rename, right-click to delete) and + New notebook. Deleting asks what
 //!   happens to the Notebook's Annotations: moved to the default Notebook (pre-selected) or
-//!   deleted; either way Ctrl+Z brings everything back. **⚠ Needs attention** (#65, #17
+//!   deleted; either way Ctrl+Z brings everything back. **Needs attention** (#65, #17
 //!   rule 12) lists the Orphaned annotations; it shows only when there are some (or while it
 //!   is the chosen entry).
 //! - **Orphaned cards** say their text was not found after their Resource changed, show the
@@ -48,6 +48,7 @@ use serde_json::{Value, json};
 use super::State;
 use super::annotate::{menu_label, paint_swatch, selection_params};
 use crate::heights::HeightIndex;
+use crate::icons::{self, Icon};
 use crate::theme;
 use crate::workers::SnippetCache;
 
@@ -588,7 +589,12 @@ impl State {
                 if self.notes_ui.attention > 0 || attention {
                     ui.horizontal(|ui| {
                         ui.add_space(4.0);
-                        ui.label(RichText::new("⚠").color(theme::c().warn));
+                        ui.add(icons::image(
+                            ui.ctx(),
+                            Icon::Warning,
+                            icons::BODY,
+                            theme::c().warn,
+                        ));
                         ui.add_space(4.0);
                         let r = row(ui, attention, "Needs attention", self.notes_ui.attention as u64)
                             .on_hover_text(
@@ -604,11 +610,11 @@ impl State {
                     let selected = filter == NotesFilter::Notebook(nb.id.clone());
                     ui.horizontal(|ui| {
                         let shown = !self.notes_ui.hidden.contains(&nb.id);
-                        let eye = egui::Button::new(RichText::new("👁").color(if shown {
-                            theme::c().ink
+                        let eye = egui::Button::new(if shown {
+                            icons::image(ui.ctx(), Icon::Shown, icons::BODY, theme::c().ink)
                         } else {
-                            theme::c().rule
-                        }))
+                            icons::image(ui.ctx(), Icon::Hidden, icons::BODY, theme::c().muted)
+                        })
                         .frame(false)
                         .min_size(vec2(22.0, 22.0));
                         let tip = if shown {
@@ -616,7 +622,7 @@ impl State {
                         } else {
                             "Hidden in the text. Click to show this Notebook's Highlights and Notes."
                         };
-                        if ui.add(eye).on_hover_text(tip).clicked() {
+                        if ui.add(eye).accessible_name(tip).on_hover_text(tip).clicked() {
                             run.push((
                                 "notebook.show_in_text",
                                 json!({ "id": nb.id, "show": !shown }),
@@ -823,7 +829,7 @@ impl State {
             } else if self.session.notes.filter != NotesFilter::All {
                 "This Notebook is empty"
             } else {
-                "No Notes or Highlights yet. Select text in a Bible, then pick a colour or ✏ Note."
+                "No Notes or Highlights yet. Select text in a Bible, then pick a colour, or Note to write one."
             };
             ui.add_space(30.0);
             ui.vertical_centered(|ui| {
@@ -889,7 +895,12 @@ impl State {
                             paint_swatch(ui, rect, &look, &self.palette, false);
                         }
                         Content::Note { .. } => {
-                            ui.label(RichText::new("✏").color(theme::c().muted));
+                            ui.add(icons::image(
+                                ui.ctx(),
+                                Icon::Note,
+                                icons::BODY,
+                                icons::page_muted(&self.palette),
+                            ));
                         }
                     }
                     let reference = RichText::new(&card.reference).strong();
@@ -922,7 +933,11 @@ impl State {
                         .on_hover_text("Its Annotations come back when it is imported again");
                 }
                 if let Some(m) = &card.attention {
-                    ui.label(RichText::new(m).small().color(theme::c().warn));
+                    ui.horizontal_top(|ui| {
+                        let warn = theme::c().warn;
+                        ui.add(icons::image(ui.ctx(), Icon::Warning, icons::SMALL, warn));
+                        ui.add(egui::Label::new(RichText::new(m).small().color(warn)).wrap());
+                    });
                 }
                 if let Some(q) = &card.quote {
                     let width = ui.available_width();

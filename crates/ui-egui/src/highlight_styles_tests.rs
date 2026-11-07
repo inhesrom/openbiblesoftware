@@ -312,14 +312,16 @@ fn the_keys_and_the_right_click_menu_follow_the_active_palette() {
         h.frame();
     }
     h.frame();
-    for label in [
-        "■Yellow",
-        "■Red underline",
-        "■Promises",
-        "Highlight styles…",
-    ] {
+    for label in ["Yellow", "Red underline", "Promises", "Highlight styles…"] {
         assert!(h.find(label).is_some(), "{label}: {:?}", h.texts());
     }
+    // Each style after its swatch.
+    let swatches = h
+        .texts()
+        .iter()
+        .filter(|t| **t == "[square-filled]")
+        .count();
+    assert!(swatches >= 3, "{:?}", h.texts());
     press_key(&mut h, egui::Key::Escape, Modifiers::NONE);
 
     // A new palette, made active: no styles, so Ctrl+1 highlights nothing.
@@ -667,7 +669,7 @@ fn previews() {
 fn the_styles_window_symbols_are_in_the_chrome_fonts() {
     let h = Harness::new();
     h.ctx.fonts_mut(|f| {
-        let missing: Vec<&str> = ["⏶", "⏷", "AA ✔", "■", "…"]
+        let missing: Vec<&str> = ["…"]
             .into_iter()
             .filter(|s| !f.has_glyphs(&egui::FontId::proportional(14.0), s))
             .collect();

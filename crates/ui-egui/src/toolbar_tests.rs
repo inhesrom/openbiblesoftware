@@ -334,7 +334,10 @@ fn the_tools_pane_shows_a_rebound_or_cleared_key() {
         let row = in_pane(h, "Search");
         (h.shapes.iter())
             .filter(|(r, t)| {
-                pane.contains(r.center()) && (r.center().y - row.y).abs() < 4.0 && t != "Search"
+                pane.contains(r.center())
+                    && (r.center().y - row.y).abs() < 4.0
+                    && t != "Search"
+                    && t != "[search]"
             })
             .map(|(_, t)| t.clone())
             .collect::<Vec<_>>()

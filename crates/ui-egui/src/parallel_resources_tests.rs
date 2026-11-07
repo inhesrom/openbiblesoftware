@@ -125,7 +125,7 @@ fn next_button_in_a_bsb_tab_at_ps_3_1_lands_on_tahot_hebrew_ps_3_2_and_back_retu
     let (mut h, tab) = bsb_at_ps_3_1();
     assert_eq!(h.shell.st.location_text(tab), "Psalms 3:1");
     let link = h.shell.st.session.workspace.tab(tab).unwrap().link;
-    h.click(in_panel(&h, tab, "▶"));
+    h.click(in_panel(&h, tab, "[chevron-right]"));
     settle_all(&mut h);
     assert_eq!(shows(&h, tab), ("tahot".into(), Some(ps(3, 2))));
     assert_eq!(h.shell.st.location_text(tab), "Psalms 3:2");
@@ -141,13 +141,13 @@ fn next_button_in_a_bsb_tab_at_ps_3_1_lands_on_tahot_hebrew_ps_3_2_and_back_retu
     in_panel(&h, tab, "TAHOT");
 
     // Back (the header's ‹) returns to the BSB at the same place.
-    h.click(in_panel(&h, tab, "‹"));
+    h.click(in_panel(&h, tab, "[arrow-left]"));
     settle_all(&mut h);
     assert_eq!(shows(&h, tab), ("bsb".into(), Some(ps(3, 1))));
     assert_eq!(h.shell.st.location_text(tab), "Psalms 3:1");
     assert_eq!(top_verse(&mut h, tab), Some(ps(3, 1)));
     // And Forward to TAHOT again.
-    h.click(in_panel(&h, tab, "›"));
+    h.click(in_panel(&h, tab, "[arrow-right]"));
     settle_all(&mut h);
     assert_eq!(shows(&h, tab), ("tahot".into(), Some(ps(3, 2))));
 }
@@ -170,7 +170,7 @@ fn ctrl_brackets_cycle_through_the_bibles_in_preferred_order() {
     press(&mut h, EguiKey::OpenBracket);
     assert_eq!(shows(&h, tab), ("bsb".into(), Some(ps(3, 1))));
     // ◀ from the BSB is the Bible before it.
-    h.click(in_panel(&h, tab, "◀"));
+    h.click(in_panel(&h, tab, "[chevron-left]"));
     settle_all(&mut h);
     assert_eq!(shows(&h, tab).0, "heb-num");
 }
@@ -217,7 +217,7 @@ fn a_type_with_one_resource_shows_the_control_disabled() {
             .unwrap(),
     );
     h.frames(3);
-    h.click(in_panel(&h, tab, "▶"));
+    h.click(in_panel(&h, tab, "[chevron-right]"));
     h.click(in_panel(&h, tab, "TC"));
     assert_eq!(shows(&h, tab).0, "tc");
     assert!(
@@ -289,13 +289,13 @@ fn back_across_a_switch_returns_to_the_scroll_position_inside_a_long_commentary_
     assert_eq!(shows(&h, tab), ("tc".into(), Some(ps(3, 1))));
     let seen = texts_in(&h, tab);
 
-    h.click(in_panel(&h, tab, "▶"));
+    h.click(in_panel(&h, tab, "[chevron-right]"));
     settle_all(&mut h);
     assert_eq!(shows(&h, tab), ("oc".into(), Some(ps(3, 1))));
     // A switch opens the other Commentary at the section's start.
     assert_eq!(top_anchor(&mut h, tab).byte, start.byte);
 
-    h.click(in_panel(&h, tab, "‹"));
+    h.click(in_panel(&h, tab, "[arrow-left]"));
     settle_all(&mut h);
     assert_eq!(shows(&h, tab), ("tc".into(), Some(ps(3, 1))));
     let back = top_anchor(&mut h, tab);
@@ -307,7 +307,7 @@ fn back_across_a_switch_returns_to_the_scroll_position_inside_a_long_commentary_
     assert_eq!(texts_in(&h, tab), seen, "the same text is in view");
 
     // Forward returns to the other Commentary where it was left.
-    h.click(in_panel(&h, tab, "›"));
+    h.click(in_panel(&h, tab, "[arrow-right]"));
     settle_all(&mut h);
     assert_eq!(shows(&h, tab).0, "oc");
     assert_eq!(top_anchor(&mut h, tab).byte, start.byte);
@@ -333,13 +333,13 @@ fn the_reference_box_leaves_room_for_the_parallel_controls_in_a_narrow_panel() {
         .filter(|r| r.contains(text) && r.width() > 40.0 && r.height() < 40.0)
         .min_by(|a, b| a.width().total_cmp(&b.width()))
         .expect("the reference box");
-    let previous = in_panel(&h, tab, "◀");
+    let previous = in_panel(&h, tab, "[chevron-left]");
     assert!(
         field.right() < previous.x - 4.0,
         "the box {field:?} overlaps ◀ at {previous:?}"
     );
     assert!(
-        panel.contains(in_panel(&h, tab, "…")),
+        panel.contains(in_panel(&h, tab, "[ellipsis]")),
         "the Tab menu is in the Panel"
     );
 }
@@ -368,10 +368,10 @@ fn parallel_resources_previews() {
         modifiers: Modifiers::NONE,
     });
     h.frames(2);
-    h.click(in_panel(&h, tab, "▶"));
+    h.click(in_panel(&h, tab, "[chevron-right]"));
     settle_all(&mut h);
     h.screenshot(&dir.join("tahot-ps-3-2.ppm"));
-    h.click(in_panel(&h, tab, "‹"));
+    h.click(in_panel(&h, tab, "[arrow-left]"));
     settle_all(&mut h);
     h.screenshot(&dir.join("back-bsb-ps-3-1.ppm"));
 }

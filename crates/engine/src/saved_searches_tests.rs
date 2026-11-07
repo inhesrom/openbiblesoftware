@@ -493,7 +493,7 @@ fn search_scope_details_name_the_bibles_resources_and_notebook() {
         let st = s.search_tab(t).unwrap();
         s.search_scope_details(&SavedSearch::of(st).unwrap())
     };
-    assert_eq!(of(&s), "Bibles: the ★ Bible");
+    assert_eq!(of(&s), "Bibles: the first in Preferred order");
     run(
         &mut s,
         "search.run",

@@ -11,6 +11,7 @@ use obs_engine::{HomeCard, PlanDate, QUICK_STARTS, TabId, day_heading};
 use serde_json::{Value, json};
 
 use super::State;
+use crate::icons::{self, Icon};
 use crate::theme;
 
 /// Narrower than this, the cards stack in one column.
@@ -29,7 +30,13 @@ impl State {
             .and_then(|t| self.session.workspace.tab(t))
             .is_some_and(|t| t.kind == obs_engine::TabKind::Home);
         let r = ui
-            .add(egui::Button::new(RichText::new("Home").size(12.5)).selected(open))
+            .add(
+                egui::Button::new((
+                    icons::image(ui.ctx(), Icon::Home, icons::BODY, theme::c().muted),
+                    RichText::new("Home").size(12.5),
+                ))
+                .selected(open),
+            )
             .on_hover_text(super::with_key(
                 &self.session,
                 "Today's reading, where you left off, Quick start and your library",
@@ -111,7 +118,7 @@ impl State {
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let title = card.title();
-                        if card_button(ui, "×", &format!("Hide {title}")).clicked() {
+                        if card_button(ui, Icon::Close, &format!("Hide {title}")).clicked() {
                             *run = Some(("home.hide_card", json!({ "card": card.id() })));
                         }
                         // Moves are within the whole order, hidden cards included: past the
@@ -123,7 +130,7 @@ impl State {
                             .and_then(|c| all.position(*c));
                         if ui
                             .add_enabled_ui(next.is_some(), |ui| {
-                                card_button(ui, "⏷", &format!("Move {title} down"))
+                                card_button(ui, Icon::MoveDown, &format!("Move {title} down"))
                             })
                             .inner
                             .clicked()
@@ -133,7 +140,7 @@ impl State {
                         }
                         if ui
                             .add_enabled_ui(prev.is_some(), |ui| {
-                                card_button(ui, "⏶", &format!("Move {title} up"))
+                                card_button(ui, Icon::MoveUp, &format!("Move {title} up"))
                             })
                             .inner
                             .clicked()
@@ -269,7 +276,7 @@ impl State {
             );
         }
         for (id, label) in &history {
-            if place_row(ui, label) {
+            if place_row(ui, None, label) {
                 *run = Some(("history.open", json!({ "id": id, "split": split })));
             }
         }
@@ -287,13 +294,13 @@ impl State {
         if favorites.is_empty() {
             let star = super::with_key(
                 &self.session,
-                "Star a place with the ☆ in a Tab's header",
+                "Star a place with the star in a Tab's header",
                 "favorite.add",
             );
             muted(ui, &format!("{star} to keep it here."));
         }
         for (id, label) in &favorites {
-            if place_row(ui, &format!("★ {label}")) {
+            if place_row(ui, Some(Icon::StarFilled), label) {
                 *run = Some(("favorite.open", json!({ "id": id, "split": split })));
             }
         }
@@ -314,7 +321,9 @@ impl State {
                 )
                 .frame(false),
             )
-            .on_hover_text("Read it in the ★ Bible (Ctrl/Cmd-click: in a new split)")
+            .on_hover_text(
+                "Read it in the first Bible of your Preferred order (Ctrl/Cmd-click: in a new split)",
+            )
             .clicked()
         {
             *run = Some((
@@ -459,16 +468,22 @@ fn hidden_row(ui: &mut Ui, hidden: &[HomeCard], run: &mut Run) {
 }
 
 /// A small header button with an accessible name.
-fn card_button(ui: &mut Ui, text: &str, name: &str) -> egui::Response {
-    ui.add(egui::Button::new(RichText::new(text).color(theme::c().muted)).frame(false))
-        .accessible_name(name)
-        .on_hover_text(name)
+fn card_button(ui: &mut Ui, icon: Icon, name: &str) -> egui::Response {
+    icons::button(ui, icon, icons::BODY, theme::c().muted, name).on_hover_text(name)
 }
 
 /// One place to open: returns whether it was clicked.
-fn place_row(ui: &mut Ui, label: &str) -> bool {
+fn place_row(ui: &mut Ui, icon: Option<Icon>, label: &str) -> bool {
+    let text = RichText::new(label).size(14.0).color(theme::c().ink);
+    let button = match icon {
+        Some(icon) => egui::Button::new((
+            icons::image(ui.ctx(), icon, icons::BODY, theme::c().gilt),
+            text,
+        )),
+        None => egui::Button::new(text),
+    };
     ui.add(
-        egui::Button::new(RichText::new(label).size(14.0).color(theme::c().ink))
+        button
             .frame(false)
             .min_size(vec2(ui.available_width(), 22.0)),
     )

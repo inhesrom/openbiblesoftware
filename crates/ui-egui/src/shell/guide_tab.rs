@@ -16,6 +16,7 @@ use super::State;
 use super::factbook_tab::FactbookAction;
 use super::guide_words::WordsAction;
 use super::topic_guide_tab::TopicAction;
+use crate::icons::{self, Icon};
 use crate::theme;
 
 /// Height of a section header.
@@ -115,7 +116,7 @@ impl State {
 
     /// A Guide's page: `head` (the Guide's Key), then its sections in the Guide arrangement's
     /// order, each computed on the job queue. Headers collapse on click, move by dragging and
-    /// hide with ×, for every Guide of the kind.
+    /// hide with their Close button, for every Guide of the kind.
     pub(super) fn guide_page(
         &mut self,
         ui: &mut Ui,
@@ -655,31 +656,23 @@ fn section_header(
     };
     painter.rect_filled(rect, 4.0, fill);
     let y = rect.center().y;
-    painter.text(
-        pos2(rect.left() + 7.0, y),
-        Align2::LEFT_CENTER,
-        "≡",
-        FontId::monospace(14.0),
-        c.muted,
-    );
-    // ▸ collapsed, ▾ expanded.
-    let tip = pos2(rect.left() + 28.0, y);
-    let points = if collapsed {
-        vec![
-            tip + vec2(-3.0, -5.0),
-            tip + vec2(4.0, 0.0),
-            tip + vec2(-3.0, 5.0),
-        ]
+    let at = |x: f32| Rect::from_center_size(pos2(rect.left() + x, y), vec2(16.0, 16.0));
+    icons::paint(&painter, Icon::Grip, at(13.0), icons::SMALL, c.muted);
+    let chevron = if collapsed {
+        Icon::ChevronRight
     } else {
-        vec![
-            tip + vec2(-5.0, -3.0),
-            tip + vec2(5.0, -3.0),
-            tip + vec2(0.0, 4.0),
-        ]
+        Icon::ChevronDown
     };
-    painter.add(Shape::convex_polygon(points, c.ink, Stroke::NONE));
+    icons::paint(&painter, chevron, at(31.0), icons::BODY, c.ink);
+    icons::paint(
+        &painter,
+        icons::for_section(section),
+        at(52.0),
+        icons::BODY,
+        c.lapis,
+    );
     let title = painter.text(
-        pos2(rect.left() + 40.0, y),
+        pos2(rect.left() + 66.0, y),
         Align2::LEFT_CENTER,
         section.title(),
         FontId::proportional(14.5),
@@ -717,11 +710,11 @@ fn section_header(
             Sense::click(),
         )
         .on_hover_text(format!("Hide this section in every {}", guide.title()));
-    painter.text(
-        hide_rect.center(),
-        Align2::CENTER_CENTER,
-        "×",
-        FontId::proportional(15.0),
+    icons::paint(
+        &painter,
+        Icon::Close,
+        hide_rect,
+        icons::BODY,
         if hide.hovered() { c.ink } else { c.muted },
     );
     Header {

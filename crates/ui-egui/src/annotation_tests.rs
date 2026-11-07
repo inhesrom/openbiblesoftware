@@ -174,7 +174,7 @@ fn ctrl_2_draws_a_green_highlight_at_once_and_ctrl_z_removes_it() {
     double_click(&mut h, r.center());
     assert!(h.shell.st.has_selection(tb));
     // Released: the floating toolbar is up, with its actions.
-    for label in ["✏ Note", "Copy", "🔎 Search this"] {
+    for label in ["Note", "Copy", "Search this"] {
         assert!(h.find(label).is_some(), "{label}: {:?}", h.texts());
     }
     let green = h.shell.st.palette.built_in_color("green");
@@ -191,7 +191,7 @@ fn ctrl_2_draws_a_green_highlight_at_once_and_ctrl_z_removes_it() {
     assert!(covers(union(&rects), r), "{rects:?} vs word {r:?}");
     // The selection and the toolbar make way for it.
     assert!(!h.shell.st.has_selection(tb));
-    assert!(h.find("✏ Note").is_none());
+    assert!(h.find("Note").is_none());
     let stored = h.shell.st.session.annotations(None).unwrap();
     assert_eq!(stored.len(), 1);
     assert_eq!(
@@ -389,8 +389,8 @@ fn toolbar_swatches_and_right_click_apply_styles_and_the_newest_is_drawn_on_top(
     }
     h.frame();
     assert!(h.shell.st.has_selection(tb), "right-click selects the word");
-    assert!(h.find("■Red underline").is_some(), "{:?}", h.texts());
-    h.click_text("■Pink");
+    assert!(h.find("Red underline").is_some(), "{:?}", h.texts());
+    h.click_text("Pink");
     let order: Vec<Color32> = h
         .rects
         .iter()
@@ -439,8 +439,8 @@ fn a_note_saves_on_blur_and_survives_restart() {
     let (_, b, _, last) = word_in_view(&h, tb, first.bottom() + 1.0);
     // Drag from the first word to the end of the second: the toolbar comes up on release.
     h.drag(first.left_center() + vec2(1.0, 0.0), last.right_center());
-    assert!(h.find("✏ Note").is_some(), "{:?}", h.texts());
-    h.click_text("✏ Note");
+    assert!(h.find("Note").is_some(), "{:?}", h.texts());
+    h.click_text("Note");
     assert!(h.ctx.text_edit_focused(), "the editor takes the keyboard");
     // Ctrl+Z inside it is the field's own undo, not the app's (which would undo the new
     // Notebook).
@@ -816,7 +816,7 @@ fn highlight_swatches_and_note_markers_are_legible_in_every_tone() {
 fn the_toolbar_symbols_are_in_the_chrome_fonts() {
     let h = Harness::new();
     h.ctx.fonts_mut(|f| {
-        let missing: Vec<&str> = ["✏ Note", "🔎 Search this"]
+        let missing: Vec<&str> = ["Note", "Search this"]
             .into_iter()
             .filter(|s| !f.has_glyphs(&egui::FontId::proportional(14.0), s))
             .collect();

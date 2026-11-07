@@ -10,6 +10,7 @@ use obs_model::{Manifest, Origin, ResourceType};
 use serde_json::json;
 
 use super::{RESOURCE_TYPES, State, type_name};
+use crate::icons::{self, Icon};
 use crate::pane::reading_pane;
 use crate::theme;
 
@@ -490,20 +491,20 @@ fn library_row(
         painter.rect_filled(rect, 4.0, c.hover);
     }
     let y = rect.center().y;
-    let font = FontId::proportional(14.0);
-    painter.text(
-        pos2(rect.left() + 6.0, y),
-        Align2::LEFT_CENTER,
-        "≡",
-        FontId::monospace(14.0),
+    let at = |x: f32| Rect::from_center_size(pos2(rect.left() + x, y), vec2(16.0, 16.0));
+    icons::paint(
+        &painter,
+        Icon::Grip,
+        at(12.0),
+        icons::SMALL,
         if handle.hovered() { c.ink } else { c.muted },
     );
     if first {
-        painter.text(
-            pos2(rect.left() + HANDLE_W, y),
-            Align2::LEFT_CENTER,
-            "★",
-            font.clone(),
+        icons::paint(
+            &painter,
+            Icon::StarFilled,
+            at(HANDLE_W + 7.0),
+            icons::SMALL,
             c.gilt,
         );
     }

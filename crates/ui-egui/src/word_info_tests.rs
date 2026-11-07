@@ -416,7 +416,7 @@ fn pinning_holds_the_panel_while_hovering_elsewhere() {
             .to_string(),
         "H1254A"
     );
-    assert!(h.find("📌 Pinned").is_some(), "{:?}", h.texts());
+    assert!(h.find("Pinned").is_some(), "{:?}", h.texts());
     // Hovering another Tagged word underlines it but the panel holds.
     let elohim = word_spot(&h, heb, "אֱלֹהִ֑ים");
     h.events.push(Event::PointerMoved(elohim));
@@ -479,7 +479,7 @@ fn the_header_chip_unpins_and_copy_writes_the_cards() {
     let bara = word_spot(&h, heb, "בָּרָ֣א");
     h.click(bara);
     assert!(h.shell.st.session.word_info.pinned);
-    h.click_text("📌 Pinned");
+    h.click_text("Pinned");
     assert!(!h.shell.st.session.word_info.pinned);
     assert!(h.find("Follows hover").is_some());
     // Copy: the command returns the card text (the clipboard itself is the OS's).
@@ -495,7 +495,7 @@ fn the_header_chip_unpins_and_copy_writes_the_cards() {
     // Word Study › opens the shown word (#55); Search this word works (#59).
     assert!(h.shell.st.session.is_enabled("word_info.word_study"));
     assert!(h.shell.st.session.is_enabled("word_info.search"));
-    assert!(h.find("Word Study ›").is_some());
+    assert!(h.find("Word Study").is_some());
     assert!(h.find("Search this word").is_some());
 }
 

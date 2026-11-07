@@ -27,7 +27,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 name: "to",
                 kind: ParamKind::Integer,
                 required: true,
-                help: "New position within its Resource type; 0 is first (★)",
+                help: "New position within its Resource type; 0 is first",
             },
         ],
         enabled: always,

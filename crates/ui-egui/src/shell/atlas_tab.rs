@@ -497,10 +497,10 @@ impl State {
                     .desired_width(180.0),
             )
             .accessible_name("Find a place on the map");
-            if ui.small_button("−").on_hover_text("Zoom out").clicked() {
+            if crate::icons::small_button(ui, crate::icons::Icon::ZoomOut, "Zoom out").clicked() {
                 zoom = Some(0.5);
             }
-            if ui.small_button("+").on_hover_text("Zoom in").clicked() {
+            if crate::icons::small_button(ui, crate::icons::Icon::ZoomIn, "Zoom in").clicked() {
                 zoom = Some(2.0);
             }
             if ui
@@ -713,8 +713,7 @@ fn place_list(
                     state.moved = true;
                 }
             }
-            if ui
-                .small_button("Factbook ›")
+            if crate::icons::onward(ui, "Factbook")
                 .on_hover_text(format!("Open {}'s Factbook", place.name))
                 .clicked()
             {
@@ -747,7 +746,7 @@ fn place_list(
         for place in unlocated {
             ui.horizontal(|ui| {
                 ui.label(&place.name);
-                if ui.small_button("Factbook ›").clicked() {
+                if crate::icons::onward(ui, "Factbook").clicked() {
                     open = Some((place.entity.clone(), new_tab));
                 }
             });

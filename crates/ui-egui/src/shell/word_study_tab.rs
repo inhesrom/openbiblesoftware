@@ -4,7 +4,7 @@
 //! until a Strong's number is chosen. Everything shown comes from the engine as pure data
 //! computed on the job queue; this file only draws it.
 
-use egui::{Rect, RichText, Sense, Shape, Stroke, Ui, pos2, vec2};
+use egui::{Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
 use obs_engine::{
     Chooser, Effect, Guide, LexiconEntry, TabId, TabKind, WordStatus, WordStudyHeader,
 };
@@ -38,7 +38,7 @@ impl State {
             hint_page(
                 ui,
                 "Type a Strong's number (G5485, H1254A) or an English word (love) in the box \
-                 above, or click Word Study › in Word Info.",
+                 above, or click Word Study in Word Info.",
             );
             return;
         };
@@ -505,25 +505,18 @@ fn strongs_line(ui: &mut Ui, number: StrongsNumber, part_of_speech: Option<&str>
     });
 }
 
-/// ▸ collapsed, ▾ expanded, painted (the UI font has no such glyphs).
+/// A chevron: right collapsed, down expanded.
 fn paint_disclosure(ui: &Ui, rect: Rect, open: bool) {
-    let tip = rect.center();
-    let points = if open {
-        vec![
-            tip + vec2(-5.0, -3.0),
-            tip + vec2(5.0, -3.0),
-            tip + vec2(0.0, 4.0),
-        ]
+    let icon = if open {
+        crate::icons::Icon::ChevronDown
     } else {
-        vec![
-            tip + vec2(-3.0, -5.0),
-            tip + vec2(4.0, 0.0),
-            tip + vec2(-3.0, 5.0),
-        ]
+        crate::icons::Icon::ChevronRight
     };
-    ui.painter().add(Shape::convex_polygon(
-        points,
+    crate::icons::paint(
+        ui.painter(),
+        icon,
+        rect,
+        crate::icons::BODY,
         theme::c().lapis,
-        Stroke::NONE,
-    ));
+    );
 }
