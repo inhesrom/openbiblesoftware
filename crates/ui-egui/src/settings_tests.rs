@@ -368,6 +368,7 @@ fn privacy_and_data_opens_back_up_and_restore() {
     let tab = open_settings(&mut h);
     search(&mut h, tab, "backup");
     assert!(in_tab(&h, tab, "This cannot be undone.").is_none());
+    preview(&h, "settings-backups-kittest");
     click_in_tab(&mut h, tab, "Back up & restore…");
     let backups = h.tab_id(obs_engine::BACKUPS_TITLE);
     assert_eq!(

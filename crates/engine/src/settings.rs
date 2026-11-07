@@ -410,8 +410,8 @@ pub const SETTINGS: &[Setting] = &[
     setting(
         "back_up_and_restore",
         S::PrivacyAndData,
-        "Back up & restore",
-        "Back up everything to one file, restore a backup, or export everything as Markdown and JSON",
+        "Backups",
+        "Back up, restore or export all your data",
         "backup back up restore export zip safety copy move computer data",
         SettingKind::Action {
             command: "data.backups",
