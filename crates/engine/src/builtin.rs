@@ -123,6 +123,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::lookups::COMMANDS)
         .chain(crate::command_box::COMMANDS)
         .chain(crate::copy_verses::COMMANDS)
+        .chain(crate::diagnostics::COMMANDS)
         .chain(crate::notes_export::COMMANDS)
         .chain(crate::toolbar::COMMANDS)
         .chain(crate::interlinear::COMMANDS)

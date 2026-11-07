@@ -368,7 +368,7 @@ One of the Layouts that come with the app: "Bible + Commentary", "Word study des
 _Avoid_: Preset, Template
 
 **Last session**:
-The Workspace as the user left it, restored automatically at the next launch. It is not a Layout. One with no Tabs open comes back empty while its Recently closed has anything to reopen; otherwise the default arrangement opens instead.
+The Workspace as the user left it, restored automatically at the next launch. It is saved within a second of every change, so it is restored after a crash too. It is not a Layout. One with no Tabs open comes back empty while its Recently closed has anything to reopen; otherwise the default arrangement opens instead.
 _Avoid_: Autosave layout
 
 **Recently closed**:
@@ -558,3 +558,21 @@ _Avoid_: Undo file, Restore point
 **Data export**:
 What Export everything writes: a zip with each Notebook's Notes as Markdown (as a Notes export) and every other part of the User database as JSON (Annotations with the remembered names of the Resources they were made on, Layouts, the Last session, Favorites, History, Reading plans, the Preferred order and settings), to read or keep elsewhere. Like a Notes export it is a copy, not a Backup: the app does not read it back.
 _Avoid_: Backup, Dump, Archive
+
+### Problems
+
+**Log folder**:
+The folder on this computer where the app keeps its log files and Crash reports. Help → Open log folder (or Settings → Privacy and data → Log folder) shows it in the file manager.
+_Avoid_: Logs directory, Diagnostics folder
+
+**Log level**:
+How much the app writes to its log files: Errors only, Warnings, Normal (the default) or Detailed, chosen in Settings → Privacy and data. Log files name what the app did (launches, commands, background jobs, problems), never Notes, Highlights or Resource text; each is rotated at 1 MB and the last three old ones are kept.
+_Avoid_: Verbosity, Debug mode
+
+**Crash report**:
+A text file the app writes to the Log folder when it hits a bug it cannot recover from: what failed and where in the program, a backtrace, the app version, the operating system and the recent log lines, with the home folder written as `~`. It holds none of the user's content. The next launch offers Report a problem for it, once; the last ten are kept.
+_Avoid_: Crash dump, Telemetry, Error log
+
+**Report a problem**:
+The window that shows a Crash report (offered at the launch after a crash, or the newest one from Help → Report a problem…), or with none a problem report made now (app version, operating system, recent log lines), for the user to read first. Copy report copies it; Open GitHub issue… opens the project's new-issue form in the browser filled in with it, which the user may submit there; Delete report removes it. Nothing is ever sent automatically.
+_Avoid_: Send feedback, Bug reporter, Crash reporter

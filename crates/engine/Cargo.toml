@@ -25,6 +25,8 @@ pulldown-cmark = { workspace = true, features = ["html"] }
 sha2.workspace = true
 # Parses the Featured Bibles data file (Get Bibles, #91).
 toml = "1"
+# Log lines for the Log files and Crash reports (#219); the app installs the logger.
+log.workspace = true
 # Writes Export everything's zip (#217) and the mock Open catalogue's USFM zip (feature
 # test-support, #134); the same version obs-formats reads with, so no new crate.
 zip = { version = "8", default-features = false, features = ["deflate-flate2"] }

@@ -37,6 +37,8 @@ sha2 = "0.11"
 unicode-normalization = "0.1"
 # CommonMark, for Note formatting (#186). No default features: no binary, no getopts.
 pulldown-cmark = { version = "0.13", default-features = false }
+# The logging facade; the desktop app installs the one logger (Log files, #219).
+log = "0.4"
 
 # UI (L6 only; enforced by `cargo xtask layers`).
 egui = "0.37"
