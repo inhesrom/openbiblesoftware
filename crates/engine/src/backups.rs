@@ -303,6 +303,15 @@ impl Session {
             used.push(name.clone());
             files.push((name, export.markdown()));
         }
+        // The remembered name of every Resource seen, so an Annotation on one since removed
+        // still says which it was.
+        let resource_names: Vec<Value> = user
+            .resource_names()?
+            .into_iter()
+            .map(|(id, abbreviation, title)| {
+                json!({ "resource_id": id, "abbreviation": abbreviation, "title": title })
+            })
+            .collect();
         files.push((
             "annotations.json".to_string(),
             pretty(&json!({
@@ -310,6 +319,7 @@ impl Session {
                 "highlight_palettes": user.highlight_palettes()?,
                 "highlight_styles": user.highlight_styles()?,
                 "annotations": user.annotations(None)?,
+                "resource_names": resource_names,
             })),
         ));
 
@@ -406,7 +416,7 @@ This zip is a copy of everything you made in Open Bible Software, for reading or
 elsewhere:\n\n\
 - `notes/`: each Notebook's Notes and Highlights as Markdown, in Bible order.\n\
 - `annotations.json`: every Notebook, Highlight style and palette, and Annotation with its \
-anchor.\n\
+anchor, and the name of every Resource they were made on, removed ones included.\n\
 - `layouts.json` and `last-session.json`: your Layouts and the Workspace as you left it.\n\
 - `favorites.json`, `history.json` and `reading-plans.json`.\n\
 - `preferred-order.json` and `settings.json`: your Preferred order and every setting.\n\

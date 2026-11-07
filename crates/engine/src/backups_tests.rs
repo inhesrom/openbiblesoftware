@@ -401,6 +401,13 @@ fn export_everything_writes_markdown_notes_and_json_of_every_table() {
     romans(&mut s);
     s.run("layout.save", &json!({ "name": "Study" })).unwrap();
     s.run("view.text_larger", &Value::Null).unwrap();
+    // A Resource removed since: only the User database remembers its name.
+    s.user
+        .as_ref()
+        .unwrap()
+        .save_resource_names(&[("gone".into(), "GONE".into(), "A Removed Bible".into())])
+        .unwrap();
+    assert!(s.library.get("gone").is_none());
     let dest = f.file("data.zip");
     let out = s.run("data.export", &path(&dest)).unwrap();
     assert_eq!(out["annotations"], 3);
@@ -464,6 +471,19 @@ fn export_everything_writes_markdown_notes_and_json_of_every_table() {
             .as_array()
             .unwrap()
             .is_empty()
+    );
+    let names = annotations["resource_names"].as_array().unwrap();
+    assert!(
+        names.contains(&json!({
+            "resource_id": "gone",
+            "abbreviation": "GONE",
+            "title": "A Removed Bible",
+        })),
+        "{names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n["resource_id"] == "kjv"),
+        "the Resources in the library are remembered too: {names:?}"
     );
     let layouts = json("layouts.json", &mut read);
     assert_eq!(layouts[0]["name"], "Study");
