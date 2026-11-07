@@ -56,3 +56,9 @@ jobs:
             echo "the bench gate did not catch 3 ms of synchronous feature work a frame" >&2
             exit 1
           fi
+      - name: Seeded work only when the catalog query changes must fail the gate
+        run: |
+          if OBS_BENCH_ACTION_SLOWDOWN_MS=3 cargo xtask bench; then
+            echo "the bench gate did not catch 3 ms of synchronous work in the frame a query changes" >&2
+            exit 1
+          fi

@@ -32,7 +32,7 @@ tessellation, the UI thread's work before the GPU.
 | `search-chart` | the same search | Chart by book, then by chapter of Psalms, scrolled | ≤ 1 frame |
 | `exegetical-guide` | a Tagged Hebrew Torah (10–30 words a verse) and its Lexicon | Genesis 24 word by word scrolled, then other chapters | ≤ 6 frames |
 | `topic-guide` | two topical indexes of 1,000 topics; Prayer has 60 subtopics of 20 Passages each | scrolls, shows every subtopic, scrolls, switches topic | ≤ 6 frames |
-| `get-resources` | a 3,000-row catalog (the live SWORD repositories list about 2,200) | types a search a key at a time, erases it, scrolls | ≤ 1 frame |
+| `get-resources` | a 3,000-row catalog (the live SWORD repositories list about 2,200) | types a search a key at a time, erases it, switches the type filter to Bibles and back, scrolls | ≤ 1 frame |
 
 Every feature scenario has the steady-scrolling budget: at most 1% missed frames. A settle
 budget counts frames from an action until the feature shows its result (0: its own frame). A
@@ -47,15 +47,20 @@ missed at 60 Hz.
 - `interlinear` and `find` measure the reading panes' UI-thread layout, as the reading
   scenarios do.
 - The Shell-driven scenarios measure the feature Tab's own drawing (its body, egui text
-  layout included). Every timed frame must draw it. The frames from an action until its
-  result shows are exempt, as #19 exempts the block a jump lands in. Those frames are held to
-  the settle and missed-frame budgets instead.
+  layout included). Every timed frame must draw it. When an action's result is made off the
+  UI thread or drawn afresh (the Atlas following a Link set, a Search view switched, a Guide
+  moved), the frames from the action until its result shows are exempt, as #19 exempts the
+  block a jump lands in. Those frames are held to the settle and missed-frame budgets
+  instead. Get Resources filters and sorts its catalog on the UI thread in the frame a search
+  key is typed or the type filter changes; those frames are not exempt.
 
-CI runs the gate twice more, each with a seeded slowdown that must fail it:
+CI runs the gate three more times, each with a seeded slowdown that must fail it:
 
 - `OBS_BENCH_SLOWDOWN_MS=3` adds 3 ms to every reading layout.
 - `OBS_BENCH_FEATURE_SLOWDOWN_MS=3` adds 3 ms to every frame of each feature Tab, which still
   fits in a 60 Hz frame.
+- `OBS_BENCH_ACTION_SLOWDOWN_MS=3` adds 3 ms to each feature Tab only in an action's own
+  frame: in Get Resources, each frame its catalog query or type filter changes.
 
 ## Running it
 
@@ -64,3 +69,5 @@ CI runs the gate twice more, each with a seeded slowdown that must fail it:
   `--no-shell-scenarios` leaves out the feature scenarios, `--json OUT` writes the report.
 - `cargo test -p obs-ui-egui -- every_shell_scenario`: every feature scenario sets up and
   shows its feature (unpaced, a few frames each).
+- `cargo test -p obs-ui-egui -- get_resources_holds`: catalog filtering frames count toward
+  the 2 ms budget.

@@ -397,15 +397,11 @@ impl ResourceListing {
 
     /// Whether the listing matches a search box entry (title, abbreviation or module).
     pub fn matches(&self, query: &str) -> bool {
-        self.matches_lower(&query.trim().to_lowercase())
-    }
-
-    /// [`Self::matches`] for an entry already trimmed and in lower case.
-    fn matches_lower(&self, q: &str) -> bool {
+        let q = query.trim().to_lowercase();
         q.is_empty()
             || [&self.title, &self.abbreviation, &self.module]
                 .iter()
-                .any(|f| f.to_lowercase().contains(q))
+                .any(|f| f.to_lowercase().contains(&q))
     }
 }
 
@@ -692,9 +688,9 @@ pub struct GetBibles {
     open: Option<(Vec<OpenSource>, Vec<ResourceListing>)>,
     /// Counts changes of the catalog and the Open catalogue, for [`Self::all_cache`].
     generation: u64,
-    /// The last "All" list ([`Self::all_listings`]): the Tab asks for it every frame, and
-    /// filtering and sorting a few thousand rows took most of a frame's budget (#183).
-    all_cache: std::sync::Mutex<Option<(AllKey, Vec<AllRow>)>>,
+    /// The "All" list's rows sorted and ready to filter, and the last list
+    /// ([`Self::all_listings`]).
+    all_cache: std::sync::Mutex<AllCache>,
 }
 
 /// What an "All" list was made for: the search (trimmed, lower case), language, type and
@@ -703,6 +699,27 @@ type AllKey = (String, Option<String>, ResourceFilter, LicenceFilter, u64);
 
 /// A row of the "All" list: an Open catalogue row (true) or a catalog listing, by index.
 type AllRow = (bool, usize);
+
+/// [`GetBibles::all_listings`]' caches. The Tab asks for the list every frame and makes it
+/// again in the frame its search or a filter changes, a UI-thread frame held to #19's 2 ms
+/// (#183): every row is sorted by title, lower-cased and its licence classed once per
+/// [`GetBibles::generation`], so a new search only tests each row.
+#[derive(Debug, Default)]
+struct AllCache {
+    /// Every row by title, with [`GetBibles::generation`].
+    rows: Option<(u64, Vec<IndexedRow>)>,
+    /// The last list and what it was made for.
+    list: Option<(AllKey, Vec<AllRow>)>,
+}
+
+/// A row of [`AllCache::rows`]: its title, abbreviation and module in lower case (what the
+/// search matches) and its licence class.
+#[derive(Debug)]
+struct IndexedRow {
+    row: AllRow,
+    lower: [String; 3],
+    licence: LicenceClass,
+}
 
 /// The compiled-in Open catalogue's rows.
 fn default_open_listings() -> &'static [ResourceListing] {
@@ -829,36 +846,54 @@ impl GetBibles {
             .all_cache
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if cache.as_ref().is_none_or(|(k, _)| *k != key) {
-            let rows = self.all_rows(&key.0, language, filter, licence);
-            *cache = Some((key, rows));
+        if cache.list.as_ref().is_none_or(|(k, _)| *k != key) {
+            let rows = self.all_rows(&mut cache, &key.0, language, filter, licence);
+            cache.list = Some((key, rows));
         }
-        let rows = cache.as_ref().map_or(&[][..], |(_, rows)| rows.as_slice());
-        rows.iter()
-            .filter_map(|&(open, i)| {
-                if open {
-                    self.open_listings().get(i)
-                } else {
-                    self.catalog.as_ref().and_then(|c| c.listings.get(i))
-                }
-            })
-            .collect()
+        let rows = cache.list.as_ref().map_or(&[][..], |(_, rows)| rows);
+        rows.iter().filter_map(|&row| self.all_row(row)).collect()
     }
 
-    /// [`Self::all_listings`] made afresh, for a lower-case `query`.
+    fn all_row(&self, (open, i): AllRow) -> Option<&ResourceListing> {
+        if open {
+            self.open_listings().get(i)
+        } else {
+            self.catalog.as_ref().and_then(|c| c.listings.get(i))
+        }
+    }
+
+    /// [`Self::all_listings`] made afresh, for a lower-case `query`, from `cache`'s sorted
+    /// rows (made first when the catalogs changed).
     fn all_rows(
         &self,
+        cache: &mut AllCache,
         query: &str,
         language: Option<&str>,
         filter: ResourceFilter,
         licence: LicenceFilter,
     ) -> Vec<AllRow> {
-        let passes = |b: &ResourceListing| {
-            filter.accepts(b)
-                && b.matches_lower(query)
-                && language.is_none_or(|l| b.language == l)
-                && licence.accepts(b.licence_class())
-        };
+        if cache
+            .rows
+            .as_ref()
+            .is_none_or(|(g, _)| *g != self.generation)
+        {
+            cache.rows = Some((self.generation, self.indexed_rows()));
+        }
+        let rows = cache.rows.as_ref().map_or(&[][..], |(_, rows)| rows);
+        rows.iter()
+            .filter(|r| {
+                licence.accepts(r.licence)
+                    && (query.is_empty() || r.lower.iter().any(|f| f.contains(query)))
+                    && self.all_row(r.row).is_some_and(|b| {
+                        filter.accepts(b) && language.is_none_or(|l| b.language == l)
+                    })
+            })
+            .map(|r| r.row)
+            .collect()
+    }
+
+    /// Every catalog listing and Open catalogue row by title (then module), ready to filter.
+    fn indexed_rows(&self) -> Vec<IndexedRow> {
         let catalog = self.catalog.iter().flat_map(|c| c.listings.iter());
         let mut rows: Vec<(AllRow, &ResourceListing)> = catalog
             .enumerate()
@@ -869,10 +904,15 @@ impl GetBibles {
                     .enumerate()
                     .map(|(i, b)| ((true, i), b)),
             )
-            .filter(|(_, b)| passes(b))
             .collect();
         rows.sort_by_cached_key(|(_, b)| (b.title.to_lowercase(), b.module.clone()));
-        rows.into_iter().map(|(row, _)| row).collect()
+        rows.into_iter()
+            .map(|(row, b)| IndexedRow {
+                row,
+                lower: [&b.title, &b.abbreviation, &b.module].map(|f| f.to_lowercase()),
+                licence: b.licence_class(),
+            })
+            .collect()
     }
 
     /// Language codes among the listings the type and licence filters accept, the Open

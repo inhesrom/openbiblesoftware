@@ -13,15 +13,19 @@
 //! A frame's synchronous feature work (its `sync` sample, held to #19's 2 ms per frame) is
 //! the feature Tab's own drawing on the UI thread: its body, egui text layout included, timed
 //! in the Shell's pane drawing ([`crate::shell::TimedTab`]). Every timed frame must draw the
-//! Tab. The frames from an action until its result shows are exempt, as #19 exempts the block
-//! a jump lands in: they are held to the settle and missed-frame budgets instead.
+//! Tab. The frames from an action whose result is made off the UI thread or drawn afresh (a
+//! Link set moving, a view switched) until it shows are exempt, as #19 exempts the block a jump
+//! lands in: they are held to the settle and missed-frame budgets instead. An action done on
+//! the UI thread in its own frame (Get Resources filtering its catalog) is not exempt
+//! ([`ActionWork`]).
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use egui::{Event, Modifiers, Pos2, RawInput, Rect, Shape, Vec2, pos2, vec2};
+use obs_engine::get_bibles::ResourceFilter;
 use obs_engine::{JobMode, Library, Session, TabId, TabKind};
-use obs_model::Resource;
+use obs_model::{Resource, ResourceType};
 use obs_scripture::{Book, Passage, RefStyle, Standard, format_passage};
 use serde_json::json;
 
@@ -59,11 +63,16 @@ struct ShellBench {
     texts: Vec<(Rect, String)>,
     /// Seeded extra work in the feature Tab's body ([`BenchConfig::feature_slowdown`]).
     slowdown: Duration,
+    /// Seeded extra work in the feature Tab's body in each action's own frame only
+    /// ([`BenchConfig::action_slowdown`]).
+    action_slowdown: Duration,
     /// Timed frames in which the feature Tab was not drawn.
     undrawn_frames: usize,
-    /// The frames from an action until its result shows ([`Self::settle`]): like a jump's,
-    /// exempt from the synchronous-work budget (#19), held to the settle budget instead.
-    in_action: bool,
+    /// The next frame is an action's own ([`Self::settle`]).
+    action_frame: bool,
+    /// The frames from an action whose result is exempt from the synchronous-work budget
+    /// ([`ActionWork::Exempt`]) until it shows.
+    in_exempt_action: bool,
     /// Kept until the Shell is dropped (it may hold its files open).
     _folder: Folder,
 }
@@ -115,8 +124,10 @@ impl ShellBench {
             pace: cfg.pace,
             texts: Vec::new(),
             slowdown: cfg.feature_slowdown,
+            action_slowdown: cfg.action_slowdown,
             undrawn_frames: 0,
-            in_action: false,
+            action_frame: false,
+            in_exempt_action: false,
             _folder: folder,
         };
         for _ in 0..3 {
@@ -145,6 +156,11 @@ impl ShellBench {
         };
         self.time += self.interval.as_secs_f64();
         self.shell.st.timed_tab.took = None;
+        self.shell.st.timed_tab.slowdown = if std::mem::take(&mut self.action_frame) {
+            self.slowdown + self.action_slowdown
+        } else {
+            self.slowdown
+        };
         let start = Instant::now();
         action(&mut self.shell);
         let shell = &mut self.shell;
@@ -163,7 +179,7 @@ impl ShellBench {
         if let Some(s) = samples {
             s.cpu.push(elapsed.as_secs_f64() * 1000.0);
             match feature {
-                Some(_) if self.in_action => {}
+                Some(_) if self.in_exempt_action => {}
                 Some(d) => s.sync.push(d.as_secs_f64() * 1000.0),
                 None => self.undrawn_frames += 1,
             }
@@ -176,7 +192,6 @@ impl ShellBench {
     /// Time Tab `tab`'s drawing from now on: the scenario's synchronous feature work.
     fn time_tab(&mut self, tab: TabId) {
         self.shell.st.timed_tab.tab = Some(tab);
-        self.shell.st.timed_tab.slowdown = self.slowdown;
     }
 
     /// The scenario's samples, once every timed frame drew the feature Tab: a scenario whose
@@ -193,14 +208,17 @@ impl ShellBench {
     }
 
     /// Timed frames until `ready`, after `action`: how many frames after the action's own
-    /// ([`SETTLE_LIMIT`] if never).
+    /// ([`SETTLE_LIMIT`] if never). `work` says whether those frames are held to the
+    /// synchronous-work budget.
     fn settle(
         &mut self,
         samples: &mut Samples,
+        work: ActionWork,
         action: impl FnOnce(&mut Shell),
         ready: impl Fn(&Self) -> bool,
     ) -> usize {
-        self.in_action = true;
+        self.in_exempt_action = work == ActionWork::Exempt;
+        self.action_frame = true;
         self.frame(Some(samples), action);
         let mut frames = SETTLE_LIMIT;
         for frame in 0..SETTLE_LIMIT {
@@ -210,7 +228,7 @@ impl ShellBench {
             }
             self.frame(Some(samples), |_| {});
         }
-        self.in_action = false;
+        self.in_exempt_action = false;
         frames
     }
 
@@ -307,6 +325,19 @@ impl ShellBench {
             self.frame(None, |_| {});
         }
     }
+}
+
+/// How the frames from an action until its result shows count toward #19's synchronous-work
+/// budget (2 ms a frame).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ActionWork {
+    /// The result is made off the UI thread (a worker finds a chapter's places, a Guide reads
+    /// its Passage) or drawn afresh (a Search view switched): exempt, as #19 exempts the
+    /// block a jump lands in, and held to the settle budget instead.
+    Exempt,
+    /// The result is made on the UI thread in the action's own frame (Get Resources filters
+    /// and sorts its catalog as a key is typed): held to the 2 ms budget like any frame.
+    Budgeted,
 }
 
 /// Run every feature scenario: the reports of those that ran, and why the others could not
@@ -415,6 +446,7 @@ fn atlas(cfg: &BenchConfig) -> Result<Samples, String> {
         let go = format!("{} {chapter}:1", book.name());
         let frames = b.settle(
             &mut s,
+            ActionWork::Exempt,
             |shell| {
                 shell.run("tab.go", &json!({ "tab": bible.0, "text": go }));
             },
@@ -472,6 +504,7 @@ fn search_views(cfg: &BenchConfig) -> Result<(Samples, Samples), String> {
     for _ in 0..cfg.tool_steps.div_ceil(2) {
         let frames = b.settle(
             &mut grid,
+            ActionWork::Exempt,
             |shell| {
                 shell.run("search.view", &json!({ "tab": tab.0, "value": "grid" }));
             },
@@ -490,6 +523,7 @@ fn search_views(cfg: &BenchConfig) -> Result<(Samples, Samples), String> {
     for _ in 0..cfg.tool_steps.div_ceil(2) {
         let frames = b.settle(
             &mut chart,
+            ActionWork::Exempt,
             |shell| {
                 shell.run("search.view", &json!({ "tab": tab.0, "value": "chart" }));
                 shell.run("search.chart", &json!({ "tab": tab.0, "value": "books" }));
@@ -501,6 +535,7 @@ fn search_views(cfg: &BenchConfig) -> Result<(Samples, Samples), String> {
         b.wheel(&mut chart, over, 30.0, half / 2);
         let frames = b.settle(
             &mut chart,
+            ActionWork::Exempt,
             |shell| {
                 shell.run("search.chart", &json!({ "tab": tab.0, "value": "Psalms" }));
             },
@@ -563,6 +598,7 @@ fn exegetical_guide(cfg: &BenchConfig) -> Result<Samples, String> {
         let go = chapter_label(book, chapter);
         let frames = b.settle(
             &mut s,
+            ActionWork::Exempt,
             |shell| {
                 shell.run("tab.go", &json!({ "tab": guide.0, "text": go }));
             },
@@ -616,6 +652,7 @@ fn topic_guide(cfg: &BenchConfig) -> Result<Samples, String> {
         let (topic, _, _) = library::LONG_TOPICS[(k + 1) % library::LONG_TOPICS.len()];
         let frames = b.settle(
             &mut s,
+            ActionWork::Exempt,
             |shell| {
                 shell.run("guide.topic_guide", &json!({ "topic": topic }));
             },
@@ -628,8 +665,9 @@ fn topic_guide(cfg: &BenchConfig) -> Result<Samples, String> {
 }
 
 /// Get Resources over a catalog of 3,000 modules: a search typed a key at a time and erased,
-/// the type filter changed, and the list scrolled.
-fn get_resources(cfg: &BenchConfig) -> Result<Samples, String> {
+/// the type filter changed and back, and the list scrolled. Filtering is held to the 2 ms
+/// budget in the frame it happens ([`ActionWork::Budgeted`]).
+pub(crate) fn get_resources(cfg: &BenchConfig) -> Result<Samples, String> {
     let resources = [torah_bible()?];
     let fetched_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -655,7 +693,7 @@ fn get_resources(cfg: &BenchConfig) -> Result<Samples, String> {
     let over = pos2(pane.center().x, pane.top() + pane.height() * 0.7);
     let mut s = Samples::default();
     // Each key filters and sorts the whole catalog in the frame it is typed (the field shows
-    // the query from that frame on).
+    // the query from that frame on): UI-thread work held to the 2 ms budget.
     let query = "rabe";
     let key = |key| Event::Key {
         key,
@@ -668,20 +706,39 @@ fn get_resources(cfg: &BenchConfig) -> Result<Samples, String> {
         for n in 1..=query.len() {
             b.events.push(Event::Text(query[n - 1..n].into()));
             let typed = &query[..n];
-            let frames = b.settle(&mut s, |_| {}, |b| b.has_text(typed));
+            let frames = b.settle(&mut s, ActionWork::Budgeted, |_| {}, |b| b.has_text(typed));
             s.settle.push(frames);
         }
         for n in (1..query.len()).rev() {
             b.events.push(key(egui::Key::Backspace));
             let typed = &query[..n];
-            let frames = b.settle(&mut s, |_| {}, |b| b.has_text(typed));
+            let frames = b.settle(&mut s, ActionWork::Budgeted, |_| {}, |b| b.has_text(typed));
             s.settle.push(frames);
         }
         b.events.push(key(egui::Key::Backspace));
         let frames = b.settle(
             &mut s,
+            ActionWork::Budgeted,
             |_| {},
             |b| b.has_text("Search by name or abbreviation"),
+        );
+        s.settle.push(frames);
+    }
+    // The type filter changed, as its chips do, and back: the lists are made again in that
+    // frame. Bibles shows its Featured section; All names each row's type.
+    let filters = [
+        (
+            ResourceFilter::Type(ResourceType::Bible),
+            "FEATURED BIBLES · ",
+        ),
+        (ResourceFilter::All, "Bible · "),
+    ];
+    for (filter, shows) in filters {
+        let frames = b.settle(
+            &mut s,
+            ActionWork::Budgeted,
+            |shell| shell.session_mut().get_bibles.set_filter(filter),
+            |b| b.has_text_starting(shows),
         );
         s.settle.push(frames);
     }

@@ -72,6 +72,10 @@ pub struct BenchConfig {
     /// Extra work in each Shell-driven scenario's feature Tab every frame, for checking that
     /// the gate catches synchronous work over budget that still fits in a frame (0 normally).
     pub feature_slowdown: Duration,
+    /// Extra work in each Shell-driven scenario's feature Tab in each action's own frame only
+    /// (a key typed into Get Resources' search, say), for checking that the gate catches
+    /// synchronous work done only when an action is taken (0 normally).
+    pub action_slowdown: Duration,
 }
 
 impl Default for BenchConfig {
@@ -91,6 +95,7 @@ impl Default for BenchConfig {
             tool_frames: 120,
             tool_steps: 6,
             feature_slowdown: Duration::ZERO,
+            action_slowdown: Duration::ZERO,
         }
     }
 }
@@ -141,7 +146,7 @@ pub struct BenchReport {
 }
 
 #[derive(Default)]
-struct Samples {
+pub(crate) struct Samples {
     cpu: Vec<f64>,
     sync: Vec<f64>,
     placeholder_frames: usize,
@@ -160,7 +165,7 @@ fn percentile(v: &[f64], p: f64) -> f64 {
 }
 
 impl Samples {
-    fn report(&self, name: &str, interval_ms: f64) -> ScenarioReport {
+    pub(crate) fn report(&self, name: &str, interval_ms: f64) -> ScenarioReport {
         let missed = self.cpu.iter().filter(|&&c| c > interval_ms).count();
         ScenarioReport {
             name: name.into(),

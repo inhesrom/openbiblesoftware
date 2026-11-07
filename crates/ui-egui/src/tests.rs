@@ -529,6 +529,28 @@ fn every_shell_scenario_shows_its_feature_and_measures_it() {
     }
 }
 
+/// Get Resources filters and sorts its catalog on the UI thread in the frame its search or
+/// type filter changes (#183): those frames are held to #19's 2 ms synchronous-work budget, not
+/// exempt as a jump's target block is. 3 ms seeded only in an action's own frame (each key
+/// typed, each type filter change) shows in the scenario's p99, where the gate catches it.
+#[test]
+fn get_resources_holds_catalog_filtering_frames_to_the_sync_budget() {
+    let cfg = bench::BenchConfig {
+        pace: false,
+        tool_frames: 8,
+        tool_steps: 2,
+        action_slowdown: std::time::Duration::from_millis(3),
+        ..bench::BenchConfig::default()
+    };
+    let s = bench::tools::get_resources(&cfg).expect("the Get Resources scenario");
+    let r = s.report("get-resources", 1000.0 / 60.0);
+    assert!(
+        r.settle_frames_max.expect("settle frames") < bench::SETTLE_LIMIT,
+        "{r:?}"
+    );
+    assert!(r.sync_layout_p99_ms >= 3.0, "{r:?}");
+}
+
 #[test]
 fn a_selection_made_across_a_scroll_copies_the_exact_source() {
     let mut view = view();
