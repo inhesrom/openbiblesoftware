@@ -85,11 +85,33 @@ fn bench(args: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Log files and Crash reports in the Log folder (#219), before anything else runs. The Log
+/// level saved in the User database is applied when the app attaches it.
+fn start_diagnostics() {
+    use obs_engine::diagnostics;
+    let Some(dir) = diagnostics::default_log_dir() else {
+        return;
+    };
+    if let Err(e) = diagnostics::start_logging(&dir, obs_engine::LogLevel::default()) {
+        eprintln!("openbible: no log file: {e}");
+    }
+    diagnostics::install_panic_hook(dir);
+    // A test build panics here on request, to check the Crash report end to end.
+    #[cfg(debug_assertions)]
+    if std::env::var_os("OBS_FORCE_PANIC").is_some() {
+        #[allow(clippy::panic)]
+        {
+            panic!("forced panic (OBS_FORCE_PANIC)");
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|a| a == "--bench") {
         return bench(&args[1..]);
     }
+    start_diagnostics();
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title(obs_ui_egui::APP_TITLE)

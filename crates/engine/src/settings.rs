@@ -409,6 +409,25 @@ pub const SETTINGS: &[Setting] = &[
         },
     ),
     setting(
+        "log_level",
+        S::PrivacyAndData,
+        "Log level",
+        "How much the app writes to its log files on this computer. They name what the app did, never your Notes or Resource text, and are never sent",
+        "log logging logs level debug diagnostics crash report problem verbose",
+        choice("app.log_level", "info"),
+    ),
+    setting(
+        "open_log_folder",
+        S::PrivacyAndData,
+        "Log folder",
+        "Where the log files and Crash reports are kept; Help → Report a problem… shows the newest report",
+        "log logs folder crash report problem bug diagnostics",
+        SettingKind::Action {
+            command: "help.open_log_folder",
+            confirm: false,
+        },
+    ),
+    setting(
         "back_up_and_restore",
         S::PrivacyAndData,
         "Backups",

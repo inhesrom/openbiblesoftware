@@ -3293,6 +3293,8 @@ mod copy_export;
 mod drag_drop;
 #[path = "find_tests.rs"]
 mod find_bar;
+#[path = "report_problem_tests.rs"]
+mod report_problem;
 
 #[path = "a11y_audit_tests.rs"]
 mod a11y_audit;

@@ -162,6 +162,9 @@ pub const MENUS: &[Menu] = &[
             C("help.credits"),
             C("help.keyboard_shortcuts"),
             C("app.commands"),
+            Separator,
+            C("help.report_problem"),
+            C("help.open_log_folder"),
         ],
     },
 ];
@@ -253,6 +256,9 @@ pub fn choices(s: &Session, command: &str) -> (Vec<(&'static str, &'static str)>
     use crate::appearance::*;
     if let Some(toolbar) = crate::toolbar_settings::choices(s, command) {
         return toolbar;
+    }
+    if let Some(levels) = crate::diagnostics::choices(s, command) {
+        return levels;
     }
     match command {
         "view.theme" => (

@@ -274,8 +274,12 @@ fn step_once(q: &mut Queued, events: &Sender<JobEvent>) -> Outcome {
     match result {
         Ok(Ok(Step::Continue)) => Outcome::Pending,
         Ok(Ok(Step::Done(out))) => Outcome::Done(JobEventKind::Finished(out)),
-        Ok(Err(message)) => Outcome::Done(JobEventKind::Failed(message)),
+        Ok(Err(message)) => {
+            log::info!("job {} failed", q.job.label());
+            Outcome::Done(JobEventKind::Failed(message))
+        }
         Err(panic) => {
+            log::error!("job {} panicked", q.job.label());
             let message = panic
                 .downcast_ref::<&str>()
                 .map(|s| s.to_string())
