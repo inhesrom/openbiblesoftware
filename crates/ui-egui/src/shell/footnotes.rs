@@ -17,7 +17,7 @@ use obs_scripture::{
 use super::references::{Targets, standard_targets};
 use super::{HOVER_DWELL_SECS, State, TabId};
 use crate::doc::ReadingDoc;
-use crate::pane::{FootnoteHit, PaneOutput};
+use crate::pane::{FootnoteHit, PaneOutput, note_footnote_widget_focus};
 use crate::theme;
 use crate::workers::SnippetCache;
 
@@ -616,6 +616,9 @@ impl State {
                                         "Close footnote",
                                     )
                                     .on_hover_text("Close (Esc)");
+                                    if r.has_focus() {
+                                        note_footnote_widget_focus(ui.ctx(), r.id);
+                                    }
                                     close_id = Some(r.id);
                                     close |= r.clicked();
                                 },
@@ -644,6 +647,7 @@ impl State {
             LinkFocus::NoLink => {
                 if focus_inside && let Some(id) = close_id {
                     ui.ctx().memory_mut(|m| m.request_focus(id));
+                    note_footnote_widget_focus(ui.ctx(), id);
                 }
                 true
             }
@@ -754,6 +758,7 @@ impl State {
                 clicked |= line.clicked();
             }
             if link.has_focus() {
+                note_footnote_widget_focus(ui.ctx(), id);
                 for r in &rects {
                     painter.rect_stroke(
                         r.expand(1.0),

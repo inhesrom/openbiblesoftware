@@ -501,6 +501,94 @@ fn space_on_a_focused_marker_pages_no_pane_under_the_pointer() {
     assert!(scrolled(&mut h, other) > before + 1.0, "the pane pages");
 }
 
+/// Whether a Tab goes (or is opening to go) to `verse`.
+fn went_to(h: &Harness, verse: obs_scripture::Verse) -> bool {
+    (h.shell.st.session.workspace.tabs()).any(|t| t.history.current() == Some(verse))
+        || (h.shell.st.references.pending_navigation.values()).any(|v| *v == verse)
+}
+
+/// Review repro: once Enter has moved the focus into a pinned popover, Space on its focused
+/// link follows the link, with the pointer resting on the text of the marker's pane or of
+/// another pane: neither pane pages first (which would carry the marker, and the popover
+/// with it, away before the link could take the key). The two Tabs are unlinked, so the
+/// link opens a new Tab and leaves both where they were.
+#[test]
+fn space_on_a_focused_popover_link_follows_it_and_pages_no_pane() {
+    for pointer_on_other in [false, true] {
+        let name = format!("space-link-{pointer_on_other}");
+        let (mut h, _files, tab) = bsb(&name, "Jn 1:19");
+        let other = split(&mut h, tab, "bsb", "Jn 1:19");
+        for t in [tab, other] {
+            h.shell.st.session.workspace.set_link(t, None);
+        }
+        h.frames(2);
+        let (m, marker_widget) = focus_marker(&mut h, tab, "Isaiah 40:3");
+        press(&mut h, Key::Enter);
+        h.frames(3);
+        let p = popover(&h).expect("Enter pins it");
+        assert!(p.pinned && p.tab == tab && p.hit.note == m.note);
+        let focused = h.ctx.memory(|mem| mem.focused());
+        assert!(
+            focused.is_some() && focused != Some(marker_widget),
+            "focus moved onto the popover's link"
+        );
+        // The pointer onto reading text, away from the markers and the popover, no click.
+        let at = if pointer_on_other {
+            let [left, top] = h.shell.st.tabs[&other].view.as_ref().unwrap().text_origin;
+            pos2(left + 20.0, top + 60.0)
+        } else {
+            let (_, at) = marker(&h, tab, "Isaiah 40:3");
+            pos2(at.x - 120.0, at.y - 40.0)
+        };
+        h.events.push(Event::PointerMoved(at));
+        h.frames(2);
+        assert!(popover(&h).is_some_and(|p| p.pinned), "still pinned");
+        let before = (scrolled(&mut h, tab), scrolled(&mut h, other));
+        press(&mut h, Key::Space);
+        h.frames(6);
+        assert!(popover(&h).is_none(), "following the link closes it");
+        assert!(
+            went_to(&h, Verse::new(Book::Isaiah, 40, 3)),
+            "Space on the link goes to Isaiah 40:3 (pointer on other pane: {pointer_on_other})"
+        );
+        let after = (scrolled(&mut h, tab), scrolled(&mut h, other));
+        assert!(
+            (after.0 - before.0).abs() < 0.01 && (after.1 - before.1).abs() < 0.01,
+            "no pane paged: {before:?} → {after:?}"
+        );
+    }
+}
+
+/// Review repro: Space on a pinned popover's focused × (a Footnote with no link to focus)
+/// closes it, with the pointer resting on another pane's text, and no pane pages.
+#[test]
+fn space_on_a_focused_popover_close_closes_it_and_pages_no_pane() {
+    let (mut h, _files, tab) = bsb("space-close", "Jn 1:1");
+    let other = split(&mut h, tab, "bsb", "Jn 1:1");
+    let (_, marker_widget) = focus_marker(&mut h, tab, "Or comprehended");
+    press(&mut h, Key::Enter);
+    h.frames(3);
+    assert!(popover(&h).is_some_and(|p| p.pinned && p.tab == tab));
+    let focused = h.ctx.memory(|mem| mem.focused());
+    assert!(
+        focused.is_some() && focused != Some(marker_widget),
+        "focus moved onto the popover's ×"
+    );
+    let [left, top] = h.shell.st.tabs[&other].view.as_ref().unwrap().text_origin;
+    h.events
+        .push(Event::PointerMoved(pos2(left + 20.0, top + 60.0)));
+    h.frames(2);
+    let before = (scrolled(&mut h, tab), scrolled(&mut h, other));
+    press(&mut h, Key::Space);
+    h.frames(3);
+    assert!(popover(&h).is_none(), "Space on the × closes it");
+    let after = (scrolled(&mut h, tab), scrolled(&mut h, other));
+    assert!(
+        (after.0 - before.0).abs() < 0.01 && (after.1 - before.1).abs() < 0.01,
+        "no pane paged: {before:?} → {after:?}"
+    );
+}
+
 /// Review repro: a marker whose popover was dismissed while it keeps the keyboard focus
 /// stays dismissed after the pointer has shown another marker's popover (in its pane, or
 /// another pane) and left it for the text, however long the focus rests on it.
