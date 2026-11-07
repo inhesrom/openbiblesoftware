@@ -1194,11 +1194,14 @@ impl Session {
 
 fn reopen_closed(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const ID: &str = "tab.reopen_closed";
-    let id = p.i64("closed").and_then(|n| u64::try_from(n).ok());
-    let tabs = s
-        .workspace
-        .reopen_closed(id)
-        .ok_or_else(|| failed(ID, "nothing to reopen"))?;
+    let id = match p.i64("closed") {
+        Some(n) => Some(u64::try_from(n).map_err(|_| failed(ID, format!("no closing {n}")))?),
+        None => None,
+    };
+    let tabs = s.workspace.reopen_closed(id).ok_or_else(|| match id {
+        Some(n) => failed(ID, format!("no closing {n}")),
+        None => failed(ID, "nothing to reopen"),
+    })?;
     Ok(json!({ "tabs": tabs.iter().map(|t| t.0).collect::<Vec<_>>() }))
 }
 
