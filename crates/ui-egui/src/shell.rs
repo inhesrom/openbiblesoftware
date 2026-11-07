@@ -1587,12 +1587,17 @@ impl State {
         out
     }
 
-    /// Tab `tab` is closing: Recently closed keeps where its view was scrolled (#214).
+    /// Tab `tab` is closing: Recently closed keeps where its view was scrolled (#214). A
+    /// reopened Tab that never drew still owes its saved position, so that one is kept.
     fn keep_closed_scroll(&mut self, tab: TabId) {
-        let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) else {
+        let Some(t) = self.tabs.get_mut(&tab) else {
             return;
         };
-        let Some(anchor) = view.text_anchor() else {
+        let pending = t.restore_scroll.take();
+        let Some(view) = t.view.as_mut() else {
+            return;
+        };
+        let Some(anchor) = pending.or_else(|| view.text_anchor()) else {
             return;
         };
         let Some(unit) = view.doc.units.get(anchor.unit).map(|u| u.id.clone()) else {

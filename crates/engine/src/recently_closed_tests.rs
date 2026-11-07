@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use obs_model::{Manifest, ResourceType};
+use obs_model::{Key, KeyScheme, Manifest, ResourceType};
 use obs_scripture::{Book, Verse};
 use serde_json::json;
 
@@ -452,4 +452,46 @@ fn a_removed_resource_leaves_recently_closed() {
         .map(|(_, l)| l)
         .collect();
     assert_eq!(labels, ["KJV"]);
+}
+
+/// A closed Dictionary or Lexicon Tab is listed by the entry it showed, so two of them closed
+/// at different entries are told apart.
+#[test]
+fn closed_dictionary_and_lexicon_tabs_are_listed_by_their_entry() {
+    let (mut s, _t) = session("entries");
+    for (id, ab, ty, scheme) in [
+        (
+            "easton",
+            "Easton",
+            ResourceType::Dictionary,
+            KeyScheme::Headword,
+        ),
+        (
+            "lex",
+            "LEX",
+            ResourceType::Lexicon,
+            KeyScheme::StrongsNumber,
+        ),
+    ] {
+        let mut manifest = Manifest::new(id, ab, ab, ty, "en");
+        manifest.key_schemes = vec![scheme];
+        s.library.add(LibraryEntry {
+            manifest,
+            path: format!("/library/{id}.obr").into(),
+        });
+    }
+    let opened = [
+        ("easton", Key::Headword("Abraham".into())),
+        ("easton", Key::Headword("Abram".into())),
+        ("lex", Key::StrongsNumber("G26".parse().unwrap())),
+    ];
+    for (id, key) in opened {
+        let t = open(&mut s, id, json!({ "split": true }));
+        s.workspace.navigate_entry(t, key);
+        s.run("tab.close", &json!({ "tab": t.0 })).unwrap();
+    }
+    let labels: Vec<String> = (s.recently_closed_labels().into_iter())
+        .map(|(_, l)| l)
+        .collect();
+    assert_eq!(labels, ["G26 · LEX", "Abram · Easton", "Abraham · Easton"]);
 }

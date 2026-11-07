@@ -1185,7 +1185,15 @@ impl Session {
             .map(|c| {
                 let label = match c.tabs.as_slice() {
                     [one] => {
-                        let tab = crate::workspace::Tab::from_snapshot(TabId(one.id), one.clone());
+                        let mut tab =
+                            crate::workspace::Tab::from_snapshot(TabId(one.id), one.clone());
+                        // A Lexicon or Dictionary is named by its Key, as its manifest says.
+                        if let Some(e) =
+                            (tab.kind.resource_id()).and_then(|id| self.library.get(id))
+                            && !e.manifest.key_schemes.is_empty()
+                        {
+                            tab.key_schemes = e.manifest.key_schemes.clone();
+                        }
                         self.location_label(&tab)
                             .unwrap_or_else(|| one.title.clone())
                     }
