@@ -611,8 +611,8 @@ pub fn reading_pane(
 }
 
 /// The Footnote widgets (markers, popover links and ×) drawn this pass and the pass before,
-/// in any reading pane: the set the keyboard focus is checked against, so no state about who
-/// had the focus is kept from one frame to the next.
+/// in any reading pane of one viewport: the set the keyboard focus is checked against, so no
+/// state about who had the focus is kept from one frame to the next.
 #[derive(Clone, Default)]
 struct FootnoteWidgets {
     pass: u64,
@@ -621,8 +621,10 @@ struct FootnoteWidgets {
 }
 
 impl FootnoteWidgets {
-    fn key() -> egui::Id {
-        egui::Id::unique("footnote-widgets")
+    /// One set per viewport: pass numbers and keyboard focus are each viewport's own, and a
+    /// floating window's native viewport draws within the main window's frame.
+    fn key(ctx: &egui::Context) -> egui::Id {
+        egui::Id::new("footnote-widgets").with(ctx.viewport_id())
     }
 
     /// Move to `pass`: this pass's widgets become the last pass's, or are dropped when no
@@ -643,23 +645,25 @@ impl FootnoteWidgets {
 /// Register `id`, a Footnote widget (a marker, a popover's link or ×) drawn this pass.
 pub(crate) fn register_footnote_widget(ctx: &egui::Context, id: egui::Id) {
     let pass = ctx.cumulative_pass_nr();
+    let key = FootnoteWidgets::key(ctx);
     ctx.data_mut(|d| {
-        let w = d.get_temp_mut_or_default::<FootnoteWidgets>(FootnoteWidgets::key());
+        let w = d.get_temp_mut_or_default::<FootnoteWidgets>(key);
         w.roll(pass);
         w.this.insert(id);
     });
 }
 
 /// Whether the keyboard focus is now on a Footnote widget (a marker, a popover's link or ×)
-/// drawn this pass or the last, in any reading pane: its activation keys (Space, Enter) are
-/// for it, so no pane pages on Space.
+/// drawn this pass or the last, in any reading pane of this viewport: its activation keys
+/// (Space, Enter) are for it, so no pane pages on Space.
 pub(crate) fn footnote_widget_focused(ctx: &egui::Context) -> bool {
     let Some(focused) = ctx.memory(|m| m.focused()) else {
         return false;
     };
     let pass = ctx.cumulative_pass_nr();
+    let key = FootnoteWidgets::key(ctx);
     ctx.data_mut(|d| {
-        let w = d.get_temp_mut_or_default::<FootnoteWidgets>(FootnoteWidgets::key());
+        let w = d.get_temp_mut_or_default::<FootnoteWidgets>(key);
         w.roll(pass);
         w.this.contains(&focused) || w.last.contains(&focused)
     })

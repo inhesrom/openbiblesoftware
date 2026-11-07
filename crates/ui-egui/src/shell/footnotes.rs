@@ -216,9 +216,9 @@ pub(crate) struct TabFootnote {
     pub(crate) rect: Option<Rect>,
     /// Where its links were drawn last frame, in its body's `links` order.
     pub(crate) link_rects: Vec<Rect>,
-    /// The pass (of its window's viewport) it was last drawn in: only a popover on screen
-    /// takes Esc ahead of the keyboard shortcuts.
-    drawn_in: Option<u64>,
+    /// The viewport and pass (that viewport's own count) it was last drawn in: only a popover
+    /// on screen takes Esc ahead of the keyboard shortcuts.
+    drawn_in: Option<(egui::ViewportId, u64)>,
     /// The note built for a marker: used only while that marker (of that Resource) is the
     /// phase's, so a hover's note serves its pin and never another Resource's marker.
     body: Option<(FootnoteHit, Arc<FootnoteBody>)>,
@@ -288,9 +288,12 @@ impl Footnotes {
     /// Whether a popover shown on a Tab `here` was drawn in the last pass of `ctx`'s viewport:
     /// Esc is for it before any command bound to Esc.
     pub(crate) fn on_screen(&self, ctx: &egui::Context, here: impl Fn(TabId) -> bool) -> bool {
-        let pass = ctx.cumulative_pass_nr();
+        let (viewport, pass) = (ctx.viewport_id(), ctx.cumulative_pass_nr());
         self.tabs.iter().any(|(t, f)| {
-            f.state.phase.shown() && f.drawn_in.is_some_and(|d| d + 1 >= pass) && here(*t)
+            f.state.phase.shown()
+                && f.drawn_in
+                    .is_some_and(|(v, d)| v == viewport && d + 1 >= pass)
+                && here(*t)
         })
     }
 
@@ -652,7 +655,7 @@ impl State {
         };
         if let Some(f) = self.footnotes.tabs.get_mut(&tab) {
             f.rect = Some(shown.response.rect);
-            f.drawn_in = Some(ui.ctx().cumulative_pass_nr());
+            f.drawn_in = Some((ui.ctx().viewport_id(), ui.ctx().cumulative_pass_nr()));
             f.link_rects = links;
             if focus_moved {
                 f.focus_inside = false;
