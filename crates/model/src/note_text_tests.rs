@@ -331,6 +331,37 @@ fn offsets_map_shown_text_back_to_the_body() {
 }
 
 #[test]
+fn a_character_reference_is_one_character_both_ways() {
+    for (body, reference, shown) in [
+        ("caf&eacute; x", "&eacute;", "é"),
+        ("a&#x1F600;b", "&#x1F600;", "😀"),
+        ("x &#233;", "&#233;", "é"),
+        ("&amp; y", "&amp;", "&"),
+    ] {
+        let l = &parse_note_text(body)[0];
+        let at = body.find(reference).unwrap();
+        let whole = at..at + reference.len();
+        let ch = l.text.find(shown).unwrap();
+        let ch = ch..ch + shown.len();
+        // Any byte of the reference shows the whole character, never part of its UTF-8.
+        for b in whole.clone() {
+            assert_eq!(l.text_range(b..b + 1), ch, "{body:?} byte {b}");
+        }
+        assert_eq!(l.source_range(ch.clone()), whole, "{body:?}");
+        // None of it is markup: it is the character's own text.
+        assert!(
+            l.markup()
+                .iter()
+                .all(|m| m.end <= whole.start || whole.end <= m.start),
+            "{body:?}"
+        );
+    }
+    // A typed character of more than one byte: a range from inside it still takes it whole.
+    let l = &parse_note_text("café")[0];
+    assert_eq!(l.text_range(4..5), 3..5);
+}
+
+#[test]
 fn plain_text_drops_the_markup() {
     assert_eq!(
         note_plain_text("# Title\n- **grace** and [peace](<Rom 1:7>)\n> quoted"),

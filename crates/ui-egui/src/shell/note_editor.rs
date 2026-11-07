@@ -337,7 +337,8 @@ pub(super) fn format_blocked(text: &str, sel: Range<usize>, f: Format) -> Option
 
 /// The selected part of each line the selection `a..b` (bytes) touches, by line of `lines`
 /// (the parse of `text`): past the line's heading, list or quote marker, its outer spaces
-/// left outside, empty lines skipped.
+/// left outside, empty lines skipped. A part with an end inside a character reference
+/// (`&#233;`) takes in the whole reference: it shows one character.
 fn emphasis_parts(
     text: &str,
     lines: &[obs_model::NoteLine],
@@ -359,6 +360,12 @@ fn emphasis_parts(
             e - (part.len() - part.trim_end().len()),
         );
         if s < e {
+            let whole = line.source_range(line.text_range(s..e));
+            let (s, e) = if whole.is_empty() {
+                (s, e)
+            } else {
+                (s.min(whole.start), e.max(whole.end))
+            };
             parts.push((i, s..e));
         }
     }
@@ -1004,6 +1011,37 @@ mod tests {
         // Nothing selected: the marks, with the cursor between them.
         let (new, r) = apply_format("ab", 1..1, Format::Bold);
         assert_eq!((new.as_str(), r), ("a****b", 3..3));
+    }
+
+    #[test]
+    fn bold_and_italic_on_part_of_a_character_reference_take_in_the_whole_reference() {
+        // Numeric (one char, two or four UTF-8 bytes) and named references, part selected:
+        // the `#`, the digits, a letter of the name, or from inside one to the next word.
+        for (text, sel, whole) in [
+            ("&#233;", "#", "&#233;"),
+            ("&#233;", "23", "&#233;"),
+            ("a &eacute; x", "e", "&eacute;"),
+            ("a &eacute; x", "acute; x", "&eacute; x"),
+            ("a &#x1F600; b", "1F6", "&#x1F600;"),
+            ("&amp;", "amp", "&amp;"),
+        ] {
+            for (f, mark) in [(Format::Bold, "**"), (Format::Italic, "*")] {
+                let (new, _) = applied(text, sel, f);
+                let want = text.replacen(whole, &format!("{mark}{whole}{mark}"), 1);
+                assert_eq!(new, want, "{text:?} {sel:?} {f:?}");
+                // Shown: the character, marked whole.
+                let line = &obs_model::parse_note_text(&new)[0];
+                assert_eq!(line.text, obs_model::note_plain_text(text), "{new:?}");
+                assert_eq!(line.marks.len(), 1, "{new:?}");
+                // And off again, from the same part of it.
+                let (back, _) = applied(&new, sel, f);
+                assert_eq!(back, text, "{new:?} {sel:?} {f:?}");
+            }
+        }
+        // Inside a word the reference is still wrapped whole, never cut (CommonMark reads
+        // `**` before the `&` there as literal, as before any punctuation inside a word).
+        let (new, _) = applied("caf&eacute;", "acu", Format::Bold);
+        assert_eq!(new, "caf**&eacute;**");
     }
 
     #[test]

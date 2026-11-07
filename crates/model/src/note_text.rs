@@ -95,32 +95,36 @@ pub struct NoteLine {
     pub content: usize,
     /// The heading this line is part of, as the parser read it.
     pub heading: Option<NoteHeading>,
-    /// For each byte of `text`, its byte in the body.
-    offsets: Vec<usize>,
+    /// For each byte of `text`, the body bytes it was read from: one byte, or for a
+    /// character reference (`&#233;`) the whole reference, so it is one character both ways.
+    offsets: Vec<Range<usize>>,
 }
 
 impl NoteLine {
     /// Where `range` of [`Self::text`] is in the body (the markup around it excluded).
     pub fn source_range(&self, range: Range<usize>) -> Range<usize> {
-        let at = |i: usize| self.offsets.get(i).copied();
-        let start = at(range.start).unwrap_or(self.source.end);
+        let at = |i: usize| self.offsets.get(i);
+        let start = at(range.start).map_or(self.source.end, |o| o.start);
         let end = match range.end.checked_sub(1).and_then(at) {
-            Some(last) if range.end > range.start => last + 1,
+            Some(last) if range.end > range.start => last.end,
             _ => start,
         };
         start..end.max(start)
     }
 
-    /// The part of [`Self::text`] shown from body bytes `source`: from the first shown byte
-    /// typed in it to the last (empty, at the end of the text, when none is).
+    /// The part of [`Self::text`] shown from body bytes `source`: from the first character
+    /// read from any of them to the last, whole characters (empty, at the end of the text,
+    /// when none is). A character reference counts when any byte of it is in `source`.
     pub fn text_range(&self, source: Range<usize>) -> Range<usize> {
-        let inside = |o: &usize| source.contains(o);
-        match (
-            self.offsets.iter().position(inside),
-            self.offsets.iter().rposition(inside),
-        ) {
-            (Some(first), Some(last)) => first..last + 1,
-            _ => self.text.len()..self.text.len(),
+        let mut hit = self.text.char_indices().filter_map(|(k, c)| {
+            let n = k + c.len_utf8();
+            let from = self.offsets.get(k)?.start;
+            let to = self.offsets.get(n - 1)?.end;
+            (source.start < to && from < source.end).then_some(k..n)
+        });
+        match hit.next() {
+            Some(first) => first.start..hit.next_back().unwrap_or(first).end,
+            None => self.text.len()..self.text.len(),
         }
     }
 
@@ -128,11 +132,11 @@ impl NoteLine {
     pub fn markup(&self) -> Vec<Range<usize>> {
         let mut out: Vec<Range<usize>> = Vec::new();
         let mut at = self.source.start;
-        for &o in &self.offsets {
-            if o > at {
-                out.push(at..o);
+        for o in &self.offsets {
+            if o.start > at {
+                out.push(at..o.start);
             }
-            at = at.max(o + 1);
+            at = at.max(o.end);
         }
         if self.source.end > at {
             out.push(at..self.source.end);
@@ -346,7 +350,8 @@ impl Builder<'_> {
     /// typed on, and a line break shows as the break itself. A code span is opaque (`code`).
     fn text(&mut self, t: &str, r: Range<usize>, code: bool) {
         let src = &self.body[r.clone()];
-        // For each byte of `t`, its byte in the body.
+        // For each byte of `t`, its byte in the body; `None` for a character reference.
+        let reference = src != t && !code && src.starts_with('&') && src.ends_with(';');
         let map: Option<Vec<usize>> = if src == t {
             Some(r.clone().collect())
         } else if code {
@@ -360,15 +365,17 @@ impl Builder<'_> {
                 }
                 _ => vec![r.start; t.len()],
             })
+        } else if reference {
+            None
         } else {
             src.find(t)
                 .map(|i| (r.start + i..r.start + i + t.len()).collect())
         };
-        let last = r.end.saturating_sub(1).max(r.start);
         for (k, c) in t.char_indices() {
-            // Text that is not in the body as shown (a character reference) maps onto it.
-            let at = |j: usize| map.as_ref().map_or((r.start + j).min(last), |m| m[j]);
-            let o = at(k);
+            // Text that is not in the body as shown (a character reference) is read from
+            // all of it: one character, never a part of one.
+            let at = |j: usize| map.as_ref().map_or(r.clone(), |m| m[j]..m[j] + 1);
+            let o = at(k).start;
             // A line break is the break itself; anything else is kept, on the line it maps to.
             let bytes = self.body.as_bytes();
             let line_break = bytes.get(o) == Some(&b'\n')
@@ -398,7 +405,7 @@ impl Builder<'_> {
                 line.kind = NoteLineKind::Quote;
             }
             line.content = self.first_inline[i]
-                .or(line.offsets.first().copied())
+                .or(line.offsets.first().map(|o| o.start))
                 .filter(|c| line.source.contains(c))
                 .unwrap_or(line.source.end);
             line.heading = self

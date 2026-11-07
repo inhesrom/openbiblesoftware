@@ -165,10 +165,14 @@ in one every button is off ("Selection partly covers a code span or link"), and 
 would cut one at a line break (a mark on each line, a list item or quote of its own) that
 button is off; Ctrl+B and Ctrl+I then leave the text as it is, byte for byte. A code span over
 lines shows its whole text (line breaks read as spaces) on the line it starts on: no position
-inside a code span is worked out. Typing `- `, `1. ` or `> `
+inside a code span is worked out. A character reference (`&#233;`, `&eacute;`) is one
+character both ways: bold or italic on a selection that ends inside one takes in the whole
+reference. Typing `- `, `1. ` or `> `
 at a line's start starts a list or quote; Enter at the end of an item continues it (with the
-next number) and Enter in an empty item ends it. List, quote and heading changes apply to
-every line the selection touches, each read in its place in the Note's parse: numbering goes
+next number) and Enter in an empty item ends it. List and quote changes apply to every line
+the selection touches; a heading change applies to the line the selection starts on only,
+rewriting the whole heading that line is part of (a setext heading's text lines and its
+underline go together). Each line is read in its place in the Note's parse: numbering goes
 per nesting level (on from a numbered item just above), a nested item is written under its
 parent's text (re-indented when the parent's marker changes width), and the nested items of a
 line that stops being an item move out a level rather than turn into text.
