@@ -280,7 +280,8 @@ impl State {
             if let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) {
                 view.selection = None;
             }
-            self.toast("Re-attached. Ctrl+Z to undo.".to_string());
+            let undo = super::with_key(&self.session, "Edit → Undo brings it back", "edit.undo");
+            self.toast(format!("Re-attached. {undo}."));
         }
     }
 
@@ -715,6 +716,7 @@ impl State {
             .iter()
             .find(|n| n.is_default)
             .map_or_else(String::new, |n| n.name.clone());
+        let undo = super::with_key(&self.session, "Edit → Undo brings it all back", "edit.undo");
         let mut done: Option<bool> = None;
         egui::Window::new("Delete Notebook")
             .collapsible(false)
@@ -733,7 +735,7 @@ impl State {
                     ui.radio_value(&mut d.delete, true, "Delete them");
                 }
                 ui.label(
-                    RichText::new("Ctrl+Z (Edit → Undo) brings it all back.")
+                    RichText::new(format!("{undo}."))
                         .small()
                         .color(theme::c().muted),
                 );
@@ -755,10 +757,9 @@ impl State {
                     "notebook.delete",
                     json!({ "id": d.id, "annotations": annotations }),
                 ));
-                self.toast(format!(
-                    "Deleted the Notebook “{}”. Ctrl+Z to undo.",
-                    d.name
-                ));
+                let undo =
+                    super::with_key(&self.session, "Edit → Undo brings it back", "edit.undo");
+                self.toast(format!("Deleted the Notebook “{}”. {undo}.", d.name));
             }
             Some(false) => {}
             None => self.notes_ui.deleting = Some(d),

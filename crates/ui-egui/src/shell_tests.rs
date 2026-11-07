@@ -539,7 +539,7 @@ fn default_layout_has_a_bible_and_a_tools_panel() {
         "Layouts",
         "View",
         "Help",
-        crate::shell::command_box::HINT,
+        &format!("{} (Ctrl+L)", crate::shell::command_box::HINT),
     ] {
         assert!(h.find(t).is_some(), "{t}");
     }
@@ -3180,6 +3180,8 @@ mod a11y_audit;
 mod floating_windows;
 #[path = "interlinear_tests.rs"]
 mod interlinear;
+#[path = "keyboard_shortcuts_tests.rs"]
+mod keyboard_shortcuts;
 #[path = "toolbar_tests.rs"]
 mod toolbar;
 #[path = "toolbar_position_tests.rs"]

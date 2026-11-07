@@ -323,6 +323,14 @@ _Avoid_: Ribbon, Toolbar menu, Pane (for its drop-down)
 The bar holding the Launchers. It sits at the Top of the window (in the menu bar) by default, or at the Bottom, Left or Right: its Toolbar position, chosen in View → Toolbar position, by right-clicking it, or by dragging its grip to that edge. At the Left and Right it shows icons only, with the labels in the tooltips. Customize toolbar… shows or hides each Launcher, orders them, and picks icons and labels, icons only or labels only; a Launcher with no room in a small window goes into its » button. With Auto-hide it is drawn over the Workspace only while the pointer is at its window edge or Alt is held. A hidden Launcher still opens from its shortcut and the Command box. All of this is a preference in the User database, never part of a Layout.
 _Avoid_: Ribbon, Dock, Menu bar (for the toolbar)
 
+**Keyboard shortcut**:
+A key that runs a command, or does something to the reading-pane selection (a Selection key). Each has a default key; Help → Keyboard shortcuts lists them all, grouped by menu and searchable, and there the user clicks one to record a new key, Clears it or Resets it to its default (Reset all restores every default). A key another Keyboard shortcut already has is not saved until the user swaps the two keys or cancels. Esc, Enter and Tab are never Keyboard shortcuts, and a key needs Ctrl or Alt unless it is a function key. Ctrl means Cmd on macOS. The user's own keys are a preference in the User database and apply at once.
+_Avoid_: Hotkey, Key map, Accelerator, Key binding (in the UI)
+
+**Selection key**:
+A Keyboard shortcut that acts on the selection in a reading pane: Note (Ctrl+Shift+N) and the five Highlight styles (Ctrl+1…5) by default. It is listed under Selection in Help → Keyboard shortcuts.
+_Avoid_: Annotation key
+
 **Built-in Layout**:
 One of the Layouts that come with the app: "Bible + Commentary", "Word study desk", "Parallel Bibles" and "Reading only". It is made from the library's Preferred order when it is loaded, at the Passage shown then, and cannot be renamed or deleted. One that needs a Resource the library lacks says so instead.
 _Avoid_: Preset, Template
@@ -482,5 +490,5 @@ A Markdown or HTML file made from a Notebook (or all of them) or from the Notes 
 _Avoid_: Backup, Report, Notes dump
 
 **User database**:
-The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Home arrangement, Saved searches and the Search history, the Command box's recent entries, Copy presets, Collections, Resource tags and preferences. Resources and Search indexes are never part of it.
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Home arrangement, Saved searches and the Search history, the Command box's recent entries, Copy presets, Collections, Resource tags, the user's own Keyboard shortcuts and preferences. Resources and Search indexes are never part of it.
 _Avoid_: Profile, User library, Settings file

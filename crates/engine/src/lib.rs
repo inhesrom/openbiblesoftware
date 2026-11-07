@@ -67,6 +67,9 @@ pub mod interlinear;
 #[cfg(test)]
 mod interlinear_tests;
 pub mod jobs;
+pub mod key_bindings;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod key_bindings_tests;
 pub mod key_words;
 mod library;
 mod library_commands;
@@ -192,6 +195,7 @@ pub use interlinear::{
 pub use jobs::{
     Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step, sword_installer,
 };
+pub use key_bindings::{KeyBinding, KeyConflict, SELECTION_KEYS, SelectionAction, SelectionKey};
 pub use key_words::{KeyWord, KeyWords};
 pub use library::{
     Library, LibraryEntry, LibraryFilter, STARTER_PREFERRED_ORDER, default_library_dir,

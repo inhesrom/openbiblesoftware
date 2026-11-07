@@ -72,7 +72,11 @@ fn ge(c: u16, v: u16) -> Verse {
 #[test]
 fn ctrl_l_focuses_the_box_typing_suggests_and_enter_goes_to_the_reference() {
     let mut h = Harness::new();
-    assert!(h.find(HINT).is_some(), "{:?}", h.texts());
+    assert!(
+        h.find(&format!("{HINT} (Ctrl+L)")).is_some(),
+        "{:?}",
+        h.texts()
+    );
     let tb = tb_tabs(&h)[0];
     assert!(!box_focused(&h));
     key(&mut h, Key::L, CTRL);
@@ -197,4 +201,24 @@ fn an_empty_box_lists_recent_entries_kept_across_a_restart() {
         h.shell.st.session.command_box_recent(),
         ["gen 30:2", "gen 32 5"]
     );
+}
+
+/// The box's placeholder names the key the user has for it (#177), or none once cleared.
+#[test]
+fn the_hint_names_the_current_command_box_key() {
+    let mut h = Harness::new();
+    h.shell.run(
+        "keys.set",
+        &json!({ "command": "command_box.focus", "key": "Ctrl+Shift+K" }),
+    );
+    h.frames(2);
+    assert!(
+        h.find(&format!("{HINT} (Ctrl+Shift+K)")).is_some(),
+        "{:?}",
+        h.texts()
+    );
+    h.shell
+        .run("keys.clear", &json!({ "command": "command_box.focus" }));
+    h.frames(2);
+    assert!(h.find(HINT).is_some(), "{:?}", h.texts());
 }

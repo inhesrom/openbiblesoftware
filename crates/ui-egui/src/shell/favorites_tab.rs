@@ -42,11 +42,11 @@ impl State {
         };
         paint_star(ui.painter(), rect.center(), 7.0, favorite.is_some(), color);
         let label = if favorite.is_some() {
-            "Remove from Favorites"
+            "Remove from Favorites".to_string()
         } else {
-            "Add to Favorites (Ctrl+D)"
+            super::with_key(&self.session, "Add to Favorites", "favorite.add")
         };
-        r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+        r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.favorite_star = Some(rect);
         }
@@ -105,11 +105,12 @@ impl State {
                     return;
                 }
                 if self.session.favorites().is_empty() {
-                    muted(
-                        ui,
-                        "No Favorites yet. Click the ☆ in a Tab's header (or press Ctrl+D) to \
-                         add the place it shows.",
+                    let star = super::with_key(
+                        &self.session,
+                        "No Favorites yet. Click the ☆ in a Tab's header",
+                        "favorite.add",
                     );
+                    muted(ui, &format!("{star} to add the place it shows."));
                     return;
                 }
                 let shown: Vec<(i64, String, String)> = self

@@ -30,9 +30,11 @@ impl State {
             .is_some_and(|t| t.kind == obs_engine::TabKind::Home);
         let r = ui
             .add(egui::Button::new(RichText::new("Home").size(12.5)).selected(open))
-            .on_hover_text(
-                "Today's reading, where you left off, Quick start and your library (Alt+H)",
-            );
+            .on_hover_text(super::with_key(
+                &self.session,
+                "Today's reading, where you left off, Quick start and your library",
+                "home.open",
+            ));
         if !r.clicked() {
             return false;
         }
@@ -283,10 +285,12 @@ impl State {
             .map(|f| (f.id, f.label.clone()))
             .collect();
         if favorites.is_empty() {
-            muted(
-                ui,
-                "Star a place with the ☆ in a Tab's header (Ctrl+D) to keep it here.",
+            let star = super::with_key(
+                &self.session,
+                "Star a place with the ☆ in a Tab's header",
+                "favorite.add",
             );
+            muted(ui, &format!("{star} to keep it here."));
         }
         for (id, label) in &favorites {
             if place_row(ui, &format!("★ {label}")) {

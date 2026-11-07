@@ -573,14 +573,17 @@ impl Shell {
             .collect()
     }
 
-    /// The Tools menu's commands whose label holds `query`: id, label, shortcut, enabled.
-    fn tool_rows(&self, query: &str) -> Vec<(&'static str, &'static str, &'static str, bool)> {
+    /// The Tools menu's commands whose label holds `query`: id, label, the key the user has
+    /// for it now (#177; empty when cleared), enabled.
+    fn tool_rows(&self, query: &str) -> Vec<(&'static str, &'static str, String, bool)> {
         let needle = query.trim().to_lowercase();
+        let s = &self.st.session;
         self.footer(Launcher::Tools)
             .into_iter()
             .filter_map(|(id, _, enabled)| {
-                let spec = self.st.session.commands().get(id)?;
-                Some((id, spec.label, spec.shortcut.unwrap_or_default(), enabled))
+                let spec = s.commands().get(id)?;
+                let key = s.shortcut(id).unwrap_or_default().to_string();
+                Some((id, spec.label, key, enabled))
             })
             .filter(|(_, label, _, _)| needle.is_empty() || label.to_lowercase().contains(&needle))
             .collect()

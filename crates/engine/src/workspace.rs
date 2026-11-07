@@ -102,6 +102,9 @@ pub enum TabKind {
     /// Home (#178): today's reading, where the user left off, History and Favorites, the
     /// Verse of the day, Quick start and the library summary. Keyless, single instance.
     Home,
+    /// Help → Keyboard shortcuts (#177): every key binding, to see and change. Single
+    /// instance, with a filter box.
+    KeyboardShortcuts,
     Guide(Guide),
     Tool(Tool),
 }
@@ -140,6 +143,7 @@ enum Slot {
     StarterLibrary,
     Credits,
     Home,
+    KeyboardShortcuts,
     Guide(Guide),
     Tool(Tool),
 }
@@ -157,6 +161,7 @@ impl TabKind {
                 | TabKind::StarterLibrary
                 | TabKind::Credits
                 | TabKind::Home
+                | TabKind::KeyboardShortcuts
                 | TabKind::Tool(
                     Tool::Notes
                         | Tool::WordInfo
@@ -182,9 +187,9 @@ impl TabKind {
 
     pub fn header_box(&self) -> HeaderBox {
         match self {
-            TabKind::Library | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History) => {
-                HeaderBox::Filter
-            }
+            TabKind::Library
+            | TabKind::KeyboardShortcuts
+            | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History) => HeaderBox::Filter,
             TabKind::Tool(Tool::WordInfo) => HeaderBox::FollowsHover,
             TabKind::Guide(Guide::WordStudy) => HeaderBox::Word,
             TabKind::Guide(Guide::Factbook) => HeaderBox::Name,
@@ -221,6 +226,7 @@ impl TabKind {
                 | TabKind::StarterLibrary
                 | TabKind::Credits
                 | TabKind::Home
+                | TabKind::KeyboardShortcuts
                 | TabKind::Guide(Guide::Factbook)
                 | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History | Tool::ReadingPlans)
         )
@@ -249,6 +255,7 @@ impl TabKind {
             TabKind::StarterLibrary => Slot::StarterLibrary,
             TabKind::Credits => Slot::Credits,
             TabKind::Home => Slot::Home,
+            TabKind::KeyboardShortcuts => Slot::KeyboardShortcuts,
             TabKind::Guide(g) => Slot::Guide(*g),
             TabKind::Tool(t) => Slot::Tool(*t),
         }

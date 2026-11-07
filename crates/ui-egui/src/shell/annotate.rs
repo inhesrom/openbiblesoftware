@@ -5,8 +5,9 @@
 //! - releasing a selection shows a floating **selection toolbar** (5 style swatches, Note,
 //!   Copy, Search this); the right-click menu's Selection target offers the same actions
 //!   (`context_menu.rs`, #142); Ctrl+1…5 and Ctrl+Shift+N are
-//!   their keys, and Ctrl+Z / Ctrl+Shift+Z undo and redo. None of these keys fire while a
-//!   text field has focus: there they belong to the field.
+//!   their keys by default (the Selection keys, rebindable in Help → Keyboard shortcuts, #177),
+//!   and Ctrl+Z / Ctrl+Shift+Z undo and redo. None of these keys fire while a text field has
+//!   focus: there they belong to the field.
 //! - Note opens a **popup editor** anchored at the selection with a Notebook picker; it saves
 //!   when focus leaves it (a click elsewhere, Esc) or on Ctrl+Enter. New Annotations go into
 //!   the Notebook last used, which the engine remembers in the User database.
@@ -19,11 +20,13 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use egui::{Key, Modifiers, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
-use obs_engine::{Annotation, HighlightStyle, Session, TabId};
+use obs_engine::{
+    Annotation, HighlightStyle, SELECTION_KEYS, SelectionAction, SelectionKey, Session, TabId,
+};
 use obs_model::ResourceType;
 use serde_json::{Value, json};
 
-use super::{State, bindings, consume_key, extra_held};
+use super::{State, bindings, consume_key, extra_held, parse_shortcut, pressed_as};
 use crate::doc::ReadingDoc;
 use crate::marks::{Mark, marks_for};
 use crate::palette::{HIGHLIGHT_STYLES, Palette};
@@ -31,17 +34,62 @@ use crate::pane::{PaneOutput, has_text};
 use crate::selection::{Selection, copy_text, selected_text};
 use crate::theme;
 
-/// The keys of the 5 Highlight styles, in [`HighlightStyle::ALL`] order.
-const STYLE_KEYS: [Key; 5] = [Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5];
+/// The Selection keys as the user has them (Ctrl+Shift+N and Ctrl+1…5 by default), with what
+/// each does: each as every key report that presses it ([`pressed_as`]), so one bound to
+/// Ctrl+Plus runs on Ctrl+= too, as a command's does.
+fn selection_keys(
+    session: &Session,
+) -> impl Iterator<Item = (&'static SelectionKey, egui::KeyboardShortcut)> + '_ {
+    (SELECTION_KEYS.iter())
+        .filter_map(|k| Some((k, session.shortcut(k.id).and_then(parse_shortcut)?)))
+        .flat_map(|(k, sc)| pressed_as(sc).map(move |sc| (k, sc)))
+}
 
-/// Ctrl+Shift+N, the Note key.
-const NOTE_KEY: egui::KeyboardShortcut =
-    egui::KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::N);
+/// The Selection keys' shortcuts.
+pub(super) fn shortcuts(session: &Session) -> impl Iterator<Item = egui::KeyboardShortcut> + '_ {
+    selection_keys(session).map(|(_, sc)| sc)
+}
 
-/// The annotation keys: Ctrl+Shift+N and Ctrl+1…5.
-pub(super) fn shortcuts() -> impl Iterator<Item = egui::KeyboardShortcut> {
-    let styles = STYLE_KEYS.map(|k| egui::KeyboardShortcut::new(Modifiers::COMMAND, k));
-    std::iter::once(NOTE_KEY).chain(styles)
+/// The Selection keys as text, for tooltips and menus (empty: no key).
+#[derive(Debug, Clone, Default)]
+pub(super) struct SelectionKeyText {
+    note: String,
+    styles: [String; 5],
+}
+
+impl SelectionKeyText {
+    pub(super) fn of(session: &Session) -> Self {
+        let key = |action: SelectionAction| {
+            (SELECTION_KEYS.iter())
+                .find(|k| k.action == action)
+                .and_then(|k| session.shortcut(k.id))
+                .unwrap_or_default()
+                .to_string()
+        };
+        Self {
+            note: key(SelectionAction::Note),
+            styles: HighlightStyle::ALL.map(|s| key(SelectionAction::Highlight(s))),
+        }
+    }
+
+    pub(super) fn note(&self) -> &str {
+        &self.note
+    }
+
+    pub(super) fn style(&self, style: HighlightStyle) -> &str {
+        (HighlightStyle::ALL.iter())
+            .position(|s| *s == style)
+            .map_or("", |i| &self.styles[i])
+    }
+}
+
+/// `text (key)`, or `text` when `key` is empty.
+fn with_key_text(text: &str, key: &str) -> String {
+    if key.is_empty() {
+        text.to_string()
+    } else {
+        format!("{text} ({key})")
+    }
 }
 
 /// Shortcuts that text fields use themselves (undo, redo, leaving the field, moving by word on
@@ -173,14 +221,6 @@ fn style_name(style: HighlightStyle) -> &'static str {
         .map_or("", |i| HIGHLIGHT_STYLES[i])
 }
 
-pub(super) fn style_shortcut(style: HighlightStyle) -> String {
-    let n = HighlightStyle::ALL
-        .iter()
-        .position(|s| *s == style)
-        .map_or(0, |i| i + 1);
-    format!("Ctrl+{n}")
-}
-
 /// Paint one style's swatch into `rect`: its background, or the red underline on the page.
 pub(super) fn paint_swatch(
     ui: &Ui,
@@ -209,7 +249,12 @@ pub(super) fn paint_swatch(
 
 /// The selection toolbar's buttons in a row; returns the one clicked. Without a User database
 /// (`can_annotate` false) only Copy works.
-fn toolbar_row(ui: &mut Ui, palette: &Palette, can_annotate: bool) -> Option<Annotate> {
+fn toolbar_row(
+    ui: &mut Ui,
+    palette: &Palette,
+    can_annotate: bool,
+    keys: &SelectionKeyText,
+) -> Option<Annotate> {
     let mut picked = None;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
@@ -221,10 +266,9 @@ fn toolbar_row(ui: &mut Ui, palette: &Palette, can_annotate: bool) -> Option<Ann
         for style in HighlightStyle::ALL {
             let (rect, r) = ui.allocate_exact_size(vec2(22.0, 22.0), sense);
             paint_swatch(ui, rect.shrink(2.0), style, palette, r.hovered());
-            if r.on_hover_text(format!(
-                "Highlight {} ({})",
-                style_name(style).to_lowercase(),
-                style_shortcut(style)
+            if r.on_hover_text(with_key_text(
+                &format!("Highlight {}", style_name(style).to_lowercase()),
+                keys.style(style),
             ))
             .clicked()
             {
@@ -234,7 +278,7 @@ fn toolbar_row(ui: &mut Ui, palette: &Palette, can_annotate: bool) -> Option<Ann
         ui.separator();
         if ui
             .add_enabled(can_annotate, egui::Button::new("✏ Note"))
-            .on_hover_text("Write a Note on the selection (Ctrl+Shift+N)")
+            .on_hover_text(with_key_text("Write a Note on the selection", keys.note()))
             .clicked()
         {
             picked = Some(Annotate::Note);
@@ -318,13 +362,14 @@ impl State {
             ..extra_held(sc, &all)
         };
         let mut action = None;
+        let keys: Vec<_> = selection_keys(&self.session).collect();
         ui.input_mut(|i| {
-            if consume_key(i, NOTE_KEY.modifiers, NOTE_KEY.logical_key, extra(NOTE_KEY)) {
-                action = Some(Annotate::Note);
-            }
-            for (style, sc) in HighlightStyle::ALL.into_iter().zip(shortcuts().skip(1)) {
+            for (k, sc) in keys {
                 if consume_key(i, sc.modifiers, sc.logical_key, extra(sc)) {
-                    action = Some(Annotate::Highlight(style));
+                    action = Some(match k.action {
+                        SelectionAction::Note => Annotate::Note,
+                        SelectionAction::Highlight(style) => Annotate::Highlight(style),
+                    });
                 }
             }
         });
@@ -518,6 +563,7 @@ impl State {
         }
         let palette = self.palette;
         let can_annotate = self.session.is_enabled("annotation.highlight");
+        let keys = SelectionKeyText::of(&self.session);
         let mut picked: Option<(Annotate, Option<Rect>)> = None;
         // The floating toolbar, just above the selection (below it at the top of the pane).
         if let (true, true, false, Some(sel)) = (
@@ -543,7 +589,7 @@ impl State {
                     egui::Frame::popup(ui.style())
                         .inner_margin(egui::Margin::symmetric(6, 4))
                         .show(ui, |ui| {
-                            if let Some(a) = toolbar_row(ui, &palette, can_annotate) {
+                            if let Some(a) = toolbar_row(ui, &palette, can_annotate, &keys) {
                                 picked = Some((a, Some(sel)));
                             }
                         });
