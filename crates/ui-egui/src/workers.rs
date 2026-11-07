@@ -280,6 +280,42 @@ impl SnippetCache {
         None
     }
 
+    /// Like [`Self::get`], with Note formatting (#186): byte ranges bold, italic or in their
+    /// own colour role, at `scale` times the text size.
+    pub fn get_formatted(
+        &mut self,
+        text: &str,
+        base: obs_layout::ColorRole,
+        styled: &[(std::ops::Range<usize>, obs_layout::SnippetStyle)],
+        scale: f32,
+        width: f32,
+        settings: &obs_layout::TextSettings,
+    ) -> Option<Arc<LaidBlock>> {
+        use std::hash::{Hash, Hasher};
+        self.drain();
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (
+            "formatted",
+            text,
+            base,
+            styled,
+            scale.to_bits(),
+            width.to_bits(),
+            settings.key(),
+        )
+            .hash(&mut h);
+        let key = h.finish();
+        if let Some(l) = self.ready.get(&key) {
+            return Some(Arc::clone(l));
+        }
+        if self.ready.len() > 2000 {
+            self.ready.clear();
+        }
+        let para = obs_layout::formatted_snippet_paragraph(text, base, styled, scale, settings);
+        self.client.submit(key, para, width);
+        None
+    }
+
     pub fn has_pending(&self) -> bool {
         self.client.pending() > 0
     }

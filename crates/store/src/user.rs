@@ -19,7 +19,7 @@ use crate::error::StoreError;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 10;
+pub const USER_SCHEMA_VERSION: u32 = 11;
 
 /// How many launch backups are kept.
 pub const ROLLING_BACKUPS: usize = 5;
@@ -49,6 +49,9 @@ const MIGRATIONS: &[&str] = &[
     crate::annotation_store::SCHEMA_9,
     // 9 → 10: Highlight styles and palettes, the five built-ins seeded (#181).
     crate::highlight_style_store::SCHEMA_10,
+    // 10 → 11: Note text is Note formatting; plain-text Notes are escaped to look the same
+    // (#186).
+    crate::annotation_store::SCHEMA_11,
 ];
 
 pub(crate) fn sql(e: rusqlite::Error) -> StoreError {
@@ -150,6 +153,9 @@ impl UserStore {
             // 8 → 9 refuses, rather than drops, rows its stricter CHECK would refuse.
             if v == 8 {
                 crate::annotation_store::refuse_text_ranges_covering_no_text(&tx)?;
+            }
+            if v == 10 {
+                crate::annotation_store::escape_plain_notes(&tx)?;
             }
             tx.execute_batch(step).map_err(sql)?;
         }

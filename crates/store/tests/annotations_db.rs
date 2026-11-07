@@ -747,3 +747,87 @@ fn the_v9_migration_refuses_text_ranges_that_cover_no_text_and_keeps_every_row()
         .unwrap();
     assert_eq!(db.annotation(&back.id).unwrap(), Some(back));
 }
+
+/// Migration 10 → 11 (#186, ADR 0010): Note text becomes Note formatting. A Note written as
+/// plain text whose lines would now read as formatting is escaped so it shows exactly as it
+/// did; every other Note, and every Note's change time, is untouched; `notes_fts` holds the
+/// words the Notes show.
+#[test]
+fn the_v11_migration_keeps_plain_text_notes_looking_as_they_did() {
+    let dir = Dir::new("migrate11");
+    let plain = "# not a heading\n- nor a list\n1. nor this\n*stars* and a_b, [x](y)\n> no quote";
+    let (ordinary, awkward) = {
+        let (v10, _) = UserStore::open_to(&dir.db(), 10).unwrap();
+        let nb = default_of(&v10).id;
+        let ordinary = note(&nb, "Esau ran to meet him; compare Gen 32:24.", None);
+        let awkward = note(&nb, plain, None);
+        v10.apply_changes(&[
+            Change::insert(Row::Annotation(ordinary.clone())),
+            Change::insert(Row::Annotation(awkward.clone())),
+        ])
+        .unwrap();
+        (ordinary, awkward)
+    };
+    let (db, report) = UserStore::open(&dir.db()).unwrap();
+    assert_eq!(report.found_version, 10);
+    assert!(report.migration_backup.unwrap().is_file());
+    assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
+    // Untouched: it reads as plain text already.
+    assert_eq!(
+        db.annotation(&ordinary.id).unwrap().as_ref(),
+        Some(&ordinary)
+    );
+    // Escaped, so each line shows as the text typed, with no formatting.
+    let migrated = db.annotation(&awkward.id).unwrap().unwrap();
+    assert_eq!(migrated.modified_at, awkward.modified_at);
+    let body = migrated.body();
+    assert_ne!(body, plain);
+    let lines = obs_model::parse_note_text(body);
+    let shown: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
+    assert_eq!(shown, plain.split('\n').collect::<Vec<_>>());
+    assert!(
+        lines
+            .iter()
+            .all(|l| l.kind == obs_model::NoteLineKind::Text && l.marks.is_empty()),
+        "{lines:?}"
+    );
+    // The index holds the words shown: the escapes are not words.
+    assert_eq!(
+        db.search_notes("\"stars\"").unwrap(),
+        std::slice::from_ref(&awkward.id)
+    );
+    assert_eq!(
+        db.search_notes("\"esau\"").unwrap(),
+        std::slice::from_ref(&ordinary.id)
+    );
+    db.annotation_dump().unwrap();
+}
+
+/// The words of formatted Note text are found; markup and link targets are not words.
+#[test]
+fn notes_fts_indexes_the_words_a_formatted_note_shows() {
+    let dir = Dir::new("fts-formatted");
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    let nb = default_of(&db).id;
+    let n = note(
+        &nb,
+        "## Justified\n- by **grace**\n- through *faith*\n> [peace](https://example.org/shalom)",
+        None,
+    );
+    db.apply_changes(&[Change::insert(Row::Annotation(n.clone()))])
+        .unwrap();
+    for word in ["justified", "grace", "faith", "peace"] {
+        assert_eq!(
+            db.search_notes(&format!("\"{word}\"")).unwrap(),
+            std::slice::from_ref(&n.id),
+            "{word}"
+        );
+    }
+    for target in ["example", "shalom", "https"] {
+        assert!(
+            db.search_notes(&format!("\"{target}\""))
+                .unwrap()
+                .is_empty()
+        );
+    }
+}

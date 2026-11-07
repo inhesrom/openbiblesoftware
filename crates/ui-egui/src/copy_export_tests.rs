@@ -368,7 +368,8 @@ fn the_notes_tool_exports_its_notebook_to_markdown_and_prints_it() {
     let markdown = std::fs::read_to_string(&saved).unwrap();
     assert_eq!(
         markdown,
-        "# Sermon prep\n\n## John 3:16\n\nGod's love\\\n\\# for the world\n"
+        // The Note as typed, its heading included (Note formatting, #186).
+        "# Sermon prep\n\n## John 3:16\n\nGod's love\n# for the world\n"
     );
     h.click_text("Export…");
     h.click_text("Print / Save as PDF…");

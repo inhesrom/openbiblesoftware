@@ -740,6 +740,60 @@ pub fn styled_snippet_paragraph(
     para
 }
 
+/// How a byte range of a formatted snippet is drawn (Note formatting, #186).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct SnippetStyle {
+    pub bold: bool,
+    pub italic: bool,
+    /// Its own colour role (a link), else the snippet's.
+    pub role: Option<ColorRole>,
+}
+
+/// A one-off paragraph of text in `base` at `scale` times the text size, with the byte ranges
+/// in `styled` bold, italic or in their own colour role (a Note's formatting, its links and
+/// Bible references). Ranges may overlap, such as a reference in bold text: each byte takes
+/// every style over it. Byte positions map back to `text`, as in
+/// [`styled_snippet_paragraph`].
+pub fn formatted_snippet_paragraph(
+    text: &str,
+    base: ColorRole,
+    styled: &[(Range<usize>, SnippetStyle)],
+    scale: f32,
+    settings: &TextSettings,
+) -> Paragraph {
+    let mut para = snippet_paragraph("", base, false, settings);
+    let mut cuts: Vec<usize> = vec![0, text.len()];
+    for (r, _) in styled {
+        cuts.extend([r.start.min(text.len()), r.end.min(text.len())]);
+    }
+    cuts.retain(|&c| text.is_char_boundary(c));
+    cuts.sort_unstable();
+    cuts.dedup();
+    for pair in cuts.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let mut flags = Flags {
+            role: Some(base),
+            ..Flags::default()
+        };
+        for (_, style) in styled.iter().filter(|(r, _)| r.start <= a && b <= r.end) {
+            flags.bold |= style.bold;
+            flags.italic |= style.italic;
+            if style.role.is_some() {
+                flags.role = style.role;
+            }
+        }
+        push_text(
+            &mut para.runs,
+            &text[a..b],
+            a,
+            flags,
+            settings.size * scale,
+            settings,
+        );
+    }
+    para
+}
+
 /// A one-off paragraph of plain text (inline-snippet mode: previews, popups, Word Info).
 pub fn snippet_paragraph(
     text: &str,

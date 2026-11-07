@@ -79,6 +79,9 @@ icons! {
     Contents => "table-of-contents",
     Home => "house",
     Copy => "copy",
+    // The Note editor's toolbar.
+    BulletList => "list",
+    Link => "link",
     // Launchers.
     Library => "library",
     Guides => "compass",

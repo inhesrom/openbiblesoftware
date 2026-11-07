@@ -598,8 +598,18 @@ impl State {
                 return;
             }
         };
-        // Focus now, so keys typed on the very next frame land in the editor.
+        // Focus now, so keys typed on the very next frame land in the editor; the key that
+        // opened it (Enter or Space on a menu item) is not typed into it this frame.
         ctx.memory_mut(|m| m.request_focus(editor_body_id()));
+        ctx.input_mut(|i| {
+            i.events.retain(|e| match e {
+                egui::Event::Key { key, pressed, .. } => {
+                    !(*pressed && matches!(key, egui::Key::Enter | egui::Key::Space))
+                }
+                egui::Event::Text(_) => false,
+                _ => true,
+            });
+        });
         self.note_editor = Some(NoteEditor {
             tab,
             target,
@@ -639,13 +649,14 @@ impl State {
         self.run("search.run", &params);
     }
 
-    /// Save the open Note editor's Note (nothing is saved when it is empty) and close it,
-    /// returning the new Note's id. If the save fails, the editor stays open with the error,
-    /// keeping the text.
+    /// Save the open Note editor's Note (nothing is saved when it is only white space) and
+    /// close it, returning the new Note's id. The text is saved as typed: its white space is
+    /// CommonMark (four spaces start a code block), as in the Notes Tool's editor. If the save
+    /// fails, the editor stays open with the error, keeping the text.
     pub(super) fn save_note(&mut self) -> Option<String> {
         let mut ed = self.note_editor.take()?;
-        let body = ed.body.trim();
-        if body.is_empty() {
+        let body = ed.body.as_str();
+        if body.trim().is_empty() {
             return None;
         }
         let mut params = ed.target.clone();
@@ -748,10 +759,6 @@ impl State {
             .get(&a.notebook_id)
             .cloned()
             .unwrap_or_default();
-        let mut body: String = a.body().chars().take(600).collect();
-        if a.body().chars().count() > 600 {
-            body.push('…');
-        }
         egui::Tooltip::always_open(
             ui.ctx().clone(),
             ui.layer_id(),
@@ -765,7 +772,7 @@ impl State {
                     .small()
                     .color(theme::c().muted),
             );
-            ui.label(body);
+            note_preview_lines(ui, a.body());
             ui.label(
                 RichText::new("Click to open it in Notes")
                     .small()
@@ -833,15 +840,8 @@ impl State {
                                 .color(theme::c().muted),
                         );
                     }
-                    let r = ui
-                        .add(
-                            egui::TextEdit::multiline(&mut ed.body)
-                                .id(editor_body_id())
-                                .hint_text("Write a note…")
-                                .desired_rows(5)
-                                .desired_width(f32::INFINITY),
-                        )
-                        .accessible_name("Note");
+                    let r = super::note_editor::note_editor(ui, editor_body_id(), &mut ed.body, 5)
+                        .response;
                     if !ed.focused_once {
                         r.request_focus();
                         ed.focused_once = r.has_focus();
@@ -907,6 +907,42 @@ impl State {
             }
         } else if save {
             self.save_note();
+        }
+    }
+}
+
+/// A Note's text in its marker's preview: its first 600 characters as shown, a heading
+/// strong, a list item after its bullet or number, a quote line in quotation marks (#186).
+fn note_preview_lines(ui: &mut Ui, body: &str) {
+    let mut left = 600usize;
+    for line in obs_model::parse_note_text(body) {
+        if left == 0 {
+            ui.label("…");
+            break;
+        }
+        let mut text: String = line.text.chars().take(left).collect();
+        left = left.saturating_sub(line.text.chars().count());
+        if left == 0 && text.chars().count() < line.text.chars().count() {
+            text.push('…');
+        }
+        let indent = |level: u8| "    ".repeat(usize::from(level));
+        match line.kind {
+            obs_model::NoteLineKind::Blank => ui.add_space(4.0),
+            obs_model::NoteLineKind::Heading(_) => {
+                ui.label(RichText::new(text).strong());
+            }
+            obs_model::NoteLineKind::Bullet { level } => {
+                ui.label(format!("{}• {text}", indent(level)));
+            }
+            obs_model::NoteLineKind::Numbered { level, number } => {
+                ui.label(format!("{}{number}. {text}", indent(level)));
+            }
+            obs_model::NoteLineKind::Quote => {
+                ui.label(format!("“{text}”"));
+            }
+            obs_model::NoteLineKind::Text => {
+                ui.label(text);
+            }
         }
     }
 }

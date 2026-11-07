@@ -53,6 +53,7 @@ mod import_tab;
 mod keys_tab;
 mod library_tab;
 mod missing_resource;
+mod note_editor;
 mod notes_tab;
 mod reading_plans_tab;
 #[path = "references.rs"]

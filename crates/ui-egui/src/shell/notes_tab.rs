@@ -18,7 +18,9 @@
 //!   a Note's body edits it in place: it saves as you type (one undo step per editing pass),
 //!   and when focus leaves it, on Esc or Ctrl+Enter. Bible references in a body are links
 //!   with the reference popup (clicking one runs `notes.show_passage`); they are found once
-//!   per body, not every frame. A save the database refuses (#129) keeps the editor open with
+//!   per body, not every frame. Bodies carry Note formatting (#186): headings, lists, quotes,
+//!   bold, italic and links are drawn formatted ([`State::body_line`]), and the editor is the
+//!   Note editor with its toolbar (`note_editor.rs`). A save the database refuses (#129) keeps the editor open with
 //!   the text and the error, tries again a moment later, and offers Discard changes; only a
 //!   Note deleted underneath ends the editing pass. The list is virtualized (only cards in view are drawn and
 //!   measured) and quotes and bodies are drawn by the text pipeline.
@@ -35,9 +37,11 @@ use std::sync::Arc;
 
 use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, UiBuilder, pos2, vec2};
 use obs_engine::{
-    Card, CardOrder, Content, Notebook, NotesFilter, NotesFormat, TabId, body_references,
+    Card, CardOrder, Content, NoteBodyLine, Notebook, NotesFilter, NotesFormat, TabId,
+    link_passages, note_body,
 };
-use obs_layout::{ColorRole, LaidBlock};
+use obs_layout::{ColorRole, LaidBlock, SnippetStyle};
+use obs_model::{NoteLineKind, NoteMarkKind};
 use obs_scripture::{PassageList, RefStyle, Standard, format_passage};
 use serde_json::{Value, json};
 
@@ -55,6 +59,11 @@ pub(crate) const AUTOSAVE_SECS: f64 = 1.0;
 const COLUMN: f32 = 210.0;
 /// Space between cards.
 const GAP: f32 = 8.0;
+
+/// The text field of the card editing Note `id`.
+pub(super) fn card_editor_id(id: &str) -> egui::Id {
+    egui::Id::unique(("notes-card-edit", id))
+}
 
 /// A Note card being edited in place.
 pub(super) struct CardEdit {
@@ -89,6 +98,18 @@ pub(super) struct DrawnCard {
     pub(super) rect: Rect,
     /// A Note's body (or its editor).
     pub(super) body: Option<Rect>,
+}
+
+/// A line of a Note's text as drawn last frame, for tests.
+#[derive(Debug, Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(super) struct DrawnLine {
+    pub(super) kind: NoteLineKind,
+    /// Where its text was drawn (after any bullet, number or quote rule).
+    pub(super) text_rect: Rect,
+    /// The bullet or number drawn before it.
+    pub(super) marker: Option<String>,
+    pub(super) laid: Arc<LaidBlock>,
 }
 
 /// What the cards were loaded for.
@@ -126,8 +147,8 @@ fn library_key(library: &obs_engine::Library) -> u64 {
     h.finish()
 }
 
-/// A Note body's Bible references, one list per line (byte ranges into the line).
-type BodyRefs = Arc<Vec<Vec<(Range<usize>, PassageList)>>>;
+/// A Note body's lines as shown (Note formatting, #186), each with its Bible references.
+type BodyLines = Arc<Vec<NoteBodyLine>>;
 
 /// The Notes Tab's UI state.
 #[derive(Default)]
@@ -150,11 +171,13 @@ pub(super) struct NotesUi {
     creating: Option<(String, bool)>,
     pub(super) deleting: Option<DeleteNotebook>,
     pub(super) drawn: Vec<DrawnCard>,
+    /// The lines of Notes' text drawn last frame.
+    pub(super) drawn_lines: Vec<DrawnLine>,
     snippets: SnippetCache,
     scroll_to: Option<f32>,
-    /// Each Note's Bible references, by id, with the body they were found in.
-    refs: HashMap<String, (String, BodyRefs)>,
-    /// How many bodies were searched for references (tests check the cache).
+    /// Each Note's lines as shown, by id, with the body they were read from.
+    refs: HashMap<String, (String, BodyLines)>,
+    /// How many bodies were read for formatting and references (tests check the cache).
     pub(super) ref_parses: usize,
     /// The Notes Tab was drawn this frame.
     pub(super) shown: bool,
@@ -178,18 +201,18 @@ impl NotesUi {
         self.cards.iter().position(|c| c.annotation.id == id)
     }
 
-    /// A Note body's Bible references, found once per (id, body).
-    fn body_refs(&mut self, id: &str, body: &str) -> BodyRefs {
-        if let Some((seen, refs)) = self.refs.get(id)
+    /// A Note body's lines as shown, with their references, read once per (id, body).
+    fn body_lines(&mut self, id: &str, body: &str) -> BodyLines {
+        if let Some((seen, lines)) = self.refs.get(id)
             && seen == body
         {
-            return Arc::clone(refs);
+            return Arc::clone(lines);
         }
         self.ref_parses += 1;
-        let refs: BodyRefs = Arc::new(body.split('\n').map(body_references).collect());
+        let lines: BodyLines = Arc::new(note_body(body));
         self.refs
-            .insert(id.to_string(), (body.to_string(), Arc::clone(&refs)));
-        refs
+            .insert(id.to_string(), (body.to_string(), Arc::clone(&lines)));
+        lines
     }
 }
 
@@ -793,6 +816,7 @@ impl State {
         });
         ui.add_space(4.0);
         self.notes_ui.drawn.clear();
+        self.notes_ui.drawn_lines.clear();
         if cards.is_empty() {
             let filtered = self
                 .tabs
@@ -993,15 +1017,9 @@ impl State {
             let Some(ed) = self.notes_ui.editing.as_mut() else {
                 return Rect::NOTHING;
             };
-            let r = ui
-                .add(
-                    egui::TextEdit::multiline(&mut ed.text)
-                        .id(egui::Id::unique(("notes-card-edit", a.id.as_str())))
-                        .hint_text("Write a note…")
-                        .desired_rows(3)
-                        .desired_width(f32::INFINITY),
-                )
-                .accessible_name("Note");
+            let id = card_editor_id(&a.id);
+            let out = super::note_editor::note_editor(ui, id, &mut ed.text, 3);
+            let r = out.response;
             if ed.focus {
                 r.request_focus();
                 ed.focus = false;
@@ -1014,7 +1032,8 @@ impl State {
             {
                 finished = true;
             }
-            if r.lost_focus() {
+            // The keys on the toolbar (pressed, or Tab to a button) are still in the editor.
+            if out.left {
                 finished = true;
             }
             ui.label(
@@ -1053,22 +1072,9 @@ impl State {
                     .color(theme::c().muted),
             );
         } else {
-            let refs = self.notes_ui.body_refs(&a.id, a.body());
-            for (line, refs) in a.body().split('\n').zip(refs.iter()) {
-                if line.trim().is_empty() {
-                    ui.add_space(self.session.text.size * 0.8);
-                    continue;
-                }
-                let styled: Vec<(Range<usize>, ColorRole)> = refs
-                    .iter()
-                    .map(|(r, _)| (r.clone(), ColorRole::Link))
-                    .collect();
-                let Some((rect, laid)) =
-                    self.pipeline_text(ui, line, ColorRole::Ink, &styled, width)
-                else {
-                    continue;
-                };
-                link_hit |= self.body_links(ui, rect, &laid, refs, run);
+            let lines = self.notes_ui.body_lines(&a.id, a.body());
+            for line in lines.iter() {
+                link_hit |= self.body_line(ui, line, width, run);
             }
         }
         let rect = Rect::from_min_max(
@@ -1087,23 +1093,179 @@ impl State {
         rect
     }
 
-    /// Underline a body line's Bible references; hovering one shows the reference popup and
-    /// clicking it shows the Passage (`notes.show_passage`, #18 rule 10; Ctrl/Cmd: a new
-    /// Tab). Returns whether the pointer is on a reference.
+    /// One line of a Note's text, formatted (#186): a gap for a blank line; a heading larger,
+    /// bold and in the heading colour; a list item after its bullet or number, indented by
+    /// its level; a quote line beside a rule; bold, italic, links and Bible references in the
+    /// text. Returns whether the pointer is on a link or reference.
+    fn body_line(
+        &mut self,
+        ui: &mut Ui,
+        body: &NoteBodyLine,
+        width: f32,
+        run: &mut Vec<(&'static str, Value)>,
+    ) -> bool {
+        let line = &body.line;
+        let size = self.session.text.size;
+        const LEVEL: f32 = 18.0;
+        let (scale, base, marker, gutter) = match line.kind {
+            NoteLineKind::Blank => {
+                ui.add_space(size * 0.8);
+                return false;
+            }
+            NoteLineKind::Text => (1.0, ColorRole::Ink, None, 0.0),
+            NoteLineKind::Heading(n) => {
+                ui.add_space(size * 0.25);
+                let scale = [1.35, 1.2, 1.08].get(usize::from(n) - 1).unwrap_or(&1.0);
+                (*scale, ColorRole::Accent, None, 0.0)
+            }
+            NoteLineKind::Bullet { level } => {
+                // List markers in the reading font, as the text of the Note shows them.
+                let bullet = ['•', '○', '–'][usize::from(level) % 3];
+                let at = f32::from(level) * LEVEL;
+                (
+                    1.0,
+                    ColorRole::Ink,
+                    Some((bullet.to_string(), at)),
+                    at + LEVEL,
+                )
+            }
+            NoteLineKind::Numbered { level, number } => {
+                let at = f32::from(level) * LEVEL;
+                let width = 14.0 + 8.0 * number.to_string().len() as f32;
+                (
+                    1.0,
+                    ColorRole::Ink,
+                    Some((format!("{number}."), at)),
+                    at + width,
+                )
+            }
+            NoteLineKind::Quote => (1.0, ColorRole::Ink, None, 14.0),
+        };
+        let mut styled: Vec<(Range<usize>, SnippetStyle)> = Vec::new();
+        if let NoteLineKind::Heading(_) = line.kind {
+            styled.push((
+                0..line.text.len(),
+                SnippetStyle {
+                    bold: true,
+                    ..SnippetStyle::default()
+                },
+            ));
+        }
+        let link = SnippetStyle {
+            role: Some(ColorRole::Link),
+            ..SnippetStyle::default()
+        };
+        for m in &line.marks {
+            let style = match m.kind {
+                NoteMarkKind::Bold => SnippetStyle {
+                    bold: true,
+                    ..SnippetStyle::default()
+                },
+                NoteMarkKind::Italic => SnippetStyle {
+                    italic: true,
+                    ..SnippetStyle::default()
+                },
+                NoteMarkKind::Link(_) => link,
+            };
+            styled.push((m.range.clone(), style));
+        }
+        styled.extend(body.references.iter().map(|(r, _)| (r.clone(), link)));
+        let settings = self.session.text;
+        let text_width = (width - gutter).max(40.0);
+        let laid = self
+            .notes_ui
+            .snippets
+            .get_formatted(&line.text, base, &styled, scale, text_width, &settings);
+        let marker = marker.and_then(|(m, at)| {
+            let laid = self.notes_ui.snippets.get_formatted(
+                &m,
+                ColorRole::VerseNumber,
+                &[],
+                scale,
+                gutter.max(40.0),
+                &settings,
+            );
+            if laid.is_none() {
+                ui.ctx().request_repaint();
+            }
+            Some((laid?, at))
+        });
+        let Some(laid) = laid else {
+            ui.allocate_space(vec2(width, settings.size * 1.6 * scale));
+            ui.ctx().request_repaint();
+            return false;
+        };
+        let (rect, response) = ui.allocate_exact_size(vec2(width, laid.height), Sense::hover());
+        let label = match &marker {
+            Some((m, _)) => format!("{} {}", m.text, line.text),
+            None => line.text.clone(),
+        };
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &label));
+        let text_rect =
+            Rect::from_min_size(rect.min + vec2(gutter, 0.0), vec2(text_width, laid.height));
+        if ui.is_rect_visible(rect) {
+            self.paint_laid(ui, &laid, text_rect.min);
+            if let Some((m, at)) = &marker {
+                self.paint_laid(ui, m, rect.min + vec2(*at, 0.0));
+            }
+            if line.kind == NoteLineKind::Quote {
+                let bar =
+                    Rect::from_min_size(rect.min + vec2(2.0, 1.0), vec2(3.0, rect.height() - 2.0));
+                ui.painter().rect_filled(bar, 1.0, theme::c().rule);
+            }
+        }
+        self.notes_ui.drawn_lines.push(DrawnLine {
+            kind: line.kind,
+            text_rect,
+            marker: marker.as_ref().map(|(m, _)| m.text.clone()),
+            laid: Arc::clone(&laid),
+        });
+        self.body_links(ui, text_rect, &laid, body, run)
+    }
+
+    /// Underline a body line's links and Bible references. Hovering a reference, or a link
+    /// to one, shows the reference popup and clicking it shows the Passage
+    /// (`notes.show_passage`, #18 rule 10; Ctrl/Cmd: a new Tab); a link to a web address
+    /// shows the address and clicking it opens it. Returns whether the pointer is on one.
     fn body_links(
         &mut self,
         ui: &Ui,
         rect: Rect,
         laid: &LaidBlock,
-        refs: &[(Range<usize>, PassageList)],
+        body: &NoteBodyLine,
         run: &mut Vec<(&'static str, Value)>,
     ) -> bool {
+        enum Target<'a> {
+            Passages(PassageList),
+            Url(&'a str),
+            Other(&'a str),
+        }
+        let mut targets: Vec<(Range<usize>, Target)> = body
+            .references
+            .iter()
+            .map(|(r, list)| (r.clone(), Target::Passages(list.clone())))
+            .collect();
+        for m in &body.line.marks {
+            if let NoteMarkKind::Link(to) = &m.kind {
+                let target = match link_passages(to) {
+                    Some(list) => Target::Passages(list),
+                    None if ["https://", "http://", "mailto:"]
+                        .iter()
+                        .any(|p| to.starts_with(p)) =>
+                    {
+                        Target::Url(to)
+                    }
+                    None => Target::Other(to),
+                };
+                targets.push((m.range.clone(), target));
+            }
+        }
         let pointer = ui.input(|i| i.pointer.hover_pos());
         let clicked = ui.input(|i| i.pointer.primary_clicked());
         let split = ui.input(|i| i.modifiers.command);
         let mut on = false;
-        for (range, list) in refs {
-            let rects: Vec<Rect> = crate::compare_view::range_rects(laid, range)
+        for (range, target) in targets {
+            let rects: Vec<Rect> = crate::compare_view::range_rects(laid, &range)
                 .into_iter()
                 .map(|[x0, y0, x1, y1]| {
                     Rect::from_min_max(rect.min + vec2(x0, y0), rect.min + vec2(x1, y1))
@@ -1116,22 +1278,56 @@ impl State {
                     Stroke::new(1.0, self.palette.link.gamma_multiply(0.6)),
                 );
             }
-            if pointer.is_some_and(|p| rects.iter().any(|r| r.contains(p)))
-                && ui.rect_contains_pointer(rect)
+            if !(pointer.is_some_and(|p| rects.iter().any(|r| r.contains(p)))
+                && ui.rect_contains_pointer(rect))
             {
-                on = true;
-                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                self.reference_popup(ui, std::slice::from_ref(list));
-                if clicked && let Some(p) = list.passages().first() {
-                    let passage = format_passage(*p, &Standard, RefStyle::Short);
-                    run.push((
-                        "notes.show_passage",
-                        json!({ "passage": passage, "split": split }),
-                    ));
+                continue;
+            }
+            on = true;
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            match target {
+                Target::Passages(list) => {
+                    self.reference_popup(ui, std::slice::from_ref(&list));
+                    if clicked && let Some(p) = list.passages().first() {
+                        let passage = format_passage(*p, &Standard, RefStyle::Short);
+                        run.push((
+                            "notes.show_passage",
+                            json!({ "passage": passage, "split": split }),
+                        ));
+                    }
+                }
+                Target::Url(url) => {
+                    link_tip(ui, &format!("{url}\nClick to open it in the browser"));
+                    if clicked {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+                    }
+                }
+                Target::Other(to) => {
+                    link_tip(
+                        ui,
+                        &format!("“{to}” is not a Bible reference or a web address"),
+                    );
                 }
             }
         }
         on
+    }
+
+    /// Paint laid text with the text pipeline (glyph atlas) at `origin`.
+    fn paint_laid(&mut self, ui: &Ui, laid: &LaidBlock, origin: Pos2) {
+        let quads = self
+            .atlas
+            .atlas
+            .quads(laid, [origin.x, origin.y], ui.ctx().pixels_per_point());
+        let mut mesh = Mesh::with_texture(self.atlas.sync(ui.ctx()));
+        for q in quads {
+            mesh.add_rect_with_uv(
+                Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
+                Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
+                self.palette.color(q.role),
+            );
+        }
+        ui.painter().add(Shape::mesh(mesh));
     }
 
     /// Draw `text` with the text pipeline (glyph atlas), `width` wide; `None` (space kept)
@@ -1161,20 +1357,7 @@ impl State {
         let (rect, response) = ui.allocate_exact_size(vec2(width, laid.height), Sense::hover());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, text));
         if ui.is_rect_visible(rect) {
-            let quads = self.atlas.atlas.quads(
-                &laid,
-                [rect.left(), rect.top()],
-                ui.ctx().pixels_per_point(),
-            );
-            let mut mesh = Mesh::with_texture(self.atlas.sync(ui.ctx()));
-            for q in quads {
-                mesh.add_rect_with_uv(
-                    Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
-                    Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-                    self.palette.color(q.role),
-                );
-            }
-            ui.painter().add(Shape::mesh(mesh));
+            self.paint_laid(ui, &laid, rect.min);
         }
         Some((rect, laid))
     }
@@ -1235,6 +1418,17 @@ impl State {
             ui.close();
         }
     }
+}
+
+/// A small tip by the pointer over a link.
+fn link_tip(ui: &Ui, text: &str) {
+    egui::Tooltip::always_open(
+        ui.ctx().clone(),
+        ui.layer_id(),
+        ui.scope_id().with("note-link-tip"),
+        egui::PopupAnchor::Pointer,
+    )
+    .show(|ui| ui.label(text));
 }
 
 /// The Export menu of the Notes Tool and of a Notes search (#154): Markdown, HTML, or

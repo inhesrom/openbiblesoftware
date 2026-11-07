@@ -13,9 +13,12 @@
 //! write failed), is left out with a note saying why, so no quote goes out without the
 //! credit it may need.
 //!
-//! The Markdown keeps a Note's text as typed: CommonMark's special characters are
-//! backslash-escaped, lines end in a hard line break and leading spaces are written as
-//! character references, so a Markdown reader shows (and a parser reads back) the same text.
+//! A Note's text is CommonMark (Note formatting, #186). The Markdown export writes it byte
+//! for byte as typed, never re-written or wrapped; only a code fence or HTML block the Note
+//! leaves open is closed by a line after it, so the rest of the export is not read into it.
+//! The HTML export is a CommonMark reader's HTML (pulldown-cmark), with line breaks kept,
+//! the Note's headings two levels down (under the Annotation's own), raw HTML shown as
+//! typed, and only web links as links.
 
 use std::collections::BTreeMap;
 
@@ -25,6 +28,8 @@ use serde_json::{Value, json};
 
 use crate::annotations::{Anchor, Content, TextRange};
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params};
+use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
+
 use crate::copy_verses::{html_document, html_escape, markdown_escape, markdown_escape_line_start};
 use crate::notes::{Card, NotesFilter};
 use crate::session::Session;
@@ -121,6 +126,157 @@ fn html_lines(text: &str) -> String {
         .join("\n")
 }
 
+/// How far a Note's headings move down in the HTML export: its `#` sits under the
+/// Annotation's `##`.
+const HEADING_SHIFT: u8 = 2;
+
+/// A Note's text as Markdown: its source byte for byte, which is CommonMark (see the module
+/// docs), never re-written or wrapped, so its links, reference definitions and white space
+/// are as typed. Only if it ends inside a code fence or an HTML block is a closing line put
+/// after it, so what follows in the export is not read into it.
+pub fn note_markdown(body: &str) -> String {
+    if ends_closed(body) {
+        return body.to_string();
+    }
+    let longest = |c: char| {
+        body.split(|x| x != c)
+            .map(str::len)
+            .max()
+            .unwrap_or(0)
+            .max(3)
+    };
+    let fences = ['`', '~']
+        .into_iter()
+        .flat_map(|c| (3..=longest(c)).map(move |n| c.to_string().repeat(n)));
+    let html = [
+        "-->",
+        "?>",
+        "]]>",
+        ">",
+        "</script>",
+        "</pre>",
+        "</style>",
+        "</textarea>",
+    ]
+    .map(String::from);
+    fences
+        .chain(html)
+        .map(|closer| {
+            // The closer on a line of its own, after the text as typed (its last line
+            // break, if any, ends the line before it).
+            let gap = if body.ends_with('\n') { "" } else { "\n" };
+            format!("{body}{gap}{closer}")
+        })
+        .find(|closed| ends_closed(closed))
+        .unwrap_or_else(|| body.to_string())
+}
+
+/// Whether a heading after Markdown `md` (and a blank line) is read as one, not as part of
+/// a code fence or HTML block left open in it.
+fn ends_closed(md: &str) -> bool {
+    let probe = format!("{md}\n\n# end");
+    let events: Vec<Event<'_>> = Parser::new(&probe).collect();
+    matches!(
+        events.as_slice(),
+        [
+            ..,
+            Event::Start(Tag::Heading {
+                level: HeadingLevel::H1,
+                ..
+            }),
+            Event::Text(t),
+            Event::End(TagEnd::Heading(HeadingLevel::H1)),
+        ] if t.as_ref() == "end"
+    )
+}
+
+/// Whether a link target is a web address the HTML export may link to.
+fn web_target(t: &str) -> bool {
+    ["https://", "http://", "mailto:"]
+        .iter()
+        .any(|p| t.starts_with(p))
+}
+
+/// A Note's text as HTML, by a CommonMark reader, as the app shows it: each line break a
+/// line break (`<br />`), headings two levels down, raw HTML shown as typed (escaped), web
+/// links as `<a href>` and a link to a Bible reference as its text followed by the reference
+/// in parentheses when they differ; paragraphs take their direction from their first letter.
+pub fn note_html(body: &str) -> String {
+    let shift = |level: HeadingLevel| {
+        HeadingLevel::try_from((level as usize + usize::from(HEADING_SHIFT)).min(6))
+            .unwrap_or(HeadingLevel::H6)
+    };
+    let mut events: Vec<Event<'_>> = Vec::new();
+    // Open links: for one not written as a link, its target and the text shown so far.
+    let mut links: Vec<Option<(String, String)>> = Vec::new();
+    for event in Parser::new(body) {
+        match event {
+            Event::SoftBreak => events.push(Event::HardBreak),
+            Event::Start(Tag::Heading {
+                level,
+                id,
+                classes,
+                attrs,
+            }) => events.push(Event::Start(Tag::Heading {
+                level: shift(level),
+                id,
+                classes,
+                attrs,
+            })),
+            Event::End(TagEnd::Heading(level)) => {
+                events.push(Event::End(TagEnd::Heading(shift(level))));
+            }
+            // Raw HTML shows as typed, its lines as lines of a paragraph.
+            Event::Start(Tag::HtmlBlock) => events.push(Event::Start(Tag::Paragraph)),
+            Event::End(TagEnd::HtmlBlock) => {
+                if events.last() == Some(&Event::HardBreak) {
+                    events.pop();
+                }
+                events.push(Event::End(TagEnd::Paragraph));
+            }
+            Event::Html(t) => {
+                let line = t.trim_end_matches(['\r', '\n']).to_string();
+                let broke = line.len() < t.len();
+                events.push(Event::Text(line.into()));
+                if broke {
+                    events.push(Event::HardBreak);
+                }
+            }
+            Event::InlineHtml(t) => events.push(Event::Text(t)),
+            Event::Start(Tag::Link { ref dest_url, .. }) if !web_target(dest_url) => {
+                links.push(Some((dest_url.to_string(), String::new())));
+            }
+            Event::Start(Tag::Link { .. }) => {
+                links.push(None);
+                events.push(event);
+            }
+            Event::End(TagEnd::Link) => match links.pop() {
+                Some(Some((target, text))) => {
+                    if text.trim() != target.trim() {
+                        events.push(Event::Text(format!(" ({target})").into()));
+                    }
+                }
+                _ => events.push(event),
+            },
+            // An image is not fetched: its description shows.
+            Event::Start(Tag::Image { .. }) | Event::End(TagEnd::Image) => {}
+            Event::Text(ref t) | Event::Code(ref t) => {
+                for (_, text) in links.iter_mut().flatten() {
+                    text.push_str(t);
+                }
+                events.push(event);
+            }
+            other => events.push(other),
+        }
+    }
+    let mut html = String::new();
+    pulldown_cmark::html::push_html(&mut html, events.into_iter());
+    // Text is escaped, so `<p>` here is only ever the element.
+    html.replace("<p>", "<p dir=\"auto\">")
+        .trim_end()
+        .to_string()
+}
+
 /// Why a Text range's quote was left out of the export (see [`Session::notes_export`]).
 fn withheld_quote(card: &Card) -> Option<&str> {
     card.missing.as_deref().filter(|_| card.quote.is_none())
@@ -181,10 +337,7 @@ impl NotesExport {
             match self.highlight_label(&card.annotation.content) {
                 Some(label) => out.push_str(&format!("\n*{}*\n", markdown_escape(&label))),
                 None if !card.annotation.body().trim().is_empty() => {
-                    out.push_str(&format!(
-                        "\n{}\n",
-                        markdown_lines(card.annotation.body(), "")
-                    ));
+                    out.push_str(&format!("\n{}\n", note_markdown(card.annotation.body())));
                 }
                 None => {}
             }
@@ -210,7 +363,7 @@ impl NotesExport {
             }
             match self.highlight_label(&card.annotation.content) {
                 Some(label) => out.push(format!("<p><em>{}</em></p>", html_escape(&label))),
-                None => out.push(html_lines(card.annotation.body())),
+                None => out.push(note_html(card.annotation.body())),
             }
         }
         if !self.attributions.is_empty() {

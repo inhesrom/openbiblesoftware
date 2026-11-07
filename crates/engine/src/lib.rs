@@ -223,8 +223,8 @@ pub use licence::{LicenceClass, LicenceFilter, licence_class};
 pub use link::LINK_SETS;
 pub use missing_resource::{EmptyState, MissingResource, StarterOffer, Tagging};
 pub use notes::{
-    Card, CardOrder, NoteHit, NotesFilter, NotesResults, NotesTool, body_references,
-    body_references_in,
+    Card, CardOrder, NoteBodyLine, NoteHit, NotesFilter, NotesResults, NotesTool, body_references,
+    body_references_in, link_passages, note_body,
 };
 pub use notes_export::{NotesExport, NotesFormat, NotesSource};
 /// The Morphology chooser's menus and choices (#145).
