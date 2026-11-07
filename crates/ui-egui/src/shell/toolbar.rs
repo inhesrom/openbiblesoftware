@@ -32,6 +32,7 @@ use serde_json::{Value, json};
 
 use super::Shell;
 use super::toolbar_look as look;
+use crate::icons;
 
 /// The Library pane's search field.
 pub(crate) const SEARCH_HINT: &str = "Find a Resource: title, abbreviation, type, language";
@@ -418,7 +419,7 @@ impl Shell {
                 .take(4)
                 .map(|f| ResourceRow {
                     item: Item::Favorite(f.id),
-                    abbreviation: "★".into(),
+                    abbreviation: String::new(),
                     title: f.label.clone(),
                     detail: f.folder.clone(),
                 })
@@ -494,13 +495,11 @@ impl Shell {
                                         index == selected,
                                         resp.hovered(),
                                     );
-                                    look::resource_row(
-                                        ui,
-                                        rect,
-                                        &row.abbreviation,
-                                        &row.title,
-                                        &row.detail,
-                                    );
+                                    let chip = match row.item {
+                                        Item::Favorite(_) => None,
+                                        _ => Some(row.abbreviation.as_str()),
+                                    };
+                                    look::resource_row(ui, rect, chip, &row.title, &row.detail);
                                     if index == selected && scroll {
                                         resp.scroll_to_me(None);
                                     }
@@ -618,7 +617,14 @@ impl Shell {
                             egui::WidgetInfo::labeled(egui::Role::Button, *enabled, *label)
                         });
                         look::row_background(ui, rect, i == selected, resp.hovered());
-                        look::plain_row(ui, rect, label, shortcut, *enabled);
+                        look::plain_row(
+                            ui,
+                            rect,
+                            icons::for_command(id),
+                            label,
+                            shortcut,
+                            *enabled,
+                        );
                         if resp.clicked() && *enabled {
                             let ctrl = ui.input(|i| i.modifiers.command);
                             action = Some(Action::Run(Item::Command(id), ctrl));
@@ -665,7 +671,7 @@ impl Shell {
                             vec2(ui.available_width(), look::ROW + 8.0),
                             Sense::hover(),
                         );
-                        let label_rect = Rect::from_min_size(rect.min, vec2(150.0, rect.height()));
+                        let label_rect = Rect::from_min_size(rect.min, vec2(176.0, rect.height()));
                         let resp = ui.interact(
                             label_rect,
                             ui.scope_id().with(("guide", *id)),
@@ -675,7 +681,7 @@ impl Shell {
                             egui::WidgetInfo::labeled(egui::Role::Button, true, label)
                         });
                         look::row_background(ui, rect, selected, resp.hovered());
-                        look::plain_row(ui, label_rect, label, "", true);
+                        look::plain_row(ui, label_rect, icons::for_command(id), label, "", true);
                         let input = tb.guide_inputs.entry(id).or_default();
                         let field = Rect::from_min_max(
                             pos2(label_rect.right(), rect.top() + 5.0),

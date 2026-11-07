@@ -534,7 +534,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     ),
     CommandSpec {
         id: "word_info.word_study",
-        label: "Word Study ›",
+        label: "Word Study",
         shortcut: None,
         params: OPEN,
         enabled: |s| crate::word_study::word_info_number(s).is_some(),

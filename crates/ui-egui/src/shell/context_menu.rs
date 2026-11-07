@@ -32,6 +32,7 @@ use super::annotate::{Annotate, SelectionKeyText, StyleBook, menu_label};
 use super::references::TargetKey;
 use crate::compare_view::ComparisonContext;
 use crate::doc::ReadingDoc;
+use crate::icons::{Icon, with_icon};
 use crate::pane::{PaneOutput, WordHit, has_text, select_for_menu};
 use crate::selection::{DocPos, Granularity, Selection, copy_text, selected_text};
 use crate::theme;
@@ -340,35 +341,35 @@ fn actions_ui(
             item(
                 ui,
                 can_annotate,
-                egui::Button::new("✏ Note…").shortcut_text(keys.note()),
+                egui::Button::new(with_icon(ui, Icon::Note, "Note…")).shortcut_text(keys.note()),
                 MenuAction::Annotate(Annotate::Note),
                 no_db,
             );
             item(
                 ui,
                 true,
-                egui::Button::new("Copy").shortcut_text("Ctrl+C"),
+                egui::Button::new(with_icon(ui, Icon::Copy, "Copy")).shortcut_text("Ctrl+C"),
                 MenuAction::Annotate(Annotate::Copy),
                 "",
             );
             item(
                 ui,
                 true,
-                egui::Button::new("🔎 Search this"),
+                egui::Button::new(with_icon(ui, Icon::Search, "Search this")),
                 MenuAction::Annotate(Annotate::Search),
                 "",
             );
             item(
                 ui,
                 true,
-                egui::Button::new("Look up in Dictionary"),
+                egui::Button::new(with_icon(ui, Icon::Articles, "Look up in Dictionary")),
                 MenuAction::LookUp,
                 "",
             );
             item(
                 ui,
                 m.short_selection().is_some(),
-                egui::Button::new("Word Study…"),
+                egui::Button::new(with_icon(ui, Icon::WordStudy, "Word Study…")),
                 MenuAction::ChooseWord,
                 "Select a word or a short phrase",
             );
@@ -383,26 +384,43 @@ fn actions_ui(
             } else {
                 "An Unmapped verse has no Verse in the Standard versification"
             };
-            for (label, action) in [
-                ("Passage Guide", MenuAction::PassageGuide),
-                ("Exegetical Guide", MenuAction::ExegeticalGuide),
-                ("Cross-references", MenuAction::CrossReferences),
-                ("Text Comparison", MenuAction::TextComparison),
+            for (icon, label, action) in [
+                (
+                    Icon::PassageGuide,
+                    "Passage Guide",
+                    MenuAction::PassageGuide,
+                ),
+                (
+                    Icon::ExegeticalGuide,
+                    "Exegetical Guide",
+                    MenuAction::ExegeticalGuide,
+                ),
+                (
+                    Icon::CrossReferences,
+                    "Cross-references",
+                    MenuAction::CrossReferences,
+                ),
+                (
+                    Icon::TextComparison,
+                    "Text Comparison",
+                    MenuAction::TextComparison,
+                ),
             ] {
-                item(ui, mapped, egui::Button::new(label), action, unmapped);
+                let button = egui::Button::new(with_icon(ui, icon, label));
+                item(ui, mapped, button, action, unmapped);
             }
             ui.separator();
             item(
                 ui,
                 v.native.is_some() || v.copy.is_some(),
-                egui::Button::new("Copy with reference"),
+                egui::Button::new(with_icon(ui, Icon::Copy, "Copy with reference")),
                 MenuAction::CopyVerse,
                 "There is no text here to copy",
             );
             item(
                 ui,
                 can_annotate && (v.native.is_some() || mapped),
-                egui::Button::new("✏ Add Note on verse"),
+                egui::Button::new(with_icon(ui, Icon::Note, "Add Note on verse")),
                 MenuAction::NoteOnVerse,
                 no_db,
             );
@@ -414,21 +432,21 @@ fn actions_ui(
             item(
                 ui,
                 true,
-                egui::Button::new("Word Study"),
+                egui::Button::new(with_icon(ui, Icon::WordStudy, "Word Study")),
                 MenuAction::WordStudy,
                 "",
             );
             item(
                 ui,
                 true,
-                egui::Button::new("Open in preferred Lexicon"),
+                egui::Button::new(with_icon(ui, Icon::Lexicon, "Open in preferred Lexicon")),
                 MenuAction::OpenLexicon,
                 "",
             );
             item(
                 ui,
                 true,
-                egui::Button::new("📌 Pin in Word Info"),
+                egui::Button::new(with_icon(ui, Icon::Pin, "Pin in Word Info")),
                 MenuAction::PinWordInfo,
                 "",
             );
@@ -439,7 +457,11 @@ fn actions_ui(
             item(
                 ui,
                 true,
-                egui::Button::new(format!("🔎 Search Bible for {shown}")),
+                egui::Button::new(with_icon(
+                    ui,
+                    Icon::Search,
+                    format!("Search Bible for {shown}"),
+                )),
                 action,
                 "",
             );
@@ -448,14 +470,14 @@ fn actions_ui(
             item(
                 ui,
                 true,
-                egui::Button::new("Copy"),
+                egui::Button::new(with_icon(ui, Icon::Copy, "Copy")),
                 MenuAction::CopyMorphology,
                 "",
             );
             item(
                 ui,
                 true,
-                egui::Button::new("📌 Pin in Word Info"),
+                egui::Button::new(with_icon(ui, Icon::Pin, "Pin in Word Info")),
                 MenuAction::PinWordInfo,
                 "",
             );

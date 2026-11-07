@@ -250,7 +250,7 @@ impl Session {
     pub fn search_scope_details(&self, search: &SavedSearch) -> String {
         match search.mode {
             SearchMode::Bible => match &search.bibles {
-                None => "Bibles: the ★ Bible".to_string(),
+                None => "Bibles: the first in Preferred order".to_string(),
                 Some(ids) if ids.is_empty() => "Bibles: none".to_string(),
                 Some(ids) => {
                     let names: Vec<String> = ids.iter().map(|id| self.resource_label(id)).collect();

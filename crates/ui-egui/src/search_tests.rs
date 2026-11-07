@@ -823,7 +823,7 @@ fn strong_g26_grid_shows_john_and_1_john_hottest_and_a_cell_filters_the_verse_li
         .shapes
         .iter()
         .filter(|(r, t)| {
-            t == "×" && r.left() > chip.right() && (r.center().y - chip.center().y).abs() < 6.0
+            t == "[x]" && r.left() > chip.right() && (r.center().y - chip.center().y).abs() < 6.0
         })
         .map(|(r, _)| r.center())
         .next()

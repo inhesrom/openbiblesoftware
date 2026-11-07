@@ -538,19 +538,14 @@ impl State {
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    let r = ui
-                                        .add(
-                                            egui::Button::new(RichText::new("×").small())
-                                                .frame(false),
-                                        )
-                                        .on_hover_text("Close (Esc)");
-                                    r.widget_info(|| {
-                                        egui::WidgetInfo::labeled(
-                                            egui::Role::Button,
-                                            true,
-                                            "Close footnote",
-                                        )
-                                    });
+                                    let r = crate::icons::button(
+                                        ui,
+                                        crate::icons::Icon::Close,
+                                        crate::icons::SMALL,
+                                        theme::c().muted,
+                                        "Close footnote",
+                                    )
+                                    .on_hover_text("Close (Esc)");
                                     close_id = Some(r.id);
                                     close |= r.clicked();
                                 },

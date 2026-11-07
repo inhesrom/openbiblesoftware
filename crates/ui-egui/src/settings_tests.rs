@@ -54,8 +54,9 @@ fn pane_rect(h: &Harness, tab: TabId) -> Rect {
 /// the same words).
 fn in_tab(h: &Harness, tab: TabId, text: &str) -> Option<Rect> {
     let mut r = pane_rect(h, tab);
-    // The header's ⋯ menu button is the lowest thing above the body.
-    if let Some(menu) = (h.shapes.iter()).find(|(s, t)| t == "…" && r.contains(s.center())) {
+    // The header's More menu button is the lowest thing above the body.
+    if let Some(menu) = (h.shapes.iter()).find(|(s, t)| t == "[ellipsis]" && r.contains(s.center()))
+    {
         r.min.y = menu.0.bottom() + 2.0;
     }
     (h.shapes.iter())
@@ -191,7 +192,7 @@ fn change_from_row(h: &mut Harness, tab: TabId, setting: &Setting) {
             h.click(p);
         }
         SettingKind::Toggle { .. } => click_in_tab(h, tab, setting.label),
-        SettingKind::TextSize => click_in_tab(h, tab, "+"),
+        SettingKind::TextSize => click_in_tab(h, tab, "[plus]"),
         SettingKind::NotebooksInText => click_in_tab(h, tab, obs_store::DEFAULT_NOTEBOOK_NAME),
         _ => {}
     }

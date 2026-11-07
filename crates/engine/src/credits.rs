@@ -49,7 +49,19 @@ const EMBEDDED_USE: &[(&str, &str)] = &[
         "crates/engine/assets/reading-plans/",
         "Built into the app: the templates Tools → Reading plans makes plans from.",
     ),
+    (
+        "crates/ui-egui/assets/icons/",
+        "Built into the app: the icons of the toolbar, menus, Tab headers, Guides and Tools.",
+    ),
 ];
+
+/// Licence texts shown with a piece of data built into the app, by `ATTRIBUTION.toml` path
+/// prefix: (prefix, title, text).
+const EMBEDDED_TEXTS: &[(&str, &str, &str)] = &[(
+    "crates/ui-egui/assets/icons/",
+    "Lucide licence (ISC, and MIT for the icons from Feather)",
+    include_str!("../../ui-egui/assets/icons/LICENSE"),
+)];
 
 /// One credited work.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -250,6 +262,11 @@ fn build(attribution: &str, lock: &str, third_party: &str) -> Credits {
                 .iter()
                 .find(|(prefix, _)| a.path.starts_with(prefix))
                 .map(|(_, note)| (*note).to_string());
+            c.texts = EMBEDDED_TEXTS
+                .iter()
+                .filter(|(prefix, ..)| a.path.starts_with(prefix))
+                .map(|(_, title, text)| ((*title).to_string(), *text))
+                .collect();
             c
         })
         .collect();
@@ -512,6 +529,22 @@ mod tests {
                 f.name
             );
         }
+    }
+
+    /// #220: the interface's icons are credited with their use and the Lucide licence text.
+    #[test]
+    fn the_icon_set_is_credited_with_its_licence_text() {
+        let embedded = &credits().sections[1];
+        let icons = embedded
+            .credits
+            .iter()
+            .find(|c| c.asset.as_deref() == Some("crates/ui-egui/assets/icons/*"))
+            .unwrap();
+        assert_eq!(icons.license, "ISC AND MIT");
+        assert!(icons.note.as_deref().unwrap().contains("icons"));
+        assert_eq!(icons.texts.len(), 1);
+        assert!(icons.texts[0].1.starts_with("ISC License"));
+        assert!(icons.texts[0].1.contains("Cole Bemis"));
     }
 
     #[test]

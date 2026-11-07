@@ -22,6 +22,7 @@ use serde_json::{Value, json};
 
 use super::State;
 use super::annotate::{StyleBook, paint_swatch};
+use crate::icons::{self, Icon};
 use crate::palette::{Palette, to_color, to_rgb};
 use crate::theme;
 
@@ -448,8 +449,9 @@ impl State {
                         color_field(ui, ui_state, style, &label, acts);
                     });
                     ui.horizontal(|ui| {
+                        let up = icons::image(ui.ctx(), Icon::MoveUp, icons::SMALL, theme::c().ink);
                         if ui
-                            .add_enabled(i > 0, egui::Button::new("⏶").small())
+                            .add_enabled(i > 0, egui::Button::new(up).small())
                             .on_hover_text("Move up")
                             .accessible_name(format!("Move {label} up"))
                             .clicked()
@@ -459,8 +461,10 @@ impl State {
                                 json!({ "id": style.id, "position": i - 1 }),
                             ));
                         }
+                        let down =
+                            icons::image(ui.ctx(), Icon::MoveDown, icons::SMALL, theme::c().ink);
                         if ui
-                            .add_enabled(i + 1 < n, egui::Button::new("⏷").small())
+                            .add_enabled(i + 1 < n, egui::Button::new(down).small())
                             .on_hover_text("Move down")
                             .accessible_name(format!("Move {label} down"))
                             .clicked()
@@ -790,7 +794,7 @@ fn contrast_text(palette: &Palette, look: HighlightLook, color: egui::Color32) -
         HighlightLook::Underline | HighlightLook::Box => contrast(color, palette.page),
     };
     let ok = if palette.check(look, color).is_ok() {
-        "AA ✔"
+        "meets AA"
     } else {
         "below AA"
     };
@@ -823,7 +827,8 @@ fn color_field(
             Err(e) => acts.push(Act::Error(e)),
         }
     }
-    ui.menu_button("⏷", |ui| {
+    let open = icons::image(ui.ctx(), Icon::ChevronDown, icons::SMALL, theme::c().muted);
+    ui.menu_button(open, |ui| {
         for (name, c) in PRESETS {
             let r = ui.horizontal(|ui| {
                 let (rect, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());

@@ -187,7 +187,7 @@ fn right_click_loved_in_john_3_16_kjv_opens_word_study_on_g25_in_one_click() {
     // Strong's: Search Bible for G25 searches this Bible.
     right_click(&mut h, loved);
     hover(&mut h, "G25");
-    h.click_text("🔎 Search Bible for G25");
+    h.click_text("Search Bible for G25");
     let (query, bibles) = search_query(&h);
     assert_eq!(query, "strong:G25");
     assert_eq!(bibles.as_deref(), Some(&["kjv".to_string()][..]));
@@ -243,7 +243,7 @@ fn right_click_in_a_greek_nt_lists_lemma_strongs_and_morphology() {
 
     // Lemma: the right column searches by Lemma.
     hover(&mut h, "ἀγαπάω");
-    h.click_text("🔎 Search Bible for ἀγαπάω");
+    h.click_text("Search Bible for ἀγαπάω");
     let (query, bibles) = search_query(&h);
     assert_eq!(query, "lemma:ἀγαπάω");
     assert_eq!(bibles.as_deref(), Some(&["tagnt".to_string()][..]));
@@ -252,7 +252,7 @@ fn right_click_in_a_greek_nt_lists_lemma_strongs_and_morphology() {
     right_click(&mut h, word);
     hover(&mut h, &morphology);
     assert!(h.find("Copy").is_some(), "{:?}", h.texts());
-    h.click_text("📌 Pin in Word Info");
+    h.click_text("Pin in Word Info");
     let info = &h.shell.session().word_info;
     assert!(info.pinned);
     assert_eq!(info.shown.as_ref().unwrap().written, "ἠγάπησεν");
@@ -279,7 +279,7 @@ fn right_click_on_an_untagged_word_offers_the_english_word_chooser() {
 
     // Search this searches the selected word in this Bible.
     right_click(&mut h, should);
-    h.click_text("🔎 Search this");
+    h.click_text("Search this");
     let (query, bibles) = search_query(&h);
     assert_eq!(query, "\"should\"");
     assert_eq!(bibles.as_deref(), Some(&["kjv".to_string()][..]));
@@ -317,7 +317,7 @@ fn search_this_on_a_selected_uppercase_and_searches_the_word_not_the_operator() 
     let and = super::word_info::word_spot(&h, tab, "AND");
     right_click(&mut h, and);
     assert!(h.find("“AND”").is_some(), "{:?}", h.texts());
-    h.click_text("🔎 Search this");
+    h.click_text("Search this");
     settle_search(&mut h);
     let ws = &h.shell.session().workspace;
     let search = ws
@@ -575,7 +575,7 @@ fn the_verse_target_copies_with_reference_and_adds_a_note_on_the_verse() {
 
     right_click(&mut h, loved);
     hover(&mut h, "John 3:16");
-    h.click_text("✏ Add Note on verse");
+    h.click_text("Add Note on verse");
     assert!(h.shell.st.note_editor.is_some());
     h.events
         .push(Event::Text("God's love for the world".into()));
@@ -669,7 +669,7 @@ fn ctrl_cmd_click_on_a_search_action_opens_a_new_search_tab() {
     right_click(&mut h, at);
     hover(&mut h, "G25");
     h.modifiers = Modifiers::COMMAND;
-    h.click_text("🔎 Search Bible for G25");
+    h.click_text("Search Bible for G25");
     h.modifiers = Modifiers::NONE;
     let tabs = search_tabs(&h);
     assert_eq!(tabs.len(), 2, "a second Search Tab");
@@ -682,7 +682,7 @@ fn ctrl_cmd_click_on_a_search_action_opens_a_new_search_tab() {
     right_click(&mut h, at);
     hover(&mut h, "“loved”");
     h.modifiers = Modifiers::COMMAND;
-    h.click_text("🔎 Search this");
+    h.click_text("Search this");
     h.modifiers = Modifiers::NONE;
     let tabs = search_tabs(&h);
     assert_eq!(tabs.len(), 3, "a third Search Tab");
@@ -694,7 +694,7 @@ fn ctrl_cmd_click_on_a_search_action_opens_a_new_search_tab() {
     let at = loved(&mut h);
     right_click(&mut h, at);
     hover(&mut h, "G25");
-    h.click_text("🔎 Search Bible for G25");
+    h.click_text("Search Bible for G25");
     assert_eq!(search_tabs(&h).len(), 3);
     drop(h);
 }

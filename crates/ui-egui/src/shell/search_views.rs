@@ -71,10 +71,7 @@ impl State {
                             ui.label(
                                 RichText::new(format!("Only {}", filter.label(all))).size(12.5),
                             );
-                            let x = egui::Button::new(RichText::new("×").size(12.0))
-                                .frame(false)
-                                .min_size(vec2(16.0, 20.0));
-                            if ui.add(x).on_hover_text("Show every result").clicked() {
+                            if crate::icons::chip_close(ui, "Show every result").clicked() {
                                 run.push(("search.filter", json!({ "tab": tab.0 })));
                             }
                         });
@@ -381,19 +378,16 @@ impl State {
                         FontId::proportional(13.0),
                         ink,
                     );
-                    // The sorted column's arrow, drawn (the interface font has no ▲ ▼).
+                    // The sorted column's chevron: down descending, up ascending.
                     if let Some(descending) = sorted {
-                        let c = text.right_center() + vec2(9.0, 0.0);
-                        let (tip, base) = if descending { (4.0, -3.0) } else { (-4.0, 3.0) };
-                        ui.painter().add(Shape::convex_polygon(
-                            vec![
-                                c + vec2(-4.5, base),
-                                c + vec2(4.5, base),
-                                c + vec2(0.0, tip),
-                            ],
-                            ink,
-                            Stroke::NONE,
-                        ));
+                        let c = text.right_center() + vec2(10.0, 0.0);
+                        let icon = if descending {
+                            crate::icons::Icon::ChevronDown
+                        } else {
+                            crate::icons::Icon::ChevronUp
+                        };
+                        let at = egui::Rect::from_center_size(c, vec2(12.0, 12.0));
+                        crate::icons::paint(ui.painter(), icon, at, crate::icons::SMALL, ink);
                     }
                     let label = match sorted {
                         Some(false) => format!("{}, sorted ascending", column.label()),

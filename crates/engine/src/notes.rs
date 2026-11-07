@@ -390,7 +390,7 @@ impl Session {
         };
         let attention = match &a.anchor {
             Some(Anchor::TextRange { range }) if range.orphaned => Some(format!(
-                "⚠ This text was not found in {} after it changed. Select the text in a \
+                "This text was not found in {} after it changed. Select the text in a \
                  reading pane and choose Re-attach here{}.",
                 name(&range.resource_id),
                 if a.is_note() {
@@ -761,7 +761,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 name: "bible",
                 kind: ParamKind::String,
                 required: false,
-                help: "The Bible to prefer (default: the most recent Bible Tab, else the ★ Bible)",
+                help: "The Bible to prefer (default: the most recent Bible Tab, else the first Bible in Preferred order)",
             },
             SPLIT,
         ],

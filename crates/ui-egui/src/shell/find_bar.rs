@@ -1,16 +1,17 @@
 //! The Find bar (#175): Ctrl+F in a Resource or Text Comparison Tab opens it under the Tab's
 //! header strip. As the user types, every match in the Resource is found (on a worker) and
-//! drawn; the count reads "12 of 48". Enter / Shift+Enter (or ▼ ▲) move between matches,
-//! scrolling to each; Esc (or ×) closes the bar and clears them. Alt+Enter ("Search all
-//! Resources") hands what is typed to the Search Tool.
+//! drawn; the count reads "12 of 48". Enter / Shift+Enter (or the Next and Previous buttons)
+//! move between matches, scrolling to each; Esc (or Close) closes the bar and clears them.
+//! Alt+Enter ("Search all Resources") hands what is typed to the Search Tool.
 
-use egui::{Key, Modifiers, RichText, Ui, pos2, vec2};
+use egui::{Key, Modifiers, RichText, Ui, vec2};
 use obs_engine::TabId;
 use obs_model::ResourceType;
 use serde_json::{Value, json};
 
 use super::State;
 use crate::find::{FindBar, FindStatus};
+use crate::icons;
 use crate::selection::selected_text;
 use crate::theme;
 
@@ -42,7 +43,7 @@ pub(crate) fn field_id(tab: TabId) -> egui::Id {
     egui::Id::unique(("find-field", tab.0))
 }
 
-/// ▲ or ▼, painted (the interface font has no such triangles), named for screen readers.
+/// Previous (a chevron up) or Next (down), named for screen readers.
 fn arrow_button(ui: &mut Ui, up: bool, enabled: bool, what: &str) -> egui::Response {
     let sense = if enabled {
         egui::Sense::click()
@@ -55,25 +56,12 @@ fn arrow_button(ui: &mut Ui, up: bool, enabled: bool, what: &str) -> egui::Respo
         ui.painter().rect_filled(rect, 4.0, c.hover);
     }
     let color = if enabled { c.ink } else { c.muted };
-    let (x, y, s) = (rect.center().x, rect.center().y, 4.5);
-    let points = if up {
-        vec![
-            pos2(x - s, y + s * 0.6),
-            pos2(x + s, y + s * 0.6),
-            pos2(x, y - s * 0.7),
-        ]
+    let icon = if up {
+        icons::Icon::ChevronUp
     } else {
-        vec![
-            pos2(x - s, y - s * 0.6),
-            pos2(x + s, y - s * 0.6),
-            pos2(x, y + s * 0.7),
-        ]
+        icons::Icon::ChevronDown
     };
-    ui.painter().add(egui::Shape::convex_polygon(
-        points,
-        color,
-        egui::Stroke::NONE,
-    ));
+    icons::paint(ui.painter(), icon, rect, icons::BODY, color);
     let label = what.split(" (").next().unwrap_or(what).to_string();
     r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, &label));
     r.on_hover_text(what)
@@ -176,10 +164,15 @@ impl State {
             if next.clicked() {
                 bar.step = Some(true);
             }
-            if ui
-                .add(egui::Button::new(RichText::new("×").small()).frame(false))
-                .on_hover_text("Close (Esc)")
-                .clicked()
+            if icons::button(
+                ui,
+                icons::Icon::Close,
+                icons::SMALL,
+                theme::c().muted,
+                "Close",
+            )
+            .on_hover_text("Close (Esc)")
+            .clicked()
             {
                 close = true;
             }

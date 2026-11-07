@@ -277,11 +277,11 @@ fn clicking_a_marker_pins_its_popover_until_esc_or_another_click() {
     h.click(at);
     let area = popover(&h).unwrap().rect.unwrap();
     let close = (h.shapes.iter())
-        .find(|(r, t)| t == "×" && area.contains(r.center()))
+        .find(|(r, t)| *t == crate::icons::Icon::Close.marker() && area.contains(r.center()))
         .map(|(r, _)| r.center())
-        .expect("a × in the pinned popover");
+        .expect("a Close in the pinned popover");
     h.click(close);
-    assert!(popover(&h).is_none(), "× closes it");
+    assert!(popover(&h).is_none(), "Close closes it");
 }
 
 /// The markers are reachable from the keyboard: Tab focuses one (its popover follows after
@@ -829,10 +829,18 @@ fn view_footnote_markers_toggles_them_per_tab() {
     assert!(!markers(&h, tab).is_empty());
     h.shell.st.session.workspace.focus(tab);
     h.open_menu("View");
-    assert!(h.find("✓ Footnote markers").is_some(), "{:?}", h.texts());
-    h.click_text("✓ Footnote markers");
+    let item = h.find("Footnote markers").expect("in the View menu");
+    let check = crate::icons::Icon::Check.marker();
+    let checked = |h: &Harness| {
+        (h.shapes.iter()).any(|(r, t)| *t == check && (r.center().y - item.center().y).abs() < 6.0)
+    };
+    assert!(checked(&h), "checked: {:?}", h.texts());
+    h.click_text("Footnote markers");
     h.frames(4);
     assert!(markers(&h, tab).is_empty(), "hidden in this Tab");
+    h.open_menu("View");
+    assert!(!checked(&h), "unchecked once hidden");
+    press(&mut h, Key::Escape);
     assert!(
         !h.shell
             .st
