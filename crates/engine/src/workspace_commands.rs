@@ -30,6 +30,9 @@ pub enum MenuItem {
     /// "Favorites": a submenu of the Favorites, each Favorites folder a submenu of its own;
     /// each runs `favorite.open` (#155).
     Favorites,
+    /// "Recently closed": a submenu of Recently closed, newest first, each running
+    /// `tab.reopen_closed` with its id (#214).
+    RecentlyClosed,
     /// A submenu of exclusive choices: one `command` run with `{ "value": id }` per choice,
     /// the current one checked.
     Choice {
@@ -141,6 +144,15 @@ pub const MENUS: &[Menu] = &[
             },
             C("view.toolbar_auto_hide"),
             C("view.toolbar_customize"),
+        ],
+    },
+    Menu {
+        title: "Window",
+        items: &[
+            C("tab.reopen_closed"),
+            MenuItem::RecentlyClosed,
+            Separator,
+            C("panel.close"),
         ],
     },
     Menu {
@@ -795,8 +807,35 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         enabled: always,
         run: |s, p| {
             let tab = tab_param("tab.close", s, &p)?;
-            Ok(json!({ "closed": s.workspace.close(tab) }))
+            Ok(json!({ "closed": s.workspace.user_closed(tab) }))
         },
+    },
+    // Recently closed (#214).
+    CommandSpec {
+        id: "tab.reopen_closed",
+        label: "Reopen closed Tab",
+        shortcut: Some("Ctrl+Shift+T"),
+        params: &[ParamSpec {
+            name: "closed",
+            kind: ParamKind::Integer,
+            required: false,
+            help: "Which Recently closed entry, by id (default: the newest)",
+        }],
+        enabled: |s| s.workspace.recently_closed().next().is_some(),
+        run: reopen_closed,
+    },
+    CommandSpec {
+        id: "panel.close",
+        label: "Close Panel",
+        shortcut: None,
+        params: &[ParamSpec {
+            name: "tab",
+            kind: ParamKind::Integer,
+            required: false,
+            help: "A Tab in the Panel (default: the focused Tab)",
+        }],
+        enabled: |s| s.workspace.focused().is_some(),
+        run: close_panel,
     },
     // Find in Resource (#175): the Find bar is the UI's; these open it and step through it.
     CommandSpec {
@@ -1136,6 +1175,68 @@ fn tab_param(command: &'static str, s: &Session, p: &Params<'_>) -> Result<TabId
     Ok(tab)
 }
 
+impl Session {
+    /// Recently closed, newest first, as Window → Recently closed lists it (#214): each
+    /// entry's id and how to name it, a Tab by where it was ("John 3:16 · KJV") or its title,
+    /// a closed Panel by its Tabs' titles.
+    pub fn recently_closed_labels(&self) -> Vec<(u64, String)> {
+        self.workspace
+            .recently_closed()
+            .map(|c| {
+                let label = match c.tabs.as_slice() {
+                    [one] => {
+                        let mut tab =
+                            crate::workspace::Tab::from_snapshot(TabId(one.id), one.clone());
+                        // A Lexicon or Dictionary is named by its Key, as its manifest says.
+                        if let Some(e) =
+                            (tab.kind.resource_id()).and_then(|id| self.library.get(id))
+                            && !e.manifest.key_schemes.is_empty()
+                        {
+                            tab.key_schemes = e.manifest.key_schemes.clone();
+                        }
+                        self.location_label(&tab)
+                            .unwrap_or_else(|| one.title.clone())
+                    }
+                    tabs => {
+                        let titles: Vec<&str> = tabs.iter().map(|t| t.title.as_str()).collect();
+                        format!("Panel: {}", titles.join(", "))
+                    }
+                };
+                (c.id, label)
+            })
+            .collect()
+    }
+}
+
+fn reopen_closed(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "tab.reopen_closed";
+    let id = match p.i64("closed") {
+        Some(n) => Some(u64::try_from(n).map_err(|_| failed(ID, format!("no closing {n}")))?),
+        None => None,
+    };
+    let tabs = s.workspace.reopen_closed(id).ok_or_else(|| match id {
+        Some(n) => failed(ID, format!("no closing {n}")),
+        None => failed(ID, "nothing to reopen"),
+    })?;
+    Ok(json!({ "tabs": tabs.iter().map(|t| t.0).collect::<Vec<_>>() }))
+}
+
+fn close_panel(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "panel.close";
+    let tab = match p.i64("tab") {
+        Some(_) => tab_param(ID, s, &p)?,
+        None => s
+            .workspace
+            .focused()
+            .ok_or_else(|| failed(ID, "no Tab is focused"))?,
+    };
+    let panel = s
+        .workspace
+        .panel_of(tab)
+        .ok_or_else(|| failed(ID, format!("Tab {} is in no Panel", tab.0)))?;
+    Ok(json!({ "closed": s.workspace.close_panel(panel) }))
+}
+
 fn go(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const ID: &str = "tab.go";
     let tab = tab_param(ID, s, &p)?;
@@ -1321,7 +1422,12 @@ fn layout_save(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             .push_effect(Effect::PromptLayoutName { rename: None });
         return Ok(Value::Null);
     };
-    let json = s.workspace.snapshot().to_json();
+    // Recently closed is the session's, never a Layout's (#214).
+    let snapshot = crate::persist::WorkspaceSnapshot {
+        recently_closed: Default::default(),
+        ..s.workspace.snapshot()
+    };
+    let json = snapshot.to_json();
     user(s, ID)?
         .save_layout(name, &json)
         .map_err(|e| failed(ID, e))?;

@@ -13,7 +13,7 @@ use obs_store::{
 };
 
 use crate::floating_windows::WindowSnapshot;
-use crate::workspace::{TabKind, Workspace};
+use crate::workspace::{RecentlyClosed, TabKind, Workspace};
 
 /// Snapshot format version; bump when the shape changes incompatibly.
 pub const SNAPSHOT_VERSION: u32 = 1;
@@ -123,6 +123,46 @@ pub struct TabSnapshot {
     /// A Resource Tab shows its Contents pane (#176).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub contents: bool,
+    /// Where a closed Resource Tab's view was scrolled, for Reopen closed Tab (#214). Only
+    /// Recently closed Tabs have one ([`TabSnapshot::closing`]); Layouts and the Last
+    /// session's open Tabs do not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scroll: Option<ScrollPosition>,
+}
+
+impl TabSnapshot {
+    /// Tab `t` as a Layout or the Last session saves it.
+    pub fn of(t: &crate::workspace::Tab) -> Self {
+        TabSnapshot {
+            id: t.id.0,
+            kind: t.kind.clone(),
+            title: t.title.clone(),
+            location: t.history.current(),
+            entry_location: t.entry_history.current(),
+            link: t.link,
+            interlinear: t.interlinear.clone(),
+            contents: t.contents,
+            scroll: None,
+        }
+    }
+
+    /// Tab `t` as Recently closed keeps it, closed by the user now: scrolled as its view is.
+    pub fn closing(t: &crate::workspace::Tab) -> Self {
+        TabSnapshot {
+            scroll: t.scroll.clone(),
+            ..Self::of(t)
+        }
+    }
+}
+
+/// A place in a Resource Tab's text finer than its Current location: the text unit at the
+/// top of its view, a UTF-8 byte offset into it, and how far, in points, the view is scrolled
+/// past the top of the line holding that byte (#214).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScrollPosition {
+    pub unit: obs_model::UnitId,
+    pub byte: usize,
+    pub into: f32,
 }
 
 /// The Workspace as saved: Tabs, the arrangement of Panels, Link sets, focus and each Tab
@@ -140,6 +180,10 @@ pub struct WorkspaceSnapshot {
     /// Floating windows (#152), each with its own Panels and where it was on screen.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub windows: Vec<WindowSnapshot>,
+    /// Recently closed Tabs and Panels (#214): kept with the Last session, also when no Tab
+    /// is open, never with a Layout.
+    #[serde(default, skip_serializing_if = "RecentlyClosed::is_default")]
+    pub recently_closed: RecentlyClosed,
 }
 
 impl WorkspaceSnapshot {
@@ -155,10 +199,8 @@ impl WorkspaceSnapshot {
 
     /// Drop Tabs whose Resource is no longer in the library.
     pub fn without_missing(mut self, has: impl Fn(&str) -> bool) -> Self {
-        self.tabs.retain(|t| match &t.kind {
-            TabKind::Resource(id) | TabKind::About(id) | TabKind::ImportReport(id) => has(id),
-            _ => true,
-        });
+        let kept = |t: &TabSnapshot| t.kind.resource_id().is_none_or(&has);
+        self.tabs.retain(kept);
         let keep: BTreeSet<u64> = self.tabs.iter().map(|t| t.id).collect();
         self.layout = self.layout.and_then(|l| l.retain_tabs(&keep));
         self.windows = std::mem::take(&mut self.windows)
@@ -173,6 +215,11 @@ impl WorkspaceSnapshot {
         if self.focused.is_some_and(|f| !keep.contains(&f)) {
             self.focused = None;
         }
+        let closed = &mut self.recently_closed.closed;
+        for c in closed.iter_mut() {
+            c.tabs.retain(kept);
+        }
+        closed.retain(|c| !c.tabs.is_empty());
         self
     }
 }
@@ -439,19 +486,7 @@ impl Workspace {
         let live: BTreeSet<u64> = self.tabs().map(|t| t.id.0).collect();
         WorkspaceSnapshot {
             version: SNAPSHOT_VERSION,
-            tabs: self
-                .tabs()
-                .map(|t| TabSnapshot {
-                    id: t.id.0,
-                    kind: t.kind.clone(),
-                    title: t.title.clone(),
-                    location: t.history.current(),
-                    entry_location: t.entry_history.current(),
-                    link: t.link,
-                    interlinear: t.interlinear.clone(),
-                    contents: t.contents,
-                })
-                .collect(),
+            tabs: self.tabs().map(TabSnapshot::of).collect(),
             layout: self.arrangement.clone(),
             focused: self.focused().map(|t| t.0),
             remembered: self.remembered_slots(),
@@ -468,6 +503,7 @@ impl Workspace {
                     })
                 })
                 .collect(),
+            recently_closed: self.closed_snapshot(),
         }
     }
 }

@@ -320,7 +320,7 @@ impl Session {
     }
 
     /// Restore the Last session, dropping Tabs whose Resource is gone. Returns whether there
-    /// was one to restore.
+    /// was one to restore: an empty one only counts while its Recently closed is not.
     pub fn restore_last_session(&mut self) -> bool {
         let Some(json) = self
             .user
@@ -333,7 +333,9 @@ impl Session {
             return false;
         };
         let snap = snap.without_missing(|id| self.library.get(id).is_some());
-        if snap.tabs.is_empty() {
+        // A Workspace the user emptied still comes back while it has Recently closed (#214),
+        // so Reopen closed Tab works after a restart.
+        if snap.tabs.is_empty() && snap.recently_closed.is_empty() {
             return false;
         }
         self.workspace.restore(snap);

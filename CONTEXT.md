@@ -356,8 +356,12 @@ One of the Layouts that come with the app: "Bible + Commentary", "Word study des
 _Avoid_: Preset, Template
 
 **Last session**:
-The Workspace as the user left it, restored automatically at the next launch. It is not a Layout.
+The Workspace as the user left it, restored automatically at the next launch. It is not a Layout. One with no Tabs open comes back empty while its Recently closed has anything to reopen; otherwise the default arrangement opens instead.
 _Avoid_: Autosave layout
+
+**Recently closed**:
+The Tabs and Panels the user closed lately, newest first, at most 20, listed in Window → Recently closed. Reopen closed Tab (Ctrl+Shift+T) brings back the newest, and clicking an entry brings back that one: each Tab in its old Panel (a Panel that closed with it comes back where it was: on the same side of the Panel, row or column it was next to, left, right, above or below), at its Current location, in its Link set and scrolled where it was. Close Panel (Window menu, or a Tab's ⋯ menu) closes all of a Panel's Tabs as one entry, so one Reopen closed Tab brings the Panel back whole, its active Tab focused (or, for a single-instance Tool open again since, that Tool). It is kept for the session and with the Last session, never in a Layout. Tabs the app closes itself (restoring a Layout, removing a Resource) are not in it, and a Resource removed from the library leaves it.
+_Avoid_: Closed tabs history, Trash, Undo close
 
 **Home**:
 The Tab the app opens on at its first launch, and from the Home button beside Today's reading (Alt+H). Its cards are Today's reading, Continue where you left off (the newest Visit), History and Favorites, the Verse of the day, Quick start (Passage Guide, Word Study, Get Resources, Import) and Your library (how many Resources of each Resource type, with Get Resources for an empty one, and how much of the Starter library is there); each row opens its place with one click. The cards are reordered and hidden like a Guide's sections, and that **Home arrangement** is kept in the User database. With **Open Home at launch** on, Home opens on top of the Last session at every launch. It has no Current location, so it is never a Visit or a Favorite.
