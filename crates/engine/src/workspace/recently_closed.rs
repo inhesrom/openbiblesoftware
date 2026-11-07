@@ -220,12 +220,12 @@ impl Workspace {
             entry.0.push(tab);
             entry.1 = Some(tab);
             self.tabs.insert(tab, Tab::from_snapshot(tab, snap.clone()));
-            self.effects.push(Effect::Opened {
+            self.queue(Effect::Opened {
                 tab,
                 placement: here,
             });
             if let Some(at) = snap.scroll.clone() {
-                self.effects.push(Effect::RestoreScroll { tab, at });
+                self.queue(Effect::RestoreScroll { tab, at });
             }
             self.visits.push(PendingVisit { tab, at: None });
             if was_active || focus.is_none() {

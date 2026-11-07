@@ -624,6 +624,7 @@ impl Tab {
     /// the new one.
     fn show_resource(&mut self, resource: String) {
         self.kind = TabKind::Resource(resource);
+        self.scroll = None;
         self.navigation = None;
         self.view_unit = None;
         self.versification = None;
@@ -871,10 +872,12 @@ pub enum Effect {
 }
 
 impl Effect {
-    /// The Tab whose view this sends somewhere else, if it does.
+    /// The Tab whose view this sends somewhere else (another place, or another Resource),
+    /// if it does.
     pub fn moved_view(&self) -> Option<TabId> {
         match self {
             Effect::Navigate { tab, .. }
+            | Effect::Switched(tab)
             | Effect::NavigateEntry { tab, .. }
             | Effect::Follow { tab, .. }
             | Effect::NavigateText { tab, .. }
@@ -1004,7 +1007,8 @@ impl Workspace {
 
     /// Effects queued since the last call, for the UI to apply in order.
     pub fn take_effects(&mut self) -> Vec<Effect> {
-        // A Tab sent somewhere else is no longer scrolled where its view was (#214).
+        // A view drawn between queueing a move and this drain reported where it still was
+        // (#214): it is no longer scrolled there.
         for e in &self.effects {
             if let Some(t) = e.moved_view().and_then(|t| self.tabs.get_mut(&t)) {
                 t.scroll = None;
@@ -1014,6 +1018,16 @@ impl Workspace {
     }
 
     pub fn push_effect(&mut self, e: Effect) {
+        self.queue(e);
+    }
+
+    /// Queue an effect. A Tab it sends somewhere else is no longer scrolled where its view
+    /// was, from now on: a Tab closed before the UI drains the effect must not keep the old
+    /// place's scroll (#214).
+    fn queue(&mut self, e: Effect) {
+        if let Some(t) = e.moved_view().and_then(|t| self.tabs.get_mut(&t)) {
+            t.scroll = None;
+        }
         self.effects.push(e);
     }
 
@@ -1157,7 +1171,7 @@ impl Workspace {
         {
             t.history.scrolled_to(v);
         }
-        self.effects.push(Effect::Opened { tab: id, placement });
+        self.queue(Effect::Opened { tab: id, placement });
         self.visits.push(PendingVisit { tab: id, at: None });
         self.focus(id);
         id
@@ -1187,7 +1201,7 @@ impl Workspace {
             return;
         };
         self.note_active(tab, &kind);
-        self.effects.push(Effect::Focus(tab));
+        self.queue(Effect::Focus(tab));
         self.focused = Some(tab);
     }
 
@@ -1230,7 +1244,7 @@ impl Workspace {
         if self.focused == Some(tab) {
             self.focused = None;
         }
-        self.effects.push(Effect::Closed(tab));
+        self.queue(Effect::Closed(tab));
         true
     }
 
@@ -1282,7 +1296,7 @@ impl Workspace {
         {
             t.visit(local, None);
             t.moved_to(local);
-            self.effects.push(Effect::Navigate { tab, verse: local });
+            self.queue(Effect::Navigate { tab, verse: local });
             self.visited(tab);
             self.broadcast(tab, verse, true);
         }
@@ -1306,7 +1320,7 @@ impl Workspace {
                 let start = p.start();
                 t.visit(start, Some(&unit));
                 t.moved_to(start);
-                self.effects.push(Effect::NavigateText {
+                self.queue(Effect::NavigateText {
                     tab,
                     unit,
                     range,
@@ -1316,7 +1330,7 @@ impl Workspace {
             }
             Some(k) if !matches!(k, Key::Passage(_)) => {
                 t.visit_entry(k.clone(), Some(&unit));
-                self.effects.push(Effect::NavigateText {
+                self.queue(Effect::NavigateText {
                     tab,
                     unit,
                     range,
@@ -1324,7 +1338,7 @@ impl Workspace {
                 });
                 self.broadcast_entry(tab, k);
             }
-            _ => self.effects.push(Effect::NavigateText {
+            _ => self.queue(Effect::NavigateText {
                 tab,
                 unit,
                 range,
@@ -1340,7 +1354,7 @@ impl Workspace {
             return;
         };
         t.visit_entry(key.clone(), None);
-        self.effects.push(Effect::NavigateEntry {
+        self.queue(Effect::NavigateEntry {
             tab,
             key: key.clone(),
         });
@@ -1363,13 +1377,17 @@ impl Workspace {
         let Some(link) = self.tabs.get(&tab).and_then(|t| t.link) else {
             return;
         };
+        let mut moved = Vec::new();
         for t in self.tabs.values_mut().filter(|t| {
             t.id != tab && t.link == Some(link) && t.key_schemes.contains(&key.scheme())
         }) {
             if let Some(key) = t.entry_key(key) {
                 t.entry_history.scrolled_to(key.clone());
-                self.effects.push(Effect::NavigateEntry { tab: t.id, key });
+                moved.push(Effect::NavigateEntry { tab: t.id, key });
             }
+        }
+        for e in moved {
+            self.queue(e);
         }
     }
 
@@ -1382,12 +1400,12 @@ impl Workspace {
             t.entry_history.forward(shown)?
         };
         if t.follow_history_resource() {
-            self.effects.push(Effect::Switched(tab));
+            self.queue(Effect::Switched(tab));
             self.show_unit(tab, unit);
             self.visited(tab);
             return Some(key);
         }
-        self.effects.push(Effect::NavigateEntry {
+        self.queue(Effect::NavigateEntry {
             tab,
             key: key.clone(),
         });
@@ -1400,7 +1418,7 @@ impl Workspace {
     /// Back or Forward returned to a history entry whose view showed `unit` (#176).
     fn show_unit(&mut self, tab: TabId, unit: Option<UnitId>) {
         if let Some(unit) = unit {
-            self.effects.push(Effect::ShowUnit { tab, unit });
+            self.queue(Effect::ShowUnit { tab, unit });
         }
     }
 
@@ -1435,7 +1453,7 @@ impl Workspace {
         {
             t.visit(native, None);
             t.moved_to(native);
-            self.effects.push(Effect::Navigate { tab, verse: native });
+            self.queue(Effect::Navigate { tab, verse: native });
             self.visited(tab);
         }
         // A Lexicon can open a Scripture reference without following Passages itself.
@@ -1497,13 +1515,13 @@ impl Workspace {
             return v;
         };
         if t.follow_history_resource() {
-            self.effects.push(Effect::Switched(tab));
+            self.queue(Effect::Switched(tab));
             self.show_unit(tab, unit);
             self.visited(tab);
             return v;
         }
         t.moved_to(v);
-        self.effects.push(Effect::Navigate { tab, verse: v });
+        self.queue(Effect::Navigate { tab, verse: v });
         self.show_unit(tab, unit);
         self.visited(tab);
         self.broadcast(tab, v, false);
@@ -1545,7 +1563,7 @@ impl Workspace {
         }
         t.show_resource(to);
         t.arriving_at = arriving_at;
-        self.effects.push(Effect::Switched(tab));
+        self.queue(Effect::Switched(tab));
         // History records the new Resource where the UI places it, as for a Tab just opened.
         self.visits.push(PendingVisit { tab, at: None });
         true
@@ -1577,7 +1595,7 @@ impl Workspace {
             if let Some(t) = self.tabs.get_mut(&tab) {
                 t.entry_history.scrolled_to(key.clone());
             }
-            self.effects.push(Effect::NavigateEntry { tab, key });
+            self.queue(Effect::NavigateEntry { tab, key });
         }
     }
 
@@ -1617,7 +1635,7 @@ impl Workspace {
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.history.scrolled_to(verse);
             t.moved_to(verse);
-            self.effects.push(Effect::Follow { tab, verse, flash });
+            self.queue(Effect::Follow { tab, verse, flash });
         }
     }
 
@@ -1780,7 +1798,7 @@ impl Workspace {
             .focused
             .map(TabId)
             .filter(|t| self.tabs.contains_key(t));
-        self.effects.push(Effect::Rebuild);
+        self.queue(Effect::Rebuild);
     }
 
     /// Close everything (before a layout reset).
@@ -1832,7 +1850,7 @@ impl Workspace {
             }),
             placement,
         });
-        self.effects.push(Effect::Float {
+        self.queue(Effect::Float {
             tab,
             window,
             panel,
@@ -1857,7 +1875,7 @@ impl Workspace {
                 active: Some(tab.0),
             },
         ));
-        self.effects.push(Effect::Dock { tab, panel });
+        self.queue(Effect::Dock { tab, panel });
         self.focus(tab);
         true
     }
@@ -1872,7 +1890,7 @@ impl Workspace {
         if let Some(node) = w.arrangement {
             self.arrangement = Some(beside_right(self.arrangement.take(), node));
         }
-        self.effects.push(Effect::DockWindow(window));
+        self.queue(Effect::DockWindow(window));
         true
     }
 

@@ -611,22 +611,89 @@ fn a_closed_tab_keeps_the_scroll_it_closed_with_whatever_happens_after() {
 }
 
 /// A reopened Tab sent elsewhere before it draws no longer carries the scroll it closed with,
-/// so closing it again keeps none.
+/// so closing it again keeps none, whether or not the UI drained the move first.
 #[test]
 fn a_reopened_tab_sent_elsewhere_before_it_draws_closes_without_its_old_scroll() {
-    let (mut s, _t) = session("scroll-moved");
-    let kjv = open(&mut s, "kjv", json!({}));
-    place(&mut s, kjv, None, v(Book::Genesis, 31, 1));
-    draw(&mut s, kjv, scrolled("GEN", 40));
-    s.run("tab.close", &json!({ "tab": kjv.0 })).unwrap();
-    let back = reopen(&mut s)[0];
-    s.workspace.navigate(back, v(Book::Genesis, 33, 5));
-    s.workspace.take_effects();
-    assert_eq!(s.workspace.tab(back).unwrap().scroll, None);
-    s.run("tab.close", &json!({ "tab": back.0 })).unwrap();
-    let newest = s.workspace.recently_closed().next().unwrap();
-    assert_eq!(newest.tabs[0].scroll, None);
-    assert_eq!(newest.tabs[0].location, Some(v(Book::Genesis, 33, 5)));
+    for drained in [true, false] {
+        let (mut s, _t) = session(&format!("scroll-moved-{drained}"));
+        let kjv = open(&mut s, "kjv", json!({}));
+        place(&mut s, kjv, None, v(Book::Genesis, 31, 1));
+        draw(&mut s, kjv, scrolled("GEN", 40));
+        s.run("tab.close", &json!({ "tab": kjv.0 })).unwrap();
+        let back = reopen(&mut s)[0];
+        s.workspace.navigate(back, v(Book::Genesis, 33, 5));
+        if drained {
+            s.workspace.take_effects();
+        }
+        assert_eq!(s.workspace.tab(back).unwrap().scroll, None, "{drained}");
+        s.run("tab.close", &json!({ "tab": back.0 })).unwrap();
+        let newest = s.workspace.recently_closed().next().unwrap();
+        assert_eq!(newest.tabs[0].scroll, None, "{drained}");
+        assert_eq!(
+            newest.tabs[0].location,
+            Some(v(Book::Genesis, 33, 5)),
+            "{drained}"
+        );
+    }
+}
+
+/// How a drawn, scrolled KJV Tab is sent elsewhere before its view draws again.
+struct MoveCase {
+    name: &'static str,
+    send: fn(&mut Session, TabId),
+}
+
+/// A Tab closed after it is sent elsewhere (a jump, its Link set following, a switch to
+/// another Resource) but before its view draws there keeps none of the old view's scroll:
+/// Reopen closed Tab does not scroll the new place or Resource to it.
+#[test]
+fn a_tab_closed_before_its_move_draws_keeps_none_of_the_old_scroll() {
+    let cases = [
+        MoveCase {
+            name: "jumped",
+            send: |s, kjv| s.workspace.navigate(kjv, v(Book::Genesis, 33, 5)),
+        },
+        MoveCase {
+            name: "followed its Link set",
+            send: |s, kjv| {
+                let web = open(s, "web", json!({ "split": true }));
+                place(s, web, Some('A'), v(Book::Genesis, 31, 1));
+                s.workspace.set_link(kjv, Some('A'));
+                s.workspace.navigate(web, v(Book::Genesis, 33, 5));
+                let kjv_at = s.workspace.tab(kjv).unwrap().history.current();
+                assert_eq!(kjv_at, Some(v(Book::Genesis, 33, 5)));
+            },
+        },
+        MoveCase {
+            name: "switched Resource",
+            send: |s, kjv| assert!(s.workspace.switch_resource(kjv, "asv".into())),
+        },
+    ];
+    for case in cases {
+        for drained in [false, true] {
+            let (mut s, _t) = session(&format!("scroll-sent-{}-{drained}", case.name.len()));
+            let kjv = open(&mut s, "kjv", json!({}));
+            place(&mut s, kjv, None, v(Book::Genesis, 31, 1));
+            draw(&mut s, kjv, scrolled("GEN", 40));
+            (case.send)(&mut s, kjv);
+            if drained {
+                s.workspace.take_effects();
+            }
+            let at = (case.name, drained);
+            assert_eq!(s.workspace.tab(kjv).unwrap().scroll, None, "{at:?}");
+            s.run("tab.close", &json!({ "tab": kjv.0 })).unwrap();
+            let newest = s.workspace.recently_closed().next().unwrap();
+            assert_eq!(newest.tabs[0].scroll, None, "{at:?}");
+            s.workspace.take_effects();
+            let back = reopen(&mut s)[0];
+            let restore = s
+                .workspace
+                .take_effects()
+                .into_iter()
+                .any(|e| matches!(e, Effect::RestoreScroll { tab, .. } if tab == back));
+            assert!(!restore, "{at:?}");
+        }
+    }
 }
 
 #[test]
