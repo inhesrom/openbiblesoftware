@@ -278,6 +278,7 @@ impl Shell {
             Placement::NewPanel {
                 panel,
                 beside: None,
+                before: false,
             },
         );
         self.floating.push(d);
@@ -295,7 +296,7 @@ impl Shell {
         };
         let ws = &mut self.st.session.workspace;
         if let Some(tile) = build_node(&mut self.tree, &mut self.st.panels, ws, &node) {
-            attach_beside(&mut self.tree, tile, None);
+            attach_beside(&mut self.tree, tile, None, false);
         }
     }
 
