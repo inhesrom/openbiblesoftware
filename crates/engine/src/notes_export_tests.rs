@@ -265,7 +265,7 @@ fn exporting_a_notebook_writes_markdown_that_round_trips_passages_and_note_text(
     for tag in ["<h3", "<li", "<ol", "<ul", "<em>", "<strong>", "<a ", "<hr"] {
         assert!(!html.contains(tag), "{tag} in {html}");
     }
-    assert!(html.contains("# not a heading<br />"), "{html}");
+    assert!(html.contains("# not a heading\n"), "{html}");
 }
 
 /// Markdown as a CommonMark reader turns it into HTML.
@@ -292,42 +292,26 @@ fn commonmark_events(markdown: &str) -> Vec<pulldown_cmark::Event<'_>> {
         .collect()
 }
 
-/// The Markdown export of a Note is its text as typed (never re-written): a CommonMark
-/// reader reads the very same document from it, every line break kept.
+/// The Markdown export of a Note is its text byte for byte (never re-written or wrapped),
+/// a closing fence or HTML end after it, on a line of its own, only if it leaves one open.
 fn assert_exported_as_typed(body: &str) {
     let markdown = crate::notes_export::note_markdown(body);
-    // Each line is the line typed, or it with a `\` after it; a closing fence or HTML end
-    // may follow, on a line of its own.
-    let typed: Vec<&str> = body.split('\n').collect();
-    let mut written: Vec<&str> = markdown.split('\n').collect();
-    let ends_in_break = body.ends_with('\n');
-    let closer = if written.len() > typed.len() || (ends_in_break && written.last() != Some(&"")) {
-        written.pop()
+    let after = markdown
+        .strip_prefix(body)
+        .unwrap_or_else(|| panic!("{body:?} -> {markdown:?}"));
+    let closer = if body.ends_with('\n') {
+        after
     } else {
-        None
+        after.strip_prefix('\n').unwrap_or(after)
     };
-    let kept = match closer {
-        Some(_) if ends_in_break => typed.len() - 1,
-        _ => typed.len(),
-    };
-    assert_eq!(written.len(), kept, "{body:?} -> {markdown:?}");
-    for (w, t) in written.iter().zip(&typed) {
-        assert!(
-            w == t || w.strip_suffix('\\') == Some(t),
-            "{t:?} -> {w:?} in {markdown:?}"
-        );
-    }
-    // A code fence or HTML block left open is closed: the closing line is read with it.
-    let closed = match closer {
-        Some(closer) if ends_in_break => format!("{body}{closer}"),
-        Some(closer) => format!("{body}\n{closer}"),
-        None => body.to_string(),
-    };
-    assert_eq!(
-        commonmark_events(&markdown),
-        commonmark_events(&closed),
+    assert!(
+        after.is_empty() || (!closer.is_empty() && !closer.contains('\n')),
         "{body:?} -> {markdown:?}"
     );
+    // Without a closer, a CommonMark reader reads the Note itself.
+    if after.is_empty() {
+        assert_eq!(commonmark_events(&markdown), commonmark_events(body));
+    }
 }
 
 /// The Markdown export keeps every character typed (#186 review): blank lines before and
@@ -340,7 +324,7 @@ fn exported_markdown_keeps_white_space_as_typed() {
         ("```\ncode  \n", "```\ncode  \n```"),
         ("```\ncode\n\n", "```\ncode\n\n```"),
         ("    code  \n    more  ", "    code  \n    more  "),
-        ("\n\nfirst\nsecond\n\n", "\n\nfirst\\\nsecond\n\n"),
+        ("\n\nfirst\nsecond\n\n", "\n\nfirst\nsecond\n\n"),
         ("  \nline  \n  ", "  \nline  \n  "),
     ] {
         assert_eq!(note_markdown(body), markdown, "{body:?}");
@@ -380,26 +364,13 @@ fn exporting_a_formatted_note_keeps_its_formatting_as_markdown_and_html() {
         .as_str()
         .unwrap()
         .to_string();
-    // The Note as typed, a `\` (hard line break) before the line break inside its quote.
-    let note = FORMATTED.replace("ashamed\n", "ashamed\\\n");
+    // The Note byte for byte as typed.
     assert_eq!(
         markdown,
-        format!("# All Notebooks\n\n## Romans 5:1\n\n{note}\n"),
+        format!("# All Notebooks\n\n## Romans 5:1\n\n{FORMATTED}\n"),
         "{markdown}"
     );
     assert_exported_as_typed(FORMATTED);
-    // The app reads the export back as it shows the Note.
-    let shown = |body: &str| {
-        obs_model::parse_note_text(body)
-            .into_iter()
-            .map(|l| {
-                // Where a mark is in the body differs by the export's `\`; what it marks not.
-                let marks: Vec<_> = l.marks.into_iter().map(|m| (m.range, m.kind)).collect();
-                (l.kind, l.text, marks)
-            })
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(shown(&note), shown(FORMATTED));
     // A CommonMark reader shows the same structure.
     let html = commonmark_html(&markdown);
     for part in [
@@ -407,7 +378,7 @@ fn exporting_a_formatted_note_keeps_its_formatting_as_markdown_and_html() {
         "<p>By <strong>grace</strong> through <em>faith</em>, cf. Rom 5:8.</p>",
         "<ul>\n<li>peace with God\n<ul>\n<li>access by <em>faith</em></li>\n</ul>\n</li>\n</ul>",
         "<ol>\n<li>tribulation</li>\n<li>patience</li>\n</ol>",
-        "<blockquote>\n<p>hope maketh not ashamed<br />\nfor the love of God</p>\n</blockquote>",
+        "<blockquote>\n<p>hope maketh not ashamed\nfor the love of God</p>\n</blockquote>",
         "<a href=\"Rom%205\">the chapter</a>",
         "<a href=\"https://example.org/rom5\">notes</a>",
     ] {
@@ -1151,6 +1122,69 @@ fn exported_link_targets_are_the_ones_the_app_follows() {
     }
 }
 
+/// Reference links over lines (#186 review): the Markdown export writes each Note byte for
+/// byte, so a shortcut, collapsed or full reference link whose text or label runs over lines
+/// still finds its definition, and a reader reads the same links to the same places.
+#[test]
+fn exported_reference_links_over_lines_are_the_notes_byte_for_byte() {
+    use pulldown_cmark::{Event, Tag};
+    let links = |md: &str| -> Vec<(String, String)> {
+        pulldown_cmark::Parser::new(md)
+            .filter_map(|e| match e {
+                Event::Start(Tag::Link {
+                    link_type,
+                    dest_url,
+                    ..
+                }) => Some((format!("{link_type:?}"), dest_url.to_string())),
+                _ => None,
+            })
+            .collect()
+    };
+    let notes = [
+        ("Rom 5:1", "[x\ny]\n\n[x y]: https://example.org/shortcut"),
+        (
+            "Rom 5:2",
+            "[grace\nand *peace*][]\nafter\n\n[grace and *peace*]: <Rom 5:8>",
+        ),
+        (
+            "Rom 5:3",
+            "[full\ntext][the\nlabel]\n\n[the label]: https://example.org/full",
+        ),
+    ];
+    let f = Fixture::new("reference-links");
+    let mut s = f.session();
+    for (passage, body) in notes {
+        s.run(
+            "annotation.note",
+            &json!({ "passage": passage, "body": body }),
+        )
+        .unwrap();
+        assert_eq!(links(body).len(), 1, "{body:?}");
+        assert_exported_as_typed(body);
+    }
+    let markdown = s
+        .run(
+            "notes.export",
+            &json!({ "format": "markdown", "notebook": "all" }),
+        )
+        .unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let expected: String = notes
+        .iter()
+        .enumerate()
+        .map(|(i, (_, body))| format!("\n## Romans 5:{}\n\n{body}\n", i + 1))
+        .collect();
+    assert_eq!(markdown, format!("# All Notebooks\n{expected}"));
+    // Each Note's slice of the export is its stored text, exactly.
+    for (_, body) in notes {
+        assert_eq!(markdown.matches(body).count(), 1, "{body:?} in {markdown}");
+    }
+    let want: Vec<(String, String)> = notes.iter().flat_map(|(_, b)| links(b)).collect();
+    assert_eq!(links(&markdown), want);
+}
+
 /// Samples of each part of the CommonMark spec, as Notes: the Markdown export reads as the
 /// Note does, and the Note after it in an export is not read into it (a code fence or HTML
 /// block left open is closed).
@@ -1179,6 +1213,9 @@ const SPEC_SAMPLES: &[&str] = &[
     "<textarea>\nopen",
     // Link reference definitions and paragraphs.
     "[foo]: /url \"title\"\n\n[foo]",
+    "[x\ny]\n\n[x y]: https://example.org",
+    "[x\ny][]\n\n[x y]: https://example.org",
+    "![a\n*b*][]\n[full\ntext][x y]\n\n[x y]: /url\n[a b]: /img",
     "aaa\nbbb\n\nccc\n   ddd",
     // Block quotes, with laziness.
     "> # Foo\n> bar\nbaz",

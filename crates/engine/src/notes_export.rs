@@ -13,13 +13,12 @@
 //! write failed), is left out with a note saying why, so no quote goes out without the
 //! credit it may need.
 //!
-//! A Note's text is CommonMark (Note formatting, #186). The Markdown export writes it as
-//! typed, never re-written from a parse: only a `\` goes before each line break inside a
-//! paragraph (a hard line break, so a reader keeps every line break as the app shows it),
-//! and a code fence or HTML block the Note leaves open is closed, so the rest of the export
-//! is not read into it. The HTML export is a CommonMark reader's HTML (pulldown-cmark), with
-//! line breaks kept, the Note's headings two levels down (under the Annotation's own), raw
-//! HTML shown as typed, and only web links as links.
+//! A Note's text is CommonMark (Note formatting, #186). The Markdown export writes it byte
+//! for byte as typed, never re-written or wrapped; only a code fence or HTML block the Note
+//! leaves open is closed by a line after it, so the rest of the export is not read into it.
+//! The HTML export is a CommonMark reader's HTML (pulldown-cmark), with line breaks kept,
+//! the Note's headings two levels down (under the Annotation's own), raw HTML shown as
+//! typed, and only web links as links.
 
 use std::collections::BTreeMap;
 
@@ -129,29 +128,16 @@ fn html_lines(text: &str) -> String {
 /// Annotation's `##`.
 const HEADING_SHIFT: u8 = 2;
 
-/// A Note's text as Markdown: its source as typed, which is CommonMark (see the module docs),
-/// every character kept (blank lines and spaces too), with a `\` (a hard line break) before
-/// each line break inside a paragraph, so a reader keeps the Note's line breaks as the app
-/// shows them, and closed if it ends inside a code fence or an HTML block, so what follows
-/// in the export is not read into it.
+/// A Note's text as Markdown: its source byte for byte, which is CommonMark (see the module
+/// docs), never re-written or wrapped, so its links, reference definitions and white space
+/// are as typed. Only if it ends inside a code fence or an HTML block is a closing line put
+/// after it, so what follows in the export is not read into it.
 pub fn note_markdown(body: &str) -> String {
-    let mut out = String::with_capacity(body.len() + 16);
-    let mut at = 0;
-    for (event, r) in Parser::new(body).into_offset_iter() {
-        if event == Event::SoftBreak
-            && let Some(nl) = body[r.clone()].find(['\r', '\n']).map(|i| i + r.start)
-        {
-            out.push_str(&body[at..nl]);
-            out.push('\\');
-            at = nl;
-        }
-    }
-    out.push_str(&body[at..]);
-    if ends_closed(&out) {
-        return out;
+    if ends_closed(body) {
+        return body.to_string();
     }
     let longest = |c: char| {
-        out.split(|x| x != c)
+        body.split(|x| x != c)
             .map(str::len)
             .max()
             .unwrap_or(0)
@@ -176,11 +162,11 @@ pub fn note_markdown(body: &str) -> String {
         .map(|closer| {
             // The closer on a line of its own, after the text as typed (its last line
             // break, if any, ends the line before it).
-            let gap = if out.ends_with('\n') { "" } else { "\n" };
-            format!("{out}{gap}{closer}")
+            let gap = if body.ends_with('\n') { "" } else { "\n" };
+            format!("{body}{gap}{closer}")
         })
         .find(|closed| ends_closed(closed))
-        .unwrap_or(out)
+        .unwrap_or_else(|| body.to_string())
 }
 
 /// Whether a heading after Markdown `md` (and a blank line) is read as one, not as part of

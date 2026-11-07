@@ -84,18 +84,21 @@ Attribution of each quoted Resource that requires one.
   Standard versification once the Bible abbreviation in parentheses is removed.
 - The quote is the Text range's quoted text (white space collapsed) as a block quote.
 - A Note written as plain text before Note formatting was escaped once by the v10 migration
-  (`escape_note_text`: markup backslash-escaped, leading spaces `&#32;`), so its text as typed
-  reads in a Markdown reader exactly as it was written, line by line.
-- A Note's text is CommonMark (Note formatting, #186), and the Markdown export writes it **as
-  typed** (`note_markdown`), every character kept (blank lines and the spaces ending a line of
-  code too), never re-written from a parse, so it reads as the Note does: only
-  a `\` goes before each line break inside a paragraph (a hard line break, so a reader keeps
-  the line breaks the app shows), and a code fence or HTML block the Note leaves open is
-  closed, so the next Annotation's heading is not read into it. Its headings are its own
-  (`#` stays `#`). Tests: `exporting_a_formatted_note_keeps_its_formatting_as_markdown_and_html`,
-  `commonmark_spec_samples_export_as_they_read` (a sample of each part of the spec, read by
-  pulldown-cmark: the same events as the Note, and every Annotation heading after it still a
-  heading), `exported_emphasis_reads_back_as_the_app_shows_it` (every run of four of 14 awkward
+  (`escape_note_text`: markup backslash-escaped, leading spaces `&#32;`), so a Markdown reader
+  shows its characters exactly as written (its lines within a paragraph joined by spaces).
+- A Note's text is CommonMark (Note formatting, #186), and the Markdown export writes it **byte
+  for byte as typed** (`note_markdown`), never re-written from a parse, transformed or wrapped
+  (its reference links and their definitions, blank lines and the spaces ending a line of code
+  all as stored); only a code fence or HTML block the Note leaves open gets a closing line after
+  it, so the next Annotation's heading is not read into it. A line break inside a paragraph
+  stays a CommonMark soft line break (a Markdown reader shows it as a space; the app and the HTML
+  export show it as a break): a `\` before it would change the label of a shortcut or collapsed
+  reference link running over lines. Its headings are its own (`#` stays `#`). Tests:
+  `exporting_a_formatted_note_keeps_its_formatting_as_markdown_and_html`,
+  `exported_reference_links_over_lines_are_the_notes_byte_for_byte`,
+  `commonmark_spec_samples_export_as_they_read` (a sample of each part of the spec: the Note byte
+  for byte, and every Annotation heading after it still a heading),
+  `exported_emphasis_reads_back_as_the_app_shows_it` (every run of four of 14 awkward
   emphasis spans, 38,416 Notes), `exported_link_targets_are_the_ones_the_app_follows` and
   `exported_markdown_keeps_white_space_as_typed`.
 - The HTML export (`note_html`) is pulldown-cmark's HTML of the Note, with each soft line break
