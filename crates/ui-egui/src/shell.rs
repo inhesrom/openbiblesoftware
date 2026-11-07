@@ -45,6 +45,7 @@ mod fonts_window;
 mod get_bibles_tab;
 mod guide_tab;
 mod guide_words;
+mod highlight_styles_window;
 mod home_tab;
 mod import_tab;
 mod keys_tab;
@@ -227,6 +228,8 @@ pub(crate) struct State {
     notes_ui: notes_tab::NotesUi,
     /// The Fonts window and the fonts loaded for View → Fonts (#138).
     fonts_ui: fonts_window::FontsUi,
+    /// The Highlight styles window (View → Highlight styles…, #181).
+    styles_ui: highlight_styles_window::StylesUi,
     /// The Reading plans Tool's New plan form (#147).
     plans_ui: reading_plans_tab::PlansUi,
     /// The Copy verses window (#154).
@@ -307,6 +310,7 @@ impl Shell {
                 note_editor: None,
                 notes_ui: notes_tab::NotesUi::default(),
                 fonts_ui: fonts_window::FontsUi::default(),
+                styles_ui: highlight_styles_window::StylesUi::default(),
                 plans_ui: reading_plans_tab::PlansUi::default(),
                 copy_ui: copy_window::CopyUi::default(),
                 collection_editor: None,
@@ -510,6 +514,7 @@ impl Shell {
                 } => self.st.confirm = Some((resource_id, title, message)),
                 Effect::PickImport => self.st.pick_import = true,
                 Effect::ShowFonts => self.st.fonts_ui.open = true,
+                Effect::ShowHighlightStyles => self.st.styles_ui.open = true,
                 Effect::FocusCommandBox => {
                     self.st.toolbar.close();
                     self.st.command_box.focus = true;
@@ -2765,6 +2770,7 @@ impl State {
         self.remove_prompt(&ctx);
         self.import_chooser(&ctx);
         self.fonts_window(&ctx);
+        self.highlight_styles_window(&ctx);
         self.copy_window(&ctx);
         self.collection_editor_window(&ctx);
         if let Some((msg, t)) = &self.toast {

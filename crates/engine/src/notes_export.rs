@@ -79,6 +79,8 @@ pub struct NotesExport {
     pub cards: Vec<Card>,
     /// The Attributions of the quoted Resources whose licence requires one.
     pub attributions: Vec<String>,
+    /// What each Highlight style is called (#181), by id.
+    pub style_names: BTreeMap<String, String>,
 }
 
 /// Markdown for text that may span lines: each line escaped (block markers at its start
@@ -124,17 +126,19 @@ fn withheld_quote(card: &Card) -> Option<&str> {
     card.missing.as_deref().filter(|_| card.quote.is_none())
 }
 
-/// What a Highlight says in place of a Note's text.
-fn highlight_label(content: &Content) -> Option<String> {
-    match content {
-        Content::Highlight { style } => {
-            Some(format!("Highlight ({})", style.id().replace('_', " ")))
-        }
-        Content::Note { .. } => None,
-    }
-}
-
 impl NotesExport {
+    /// What a Highlight says in place of a Note's text: "Highlight (Promises)", its style's
+    /// name as written by the user (to be escaped), or its id when the style is gone.
+    fn highlight_label(&self, content: &Content) -> Option<String> {
+        match content {
+            Content::Highlight { style } => Some(format!(
+                "Highlight ({})",
+                self.style_names.get(style).unwrap_or(style)
+            )),
+            Content::Note { .. } => None,
+        }
+    }
+
     pub fn render(&self, format: NotesFormat) -> String {
         match format {
             NotesFormat::Markdown => self.markdown(),
@@ -174,8 +178,8 @@ impl NotesExport {
             } else if let Some(left_out) = withheld_quote(card) {
                 out.push_str(&format!("\n*{}*\n", markdown_escape(left_out)));
             }
-            match highlight_label(&card.annotation.content) {
-                Some(label) => out.push_str(&format!("\n*{label}*\n")),
+            match self.highlight_label(&card.annotation.content) {
+                Some(label) => out.push_str(&format!("\n*{}*\n", markdown_escape(&label))),
                 None if !card.annotation.body().trim().is_empty() => {
                     out.push_str(&format!(
                         "\n{}\n",
@@ -204,8 +208,8 @@ impl NotesExport {
             } else if let Some(left_out) = withheld_quote(card) {
                 out.push(format!("<p><em>{}</em></p>", html_escape(left_out)));
             }
-            match highlight_label(&card.annotation.content) {
-                Some(label) => out.push(format!("<p><em>{label}</em></p>")),
+            match self.highlight_label(&card.annotation.content) {
+                Some(label) => out.push(format!("<p><em>{}</em></p>", html_escape(&label))),
                 None => out.push(html_lines(card.annotation.body())),
             }
         }
@@ -305,10 +309,21 @@ impl Session {
                 }
             }
         }
+        let styles = self.highlight_styles().unwrap_or_default();
+        let style_names = styles
+            .iter()
+            .map(|st| {
+                (
+                    st.id.clone(),
+                    crate::highlight_styles::style_label(st, &styles),
+                )
+            })
+            .collect();
         Ok(NotesExport {
             title,
             cards,
             attributions,
+            style_names,
         })
     }
 

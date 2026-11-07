@@ -31,8 +31,8 @@ pub use doc::{DocBlock, ReadingDoc};
 pub use find::{FindMatch, Found};
 pub use heights::HeightIndex;
 pub use interlinear::InterlinearSource;
-pub use marks::{Mark, MarkKind, marks_for};
-pub use palette::{HIGHLIGHT_STYLES, Palette, contrast};
+pub use marks::{HighlightLooks, Mark, MarkKind, marks_for};
+pub use palette::{ContrastShort, Palette, StylePaint, contrast};
 pub use pane::{AtlasTexture, MEASURE_EMS, PaneOutput, reading_pane};
 pub use rich_clipboard::RichClipboard;
 pub use selection::{

@@ -247,6 +247,16 @@ pub const SETTINGS: &[Setting] = &[
         },
     ),
     setting(
+        "highlight_styles",
+        S::ReadingLayout,
+        "Highlight styles",
+        "Your Highlight styles and palettes: names, colours, looks and order, export and import",
+        "highlight styles palette palettes colour color custom underline box promises",
+        SettingKind::Action {
+            command: "view.highlight_styles",
+        },
+    ),
+    setting(
         "notebooks_in_text",
         S::ReadingLayout,
         "Notebooks in text",

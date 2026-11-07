@@ -223,7 +223,7 @@ fn exporting_a_notebook_writes_markdown_that_round_trips_passages_and_note_text(
             ReadBack {
                 passage: passage("Mt 5:43"),
                 quote: Some("love thy neighbour".into()),
-                text: "*Highlight (yellow)*".into(),
+                text: "*Highlight (Yellow)*".into(),
             },
             ReadBack {
                 passage: passage("Rom 13:10"),

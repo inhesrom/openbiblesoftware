@@ -991,7 +991,7 @@ fn plan_on_the_starter_kjv() {
             id: format!("{}", made.len()),
             notebook_id: "n".into(),
             content: Content::Highlight {
-                style: HighlightStyle::Yellow,
+                style: "yellow".into(),
             },
             anchor: Some(Anchor::TextRange {
                 range: TextRange {

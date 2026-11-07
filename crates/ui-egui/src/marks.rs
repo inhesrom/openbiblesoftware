@@ -17,23 +17,54 @@
 
 use std::collections::HashMap;
 
-use obs_engine::{Annotation, Content, HighlightStyle};
+use obs_engine::{Annotation, Content, HighlightStyle, StyleAppearance};
 use obs_model::{ResourceType, UnitId};
 use obs_scripture::Passage;
 
 use crate::doc::ReadingDoc;
 use crate::selection::DocPos;
 
+/// What each Highlight style looks like, by id (#181): Marks carry the look, so drawing
+/// needs no lookup, and a style edit (which moves the annotation revision) remakes them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HighlightLooks(HashMap<String, StyleAppearance>);
+
+impl HighlightLooks {
+    pub fn new(styles: &[HighlightStyle]) -> Self {
+        Self(
+            styles
+                .iter()
+                .map(|s| (s.id.clone(), s.appearance))
+                .collect(),
+        )
+    }
+
+    /// The five built-in styles (as a new User database has them).
+    pub fn built_in() -> Self {
+        Self::new(&obs_store::built_in_styles())
+    }
+
+    /// Style `id`'s look; a style no row has (a database edited by hand) shows as the first
+    /// built-in, so its Highlight is never lost from view.
+    pub fn get(&self, id: &str) -> StyleAppearance {
+        self.0
+            .get(id)
+            .copied()
+            .unwrap_or_else(obs_store::fallback_appearance)
+    }
+}
+
 /// What a Mark draws.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MarkKind {
-    /// A background behind the glyphs, or the red underline over them.
-    Highlight(HighlightStyle),
+    /// A Highlight in its style's look: a background behind the glyphs, the glyphs in its
+    /// colour, or a line or box over them.
+    Highlight(StyleAppearance),
     /// A small marker at the end of the range; hovering it previews the Note.
     Note,
     /// A Highlight made over part of a Verse in another Bible: a bar in the style's colour
     /// in the margin on the verse number's line, for each Verse the range touches.
-    Margin(HighlightStyle),
+    Margin(StyleAppearance),
     /// A Note from another Bible (or one without a Text range): its marker in the margin on
     /// the line of the verse number of the Verse its range starts at.
     VerseNote,
@@ -69,7 +100,11 @@ pub struct Mark {
 /// Verse(s) (ADR 0006), and a bare Text range is left out. Re-anchoring normally fixes both
 /// before the Resource is shown; this guards Resources replaced outside the app. A Passage
 /// anchor whose origin re-anchoring did not find shows as whole Verses everywhere.
-pub fn marks_for(doc: &ReadingDoc, annotations: &[Annotation]) -> Vec<Mark> {
+pub fn marks_for(
+    doc: &ReadingDoc,
+    annotations: &[Annotation],
+    looks: &HighlightLooks,
+) -> Vec<Mark> {
     let units: HashMap<&UnitId, usize> = doc
         .units
         .iter()
@@ -93,8 +128,8 @@ pub fn marks_for(doc: &ReadingDoc, annotations: &[Annotation]) -> Vec<Mark> {
                 },
             ));
         };
-        let here = match a.content {
-            Content::Highlight { style } => MarkKind::Highlight(style),
+        let here = match &a.content {
+            Content::Highlight { style } => MarkKind::Highlight(looks.get(style)),
             Content::Note { .. } => MarkKind::Note,
         };
         // A Passage anchor's origin that re-anchoring did not find is kept for later but not

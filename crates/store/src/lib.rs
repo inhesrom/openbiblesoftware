@@ -16,6 +16,9 @@ mod error;
 mod favorites;
 #[cfg(not(target_arch = "wasm32"))]
 mod favorites_store;
+pub mod highlight_style;
+#[cfg(not(target_arch = "wasm32"))]
+mod highlight_style_store;
 #[cfg(not(target_arch = "wasm32"))]
 mod obr;
 mod reading_plans;
@@ -32,13 +35,16 @@ mod span_codec;
 mod user;
 
 pub use annotation::{
-    Anchor, Annotation, CONTEXT_CHARS, Change, Content, HighlightStyle, Notebook, Row, RowKey,
-    TextRange,
+    Anchor, Annotation, CONTEXT_CHARS, Change, Content, Notebook, Row, RowKey, TextRange,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use annotation_store::DEFAULT_NOTEBOOK_NAME;
 pub use error::StoreError;
 pub use favorites::{FavoriteRow, HISTORY_DAYS, HISTORY_LIMIT, VisitRow};
+pub use highlight_style::{
+    HighlightLook, HighlightPalette, HighlightStyle, MAX_STYLE_NAME, Rgb, STANDARD_PALETTE_ID,
+    STANDARD_PALETTE_NAME, StyleAppearance, built_in_styles, fallback_appearance, standard_palette,
+};
 #[cfg(not(target_arch = "wasm32"))]
 pub use obr::{APPLICATION_ID, ObrReader, write_obr};
 pub use reading_plans::{PlanReadingRow, ReadingPlanRow};

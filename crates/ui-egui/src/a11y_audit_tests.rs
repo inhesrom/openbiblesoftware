@@ -438,6 +438,13 @@ fn every_overlay() -> Vec<Overlay> {
             |h| h.shell.st.fonts_ui.open,
         ),
         (
+            "Highlight styles",
+            |h| {
+                h.shell.run("view.highlight_styles", &json!({}));
+            },
+            |h| h.shell.st.styles_ui.open,
+        ),
+        (
             "Copy verses",
             |h| {
                 h.shell

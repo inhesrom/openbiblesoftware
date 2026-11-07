@@ -348,7 +348,7 @@ The Tab (Ctrl+, or View → Settings) where every preference is in one place, un
 _Avoid_: Preferences (as the Tab's name), Options, Program settings, Settings file
 
 **Selection key**:
-A Keyboard shortcut that acts on the selection in a reading pane: Note (Ctrl+Shift+N) and the five Highlight styles (Ctrl+1…5) by default. It is listed under Selection in Help → Keyboard shortcuts.
+A Keyboard shortcut that acts on the selection in a reading pane: Note (Ctrl+Shift+N) and the first nine Highlight styles of the active Highlight palette, in its order (Ctrl+1…9), by default. It is listed under Selection in Help → Keyboard shortcuts.
 _Avoid_: Annotation key
 
 **Built-in Layout**:
@@ -474,8 +474,12 @@ An Annotation that shows a span of text in a Highlight style. It has exactly one
 _Avoid_: Mark, Markup
 
 **Highlight style**:
-One look from the small fixed set used to render a Highlight.
-_Avoid_: Color, Palette
+A look a Highlight is drawn in: a colour with a look (background, underline, box or text colour) and an optional name such as "Promises", in one Highlight palette. Its colour in each Page tone is derived from that colour so that text stays readable there (WCAG AA), unless the user adjusted it for that tone; an adjustment that is not readable is refused. A Highlight stores only its style; deleting a style that Highlights use moves them to a style the user chooses, and undo brings both back. The five built-in styles (Yellow, Green, Blue, Pink and Red underline) start the Standard palette and can be edited like any other.
+_Avoid_: Color, Tag, Label
+
+**Highlight palette**:
+A named, ordered set of Highlight styles, made, renamed, deleted, exported and imported (as a small JSON file) in View → Highlight styles…. One is active: the selection toolbar, the right-click menu and Ctrl+1…9 offer its styles in its order. A Highlight in a style of another palette still shows. The first palette is **Standard**, with the five built-in styles.
+_Avoid_: Theme, Colour set
 
 **Notebook**:
 A named container for Annotations. Every Annotation belongs to exactly one Notebook, and a default Notebook exists.
@@ -510,5 +514,5 @@ A Markdown or HTML file made from a Notebook (or all of them) or from the Notes 
 _Avoid_: Backup, Report, Notes dump
 
 **User database**:
-The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Home arrangement, Saved searches and the Search history, the Command box's recent entries, Copy presets, Collections, Resource tags, the user's own Keyboard shortcuts and preferences. Resources and Search indexes are never part of it.
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Home arrangement, Saved searches and the Search history, the Command box's recent entries, Copy presets, Collections, Resource tags, Highlight styles and palettes, the user's own Keyboard shortcuts and preferences. Resources and Search indexes are never part of it.
 _Avoid_: Profile, User library, Settings file

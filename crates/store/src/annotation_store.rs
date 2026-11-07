@@ -13,10 +13,11 @@ use obs_scripture::{Book, Passage, Verse};
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension, Row as SqlRow, params};
 
-use crate::annotation::{
-    Anchor, Annotation, Change, Content, HighlightStyle, Notebook, Row, RowKey, TextRange,
-};
+use crate::annotation::{Anchor, Annotation, Change, Content, Notebook, Row, RowKey, TextRange};
 use crate::error::StoreError;
+use crate::highlight_style_store::{
+    read_palette, read_style, style_exists, write_palette, write_style,
+};
 use crate::user::{UserStore, sql};
 
 /// Migration 3 → 4.
@@ -264,13 +265,7 @@ fn annotation_from(r: &SqlRow<'_>) -> rusqlite::Result<Annotation> {
     let kind: String = r.get(2)?;
     let content = match kind.as_str() {
         "note" => Content::Note { body: r.get(4)? },
-        _ => {
-            let style: String = r.get(3)?;
-            Content::Highlight {
-                style: HighlightStyle::from_id(&style)
-                    .ok_or_else(|| corrupt(format!("Highlight style `{style}`")))?,
-            }
-        }
+        _ => Content::Highlight { style: r.get(3)? },
     };
     let anchor = match r.get::<_, Option<String>>(7)?.as_deref() {
         None => None,
@@ -328,6 +323,8 @@ fn read_row(c: &Connection, key: &RowKey) -> Result<Option<Row>, StoreError> {
     Ok(match key {
         RowKey::Notebook(id) => read_notebook(c, id)?.map(Row::Notebook),
         RowKey::Annotation(id) => read_annotation(c, id)?.map(Row::Annotation),
+        RowKey::HighlightStyle(id) => read_style(c, id)?.map(Row::HighlightStyle),
+        RowKey::HighlightPalette(id) => read_palette(c, id)?.map(Row::HighlightPalette),
     })
 }
 
@@ -432,8 +429,19 @@ fn write_annotation(
     }
     let (kind, style, body) = match &a.content {
         Content::Note { body } => ("note", None, body.as_str()),
-        Content::Highlight { style } => ("highlight", Some(style.id()), ""),
+        Content::Highlight { style } => ("highlight", Some(style.as_str()), ""),
     };
+    // A Highlight always has its style (ADR 0012); one that is not changing style is not
+    // checked again, so rows of a database edited by hand stay movable.
+    let restyled = before.is_none_or(|b| b.content != a.content);
+    if let Some(style) = style
+        && restyled
+        && !style_exists(c, style)?
+    {
+        return Err(StoreError::Rejected(format!(
+            "there is no Highlight style {style}"
+        )));
+    }
     c.execute(
         "INSERT INTO annotations (id, notebook_id, kind, style, body, created_at, modified_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
@@ -594,6 +602,8 @@ impl UserStore {
                 let what = match &key {
                     RowKey::Notebook(id) => format!("Notebook {id}"),
                     RowKey::Annotation(id) => format!("Annotation {id}"),
+                    RowKey::HighlightStyle(id) => format!("Highlight style {id}"),
+                    RowKey::HighlightPalette(id) => format!("Highlight palette {id}"),
                 };
                 return Err(StoreError::Conflict(what));
             }
@@ -619,14 +629,28 @@ impl UserStore {
                     };
                     write_annotation(&tx, id, pick(before).as_ref(), pick(after).as_ref())?;
                 }
+                (RowKey::HighlightStyle(id), _, after) => {
+                    let after = match after {
+                        Some(Row::HighlightStyle(s)) => Some(s),
+                        _ => None,
+                    };
+                    write_style(&tx, id, after)?;
+                }
+                (RowKey::HighlightPalette(id), _, after) => {
+                    let after = match after {
+                        Some(Row::HighlightPalette(p)) => Some(p),
+                        _ => None,
+                    };
+                    write_palette(&tx, id, after)?;
+                }
             }
         }
         tx.commit().map_err(sql)
     }
 
-    /// Every row of `notebooks`, `annotations`, `anchors` and `notes_fts` as text, after
-    /// checking the FTS index against its rows; tests compare these to prove undo and redo
-    /// restore the same database.
+    /// Every row of `notebooks`, the Highlight styles and palettes, `annotations`, `anchors`
+    /// and `notes_fts` as text, after checking the FTS index against its rows; tests compare
+    /// these to prove undo and redo restore the same database.
     #[cfg(feature = "test-support")]
     pub fn annotation_dump(&self) -> Result<String, StoreError> {
         self.conn
@@ -638,6 +662,14 @@ impl UserStore {
         let mut out = String::new();
         for (table, query) in [
             ("notebooks", "SELECT * FROM notebooks ORDER BY id"),
+            (
+                "highlight_palettes",
+                "SELECT * FROM highlight_palettes ORDER BY id",
+            ),
+            (
+                "highlight_styles",
+                "SELECT * FROM highlight_styles ORDER BY id",
+            ),
             ("annotations", "SELECT * FROM annotations ORDER BY id"),
             ("anchors", "SELECT * FROM anchors ORDER BY annotation_id"),
             (
@@ -645,6 +677,18 @@ impl UserStore {
                 "SELECT annotation_id, body FROM notes_fts ORDER BY annotation_id, body",
             ),
         ] {
+            // A database opened at an older schema (migration tests) lacks later tables.
+            let exists: bool = self
+                .conn
+                .query_row(
+                    "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = ?1)",
+                    [table],
+                    |r| r.get(0),
+                )
+                .map_err(sql)?;
+            if !exists {
+                continue;
+            }
             let _ = writeln!(out, "[{table}]");
             let mut stmt = self.conn.prepare(query).map_err(sql)?;
             let n = stmt.column_count();

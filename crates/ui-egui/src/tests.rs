@@ -714,7 +714,17 @@ fn every_ink_on_every_highlight_meets_wcag_aa_in_every_tone() {
         ("Sepia", Palette::SEPIA),
         ("Dark", Palette::DARK),
     ] {
-        for (bg_name, bg) in p.backgrounds() {
+        // The page, each overlay and each built-in background style as this tone draws it.
+        let mut backgrounds: Vec<(String, egui::Color32)> = (p.overlays().into_iter())
+            .map(|(n, c)| (n.to_string(), c))
+            .collect();
+        for style in obs_store::built_in_styles() {
+            let paint = p.paint(&style.appearance);
+            if paint.look == obs_engine::HighlightLook::Background {
+                backgrounds.push((style.name, paint.color));
+            }
+        }
+        for (bg_name, bg) in backgrounds {
             for (role, ink) in p.inks() {
                 let c = contrast(ink, bg);
                 assert!(
@@ -728,8 +738,10 @@ fn every_ink_on_every_highlight_meets_wcag_aa_in_every_tone() {
             }
         }
         // The red underline is a mark, not text: WCAG's 3:1 for graphics, against the page.
+        let u = contrast(p.built_in_color("red_underline"), p.page);
+        assert!(u >= 3.0, "{name}: red underline {u:.2}:1");
         let u = contrast(p.underline, p.page);
-        assert!(u >= 3.0, "{name}: underline {u:.2}:1");
+        assert!(u >= 3.0, "{name}: word underline {u:.2}:1");
         // So is the current Find match's outline (#175), against the page and its fill.
         for (what, bg) in [("page", p.page), ("search hit", p.search_hit)] {
             let o = contrast(p.find_current, bg);
@@ -738,6 +750,15 @@ fn every_ink_on_every_highlight_meets_wcag_aa_in_every_tone() {
     }
     assert_eq!(pairs, 3 * 10 * 7);
     eprintln!("lowest contrast {:.2}:1 ({})", worst.0, worst.1);
+    // The built-in styles keep the colours v0.1 tuned for each tone (#21 decision 3).
+    assert_eq!(
+        Palette::DARK.built_in_color("yellow"),
+        egui::Color32::from_rgb(70, 60, 16)
+    );
+    assert_eq!(
+        Palette::SEPIA.built_in_color("red_underline"),
+        egui::Color32::from_rgb(184, 40, 32)
+    );
     // The formula itself: black on white is 21:1, a colour on itself 1:1.
     assert!((contrast(egui::Color32::BLACK, egui::Color32::WHITE) - 21.0).abs() < 0.01);
     assert!((contrast(Palette::DARK.ink, Palette::DARK.ink) - 1.0).abs() < 1e-6);

@@ -10,8 +10,8 @@ use obs_model::UnitId;
 use obs_scripture::{Book, Passage, Verse};
 use obs_store::annotation::{inverse, new_id};
 use obs_store::{
-    Anchor, Annotation, Change, Content, DEFAULT_NOTEBOOK_NAME, HighlightStyle, Notebook, Row,
-    StoreError, TextRange, USER_SCHEMA_VERSION, UserStore,
+    Anchor, Annotation, Change, Content, DEFAULT_NOTEBOOK_NAME, Notebook, Row, StoreError,
+    TextRange, USER_SCHEMA_VERSION, UserStore,
 };
 
 struct Dir(PathBuf);
@@ -81,7 +81,7 @@ fn highlight(notebook: &str, anchor: Anchor) -> Annotation {
         id: new_id(),
         notebook_id: notebook.into(),
         content: Content::Highlight {
-            style: HighlightStyle::Green,
+            style: "green".into(),
         },
         anchor: Some(anchor),
         created_at: 30,

@@ -1,7 +1,8 @@
 //! The User database (#17): one SQLite file in the platform data folder holding everything the
 //! user makes: preferences, the Last session, named Layouts, the Preferred order, the
 //! Notebooks, Annotations and Anchors with the `notes_fts` index of Note bodies (#61),
-//! Favorites and History (#155), and Reading plans (#147).
+//! Favorites and History (#155), Reading plans (#147), and Highlight styles and palettes
+//! (#181).
 //!
 //! Safety rules: WAL journaling; `PRAGMA user_version` with forward-only migrations; a copy of
 //! the file is taken before any migration runs; and at every launch a rolling backup (the
@@ -18,7 +19,7 @@ use crate::error::StoreError;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 9;
+pub const USER_SCHEMA_VERSION: u32 = 10;
 
 /// How many launch backups are kept.
 pub const ROLLING_BACKUPS: usize = 5;
@@ -46,6 +47,8 @@ const MIGRATIONS: &[&str] = &[
     crate::reading_plans_store::SCHEMA_8,
     // 8 → 9: a stored Text range must cover some text (#115).
     crate::annotation_store::SCHEMA_9,
+    // 9 → 10: Highlight styles and palettes, the five built-ins seeded (#181).
+    crate::highlight_style_store::SCHEMA_10,
 ];
 
 pub(crate) fn sql(e: rusqlite::Error) -> StoreError {

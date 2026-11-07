@@ -5,7 +5,7 @@
 //!
 //! | Target | Actions |
 //! |---|---|
-//! | Selection | Highlight styles, Note…, Copy, Search this, Look up in Dictionary, Word Study… (the English-word chooser) |
+//! | Selection | the active palette's Highlight styles, Highlight styles…, Note…, Copy, Search this, Look up in Dictionary, Word Study… (the English-word chooser) |
 //! | Verse | Passage Guide, Cross-references, Text Comparison, Copy with reference, Add Note on verse |
 //! | Lemma, Strong's number | Word Study, Open in preferred Lexicon, Pin in Word Info, Search Bible for it |
 //! | Morphology | Copy, Pin in Word Info |
@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use egui::{Key, Modifiers, Rect, RichText, Ui, pos2, vec2};
 use obs_engine::link::{ToStandard, to_standard};
-use obs_engine::{HighlightStyle, TabId};
+use obs_engine::{TabId, style_label};
 use obs_model::ResourceType;
 use obs_scripture::{
     Passage, RefStyle, Standard, StrongsNumber, Verse, Versification, format_passage,
@@ -28,11 +28,10 @@ use obs_scripture::{
 use serde_json::json;
 
 use super::State;
-use super::annotate::{Annotate, SelectionKeyText, menu_label};
+use super::annotate::{Annotate, SelectionKeyText, StyleBook, menu_label};
 use super::references::TargetKey;
 use crate::compare_view::ComparisonContext;
 use crate::doc::ReadingDoc;
-use crate::palette::Palette;
 use crate::pane::{PaneOutput, WordHit, has_text, select_for_menu};
 use crate::selection::{DocPos, Granularity, Selection, copy_text, selected_text};
 use crate::theme;
@@ -234,7 +233,7 @@ impl MenuTargets {
 }
 
 /// Something done from the menu.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum MenuAction {
     Annotate(Annotate),
     LookUp,
@@ -258,7 +257,7 @@ pub(super) enum MenuAction {
 fn menu_ui(
     ui: &mut Ui,
     m: &mut MenuTargets,
-    palette: &Palette,
+    styles: &StyleBook,
     can_annotate: bool,
     keys: &SelectionKeyText,
 ) -> Option<MenuAction> {
@@ -283,7 +282,7 @@ fn menu_ui(
         ui.separator();
         ui.vertical(|ui| {
             ui.set_min_width(190.0);
-            picked = actions_ui(ui, m, palette, can_annotate, keys);
+            picked = actions_ui(ui, m, styles, can_annotate, keys);
         });
     });
     if picked.is_some() {
@@ -296,7 +295,7 @@ fn menu_ui(
 fn actions_ui(
     ui: &mut Ui,
     m: &MenuTargets,
-    palette: &Palette,
+    styles: &StyleBook,
     can_annotate: bool,
     keys: &SelectionKeyText,
 ) -> Option<MenuAction> {
@@ -315,16 +314,28 @@ fn actions_ui(
     let no_db = "Annotations are kept in the User database";
     match m.chosen {
         Target::Selection => {
-            for style in HighlightStyle::ALL {
+            // The active Highlight palette, in its order (#181).
+            for (i, style) in styles.active_styles().into_iter().enumerate() {
                 item(
                     ui,
                     can_annotate,
-                    egui::Button::new(menu_label(ui, style, palette))
-                        .shortcut_text(keys.style(style)),
-                    MenuAction::Annotate(Annotate::Highlight(style)),
+                    egui::Button::new(menu_label(
+                        ui,
+                        &style_label(style, &styles.all),
+                        &style.appearance,
+                    ))
+                    .shortcut_text(keys.slot(i)),
+                    MenuAction::Annotate(Annotate::Highlight(style.id.clone())),
                     no_db,
                 );
             }
+            item(
+                ui,
+                can_annotate,
+                egui::Button::new("Highlight styles…"),
+                MenuAction::Annotate(Annotate::Styles),
+                no_db,
+            );
             ui.separator();
             item(
                 ui,
@@ -636,7 +647,7 @@ impl State {
             self.resolve_reference(ui.ctx(), m);
         }
         let menu = &mut menu.filter(|m| !m.targets().is_empty());
-        let palette = self.palette;
+        let styles = self.marks.styles(&self.session).clone();
         let can_annotate = self.session.is_enabled("annotation.highlight");
         let keys = SelectionKeyText::of(&self.session);
         let mut picked = None;
@@ -651,7 +662,7 @@ impl State {
         }
         popup.show(|ui| {
             if let Some(m) = menu.as_mut() {
-                picked = menu_ui(ui, m, &palette, can_annotate, &keys);
+                picked = menu_ui(ui, m, &styles, can_annotate, &keys);
             }
         });
         let new_tab = ui.input(|i| i.modifiers.command);

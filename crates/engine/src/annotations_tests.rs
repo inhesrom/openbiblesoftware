@@ -307,7 +307,7 @@ fn a_selection_in_mapped_verses_gets_a_standard_passage_anchor_with_its_origin_r
     assert_eq!(
         made[0].content,
         Content::Highlight {
-            style: HighlightStyle::Green
+            style: "green".into()
         }
     );
     // The title verses 51:1-2 together are the Standard title slot.
