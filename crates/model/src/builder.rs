@@ -9,7 +9,7 @@ use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, Versification};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::dataset::{CrossReference, Entity, Event, Mention};
+use crate::dataset::{CrossReference, Entity, Event, Mention, ParallelSection};
 use crate::key::{Key, KeyEntry};
 use crate::manifest::{
     FORMAT_VERSION, Manifest, OLDEST_FORMAT_VERSION, ResourceType, is_valid_resource_id,
@@ -50,6 +50,9 @@ pub struct Resource {
     /// A People & places index's Events dataset (#185, ADR 0011): Eras, Lifespans and Events,
     /// ordered by id.
     pub events: Vec<Event>,
+    /// A Cross-reference set's Parallel passages (#212, ADR 0014): sections with the Passages
+    /// parallel to them, ordered by section Passage.
+    pub parallel_sections: Vec<ParallelSection>,
     /// Transliteration index of the Lemma Keys (#20 rule 5), sorted. Derived from the Keys with
     /// the shared scheme, so not part of the content hash.
     pub transliterations: Vec<LemmaTransliteration>,
@@ -146,6 +149,11 @@ pub enum ValidationError {
         event: String,
         why: String,
     },
+    /// A Parallel passages section (#212) with an empty heading or no parallels.
+    InvalidParallelSection {
+        passage: Passage,
+        why: &'static str,
+    },
 }
 
 impl fmt::Display for ValidationError {
@@ -239,6 +247,9 @@ impl fmt::Display for ValidationError {
                 write!(f, "{what} refers to unknown entity `{entity}`")
             }
             InvalidEvent { event, why } => write!(f, "event `{event}`: {why}"),
+            InvalidParallelSection { passage, why } => {
+                write!(f, "parallel passages of {passage}: {why}")
+            }
         }
     }
 }
@@ -280,6 +291,7 @@ pub struct ResourceBuilder {
     mentions: Vec<Mention>,
     volumes: BTreeMap<Book, String>,
     events: Vec<Event>,
+    parallel_sections: Vec<ParallelSection>,
 }
 
 fn offset(n: usize) -> u32 {
@@ -302,6 +314,7 @@ impl ResourceBuilder {
             mentions: Vec::new(),
             volumes: BTreeMap::new(),
             events: Vec::new(),
+            parallel_sections: Vec::new(),
         }
     }
 
@@ -404,6 +417,12 @@ impl ResourceBuilder {
         self.events.push(event);
     }
 
+    /// Add one section with its Parallel passages (a Cross-reference set, #212). Exact
+    /// duplicates are merged.
+    pub fn add_parallel_section(&mut self, section: ParallelSection) {
+        self.parallel_sections.push(section);
+    }
+
     pub fn count_dropped(&mut self, marker: &str) {
         *self.dropped.entry(marker.to_string()).or_insert(0) += 1;
     }
@@ -457,6 +476,9 @@ impl ResourceBuilder {
         mentions.dedup();
         let mut events = self.events;
         events.sort_by(|a, b| a.id.cmp(&b.id).then_with(|| a.cmp(b)));
+        let mut parallel_sections = self.parallel_sections;
+        parallel_sections.sort();
+        parallel_sections.dedup();
         let transliterations = transliteration_index(&keys);
         let renderings = if self.manifest.resource_type == ResourceType::Bible {
             RenderingIndex::build(&units)
@@ -475,6 +497,7 @@ impl ResourceBuilder {
             entities,
             mentions,
             events,
+            parallel_sections,
             transliterations,
             renderings,
             volumes: self.volumes,
@@ -517,6 +540,8 @@ struct HashInput<'a> {
     mentions: &'a [Mention],
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     events: &'a [Event],
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    parallel_sections: &'a [ParallelSection],
 }
 
 impl Resource {
@@ -533,6 +558,7 @@ impl Resource {
             entities: &self.entities,
             mentions: &self.mentions,
             events: &self.events,
+            parallel_sections: &self.parallel_sections,
         };
         let mut hasher = Sha256::new();
         // Serializing plain data into a Vec cannot fail; an empty hash input would still be
@@ -795,7 +821,13 @@ impl Resource {
             !self.events.is_empty(),
             ResourceType::PeopleAndPlaces,
         );
+        wrong_type(
+            "parallel passages",
+            !self.parallel_sections.is_empty(),
+            ResourceType::CrossReferenceSet,
+        );
         self.validate_events(errors);
+        self.validate_parallel_sections(errors);
         for x in &self.cross_references {
             for (what, passage) in [
                 ("cross-reference source", x.from),
@@ -848,6 +880,32 @@ impl Resource {
 }
 
 impl Resource {
+    /// Parallel passages: a heading and at least one parallel per section, every Passage
+    /// valid in the Standard versification.
+    fn validate_parallel_sections(&self, errors: &mut Vec<ValidationError>) {
+        for s in &self.parallel_sections {
+            let mut bad = |why| {
+                errors.push(ValidationError::InvalidParallelSection {
+                    passage: s.passage,
+                    why,
+                });
+            };
+            if s.title.trim().is_empty() {
+                bad("empty heading");
+            }
+            if s.parallels.is_empty() {
+                bad("no parallel Passage");
+            }
+            for (what, passage) in std::iter::once(("parallel section", s.passage))
+                .chain(s.parallels.iter().map(|p| ("parallel passage", *p)))
+            {
+                if !is_standard_passage(passage) {
+                    errors.push(ValidationError::NotStandardPassage { what, passage });
+                }
+            }
+        }
+    }
+
     /// Events: unique non-empty ids, titles, calendar dates, an end not before the start, a
     /// `part_of` that names an Event of this Resource, Standard Passages.
     fn validate_events(&self, errors: &mut Vec<ValidationError>) {

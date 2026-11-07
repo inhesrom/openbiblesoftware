@@ -290,6 +290,7 @@ fn the_real_lock_passes_the_provenance_gate() {
             "hitchcock",
             "openbible-geo",
             "theographic",
+            "bsb-parallels",
         ]
     );
     // STEPBible splits TAHOT over four files and TAGNT over two.
@@ -1228,6 +1229,99 @@ fn a_usfm_source_takes_no_extra_files() {
     std::fs::write(&config.lock, lock).unwrap();
     let err = format!("{:#}", build(&config).unwrap_err());
     assert!(err.contains("takes no extra files"), "{err}");
+}
+
+/// The BSB's parallel passages (#212) build from the very zip the BSB's own entry pins: one
+/// download, two Resources, and the Cross-reference set carries the `\r` sections.
+#[test]
+fn bsb_parallel_passages_build_from_the_pinned_bsb_zip() {
+    use obs_scripture::{Book, Passage, Verse};
+    let dir = scratch("bsb-parallels");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("crates/formats/tests/assets/bsb-parallels");
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&src)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    files.sort();
+    let zip_path = dir.join("bsb_usfm.zip");
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&zip_path).unwrap());
+    for f in files {
+        let name = f.file_name().unwrap().to_string_lossy().into_owned();
+        zip.start_file(
+            format!("bsb_usfm/{name}"),
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        zip.write_all(&std::fs::read(&f).unwrap()).unwrap();
+    }
+    zip.finish().unwrap();
+    let sha = sha256_hex(&std::fs::read(&zip_path).unwrap());
+    let starter = dir.join("starter");
+    std::fs::create_dir_all(starter.join("evidence")).unwrap();
+    std::fs::write(
+        starter.join("evidence/bsb.md"),
+        format!("Public domain.\nsha256 {sha}\n"),
+    )
+    .unwrap();
+    let mut lock = String::from("size_budget_mb = 400\n");
+    for (id, importer) in [("bsb", "usfm"), ("bsb-parallels", "usfm-parallel-passages")] {
+        lock.push_str(&format!(
+            r#"
+[[source]]
+resource_id = "{id}"
+importer = "{importer}"
+url = "file://{}"
+sha256 = "{sha}"
+title = "{id}"
+abbreviation = "{id}"
+language = "en"
+spdx = "LicenseRef-PublicDomain"
+attribution = "Public domain."
+changes = "Converted."
+provenance = "Terms page."
+evidence = "evidence/bsb.md"
+"#,
+            zip_path.display().to_string().replace('\\', "/")
+        ));
+    }
+    std::fs::write(starter.join("sources.toml"), lock).unwrap();
+    let config = Config {
+        lock: starter.join("sources.toml"),
+        id_changes: starter.join("id-changes.toml"),
+        previous: None,
+        out: dir.join("out"),
+        cache: dir.join("cache"),
+        goldens: dir.join("goldens"),
+        update_goldens: false,
+    };
+    build(&config).unwrap();
+    let reader = ObrReader::open(&config.out.join("bsb-parallels.obr")).unwrap();
+    assert_eq!(
+        reader.manifest().resource_type,
+        obs_model::ResourceType::CrossReferenceSet
+    );
+    let sections = reader.parallel_sections().unwrap();
+    let range = |book, chapter, from, to| {
+        Passage::new(
+            Verse::new(book, chapter, from),
+            Verse::new(book, chapter, to),
+        )
+        .unwrap()
+    };
+    let baptism = sections
+        .iter()
+        .find(|s| s.passage == range(Book::Matthew, 3, 13, 17))
+        .unwrap();
+    assert_eq!(baptism.title, "The Baptism of Jesus");
+    assert!(baptism.parallels.contains(&range(Book::Mark, 1, 9, 11)));
+    let report = std::fs::read_to_string(config.out.join(REPORT_FILE)).unwrap();
+    assert!(
+        report.contains("section(s) with parallel passages"),
+        "{report}"
+    );
 }
 
 #[test]

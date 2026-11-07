@@ -45,6 +45,9 @@ pub struct ImportReport {
     pub mentions: usize,
     /// Eras, Lifespans and Events kept (a People & places index's Events dataset, #185).
     pub events: usize,
+    /// Sections with Parallel passages kept (a Cross-reference set, #212).
+    #[serde(default)]
+    pub parallel_sections: usize,
     /// Lexicon (or other non-Bible) entries.
     pub entries: usize,
     /// Bible references in the text made into `scripture_ref` spans.
@@ -73,7 +76,12 @@ impl fmt::Display for ImportReport {
             self.source_files.len(),
             self.source_format
         )?;
-        let dataset = self.cross_references + self.entities + self.mentions + self.events > 0;
+        let dataset = self.cross_references
+            + self.entities
+            + self.mentions
+            + self.events
+            + self.parallel_sections
+            > 0;
         if self.cross_references > 0 {
             writeln!(f, "  {} cross-reference(s)", self.cross_references)?;
         }
@@ -86,6 +94,13 @@ impl fmt::Display for ImportReport {
         }
         if self.events > 0 {
             writeln!(f, "  {} era(s), lifespan(s) or event(s)", self.events)?;
+        }
+        if self.parallel_sections > 0 {
+            writeln!(
+                f,
+                "  {} section(s) with parallel passages",
+                self.parallel_sections
+            )?;
         }
         if self.entries > 0 {
             writeln!(

@@ -9,7 +9,7 @@ Decisions #15 (sections, Guide arrangement, navigation), #18 (Tab header, placem
 ## Contract
 
 - `obs_engine::guide` owns the framework. `GuideSection` is the engine type for one
-  section (`Commentaries`, `CrossReferences`); `Guide::sections()` lists a Guide's sections
+  section (`Commentaries`, `CrossReferences`, `ParallelPassages`); `Guide::sections()` lists a Guide's sections
   in default order. Section and Guide ids (`commentaries`, `passage_guide`, ...) are stored
   and passed to commands; never rename them.
 - `Session::guide_section(&key, section)` never waits. A section that is not computed yet is
@@ -104,6 +104,40 @@ Decisions #15 (sections, Guide arrangement, navigation), #18 (Tab header, placem
   report's total and count toward the size budget.
 - Starter coverage (real library): Easton links 3,148 and Smith 3,685 of TIPNR's 4,135
   entities; building both tables takes ~130 ms.
+
+## Parallel passages (#212)
+
+- `obs_engine::parallel_passages` (ADR 0014). Every Cross-reference set in Preferred order that
+  carries Parallel passages (`ObrReader::parallel_sections`: a section's Passage, its heading
+  and its parallels). Each section is read both ways: a section overlapping the Passage offers
+  its parallels, a parallel overlapping the Passage offers its section; the overlapping side is
+  the offer's evidence. An offer whose evidence contains another's that covers as much of the
+  Passage is dropped (Mark 1:1-11's give way to Mark 1:9-11's), an offered Passage containing
+  another offered one is dropped (Matthew 3:1-17 for 3:13-17), and nothing overlapping the
+  Passage itself is offered. Rows are grouped by evidence in Bible order, each with the heading
+  that paired it; `all` merges every parallel ("1 Chr 21" for 2 Samuel 24). The `.obr` is read
+  per ask (1,324 sections: ~9 ms cold, ~1 ms warm on the Starter set).
+- UI (`shell/guide_parallels.rs`): with several groups an "In all:" line first; a "Beside
+  Mark 1:1-8" line above a group that is not the whole Passage; each row the reference (link),
+  the heading and a one-line preview from the ★ Bible; hover shows the Scripture popup.
+- Click runs `compare.parallel {passage, new_tab?}`: Text Comparison at the parallel, its range
+  chip set to it (none for a whole chapter or one Verse), in a Tab in no Link set so the Guide
+  and its Bible stay put. The most recent unlinked Text Comparison is reused; otherwise (and on
+  Ctrl/Cmd-click, `new_tab`) a new one opens in a Panel of its own beside the Guide.
+- Empty state: "Add a set of parallel passages (the BSB Parallel Passages in the Starter
+  library)" offers the Starter's `bsb-parallels` (`parallel_passages::PARALLEL_SETS`). A set
+  listed there never counts as a Cross-reference set for the Cross-references section.
+- Starter library: lock entry `bsb-parallels` (importer `usfm-parallel-passages`,
+  `obs_formats::import_usfm_parallel_passages`) reads the BSB zip the `bsb` entry pins; see
+  [the research note](../research/parallel-passages.md).
+- Evidence: engine `parallel_passages_tests` (Mark 1:9-11 and 2 Samuel 24 acceptance, wider
+  Passages, the Guide section and empty state, `compare.parallel`), formats
+  `tests/parallels.rs` (the BSB excerpt; the whole zip with `OBS_TEST_BSB_USFM`), UI
+  `shell::tests::guide::parallel_passages_list_the_baptism_and_a_click_compares_it`; on a
+  Starter build, `cargo test -p obs-engine --lib starter_bsb_parallels -- --ignored --nocapture`.
+- Previews (real app, Starter Resources): `docs/previews/parallel-passages-mark-1-9-11.png`,
+  `parallel-passages-2-samuel-24.png`, `parallel-passages-compare-matthew-3-13-17.png`, and
+  the `-before` images of the same Guides without the section.
 
 ## Guide arrangement
 

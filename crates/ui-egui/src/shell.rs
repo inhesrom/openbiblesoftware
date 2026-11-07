@@ -46,6 +46,7 @@ mod floating;
 pub use floating::DesktopUnits;
 mod fonts_window;
 mod get_bibles_tab;
+mod guide_parallels;
 mod guide_tab;
 mod guide_words;
 mod highlight_styles_window;

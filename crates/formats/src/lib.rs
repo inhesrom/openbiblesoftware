@@ -1,5 +1,5 @@
 //! Importers and dataset converters writing into `ResourceBuilder`: USFM, Lexicons,
-//! OpenBible.info Cross-references, STEPBible TAHOT/TAGNT and TIPNR, Starter Commentaries and
+//! OpenBible.info Cross-references, a USFM Bible's parallel passages, STEPBible TAHOT/TAGNT and TIPNR, Starter Commentaries and
 //! Dictionaries, and the TVTMS Verse-map builder.
 //!
 //! Layer L2. No SQLite and no UI here; compiles for `wasm32-unknown-unknown`.
@@ -10,6 +10,7 @@ mod error;
 mod lexicon;
 mod openbible;
 mod openbible_geo;
+mod parallels;
 mod report;
 mod stepbible;
 mod sword;
@@ -33,6 +34,10 @@ pub use lexicon::{
 };
 pub use openbible::{DROPPED_NOT_STANDARD, OPENBIBLE_FORMAT, import_openbible_cross_references};
 pub use openbible_geo::{OPENBIBLE_GEO_FORMAT, import_openbible_geocoding};
+pub use parallels::{
+    DROPPED_PARALLEL_NOT_STANDARD, DROPPED_PARALLEL_SELF, DROPPED_PARALLEL_SPANS_BOOKS,
+    USFM_PARALLELS_FORMAT, import_usfm_parallel_passages,
+};
 pub use report::{BookReport, ImportReport, VerseMapCounts};
 pub use stepbible::{StepbibleImport, StepbibleOptions, StepbibleText};
 pub use sword::repo as sword_repo;

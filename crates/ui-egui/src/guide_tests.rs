@@ -298,6 +298,7 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
         [
             "Commentaries",
             "Cross-references",
+            "Parallel passages",
             "Key words",
             "People & places"
         ]
@@ -307,6 +308,7 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
         [
             "Commentaries",
             "Cross-references",
+            "Parallel passages",
             "Key words",
             "People & places"
         ]
@@ -322,6 +324,7 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
         [
             "Cross-references",
             "Commentaries",
+            "Parallel passages",
             "Key words",
             "People & places"
         ]
@@ -331,6 +334,7 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
         [
             "Cross-references",
             "Commentaries",
+            "Parallel passages",
             "Key words",
             "People & places"
         ],
@@ -352,6 +356,7 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
         [
             "Cross-references",
             "Commentaries",
+            "Parallel passages",
             "Key words",
             "People & places"
         ]
@@ -377,6 +382,7 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
             [
                 "Cross-references",
                 "Commentaries",
+                "Parallel passages",
                 "Key words",
                 "People & places"
             ]
@@ -402,7 +408,12 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
     h.frames(2);
     assert_eq!(
         headers(&h, guides[1]),
-        ["Commentaries", "Key words", "People & places"]
+        [
+            "Commentaries",
+            "Parallel passages",
+            "Key words",
+            "People & places"
+        ]
     );
     let show = find_in(&h, guides[1], "Show Cross-references")
         .unwrap()
@@ -414,6 +425,7 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
         [
             "Cross-references",
             "Commentaries",
+            "Parallel passages",
             "Key words",
             "People & places"
         ]
@@ -428,6 +440,7 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
             [
                 "Commentaries",
                 "Cross-references",
+                "Parallel passages",
                 "Key words",
                 "People & places"
             ]
@@ -642,6 +655,10 @@ fn key_words_lead_with_rare_words_and_a_click_opens_a_word_study() {
         h.frames(4);
     };
     wheel(&mut h, -400.0);
+    // Let the sections below finish loading, so the scroll offset stays put.
+    for _ in 0..20 {
+        h.paced_frame();
+    }
     let all = find_in(&h, guide, "Show all 13").unwrap().center();
     h.click(all);
     h.frames(2);
@@ -1369,4 +1386,85 @@ fn topic_guide_on_forgiveness_shows_naves_subtopics_and_a_passage_moves_the_link
     });
     drop(h);
     drop(files);
+}
+
+/// #212 acceptance through the real shell: a Passage Guide at Mark 1:9-11 lists Matthew
+/// 3:13-17 and Luke 3:21-22 (with John 1:29-34) under Parallel passages, each with its heading
+/// and the ★ Bible's text; clicking Matthew opens Text Comparison aligned on Matthew 3:13-17,
+/// and the Guide and the Bible it follows stay at Mark.
+#[test]
+fn parallel_passages_list_the_baptism_and_a_click_compares_it() {
+    use obs_engine::testing::{bsb_parallels, bsb_parallels_bible};
+    let mut h = Harness::new();
+    let dir = std::env::temp_dir().join(format!("obs-shell-parallels-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let files = Files(dir);
+    h.shell.st.session.library = Library::new();
+    add_file(&mut h, &files, &bsb_parallels_bible());
+    add_file(&mut h, &files, &bsb_parallels());
+    h.shell.reset_layout();
+    let bible = h
+        .shell
+        .st
+        .session
+        .workspace
+        .tabs()
+        .find(|t| t.kind == TabKind::Resource("bsb".into()))
+        .unwrap()
+        .id;
+    h.shell
+        .run("tab.go", &json!({ "tab": bible.0, "text": "Mk 1:9" }));
+    h.frames(2);
+    let guide = open_guide(&mut h);
+    h.shell
+        .run("tab.go", &json!({ "tab": guide.0, "text": "Mk 1:9-11" }));
+    // Cross-references and Commentaries are empty here; collapse them out of the way.
+    for section in ["commentaries", "cross_references"] {
+        h.shell.run(
+            "guide.collapse_section",
+            &json!({ "guide": "passage_guide", "section": section, "collapsed": true }),
+        );
+    }
+    until(&mut h, "the parallel passages", |h| {
+        find_in(h, guide, "Matt 3:13-17").is_some() && find_in(h, guide, "Luke 3:21-22").is_some()
+    });
+    assert!(headers(&h, guide).contains(&"Parallel passages".to_string()));
+    assert!(find_in(&h, guide, "John 1:29-34").is_some());
+    assert!(
+        find_in(&h, guide, "The Baptism of Jesus").is_some(),
+        "{:?}",
+        h.texts()
+    );
+    preview(&mut h, "parallel-passages-mark-1-9-11");
+
+    let tabs = h.shell.session().workspace.tabs().count();
+    let link = find_in(&h, guide, "Matt 3:13-17").unwrap().center();
+    h.click(link);
+    h.frames(3);
+    let ws = &h.shell.session().workspace;
+    assert_eq!(ws.tabs().count(), tabs + 1);
+    let compare = ws.focused().unwrap();
+    let t = ws.tab(compare).unwrap();
+    assert_eq!(t.kind, TabKind::Tool(obs_engine::Tool::TextComparison));
+    assert_eq!(t.link, None);
+    let matthew = Passage::new(
+        Verse::new(Book::Matthew, 3, 13),
+        Verse::new(Book::Matthew, 3, 17),
+    )
+    .unwrap();
+    assert_eq!(t.comparison.range, Some(matthew));
+    assert_eq!(t.history.current(), Some(Verse::new(Book::Matthew, 3, 13)));
+    let mark = Passage::new(Verse::new(Book::Mark, 1, 9), Verse::new(Book::Mark, 1, 11)).unwrap();
+    assert_eq!(ws.tab(guide).unwrap().shown_passage(), Some(mark));
+    assert_eq!(
+        ws.tab(bible).unwrap().history.current(),
+        Some(Verse::new(Book::Mark, 1, 9))
+    );
+    // The Text Comparison shows Matthew's Verses, its range chip naming the parallel.
+    until(&mut h, "Matthew 3:13 compared", |h| {
+        h.find("Matt 3:13-17").is_some() && h.find("Matthew 3:13").is_some()
+    });
+    preview(&mut h, "parallel-passages-compare-matthew");
+    drop(h);
 }
