@@ -696,6 +696,115 @@ fn a_note_on_a_floating_bible_is_written_in_its_window() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A drag with the primary button in a floating window, from `from` to `to`, with that
+/// window's input only.
+fn drag_in(h: &mut Harness, w: WindowId, from: Pos2, to: Pos2) {
+    h.window(w).events.push(Event::PointerMoved(from));
+    h.frame();
+    let button = |pos, pressed| Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    h.window(w).events.push(button(from, true));
+    h.frame();
+    for i in 1..=20 {
+        let t = i as f32 / 20.0;
+        h.window(w)
+            .events
+            .push(Event::PointerMoved(from + (to - from) * t));
+        h.frame();
+    }
+    h.window(w).events.push(button(to, false));
+    h.frames(3);
+}
+
+/// The Panels of floating window `w` (its own points), and the Panel each is.
+fn window_panels(h: &Harness, w: WindowId) -> Vec<(Rect, obs_engine::PanelId)> {
+    let d = h.shell.floating.iter().find(|d| d.id == w).unwrap();
+    let mut out: Vec<_> = (d.panels.iter())
+        .filter_map(|(tile, panel)| Some((d.tree.tiles.rect(*tile)?, *panel)))
+        .collect();
+    out.sort_by(|a, b| a.0.left().total_cmp(&b.0.left()));
+    out
+}
+
+#[test]
+fn a_resource_dragged_out_of_a_floating_library_tab_opens_in_that_window() {
+    let mut h = Harness::new();
+    h.native_windows();
+    let library = h.tab_id("Library");
+    h.shell.run("tab.float", &json!({ "tab": library.0 }));
+    h.frames(3);
+    let w = h.shell.floating[0].id;
+    let main_before = main_titles(&h);
+    // HNUM's row onto the Library Panel's right edge, in the same window: a new Panel there.
+    let (panel, _) = window_panels(&h, w)[0];
+    let row = h.window(w).find("HNUM").expect("HNUM's row").center();
+    drag_in(&mut h, w, row, pos2(panel.right() - 20.0, panel.center().y));
+    let hnum = h.tab_id("HNUM");
+    assert_eq!(h.shell.keys_window(hnum), Some(w), "{:?}", floating(&h));
+    let ws = &h.shell.st.session.workspace;
+    assert_ne!(
+        ws.panel_of(hnum),
+        ws.panel_of(library),
+        "a Panel of its own"
+    );
+    assert_eq!(main_titles(&h), main_before, "the main window is as it was");
+    assert!(h.shell.st.drag.dragging.is_none());
+    // HEB's row onto HNUM's tab bar: a new Tab in that Panel.
+    let panels = window_panels(&h, w);
+    let (bar, hnum_panel) = (panels.iter())
+        .find(|(_, p)| Some(*p) == ws.panel_of(hnum))
+        .map(|(r, p)| (pos2(r.left() + 40.0, r.top() + 12.0), *p))
+        .unwrap();
+    let row = h.window(w).find("HEB").expect("HEB's row").center();
+    drag_in(&mut h, w, row, bar);
+    let heb = h.tab_id("HEB");
+    assert_eq!(h.shell.st.session.workspace.panel_of(heb), Some(hnum_panel));
+    assert_eq!(main_titles(&h), main_before);
+    // Dropped back on the Library's own list, nothing opens.
+    let (list, _) = (window_panels(&h, w).into_iter())
+        .find(|(_, p)| Some(*p) == h.shell.st.session.workspace.panel_of(library))
+        .unwrap();
+    let tabs = h.shell.st.session.workspace.window_tabs(w).len();
+    let row = h.window(w).find("TB").expect("TB's row").center();
+    drag_in(
+        &mut h,
+        w,
+        row,
+        pos2(list.left() + 60.0, list.center().y + 40.0),
+    );
+    assert_eq!(h.shell.st.session.workspace.window_tabs(w).len(), tabs);
+}
+
+#[test]
+fn the_move_note_box_for_a_floating_bible_is_shown_in_its_window() {
+    let mut h = Harness::new();
+    h.native_windows();
+    let tb = h.tab_id("TB");
+    h.shell.run("tab.float", &json!({ "tab": tb.0 }));
+    h.frames(3);
+    let w = h.shell.floating[0].id;
+    // A Note dropped on TB's text, in its floating window.
+    h.shell.st.confirm_reanchor(
+        "n".into(),
+        "Genesis 30:1 (TB)".into(),
+        tb,
+        json!({}),
+        "Genesis 30:5 (TB)".into(),
+    );
+    h.frames(2);
+    let ask = "Move this Note from Genesis 30:1 (TB) to Genesis 30:5 (TB)?";
+    assert!(h.window(w).find(ask).is_some());
+    assert!(h.find(ask).is_none(), "not in the main window");
+    // Esc there cancels it.
+    h.key_in(w, egui::Key::Escape, Modifiers::NONE);
+    assert!(h.shell.st.drag.confirm.is_none());
+    assert!(h.window(w).find(ask).is_none());
+}
+
 #[test]
 fn a_tab_dragged_out_as_the_pointer_leaves_the_window_floats_where_it_left() {
     let mut h = Harness::new();

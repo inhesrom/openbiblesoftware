@@ -42,8 +42,10 @@ A Note drops only on a Resource's text, under the pointer: on the selection when
 inside it, else on the Verse under the pointer (a Bible) or the word (any other Resource). The
 Tab's header, its Contents, the pane's margins and the space after the text are no target.
 
-Resources keep the Library launcher's targets (#140): a Panel (a Tab there) or its right
-quarter (a new Panel).
+Resources keep the Library launcher's targets (#140): a Panel (its tab bar or a Tab's text: a
+Tab there) or its right quarter (a new Panel). A row dropped back on its own Library Tab opens
+nothing. Every drag, a Library Tab row's too, drops in the window it started in: a floating
+window's Library opens Resources among that window's Panels.
 
 Files dragged onto the window from the system (a `.obr`) still join the library and open
 (`App::files_dropped`); drags inside the Workspace never carry files.
@@ -67,9 +69,13 @@ Files dragged onto the window from the system (a `.obr`) still join the library 
 - Notes: a Tab takes a Note only where `ReadingView::text_under` finds text (inside the pane
   last drawn, `pane_rect`, on a laid-out line, never clamped as `pos_at` does). Then
   `annotation.reattach` with the selection params of where it was dropped, after the Move
-  Note box (`reanchor_prompt`, also opened by the card menu's Move to selected text).
-- Library Tab rows sense click-and-drag; a drag of the row sets `ToolbarUi::dragging`, the
-  same Resource drag as the Library launcher's (`Shell::library_drag`).
+  Note box (`reanchor_prompt`, also opened by the card menu's Move to selected text), drawn
+  in the window of the Tab it was dropped on (a floating OS window draws its own, as the Note
+  editor).
+- Library Tab rows sense click-and-drag; a drag of the row is a `Dragged::Resource` in
+  `DragDropUi`, so it drops in the window it started in (`toolbar.open_resource` with `panel`
+  or `beside`). The Library launcher's pane, only in the main window, keeps its own drag
+  (`ToolbarUi::dragging`, `Shell::library_drag`).
 
 ## Keyboard and click equivalents
 
@@ -89,6 +95,9 @@ Files dragged onto the window from the system (a `.obr`) still join the library 
   onto a Bible Tab and onto its Panel's edge; a selected word onto a tab bar; Esc; a drag
   inside and outside the selection; a Library Tab row onto an edge; a Note card moved after
   confirming (Cancel, Move, Undo); where a Note can drop.
+- `floating_windows_tests.rs` (native windows, each with its own input): a Library Tab row
+  dragged onto Panels of the same floating window; the Move Note box in a floating Bible's
+  window, Esc there.
 - `tabs_can_be_dragged_to_split_dock_and_resize` (`shell_tests.rs`): Tab docking.
 - `a_resource_file_dropped_on_the_window_from_the_system_joins_the_library_and_opens`
   (`tests.rs`): system file drop.

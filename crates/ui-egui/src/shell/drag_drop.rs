@@ -1,9 +1,11 @@
 //! Drag and drop across the Workspace (#216), besides docking Tabs (egui_tiles) and Resources
-//! dragged out of the Library launcher or the Library Tab (`toolbar.rs`, `library_drag`).
+//! dragged out of the Library launcher's pane (`toolbar.rs`, `library_drag`).
 //!
 //! - **From text:** a drag that starts on a Scripture reference carries its Passage; one that
 //!   starts inside the selection carries the selected text (a word, or a reference written
 //!   plainly). `pane.rs` tells the drag apart from selecting ([`crate::pane::DragOut`]).
+//! - **A Library Tab row** carries its Resource: it opens in the Panel it is dropped on, or in a
+//!   new Panel beside it (`toolbar.open_resource`, as from the Library launcher).
 //! - **A Note card** is dragged by its Note icon (the grip) onto a Resource's text: on
 //!   confirmation it is re-anchored there (`annotation.reattach`, one undo step), on the
 //!   selection when it was dropped inside it, else on the Verse (in a Bible) or word under the
@@ -51,6 +53,12 @@ pub(crate) enum Dragged {
     },
     /// A Note card, by the Note's id, with the reference it is anchored at.
     Note { id: String, reference: String },
+    /// A Resource, by its id, dragged out of Library Tab `from`.
+    Resource {
+        id: String,
+        abbreviation: String,
+        from: TabId,
+    },
 }
 
 impl Dragged {
@@ -60,12 +68,15 @@ impl Dragged {
             Dragged::Reference { label, .. } => label.clone(),
             Dragged::Text { text, .. } => text.clone(),
             Dragged::Note { reference, .. } => format!("Note: {reference}"),
+            Dragged::Resource { abbreviation, .. } => abbreviation.clone(),
         }
     }
 
     fn from(&self) -> Option<TabId> {
         match self {
-            Dragged::Reference { from, .. } | Dragged::Text { from, .. } => Some(*from),
+            Dragged::Reference { from, .. }
+            | Dragged::Text { from, .. }
+            | Dragged::Resource { from, .. } => Some(*from),
             Dragged::Note { .. } => None,
         }
     }
@@ -96,7 +107,8 @@ impl DropTarget {
 #[derive(Debug, Clone)]
 pub(crate) struct Reanchor {
     pub(crate) id: String,
-    tab: TabId,
+    /// The Tab it was dropped on: its window shows the box.
+    pub(crate) tab: TabId,
     params: Value,
     pub(crate) from: String,
     pub(crate) to: String,
@@ -244,6 +256,24 @@ impl State {
         self.drag.dragging = Some((what, ui.ctx().viewport_id()));
     }
 
+    /// A row of Library Tab `tab` started dragging Resource `id` out of it.
+    pub(super) fn resource_drag_started(
+        &mut self,
+        ui: &Ui,
+        tab: TabId,
+        id: String,
+        abbreviation: String,
+    ) {
+        self.drag.dragging = Some((
+            Dragged::Resource {
+                id,
+                abbreviation,
+                from: tab,
+            },
+            ui.ctx().viewport_id(),
+        ));
+    }
+
     /// A Note card's grip started a drag.
     pub(super) fn note_drag_started(&mut self, ui: &Ui, id: &str, reference: &str) {
         self.drag.dragging = Some((
@@ -330,6 +360,18 @@ impl State {
                 if let DropTarget::Tab(tab) = target {
                     self.note_dropped(id, reference, tab, p);
                 }
+            }
+            Dragged::Resource { id, .. } => {
+                // On a Tab's text it opens in that Tab's Panel, as on its tab bar.
+                let params = match target {
+                    DropTarget::Tab(t) => match self.session.workspace.panel_of(t) {
+                        Some(panel) => json!({ "id": id, "panel": panel.0 }),
+                        None => return,
+                    },
+                    DropTarget::Panel(panel) => json!({ "id": id, "panel": panel.0 }),
+                    DropTarget::Beside(panel) => json!({ "id": id, "beside": panel.0 }),
+                };
+                self.run("toolbar.open_resource", &params);
             }
         }
     }

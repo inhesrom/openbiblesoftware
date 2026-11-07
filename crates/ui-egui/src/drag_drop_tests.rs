@@ -392,7 +392,7 @@ fn a_resource_dragged_out_of_the_library_tab_opens_where_it_is_dropped() {
     let panels = h.panels();
     assert_eq!(panels.len(), 3, "{panels:?}");
     assert_eq!(panels[1].1, ["HNUM"], "beside the left Panel: {panels:?}");
-    assert!(h.shell.st.toolbar.dragging.is_none());
+    assert!(h.shell.st.drag.dragging.is_none());
 }
 
 fn note_folder(name: &str) -> PathBuf {
