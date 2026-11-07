@@ -525,6 +525,13 @@ impl Shell {
         {
             self.st.note_editor_ui(&ctx);
         }
+        // So is the Move Note box for a Note dropped on one of them.
+        if native
+            && let Some(r) = &self.st.drag.confirm
+            && self.keys_window(r.tab) == Some(id)
+        {
+            self.st.reanchor_prompt(&ctx);
+        }
         if native {
             super::focus_ring(&ctx);
         }

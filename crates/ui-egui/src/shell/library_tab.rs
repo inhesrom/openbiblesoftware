@@ -68,7 +68,7 @@ impl State {
         let mut bar = None;
         let mut drag_start: Option<String> = None;
         let mut drag_end = false;
-        let mut open_drag: Option<(String, String)> = None;
+        let mut resource_drag: Option<(String, String)> = None;
         let mut rows: Vec<Row> = Vec::new();
         let mut drop_region = Rect::NOTHING;
         let enter_pressed =
@@ -148,7 +148,7 @@ impl State {
                                 }
                                 // The row itself drags the Resource into the Workspace (#216).
                                 if row.body.drag_started() {
-                                    open_drag = Some((id.clone(), m.abbreviation.clone()));
+                                    resource_drag = Some((id.clone(), m.abbreviation.clone()));
                                 }
                                 if row.body.clicked() || row.body.secondary_clicked() {
                                     select = Some(id.clone());
@@ -234,8 +234,9 @@ impl State {
                 t.dragging = Some(id);
             }
         }
-        if open_drag.is_some() {
-            self.toolbar.dragging = open_drag;
+        // Dropped in the window this Library Tab is drawn in (`workspace_drag`).
+        if let Some((id, abbreviation)) = resource_drag {
+            self.resource_drag_started(ui, tab, id, abbreviation);
         }
         if drag_end || action.is_some() || bar.is_some() {
             self.session.workspace.user_focused(tab);

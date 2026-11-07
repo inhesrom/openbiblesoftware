@@ -911,7 +911,10 @@ impl Shell {
         // A Note being written on a Tab in a floating OS window is drawn in that window.
         let note_here =
             (self.st.note_editor.as_ref()).is_none_or(|ed| self.keys_window(ed.tab).is_none());
-        self.st.overlays(ui, note_here);
+        // So is the Move Note box for a Note dropped on a Tab there.
+        let reanchor_here =
+            (self.st.drag.confirm.as_ref()).is_none_or(|r| self.keys_window(r.tab).is_none());
+        self.st.overlays(ui, note_here, reanchor_here);
         self.customize_window(ui.ctx());
         focus_ring(ui.ctx());
         // A Notes card being edited saves as the user types, and at once once its Tab is not
@@ -2820,16 +2823,18 @@ impl State {
         }
     }
 
-    /// Toasts and the About/Credits window, and the Note editor when `note_here` (its Tab is
-    /// not in a floating OS window, which draws it).
-    fn overlays(&mut self, ui: &Ui, note_here: bool) {
+    /// Toasts and the About/Credits window, the Note editor when `note_here` and the Move Note
+    /// box when `reanchor_here` (their Tab is not in a floating OS window, which draws them).
+    fn overlays(&mut self, ui: &Ui, note_here: bool, reanchor_here: bool) {
         let ctx = ui.ctx().clone();
         if note_here {
             self.note_editor_ui(&ctx);
         }
         self.layout_prompt(&ctx);
         self.remove_prompt(&ctx);
-        self.reanchor_prompt(&ctx);
+        if reanchor_here {
+            self.reanchor_prompt(&ctx);
+        }
         self.import_chooser(&ctx);
         self.fonts_window(&ctx);
         self.highlight_styles_window(&ctx);
