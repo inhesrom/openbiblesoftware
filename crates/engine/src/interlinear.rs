@@ -320,12 +320,14 @@ pub fn cell_texts(
                     .map(|m| m.short())
                     .filter(|m| !m.is_empty()),
                 InterlinearLine::Gloss => match kind {
-                    // Every morpheme's gloss, in order ("in beginning"), as Word Info shows it.
+                    // Every morpheme's gloss, in order ("in beginning"), as Word Info shows it;
+                    // words that carry none read the Lexicons, then the built-in index.
                     InterlinearKind::Interlinear => {
                         let glosses: Vec<String> =
                             parts.iter().filter_map(|p| trimmed(&p.gloss)).collect();
                         (!glosses.is_empty())
                             .then(|| glosses.join(" "))
+                            .or_else(|| lexicon_word().gloss.clone())
                             .or_else(|| from_index(|w| &w.gloss))
                     }
                     InterlinearKind::Reverse => trimmed(&main.gloss)

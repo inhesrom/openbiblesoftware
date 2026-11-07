@@ -424,6 +424,35 @@ fn an_original_text_without_glosses_reads_the_index_gloss() {
     assert_eq!(cells, ["to create", "bārāʾ"]);
 }
 
+/// #243 review: a Hebrew or Greek Bible's untagged Gloss reads an installed Lexicon before
+/// the built-in index, and its own tagging before both.
+#[test]
+fn an_original_text_without_glosses_reads_an_installed_lexicon_first() {
+    let kind = InterlinearKind::Interlinear;
+    let lexicon = |_: StrongsNumber| {
+        Some(LexiconWord {
+            lemma: None,
+            gloss: Some("to bring into being".into()),
+        })
+    };
+    let cells = cell_texts(
+        &[Gloss],
+        kind,
+        "בָּרָ֣א",
+        &[part("H1254", None, Some("HVqp3ms"), None)],
+        &lexicon,
+    );
+    assert_eq!(cells, ["to bring into being"]);
+    let cells = cell_texts(
+        &[Gloss],
+        kind,
+        "בָּרָ֣א",
+        &[part("H1254", None, None, Some("he created"))],
+        &lexicon,
+    );
+    assert_eq!(cells, ["he created"]);
+}
+
 /// #243: an empty Morphology line points at Hebrew and Greek texts (#135's Get Hebrew & Greek
 /// texts…), and the hint closes for good on that Tab.
 #[test]

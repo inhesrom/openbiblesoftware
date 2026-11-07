@@ -108,17 +108,19 @@ impl InterlinearSource {
 
     /// Whether `lines` of a `kind` Bible need the Lexicons: an English Bible's words carry
     /// only their Strong's numbers, so their Lemma (and its transliteration) and Gloss are
-    /// looked up.
+    /// looked up; a Hebrew or Greek Bible's words may lack a Lemma or Gloss (#243), which an
+    /// installed Lexicon gives before the built-in index.
     pub fn needs_lexicons(kind: InterlinearKind, lines: &[InterlinearLine]) -> bool {
-        kind == InterlinearKind::Reverse
-            && lines.iter().any(|l| {
-                matches!(
-                    l,
-                    InterlinearLine::Lemma
-                        | InterlinearLine::Transliteration
-                        | InterlinearLine::Gloss
-                )
-            })
+        lines.iter().any(|l| match kind {
+            InterlinearKind::Reverse => matches!(
+                l,
+                InterlinearLine::Lemma | InterlinearLine::Transliteration | InterlinearLine::Gloss
+            ),
+            // Its transliteration is of the written word.
+            InterlinearKind::Interlinear => {
+                matches!(l, InterlinearLine::Lemma | InterlinearLine::Gloss)
+            }
+        })
     }
 
     /// The text of each line under a word.

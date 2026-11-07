@@ -562,3 +562,70 @@ fn wide_lines_never_part_a_word_from_its_punctuation() {
         }
     }
 }
+
+/// Whether every line of `laid` holding more than one column, and its cells, stays inside
+/// `0..=width`.
+fn lines_stay_inside(laid: &LaidBlock, width: f32) -> Result<(), String> {
+    for (li, line) in laid.lines.iter().enumerate() {
+        let mut words: Vec<_> = laid
+            .cells
+            .iter()
+            .filter(|c| c.line == li)
+            .map(|c| c.word.start)
+            .collect();
+        words.sort_unstable();
+        words.dedup();
+        if words.len() < 2 {
+            continue;
+        }
+        // Visible text: whitespace at the line's end hangs past the margin.
+        let text = line
+            .items
+            .iter()
+            .flat_map(|i| i.clusters())
+            .filter_map(|(b, x0, x1)| {
+                (!laid.text[b].trim().is_empty()).then_some((x0.min(x1), x0.max(x1)))
+            });
+        let cells = laid
+            .cells
+            .iter()
+            .filter(|c| c.line == li)
+            .map(|c| (c.x, c.x + c.width));
+        for (left, right) in text.chain(cells) {
+            if left < -0.5 || right > width + 0.5 {
+                return Err(format!("line {li}: {left}..{right} outside 0..{width}"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// #243 review: line filling counts the space a column takes at the line's ends as drawn, so
+/// short words with wide lines wrap instead of running past the pane, left to right and right
+/// to left.
+#[test]
+fn wide_lines_wrap_inside_the_width() {
+    let unit = bsb_gen_1_3();
+    let wide = [
+        ("H430", "ʾĕlōhîm ʾĕlōhîm ʾĕlōhîm"),
+        ("H559", "wayyōʾmer wayyōʾmer"),
+        ("H1961", "yᵊhî yᵊhî yᵊhî yᵊhî yᵊhî"),
+        ("H216", "ʾôr ʾôr ʾôr ʾôr ʾôr ʾôr"),
+    ];
+    let hebrew = tahot_unit();
+    let long_glosses = [
+        ("H7225", "in the beginning of all"),
+        ("H1254", "he brought into being"),
+        ("H430", "God, the mighty one"),
+        ("H853", "<the direct object>"),
+        ("H8064", "the heavens above"),
+        ("H776", "the earth below"),
+    ];
+    for step in 0..60 {
+        let width = 150.0 + step as f32 * 10.0;
+        let (_, ltr) = interlinear_block(&unit, Direction::Ltr, width, &wide, 2);
+        lines_stay_inside(&ltr, width).unwrap_or_else(|e| panic!("LTR at {width}: {e}"));
+        let (_, rtl) = interlinear_block(&hebrew, Direction::Rtl, width, &long_glosses, 1);
+        lines_stay_inside(&rtl, width).unwrap_or_else(|e| panic!("RTL at {width}: {e}"));
+    }
+}

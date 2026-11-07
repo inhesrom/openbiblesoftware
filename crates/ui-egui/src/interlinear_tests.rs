@@ -875,6 +875,57 @@ fn bsb_alone_shows_the_hebrew_word_its_transliteration_and_gloss_under_in_the_be
     drop(h);
 }
 
+/// #243 review: a Hebrew Bible whose words carry no Gloss reads an installed Lexicon's Gloss
+/// before the built-in Strong's index's, and the index's where the Lexicon has none.
+#[test]
+fn an_original_text_reads_an_installed_lexicon_gloss_before_the_built_in_index() {
+    let mut h = Harness::new();
+    let dir = std::env::temp_dir().join(format!(
+        "obs-shell-interlinear-hebrew-lexicon-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let files = Files(dir);
+    h.shell.st.session.library = Library::new();
+    for r in [
+        obs_engine::testing::hebrew_bara(),
+        obs_engine::testing::lexicon("hebrew", "HEB", &[("H1254", "בָּרָא", "to bring into being")]),
+    ] {
+        let path = files.0.join(format!("{}.obr", r.manifest.resource_id));
+        obs_store::write_obr(&r, &path).unwrap();
+        h.shell.st.session.library.add_file(&path).unwrap();
+    }
+    h.shell.reset_layout();
+    h.frames(2);
+    let hebrew = open_at(&mut h, "heb-bara", "Gn 1:1");
+    click_header(&mut h, hebrew, "Interlinear");
+    settle_all(&mut h);
+    let source = view(&h, hebrew).interlinear().expect("lines shown").clone();
+    assert_eq!(
+        source.lines,
+        [InterlinearLine::Gloss, InterlinearLine::Transliteration]
+    );
+    assert!(source.looks_up_in("hebrew"), "the Gloss is looked up");
+    let verse = verse_range(&h, hebrew, Verse::new(Book::Genesis, 1, 1));
+    let (_, laid) = block_at(&h, hebrew, 0, verse.start);
+    let rows = rows_of(&h, hebrew, &laid);
+    assert_eq!(
+        rows[..2],
+        [
+            (
+                "בָּרָא".to_string(),
+                vec!["to bring into being".to_string(), "bārāʾ".into()]
+            ),
+            (
+                "אֱלֹהִים".to_string(),
+                vec!["God".to_string(), "ʾĕlōhîm".into()]
+            ),
+        ]
+    );
+    drop(h);
+}
+
 /// #243: a line with nothing to show under any word (Morphology: the BSB's words carry
 /// none) brings a hint with the #135 buttons; Close keeps it closed on that Tab.
 #[test]
