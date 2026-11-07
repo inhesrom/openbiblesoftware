@@ -521,6 +521,14 @@ _Avoid_: Color, Tag, Label
 A named, ordered set of Highlight styles, made, renamed, deleted, exported and imported (as a small JSON file) in View → Highlight styles…. One is active: the selection toolbar, the right-click menu and Alt+1…9 offer its styles in its order. A Highlight in a style of another palette still shows. The first palette is **Standard**, with the five built-in styles.
 _Avoid_: Theme, Colour set
 
+**Visual filter**:
+A named rule that colours, as the user reads, the words of Resource text that match a Search query (`@imperative`, `strong:G26`, `"love one another"`), the text the Resource marks as Words of Christ or a divine name, or both, optionally limited to some Passages (`Rom 12`). Its matches are drawn in a colour with a look (background, underline, box or text colour), each Page tone's colour derived as a Highlight style's is. A filter is on in all Tabs or not; the Tab header's Filters menu (a narrow Tab's ⋯ menu) switches it for one Resource Tab, and Layouts keep the switch. Filters are made and edited in View → Visual filters… and kept in the User database; the built-ins are Words of Christ, Divine names and Imperatives, off until switched on. Its colours are an overlay, not Highlights, and are never Annotations. In a Bible without Morphology or Lemmas of its own, Morphology and Lemma terms reach the words through Strong's alignment.
+_Avoid_: Highlight (for this), Search highlights, Layer
+
+**Strong's alignment**:
+How a Bible tagged only with Strong's numbers (KJV+Strong's) takes Morphology and Lemma terms from an original-language Bible: in each Verse, its words whose Strong's number is that of a matching word in the same Standard Verse of the first Hebrew (Old Testament) or Greek (New Testament) Bible in Preferred order. Prefixes, suffixes and other grammatical morphemes are never aligned (ADR 0015).
+_Avoid_: Word alignment (it is by number, not by position), Mapping
+
 **Notebook**:
 A named container for Annotations. Every Annotation belongs to exactly one Notebook, and a default Notebook exists.
 _Avoid_: Folder, Collection, Tag

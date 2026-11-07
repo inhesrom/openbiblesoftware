@@ -151,6 +151,12 @@ impl Highlighter {
             && self.morph.is_empty()
     }
 
+    /// Whether it asks for Morphology or a Lemma (`@…`, `lemma:`), which only an
+    /// original-language Bible's words carry.
+    pub fn uses_original_language_data(&self) -> bool {
+        !self.lemmas.is_empty() || !self.morph.is_empty()
+    }
+
     /// Whether a query Strong's number matches a tagged one: an extended number matches
     /// exactly, a base number matches all its homographs (#16).
     fn strong_matches(&self, n: StrongsNumber) -> bool {

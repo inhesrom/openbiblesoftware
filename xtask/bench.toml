@@ -47,6 +47,11 @@ max_missed_pct = 1.0
 max_sync_p99_ms = 2.0
 max_settle_frames = 1
 
+[features.filters]          # three Visual filters on every pane, scrolling
+max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
+max_placeholder_frames = 0
+
 [features.atlas]            # panning, zooming, following chapters of 8-120 places
 max_missed_pct = 1.0
 max_sync_p99_ms = 2.0

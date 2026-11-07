@@ -177,20 +177,36 @@ pub struct PaneOutput {
     pub drag_out: Option<DragOut>,
 }
 
+/// One Visual filter's matches in view (#211): its look, and the rectangles of its words in
+/// text coordinates (as [`range_rects`] gives them).
+pub type FilterRects = (obs_engine::StyleAppearance, Vec<[f32; 4]>);
+
+/// What a reading pane draws over its text besides the Find bar's matches.
+#[derive(Debug, Default)]
+pub struct PaneMarks<'a> {
+    /// Highlights and Notes, oldest first.
+    pub annotations: &'a [Mark],
+    /// The Tab's Visual filters (#211), drawn under the Annotations: their matches in the
+    /// blocks this frame shows.
+    pub filters: Option<&'a mut crate::filters::FilterPainter>,
+}
+
 /// Draw the reading pane into all the space `ui` has, and handle its input. `flash` marks a
 /// verse or a Text range (after a jump) with a colour whose alpha fades it out. `marks` are
 /// the Highlights and Notes to draw, oldest first: Highlight backgrounds under the glyphs
-/// (newest on top), the red underline and Note markers over them. `found` are the Find bar's
-/// matches (#175), drawn over the Highlights and under the selection.
+/// (newest on top), the red underline and Note markers over them; the Visual filters'
+/// matches go under them, in the same looks. `found` are the Find bar's matches (#175), drawn
+/// over the Highlights and under the selection.
 pub fn reading_pane(
     ui: &mut Ui,
     view: &mut ReadingView,
     atlas: &mut AtlasTexture,
     palette: &Palette,
     flash: Option<(Flash, Color32)>,
-    marks: &[Mark],
+    pane_marks: PaneMarks<'_>,
     found: Found<'_>,
 ) -> PaneOutput {
+    let marks = pane_marks.annotations;
     let mut out = PaneOutput::default();
     let rect = ui.available_rect_before_wrap();
     let response = ui.allocate_rect(rect, Sense::click_and_drag());
@@ -291,6 +307,10 @@ pub fn reading_pane(
     if view.has_pending() {
         ui.ctx().request_repaint();
     }
+    let filtered = match pane_marks.filters {
+        Some(f) => f.rects(view, rect.height(), Some(ui.ctx())),
+        None => Vec::new(),
+    };
     let flashed = flash.and_then(|(f, color)| match f {
         Flash::Verse(verse) => {
             let (unit, byte) = view.doc.verse_position(verse)?;
@@ -341,19 +361,26 @@ pub fn reading_pane(
     // What is painted under the glyphs above the page, in paint order (the last one holding a
     // glyph is the one it sits on): a recoloured glyph must read on it, not only on the page.
     let mut grounds: Vec<(Rect, Color32)> = Vec::new();
-    for (mark, rects) in marks.iter().zip(&mark_rects) {
-        if let MarkKind::Highlight(a) = mark.kind {
-            let p = paint(a);
-            for r in rects {
-                let r = to_screen(text_band(*r, size));
-                match p.look {
-                    HighlightLook::Background => {
-                        painter.rect_filled(r, 1.5, p.color);
-                        grounds.push((r, p.color));
-                    }
-                    HighlightLook::TextColor => recolour.push((r, p.color)),
-                    HighlightLook::Underline | HighlightLook::Box => {}
+    // Visual filters (#211) first, so a Highlight shows over them.
+    let filter_looks = filtered.iter().map(|(a, rects)| (*a, rects));
+    let mark_looks = marks
+        .iter()
+        .zip(&mark_rects)
+        .filter_map(|(m, rects)| match m.kind {
+            MarkKind::Highlight(a) => Some((a, rects)),
+            _ => None,
+        });
+    for (a, rects) in filter_looks.chain(mark_looks) {
+        let p = paint(a);
+        for r in rects {
+            let r = to_screen(text_band(*r, size));
+            match p.look {
+                HighlightLook::Background => {
+                    painter.rect_filled(r, 1.5, p.color);
+                    grounds.push((r, p.color));
                 }
+                HighlightLook::TextColor => recolour.push((r, p.color)),
+                HighlightLook::Underline | HighlightLook::Box => {}
             }
         }
     }
@@ -484,32 +511,14 @@ pub fn reading_pane(
         rect.left() - text_rect.left() + 1.0,
         track.left() - text_rect.left() - 1.0,
     );
+    for (a, rects) in &filtered {
+        draw_line_or_box(&painter, paint(*a), rects, size, &to_screen);
+    }
     for (mark, rects) in marks.iter().zip(&mark_rects) {
         match mark.kind {
             MarkKind::Highlight(a) => {
-                let p = paint(a);
                 // A line or box runs unbroken along each line of the range (#181).
-                for r in line_runs(rects, size * 0.6) {
-                    let r = to_screen(text_band(r, size));
-                    match p.look {
-                        HighlightLook::Underline => {
-                            let y = r.bottom() - (size * 0.1).max(1.5);
-                            painter.line_segment(
-                                [pos2(r.left(), y), pos2(r.right(), y)],
-                                egui::Stroke::new((size * 0.09).max(1.5), p.color),
-                            );
-                        }
-                        HighlightLook::Box => {
-                            painter.rect_stroke(
-                                r,
-                                2.0,
-                                egui::Stroke::new((size * 0.08).max(1.5), p.color),
-                                egui::StrokeKind::Outside,
-                            );
-                        }
-                        HighlightLook::Background | HighlightLook::TextColor => {}
-                    }
-                }
+                draw_line_or_box(&painter, paint(a), rects, size, &to_screen);
             }
             MarkKind::Note => {
                 let Some(marker) =
@@ -778,6 +787,36 @@ pub(crate) fn paint_find_match(painter: &egui::Painter, r: Rect, current: bool, 
         );
     } else {
         painter.rect_filled(r, 2.0, palette.find_match);
+    }
+}
+
+/// A Highlight's or Visual filter's underline or box: unbroken along each line of its range.
+fn draw_line_or_box(
+    painter: &egui::Painter,
+    p: crate::palette::StylePaint,
+    rects: &[[f32; 4]],
+    size: f32,
+    to_screen: &dyn Fn([f32; 4]) -> Rect,
+) {
+    if !matches!(p.look, HighlightLook::Underline | HighlightLook::Box) {
+        return;
+    }
+    for r in line_runs(rects, size * 0.6) {
+        let r = to_screen(text_band(r, size));
+        if p.look == HighlightLook::Underline {
+            let y = r.bottom() - (size * 0.1).max(1.5);
+            painter.line_segment(
+                [pos2(r.left(), y), pos2(r.right(), y)],
+                egui::Stroke::new((size * 0.09).max(1.5), p.color),
+            );
+        } else {
+            painter.rect_stroke(
+                r,
+                2.0,
+                egui::Stroke::new((size * 0.08).max(1.5), p.color),
+                egui::StrokeKind::Outside,
+            );
+        }
     }
 }
 

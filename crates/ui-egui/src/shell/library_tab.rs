@@ -425,7 +425,7 @@ impl State {
                                     &mut self.atlas,
                                     &palette,
                                     None,
-                                    &[],
+                                    crate::pane::PaneMarks::default(),
                                     crate::Found::default(),
                                 );
                             });

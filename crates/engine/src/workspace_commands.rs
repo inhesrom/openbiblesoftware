@@ -137,6 +137,7 @@ pub const MENUS: &[Menu] = &[
             Separator,
             C("view.highlights"),
             C("view.highlight_styles"),
+            C("view.visual_filters"),
             MenuItem::Notebooks,
             Separator,
             MenuItem::Choice {
@@ -686,6 +687,16 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         |s| s.user.is_some(),
         |s, _| {
             s.workspace.push_effect(Effect::ShowHighlightStyles);
+            Ok(Value::Null)
+        },
+    ),
+    simple(
+        "view.visual_filters",
+        "Visual filters…",
+        None,
+        always,
+        |s, _| {
+            s.workspace.push_effect(Effect::ShowVisualFilters);
             Ok(Value::Null)
         },
     ),

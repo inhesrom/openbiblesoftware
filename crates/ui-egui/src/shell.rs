@@ -75,6 +75,7 @@ mod toolbar;
 mod toolbar_bar;
 mod toolbar_look;
 mod topic_guide_tab;
+mod visual_filters_window;
 mod word_info_tab;
 mod word_sections_view;
 mod word_study_tab;
@@ -95,6 +96,8 @@ struct Dwell {
 #[derive(Default)]
 struct TabUi {
     view: Option<ReadingView>,
+    /// The Visual filters' matches in the view's blocks (#211).
+    filters: crate::filters::FilterPainter,
     /// The header box's text while it is being edited.
     edit: Option<String>,
     filter: String,
@@ -242,6 +245,8 @@ pub(crate) struct State {
     fonts_ui: fonts_window::FontsUi,
     /// The Highlight styles window (View → Highlight styles…, #181).
     styles_ui: highlight_styles_window::StylesUi,
+    /// The Visual filters window (View → Visual filters…, #211).
+    pub(crate) filters_ui: visual_filters_window::FiltersUi,
     /// The Reading plans Tool's New plan form (#147).
     plans_ui: reading_plans_tab::PlansUi,
     /// The Copy verses window (#154).
@@ -347,6 +352,7 @@ impl Shell {
                 notes_ui: notes_tab::NotesUi::default(),
                 fonts_ui: fonts_window::FontsUi::default(),
                 styles_ui: highlight_styles_window::StylesUi::default(),
+                filters_ui: visual_filters_window::FiltersUi::default(),
                 plans_ui: reading_plans_tab::PlansUi::default(),
                 copy_ui: copy_window::CopyUi::default(),
                 collection_editor: None,
@@ -584,6 +590,7 @@ impl Shell {
                 Effect::OpenFolder(path) => self.st.open_folder(&path),
                 Effect::ReportProblem => self.st.show_report_problem(),
                 Effect::ShowHighlightStyles => self.st.styles_ui.open = true,
+                Effect::ShowVisualFilters => self.st.filters_ui.open = true,
                 Effect::FocusCommandBox => {
                     self.st.toolbar.close();
                     self.st.command_box.focus = true;
@@ -2183,6 +2190,7 @@ impl State {
         }
         self.sync_interlinear(tab, false);
         self.interlinear_hint(ui, tab);
+        let filters = self.filter_source(tab);
         let palette = self.palette;
         let mut text = self.session.text;
         text.footnote_markers = self
@@ -2226,7 +2234,23 @@ impl State {
             .map(crate::find::FindBar::found)
             .unwrap_or_default();
         let marks = self.marks.marks(&self.session, &view.doc);
-        let out = reading_pane(ui, view, &mut self.atlas, &palette, flash, &marks, found);
+        // The matches are for these filters in this document.
+        let doc_key = Arc::as_ptr(&view.doc) as usize as u64;
+        t.filters
+            .set(filters.map(|(key, source)| (key ^ doc_key.rotate_left(17), source)));
+        let pane_marks = crate::pane::PaneMarks {
+            annotations: &marks,
+            filters: Some(&mut t.filters),
+        };
+        let out = reading_pane(
+            ui,
+            view,
+            &mut self.atlas,
+            &palette,
+            flash,
+            pane_marks,
+            found,
+        );
         let user_moved = out.user_moved || found_moved;
         // A reopened Tab's scroll position (#214) goes back once the pane has drawn at its
         // width; the view keeps it across later relayouts until the user scrolls or it jumps.
@@ -2300,6 +2324,49 @@ impl State {
             self.text_drag_started(ui, tab, drag);
         }
         self.after_reading_pane(ui, tab, &out);
+    }
+
+    /// What Tab `tab`'s Visual filters (#211) are matched with, and a key that changes when
+    /// any of it does: none when the Tab shows no filter.
+    fn filter_source(&self, tab: TabId) -> Option<(u64, crate::filters::FilterSource)> {
+        use std::hash::{Hash, Hasher};
+        let filters = self.session.tab_visual_filters(tab);
+        if filters.is_empty() {
+            return None;
+        }
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.session.visual_filters_revision().hash(&mut h);
+        for f in &filters {
+            f.id.hash(&mut h);
+        }
+        let library = &self.session.library;
+        let mut lexicons = Vec::new();
+        for e in library.of_type(ResourceType::Lexicon) {
+            (&e.manifest.resource_id, e.manifest.revision).hash(&mut h);
+            lexicons.push(e.path.clone());
+        }
+        let mut originals = Vec::new();
+        for e in library.of_type(ResourceType::Bible) {
+            let language = [
+                obs_scripture::StrongsLanguage::Hebrew,
+                obs_scripture::StrongsLanguage::Greek,
+            ]
+            .into_iter()
+            .find(|l| obs_engine::key_words::is_original_language(&e.manifest.language, *l));
+            let Some(language) = language else {
+                continue;
+            };
+            (&e.manifest.resource_id, e.manifest.revision).hash(&mut h);
+            originals.push(crate::filters::OriginalBible::new(
+                language,
+                Some(e.path.clone()),
+                self.docs.get(&e.manifest.resource_id).cloned(),
+            ));
+        }
+        Some((
+            h.finish(),
+            crate::filters::FilterSource::new(filters, lexicons, originals),
+        ))
     }
 
     /// The interlinear kind and lines (#143) a Bible Tab shows: none when they are off, or
@@ -2756,9 +2823,12 @@ impl State {
                     self.header_box(ui, tab, header, width);
                     let title = self.title(tab, kind);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        self.tab_menu(ui, tab);
+                        self.tab_menu(ui, tab, narrow);
                         self.favorite_star(ui, tab);
                         if matches!(kind, TabKind::Resource(_)) {
+                            if !narrow {
+                                self.filters_menu(ui, tab);
+                            }
                             self.interlinear_controls(ui, tab, narrow);
                             self.parallel_resources(ui, tab, narrow);
                         }
@@ -3067,7 +3137,9 @@ impl State {
         }
     }
 
-    fn tab_menu(&mut self, ui: &mut Ui, tab: TabId) {
+    /// The Tab header's ⋯ menu; `narrow`: the header has no room for the Filters button, so
+    /// a Resource Tab's Visual filters are here.
+    fn tab_menu(&mut self, ui: &mut Ui, tab: TabId, narrow: bool) {
         let resource = match self.session.workspace.tab(tab).map(|t| &t.kind) {
             Some(TabKind::Resource(id)) => Some(id.clone()),
             _ => None,
@@ -3106,6 +3178,9 @@ impl State {
                 }
                 if let Some(g) = guide {
                     self.guide_menu(ui, g);
+                }
+                if narrow && resource.is_some() {
+                    self.filters_submenu(ui, tab);
                 }
                 if let Some(id) = &resource
                     && ui.button("About").clicked()
@@ -3202,6 +3277,7 @@ impl State {
         self.import_chooser(&ctx);
         self.fonts_window(&ctx);
         self.highlight_styles_window(&ctx);
+        self.visual_filters_window(&ctx);
         self.copy_window(&ctx);
         self.collection_editor_window(&ctx);
         self.page_tone_hint_ui(&ctx);
