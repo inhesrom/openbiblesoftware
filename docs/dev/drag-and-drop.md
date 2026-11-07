@@ -41,7 +41,13 @@ so an English Bible it is dropped on goes to 31:55. Selected anywhere else it is
 verse with no Standard equivalent (Unmapped) has nowhere to go in a Passage Tab, but a Search
 Tab or a lookup Tab still takes the text as typed.
 
-A Note drops only on a Resource's text, under the pointer: on the selection when dropped
+A dragged reference (a Commentary's "Rom 8:28") dropped on a Search Tab is searched for as
+written, as if typed in its box, like selected text. Dropped on a lookup Tab (a Lexicon,
+Dictionary, Word Study, Factbook or Topic Guide, whose entries are not keyed by references) it
+opens a Bible at its Passage in that Tab's Panel, as on its tab bar.
+
+A Note drops only on a Resource's text, under the pointer, wherever it is (words in the Panel's
+right quarter too: for a Note there is no new Panel beside it): on the selection when dropped
 inside it, else on the Verse under the pointer (a Bible) or the word (any other Resource). The
 Tab's header, its Contents, the pane's margins and the space after the text are no target.
 
@@ -60,7 +66,9 @@ Files dragged onto the window from the system (a `.obr`) still join the library 
   Bible's text is parsed in its Versification and translated through its Verse map, a range
   to the Standard range covering every Verse it maps to, even when the map reorders them; an
   Unmapped first verse fails), an optional `bible`, and where: `tab`, `panel` (its tab bar) or
-  `beside` (its right edge); none, a new Tab where its kind opens. A new Bible Tab gets
+  `beside` (its right edge); none, a new Tab where its kind opens. A Search Tab
+  searches for `text` (the reference as written) when given with `passage`, else for
+  `passage`. A new Bible Tab gets
   `Effect::NavigateStandard`, so it moves once its Verse map is loaded.
 - UI, `pane.rs`: a drag whose press was on a Scripture reference, or on a glyph inside a
   selection with text (the cluster hit, not the nearest caret), reports `PaneOutput::drag_out` and sets `ReadingView::dragging_out`, which keeps the
@@ -69,9 +77,11 @@ Files dragged onto the window from the system (a `.obr`) still join the library 
   After each window's dock is drawn, `workspace_drag` finds the Drop target under the pointer
   (`drop_panels`: that window's Panels and front Tabs), highlights it and drops on release. A
   reference's Passage comes from the reference target cache (the same Standard targets a
-  click uses); a drop made before the worker has them waits in `pending`.
+  click uses); a drop made before the worker has them waits in `pending`. On a Search Tab
+  it drops at once, as the text it is written as.
 - Notes: a Tab takes a Note only where `ReadingView::text_under` finds text (inside the pane
-  last drawn, `pane_rect`, on a laid-out line, never clamped as `pos_at` does). Then
+  last drawn, `pane_rect`, on a laid-out line, never clamped as `pos_at` does), across the
+  whole Panel (`note_target_at`: its right quarter is no edge for a Note). Then
   `annotation.reattach` with the selection params of where it was dropped, after the Move
   Note box (`reanchor_prompt`, also opened by the card menu's Move to selected text), drawn
   in the window of the Tab it was dropped on (a floating OS window draws its own, as the Note
@@ -96,9 +106,10 @@ Files dragged onto the window from the system (a `.obr`) still join the library 
 
 - `crates/engine/src/drag_drop_tests.rs`: every Drop target for a Passage and for text.
 - `crates/ui-egui/src/drag_drop_tests.rs` (real pointer events): Rom 8:28 from a Commentary
-  onto a Bible Tab and onto its Panel's edge; a selected word onto a tab bar; Esc; a drag
+  onto a Bible Tab and onto its Panel's edge, and onto a Search Tab (searched as written); a selected word onto a tab bar; Esc; a drag
   inside and outside the selection; a Library Tab row onto an edge; a Note card moved after
-  confirming (Cancel, Move, Undo); where a Note can drop.
+  confirming (Cancel, Move, Undo); where a Note can drop (words in a Panel's right quarter
+  too).
 - `floating_windows_tests.rs` (native windows, each with its own input): a Library Tab row
   dragged onto Panels of the same floating window; the Move Note box in a floating Bible's
   window, Esc there.

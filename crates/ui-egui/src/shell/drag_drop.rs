@@ -1,7 +1,8 @@
 //! Drag and drop across the Workspace (#216), besides docking Tabs (egui_tiles) and Resources
 //! dragged out of the Library launcher's pane (`toolbar.rs`, `library_drag`).
 //!
-//! - **From text:** a drag that starts on a Scripture reference carries its Passage; one that
+//! - **From text:** a drag that starts on a Scripture reference carries its Passage, and the
+//!   reference as written for a Search Tab; one that
 //!   starts inside the selection carries the selected text (a word, or a reference written
 //!   plainly). `pane.rs` tells the drag apart from selecting ([`crate::pane::DragOut`]).
 //! - **A Library Tab row** carries its Resource: it opens in the Panel it is dropped on, or in a
@@ -9,7 +10,8 @@
 //! - **A Note card** is dragged by its Note icon (the grip) onto a Resource's text: on
 //!   confirmation it is re-anchored there (`annotation.reattach`, one undo step), on the
 //!   selection when it was dropped inside it, else on the Verse (in a Bible) or word under the
-//!   pointer. Only text takes it: not the pane's margins, the Tab's header or Contents.
+//!   pointer. Only text takes it, wherever it is (the Panel's right quarter too): not the
+//!   pane's margins, the Tab's header or Contents.
 //! - **Drop targets** (CONTEXT.md), highlighted while dragging: a Tab's text (it goes there:
 //!   `workspace.drop` with `tab`), a Panel's tab bar (a new Tab in it), a Panel's right edge
 //!   (a new Panel beside it). Dropped back on the Tab it came from, nothing happens; Esc
@@ -19,7 +21,7 @@
 
 use egui::{Pos2, Rect, RichText, Ui, pos2, vec2};
 use egui_tiles::Tree;
-use obs_engine::{PanelId, TabId, TabKind};
+use obs_engine::{PanelId, TabId, TabKind, Tool};
 use obs_model::ResourceType;
 use obs_scripture::{RefStyle, Standard, format_passage};
 use serde_json::{Value, json};
@@ -302,10 +304,10 @@ impl State {
         }
         let pos = ui.input(|i| i.pointer.latest_pos());
         let released = ui.input(|i| i.pointer.any_released() || !i.pointer.any_down());
-        let target = pos
-            .and_then(|p| Some((target_at(panels, p)?, p)))
-            .filter(|((t, _), p)| self.takes(what, *t, *p))
-            .map(|(target, _)| target);
+        let target = pos.and_then(|p| match what {
+            Dragged::Note { .. } => self.note_target_at(panels, p),
+            _ => target_at(panels, p).filter(|(t, _)| self.takes(what, *t)),
+        });
         if released {
             if let (Some((what, _)), Some((target, _)), Some(p)) =
                 (self.drag.dragging.take(), target, pos)
@@ -324,26 +326,49 @@ impl State {
         ui.ctx().request_repaint();
     }
 
-    /// Whether `what` can drop on `target` with the pointer at `p`: never back on the Tab it
-    /// came from; a Note only on a Resource's text, under the pointer.
-    fn takes(&self, what: &Dragged, target: DropTarget, p: Pos2) -> bool {
-        match (what, target) {
-            (Dragged::Note { .. }, DropTarget::Tab(t)) => {
-                self.session
-                    .workspace
-                    .tab(t)
-                    .is_some_and(|t| matches!(t.kind, TabKind::Resource(_)))
-                    && self.text_under(t, p).is_some()
-            }
-            (Dragged::Note { .. }, _) => false,
-            (_, DropTarget::Tab(t)) => what.from() != Some(t),
+    /// Whether `what` (not a Note) can drop on `target`: never back on the Tab it came from.
+    fn takes(&self, what: &Dragged, target: DropTarget) -> bool {
+        match target {
+            DropTarget::Tab(t) => what.from() != Some(t),
             _ => true,
         }
     }
 
+    /// Where a Note can drop with the pointer at `p`: only on a Resource's text, wherever it
+    /// is under the pointer (the Panel's right quarter included), and the Panel's body to
+    /// highlight.
+    fn note_target_at(&self, panels: &[DropPanel], p: Pos2) -> Option<(DropTarget, Rect)> {
+        let d = panels.iter().find(|d| d.rect.contains(p))?;
+        let tab = d.tab?;
+        let resource = self
+            .session
+            .workspace
+            .tab(tab)
+            .is_some_and(|t| matches!(t.kind, TabKind::Resource(_)));
+        (resource && self.text_under(tab, p).is_some()).then(|| {
+            let body = Rect::from_min_max(pos2(d.rect.left(), d.rect.top() + TAB_BAR), d.rect.max);
+            (DropTarget::Tab(tab), body)
+        })
+    }
+
     fn dropped(&mut self, what: Dragged, target: DropTarget, p: Pos2) {
         match what {
-            Dragged::Reference { key, bible, .. } => {
+            Dragged::Reference {
+                key, label, bible, ..
+            } => {
+                // A Search Tab searches for the reference as written, as typed in its box,
+                // even one with no Standard equivalent: no need to wait for its Passage.
+                if let DropTarget::Tab(t) = target
+                    && !label.is_empty()
+                    && self
+                        .session
+                        .workspace
+                        .tab(t)
+                        .is_some_and(|t| t.kind == TabKind::Tool(Tool::Search))
+                {
+                    self.run("workspace.drop", &json!({ "tab": t.0, "text": label }));
+                    return;
+                }
                 self.drag.pending = Some((key, target, bible));
             }
             Dragged::Text { text, from, bible } => {

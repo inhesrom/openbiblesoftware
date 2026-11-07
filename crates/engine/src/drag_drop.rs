@@ -5,8 +5,9 @@
 //!
 //! - **a Tab** (its text): a Tab that follows Passages goes to a dropped Passage, as a jump its
 //!   Link set follows; a Lexicon, Dictionary, Word Study, Factbook or Topic Guide looks a
-//!   dropped word up (as typed into its box); a Search Tab searches for it. A Tab that can do
-//!   neither takes the drop as its Panel's tab bar does;
+//!   dropped word up (as typed into its box); a Search Tab searches for it, a dragged reference
+//!   as written. A Tab that can do neither takes the drop as its Panel's tab bar does, as a
+//!   lookup Tab takes a dragged reference;
 //! - **a Panel's tab bar**: a new Tab in that Panel;
 //! - **a Panel's right edge**: a new Panel beside it;
 //! - **nowhere in particular** (an empty Workspace): a new Tab where Tabs of its kind go.
@@ -39,13 +40,13 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[CommandSpec {
             name: "passage",
             kind: ParamKind::String,
             required: false,
-            help: "A Bible reference in the Standard numbering, e.g. `Rom 8:28` (a dragged reference)",
+            help: "A Bible reference in the Standard numbering, e.g. `Rom 8:28` (a dragged reference); a Search Tab searches for `text`, when given, instead",
         },
         ParamSpec {
             name: "text",
             kind: ParamKind::String,
             required: false,
-            help: "Dragged text, e.g. a selected word; a Bible reference with a chapter is read as one",
+            help: "Dragged text, e.g. a selected word or a reference as written; a Bible reference with a chapter is read as one",
         },
         ParamSpec {
             name: "bible",
@@ -113,6 +114,18 @@ fn run_drop(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         (None, None, None) => DropAt::Anywhere,
     };
     let bible = p.str("bible");
+    let text = p.str("text").map(str::trim).unwrap_or_default();
+    // A Search Tab searches for a dropped reference as written (`text`), else as `passage`.
+    if let DropAt::Tab(tab) = at
+        && s.workspace
+            .tab(tab)
+            .is_some_and(|t| t.kind == TabKind::Tool(Tool::Search))
+        && let Some(typed) = Some(text)
+            .filter(|t| !t.is_empty())
+            .or_else(|| p.str("passage").map(str::trim))
+    {
+        return drop_text(s, typed, number("from").map(TabId), bible, at);
+    }
     if let Some(text) = p.str("passage") {
         let passage = parse_reference(text, &Standard, None)
             .map_err(|e| failed(e.kind.to_string()))?
@@ -122,7 +135,6 @@ fn run_drop(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
             .ok_or_else(|| failed("no reference"))?;
         return drop_passage(s, passage, bible, at);
     }
-    let text = p.str("text").map(str::trim).unwrap_or_default();
     if text.is_empty() {
         return Err(failed("Nothing was dropped"));
     }

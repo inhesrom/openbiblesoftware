@@ -223,6 +223,21 @@ fn dropped_text_that_is_a_reference_navigates_and_a_word_is_looked_up_or_searche
     )
     .unwrap();
     assert_eq!(s.search_tab(search).unwrap().query, "grace");
+    // A dragged reference on it: searched for as written, else as its Passage; no Bible opens.
+    let tabs = s.workspace.tabs().count();
+    s.run(
+        "workspace.drop",
+        &json!({ "passage": "Romans 8:28", "text": "Rom 8:28", "tab": search.0 }),
+    )
+    .unwrap();
+    assert_eq!(s.search_tab(search).unwrap().query, "Rom 8:28");
+    s.run(
+        "workspace.drop",
+        &json!({ "passage": "Romans 8:28", "tab": search.0 }),
+    )
+    .unwrap();
+    assert_eq!(s.search_tab(search).unwrap().query, "Romans 8:28");
+    assert_eq!(s.workspace.tabs().count(), tabs);
     // A bare book name is a word, not the whole book.
     let out = s
         .run(

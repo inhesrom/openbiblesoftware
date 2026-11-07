@@ -164,6 +164,31 @@ fn glyph_rect(h: &Harness, tab: TabId, unit: usize, byte: usize) -> Rect {
     panic!("byte {byte} of unit {unit} is not laid out in view");
 }
 
+/// The centre of a glyph of Tab `tab`'s text right of `x` (in a Panel's right quarter), inside
+/// its pane.
+fn glyph_right_of(h: &Harness, tab: TabId, x: f32) -> Pos2 {
+    let view = h.shell.st.tabs[&tab].view.as_ref().unwrap();
+    let [ox, oy] = view.text_origin;
+    let [_, pane_top, _, pane_bottom] = view.pane_rect;
+    for (_, top, laid) in view.laid_in_view(900.0) {
+        for line in &laid.lines {
+            let y = oy + top + (line.top + line.text_bottom) / 2.0;
+            if y <= pane_top + 4.0 || y >= pane_bottom - 4.0 {
+                continue;
+            }
+            for item in &line.items {
+                for (bytes, x0, x1) in item.clusters() {
+                    let c = ox + (x0 + x1) / 2.0;
+                    if c > x + 4.0 && x1 - x0 > 2.0 && laid.to_unit(bytes.start).is_some() {
+                        return pos2(c, y);
+                    }
+                }
+            }
+        }
+    }
+    panic!("no text right of {x}");
+}
+
 /// Where `word` of the Commentary's text is on screen.
 fn commentary_spot(h: &Harness, tab: TabId, word: &str) -> Pos2 {
     let at = COMMENTARY_TEXT.find(word).unwrap();
@@ -266,6 +291,36 @@ fn rom_8_28_dragged_from_a_commentary_navigates_a_bible_tab_and_on_its_edge_open
         .unwrap();
     assert_eq!(new.history.current(), Some(rom(8, 28)));
     assert_eq!(ws.focused(), Some(new.id));
+}
+
+#[test]
+fn rom_8_28_dragged_from_a_commentary_onto_a_search_tab_searches_for_it_as_written() {
+    let (mut h, bible, commentary) = romans_harness();
+    let left = h.shell.session().workspace.panel_of(bible).unwrap();
+    let out = h
+        .shell
+        .run(
+            "workspace.drop",
+            &json!({ "text": "love", "panel": left.0 }),
+        )
+        .unwrap();
+    let search = TabId(out["tab"].as_u64().unwrap());
+    settle_all(&mut h);
+    let tabs = h.shell.session().workspace.tabs().count();
+    let (rect, _) = h.panels()[0].clone();
+    let body = pos2(rect.left() + 120.0, rect.center().y);
+    let from = commentary_spot(&h, commentary, "Rom 8:28");
+    drag_to(&mut h, from, body);
+    release(&mut h, body);
+    settle_drop(&mut h);
+    let ws = &h.shell.session().workspace;
+    assert_eq!(ws.tabs().count(), tabs, "no new Tab");
+    assert_eq!(ws.tab(bible).unwrap().history.current(), Some(rom(8, 1)));
+    assert_eq!(
+        h.shell.session().search_tab(search).unwrap().query,
+        "Rom 8:28"
+    );
+    assert_eq!(ws.focused(), Some(search));
 }
 
 #[test]
@@ -666,6 +721,31 @@ fn a_note_card_drops_only_on_a_resources_text() {
     h.frame();
     h.button(word, false);
     h.frames(2);
+    assert!(h.shell.st.drag.confirm.is_none());
+    // Words in the Panel's right quarter take it too (no new Panel for a Note): the body is
+    // highlighted, and dropped there the Move Note box asks.
+    h.shell
+        .run("tab.contents", &json!({ "tab": tb.0, "on": false }));
+    settle_all(&mut h);
+    let (left, _) = h.panels()[0].clone();
+    let edge = left.right() - left.width() * 0.25;
+    let far = glyph_right_of(&h, tb, edge);
+    h.shell.st.drag.dragging = Some((
+        super::super::drag_drop::Dragged::Note {
+            id: "n".into(),
+            reference: "Genesis 30:1 (TB)".into(),
+        },
+        egui::ViewportId::ROOT,
+    ));
+    assert!(over(&mut h, far), "{far:?}");
+    assert!(highlighted(
+        &h,
+        Rect::from_min_max(pos2(left.left(), left.top() + 31.0), left.max)
+    ));
+    h.button(far, false);
+    h.frames(2);
+    assert!(h.find("Move Note").is_some(), "{:?}", h.texts());
+    h.click_text("Cancel");
     assert!(h.shell.st.drag.confirm.is_none());
     drop(h);
     let _ = std::fs::remove_dir_all(&dir);
