@@ -131,6 +131,9 @@ struct TabUi {
     /// in `topic_previews_for`.
     topic_previews: std::collections::BTreeSet<topic_guide_tab::SubtopicId>,
     topic_previews_for: Option<String>,
+    /// Topic Guide: each subtopic row's width and height when last drawn, for the topic in
+    /// `topic_previews_for`: a row out of view takes its place without being laid out.
+    topic_rows: BTreeMap<topic_guide_tab::SubtopicId, (f32, f32)>,
     /// Where the header's Favorites ☆ was drawn last frame (#155).
     favorite_star: Option<egui::Rect>,
     /// History: "Clear History…" is asking to confirm.

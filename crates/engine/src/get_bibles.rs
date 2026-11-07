@@ -397,11 +397,15 @@ impl ResourceListing {
 
     /// Whether the listing matches a search box entry (title, abbreviation or module).
     pub fn matches(&self, query: &str) -> bool {
-        let q = query.trim().to_lowercase();
+        self.matches_lower(&query.trim().to_lowercase())
+    }
+
+    /// [`Self::matches`] for an entry already trimmed and in lower case.
+    fn matches_lower(&self, q: &str) -> bool {
         q.is_empty()
             || [&self.title, &self.abbreviation, &self.module]
                 .iter()
-                .any(|f| f.to_lowercase().contains(&q))
+                .any(|f| f.to_lowercase().contains(q))
     }
 }
 
@@ -686,7 +690,19 @@ pub struct GetBibles {
     licence: LicenceFilter,
     /// The Open catalogue and its rows, when a test sets one; else the compiled-in one.
     open: Option<(Vec<OpenSource>, Vec<ResourceListing>)>,
+    /// Counts changes of the catalog and the Open catalogue, for [`Self::all_cache`].
+    generation: u64,
+    /// The last "All" list ([`Self::all_listings`]): the Tab asks for it every frame, and
+    /// filtering and sorting a few thousand rows took most of a frame's budget (#183).
+    all_cache: std::sync::Mutex<Option<(AllKey, Vec<AllRow>)>>,
 }
+
+/// What an "All" list was made for: the search (trimmed, lower case), language, type and
+/// licence filters, and [`GetBibles::generation`].
+type AllKey = (String, Option<String>, ResourceFilter, LicenceFilter, u64);
+
+/// A row of the "All" list: an Open catalogue row (true) or a catalog listing, by index.
+type AllRow = (bool, usize);
 
 /// The compiled-in Open catalogue's rows.
 fn default_open_listings() -> &'static [ResourceListing] {
@@ -697,13 +713,6 @@ fn default_open_listings() -> &'static [ResourceListing] {
             .map(OpenSource::listing)
             .collect()
     })
-}
-
-fn by_title(a: &&ResourceListing, b: &&ResourceListing) -> std::cmp::Ordering {
-    a.title
-        .to_lowercase()
-        .cmp(&b.title.to_lowercase())
-        .then_with(|| a.module.cmp(&b.module))
 }
 
 impl GetBibles {
@@ -758,6 +767,13 @@ impl GetBibles {
     pub fn set_open_catalogue(&mut self, sources: Vec<OpenSource>) {
         let rows = sources.iter().map(OpenSource::listing).collect();
         self.open = Some((sources, rows));
+        self.generation += 1;
+    }
+
+    /// Show a freshly fetched catalog.
+    pub(crate) fn set_catalog(&mut self, catalog: ResourceCatalog) {
+        self.catalog = Some(catalog);
+        self.generation += 1;
     }
 
     /// The sections above All, titled, in order: the filter's Featured sections (see
@@ -792,7 +808,8 @@ impl GetBibles {
     }
 
     /// "All": the catalog's listings and the Open catalogue's rows that pass every filter
-    /// (type, search, language and licence), by title.
+    /// (type, search, language and licence), by title. Made again only when a filter or the
+    /// catalogs changed.
     pub fn all_listings(
         &self,
         query: &str,
@@ -800,17 +817,62 @@ impl GetBibles {
         filter: ResourceFilter,
         licence: LicenceFilter,
     ) -> Vec<&ResourceListing> {
-        let mut out = self
-            .catalog
-            .as_ref()
-            .map(|c| c.all(query, language, filter))
-            .unwrap_or_default();
-        out.extend(self.open_listings().iter().filter(|b| {
-            filter.accepts(b) && b.matches(query) && language.is_none_or(|l| b.language == l)
-        }));
-        out.retain(|b| licence.accepts(b.licence_class()));
-        out.sort_by(by_title);
-        out
+        let query = query.trim().to_lowercase();
+        let key: AllKey = (
+            query,
+            language.map(str::to_string),
+            filter,
+            licence,
+            self.generation,
+        );
+        let mut cache = self
+            .all_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if cache.as_ref().is_none_or(|(k, _)| *k != key) {
+            let rows = self.all_rows(&key.0, language, filter, licence);
+            *cache = Some((key, rows));
+        }
+        let rows = cache.as_ref().map_or(&[][..], |(_, rows)| rows.as_slice());
+        rows.iter()
+            .filter_map(|&(open, i)| {
+                if open {
+                    self.open_listings().get(i)
+                } else {
+                    self.catalog.as_ref().and_then(|c| c.listings.get(i))
+                }
+            })
+            .collect()
+    }
+
+    /// [`Self::all_listings`] made afresh, for a lower-case `query`.
+    fn all_rows(
+        &self,
+        query: &str,
+        language: Option<&str>,
+        filter: ResourceFilter,
+        licence: LicenceFilter,
+    ) -> Vec<AllRow> {
+        let passes = |b: &ResourceListing| {
+            filter.accepts(b)
+                && b.matches_lower(query)
+                && language.is_none_or(|l| b.language == l)
+                && licence.accepts(b.licence_class())
+        };
+        let catalog = self.catalog.iter().flat_map(|c| c.listings.iter());
+        let mut rows: Vec<(AllRow, &ResourceListing)> = catalog
+            .enumerate()
+            .map(|(i, b)| ((false, i), b))
+            .chain(
+                self.open_listings()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, b)| ((true, i), b)),
+            )
+            .filter(|(_, b)| passes(b))
+            .collect();
+        rows.sort_by_cached_key(|(_, b)| (b.title.to_lowercase(), b.module.clone()));
+        rows.into_iter().map(|(row, _)| row).collect()
     }
 
     /// Language codes among the listings the type and licence filters accept, the Open
@@ -880,7 +942,7 @@ impl GetBibles {
         if let Ok(text) = std::fs::read_to_string(path)
             && let Ok(catalog) = serde_json::from_str::<ResourceCatalog>(&text)
         {
-            self.catalog = Some(catalog);
+            self.set_catalog(catalog);
         }
     }
 
@@ -1366,7 +1428,7 @@ impl Session {
                 JobEventKind::Finished(out) => {
                     self.get_bibles.refreshing = None;
                     if let Ok(catalog) = out.downcast::<ResourceCatalog>() {
-                        self.get_bibles.catalog = Some(*catalog);
+                        self.get_bibles.set_catalog(*catalog);
                         self.get_bibles.offline = None;
                         self.get_bibles.checked_this_session = true;
                         self.fill_installed_versions();
