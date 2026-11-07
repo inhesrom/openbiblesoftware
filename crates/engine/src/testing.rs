@@ -870,6 +870,45 @@ pub fn openbible_geo(tipnr: Option<&obs_model::Resource>) -> obs_model::Resource
     .0
 }
 
+/// TIPNR's records of the people and places the Timeline excerpt names (David, Goliath,
+/// Abraham, Solomon, Jerusalem…; STEPBible, CC BY) as a People & places index (#185).
+pub fn tipnr_timeline() -> obs_model::Resource {
+    let text = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../formats/tests/assets/tipnr/tipnr-timeline-excerpt.txt"),
+    )
+    .unwrap();
+    let options = obs_formats::DatasetOptions {
+        resource_id: "tipnr".into(),
+        title: "Translators Individualised Proper Names".into(),
+        abbreviation: "TIPNR".into(),
+        ..Default::default()
+    };
+    obs_formats::import_tipnr(&text, &options).unwrap().0
+}
+
+/// The Theographic excerpt of the format tests (CC BY-SA) as a People & places index carrying
+/// the Timeline's Events dataset, its people and places matched to `tipnr` when given (#185).
+pub fn theographic(tipnr: Option<&obs_model::Resource>) -> obs_model::Resource {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/theographic");
+    let read = |name: &str| std::fs::read_to_string(dir.join(name)).unwrap();
+    let options = obs_formats::DatasetOptions {
+        resource_id: "theographic".into(),
+        title: "Theographic Bible Timeline".into(),
+        abbreviation: "Theographic".into(),
+        ..Default::default()
+    };
+    obs_formats::import_theographic_events(
+        &read("Events-excerpt.csv"),
+        &read("events-excerpt.json"),
+        &read("People-excerpt.csv"),
+        tipnr,
+        &options,
+    )
+    .unwrap()
+    .0
+}
+
 /// Easton's or Smith's Bible Dictionary, reduced to the public-domain Abraham and Abram
 /// entries of the #44 study fixtures (with the converter's Abram → Abraham alias).
 pub fn dictionary(id: &str) -> obs_model::Resource {

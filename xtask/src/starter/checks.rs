@@ -283,6 +283,7 @@ mod tests {
             cross_references: vec![],
             entities: vec![],
             mentions: vec![],
+            events: vec![],
             transliterations: vec![],
             renderings: Default::default(),
             volumes: Default::default(),

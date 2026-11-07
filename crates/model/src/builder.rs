@@ -9,7 +9,7 @@ use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, Versification};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::dataset::{CrossReference, Entity, Mention};
+use crate::dataset::{CrossReference, Entity, Event, Mention};
 use crate::key::{Key, KeyEntry};
 use crate::manifest::{
     FORMAT_VERSION, Manifest, OLDEST_FORMAT_VERSION, ResourceType, is_valid_resource_id,
@@ -47,6 +47,9 @@ pub struct Resource {
     pub entities: Vec<Entity>,
     /// A People & places index's mentions, ordered by entity, then Passage.
     pub mentions: Vec<Mention>,
+    /// A People & places index's Events dataset (#185, ADR 0011): Eras, Lifespans and Events,
+    /// ordered by id.
+    pub events: Vec<Event>,
     /// Transliteration index of the Lemma Keys (#20 rule 5), sorted. Derived from the Keys with
     /// the shared scheme, so not part of the content hash.
     pub transliterations: Vec<LemmaTransliteration>,
@@ -136,6 +139,12 @@ pub enum ValidationError {
     UnknownEntity {
         what: &'static str,
         entity: String,
+    },
+    /// An Event (#185) that is malformed: a duplicate or empty id, an empty title, an end
+    /// before its start, a date out of the calendar or a `part_of` naming no Event.
+    InvalidEvent {
+        event: String,
+        why: String,
     },
 }
 
@@ -229,6 +238,7 @@ impl fmt::Display for ValidationError {
             UnknownEntity { what, entity } => {
                 write!(f, "{what} refers to unknown entity `{entity}`")
             }
+            InvalidEvent { event, why } => write!(f, "event `{event}`: {why}"),
         }
     }
 }
@@ -269,6 +279,7 @@ pub struct ResourceBuilder {
     entities: Vec<Entity>,
     mentions: Vec<Mention>,
     volumes: BTreeMap<Book, String>,
+    events: Vec<Event>,
 }
 
 fn offset(n: usize) -> u32 {
@@ -290,6 +301,7 @@ impl ResourceBuilder {
             entities: Vec::new(),
             mentions: Vec::new(),
             volumes: BTreeMap::new(),
+            events: Vec::new(),
         }
     }
 
@@ -387,6 +399,11 @@ impl ResourceBuilder {
         self.volumes.insert(book, title.into());
     }
 
+    /// Add one Era, Lifespan or Event (a People & places index's Events dataset, #185).
+    pub fn add_event(&mut self, event: Event) {
+        self.events.push(event);
+    }
+
     pub fn count_dropped(&mut self, marker: &str) {
         *self.dropped.entry(marker.to_string()).or_insert(0) += 1;
     }
@@ -438,6 +455,8 @@ impl ResourceBuilder {
         let mut mentions = self.mentions;
         mentions.sort();
         mentions.dedup();
+        let mut events = self.events;
+        events.sort_by(|a, b| a.id.cmp(&b.id).then_with(|| a.cmp(b)));
         let transliterations = transliteration_index(&keys);
         let renderings = if self.manifest.resource_type == ResourceType::Bible {
             RenderingIndex::build(&units)
@@ -455,6 +474,7 @@ impl ResourceBuilder {
             cross_references,
             entities,
             mentions,
+            events,
             transliterations,
             renderings,
             volumes: self.volumes,
@@ -495,6 +515,8 @@ struct HashInput<'a> {
     entities: &'a [Entity],
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     mentions: &'a [Mention],
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    events: &'a [Event],
 }
 
 impl Resource {
@@ -510,6 +532,7 @@ impl Resource {
             cross_references: &self.cross_references,
             entities: &self.entities,
             mentions: &self.mentions,
+            events: &self.events,
         };
         let mut hasher = Sha256::new();
         // Serializing plain data into a Vec cannot fail; an empty hash input would still be
@@ -767,6 +790,12 @@ impl Resource {
             !self.mentions.is_empty(),
             ResourceType::PeopleAndPlaces,
         );
+        wrong_type(
+            "event",
+            !self.events.is_empty(),
+            ResourceType::PeopleAndPlaces,
+        );
+        self.validate_events(errors);
         for x in &self.cross_references {
             for (what, passage) in [
                 ("cross-reference source", x.from),
@@ -813,6 +842,60 @@ impl Resource {
                     what: "mention",
                     passage: m.passage,
                 });
+            }
+        }
+    }
+}
+
+impl Resource {
+    /// Events: unique non-empty ids, titles, calendar dates, an end not before the start, a
+    /// `part_of` that names an Event of this Resource, Standard Passages.
+    fn validate_events(&self, errors: &mut Vec<ValidationError>) {
+        let ids: HashSet<&str> = self.events.iter().map(|e| e.id.as_str()).collect();
+        let mut seen = HashSet::new();
+        for e in &self.events {
+            let mut bad = |why: String| {
+                errors.push(ValidationError::InvalidEvent {
+                    event: e.id.clone(),
+                    why,
+                });
+            };
+            if e.id.trim().is_empty() {
+                bad("empty id".into());
+            }
+            if !seen.insert(e.id.as_str()) {
+                bad("defined twice".into());
+            }
+            if e.title.trim().is_empty() {
+                bad("empty title".into());
+            }
+            for d in std::iter::once(&e.start).chain(e.end.as_ref()) {
+                let month_ok = d.month.is_none_or(|m| (1..=12).contains(&m));
+                let day_ok = match d.day {
+                    None => true,
+                    Some(day) => d.month.is_some() && (1..=31).contains(&day),
+                };
+                if !month_ok || !day_ok {
+                    bad(format!("date {d:?} is not in the calendar"));
+                }
+            }
+            if let Some(end) = e.end
+                && end < e.start
+            {
+                bad(format!("ends ({end:?}) before it starts ({:?})", e.start));
+            }
+            if let Some(parent) = &e.part_of
+                && (!ids.contains(parent.as_str()) || parent == &e.id)
+            {
+                bad(format!("part of unknown event `{parent}`"));
+            }
+            for p in &e.passages {
+                if !is_standard_passage(*p) {
+                    errors.push(ValidationError::NotStandardPassage {
+                        what: "event",
+                        passage: *p,
+                    });
+                }
             }
         }
     }

@@ -59,6 +59,7 @@ mod search_tab;
 mod search_views;
 mod starter_tab;
 mod tile_handles;
+mod timeline_tab;
 mod toolbar;
 mod toolbar_bar;
 mod toolbar_look;
@@ -145,6 +146,8 @@ struct TabUi {
     contents: contents_pane::ContentsUi,
     /// An Atlas Tab's map: view, search and the place picked (#150).
     map: Option<atlas_tab::MapUi>,
+    /// A Timeline Tab's view: where it looks and what it was fitted to (#185).
+    timeline: Option<timeline_tab::TimelineUi>,
 }
 
 /// A Resource Tab's location when it switched to a parallel resource (#151), in that
@@ -1793,6 +1796,7 @@ impl State {
             TabKind::Tool(Tool::History) => self.history_body(&mut body, tab),
             TabKind::Tool(Tool::ReadingPlans) => self.reading_plans_body(&mut body, tab),
             TabKind::Tool(Tool::Atlas) => self.atlas_body(&mut body, tab),
+            TabKind::Tool(Tool::Timeline) => self.timeline_body(&mut body, tab),
         }
     }
 
@@ -2977,6 +2981,7 @@ impl egui_tiles::Behavior<TabId> for State {
                 "tool.word_info",
                 "tool.cross_references",
                 "tool.atlas",
+                "tool.timeline",
                 "tool.favorites",
                 "tool.history",
             ] {

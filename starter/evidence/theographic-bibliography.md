@@ -1,0 +1,54 @@
+# Data Source Bibliography
+
+These are the works and datasets Theographic draws on, grouped by the part of the data each one supports. If you publish work built on Theographic, please also credit the original sources listed here and respect their licenses.
+
+## Passages
+
+- **King James Version, 1769 Cambridge Edition.** The text of every verse in `verses.verseText`, `mdText`, and `richText`.
+
+## Chronology (events, birth and death years)
+
+- Jones, Floyd Nolen. *The Chronology of the Old Testament: A Return to the Basics.* Green Forest, AR: Master Books. First edition 1993; Master Books edition 2004; 23rd edition 2026. ISBN 978-1-61458-210-6 (digital).
+  - Free PDF: [The Chronology of the Old Testament](https://floydnolenjonesministries.com/wp-content/uploads/2026/07/floydnolenjonesministries_com_files_131144963.pdf)
+  - Charts and related studies: [floydnolenjonesministries.com/chronology](https://floydnolenjonesministries.com/chronology/)
+  - **Basis for:** event `startDate`s (Old Testament and Gospels) and people `birthYear` / `deathYear`.
+- Atwood, Todd, ThM. Timelines of the Book of Acts (provided to the project). **Basis for:** event dates in Acts.
+- Torrey, R. A. *The Treasury of Scripture Knowledge* (1880), marginal dates after Ussher. **Basis for:** `verses.yearNum`.
+- Ussher, James. *The Annals of the World* (1650–54). The framework Jones builds on, and the source of the Treasury of Scripture Knowledge dates.
+
+For how these sources map onto each field, see [Chronology and Dates](chronology-and-dates.md).
+
+## People
+
+*Individuals, relationships, and verse tagging were identified using these references:*
+
+- STEPBible. *TIPNR – Translators Individualised Proper Names with all References.* STEPBible.org, CC BY 4.0. [GitHub: STEPBible/STEPBible-Data › Proper Nouns](https://github.com/STEPBible/STEPBible-Data/tree/master/Proper%20Nouns) (formerly "Tyndale Individualised Proper Names", Tyndale House)
+- Marshall Genealogy. [marshallgenealogy.org/bible](https://marshallgenealogy.org/bible/index.htm) ([archived copy](http://web.archive.org/web/20260412030941/https://marshallgenealogy.org/bible/index.htm); the live site was unresponsive in October 2026)
+- Complete Bible Genealogy. [complete-bible-genealogy.com](https://complete-bible-genealogy.com/)
+
+## Dictionary
+
+- Easton, M. G. *Easton's Bible Dictionary* (1897). Text parsed from the Christian Classics Ethereal Library XML edition: [ccel.org/ccel/easton/ebd2.xml](https://www.ccel.org/ccel/easton/ebd2.xml). **Basis for:** the `easton` table and the `dictText` / `dictionaryText` fields on people and places.
+
+## Places
+
+- OpenBible.info. *Bible Geocoding.* [openbible.info/geo](https://www.openbible.info/geo/). **Basis for:** `openBibleLat`, `openBibleLong`, `esvName`, and `comment` on places.
+- Pelagios Network. *Recogito*, used to link places to gazetteers such as GeoNames, Pleiades, and the Digital Atlas of the Roman Empire. [recogito.pelagios.org](https://recogito.pelagios.org/). **Basis for:** the `recogito*` fields on places.
+- Pleiades: A Gazetteer of Past Places. [pleiades.stoa.org](https://pleiades.stoa.org/). **Basis for:** Pleiades links, ancient-language names and earliest attestation dates in `geo/bible-places.geojson`.
+- Digital Manna. *Encyclopedia: Places.* [digitalmanna.org](https://www.digitalmanna.org/encyclopedia/places). **Basis for:** place identity (which records are one place), names, coordinates, verse lists and region notes in `geo/bible-places.geojson`.
+- Wikidata. [wikidata.org](https://www.wikidata.org/). **Basis for:** Wikidata links and additional Pleiades identifiers in `geo/bible-places.geojson`.
+- Stern, E. (ed.). *The New Encyclopedia of Archaeological Excavations in the Holy Land.* Jerusalem: Israel Exploration Society (1993), periods as published in PeriodO, [n2t.net/ark:/99152/p0dkm29](http://n2t.net/ark:/99152/p0dkm29). **Basis for:** the PeriodO periods on place dates in `geo/bible-places.geojson`.
+- Grossner, K., Janowicz, K. & Keßler, C. *Linked Places Format* and the World Historical Gazetteer validation schema. [github.com/LinkedPasts/linked-places-format](https://github.com/LinkedPasts/linked-places-format). **Basis for:** the structure of `geo/bible-places.geojson`.
+- GeoNames. [geonames.org](https://www.geonames.org/)
+- Wilson, M. (2009). "The Route of Paul's First Journey to Pisidian Antioch." *New Testament Studies* 55(4), 471. [academia.edu](https://www.academia.edu/15359253/_The_Route_of_Pauls_First_Journey_to_Pisidian_Antioch_)
+- Thompson, G. & Wilson, M. (2016). "The Route of Paul's Second Journey in Asia Minor." *Tyndale Bulletin* 67.2, 217–246. [academia.edu](https://www.academia.edu/31703977/THE_ROUTE_OF_PAULS_SECOND_JOURNEY_IN_ASIA_MINOR_IN_THE_STEPS_OF_ROBERT_JEWETT_AND_BEYOND)
+- Hurlbut, J. L. *Rand McNally Bible Atlas.* Chicago, IL: Rand McNally (1962). [archive.org](https://archive.org/details/randmcnallybibl00krae)
+- Brisco, T. V. *Holman Bible Atlas.* Nashville, TN: Broadman & Holman (1998).
+- Ancient World Mapping Center, University of North Carolina. [awmc.unc.edu](https://awmc.unc.edu/)
+- Åhlfeldt, Johan. *Digital Atlas of the Roman Empire (DARE).* [dh.gu.se/dare](https://dh.gu.se/dare/). Cited in `geo/pauls_journeys_all.geojson` as `imperium.ahlfeldt.se` links.
+- Scheidel, Walter. *ORBIS: The Stanford Geospatial Network Model of the Roman World.* [orbis.stanford.edu](https://orbis.stanford.edu/)
+
+### Map design (Viz.Bible maps)
+
+- Vector tiles generated by KlokanTech scripts. [github.com/klokantech/roman-empire](https://github.com/klokantech/roman-empire)
+- Map style adapted from *North Star* by Nat Slaughter, Mapbox.

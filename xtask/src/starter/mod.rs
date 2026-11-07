@@ -533,6 +533,8 @@ fn import(source: &Source, files: &[Vec<u8>]) -> Result<(Resource, ImportReport)
         "tahot" | "tagnt" => source.extra_files.len(),
         // `modern.jsonl`, then TIPNR (to match places to its ids).
         "openbible-geocoding" => 2,
+        // `events.json`, `People.csv`, then TIPNR (to give people and places its ids).
+        "theographic-events" => 3,
         _ => 0,
     };
     if files.len() != 1 + extras {
@@ -554,6 +556,7 @@ fn import(source: &Source, files: &[Vec<u8>]) -> Result<(Resource, ImportReport)
         "tipnr" => return import_tipnr_text(source, &files[0]),
         "sword-zip" => return import_sword_zip(source, &files[0]),
         "openbible-geocoding" => return import_openbible_geo(source, files),
+        "theographic-events" => return import_theographic(source, files),
         "wikisource-mhc" | "jfb-html" | "easton-zld" | "smith-rawld" => {
             return study::import(source, &files[0]);
         }
@@ -777,6 +780,26 @@ fn import_openbible_geo(source: &Source, files: &[Vec<u8>]) -> Result<(Resource,
     obs_formats::import_openbible_geocoding(
         text(0, "ancient.jsonl")?,
         text(1, "modern.jsonl")?,
+        Some(&tipnr),
+        &dataset_options(source),
+    )
+    .map_err(|e| anyhow!("{e}"))
+}
+
+/// Theographic's `Events.csv`, `events.json` and `People.csv` → a People & places index
+/// carrying the Timeline's Events dataset (#185), its people and places matched to the TIPNR
+/// file given fourth.
+fn import_theographic(source: &Source, files: &[Vec<u8>]) -> Result<(Resource, ImportReport)> {
+    let text = |i: usize, what: &str| {
+        std::str::from_utf8(&files[i]).with_context(|| format!("{what} is not UTF-8 text"))
+    };
+    let tipnr = import_tipnr(text(3, "the TIPNR file")?, &dataset_options(source))
+        .map_err(|e| anyhow!("TIPNR (for matching people and places): {e}"))?
+        .0;
+    obs_formats::import_theographic_events(
+        text(0, "Events.csv")?,
+        text(1, "events.json")?,
+        text(2, "People.csv")?,
         Some(&tipnr),
         &dataset_options(source),
     )

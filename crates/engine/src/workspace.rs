@@ -38,6 +38,8 @@ pub enum Tool {
     ReadingPlans,
     /// An offline map of the places a Passage names (#150).
     Atlas,
+    /// Biblical history on a zoomable axis: Eras, Lifespans and Events (#185).
+    Timeline,
 }
 
 /// The Guides.
@@ -65,6 +67,7 @@ impl Tool {
             Tool::History => "History",
             Tool::ReadingPlans => "Reading plans",
             Tool::Atlas => "Atlas",
+            Tool::Timeline => "Timeline",
         }
     }
 }
@@ -236,7 +239,9 @@ impl TabKind {
     pub fn default_key_schemes(&self) -> Vec<KeyScheme> {
         match self {
             TabKind::Guide(Guide::PassageGuide | Guide::ExegeticalGuide)
-            | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences | Tool::Atlas)
+            | TabKind::Tool(
+                Tool::TextComparison | Tool::CrossReferences | Tool::Atlas | Tool::Timeline,
+            )
             | TabKind::Resource(_) => vec![KeyScheme::Passage],
             TabKind::Guide(Guide::WordStudy) => vec![KeyScheme::StrongsNumber],
             // A Topic Guide follows (and moves) its Link set's Dictionary headwords.

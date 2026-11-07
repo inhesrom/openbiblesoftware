@@ -124,6 +124,7 @@ pub const IMPORTERS: &[&str] = &[
     "smith-rawld",
     "sword-zip",
     "openbible-geocoding",
+    "theographic-events",
 ];
 
 /// Hosts whose site terms restrict republishing (#20 decision 3).

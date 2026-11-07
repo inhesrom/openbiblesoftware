@@ -188,6 +188,8 @@ pub(super) struct References {
     pub pending_navigation: BTreeMap<TabId, Verse>,
     /// The Atlas's places, per Passage (#150).
     places: Queries<Vec<obs_engine::MapPlace>>,
+    /// The Timeline's Eras, Lifespans and Events (#185): one for the library.
+    timeline: Queries<obs_engine::Timeline, ()>,
 }
 
 impl References {
@@ -209,7 +211,19 @@ impl References {
             self.groups.clear();
             self.previews.clear();
             self.places.clear();
+            self.timeline.clear();
         }
+    }
+
+    /// The Timeline of the library's People & places indexes (#185); `None` while it is read
+    /// on a worker.
+    pub(super) fn timeline(
+        &mut self,
+        library: &Library,
+    ) -> Option<Result<Arc<obs_engine::Timeline>, String>> {
+        let library = library.clone();
+        self.timeline
+            .get_key((), move |()| obs_engine::timeline::read_timeline(&library))
     }
 
     /// The places the library's People & places indexes list in `passage`, with their

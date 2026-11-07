@@ -16,7 +16,8 @@
 //!   fallback of `lookup_strongs`;
 //! - Dictionary (`headword`): the entry units, aliases included;
 //! - Cross-reference set (`passage`): the Cross-references from it;
-//! - People & places index (`passage`): the mentions in it and the entities they name.
+//! - People & places index (`passage`): the mentions in it and the entities they name, and the
+//!   Events whose Passages overlap it (#185; left out of the snapshot when there are none).
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -24,7 +25,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use obs_model::{
-    CrossReference, Entity, Key, Mention, Resource, ResourceType, Span, SpanKind, TextUnit,
+    CrossReference, Entity, Event, Key, Mention, Resource, ResourceType, Span, SpanKind, TextUnit,
 };
 use obs_scripture::{Passage, Standard, StrongsNumber, parse_reference};
 use serde::{Deserialize, Serialize};
@@ -168,6 +169,8 @@ enum Body<'a> {
     People {
         entities: Vec<&'a Entity>,
         mentions: Vec<&'a Mention>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        events: Vec<&'a Event>,
     },
 }
 
@@ -224,6 +227,11 @@ pub fn snapshot(golden: &Golden, resource: &Resource) -> Result<String> {
                     .filter(|e| named.contains(e.id.as_str()))
                     .collect(),
                 mentions,
+                events: resource
+                    .events
+                    .iter()
+                    .filter(|e| e.passages.iter().any(|q| q.overlaps(*p)))
+                    .collect(),
             }
         }
         _ => bail!(
@@ -235,7 +243,9 @@ pub fn snapshot(golden: &Golden, resource: &Resource) -> Result<String> {
         Body::Verses { verses, .. } => verses.is_empty(),
         Body::Units { units } => units.is_empty(),
         Body::CrossReferences { cross_references } => cross_references.is_empty(),
-        Body::People { mentions, .. } => mentions.is_empty(),
+        Body::People {
+            mentions, events, ..
+        } => mentions.is_empty() && events.is_empty(),
     };
     if empty {
         bail!(

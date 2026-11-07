@@ -120,6 +120,9 @@ mod starter_tests;
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub mod testing;
+pub mod timeline;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod timeline_tests;
 pub mod toolbar;
 pub mod toolbar_settings;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -230,6 +233,7 @@ pub use search_views::{
     ResultsView, SearchAnalysis, chart_bars,
 };
 pub use session::{JobMode, Session};
+pub use timeline::{Emphasis, Timeline, TimelineEntry, TimelineView};
 pub use toolbar::{
     BUILTIN_LAYOUTS, Launcher, LayoutCard, LayoutThumbnail, LibraryLauncherRow,
     LibraryLauncherSection,

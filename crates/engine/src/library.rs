@@ -22,6 +22,7 @@ pub const STARTER_PREFERRED_ORDER: &[&str] = &[
     "strongs-greek",
     "tipnr",
     "openbible-geo",
+    "theographic",
 ];
 
 /// One Resource in the library.

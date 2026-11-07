@@ -107,7 +107,7 @@ _Avoid_: Topical Bible (as the kind), Concordance, Topic list
 A Resource made of Cross-references.
 
 **People & places index**:
-A Resource that identifies people and places and lists the Passages that mention them. Its places may carry Place locations (the Starter library's OpenBible.info geocoding does, under TIPNR's ids, so the two indexes describe one place, not two).
+A Resource that identifies people and places and lists the Passages that mention them. Its places may carry Place locations (the Starter library's OpenBible.info geocoding does, under TIPNR's ids, so the two indexes describe one place, not two). It may also carry the Eras, Lifespans and Events the Timeline shows (the Starter library's Theographic timeline does, naming people and places by TIPNR's ids).
 
 **Place location**:
 A modern location a place of the Bible has been identified with, with its coordinates and the Confidence of that identification. A place may have several (Eden has many tentative ones) or none (its site is unknown); the most confident is where the Atlas draws it.
@@ -260,7 +260,7 @@ One open thing in a Panel: a Resource, a Guide, or a Tool.
 _Avoid_: View, Document
 
 **Tool**:
-A Tab that is neither a Resource nor a Guide. In v0.1 the Tools are Text Comparison, Word Info, Search, and Notes; Cross-references, Favorites, History, Reading plans and the Atlas came later.
+A Tab that is neither a Resource nor a Guide. In v0.1 the Tools are Text Comparison, Word Info, Search, and Notes; Cross-references, Favorites, History, Reading plans, the Atlas and the Timeline came later.
 _Avoid_: Utility, Widget
 
 **Word Info**:
@@ -274,6 +274,22 @@ _Avoid_: Compare, Diff view
 **Atlas**:
 The Tool that maps the places a Passage names, on a base map built into the app (no tiles, no network). It follows its Link set; a single Verse widens to its chapter, so a Bible at Acts 13:14 maps all of Acts 13. Each place is drawn at its most confident Place location, labelled, and listed beside the map with its Confidence and the Verses that name it; a place no index locates is listed as not on the map. Drag pans, the wheel zooms, Find a place… finds any located place, and clicking a place opens its Factbook.
 _Avoid_: Map view, Bible map, Atlas Resource
+
+**Timeline**:
+The Tool that shows biblical history on a zoomable horizontal axis: the Eras as a band of named periods, then Lifespans, then Events, each at its dates as the index gives them. It follows its Link set: the Events the Passage tells are emphasised, with the Lifespans of the people they name, and the view centres on the one it tells most of; a Verse no Event tells widens to its chapter. Clicking an Event opens its Passage (its Link set moves there, or the ★ Bible opens at it), clicking a Lifespan opens the person's Factbook, clicking an Era shows all of it. Dates say how sure they are: "c. 2246 BC" where the source marks a date approximate, ranges for what lasts ("1055–1015 BC"), and a day only where the source gives one.
+_Avoid_: Chronology (as the Tool's name), Time chart, History view
+
+**Era**:
+A named period of the biblical story on the Timeline (the Patriarchs, the United Kingdom, the Exile), dated from the Events of the same chronology so the two agree.
+_Avoid_: Period, Age, Epoch
+
+**Lifespan**:
+One person's life on the Timeline, from birth to death, as a bar that opens their Factbook.
+_Avoid_: Life, Lifetime (as the record's name)
+
+**Event** (on the Timeline):
+Something that happened, on a day, in a year or over years (a reign, a journey), with the people and places it names and the Passages that tell it.
+_Avoid_: Incident, Happening
 
 **Current location**:
 The Key that a Tab is showing right now.

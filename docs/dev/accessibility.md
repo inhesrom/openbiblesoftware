@@ -3,7 +3,7 @@
 #68 gave Resource text an AccessKit tree. This audit covers the chrome added since #131:
 toolbar Launchers and panes, the Command box, Get Resources, the Starter library, the Guides
 (Passage Guide, Word Study, Factbook, Exegetical Guide, Topic Guide), interlinear lines, the Search views,
-Reading plans, Home, Favorites and History, the Atlas (#150), Collections, Copy verses, Fonts, Customize toolbar and the
+Reading plans, Home, Favorites and History, the Atlas (#150), the Timeline (#185), Collections, Copy verses, Fonts, Customize toolbar and the
 right-click menu. It checks three things, and all three run in `cargo xtask ci` (gate `a11y`, and again in
 `test`):
 
@@ -62,6 +62,7 @@ control has the keyboard and then checks that a ring in the focus colour is draw
 | Copy verses (#154) | Ctrl+L `copy verses` | Tab to *Copy plain text*, Enter | Esc |
 | Favorites (#155) | Ctrl+D, Ctrl+L `favorites` | Tab to the Favorite, Enter | Ctrl+W |
 | Keyboard shortcuts (#177) | Ctrl+L `keyboard shortcuts` | *Filter* `larger`; Tab to *Larger text shortcut: Ctrl+Plus*, Enter, Ctrl+↑; Tab to *Reset the Larger text shortcut*, Enter | Ctrl+W |
+| Timeline (#185) | Ctrl+L `timeline` | Tab to *Fit*, Enter; Tab to *Era: Patriarchs, …*, Enter (the view fits it); Tab to *Event: Birth of Abraham, …*, Enter (the Link set moves to Gen 11:26); Tab to *Lifespan: Abraham, …*, Enter (his Factbook) | Ctrl+W |
 | Panel separator | Tab | → → widens the left Panel by 48 points | — |
 | Floating window (#152), an OS window of its own | `tab.float` on a Search Tab, a Bible split beside it (set-up) | In that window: Tab to *Search for*, query, Enter; Tab to *Grid*, Enter; Tab to *Resize Panels*, → → | — |
 

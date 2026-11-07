@@ -404,3 +404,39 @@ sha256 = "da731f6e110bac4ea66a9f037a0a31cfb11c4f1efc1206aa9e109092b2c60087"
 [[source.extra_file]]
 url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Proper%20Nouns/TIPNR%20-%20Translators%20Individualised%20Proper%20Names%20with%20all%20References%20-%20STEPBible.org%20CC%20BY.txt"
 sha256 = "d595b9163d32a400bb0ef96b27a6de58335a63da840b82531fe9f5e1d16a318c"
+
+# The Timeline's events, lifespans and eras (#185): Theographic Bible Metadata, carried by a
+# People & places index (ADR 0011). GitHub raw files at a fixed commit never change, so they are
+# pinned directly. `Events.csv` names Verses and people by readable ids; `events.json` (the same
+# table) is read only for its approximate-date flag, which the CSV omits; `People.csv` gives
+# birth and death years (its Easton text is never read). TIPNR (the same pin as the `tipnr`
+# entry) is read only to give people and places TIPNR's ids.
+[[source]]
+resource_id = "theographic"
+importer = "theographic-events"
+url = "https://raw.githubusercontent.com/robertrouse/theographic-bible-metadata/3f461f2f3cf8939f2b79430ae238a36528024ed3/CSV/Events.csv"
+origin_url = "https://github.com/robertrouse/theographic-bible-metadata/raw/master/CSV/Events.csv"
+sha256 = "c042e1413e26657f5a7d4c4e653ed8b44827995a8b3c7c384a05e762d01f6384"
+title = "Theographic Bible Timeline"
+abbreviation = "Theographic"
+language = "en"
+edition = "theographic-bible-metadata commit 3f461f2 (2026-11-02): CSV/Events.csv, json/events.json and CSV/People.csv"
+publisher = "Theographic (Robert Rouse, Viz.Bible)"
+homepage = "https://github.com/robertrouse/theographic-bible-metadata"
+spdx = "CC-BY-SA-4.0"
+attribution = "Events, dates and people from Theographic Bible Metadata by Robert Rouse (https://github.com/robertrouse/theographic-bible-metadata), licensed under CC BY-SA 4.0. Its chronology follows Floyd Nolen Jones, The Chronology of the Old Testament (Master Books), and, for Acts, timelines by Todd Atwood. People and places matched to TIPNR by STEP Bible (https://www.STEPBible.org), CC BY 4.0. This Resource is shared under CC BY-SA 4.0."
+changes = "Converted from Events.csv, events.json and People.csv to the Open Bible resource format as a People & places index that carries an Events dataset. Kept for each event: its title, start date (astronomical years, with month and day where given), its end (the start plus its duration), the approximate-date flag, the event it is part of, its people and places (under TIPNR's ids where matched) and its Verses, joined into Passages. Added: a Lifespan for each person with both a birth and a death year, and for each other person with a 'Lifetime of' event (which it replaces); and eleven Eras (Primeval history to Early Church) dated from the dataset's own events. Omitted: notes, groups, people's descriptions and dictionary text, and every other table."
+provenance = "theographic-bible-metadata readme.md and LICENSE at the pinned commit: CC BY-SA 4.0 (GitHub reports CC-BY-SA-4.0). Archived in evidence/theographic-*."
+evidence = "evidence/theographic.md"
+
+[[source.extra_file]]
+url = "https://raw.githubusercontent.com/robertrouse/theographic-bible-metadata/3f461f2f3cf8939f2b79430ae238a36528024ed3/json/events.json"
+sha256 = "b0a84a4d310b3e81d2fbc43a86a84ee70b888b933c4e9b79c315c0405618e691"
+
+[[source.extra_file]]
+url = "https://raw.githubusercontent.com/robertrouse/theographic-bible-metadata/3f461f2f3cf8939f2b79430ae238a36528024ed3/CSV/People.csv"
+sha256 = "60d88c59577bb9afbbf63a13d74a60161d186050d53ddeb4f24bdc8407a0d32f"
+
+[[source.extra_file]]
+url = "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Proper%20Nouns/TIPNR%20-%20Translators%20Individualised%20Proper%20Names%20with%20all%20References%20-%20STEPBible.org%20CC%20BY.txt"
+sha256 = "d595b9163d32a400bb0ef96b27a6de58335a63da840b82531fe9f5e1d16a318c"
