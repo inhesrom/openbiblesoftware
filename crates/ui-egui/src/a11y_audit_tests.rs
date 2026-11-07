@@ -507,7 +507,7 @@ fn every_pane_menu_and_window_names_its_interactive_nodes() {
 // The keyboard alone: open, use, close.
 
 /// The node that has the keyboard: its name, role and bounds.
-fn focused(h: &Harness) -> Option<(String, Role, egui::Rect)> {
+pub(super) fn focused(h: &Harness) -> Option<(String, Role, egui::Rect)> {
     focused_in(h.tree.as_ref()?)
 }
 
@@ -528,7 +528,7 @@ fn focused_in(tree: &TreeUpdate) -> Option<(String, Role, egui::Rect)> {
 
 /// A stroke in the focus colour is drawn round the focused widget: the shell's focus ring, or
 /// a text field's own border.
-fn assert_focus_ring(h: &Harness) {
+pub(super) fn assert_focus_ring(h: &Harness) {
     assert_focus_ring_in(h.tree.as_ref().expect("an AccessKit tree"), &h.last_shapes);
 }
 

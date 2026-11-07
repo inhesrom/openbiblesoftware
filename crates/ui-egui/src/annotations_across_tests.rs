@@ -284,7 +284,7 @@ fn a_kjv_highlight_of_john_3_16_shows_in_web_bsb_and_tagnt() {
     for t in ["KJV", "WEB", "BSB", "TAGNT"] {
         assert!(painted_in(&h, t, yellow).is_empty(), "{t}");
     }
-    // Triple-click selects the whole Verse; Ctrl+1 highlights it in yellow.
+    // Triple-click selects the whole Verse; Alt+1 highlights it in yellow.
     let tab = h.tab_id("KJV");
     let line = verse_rects(&h, tab, jn(16))[0];
     let p = line.center();
@@ -302,7 +302,7 @@ fn a_kjv_highlight_of_john_3_16_shows_in_web_bsb_and_tagnt() {
         physical_key: None,
         pressed: true,
         repeat: false,
-        modifiers: Modifiers::COMMAND,
+        modifiers: Modifiers::ALT,
     });
     h.frames(3);
     let stored = h.shell.st.session.annotations(None).unwrap();

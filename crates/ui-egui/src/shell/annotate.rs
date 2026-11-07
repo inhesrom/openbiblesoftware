@@ -4,7 +4,7 @@
 //!
 //! - releasing a selection shows a floating **selection toolbar** (the active Highlight
 //!   palette's swatches, Note, Copy, Search this); the right-click menu's Selection target
-//!   offers the same actions (`context_menu.rs`, #142); Ctrl+1…9 (the palette's first nine
+//!   offers the same actions (`context_menu.rs`, #142); Alt+1…9 (the palette's first nine
 //!   styles, #181) and Ctrl+Shift+N are
 //!   their keys by default (the Selection keys, rebindable in Help → Keyboard shortcuts, #177),
 //!   and Ctrl+Z / Ctrl+Shift+Z undo and redo. None of these keys fire while a text field has
@@ -37,7 +37,7 @@ use crate::pane::{PaneOutput, has_text};
 use crate::selection::{Selection, copy_text, selected_text};
 use crate::theme;
 
-/// The Selection keys as the user has them (Ctrl+Shift+N and Ctrl+1…9 by default), with what
+/// The Selection keys as the user has them (Ctrl+Shift+N and Alt+1…9 by default), with what
 /// each does: each as every key report that presses it ([`pressed_as`]), so one bound to
 /// Ctrl+Plus runs on Ctrl+= too, as a command's does.
 fn selection_keys(
@@ -158,7 +158,7 @@ impl StyleBook {
         self.all.iter().filter(move |s| s.palette_id == id)
     }
 
-    /// The active palette's styles, in order (Ctrl+1 … Ctrl+9 for the first nine).
+    /// The active palette's styles, in order (Alt+1 … Alt+9 for the first nine).
     pub(super) fn active_styles(&self) -> Vec<&HighlightStyle> {
         self.of_palette(&self.active).collect()
     }
@@ -456,7 +456,7 @@ impl State {
             .is_some_and(|v| v.selection.is_some_and(|s| has_text(v, &s)))
     }
 
-    /// Ctrl+1…9 and Ctrl+Shift+N on the selection of `tab`, the Tab focused in the window
+    /// Alt+1…9 and Ctrl+Shift+N on the selection of `tab`, the Tab focused in the window
     /// the keys were typed in: whether one ran. Not while a text field has focus, and the
     /// keys stay unconsumed when there is no selection.
     pub(super) fn annotation_keys(&mut self, ui: &Ui, tab: Option<TabId>) -> bool {
@@ -477,7 +477,7 @@ impl State {
             ..extra_held(sc, &all)
         };
         let mut action = None;
-        // Ctrl+1…9 follow the active palette's order; a place past its last style is no key.
+        // Alt+1…9 follow the active palette's order; a place past its last style is no key.
         let active: Vec<String> = (self.marks.styles(&self.session).active_styles().iter())
             .map(|s| s.id.clone())
             .collect();

@@ -3300,6 +3300,8 @@ mod a11y_audit;
 mod floating_windows;
 #[path = "interlinear_tests.rs"]
 mod interlinear;
+#[path = "keyboard_navigation_tests.rs"]
+mod keyboard_navigation;
 #[path = "keyboard_shortcuts_tests.rs"]
 mod keyboard_shortcuts;
 #[path = "recently_closed_tests.rs"]

@@ -179,13 +179,13 @@ fn ctrl_2_draws_a_green_highlight_at_once_and_ctrl_z_removes_it() {
     }
     let green = h.shell.st.palette.built_in_color("green");
     assert!(painted(&h, green).is_empty());
-    // Ctrl+Alt+2 (AltGr+2 on Windows) is not Ctrl+2: no style.
+    // Ctrl+Alt+2 (AltGr+2 on Windows) is not Alt+2: no style (nor Ctrl+2, Go to Panel 2).
     press_key(&mut h, egui::Key::Num2, Modifiers::COMMAND | Modifiers::ALT);
     assert!(h.shell.st.session.annotations(None).unwrap().is_empty());
     assert!(h.shell.st.has_selection(tb));
 
-    // Ctrl+2: green on the very frame the key arrives, exactly over the word.
-    press_key(&mut h, egui::Key::Num2, Modifiers::COMMAND);
+    // Alt+2: green on the very frame the key arrives, exactly over the word.
+    press_key(&mut h, egui::Key::Num2, Modifiers::ALT);
     let rects = painted(&h, green);
     assert!(!rects.is_empty(), "no green Highlight painted");
     assert!(covers(union(&rects), r), "{rects:?} vs word {r:?}");
@@ -235,8 +235,8 @@ fn keys_that_need_shift_on_some_layouts_still_work_and_ctrl_shift_z_never_undoes
     let tb = h.tab_id("TB");
     let (_, _, _, r) = word_in_view(&h, tb, 200.0);
     double_click(&mut h, r.center());
-    // Digits need Shift on AZERTY: Ctrl+1 arrives as Num1 with Shift held.
-    press_key(&mut h, egui::Key::Num1, cmd_shift());
+    // Digits need Shift on AZERTY: Alt+1 arrives as Num1 with Shift held.
+    press_key(&mut h, egui::Key::Num1, Modifiers::ALT | Modifiers::SHIFT);
     let stored = h.shell.st.session.annotations(None).unwrap();
     assert_eq!(stored.len(), 1);
     assert_eq!(
@@ -283,7 +283,7 @@ fn a_rebound_selection_key_highlights_and_its_old_key_does_not() {
     let keys = crate::shell::annotate::SelectionKeyText::of(&h.shell.st.session);
     assert_eq!(keys.slot(1), "F7");
     assert_eq!(keys.note(), "Ctrl+Shift+N");
-    press_key(&mut h, egui::Key::Num2, Modifiers::COMMAND);
+    press_key(&mut h, egui::Key::Num2, Modifiers::ALT);
     h.frame();
     assert!(h.shell.st.session.annotations(None).unwrap().is_empty());
     assert!(h.shell.st.has_selection(tb));
@@ -302,14 +302,14 @@ fn a_rebound_selection_key_highlights_and_its_old_key_does_not() {
 }
 
 /// A Selection key swapped onto Ctrl+Plus (#177) runs on Ctrl+= too, as a command's does
-/// (#137): Larger text rebound to Ctrl+1 and swapped with yellow Highlight.
+/// (#137): Larger text rebound to Alt+1 and swapped with yellow Highlight.
 #[test]
 fn a_selection_key_on_ctrl_plus_also_runs_on_ctrl_equals() {
     let dir = folder("plus-equals");
     let mut h = launch(&dir);
     h.shell.run(
         "keys.set",
-        &json!({ "command": "view.text_larger", "key": "Ctrl+1", "swap": true }),
+        &json!({ "command": "view.text_larger", "key": "Alt+1", "swap": true }),
     );
     assert_eq!(
         h.shell.st.session.shortcut("selection.highlight_1"),
@@ -409,7 +409,7 @@ fn toolbar_swatches_and_right_click_apply_styles_and_the_newest_is_drawn_on_top(
 
     // The red underline is drawn over the glyphs, along the word's bottom.
     double_click(&mut h, r.center());
-    press_key(&mut h, egui::Key::Num5, Modifiers::COMMAND);
+    press_key(&mut h, egui::Key::Num5, Modifiers::ALT);
     let lines = painted(&h, palette.underline);
     assert!(!lines.is_empty());
     let line = union(&lines);
@@ -521,8 +521,8 @@ fn an_empty_note_is_not_saved_and_esc_saves_a_written_one() {
     press_key(&mut h, egui::Key::N, cmd_shift());
     h.frame();
     assert!(h.shell.st.note_editor.is_some());
-    // Ctrl+1 while typing is not a Highlight.
-    press_key(&mut h, egui::Key::Num1, Modifiers::COMMAND);
+    // Alt+1 while typing is not a Highlight.
+    press_key(&mut h, egui::Key::Num1, Modifiers::ALT);
     press_key(&mut h, egui::Key::Escape, Modifiers::NONE);
     assert!(h.shell.st.note_editor.is_none());
     assert!(h.shell.st.session.annotations(None).unwrap().is_empty());
@@ -627,7 +627,7 @@ fn a_passage_anchor_with_a_stale_origin_falls_back_to_its_whole_verses() {
     let tb = h.tab_id("TB");
     let (a, _, _, r) = word_in_view(&h, tb, 200.0);
     double_click(&mut h, r.center());
-    press_key(&mut h, egui::Key::Num1, Modifiers::COMMAND);
+    press_key(&mut h, egui::Key::Num1, Modifiers::ALT);
     let mut stored = h.shell.st.session.annotations(None).unwrap();
     assert_eq!(stored.len(), 1);
     let doc = std::sync::Arc::clone(&view(&h, tb).doc);
@@ -728,7 +728,7 @@ fn highlights_stay_aligned_with_their_glyphs_while_scrolling_and_after_a_text_si
     let yellow = h.shell.st.palette.built_in_color("yellow");
     let (a, b, word, r) = word_in_view(&h, tb, 250.0);
     double_click(&mut h, r.center());
-    press_key(&mut h, egui::Key::Num1, Modifiers::COMMAND);
+    press_key(&mut h, egui::Key::Num1, Modifiers::ALT);
     let at = assert_aligned(&h, yellow, &word);
     // The word under the Highlight, by hit-testing the laid-out text.
     let hit = |h: &mut Harness, p: Pos2| {
@@ -851,7 +851,7 @@ fn previews() {
         let (_, _, _, r) = word_in_view(&h, tb, y);
         y = r.bottom() + if i == 2 { 1.0 } else { 40.0 };
         double_click(&mut h, r.center());
-        press_key(&mut h, key, Modifiers::COMMAND);
+        press_key(&mut h, key, Modifiers::ALT);
     }
     let (_, _, _, r) = word_in_view(&h, tb, y);
     double_click(&mut h, r.center());
@@ -1004,7 +1004,7 @@ fn marks_are_not_painted_while_their_resource_is_being_reanchored() {
     let tb = h.tab_id("TB");
     let (_, _, _, r) = word_in_view(&h, tb, 200.0);
     double_click(&mut h, r.center());
-    press_key(&mut h, egui::Key::Num2, Modifiers::COMMAND);
+    press_key(&mut h, egui::Key::Num2, Modifiers::ALT);
     let green = h.shell.st.palette.built_in_color("green");
     assert!(covers(union(&painted(&h, green)), r));
 

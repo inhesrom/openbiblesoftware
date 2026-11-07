@@ -2,7 +2,8 @@
 //!
 //! Every binding the user can change is a command a key can run (one that needs no parameter
 //! but its Tab) or one of the Selection keys the Shell binds itself on the reading-pane
-//! selection (Ctrl+Shift+N and Ctrl+1…9, #62, #181). Each has a default key, its command's
+//! selection (Ctrl+Shift+N and Alt+1…9, #62, #181; the Highlight keys were Ctrl+1…9 until
+//! those went to the Panels, #215). Each has a default key, its command's
 //! [`CommandSpec::shortcut`]; the user's own keys override it by command id and are kept in
 //! the User database (`key_bindings`), applying at once.
 //!
@@ -18,8 +19,9 @@
 //! - `keys.reset {command, swap}` restores the default key (refused like `keys.set` when
 //!   another binding has it now), and `keys.reset_all` every default.
 //!
-//! Esc, Enter and Tab are never bound (they close, confirm and move the keyboard focus), and
-//! a key needs Ctrl or Alt unless it is a function key: a key alone or with Shift types text.
+//! Esc, Enter, and Tab without Ctrl are never bound (they close, confirm and move the keyboard
+//! focus; Alt+Tab is the system's), and a key needs Ctrl or Alt unless it is a function key: a
+//! key alone or with Shift types text.
 
 use std::collections::BTreeMap;
 
@@ -77,55 +79,55 @@ pub const SELECTION_KEYS: [SelectionKey; 1 + STYLE_SLOTS] = [
     highlight_key(
         "selection.highlight_1",
         "Highlight with the palette's style 1",
-        "Ctrl+1",
+        "Alt+1",
         0,
     ),
     highlight_key(
         "selection.highlight_2",
         "Highlight with the palette's style 2",
-        "Ctrl+2",
+        "Alt+2",
         1,
     ),
     highlight_key(
         "selection.highlight_3",
         "Highlight with the palette's style 3",
-        "Ctrl+3",
+        "Alt+3",
         2,
     ),
     highlight_key(
         "selection.highlight_4",
         "Highlight with the palette's style 4",
-        "Ctrl+4",
+        "Alt+4",
         3,
     ),
     highlight_key(
         "selection.highlight_5",
         "Highlight with the palette's style 5",
-        "Ctrl+5",
+        "Alt+5",
         4,
     ),
     highlight_key(
         "selection.highlight_6",
         "Highlight with the palette's style 6",
-        "Ctrl+6",
+        "Alt+6",
         5,
     ),
     highlight_key(
         "selection.highlight_7",
         "Highlight with the palette's style 7",
-        "Ctrl+7",
+        "Alt+7",
         6,
     ),
     highlight_key(
         "selection.highlight_8",
         "Highlight with the palette's style 8",
-        "Ctrl+8",
+        "Alt+8",
         7,
     ),
     highlight_key(
         "selection.highlight_9",
         "Highlight with the palette's style 9",
-        "Ctrl+9",
+        "Alt+9",
         8,
     ),
 ];
@@ -316,7 +318,10 @@ pub fn not_bindable(key: &str) -> Option<String> {
     match name {
         "Escape" => return Some("Esc is kept for closing and cancelling".into()),
         "Enter" => return Some("Enter is kept for text fields and buttons".into()),
-        "Tab" => return Some("Tab is kept for moving between controls".into()),
+        // Ctrl+Tab is the Tab switcher's (#215); Alt+Tab is the system's.
+        "Tab" if !mods.split('+').any(|m| m == "Ctrl") => {
+            return Some("Tab is kept for moving between controls".into());
+        }
         _ => {}
     }
     let function = name.len() > 1 && name.starts_with('F') && name[1..].parse::<u8>().is_ok();

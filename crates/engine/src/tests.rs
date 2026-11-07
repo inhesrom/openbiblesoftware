@@ -18,9 +18,11 @@ fn command_ids_are_unique_and_well_formed() {
         assert!(seen.insert(c.id), "duplicate {}", c.id);
         assert!(
             c.id.contains('.')
-                && c.id
-                    .bytes()
-                    .all(|b| b.is_ascii_lowercase() || b == b'.' || b == b'_'),
+                && c.id.bytes().all(|b| b.is_ascii_lowercase()
+                    || b.is_ascii_digit()
+                    || b == b'.'
+                    || b == b'_')
+                && c.id.as_bytes()[0].is_ascii_lowercase(),
             "bad id {}",
             c.id
         );

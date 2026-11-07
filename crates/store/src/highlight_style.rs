@@ -145,7 +145,7 @@ pub struct HighlightStyle {
     /// The five built-in styles keep their v0.1 ids (`yellow` …); others are UUIDv7.
     pub id: String,
     pub palette_id: String,
-    /// Order within its palette (Ctrl+1 … Ctrl+9 follow it); gaps are allowed.
+    /// Order within its palette (Alt+1 … Alt+9 follow it); gaps are allowed.
     pub position: i64,
     /// May be empty: the UI then calls it by its place in the palette.
     pub name: String,
@@ -157,7 +157,7 @@ pub struct HighlightStyle {
 }
 
 /// A named, ordered group of Highlight styles; one is active at a time and the selection
-/// toolbar, right-click menu and Ctrl+1…9 show it.
+/// toolbar, right-click menu and Alt+1…9 show it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HighlightPalette {
     /// `standard` for the seeded one; others are UUIDv7.

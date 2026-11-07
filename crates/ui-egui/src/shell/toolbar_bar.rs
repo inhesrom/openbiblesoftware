@@ -68,6 +68,7 @@ impl Shell {
         let mut act: Act = None;
         let mut menu_open = false;
         let mut toggle = None;
+        let mut first = None;
         let strip = ui.allocate_ui_with_layout(size, layout, |ui| {
             ui.set_min_size(size);
             ui.spacing_mut().item_spacing = vec2(GAP, GAP);
@@ -116,6 +117,7 @@ impl Shell {
                 let tip = self.launcher_tip(which, shows.label);
                 let resp = resp.on_hover_text(tip);
                 self.st.toolbar.buttons.insert(which, resp.rect);
+                first = first.or(Some(resp.id));
                 if resp.clicked() {
                     toggle = Some(which);
                 }
@@ -148,6 +150,8 @@ impl Shell {
             }
         });
         self.st.toolbar.bar = Some(strip.response.rect);
+        // F6 puts the keyboard on the first Launcher (#215).
+        self.st.areas.toolbar = first.map(|id| (id, strip.response.rect));
         self.st.toolbar.menu_open |= menu_open;
         if let Some(which) = toggle {
             self.st.toolbar.toggle(which);
