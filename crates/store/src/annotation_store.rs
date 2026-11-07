@@ -166,6 +166,44 @@ CREATE INDEX anchors_passage ON anchors (start_book, start_chapter, start_verse)
 CREATE INDEX anchors_resource ON anchors (resource_id) WHERE resource_id IS NOT NULL;
 ";
 
+/// Migration 10 → 11 (#186, ADR 0010): Note text becomes Note formatting, CommonMark.
+/// No table changes: [`escape_plain_notes`] runs first and rewrites each Note written as
+/// plain text so it shows exactly as before, and re-indexes it.
+pub(crate) const SCHEMA_11: &str = "";
+
+/// Before migration 10 → 11: every Note body was plain text. A body that would now read as
+/// formatting (`# heading`, `- item`, `*stars*`, `[link](x)`, leading spaces) is escaped
+/// (`escape_note_text`), so every Note looks exactly as it did; other bodies are untouched.
+/// `notes_fts` is rebuilt from the text the Notes show, without markup. `modified_at` stays:
+/// the user changed nothing.
+pub(crate) fn escape_plain_notes(c: &Connection) -> Result<(), StoreError> {
+    let notes: Vec<(String, String)> = c
+        .prepare("SELECT id, body FROM annotations WHERE kind = 'note'")
+        .map_err(sql)?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    for (id, plain) in notes {
+        let body = obs_model::escape_note_text(&plain);
+        if body != plain {
+            c.execute(
+                "UPDATE annotations SET body = ?1 WHERE id = ?2",
+                params![body, id],
+            )
+            .map_err(sql)?;
+        }
+        c.execute("DELETE FROM notes_fts WHERE annotation_id = ?1", [&id])
+            .map_err(sql)?;
+        c.execute(
+            "INSERT INTO notes_fts (body, annotation_id) VALUES (?1, ?2)",
+            params![index_form(&body), id],
+        )
+        .map_err(sql)?;
+    }
+    Ok(())
+}
+
 /// Stored Text ranges that cover no text: the rows schema 9's CHECK refuses.
 const TEXT_RANGES_COVERING_NO_TEXT: &str = "SELECT annotation_id FROM anchors
     WHERE resource_id IS NOT NULL AND NOT coalesce(end_byte > start_byte AND quote <> '', 0)
@@ -294,9 +332,10 @@ fn book_number(v: Verse) -> i64 {
     i64::try_from(v.book.index()).unwrap_or(0) + 1
 }
 
-/// Note body as `notes_fts` holds it: normalized words, as in the Search index.
+/// Note body as `notes_fts` holds it: the words the Note shows (its formatting's markup and
+/// link targets left out), normalized as in the Search index.
 fn index_form(body: &str) -> String {
-    obs_model::tokenize(body)
+    obs_model::tokenize(&obs_model::note_plain_text(body))
         .into_iter()
         .map(|t| t.text)
         .collect::<Vec<_>>()

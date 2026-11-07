@@ -354,9 +354,22 @@ pub fn copy_verses(
 /// inline markers, and `&` where it could start a character reference (`&amp;`, `&#38;`).
 /// What starts a block at the beginning of a line is [`markdown_escape_line_start`]'s job.
 pub fn markdown_escape(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
+    markdown_escape_part(text, 0..text.len())
+}
+
+/// [`markdown_escape`] of `text[range]`, an `&` at its end read with the text after it.
+pub fn markdown_escape_part(text: &str, range: std::ops::Range<usize>) -> String {
+    let part = &text[range.clone()];
+    let mut out = String::with_capacity(part.len());
+    let mut chars = part
+        .chars()
+        .chain(text[range.end..].chars().take(1))
+        .peekable();
+    let mut left = part.chars().count();
+    while left > 0
+        && let Some(c) = chars.next()
+    {
+        left -= 1;
         let entity = c == '&'
             && chars
                 .peek()
