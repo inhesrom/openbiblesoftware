@@ -921,7 +921,11 @@ fn footnote_previews() {
     h.click(at);
     let link = popover(&h).unwrap().link_rects[0];
     h.events.push(Event::PointerMoved(link.center()));
-    h.frames(8);
+    // The preview's verse is laid out off-thread: give it time to arrive.
+    for _ in 0..40 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        h.frame();
+    }
     h.screenshot(&dir.join("footnotes-pinned-reference.ppm"));
     h.events.push(Event::PointerMoved(pos2(10.0, 10.0)));
     press(&mut h, Key::Escape);
