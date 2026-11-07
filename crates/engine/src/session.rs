@@ -95,6 +95,8 @@ pub struct Session {
     pub(crate) annotations_revision: u64,
     /// The Last session as last written, to skip writes that change nothing.
     saved_session: Option<String>,
+    /// The last restore of a Backup, which Undo restore takes back (#217).
+    pub(crate) last_restore: Option<crate::backups::LastRestore>,
     /// How SWORD repositories are reached (#91). The app installs its network transport;
     /// until then only local `file://` repositories answer.
     fetch: std::sync::Arc<dyn obs_formats::sword_repo::Fetch>,
@@ -143,6 +145,7 @@ impl Session {
             reanchoring: crate::reanchor::Reanchoring::default(),
             annotations_revision: 0,
             saved_session: None,
+            last_restore: None,
             fetch: std::sync::Arc::new(obs_formats::sword_repo::LocalFetch),
         }
     }
@@ -223,6 +226,24 @@ impl Session {
         self.reanchor_library();
     }
 
+    /// Forget the preferences read from the User database that [`Session::attach_user`] only
+    /// overwrites when the database has them, so attaching a replaced one (a restore, #217)
+    /// leaves each it lacks at its default, as a launch with it would.
+    pub(crate) fn forget_user_preferences(&mut self) {
+        // The reading faces are what the UI loaded for the font choices, not a preference: it
+        // loads them again when the choices change.
+        self.text = TextSettings {
+            fonts: self.text.fonts,
+            ..TextSettings::default()
+        };
+        self.appearance = crate::appearance::Appearance::default();
+        self.fonts = crate::appearance::FontChoices::default();
+        self.toolbar = crate::toolbar_settings::ToolbarSettings::default();
+        self.guides.forget_arrangements();
+        self.copy_verses = crate::copy_verses::CopyVerses::default();
+        self.imports.reports.clear();
+    }
+
     /// Save the library's Preferred order.
     pub(crate) fn save_preferred_order(&self) -> Result<(), String> {
         let Some(user) = &self.user else {
@@ -290,6 +311,12 @@ impl Session {
         user.save_last_session(&json)?;
         self.saved_session = Some(json);
         Ok(())
+    }
+
+    /// Forget which Last session was written: the next save writes it whatever it holds (the
+    /// User database was replaced by a restore, #217).
+    pub(crate) fn forget_saved_session(&mut self) {
+        self.saved_session = None;
     }
 
     /// Restore the Last session, dropping Tabs whose Resource is gone. Returns whether there

@@ -313,17 +313,24 @@ impl State {
                     "Set with the OBS_LIBRARY environment variable before launch.",
                 );
             }
-            SettingKind::Action { command } => run = self.action(ui, setting, command),
+            SettingKind::Action { command, confirm } => {
+                run = self.action(ui, setting, command, confirm);
+            }
         }
         run
     }
 
     /// A Setting that is something to do: its button (Privacy and data asks first) and what
     /// it does.
-    fn action(&mut self, ui: &mut Ui, setting: &'static Setting, command: &'static str) -> Run {
+    fn action(
+        &mut self,
+        ui: &mut Ui,
+        setting: &'static Setting,
+        command: &'static str,
+        asks: bool,
+    ) -> Run {
         let mut run = None;
         let enabled = self.session.is_enabled(command);
-        let asks = setting.section == SettingsSection::PrivacyAndData;
         if asks && self.settings_ui.confirming == Some(setting.id) {
             ui.horizontal(|ui| {
                 ui.colored_label(

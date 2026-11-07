@@ -518,5 +518,19 @@ A Markdown or HTML file made from a Notebook (or all of them) or from the Notes 
 _Avoid_: Backup, Report, Notes dump
 
 **User database**:
-The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Home arrangement, Saved searches and the Search history, the Command box's recent entries, Copy presets, Collections, Resource tags, Highlight styles and palettes, the user's own Keyboard shortcuts and preferences. Resources and Search indexes are never part of it.
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Home arrangement, Saved searches and the Search history, the Command box's recent entries, Copy presets, Collections, Resource tags, Highlight styles and palettes, the user's own Keyboard shortcuts and preferences. Resources and Search indexes are never part of it. A Backup is a copy of it.
 _Avoid_: Profile, User library, Settings file
+
+### Your data
+
+**Backup**:
+One file (`.obsbackup`) holding everything in the User database, made with Back up now in Back up & restore (Tools → Back up & restore…, or Settings → Privacy and data), and restored with Restore from backup… after a preview of what will change (Notebooks, Notes, Highlights, Layouts, Reading plans, Favorites, History and Settings, now and after, with the Notebooks, Layouts and Reading plans it brings back or removes by name). A restore replaces all of the user's data, settings included (one the Backup does not have goes back to its default); the open Workspace stays as it is. A Backup knows its format version: one from an older app is upgraded as it is restored, one from a newer app is refused. The app also keeps Backups by itself, listed there with their dates and each restorable: one at each launch (the last five), one before an app upgrade changes the User database's format, and the Safety backups.
+_Avoid_: Snapshot, Archive, Export (for this), Restore point
+
+**Safety backup**:
+The Backup the app takes of the User database just before a restore replaces it, so the restore can be undone: Undo restore (in Back up & restore) restores it, and it stays in the list of kept Backups (the last five). A restore of an unreadable, damaged or newer file takes none and changes nothing.
+_Avoid_: Undo file, Restore point
+
+**Data export**:
+What Export everything writes: a zip with each Notebook's Notes as Markdown (as a Notes export) and every other part of the User database as JSON (Annotations with the remembered names of the Resources they were made on, Layouts, the Last session, Favorites, History, Reading plans, the Preferred order and settings), to read or keep elsewhere. Like a Notes export it is a copy, not a Backup: the app does not read it back.
+_Avoid_: Backup, Dump, Archive

@@ -111,6 +111,9 @@ pub enum TabKind {
     /// Settings (#213, Ctrl+,): every preference in one place, with a search box. Single
     /// instance.
     Settings,
+    /// Back up & restore (#217): Back up now, Restore from backup…, the Backups the app keeps
+    /// and Export everything. Keyless, single instance.
+    Backups,
     Guide(Guide),
     Tool(Tool),
 }
@@ -151,6 +154,7 @@ enum Slot {
     Home,
     KeyboardShortcuts,
     Settings,
+    Backups,
     Guide(Guide),
     Tool(Tool),
 }
@@ -170,6 +174,7 @@ impl TabKind {
                 | TabKind::Home
                 | TabKind::KeyboardShortcuts
                 | TabKind::Settings
+                | TabKind::Backups
                 | TabKind::Tool(
                     Tool::Notes
                         | Tool::WordInfo
@@ -211,6 +216,7 @@ impl TabKind {
             | TabKind::StarterLibrary
             | TabKind::Credits
             | TabKind::Home
+            | TabKind::Backups
             | TabKind::Tool(Tool::ReadingPlans) => HeaderBox::Keyless,
             _ => HeaderBox::Reference,
         }
@@ -237,6 +243,7 @@ impl TabKind {
                 | TabKind::Home
                 | TabKind::KeyboardShortcuts
                 | TabKind::Settings
+                | TabKind::Backups
                 | TabKind::Guide(Guide::Factbook)
                 | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History | Tool::ReadingPlans)
         )
@@ -269,6 +276,7 @@ impl TabKind {
             TabKind::Home => Slot::Home,
             TabKind::KeyboardShortcuts => Slot::KeyboardShortcuts,
             TabKind::Settings => Slot::Settings,
+            TabKind::Backups => Slot::Backups,
             TabKind::Guide(g) => Slot::Guide(*g),
             TabKind::Tool(t) => Slot::Tool(*t),
         }

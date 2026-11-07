@@ -44,6 +44,9 @@ use MenuItem::{Command as C, Layouts, Resources, Separator};
 /// The top menu bar (#18 rule 3). The Command box (#139) sits to the right of it. Library,
 /// Guides, Tools and Layouts are drawn as toolbar Launchers (#140, [`crate::toolbar`]) whose
 /// panes offer these items.
+/// The Back up & restore Tab's title (#217).
+pub const BACKUPS_TITLE: &str = "Back up & restore";
+
 pub const MENUS: &[Menu] = &[
     Menu {
         title: "Library",
@@ -83,6 +86,7 @@ pub const MENUS: &[Menu] = &[
             C("tool.timeline"),
             Separator,
             C("tool.copy_verses"),
+            C("data.backups"),
         ],
     },
     Menu {
@@ -699,6 +703,9 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         None,
         |s, p| open(s, p, TabKind::KeyboardShortcuts),
     ),
+    open_cmd("data.backups", "Back up & restore…", None, |s, p| {
+        open(s, p, TabKind::Backups)
+    }),
     CommandSpec {
         id: "tab.go",
         label: "Go to Key",
@@ -903,6 +910,7 @@ pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
         TabKind::Home => "Home".into(),
         TabKind::KeyboardShortcuts => "Keyboard shortcuts".into(),
         TabKind::Settings => "Settings".into(),
+        TabKind::Backups => BACKUPS_TITLE.into(),
         TabKind::Resource(id) => s
             .library
             .get(id)

@@ -29,6 +29,7 @@ use crate::workers::SnippetCache;
 
 mod annotate;
 mod atlas_tab;
+mod backups_tab;
 mod collections_ui;
 mod command_box;
 mod contents_pane;
@@ -248,6 +249,8 @@ pub(crate) struct State {
     keys_ui: keys_tab::KeysUi,
     /// The Settings Tab's confirmations and search focus (#213).
     settings_ui: settings_tab::SettingsUi,
+    /// The Back up & restore Tab's file dialog and restore preview (#217).
+    backups_ui: backups_tab::BackupsUi,
     /// The bench's feature scenarios (#183): one Tab's UI-thread work, timed each frame.
     pub(crate) timed_tab: TimedTab,
 }
@@ -321,6 +324,7 @@ impl Shell {
                 contents: Default::default(),
                 keys_ui: Default::default(),
                 settings_ui: Default::default(),
+                backups_ui: Default::default(),
                 timed_tab: TimedTab::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
@@ -812,6 +816,7 @@ impl Shell {
             || self.st.session.starter.is_checking()
             || self.st.picker.is_some()
             || self.st.export_waiting()
+            || self.st.data_dialog_waiting()
             || self.st.session.guides.is_busy()
             || self.st.session.bible_search_running()
             || self.st.session.word_study.is_busy()
@@ -854,6 +859,7 @@ impl Shell {
         self.st.session.load_starter_manifest_for_open_tab();
         self.st.poll_picker();
         self.st.poll_export();
+        self.st.poll_data_dialog();
         self.st.poll_csv_picker();
         self.apply_effects();
         if let Some(after) = self.background_repaint() {
@@ -1485,14 +1491,25 @@ impl State {
         self.toast = Some((m.into(), self.now));
     }
 
+    /// Every way a command runs (a button, a menu, the Command box, a key) comes here, so a
+    /// restore or its undo (#217) always saves the Notes being written first and forgets the
+    /// Notes Tab's drafts after.
     fn run(&mut self, id: &str, params: &Value) -> Option<Value> {
-        match self.session.run(id, params) {
+        let replaces_user_data = backups_tab::replaces_user_data(id);
+        if replaces_user_data && !self.settle_note_editors() {
+            return None;
+        }
+        let out = match self.session.run(id, params) {
             Ok(v) => Some(v),
             Err(e) => {
                 self.toast(e.to_string());
                 None
             }
+        };
+        if replaces_user_data && out.is_some() {
+            self.forget_notes_drafts();
         }
+        out
     }
 
     /// A Tab was opened: load its Resource if it has one.
@@ -1821,6 +1838,7 @@ impl State {
             TabKind::Home => self.home_body(&mut body, tab),
             TabKind::KeyboardShortcuts => self.keys_body(&mut body, tab),
             TabKind::Settings => self.settings_body(&mut body, tab),
+            TabKind::Backups => self.backups_body(&mut body, tab),
             TabKind::Guide(
                 g @ (obs_engine::Guide::PassageGuide | obs_engine::Guide::ExegeticalGuide),
             ) => self.passage_keyed_guide_body(&mut body, tab, g),
