@@ -346,3 +346,51 @@ fn a_reopened_tab_not_yet_drawn_shows_where_its_link_set_went_since_not_where_it
         "text at the top is {shown}"
     );
 }
+
+#[test]
+fn a_reopened_tab_closed_again_before_it_draws_keeps_where_it_was_scrolled() {
+    let mut h = Harness::new();
+    settle_all(&mut h);
+    // Two TBs in one Panel, the second at Gen 30:20 scrolled into a line, then the first made
+    // the Panel's active Tab.
+    let tb = h.tab_id("TB");
+    let tb_panel = h.shell.st.session.workspace.panel_of(tb).unwrap();
+    let out = h.shell.run(
+        "resource.open",
+        &json!({ "id": "test-bible", "panel": tb_panel.0 }),
+    );
+    let tb2 = TabId(out.unwrap()["tab"].as_u64().unwrap());
+    settle_all(&mut h);
+    link(&mut h, tb2, None);
+    go(&mut h, tb2, "Gen 30:20");
+    scroll(&mut h, tb2, 9.0);
+    let tb2_anchor = anchor(&mut h, tb2);
+    assert!(tb2_anchor.into > 0.0, "{tb2_anchor:?}");
+    h.shell.st.session.workspace.focus(tb);
+    h.shell.apply_effects();
+    settle_all(&mut h);
+
+    // Close the Panel and reopen it twice, the second TB never drawn in between.
+    let mut tb = tb;
+    for _ in 0..2 {
+        h.shell.run("panel.close", &json!({ "tab": tb.0 }));
+        settle_all(&mut h);
+        key(&mut h, Key::T, CTRL_SHIFT);
+        tb = h.shell.st.session.workspace.focused().unwrap();
+    }
+    let tb_panel = h.shell.st.session.workspace.panel_of(tb).unwrap();
+    let tb2 = (h.shell.st.session.workspace.tabs())
+        .find(|t| t.id != tb && h.shell.st.session.workspace.panel_of(t.id) == Some(tb_panel))
+        .map(|t| t.id)
+        .unwrap();
+
+    // Drawn at last, its text is where it was scrolled, as far into its line.
+    h.shell.st.session.workspace.focus(tb2);
+    h.shell.apply_effects();
+    settle_all(&mut h);
+    let view = (h.shell.st.tabs.get_mut(&tb2))
+        .and_then(|t| t.view.as_mut())
+        .unwrap();
+    let top = view.text_top(tb2_anchor.unit, tb2_anchor.byte, 600.0);
+    assert_eq!(top, Some(-tb2_anchor.into), "{:?}", view.text_anchor());
+}
