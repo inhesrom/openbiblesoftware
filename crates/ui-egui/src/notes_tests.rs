@@ -898,6 +898,100 @@ fn a_card_being_edited_is_saved_before_a_restore_and_never_written_over_it() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// Undo restore run from a key (#217) guards the card being edited as its button does: the
+/// words still waiting for their autosave are saved first and the editor ends, so no later
+/// save writes them over the data the undo brought back; words the database refuses hold the
+/// undo back, their card kept open.
+#[test]
+fn undo_restore_from_a_key_saves_the_card_being_edited_first() {
+    use std::sync::atomic::Ordering;
+    let dir = folder("undo-restore-key");
+    let mut h = launch(&dir);
+    let (store, _) = obs_store::UserStore::open(&dir.join("failing.db")).unwrap();
+    let (store, failures) = obs_engine::testing::WritesFail::changes(store);
+    h.shell.st.session.attach_user(Box::new(store));
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Gen 31:49", "body": "The heap" }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let backup = dir.join("before.obsbackup");
+    let backup_path = json!({ "path": backup.to_string_lossy() });
+    h.shell.run("data.back_up", &backup_path).unwrap();
+    h.shell
+        .run("annotation.edit", &json!({ "id": id, "body": "Galeed" }))
+        .unwrap();
+    let saved = |h: &Harness| {
+        h.shell
+            .st
+            .session
+            .annotation(&id)
+            .unwrap()
+            .body()
+            .to_string()
+    };
+    let restore = |h: &mut Harness| {
+        h.shell.run("data.restore", &backup_path).unwrap();
+        assert_eq!(saved(h), "The heap", "the Backup's Note");
+        // Key bindings are User data the restore replaced: bind Undo restore after it.
+        h.shell
+            .run(
+                "keys.set",
+                &json!({ "command": "data.undo_restore", "key": "F8" }),
+            )
+            .unwrap();
+        open_notes(h);
+    };
+    let autosave_window_passes = |h: &mut Harness| {
+        h.time += crate::shell::notes_tab::AUTOSAVE_SECS + 0.2;
+        h.frames(3);
+    };
+
+    // Words typed and not yet autosaved: F8 saves them, then undoes the restore.
+    restore(&mut h);
+    retype(&mut h, &id, "Typed after the restore");
+    assert!(card_editor(&h).is_some_and(|(_, e)| e.is_none()));
+    press_key(&mut h, egui::Key::F8, Modifiers::NONE);
+    assert_eq!(saved(&h), "Galeed", "the data from before the restore");
+    assert!(h.shell.st.session.last_restore().is_none());
+    assert!(card_editor(&h).is_none(), "the editing pass ended");
+    autosave_window_passes(&mut h);
+    assert_eq!(
+        saved(&h),
+        "Galeed",
+        "no later save writes the old words over it"
+    );
+
+    // Words the database refuses: F8 undoes nothing and the card keeps them.
+    restore(&mut h);
+    failures.store(u32::MAX, Ordering::SeqCst);
+    retype(&mut h, &id, "Refused words");
+    press_key(&mut h, egui::Key::F8, Modifiers::NONE);
+    h.frames(2);
+    assert_eq!(saved(&h), "The heap", "nothing was undone");
+    assert!(h.shell.st.session.last_restore().is_some());
+    assert_eq!(
+        card_editor(&h).map(|(t, _)| t).as_deref(),
+        Some("Refused words")
+    );
+
+    // The disk has room again: F8 saves the words first, then undoes the restore.
+    failures.store(0, Ordering::SeqCst);
+    press_key(&mut h, egui::Key::F8, Modifiers::NONE);
+    assert_eq!(saved(&h), "Galeed");
+    assert!(h.shell.st.session.last_restore().is_none());
+    assert!(card_editor(&h).is_none());
+    autosave_window_passes(&mut h);
+    assert_eq!(saved(&h), "Galeed");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// A refused save is retried on its own clock (#129): with the Notes Tab covered, its toast
 /// gone and nothing else moving, each failed try still asks for the frame of the next one, so
 /// the words save once the disk has room without the user touching the window.

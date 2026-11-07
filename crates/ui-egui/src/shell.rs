@@ -1491,14 +1491,25 @@ impl State {
         self.toast = Some((m.into(), self.now));
     }
 
+    /// Every way a command runs (a button, a menu, the Command box, a key) comes here, so a
+    /// restore or its undo (#217) always saves the Notes being written first and forgets the
+    /// Notes Tab's drafts after.
     fn run(&mut self, id: &str, params: &Value) -> Option<Value> {
-        match self.session.run(id, params) {
+        let replaces_user_data = backups_tab::replaces_user_data(id);
+        if replaces_user_data && !self.settle_note_editors() {
+            return None;
+        }
+        let out = match self.session.run(id, params) {
             Ok(v) => Some(v),
             Err(e) => {
                 self.toast(e.to_string());
                 None
             }
+        };
+        if replaces_user_data && out.is_some() {
+            self.forget_notes_drafts();
         }
+        out
     }
 
     /// A Tab was opened: load its Resource if it has one.

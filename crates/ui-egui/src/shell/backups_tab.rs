@@ -31,6 +31,12 @@ pub(crate) enum DataPick {
 /// Asks for a file: (what for, suggested file name) → the chosen path.
 pub(crate) type DataDialog = Arc<dyn Fn(DataPick, &str) -> Option<PathBuf> + Send + Sync>;
 
+/// Whether command `id` replaces the whole User database (a restore or its undo), so the
+/// Notes being written are saved before it and the Notes Tab's drafts forgotten after.
+pub(super) fn replaces_user_data(id: &str) -> bool {
+    matches!(id, "data.restore" | "data.undo_restore")
+}
+
 /// The Back up & restore Tab's state across frames.
 pub(crate) struct BackupsUi {
     pub(super) dialog: DataDialog,
@@ -168,10 +174,8 @@ impl State {
                     file_name(&last.from)
                 ));
                 if ui.button("Undo restore").clicked()
-                    && self.settle_note_editors()
                     && self.run("data.undo_restore", &json!({})).is_some()
                 {
-                    self.forget_notes_drafts();
                     self.toast("Restore undone: your data is back as it was before it");
                 }
             });
@@ -325,7 +329,6 @@ impl State {
                 };
                 let path = p.path.to_string_lossy().into_owned();
                 if self.run("data.restore", &json!({ "path": path })).is_some() {
-                    self.forget_notes_drafts();
                     self.toast(format!(
                         "Restored from {}. Undo restore takes it back.",
                         file_name(&p.path)
@@ -341,8 +344,9 @@ impl State {
     /// and the Notes card being edited, as closing the window does, so neither writes text
     /// typed before the restore over the restored Notes later (a card's failed save is
     /// retried by itself). False if one cannot be saved: it is shown with why, and nothing is
-    /// restored until it is saved or its changes discarded.
-    fn settle_note_editors(&mut self) -> bool {
+    /// restored until it is saved or its changes discarded. [`State::run`] calls it before
+    /// every command [`replaces_user_data`], whatever ran it.
+    pub(super) fn settle_note_editors(&mut self) -> bool {
         self.save_note();
         self.save_card_edit(true);
         if let Some(id) = self.notes_ui.editing.as_ref().map(|e| e.id.clone()) {
