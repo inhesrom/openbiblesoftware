@@ -3,8 +3,9 @@
 //!
 //! - **Toolbar** above the field: **B**old, *I*talic, Heading, bulleted list, numbered list,
 //!   block quote and link. Each acts on the selection (or the lines it touches; Heading, the
-//!   line or heading it starts on) and keeps the keys in the field; pressing one does not end
-//!   the editing pass. Bold and italic mark each
+//!   line or heading it starts on) and gives the keys back to the field; pressing one, or
+//!   reaching one with Tab or Shift+Tab (Space or Enter presses it), does not end the editing
+//!   pass. Bold and italic mark each
 //!   selected line on its own (empty lines skipped), since a span cannot run over a blank line
 //!   or a list item's marker; the link button is off while the selection spans lines. What is
 //!   bold, italic, a heading, a list item or a quote is read from the Note's CommonMark parse
@@ -12,7 +13,7 @@
 //!   here: Bold/Italic take off the delimiters of the span the parse found, a heading is
 //!   rewritten whole from its source and inline content as parsed (any ATX or setext form),
 //!   and Enter continues the item the parse found. A nested item is written under its parent's
-//!   text, as CommonMark nests it. Bold or italic over lines that the change cuts (into a mark
+//!   text, as CommonMark nests it, and so are the item's own paragraphs below it, past gaps. Bold or italic over lines that the change cuts (into a mark
 //!   on each line, or blocks of their own) is cut into one span per line first, so each line
 //!   keeps its formatting. A code span, link, image or autolink is opaque, never cut or
 //!   re-aligned: one the selection takes in whole is copied as typed; while the selection (or
@@ -93,9 +94,10 @@ impl Format {
 /// What the editor did this frame.
 pub(super) struct NoteEditorOutput {
     pub(super) response: egui::Response,
-    /// The pointer is on the toolbar: the field lost the keys to it only for a moment, so
-    /// this is not the end of editing.
-    pub(super) on_toolbar: bool,
+    /// The keys left the editor this frame: neither the field nor a toolbar button has them,
+    /// and the pointer is not pressing the toolbar. Moving them from the field to the toolbar
+    /// (Tab, Shift+Tab, a press) is not leaving: the editing pass goes on.
+    pub(super) left: bool,
 }
 
 /// The toolbar and the text field (`id`), `rows` high.
@@ -106,6 +108,10 @@ pub(super) fn note_editor(
     rows: usize,
 ) -> NoteEditorOutput {
     let mut action = None;
+    // Whether a toolbar button has the keys, or had them a moment ago.
+    let (mut toolbar_focus, mut toolbar_lost) = (false, false);
+    // A button pressed with Enter or Space: that key is the press, not typing for the field.
+    let mut pressed_with_keys = false;
     let sel = selection(ui.ctx(), id, text);
     // Why a button is off for this selection, if it is.
     let off = |f: Format| format_blocked(text, sel.clone(), f);
@@ -125,8 +131,11 @@ pub(super) fn note_editor(
                     ui.ctx()
                         .accesskit_node_builder(response.id, |n| n.set_description(why));
                 }
+                toolbar_focus |= response.has_focus();
+                toolbar_lost |= response.lost_focus();
                 if response.clicked() {
                     action = Some(f);
+                    pressed_with_keys |= response.has_focus();
                 }
             }
         })
@@ -147,6 +156,15 @@ pub(super) fn note_editor(
             }
         });
         continue_list_on_enter(ui, id, text);
+    }
+    if pressed_with_keys {
+        ui.input_mut(|i| {
+            i.events.retain(|e| match e {
+                egui::Event::Key { key, .. } => !matches!(key, Key::Enter | Key::Space),
+                egui::Event::Text(t) => t != " ",
+                _ => true,
+            });
+        });
     }
     if let Some(f) = action {
         edit_in_place(ui.ctx(), id, text, |t, sel| apply_format(t, sel, f));
@@ -170,9 +188,10 @@ pub(super) fn note_editor(
     if on_toolbar {
         response.request_focus();
     }
+    let inside = on_toolbar || toolbar_focus || response.has_focus();
     NoteEditorOutput {
+        left: (response.lost_focus() || toolbar_lost) && !inside,
         response,
-        on_toolbar,
     }
 }
 
@@ -627,6 +646,10 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
     // nested item goes under its parent's text, as CommonMark nests it (`- ` two columns,
     // `1. ` three).
     let mut cols = parent_columns(text, &lines[..first]);
+    // The list item open at each level of the Note as it was: its content column then, and
+    // now (`None` once it is no longer an item). The lines inside an item below the
+    // selection are read against it ([`ItemColumns`]).
+    let mut owners = ItemColumns(cols.iter().map(|&c| (c, Some(c))).collect());
     let mut out: Vec<String> = Vec::new();
     for l in chosen {
         let rest = match &l.heading {
@@ -677,43 +700,71 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
         } else {
             rest.to_string()
         };
-        if matches!(f, Format::Bullet | Format::Numbered) && !remove {
+        let new_col = if matches!(f, Format::Bullet | Format::Numbered) && !remove {
             let indent = level.checked_sub(1).map_or(0, |p| cols[p]);
             cols.truncate(level);
             cols.push(indent + marker.len());
             out.push(format!("{}{marker}{rest}", " ".repeat(indent)));
+            Some(indent + marker.len())
         } else {
             cols.clear();
             out.push(format!("{marker}{rest}"));
+            None
+        };
+        match l.kind.list_level() {
+            Some(old) => owners.open(old, l.content - l.source.start, new_col),
+            // An item's own paragraphs and gaps are inside the list; other lines end it.
+            None if l.kind == NoteLineKind::Blank
+                || text[l.source.clone()].starts_with([' ', '\t']) => {}
+            None => owners.0.clear(),
         }
     }
     let replaced = out.join("\n");
-    // The items nested below the selection, written again under their (new) parents. When
-    // the last line stops being a list item, they move out a level: without an item above
-    // they would read as text.
+    // What is nested below the selection, written again under its (new) parents: nested
+    // items, and an item's own paragraphs (and quotes, code) indented under its text, gaps
+    // between them kept. When the last line stops being a list item, its nested items move
+    // out a level: without an item above they would read as text.
     let still_list = !remove && matches!(f, Format::Bullet | Format::Numbered);
     let after = last + 1;
     let mut moved: Vec<String> = Vec::new();
-    if let Some(depth) = lines
-        .get(after)
-        .and_then(|l| l.kind.list_level())
-        .filter(|d| *d > 0)
-    {
-        let shift = if still_list { 0 } else { usize::from(depth) };
-        for l in &lines[after..] {
-            let Some(level) = l.kind.list_level().filter(|level| *level > 0) else {
-                break;
-            };
-            let level = (usize::from(level) - shift.min(usize::from(level))).min(cols.len());
-            let line = &text[l.source.clone()];
-            let item = line.trim_start_matches([' ', '\t']);
-            let marker_end = l.content.saturating_sub(l.source.end - item.len());
-            let (marker, rest) = item.split_at(marker_end.min(item.len()));
-            let indent = level.checked_sub(1).map_or(0, |p| cols[p]);
-            cols.truncate(level);
-            cols.push(indent + marker.len());
-            moved.push(format!("{}{marker}{rest}", " ".repeat(indent)));
+    // Gaps are kept only when something nested follows them.
+    let mut gap: Vec<String> = Vec::new();
+    let mut shift: Option<usize> = None;
+    for l in &lines[after..] {
+        let line = &text[l.source.clone()];
+        if l.kind == NoteLineKind::Blank {
+            gap.push(line.to_string());
+            continue;
         }
+        let item = line.trim_start_matches([' ', '\t']);
+        let written = match l.kind.list_level() {
+            Some(0) => break,
+            Some(old) => {
+                let at = usize::from(old);
+                let shift = *shift.get_or_insert(if still_list { 0 } else { at });
+                let level = (at - shift.min(at)).min(cols.len());
+                let marker_end = l.content.saturating_sub(l.source.end - item.len());
+                let (marker, rest) = item.split_at(marker_end.min(item.len()));
+                let indent = level.checked_sub(1).map_or(0, |p| cols[p]);
+                cols.truncate(level);
+                cols.push(indent + marker.len());
+                owners.open(old, l.content - l.source.start, Some(indent + marker.len()));
+                format!("{}{marker}{rest}", " ".repeat(indent))
+            }
+            None => {
+                let indent = &line[..line.len() - item.len()];
+                if indent.is_empty() || indent.contains('\t') {
+                    break;
+                }
+                match owners.inside(indent.len()) {
+                    None => break,
+                    Some(None) => line.to_string(),
+                    Some(Some(col)) => format!("{}{item}", " ".repeat(col)),
+                }
+            }
+        };
+        moved.append(&mut gap);
+        moved.push(written);
     }
     let from = lines[first].source.start;
     let to = match moved.len() {
@@ -841,6 +892,33 @@ fn block_start_escaped(rest: &str) -> String {
         format!("{}\\{}", &rest[..at], &rest[at..])
     } else {
         rest.to_string()
+    }
+}
+
+/// The list item open at each nesting level, as the Note was: its content column then, and
+/// its content column as rewritten (`None` once it is no longer an item).
+struct ItemColumns(Vec<(usize, Option<usize>)>);
+
+impl ItemColumns {
+    /// An item at `level`, its content at column `old` (now `new`): it closes the items
+    /// nested deeper.
+    fn open(&mut self, level: u8, old: usize, new: Option<usize>) {
+        let level = usize::from(level);
+        self.0.truncate(level);
+        // A level with no item found: none of its lines are read against it.
+        self.0.resize(level, (usize::MAX, None));
+        self.0.push((old, new));
+    }
+
+    /// A line inside the list indented `indent` columns: in the deepest item whose content
+    /// it reaches (closing those nested deeper), as CommonMark reads it. Where it goes now:
+    /// the same distance past that item's content column, or `Some(None)` to stay as it is
+    /// (its item is no longer one); `None` when it is in no item.
+    fn inside(&mut self, indent: usize) -> Option<Option<usize>> {
+        let at = self.0.iter().rposition(|(old, _)| *old <= indent)?;
+        self.0.truncate(at + 1);
+        let (old, new) = self.0[at];
+        Some(new.map(|new| new + indent - old))
     }
 }
 
@@ -1396,6 +1474,53 @@ mod tests {
             levels,
             [NoteLineKind::Quote, NoteLineKind::Bullet { level: 0 }]
         );
+    }
+
+    #[test]
+    fn line_formats_keep_what_is_nested_below_a_gap_under_its_item() {
+        // (kind, shown text) of each line that shows something.
+        let shown = |t: &str| {
+            obs_model::parse_note_text(t)
+                .into_iter()
+                .filter(|l| l.kind != NoteLineKind::Blank)
+                .map(|l| (l.kind, l.text))
+                .collect::<Vec<_>>()
+        };
+        let numbered = |level, number| NoteLineKind::Numbered { level, number };
+        // A nested item after a gap moves under the numbered parent's text.
+        let (new, _) = applied("- a\n\n  - b", "a", Format::Numbered);
+        assert_eq!(new, "1. a\n\n   - b");
+        assert_eq!(
+            shown(&new),
+            [
+                (numbered(0, 1), "a".to_string()),
+                (NoteLineKind::Bullet { level: 1 }, "b".to_string()),
+            ]
+        );
+        // An item's own paragraph after a gap, and an item nested below it, stay in it.
+        let text = "- a\n\n  more\n\n  - b\n\n    deeper\n\nafter";
+        let (new, _) = applied(text, "a", Format::Numbered);
+        assert_eq!(new, "1. a\n\n   more\n\n   - b\n\n     deeper\n\nafter");
+        // The same blocks, in the same items, as the HTML export reads them.
+        let html = |t: &str| {
+            obs_engine::notes_export::note_html(t)
+                .replace("<ol>", "<ul>")
+                .replace("</ol>", "</ul>")
+        };
+        assert_eq!(html(&new), html(text));
+        // Back to bullets: the same nesting.
+        let (back, _) = applied(&new, "a", Format::Bullet);
+        assert_eq!(back, text);
+        // A gap before a top-level item or text: nothing below is moved.
+        let (new, _) = applied("- a\n\n- b\n\n  c", "a", Format::Numbered);
+        assert_eq!(new, "1. a\n\n- b\n\n  c");
+        // A parent that stops being an item: its nested item after a gap moves out a level.
+        let (new, _) = applied("- a\n\n  - b", "a", Format::Quote);
+        assert_eq!(new, "> a\n\n- b");
+        assert_eq!(shown(&new)[1].0, NoteLineKind::Bullet { level: 0 });
+        // And its own paragraph moves out with it.
+        let (new, _) = applied("- a\n  - b\n\n    more", "a", Format::Quote);
+        assert_eq!(new, "> a\n- b\n\n  more");
     }
 
     /// A line's shown text and its formatting (what, over which bytes).

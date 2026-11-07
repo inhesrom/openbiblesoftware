@@ -174,14 +174,17 @@ the selection touches; a heading change applies to the line the selection starts
 rewriting the whole heading that line is part of (a setext heading's text lines and its
 underline go together). Each line is read in its place in the Note's parse: numbering goes
 per nesting level (on from a numbered item just above), a nested item is written under its
-parent's text (re-indented when the parent's marker changes width), and the nested items of a
+parent's text (re-indented when the parent's marker changes width, as are the item's own
+paragraphs, quotes and code below it, gaps between them kept), and the nested items of a
 line that stops being an item move out a level rather than turn into text.
 
 The field shows the Markdown as typed, coloured: headings in the display face and larger,
 bold text strong, italics slanted, markup dimmed, links and Bible references in the link colour
 and underlined. Each toolbar or shortcut change is one step of the field's own undo (Ctrl+Z,
 Ctrl+Shift+Z), and pressing the toolbar does not end the card's editing pass (the field gets
-the keys back). The saves of an editing pass are still one `annotation.edit` undo step.
+the keys back). The toolbar works from the keyboard too: Shift+Tab from the field reaches its
+buttons with the card still editing, Enter or Space presses one (the field gets the keys
+back), and moving the keys past the toolbar ends the pass like clicking away. The saves of an editing pass are still one `annotation.edit` undo step.
 
 Every save (a card's editing pass, the popup Note editor, undo and redo) stores the field's
 text byte for byte: white space is CommonMark (four spaces start a code block), so nothing is

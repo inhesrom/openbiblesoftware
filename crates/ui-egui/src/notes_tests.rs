@@ -1421,6 +1421,72 @@ fn the_note_editor_link_button_does_not_link_across_lines() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// The Note editor's toolbar works from the keyboard (#186 review): Shift+Tab from the field
+/// reaches its buttons without ending the card's editing pass, Enter presses one and gives
+/// the keys back to the field, and moving the keys past the toolbar ends the pass, saved.
+#[test]
+fn the_note_editor_toolbar_is_reached_with_the_keyboard_and_keeps_the_card_editing() {
+    let dir = folder("editor-keyboard");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    h.shell.run("tab.close", &json!({ "tab": tb.0 }));
+    settle_all(&mut h);
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Rom 5:8", "body": "faith" }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    open_notes(&mut h);
+    let body = card_body(&h, &id);
+    h.click(body.center());
+    assert!(h.ctx.text_edit_focused());
+    let text = |h: &Harness| {
+        h.shell
+            .st
+            .notes_ui
+            .editing
+            .as_ref()
+            .map(|e| e.text.clone())
+            .unwrap_or_default()
+    };
+    press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+    // Back past the link button to the quote button: still editing, the keys on the toolbar.
+    for _ in 0..2 {
+        press_key(&mut h, egui::Key::Tab, Modifiers::SHIFT);
+        h.frame();
+        assert!(h.shell.st.notes_ui.editing.is_some(), "still editing");
+        assert!(!h.ctx.text_edit_focused(), "the keys are on the toolbar");
+    }
+    // Enter presses it: the quote is made and the field has the keys again.
+    press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    h.frames(2);
+    assert_eq!(text(&h), "> faith");
+    assert!(h.shell.st.notes_ui.editing.is_some(), "still editing");
+    assert!(h.ctx.text_edit_focused(), "the field has the keys back");
+    // Past the whole toolbar (seven buttons) and out: the pass ends, saved.
+    for _ in 0..8 {
+        press_key(&mut h, egui::Key::Tab, Modifiers::SHIFT);
+    }
+    h.frames(2);
+    assert!(h.shell.st.notes_ui.editing.is_none(), "editing ended");
+    let saved = h
+        .shell
+        .st
+        .session
+        .annotation(&id)
+        .unwrap()
+        .body()
+        .to_string();
+    assert_eq!(saved, "> faith");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// The Note editor's list, quote and heading buttons (#186 review) are off while they
 /// would put a block boundary inside a code span or link over lines, saying why to the
 /// pointer and to a screen reader, and the Note keeps its bytes; bold over lines is cut so

@@ -1013,8 +1013,8 @@ impl State {
             {
                 finished = true;
             }
-            // Pressing the toolbar takes the keys only for a moment.
-            if r.lost_focus() && !out.on_toolbar {
+            // The keys on the toolbar (pressed, or Tab to a button) are still in the editor.
+            if out.left {
                 finished = true;
             }
             ui.label(
