@@ -15,7 +15,7 @@ A desktop app that crashes leaves the user with nothing to tell us, and an offli
 ## Consequences
 
 - A panic on a worker thread that the job queue catches still writes a Crash report: it is a bug worth reporting even though the app carried on.
-- A panic message can carry data the code put in it. Quoted spans (`` `…` ``, `"…"`, a quoted character) are withheld, which covers the standard library's own quoting of a string it could not slice; unquoted values a panic formats are not, so the user still reads every report before it leaves, and the home folder is redacted.
+- A panic message can carry data the code put in it. Quoted spans (`` `…` ``, `"…"`, a quoted character) are withheld (escaped quotes do not end a span, and only the standard library's own opening phrases such as ``called `Option::unwrap()` on a `None` value`` keep their backticks), which covers the standard library's own quoting of a string it could not slice; unquoted values a panic formats are not, so the user still reads every report before it leaves, and the home folder is redacted.
 - A library's log message is lost for diagnosis unless that library is vetted; its source file and line still say what it was.
 - Crash reports are named by creating the file (`create_new`), so threads panicking in the same second each keep their own.
 - Native crashes (a segfault in a graphics driver) write no report; the log file still shows what led up to them.

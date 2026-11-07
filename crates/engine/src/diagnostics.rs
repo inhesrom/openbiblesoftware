@@ -541,38 +541,48 @@ pub fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
 
 /// A panic message without the text it quotes, which may be the user's: the standard
 /// library quotes a whole string it could not slice (`` of `…` ``), and an error's details
-/// are often in double quotes. A span in backticks is kept when it names code
-/// (`Result::unwrap()`, `Err`); a span in double quotes, or a single character in single
-/// quotes, is written `…`. The message is cut at [`PANIC_MESSAGE_CHARS`].
+/// are often in double quotes. Only the standard library's own opening phrases keep their
+/// backticks ([`STD_PANIC_PHRASES`], e.g. ``called `Option::unwrap()` on a `None` value``);
+/// any other backtick span runs to the message's last backtick, since the quoted string may
+/// hold backticks itself, and is written `…`. A span in double quotes (up to the first
+/// unescaped `"`), or a character's debug form in single quotes, is written `…` too. The
+/// message is cut at [`PANIC_MESSAGE_CHARS`].
 pub fn withhold_quoted(message: &str) -> String {
-    const CODE_WORDS: &[&str] = &["Err", "Ok", "None", "Some"];
-    let chars: Vec<char> = message.chars().collect();
-    let mut out = String::new();
+    let (mut out, rest) = match STD_PANIC_PHRASES
+        .iter()
+        .find(|phrase| message.starts_with(*phrase))
+    {
+        Some(phrase) => (phrase.to_string(), &message[phrase.len()..]),
+        None => (String::new(), message),
+    };
+    let chars: Vec<char> = rest.chars().collect();
+    let last_backtick = chars.iter().rposition(|&c| c == '`');
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
-        let close = |q: char| {
-            chars[i + 1..]
-                .iter()
-                .position(|&d| d == q)
-                .map(|p| i + 1 + p)
-        };
         match c {
-            '`' | '"' => {
-                let end = close(c);
-                let inner: String = chars[i + 1..end.unwrap_or(chars.len())].iter().collect();
-                let code = c == '`' && (inner.contains("::") || CODE_WORDS.contains(&&*inner));
-                out.push(c);
-                out.push_str(if code { &inner } else { "…" });
-                if let Some(end) = end {
-                    out.push(c);
-                    i = end + 1;
-                } else {
-                    i = chars.len();
+            '`' => {
+                out.push_str("`…");
+                match last_backtick.filter(|&end| end > i) {
+                    Some(end) => {
+                        out.push('`');
+                        i = end + 1;
+                    }
+                    None => i = chars.len(),
                 }
             }
-            // A char's debug form: 'é', '\n', '\u{301}' (not an apostrophe in words).
-            '\'' => match close('\'') {
+            '"' => {
+                out.push_str("\"…");
+                match closing_quote(&chars, i + 1, '"') {
+                    Some(end) => {
+                        out.push('"');
+                        i = end + 1;
+                    }
+                    None => i = chars.len(),
+                }
+            }
+            // A char's debug form: 'é', '\n', '\'', '\u{301}' (not an apostrophe in words).
+            '\'' => match closing_quote(&chars, i + 1, '\'') {
                 Some(end) if end == i + 2 || (chars.get(i + 1) == Some(&'\\') && end - i <= 11) => {
                     out.push_str("'…'");
                     i = end + 1;
@@ -593,6 +603,31 @@ pub fn withhold_quoted(message: &str) -> String {
         out.push('…');
     }
     out
+}
+
+/// The opening phrases of the standard library's panic messages whose backticks name code,
+/// kept as they are at the start of a panic message by [`withhold_quoted`].
+const STD_PANIC_PHRASES: &[&str] = &[
+    "called `Result::unwrap()` on an `Err` value",
+    "called `Result::unwrap_err()` on an `Ok` value",
+    "called `Option::unwrap()` on a `None` value",
+    "assertion `left == right` failed",
+    "assertion `left != right` failed",
+    "assertion `left matches right` failed",
+];
+
+/// The index of the `quote` closing a span that starts at `from`, skipping a debug string's
+/// escapes (`\"`, `\\`).
+fn closing_quote(chars: &[char], from: usize, quote: char) -> Option<usize> {
+    let mut i = from;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => i += 2,
+            c if c == quote => return Some(i),
+            _ => i += 1,
+        }
+    }
+    None
 }
 
 /// One Crash report in the Log folder.
@@ -1041,6 +1076,31 @@ mod tests {
             "index out of bounds: the len is 3 but the index is 7"
         );
         assert_eq!(withhold_quoted("can't open it's"), "can't open it's");
+        // Quoted text that looks like code is still withheld; only the standard library's
+        // own phrases keep their backticks, and only at the start of the message.
+        assert_eq!(withhold_quoted("of `PRIVATE::NOTE`"), "of `…`");
+        assert_eq!(withhold_quoted("of `Err`"), "of `…`");
+        assert_eq!(
+            withhold_quoted("of `Err` PRIVATE_NOTE `Option::unwrap()` [...]"),
+            "of `…` [...]"
+        );
+        assert_eq!(
+            withhold_quoted("called `Option::unwrap()` on a `None` value"),
+            "called `Option::unwrap()` on a `None` value"
+        );
+        assert_eq!(
+            withhold_quoted("assertion `left == right` failed\n  left: \"PRIVATE\"\n right: 2"),
+            "assertion `left == right` failed\n  left: \"…\"\n right: 2"
+        );
+        // Escaped quotes in a debug string do not end it.
+        assert_eq!(
+            withhold_quoted(r#"Error { msg: "a \"PRIVATE_NOTE\" \\" }"#),
+            r#"Error { msg: "…" }"#
+        );
+        assert_eq!(
+            withhold_quoted(r"char '\'' PRIVATE '\\'"),
+            "char '…' PRIVATE '…'"
+        );
         let long = withhold_quoted(&"x".repeat(1000));
         assert_eq!(long.chars().count(), PANIC_MESSAGE_CHARS + 1);
     }

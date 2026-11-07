@@ -3,9 +3,17 @@
 //! home folder written as `~`; neither a library's log message quoting typed text nor quoted
 //! text in the panic message reaches it. The next launch finds it as a new report to offer
 //! (`ui-egui`'s `report_problem_tests` show the offer and the review).
+//!
+//! Only test (debug) builds panic on `OBS_FORCE_PANIC`; a release build would start the
+//! normal app, so the test is compiled for debug builds only.
+#![cfg(debug_assertions)]
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
+/// How long the forced panic may take before the app is stopped and the test fails.
+const PANIC_WAIT: Duration = Duration::from_secs(120);
 
 #[test]
 fn a_forced_panic_writes_a_crash_report_the_next_launch_offers() {
@@ -14,16 +22,32 @@ fn a_forced_panic_writes_a_crash_report_the_next_launch_offers() {
     let home = root.join("home");
     let logs = home.join("logs");
     std::fs::create_dir_all(&home).unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_openbible"))
+    let stderr_path = root.join("stderr.txt");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_openbible"))
         .env("HOME", &home)
         .env("OBS_LOG_DIR", &logs)
         .env("OBS_FORCE_PANIC", "1")
         .env("OBS_USER_DB", root.join("user.db"))
         .env("OBS_LIBRARY", root.join("library"))
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(std::fs::File::create(&stderr_path).unwrap())
+        .spawn()
         .expect("run openbible");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(!out.status.success(), "the app stopped: {stderr}");
+    let started = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if started.elapsed() > PANIC_WAIT {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("openbible did not stop within {PANIC_WAIT:?} of a forced panic");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let stderr = std::fs::read_to_string(&stderr_path).unwrap();
+    assert!(!status.success(), "the app stopped: {stderr}");
     assert!(stderr.contains("crash report written to"), "{stderr}");
 
     // The next launch's Session finds it as a new Crash report.
