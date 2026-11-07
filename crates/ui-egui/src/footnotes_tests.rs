@@ -589,6 +589,100 @@ fn space_on_a_focused_popover_close_closes_it_and_pages_no_pane() {
     );
 }
 
+/// Review repro: Esc on a keyboard-pinned popover gives the focus back to its marker, and
+/// Space on the very next frame (no idle frame between) is the marker's: it pins the
+/// Footnote again, and no pane under the pointer pages.
+#[test]
+fn space_right_after_esc_returns_focus_to_the_marker_pages_no_pane() {
+    for pointer_on_other in [false, true] {
+        let name = format!("esc-space-{pointer_on_other}");
+        let (mut h, _files, tab) = bsb(&name, "Jn 1:19");
+        let other = split(&mut h, tab, "bsb", "Jn 1:19");
+        let (m, marker_widget) = focus_marker(&mut h, tab, "Isaiah 40:3");
+        press(&mut h, Key::Enter);
+        h.frames(3);
+        assert!(popover(&h).is_some_and(|p| p.pinned && p.tab == tab));
+        assert_ne!(
+            h.ctx.memory(|mem| mem.focused()),
+            Some(marker_widget),
+            "focus moved into the popover"
+        );
+        let at = if pointer_on_other {
+            let [left, top] = h.shell.st.tabs[&other].view.as_ref().unwrap().text_origin;
+            pos2(left + 20.0, top + 60.0)
+        } else {
+            let (_, at) = marker(&h, tab, "Isaiah 40:3");
+            pos2(at.x - 120.0, at.y - 40.0)
+        };
+        h.events.push(Event::PointerMoved(at));
+        h.frames(2);
+        assert!(popover(&h).is_some_and(|p| p.pinned), "still pinned");
+        let before = (scrolled(&mut h, tab), scrolled(&mut h, other));
+        press(&mut h, Key::Escape);
+        assert!(popover(&h).is_none(), "Esc closes it");
+        press(&mut h, Key::Space);
+        h.frames(3);
+        let p = popover(&h).expect("Space on the marker pins it again");
+        assert!(p.pinned && p.tab == tab && p.hit.note == m.note);
+        let after = (scrolled(&mut h, tab), scrolled(&mut h, other));
+        assert!(
+            (after.0 - before.0).abs() < 0.01 && (after.1 - before.1).abs() < 0.01,
+            "no pane paged (pointer on other pane: {pointer_on_other}): {before:?} → {after:?}"
+        );
+    }
+}
+
+/// Esc on a popover shown on hover leaves the keyboard focus off every Footnote widget, so
+/// Space on the next frame pages the pane under the pointer.
+#[test]
+fn space_right_after_esc_on_a_hover_popover_pages_the_pane() {
+    let (mut h, _files, tab) = bsb("esc-hover-space", "Jn 1:1");
+    let (_, at) = marker(&h, tab, "Or comprehended");
+    h.events.push(Event::PointerMoved(at));
+    h.frames(14);
+    assert!(popover(&h).is_some_and(|p| !p.pinned), "shown on hover");
+    h.events
+        .push(Event::PointerMoved(pos2(at.x - 120.0, at.y + 40.0)));
+    h.frame();
+    let before = scrolled(&mut h, tab);
+    press(&mut h, Key::Escape);
+    press(&mut h, Key::Space);
+    h.frames(2);
+    assert!(popover(&h).is_none());
+    assert!(scrolled(&mut h, tab) > before + 1.0, "the pane pages");
+}
+
+/// With a keyboard-pinned popover, a click on another pane's text closes it and takes the
+/// focus off its widgets, so Space on the next frame pages that pane, not the marker's.
+#[test]
+fn space_after_clicking_another_panes_text_pages_that_pane() {
+    let (mut h, _files, tab) = bsb("click-other-space", "Jn 1:19");
+    let other = split(&mut h, tab, "bsb", "Jn 1:19");
+    for t in [tab, other] {
+        h.shell.st.session.workspace.set_link(t, None);
+    }
+    h.frames(2);
+    focus_marker(&mut h, tab, "Isaiah 40:3");
+    press(&mut h, Key::Enter);
+    h.frames(3);
+    assert!(popover(&h).is_some_and(|p| p.pinned && p.tab == tab));
+    let [left, top] = h.shell.st.tabs[&other].view.as_ref().unwrap().text_origin;
+    h.click(pos2(left + 20.0, top + 60.0));
+    assert!(popover(&h).is_none(), "the click closes it");
+    let before = (scrolled(&mut h, tab), scrolled(&mut h, other));
+    press(&mut h, Key::Space);
+    h.frames(2);
+    let after = (scrolled(&mut h, tab), scrolled(&mut h, other));
+    assert!(
+        (after.0 - before.0).abs() < 0.01,
+        "the marker's pane stays: {before:?} → {after:?}"
+    );
+    assert!(
+        after.1 > before.1 + 1.0,
+        "the clicked pane pages: {before:?} → {after:?}"
+    );
+}
+
 /// Review repro: a marker whose popover was dismissed while it keeps the keyboard focus
 /// stays dismissed after the pointer has shown another marker's popover (in its pane, or
 /// another pane) and left it for the text, however long the focus rests on it.

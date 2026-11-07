@@ -36,9 +36,11 @@ does not have the keyboard focus (hovering another marker never clears it). The 
 frame turns what the pointer, keyboard and text did into `FootnoteEvent`s, and every change goes
 through `next(state, event)`, whose unit test covers each phase with each event, with a marker
 dismissed and while another one's popover shows; a second table walks two panes' Tabs through a
-focused marker in one and the pointer in the other. Which marker has the keyboard focus, in any
-pane, is noted where every pane reads it (`footnote_marker_focused`), so Space is routed to the
-marker before any pane would page on it. `Footnotes::send` keeps
+focused marker in one and the pointer in the other. Every Footnote widget drawn (a marker, a
+popover's link or ×), in any pane, is registered for its pass (`register_footnote_widget`); a
+pane pages on Space only when egui's focused widget is none of those drawn this pass or the last
+(`footnote_widget_focused`), so Space goes to a focused Footnote widget, and no record of who had
+the focus outlives the frame. Esc moves the focus back to the marker in the same frame. `Footnotes::send` keeps
 one popover pinned at a time across Tabs. Pinned from the keyboard (Enter or Space on the focused
 marker, or a screen reader's click: the marker widget reports it, wherever the pointer rests),
 focus moves to its first link (its × when it has none) as soon as the note's text is laid out,
@@ -79,8 +81,8 @@ footnote_markers`, part of the settings key, so views lay out again).
 - `ReadingView::footnote_markers(height)` lists the markers laid out in view with their boxes;
   the reading pane makes each one a small click widget with an AccessKit name ("Footnote a",
   "Cross-reference note") and the note as its description, and reports `hovered_footnote` (the
-  pointer's, else the focused one), `clicked_footnote` and `footnote_by_keyboard` (that click
-  was not the pointer's: `Response::clicked_by(Primary)` is false). A `FootnoteHit` names its
+  pointer's), `focused_footnote` (the keyboard's), `clicked_footnote` and `footnote_by_keyboard`
+  (that click was not the pointer's: `Response::clicked_by(Primary)` is false). A `FootnoteHit` names its
   Resource.
 - `shell/footnotes.rs` owns the dwell, pinning and drawing; the popover's text, × and links
   have AccessKit names.

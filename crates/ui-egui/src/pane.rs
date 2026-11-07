@@ -596,23 +596,59 @@ pub fn reading_pane(
     out
 }
 
-/// Where the reading panes and Footnote popovers note the Footnote widget (a marker, a
-/// popover's link or ×) that last had the keyboard focus, in any pane.
-fn focused_footnote_widget_key() -> egui::Id {
-    egui::Id::unique("focused-footnote-widget")
+/// The Footnote widgets (markers, popover links and ×) drawn this pass and the pass before,
+/// in any reading pane: the set the keyboard focus is checked against, so no state about who
+/// had the focus is kept from one frame to the next.
+#[derive(Clone, Default)]
+struct FootnoteWidgets {
+    pass: u64,
+    this: std::collections::HashSet<egui::Id>,
+    last: std::collections::HashSet<egui::Id>,
 }
 
-/// Note `id`, a Footnote widget that has (or is given) the keyboard focus.
-pub(crate) fn note_footnote_widget_focus(ctx: &egui::Context, id: egui::Id) {
-    ctx.data_mut(|d| d.insert_temp(focused_footnote_widget_key(), id));
+impl FootnoteWidgets {
+    fn key() -> egui::Id {
+        egui::Id::unique("footnote-widgets")
+    }
+
+    /// Move to `pass`: this pass's widgets become the last pass's, or are dropped when no
+    /// widget was drawn in the pass just before.
+    fn roll(&mut self, pass: u64) {
+        if pass != self.pass {
+            self.last = if pass == self.pass + 1 {
+                std::mem::take(&mut self.this)
+            } else {
+                Default::default()
+            };
+            self.this.clear();
+            self.pass = pass;
+        }
+    }
 }
 
-/// Whether the keyboard focus is on a Footnote widget (a marker, a popover's link or ×), in
-/// any reading pane: its activation keys (Space, Enter) are for it, so no pane pages on Space.
+/// Register `id`, a Footnote widget (a marker, a popover's link or ×) drawn this pass.
+pub(crate) fn register_footnote_widget(ctx: &egui::Context, id: egui::Id) {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| {
+        let w = d.get_temp_mut_or_default::<FootnoteWidgets>(FootnoteWidgets::key());
+        w.roll(pass);
+        w.this.insert(id);
+    });
+}
+
+/// Whether the keyboard focus is now on a Footnote widget (a marker, a popover's link or ×)
+/// drawn this pass or the last, in any reading pane: its activation keys (Space, Enter) are
+/// for it, so no pane pages on Space.
 pub(crate) fn footnote_widget_focused(ctx: &egui::Context) -> bool {
-    let widget = ctx.data(|d| d.get_temp::<egui::Id>(focused_footnote_widget_key()));
-    ctx.memory(|m| m.focused())
-        .is_some_and(|f| Some(f) == widget)
+    let Some(focused) = ctx.memory(|m| m.focused()) else {
+        return false;
+    };
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| {
+        let w = d.get_temp_mut_or_default::<FootnoteWidgets>(FootnoteWidgets::key());
+        w.roll(pass);
+        w.this.contains(&focused) || w.last.contains(&focused)
+    })
 }
 
 /// The widget of Footnote marker `m` in the reading pane `pane`.
@@ -661,6 +697,7 @@ fn footnote_markers(
             ui.ctx()
                 .accesskit_node_builder(response.id, |n| n.set_description(text));
         }
+        register_footnote_widget(ui.ctx(), id);
         if response.has_focus() {
             painter.rect_stroke(
                 r.expand(2.0),
@@ -668,7 +705,6 @@ fn footnote_markers(
                 ui.visuals().selection.stroke,
                 egui::StrokeKind::Outside,
             );
-            note_footnote_widget_focus(ui.ctx(), id);
             focused = Some(hit.clone());
         }
         if response.hovered() {

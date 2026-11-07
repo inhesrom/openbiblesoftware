@@ -17,7 +17,7 @@ use obs_scripture::{
 use super::references::{Targets, standard_targets};
 use super::{HOVER_DWELL_SECS, State, TabId};
 use crate::doc::ReadingDoc;
-use crate::pane::{FootnoteHit, PaneOutput, note_footnote_widget_focus};
+use crate::pane::{FootnoteHit, PaneOutput, register_footnote_widget};
 use crate::theme;
 use crate::workers::SnippetCache;
 
@@ -492,7 +492,8 @@ impl State {
             && let Some(m) = f.state.phase.marker()
         {
             if escape {
-                // Focus goes back to the marker a pinned popover closes from.
+                // Focus goes back to the marker a pinned popover closes from, this frame,
+                // so the next frame's Space is the marker's.
                 if f.state.phase.pinned() {
                     let marker = m.widget;
                     ui.ctx().memory_mut(|mem| mem.request_focus(marker));
@@ -616,9 +617,7 @@ impl State {
                                         "Close footnote",
                                     )
                                     .on_hover_text("Close (Esc)");
-                                    if r.has_focus() {
-                                        note_footnote_widget_focus(ui.ctx(), r.id);
-                                    }
+                                    register_footnote_widget(ui.ctx(), r.id);
                                     close_id = Some(r.id);
                                     close |= r.clicked();
                                 },
@@ -647,7 +646,6 @@ impl State {
             LinkFocus::NoLink => {
                 if focus_inside && let Some(id) = close_id {
                     ui.ctx().memory_mut(|m| m.request_focus(id));
-                    note_footnote_widget_focus(ui.ctx(), id);
                 }
                 true
             }
@@ -740,6 +738,7 @@ impl State {
             let id = ui.scope_id().with(("footnote-link", i));
             let first = rects.first().copied().unwrap_or(area);
             let link = ui.interact(first, id, Sense::click());
+            register_footnote_widget(ui.ctx(), id);
             link.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, &written));
             if link.gained_focus() {
                 ui.scroll_to_rect(area, None);
@@ -758,7 +757,6 @@ impl State {
                 clicked |= line.clicked();
             }
             if link.has_focus() {
-                note_footnote_widget_focus(ui.ctx(), id);
                 for r in &rects {
                     painter.rect_stroke(
                         r.expand(1.0),
