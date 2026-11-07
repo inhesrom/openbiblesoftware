@@ -20,8 +20,8 @@ single-instance Tab with all of it.
   User database, `PRAGMA user_version` which schema it has. There is no other header.
 - `back_up` (and Export everything) first calls `UserStore::refuse_own_file(dest)`, which
   refuses the live database and its `-wal`, `-shm` and `-journal` files by any path naming
-  them: `.`/`..`, symlinks and hard links (same device and inode on Unix), and another case on
-  Windows and macOS, whose disks ignore case by default. Writing there would destroy the data
+  them: `.`/`..`, symlinks and hard links (the `same-file` crate: device and inode on Unix, volume
+  and file index on Windows), and another case on Windows and macOS, whose disks ignore case by default. Writing there would destroy the data
   being saved.
 - The launch backups (`backups/user-000006.db`) and the before-upgrade copy
   (`user.v8-<time>.bak`) are written the same way, so they are Backups too.
