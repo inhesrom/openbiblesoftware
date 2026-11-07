@@ -1421,6 +1421,89 @@ fn the_note_editor_link_button_does_not_link_across_lines() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// The Note editor's list, quote and heading buttons (#186 review) are off while they
+/// would put a block boundary inside a code span or link over lines, saying why to the
+/// pointer and to a screen reader, and the Note keeps its bytes; bold over lines is cut so
+/// each line keeps it.
+#[test]
+fn the_note_editor_line_buttons_are_off_over_a_code_span_or_link_across_lines() {
+    let dir = folder("editor-span-lines");
+    let mut h = launch(&dir);
+    h.ctx.enable_accesskit();
+    let tb = h.tab_id("TB");
+    h.shell.run("tab.close", &json!({ "tab": tb.0 }));
+    settle_all(&mut h);
+    let body = "` a\nb ` and [x\ny](<https://example.org/?q=\\&amp;>)";
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Rom 5:8", "body": body }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    open_notes(&mut h);
+    let card = card_body(&h, &id);
+    h.click(card.center());
+    assert!(h.ctx.text_edit_focused());
+    let text = |h: &Harness| {
+        h.shell
+            .st
+            .notes_ui
+            .editing
+            .as_ref()
+            .map(|e| e.text.clone())
+            .unwrap_or_default()
+    };
+    press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+    h.frames(2);
+    let buttons = |h: &Harness| -> Vec<(String, bool, Option<String>)> {
+        h.tree
+            .as_ref()
+            .unwrap()
+            .nodes
+            .iter()
+            .filter(|(_, n)| n.role() == egui::accesskit::Role::Button)
+            .filter_map(|(_, n)| {
+                let label = n.label()?.to_string();
+                ["H", "•", "1.", "“”"]
+                    .contains(&label.as_str())
+                    .then(|| (label, n.is_disabled(), n.description().map(str::to_string)))
+            })
+            .collect()
+    };
+    let off = buttons(&h);
+    assert_eq!(off.len(), 4, "{off:?}");
+    const SPAN_ACROSS_LINES: &str = "Selection has a code span or link that crosses lines";
+    for (label, disabled, description) in &off {
+        assert!(disabled, "{label}");
+        assert_eq!(description.as_deref(), Some(SPAN_ACROSS_LINES), "{label}");
+    }
+    for b in ["•", "1.", "“”", "H"] {
+        h.click_text(b);
+        assert_eq!(text(&h), body, "{b}");
+    }
+    assert!(h.shell.st.notes_ui.editing.is_some(), "still editing");
+    // Bold over lines: the buttons are on, and each line keeps it.
+    press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+    h.events.push(Event::Text("**faith\nhope**".into()));
+    h.frame();
+    press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+    h.frames(2);
+    let on = buttons(&h);
+    assert_eq!(on.len(), 4, "{on:?}");
+    for (label, disabled, description) in on {
+        assert!(!disabled, "{label}");
+        assert_ne!(description.as_deref(), Some(SPAN_ACROSS_LINES), "{label}");
+    }
+    h.click_text("•");
+    assert_eq!(text(&h), "- **faith**\n- **hope**");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn the_note_editor_symbols_are_in_the_chrome_fonts_and_bullets_in_the_reading_font() {
     let h = Harness::new();

@@ -18,7 +18,7 @@
 
 use std::ops::Range;
 
-use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
 /// What one line of a Note is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -397,94 +397,47 @@ impl Builder<'_> {
     }
 }
 
-/// An inline span of a Note's body (bold, italic, a link, a code span) as the parser read
-/// it, with the markup that opens and closes a part of it: what the Note editor writes to
-/// cut a span in two at a line break that becomes a block boundary, so each part shows as
-/// the whole did.
+/// An inline span of a Note's body (bold, italic, a code span, a link, an image, an
+/// autolink) as the parser read it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteSpan {
     /// The whole span in the body, its markup included.
     pub source: Range<usize>,
-    /// What opens a part: `*`, `__`, `[`, a code span's backticks.
-    pub open: String,
-    /// What closes a part as the whole is closed: `*`, `__`, a code span's backticks, a
-    /// link's `](target "title")` or `][label]` as typed; for a link written `[text]` or
-    /// `[text][]` (whose label is its text), `](<target> "title")`.
-    pub close: String,
-    /// Where the span's own closing markup is in the body.
-    pub closing: Range<usize>,
+    /// For bold or italic, its delimiter as typed (`*`, `__`): what the Note editor writes to
+    /// close it at the end of a line and open it again on the next, so a span over a line
+    /// break that becomes a block boundary keeps its formatting on each line. `None` for a
+    /// code span, link, image or autolink: cut in two, its parts would not show as the whole
+    /// did (a code span's stripped spaces, a link's target), so the editor does not cut it.
+    pub delimiter: Option<String>,
 }
 
 /// Every [`NoteSpan`] of `body`, by where it starts (an outer span before one inside it).
-/// Autolinks (`<https://…>`) are left out: they cannot run over a line break.
 pub fn note_spans(body: &str) -> Vec<NoteSpan> {
-    // Open links: the link, its closing markup when it is rewritten, and where its text ends.
-    let mut links: Vec<(Range<usize>, Option<String>, usize)> = Vec::new();
     let mut out = Vec::new();
     for (event, r) in Parser::new_ext(body, Options::empty()).into_offset_iter() {
-        if !matches!(event, Event::End(TagEnd::Link)) {
-            for link in &mut links {
-                link.2 = link.2.max(r.end);
-            }
-        }
         let delimited = |n: usize| {
-            let open = body.get(r.start..r.start + n)?.to_string();
-            let closing = r.end.checked_sub(n)?..r.end;
-            (body.get(closing.clone())? == open).then(|| NoteSpan {
-                source: r.clone(),
-                close: open.clone(),
-                open,
-                closing,
-            })
+            let open = body.get(r.start..r.start + n)?;
+            let close = body.get(r.end.checked_sub(n)?..r.end)?;
+            (open == close).then(|| open.to_string())
         };
-        let span = match event {
-            Event::Start(Tag::Emphasis) => delimited(1),
-            Event::Start(Tag::Strong) => delimited(2),
-            Event::Code(_) => {
-                delimited(body[r.clone()].len() - body[r.clone()].trim_start_matches('`').len())
-            }
-            Event::Start(Tag::Link {
-                link_type,
-                dest_url,
-                title,
-                ..
-            }) => {
-                let close = match link_type {
-                    LinkType::Inline | LinkType::Reference => None,
-                    _ => {
-                        let esc = |s: &str, special: &[char]| {
-                            s.chars().fold(String::new(), |mut o, c| {
-                                if special.contains(&c) {
-                                    o.push('\\');
-                                }
-                                o.push(c);
-                                o
-                            })
-                        };
-                        let title = if title.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" \"{}\"", esc(&title, &['\\', '"']))
-                        };
-                        Some(format!("](<{}>{title})", esc(&dest_url, &['\\', '<', '>'])))
-                    }
-                };
-                links.push((r.clone(), close, r.start + 1));
-                None
-            }
-            Event::End(TagEnd::Link) => links.pop().and_then(|(source, close, text_end)| {
-                let closing = text_end..source.end;
-                let typed = body.get(closing.clone()).filter(|c| c.starts_with(']'))?;
-                Some(NoteSpan {
-                    open: "[".into(),
-                    close: close.unwrap_or_else(|| typed.to_string()),
-                    source,
-                    closing,
-                })
-            }),
-            _ => None,
+        // Bold or italic whose delimiters are not as typed at both ends is left out: it is
+        // neither cut nor in the way of a change.
+        let delimiter = match event {
+            Event::Start(Tag::Emphasis) => match delimited(1) {
+                Some(d) => Some(d),
+                None => continue,
+            },
+            Event::Start(Tag::Strong) => match delimited(2) {
+                Some(d) => Some(d),
+                None => continue,
+            },
+            Event::Code(_) | Event::Start(Tag::Link { .. } | Tag::Image { .. }) => None,
+            _ => continue,
         };
-        out.extend(span);
+        out.push(NoteSpan {
+            source: r,
+            delimiter,
+        });
     }
     out.sort_by_key(|s| (s.source.start, std::cmp::Reverse(s.source.end)));
     out

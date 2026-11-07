@@ -410,57 +410,36 @@ fn plain_text_that_reads_as_typed_is_left_alone() {
 }
 
 #[test]
-fn spans_know_the_markup_that_opens_and_closes_each_part() {
-    // Each span as (its source, open, close, its closing markup).
-    type Spans = &'static [(&'static str, &'static str, &'static str, &'static str)];
+fn spans_know_their_delimiter_and_code_and_links_have_none() {
+    // Each span as (its source, its delimiter): bold and italic can be cut at a line break
+    // with their delimiter; a code span, link, image or autolink cannot.
+    type Spans = &'static [(&'static str, Option<&'static str>)];
     let cases: &[(&str, Spans)] = &[
-        ("**a\nb**", &[("**a\nb**", "**", "**", "**")]),
-        ("_a_", &[("_a_", "_", "_", "_")]),
-        ("``a`b``", &[("``a`b``", "``", "``", "``")]),
+        ("**a\nb**", &[("**a\nb**", Some("**"))]),
+        ("_a_", &[("_a_", Some("_"))]),
+        ("__a__", &[("__a__", Some("__"))]),
         (
             "**a *b\nc* d**",
-            &[
-                ("**a *b\nc* d**", "**", "**", "**"),
-                ("*b\nc*", "*", "*", "*"),
-            ],
+            &[("**a *b\nc* d**", Some("**")), ("*b\nc*", Some("*"))],
         ),
+        ("``a`b``", &[("``a`b``", None)]),
+        ("` a\nb `", &[("` a\nb `", None)]),
         (
             "[*x*\ny](<Rom 5:8> \"t\")",
-            &[
-                (
-                    "[*x*\ny](<Rom 5:8> \"t\")",
-                    "[",
-                    "](<Rom 5:8> \"t\")",
-                    "](<Rom 5:8> \"t\")",
-                ),
-                ("*x*", "*", "*", "*"),
-            ],
+            &[("[*x*\ny](<Rom 5:8> \"t\")", None), ("*x*", Some("*"))],
         ),
-        ("[x][r]\n\n[r]: u", &[("[x][r]", "[", "][r]", "][r]")]),
-        // Labelled by its text: each part gets the target written out.
-        (
-            "[x]\n\n[x]: <a\\>b> \"t\\\"\"",
-            &[("[x]", "[", "](<a\\>b> \"t\\\"\")", "]")],
-        ),
-        // Autolinks are left out.
-        ("<https://example.org>", &[]),
+        ("[x][r]\n\n[r]: u", &[("[x][r]", None)]),
+        ("[x\ny]\n\n[x y]: u", &[("[x\ny]", None)]),
+        ("![a\nb](u)", &[("![a\nb](u)", None)]),
+        ("<https://example.org>", &[("<https://example.org>", None)]),
+        ("plain", &[]),
     ];
     for &(body, want) in cases {
-        let got: Vec<_> = note_spans(body)
-            .into_iter()
-            .map(|s| {
-                (
-                    body[s.source].to_string(),
-                    s.open,
-                    s.close,
-                    body[s.closing].to_string(),
-                )
-            })
-            .collect();
-        let want: Vec<_> = want
+        let spans = note_spans(body);
+        let got: Vec<(&str, Option<&str>)> = spans
             .iter()
-            .map(|&(a, b, c, d)| (a.into(), b.into(), c.into(), d.into()))
-            .collect::<Vec<(String, String, String, String)>>();
+            .map(|s| (&body[s.source.clone()], s.delimiter.as_deref()))
+            .collect();
         assert_eq!(got, want, "{body:?}");
     }
 }

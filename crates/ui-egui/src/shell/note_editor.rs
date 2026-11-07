@@ -12,9 +12,11 @@
 //!   here: Bold/Italic take off the delimiters of the span the parse found, a heading is
 //!   rewritten whole from its source and inline content as parsed (any ATX or setext form),
 //!   and Enter continues the item the parse found. A nested item is written under its parent's
-//!   text, as CommonMark nests it. A span over lines that become blocks of their own is cut
-//!   into one per line, each with the span's markup (a link's with its target), so each line
-//!   keeps its formatting. A link target goes between `<` and `>`.
+//!   text, as CommonMark nests it. Bold or italic over lines that become blocks of their own
+//!   is cut into one span per line, so each line keeps its formatting. A code span, link,
+//!   image or autolink is not cut: while list, quote or heading would put a block boundary
+//!   inside one, those buttons are off ([`SPAN_ACROSS_LINES`]) and the change is not made. A
+//!   link target goes between `<` and `>`.
 //! - **Shortcuts**: Ctrl+B and Ctrl+I (Cmd on macOS). Typing `- `, `1. ` or `> ` at the start
 //!   of a line starts a list or quote; Enter in an item continues it (the next number), and
 //!   Enter in an empty item ends it.
@@ -101,8 +103,18 @@ pub(super) fn note_editor(
     rows: usize,
 ) -> NoteEditorOutput {
     let mut action = None;
-    // A link is one line's text: a selection across lines cannot be one.
-    let across_lines = selection_spans_lines(ui.ctx(), id, text);
+    let sel = selection(ui.ctx(), id, text);
+    // Why a button is off for this selection, if it is.
+    let off = |f: Format| match f {
+        // A link is one line's text: a selection across lines cannot be one.
+        Format::Link => text
+            .chars()
+            .skip(sel.start)
+            .take(sel.len())
+            .any(|c| c == '\n')
+            .then_some(LINK_ONE_LINE),
+        _ => line_format_blocked(text, sel.clone(), f).then_some(SPAN_ACROSS_LINES),
+    };
     let toolbar = ui
         .horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
@@ -110,13 +122,16 @@ pub(super) fn note_editor(
                 let b = egui::Button::new(f.label())
                     .frame(false)
                     .min_size(egui::vec2(24.0, 20.0));
-                let enabled = !(f == Format::Link && across_lines);
-                if ui
-                    .add_enabled(enabled, b)
+                let why = off(f);
+                let response = ui
+                    .add_enabled(why.is_none(), b)
                     .on_hover_text(f.hint())
-                    .on_disabled_hover_text(LINK_ONE_LINE)
-                    .clicked()
-                {
+                    .on_disabled_hover_text(why.unwrap_or_default());
+                if let Some(why) = why {
+                    ui.ctx()
+                        .accesskit_node_builder(response.id, |n| n.set_description(why));
+                }
+                if response.clicked() {
                     action = Some(f);
                 }
             }
@@ -170,17 +185,14 @@ pub(super) fn note_editor(
 /// Why the link button is off while the selection spans lines.
 const LINK_ONE_LINE: &str = "Link: select text on one line";
 
-/// Whether the field's selection takes in a line break.
-fn selection_spans_lines(ctx: &egui::Context, id: egui::Id, text: &str) -> bool {
-    let Some(range) = egui::TextEdit::load_state(ctx, id).and_then(|s| s.cursor.char_range())
-    else {
-        return false;
-    };
+/// The field's selection (char indices), as [`edit_in_place`] reads it.
+fn selection(ctx: &egui::Context, id: egui::Id, text: &str) -> Range<usize> {
+    let end = text.chars().count();
+    let range = egui::TextEdit::load_state(ctx, id)
+        .and_then(|s| s.cursor.char_range())
+        .unwrap_or_else(|| CCursorRange::one(CCursor::new(end)));
     let sel = range.as_sorted_char_range();
-    text.chars()
-        .skip(sel.start.0)
-        .take(sel.end.0.saturating_sub(sel.start.0))
-        .any(|c| c == '\n')
+    sel.start.0.min(end)..sel.end.0.min(end)
 }
 
 /// Run `change` on the field's text and selection (char indices), as one undo step of the
@@ -418,22 +430,21 @@ fn touched_lines(text: &str, a: usize, b: usize) -> Vec<Range<usize>> {
     out
 }
 
-/// List or quote: on every line the selection touches, each read in its place in the Note
-/// (a nested item is one under the item above it). Heading: on the line the selection
-/// starts on (an ATX heading is one line). A heading touched anywhere is rewritten as a
-/// whole, from the parse: its whole source (`#` markers, closing `#`s, a setext heading's
-/// `===` or `---` underline) is replaced by its inline content, each line of it with the
-/// new marker, so the shown text stays the same. A span (bold, italic, a link, a code span)
-/// over a line break that may become a block boundary is cut there first
-/// ([`spans_cut_at`]), so each line keeps its formatting.
-fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize>) {
+/// The lines a list, quote or heading change `f` of `sel` (char indices) rewrites, as
+/// `first..=last` of `lines` (the parse of `text`), and the line breaks around and between
+/// them (by the line each comes after): a heading's lines all go together.
+fn rewritten_lines(
+    text: &str,
+    lines: &[obs_model::NoteLine],
+    sel: Range<usize>,
+    f: Format,
+) -> (usize, usize, Vec<usize>) {
     let a = byte_at(text, sel.start);
     let b = if f == Format::Heading {
         a
     } else {
         byte_at(text, sel.end)
     };
-    let lines = obs_model::parse_note_text(text);
     let touched = touched_lines(text, a, b);
     let mut first = text[..touched[0].start].matches('\n').count();
     let mut last = first + touched.len() - 1;
@@ -445,10 +456,51 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
     while last + 1 < lines.len() && same(last + 1, last) {
         last += 1;
     }
-    // The breaks around and between the lines rewritten (after line `i`).
-    let breaks: Vec<usize> = (first.saturating_sub(1)..=last)
+    let breaks = (first.saturating_sub(1)..=last)
         .filter(|&i| i + 1 < lines.len())
         .collect();
+    (first, last, breaks)
+}
+
+/// Why a list, quote or heading change is off for the selection.
+pub(super) const SPAN_ACROSS_LINES: &str = "Selection has a code span or link that crosses lines";
+
+/// Whether list, quote or heading `f` on `sel` (char indices) would put a block boundary
+/// inside a code span, link, image or autolink ([`obs_model::NoteSpan::delimiter`] `None`):
+/// its parts would not show as the whole did, so the change is not made.
+pub(super) fn line_format_blocked(text: &str, sel: Range<usize>, f: Format) -> bool {
+    if !matches!(
+        f,
+        Format::Heading | Format::Bullet | Format::Numbered | Format::Quote
+    ) {
+        return false;
+    }
+    let lines = obs_model::parse_note_text(text);
+    let (_, _, breaks) = rewritten_lines(text, &lines, sel, f);
+    let spans = obs_model::note_spans(text);
+    breaks.iter().any(|&i| {
+        let at = lines[i].source.end;
+        spans
+            .iter()
+            .any(|s| s.delimiter.is_none() && s.source.contains(&at))
+    })
+}
+
+/// List or quote: on every line the selection touches, each read in its place in the Note
+/// (a nested item is one under the item above it). Heading: on the line the selection
+/// starts on (an ATX heading is one line). A heading touched anywhere is rewritten as a
+/// whole, from the parse: its whole source (`#` markers, closing `#`s, a setext heading's
+/// `===` or `---` underline) is replaced by its inline content, each line of it with the
+/// new marker, so the shown text stays the same. Bold or italic over a line break that may
+/// become a block boundary is cut there first ([`spans_cut_at`]), so each line keeps its
+/// formatting; a code span, link, image or autolink over one leaves the text as it is
+/// ([`line_format_blocked`]).
+fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize>) {
+    if line_format_blocked(text, sel.clone(), f) {
+        return (text.to_string(), sel);
+    }
+    let lines = obs_model::parse_note_text(text);
+    let (first, last, breaks) = rewritten_lines(text, &lines, sel, f);
     let cut = spans_cut_at(text, &lines, &breaks);
     let (text, lines) = if cut == text {
         (text, lines)
@@ -595,62 +647,54 @@ fn line_format(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize
     (new, start..start + replaced.chars().count())
 }
 
-/// `text` with each inline span ([`obs_model::note_spans`]) that runs over one of the line
-/// `breaks` (the break after line `i` of `lines`, its parse) closed at the end of that line
-/// and opened again where the next line's content starts, each part with the span's own
-/// markup (a link's parts with its target). Inside a paragraph that shows the same; where
-/// the break becomes a block boundary (a list item, quote or heading of its own), it keeps
-/// each line's formatting, where the whole span would come apart into literal `*`s. A span
-/// is cut only where it shows text on both sides of the break.
+/// `text` with each bold or italic span ([`obs_model::note_spans`] with a delimiter) that
+/// runs over one of the line `breaks` (the break after line `i` of `lines`, its parse)
+/// closed at the end of that line and opened again where the next line's content starts,
+/// each part with the span's delimiter. Inside a paragraph that shows the same; where the
+/// break becomes a block boundary (a list item, quote or heading of its own), it keeps each
+/// line's formatting, where the whole span would come apart into literal `*`s. A span is
+/// cut only where it shows text on both sides of the break.
 fn spans_cut_at(text: &str, lines: &[obs_model::NoteLine], breaks: &[usize]) -> String {
-    let spans = obs_model::note_spans(text);
+    let spans: Vec<(Range<usize>, String)> = obs_model::note_spans(text)
+        .into_iter()
+        .filter_map(|s| Some((s.source, s.delimiter?)))
+        .collect();
     // Whether `l` shows text of span `s`.
-    let shows = |l: &obs_model::NoteLine, s: &obs_model::NoteSpan| {
-        let r = s.source.start.max(l.source.start)..s.source.end.min(l.source.end);
+    let shows = |l: &obs_model::NoteLine, s: &Range<usize>| {
+        let r = s.start.max(l.source.start)..s.end.min(l.source.end);
         r.start < r.end && !l.text_range(r).is_empty()
     };
-    let mut edits: Vec<(Range<usize>, &str)> = Vec::new();
-    let mut cut = vec![false; spans.len()];
+    let mut edits: Vec<(usize, &str)> = Vec::new();
     for &i in breaks {
         let (line, next) = (&lines[i], &lines[i + 1]);
-        let crossing: Vec<usize> = (0..spans.len())
-            .filter(|&k| {
-                let s = &spans[k];
-                s.source.start < line.source.end
-                    && next.source.start < s.source.end
+        let crossing: Vec<&(Range<usize>, String)> = spans
+            .iter()
+            .filter(|(s, _)| {
+                s.start < line.source.end
+                    && next.source.start < s.end
                     && shows(line, s)
                     && shows(next, s)
             })
             .collect();
-        if crossing.is_empty() {
-            continue;
-        }
         let end = part_end(text, line);
         // Inner spans close first and open last.
-        for &k in crossing.iter().rev() {
-            edits.push((end..end, &spans[k].close));
-            cut[k] = true;
+        for (_, d) in crossing.iter().rev() {
+            edits.push((end, d));
         }
-        for &k in &crossing {
-            edits.push((next.content..next.content, &spans[k].open));
-        }
-    }
-    // A link whose label is its text: its last part gets the target too.
-    for (s, cut) in spans.iter().zip(cut) {
-        if cut && text[s.closing.clone()] != s.close {
-            edits.push((s.closing.clone(), &s.close));
+        for (_, d) in &crossing {
+            edits.push((next.content, d));
         }
     }
     if edits.is_empty() {
         return text.to_string();
     }
-    edits.sort_by_key(|(r, _)| r.start);
+    edits.sort_by_key(|(at, _)| *at);
     let mut out = String::with_capacity(text.len() + edits.len() * 2);
     let mut at = 0;
-    for (r, s) in edits {
-        out.push_str(&text[at..r.start]);
-        out.push_str(s);
-        at = r.end;
+    for (to, d) in edits {
+        out.push_str(&text[at..to]);
+        out.push_str(d);
+        at = to;
     }
     out.push_str(&text[at..]);
     out
@@ -1241,7 +1285,7 @@ mod tests {
     }
 
     #[test]
-    fn line_formats_cut_spans_over_lines_so_each_line_keeps_its_formatting() {
+    fn line_formats_cut_bold_and_italic_over_lines_so_each_line_keeps_its_formatting() {
         // (Note, selection, format, after): every line shows the same text, formatted the
         // same; only the blocks change.
         let all = |t: &str| 0..t.chars().count();
@@ -1263,25 +1307,6 @@ mod tests {
             ("*a\nb*", 0..5, Format::Quote, "> *a*\n> *b*"),
             ("*a\nb*", 0..0, Format::Heading, "# *a*\n*b*"),
             ("__a\nb__", 0..7, Format::Numbered, "1. __a__\n2. __b__"),
-            ("[x\ny](u)", 0..8, Format::Bullet, "- [x](u)\n- [y](u)"),
-            ("[x\ny](u)", 0..8, Format::Quote, "> [x](u)\n> [y](u)"),
-            ("[x\ny](u)", 0..0, Format::Heading, "# [x](u)\n[y](u)"),
-            (
-                "[x\ny](<Rom 5:8> \"t\")",
-                0..3,
-                Format::Bullet,
-                "- [x](<Rom 5:8> \"t\")\n- [y](<Rom 5:8> \"t\")",
-            ),
-            // A link whose label is its text: each part gets the target.
-            (
-                "[x\ny]\n\n[x y]: u",
-                0..3,
-                Format::Bullet,
-                "- [x](<u>)\n- [y](<u>)\n\n[x y]: u",
-            ),
-            ("`a\nb`", 0..5, Format::Bullet, "- `a`\n- `b`"),
-            ("`a\nb`", 0..5, Format::Quote, "> `a`\n> `b`"),
-            ("`a\nb`", 0..0, Format::Heading, "# `a`\n`b`"),
             (
                 "**a *b\nc* d**",
                 0..14,
@@ -1328,6 +1353,64 @@ mod tests {
             );
             assert!(r.end <= new.chars().count());
         }
+    }
+
+    #[test]
+    fn line_formats_leave_a_code_span_or_link_over_lines_as_it_is() {
+        // A block boundary inside a code span, link, image or autolink would change what it
+        // shows (a code span's stripped spaces, a link's target): the change is off, and
+        // the Note's bytes stay as they are (#186 review).
+        let all = |t: &str| 0..t.chars().count();
+        let blocked = [
+            "` a\nb `",
+            "`a\nb`",
+            "`` `a\nb` ``",
+            "[x\ny](u)",
+            "[x\ny](<Rom 5:8> \"t\")",
+            "[x\ny]\n\n[x y]: <https://example.org/?q=\\&amp;>",
+            "![a\nb](u)",
+            "*[x\ny](u)*",
+            "**a `b\nc` d**",
+        ];
+        for text in blocked {
+            let to = text.find("\n\n").map_or(all(text), |i| 0..i);
+            for f in [Format::Bullet, Format::Numbered, Format::Quote] {
+                assert!(line_format_blocked(text, to.clone(), f), "{text:?} {f:?}");
+                let (new, r) = apply_format(text, to.clone(), f);
+                assert_eq!(new, text, "{f:?}");
+                assert_eq!(r, to, "{text:?} {f:?}");
+            }
+            // Heading: the line it starts on, its break into the next inside the span.
+            assert!(line_format_blocked(text, 0..0, Format::Heading), "{text:?}");
+            assert_eq!(apply_format(text, 0..0, Format::Heading).0, text);
+        }
+        // The span's last line alone: a block boundary before it splits the span too.
+        let text = "a\n`b\nc`";
+        for f in [Format::Bullet, Format::Quote, Format::Heading] {
+            assert!(line_format_blocked(text, 6..6, f), "{f:?}");
+            assert_eq!(apply_format(text, 6..6, f).0, text);
+        }
+        // The line above it: it stays one paragraph's text, so the change is made.
+        assert_eq!(apply_format(text, 0..0, Format::Bullet).0, "- a\n`b\nc`");
+        // A code span or link on one line, or one the change keeps inside a paragraph, is fine.
+        let one_line = "`a b` [x](u)\nc";
+        assert!(!line_format_blocked(
+            one_line,
+            all(one_line),
+            Format::Bullet
+        ));
+        assert_eq!(
+            apply_format(one_line, all(one_line), Format::Bullet).0,
+            "- `a b` [x](u)\n- c"
+        );
+        let whole = "`a\nb`";
+        assert!(!line_format_blocked(
+            &format!("{whole}\n\nc"),
+            7..7,
+            Format::Bullet
+        ));
+        // Bold and italic are not changes that put a block boundary anywhere.
+        assert!(!line_format_blocked("`a\nb`", 0..5, Format::Bold));
     }
 
     #[test]
