@@ -293,7 +293,11 @@ pub fn cell_texts(
         trimmed(&main.lemma)
             .or_else(|| lexicon_word().lemma.clone())
             .or_else(|| from_index(|w| &w.lemma))
-            .map(|l| without_cantillation(&l).trim().to_string())
+            // A verse's last word may carry sof pasuq and a paragraph mark (הָאָֽרֶץ׃,
+            // אֶחָֽד׃פ): neither is part of the word.
+            .map(|l| without_cantillation(l.split('\u{05C3}').next().unwrap_or_default()))
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
     };
     lines
         .iter()

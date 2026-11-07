@@ -441,3 +441,119 @@ fn a_mixed_direction_cell_is_laid_out_in_bidi_order() {
         ]
     );
 }
+
+/// BSB Gen 1:3 as CrossWire tags it (#243): punctuation and quotation marks outside the
+/// Tagged words, right against them.
+fn bsb_gen_1_3() -> TextUnit {
+    let text = "And God said, “Let there be light,” and there was light.".to_string();
+    let spans = tagged(
+        &text,
+        &[
+            ("And God", "H430"),
+            ("said", "H559"),
+            ("Let there be", "H1961"),
+            ("light", "H216"),
+            ("and there was", "H1961"),
+            ("light", "H216"),
+        ],
+    );
+    TextUnit {
+        id: UnitId::book(Book::Genesis),
+        kind: UnitKind::BibleBook,
+        title: None,
+        text,
+        spans,
+    }
+}
+
+/// Each text item of `laid` as (text, x, width), in visual order, line by line.
+fn items(laid: &LaidBlock) -> Vec<Vec<(String, f32, f32)>> {
+    laid.lines
+        .iter()
+        .map(|l| {
+            l.items
+                .iter()
+                .map(|i| (laid.text[i.bytes.clone()].to_string(), i.x, i.width))
+                .collect()
+        })
+        .collect()
+}
+
+/// The left edge of the item starting with `text` on line 0, and the right edge of the item
+/// before it.
+fn edges_around(laid: &LaidBlock, text: &str) -> (f32, f32) {
+    let line = &items(laid)[0];
+    let i = line
+        .iter()
+        .position(|(t, _, _)| t.starts_with(text))
+        .unwrap_or_else(|| panic!("no {text:?} in {line:?}"));
+    let (_, px, pw) = &line[i - 1];
+    (px + pw, line[i].1)
+}
+
+/// #243: lines narrower than their words add no space at all: the text sits exactly where
+/// it does without them, punctuation and quotation marks against their words.
+#[test]
+fn narrow_lines_leave_the_text_where_it_is() {
+    let unit = bsb_gen_1_3();
+    let plain = {
+        let settings = TextSettings::default();
+        let block = unit_blocks(&unit).remove(0);
+        let para = block_paragraph(&unit, &block, Direction::Ltr, &settings);
+        layout(&para, 900.0, ShapeCache::shared())
+    };
+    // One short line under each word, narrower than any word here.
+    let short_lines = [("H430", "a"), ("H559", "b"), ("H1961", "c"), ("H216", "d")];
+    let (_, laid) = interlinear_block(&unit, Direction::Ltr, 900.0, &short_lines, 1);
+    assert_eq!(laid.cells.len(), 6);
+    // Where each character is drawn (however the line is cut into items).
+    let short = |laid: &LaidBlock| -> Vec<(usize, f32)> {
+        let mut at: Vec<(usize, f32)> = laid
+            .lines
+            .iter()
+            .flat_map(|l| &l.items)
+            .flat_map(|i| i.clusters())
+            .map(|(bytes, x0, _)| (bytes.start, (x0 * 10.0).round() / 10.0))
+            .collect();
+        at.sort_by_key(|(b, _)| *b);
+        at
+    };
+    assert_eq!(short(&laid), short(&plain));
+}
+
+/// #243: a line wider than its word widens the word's column, but never between the word and
+/// the punctuation or quotation mark against it: "said," and "“Let there be" stay whole.
+#[test]
+fn wide_lines_never_part_a_word_from_its_punctuation() {
+    let unit = bsb_gen_1_3();
+    let wide = [
+        ("H430", "ʾĕlōhîm ʾĕlōhîm ʾĕlōhîm"),
+        ("H559", "wayyōʾmer wayyōʾmer"),
+        ("H1961", "yᵊhî yᵊhî yᵊhî yᵊhî yᵊhî"),
+        ("H216", "ʾôr ʾôr ʾôr ʾôr ʾôr ʾôr"),
+    ];
+    let (_, laid) = interlinear_block(&unit, Direction::Ltr, 1400.0, &wide, 2);
+    assert_eq!(laid.lines.len(), 1);
+    for punct in [",", ",”", "."] {
+        let (before, at) = edges_around(&laid, punct);
+        assert!(
+            (at - before).abs() < 0.01,
+            "{punct:?} is right against the word before it: {before} → {at}"
+        );
+    }
+    let (said_end, _) = edges_around(&laid, ",");
+    let (quote_end, let_start) = edges_around(&laid, "Let");
+    assert!(
+        (let_start - quote_end).abs() < 0.01,
+        "“ is right against Let"
+    );
+    assert!(said_end < quote_end);
+    // The cells still never touch.
+    for row in 0..2 {
+        let mut cells: Vec<&LaidCell> = laid.cells.iter().filter(|c| c.row == row).collect();
+        cells.sort_by(|a, b| a.x.total_cmp(&b.x));
+        for w in cells.windows(2) {
+            assert!(w[0].x + w[0].width < w[1].x, "{} / {}", w[0].text, w[1].text);
+        }
+    }
+}
