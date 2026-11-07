@@ -1424,7 +1424,7 @@ fn layout_save(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     };
     // Recently closed is the session's, never a Layout's (#214).
     let snapshot = crate::persist::WorkspaceSnapshot {
-        recently_closed: Vec::new(),
+        recently_closed: Default::default(),
         ..s.workspace.snapshot()
     };
     let json = snapshot.to_json();

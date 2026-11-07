@@ -356,7 +356,7 @@ One of the Layouts that come with the app: "Bible + Commentary", "Word study des
 _Avoid_: Preset, Template
 
 **Last session**:
-The Workspace as the user left it, restored automatically at the next launch. It is not a Layout.
+The Workspace as the user left it, restored automatically at the next launch. It is not a Layout. One with no Tabs open comes back empty while its Recently closed has anything to reopen; otherwise the default arrangement opens instead.
 _Avoid_: Autosave layout
 
 **Recently closed**:

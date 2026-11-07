@@ -34,6 +34,20 @@ fn session(name: &str) -> (Session, Temp) {
     (s, Temp(root))
 }
 
+/// The app started again on `session`'s User database.
+fn relaunch(t: &Temp) -> Session {
+    let mut s = Session::new(JobMode::Inline);
+    for (id, ab) in [("kjv", "KJV"), ("web", "WEB"), ("asv", "ASV")] {
+        s.library.add(LibraryEntry {
+            manifest: Manifest::new(id, ab, ab, ResourceType::Bible, "en"),
+            path: format!("/library/{id}.obr").into(),
+        });
+    }
+    let (store, _) = obs_store::UserStore::open(&t.0.join("user.db")).unwrap();
+    s.attach_user(Box::new(store));
+    s
+}
+
 fn tab(v: &serde_json::Value) -> TabId {
     TabId(v["tab"].as_u64().unwrap())
 }
@@ -410,15 +424,7 @@ fn recently_closed_survives_a_restart_but_is_never_saved_in_a_layout() {
     s.save_last_session().unwrap();
     drop(s);
 
-    let mut s = Session::new(JobMode::Inline);
-    for (id, ab) in [("kjv", "KJV"), ("web", "WEB"), ("asv", "ASV")] {
-        s.library.add(LibraryEntry {
-            manifest: Manifest::new(id, ab, ab, ResourceType::Bible, "en"),
-            path: format!("/library/{id}.obr").into(),
-        });
-    }
-    let (store, _) = obs_store::UserStore::open(&t.0.join("user.db")).unwrap();
-    s.attach_user(Box::new(store));
+    let mut s = relaunch(&t);
     assert!(s.restore_last_session());
     assert_eq!(s.recently_closed_labels()[0].1, "Romans 12:1 · WEB");
     let kjv_panel = s.workspace.panel_of(kjv).unwrap();
@@ -436,6 +442,191 @@ fn recently_closed_survives_a_restart_but_is_never_saved_in_a_layout() {
     assert_eq!(s.recently_closed_labels().len(), 1);
     let back = reopen(&mut s);
     assert_eq!(state(&s, back[0]).0, TabKind::Resource("web".into()));
+}
+
+/// Every Tab closed, then a restart: the empty Workspace comes back with its Recently closed,
+/// so Reopen closed Tab still works.
+#[test]
+fn recently_closed_survives_a_restart_with_every_tab_closed() {
+    let (mut s, t) = session("restart-empty");
+    let kjv = open(&mut s, "kjv", json!({}));
+    let web = open(&mut s, "web", json!({ "split": true }));
+    place(&mut s, web, Some('C'), v(Book::Romans, 12, 1));
+    for t in [kjv, web] {
+        s.run("tab.close", &json!({ "tab": t.0 })).unwrap();
+    }
+    assert_eq!(s.workspace.tabs().count(), 0);
+    s.save_last_session().unwrap();
+    drop(s);
+
+    let mut s = relaunch(&t);
+    assert!(s.restore_last_session(), "the empty Workspace is restored");
+    assert_eq!(s.workspace.tabs().count(), 0);
+    assert_eq!(s.recently_closed_labels()[0].1, "Romans 12:1 · WEB");
+    let back = reopen(&mut s);
+    let (kind, at, link, _) = state(&s, back[0]);
+    assert_eq!(kind, TabKind::Resource("web".into()));
+    assert_eq!((at, link), (Some(v(Book::Romans, 12, 1)), Some('C')));
+    let back = reopen(&mut s);
+    assert_eq!(state(&s, back[0]).0, TabKind::Resource("kjv".into()));
+
+    // With nothing open and nothing in Recently closed there is nothing to restore.
+    assert!(s.recently_closed_labels().is_empty());
+    s.workspace.clear();
+    s.save_last_session().unwrap();
+    drop(s);
+    assert!(!relaunch(&t).restore_last_session());
+}
+
+/// Where a view of KJV is scrolled, as the UI would report it: `byte` into `unit`.
+fn scrolled(unit: &str, byte: usize) -> ScrollPosition {
+    ScrollPosition {
+        unit: obs_model::UnitId::new(unit).unwrap(),
+        byte,
+        into: 2.5,
+    }
+}
+
+/// The UI applies the queued effects and draws Tab `t` scrolled to `at`.
+fn draw(s: &mut Session, t: TabId, at: ScrollPosition) {
+    s.workspace.take_effects();
+    s.workspace.view_scrolled(t, Some(at));
+}
+
+/// What happens to the Workspace between the user closing KJV, scrolled into Genesis 31, and
+/// reopening it; after it, that closing is the newest in Recently closed.
+struct ScrollCase {
+    name: &'static str,
+    /// Before KJV goes to Genesis 31.
+    before: fn(&mut Session, TabId),
+    /// After it is closed: returns the Session, which may have been restarted.
+    after: fn(Session, &Temp, TabId) -> Session,
+}
+
+fn nothing(_: &mut Session, _: TabId) {}
+
+/// The closed Tab's closing is taken once, as the user closes it, and nothing after changes
+/// it: Reopen closed Tab brings KJV back at Genesis 31 scrolled where it was, however the
+/// Workspace changed meanwhile.
+#[test]
+fn a_closed_tab_keeps_the_scroll_it_closed_with_whatever_happens_after() {
+    let cases = [
+        ScrollCase {
+            name: "reopened straight away",
+            before: nothing,
+            after: |s, _, _| s,
+        },
+        ScrollCase {
+            name: "reopened, then closed again before it draws",
+            before: nothing,
+            after: |mut s, _, _| {
+                let back = reopen(&mut s);
+                s.run("tab.close", &json!({ "tab": back[0].0 })).unwrap();
+                s
+            },
+        },
+        ScrollCase {
+            name: "reopened, drawn where it was, then closed again",
+            before: nothing,
+            after: |mut s, _, _| {
+                let back = reopen(&mut s);
+                draw(&mut s, back[0], scrolled("GEN", 40));
+                s.run("tab.close", &json!({ "tab": back[0].0 })).unwrap();
+                s
+            },
+        },
+        ScrollCase {
+            name: "every Tab closed, then a restart",
+            before: nothing,
+            after: |mut s, t, _| {
+                assert_eq!(s.workspace.tabs().count(), 0);
+                s.save_last_session().unwrap();
+                drop(s);
+                let mut s = relaunch(t);
+                assert!(s.restore_last_session(), "the empty Workspace comes back");
+                s
+            },
+        },
+        ScrollCase {
+            name: "a Layout giving its id to another Tab, then Reset layout",
+            before: |s, kjv| {
+                place(s, kjv, None, v(Book::Genesis, 30, 1));
+                s.run("layout.save", &json!({ "name": "Study" })).unwrap();
+            },
+            after: |mut s, _, kjv| {
+                s.run("layout.restore", &json!({ "name": "Study" }))
+                    .unwrap();
+                assert!(
+                    s.workspace.tab(kjv).is_some(),
+                    "the Layout's KJV has its id"
+                );
+                draw(&mut s, kjv, scrolled("GEN", 10));
+                s.workspace.clear();
+                s
+            },
+        },
+        ScrollCase {
+            name: "the Last session saved and restored with a Tab open",
+            before: nothing,
+            after: |mut s, t, _| {
+                open(&mut s, "web", json!({}));
+                s.save_last_session().unwrap();
+                drop(s);
+                let mut s = relaunch(t);
+                assert!(s.restore_last_session());
+                s
+            },
+        },
+    ];
+    for case in cases {
+        let (mut s, t) = session(&format!("scroll-{}", case.name.replace([' ', ','], "-")));
+        let kjv = open(&mut s, "kjv", json!({}));
+        (case.before)(&mut s, kjv);
+        place(&mut s, kjv, None, v(Book::Genesis, 31, 1));
+        draw(&mut s, kjv, scrolled("GEN", 40));
+        s.run("tab.close", &json!({ "tab": kjv.0 })).unwrap();
+        let mut s = (case.after)(s, &t, kjv);
+        let newest = s.workspace.recently_closed().next().unwrap();
+        assert_eq!(
+            newest.tabs[0].scroll,
+            Some(scrolled("GEN", 40)),
+            "{}",
+            case.name
+        );
+        s.workspace.take_effects();
+        let back = reopen(&mut s);
+        let (kind, at, ..) = state(&s, back[0]);
+        assert_eq!(kind, TabKind::Resource("kjv".into()), "{}", case.name);
+        assert_eq!(at, Some(v(Book::Genesis, 31, 1)), "{}", case.name);
+        let restore = s
+            .workspace
+            .take_effects()
+            .into_iter()
+            .find_map(|e| match e {
+                Effect::RestoreScroll { tab, at } if tab == back[0] => Some(at),
+                _ => None,
+            });
+        assert_eq!(restore, Some(scrolled("GEN", 40)), "{}", case.name);
+    }
+}
+
+/// A reopened Tab sent elsewhere before it draws no longer carries the scroll it closed with,
+/// so closing it again keeps none.
+#[test]
+fn a_reopened_tab_sent_elsewhere_before_it_draws_closes_without_its_old_scroll() {
+    let (mut s, _t) = session("scroll-moved");
+    let kjv = open(&mut s, "kjv", json!({}));
+    place(&mut s, kjv, None, v(Book::Genesis, 31, 1));
+    draw(&mut s, kjv, scrolled("GEN", 40));
+    s.run("tab.close", &json!({ "tab": kjv.0 })).unwrap();
+    let back = reopen(&mut s)[0];
+    s.workspace.navigate(back, v(Book::Genesis, 33, 5));
+    s.workspace.take_effects();
+    assert_eq!(s.workspace.tab(back).unwrap().scroll, None);
+    s.run("tab.close", &json!({ "tab": back.0 })).unwrap();
+    let newest = s.workspace.recently_closed().next().unwrap();
+    assert_eq!(newest.tabs[0].scroll, None);
+    assert_eq!(newest.tabs[0].location, Some(v(Book::Genesis, 33, 5)));
 }
 
 #[test]

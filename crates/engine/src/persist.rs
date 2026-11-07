@@ -13,7 +13,7 @@ use obs_store::{
 };
 
 use crate::floating_windows::WindowSnapshot;
-use crate::workspace::{ClosedTabs, TabKind, Workspace};
+use crate::workspace::{RecentlyClosed, TabKind, Workspace};
 
 /// Snapshot format version; bump when the shape changes incompatibly.
 pub const SNAPSHOT_VERSION: u32 = 1;
@@ -124,13 +124,14 @@ pub struct TabSnapshot {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub contents: bool,
     /// Where a closed Resource Tab's view was scrolled, for Reopen closed Tab (#214). Only
-    /// Recently closed Tabs have one; Layouts and the Last session's open Tabs do not.
+    /// Recently closed Tabs have one ([`TabSnapshot::closing`]); Layouts and the Last
+    /// session's open Tabs do not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scroll: Option<ScrollPosition>,
 }
 
 impl TabSnapshot {
-    /// Tab `t` as saved.
+    /// Tab `t` as a Layout or the Last session saves it.
     pub fn of(t: &crate::workspace::Tab) -> Self {
         TabSnapshot {
             id: t.id.0,
@@ -142,6 +143,14 @@ impl TabSnapshot {
             interlinear: t.interlinear.clone(),
             contents: t.contents,
             scroll: None,
+        }
+    }
+
+    /// Tab `t` as Recently closed keeps it, closed by the user now: scrolled as its view is.
+    pub fn closing(t: &crate::workspace::Tab) -> Self {
+        TabSnapshot {
+            scroll: t.scroll.clone(),
+            ..Self::of(t)
         }
     }
 }
@@ -171,10 +180,10 @@ pub struct WorkspaceSnapshot {
     /// Floating windows (#152), each with its own Panels and where it was on screen.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub windows: Vec<WindowSnapshot>,
-    /// Recently closed Tabs and Panels, oldest first (#214): kept with the Last session,
-    /// never with a Layout.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub recently_closed: Vec<ClosedTabs>,
+    /// Recently closed Tabs and Panels (#214): kept with the Last session, also when no Tab
+    /// is open, never with a Layout.
+    #[serde(default, skip_serializing_if = "RecentlyClosed::is_default")]
+    pub recently_closed: RecentlyClosed,
 }
 
 impl WorkspaceSnapshot {
@@ -206,10 +215,11 @@ impl WorkspaceSnapshot {
         if self.focused.is_some_and(|f| !keep.contains(&f)) {
             self.focused = None;
         }
-        for closed in &mut self.recently_closed {
-            closed.tabs.retain(kept);
+        let closed = &mut self.recently_closed.closed;
+        for c in closed.iter_mut() {
+            c.tabs.retain(kept);
         }
-        self.recently_closed.retain(|c| !c.tabs.is_empty());
+        closed.retain(|c| !c.tabs.is_empty());
         self
     }
 }

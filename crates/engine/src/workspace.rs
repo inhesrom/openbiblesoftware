@@ -17,7 +17,7 @@ use crate::link::{ToStandard, to_native, to_standard};
 use crate::persist::{LayoutNode, ScrollPosition, TabSnapshot, WorkspaceSnapshot};
 
 mod recently_closed;
-pub use recently_closed::{ClosedTabs, RECENTLY_CLOSED_LIMIT};
+pub use recently_closed::{CameBackBeside, ClosedTabs, RECENTLY_CLOSED_LIMIT, RecentlyClosed};
 
 /// A Tab, stable for the life of the Workspace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -474,6 +474,11 @@ pub struct Tab {
     /// a command or typed reference gave a chapter or range (Standard numbering). Kept while
     /// the Tab's location is the Passage's first Verse; otherwise the Tab shows that Verse.
     pub passage: Option<Passage>,
+    /// Where a Resource Tab's view is scrolled, finer than its Current location, as the UI
+    /// reports it each time the view draws ([`Workspace::view_scrolled`]); a reopened Tab
+    /// (#214) carries the one it closed with until it draws. Cleared when the Tab is sent
+    /// somewhere else. Recently closed takes it as the user closes the Tab.
+    pub scroll: Option<ScrollPosition>,
 }
 
 impl Tab {
@@ -506,6 +511,7 @@ impl Tab {
             contents: t.contents,
             view_unit: None,
             passage: None,
+            scroll: t.scroll,
         }
     }
 
@@ -864,6 +870,21 @@ pub enum Effect {
     },
 }
 
+impl Effect {
+    /// The Tab whose view this sends somewhere else, if it does.
+    pub fn moved_view(&self) -> Option<TabId> {
+        match self {
+            Effect::Navigate { tab, .. }
+            | Effect::NavigateEntry { tab, .. }
+            | Effect::Follow { tab, .. }
+            | Effect::NavigateText { tab, .. }
+            | Effect::ShowUnit { tab, .. }
+            | Effect::RevealText { tab, .. } => Some(*tab),
+            _ => None,
+        }
+    }
+}
+
 /// How the caller asked for a Tab to be opened.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OpenRequest {
@@ -900,8 +921,8 @@ pub struct Workspace {
     visits: Vec<PendingVisit>,
     /// Tabs closed while History still had Visits of theirs to record, kept until it has.
     closed_with_visits: BTreeMap<TabId, Tab>,
-    /// Recently closed Tabs and Panels, oldest first, at most [`RECENTLY_CLOSED_LIMIT`] (#214).
-    closed: Vec<ClosedTabs>,
+    /// Recently closed Tabs and Panels (#214).
+    closed: RecentlyClosed,
     next_closed: u64,
 }
 
@@ -983,6 +1004,12 @@ impl Workspace {
 
     /// Effects queued since the last call, for the UI to apply in order.
     pub fn take_effects(&mut self) -> Vec<Effect> {
+        // A Tab sent somewhere else is no longer scrolled where its view was (#214).
+        for e in &self.effects {
+            if let Some(t) = e.moved_view().and_then(|t| self.tabs.get_mut(&t)) {
+                t.scroll = None;
+            }
+        }
         std::mem::take(&mut self.effects)
     }
 
@@ -1119,6 +1146,7 @@ impl Workspace {
                 contents: false,
                 view_unit: None,
                 passage: None,
+                scroll: None,
             },
         );
         // A linked Tool or Guide starts at its Link set's location. (Bibles wait until their
@@ -1433,6 +1461,13 @@ impl Workspace {
         }
         t.history.scrolled_to(verse);
         self.broadcast(tab, verse, false);
+    }
+
+    /// The UI reports where a Tab's view is scrolled ([`Tab::scroll`]), as it draws.
+    pub fn view_scrolled(&mut self, tab: TabId, at: Option<ScrollPosition>) {
+        if let Some(t) = self.tabs.get_mut(&tab) {
+            t.scroll = at;
+        }
     }
 
     /// The UI reports the text unit at the top of a Tab's view ([`Tab::view_unit`]).
@@ -1759,7 +1794,7 @@ impl Workspace {
         self.last_other_panel = None;
         self.arrangement = None;
         self.floating.clear();
-        self.forget_closed_panels();
+        self.panels_replaced();
     }
 
     /// The floating window a Tab is in (none: the main window).

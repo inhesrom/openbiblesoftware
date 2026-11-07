@@ -276,8 +276,8 @@ pub use word_study::{
     WordStudyInput,
 };
 pub use workspace::{
-    ClosedTabs, Effect, Guide, HeaderBox, History, OpenRequest, PanelId, Placement,
-    RECENTLY_CLOSED_LIMIT, Side, Tab, TabId, TabKind, Tool, Workspace,
+    CameBackBeside, ClosedTabs, Effect, Guide, HeaderBox, History, OpenRequest, PanelId, Placement,
+    RECENTLY_CLOSED_LIMIT, RecentlyClosed, Side, Tab, TabId, TabKind, Tool, Workspace,
 };
 pub use workspace_commands::{BACKUPS_TITLE, MENUS, Menu, MenuItem, choices, parallel_resources};
 

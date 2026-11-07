@@ -417,7 +417,7 @@ impl Shell {
     pub fn apply_effects(&mut self) {
         for e in self.st.session.workspace.take_effects() {
             // A reopened Tab not drawn yet (#214) that is sent elsewhere first stays there.
-            if let Some(t) = moved_view(&e).and_then(|tab| self.st.tabs.get_mut(&tab)) {
+            if let Some(t) = e.moved_view().and_then(|tab| self.st.tabs.get_mut(&tab)) {
                 t.restore_scroll = None;
             }
             match e {
@@ -427,7 +427,6 @@ impl Shell {
                 }
                 Effect::Focus(tab) => self.make_active(tab),
                 Effect::Closed(tab) => {
-                    self.st.keep_closed_scroll(tab);
                     self.remove_pane(tab);
                     self.st.tabs.remove(&tab);
                 }
@@ -659,13 +658,6 @@ impl Shell {
             self.st.session.workspace.sync_panels(shown.clone());
             self.shown = shown;
             let live: Vec<TabId> = self.st.session.workspace.tabs().map(|t| t.id).collect();
-            let closed: Vec<TabId> = (self.st.tabs.keys())
-                .filter(|t| !live.contains(t))
-                .copied()
-                .collect();
-            for t in closed {
-                self.st.keep_closed_scroll(t);
-            }
             self.st.tabs.retain(|t, _| live.contains(t));
         }
         let arrangement = self
@@ -1195,19 +1187,6 @@ impl Shell {
 }
 
 /// Which ticket a not-yet-built menu item arrives with.
-/// The Tab whose view `e` sends somewhere else, if it does.
-fn moved_view(e: &Effect) -> Option<TabId> {
-    match e {
-        Effect::Navigate { tab, .. }
-        | Effect::NavigateEntry { tab, .. }
-        | Effect::Follow { tab, .. }
-        | Effect::NavigateText { tab, .. }
-        | Effect::ShowUnit { tab, .. }
-        | Effect::RevealText { tab, .. } => Some(*tab),
-        _ => None,
-    }
-}
-
 fn not_yet(id: &str) -> &'static str {
     match id {
         "library.import" => "Import a local USFM file or folder",
@@ -1587,28 +1566,24 @@ impl State {
         out
     }
 
-    /// Tab `tab` is closing: Recently closed keeps where its view was scrolled (#214). A
-    /// reopened Tab that never drew still owes its saved position, so that one is kept.
-    fn keep_closed_scroll(&mut self, tab: TabId) {
-        let Some(t) = self.tabs.get_mut(&tab) else {
+    /// Report where Resource Tab `tab`'s view, just drawn, is scrolled to the Workspace,
+    /// which Recently closed takes it from if the user closes the Tab (#214). A reopened Tab
+    /// not drawn yet reports nothing: it still carries the position it closed with.
+    fn report_scroll(&mut self, tab: TabId) {
+        let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) else {
             return;
         };
-        let pending = t.restore_scroll.take();
-        let Some(view) = t.view.as_mut() else {
-            return;
-        };
-        let Some(anchor) = pending.or_else(|| view.text_anchor()) else {
-            return;
-        };
-        let Some(unit) = view.doc.units.get(anchor.unit).map(|u| u.id.clone()) else {
-            return;
-        };
-        let at = obs_engine::ScrollPosition {
-            unit,
-            byte: anchor.byte,
-            into: anchor.into,
-        };
-        self.session.workspace.closed_scroll(tab, at);
+        let at = view.text_anchor().and_then(|a| {
+            Some(obs_engine::ScrollPosition {
+                unit: view.doc.units.get(a.unit)?.id.clone(),
+                byte: a.byte,
+                into: a.into,
+            })
+        });
+        let ws = &mut self.session.workspace;
+        if ws.tab(tab).is_some_and(|t| t.scroll != at) {
+            ws.view_scrolled(tab, at);
+        }
     }
 
     /// A reopened Tab (#214), loaded at its Current location, scrolls back to where its view
@@ -2084,6 +2059,7 @@ impl State {
             self.session.workspace.user_scrolled_entry(tab, key);
         }
         self.report_view_unit(tab);
+        self.report_scroll(tab);
         if let Some(at) = at {
             let ws = &mut self.session.workspace;
             if user_moved {
