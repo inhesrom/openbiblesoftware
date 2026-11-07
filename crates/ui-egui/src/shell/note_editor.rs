@@ -19,8 +19,10 @@
 //!   re-aligned: one the selection takes in whole is copied as typed; while the selection (or
 //!   the cursor) is partly in one, every button is off ([`PARTLY_COVERS_SPAN`]), and while a
 //!   change would cut one at a line break, that button is off ([`SPAN_ACROSS_LINES`]). Then the
-//!   text stays as it is, byte for byte ([`format_blocked`]). A link target goes between `<`
-//!   and `>`.
+//!   text stays as it is, byte for byte ([`format_blocked`]). A code block is opaque too: a
+//!   button whose change would make a code block show other text, or turn its code into
+//!   formatted text (a list marker on an indented code line), is off
+//!   ([`CHANGES_CODE_BLOCK`]). A link target goes between `<` and `>`.
 //! - **Shortcuts**: Ctrl+B and Ctrl+I (Cmd on macOS). Typing `- `, `1. ` or `> ` at the start
 //!   of a line starts a list or quote; Enter in an item continues it (the next number), and
 //!   Enter in an empty item ends it.
@@ -306,6 +308,12 @@ pub(super) fn apply_format(text: &str, sel: Range<usize>, f: Format) -> (String,
     if format_blocked(text, sel.clone(), f).is_some() {
         return (text.to_string(), sel);
     }
+    formatted(text, sel, f)
+}
+
+/// `text` with `f` made on `sel` (char indices), and the selection after; whether it may be
+/// made is [`format_blocked`]'s to say.
+fn formatted(text: &str, sel: Range<usize>, f: Format) -> (String, Range<usize>) {
     match f {
         Format::Bold => wrap(text, sel, "**"),
         Format::Italic => wrap(text, sel, "*"),
@@ -320,13 +328,22 @@ pub(super) fn apply_format(text: &str, sel: Range<usize>, f: Format) -> (String,
 /// link, image or autolink: they are moved whole or not at all.
 pub(super) const PARTLY_COVERS_SPAN: &str = "Selection partly covers a code span or link";
 
+/// Why a format is off when it would change what a code block shows: a code block's lines
+/// are code by their indent or fences, so a list, quote or heading marker put on one (or one
+/// taken off a block around it), or a mark typed in it, would turn code into formatted text
+/// or change its text.
+pub(super) const CHANGES_CODE_BLOCK: &str = "Selection touches a code block this would change";
+
 /// Why `f` is off for the selection `sel` (char indices) of `text`, if it is; then
 /// [`apply_format`] leaves the text as it is, byte for byte. A code span, link, image or
 /// autolink ([`obs_model::NoteSpan::delimiter`] `None`) is opaque: a selection that touches
 /// one without taking it in whole, or a cursor inside one, turns every format off
 /// ([`PARTLY_COVERS_SPAN`]). One taken in whole is copied as typed. A format that would cut
 /// one at a line break (Bold or Italic, a mark on each line; list, quote or heading, a block
-/// boundary) is off too ([`SPAN_ACROSS_LINES`]), as is a link over lines.
+/// boundary) is off too ([`SPAN_ACROSS_LINES`]), as is a link over lines. A code block is
+/// opaque as well: a format whose change would make any code block of the Note
+/// ([`obs_model::note_code_blocks`]) show other text, or no longer be code, is off
+/// ([`CHANGES_CODE_BLOCK`]).
 pub(super) fn format_blocked(text: &str, sel: Range<usize>, f: Format) -> Option<&'static str> {
     let (a, b) = (byte_at(text, sel.start), byte_at(text, sel.end));
     let spans = obs_model::note_spans(text);
@@ -341,7 +358,7 @@ pub(super) fn format_blocked(text: &str, sel: Range<usize>, f: Format) -> Option
     if partly {
         return Some(PARTLY_COVERS_SPAN);
     }
-    match f {
+    let why = match f {
         // A link is one line's text: a selection across lines cannot be one.
         Format::Link => text[a..b].contains('\n').then_some(LINK_ONE_LINE),
         // A mark goes on each selected line: one taken in whole over lines would be cut.
@@ -350,8 +367,14 @@ pub(super) fn format_blocked(text: &str, sel: Range<usize>, f: Format) -> Option
             .filter(|s| s.delimiter.is_none() && a < s.source.end && s.source.start < b)
             .any(|s| text[s.source.clone()].contains('\n'))
             .then_some(SPAN_ACROSS_LINES),
-        _ => line_format_blocked(text, sel, f).then_some(SPAN_ACROSS_LINES),
+        _ => line_format_blocked(text, sel.clone(), f).then_some(SPAN_ACROSS_LINES),
+    };
+    if why.is_some() {
+        return why;
     }
+    let (new, _) = formatted(text, sel, f);
+    (obs_model::note_code_blocks(&new) != obs_model::note_code_blocks(text))
+        .then_some(CHANGES_CODE_BLOCK)
 }
 
 /// The selected part of each line the selection `a..b` (bytes) touches, by line of `lines`
@@ -1670,6 +1693,85 @@ mod tests {
             format_blocked("`a\nb`", 0..5, Format::Bold),
             Some(SPAN_ACROSS_LINES)
         );
+    }
+
+    #[test]
+    fn a_format_that_would_change_a_code_block_is_off() {
+        // A code block's lines are code by their indent or fences: a marker put on one, or
+        // a block around it changed, could turn its code into formatted text (#186 review).
+        let off = Some(CHANGES_CODE_BLOCK);
+        // Review repro: the item's text is an indented code block showing `**faith**` as
+        // typed; a `1. ` marker in place of `- ` would make it bold `faith`.
+        let text = "-     **faith**";
+        assert_eq!(format_blocked(text, 3..3, Format::Numbered), off);
+        assert_eq!(
+            apply_format(text, 3..3, Format::Numbered),
+            (text.into(), 3..3)
+        );
+        let line = obs_model::parse_note_text(text).remove(0);
+        assert_eq!((line.text.as_str(), line.marks.len()), ("**faith**", 0));
+        assert_eq!(obs_model::note_code_blocks(text), ["**faith**"]);
+        // (Note, selection, format): each off, the Note left byte for byte.
+        let cases: &[(&str, Range<usize>, Format)] = &[
+            ("-     **faith**", 3..3, Format::Bullet),
+            ("-     **faith**", 3..3, Format::Quote),
+            ("-     **faith**", 3..3, Format::Heading),
+            ("    **faith**", 0..0, Format::Bullet),
+            ("    **faith**", 0..0, Format::Quote),
+            // The text above it becoming an item would take it in as the item's paragraph.
+            ("a\n\n    **x**", 0..0, Format::Bullet),
+            ("a\n\n    **x**", 0..0, Format::Numbered),
+            // Fences are lines of their own: a marker on one ends the block.
+            ("```\n**x**\n```", 0..0, Format::Bullet),
+            ("```\n**x**\n```", 0..13, Format::Numbered),
+            ("```\n**x**\n```", 4..4, Format::Heading),
+            // Inside its item a fenced block keeps its place only as the item's.
+            ("- a\n  ```\n  **x**\n  ```", 2..2, Format::Numbered),
+            // A mark or link typed in code shows as typed: its text would change.
+            ("```\n**x**\n```", 4..9, Format::Bold),
+            ("    faith", 4..9, Format::Italic),
+            ("    faith", 6..6, Format::Bold),
+            ("    faith", 4..9, Format::Link),
+        ];
+        for (text, sel, f) in cases {
+            assert_eq!(format_blocked(text, sel.clone(), *f), off, "{text:?} {f:?}");
+            assert_eq!(
+                apply_format(text, sel.clone(), *f),
+                (text.to_string(), sel.clone()),
+                "{text:?} {f:?}"
+            );
+        }
+        // A change that leaves every code block as it shows is made: one nested under the
+        // item moves under the new marker's text, still code, still `**x**`.
+        for (text, sel, f, want) in [
+            (
+                "- a\n\n      **x**",
+                2..2,
+                Format::Numbered,
+                "1. a\n\n       **x**",
+            ),
+            (
+                "1. a\n\n       **x**",
+                0..0,
+                Format::Bullet,
+                "- a\n\n      **x**",
+            ),
+            (
+                "> a\n>\n>     **x**",
+                0..0,
+                Format::Bullet,
+                "- a\n>\n>     **x**",
+            ),
+            ("a\n\n    **x**", 0..1, Format::Bold, "**a**\n\n    **x**"),
+        ] {
+            assert_eq!(format_blocked(text, sel.clone(), f), None, "{text:?} {f:?}");
+            let (new, _) = apply_format(text, sel, f);
+            assert_eq!(new, want, "{text:?} {f:?}");
+            assert_eq!(
+                obs_model::note_code_blocks(&new),
+                obs_model::note_code_blocks(text)
+            );
+        }
     }
 
     #[test]

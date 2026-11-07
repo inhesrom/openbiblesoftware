@@ -165,7 +165,11 @@ in one every button is off ("Selection partly covers a code span or link"), and 
 would cut one at a line break (a mark on each line, a list item or quote of its own) that
 button is off; Ctrl+B and Ctrl+I then leave the text as it is, byte for byte. A code span over
 lines shows its whole text (line breaks read as spaces) on the line it starts on: no position
-inside a code span is worked out. A character reference (`&#233;`, `&eacute;`) is one
+inside a code span is worked out. A code block (indented or fenced) is opaque too: its lines
+are code by their indent or fences, so a button whose change would make any code block show
+other text or stop being code (a `1. ` in place of the `- ` of an item whose text is indented
+code, a list marker on a fence, a mark typed in code) is off ("Selection touches a code block
+this would change"), checked against `note_code_blocks` before and after. A character reference (`&#233;`, `&eacute;`) is one
 character both ways: bold or italic on a selection that ends inside one takes in the whole
 reference. Typing `- `, `1. ` or `> `
 at a line's start starts a list or quote; Enter at the end of an item continues it (with the

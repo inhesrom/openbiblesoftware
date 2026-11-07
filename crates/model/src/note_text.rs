@@ -466,6 +466,28 @@ pub fn note_spans(body: &str) -> Vec<NoteSpan> {
     out
 }
 
+/// The text of each code block (indented or fenced) of `body`, in order: what it shows, as
+/// typed. Whether a code block's line is code is read from its indent or fences, so a change
+/// to the blocks around it can change what it shows; the Note editor makes no change that
+/// changes this list.
+pub fn note_code_blocks(body: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut open: Option<String> = None;
+    for event in Parser::new_ext(body, Options::empty()) {
+        match event {
+            Event::Start(Tag::CodeBlock(_)) => open = Some(String::new()),
+            Event::End(TagEnd::CodeBlock) => out.extend(open.take()),
+            Event::Text(t) => {
+                if let Some(code) = open.as_mut() {
+                    code.push_str(&t);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 /// The text a Note shows, markup removed: one line per line (for search and filtering).
 pub fn note_plain_text(body: &str) -> String {
     parse_note_text(body)

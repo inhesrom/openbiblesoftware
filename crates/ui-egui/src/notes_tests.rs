@@ -1603,6 +1603,79 @@ fn the_note_editor_buttons_are_off_over_a_code_span_or_link_across_lines_or_part
 }
 
 #[test]
+fn the_note_editor_buttons_are_off_where_they_would_change_a_code_block() {
+    // Review repro (#186): the item's text is indented code showing `**faith**` as typed; a
+    // `1. ` marker in its place would make it bold `faith`.
+    let dir = folder("editor-code-block");
+    let mut h = launch(&dir);
+    h.ctx.enable_accesskit();
+    let tb = h.tab_id("TB");
+    h.shell.run("tab.close", &json!({ "tab": tb.0 }));
+    settle_all(&mut h);
+    let body = "-     **faith**";
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Rom 5:8", "body": body }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    open_notes(&mut h);
+    let card = card_body(&h, &id);
+    h.click(card.center());
+    assert!(h.ctx.text_edit_focused());
+    let text = |h: &Harness| {
+        h.shell
+            .st
+            .notes_ui
+            .editing
+            .as_ref()
+            .map(|e| e.text.clone())
+            .unwrap_or_default()
+    };
+    press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+    h.frames(2);
+    const CHANGES_CODE_BLOCK: &str = "Selection touches a code block this would change";
+    let every = ["B", "I", "H", "•", "1.", "“”", "🔗"];
+    let off: Vec<_> = h
+        .tree
+        .as_ref()
+        .unwrap()
+        .nodes
+        .iter()
+        .filter(|(_, n)| n.role() == egui::accesskit::Role::Button)
+        .filter(|(_, n)| n.label().is_some_and(|l| every.contains(&l)))
+        .map(|(_, n)| {
+            let description = n.description().map(str::to_string);
+            (n.label().unwrap().to_string(), n.is_disabled(), description)
+        })
+        .collect();
+    assert_eq!(off.len(), 7, "{off:?}");
+    for (label, disabled, description) in &off {
+        assert!(disabled, "{label}");
+        assert_eq!(description.as_deref(), Some(CHANGES_CODE_BLOCK), "{label}");
+    }
+    for b in ["1.", "•", "“”", "H"] {
+        press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+        h.click_text(b);
+        assert_eq!(text(&h), body, "{b}");
+    }
+    for key in [egui::Key::B, egui::Key::I] {
+        press_key(&mut h, egui::Key::A, Modifiers::COMMAND);
+        press_key(&mut h, key, Modifiers::COMMAND);
+        assert_eq!(text(&h), body, "{key:?}");
+    }
+    // What the card shows is still the code, as typed.
+    let line = obs_model::parse_note_text(&text(&h)).remove(0);
+    assert_eq!((line.text.as_str(), line.marks.len()), ("**faith**", 0));
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn the_note_editor_symbols_are_in_the_chrome_fonts_and_bullets_in_the_reading_font() {
     let h = Harness::new();
     h.ctx.fonts_mut(|f| {

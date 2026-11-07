@@ -463,3 +463,19 @@ fn spans_know_their_delimiter_and_code_and_links_have_none() {
         assert_eq!(got, want, "{body:?}");
     }
 }
+
+#[test]
+fn note_code_blocks_are_read_from_indent_and_fences() {
+    let cases: &[(&str, &[&str])] = &[
+        ("    **faith**", &["**faith**"]),
+        ("-     **faith**", &["**faith**"]),
+        ("- a\n\n      **x**\n      y", &["**x**\ny"]),
+        ("```\n**x**\n```", &["**x**\n"]),
+        ("> ```\n> a\n>\n> b\n> ```", &["a\n\nb\n"]),
+        ("a\n    b", &[]),
+        ("`a` **b**", &[]),
+    ];
+    for &(body, want) in cases {
+        assert_eq!(note_code_blocks(body), want, "{body:?}");
+    }
+}
