@@ -9,6 +9,7 @@ use obs_scripture::{Passage, RefStyle, Standard, format_passage};
 
 use super::State;
 use crate::theme;
+use crate::tokens::space;
 
 /// What the hint under each link says.
 const COMPARE_HINT: &str =
@@ -28,7 +29,7 @@ impl State {
         // parallel to "1 Chr 21" across four sections.
         if found.groups.len() > 1 {
             ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
+                ui.spacing_mut().item_spacing.x = space::S;
                 ui.label(RichText::new("In all:").strong().color(theme::c().ink));
                 for (i, p) in found.all.iter().enumerate() {
                     if i > 0 {
@@ -43,7 +44,7 @@ impl State {
                     }
                 }
             });
-            ui.add_space(6.0);
+            ui.add_space(space::S);
         }
         for group in &found.groups {
             // The part of the Guide's Passage the rows are parallel to, when it is not the
@@ -59,7 +60,7 @@ impl State {
                 let reference = short(row.passage);
                 let r = ui
                     .horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
+                        ui.spacing_mut().item_spacing.x = space::M;
                         let r = super::unbroken_link(ui, &reference).on_hover_text(format!(
                             "{} · {}\n{COMPARE_HINT}",
                             row.title, row.source_title
@@ -75,7 +76,7 @@ impl State {
                     self.reference_popup(ui, &[vec![row.passage].into()]);
                 }
                 self.preview(ui, Passage::verse(row.passage.start()), true);
-                ui.add_space(4.0);
+                ui.add_space(space::XS);
             }
             ui.separator();
         }

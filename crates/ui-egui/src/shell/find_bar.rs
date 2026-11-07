@@ -14,6 +14,7 @@ use crate::find::{FindBar, FindStatus};
 use crate::icons;
 use crate::selection::selected_text;
 use crate::theme;
+use crate::tokens::{inset, radius, size, space};
 
 /// What the empty field says.
 pub(crate) const FIND_HINT: &str = "Find in this Resource";
@@ -50,10 +51,10 @@ fn arrow_button(ui: &mut Ui, up: bool, enabled: bool, what: &str) -> egui::Respo
     } else {
         egui::Sense::hover()
     };
-    let (rect, r) = ui.allocate_exact_size(vec2(22.0, 22.0), sense);
+    let (rect, r) = ui.allocate_exact_size(egui::Vec2::splat(size::CONTROL_COMPACT), sense);
     let c = theme::c();
     if r.hovered() && enabled {
-        ui.painter().rect_filled(rect, 4.0, c.hover);
+        ui.painter().rect_filled(rect, radius::S, c.hover);
     }
     let color = if enabled { c.ink } else { c.muted };
     let icon = if up {
@@ -136,16 +137,16 @@ impl State {
             && (ui.memory(|m| m.had_focus_last_frame(id))
                 || (focused_tab && ui.memory(|m| m.focused().is_none())));
         close |= escape;
-        ui.add_space(4.0);
+        ui.add_space(space::XS);
         ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = 5.0;
-            ui.add_space(4.0);
+            ui.spacing_mut().item_spacing.x = space::XS;
+            ui.add_space(space::XS);
             let mut out = egui::TextEdit::singleline(&mut bar.text)
                 .id(id)
                 .hint_text(FIND_HINT)
-                .desired_width(170.0)
+                .desired_width(size::FIELD)
                 .return_key(None)
-                .margin(egui::Margin::symmetric(8, 4))
+                .margin(inset::BAR)
                 .show(ui);
             if std::mem::take(&mut bar.focus) {
                 out.response.request_focus();
@@ -157,8 +158,8 @@ impl State {
             let status = bar.status();
             let count = status_text(status);
             ui.add_sized(
-                vec2(78.0, 20.0),
-                egui::Label::new(RichText::new(count).small().color(theme::c().muted)),
+                vec2(size::LABEL_COLUMN, size::CONTROL_COMPACT),
+                egui::Label::new(crate::components::hint_text(count)),
             );
             let any = matches!(status, FindStatus::Found { total, .. } if total > 0);
             let key = crate::key_labels::label;
@@ -209,7 +210,7 @@ impl State {
             if ui
                 .add_enabled(
                     !bar.text.trim().is_empty(),
-                    egui::Button::new(RichText::new("Search all Resources").small()),
+                    crate::components::button(RichText::new("Search all Resources").small()),
                 )
                 .on_hover_text(format!("Open Search with this text ({})", key("Alt+Enter")))
                 .clicked()

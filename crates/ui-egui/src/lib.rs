@@ -6,6 +6,7 @@
 mod a11y;
 pub mod bench;
 mod compare_view;
+mod components;
 mod doc;
 mod filters;
 mod find;
@@ -22,6 +23,7 @@ mod selection;
 mod shell;
 mod system_fonts;
 pub mod theme;
+pub mod tokens;
 mod view;
 mod workers;
 

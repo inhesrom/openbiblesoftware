@@ -17,6 +17,7 @@ use serde_json::json;
 use super::State;
 use crate::system_fonts::{InstalledFamily, NoSystemFonts, SystemFonts};
 use crate::theme;
+use crate::tokens::{inset, share, size, space};
 
 /// Family and style chosen for each reading script (Latin, Greek, Hebrew).
 type ReadingWanted = [Option<(String, String)>; 3];
@@ -263,12 +264,12 @@ impl State {
         let mut open = true;
         let escape = super::escape_closes_window(ctx);
         let mut picks: Vec<(FontSlot, Option<(String, String)>)> = Vec::new();
-        let max_height = ctx.content_rect().height() * 0.75;
+        let max_height = ctx.content_rect().height() * share::DIALOG;
         let window = egui::Window::new("Fonts")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
-            .default_width(580.0)
+            .default_width(size::DIALOG.x)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
                 ui.label(
@@ -283,7 +284,7 @@ impl State {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.fonts_ui.filter)
                             .id_salt("fonts-filter")
-                            .desired_width(200.0),
+                            .desired_width(size::FIELD),
                     )
                     .accessible_name("Filter installed fonts");
                 });
@@ -297,10 +298,10 @@ impl State {
                 }
                 egui::ScrollArea::vertical()
                     .max_height(max_height)
-                    .min_scrolled_height(max_height.min(640.0))
+                    .min_scrolled_height(max_height.min(size::DIALOG_LIST))
                     .show(ui, |ui| {
                         for slot in FontSlot::ALL {
-                            ui.add_space(10.0);
+                            ui.add_space(space::L);
                             self.font_slot_ui(ui, slot, &families, &mut picks);
                         }
                     });
@@ -334,8 +335,8 @@ impl State {
             let family_text = current.as_ref().map_or(bundled.clone(), |c| c.0.clone());
             egui::ComboBox::from_id_salt(("font-family", slot.id()))
                 .selected_text(family_text)
-                .width(260.0)
-                .height(360.0)
+                .width(size::FIELD_WIDE)
+                .height(size::LIST_TALL)
                 .show_ui(ui, |ui| {
                     if ui.selectable_label(current.is_none(), &bundled).clicked() {
                         picks.push((slot, None));
@@ -369,7 +370,7 @@ impl State {
                     .unwrap_or_default();
                 egui::ComboBox::from_id_salt(("font-style", slot.id()))
                     .selected_text(style.as_str())
-                    .width(140.0)
+                    .width(size::FIELD_NARROW)
                     .show_ui(ui, |ui| {
                         for st in styles {
                             if ui.selectable_label(&st == style, &st).clicked() {
@@ -398,14 +399,10 @@ impl State {
                 }
                 if let Some((_, sample, rtl)) = PREVIEWS.iter().find(|p| p.0 == script) {
                     let settings = self.session.text;
-                    let width = ui.available_width().min(540.0);
-                    egui::Frame::new()
-                        .fill(theme::c().field)
-                        .corner_radius(4.0)
-                        .inner_margin(egui::Margin::symmetric(10, 6))
-                        .show(ui, |ui| {
-                            self.snippet(ui, sample, *rtl, width - 20.0, &settings);
-                        });
+                    let width = ui.available_width().min(size::DIALOG.x);
+                    crate::components::card_frame().show(ui, |ui| {
+                        self.snippet(ui, sample, *rtl, width - inset::CARD.sum().x, &settings);
+                    });
                 }
             }
             None => {

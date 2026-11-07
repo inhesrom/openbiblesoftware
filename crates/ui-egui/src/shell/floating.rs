@@ -11,6 +11,7 @@ use obs_engine::{PanelId, Placement, ScreenRect, Side, TabId, WindowId, WindowPl
 
 use super::{PanelTiles, Shell, attach_beside, build_node, dock_node, insert_pane, tile_handles};
 use crate::theme;
+use crate::tokens::inset;
 
 /// A new floating window's size when its Tab's Panel size is not known, in points.
 const DEFAULT_SIZE: (f32, f32) = (640.0, 720.0);
@@ -486,7 +487,7 @@ impl Shell {
             .frame(
                 egui::Frame::new()
                     .fill(theme::c().shell)
-                    .inner_margin(egui::Margin::same(8)),
+                    .inner_margin(inset::POPOVER),
             )
             .show(ui, |ui| {
                 let Some(d) = self.floating.iter().find(|d| d.id == id) else {

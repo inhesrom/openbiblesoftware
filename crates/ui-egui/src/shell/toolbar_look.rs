@@ -8,36 +8,42 @@
 //! window.
 
 use egui::{
-    Align2, Color32, CornerRadius, FontId, Painter, Rect, Response, Sense, Stroke, StrokeKind, Ui,
-    Vec2, pos2, vec2,
+    Align2, Color32, FontId, Painter, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, pos2,
+    vec2,
 };
 use obs_engine::{Launcher, LayoutThumbnail};
 
 use crate::icons::{self, Icon};
 use crate::theme;
+use crate::tokens::{alpha, radius, size, space, stroke, text};
 
 /// The launcher buttons' height and icon size.
-pub(super) const BUTTON_HEIGHT: f32 = 30.0;
-const ICON: f32 = 18.0;
-const BUTTON_PAD: f32 = 9.0;
-const ICON_GAP: f32 = 7.0;
-const RADIUS: u8 = 7;
+pub(super) const BUTTON_HEIGHT: f32 = size::LAUNCHER;
+const ICON: f32 = size::ICON_LARGE;
+const BUTTON_PAD: f32 = space::M;
+const ICON_GAP: f32 = space::S;
+const RADIUS: f32 = radius::L;
 
 /// One row of a drop-down list.
-pub(super) const ROW: f32 = 30.0;
+pub(super) const ROW: f32 = size::LAUNCHER;
 /// The drop-downs' widths.
-pub(super) const LIBRARY_WIDTH: f32 = 500.0;
-pub(super) const GUIDES_WIDTH: f32 = 420.0;
-pub(super) const TOOLS_WIDTH: f32 = 300.0;
+pub(super) const LIBRARY_WIDTH: f32 = size::DIALOG_WIDTH;
+pub(super) const GUIDES_WIDTH: f32 = size::PROSE;
+pub(super) const TOOLS_WIDTH: f32 = size::COLUMN;
 /// The Library pane's list of rows at most, before it scrolls.
-pub(super) const LIBRARY_LIST: f32 = 440.0;
+pub(super) const LIBRARY_LIST: f32 = size::PROSE;
 /// Room kept under a pane's scrolling list, to the window's bottom edge: the footer links,
 /// the frame and a gap.
-pub(super) const BELOW_LIST: f32 = 90.0;
+pub(super) const BELOW_LIST: f32 = size::ROW_TRIPLE + space::M;
 /// A Layout card, and how many fit across the Layouts drop-down.
-pub(super) const CARD: egui::Vec2 = vec2(150.0, 122.0);
+pub(super) const CARD: egui::Vec2 = size::LAYOUT_CARD;
 pub(super) const CARDS_ACROSS: usize = 4;
-const THUMB_HEIGHT: f32 = 78.0;
+const THUMB_HEIGHT: f32 = size::LAYOUT_THUMB;
+/// A count badge's height and its text's inset.
+const BADGE: f32 = size::BADGE;
+const BADGE_PAD: f32 = space::XS;
+/// A row's text inset from its sides.
+const ROW_PAD: f32 = space::L;
 
 /// The colour roles the toolbar uses, from this frame's chrome theme.
 #[derive(Clone, Copy)]
@@ -70,11 +76,11 @@ pub(super) fn look() -> Look {
 }
 
 fn label_font() -> FontId {
-    FontId::proportional(14.0)
+    FontId::proportional(text::BODY)
 }
 
 fn small_font() -> FontId {
-    FontId::proportional(11.5)
+    FontId::proportional(text::SMALL)
 }
 
 /// What a launcher button draws: its icon, its label, or both (Customize toolbar…).
@@ -92,16 +98,20 @@ pub(super) fn launcher_size(ui: &Ui, which: Launcher, shows: ButtonShows, badge:
     }
     let label = ui
         .painter()
-        .layout_no_wrap(which.title().to_string(), label_font(), Color32::WHITE)
+        .layout_no_wrap(
+            which.title().to_string(),
+            label_font(),
+            Color32::PLACEHOLDER,
+        )
         .size()
         .x;
     let badge_w = if badge > 0 {
         ui.painter()
-            .layout_no_wrap(badge.to_string(), small_font(), Color32::WHITE)
+            .layout_no_wrap(badge.to_string(), small_font(), Color32::PLACEHOLDER)
             .size()
             .x
-            + 10.0
-            + 5.0
+            + 2.0 * BADGE_PAD
+            + space::XS
     } else {
         0.0
     };
@@ -131,7 +141,7 @@ pub(super) fn launcher_button(
         p.rect_stroke(
             rect,
             RADIUS,
-            Stroke::new(1.5, lk.accent),
+            Stroke::new(stroke::MEDIUM, lk.accent),
             StrokeKind::Inside,
         );
     }
@@ -148,12 +158,12 @@ pub(super) fn launcher_button(
     if !shows.label {
         if let Some(g) = badge_text {
             let pill = Rect::from_min_size(
-                pos2(rect.right() - g.size().x - 8.0, rect.top()),
-                vec2(g.size().x + 8.0, 14.0),
+                pos2(rect.right() - g.size().x - 2.0 * BADGE_PAD, rect.top()),
+                vec2(g.size().x + 2.0 * BADGE_PAD, BADGE),
             );
-            p.rect_filled(pill, 7, lk.badge);
+            p.rect_filled(pill, BADGE / 2.0, lk.badge);
             p.galley(
-                pos2(pill.left() + 4.0, pill.center().y - g.size().y / 2.0),
+                pos2(pill.left() + BADGE_PAD, pill.center().y - g.size().y / 2.0),
                 g,
                 theme::text_on(lk.badge),
             );
@@ -170,14 +180,14 @@ pub(super) fn launcher_button(
         color,
     );
     if let Some(g) = badge_text {
-        let x = x + galley.size().x + 5.0;
+        let x = x + galley.size().x + space::XS;
         let pill = Rect::from_min_size(
-            pos2(x, rect.center().y - 8.0),
-            vec2(g.size().x + 10.0, 16.0),
+            pos2(x, rect.center().y - BADGE / 2.0),
+            vec2(g.size().x + 2.0 * BADGE_PAD, BADGE),
         );
-        p.rect_filled(pill, 8, lk.badge);
+        p.rect_filled(pill, BADGE / 2.0, lk.badge);
         p.galley(
-            pos2(pill.left() + 5.0, pill.center().y - g.size().y / 2.0),
+            pos2(pill.left() + BADGE_PAD, pill.center().y - g.size().y / 2.0),
             g,
             theme::text_on(lk.badge),
         );
@@ -185,7 +195,7 @@ pub(super) fn launcher_button(
     resp
 }
 
-const BAR_MARGIN: f32 = 6.0;
+const BAR_MARGIN: f32 = space::S;
 
 /// How thick a toolbar is across, with its frame: a launcher button (icons only when
 /// `vertical`), the margins and the outline.
@@ -198,14 +208,14 @@ pub(super) fn bar_thickness(vertical: bool) -> f32 {
     button + 2.0 * BAR_MARGIN + 2.0
 }
 /// The grip's length along the toolbar.
-const GRIP: f32 = 12.0;
+const GRIP: f32 = space::L;
 
 /// The frame of a toolbar outside the menu bar (Bottom, Left, Right, or Auto-hide).
 pub(super) fn bar_frame() -> egui::Frame {
     let lk = look();
     egui::Frame::new()
         .fill(lk.surface)
-        .stroke(Stroke::new(1.0, lk.rule))
+        .stroke(Stroke::new(stroke::HAIR, lk.rule))
         .inner_margin(egui::Margin::same(BAR_MARGIN as i8))
 }
 
@@ -232,12 +242,12 @@ pub(super) fn grip(ui: &mut Ui, vertical: bool) -> Response {
     for i in -1..=1 {
         for j in [-1.0, 1.0] {
             let (dx, dy) = if vertical {
-                (i as f32 * 4.0, j * 2.0)
+                (i as f32 * space::XS, j * space::XXS)
             } else {
-                (j * 2.0, i as f32 * 4.0)
+                (j * space::XXS, i as f32 * space::XS)
             };
             ui.painter()
-                .circle_filled(pos2(c.x + dx, c.y + dy), 1.2, color);
+                .circle_filled(pos2(c.x + dx, c.y + dy), size::GRIP_DOT, color);
         }
     }
     resp
@@ -268,8 +278,13 @@ pub(super) fn drop_edge(ctx: &egui::Context, r: Rect) {
         egui::Order::Foreground,
         egui::Id::unique("toolbar-drop-edge"),
     ));
-    p.rect_filled(r, 4, lk.accent.gamma_multiply(0.22));
-    p.rect_stroke(r, 4, Stroke::new(2.0, lk.accent), StrokeKind::Inside);
+    p.rect_filled(r, radius::S, lk.accent.gamma_multiply(alpha::TINT));
+    p.rect_stroke(
+        r,
+        radius::S,
+        Stroke::new(stroke::THICK, lk.accent),
+        StrokeKind::Inside,
+    );
 }
 
 /// A launcher's icon inside `r`.
@@ -285,25 +300,22 @@ pub(super) fn paint_icon(p: &Painter, which: Launcher, r: Rect, lk: &Look) {
 
 /// A drop-down's section heading ("Recent", "Bibles").
 pub(super) fn heading(ui: &mut Ui, text: &str) {
-    let lk = look();
-    ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new(text.to_uppercase())
-            .font(small_font())
-            .color(lk.muted)
-            .strong(),
-    );
+    ui.add_space(space::XS);
+    crate::components::section_header(ui, text);
 }
 
 /// The background of a list row: selected, hovered or neither.
 pub(super) fn row_background(ui: &Ui, rect: Rect, selected: bool, hovered: bool) {
     let lk = look();
     if selected {
-        ui.painter().rect_filled(rect, 5, lk.selected);
-        let bar = Rect::from_min_size(rect.min + vec2(0.0, 6.0), vec2(3.0, rect.height() - 12.0));
-        ui.painter().rect_filled(bar, 2, lk.accent);
+        ui.painter().rect_filled(rect, radius::M, lk.selected);
+        let bar = Rect::from_min_size(
+            rect.min + vec2(0.0, space::S),
+            vec2(size::DOT, rect.height() - 2.0 * space::S),
+        );
+        ui.painter().rect_filled(bar, radius::XS, lk.accent);
     } else if hovered {
-        ui.painter().rect_filled(rect, 5, lk.hover);
+        ui.painter().rect_filled(rect, radius::M, lk.hover);
     }
 }
 
@@ -313,20 +325,25 @@ pub(super) fn resource_row(ui: &Ui, rect: Rect, chip: Option<&str>, title: &str,
     let lk = look();
     let p = ui.painter();
     // A fixed-width chip, so titles line up; a long abbreviation ends in "…".
-    let chip_w = 58.0;
+    let chip_w = size::CHIP_ABBREVIATION;
     let chip_rect = Rect::from_min_size(
-        pos2(rect.left() + 10.0, rect.center().y - 10.0),
-        vec2(chip_w, 20.0),
+        pos2(rect.left() + ROW_PAD, rect.center().y - size::CHIP / 2.0),
+        vec2(chip_w, size::CHIP),
     );
-    p.rect_filled(chip_rect, 4, lk.surface);
-    p.rect_stroke(chip_rect, 4, Stroke::new(1.0, lk.rule), StrokeKind::Inside);
+    p.rect_filled(chip_rect, radius::S, lk.surface);
+    p.rect_stroke(
+        chip_rect,
+        radius::S,
+        Stroke::new(stroke::HAIR, lk.rule),
+        StrokeKind::Inside,
+    );
     match chip {
         Some(abbreviation) => {
             let chip_text = elided(
                 p,
                 abbreviation.to_string(),
-                FontId::proportional(12.0),
-                chip_w - 8.0,
+                FontId::proportional(text::SMALL),
+                chip_w - 2.0 * BADGE_PAD,
                 lk.accent,
             );
             p.galley(
@@ -341,16 +358,16 @@ pub(super) fn resource_row(ui: &Ui, rect: Rect, chip: Option<&str>, title: &str,
         None => icons::paint(p, Icon::StarFilled, chip_rect, icons::SMALL, lk.badge),
     }
     let right = p.text(
-        pos2(rect.right() - 10.0, rect.center().y),
+        pos2(rect.right() - ROW_PAD, rect.center().y),
         Align2::RIGHT_CENTER,
         detail,
         small_font(),
         lk.muted,
     );
-    let left = chip_rect.right() + 10.0;
+    let left = chip_rect.right() + ROW_PAD;
     let clip = Rect::from_min_max(
         pos2(left, rect.top()),
-        pos2((right.left() - 10.0).max(left), rect.bottom()),
+        pos2((right.left() - ROW_PAD).max(left), rect.bottom()),
     );
     p.with_clip_rect(clip).text(
         pos2(left, rect.center().y),
@@ -372,7 +389,7 @@ pub(super) fn plain_row(
 ) {
     let lk = look();
     let p = ui.painter();
-    let mut x = rect.left() + 12.0;
+    let mut x = rect.left() + ROW_PAD;
     if let Some(icon) = icon {
         let at = Rect::from_min_size(
             pos2(x, rect.center().y - icons::BODY / 2.0),
@@ -385,7 +402,7 @@ pub(super) fn plain_row(
             icons::BODY,
             if enabled { lk.accent } else { lk.muted },
         );
-        x = at.right() + 10.0;
+        x = at.right() + ROW_PAD;
     }
     p.text(
         pos2(x, rect.center().y),
@@ -396,7 +413,7 @@ pub(super) fn plain_row(
     );
     if !note.is_empty() {
         p.text(
-            pos2(rect.right() - 10.0, rect.center().y),
+            pos2(rect.right() - ROW_PAD, rect.center().y),
             Align2::RIGHT_CENTER,
             note,
             small_font(),
@@ -411,11 +428,17 @@ pub(super) fn footer_link(ui: &mut Ui, text: &str, selected: bool) -> Response {
     let galley = ui
         .painter()
         .layout_no_wrap(text.to_string(), label_font(), lk.accent);
-    let (rect, resp) = ui.allocate_exact_size(galley.size() + vec2(14.0, 10.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(
+        galley.size() + 2.0 * vec2(space::S, space::XS),
+        Sense::click(),
+    );
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, text));
     row_background(ui, rect, selected, resp.hovered());
     ui.painter().galley(
-        pos2(rect.left() + 7.0, rect.center().y - galley.size().y / 2.0),
+        pos2(
+            rect.left() + space::S,
+            rect.center().y - galley.size().y / 2.0,
+        ),
         galley,
         lk.accent,
     );
@@ -423,13 +446,8 @@ pub(super) fn footer_link(ui: &mut Ui, text: &str, selected: bool) -> Response {
 }
 
 /// The frame of a drop-down.
-pub(super) fn dropdown_frame(ui: &Ui) -> egui::Frame {
-    let lk = look();
-    egui::Frame::popup(ui.style())
-        .fill(lk.field)
-        .stroke(Stroke::new(1.0, lk.rule))
-        .corner_radius(CornerRadius::same(10))
-        .inner_margin(egui::Margin::same(10))
+pub(super) fn dropdown_frame(_ui: &Ui) -> egui::Frame {
+    crate::components::popover_frame()
 }
 
 /// A Layout card: its thumbnail and its name. `dim` greys out a Built-in Layout this library
@@ -451,16 +469,21 @@ pub(super) fn layout_card(
     } else {
         lk.surface
     };
-    p.rect_filled(rect, 8, bg);
+    p.rect_filled(rect, radius::L, bg);
     let border = if selected { lk.accent } else { lk.rule };
-    p.rect_stroke(rect, 8, Stroke::new(1.0, border), StrokeKind::Inside);
-    let thumb = Rect::from_min_size(
-        rect.min + vec2(8.0, 8.0),
-        vec2(rect.width() - 16.0, THUMB_HEIGHT),
+    p.rect_stroke(
+        rect,
+        radius::L,
+        Stroke::new(stroke::HAIR, border),
+        StrokeKind::Inside,
     );
-    p.rect_filled(thumb, 4, lk.field);
+    let thumb = Rect::from_min_size(
+        rect.min + egui::Vec2::splat(space::M),
+        vec2(rect.width() - 2.0 * space::M, THUMB_HEIGHT),
+    );
+    p.rect_filled(thumb, radius::S, lk.field);
     match thumbnail {
-        Some(t) => paint_thumbnail(p, t, thumb.shrink(3.0), &lk, dim),
+        Some(t) => paint_thumbnail(p, t, thumb.shrink(space::XS), &lk, dim),
         None => {
             p.text(
                 thumb.center(),
@@ -473,23 +496,28 @@ pub(super) fn layout_card(
     }
     // Where the name goes.
     Rect::from_min_max(
-        pos2(rect.left() + 8.0, thumb.bottom() + 4.0),
-        rect.max - vec2(8.0, 4.0),
+        pos2(rect.left() + space::M, thumb.bottom() + space::XS),
+        rect.max - vec2(space::M, space::XS),
     )
 }
 
 /// Paint a Layout's Panel tiling into `r`: each Panel a rounded tile with its active Tab's
 /// title, topped by its Link set's colour.
 pub(super) fn paint_thumbnail(p: &Painter, t: &LayoutThumbnail, r: Rect, lk: &Look, dim: bool) {
-    const GAP: f32 = 3.0;
+    const GAP: f32 = space::XS;
     match t {
         LayoutThumbnail::Panel { title, link, tabs } => {
             let fill = if dim { lk.field } else { lk.surface };
-            p.rect_filled(r, 3, fill);
-            p.rect_stroke(r, 3, Stroke::new(1.0, lk.rule), StrokeKind::Inside);
+            p.rect_filled(r, radius::S, fill);
+            p.rect_stroke(
+                r,
+                radius::S,
+                Stroke::new(stroke::HAIR, lk.rule),
+                StrokeKind::Inside,
+            );
             if link.is_some() && !dim {
-                let stripe = Rect::from_min_size(r.min, vec2(r.width(), 3.0));
-                p.rect_filled(stripe, 2, theme::link_color(*link));
+                let stripe = Rect::from_min_size(r.min, vec2(r.width(), size::DOT));
+                p.rect_filled(stripe, radius::XS, theme::link_color(*link));
             }
             let text = if *tabs > 1 {
                 format!("{title} +{}", tabs - 1)
@@ -499,8 +527,8 @@ pub(super) fn paint_thumbnail(p: &Painter, t: &LayoutThumbnail, r: Rect, lk: &Lo
             let galley = elided(
                 p,
                 text,
-                FontId::proportional(10.0),
-                r.width() - 6.0,
+                FontId::proportional(text::CAPTION),
+                r.width() - space::S,
                 if dim { lk.muted } else { lk.ink },
             );
             let at = r.center() - galley.size() / 2.0;
@@ -549,7 +577,7 @@ pub(super) fn card_action(ui: &mut Ui, rect: Rect, text: &str) -> Response {
         Sense::click(),
     );
     if resp.hovered() {
-        ui.painter().rect_filled(rect, 3, lk.hover);
+        ui.painter().rect_filled(rect, radius::S, lk.hover);
     }
     ui.painter().text(
         rect.center(),
@@ -564,7 +592,7 @@ pub(super) fn card_action(ui: &mut Ui, rect: Rect, text: &str) -> Response {
 /// How wide `text` is in the card actions' font.
 pub(super) fn small_width(ui: &Ui, text: &str) -> f32 {
     ui.painter()
-        .layout_no_wrap(text.to_string(), small_font(), Color32::WHITE)
+        .layout_no_wrap(text.to_string(), small_font(), Color32::PLACEHOLDER)
         .size()
         .x
 }
@@ -576,7 +604,7 @@ pub(super) fn card_name(ui: &Ui, slot: Rect, name: &str, dim: bool) {
         pos2(slot.left(), slot.top() + 2.0),
         Align2::LEFT_TOP,
         name,
-        FontId::proportional(13.0),
+        FontId::proportional(text::LABEL),
         if dim { lk.muted } else { lk.ink },
     );
 }
@@ -602,10 +630,16 @@ pub(super) fn drag_ghost(ctx: &egui::Context, at: egui::Pos2, abbreviation: &str
         egui::Id::unique("library-drag-ghost"),
     ));
     let galley = p.layout_no_wrap(abbreviation.to_string(), label_font(), lk.accent);
-    let r = Rect::from_min_size(at + vec2(12.0, 8.0), galley.size() + vec2(16.0, 10.0));
-    p.rect_filled(r, 6, lk.field);
-    p.rect_stroke(r, 6, Stroke::new(1.5, lk.accent), StrokeKind::Inside);
-    p.galley(r.min + vec2(8.0, 5.0), galley, lk.accent);
+    let pad = vec2(space::M, space::XS);
+    let r = Rect::from_min_size(at + vec2(space::L, space::M), galley.size() + 2.0 * pad);
+    p.rect_filled(r, radius::M, lk.field);
+    p.rect_stroke(
+        r,
+        radius::M,
+        Stroke::new(stroke::MEDIUM, lk.accent),
+        StrokeKind::Inside,
+    );
+    p.galley(r.min + pad, galley, lk.accent);
 }
 
 /// The drop target under a dragged Resource: a whole Panel, or its right edge (a new Panel
@@ -616,6 +650,11 @@ pub(super) fn drop_target(ctx: &egui::Context, r: Rect) {
         egui::Order::Foreground,
         egui::Id::unique("library-drop-target"),
     ));
-    p.rect_filled(r, 6, lk.accent.gamma_multiply(0.18));
-    p.rect_stroke(r, 6, Stroke::new(2.0, lk.accent), StrokeKind::Inside);
+    p.rect_filled(r, radius::M, lk.accent.gamma_multiply(alpha::TINT));
+    p.rect_stroke(
+        r,
+        radius::M,
+        Stroke::new(stroke::THICK, lk.accent),
+        StrokeKind::Inside,
+    );
 }

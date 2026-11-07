@@ -23,9 +23,10 @@ use super::import_tab::megabytes;
 use super::library_tab::{section, type_singular};
 use crate::icons::{self, Icon};
 use crate::theme;
+use crate::tokens::{size, space};
 
 /// Every row (and section header) is this tall, so the list can be virtualized.
-const ROW_HEIGHT: f32 = 80.0;
+const ROW_HEIGHT: f32 = size::ROW_TRIPLE;
 
 /// The Tab's own search and language filter.
 #[derive(Debug, Default)]
@@ -71,7 +72,7 @@ fn language_filter(
         });
     let chevron = icons::image(ui.ctx(), Icon::ChevronDown, icons::SMALL, theme::c().muted);
     let button = ui
-        .add(egui::Button::new((shown, chevron)))
+        .add(crate::components::button((shown, chevron)))
         .accessible_name("Language");
     let button = match filter.language.as_deref() {
         Some(l) => button.on_hover_text(language_hover(&language(l))),
@@ -81,7 +82,7 @@ fn language_filter(
     let opening = button.clicked() && !egui::Popup::is_id_open(ui.ctx(), popup_id);
     egui::Popup::menu(&button)
         .id(popup_id)
-        .width(300.0)
+        .width(size::COLUMN)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
             if opening {
@@ -110,9 +111,9 @@ fn language_filter(
                 filter.language = Some(first.code.clone());
                 ui.close();
             }
-            ui.add_space(4.0);
+            ui.add_space(space::XS);
             egui::ScrollArea::vertical()
-                .max_height(360.0)
+                .max_height(size::POPOVER)
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
@@ -125,11 +126,7 @@ fn language_filter(
                         ui.close();
                     }
                     if found.is_empty() {
-                        ui.label(
-                            RichText::new("No language matches")
-                                .small()
-                                .color(theme::c().muted),
-                        );
+                        ui.label(crate::components::hint_text("No language matches"));
                     }
                     for c in found {
                         let selected = filter.language.as_deref() == Some(c.code.as_str());
@@ -217,10 +214,7 @@ fn updates_line(ui: &mut Ui, summary: &UpdatesSummary, names: &dyn Fn(&str) -> S
     let mut update_all = false;
     let n = summary.updates.len();
     if n > 0 {
-        egui::Frame::new()
-            .fill(theme::c().verdigris.gamma_multiply(0.12))
-            .inner_margin(egui::Margin::symmetric(10, 6))
-            .corner_radius(4.0)
+        crate::components::notice_frame(theme::c().verdigris)
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     let what = if n == 1 {
@@ -248,10 +242,10 @@ fn updates_line(ui: &mut Ui, summary: &UpdatesSummary, names: &dyn Fn(&str) -> S
                     }
                 });
             });
-        ui.add_space(4.0);
+        ui.add_space(space::XS);
     }
     let muted = |ui: &mut Ui, text: String| {
-        ui.label(RichText::new(text).small().color(theme::c().muted));
+        ui.label(crate::components::hint_text(text));
     };
     match &summary.check {
         _ if summary.downloaded == 0 => {}
@@ -310,166 +304,160 @@ impl State {
         let mut action: Option<Action> = None;
         let mut new_filter: Option<ResourceFilter> = None;
         let mut new_licence: Option<LicenceFilter> = None;
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(14, 10))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                let gb = &self.session.get_bibles;
-                // Status line: refreshing, offline (cache shown), or never fetched.
-                if gb.is_refreshing() {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label("Checking SWORD repositories for Resources…");
-                    });
-                }
-                if let Some(why) = gb.offline() {
-                    egui::Frame::new()
-                        .fill(theme::c().warn.gamma_multiply(0.12))
-                        .inner_margin(egui::Margin::symmetric(10, 6))
-                        .corner_radius(4.0)
-                        .show(ui, |ui| {
-                            ui.horizontal_wrapped(|ui| {
-                                let msg = match gb.catalog() {
-                                    Some(c) => format!(
-                                        "Offline: showing the catalog from {}. Downloads need \
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            let gb = &self.session.get_bibles;
+            // Status line: refreshing, offline (cache shown), or never fetched.
+            if gb.is_refreshing() {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label("Checking SWORD repositories for Resources…");
+                });
+            }
+            if let Some(why) = gb.offline() {
+                crate::components::notice_frame(theme::c().warn).show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        let msg = match gb.catalog() {
+                            Some(c) => format!(
+                                "Offline: showing the catalog from {}. Downloads need \
                                          a connection.",
-                                        ago(c.fetched_at)
-                                    ),
-                                    None => "Offline: the Resource catalog could not be loaded, \
+                                ago(c.fetched_at)
+                            ),
+                            None => "Offline: the Resource catalog could not be loaded, \
                                              and there is no saved copy yet."
-                                        .to_string(),
-                                };
-                                ui.colored_label(theme::c().warn, msg).on_hover_text(why);
-                                if !gb.is_refreshing() && ui.button("Try again").clicked() {
-                                    action = Some(Action::Run("getbibles.refresh", json!({})));
-                                }
-                            });
-                        });
-                    ui.add_space(4.0);
-                }
-                let summary = self.session.resource_updates();
-                let library = &self.session.library;
-                let names = |id: &str| library.abbreviation_of(id).unwrap_or(id).to_string();
-                if updates_line(ui, &summary, &names) {
-                    action = Some(Action::Run("getbibles.update_all", json!({})));
-                }
-                // Without a fetched catalog the Open catalogue (compiled in) still lists.
-                if gb.catalog().is_none() && !gb.is_refreshing() && gb.offline().is_none() {
-                    ui.horizontal(|ui| {
-                        ui.label("The SWORD repositories' catalog has not been loaded.");
-                        if ui.button("Load catalog").clicked() {
+                                .to_string(),
+                        };
+                        ui.colored_label(theme::c().warn, msg).on_hover_text(why);
+                        if !gb.is_refreshing() && ui.button("Try again").clicked() {
                             action = Some(Action::Run("getbibles.refresh", json!({})));
                         }
                     });
-                }
-
-                // Type filter, licence filter, then search and language filter for "All".
-                let filter = &mut self.get_bibles_ui;
-                let shown_filter = gb.filter();
-                let shown_licence = gb.licence_filter();
-                ui.horizontal_wrapped(|ui| {
-                    for f in ResourceFilter::CHOICES {
-                        let chip = ui.selectable_label(shown_filter == f, f.label());
-                        let chip = if f == ResourceFilter::HebrewAndGreek {
-                            chip.on_hover_text(
-                                "Bibles in Hebrew, Aramaic and Greek. Those marked Strong's and \
-                                 Morphology fill in Word Info and Word Study › Forms.",
-                            )
-                        } else {
-                            chip
-                        };
-                        if chip.clicked() && shown_filter != f {
-                            new_filter = Some(f);
-                        }
-                    }
                 });
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new("Licence").small().color(theme::c().muted));
-                    for l in LicenceFilter::CHOICES {
-                        if ui
-                            .selectable_label(shown_licence == l, l.label())
-                            .on_hover_text(l.hover())
-                            .clicked()
-                            && shown_licence != l
-                        {
-                            new_licence = Some(l);
-                        }
-                    }
-                });
-                // Never wider than the Panel: a wide row would widen every row below it and
-                // push their buttons out of view.
-                let search_width = (ui.available_width() - 220.0).clamp(120.0, 280.0);
-                ui.horizontal_wrapped(|ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut filter.query)
-                            .hint_text("Search by name or abbreviation")
-                            .desired_width(search_width),
-                    )
-                    .accessible_name("Search by name or abbreviation");
-                    language_filter(ui, filter, &|| gb.languages(shown_filter, shown_licence));
-                    if !gb.is_refreshing()
-                        && ui
-                            .small_button("Refresh")
-                            .on_hover_text("Fetch the repositories' catalogs again")
-                            .clicked()
-                    {
+                ui.add_space(space::XS);
+            }
+            let summary = self.session.resource_updates();
+            let library = &self.session.library;
+            let names = |id: &str| library.abbreviation_of(id).unwrap_or(id).to_string();
+            if updates_line(ui, &summary, &names) {
+                action = Some(Action::Run("getbibles.update_all", json!({})));
+            }
+            // Without a fetched catalog the Open catalogue (compiled in) still lists.
+            if gb.catalog().is_none() && !gb.is_refreshing() && gb.offline().is_none() {
+                ui.horizontal(|ui| {
+                    ui.label("The SWORD repositories' catalog has not been loaded.");
+                    if ui.button("Load catalog").clicked() {
                         action = Some(Action::Run("getbibles.refresh", json!({})));
                     }
                 });
-                ui.add_space(6.0);
+            }
 
-                // The filter's Featured sections (with All, empty ones are left out), then the
-                // Open catalogue.
-                let mut items: Vec<Item> = Vec::new();
-                for (title, rows) in gb.sections(shown_filter, shown_licence) {
-                    items.push(Item::Header(title, rows.len()));
-                    items.extend(rows.into_iter().map(Item::Listing));
+            // Type filter, licence filter, then search and language filter for "All".
+            let filter = &mut self.get_bibles_ui;
+            let shown_filter = gb.filter();
+            let shown_licence = gb.licence_filter();
+            ui.horizontal_wrapped(|ui| {
+                for f in ResourceFilter::CHOICES {
+                    let chip = ui.selectable_label(shown_filter == f, f.label());
+                    let chip = if f == ResourceFilter::HebrewAndGreek {
+                        chip.on_hover_text(
+                            "Bibles in Hebrew, Aramaic and Greek. Those marked Strong's and \
+                                 Morphology fill in Word Info and Word Study › Forms.",
+                        )
+                    } else {
+                        chip
+                    };
+                    if chip.clicked() && shown_filter != f {
+                        new_filter = Some(f);
+                    }
                 }
-                let all = gb.all_listings(
-                    &filter.query,
-                    filter.language.as_deref(),
-                    shown_filter,
-                    shown_licence,
-                );
-                let all_title = match shown_filter {
-                    ResourceFilter::All => "All Resources".to_string(),
-                    f => format!("All {}", f.label()),
-                };
-                items.push(Item::Header(all_title, all.len()));
-                if all.is_empty() {
-                    items.push(Item::Empty(
-                        "Nothing matches the search, type, language and licence.",
-                    ));
+            });
+            ui.horizontal_wrapped(|ui| {
+                ui.label(crate::components::hint_text("Licence"));
+                for l in LicenceFilter::CHOICES {
+                    if ui
+                        .selectable_label(shown_licence == l, l.label())
+                        .on_hover_text(l.hover())
+                        .clicked()
+                        && shown_licence != l
+                    {
+                        new_licence = Some(l);
+                    }
                 }
-                items.extend(all.into_iter().map(Item::Listing));
+            });
+            // Never wider than the Panel: a wide row would widen every row below it and
+            // push their buttons out of view.
+            let search_width = (ui.available_width() - size::SIDE_LIST)
+                .clamp(size::FIELD_NARROW, size::FIELD_WIDE);
+            ui.horizontal_wrapped(|ui| {
+                ui.add(crate::components::search_field(
+                    &mut filter.query,
+                    "Search by name or abbreviation",
+                    search_width,
+                ))
+                .accessible_name("Search by name or abbreviation");
+                language_filter(ui, filter, &|| gb.languages(shown_filter, shown_licence));
+                if !gb.is_refreshing()
+                    && ui
+                        .small_button("Refresh")
+                        .on_hover_text("Fetch the repositories' catalogs again")
+                        .clicked()
+                {
+                    action = Some(Action::Run("getbibles.refresh", json!({})));
+                }
+            });
+            ui.add_space(space::S);
 
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show_rows(ui, ROW_HEIGHT, items.len(), |ui, range| {
-                        for item in &items[range] {
-                            ui.allocate_ui(egui::vec2(ui.available_width(), ROW_HEIGHT), |ui| {
-                                ui.set_min_height(ROW_HEIGHT);
-                                match item {
-                                    Item::Header(title, n) => {
-                                        ui.add_space(ROW_HEIGHT - 22.0);
-                                        section(ui, &format!("{title} · {n}"));
-                                    }
-                                    Item::Empty(msg) => {
-                                        ui.label(RichText::new(*msg).color(theme::c().muted));
-                                    }
-                                    Item::Listing(b) => {
-                                        let status = self.session.listing_status(b);
-                                        let show_type = shown_filter == ResourceFilter::All;
-                                        if let Some(a) = listing_row(ui, b, &status, show_type) {
-                                            action = Some(a);
-                                        }
+            // The filter's Featured sections (with All, empty ones are left out), then the
+            // Open catalogue.
+            let mut items: Vec<Item> = Vec::new();
+            for (title, rows) in gb.sections(shown_filter, shown_licence) {
+                items.push(Item::Header(title, rows.len()));
+                items.extend(rows.into_iter().map(Item::Listing));
+            }
+            let all = gb.all_listings(
+                &filter.query,
+                filter.language.as_deref(),
+                shown_filter,
+                shown_licence,
+            );
+            let all_title = match shown_filter {
+                ResourceFilter::All => "All Resources".to_string(),
+                f => format!("All {}", f.label()),
+            };
+            items.push(Item::Header(all_title, all.len()));
+            if all.is_empty() {
+                items.push(Item::Empty(
+                    "Nothing matches the search, type, language and licence.",
+                ));
+            }
+            items.extend(all.into_iter().map(Item::Listing));
+
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show_rows(ui, ROW_HEIGHT, items.len(), |ui, range| {
+                    for item in &items[range] {
+                        ui.allocate_ui(egui::vec2(ui.available_width(), ROW_HEIGHT), |ui| {
+                            ui.set_min_height(ROW_HEIGHT);
+                            match item {
+                                Item::Header(title, n) => {
+                                    ui.add_space(ROW_HEIGHT - size::CONTROL_COMPACT);
+                                    section(ui, &format!("{title} · {n}"));
+                                }
+                                Item::Empty(msg) => {
+                                    ui.label(RichText::new(*msg).color(theme::c().muted));
+                                }
+                                Item::Listing(b) => {
+                                    let status = self.session.listing_status(b);
+                                    let show_type = shown_filter == ResourceFilter::All;
+                                    if let Some(a) = listing_row(ui, b, &status, show_type) {
+                                        action = Some(a);
                                     }
                                 }
-                            });
-                        }
-                    });
-            });
+                            }
+                        });
+                    }
+                });
+        });
         if let Some(f) = new_filter {
             self.session.get_bibles.set_filter(f);
         }
@@ -522,15 +510,11 @@ fn listing_row(
         match status {
             ListingStatus::Available if b.refused.is_some() => {
                 let why = b.refused.as_deref().unwrap_or_default();
-                ui.add_enabled(false, egui::Button::new("Download"))
+                ui.add_enabled(false, crate::components::button("Download"))
                     .accessible_name(format!("Download {}", b.title))
                     .on_disabled_hover_text(format!("Import cannot read this module yet: {why}"));
-                ui.label(
-                    RichText::new("Not supported yet")
-                        .small()
-                        .color(theme::c().muted),
-                )
-                .on_hover_text(why);
+                ui.label(crate::components::hint_text("Not supported yet"))
+                    .on_hover_text(why);
             }
             ListingStatus::Available => {
                 if ui
@@ -566,7 +550,7 @@ fn listing_row(
                 };
                 ui.add(
                     egui::ProgressBar::new(fraction)
-                        .desired_width(130.0)
+                        .desired_width(size::FIELD_NARROW)
                         .text(text),
                 );
             }
@@ -578,7 +562,7 @@ fn listing_row(
                 {
                     action = Some(Action::Run("resource.open", json!({"id": resource_id})));
                 }
-                ui.label(RichText::new("Installed").small().color(theme::c().muted));
+                ui.label(crate::components::hint_text("Installed"));
             }
             ListingStatus::UpdateAvailable {
                 resource_id,
@@ -625,7 +609,7 @@ fn listing_row(
                     .on_hover_text(error.as_str());
             }
         }
-        ui.add_space(8.0);
+        ui.add_space(space::M);
         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
             ui.add(
                 egui::Label::new(RichText::new(&b.title).strong().color(theme::c().ink)).truncate(),
@@ -647,7 +631,7 @@ fn listing_row(
                         .on_hover_text(tag_hover(tag));
                 }
                 // Type, abbreviation, language (its code on hover), size, repository.
-                let fact = |t: String| RichText::new(t).small().color(theme::c().muted);
+                let fact = |t: String| crate::components::hint_text(t);
                 let mut before = Vec::new();
                 if show_type {
                     before.push(type_singular(b.kind).to_string());
@@ -678,22 +662,13 @@ fn listing_row(
                     ui.hyperlink_to(RichText::new("Licence evidence").small(), url)
                         .on_hover_text(url);
                     ui.add(
-                        egui::Label::new(
-                            RichText::new(notes.join(" · "))
-                                .small()
-                                .color(theme::c().muted),
-                        )
-                        .truncate(),
+                        egui::Label::new(crate::components::hint_text(notes.join(" · ")))
+                            .truncate(),
                     );
                 });
             } else if !notes.is_empty() {
                 ui.add(
-                    egui::Label::new(
-                        RichText::new(notes.join(" · "))
-                            .small()
-                            .color(theme::c().muted),
-                    )
-                    .truncate(),
+                    egui::Label::new(crate::components::hint_text(notes.join(" · "))).truncate(),
                 );
             }
         });

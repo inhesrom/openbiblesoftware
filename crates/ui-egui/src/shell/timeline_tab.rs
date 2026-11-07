@@ -21,6 +21,7 @@ use serde_json::json;
 
 use super::State;
 use crate::theme;
+use crate::tokens::{chart, radius, share, size, space, stroke, text};
 
 /// A Timeline Tab's view: where it looks and what it was fitted to.
 #[derive(Default)]
@@ -44,17 +45,19 @@ impl TimelineUi {
 /// Years shown around a short focus Event: its reign and the decades either side.
 const FOCUS_YEARS: f64 = 160.0;
 /// Heights of the parts of the axis, in points.
-const TICKS_H: f32 = 20.0;
-const ERA_H: f32 = 22.0;
-const ROW_H: f32 = 18.0;
+const TICKS_H: f32 = chart::TICKS;
+const ERA_H: f32 = chart::BAND;
+const ROW_H: f32 = chart::ROW;
 /// A point Event's diamond, half its width.
-const DIAMOND: f32 = 4.5;
+const DIAMOND: f32 = chart::DIAMOND;
 /// Horizontal room left between neighbours in a row.
-const GAP: f32 = 8.0;
+const GAP: f32 = space::M;
 /// Most rows of Lifespans; the rest go to Events.
 const LIFESPAN_ROWS: usize = 3;
 /// How far `Earlier` and `Later` move the view: a third of the axis.
 const PAN_SHARE: f64 = 1.0 / 3.0;
+/// Room left at the axis's ends when it fits a span of years.
+const FIT_PAD: f64 = space::XXL as f64;
 
 /// `a` blended `t` of the way towards `b`.
 fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
@@ -190,17 +193,17 @@ impl State {
         // The axis, and the list of the Passage's events under it.
         let area = ui.available_rect_before_wrap().intersect(ui.clip_rect());
         let listed = timeline.events_in(&emphasis);
-        let caption_h = 20.0;
+        let caption_h = size::CONTROL_COMPACT;
         let list_h = if listed.is_empty() {
             0.0
         } else {
-            (area.height() * 0.32).clamp(60.0, 220.0)
+            (area.height() * share::LIST).clamp(size::ROW_DOUBLE, size::SIDE_LIST)
         };
         let axis_rect = Rect::from_min_max(
             area.min,
             pos2(
                 area.max.x,
-                (area.max.y - list_h - caption_h).max(area.min.y + 120.0),
+                (area.max.y - list_h - caption_h).max(area.min.y + chart::AXIS_MIN),
             ),
         );
         let width = f64::from(axis_rect.width());
@@ -208,19 +211,19 @@ impl State {
         if refit || state.view.is_none() || (resized && !state.moved) {
             state.view = Some(match focus {
                 Some(f) => TimelineView::around(f, FOCUS_YEARS, width),
-                None => TimelineView::fit(bounds.0, bounds.1, width, 24.0),
+                None => TimelineView::fit(bounds.0, bounds.1, width, FIT_PAD),
             });
             state.fitted = Some(shown);
             state.fitted_width = Some(axis_rect.width());
             state.moved = false;
         }
         if fit_all {
-            state.view = Some(TimelineView::fit(bounds.0, bounds.1, width, 24.0));
+            state.view = Some(TimelineView::fit(bounds.0, bounds.1, width, FIT_PAD));
             state.moved = true;
         }
         let mut view = state
             .view
-            .unwrap_or_else(|| TimelineView::fit(bounds.0, bounds.1, width, 24.0));
+            .unwrap_or_else(|| TimelineView::fit(bounds.0, bounds.1, width, FIT_PAD));
         if let Some(factor) = zoom {
             state.moved = true;
             view.zoom_about(factor, width / 2.0, width, bounds);
@@ -243,7 +246,7 @@ impl State {
                     )),
                 },
                 EventKind::Era => {
-                    view = TimelineView::fit(e.from, e.to, width, 24.0);
+                    view = TimelineView::fit(e.from, e.to, width, FIT_PAD);
                     state.moved = true;
                 }
             }
@@ -251,7 +254,7 @@ impl State {
         state.view = Some(view);
 
         // The Passage's events, under the axis.
-        let below = Rect::from_min_max(pos2(area.min.x, axis_rect.max.y + 4.0), area.max);
+        let below = Rect::from_min_max(pos2(area.min.x, axis_rect.max.y + space::XS), area.max);
         let mut child = ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(below)
@@ -271,7 +274,7 @@ impl State {
             let new_tab = child.input(|i| i.modifiers.command || i.modifiers.ctrl);
             egui::ScrollArea::vertical()
                 .id_salt(("timeline-events", tab, shown))
-                .max_height(list_h - 22.0)
+                .max_height(list_h - size::CONTROL_COMPACT)
                 .auto_shrink([false, true])
                 .show(&mut child, |ui| {
                     for e in &listed {
@@ -291,14 +294,10 @@ impl State {
                     }
                 });
         }
-        child.label(
-            RichText::new(format!(
-                "Dates as {} gives them; “c.” marks a date the source gives as approximate.",
-                timeline.sources.join(", ")
-            ))
-            .small()
-            .color(theme::c().muted),
-        );
+        child.label(crate::components::hint_text(format!(
+            "Dates as {} gives them; “c.” marks a date the source gives as approximate.",
+            timeline.sources.join(", ")
+        )));
 
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.timeline = Some(state);
@@ -417,7 +416,7 @@ fn axis(
     let ch = theme::c();
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, ch.field);
-    let font = FontId::proportional(12.0);
+    let font = FontId::proportional(text::SMALL);
 
     // Eras: shading down the axis, then the band of names.
     let era_top = rect.min.y + TICKS_H;
@@ -438,7 +437,15 @@ fn axis(
     };
     for &(n, i, x0, x1) in &eras {
         let strong = emphasis.entries.contains(&i);
-        let shade = mix(ch.field, era_tint(n), if strong { 0.10 } else { 0.05 });
+        let shade = mix(
+            ch.field,
+            era_tint(n),
+            if strong {
+                chart::SHADE_STRONG
+            } else {
+                chart::SHADE
+            },
+        );
         painter.rect_filled(
             Rect::from_min_max(pos2(x0, era_band.max.y), pos2(x1, rect.max.y)),
             0.0,
@@ -447,13 +454,16 @@ fn axis(
     }
 
     // Ticks, under the Eras' names.
-    for (year, label) in v.ticks(width, 70.0) {
+    for (year, label) in v.ticks(width, f64::from(chart::TICK_SPACING)) {
         let tx = x(year);
         painter.line_segment(
-            [pos2(tx, rect.min.y + TICKS_H - 5.0), pos2(tx, rect.max.y)],
-            Stroke::new(1.0, mix(ch.field, ch.rule, 0.6)),
+            [
+                pos2(tx, rect.min.y + TICKS_H - chart::TICK),
+                pos2(tx, rect.max.y),
+            ],
+            Stroke::new(stroke::HAIR, mix(ch.field, ch.rule, chart::GRID)),
         );
-        let galley = painter.layout_no_wrap(label, FontId::proportional(11.0), ch.muted);
+        let galley = painter.layout_no_wrap(label, FontId::proportional(text::CAPTION), ch.muted);
         let at = pos2(tx - galley.size().x / 2.0, rect.min.y + 2.0);
         if at.x >= rect.min.x && at.x + galley.size().x <= rect.max.x {
             painter.galley(at, galley, ch.muted);
@@ -463,13 +473,21 @@ fn axis(
     for &(n, i, x0, x1) in &eras {
         let era = &timeline.entries[i];
         let strong = emphasis.entries.contains(&i);
-        let fill = mix(ch.field, era_tint(n), if strong { 0.32 } else { 0.16 });
+        let fill = mix(
+            ch.field,
+            era_tint(n),
+            if strong {
+                chart::TINT_STRONG
+            } else {
+                chart::TINT
+            },
+        );
         let band = Rect::from_min_max(pos2(x0, era_band.min.y), pos2(x1, era_band.max.y));
         let visible = band.intersect(rect);
         painter.rect_filled(visible, 0.0, fill);
         hits.push((visible, i));
         let galley = painter.layout_no_wrap(era.title.clone(), font.clone(), ch.ink);
-        if galley.size().x + 8.0 <= visible.width() {
+        if galley.size().x + space::M <= visible.width() {
             let at = pos2(
                 visible.center().x - galley.size().x / 2.0,
                 band.center().y - galley.size().y / 2.0,
@@ -479,7 +497,7 @@ fn axis(
     }
 
     // Rows of Lifespans, then of Events.
-    let rows_top = era_band.max.y + 6.0;
+    let rows_top = era_band.max.y + space::S;
     // The axis is a few hundred points tall: a few dozen rows.
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let all_rows = (((rect.max.y - rows_top) / ROW_H).floor() as usize).max(2);
@@ -496,7 +514,7 @@ fn axis(
     let events_top = if life_rows == 0 {
         rows_top
     } else {
-        rows_top + life_rows as f32 * ROW_H + 4.0
+        rows_top + life_rows as f32 * ROW_H + space::XS
     };
     let (events, _) = place_rows(
         &painter,
@@ -511,7 +529,7 @@ fn axis(
     for p in lifespans.iter().chain(&events) {
         let e = &timeline.entries[p.index];
         if e.is_span() {
-            painter.rect_filled(p.shape, 3.0, p.fill);
+            painter.rect_filled(p.shape, radius::S, p.fill);
         } else {
             let c = p.shape.center();
             painter.add(Shape::convex_polygon(
@@ -527,16 +545,16 @@ fn axis(
         }
         if p.focus {
             painter.rect_stroke(
-                p.shape.expand(2.5),
-                4.0,
-                Stroke::new(2.0, ch.gilt),
+                p.shape.expand(space::XXS),
+                radius::S,
+                Stroke::new(stroke::THICK, ch.gilt),
                 egui::StrokeKind::Outside,
             );
         }
         if let Some((at, galley, color)) = &p.label {
             painter.galley(*at, galley.clone(), *color);
         }
-        let mut hit = p.shape.expand2(vec2(0.0, 2.0));
+        let mut hit = p.shape.expand2(vec2(0.0, space::XXS));
         if let Some((at, galley, _)) = &p.label {
             hit = hit.union(Rect::from_min_size(*at, galley.size()));
         }
@@ -639,15 +657,18 @@ fn place_rows(
     x: &dyn Fn(f64) -> f32,
 ) -> (Vec<Placed>, usize) {
     let ch = theme::c();
-    let font = FontId::proportional(12.0);
+    let font = FontId::proportional(text::SMALL);
     let (bar, strong_bar) = match kind {
-        EventKind::Lifespan => (mix(ch.field, ch.verdigris, 0.35), ch.verdigris),
-        _ => (mix(ch.field, ch.lapis, 0.30), ch.lapis),
+        EventKind::Lifespan => (
+            mix(ch.field, ch.verdigris, chart::TINT_STRONG),
+            ch.verdigris,
+        ),
+        _ => (mix(ch.field, ch.lapis, chart::TINT_STRONG), ch.lapis),
     };
-    let point = (mix(ch.field, ch.muted, 0.8), ch.lapis);
+    let point = (mix(ch.field, ch.muted, chart::POINT), ch.lapis);
     let mut items: Vec<(usize, &TimelineEntry, bool)> = timeline
         .of_kind(kind)
-        .filter(|(_, e)| x(e.to) >= rect.min.x - 4.0 && x(e.from) <= rect.max.x + 4.0)
+        .filter(|(_, e)| x(e.to) >= rect.min.x - space::XS && x(e.from) <= rect.max.x + space::XS)
         .map(|(i, e)| (i, e, emphasis.entries.contains(&i)))
         .collect();
     items.sort_by(|a, b| b.2.cmp(&a.2).then(a.1.from.total_cmp(&b.1.from)));
@@ -656,7 +677,7 @@ fn place_rows(
     for (index, e, strong) in items {
         let focus = emphasis.focus == Some(index);
         let (x0, x1) = (x(e.from), x(e.to));
-        let span = e.is_span() && x1 - x0 >= 3.0;
+        let span = e.is_span() && x1 - x0 >= chart::BAR_INSET;
         let (start, end) = if span {
             (x0, x1)
         } else {
@@ -673,20 +694,20 @@ fn place_rows(
         let text_color = if strong { ch.ink } else { ch.muted };
         let mut galley = painter.layout_no_wrap(e.title.clone(), font.clone(), text_color);
         let visible_start = start.max(rect.min.x);
-        let inside = span && end.min(rect.max.x) - visible_start >= galley.size().x + 8.0;
-        let after = end.max(visible_start) + 4.0;
-        let (room_after, room_before) = (rect.max.x - after, start - 4.0 - rect.min.x);
+        let inside = span && end.min(rect.max.x) - visible_start >= galley.size().x + space::M;
+        let after = end.max(visible_start) + space::XS;
+        let (room_after, room_before) = (rect.max.x - after, start - space::XS - rect.min.x);
         // With no room either side, the side with more, the label cut short to fit it.
         let before = !inside && galley.size().x > room_after && room_before > room_after;
         let room = if before { room_before } else { room_after };
-        if !inside && galley.size().x > room && room > 24.0 {
+        if !inside && galley.size().x > room && room > space::XXL {
             galley = elided(painter, &e.title, &font, text_color, room);
         }
         let w = galley.size().x;
         let label_x = if inside {
-            visible_start + 4.0
+            visible_start + space::XS
         } else if before {
-            start - 4.0 - w
+            start - space::XS - w
         } else {
             after
         };
@@ -709,7 +730,10 @@ fn place_rows(
         taken[row].push(occupied);
         let y = top + row as f32 * ROW_H;
         let shape = if span {
-            Rect::from_min_max(pos2(x0, y + 3.0), pos2(x1.max(x0 + 3.0), y + ROW_H - 3.0))
+            Rect::from_min_max(
+                pos2(x0, y + chart::BAR_INSET),
+                pos2(x1.max(x0 + chart::BAR_INSET), y + ROW_H - chart::BAR_INSET),
+            )
         } else {
             Rect::from_center_size(
                 pos2(x0, y + ROW_H / 2.0),

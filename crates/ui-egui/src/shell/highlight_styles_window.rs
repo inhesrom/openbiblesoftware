@@ -25,23 +25,11 @@ use super::annotate::{StyleBook, paint_swatch};
 use crate::icons::{self, Icon};
 use crate::palette::{Palette, to_color, to_rgb};
 use crate::theme;
+use crate::tokens::{self, mark, radius, size, stroke, text};
 
 /// Colours offered beside the hex field: the built-ins' and a few strong ones for lines,
 /// boxes and text.
-const PRESETS: [(&str, Rgb); 12] = [
-    ("Yellow", Rgb::new(255, 236, 140)),
-    ("Green", Rgb::new(200, 238, 190)),
-    ("Blue", Rgb::new(196, 222, 250)),
-    ("Pink", Rgb::new(250, 206, 224)),
-    ("Orange", Rgb::new(255, 214, 170)),
-    ("Lavender", Rgb::new(222, 210, 250)),
-    ("Gold", Rgb::new(201, 162, 39)),
-    ("Red", Rgb::new(200, 40, 40)),
-    ("Teal", Rgb::new(20, 130, 120)),
-    ("Navy", Rgb::new(40, 70, 150)),
-    ("Purple", Rgb::new(120, 60, 160)),
-    ("Brown", Rgb::new(130, 80, 40)),
-];
+const PRESETS: [(&str, Rgb); 12] = crate::tokens::HIGHLIGHT_PRESETS;
 
 /// A file dialog's answer, on its own thread.
 #[cfg(not(target_arch = "wasm32"))]
@@ -120,15 +108,15 @@ fn hex(c: Rgb) -> String {
 /// A sample of a style on one tone's page: "Rom 8:28" marked as the style marks text there.
 fn paint_sample(ui: &Ui, rect: Rect, a: &StyleAppearance, palette: &Palette) {
     let p = ui.painter();
-    p.rect_filled(rect, 4.0, palette.page);
+    p.rect_filled(rect, radius::S, palette.page);
     p.rect_stroke(
         rect,
-        4.0,
-        Stroke::new(1.0, theme::c().rule),
+        radius::S,
+        crate::components::rule_stroke(),
         egui::StrokeKind::Inside,
     );
     let paint = palette.paint(a);
-    let font = egui::FontId::proportional(14.0);
+    let font = egui::FontId::proportional(text::BODY);
     let ink = if paint.look == HighlightLook::TextColor {
         paint.color
     } else {
@@ -136,24 +124,24 @@ fn paint_sample(ui: &Ui, rect: Rect, a: &StyleAppearance, palette: &Palette) {
     };
     let galley = p.layout_no_wrap("Rom 8:28".into(), font, ink);
     let text = Rect::from_center_size(rect.center(), galley.size());
-    let band = text.expand2(vec2(3.0, 1.0));
+    let band = text.expand2(mark::SAMPLE_PAD);
     match paint.look {
         HighlightLook::Background => {
-            p.rect_filled(band, 1.5, paint.color);
+            p.rect_filled(band, mark::RADIUS, paint.color);
         }
         HighlightLook::Box => {
             p.rect_stroke(
                 band,
-                2.0,
-                Stroke::new(1.5, paint.color),
+                radius::XS,
+                Stroke::new(stroke::MEDIUM, paint.color),
                 egui::StrokeKind::Outside,
             );
         }
         HighlightLook::Underline => {
-            let y = band.bottom() - 1.5;
+            let y = band.bottom() - mark::LINE_MIN;
             p.line_segment(
                 [pos2(band.left(), y), pos2(band.right(), y)],
-                Stroke::new(1.5, paint.color),
+                Stroke::new(stroke::MEDIUM, paint.color),
             );
         }
         HighlightLook::TextColor => {}
@@ -205,18 +193,20 @@ impl State {
         let mut open = true;
         let escape = super::escape_closes_window(ctx);
         let mut acts: Vec<Act> = Vec::new();
-        let max_height = ctx.content_rect().height() - 160.0;
+        let max_height = ctx.content_rect().height() - size::DIALOG_ROOM;
         let window = egui::Window::new("Highlight styles")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
-            .default_width(620.0)
+            .default_width(size::DIALOG.x)
             // Pinned at the top, so rows stay put while a question opens below them.
-            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 60.0))
+            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, size::DIALOG_TOP))
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical()
                     .max_height(max_height)
-                    .min_scrolled_height(max_height.clamp(120.0, 640.0))
+                    .min_scrolled_height(
+                        max_height.clamp(size::LABEL_COLUMN_WIDE, size::DIALOG_LIST),
+                    )
                     .show(ui, |ui| {
                         self.palette_row(ui, &book, &mut acts);
                         ui.separator();
@@ -325,7 +315,7 @@ impl State {
             if ui
                 .add_enabled(
                     book.palettes.len() > 1,
-                    egui::Button::new("Delete palette…"),
+                    crate::components::button("Delete palette…"),
                 )
                 .on_disabled_hover_text("The last palette cannot be deleted")
                 .clicked()
@@ -351,7 +341,7 @@ impl State {
                     "Name of the new palette"
                 });
                 let r = ui
-                    .add(egui::TextEdit::singleline(name).desired_width(200.0))
+                    .add(crate::components::text_field(name))
                     .accessible_name("Palette name");
                 r.request_focus();
                 let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -386,26 +376,25 @@ impl State {
         let palette = self.palette;
         let styles = book.active_styles();
         let n = styles.len();
-        ui.label(
-            RichText::new(
-                "Alt+1…9 highlight with the first nine styles, in this order. A colour is \
+        ui.label(crate::components::hint_text(
+            "Alt+1…9 highlight with the first nine styles, in this order. A colour is \
                  adjusted for each page tone so text stays readable.",
-            )
-            .small()
-            .color(theme::c().muted),
-        );
+        ));
         if styles.is_empty() {
             ui.label("This palette has no styles yet.");
         }
         let ui_state = &mut self.styles_ui;
         egui::Grid::new("highlight-styles")
             .num_columns(7)
-            .spacing(vec2(8.0, 6.0))
+            .spacing(tokens::ITEM_SPACING)
             .show(ui, |ui| {
                 for (i, style) in styles.iter().enumerate() {
                     let label = book.label(&style.id);
                     let chosen = ui_state.chosen.as_deref() == Some(style.id.as_str());
-                    let (rect, r) = ui.allocate_exact_size(vec2(26.0, 22.0), Sense::click());
+                    let (rect, r) = ui.allocate_exact_size(
+                        vec2(size::CONTROL, size::CONTROL_COMPACT),
+                        Sense::click(),
+                    );
                     paint_swatch(ui, rect, &style.appearance, &palette, r.hovered() || chosen);
                     if r.accessible_name(format!("Show {label} in each page tone"))
                         .on_hover_text("Show its colour in each page tone")
@@ -413,14 +402,14 @@ impl State {
                     {
                         ui_state.chosen = Some(style.id.clone());
                     }
-                    ui.label(RichText::new(keys.slot(i)).small().color(theme::c().muted));
+                    ui.label(crate::components::hint_text(keys.slot(i)));
                     let field_name = format!("Name of {label}");
                     if let Some(name) = draft_field(
                         ui,
                         &mut ui_state.names,
                         &style.id,
                         &style.name,
-                        (140.0, &field_name, &label),
+                        (size::FIELD_NARROW, &field_name, &label),
                     ) && name != style.name
                     {
                         acts.push(Act::Run(
@@ -431,7 +420,7 @@ impl State {
                     let mut look = style.appearance.look;
                     egui::ComboBox::from_id_salt(("highlight-look", &style.id))
                         .selected_text(look.label())
-                        .width(110.0)
+                        .width(size::FIELD_NARROW)
                         .show_ui(ui, |ui| {
                             for l in HighlightLook::ALL {
                                 ui.selectable_value(&mut look, l, l.label());
@@ -451,7 +440,7 @@ impl State {
                     ui.horizontal(|ui| {
                         let up = icons::image(ui.ctx(), Icon::MoveUp, icons::SMALL, theme::c().ink);
                         if ui
-                            .add_enabled(i > 0, egui::Button::new(up).small())
+                            .add_enabled(i > 0, crate::components::button(up).small())
                             .on_hover_text("Move up")
                             .accessible_name(format!("Move {label} up"))
                             .clicked()
@@ -464,7 +453,7 @@ impl State {
                         let down =
                             icons::image(ui.ctx(), Icon::MoveDown, icons::SMALL, theme::c().ink);
                         if ui
-                            .add_enabled(i + 1 < n, egui::Button::new(down).small())
+                            .add_enabled(i + 1 < n, crate::components::button(down).small())
                             .on_hover_text("Move down")
                             .accessible_name(format!("Move {label} down"))
                             .clicked()
@@ -518,7 +507,7 @@ impl State {
             format!("“{}”", book.label(&d.id))
         };
         let mut close = false;
-        egui::Frame::group(ui.style()).show(ui, |ui| {
+        crate::components::card_frame().show(ui, |ui| {
             ui.label(format!("{} Highlight(s) use {what}. Move them to:", d.uses));
             ui.horizontal(|ui| {
                 egui::ComboBox::from_id_salt("highlight-replacement")
@@ -542,7 +531,7 @@ impl State {
                 if ui
                     .add_enabled(
                         !d.replacement.is_empty(),
-                        egui::Button::new("Delete and move"),
+                        crate::components::button("Delete and move"),
                     )
                     .clicked()
                 {
@@ -561,14 +550,10 @@ impl State {
                     close = true;
                 }
             });
-            ui.label(
-                RichText::new(format!(
-                    "{}.",
-                    super::undo_hint(&self.session, "brings back the style and its Highlights")
-                ))
-                .small()
-                .color(theme::c().muted),
-            );
+            ui.label(crate::components::hint_text(format!(
+                "{}.",
+                super::undo_hint(&self.session, "brings back the style and its Highlights")
+            )));
         });
         if close {
             self.styles_ui.deleting = None;
@@ -590,13 +575,16 @@ impl State {
         let ui_state = &mut self.styles_ui;
         egui::Grid::new("highlight-tones")
             .num_columns(4)
-            .spacing(vec2(8.0, 6.0))
+            .spacing(tokens::ITEM_SPACING)
             .show(ui, |ui| {
                 for tone in StyleTone::ALL {
                     let palette = Palette::for_style_tone(tone);
                     let paint = palette.paint(&style.appearance);
                     ui.label(tone.label());
-                    let (rect, _) = ui.allocate_exact_size(vec2(110.0, 26.0), Sense::hover());
+                    let (rect, _) = ui.allocate_exact_size(
+                        vec2(size::FIELD_NARROW, size::CONTROL),
+                        Sense::hover(),
+                    );
                     paint_sample(ui, rect, &style.appearance, &palette);
                     let adjusted = tone.adjusted(&style.appearance);
                     let state = match adjusted {
@@ -615,7 +603,7 @@ impl State {
                         let key = (style.id.clone(), tone);
                         let stored = adjusted.map(hex).unwrap_or_default();
                         let name = format!("{} colour of {label}", tone.label());
-                        let field = (80.0, name.as_str(), "#rrggbb");
+                        let field = (size::FIELD_HEX, name.as_str(), "#rrggbb");
                         if let Some(typed) =
                             draft_field(ui, &mut ui_state.tones, &key, &stored, field)
                         {
@@ -642,7 +630,7 @@ impl State {
                             }
                         }
                         if ui
-                            .add_enabled(adjusted.is_some(), egui::Button::new("Derive"))
+                            .add_enabled(adjusted.is_some(), crate::components::button("Derive"))
                             .on_hover_text("Go back to the colour derived for this tone")
                             .accessible_name(format!(
                                 "Derive the {} colour of {label}",
@@ -819,7 +807,7 @@ fn color_field(
         &mut ui_state.colors,
         &style.id,
         &stored,
-        (80.0, &name, "#rrggbb"),
+        (size::FIELD_HEX, &name, "#rrggbb"),
     ) {
         match typed.trim().parse::<Rgb>() {
             Ok(c) if c != style.appearance.color => acts.push(Act::Run(
@@ -831,11 +819,12 @@ fn color_field(
         }
     }
     let open = icons::image(ui.ctx(), Icon::ChevronDown, icons::SMALL, theme::c().muted);
-    ui.menu_button(open, |ui| {
+    crate::components::menu(ui, open, |ui| {
         for (name, c) in PRESETS {
             let r = ui.horizontal(|ui| {
-                let (rect, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
-                ui.painter().rect_filled(rect, 2.0, to_color(c));
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::Vec2::splat(size::ICON_SMALL), Sense::hover());
+                ui.painter().rect_filled(rect, radius::XS, to_color(c));
                 ui.button(name)
             });
             if r.inner.clicked() {

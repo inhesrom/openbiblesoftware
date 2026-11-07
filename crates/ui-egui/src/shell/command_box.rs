@@ -14,6 +14,7 @@ use serde_json::json;
 
 use super::Shell;
 use crate::theme;
+use crate::tokens::{inset, radius, size, space};
 
 /// The box's widget id.
 pub(crate) const BOX_ID: &str = "command-box";
@@ -22,7 +23,7 @@ pub(crate) const BOX_ID: &str = "command-box";
 pub(crate) const HINT: &str = "Go to, study, open or search";
 
 /// Height of one suggestion row.
-const ROW: f32 = 26.0;
+const ROW: f32 = size::ROW;
 
 /// Rows the dropdown shows before it scrolls.
 const MAX_ROWS: usize = 12;
@@ -96,8 +97,8 @@ impl Shell {
         let mut out = egui::TextEdit::singleline(&mut cb.text)
             .id(id)
             .hint_text(super::with_key(&self.st.session, HINT, "command_box.focus"))
-            .desired_width(280.0)
-            .margin(egui::Margin::symmetric(8, 4))
+            .desired_width(size::FIELD_WIDE)
+            .margin(inset::BAR)
             .show(ui);
         let r = egui::Response::clone(&out.response).accessible_name("Command box");
         if std::mem::take(&mut cb.focus) {
@@ -147,16 +148,16 @@ impl Shell {
         let details: Vec<String> = (cb.suggestions.iter())
             .map(|s| shown_detail(&self.st.session, s))
             .collect();
-        let width = field.width().max(380.0);
+        let width = field.width().max(size::POPOVER);
         let mut clicked = None;
         let shown = egui::Area::new(egui::Id::unique(BOX_ID).with("dropdown"))
             .order(egui::Order::Foreground)
-            .fixed_pos(pos2(field.right(), field.bottom() + 4.0))
+            .fixed_pos(pos2(field.right(), field.bottom() + space::XS))
             .pivot(Align2::RIGHT_TOP)
             .fade_in(false)
             .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style())
-                    .inner_margin(egui::Margin::same(4))
+                crate::components::popover_frame()
+                    .inner_margin(inset::BAR)
                     .show(ui, |ui| {
                         // All commands (#226) can be more rows than fit: they scroll, keeping
                         // the highlighted one in view.
@@ -180,23 +181,27 @@ impl Shell {
                                 }
                                 let painter = ui.painter();
                                 if i == cb.selected {
-                                    painter.rect_filled(rect, 4.0, c.selection);
+                                    painter.rect_filled(rect, radius::S, c.selection);
                                 } else if resp.hovered() {
-                                    painter.rect_filled(rect, 4.0, c.hover);
+                                    painter.rect_filled(rect, radius::S, c.hover);
                                 }
                                 let font = egui::TextStyle::Body.resolve(ui.style());
                                 let detail_rect = painter.text(
-                                    pos2(rect.right() - 8.0, rect.center().y),
+                                    pos2(rect.right() - space::M, rect.center().y),
                                     Align2::RIGHT_CENTER,
                                     detail,
                                     font.clone(),
                                     c.muted,
                                 );
                                 let label = painter.layout_no_wrap(s.label.clone(), font, c.ink);
-                                let room = (detail_rect.left() - rect.left() - 24.0).max(0.0);
-                                let clip = Rect::from_min_size(rect.min, vec2(room + 8.0, ROW));
+                                let room = (detail_rect.left() - rect.left() - space::XXL).max(0.0);
+                                let clip =
+                                    Rect::from_min_size(rect.min, vec2(room + space::M, ROW));
                                 painter.with_clip_rect(clip).galley(
-                                    pos2(rect.left() + 8.0, rect.center().y - label.size().y / 2.0),
+                                    pos2(
+                                        rect.left() + space::M,
+                                        rect.center().y - label.size().y / 2.0,
+                                    ),
                                     label,
                                     c.ink,
                                 );

@@ -227,7 +227,9 @@ fn release(h: &mut Harness, at: Pos2) {
 
 /// Whether a drop-target highlight (the lapis wash) covers `area`.
 fn highlighted(h: &Harness, area: Rect) -> bool {
-    let wash = crate::theme::c().lapis.gamma_multiply(0.18);
+    let wash = crate::theme::c()
+        .lapis
+        .gamma_multiply(crate::tokens::alpha::TINT);
     h.rects.iter().any(|(r, c)| {
         *c == wash && (r.min - area.min).length() < 2.0 && (r.max - area.max).length() < 2.0
     })
@@ -665,7 +667,9 @@ fn a_note_card_drops_only_on_a_resources_text() {
     let [text_left, _] = view.text_origin;
     // The Tab's header (its reference box) lies between the tab bar and the text.
     assert!(pane_top > left.top() + 31.0 + 8.0, "{pane_top} {left:?}");
-    let wash = crate::theme::c().lapis.gamma_multiply(0.18);
+    let wash = crate::theme::c()
+        .lapis
+        .gamma_multiply(crate::tokens::alpha::TINT);
     let over = |h: &mut Harness, p: Pos2| {
         h.events.push(Event::PointerMoved(p));
         h.button(p, true);

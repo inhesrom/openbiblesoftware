@@ -19,6 +19,7 @@ use serde_json::json;
 use super::State;
 use crate::doc::ReadingDoc;
 use crate::theme;
+use crate::tokens::{self, inset, scale, share, size, space};
 use crate::workers::SnippetCache;
 
 /// The Copy verses window's egui id.
@@ -225,34 +226,37 @@ impl State {
         let mut open = true;
         let escape = super::escape_closes_window(ctx);
         let mut acts: Vec<Act> = Vec::new();
-        let max_height = ctx.content_rect().height() * 0.4;
+        let max_height = ctx.content_rect().height() * share::LIST;
         let window = egui::Window::new("Copy verses")
             .id(egui::Id::unique(WINDOW))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
-            .default_width(620.0)
+            .default_width(size::DIALOG.x)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
                 egui::Grid::new("copy-verses-choices")
                     .num_columns(2)
-                    .spacing([12.0, 8.0])
+                    .spacing(tokens::GRID_SPACING)
                     .show(ui, |ui| {
                         ui.label("Passages");
                         ui.add(
                             egui::TextEdit::singleline(&mut self.copy_ui.passages)
                                 .id_salt("copy-passages")
                                 .hint_text("Jn 3:16-18; Rom 5:8")
-                                .desired_width(420.0),
+                                .desired_width(size::PROSE),
                         )
                         .accessible_name("Passages");
                         ui.end_row();
                         ui.label("Bibles");
                         ui.horizontal_wrapped(|ui| {
-                            ui.set_max_width(460.0);
+                            ui.set_max_width(size::PROSE);
                             for (id, abbrev, title) in &bibles {
                                 let mut on = self.copy_ui.bibles.contains(id);
-                                if ui.checkbox(&mut on, abbrev).on_hover_text(title).changed() {
+                                if crate::components::toggle(ui, &mut on, abbrev)
+                                    .on_hover_text(title)
+                                    .changed()
+                                {
                                     if on {
                                         self.copy_ui.bibles.push(id.clone());
                                     } else {
@@ -290,12 +294,15 @@ impl State {
                                 egui::TextEdit::singleline(&mut self.copy_ui.preset_name)
                                     .id_salt("copy-preset-name")
                                     .hint_text("Preset name")
-                                    .desired_width(130.0),
+                                    .desired_width(size::FIELD_NARROW),
                             )
                             .accessible_name("Preset name");
                             let name = self.copy_ui.preset_name.trim().to_string();
                             if ui
-                                .add_enabled(!name.is_empty(), egui::Button::new("Save preset"))
+                                .add_enabled(
+                                    !name.is_empty(),
+                                    crate::components::button("Save preset"),
+                                )
                                 .clicked()
                             {
                                 acts.push(Act::Preset("copy.preset_save", name));
@@ -329,7 +336,7 @@ impl State {
                 });
                 egui::Frame::new()
                     .fill(theme::c().surface)
-                    .inner_margin(egui::Margin::same(8))
+                    .inner_margin(inset::POPOVER)
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         egui::ScrollArea::vertical()
@@ -343,7 +350,7 @@ impl State {
                                 }
                             });
                     });
-                ui.add_space(4.0);
+                ui.add_space(space::XS);
                 ui.horizontal(|ui| {
                     let ok = copied.is_ok();
                     for (format, label) in [
@@ -351,12 +358,15 @@ impl State {
                         (CopyFormat::RichText, "Copy rich text"),
                         (CopyFormat::Markdown, "Copy Markdown"),
                     ] {
-                        if ui.add_enabled(ok, egui::Button::new(label)).clicked() {
+                        if ui
+                            .add_enabled(ok, crate::components::button(label))
+                            .clicked()
+                        {
                             acts.push(Act::Copy(format));
                         }
                     }
                     if ui
-                        .add_enabled(ok, egui::Button::new("Print…"))
+                        .add_enabled(ok, crate::components::button("Print…"))
                         .on_hover_text("Opens in your browser, to print or save as PDF")
                         .clicked()
                     {
@@ -431,8 +441,8 @@ impl State {
     fn copy_preview(&mut self, ui: &mut Ui, copied: &CopiedText) {
         let lines = preview_lines(copied, self.copy_ui.preview);
         let settings = self.session.text;
-        let width = ui.available_width().max(40.0);
-        let gap = settings.size * 0.6;
+        let width = ui.available_width().max(size::TEXT_MIN);
+        let gap = settings.size * scale::PARAGRAPH_GAP;
         let mut shown = Vec::with_capacity(lines.len());
         for line in lines {
             if line.text.is_empty() {

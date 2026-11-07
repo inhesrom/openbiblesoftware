@@ -13,15 +13,16 @@ use super::State;
 use super::library_tab::section;
 use crate::key_labels;
 use crate::theme;
+use crate::tokens::{size, space};
 
 /// Widest the command column gets.
-const LABEL_W: f32 = 300.0;
+const LABEL_W: f32 = size::COLUMN;
 /// Narrowest command column; in a Panel too narrow for it each name is above its buttons.
-const MIN_LABEL_W: f32 = 120.0;
+const MIN_LABEL_W: f32 = size::LABEL_COLUMN_WIDE;
 /// Width of the shortcut buttons.
-const KEY_W: f32 = 130.0;
+const KEY_W: f32 = size::FIELD_NARROW;
 /// Room for Clear and Reset, the gaps between the row's parts and the scroll bar.
-const REST_W: f32 = 160.0;
+const REST_W: f32 = size::FIELD;
 
 /// A key another binding has, waiting for Swap keys or Cancel.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -141,47 +142,40 @@ impl State {
             .iter()
             .any(KeyBinding::is_custom);
         let mut act: Option<(&'static str, Value)> = None;
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(18, 12))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                egui::ScrollArea::vertical()
-                    .id_salt(("keys", tab))
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            egui::ScrollArea::vertical()
+                .id_salt(("keys", tab))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.label(crate::components::title_text("Keyboard shortcuts"));
+                    ui.label(
+                        RichText::new(
+                            "Click a shortcut, then press the new key (Esc cancels). Your keys \
+                             are kept in the User database.",
+                        )
+                        .color(theme::c().muted),
+                    );
+                    if ui
+                        .add_enabled(any_custom, crate::components::button("Reset all"))
+                        .on_hover_text("Every shortcut back to its default")
+                        .clicked()
+                    {
+                        act = Some(("keys.reset_all", json!({})));
+                    }
+                    let (shown, a) = self.key_binding_rows(ui, &filter);
+                    if a.is_some() {
+                        act = a;
+                    }
+                    if shown == 0 {
+                        ui.add_space(space::XL);
                         ui.label(
-                            RichText::new("Keyboard shortcuts")
-                                .font(theme::display(20.0))
-                                .color(theme::c().ink),
+                            RichText::new(format!("No shortcut matches “{filter}”."))
+                                .color(theme::c().muted),
                         );
-                        ui.label(
-                            RichText::new(
-                                "Click a shortcut, then press the new key (Esc cancels). Your \
-                                 keys are kept in the User database.",
-                            )
-                            .color(theme::c().muted),
-                        );
-                        if ui
-                            .add_enabled(any_custom, egui::Button::new("Reset all"))
-                            .on_hover_text("Every shortcut back to its default")
-                            .clicked()
-                        {
-                            act = Some(("keys.reset_all", json!({})));
-                        }
-                        let (shown, a) = self.key_binding_rows(ui, &filter);
-                        if a.is_some() {
-                            act = a;
-                        }
-                        if shown == 0 {
-                            ui.add_space(14.0);
-                            ui.label(
-                                RichText::new(format!("No shortcut matches “{filter}”."))
-                                    .color(theme::c().muted),
-                            );
-                        }
-                    });
-            });
+                    }
+                });
+        });
         if let Some((id, params)) = act {
             self.run_key_action(id, &params);
         }
@@ -226,7 +220,7 @@ impl State {
             if rows.is_empty() {
                 continue;
             }
-            ui.add_space(14.0);
+            ui.add_space(space::XL);
             section(ui, group);
             for b in rows {
                 shown += 1;
@@ -252,7 +246,7 @@ impl State {
             ui.add(egui::Label::new(RichText::new(b.label).color(theme::c().ink)).truncate());
         };
         if label_w.is_none() {
-            ui.add_space(4.0);
+            ui.add_space(space::XS);
             name(ui);
         }
         ui.horizontal(|ui| {
@@ -297,7 +291,7 @@ impl State {
                 }
                 ui.horizontal(|ui| {
                     if ui
-                        .add_enabled(refused.is_none(), egui::Button::new("Swap keys"))
+                        .add_enabled(refused.is_none(), crate::components::button("Swap keys"))
                         .on_hover_text(swap_tip)
                         .clicked()
                     {
@@ -349,7 +343,7 @@ impl State {
         };
         let r = ui
             .add(
-                egui::Button::new(text)
+                crate::components::button(text)
                     .selected(recording)
                     .min_size(vec2(KEY_W, 0.0)),
             )
@@ -369,7 +363,7 @@ impl State {
             self.keys_ui.message = None;
         }
         if ui
-            .add_enabled(b.key.is_some(), egui::Button::new("Clear"))
+            .add_enabled(b.key.is_some(), crate::components::button("Clear"))
             .accessible_name(format!("Clear the {} shortcut", b.label))
             .on_hover_text("No key for this command")
             .clicked()
@@ -380,7 +374,7 @@ impl State {
         }
         let default = b.default.map_or_else(|| "none".into(), key_labels::label);
         if ui
-            .add_enabled(b.is_custom(), egui::Button::new("Reset"))
+            .add_enabled(b.is_custom(), crate::components::button("Reset"))
             .accessible_name(format!("Reset the {} shortcut", b.label))
             .on_hover_text(format!("Back to the default key ({default})"))
             .clicked()

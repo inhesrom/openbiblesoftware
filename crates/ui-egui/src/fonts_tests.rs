@@ -405,6 +405,10 @@ fn an_interface_font_change_remeasures_topic_rows_out_of_view() {
     obs_store::write_obr(&nave, &path).unwrap();
     h.shell.st.session.library.add_file(&path).unwrap();
     h.shell.reset_layout();
+    // A window width at which the italic test face wraps some synthetic subtopic row onto a
+    // different number of lines than the regular one (it depends on the page's inset, a design
+    // token since #221).
+    h.screen.x = 1440.0;
     let font = |h: &mut Harness, style: &str| {
         h.shell.run(
             "view.font",

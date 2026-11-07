@@ -18,9 +18,10 @@ use super::guide_words::WordsAction;
 use super::topic_guide_tab::TopicAction;
 use crate::icons::{self, Icon};
 use crate::theme;
+use crate::tokens::{radius, scale, size, space, stroke, text};
 
 /// Height of a section header.
-const HEADER_H: f32 = 28.0;
+const HEADER_H: f32 = size::ROW;
 /// Lines of a Commentary row's excerpt (#15: "the first ~3 lines").
 const ROW_LINES: usize = 3;
 /// Lines of excerpt in a Commentary row's hover popup.
@@ -108,11 +109,7 @@ impl State {
         }
         let title = format_passage(passage, &Standard, RefStyle::Long);
         self.guide_page(ui, tab, guide, &Key::Passage(passage), &mut |_, ui| {
-            ui.label(
-                RichText::new(title.clone())
-                    .font(theme::display(20.0))
-                    .color(theme::c().ink),
-            );
+            ui.label(crate::components::title_text(title.clone()));
             None
         });
     }
@@ -135,88 +132,81 @@ impl State {
         let mut drag_start: Option<GuideSection> = None;
         let mut drag_end = false;
         let mut region = Rect::NOTHING;
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(14, 10))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                if let Some(a) = head(self, ui) {
-                    action = Some(a);
-                }
-                ui.add_space(4.0);
-                let scroll = egui::ScrollArea::vertical()
-                    .id_salt((guide.id(), tab))
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        let mut any = false;
-                        for place in arrangement.visible() {
-                            any = true;
-                            let section = place.section;
-                            let top = ui.cursor().top();
-                            // Ask even when collapsed, so the header can show a count.
-                            let status = self.session.guide_section(key, section);
-                            let header = section_header(
-                                ui,
-                                tab,
-                                guide,
-                                section,
-                                place.collapsed,
-                                &status,
-                                dragging == Some(section),
-                            );
-                            if header.hide {
-                                action = Some(Action::Hide(section));
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            if let Some(a) = head(self, ui) {
+                action = Some(a);
+            }
+            ui.add_space(space::XS);
+            let scroll = egui::ScrollArea::vertical()
+                .id_salt((guide.id(), tab))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let mut any = false;
+                    for place in arrangement.visible() {
+                        any = true;
+                        let section = place.section;
+                        let top = ui.cursor().top();
+                        // Ask even when collapsed, so the header can show a count.
+                        let status = self.session.guide_section(key, section);
+                        let header = section_header(
+                            ui,
+                            tab,
+                            guide,
+                            section,
+                            place.collapsed,
+                            &status,
+                            dragging == Some(section),
+                        );
+                        if header.hide {
+                            action = Some(Action::Hide(section));
+                        }
+                        if header.body.drag_started() {
+                            drag_start = Some(section);
+                        }
+                        if header.body.drag_stopped() {
+                            drag_end = true;
+                        }
+                        if header.body.clicked() {
+                            action = Some(Action::Toggle(section));
+                        }
+                        if !place.collapsed {
+                            ui.add_space(space::XS);
+                            if let Some(a) = self.section_body(ui, tab, section, &status, key) {
+                                action = Some(a);
                             }
-                            if header.body.drag_started() {
-                                drag_start = Some(section);
-                            }
-                            if header.body.drag_stopped() {
-                                drag_end = true;
-                            }
-                            if header.body.clicked() {
-                                action = Some(Action::Toggle(section));
-                            }
-                            if !place.collapsed {
-                                ui.add_space(4.0);
-                                if let Some(a) = self.section_body(ui, tab, section, &status, key) {
-                                    action = Some(a);
+                        }
+                        ui.add_space(space::L);
+                        let rect =
+                            Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=ui.cursor().top());
+                        drawn.push(Drawn { section, rect });
+                    }
+                    if !any {
+                        ui.label(RichText::new("Every section is hidden.").color(theme::c().muted));
+                    }
+                    let hidden: Vec<GuideSection> = arrangement
+                        .sections
+                        .iter()
+                        .filter(|p| p.hidden)
+                        .map(|p| p.section)
+                        .collect();
+                    if !hidden.is_empty() {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(crate::components::hint_text("Hidden:"));
+                            for s in hidden {
+                                if ui
+                                    .small_button(format!("Show {}", s.title()))
+                                    .on_hover_text("Show this section again")
+                                    .clicked()
+                                {
+                                    action = Some(Action::Show(s));
                                 }
                             }
-                            ui.add_space(10.0);
-                            let rect = Rect::from_x_y_ranges(
-                                ui.max_rect().x_range(),
-                                top..=ui.cursor().top(),
-                            );
-                            drawn.push(Drawn { section, rect });
-                        }
-                        if !any {
-                            ui.label(
-                                RichText::new("Every section is hidden.").color(theme::c().muted),
-                            );
-                        }
-                        let hidden: Vec<GuideSection> = arrangement
-                            .sections
-                            .iter()
-                            .filter(|p| p.hidden)
-                            .map(|p| p.section)
-                            .collect();
-                        if !hidden.is_empty() {
-                            ui.horizontal_wrapped(|ui| {
-                                ui.label(RichText::new("Hidden:").small().color(theme::c().muted));
-                                for s in hidden {
-                                    if ui
-                                        .small_button(format!("Show {}", s.title()))
-                                        .on_hover_text("Show this section again")
-                                        .clicked()
-                                    {
-                                        action = Some(Action::Show(s));
-                                    }
-                                }
-                            });
-                        }
-                    });
-                region = scroll.inner_rect.intersect(ui.clip_rect());
-            });
+                        });
+                    }
+                });
+            region = scroll.inner_rect.intersect(ui.clip_rect());
+        });
 
         // Dragging a header: a line marks where it would land; dropping moves it there for
         // every Guide of the kind. Escape cancels.
@@ -254,12 +244,15 @@ impl State {
                     others.get(slot),
                     slot.checked_sub(1).and_then(|i| others.get(i)),
                 ) {
-                    (Some(d), _) => d.rect.top() - 5.0,
-                    (None, Some(d)) => d.rect.bottom() - 5.0,
+                    (Some(d), _) => d.rect.top() - space::XS,
+                    (None, Some(d)) => d.rect.bottom() - space::XS,
                     (None, None) => region.top(),
                 };
-                ui.painter()
-                    .hline(region.x_range(), y, Stroke::new(2.0, theme::c().lapis));
+                ui.painter().hline(
+                    region.x_range(),
+                    y,
+                    Stroke::new(stroke::THICK, theme::c().lapis),
+                );
             }
         }
         if let Some(t) = self.tabs.get_mut(&tab) {
@@ -319,10 +312,10 @@ impl State {
     pub(super) fn guide_menu(&mut self, ui: &mut Ui, guide: Guide) {
         let arrangement = self.session.guides.arrangement(guide);
         let mut run: Option<(&'static str, serde_json::Value)> = None;
-        ui.label(RichText::new("Sections").small().color(theme::c().muted));
+        ui.label(crate::components::hint_text("Sections"));
         for place in &arrangement.sections {
             let mut shown = !place.hidden;
-            if ui.checkbox(&mut shown, place.section.title()).clicked() {
+            if crate::components::toggle(ui, &mut shown, place.section.title()).clicked() {
                 run = Some((
                     "guide.hide_section",
                     json!({ "guide": guide.id(), "section": place.section.id(), "hidden": !shown }),
@@ -421,7 +414,7 @@ impl State {
                     if self.commentary_row(ui, tab, row) {
                         clicked = Some(Action::Commentary(row.clone(), new_tab));
                     }
-                    ui.add_space(6.0);
+                    ui.add_space(space::S);
                 }
                 clicked
             }
@@ -515,12 +508,7 @@ impl State {
         let label = format!("Open {} at {reference}", row.title);
         r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, &label));
         if r.hovered() {
-            ui.painter().rect_stroke(
-                rect.expand(3.0),
-                4.0,
-                Stroke::new(1.0, theme::c().hover_rule),
-                egui::StrokeKind::Outside,
-            );
+            crate::components::hover_outline(ui, rect);
             egui::Tooltip::always_open(
                 ui.ctx().clone(),
                 ui.layer_id(),
@@ -528,17 +516,15 @@ impl State {
                 egui::PopupAnchor::Pointer,
             )
             .show(|ui| {
-                ui.set_width(380.0);
+                ui.set_width(size::POPOVER);
                 ui.label(RichText::new(format!("{} · {reference}", row.abbreviation)).strong());
                 if let Some(h) = &row.heading {
                     self.guide_snippet(ui, h, ColorRole::Accent, rtl, 3);
                 }
                 self.guide_snippet(ui, &row.excerpt, ColorRole::Ink, rtl, POPUP_LINES);
-                ui.label(
-                    RichText::new("Click to open this section · Ctrl/Cmd-click opens a new Tab")
-                        .small()
-                        .color(theme::c().muted),
-                );
+                ui.label(crate::components::hint_text(
+                    "Click to open this section · Ctrl/Cmd-click opens a new Tab",
+                ));
             });
         }
         r.clicked()
@@ -555,17 +541,16 @@ impl State {
         lines: usize,
     ) {
         let settings: TextSettings = self.session.text;
-        let width = ui.available_width().max(40.0);
+        let width = ui.available_width().max(size::TEXT_MIN);
         let line = settings.size * settings.line_spacing;
         let laid = self.snippets.get(text, role, rtl, width, &settings);
         let Some(laid) = laid else {
             let (rect, _) = ui.allocate_exact_size(vec2(width, line), Sense::hover());
-            ui.painter().rect_filled(
-                Rect::from_min_size(
-                    pos2(rect.left(), rect.top() + line * 0.3),
-                    vec2(width.min(settings.size * 8.0), line * 0.35),
-                ),
-                2.0,
+            crate::components::text_placeholder(
+                ui.painter(),
+                rect.min,
+                width.min(settings.size * scale::PLACEHOLDER_EMS),
+                line,
                 theme::c().rule,
             );
             ui.ctx().request_repaint();
@@ -674,28 +659,33 @@ fn section_header(
     } else {
         c.surface
     };
-    painter.rect_filled(rect, 4.0, fill);
+    painter.rect_filled(rect, radius::S, fill);
     let y = rect.center().y;
-    let at = |x: f32| Rect::from_center_size(pos2(rect.left() + x, y), vec2(16.0, 16.0));
-    icons::paint(&painter, Icon::Grip, at(13.0), icons::SMALL, c.muted);
+    let at =
+        |x: f32| Rect::from_center_size(pos2(rect.left() + x, y), egui::Vec2::splat(icons::BODY));
+    // Grip, chevron and the section's icon, one icon and a gap apart, then the title.
+    let step = icons::BODY + space::XS;
+    let (grip_x, chevron_x) = (space::L, space::L + step);
+    let icon_x = chevron_x + step;
+    icons::paint(&painter, Icon::Grip, at(grip_x), icons::SMALL, c.muted);
     let chevron = if collapsed {
         Icon::ChevronRight
     } else {
         Icon::ChevronDown
     };
-    icons::paint(&painter, chevron, at(31.0), icons::BODY, c.ink);
+    icons::paint(&painter, chevron, at(chevron_x), icons::BODY, c.ink);
     icons::paint(
         &painter,
         icons::for_section(section),
-        at(52.0),
+        at(icon_x),
         icons::BODY,
         c.lapis,
     );
     let title = painter.text(
-        pos2(rect.left() + 66.0, y),
+        pos2(rect.left() + icon_x + icons::BODY / 2.0 + space::S, y),
         Align2::LEFT_CENTER,
         section.title(),
-        FontId::proportional(14.5),
+        FontId::proportional(text::BODY),
         c.ink,
     );
     let count = match status {
@@ -704,10 +694,10 @@ fn section_header(
     };
     if !count.is_empty() {
         painter.text(
-            pos2(title.right() + 8.0, y),
+            pos2(title.right() + space::M, y),
             Align2::LEFT_CENTER,
             count,
-            FontId::proportional(12.0),
+            FontId::proportional(text::SMALL),
             c.muted,
         );
     }
@@ -722,7 +712,10 @@ fn section_header(
             ),
         )
     });
-    let hide_rect = Rect::from_center_size(pos2(rect.right() - 16.0, y), vec2(22.0, 22.0));
+    let hide_rect = Rect::from_center_size(
+        pos2(rect.right() - space::XL, y),
+        egui::Vec2::splat(size::CONTROL_COMPACT),
+    );
     let hide = ui
         .interact(
             hide_rect,
@@ -744,13 +737,10 @@ fn section_header(
 }
 
 pub(super) fn hint_page(ui: &mut Ui, text: &str) {
-    egui::Frame::new()
-        .fill(theme::c().field)
-        .inner_margin(egui::Margin::symmetric(18, 14))
-        .show(ui, |ui| {
-            ui.set_min_size(ui.available_size());
-            ui.label(RichText::new(text).color(theme::c().muted));
-        });
+    crate::components::page_frame().show(ui, |ui| {
+        ui.set_min_size(ui.available_size());
+        ui.label(RichText::new(text).color(theme::c().muted));
+    });
 }
 
 /// A filterable section's Collection chooser (#153), shown once the user has Collections:
@@ -767,7 +757,7 @@ fn collection_filter(
     }
     let mut picked: Option<Option<String>> = None;
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Collection").small().color(theme::c().muted));
+        ui.label(crate::components::hint_text("Collection"));
         egui::ComboBox::from_id_salt(("guide-collection", guide.id(), section.id()))
             .selected_text(chosen.unwrap_or("Every Resource"))
             .show_ui(ui, |ui| {

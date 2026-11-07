@@ -12,6 +12,7 @@ use obs_model::{Direction, SpanKind};
 use obs_scripture::{Passage, PassageList, RefStyle, Standard, Verse, format_passage};
 
 use super::{State, TabId};
+use crate::tokens::{scale, size};
 use crate::{ReadingDoc, SnippetCache};
 
 struct Queries<T, K = Passage> {
@@ -408,8 +409,8 @@ impl State {
     /// Resource text is always drawn with the glyph atlas. A cache miss only submits work;
     /// it never shapes, lays out or reads SQLite on the UI thread.
     pub(super) fn preview(&mut self, ui: &mut Ui, passage: Passage, one_line: bool) {
-        let width = ui.available_width().max(40.0);
-        let height = self.session.text.size * 1.8;
+        let width = ui.available_width().max(size::TEXT_MIN);
+        let height = self.session.text.size * scale::LINE;
         if one_line
             && !ui.is_rect_visible(Rect::from_min_size(ui.cursor().min, vec2(width, height)))
         {
@@ -460,7 +461,7 @@ impl State {
         let height = if one_line {
             laid.lines.first().map_or(height, |line| line.bottom)
         } else {
-            laid.height.min(360.0)
+            laid.height.min(size::POPOVER)
         };
         let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &preview.text));
@@ -505,7 +506,7 @@ impl State {
             egui::PopupAnchor::Pointer,
         )
         .show(|ui| {
-            ui.set_width(360.0);
+            ui.set_width(size::POPOVER);
             // Bound work even when one written target maps to many disjoint Passages.
             for target in passages.iter().take(3) {
                 let mut remaining = 20;

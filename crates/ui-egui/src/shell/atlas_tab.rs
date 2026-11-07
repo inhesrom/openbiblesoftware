@@ -18,6 +18,7 @@ use serde_json::json;
 
 use super::State;
 use crate::theme;
+use crate::tokens::{alpha, chart, radius, size, space, stroke, text};
 
 /// An Atlas Tab's map: where it looks, the Passage it was fitted to, the search box and the
 /// place picked in the list or the search.
@@ -38,7 +39,7 @@ pub(super) struct MapUi {
 }
 
 /// Width of the place list beside the map, when the Tab is wide enough for it.
-const LIST_WIDTH: f32 = 230.0;
+const LIST_WIDTH: f32 = size::SIDE_LIST;
 
 /// Smallest box the Atlas opens on, in degrees of latitude: one place is not shown at full
 /// zoom.
@@ -48,37 +49,17 @@ const MIN_SPAN: f64 = 3.0;
 pub(super) const MINI_MAP_SPAN: f64 = 7.0;
 
 /// How near (screen points) the pointer must be to a marker to hover or click it.
-const HIT_RADIUS: f32 = 10.0;
+const HIT_RADIUS: f32 = chart::HIT;
 
 /// Height of the Factbook's map.
-pub(super) const MINI_MAP_HEIGHT: f32 = 240.0;
+pub(super) const MINI_MAP_HEIGHT: f32 = chart::MINI_MAP;
 
 /// The map's colours in the current theme.
-struct MapColors {
-    water: Color32,
-    land: Color32,
-    coast: Color32,
-    river: Color32,
-    halo: Color32,
-}
-
-fn colors() -> MapColors {
+fn colors() -> crate::tokens::MapColors {
     if theme::c().dark {
-        MapColors {
-            water: Color32::from_rgb(27, 38, 50),
-            land: Color32::from_rgb(55, 58, 52),
-            coast: Color32::from_rgb(98, 108, 108),
-            river: Color32::from_rgb(68, 106, 138),
-            halo: Color32::from_rgba_unmultiplied(40, 45, 50, 210),
-        }
+        crate::tokens::MAP_DARK
     } else {
-        MapColors {
-            water: Color32::from_rgb(203, 220, 230),
-            land: Color32::from_rgb(240, 235, 221),
-            coast: Color32::from_rgb(140, 150, 150),
-            river: Color32::from_rgb(120, 160, 192),
-            halo: Color32::from_rgba_unmultiplied(255, 255, 253, 210),
-        }
+        crate::tokens::MAP_LIGHT
     }
 }
 
@@ -192,7 +173,7 @@ pub(super) fn map_canvas(
     lines(
         &painter,
         &map.coasts,
-        Stroke::new(0.8, c.coast),
+        Stroke::new(stroke::HAIR, c.coast),
         visible,
         u8::MAX,
         &to_screen,
@@ -200,7 +181,7 @@ pub(super) fn map_canvas(
     lines(
         &painter,
         &map.shores,
-        Stroke::new(0.7, c.river),
+        Stroke::new(stroke::HAIR, c.river),
         visible,
         u8::MAX,
         &to_screen,
@@ -208,7 +189,7 @@ pub(super) fn map_canvas(
     lines(
         &painter,
         &map.rivers,
-        Stroke::new(1.0, c.river),
+        Stroke::new(stroke::HAIR, c.river),
         visible,
         max_rank,
         &to_screen,
@@ -271,7 +252,7 @@ pub(super) fn map_canvas(
         );
     }
     // Labels: strongest first, each only where it covers no label already placed.
-    let font = FontId::proportional(12.0);
+    let font = FontId::proportional(text::SMALL);
     let mut placed: Vec<Rect> = Vec::new();
     for m in markers.iter().rev() {
         if !rect.contains(m.at) {
@@ -281,10 +262,10 @@ pub(super) fn map_canvas(
         let size = galley.size();
         // Right of the marker, else left, above or below: inside the map, clear of others.
         let candidates = [
-            vec2(8.0, -size.y / 2.0),
-            vec2(-8.0 - size.x, -size.y / 2.0),
-            vec2(-size.x / 2.0, -8.0 - size.y),
-            vec2(-size.x / 2.0, 8.0),
+            vec2(space::M, -size.y / 2.0),
+            vec2(-space::M - size.x, -size.y / 2.0),
+            vec2(-size.x / 2.0, -space::M - size.y),
+            vec2(-size.x / 2.0, space::M),
         ];
         let Some(at) = candidates
             .into_iter()
@@ -295,7 +276,7 @@ pub(super) fn map_canvas(
         else {
             continue;
         };
-        painter.rect_filled(at.expand(1.5), 3.0, c.halo);
+        painter.rect_filled(at.expand(space::XXS), radius::S, c.halo);
         painter.galley(at.min, galley, ink);
         placed.push(at);
     }
@@ -382,11 +363,15 @@ fn lines(
 /// in gilt when picked.
 fn marker(painter: &egui::Painter, at: Pos2, confidence: Confidence, strong: bool, picked: bool) {
     let ch = theme::c();
-    let r = if strong { 6.5 } else { 5.0 };
+    let r = if strong {
+        chart::MARKER_STRONG
+    } else {
+        chart::MARKER
+    };
     let ink = ch.lapis;
     match confidence {
         Confidence::High => {
-            painter.circle(at, r, ink, Stroke::new(1.5, ch.field));
+            painter.circle(at, r, ink, Stroke::new(stroke::MEDIUM, ch.field));
         }
         Confidence::Medium => {
             // Lower half filled.
@@ -398,14 +383,19 @@ fn marker(painter: &egui::Painter, at: Pos2, confidence: Confidence, strong: boo
                 })
                 .collect();
             painter.add(Shape::convex_polygon(half, ink, Stroke::NONE));
-            painter.circle_stroke(at, r, Stroke::new(1.5, ink));
+            painter.circle_stroke(at, r, Stroke::new(stroke::MEDIUM, ink));
         }
         Confidence::Low => {
-            painter.circle(at, r, ch.field.gamma_multiply(0.6), Stroke::new(1.5, ink));
+            painter.circle(
+                at,
+                r,
+                ch.field.gamma_multiply(alpha::SOFT),
+                Stroke::new(stroke::MEDIUM, ink),
+            );
         }
     }
     if picked {
-        painter.circle_stroke(at, r + 3.5, Stroke::new(2.0, ch.gilt));
+        painter.circle_stroke(at, r + chart::RING_GAP, Stroke::new(stroke::THICK, ch.gilt));
     }
 }
 
@@ -433,7 +423,7 @@ pub(super) fn fit(places: &[&MapPlace], rect: Rect, all_points: bool, min_span: 
     MapView::fit(
         bounds,
         (f64::from(rect.width()), f64::from(rect.height())),
-        28.0,
+        chart::MAP_FIT_PAD,
     )
 }
 
@@ -498,11 +488,11 @@ impl State {
         // The search row.
         let mut zoom: Option<f64> = None;
         ui.horizontal(|ui| {
-            ui.add(
-                egui::TextEdit::singleline(&mut state.query)
-                    .hint_text("Find a place…")
-                    .desired_width(180.0),
-            )
+            ui.add(crate::components::search_field(
+                &mut state.query,
+                "Find a place…",
+                size::FIELD,
+            ))
             .accessible_name("Find a place on the map");
             if crate::icons::small_button(ui, crate::icons::Icon::ZoomOut, "Zoom out").clicked() {
                 zoom = Some(0.5);
@@ -580,14 +570,17 @@ impl State {
         let area = ui.available_rect_before_wrap().intersect(ui.clip_rect());
         let (map_rect, list_rect) = if area.width() >= LIST_WIDTH * 2.4 {
             (
-                Rect::from_min_max(area.min, pos2(area.max.x - LIST_WIDTH - 8.0, area.max.y)),
+                Rect::from_min_max(
+                    area.min,
+                    pos2(area.max.x - LIST_WIDTH - space::M, area.max.y),
+                ),
                 Rect::from_min_max(pos2(area.max.x - LIST_WIDTH, area.min.y), area.max),
             )
         } else {
-            let map_h = (area.height() * 0.62).max(MINI_MAP_HEIGHT.min(area.height()));
+            let map_h = (area.height() * chart::MAP_SHARE).max(MINI_MAP_HEIGHT.min(area.height()));
             (
                 Rect::from_min_max(area.min, pos2(area.max.x, area.min.y + map_h)),
-                Rect::from_min_max(pos2(area.min.x, area.min.y + map_h + 6.0), area.max),
+                Rect::from_min_max(pos2(area.min.x, area.min.y + map_h + space::S), area.max),
             )
         };
         let mut shown_places: Vec<&MapPlace> = places.iter().collect();
@@ -647,7 +640,7 @@ impl State {
         if input.clicked.is_some() {
             open = input.clicked;
         }
-        if list_rect.height() > 20.0 {
+        if list_rect.height() > size::CONTROL_COMPACT {
             let mut list = ui.new_child(
                 egui::UiBuilder::new()
                     .max_rect(list_rect)
@@ -736,12 +729,12 @@ fn place_list(
         if place.points.len() > 1 {
             detail.push_str(&format!(" · {} possible locations", place.points.len()));
         }
-        ui.label(RichText::new(detail).small().color(theme::c().muted));
+        ui.label(crate::components::hint_text(detail));
         let refs = verse_list(&place.verses);
         if !refs.is_empty() {
-            ui.label(RichText::new(refs).small().color(theme::c().muted));
+            ui.label(crate::components::hint_text(refs));
         }
-        ui.add_space(4.0);
+        ui.add_space(space::XS);
     }
     if !unlocated.is_empty() {
         ui.separator();

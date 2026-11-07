@@ -18,7 +18,7 @@
 
 use std::sync::Arc;
 
-use egui::{Key, Modifiers, Rect, RichText, Ui, pos2, vec2};
+use egui::{Key, Modifiers, Rect, Ui, vec2};
 use obs_engine::link::{ToStandard, to_standard};
 use obs_engine::{TabId, style_label};
 use obs_model::ResourceType;
@@ -35,7 +35,7 @@ use crate::doc::ReadingDoc;
 use crate::icons::{Icon, with_icon};
 use crate::pane::{PaneOutput, WordHit, has_text, select_for_menu};
 use crate::selection::{DocPos, Granularity, Selection, copy_text, selected_text};
-use crate::theme;
+use crate::tokens::{size, space};
 
 /// One thing the menu can act on: a row of its left column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -265,10 +265,10 @@ fn menu_ui(
     let mut picked = None;
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
-            ui.set_min_width(130.0);
+            ui.set_min_width(size::LABEL_COLUMN_WIDE);
             let pointer_moved = ui.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
             for target in m.targets() {
-                ui.label(RichText::new(target.kind()).small().color(theme::c().muted));
+                ui.label(crate::components::hint_text(target.kind()));
                 let value = m.value(target);
                 let r = ui
                     .selectable_label(m.chosen == target, value.clone())
@@ -282,7 +282,7 @@ fn menu_ui(
         });
         ui.separator();
         ui.vertical(|ui| {
-            ui.set_min_width(190.0);
+            ui.set_min_width(size::MENU_COLUMN);
             picked = actions_ui(ui, m, styles, can_annotate, keys);
         });
     });
@@ -320,7 +320,7 @@ fn actions_ui(
                 item(
                     ui,
                     can_annotate,
-                    egui::Button::new(menu_label(
+                    crate::components::button(menu_label(
                         ui,
                         &style_label(style, &styles.all),
                         &style.appearance,
@@ -333,7 +333,7 @@ fn actions_ui(
             item(
                 ui,
                 can_annotate,
-                egui::Button::new("Highlight styles"),
+                crate::components::button("Highlight styles"),
                 MenuAction::Annotate(Annotate::Styles),
                 no_db,
             );
@@ -341,14 +341,15 @@ fn actions_ui(
             item(
                 ui,
                 can_annotate,
-                egui::Button::new(with_icon(ui, Icon::Note, "Note…")).shortcut_text(keys.note()),
+                crate::components::button(with_icon(ui, Icon::Note, "Note…"))
+                    .shortcut_text(keys.note()),
                 MenuAction::Annotate(Annotate::Note),
                 no_db,
             );
             item(
                 ui,
                 true,
-                egui::Button::new(with_icon(ui, Icon::Copy, "Copy"))
+                crate::components::button(with_icon(ui, Icon::Copy, "Copy"))
                     .shortcut_text(crate::key_labels::label("Ctrl+C")),
                 MenuAction::Annotate(Annotate::Copy),
                 "",
@@ -356,21 +357,21 @@ fn actions_ui(
             item(
                 ui,
                 true,
-                egui::Button::new(with_icon(ui, Icon::Search, "Search this")),
+                crate::components::button(with_icon(ui, Icon::Search, "Search this")),
                 MenuAction::Annotate(Annotate::Search),
                 "",
             );
             item(
                 ui,
                 true,
-                egui::Button::new(with_icon(ui, Icon::Articles, "Look up in Dictionary")),
+                crate::components::button(with_icon(ui, Icon::Articles, "Look up in Dictionary")),
                 MenuAction::LookUp,
                 "",
             );
             item(
                 ui,
                 m.short_selection().is_some(),
-                egui::Button::new(with_icon(ui, Icon::WordStudy, "Word Study…")),
+                crate::components::button(with_icon(ui, Icon::WordStudy, "Word Study…")),
                 MenuAction::ChooseWord,
                 "Select a word or a short phrase",
             );
@@ -407,21 +408,21 @@ fn actions_ui(
                     MenuAction::TextComparison,
                 ),
             ] {
-                let button = egui::Button::new(with_icon(ui, icon, label));
+                let button = crate::components::button(with_icon(ui, icon, label));
                 item(ui, mapped, button, action, unmapped);
             }
             ui.separator();
             item(
                 ui,
                 v.native.is_some() || v.copy.is_some(),
-                egui::Button::new(with_icon(ui, Icon::Copy, "Copy with reference")),
+                crate::components::button(with_icon(ui, Icon::Copy, "Copy with reference")),
                 MenuAction::CopyVerse,
                 "There is no text here to copy",
             );
             item(
                 ui,
                 can_annotate && (v.native.is_some() || mapped),
-                egui::Button::new(with_icon(ui, Icon::Note, "Add Note on verse")),
+                crate::components::button(with_icon(ui, Icon::Note, "Add Note on verse")),
                 MenuAction::NoteOnVerse,
                 no_db,
             );
@@ -433,21 +434,25 @@ fn actions_ui(
             item(
                 ui,
                 true,
-                egui::Button::new(with_icon(ui, Icon::WordStudy, "Word Study")),
+                crate::components::button(with_icon(ui, Icon::WordStudy, "Word Study")),
                 MenuAction::WordStudy,
                 "",
             );
             item(
                 ui,
                 true,
-                egui::Button::new(with_icon(ui, Icon::Lexicon, "Open in preferred Lexicon")),
+                crate::components::button(with_icon(
+                    ui,
+                    Icon::Lexicon,
+                    "Open in preferred Lexicon",
+                )),
                 MenuAction::OpenLexicon,
                 "",
             );
             item(
                 ui,
                 true,
-                egui::Button::new(with_icon(ui, Icon::Pin, "Pin in Word Info")),
+                crate::components::button(with_icon(ui, Icon::Pin, "Pin in Word Info")),
                 MenuAction::PinWordInfo,
                 "",
             );
@@ -458,7 +463,7 @@ fn actions_ui(
             item(
                 ui,
                 true,
-                egui::Button::new(with_icon(
+                crate::components::button(with_icon(
                     ui,
                     Icon::Search,
                     format!("Search Bible for {shown}"),
@@ -471,14 +476,14 @@ fn actions_ui(
             item(
                 ui,
                 true,
-                egui::Button::new(with_icon(ui, Icon::Copy, "Copy")),
+                crate::components::button(with_icon(ui, Icon::Copy, "Copy")),
                 MenuAction::CopyMorphology,
                 "",
             );
             item(
                 ui,
                 true,
-                egui::Button::new(with_icon(ui, Icon::Pin, "Pin in Word Info")),
+                crate::components::button(with_icon(ui, Icon::Pin, "Pin in Word Info")),
                 MenuAction::PinWordInfo,
                 "",
             );
@@ -545,7 +550,7 @@ impl State {
                 out.pointer_at
                     .and(response.hover_pos())
                     .or_else(|| out.selection_rect.map(|r| r.left_bottom()))
-                    .unwrap_or_else(|| response.rect.left_top() + vec2(40.0, 40.0)),
+                    .unwrap_or_else(|| response.rect.left_top() + egui::Vec2::splat(space::XXXL)),
             );
         }
         if out.cell_clicked {
@@ -987,7 +992,12 @@ impl State {
             return;
         };
         let label = format_passage(Passage::verse(standard), &Standard, RefStyle::Long);
-        let at = at.unwrap_or_else(|| Rect::from_min_size(pos2(200.0, 200.0), vec2(1.0, 20.0)));
+        let at = at.unwrap_or_else(|| {
+            Rect::from_min_size(
+                ctx.content_rect().center(),
+                vec2(1.0, size::CONTROL_COMPACT),
+            )
+        });
         self.open_note_editor(
             ctx,
             tab,

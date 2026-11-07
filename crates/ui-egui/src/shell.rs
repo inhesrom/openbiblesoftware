@@ -24,6 +24,7 @@ use crate::interlinear::InterlinearSource;
 use crate::palette::Palette;
 use crate::pane::{AtlasTexture, WordHit, reading_pane};
 use crate::theme;
+use crate::tokens::{inset, radius, share, size, space, stroke, text};
 use crate::view::ReadingView;
 use crate::workers::SnippetCache;
 
@@ -971,7 +972,7 @@ impl Shell {
             .frame(
                 egui::Frame::new()
                     .fill(theme::c().surface)
-                    .inner_margin(egui::Margin::symmetric(14, 6)),
+                    .inner_margin(inset::BAND),
             )
             .show(ui, |ui| self.menu_bar(ui));
         self.st.areas.menus = menus.inner.map(|id| (id, menus.response.rect));
@@ -983,7 +984,7 @@ impl Shell {
             .frame(
                 egui::Frame::new()
                     .fill(theme::c().shell)
-                    .inner_margin(egui::Margin::same(8)),
+                    .inner_margin(inset::POPOVER),
             )
             .show(ui, |ui| {
                 if self.tree.is_empty() {
@@ -1158,20 +1159,16 @@ impl Shell {
     fn menu_bar(&mut self, ui: &mut Ui) -> Option<egui::Id> {
         let mut first = None;
         ui.horizontal(|ui| {
-            ui.label(
-                RichText::new("Open Bible")
-                    .font(theme::display(19.0))
-                    .color(theme::c().ink),
-            );
-            ui.add_space(10.0);
-            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.label(crate::components::title_text("Open Bible"));
+            ui.add_space(space::L);
+            ui.spacing_mut().item_spacing.x = space::XS;
             ui.scope(|ui| {
                 let w = &mut ui.visuals_mut().widgets;
                 w.inactive.bg_stroke = Stroke::NONE;
                 w.inactive.weak_bg_fill = Color32::TRANSPARENT;
                 w.hovered.bg_stroke = Stroke::NONE;
                 for menu in MENUS {
-                    let r = ui.menu_button(menu.title, |ui| {
+                    let r = crate::components::menu(ui, menu.title, |ui| {
                         for item in menu.items {
                             self.menu_item(ui, *item);
                         }
@@ -1181,14 +1178,14 @@ impl Shell {
             });
             let toolbar = &self.st.session.toolbar;
             if toolbar.position == obs_engine::ToolbarPosition::Top && !toolbar.auto_hide {
-                ui.add_space(8.0);
+                ui.add_space(space::M);
                 let room = ui.available_width() - self.st.toolbar.reserve;
                 self.launcher_strip(ui, room, false);
             }
             let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 self.command_box(ui);
                 // Today's reading (#147), left of the Command box, and Home (#178).
-                ui.add_space(8.0);
+                ui.add_space(space::M);
                 if self.st.todays_reading_button(ui) {
                     self.apply_effects();
                 }
@@ -1198,7 +1195,7 @@ impl Shell {
                 ui.min_rect().width()
             });
             // What the Launchers leave room for next frame: the right side and gaps.
-            self.st.toolbar.reserve = right.inner + 8.0 + 2.0 * ui.spacing().item_spacing.x;
+            self.st.toolbar.reserve = right.inner + space::M + 2.0 * ui.spacing().item_spacing.x;
         });
         first
     }
@@ -1243,8 +1240,8 @@ impl Shell {
                 // Without an icon (an unchecked toggle), the icon's room is left blank so the
                 // menu's labels line up.
                 let mut b = match icon {
-                    Some(icon) => egui::Button::new(icons::with_icon(ui, icon, label)),
-                    None => egui::Button::new((icons::blank(), label)),
+                    Some(icon) => crate::components::button(icons::with_icon(ui, icon, label)),
+                    None => crate::components::button((icons::blank(), label)),
                 };
                 if let Some(sc) = self.st.session.shortcut(id) {
                     b = b.shortcut_text(crate::key_labels::label(sc));
@@ -1277,7 +1274,7 @@ impl Shell {
             MenuItem::Choice { title, command } => {
                 let (options, current) = obs_engine::choices(&self.st.session, command);
                 let mut picked = None;
-                ui.menu_button((icons::blank(), title), |ui| {
+                crate::components::menu(ui, (icons::blank(), title), |ui| {
                     for (id, label) in options {
                         if ui.selectable_label(id == current, label).clicked() {
                             picked = Some(id);
@@ -1301,10 +1298,10 @@ impl Shell {
                 let mut toggled = None;
                 let enabled = self.st.session.is_enabled("notebook.show_in_text");
                 ui.add_enabled_ui(enabled, |ui| {
-                    ui.menu_button((icons::blank(), "Notebooks in text"), |ui| {
+                    crate::components::menu(ui, (icons::blank(), "Notebooks in text"), |ui| {
                         for n in &notebooks {
                             let mut on = n.show_in_text;
-                            if ui.checkbox(&mut on, &n.name).clicked() {
+                            if crate::components::toggle(ui, &mut on, &n.name).clicked() {
                                 toggled = Some((n.id.clone(), on));
                             }
                         }
@@ -2667,7 +2664,8 @@ impl State {
             InterlinearKind::Interlinear => "English and grammar under each word",
         };
         let mut run: Option<Value> = None;
-        ui.menu_button(
+        crate::components::menu(
+            ui,
             icons::image(
                 ui.ctx(),
                 icons::Icon::ChevronDown,
@@ -2675,11 +2673,7 @@ impl State {
                 theme::c().muted,
             ),
             |ui| {
-                ui.label(
-                    RichText::new("Interlinear lines")
-                        .small()
-                        .color(theme::c().muted),
-                );
+                ui.label(crate::components::hint_text("Interlinear lines"));
                 for line in kind.lines() {
                     let mut chosen = lines.is_chosen(kind, *line);
                     // The last line picked stays.
@@ -2814,66 +2808,56 @@ impl State {
             .collect();
         egui::Frame::new()
             .fill(theme::c().surface)
-            .inner_margin(egui::Margin::symmetric(10, 5))
+            .inner_margin(inset::BAR)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.spacing_mut().item_spacing.x = space::XS;
                     for (i, id) in bibles.iter().enumerate() {
-                        egui::Frame::new()
-                            .fill(theme::c().field)
-                            .stroke(Stroke::new(1.0, theme::c().rule))
-                            .corner_radius(11.0)
-                            .inner_margin(egui::Margin::symmetric(6, 0))
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = 2.0;
-                                    let (rect, r) = ui.allocate_exact_size(
-                                        vec2(16.0, 20.0),
-                                        egui::Sense::click(),
-                                    );
-                                    let color = if r.hovered() || Some(i) == base {
-                                        theme::c().lapis
+                        crate::components::chip_frame().show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = space::XXS;
+                                let (rect, r) = ui.allocate_exact_size(
+                                    vec2(size::ICON, size::CONTROL_COMPACT),
+                                    egui::Sense::click(),
+                                );
+                                let color = if r.hovered() || Some(i) == base {
+                                    theme::c().lapis
+                                } else {
+                                    theme::c().muted
+                                };
+                                icons::paint(
+                                    ui.painter(),
+                                    if Some(i) == base {
+                                        icons::Icon::StarFilled
                                     } else {
-                                        theme::c().muted
-                                    };
-                                    icons::paint(
-                                        ui.painter(),
-                                        if Some(i) == base {
-                                            icons::Icon::StarFilled
-                                        } else {
-                                            icons::Icon::Star
-                                        },
-                                        rect,
-                                        icons::SMALL,
-                                        color,
-                                    );
-                                    if r.on_hover_text("Compare the others with this Bible")
-                                        .clicked()
-                                    {
-                                        run = Some((
-                                            "compare.base",
-                                            json!({ "tab": tab.0, "id": id }),
-                                        ));
-                                    }
-                                    ui.label(RichText::new(abbrev(id)).size(12.5));
-                                    let remove = icons::button(
-                                        ui,
-                                        icons::Icon::Close,
-                                        icons::SMALL,
-                                        theme::c().muted,
-                                        "Remove",
-                                    );
-                                    if remove.on_hover_text("Remove").clicked() {
-                                        run = Some((
-                                            "compare.bible",
-                                            json!({ "tab": tab.0, "id": id }),
-                                        ));
-                                    }
-                                });
+                                        icons::Icon::Star
+                                    },
+                                    rect,
+                                    icons::SMALL,
+                                    color,
+                                );
+                                if r.on_hover_text("Compare the others with this Bible")
+                                    .clicked()
+                                {
+                                    run = Some(("compare.base", json!({ "tab": tab.0, "id": id })));
+                                }
+                                ui.label(crate::components::label_text(abbrev(id)));
+                                let remove = icons::button(
+                                    ui,
+                                    icons::Icon::Close,
+                                    icons::SMALL,
+                                    theme::c().muted,
+                                    "Remove",
+                                );
+                                if remove.on_hover_text("Remove").clicked() {
+                                    run =
+                                        Some(("compare.bible", json!({ "tab": tab.0, "id": id })));
+                                }
                             });
+                        });
                     }
-                    ui.menu_button(RichText::new("+ Bible").size(12.5), |ui| {
+                    crate::components::menu(ui, crate::components::label_text("+ Bible"), |ui| {
                         if others.is_empty() {
                             ui.label(RichText::new("Every Bible is shown").color(theme::c().muted));
                         }
@@ -2886,7 +2870,10 @@ impl State {
                     });
                     let mut differences = comparison.differences;
                     if ui
-                        .checkbox(&mut differences, RichText::new("Differences").size(12.5))
+                        .checkbox(
+                            &mut differences,
+                            crate::components::label_text("Differences"),
+                        )
                         .clicked()
                     {
                         run = Some(("compare.differences", json!({ "tab": tab.0 })));
@@ -2895,8 +2882,8 @@ impl State {
                         let text = format_passage(range, &Standard, RefStyle::Short);
                         if ui
                             .add(
-                                egui::Button::new((
-                                    RichText::new(text).size(12.5),
+                                crate::components::button((
+                                    crate::components::label_text(text),
                                     icons::image(
                                         ui.ctx(),
                                         icons::Icon::Close,
@@ -2904,7 +2891,7 @@ impl State {
                                         theme::c().muted,
                                     ),
                                 ))
-                                .corner_radius(11.0),
+                                .corner_radius(radius::PILL),
                             )
                             .on_hover_text("Show the whole chapter")
                             .clicked()
@@ -2928,13 +2915,13 @@ impl State {
         };
         let frame = egui::Frame::new()
             .fill(fill)
-            .inner_margin(egui::Margin::symmetric(9, 4))
+            .inner_margin(inset::BAR)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 5.0;
-                    let narrow = ui.available_width() < 430.0;
-                    ui.add_space(4.0);
+                    ui.spacing_mut().item_spacing.x = space::XS;
+                    let narrow = ui.available_width() < size::HEADER_NARROW;
+                    ui.add_space(space::XS);
                     if kind.has_link_chip() {
                         self.link_chip(ui, tab);
                     }
@@ -2960,7 +2947,13 @@ impl State {
                     // The box leaves room for the controls on the right (measured last frame).
                     let controls = self.tabs.get(&tab).map_or(0.0, |t| t.header_controls);
                     let room = ui.available_width() - controls - 2.0 * ui.spacing().item_spacing.x;
-                    let width = room.min(if narrow { 110.0 } else { 140.0 }).max(48.0);
+                    let width = room
+                        .min(if narrow {
+                            size::HEADER_BOX_NARROW
+                        } else {
+                            size::HEADER_BOX
+                        })
+                        .max(size::FIELD_NUMBER);
                     self.header_box(ui, tab, header, width);
                     let title = self.title(tab, kind);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -2982,10 +2975,7 @@ impl State {
                         }
                         if !narrow {
                             ui.add(
-                                egui::Label::new(
-                                    RichText::new(title).small().color(theme::c().muted),
-                                )
-                                .truncate(),
+                                egui::Label::new(crate::components::hint_text(title)).truncate(),
                             );
                         }
                     });
@@ -2999,14 +2989,17 @@ impl State {
             });
         let r = frame.response.rect;
         ui.painter().rect_filled(
-            egui::Rect::from_min_size(r.min, vec2(if focused { 4.0 } else { 2.0 }, r.height())),
+            egui::Rect::from_min_size(
+                r.min,
+                vec2(if focused { space::XS } else { space::XXS }, r.height()),
+            ),
             0.0,
             theme::link_color(self.session.workspace.tab(tab).and_then(|t| t.link)),
         );
         ui.painter().hline(
             r.x_range(),
             r.bottom() - 0.5,
-            Stroke::new(1.0, theme::c().rule),
+            crate::components::rule_stroke(),
         );
     }
 
@@ -3052,9 +3045,9 @@ impl State {
         });
         let ctx = ui.ctx().clone();
         let arrow = |icon| {
-            egui::Button::new(icons::image(&ctx, icon, icons::BODY, theme::c().muted))
+            crate::components::button(icons::image(&ctx, icon, icons::BODY, theme::c().muted))
                 .frame(false)
-                .min_size(vec2(18.0, 22.0))
+                .min_size(vec2(size::ICON_LARGE, size::CONTROL_COMPACT))
         };
         let mut run: Option<(&'static str, Value)> = None;
         let next = ui
@@ -3076,7 +3069,11 @@ impl State {
         ui.add_enabled_ui(others, |ui| {
             egui::ComboBox::from_id_salt(("parallel", tab))
                 .selected_text(RichText::new(shown).small())
-                .width(if narrow { 52.0 } else { 72.0 })
+                .width(if narrow {
+                    size::HEADER_CHOOSER_NARROW
+                } else {
+                    size::HEADER_CHOOSER
+                })
                 .truncate()
                 .show_ui(ui, |ui| {
                     for (id, abbreviation, title) in &parallel {
@@ -3123,13 +3120,13 @@ impl State {
         let next = enabled(true);
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(previous, egui::Button::new("Previous entry"))
+                .add_enabled(previous, crate::components::button("Previous entry"))
                 .clicked()
             {
                 self.run("tab.previous_entry", &json!({ "tab": tab.0 }));
             }
             if ui
-                .add_enabled(next, egui::Button::new("Next entry"))
+                .add_enabled(next, crate::components::button("Next entry"))
                 .clicked()
             {
                 self.run("tab.next_entry", &json!({ "tab": tab.0 }));
@@ -3150,9 +3147,9 @@ impl State {
         });
         let ctx = ui.ctx().clone();
         let arrow = |icon| {
-            egui::Button::new(icons::image(&ctx, icon, icons::BODY, theme::c().ink))
+            crate::components::button(icons::image(&ctx, icon, icons::BODY, theme::c().ink))
                 .frame(false)
-                .min_size(vec2(22.0, 24.0))
+                .min_size(vec2(size::CONTROL_COMPACT, size::ROW_COMPACT))
         };
         if ui
             .add_enabled(back, arrow(icons::Icon::Back))
@@ -3178,11 +3175,11 @@ impl State {
             HeaderBox::FollowsHover => {
                 if self.session.word_info.pinned {
                     let r = ui.add(
-                        egui::Button::new((
+                        crate::components::button((
                             icons::image(ui.ctx(), icons::Icon::Pin, icons::SMALL, theme::c().ink),
                             RichText::new("Pinned").small(),
                         ))
-                        .corner_radius(11.0),
+                        .corner_radius(radius::PILL),
                     );
                     if r.on_hover_text(
                         "Pinned to the clicked word. Click (or press Esc) to follow hover again.",
@@ -3192,11 +3189,7 @@ impl State {
                         self.run("word_info.unpin", &json!({}));
                     }
                 } else {
-                    ui.label(
-                        RichText::new("Follows hover")
-                            .small()
-                            .color(theme::c().muted),
-                    );
+                    ui.label(crate::components::hint_text("Follows hover"));
                 }
             }
             HeaderBox::Filter => {
@@ -3213,10 +3206,8 @@ impl State {
                 if let Some(t) = self.tabs.get_mut(&tab) {
                     let r = ui
                         .add(
-                            egui::TextEdit::singleline(&mut t.filter)
-                                .hint_text(name)
-                                .desired_width(width)
-                                .margin(egui::Margin::symmetric(8, 4)),
+                            crate::components::search_field(&mut t.filter, name, width)
+                                .margin(inset::BAR),
                         )
                         .accessible_name(name);
                     if settings && self.settings_ui.search_drawn(ui, focused) {
@@ -3253,7 +3244,7 @@ impl State {
                             .id_salt(("refbox", tab))
                             .hint_text(hint)
                             .desired_width(width)
-                            .margin(egui::Margin::symmetric(8, 4)),
+                            .margin(inset::BAR),
                     )
                     .accessible_name(hint);
                 if r.has_focus() {
@@ -3301,12 +3292,13 @@ impl State {
             .is_some_and(|t| t.kind.has_find_bar());
         let find_key = key_of(&self.session, "tab.find");
         let close_key = key_of(&self.session, "tab.close");
-        ui.menu_button(
+        crate::components::menu(
+            ui,
             icons::image(ui.ctx(), icons::Icon::More, icons::BODY, theme::c().muted),
             |ui| {
                 if findable
                     && ui
-                        .add(egui::Button::new("Find…").shortcut_text(find_key))
+                        .add(crate::components::button("Find…").shortcut_text(find_key))
                         .clicked()
                 {
                     self.session.workspace.user_focused(tab);
@@ -3332,7 +3324,7 @@ impl State {
                 self.favorite_folder_menu(ui, tab);
                 self.window_menu(ui, tab);
                 if ui
-                    .add(egui::Button::new("Close Tab").shortcut_text(close_key))
+                    .add(crate::components::button("Close Tab").shortcut_text(close_key))
                     .clicked()
                 {
                     self.run("tab.close", &json!({ "tab": tab.0 }));
@@ -3370,7 +3362,7 @@ impl State {
                         egui::TextEdit::singleline(&mut text)
                             .id_salt("layout-name")
                             .hint_text("Layout name")
-                            .desired_width(260.0),
+                            .desired_width(size::FIELD_WIDE),
                     )
                     .accessible_name("Layout name");
                 r.request_focus();
@@ -3428,10 +3420,13 @@ impl State {
                 let screen = ctx.content_rect();
                 egui::Area::new(egui::Id::unique("toast"))
                     .order(egui::Order::Foreground)
-                    .anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -48.0))
+                    .anchor(
+                        egui::Align2::CENTER_BOTTOM,
+                        vec2(0.0, -(space::XXXL + space::XL)),
+                    )
                     .show(&ctx, |ui| {
-                        ui.set_max_width(screen.width() * 0.6);
-                        egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.set_max_width(screen.width() * share::DIALOG);
+                        crate::components::popover_frame().show(ui, |ui| {
                             ui.label(RichText::new(msg).color(theme::c().lapis));
                         });
                     });
@@ -3448,7 +3443,7 @@ impl State {
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
                 .show(&ctx, |ui| {
-                    ui.set_max_width(460.0);
+                    ui.set_max_width(size::PROSE);
                     ui.label(body.as_str());
                 });
             if !open {
@@ -3510,15 +3505,15 @@ impl State {
         let link = self.session.workspace.tab(tab).and_then(|t| t.link);
         let txt = RichText::new(link.map_or_else(|| "–".to_string(), String::from))
             .strong()
-            .size(11.5)
+            .size(text::SMALL)
             .color(theme::text_on(theme::link_color(link)));
         let resp = ui
             .add(
-                egui::Button::new(txt)
+                crate::components::button(txt)
                     .fill(theme::link_color(link))
                     .stroke(Stroke::NONE)
-                    .corner_radius(11.0)
-                    .min_size(vec2(24.0, 22.0)),
+                    .corner_radius(radius::PILL)
+                    .min_size(vec2(size::ROW_COMPACT, size::CONTROL_COMPACT)),
             )
             .on_hover_text(
                 "Link set: Tabs with the same letter follow one location. Click to change.",
@@ -3600,8 +3595,7 @@ impl egui_tiles::Behavior<TabId> for State {
             .tab(*tab)
             .map(|t| t.title.clone())
             .unwrap_or_default();
-        RichText::new(title)
-            .size(13.5)
+        crate::components::label_text(title)
             .color(if focused {
                 theme::c().ink
             } else {
@@ -3651,7 +3645,8 @@ impl egui_tiles::Behavior<TabId> for State {
         _scroll: &mut f32,
     ) {
         let panel = self.panel_for_tile(tile_id);
-        ui.menu_button(
+        crate::components::menu(
+            ui,
             icons::image(ui.ctx(), icons::Icon::Add, icons::BODY, theme::c().muted),
             |ui| {
                 let split = ui.input(|i| i.modifiers.command);
@@ -3694,11 +3689,9 @@ impl egui_tiles::Behavior<TabId> for State {
                         picked = Some((id, json!({})));
                     }
                 }
-                ui.label(
-                    RichText::new("Ctrl/Cmd-click opens a new split")
-                        .small()
-                        .color(theme::c().muted),
-                );
+                ui.label(crate::components::hint_text(
+                    "Ctrl/Cmd-click opens a new split",
+                ));
                 if let Some((id, mut params)) = picked {
                     if let Some(obj) = params.as_object_mut() {
                         obj.insert("split".into(), json!(split));
@@ -3716,15 +3709,15 @@ impl egui_tiles::Behavior<TabId> for State {
     }
 
     fn tab_bar_height(&self, _style: &egui::Style) -> f32 {
-        31.0
+        size::TAB_BAR
     }
 
     fn gap_width(&self, _style: &egui::Style) -> f32 {
-        6.0
+        space::S
     }
 
     fn tab_title_spacing(&self, _visuals: &egui::Visuals) -> f32 {
-        12.0
+        space::L
     }
 
     fn tab_bar_color(&self, _visuals: &egui::Visuals) -> Color32 {
@@ -3756,13 +3749,13 @@ impl egui_tiles::Behavior<TabId> for State {
     }
 
     fn tab_bar_hline_stroke(&self, _visuals: &egui::Visuals) -> Stroke {
-        Stroke::new(1.0, theme::c().rule)
+        crate::components::rule_stroke()
     }
 
     fn resize_stroke(&self, _style: &egui::Style, state: egui_tiles::ResizeState) -> Stroke {
         match state {
-            egui_tiles::ResizeState::Idle => Stroke::new(1.0, theme::c().shell),
-            _ => Stroke::new(2.0, theme::c().lapis),
+            egui_tiles::ResizeState::Idle => Stroke::new(stroke::HAIR, theme::c().shell),
+            _ => Stroke::new(stroke::THICK, theme::c().lapis),
         }
     }
 
@@ -3828,7 +3821,7 @@ fn focus_ring(ctx: &egui::Context) {
     let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::unique(FOCUS_RING));
     ctx.layer_painter(layer).rect_stroke(
         rect.expand(1.0),
-        4.0,
+        radius::S,
         Stroke::new(FOCUS_RING_WIDTH, theme::c().lapis),
         egui::StrokeKind::Outside,
     );
@@ -3847,7 +3840,7 @@ pub(crate) fn unbroken_link(ui: &mut Ui, text: impl Into<egui::WidgetText>) -> e
 
 /// The focus ring's layer, and its width in points.
 pub(crate) const FOCUS_RING: &str = "focus-ring";
-pub(crate) const FOCUS_RING_WIDTH: f32 = 2.0;
+pub(crate) const FOCUS_RING_WIDTH: f32 = stroke::THICK;
 
 /// Call before drawing a window that Esc closes; the closure, called after with the layer the
 /// window was drawn on, says whether Esc closes it now (#182). Esc closes one window: the one

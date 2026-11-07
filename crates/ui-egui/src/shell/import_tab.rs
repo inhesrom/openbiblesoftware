@@ -10,6 +10,7 @@ use serde_json::json;
 use super::State;
 use super::library_tab::section;
 use crate::theme;
+use crate::tokens::{space, text};
 
 /// What the Import… chooser asks the native picker for.
 #[derive(Debug, Clone, Copy)]
@@ -32,55 +33,48 @@ impl State {
         // The Search index's live state, once the Resource is in the library (#58).
         let index = self.session.search.status(id).cloned();
         let mut action: Option<&'static str> = None;
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(18, 12))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        let title = match record.phase {
-                            ImportPhase::Complete => "Import complete",
-                            ImportPhase::Failed => "Import failed",
-                            ImportPhase::Download if record.origin.is_some() => "Downloading",
-                            ImportPhase::Download | ImportPhase::Parse | ImportPhase::Index => {
-                                "Import in progress"
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let title = match record.phase {
+                        ImportPhase::Complete => "Import complete",
+                        ImportPhase::Failed => "Import failed",
+                        ImportPhase::Download if record.origin.is_some() => "Downloading",
+                        ImportPhase::Download | ImportPhase::Parse | ImportPhase::Index => {
+                            "Import in progress"
+                        }
+                    };
+                    ui.label(crate::components::title_text(title));
+                    ui.label(RichText::new(&record.source).color(theme::c().muted));
+                    ui.add_space(space::L);
+                    phases(ui, &record, index.as_ref());
+                    let running = matches!(
+                        record.phase,
+                        ImportPhase::Download | ImportPhase::Parse | ImportPhase::Index
+                    );
+                    if running && ui.button("Cancel").clicked() {
+                        action = Some("import.cancel");
+                    }
+                    if let Some(report) = &record.report {
+                        ui.add_space(space::L);
+                        summary(ui, id, report);
+                        ui.add_space(space::XL);
+                        ui.horizontal(|ui| {
+                            if ui.button("Open").clicked() {
+                                action = Some("resource.open");
                             }
-                        };
-                        ui.label(
-                            RichText::new(title)
-                                .font(theme::display(20.0))
-                                .color(theme::c().ink),
-                        );
-                        ui.label(RichText::new(&record.source).color(theme::c().muted));
-                        ui.add_space(10.0);
-                        phases(ui, &record, index.as_ref());
-                        let running = matches!(
-                            record.phase,
-                            ImportPhase::Download | ImportPhase::Parse | ImportPhase::Index
-                        );
-                        if running && ui.button("Cancel").clicked() {
-                            action = Some("import.cancel");
-                        }
-                        if let Some(report) = &record.report {
-                            ui.add_space(10.0);
-                            summary(ui, id, report);
-                            ui.add_space(14.0);
-                            ui.horizontal(|ui| {
-                                if ui.button("Open").clicked() {
-                                    action = Some("resource.open");
-                                }
-                                if ui.button("About").clicked() {
-                                    action = Some("resource.about");
-                                }
-                                if ui.button("Remove import…").clicked() {
-                                    action = Some("library.remove");
-                                }
-                            });
-                        }
-                    });
-            });
+                            if ui.button("About").clicked() {
+                                action = Some("resource.about");
+                            }
+                            if ui.button("Remove import…").clicked() {
+                                action = Some("library.remove");
+                            }
+                        });
+                    }
+                });
+        });
         if let Some(command) = action {
             self.run(command, &json!({ "id": id }));
         }
@@ -103,7 +97,7 @@ impl State {
             .show(ctx, |ui| {
                 ui.label("Choose a USFM file or a folder of Bible books.");
                 ui.label("For a SWORD module, choose its .conf file in mods.d/.");
-                ui.add_space(6.0);
+                ui.add_space(space::S);
                 ui.horizontal(|ui| {
                     if ui.button("USFM file…").clicked() {
                         chosen = Some(Pick::UsfmFile);
@@ -210,7 +204,7 @@ fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
                 ui.label(format!("Downloaded from {}", origin.repo));
             }
         }
-        ui.add_space(8.0);
+        ui.add_space(space::M);
     }
     section(ui, "Parse");
     match record.phase {
@@ -238,7 +232,7 @@ fn phases(ui: &mut Ui, record: &ImportRecord, index: Option<&IndexStatus>) {
             );
         }
     }
-    ui.add_space(8.0);
+    ui.add_space(space::M);
     section(ui, "Search index");
     match (&record.phase, &record.index) {
         (ImportPhase::Download | ImportPhase::Parse, _) => {
@@ -297,7 +291,7 @@ fn summary(ui: &mut Ui, id: &str, report: &ImportReport) {
     section(ui, "Summary");
     ui.label(
         RichText::new(&report.title)
-            .font(theme::display(16.0))
+            .font(theme::display(text::SUBTITLE))
             .color(theme::c().ink),
     );
     ui.label(format!(
@@ -319,7 +313,7 @@ fn summary(ui: &mut Ui, id: &str, report: &ImportReport) {
         ui.label(format!("Unmapped verses: {}", counts.unmapped));
         ui.label(format!("Absent verses: {}", counts.absent));
     }
-    ui.add_space(8.0);
+    ui.add_space(space::M);
     section(ui, "Licence");
     if report.license_missing {
         ui.colored_label(
@@ -330,7 +324,7 @@ fn summary(ui: &mut Ui, id: &str, report: &ImportReport) {
     } else {
         ui.label("Licence recorded from the source; see About.");
     }
-    ui.add_space(8.0);
+    ui.add_space(space::M);
     let dropped: u64 = report.dropped_markup.values().sum();
     egui::CollapsingHeader::new(format!("Dropped markup ({dropped})"))
         .id_salt(("import-dropped", id))

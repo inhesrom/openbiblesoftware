@@ -13,6 +13,7 @@ use crate::doc::ReadingDoc;
 use crate::heights::HeightIndex;
 use crate::interlinear::InterlinearSource;
 use crate::selection::{DocPos, Selection};
+use crate::tokens::{size, space};
 use crate::workers::{LayoutClient, lay_out};
 
 /// UI-thread layout per frame. #19 allows 2 ms; one block may overrun the check, so stop
@@ -32,7 +33,7 @@ const INTERLINEAR_COST: u32 = 6;
 const PREFETCH: f32 = 1.5;
 
 /// Horizontal margin inside the pane, in points.
-pub const MARGIN: f32 = 24.0;
+pub const MARGIN: f32 = space::XXL;
 
 /// A Footnote marker in view (#208): the note it stands for, where it sits in the unit, its
 /// label as drawn and its box (`x` from the text's left edge, `y` from the viewport top).
@@ -192,7 +193,7 @@ impl ReadingView {
     /// Text width (pane width less margins). A new width or settings means new layouts; the
     /// height index is keyed by both, so it restarts from estimates.
     pub fn set_width(&mut self, width: f32) {
-        let width = width.max(80.0);
+        let width = width.max(size::TEXT_MIN * 2.0);
         if (width - self.width).abs() < 0.5 && !self.heights.is_empty() {
             return;
         }

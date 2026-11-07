@@ -20,22 +20,23 @@ use crate::compare_view::range_rects;
 use crate::heights::HeightIndex;
 use crate::palette::Palette;
 use crate::pane::AtlasTexture;
+use crate::tokens::{alpha, radius, scale, share, size, space, stroke, text};
 use crate::workers::SnippetCache;
 
 /// The Bible label column's width.
-pub const LABEL_WIDTH: f32 = 70.0;
+pub const LABEL_WIDTH: f32 = size::LABEL_COLUMN;
 /// A row's reference line.
-const ROW_HEAD: f32 = 22.0;
-const HIT_GAP: f32 = 4.0;
-const ROW_GAP: f32 = 10.0;
+const ROW_HEAD: f32 = size::CONTROL_COMPACT;
+const HIT_GAP: f32 = space::XS;
+const ROW_GAP: f32 = space::L;
 /// A Library group's header line.
-const GROUP_HEAD: f32 = 30.0;
+const GROUP_HEAD: f32 = size::ROW;
 /// How far Library rows are indented under their group's header.
-const INDENT: f32 = 14.0;
+const INDENT: f32 = space::L;
 /// Library row labels are drawn this much smaller than the text.
-const LABEL_SCALE: f32 = 0.85;
-const MARGIN: f32 = 12.0;
-const SCROLLBAR: f32 = 10.0;
+const LABEL_SCALE: f32 = scale::LABEL;
+const MARGIN: f32 = space::L;
+const SCROLLBAR: f32 = size::SCROLLBAR;
 
 /// What the last frame drew.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -111,11 +112,11 @@ impl SearchView {
     }
 
     fn line_height(&self) -> f32 {
-        self.settings.size * self.settings.line_spacing * 1.2
+        self.settings.size * self.settings.line_spacing * scale::ROW_LINE
     }
 
     fn text_width(&self) -> f32 {
-        (self.width - LABEL_WIDTH).max(60.0)
+        (self.width - LABEL_WIDTH).max(size::TEXT_MIN)
     }
 
     /// Rows are estimated at two lines per hit until laid out.
@@ -278,7 +279,7 @@ pub fn search_pane(
             rect.center(),
             Align2::CENTER_CENTER,
             message,
-            FontId::proportional(14.0),
+            FontId::proportional(text::BODY),
             palette.verse_number,
         );
     };
@@ -322,7 +323,7 @@ pub fn search_pane(
     let track = Rect::from_min_max(pos2(rect.right() - SCROLLBAR, rect.top()), rect.max);
     if response.dragged()
         && let Some(p) = response.interact_pointer_pos()
-        && track.expand(4.0).contains(p)
+        && track.expand(space::XS).contains(p)
     {
         let (y, _) = view.position();
         let max = view.max_scroll();
@@ -377,7 +378,10 @@ pub fn search_pane(
         painter.hline(
             left..=rect.right() - MARGIN - SCROLLBAR,
             y + height - ROW_GAP / 2.0,
-            Stroke::new(1.0, palette.verse_number.gamma_multiply(0.2)),
+            Stroke::new(
+                stroke::HAIR,
+                palette.verse_number.gamma_multiply(alpha::TINT),
+            ),
         );
         y += height;
         i += 1;
@@ -394,7 +398,7 @@ pub fn search_pane(
         ui.ctx().request_repaint();
     }
     for r in tints {
-        painter.rect_filled(r, 2.0, palette.search_hit);
+        painter.rect_filled(r, radius::XS, palette.search_hit);
     }
     let texture = atlas.sync(ui.ctx());
     let mut mesh = Mesh::with_texture(texture);
@@ -411,16 +415,12 @@ pub fn search_pane(
     if total > f64::from(rect.height()) {
         let max = view.max_scroll().max(1.0);
         let frac = (pos / max) as f32;
-        let thumb_h = (rect.height() * rect.height() / total as f32)
-            .clamp(24.0_f32.min(rect.height()), rect.height());
-        let thumb_top = track.top() + frac.clamp(0.0, 1.0) * (track.height() - thumb_h);
-        painter.rect_filled(
-            Rect::from_min_size(
-                pos2(track.left() + 2.0, thumb_top),
-                vec2(SCROLLBAR - 4.0, thumb_h),
-            ),
-            3.0,
-            palette.verse_number.gamma_multiply(0.5),
+        crate::components::scroll_thumb(
+            &painter,
+            track,
+            frac,
+            rect.height() / total as f32,
+            palette.verse_number.gamma_multiply(alpha::HALF),
         );
     }
     if response.clicked()
@@ -491,13 +491,12 @@ fn paint_laid(
 /// A grey bar where text will be once its snippet or layout arrives.
 fn placeholder(paint: &mut Paint<'_>, origin: Pos2, width: f32, height: f32) {
     paint.frame.placeholders += 1;
-    paint.painter.rect_filled(
-        Rect::from_min_size(
-            pos2(origin.x, origin.y + height * 0.3),
-            vec2(width, height * 0.35),
-        ),
-        2.0,
-        paint.palette.verse_number.gamma_multiply(0.12),
+    crate::components::text_placeholder(
+        paint.painter,
+        origin,
+        width,
+        height,
+        paint.palette.verse_number.gamma_multiply(alpha::WASH),
     );
 }
 
@@ -523,10 +522,10 @@ fn bible_row(
     let row = &results.rows[i];
     let reference = results.row_reference(row);
     paint.painter.text(
-        pos2(left, y + 4.0),
+        pos2(left, y + space::XS),
         Align2::LEFT_TOP,
         &reference,
-        FontId::proportional(12.5),
+        FontId::proportional(text::LABEL),
         palette.verse_number,
     );
     let mut row_y = y + ROW_HEAD;
@@ -539,20 +538,20 @@ fn bible_row(
             pos2(left, row_y + 2.0),
             Align2::LEFT_TOP,
             abbreviation,
-            FontId::proportional(13.0),
+            FontId::proportional(text::LABEL),
             palette.ink,
         );
-        let mut label_h = 18.0;
+        let mut label_h = text::LABEL_LINE;
         // The Bible's own number where it differs from the row's Standard Verse.
         if row.standard.is_some_and(|s| s != h.native) {
             paint.painter.text(
                 pos2(left, row_y + label_h),
                 Align2::LEFT_TOP,
                 format!("{}:{}", h.native.chapter, h.native.verse),
-                FontId::proportional(11.0),
+                FontId::proportional(text::CAPTION),
                 palette.verse_number,
             );
-            label_h += 14.0;
+            label_h += text::CAPTION_LINE;
         }
         let mut height = view.line_height();
         let origin = pos2(text_left, row_y);
@@ -620,17 +619,17 @@ fn library_row(
         && let Some(g) = group
     {
         paint.painter.text(
-            pos2(left, y + 8.0),
+            pos2(left, y + space::M),
             Align2::LEFT_TOP,
             results.group_header(g),
-            FontId::proportional(13.5),
+            FontId::proportional(text::LABEL),
             palette.ink,
         );
         row_y += GROUP_HEAD;
     }
     let top = row_y;
     let text_left = left + INDENT;
-    let text_width = (view.width - INDENT).max(60.0);
+    let text_width = (view.width - INDENT).max(size::TEXT_MIN);
     let rtl = group.is_some_and(|g| g.rtl);
     let mut measured = true;
     // The unit's title or Key, through the text pipeline (Lexicon titles are Greek or Hebrew).
@@ -647,7 +646,7 @@ fn library_row(
         None => {
             measured = false;
             let h = view.line_height() * LABEL_SCALE;
-            placeholder(paint, origin, text_width * 0.3, h);
+            placeholder(paint, origin, text_width * share::LABEL, h);
             h
         }
     };

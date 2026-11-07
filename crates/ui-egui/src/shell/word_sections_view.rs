@@ -9,7 +9,7 @@
 //! - **Forms:** each form with its count; a click filters Occurrences (again: clears it).
 //!   The filter is per Tab and resets when the Word Study moves to another number.
 
-use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, pos2, vec2};
+use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Ui, pos2, vec2};
 use obs_engine::{Forms, OCCURRENCE_ROWS, OccurrenceList, TabId, TranslatedAs};
 use obs_layout::{ColorRole, TextSettings};
 use obs_model::Key;
@@ -19,15 +19,16 @@ use super::State;
 use super::guide_tab::Action;
 use crate::compare_view::range_rects;
 use crate::theme;
+use crate::tokens::{alpha, chart, radius, scale, size, space, text};
 
 /// Renderings shown before Show all.
 const RENDERINGS_SHOWN: usize = 16;
 /// Width of a book's label in the bar list.
-const BOOK_LABEL: f32 = 64.0;
+const BOOK_LABEL: f32 = chart::CELL.x;
 /// Width of a count beside its bar.
-const COUNT_WIDTH: f32 = 40.0;
+const COUNT_WIDTH: f32 = size::TEXT_MIN;
 /// Height of one bar row.
-const BAR_ROW: f32 = 17.0;
+const BAR_ROW: f32 = chart::ROW;
 /// Lines of a Verse preview.
 const PREVIEW_LINES: usize = 4;
 
@@ -52,17 +53,13 @@ impl State {
             .filter(|c| *c != number)
             .map(|c| format!(" (as {c})"))
             .unwrap_or_default();
-        ui.label(
-            RichText::new(format!(
-                "How the {}{counted} translates it, {} times:",
-                t.bible_abbreviation,
-                t.total()
-            ))
-            .small()
-            .color(theme::c().muted),
-        );
+        ui.label(crate::components::hint_text(format!(
+            "How the {}{counted} translates it, {} times:",
+            t.bible_abbreviation,
+            t.total()
+        )));
         ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = 14.0;
+            ui.spacing_mut().item_spacing.x = space::L;
             let shown = if all {
                 t.renderings.len()
             } else {
@@ -153,7 +150,7 @@ impl State {
                 }
             }
         });
-        ui.add_space(4.0);
+        ui.add_space(space::XS);
         // One bar per Bible book, scaled to the largest.
         let max = filtered
             .books
@@ -171,30 +168,30 @@ impl State {
                 pos2(rect.left(), rect.center().y),
                 egui::Align2::LEFT_CENTER,
                 book.abbrev(),
-                egui::FontId::proportional(12.5),
+                egui::FontId::proportional(text::LABEL),
                 c.ink,
             );
-            let track = (width - BOOK_LABEL - COUNT_WIDTH).max(20.0);
+            let track = (width - BOOK_LABEL - COUNT_WIDTH).max(space::XXL);
             let bar = track * (*n as f32 / max as f32);
             painter.rect_filled(
                 Rect::from_min_size(
-                    pos2(rect.left() + BOOK_LABEL, rect.top() + 3.0),
-                    vec2(bar.max(2.0), BAR_ROW - 6.0),
+                    pos2(rect.left() + BOOK_LABEL, rect.top() + chart::BAR_INSET),
+                    vec2(bar.max(space::XXS), BAR_ROW - 2.0 * chart::BAR_INSET),
                 ),
-                2.0,
-                c.lapis.gamma_multiply(0.75),
+                radius::XS,
+                c.lapis.gamma_multiply(alpha::STRONG),
             );
             painter.text(
-                pos2(rect.left() + BOOK_LABEL + bar + 6.0, rect.center().y),
+                pos2(rect.left() + BOOK_LABEL + bar + space::S, rect.center().y),
                 egui::Align2::LEFT_CENTER,
                 n.to_string(),
-                egui::FontId::proportional(12.0),
+                egui::FontId::proportional(text::SMALL),
                 c.muted,
             );
             let label = format!("{}: {n}", book.name());
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &label));
         }
-        ui.add_space(8.0);
+        ui.add_space(space::M);
         // The first Verses, each with its preview.
         let shown: Vec<&obs_engine::OccurrenceVerse> = filtered
             .verses
@@ -277,12 +274,7 @@ impl State {
             let label = format!("Open {reference}");
             r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, &label));
             if r.hovered() {
-                ui.painter().rect_stroke(
-                    rect.expand(2.0),
-                    4.0,
-                    Stroke::new(1.0, c.hover_rule),
-                    egui::StrokeKind::Outside,
-                );
+                crate::components::hover_outline(ui, rect);
             }
             if r.clicked() {
                 // In the preview Bible where it has the Verse, else in the counted Bible.
@@ -296,7 +288,7 @@ impl State {
                     new_tab,
                 });
             }
-            ui.add_space(6.0);
+            ui.add_space(space::S);
         }
         ui.horizontal_wrapped(|ui| {
             if filtered.verses.len() > OCCURRENCE_ROWS {
@@ -332,14 +324,10 @@ impl State {
     pub(super) fn forms_section(&mut self, ui: &mut Ui, tab: TabId, f: &Forms) -> Option<Action> {
         let selected = self.tabs.get(&tab).and_then(|t| t.occurrence_form.clone());
         let mut action = None;
-        ui.label(
-            RichText::new(format!(
-                "In the {}. Click a form to list only its occurrences.",
-                f.bible_abbreviation
-            ))
-            .small()
-            .color(theme::c().muted),
-        );
+        ui.label(crate::components::hint_text(format!(
+            "In the {}. Click a form to list only its occurrences.",
+            f.bible_abbreviation
+        )));
         for form in &f.forms {
             let on = selected.as_deref() == Some(form.label.as_str());
             let text = RichText::new(format!("{} ×{}", form.label, form.count));
@@ -363,11 +351,10 @@ impl State {
             }
         }
         if f.without_form > 0 {
-            ui.label(
-                RichText::new(format!("{} without Morphology", f.without_form))
-                    .small()
-                    .color(theme::c().muted),
-            );
+            ui.label(crate::components::hint_text(format!(
+                "{} without Morphology",
+                f.without_form
+            )));
         }
         action
     }
@@ -383,7 +370,7 @@ impl State {
         lines: usize,
     ) {
         let settings: TextSettings = self.session.text;
-        let width = ui.available_width().max(40.0);
+        let width = ui.available_width().max(size::TEXT_MIN);
         let Some(laid) = self
             .snippets
             .get(text, ColorRole::Ink, rtl, width, &settings)
@@ -410,7 +397,7 @@ impl State {
                         pos2(rect.left() + x0, rect.top() + y0),
                         pos2(rect.left() + x1, rect.top() + y1),
                     ),
-                    2.0,
+                    radius::XS,
                     self.palette.search_hit,
                 );
             }
@@ -434,15 +421,14 @@ impl State {
     /// One line's placeholder while text is read or laid out.
     fn placeholder_line(&mut self, ui: &mut Ui) {
         let settings: TextSettings = self.session.text;
-        let width = ui.available_width().max(40.0);
+        let width = ui.available_width().max(size::TEXT_MIN);
         let line = settings.size * settings.line_spacing;
         let (rect, _) = ui.allocate_exact_size(vec2(width, line), Sense::hover());
-        ui.painter().rect_filled(
-            Rect::from_min_size(
-                pos2(rect.left(), rect.top() + line * 0.3),
-                vec2(width.min(settings.size * 8.0), line * 0.35),
-            ),
-            2.0,
+        crate::components::text_placeholder(
+            ui.painter(),
+            rect.min,
+            width.min(settings.size * scale::PLACEHOLDER_EMS),
+            line,
             theme::c().rule,
         );
         ui.ctx().request_repaint();

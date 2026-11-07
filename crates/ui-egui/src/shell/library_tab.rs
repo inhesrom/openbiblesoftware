@@ -13,14 +13,15 @@ use super::{RESOURCE_TYPES, State, type_name};
 use crate::icons::{self, Icon};
 use crate::pane::reading_pane;
 use crate::theme;
+use crate::tokens::{radius, size, space, stroke, text};
 
 /// Height of one Library row.
-pub(crate) const ROW_H: f32 = 28.0;
+pub(crate) const ROW_H: f32 = size::ROW;
 /// Width of the drag handle at the left of a row.
-const HANDLE_W: f32 = 22.0;
+const HANDLE_W: f32 = size::HANDLE;
 /// A Resource type's heading in the list: its text size, and the space above it.
-const HEADER_SIZE: f32 = 10.5;
-const HEADER_GAP: f32 = 6.0;
+const HEADER_SIZE: f32 = text::CAPTION;
+const HEADER_GAP: f32 = space::S;
 
 /// One line of the list: a Resource type's heading, or a row (its type, its position within
 /// the type in the full Preferred order, its manifest).
@@ -83,160 +84,155 @@ impl State {
         let mut drop_region = Rect::NOTHING;
         let enter_pressed =
             ui.input(|i| i.key_pressed(egui::Key::Enter)) && !egui::Popup::is_any_open(ui.ctx());
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(14, 10))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                let lib = &self.session.library;
-                if lib.entries().is_empty() {
-                    ui.label(
-                        RichText::new(
-                            "Your library is empty. Use Library → Import… to add a USFM Resource, \
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            let lib = &self.session.library;
+            if lib.entries().is_empty() {
+                ui.label(
+                    RichText::new(
+                        "Your library is empty. Use Library → Import… to add a USFM Resource, \
                              or drop a .obr file on the window.",
-                        )
-                        .color(theme::c().muted),
-                    );
-                    return;
-                }
-                // Language chips.
-                ui.horizontal_wrapped(|ui| {
-                    for lang in languages {
-                        let on = filter.languages.iter().any(|l| l == lang);
-                        let chip = egui::Button::selectable(on, lang).corner_radius(11.0);
-                        if ui
-                            .add(chip)
-                            .on_hover_text(format!(
-                                "Show {lang} Resources (chips add to each other; with none on, \
+                    )
+                    .color(theme::c().muted),
+                );
+                return;
+            }
+            // Language chips.
+            ui.horizontal_wrapped(|ui| {
+                for lang in languages {
+                    let on = filter.languages.iter().any(|l| l == lang);
+                    let chip = egui::Button::selectable(on, lang).corner_radius(radius::PILL);
+                    if ui
+                        .add(chip)
+                        .on_hover_text(format!(
+                            "Show {lang} Resources (chips add to each other; with none on, \
                                  every language shows)"
-                            ))
-                            .clicked()
-                        {
-                            toggle = Some(lang.to_string());
+                        ))
+                        .clicked()
+                    {
+                        toggle = Some(lang.to_string());
+                    }
+                }
+            });
+            bar = super::collections_ui::collections_bar(ui, lib, filter.collection.as_deref());
+            ui.add_space(space::XS);
+            // Only the rows in view are drawn (#227): a library of thousands of Resources
+            // lays out a screenful a frame. Every row still has its place, for dragging.
+            let mut items: Vec<Item> = Vec::new();
+            for ty in RESOURCE_TYPES {
+                let start = items.len();
+                items.extend(
+                    lib.of_type(ty)
+                        .enumerate()
+                        .filter(|(_, e)| filter.matches_in(lib, &e.manifest))
+                        .map(|(position, e)| Item::Row(ty, position, &e.manifest)),
+                );
+                if items.len() > start {
+                    items.insert(start, Item::Header(ty));
+                }
+            }
+            let gap = ui.spacing().item_spacing.y;
+            let header_h = HEADER_GAP
+                + ui.fonts_mut(|f| f.row_height(&FontId::proportional(HEADER_SIZE)))
+                + gap;
+            let row_h = ROW_H + gap;
+            let height = |item: &Item| match item {
+                Item::Header(_) => header_h,
+                Item::Row(..) => row_h,
+            };
+            let total: f32 = items.iter().map(height).sum();
+            let scroll = egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show_viewport(ui, |ui, viewport| {
+                    if items.is_empty() {
+                        ui.label(
+                            RichText::new("Nothing matches the filter.").color(theme::c().muted),
+                        );
+                        return;
+                    }
+                    ui.set_height(total - gap);
+                    let origin = ui.max_rect().min;
+                    let width = ui.available_width();
+                    let mut top = 0.0;
+                    for item in &items {
+                        let h = height(item);
+                        let shown = top + h > viewport.top() && top < viewport.bottom();
+                        let at = origin + vec2(0.0, top);
+                        top += h;
+                        let Item::Row(ty, position, m) = *item else {
+                            if shown && let Item::Header(ty) = item {
+                                let rect = Rect::from_min_size(at, vec2(width, h));
+                                let header = egui::UiBuilder::new().max_rect(rect).scope_id(
+                                    ui.scope_id().with(("library-header", tab, type_name(*ty))),
+                                );
+                                ui.scope_builder(header, |ui| {
+                                    ui.add_space(HEADER_GAP);
+                                    ui.label(
+                                        RichText::new(type_name(*ty).to_uppercase())
+                                            .size(HEADER_SIZE)
+                                            .strong()
+                                            .color(theme::c().muted),
+                                    );
+                                });
+                            }
+                            continue;
+                        };
+                        let id = &m.resource_id;
+                        let rect = Rect::from_min_size(at, vec2(width, ROW_H));
+                        rows.push(Row {
+                            id: id.clone(),
+                            ty,
+                            position,
+                            rect,
+                        });
+                        // The dragged row is laid out out of view too, so its drag ends
+                        // with a drop when the list scrolled under it.
+                        let dragged_row = dragging.as_deref() == Some(id.as_str());
+                        if !shown && !dragged_row {
+                            continue;
                         }
+                        // Ids of the row's own, not of its place among the rows in view:
+                        // keyboard focus stays on the row as the list scrolls.
+                        let builder = egui::UiBuilder::new()
+                            .max_rect(rect)
+                            .scope_id(ui.scope_id().with(("library-row", tab, id.as_str())));
+                        let row = ui
+                            .scope_builder(builder, |ui| {
+                                library_row(
+                                    ui,
+                                    tab,
+                                    m,
+                                    position == 0,
+                                    selected.as_deref() == Some(id.as_str()),
+                                    dragged_row,
+                                )
+                            })
+                            .inner;
+                        if row.handle.drag_started() {
+                            drag_start = Some(id.clone());
+                        }
+                        if row.handle.drag_stopped() {
+                            drag_end = true;
+                        }
+                        // The row itself drags the Resource into the Workspace (#216).
+                        if row.body.drag_started() {
+                            resource_drag = Some((id.clone(), m.abbreviation.clone()));
+                        }
+                        if row.body.clicked() || row.body.secondary_clicked() {
+                            select = Some(id.clone());
+                        }
+                        if row.body.double_clicked() || (row.body.has_focus() && enter_pressed) {
+                            action = Some(Action::Open(id.clone()));
+                        }
+                        row.body.context_menu(|ui| {
+                            if let Some(a) = row_menu(ui, lib, id) {
+                                action = Some(a);
+                            }
+                        });
                     }
                 });
-                bar = super::collections_ui::collections_bar(ui, lib, filter.collection.as_deref());
-                ui.add_space(4.0);
-                // Only the rows in view are drawn (#227): a library of thousands of Resources
-                // lays out a screenful a frame. Every row still has its place, for dragging.
-                let mut items: Vec<Item> = Vec::new();
-                for ty in RESOURCE_TYPES {
-                    let start = items.len();
-                    items.extend(
-                        lib.of_type(ty)
-                            .enumerate()
-                            .filter(|(_, e)| filter.matches_in(lib, &e.manifest))
-                            .map(|(position, e)| Item::Row(ty, position, &e.manifest)),
-                    );
-                    if items.len() > start {
-                        items.insert(start, Item::Header(ty));
-                    }
-                }
-                let gap = ui.spacing().item_spacing.y;
-                let header_h = HEADER_GAP
-                    + ui.fonts_mut(|f| f.row_height(&FontId::proportional(HEADER_SIZE)))
-                    + gap;
-                let row_h = ROW_H + gap;
-                let height = |item: &Item| match item {
-                    Item::Header(_) => header_h,
-                    Item::Row(..) => row_h,
-                };
-                let total: f32 = items.iter().map(height).sum();
-                let scroll = egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show_viewport(ui, |ui, viewport| {
-                        if items.is_empty() {
-                            ui.label(
-                                RichText::new("Nothing matches the filter.")
-                                    .color(theme::c().muted),
-                            );
-                            return;
-                        }
-                        ui.set_height(total - gap);
-                        let origin = ui.max_rect().min;
-                        let width = ui.available_width();
-                        let mut top = 0.0;
-                        for item in &items {
-                            let h = height(item);
-                            let shown = top + h > viewport.top() && top < viewport.bottom();
-                            let at = origin + vec2(0.0, top);
-                            top += h;
-                            let Item::Row(ty, position, m) = *item else {
-                                if shown && let Item::Header(ty) = item {
-                                    let rect = Rect::from_min_size(at, vec2(width, h));
-                                    let header = egui::UiBuilder::new().max_rect(rect).scope_id(
-                                        ui.scope_id().with(("library-header", tab, type_name(*ty))),
-                                    );
-                                    ui.scope_builder(header, |ui| {
-                                        ui.add_space(HEADER_GAP);
-                                        ui.label(
-                                            RichText::new(type_name(*ty).to_uppercase())
-                                                .size(HEADER_SIZE)
-                                                .strong()
-                                                .color(theme::c().muted),
-                                        );
-                                    });
-                                }
-                                continue;
-                            };
-                            let id = &m.resource_id;
-                            let rect = Rect::from_min_size(at, vec2(width, ROW_H));
-                            rows.push(Row {
-                                id: id.clone(),
-                                ty,
-                                position,
-                                rect,
-                            });
-                            // The dragged row is laid out out of view too, so its drag ends
-                            // with a drop when the list scrolled under it.
-                            let dragged_row = dragging.as_deref() == Some(id.as_str());
-                            if !shown && !dragged_row {
-                                continue;
-                            }
-                            // Ids of the row's own, not of its place among the rows in view:
-                            // keyboard focus stays on the row as the list scrolls.
-                            let builder = egui::UiBuilder::new()
-                                .max_rect(rect)
-                                .scope_id(ui.scope_id().with(("library-row", tab, id.as_str())));
-                            let row = ui
-                                .scope_builder(builder, |ui| {
-                                    library_row(
-                                        ui,
-                                        tab,
-                                        m,
-                                        position == 0,
-                                        selected.as_deref() == Some(id.as_str()),
-                                        dragged_row,
-                                    )
-                                })
-                                .inner;
-                            if row.handle.drag_started() {
-                                drag_start = Some(id.clone());
-                            }
-                            if row.handle.drag_stopped() {
-                                drag_end = true;
-                            }
-                            // The row itself drags the Resource into the Workspace (#216).
-                            if row.body.drag_started() {
-                                resource_drag = Some((id.clone(), m.abbreviation.clone()));
-                            }
-                            if row.body.clicked() || row.body.secondary_clicked() {
-                                select = Some(id.clone());
-                            }
-                            if row.body.double_clicked() || (row.body.has_focus() && enter_pressed)
-                            {
-                                action = Some(Action::Open(id.clone()));
-                            }
-                            row.body.context_menu(|ui| {
-                                if let Some(a) = row_menu(ui, lib, id) {
-                                    action = Some(a);
-                                }
-                            });
-                        }
-                    });
-                drop_region = scroll.inner_rect.intersect(ui.clip_rect());
-            });
+            drop_region = scroll.inner_rect.intersect(ui.clip_rect());
+        });
 
         // Dragging a handle: a line marks the gap the row would drop into, and dropping moves
         // it there. Escape, or dropping well away from the rows of its type, cancels. A drag
@@ -258,7 +254,7 @@ impl State {
                 action = Some(Action::Move(id, slot.to));
             } else {
                 ui.painter()
-                    .hline(slot.x, slot.y, Stroke::new(2.0, theme::c().lapis));
+                    .hline(slot.x, slot.y, Stroke::new(stroke::THICK, theme::c().lapis));
             }
         }
         // Enter opens the selected row while the Library is the focused Tab.
@@ -346,134 +342,122 @@ impl State {
         let current_tags = self.session.library.tags_of(id).join(", ");
         let mut set_tags: Option<String> = None;
         let mut action: Option<Action> = None;
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(18, 12))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.label(
-                            RichText::new(&m.title)
-                                .font(theme::display(20.0))
-                                .color(theme::c().ink),
-                        );
-                        ui.label(
-                            RichText::new(format!(
-                                "{} · {} · {}",
-                                m.abbreviation,
-                                type_singular(m.resource_type),
-                                language_name(&m.language)
-                            ))
-                            .color(theme::c().muted),
-                        );
-                        ui.add_space(8.0);
-                        egui::Grid::new(("about-fields", tab))
-                            .num_columns(2)
-                            .spacing(vec2(14.0, 4.0))
-                            .show(ui, |ui| {
-                                for (label, value) in about_fields(&m) {
-                                    ui.label(RichText::new(label).color(theme::c().muted));
-                                    ui.label(value);
-                                    ui.end_row();
-                                }
-                                // Resource tags (#153): the user's own labels, for a
-                                // Collection's tag: rules. Saved when the field loses focus.
-                                ui.label(RichText::new("Tags").color(theme::c().muted));
-                                if let Some(t) = self.tabs.get_mut(&tab) {
-                                    let text =
-                                        t.tags_edit.get_or_insert_with(|| current_tags.clone());
-                                    let r = ui
-                                        .add(
-                                            egui::TextEdit::singleline(text)
-                                                .hint_text("older, reformed")
-                                                .desired_width(260.0),
-                                        )
-                                        .on_hover_text(
-                                            "Your own labels for this Resource, comma-separated; \
-                                             a Collection's tag: rule matches them",
-                                        );
-                                    if r.lost_focus() && *text != current_tags {
-                                        set_tags = Some(text.clone());
-                                    }
-                                    if !r.has_focus() {
-                                        t.tags_edit = None;
-                                    }
-                                }
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.label(crate::components::title_text(&m.title));
+                    ui.label(
+                        RichText::new(format!(
+                            "{} · {} · {}",
+                            m.abbreviation,
+                            type_singular(m.resource_type),
+                            language_name(&m.language)
+                        ))
+                        .color(theme::c().muted),
+                    );
+                    ui.add_space(space::M);
+                    egui::Grid::new(("about-fields", tab))
+                        .num_columns(2)
+                        .spacing(vec2(space::L, space::XS))
+                        .show(ui, |ui| {
+                            for (label, value) in about_fields(&m) {
+                                ui.label(RichText::new(label).color(theme::c().muted));
+                                ui.label(value);
                                 ui.end_row();
-                            });
-                        ui.add_space(10.0);
-                        section(ui, "Attribution");
-                        // Verbatim, through the text pipeline (fonts for every script).
-                        let width = ui.available_width();
-                        let palette = self.palette;
-                        if m.attribution.is_empty() {
-                            ui.label("None recorded.");
-                        } else if let Some(view) =
-                            self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut())
-                        {
-                            view.set_settings(self.session.text);
-                            // As tall as the text (once laid out), so the page scrolls rather
-                            // than a box inside it; only a very long Attribution scrolls itself.
-                            #[allow(clippy::cast_possible_truncation)]
-                            let height = (view.position().1 as f32 + 16.0).clamp(48.0, 600.0);
-                            ui.allocate_ui(vec2(width, height), |ui| {
-                                reading_pane(
-                                    ui,
-                                    view,
-                                    &mut self.atlas,
-                                    &palette,
-                                    None,
-                                    crate::pane::PaneMarks::default(),
-                                    crate::Found::default(),
-                                );
-                            });
-                        }
-                        ui.add_space(10.0);
-                        section(ui, "Changes we made");
-                        ui.label(m.changes.as_deref().unwrap_or("None recorded."));
-                        // CC BY Starter Resources: the record published with each release
-                        // (#20 decision 4, #67).
-                        if let Some(url) = &changes_record {
-                            // One row: a wrapped link would start mid-line, off its own text.
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new("Published change record:")
-                                        .color(theme::c().muted),
-                                );
-                                ui.hyperlink_to(
-                                    obs_model::changes_record_file(&m.resource_id),
-                                    url,
-                                )
-                                .on_hover_text(url);
-                            });
-                        }
-                        ui.add_space(10.0);
-                        section(ui, "Source file");
-                        ui.label(source_file(&m));
-                        ui.add_space(10.0);
-                        section(ui, "Annotations");
-                        ui.label(format!(
-                            "{} to this Resource.",
-                            annotations_phrase(annotations)
-                        ));
-                        ui.add_space(14.0);
-                        ui.horizontal(|ui| {
-                            if ui.button("Open").clicked() {
-                                action = Some(Action::Open(id.to_string()));
                             }
-                            if self.session.imports.report(id).is_some()
-                                && ui.button("Latest Import report").clicked()
-                            {
-                                self.run("import.report", &json!({ "id": id }));
+                            // Resource tags (#153): the user's own labels, for a
+                            // Collection's tag: rules. Saved when the field loses focus.
+                            ui.label(RichText::new("Tags").color(theme::c().muted));
+                            if let Some(t) = self.tabs.get_mut(&tab) {
+                                let text = t.tags_edit.get_or_insert_with(|| current_tags.clone());
+                                let r = ui
+                                    .add(crate::components::search_field(
+                                        text,
+                                        "older, reformed",
+                                        size::FIELD_WIDE,
+                                    ))
+                                    .on_hover_text(
+                                        "Your own labels for this Resource, comma-separated; \
+                                             a Collection's tag: rule matches them",
+                                    );
+                                if r.lost_focus() && *text != current_tags {
+                                    set_tags = Some(text.clone());
+                                }
+                                if !r.has_focus() {
+                                    t.tags_edit = None;
+                                }
                             }
-                            if ui.button("Remove…").clicked() {
-                                action = Some(Action::Remove(id.to_string()));
-                            }
+                            ui.end_row();
                         });
+                    ui.add_space(space::L);
+                    section(ui, "Attribution");
+                    // Verbatim, through the text pipeline (fonts for every script).
+                    let width = ui.available_width();
+                    let palette = self.palette;
+                    if m.attribution.is_empty() {
+                        ui.label("None recorded.");
+                    } else if let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut())
+                    {
+                        view.set_settings(self.session.text);
+                        // As tall as the text (once laid out), so the page scrolls rather
+                        // than a box inside it; only a very long Attribution scrolls itself.
+                        #[allow(clippy::cast_possible_truncation)]
+                        let height = (view.position().1 as f32 + space::XL)
+                            .clamp(size::FIELD_NUMBER, size::DIALOG.x);
+                        ui.allocate_ui(vec2(width, height), |ui| {
+                            reading_pane(
+                                ui,
+                                view,
+                                &mut self.atlas,
+                                &palette,
+                                None,
+                                crate::pane::PaneMarks::default(),
+                                crate::Found::default(),
+                            );
+                        });
+                    }
+                    ui.add_space(space::L);
+                    section(ui, "Changes we made");
+                    ui.label(m.changes.as_deref().unwrap_or("None recorded."));
+                    // CC BY Starter Resources: the record published with each release
+                    // (#20 decision 4, #67).
+                    if let Some(url) = &changes_record {
+                        // One row: a wrapped link would start mid-line, off its own text.
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new("Published change record:").color(theme::c().muted),
+                            );
+                            ui.hyperlink_to(obs_model::changes_record_file(&m.resource_id), url)
+                                .on_hover_text(url);
+                        });
+                    }
+                    ui.add_space(space::L);
+                    section(ui, "Source file");
+                    ui.label(source_file(&m));
+                    ui.add_space(space::L);
+                    section(ui, "Annotations");
+                    ui.label(format!(
+                        "{} to this Resource.",
+                        annotations_phrase(annotations)
+                    ));
+                    ui.add_space(space::XL);
+                    ui.horizontal(|ui| {
+                        if ui.button("Open").clicked() {
+                            action = Some(Action::Open(id.to_string()));
+                        }
+                        if self.session.imports.report(id).is_some()
+                            && ui.button("Latest Import report").clicked()
+                        {
+                            self.run("import.report", &json!({ "id": id }));
+                        }
+                        if ui.button("Remove…").clicked() {
+                            action = Some(Action::Remove(id.to_string()));
+                        }
                     });
-            });
+                });
+        });
         if let Some(tags) = set_tags {
             self.run("resource.tags", &json!({ "id": id, "tags": tags }));
         }
@@ -499,9 +483,9 @@ impl State {
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .show(ctx, |ui| {
-                ui.set_max_width(420.0);
+                ui.set_max_width(size::PROSE);
                 ui.label(message.as_str());
-                ui.add_space(8.0);
+                ui.add_space(space::M);
                 ui.horizontal(|ui| {
                     if ui.button("Remove").clicked() {
                         done = Some(true);
@@ -552,16 +536,17 @@ fn library_row(
     let c = theme::c();
     let painter = ui.painter_at(rect);
     if selected || dragging {
-        painter.rect_filled(rect, 4.0, c.selection);
+        painter.rect_filled(rect, radius::S, c.selection);
     } else if body.hovered() {
-        painter.rect_filled(rect, 4.0, c.hover);
+        painter.rect_filled(rect, radius::S, c.hover);
     }
     let y = rect.center().y;
-    let at = |x: f32| Rect::from_center_size(pos2(rect.left() + x, y), vec2(16.0, 16.0));
+    let at =
+        |x: f32| Rect::from_center_size(pos2(rect.left() + x, y), egui::Vec2::splat(icons::BODY));
     icons::paint(
         &painter,
         Icon::Grip,
-        at(12.0),
+        at(space::L),
         icons::SMALL,
         if handle.hovered() { c.ink } else { c.muted },
     );
@@ -569,30 +554,34 @@ fn library_row(
         icons::paint(
             &painter,
             Icon::StarFilled,
-            at(HANDLE_W + 7.0),
+            at(HANDLE_W + space::S),
             icons::SMALL,
             c.gilt,
         );
     }
-    let x = rect.left() + HANDLE_W + 18.0;
+    let x = rect.left() + HANDLE_W + space::XL;
     let abbrev = painter.text(
         pos2(x, y),
         Align2::LEFT_CENTER,
         &m.abbreviation,
-        FontId::proportional(14.0),
+        FontId::proportional(text::BODY),
         c.ink,
     );
     // Right side: licence badge, then language.
-    let badge_font = FontId::proportional(11.0);
+    let badge_font = FontId::proportional(text::CAPTION);
     let galley = painter.layout_no_wrap(m.license.clone(), badge_font.clone(), c.muted);
+    let pad = space::S;
     let badge = Rect::from_min_size(
-        pos2(rect.right() - galley.size().x - 14.0, y - 9.0),
-        vec2(galley.size().x + 10.0, 18.0),
+        pos2(
+            rect.right() - galley.size().x - 2.0 * pad - space::XS,
+            y - size::BADGE / 2.0,
+        ),
+        vec2(galley.size().x + 2.0 * pad, size::BADGE),
     );
     painter.rect_stroke(
         badge,
-        9.0,
-        Stroke::new(1.0, c.rule),
+        size::BADGE / 2.0,
+        Stroke::new(stroke::HAIR, c.rule),
         egui::StrokeKind::Inside,
     );
     painter.text(
@@ -603,20 +592,20 @@ fn library_row(
         c.muted,
     );
     let lang = painter.text(
-        pos2(badge.left() - 10.0, y),
+        pos2(badge.left() - space::M, y),
         Align2::RIGHT_CENTER,
         &m.language,
-        FontId::proportional(12.0),
+        FontId::proportional(text::SMALL),
         c.muted,
     );
-    let title_left = abbrev.right().max(x + 48.0) + 10.0;
-    let title_clip = Rect::from_x_y_ranges(title_left..=lang.left() - 10.0, rect.y_range());
-    if title_clip.width() > 20.0 {
+    let title_left = abbrev.right().max(x + size::FIELD_NUMBER) + space::M;
+    let title_clip = Rect::from_x_y_ranges(title_left..=lang.left() - space::M, rect.y_range());
+    if title_clip.width() > space::XXL {
         ui.painter_at(title_clip).text(
             pos2(title_left, y),
             Align2::LEFT_CENTER,
             &m.title,
-            FontId::proportional(13.5),
+            FontId::proportional(text::LABEL),
             c.ink,
         );
     }
@@ -707,12 +696,7 @@ fn drop_slot(rows: &[Row], dragged: &str, pointer: egui::Pos2, region: Rect) -> 
 }
 
 pub(super) fn section(ui: &mut Ui, title: &str) {
-    ui.label(
-        RichText::new(title.to_uppercase())
-            .size(10.5)
-            .strong()
-            .color(theme::c().muted),
-    );
+    crate::components::section_header(ui, title);
 }
 
 pub(super) fn type_singular(t: ResourceType) -> &'static str {

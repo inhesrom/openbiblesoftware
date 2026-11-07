@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use egui::{Rect, RichText, Sense, Stroke, Ui, pos2};
+use egui::{Rect, RichText, Sense, Ui, pos2};
 use obs_engine::{
     ArticleLink, DictionaryArticle, EntityCard, EntityLink, FactbookSummary, Guide, GuideSection,
     RelatedEntity, TabId, WordStatus,
@@ -20,6 +20,7 @@ use super::State;
 use super::guide_tab::hint_page;
 use super::guide_words::ROWS_SHOWN;
 use crate::theme;
+use crate::tokens::{size, space};
 
 /// Lines of a Dictionary article excerpt.
 const ARTICLE_LINES: usize = 4;
@@ -84,92 +85,85 @@ impl State {
             .is_some_and(|t| t.entry_history.current().is_some());
         let new_tab = ui.input(|i| i.modifiers.command || i.modifiers.ctrl);
         let mut action: Option<FactbookAction> = None;
-        egui::Frame::new()
-            .fill(theme::c().field)
-            .inner_margin(egui::Margin::symmetric(14, 10))
-            .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
-                ui.horizontal(|ui| {
+        crate::components::page_frame().show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            ui.horizontal(|ui| {
+                ui.label(crate::components::title_text(format!("“{name}”")));
+                if can_cancel
+                    && ui
+                        .small_button("Cancel")
+                        .on_hover_text("Back to the person or place shown before (Esc)")
+                        .clicked()
+                {
+                    action = Some(FactbookAction::StopChoosing);
+                }
+            });
+            let chooser = match &status {
+                WordStatus::Loading => {
                     ui.label(
-                        RichText::new(format!("“{name}”"))
-                            .font(theme::display(20.0))
-                            .color(theme::c().ink),
+                        RichText::new(format!("Looking up “{name}”…")).color(theme::c().muted),
                     );
-                    if can_cancel
-                        && ui
-                            .small_button("Cancel")
-                            .on_hover_text("Back to the person or place shown before (Esc)")
-                            .clicked()
-                    {
-                        action = Some(FactbookAction::StopChoosing);
-                    }
-                });
-                let chooser = match &status {
-                    WordStatus::Loading => {
-                        ui.label(
-                            RichText::new(format!("Looking up “{name}”…")).color(theme::c().muted),
-                        );
-                        ui.ctx().request_repaint();
-                        return;
-                    }
-                    WordStatus::Failed(e) => {
-                        ui.label(
-                            RichText::new(format!("Could not look up “{name}”: {e}"))
-                                .color(theme::c().warn),
-                        );
-                        return;
-                    }
-                    WordStatus::Ready(c) => c,
-                };
-                if chooser.choices.is_empty() {
-                    if self
-                        .session
-                        .library
-                        .of_type(ResourceType::PeopleAndPlaces)
-                        .next()
-                        .is_some()
-                    {
-                        ui.label(
-                            RichText::new(format!(
-                                "No person or place is called “{name}”. Try another spelling \
-                                 (Abram, Jacob, Bethlehem)."
-                            ))
-                            .color(theme::c().muted),
-                        );
-                    } else {
-                        // The index the Factbook's sections read is what the chooser needs
-                        // too (#135).
-                        let missing = GuideSection::Summary.missing_resource(
-                            false,
-                            None,
-                            &self.session.library,
-                            self.session.starter.manifest(),
-                        );
-                        if let Some((id, params)) = self.missing_resource_ui(
-                            ui,
-                            "No People & places index in your library. Add one (TIPNR) to look \
-                             up people and places.",
-                            &missing,
-                        ) {
-                            action = Some(FactbookAction::Command(id, params));
-                        }
-                    }
+                    ui.ctx().request_repaint();
                     return;
                 }
-                ui.label(RichText::new(chooser_heading(chooser, name)).color(theme::c().muted));
-                ui.add_space(6.0);
-                egui::ScrollArea::vertical()
-                    .id_salt(("factbook-chooser", tab))
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        for c in &chooser.choices {
-                            if card_row(ui, c, None) {
-                                action = Some(FactbookAction::Entity(c.entity.clone(), new_tab));
-                            }
-                            ui.add_space(4.0);
+                WordStatus::Failed(e) => {
+                    ui.label(
+                        RichText::new(format!("Could not look up “{name}”: {e}"))
+                            .color(theme::c().warn),
+                    );
+                    return;
+                }
+                WordStatus::Ready(c) => c,
+            };
+            if chooser.choices.is_empty() {
+                if self
+                    .session
+                    .library
+                    .of_type(ResourceType::PeopleAndPlaces)
+                    .next()
+                    .is_some()
+                {
+                    ui.label(
+                        RichText::new(format!(
+                            "No person or place is called “{name}”. Try another spelling \
+                                 (Abram, Jacob, Bethlehem)."
+                        ))
+                        .color(theme::c().muted),
+                    );
+                } else {
+                    // The index the Factbook's sections read is what the chooser needs
+                    // too (#135).
+                    let missing = GuideSection::Summary.missing_resource(
+                        false,
+                        None,
+                        &self.session.library,
+                        self.session.starter.manifest(),
+                    );
+                    if let Some((id, params)) = self.missing_resource_ui(
+                        ui,
+                        "No People & places index in your library. Add one (TIPNR) to look \
+                             up people and places.",
+                        &missing,
+                    ) {
+                        action = Some(FactbookAction::Command(id, params));
+                    }
+                }
+                return;
+            }
+            ui.label(RichText::new(chooser_heading(chooser, name)).color(theme::c().muted));
+            ui.add_space(space::S);
+            egui::ScrollArea::vertical()
+                .id_salt(("factbook-chooser", tab))
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for c in &chooser.choices {
+                        if card_row(ui, c, None) {
+                            action = Some(FactbookAction::Entity(c.entity.clone(), new_tab));
                         }
-                    });
-            });
+                        ui.add_space(space::XS);
+                    }
+                });
+        });
         if can_cancel && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             action = Some(FactbookAction::StopChoosing);
         }
@@ -189,13 +183,13 @@ impl State {
         let mut action = None;
         if !sum.other_names.is_empty() {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Also called").small().color(theme::c().muted));
+                ui.label(crate::components::hint_text("Also called"));
                 ui.label(RichText::new(sum.other_names.join(", ")).color(theme::c().ink));
             });
         }
         if let Some(m) = &sum.meaning {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("Name means").small().color(theme::c().muted));
+                ui.label(crate::components::hint_text("Name means"));
                 ui.label(RichText::new(format!("“{}”", m.text)).color(theme::c().ink));
                 if ui
                     .link(RichText::new(format!("— {}", m.article.abbreviation)).small())
@@ -211,8 +205,8 @@ impl State {
         }
         for fact in &sum.family {
             ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                ui.label(RichText::new(fact.label).small().color(theme::c().muted));
+                ui.spacing_mut().item_spacing.x = space::XS;
+                ui.label(crate::components::hint_text(fact.label));
                 comma_list(ui, &fact.people, |ui, p| {
                     let (r, clicked) = entity_link(ui, p, new_tab);
                     if clicked.is_some() {
@@ -251,7 +245,7 @@ impl State {
             let list = &list[..list.len().min(left)];
             left -= list.len();
             ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
+                ui.spacing_mut().item_spacing.x = space::S;
                 let total = by_book.get(book).map_or(0, Vec::len);
                 ui.label(
                     RichText::new(format!("{} · {total}", book.name()))
@@ -269,7 +263,7 @@ impl State {
                     }
                 }
             });
-            ui.add_space(2.0);
+            ui.add_space(space::XXS);
         }
         if passages.len() > PASSAGES_SHOWN {
             let label = if expanded {
@@ -322,7 +316,7 @@ impl State {
                 let rtl = a.direction == Direction::Rtl;
                 self.guide_snippet(ui, &a.excerpt, ColorRole::Ink, rtl, ARTICLE_LINES);
             }
-            ui.add_space(6.0);
+            ui.add_space(space::S);
         }
         action
     }
@@ -338,7 +332,7 @@ impl State {
     ) -> Option<FactbookAction> {
         let one_place = matches!(places, [p] if Some(p.entity.as_str()) == subject);
         let refs: Vec<&obs_engine::MapPlace> = places.iter().collect();
-        let width = ui.available_width().max(120.0);
+        let width = ui.available_width().max(size::TEXT_MIN);
         let (rect, _) = ui.allocate_exact_size(
             egui::vec2(width, super::atlas_tab::MINI_MAP_HEIGHT),
             Sense::hover(),
@@ -375,7 +369,7 @@ impl State {
             .clicked
             .filter(|_| !one_place)
             .map(|(entity, new_tab)| FactbookAction::Entity(entity, new_tab));
-        ui.add_space(4.0);
+        ui.add_space(space::XS);
         for place in places {
             if one_place {
                 for point in &place.points {
@@ -414,7 +408,7 @@ impl State {
             if card_row(ui, &r.card, Some(&r.why)) {
                 action = Some(FactbookAction::Entity(r.card.entity.clone(), new_tab));
             }
-            ui.add_space(2.0);
+            ui.add_space(space::XXS);
         }
         self.show_all(ui, tab, GuideSection::Related, rows.len());
         action
@@ -450,11 +444,7 @@ fn factbook_header(ui: &mut Ui, id: &str, card: &WordStatus<EntityCard>) {
     match card {
         WordStatus::Ready(c) => {
             ui.horizontal_wrapped(|ui| {
-                ui.label(
-                    RichText::new(&c.name)
-                        .font(theme::display(20.0))
-                        .color(theme::c().ink),
-                );
+                ui.label(crate::components::title_text(&c.name));
                 if let Some(d) = &c.distinction {
                     ui.label(RichText::new(d).color(theme::c().ink));
                 }
@@ -462,20 +452,12 @@ fn factbook_header(ui: &mut Ui, id: &str, card: &WordStatus<EntityCard>) {
             ui.label(RichText::new(c.details()).color(theme::c().muted));
         }
         WordStatus::Loading => {
-            ui.label(
-                RichText::new(name)
-                    .font(theme::display(20.0))
-                    .color(theme::c().ink),
-            );
+            ui.label(crate::components::title_text(name));
             ui.label(RichText::new("Loading…").color(theme::c().muted));
             ui.ctx().request_repaint();
         }
         WordStatus::Failed(e) => {
-            ui.label(
-                RichText::new(name)
-                    .font(theme::display(20.0))
-                    .color(theme::c().ink),
-            );
+            ui.label(crate::components::title_text(name));
             ui.label(RichText::new(e).color(theme::c().warn));
         }
     }
@@ -565,7 +547,7 @@ fn card_row(ui: &mut Ui, c: &EntityCard, why: Option<&str>) -> bool {
             );
         }
     });
-    ui.label(RichText::new(c.details()).small().color(theme::c().muted));
+    ui.label(crate::components::hint_text(c.details()));
     let rect = Rect::from_min_max(top, pos2(ui.max_rect().right(), ui.cursor().top()));
     let r = ui
         .interact(
@@ -578,12 +560,7 @@ fn card_row(ui: &mut Ui, c: &EntityCard, why: Option<&str>) -> bool {
     let label = format!("Factbook: {}", c.title());
     r.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, &label));
     if r.hovered() {
-        ui.painter().rect_stroke(
-            rect.expand(2.0),
-            4.0,
-            Stroke::new(1.0, theme::c().hover_rule),
-            egui::StrokeKind::Outside,
-        );
+        crate::components::hover_outline(ui, rect);
     }
     r.clicked()
 }
@@ -623,7 +600,7 @@ mod tests {
             comma_width = width(",");
             haran_width = width("Haran");
             ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.spacing_mut().item_spacing.x = space::XS;
                 comma_list(ui, &names, |ui, n| {
                     let r = ui.label(*n);
                     rects.push(r.rect);
