@@ -343,6 +343,10 @@ _Avoid_: Ribbon, Dock, Menu bar (for the toolbar)
 A key that runs a command, or does something to the reading-pane selection (a Selection key). Each has a default key; Help → Keyboard shortcuts lists them all, grouped by menu and searchable, and there the user clicks one to record a new key, Clears it or Resets it to its default (Reset all restores every default). A key another Keyboard shortcut already has is not saved until the user swaps the two keys or cancels. Esc, Enter and Tab are never Keyboard shortcuts, and a key needs Ctrl or Alt unless it is a function key. Ctrl means Cmd on macOS. The user's own keys are a preference in the User database and apply at once.
 _Avoid_: Hotkey, Key map, Accelerator, Key binding (in the UI)
 
+**Settings**:
+The Tab (Ctrl+, or View → Settings) where every preference is in one place, under Text and fonts, Interface size, Theme and Page tone, Reading layout defaults, Toolbar, Keyboard shortcuts (the Keyboard shortcuts list itself), Library folders and downloads, Search, and Privacy and data. Its header box searches the Settings by their names, sections, plain words ("zoom", "sepia") and choices. A change there is made by the same command as from the View menu, the toolbar, Home or Search, so it applies at once; each Setting's Reset link puts its default back. Settings is not a separate store: the preferences stay in the User database.
+_Avoid_: Preferences (as the Tab's name), Options, Program settings, Settings file
+
 **Selection key**:
 A Keyboard shortcut that acts on the selection in a reading pane: Note (Ctrl+Shift+N) and the five Highlight styles (Ctrl+1…5) by default. It is listed under Selection in Help → Keyboard shortcuts.
 _Avoid_: Annotation key

@@ -1744,7 +1744,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         label: "Search word forms",
         shortcut: None,
         params: &[
-            TAB,
+            ParamSpec {
+                name: "tab",
+                kind: ParamKind::Integer,
+                required: false,
+                help: "The Search Tab to search again; without one (Settings), every open Search Tab",
+            },
             ParamSpec {
                 name: "value",
                 kind: ParamKind::Boolean,
@@ -1896,19 +1901,38 @@ fn search_scope(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
 /// modes; Notes searches keep each word as written).
 fn search_word_forms(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const ID: &str = "search.word_forms";
-    let tab = tab_param(ID, s, &p)?;
+    let tab = match p.i64("tab") {
+        Some(_) => Some(tab_param(ID, s, &p)?),
+        None => None,
+    };
     let on = p
         .bool("value")
         .ok_or_else(|| failed(ID, "value must be true or false"))?;
     let changed = s.search_word_forms() != on;
     s.set_search_word_forms(on);
-    let mode = s.search_tab(tab).map(|t| t.mode);
-    let error = if changed && mode != Some(SearchMode::Notes) {
-        rerun(s, tab)
-    } else {
-        None
+    // From Settings (#213) no Tab is named: every open Search Tab searches again.
+    let tabs: Vec<TabId> = match tab {
+        Some(tab) => vec![tab],
+        None => (s.workspace.tabs())
+            .filter(|t| t.kind == TabKind::Tool(Tool::Search))
+            .map(|t| t.id)
+            .collect(),
     };
-    Ok(json!({ "tab": tab.0, "word_forms": on, "error": error_json(error.as_ref()) }))
+    let mut error = None;
+    for t in tabs {
+        let mode = s.search_tab(t).map(|st| st.mode);
+        if changed && mode.is_some_and(|m| m != SearchMode::Notes) {
+            let e = rerun(s, t);
+            if Some(t) == tab {
+                error = e;
+            }
+        }
+    }
+    Ok(json!({
+        "tab": tab.map(|t| t.0),
+        "word_forms": on,
+        "error": error_json(error.as_ref()),
+    }))
 }
 
 fn search_bible(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {

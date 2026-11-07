@@ -69,6 +69,7 @@ fn every_tab_kind() -> Vec<TabKind> {
         TabKind::Credits,
         TabKind::Home,
         TabKind::KeyboardShortcuts,
+        TabKind::Settings,
         TabKind::Guide(Guide::PassageGuide),
         TabKind::Tool(Tool::Search),
     ] {
@@ -97,7 +98,8 @@ fn every_tab_kind() -> Vec<TabKind> {
             | TabKind::StarterLibrary
             | TabKind::Credits
             | TabKind::Home
-            | TabKind::KeyboardShortcuts => kinds.push(kind),
+            | TabKind::KeyboardShortcuts
+            | TabKind::Settings => kinds.push(kind),
         }
     }
     kinds
@@ -140,6 +142,7 @@ fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
             ("home.open", split)
         }
         TabKind::KeyboardShortcuts => ("help.keyboard_shortcuts", split),
+        TabKind::Settings => ("app.settings", split),
         TabKind::Guide(Guide::PassageGuide) => (
             "guide.passage_guide",
             json!({ "passage": "Jn 3:16", "split": true }),
@@ -967,6 +970,37 @@ fn keyboard_only_keyboard_shortcuts() {
     let session = h.shell.session();
     assert_eq!(session.shortcut("view.text_larger"), Some("Ctrl+Plus"));
     close_tab(&mut h, &TabKind::KeyboardShortcuts);
+}
+
+/// Settings (#213): Ctrl+, opens it with the search box ready; pick a Page tone, Reset it,
+/// turn a toggle on and off, close.
+#[test]
+fn keyboard_only_settings() {
+    let (mut h, _lab) = keyboard_harness("kb-settings");
+    key(&mut h, Key::Comma, CTRL);
+    assert_eq!(focused_kind(&h), Some(TabKind::Settings));
+    // The search box has the keyboard already.
+    assert_eq!(
+        focused(&h).map(|f| f.0),
+        Some("Search settings".to_string())
+    );
+    type_text(&mut h, "page tone");
+    tab_to(&mut h, "Page tone: Sepia");
+    key(&mut h, Key::Space, Modifiers::NONE);
+    assert_eq!(h.shell.session().appearance.page_tone, PageTone::Sepia);
+    tab_to(&mut h, "Reset Page tone");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert_eq!(h.shell.session().appearance.page_tone, PageTone::Auto);
+    tab_to(&mut h, "Search settings");
+    key(&mut h, Key::A, CTRL);
+    type_text(&mut h, "red letter");
+    tab_to(&mut h, "Red letter");
+    key(&mut h, Key::Space, Modifiers::NONE);
+    assert!(!h.shell.session().text.red_letter);
+    tab_to(&mut h, "Reset Red letter");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert!(h.shell.session().text.red_letter);
+    close_tab(&mut h, &TabKind::Settings);
 }
 
 /// Esc closes one window (#182): with Fonts open behind Copy verses, the one with the

@@ -98,6 +98,8 @@ pub const MENUS: &[Menu] = &[
     Menu {
         title: "View",
         items: &[
+            C("app.settings"),
+            Separator,
             MenuItem::Choice {
                 title: "Theme",
                 command: "view.theme",
@@ -676,6 +678,10 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     open_cmd("help.credits", "Credits", None, |s, p| {
         open(s, p, TabKind::Credits)
     }),
+    // Ctrl+, (Cmd+, on macOS), where desktop apps keep their settings.
+    open_cmd("app.settings", "Settings", Some("Ctrl+Comma"), |s, p| {
+        open(s, p, TabKind::Settings)
+    }),
     open_cmd(
         "help.keyboard_shortcuts",
         "Keyboard shortcuts",
@@ -885,6 +891,7 @@ pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
         TabKind::Credits => "Credits".into(),
         TabKind::Home => "Home".into(),
         TabKind::KeyboardShortcuts => "Keyboard shortcuts".into(),
+        TabKind::Settings => "Settings".into(),
         TabKind::Resource(id) => s
             .library
             .get(id)

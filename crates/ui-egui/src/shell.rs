@@ -57,6 +57,7 @@ pub(crate) mod references;
 mod search_sidebar;
 mod search_tab;
 mod search_views;
+mod settings_tab;
 mod starter_tab;
 mod tile_handles;
 mod timeline_tab;
@@ -237,6 +238,8 @@ pub(crate) struct State {
     contents: contents_pane::ContentsCache,
     /// The Keyboard shortcuts Tab's key being recorded and conflict being resolved (#177).
     keys_ui: keys_tab::KeysUi,
+    /// The Settings Tab's confirmations and search focus (#213).
+    settings_ui: settings_tab::SettingsUi,
 }
 
 /// The app window's content: menus, Command box and the docked Workspace.
@@ -295,6 +298,7 @@ impl Shell {
                 rich_clipboard: None,
                 contents: Default::default(),
                 keys_ui: Default::default(),
+                settings_ui: Default::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -1779,6 +1783,7 @@ impl State {
             TabKind::Credits => self.credits_body(&mut body, tab),
             TabKind::Home => self.home_body(&mut body, tab),
             TabKind::KeyboardShortcuts => self.keys_body(&mut body, tab),
+            TabKind::Settings => self.settings_body(&mut body, tab),
             TabKind::Guide(
                 g @ (obs_engine::Guide::PassageGuide | obs_engine::Guide::ExegeticalGuide),
             ) => self.passage_keyed_guide_body(&mut body, tab, g),
@@ -2534,15 +2539,28 @@ impl State {
                 }
             }
             HeaderBox::Filter => {
+                // The Settings Tab's box searches its Settings (#213), and has the keyboard
+                // when the Tab is focused, so Ctrl+, opens it ready to type.
+                let settings =
+                    (self.session.workspace.tab(tab)).is_some_and(|t| t.kind == TabKind::Settings);
+                let name = if settings {
+                    "Search settings"
+                } else {
+                    "Filter"
+                };
+                let focused = settings && self.session.workspace.focused() == Some(tab);
                 if let Some(t) = self.tabs.get_mut(&tab) {
                     let r = ui
                         .add(
                             egui::TextEdit::singleline(&mut t.filter)
-                                .hint_text("Filter")
+                                .hint_text(name)
                                 .desired_width(width)
                                 .margin(egui::Margin::symmetric(8, 4)),
                         )
-                        .accessible_name("Filter");
+                        .accessible_name(name);
+                    if settings && self.settings_ui.search_drawn(ui, focused) {
+                        r.request_focus();
+                    }
                     if r.lost_focus() {
                         // TextEdit releases focus on Enter; don't let that same key open a row.
                         ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));

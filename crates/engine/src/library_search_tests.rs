@@ -617,3 +617,66 @@ fn real_starter_library_covenant_in_mhc_jfb_easton_and_smith() {
     );
     drop(s);
 }
+
+/// Word forms set from the Settings Tab (#213) names no Search Tab: every open Bible and
+/// Library search runs again with it, a Notes search keeps each word as written (it is not
+/// run again), and the Setting's Reset brings the first results back.
+#[test]
+fn word_forms_from_settings_rerun_every_open_bible_and_library_search() {
+    let (mut s, root) = fixture("word-forms-settings", true);
+    let open = |s: &mut Session, params: serde_json::Value| {
+        let mut params = params;
+        params["split"] = json!(true);
+        let out = s.run("search.run", &params).unwrap();
+        settle(s);
+        TabId(out["tab"].as_u64().unwrap())
+    };
+    let bible_rows = |s: &Session, tab: TabId| -> Vec<String> {
+        let r = s.search_tab(tab).unwrap().results.clone().expect("results");
+        r.rows.iter().map(|row| r.row_reference(row)).collect()
+    };
+    let library_groups = |s: &Session, tab: TabId| -> Vec<String> {
+        (results(s, tab).groups.iter())
+            .map(|g| g.abbreviation.clone())
+            .collect()
+    };
+    s.run(
+        "annotation.note",
+        &json!({ "body": "Two covenants compared", "passage": "Jeremiah 31:31" }),
+    )
+    .unwrap();
+
+    let bible = open(&mut s, json!({ "text": "work", "bibles": "kjv" }));
+    let library = open(&mut s, json!({ "text": "covenants", "mode": "library" }));
+    let notes = open(&mut s, json!({ "text": "covenants", "mode": "notes" }));
+    assert_eq!(s.search_tab(bible).unwrap().mode, SearchMode::Bible);
+    assert!(bible_rows(&s, bible).is_empty());
+    assert!(library_groups(&s, library).is_empty());
+    let notes_before = s.search_tab(notes).unwrap().notes.clone().unwrap();
+    assert_eq!(notes_before.hits.len(), 1);
+
+    // The Settings Tab's check box: no `tab`.
+    let out = s
+        .run("search.word_forms", &json!({ "value": true }))
+        .unwrap();
+    settle(&mut s);
+    assert_eq!(out["tab"], serde_json::Value::Null);
+    assert_eq!(bible_rows(&s, bible), ["Romans 13:10"]);
+    assert_eq!(library_groups(&s, library), ["TCC", "TC2", "TLX", "TBD"]);
+    let notes_after = s.search_tab(notes).unwrap().notes.clone().unwrap();
+    assert!(
+        Arc::ptr_eq(&notes_before, &notes_after),
+        "the Notes search ran again"
+    );
+
+    // Reset: Word forms off again, and the searches as they first were.
+    s.run("settings.reset", &json!({ "setting": "search_word_forms" }))
+        .unwrap();
+    settle(&mut s);
+    assert!(!s.search_word_forms());
+    assert!(bible_rows(&s, bible).is_empty());
+    assert!(library_groups(&s, library).is_empty());
+    let notes_reset = s.search_tab(notes).unwrap().notes.clone().unwrap();
+    assert!(Arc::ptr_eq(&notes_before, &notes_reset));
+    cleanup(s, root);
+}

@@ -108,6 +108,9 @@ pub enum TabKind {
     /// Help → Keyboard shortcuts (#177): every key binding, to see and change. Single
     /// instance, with a filter box.
     KeyboardShortcuts,
+    /// Settings (#213, Ctrl+,): every preference in one place, with a search box. Single
+    /// instance.
+    Settings,
     Guide(Guide),
     Tool(Tool),
 }
@@ -147,6 +150,7 @@ enum Slot {
     Credits,
     Home,
     KeyboardShortcuts,
+    Settings,
     Guide(Guide),
     Tool(Tool),
 }
@@ -165,6 +169,7 @@ impl TabKind {
                 | TabKind::Credits
                 | TabKind::Home
                 | TabKind::KeyboardShortcuts
+                | TabKind::Settings
                 | TabKind::Tool(
                     Tool::Notes
                         | Tool::WordInfo
@@ -192,6 +197,7 @@ impl TabKind {
         match self {
             TabKind::Library
             | TabKind::KeyboardShortcuts
+            | TabKind::Settings
             | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History) => HeaderBox::Filter,
             TabKind::Tool(Tool::WordInfo) => HeaderBox::FollowsHover,
             TabKind::Guide(Guide::WordStudy) => HeaderBox::Word,
@@ -230,6 +236,7 @@ impl TabKind {
                 | TabKind::Credits
                 | TabKind::Home
                 | TabKind::KeyboardShortcuts
+                | TabKind::Settings
                 | TabKind::Guide(Guide::Factbook)
                 | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History | Tool::ReadingPlans)
         )
@@ -261,6 +268,7 @@ impl TabKind {
             TabKind::Credits => Slot::Credits,
             TabKind::Home => Slot::Home,
             TabKind::KeyboardShortcuts => Slot::KeyboardShortcuts,
+            TabKind::Settings => Slot::Settings,
             TabKind::Guide(g) => Slot::Guide(*g),
             TabKind::Tool(t) => Slot::Tool(*t),
         }

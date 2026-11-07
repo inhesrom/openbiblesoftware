@@ -114,6 +114,9 @@ pub mod search_views;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod search_views_tests;
 mod session;
+pub mod settings;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod settings_tests;
 pub mod starter;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod starter_tests;
@@ -233,6 +236,10 @@ pub use search_views::{
     ResultsView, SearchAnalysis, chart_bars,
 };
 pub use session::{JobMode, Session};
+pub use settings::{
+    SETTINGS, Setting, SettingKind, SettingsSection, setting_by_id, setting_matches,
+    settings_matching,
+};
 pub use timeline::{Emphasis, Timeline, TimelineEntry, TimelineView};
 pub use toolbar::{
     BUILTIN_LAYOUTS, Launcher, LayoutCard, LayoutThumbnail, LibraryLauncherRow,
