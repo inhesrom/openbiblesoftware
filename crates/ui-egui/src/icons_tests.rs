@@ -73,6 +73,30 @@ fn every_icon_file_is_used_and_credited() {
     assert!(attribution.contains(r#"path = "crates/ui-egui/assets/icons/*""#));
 }
 
+/// Every icon of the set is drawn somewhere: the interface's code names it (a Guide section's
+/// icon through `for_section`, a command's through `for_command`).
+#[test]
+fn every_icon_is_drawn_by_the_interface() {
+    let code: String = ui_sources()
+        .iter()
+        .filter(|p| p.starts_with(Path::new(env!("CARGO_MANIFEST_DIR"))))
+        .map(|p| std::fs::read_to_string(p).unwrap())
+        .collect();
+    let unused: Vec<String> = (Icon::ALL.iter())
+        .map(|i| format!("Icon::{i:?}"))
+        .filter(|name| {
+            !code
+                .match_indices(name.as_str())
+                .any(|(at, _)| !code[at + name.len()..].starts_with(char::is_alphanumeric))
+        })
+        .collect();
+    assert!(unused.is_empty(), "never drawn: {unused:?}");
+    assert_eq!(
+        for_section(obs_engine::GuideSection::Related),
+        Icon::Related
+    );
+}
+
 /// The icon meshes of one frame drawn at `ppp`: (rect in points, texture), with each icon
 /// texture's size in pixels and filtering.
 struct Drawn {

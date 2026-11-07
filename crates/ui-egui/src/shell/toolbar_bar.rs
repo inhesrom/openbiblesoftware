@@ -474,7 +474,9 @@ fn toolbar_menu(ui: &mut Ui, settings: &ToolbarSettings) -> Act {
     } else {
         crate::icons::blank()
     };
-    if ui.add(egui::Button::new((check, "Auto-hide"))).clicked() {
+    let auto_hide = ui.add(egui::Button::new((check, "Auto-hide")));
+    crate::icons::announce_toggled(&auto_hide, settings.auto_hide);
+    if auto_hide.clicked() {
         act = Some(("view.toolbar_auto_hide", json!({})));
     }
     if ui

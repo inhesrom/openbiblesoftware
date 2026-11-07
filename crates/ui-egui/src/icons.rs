@@ -162,7 +162,8 @@ pub fn for_section(section: obs_engine::GuideSection) -> Icon {
         S::Commentaries => Icon::Commentaries,
         S::CrossReferences => Icon::CrossReferences,
         S::KeyWords => Icon::KeyWords,
-        S::PeopleAndPlaces | S::Related => Icon::People,
+        S::PeopleAndPlaces => Icon::People,
+        S::Related => Icon::Related,
         S::LexiconEntries | S::LexiconSummaries => Icon::Lexicon,
         S::TranslatedAs => Icon::TranslatedAs,
         S::Occurrences => Icon::Occurrences,
@@ -227,9 +228,12 @@ pub fn pixels(ctx: &Context, size: f32) -> u32 {
 /// rasterized on first use.
 pub fn texture(ctx: &Context, icon: Icon, size: f32) -> egui::load::SizedTexture {
     let px = pixels(ctx, size);
-    let cached = ctx.data(|d| {
-        d.get_temp::<Cache>(cache_id())
-            .and_then(|c| c.0.get(&(icon, px)).map(TextureHandle::id))
+    // Borrowed in place: `get_temp` would clone every handle in the cache on each lookup.
+    let cached = ctx.data_mut(|d| {
+        d.get_temp_mut_or_default::<Cache>(cache_id())
+            .0
+            .get(&(icon, px))
+            .map(TextureHandle::id)
     });
     let id = cached.unwrap_or_else(|| {
         let handle = ctx.load_texture(
@@ -268,6 +272,16 @@ pub fn with_icon(
         image(ui.ctx(), icon, BODY, crate::theme::c().muted),
         text.into(),
     )
+}
+
+/// Tell assistive technology whether a toggle menu item (Red letter, Auto-hide) is on. Its
+/// check is an image a screen reader does not read, so without this both states would be
+/// announced alike.
+pub fn announce_toggled(response: &egui::Response, on: bool) {
+    use egui::accesskit::Toggled;
+    response.ctx.accesskit_node_builder(response.id, |n| {
+        n.set_toggled(if on { Toggled::True } else { Toggled::False });
+    });
 }
 
 /// An icon's room left blank, so a menu item without an icon lines up with those that have
@@ -355,12 +369,10 @@ pub fn button(
 /// Which icon (if any) a texture is, for tests that find icons where they are drawn.
 #[cfg(test)]
 pub(crate) fn icon_of(ctx: &Context, tex: egui::TextureId) -> Option<Icon> {
-    ctx.data(|d| {
-        d.get_temp::<Cache>(cache_id()).and_then(|c| {
-            c.0.iter()
-                .find(|(_, h)| h.id() == tex)
-                .map(|((icon, _), _)| *icon)
-        })
+    ctx.data_mut(|d| {
+        (d.get_temp_mut_or_default::<Cache>(cache_id()).0.iter())
+            .find(|(_, h)| h.id() == tex)
+            .map(|((icon, _), _)| *icon)
     })
 }
 

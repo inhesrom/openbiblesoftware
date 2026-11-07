@@ -1589,6 +1589,78 @@ mod a11y {
         h.frames(2);
         assert!(h.tree.is_none());
     }
+
+    /// Whether the open menu's `label` item is on, as a screen reader hears it: the check
+    /// beside a toggle is an image, so the state is the node's (#220).
+    fn toggled(h: &Harness, label: &str) -> Option<bool> {
+        use egui::accesskit::Toggled;
+        let n = nodes(h);
+        let item = n
+            .values()
+            .find(|n| n.role() == Role::Button && n.label() == Some(label))
+            .unwrap_or_else(|| panic!("no {label} item"));
+        item.toggled().map(|t| t == Toggled::True)
+    }
+
+    #[test]
+    fn toggle_menu_items_tell_screen_readers_whether_they_are_on() {
+        let mut h = Harness::new();
+        h.ctx.enable_accesskit();
+        h.frames(2);
+        for (label, before) in [
+            ("Red letter", true),
+            ("Show Highlights", true),
+            ("Auto-hide toolbar", false),
+        ] {
+            h.open_menu("View");
+            assert_eq!(toggled(&h, label), Some(before), "{label}");
+            h.click_text(label);
+            h.frames(2);
+            h.open_menu("View");
+            assert_eq!(toggled(&h, label), Some(!before), "{label} after a click");
+            h.events.push(Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            });
+            h.frames(2);
+        }
+        // A command that is not a toggle is not announced as one.
+        h.open_menu("View");
+        assert_eq!(toggled(&h, "Customize toolbar…"), None);
+
+        // The toolbar's right-click menu: Auto-hide (now on) reads as on.
+        h.events.push(Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        });
+        h.frames(2);
+        h.shell.run("view.toolbar_auto_hide", &json!({}));
+        h.frames(2);
+        assert!(!h.shell.st.session.toolbar.auto_hide);
+        let tools = h.shell.st.toolbar.buttons[&obs_engine::Launcher::Tools].center();
+        h.events.push(Event::PointerMoved(tools));
+        h.frame();
+        for pressed in [true, false] {
+            h.events.push(Event::PointerButton {
+                pos: tools,
+                button: PointerButton::Secondary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+            h.frame();
+        }
+        h.frames(2);
+        assert_eq!(toggled(&h, "Auto-hide"), Some(false));
+        h.click_text("Auto-hide");
+        h.frames(2);
+        assert!(h.shell.st.session.toolbar.auto_hide);
+    }
 }
 
 /// The Library Tab and the About Tab (#46).

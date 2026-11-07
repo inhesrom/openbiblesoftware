@@ -370,6 +370,12 @@ impl State {
         } else {
             r.on_hover_text("Open Reading plans")
         };
+        // The check that says today's Readings are done is an image a screen reader skips.
+        let r = if !open && !due.is_empty() {
+            r.accessible_name("Today's reading, done")
+        } else {
+            r
+        };
         if r.clicked() {
             run = Some(if open {
                 (

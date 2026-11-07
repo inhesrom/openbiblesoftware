@@ -1092,6 +1092,9 @@ impl Shell {
                 }
                 let enabled = self.st.session.is_enabled(id);
                 let r = ui.add_enabled(enabled, b);
+                if let Some(on) = checked {
+                    icons::announce_toggled(&r, on);
+                }
                 let r = if enabled {
                     r
                 } else {
