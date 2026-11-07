@@ -23,6 +23,8 @@ use crate::workers::SnippetCache;
 
 /// The popover's text column, in points.
 const WIDTH: f32 = 340.0;
+/// The most the popover's text shows at once, in points: a longer note scrolls.
+const MAX_BODY_HEIGHT: f32 = 360.0;
 
 /// A Footnote as its popover shows it: the note's text unit, with each Bible reference in it
 /// a link to its Standard Passages, and the line naming it ("Footnote a · John 1:5").
@@ -166,6 +168,9 @@ pub(crate) struct TabFootnote {
     pub(crate) rect: Option<Rect>,
     /// Where its links were drawn last frame, in its body's `links` order.
     pub(crate) link_rects: Vec<Rect>,
+    /// The pass (of its window's viewport) it was last drawn in: only a popover on screen
+    /// takes Esc ahead of the keyboard shortcuts.
+    drawn_in: Option<u64>,
     /// The note built for a marker: used only while that marker (of that Resource) is the
     /// phase's, so a hover's note serves its pin and never another Resource's marker.
     body: Option<(FootnoteHit, Arc<FootnoteBody>)>,
@@ -201,6 +206,7 @@ impl Footnotes {
             f.rect = None;
             f.link_rects.clear();
             f.focus_inside = false;
+            f.drawn_in = None;
         }
         if closed {
             self.tabs.remove(&tab);
@@ -228,6 +234,15 @@ impl Footnotes {
     /// Only these Tabs are left (a Layout loaded, the Workspace rebuilt).
     pub(crate) fn retain_tabs(&mut self, live: &[TabId]) {
         self.tabs.retain(|t, _| live.contains(t));
+    }
+
+    /// Whether a popover shown on a Tab `here` was drawn in the last pass of `ctx`'s viewport:
+    /// Esc is for it before any command bound to Esc.
+    pub(crate) fn on_screen(&self, ctx: &egui::Context, here: impl Fn(TabId) -> bool) -> bool {
+        let pass = ctx.cumulative_pass_nr();
+        self.tabs
+            .iter()
+            .any(|(t, f)| f.phase.shown() && f.drawn_in.is_some_and(|d| d + 1 >= pass) && here(*t))
     }
 
     /// The popover drawn (open on hover or pinned), with its Tab.
@@ -362,11 +377,18 @@ impl State {
     /// Follow a reading pane's Footnote markers this frame: turn what the pointer, keyboard
     /// and text did into events for its Tab's popover, and draw the popover.
     pub(super) fn footnote_frame(&mut self, ui: &mut Ui, tab: TabId, out: &PaneOutput) {
-        let (pointer, pressed, escape) = ui.input(|i| {
+        // A shown popover takes the Esc that closes it: nothing behind it (a floating window,
+        // the Note editor) closes too.
+        let shown = (self.footnotes.tabs.get(&tab)).is_some_and(|f| f.phase.shown());
+        let (pointer, pressed, escape) = ui.input_mut(|i| {
             (
                 i.pointer.hover_pos(),
                 i.pointer.any_pressed(),
-                i.key_pressed(egui::Key::Escape),
+                if shown {
+                    i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)
+                } else {
+                    i.key_pressed(egui::Key::Escape)
+                },
             )
         });
         let now = self.now;
@@ -492,7 +514,11 @@ impl State {
         let (Some(m), Some(body)) = (f.phase.marker(), f.body().cloned()) else {
             return;
         };
-        let (marker, pinned, focus_inside) = (m.rect, f.phase.pinned(), f.focus_inside);
+        let (marker, widget, pinned, focus_inside) =
+            (m.rect, m.widget, f.phase.pinned(), f.focus_inside);
+        // A long note scrolls inside the popover, which never grows past the window.
+        let screen = ui.ctx().content_rect();
+        let max_body = (screen.height() - 120.0).clamp(60.0, MAX_BODY_HEIGHT);
         let mut close = false;
         let mut close_id = None;
         let mut go: Option<(Passage, bool)> = None;
@@ -531,7 +557,12 @@ impl State {
                             );
                         }
                     });
-                    (go, links, focus) = self.footnote_text(ui, &body, focus_inside);
+                    egui::ScrollArea::vertical()
+                        .id_salt(("footnote-body", widget))
+                        .max_height(max_body)
+                        .show(ui, |ui| {
+                            (go, links, focus) = self.footnote_text(ui, &body, focus_inside);
+                        });
                     if !pinned {
                         ui.label(
                             RichText::new("Click the marker to keep this open")
@@ -554,6 +585,7 @@ impl State {
         };
         if let Some(f) = self.footnotes.tabs.get_mut(&tab) {
             f.rect = Some(shown.response.rect);
+            f.drawn_in = Some(ui.ctx().cumulative_pass_nr());
             f.link_rects = links;
             if focus_moved {
                 f.focus_inside = false;
@@ -640,6 +672,9 @@ impl State {
             let first = rects.first().copied().unwrap_or(area);
             let link = ui.interact(first, id, Sense::click());
             link.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Link, true, &written));
+            if link.gained_focus() {
+                ui.scroll_to_rect(area, None);
+            }
             if focus == LinkFocus::NoLink {
                 focus = LinkFocus::Link;
                 if focus_first {

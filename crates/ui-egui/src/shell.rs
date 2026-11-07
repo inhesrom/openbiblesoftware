@@ -951,6 +951,10 @@ impl Shell {
         }
         // Keys a text field uses itself (Ctrl+Z, Esc …) are left to it while it has focus.
         let typing = ui.ctx().text_edit_focused();
+        // A Footnote popover shown in this window has first refusal on Esc (#208): a command
+        // bound to Esc (Unpin Word Info, say) waits for the next one.
+        let footnote_shown =
+            (self.st.footnotes).on_screen(ui.ctx(), |t| self.keys_window(t) == window);
         let all = bindings(&self.st.session);
         let session = &self.st.session;
         let bound: Vec<(&obs_engine::CommandSpec, egui::KeyboardShortcut)> = session
@@ -959,6 +963,9 @@ impl Shell {
             .filter_map(|spec| Some((spec, session.shortcut(spec.id)?)))
             .filter(|(_, key)| !(typing && annotate::yields_to_text_fields(key)))
             .filter_map(|(spec, key)| Some((spec, parse_shortcut(key)?)))
+            .filter(|(_, sc)| {
+                !(footnote_shown && sc.logical_key == egui::Key::Escape && sc.modifiers.is_none())
+            })
             .flat_map(|(spec, sc)| pressed_as(sc).map(move |sc| (spec, sc)))
             .collect();
         let mut run: Vec<(&'static str, Value)> = Vec::new();

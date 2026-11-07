@@ -14,7 +14,7 @@ use crate::palette::Palette;
 use crate::selection::{
     DocPos, Granularity, Selection, range_rects, selection_rects, text_range_rects,
 };
-use crate::view::{MARGIN, ReadingView, SYNC_BUDGET};
+use crate::view::{FootnoteMarker, MARGIN, ReadingView, SYNC_BUDGET};
 use obs_layout::{InlineObject, UnitPos};
 use obs_scripture::Verse;
 
@@ -200,8 +200,17 @@ pub fn reading_pane(
     }
     if response.has_focus() || response.hovered() {
         let page = rect.height() * 0.9;
+        // Space on a focused Footnote marker (#208) activates it: the text does not page
+        // first and carry the marker out of view.
+        let marker_focused = ui.memory(|m| m.focused()).is_some_and(|f| {
+            f != response.id
+                && (view.footnote_markers(rect.height()).iter())
+                    .any(|m| footnote_marker_id(response.id, m) == f)
+        });
         ui.input(|i| {
-            if i.key_pressed(egui::Key::PageDown) || i.key_pressed(egui::Key::Space) {
+            if i.key_pressed(egui::Key::PageDown)
+                || (i.key_pressed(egui::Key::Space) && !marker_focused)
+            {
                 view.scroll_by(page);
             }
             if i.key_pressed(egui::Key::PageUp) {
@@ -588,6 +597,11 @@ pub fn reading_pane(
     out
 }
 
+/// The widget of Footnote marker `m` in the reading pane `pane`.
+fn footnote_marker_id(pane: egui::Id, m: &FootnoteMarker) -> egui::Id {
+    pane.with(("footnote", m.unit, m.anchor, m.note.as_str()))
+}
+
 /// Each Footnote marker in view (#208) is a small widget of its own over the text, so the
 /// pointer and the keyboard (Tab to it, Enter) reach it, and a screen reader names it and
 /// reads its note.
@@ -610,9 +624,7 @@ fn footnote_markers(
         if !rect.intersects(r) {
             continue;
         }
-        let id = pane
-            .id
-            .with(("footnote", m.unit, m.anchor, m.note.as_str()));
+        let id = footnote_marker_id(pane.id, &m);
         let response = ui.interact(r.expand(3.0).intersect(rect), id, Sense::click());
         let hit = FootnoteHit {
             resource: view.doc.manifest.resource_id.clone(),

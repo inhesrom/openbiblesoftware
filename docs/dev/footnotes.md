@@ -20,7 +20,12 @@ or another click on the marker. Esc closes a hover popover too. A marker whose p
 dismissed (Esc, another click on it, a click elsewhere, its ×, a link followed) shows none while
 the pointer or focus stays on it, however long it rests there: it shows again once both have
 left it, or at once on a click (Enter). Resting the pointer on another marker, in any pane, leaves
-a pinned popover (clicking that marker replaces it).
+a pinned popover (clicking that marker replaces it). A shown popover has first refusal on Esc: a
+command bound to Esc (Unpin Word Info) waits for the next Esc while one is on screen in that
+window, and the popover consumes the Esc it closes on, so no floating window behind it closes too.
+Space on a focused marker activates it; the reading pane does not page on that Space. A note
+taller than `MAX_BODY_HEIGHT` (or than the window allows) scrolls inside the popover, which stays
+in the window; a link given keyboard focus is scrolled into view.
 
 Each Tab's popover is one state machine, `FootnotePhase` in `crates/ui-egui/src/shell/footnotes.rs`:
 `Closed`, `Dwelling` (waiting for the dwell), `Open` (shown on hover), `Pinned` and `Suppressed`

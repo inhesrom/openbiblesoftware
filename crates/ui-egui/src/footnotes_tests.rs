@@ -358,6 +358,190 @@ fn esc_closes_a_hover_popover_until_the_pointer_leaves_its_marker() {
     assert_eq!(shown_text(&h).as_deref(), Some("Or comprehended"));
 }
 
+/// Click the text just before the Footnote starting with `text`, then Tab until its marker
+/// has the keyboard focus: the marker and its widget.
+fn focus_marker(h: &mut Harness, tab: TabId, text: &str) -> (FootnoteMarker, egui::Id) {
+    let (m, at) = marker(h, tab, text);
+    h.click(pos2(at.x - 40.0, at.y + 4.0));
+    for _ in 0..20 {
+        if pending(h).is_some_and(|p| p.note == m.note) {
+            break;
+        }
+        press(h, Key::Tab);
+    }
+    let widget = h
+        .ctx
+        .memory(|mem| mem.focused())
+        .expect("a marker has focus");
+    (m, widget)
+}
+
+/// A shown Footnote has first refusal on Esc: with Word Info pinned too, Esc closes the
+/// Footnote and gives its marker the focus back, leaving Word Info pinned; the next Esc
+/// unpins Word Info.
+#[test]
+fn esc_closes_a_pinned_footnote_before_it_unpins_word_info() {
+    let (mut h, _files, tab) = bsb("esc-word-info", "Jn 1:19");
+    let (_, widget) = focus_marker(&mut h, tab, "Isaiah 40:3");
+    let part = obs_model::MorphemePart::new("G3056".parse().unwrap());
+    let word =
+        obs_engine::ShownWord::new("λόγος", false, "John 1:1".into(), &[part], |_| None).unwrap();
+    h.shell.st.session.word_info.pin(word);
+    press(&mut h, Key::Enter);
+    h.frames(3);
+    assert!(popover(&h).is_some_and(|p| p.pinned));
+    press(&mut h, Key::Escape);
+    h.frames(2);
+    assert!(popover(&h).is_none(), "Esc closes the Footnote first");
+    assert_eq!(
+        h.ctx.memory(|mem| mem.focused()),
+        Some(widget),
+        "focus is back on the marker"
+    );
+    assert!(
+        h.shell.st.session.word_info.pinned,
+        "Word Info stays pinned"
+    );
+    press(&mut h, Key::Escape);
+    assert!(
+        !h.shell.st.session.word_info.pinned,
+        "the next Esc unpins Word Info"
+    );
+}
+
+/// Space on a focused marker pins its popover, even with the pointer resting on the text:
+/// the text does not page first and carry the marker away.
+#[test]
+fn space_on_a_focused_marker_pins_it_without_paging_the_text() {
+    let (mut h, _files, tab) = bsb("keys-space", "Jn 1:19");
+    let (m, _) = focus_marker(&mut h, tab, "Isaiah 40:3");
+    let (_, at) = marker(&h, tab, "Isaiah 40:3");
+    h.events
+        .push(Event::PointerMoved(pos2(at.x - 120.0, at.y - 40.0)));
+    h.frames(2);
+    let position = |h: &mut Harness| {
+        (h.shell
+            .st
+            .tabs
+            .get_mut(&tab)
+            .unwrap()
+            .view
+            .as_mut()
+            .unwrap())
+        .position()
+        .0
+    };
+    let before = position(&mut h);
+    press(&mut h, Key::Space);
+    h.frames(3);
+    let p = popover(&h).expect("Space pins it");
+    assert!(p.pinned && p.hit.note == m.note);
+    assert!(
+        (position(&mut h) - before).abs() < 0.01,
+        "the text did not page: {before} → {}",
+        position(&mut h)
+    );
+    assert_eq!(
+        shown_text(&h).as_deref(),
+        Some("Isaiah 40:3 (see also LXX)")
+    );
+}
+
+/// A Footnote taller than the window scrolls inside its popover, which stays on screen: its
+/// last words and the reference after them can be scrolled to and followed.
+#[test]
+fn a_long_footnote_scrolls_to_its_last_reference() {
+    let verses = [
+        (
+            Verse::new(Book::Psalms, 3, 1),
+            "LORD, how are they increased that trouble me!",
+        ),
+        (
+            Verse::new(Book::Psalms, 3, 2),
+            "Many there be which say of my soul,",
+        ),
+        (
+            Verse::new(Book::Psalms, 3, 3),
+            "But thou, O LORD, art a shield for me;",
+        ),
+    ];
+    let mut bible = obs_engine::testing::bibles::bible("long-note", "LNB", &verses, None, &[]);
+    let note = obs_model::UnitId::note(1);
+    let text = format!(
+        "{}See Ps 3:3.",
+        "Many words of a long note, more than any window can show at once. ".repeat(60)
+    );
+    bible.units.push(obs_model::TextUnit {
+        id: note.clone(),
+        kind: obs_model::UnitKind::Note,
+        title: None,
+        text: text.clone(),
+        spans: Vec::new(),
+    });
+    let psalms = bible
+        .units
+        .iter_mut()
+        .find(|u| u.kind == obs_model::UnitKind::BibleBook)
+        .unwrap();
+    let end = u32::try_from(psalms.text.len()).unwrap();
+    psalms.spans.push(obs_model::Span {
+        start: end,
+        end,
+        kind: obs_model::SpanKind::NoteRef {
+            note,
+            note_kind: obs_model::NoteKind::Footnote,
+        },
+    });
+    let (mut h, _files, tab) = library("long-note", &[bible], "Ps 3:1");
+    // A short window: the popover's cap is the window's, not its own.
+    h.screen = egui::vec2(1000.0, 420.0);
+    h.frames(4);
+    let (_, at) = marker(&h, tab, "Many words");
+    h.click(at);
+    h.frames(6);
+    let p = popover(&h).expect("pinned");
+    let area = p.rect.unwrap();
+    assert!(
+        area.top() >= 0.0 && area.bottom() <= h.screen.y,
+        "the popover stays in the window: {area:?}"
+    );
+    assert_eq!(p.link_rects.len(), 1);
+    assert!(
+        !area.contains(p.link_rects[0].center()),
+        "the reference is below what shows at first"
+    );
+    h.events.push(Event::PointerMoved(area.center()));
+    // To the end of the note: the reference is its last line.
+    for _ in 0..80 {
+        h.events.push(Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -60.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: Modifiers::NONE,
+        });
+        h.frame();
+    }
+    h.frames(10);
+    let p = popover(&h).expect("still pinned");
+    assert_eq!(p.rect, Some(area), "the popover itself did not move");
+    let link = p.link_rects[0];
+    assert!(
+        area.contains(link.center()),
+        "scrolled to the reference: {link:?} in {area:?}"
+    );
+    h.events.push(Event::PointerMoved(link.center()));
+    h.frames(8);
+    assert!(h.find("Ps 3:3").is_some(), "{:?}", h.texts());
+    h.click(link.center());
+    h.frames(6);
+    assert!(popover(&h).is_none(), "following the link closes it");
+    let ps = Verse::new(Book::Psalms, 3, 3);
+    let went = (h.shell.st.session.workspace.tabs()).any(|t| t.history.current() == Some(ps))
+        || (h.shell.st.references.pending_navigation.values()).any(|v| *v == ps);
+    assert!(went, "a Tab goes to Ps 3:3");
+}
+
 /// Enter on a marker whose popover has not been laid out yet (pressed before the dwell, the
 /// note's text still with the layout worker) still moves focus to its first link once the
 /// text is drawn.
