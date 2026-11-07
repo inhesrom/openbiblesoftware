@@ -40,7 +40,8 @@ focused marker in one and the pointer in the other. Every Footnote widget drawn 
 popover's link or ×), in any pane, is registered for its pass (`register_footnote_widget`); a
 pane pages on Space only when egui's focused widget is none of those drawn this pass or the last
 (`footnote_widget_focused`), so Space goes to a focused Footnote widget, and no record of who had
-the focus outlives the frame. Esc moves the focus back to the marker in the same frame. `Footnotes::send` keeps
+the focus outlives the frame. The registry is kept per viewport: a native floating window shares
+the main window's egui context but counts its own passes and has its own focus. Esc moves the focus back to the marker in the same frame. `Footnotes::send` keeps
 one popover pinned at a time across Tabs. Pinned from the keyboard (Enter or Space on the focused
 marker, or a screen reader's click: the marker widget reports it, wherever the pointer rests),
 focus moves to its first link (its × when it has none) as soon as the note's text is laid out,
