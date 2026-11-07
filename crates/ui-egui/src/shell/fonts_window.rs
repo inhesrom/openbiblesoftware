@@ -217,6 +217,9 @@ impl State {
             // The bundled interface fonts are installed at start-up already.
             if !(first && data.is_none()) {
                 theme::install_fonts(ctx, data);
+                // Fonts are set before any text this frame, so rows drawn now are measured
+                // in the new face; rows out of view must not keep the old face's heights.
+                self.forget_topic_row_heights();
             }
             self.fonts_ui.applied_interface = Some(interface);
         }

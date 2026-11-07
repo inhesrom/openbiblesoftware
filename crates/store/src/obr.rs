@@ -18,6 +18,8 @@
 //! | `mentions` | `entity` (→ `entities.ord`), Standard `start`, `end` (verse numbers) |
 //! | `entity_strongs` | An entity's other Strong's numbers: `entity` (→ `entities.ord`), `seq`, `strongs` |
 //! | `entity_locations` | A place's Place locations: `entity` (→ `entities.ord`), `seq`, `name`, `lon_e6`, `lat_e6`, `score` |
+//! | `events` | A People & places index's Events dataset (#185): `ord`, `id`, `title`, `kind`, `start_year`, `start_month`, `start_day`, `end_year`, `end_month`, `end_day` (end columns null for a single day or year), `approximate`, `part_of` (event id), `people` (JSON), `places` (JSON) |
+//! | `event_passages` | An Event's Passages: `event` (→ `events.ord`), `seq`, Standard `start`, `end` (verse numbers) |
 //!
 //! Dataset Verses are stored as verse numbers `BBCCCVVV` (book 1-66, chapter, verse), so a
 //! Passage overlap is an integer range query.
@@ -33,7 +35,8 @@
 //!
 //! `entity_strongs` arrived after format 3 was first shipped (#149). A file without it still
 //! opens; its entities read with no other Strong's numbers. Likewise `entity_locations` (#150):
-//! without it, places read with no Place locations.
+//! without it, places read with no Place locations. And `events` with `event_passages`
+//! (#185): without them, an index reads with no Events.
 //!
 //! | `volumes` | A Commentary's volumes (#176): `book` (USFM code) → `title` of the volume its sections are printed in |
 //!
@@ -55,10 +58,10 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use obs_model::{
-    BibleVerse, CrossReference, Direction, Entity, EntityKind, EntityRelation, FORMAT_VERSION, Key,
-    KeyEntry, KeyScheme, LemmaTransliteration, Manifest, Mention, OLDEST_FORMAT_VERSION, Origin,
-    PartOfSpeech, PlaceLocation, Rendering, RenderingIndex, Resource, ResourceType, Span,
-    StrongsTotal, TextUnit, UnitId, UnitKind,
+    BibleVerse, CrossReference, Direction, Entity, EntityKind, EntityRelation, Event, EventEntity,
+    FORMAT_VERSION, HistoricalDate, Key, KeyEntry, KeyScheme, LemmaTransliteration, Manifest,
+    Mention, OLDEST_FORMAT_VERSION, Origin, PartOfSpeech, PlaceLocation, Rendering, RenderingIndex,
+    Resource, ResourceType, Span, StrongsTotal, TextUnit, UnitId, UnitKind,
 };
 use obs_scripture::{Book, Passage, Standard, Verse, VerseMap, VerseMapEntry};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, params};
@@ -193,6 +196,29 @@ CREATE TABLE entity_locations (
     lat_e6 INTEGER NOT NULL,
     score INTEGER NOT NULL,
     PRIMARY KEY (entity, seq)
+) WITHOUT ROWID;
+CREATE TABLE events (
+    ord INTEGER PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    start_year INTEGER NOT NULL,
+    start_month INTEGER,
+    start_day INTEGER,
+    end_year INTEGER,
+    end_month INTEGER,
+    end_day INTEGER,
+    approximate INTEGER NOT NULL,
+    part_of TEXT,
+    people TEXT NOT NULL,
+    places TEXT NOT NULL
+);
+CREATE TABLE event_passages (
+    event INTEGER NOT NULL,
+    seq INTEGER NOT NULL,
+    start INTEGER NOT NULL,
+    end INTEGER NOT NULL,
+    PRIMARY KEY (event, seq)
 ) WITHOUT ROWID;
 CREATE TABLE transliterations (
     transliteration TEXT NOT NULL,
@@ -476,6 +502,7 @@ fn insert_datasets(tx: &rusqlite::Transaction<'_>, r: &Resource) -> Result<(), S
                 .map_err(sql)?;
         }
     }
+    insert_events(tx, &r.events)?;
     let mut mention_stmt = tx
         .prepare("INSERT INTO mentions (entity, start, end) VALUES (?1, ?2, ?3)")
         .map_err(sql)?;
@@ -490,6 +517,51 @@ fn insert_datasets(tx: &rusqlite::Transaction<'_>, r: &Resource) -> Result<(), S
                 verse_number(m.passage.end())
             ])
             .map_err(sql)?;
+    }
+    Ok(())
+}
+
+fn insert_events(tx: &rusqlite::Transaction<'_>, events: &[Event]) -> Result<(), StoreError> {
+    let mut event_stmt = tx
+        .prepare(
+            "INSERT INTO events (ord, id, title, kind, start_year, start_month, start_day,
+                 end_year, end_month, end_day, approximate, part_of, people, places)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        )
+        .map_err(sql)?;
+    let mut passage_stmt = tx
+        .prepare("INSERT INTO event_passages (event, seq, start, end) VALUES (?1, ?2, ?3, ?4)")
+        .map_err(sql)?;
+    for (ord, e) in events.iter().enumerate() {
+        let ord = ord as i64;
+        event_stmt
+            .execute(params![
+                ord,
+                e.id,
+                e.title,
+                enum_name(&e.kind),
+                e.start.year,
+                e.start.month,
+                e.start.day,
+                e.end.map(|d| d.year),
+                e.end.and_then(|d| d.month),
+                e.end.and_then(|d| d.day),
+                e.approximate,
+                e.part_of,
+                json(&e.people),
+                json(&e.places)
+            ])
+            .map_err(sql)?;
+        for (seq, p) in e.passages.iter().enumerate() {
+            passage_stmt
+                .execute(params![
+                    ord,
+                    seq as i64,
+                    verse_number(p.start()),
+                    verse_number(p.end())
+                ])
+                .map_err(sql)?;
+        }
     }
     Ok(())
 }
@@ -757,6 +829,91 @@ impl ObrReader {
                 s.parse()
                     .map_err(|_| corrupt(format!("bad Strong's `{s}`")))?,
             );
+        }
+        Ok(out)
+    }
+
+    /// Every Event of a People & places index's Events dataset (#185), ordered by id; none in
+    /// a file that predates the `events` table.
+    pub fn events(&self) -> Result<Vec<Event>, StoreError> {
+        if !self.has_table("events")? {
+            return Ok(Vec::new());
+        }
+        let mut passages: HashMap<i64, Vec<Passage>> = HashMap::new();
+        {
+            let mut stmt = self
+                .conn
+                .prepare_cached("SELECT event, start, end FROM event_passages ORDER BY event, seq")
+                .map_err(sql)?;
+            let rows = stmt
+                .query_map([], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, i64>(2)?,
+                    ))
+                })
+                .map_err(sql)?;
+            for row in rows {
+                let (ord, start, end) = row.map_err(sql)?;
+                passages
+                    .entry(ord)
+                    .or_default()
+                    .push(passage_from_numbers(start, end)?);
+            }
+        }
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT ord, id, title, kind, start_year, start_month, start_day, end_year,
+                     end_month, end_day, approximate, part_of, people, places
+                 FROM events ORDER BY ord",
+            )
+            .map_err(sql)?;
+        let mut rows = stmt.query([]).map_err(sql)?;
+        let mut out = Vec::new();
+        while let Some(r) = rows.next().map_err(sql)? {
+            let date = |year: Option<i64>, month: Option<i64>, day: Option<i64>| {
+                let part = |v: Option<i64>, what: &str| {
+                    v.map(|v| u8::try_from(v).map_err(|_| corrupt(format!("event {what} {v}"))))
+                        .transpose()
+                };
+                year.map(|y| {
+                    Ok::<_, StoreError>(HistoricalDate {
+                        year: i32::try_from(y)
+                            .map_err(|_| corrupt(format!("event year {y} out of range")))?,
+                        month: part(month, "month")?,
+                        day: part(day, "day")?,
+                    })
+                })
+                .transpose()
+            };
+            let ord: i64 = r.get(0).map_err(sql)?;
+            let kind: String = r.get(3).map_err(sql)?;
+            let people: String = r.get(12).map_err(sql)?;
+            let places: String = r.get(13).map_err(sql)?;
+            let start = date(
+                Some(r.get(4).map_err(sql)?),
+                r.get(5).map_err(sql)?,
+                r.get(6).map_err(sql)?,
+            )?
+            .ok_or_else(|| corrupt("event without a start"))?;
+            out.push(Event {
+                id: r.get(1).map_err(sql)?,
+                title: r.get(2).map_err(sql)?,
+                kind: enum_from("event kind", &kind)?,
+                start,
+                end: date(
+                    r.get(7).map_err(sql)?,
+                    r.get(8).map_err(sql)?,
+                    r.get(9).map_err(sql)?,
+                )?,
+                approximate: r.get(10).map_err(sql)?,
+                part_of: r.get(11).map_err(sql)?,
+                people: json_from::<Vec<EventEntity>>("event people", &people)?,
+                places: json_from::<Vec<EventEntity>>("event places", &places)?,
+                passages: passages.remove(&ord).unwrap_or_default(),
+            });
         }
         Ok(out)
     }
@@ -1579,6 +1736,7 @@ impl ResourceStore for ObrReader {
             )?,
             entities: self.entity_rows("", &[])?,
             mentions: self.mention_rows("", &[])?,
+            events: self.events()?,
             transliterations,
             renderings,
             volumes: self.volumes()?,

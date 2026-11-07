@@ -35,7 +35,8 @@ mod unit;
 
 pub use builder::{Resource, ResourceBuilder, ValidationError, ValidationErrors};
 pub use dataset::{
-    CrossReference, Entity, EntityKind, EntityRelation, Mention, PlaceLocation, Relation,
+    CrossReference, Entity, EntityKind, EntityRelation, Event, EventEntity, EventKind,
+    HistoricalDate, Mention, PlaceLocation, Relation,
 };
 pub use key::{Key, KeyEntry};
 pub use manifest::{

@@ -67,6 +67,9 @@ fn every_tab_kind() -> Vec<TabKind> {
         TabKind::GetBibles,
         TabKind::StarterLibrary,
         TabKind::Credits,
+        TabKind::Home,
+        TabKind::KeyboardShortcuts,
+        TabKind::Settings,
         TabKind::Guide(Guide::PassageGuide),
         TabKind::Tool(Tool::Search),
     ] {
@@ -83,6 +86,7 @@ fn every_tab_kind() -> Vec<TabKind> {
                     Tool::History,
                     Tool::ReadingPlans,
                     Tool::Atlas,
+                    Tool::Timeline,
                 ]
                 .map(TabKind::Tool),
             ),
@@ -92,7 +96,10 @@ fn every_tab_kind() -> Vec<TabKind> {
             | TabKind::ImportReport(_)
             | TabKind::GetBibles
             | TabKind::StarterLibrary
-            | TabKind::Credits => kinds.push(kind),
+            | TabKind::Credits
+            | TabKind::Home
+            | TabKind::KeyboardShortcuts
+            | TabKind::Settings => kinds.push(kind),
         }
     }
     kinds
@@ -129,6 +136,13 @@ fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
         TabKind::GetBibles => ("library.get_resources", split),
         TabKind::StarterLibrary => ("library.starter", split),
         TabKind::Credits => ("help.credits", split),
+        TabKind::Home => {
+            h.shell
+                .run("reading_plan.create", &json!({ "template": "nt-90-days" }));
+            ("home.open", split)
+        }
+        TabKind::KeyboardShortcuts => ("help.keyboard_shortcuts", split),
+        TabKind::Settings => ("app.settings", split),
         TabKind::Guide(Guide::PassageGuide) => (
             "guide.passage_guide",
             json!({ "passage": "Jn 3:16", "split": true }),
@@ -181,6 +195,10 @@ fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
         TabKind::Tool(Tool::Atlas) => {
             ("tool.atlas", json!({ "passage": "Acts 13", "split": true }))
         }
+        TabKind::Tool(Tool::Timeline) => (
+            "tool.timeline",
+            json!({ "passage": "1 Kings 6", "split": true }),
+        ),
     };
     h.shell.run(id, &params);
     settle(h);
@@ -192,6 +210,10 @@ fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
 fn audit_harness(name: &str) -> (Harness, Lab) {
     let mut set = release_set();
     set.push(obs_engine::testing::topical_index("nave"));
+    // Events, so the Timeline (#185) draws its axis rather than its empty state, their people
+    // matched to the TIPNR above so Abraham's Lifespan opens his Factbook.
+    let tipnr = obs_engine::testing::tipnr();
+    set.push(obs_engine::testing::theographic(Some(&tipnr)));
     let (mut h, lab) = setup(name, &set);
     h.ctx.enable_accesskit();
     h.events.push(Event::PointerMoved(pos2(1395.0, 895.0)));
@@ -414,6 +436,13 @@ fn every_overlay() -> Vec<Overlay> {
                 h.shell.run("view.fonts", &json!({}));
             },
             |h| h.shell.st.fonts_ui.open,
+        ),
+        (
+            "Highlight styles",
+            |h| {
+                h.shell.run("view.highlight_styles", &json!({}));
+            },
+            |h| h.shell.st.styles_ui.open,
         ),
         (
             "Copy verses",
@@ -803,6 +832,31 @@ fn keyboard_only_reading_plans() {
     close_tab(&mut h, &TabKind::Tool(Tool::ReadingPlans));
 }
 
+/// Home (#178): Alt+H opens it; a card moves down and Open Home at launch turns on from the
+/// keyboard; a Quick start opens its Guide.
+#[test]
+fn keyboard_only_home() {
+    let (mut h, _lab) = keyboard_harness("kb-home");
+    key(&mut h, Key::H, Modifiers::ALT);
+    settle(&mut h);
+    assert_eq!(focused_kind(&h), Some(TabKind::Home));
+    tab_to(&mut h, "Open Home at launch");
+    key(&mut h, Key::Space, Modifiers::NONE);
+    settle(&mut h);
+    assert!(h.shell.session().home_opens_at_launch());
+    tab_to(&mut h, "Move Today's reading down");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    assert_eq!(
+        h.shell.session().home_settings().cards[1].card,
+        obs_engine::HomeCard::TodaysReading
+    );
+    tab_to(&mut h, "Word Study");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    assert_eq!(focused_kind(&h), Some(TabKind::Guide(Guide::WordStudy)));
+}
+
 /// The Factbook (#149): from the Guides pane, a name, Enter; then the Summary's link to his
 /// father opens the father's Factbook in the same Tab.
 #[test]
@@ -902,6 +956,58 @@ fn keyboard_only_copy_verses() {
     );
     key(&mut h, Key::Escape, Modifiers::NONE);
     assert!(!h.shell.st.copy_ui.open);
+}
+
+/// Keyboard shortcuts (#177): filter to Larger text, record Ctrl+Up for it, Reset, close.
+#[test]
+fn keyboard_only_keyboard_shortcuts() {
+    let (mut h, _lab) = keyboard_harness("kb-keys");
+    command(&mut h, "keyboard shortcuts");
+    assert_eq!(focused_kind(&h), Some(TabKind::KeyboardShortcuts));
+    tab_to(&mut h, "Filter");
+    type_text(&mut h, "larger");
+    tab_to(&mut h, "Larger text shortcut: Ctrl+Plus");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert!(h.shell.st.keys_ui.is_recording());
+    key(&mut h, Key::ArrowUp, CTRL);
+    let session = h.shell.session();
+    assert_eq!(session.shortcut("view.text_larger"), Some("Ctrl+Up"));
+    tab_to(&mut h, "Reset the Larger text shortcut");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    let session = h.shell.session();
+    assert_eq!(session.shortcut("view.text_larger"), Some("Ctrl+Plus"));
+    close_tab(&mut h, &TabKind::KeyboardShortcuts);
+}
+
+/// Settings (#213): Ctrl+, opens it with the search box ready; pick a Page tone, Reset it,
+/// turn a toggle on and off, close.
+#[test]
+fn keyboard_only_settings() {
+    let (mut h, _lab) = keyboard_harness("kb-settings");
+    key(&mut h, Key::Comma, CTRL);
+    assert_eq!(focused_kind(&h), Some(TabKind::Settings));
+    // The search box has the keyboard already.
+    assert_eq!(
+        focused(&h).map(|f| f.0),
+        Some("Search settings".to_string())
+    );
+    type_text(&mut h, "page tone");
+    tab_to(&mut h, "Page tone: Sepia");
+    key(&mut h, Key::Space, Modifiers::NONE);
+    assert_eq!(h.shell.session().appearance.page_tone, PageTone::Sepia);
+    tab_to(&mut h, "Reset Page tone");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert_eq!(h.shell.session().appearance.page_tone, PageTone::Auto);
+    tab_to(&mut h, "Search settings");
+    key(&mut h, Key::A, CTRL);
+    type_text(&mut h, "red letter");
+    tab_to(&mut h, "Red letter");
+    key(&mut h, Key::Space, Modifiers::NONE);
+    assert!(!h.shell.session().text.red_letter);
+    tab_to(&mut h, "Reset Red letter");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert!(h.shell.session().text.red_letter);
+    close_tab(&mut h, &TabKind::Settings);
 }
 
 /// Esc closes one window (#182): with Fonts open behind Copy verses, the one with the
@@ -1035,6 +1141,92 @@ fn keyboard_only_panel_separator() {
         Some(super::super::tile_handles::SEPARATOR),
         "the arrow keys moved the focus away"
     );
+}
+
+/// The Timeline (#185): Tab reaches every entry on the axis. Enter on Fit shows the whole
+/// Timeline, on an Era fits the view to
+/// it, on an Event moves the Link set's Bible to its Passage, on a Lifespan opens the person's
+/// Factbook.
+#[test]
+fn keyboard_only_timeline() {
+    let (mut h, _lab) = keyboard_harness("kb-timeline");
+    let kjv = h.tab_id("KJV");
+    command(&mut h, "timeline");
+    assert_eq!(focused_kind(&h), Some(TabKind::Tool(Tool::Timeline)));
+    settle(&mut h);
+    let ws = &h.shell.session().workspace;
+    assert_eq!(
+        ws.tab(kjv).and_then(|t| t.history.current()),
+        Some(obs_scripture::Verse::new(
+            obs_scripture::Book::Genesis,
+            1,
+            1
+        ))
+    );
+    let axis = |h: &Harness| {
+        let nodes = nodes(h);
+        let node = (nodes.values())
+            .find(|n| n.role() == Role::Image && name_of(&nodes, n).starts_with("Timeline from"))
+            .expect("the Timeline's axis");
+        let b = node.bounds().unwrap();
+        (b.x1 - b.x0) as f32
+    };
+
+    // The Bible is at Genesis 1:1, so the axis shows the Creation; Fit shows it all.
+    tab_to(&mut h, "Fit");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    let patriarchs = "Era: Patriarchs, 1996–1635 BC";
+    tab_to(&mut h, patriarchs);
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    let (name, _, band) = focused(&h).unwrap();
+    assert_eq!(name, patriarchs, "Enter moved the keyboard off the Era");
+    assert!(
+        band.width() >= axis(&h) - 60.0,
+        "the view did not fit the Era: {band:?} on an axis {} wide",
+        axis(&h)
+    );
+
+    tab_to(&mut h, "Event: Birth of Abraham, 1996 BC");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle_all(&mut h);
+    // The Link set moved there: the Timeline with it, and the Bible to the nearest Verse it
+    // has (the test KJV ends at Genesis 1:3).
+    let ws = &h.shell.session().workspace;
+    let at = |t: obs_engine::TabId| ws.tab(t).and_then(|t| t.history.current());
+    let genesis = |c, v| {
+        Some(obs_scripture::Verse::new(
+            obs_scripture::Book::Genesis,
+            c,
+            v,
+        ))
+    };
+    let timeline = ws.focused().unwrap();
+    assert_eq!(
+        at(timeline),
+        genesis(11, 26),
+        "the Event's Passage did not open"
+    );
+    assert_eq!(
+        at(kjv),
+        genesis(1, 3),
+        "the Bible did not follow from Genesis 1:1"
+    );
+
+    tab_to(&mut h, "Lifespan: Abraham, 1996–1821 BC");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    settle(&mut h);
+    assert_eq!(focused_kind(&h), Some(TabKind::Guide(Guide::Factbook)));
+    let ws = &h.shell.session().workspace;
+    assert_eq!(
+        ws.tab(ws.focused().unwrap())
+            .unwrap()
+            .entry_history
+            .current(),
+        Some(obs_model::Key::Headword("Abraham@Gen.11.26-1Pe".into()))
+    );
+    close_tab(&mut h, &TabKind::Guide(Guide::Factbook));
 }
 
 /// Press Tab in the floating OS window `w` until the widget named `name` has its keyboard, and

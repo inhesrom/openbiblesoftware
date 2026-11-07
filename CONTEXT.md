@@ -107,7 +107,7 @@ _Avoid_: Topical Bible (as the kind), Concordance, Topic list
 A Resource made of Cross-references.
 
 **People & places index**:
-A Resource that identifies people and places and lists the Passages that mention them. Its places may carry Place locations (the Starter library's OpenBible.info geocoding does, under TIPNR's ids, so the two indexes describe one place, not two).
+A Resource that identifies people and places and lists the Passages that mention them. Its places may carry Place locations (the Starter library's OpenBible.info geocoding does, under TIPNR's ids, so the two indexes describe one place, not two). It may also carry the Eras, Lifespans and Events the Timeline shows (the Starter library's Theographic timeline does, naming people and places by TIPNR's ids).
 
 **Place location**:
 A modern location a place of the Bible has been identified with, with its coordinates and the Confidence of that identification. A place may have several (Eden has many tentative ones) or none (its site is unknown); the most confident is where the Atlas draws it.
@@ -260,7 +260,7 @@ One open thing in a Panel: a Resource, a Guide, or a Tool.
 _Avoid_: View, Document
 
 **Tool**:
-A Tab that is neither a Resource nor a Guide. In v0.1 the Tools are Text Comparison, Word Info, Search, and Notes; Cross-references, Favorites, History, Reading plans and the Atlas came later.
+A Tab that is neither a Resource nor a Guide. In v0.1 the Tools are Text Comparison, Word Info, Search, and Notes; Cross-references, Favorites, History, Reading plans, the Atlas and the Timeline came later.
 _Avoid_: Utility, Widget
 
 **Word Info**:
@@ -274,6 +274,22 @@ _Avoid_: Compare, Diff view
 **Atlas**:
 The Tool that maps the places a Passage names, on a base map built into the app (no tiles, no network). It follows its Link set; a single Verse widens to its chapter, so a Bible at Acts 13:14 maps all of Acts 13. Each place is drawn at its most confident Place location, labelled, and listed beside the map with its Confidence and the Verses that name it; a place no index locates is listed as not on the map. Drag pans, the wheel zooms, Find a place… finds any located place, and clicking a place opens its Factbook.
 _Avoid_: Map view, Bible map, Atlas Resource
+
+**Timeline**:
+The Tool that shows biblical history on a zoomable horizontal axis: the Eras as a band of named periods, then Lifespans, then Events, each at its dates as the index gives them. It follows its Link set: the Events the Passage tells are emphasised, with the Lifespans of the people they name, and the view centres on the one it tells most of; a Verse no Event tells widens to its chapter. Clicking an Event opens its Passage (its Link set moves there, or the ★ Bible opens at it), clicking a Lifespan opens the person's Factbook, clicking an Era shows all of it. Dates say how sure they are: "c. 2246 BC" where the source marks a date approximate, ranges for what lasts ("1055–1015 BC"), and a day only where the source gives one.
+_Avoid_: Chronology (as the Tool's name), Time chart, History view
+
+**Era**:
+A named period of the biblical story on the Timeline (the Patriarchs, the United Kingdom, the Exile), dated from the Events of the same chronology so the two agree.
+_Avoid_: Period, Age, Epoch
+
+**Lifespan**:
+One person's life on the Timeline, from birth to death, as a bar that opens their Factbook.
+_Avoid_: Life, Lifetime (as the record's name)
+
+**Event** (on the Timeline):
+Something that happened, on a day, in a year or over years (a reign, a journey), with the people and places it names and the Passages that tell it.
+_Avoid_: Incident, Happening
 
 **Current location**:
 The Key that a Tab is showing right now.
@@ -323,6 +339,18 @@ _Avoid_: Ribbon, Toolbar menu, Pane (for its drop-down)
 The bar holding the Launchers. It sits at the Top of the window (in the menu bar) by default, or at the Bottom, Left or Right: its Toolbar position, chosen in View → Toolbar position, by right-clicking it, or by dragging its grip to that edge. At the Left and Right it shows icons only, with the labels in the tooltips. Customize toolbar… shows or hides each Launcher, orders them, and picks icons and labels, icons only or labels only; a Launcher with no room in a small window goes into its » button. With Auto-hide it is drawn over the Workspace only while the pointer is at its window edge or Alt is held. A hidden Launcher still opens from its shortcut and the Command box. All of this is a preference in the User database, never part of a Layout.
 _Avoid_: Ribbon, Dock, Menu bar (for the toolbar)
 
+**Keyboard shortcut**:
+A key that runs a command, or does something to the reading-pane selection (a Selection key). Each has a default key; Help → Keyboard shortcuts lists them all, grouped by menu and searchable, and there the user clicks one to record a new key, Clears it or Resets it to its default (Reset all restores every default). A key another Keyboard shortcut already has is not saved until the user swaps the two keys or cancels. Esc, Enter and Tab are never Keyboard shortcuts, and a key needs Ctrl or Alt unless it is a function key. Ctrl means Cmd on macOS. The user's own keys are a preference in the User database and apply at once.
+_Avoid_: Hotkey, Key map, Accelerator, Key binding (in the UI)
+
+**Settings**:
+The Tab (Ctrl+, or View → Settings) where every preference is in one place, under Text and fonts, Interface size, Theme and Page tone, Reading layout defaults, Toolbar, Keyboard shortcuts (the Keyboard shortcuts list itself), Library folders and downloads, Search, and Privacy and data. Its header box searches the Settings by their names, sections, plain words ("zoom", "sepia") and choices. A change there is made by the same command as from the View menu, the toolbar, Home or Search, so it applies at once; each Setting's Reset link puts its default back. Settings is not a separate store: the preferences stay in the User database.
+_Avoid_: Preferences (as the Tab's name), Options, Program settings, Settings file
+
+**Selection key**:
+A Keyboard shortcut that acts on the selection in a reading pane: Note (Ctrl+Shift+N) and the first nine Highlight styles of the active Highlight palette, in its order (Ctrl+1…9), by default. It is listed under Selection in Help → Keyboard shortcuts.
+_Avoid_: Annotation key
+
 **Built-in Layout**:
 One of the Layouts that come with the app: "Bible + Commentary", "Word study desk", "Parallel Bibles" and "Reading only". It is made from the library's Preferred order when it is loaded, at the Passage shown then, and cannot be renamed or deleted. One that needs a Resource the library lacks says so instead.
 _Avoid_: Preset, Template
@@ -330,6 +358,14 @@ _Avoid_: Preset, Template
 **Last session**:
 The Workspace as the user left it, restored automatically at the next launch. It is not a Layout.
 _Avoid_: Autosave layout
+
+**Home**:
+The Tab the app opens on at its first launch, and from the Home button beside Today's reading (Alt+H). Its cards are Today's reading, Continue where you left off (the newest Visit), History and Favorites, the Verse of the day, Quick start (Passage Guide, Word Study, Get Resources, Import) and Your library (how many Resources of each Resource type, with Get Resources for an empty one, and how much of the Starter library is there); each row opens its place with one click. The cards are reordered and hidden like a Guide's sections, and that **Home arrangement** is kept in the User database. With **Open Home at launch** on, Home opens on top of the Last session at every launch. It has no Current location, so it is never a Visit or a Favorite.
+_Avoid_: Dashboard, Start page, Welcome screen
+
+**Verse of the day**:
+One Passage a day from the app's own short list of well-known Passages, the same all day and the next in the list the next day, shown on Home in the ★ Bible; clicking it reads it there.
+_Avoid_: Daily verse, Devotional
 
 **Find bar**:
 The bar Ctrl+F opens under a Resource or Text Comparison Tab's header (also the Tab's ⋯ menu, Find…) to find words in that Resource only: every match in the whole Resource (or every row) is marked, the count reads "12 of 48", Enter / Shift+Enter (▼ ▲) move from match to match, scrolling to each, and Esc closes it and clears the marks. It matches as Search does (case, accents, breathings, Hebrew points and final forms ignored), with Match case, Whole word and Ignore diacritics (on by default; then, unless Match case is on, Latin letters also find Greek and Hebrew words by transliteration, "agape" → ἀγάπη). Its marks are an overlay, not Highlights, and are never saved. Search all Resources (Alt+Enter) runs the same words in the Search Tool.
@@ -378,7 +414,7 @@ The Passages of a Reading plan due on one day and ticked off together. A day may
 _Avoid_: Portion, Assignment, Lesson
 
 **Today's reading**:
-The toolbar button showing the Readings due today in the first Reading plan with any, and opening the first unread one in the plan's Bible with one click.
+The toolbar button showing the Readings due today in the first Reading plan with any, and opening the first unread one in the plan's Bible with one click. Home's Today's reading card lists the Readings due today in each Reading plan, each one click from the plan's Bible.
 _Avoid_: Daily verse, Devotion
 
 **Behind**:
@@ -442,8 +478,12 @@ An Annotation that shows a span of text in a Highlight style. It has exactly one
 _Avoid_: Mark, Markup
 
 **Highlight style**:
-One look from the small fixed set used to render a Highlight.
-_Avoid_: Color, Palette
+A look a Highlight is drawn in: a colour with a look (background, underline, box or text colour) and an optional name such as "Promises", in one Highlight palette. Its colour in each Page tone is derived from that colour so that text stays readable there (WCAG AA), unless the user adjusted it for that tone; an adjustment that is not readable is refused. A Highlight stores only its style; deleting a style that Highlights use moves them to a style the user chooses, and undo brings both back. The five built-in styles (Yellow, Green, Blue, Pink and Red underline) start the Standard palette and can be edited like any other.
+_Avoid_: Color, Tag, Label
+
+**Highlight palette**:
+A named, ordered set of Highlight styles, made, renamed, deleted, exported and imported (as a small JSON file) in View → Highlight styles…. One is active: the selection toolbar, the right-click menu and Ctrl+1…9 offer its styles in its order. A Highlight in a style of another palette still shows. The first palette is **Standard**, with the five built-in styles.
+_Avoid_: Theme, Colour set
 
 **Notebook**:
 A named container for Annotations. Every Annotation belongs to exactly one Notebook, and a default Notebook exists.
@@ -478,5 +518,5 @@ A Markdown or HTML file made from a Notebook (or all of them) or from the Notes 
 _Avoid_: Backup, Report, Notes dump
 
 **User database**:
-The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, Saved searches and the Search history, the Command box's recent entries, Copy presets, Collections, Resource tags and preferences. Resources and Search indexes are never part of it.
+The single local store of everything the user has made or chosen: Notebooks, Annotations, Layouts, Last session, Preferred order, Guide arrangements, Removed Starter Resources, Favorites, History, Reading plans, the Home arrangement, Saved searches and the Search history, the Command box's recent entries, Copy presets, Collections, Resource tags, Highlight styles and palettes, the user's own Keyboard shortcuts and preferences. Resources and Search indexes are never part of it.
 _Avoid_: Profile, User library, Settings file

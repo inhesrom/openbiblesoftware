@@ -6,9 +6,10 @@
 //! longer headwords and synonyms from the topical indexes) until one topic is chosen.
 //! Everything shown is engine data ([`obs_engine::topic_guide`]); this file only draws it.
 
-use egui::{Rect, RichText, Sense, Stroke, Ui, pos2};
+use egui::{Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
 use obs_engine::{
-    ArticleLink, CitedPassage, Guide, GuideSection, TabId, TopicChoice, TopicalEntry, WordStatus,
+    ArticleLink, CitedPassage, Guide, GuideSection, Subtopic, TabId, TopicChoice, TopicalEntry,
+    WordStatus,
 };
 use obs_model::{Key, ResourceType};
 use obs_scripture::{Passage, RefStyle, Standard, format_passage};
@@ -52,6 +53,14 @@ pub(super) struct SubtopicId {
 }
 
 impl State {
+    /// Forget every Topic Guide's subtopic row heights, measured in faces no longer in use
+    /// (the interface font changed): rows out of view are measured again as they come in.
+    pub(super) fn forget_topic_row_heights(&mut self) {
+        for t in self.tabs.values_mut() {
+            t.topic_rows.clear();
+        }
+    }
+
     pub(super) fn topic_guide_body(&mut self, ui: &mut Ui, tab: TabId) {
         if let Some(text) = self.session.topic_guides.choosing(tab).map(str::to_string) {
             self.topic_chooser_page(ui, tab, &text);
@@ -75,6 +84,7 @@ impl State {
         {
             t.topic_previews_for = Some(topic.clone());
             t.topic_previews.clear();
+            t.topic_rows.clear();
             t.guide_expanded.clear();
         }
         let title = match self.session.topic_directory() {
@@ -258,62 +268,26 @@ impl State {
                     .tabs
                     .get(&tab)
                     .is_some_and(|t| t.topic_previews.contains(&id));
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    ui.add_space(16.0 * f32::from(sub.level.saturating_sub(1)));
-                    if !sub.passages.is_empty() {
-                        let arrow = if open { "▼" } else { "▶" };
-                        if ui
-                            .small_button(arrow)
-                            .on_hover_text(if open {
-                                "Hide the Passages' text"
-                            } else {
-                                "Show the Passages' text here"
-                            })
-                            .clicked()
-                        {
-                            action = Some(TopicAction::TogglePreview(id.clone()));
-                        }
+                // A long topic shown in full has thousands of Passage links: a row out of view
+                // keeps the height it had when last drawn at this width, without being laid
+                // out (#183).
+                let width = ui.available_width();
+                let height = self
+                    .tabs
+                    .get(&tab)
+                    .and_then(|t| t.topic_rows.get(&id))
+                    .filter(|(w, _)| *w == width)
+                    .map(|(_, h)| *h);
+                if let Some(h) = height
+                    && !ui.is_rect_visible(Rect::from_min_size(ui.cursor().min, vec2(width, h)))
+                {
+                    ui.allocate_space(vec2(width, h));
+                } else {
+                    let row = self.subtopic_row(ui, sub, open, &id, new_tab, &mut action);
+                    if let Some(t) = self.tabs.get_mut(&tab) {
+                        t.topic_rows.insert(id.clone(), (width, row.height()));
                     }
-                    if !sub.label.is_empty() {
-                        let label = RichText::new(&sub.label).color(theme::c().ink);
-                        ui.label(if sub.level == 1 {
-                            label.strong()
-                        } else {
-                            label
-                        });
-                    }
-                    for p in &sub.passages {
-                        if let Some(a) = self.passage_link(ui, *p, new_tab) {
-                            action = Some(a);
-                        }
-                    }
-                    if let Some(via) = &sub.via {
-                        ui.label(
-                            RichText::new(format!("(from {via})"))
-                                .small()
-                                .color(theme::c().muted),
-                        );
-                    }
-                    if !sub.see.is_empty() {
-                        ui.label(RichText::new("see").italics().color(theme::c().muted));
-                        for target in &sub.see {
-                            let topic = see_topic(target);
-                            if super::unbroken_link(
-                                ui,
-                                obs_engine::topic_guide::display_topic(target),
-                            )
-                            .on_hover_text(format!(
-                                "Open the Topic Guide on {topic} · Ctrl/Cmd-click opens a new \
-                                     Tab"
-                            ))
-                            .clicked()
-                            {
-                                action = Some(TopicAction::Topic(topic, new_tab));
-                            }
-                        }
-                    }
-                });
+                }
                 if open {
                     for p in sub.passages.iter().take(PREVIEWS_SHOWN) {
                         ui.horizontal(|ui| {
@@ -354,6 +328,74 @@ impl State {
             }
         }
         action
+    }
+
+    /// One subtopic row: its preview toggle, label, Passage links and See topics. Returns
+    /// where it was drawn.
+    fn subtopic_row(
+        &mut self,
+        ui: &mut Ui,
+        sub: &Subtopic,
+        open: bool,
+        id: &SubtopicId,
+        new_tab: bool,
+        action: &mut Option<TopicAction>,
+    ) -> Rect {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            ui.add_space(16.0 * f32::from(sub.level.saturating_sub(1)));
+            if !sub.passages.is_empty() {
+                let arrow = if open { "▼" } else { "▶" };
+                if ui
+                    .small_button(arrow)
+                    .on_hover_text(if open {
+                        "Hide the Passages' text"
+                    } else {
+                        "Show the Passages' text here"
+                    })
+                    .clicked()
+                {
+                    *action = Some(TopicAction::TogglePreview(id.clone()));
+                }
+            }
+            if !sub.label.is_empty() {
+                let label = RichText::new(&sub.label).color(theme::c().ink);
+                ui.label(if sub.level == 1 {
+                    label.strong()
+                } else {
+                    label
+                });
+            }
+            for p in &sub.passages {
+                if let Some(a) = self.passage_link(ui, *p, new_tab) {
+                    *action = Some(a);
+                }
+            }
+            if let Some(via) = &sub.via {
+                ui.label(
+                    RichText::new(format!("(from {via})"))
+                        .small()
+                        .color(theme::c().muted),
+                );
+            }
+            if !sub.see.is_empty() {
+                ui.label(RichText::new("see").italics().color(theme::c().muted));
+                for target in &sub.see {
+                    let topic = see_topic(target);
+                    if super::unbroken_link(ui, obs_engine::topic_guide::display_topic(target))
+                        .on_hover_text(format!(
+                            "Open the Topic Guide on {topic} · Ctrl/Cmd-click opens a new \
+                             Tab"
+                        ))
+                        .clicked()
+                    {
+                        *action = Some(TopicAction::Topic(topic, new_tab));
+                    }
+                }
+            }
+        })
+        .response
+        .rect
     }
 
     /// Key Passages: the most cited first, each with how often and its first line of text.

@@ -59,11 +59,20 @@ pub mod guide;
 mod guide_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod guide_words_tests;
+pub mod highlight_styles;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod highlight_styles_tests;
+pub mod home;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod home_tests;
 pub mod import;
 pub mod interlinear;
 #[cfg(test)]
 mod interlinear_tests;
 pub mod jobs;
+pub mod key_bindings;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod key_bindings_tests;
 pub mod key_words;
 mod library;
 mod library_commands;
@@ -108,12 +117,18 @@ pub mod search_views;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod search_views_tests;
 mod session;
+pub mod settings;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod settings_tests;
 pub mod starter;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod starter_tests;
 #[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub mod testing;
+pub mod timeline;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod timeline_tests;
 pub mod toolbar;
 pub mod toolbar_settings;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -137,8 +152,8 @@ pub use obs_formats::sword_repo;
 mod workspace_commands;
 
 pub use annotations::{
-    Anchor, Annotation, Change, Content, HighlightStyle, NoteTarget, Notebook, NotebookDeletion,
-    Row, Selection, TextPos, TextRange, UndoHistory, UndoStep,
+    Anchor, Annotation, Change, Content, NoteTarget, Notebook, NotebookDeletion, Row, Selection,
+    TextPos, TextRange, UndoHistory, UndoStep,
 };
 pub use appearance::{
     Appearance, FontChoice, FontChoices, FontSlot, InterfaceSize, PageTone, Theme,
@@ -174,6 +189,16 @@ pub use guide::{
     CommentaryRow, GuideArrangement, GuideSection, Guides, LibrarySections, SectionData,
     SectionPlace, SectionSource, SectionStatus,
 };
+pub use highlight_styles::{
+    ACTIVE_PALETTE_PREF, HighlightLook, HighlightPalette, HighlightStyle, PaletteFile,
+    PaletteFileStyle, Rgb, STANDARD_PALETTE_ID, STYLE_SLOTS, StyleAppearance, StyleEdit, StyleTone,
+    style_label,
+};
+pub use home::{
+    CardPlace, HOME_PREF, HomeCard, HomePlan, HomeReading, HomeSettings, LibraryCount,
+    QUICK_STARTS, QuickStart, StarterSummary, VERSES_OF_THE_DAY, VerseOfTheDay,
+    verse_of_the_day_on,
+};
 pub use import::{
     DEFERRED_INDEX, ImportIndexStatus, ImportIndexer, ImportPhase, ImportRecord, ImportReport,
     ImportSource, Imports, OpenOrigin, RepoOrigin, UNAVAILABLE_INDEX,
@@ -184,6 +209,7 @@ pub use interlinear::{
 pub use jobs::{
     Job, JobContext, JobEvent, JobEventKind, JobId, JobOutput, JobQueue, Step, sword_installer,
 };
+pub use key_bindings::{KeyBinding, KeyConflict, SELECTION_KEYS, SelectionAction, SelectionKey};
 pub use key_words::{KeyWord, KeyWords};
 pub use library::{
     Library, LibraryEntry, LibraryFilter, STARTER_PREFERRED_ORDER, default_library_dir,
@@ -221,6 +247,11 @@ pub use search_views::{
     ResultsView, SearchAnalysis, chart_bars,
 };
 pub use session::{JobMode, Session};
+pub use settings::{
+    SETTINGS, Setting, SettingKind, SettingsSection, setting_by_id, setting_matches,
+    settings_matching,
+};
+pub use timeline::{Emphasis, Timeline, TimelineEntry, TimelineView};
 pub use toolbar::{
     BUILTIN_LAYOUTS, Launcher, LayoutCard, LayoutThumbnail, LibraryLauncherRow,
     LibraryLauncherSection,

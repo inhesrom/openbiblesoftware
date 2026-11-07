@@ -80,6 +80,7 @@ pub const MENUS: &[Menu] = &[
             C("tool.history"),
             C("tool.reading_plans"),
             C("tool.atlas"),
+            C("tool.timeline"),
             Separator,
             C("tool.copy_verses"),
         ],
@@ -97,6 +98,8 @@ pub const MENUS: &[Menu] = &[
     Menu {
         title: "View",
         items: &[
+            C("app.settings"),
+            Separator,
             MenuItem::Choice {
                 title: "Theme",
                 command: "view.theme",
@@ -125,6 +128,7 @@ pub const MENUS: &[Menu] = &[
             C("view.fonts"),
             Separator,
             C("view.highlights"),
+            C("view.highlight_styles"),
             MenuItem::Notebooks,
             Separator,
             MenuItem::Choice {
@@ -137,7 +141,12 @@ pub const MENUS: &[Menu] = &[
     },
     Menu {
         title: "Help",
-        items: &[C("help.about"), C("help.credits"), C("app.commands")],
+        items: &[
+            C("help.about"),
+            C("help.credits"),
+            C("help.keyboard_shortcuts"),
+            C("app.commands"),
+        ],
     },
 ];
 
@@ -470,6 +479,21 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
             }
         },
     },
+    CommandSpec {
+        id: "tool.timeline",
+        label: "Timeline",
+        shortcut: None,
+        params: AT_PASSAGE,
+        enabled: always,
+        run: |s, p| {
+            const ID: &str = "tool.timeline";
+            let kind = TabKind::Tool(Tool::Timeline);
+            match open_at_passage(s, &p, kind.clone(), ID)? {
+                Some(out) => Ok(out),
+                None => open(s, p, kind),
+            }
+        },
+    },
     open_cmd("tool.favorites", "Favorites", None, |s, p| {
         open(s, p, TabKind::Tool(Tool::Favorites))
     }),
@@ -612,6 +636,16 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         s.workspace.push_effect(Effect::ShowFonts);
         Ok(Value::Null)
     }),
+    simple(
+        "view.highlight_styles",
+        "Highlight styles…",
+        None,
+        |s| s.user.is_some(),
+        |s, _| {
+            s.workspace.push_effect(Effect::ShowHighlightStyles);
+            Ok(Value::Null)
+        },
+    ),
     CommandSpec {
         id: "view.font",
         label: "Choose a font",
@@ -655,6 +689,16 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     open_cmd("help.credits", "Credits", None, |s, p| {
         open(s, p, TabKind::Credits)
     }),
+    // Ctrl+, (Cmd+, on macOS), where desktop apps keep their settings.
+    open_cmd("app.settings", "Settings", Some("Ctrl+Comma"), |s, p| {
+        open(s, p, TabKind::Settings)
+    }),
+    open_cmd(
+        "help.keyboard_shortcuts",
+        "Keyboard shortcuts",
+        None,
+        |s, p| open(s, p, TabKind::KeyboardShortcuts),
+    ),
     CommandSpec {
         id: "tab.go",
         label: "Go to Key",
@@ -856,6 +900,9 @@ pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
         TabKind::GetBibles => GET_RESOURCES_TITLE.into(),
         TabKind::StarterLibrary => "Starter library".into(),
         TabKind::Credits => "Credits".into(),
+        TabKind::Home => "Home".into(),
+        TabKind::KeyboardShortcuts => "Keyboard shortcuts".into(),
+        TabKind::Settings => "Settings".into(),
         TabKind::Resource(id) => s
             .library
             .get(id)

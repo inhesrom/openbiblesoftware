@@ -160,15 +160,13 @@ impl Shell {
     /// A Launcher's tooltip: what it offers and its shortcut, after its name when the button
     /// does not show it.
     fn launcher_tip(&self, which: Launcher, labelled: bool) -> String {
-        let shortcut = (self.st.session.commands().get(which.command()))
-            .and_then(|c| c.shortcut)
-            .unwrap_or_default();
         let hint = super::toolbar::hint(which);
-        if labelled {
-            format!("{hint} ({shortcut})")
+        let text = if labelled {
+            hint.to_string()
         } else {
-            format!("{}: {hint} ({shortcut})", which.title())
-        }
+            format!("{}: {hint}", which.title())
+        };
+        super::with_key(&self.st.session, &text, which.command())
     }
 
     /// The window under the menu bar, where the Workspace and the docked toolbars are.

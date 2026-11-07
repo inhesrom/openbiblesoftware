@@ -870,6 +870,45 @@ pub fn openbible_geo(tipnr: Option<&obs_model::Resource>) -> obs_model::Resource
     .0
 }
 
+/// TIPNR's records of the people and places the Timeline excerpt names (David, Goliath,
+/// Abraham, Solomon, Jerusalem…; STEPBible, CC BY) as a People & places index (#185).
+pub fn tipnr_timeline() -> obs_model::Resource {
+    let text = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../formats/tests/assets/tipnr/tipnr-timeline-excerpt.txt"),
+    )
+    .unwrap();
+    let options = obs_formats::DatasetOptions {
+        resource_id: "tipnr".into(),
+        title: "Translators Individualised Proper Names".into(),
+        abbreviation: "TIPNR".into(),
+        ..Default::default()
+    };
+    obs_formats::import_tipnr(&text, &options).unwrap().0
+}
+
+/// The Theographic excerpt of the format tests (CC BY-SA) as a People & places index carrying
+/// the Timeline's Events dataset, its people and places matched to `tipnr` when given (#185).
+pub fn theographic(tipnr: Option<&obs_model::Resource>) -> obs_model::Resource {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../formats/tests/assets/theographic");
+    let read = |name: &str| std::fs::read_to_string(dir.join(name)).unwrap();
+    let options = obs_formats::DatasetOptions {
+        resource_id: "theographic".into(),
+        title: "Theographic Bible Timeline".into(),
+        abbreviation: "Theographic".into(),
+        ..Default::default()
+    };
+    obs_formats::import_theographic_events(
+        &read("Events-excerpt.csv"),
+        &read("events-excerpt.json"),
+        &read("People-excerpt.csv"),
+        tipnr,
+        &options,
+    )
+    .unwrap()
+    .0
+}
+
 /// Easton's or Smith's Bible Dictionary, reduced to the public-domain Abraham and Abram
 /// entries of the #44 study fixtures (with the converter's Abram → Abraham alias).
 pub fn dictionary(id: &str) -> obs_model::Resource {
@@ -1939,10 +1978,11 @@ pub fn tagnt_grace() -> obs_model::Resource {
     r
 }
 
-/// A User database whose preference writes, its next few History Visit writes, or its next
-/// few annotation change lists fail ("disk full"); everything else is the real `store`. For
-/// checking that a failed save is reported, not hidden, that History keeps what it could not
-/// write, and that undo keeps a step it could not write.
+/// A User database whose preference writes, its next few History Visit writes, its next
+/// few annotation change lists, or its Notebook reads fail ("disk full", "disk I/O error");
+/// everything else is the real `store`. For checking that a failed save is reported, not
+/// hidden, that History keeps what it could not write, that undo keeps a step it could not
+/// write, and that a failed read is not taken for a default.
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug)]
 pub struct WritesFail {
@@ -1954,6 +1994,8 @@ pub struct WritesFail {
     /// How many annotation change lists still fail before they work again; shared, so a
     /// test can set it after the Session owns the store.
     pub changes: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    /// Every Notebook read fails.
+    pub notebooks: bool,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1965,6 +2007,7 @@ impl WritesFail {
             preferences: true,
             visits: std::cell::Cell::new(0),
             changes: std::sync::Arc::default(),
+            notebooks: false,
         }
     }
 
@@ -1975,6 +2018,7 @@ impl WritesFail {
             preferences: false,
             visits: std::cell::Cell::new(failures),
             changes: std::sync::Arc::default(),
+            notebooks: false,
         }
     }
 
@@ -1987,9 +2031,21 @@ impl WritesFail {
             preferences: false,
             visits: std::cell::Cell::new(0),
             changes: std::sync::Arc::default(),
+            notebooks: false,
         };
         let failures = std::sync::Arc::clone(&s.changes);
         (s, failures)
+    }
+
+    /// Every Notebook read fails.
+    pub fn notebook_reads(store: obs_store::UserStore) -> Self {
+        Self {
+            store,
+            preferences: false,
+            visits: std::cell::Cell::new(0),
+            changes: std::sync::Arc::default(),
+            notebooks: true,
+        }
     }
 }
 
@@ -2089,6 +2145,9 @@ impl crate::UserData for WritesFail {
         crate::UserData::remove_reading_plan(&self.store, id)
     }
     fn notebooks(&self) -> Result<Vec<obs_store::Notebook>, String> {
+        if self.notebooks {
+            return Err("disk I/O error".into());
+        }
         crate::UserData::notebooks(&self.store)
     }
     fn notebook_counts(&self) -> Result<Vec<(String, u64)>, String> {
@@ -2116,6 +2175,15 @@ impl crate::UserData for WritesFail {
             ));
         }
         crate::UserData::apply_changes(&self.store, changes)
+    }
+    fn highlight_palettes(&self) -> Result<Vec<obs_store::HighlightPalette>, String> {
+        crate::UserData::highlight_palettes(&self.store)
+    }
+    fn highlight_styles(&self) -> Result<Vec<obs_store::HighlightStyle>, String> {
+        crate::UserData::highlight_styles(&self.store)
+    }
+    fn highlight_style_uses(&self) -> Result<Vec<(String, u64)>, String> {
+        crate::UserData::highlight_style_uses(&self.store)
     }
     fn annotation_dump(&self) -> Result<String, String> {
         crate::UserData::annotation_dump(&self.store)

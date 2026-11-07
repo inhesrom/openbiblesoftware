@@ -772,39 +772,6 @@ impl Session {
             .or_else(|| plans.iter().find(|p| !p.is_finished()))
     }
 
-    /// Show a Reading's Passage in the plan's Bible: its most recent Tab moves there (unless
-    /// `split`), else a new Tab opens. A Bible no longer in the library gives way to any Bible
-    /// Tab, else the ★ Bible. Returns how (`tab` or `new`) and the Tab.
-    fn open_reading(
-        &mut self,
-        passage: Passage,
-        bible: &str,
-        split: bool,
-    ) -> Result<(&'static str, crate::workspace::TabId), String> {
-        if self.library.get(bible).is_none() {
-            return self.show_passage(passage, None, split);
-        }
-        let kind = crate::workspace::TabKind::Resource(bible.to_string());
-        if !split && let Some(t) = self.workspace.most_recent(|t| t.kind == kind) {
-            self.workspace.focus(t);
-            self.workspace.navigate_standard(t, passage.start());
-            return Ok(("tab", t));
-        }
-        let out = self
-            .run("resource.open", &json!({ "id": bible, "split": split }))
-            .map_err(|e| e.to_string())?;
-        let t = out["tab"]
-            .as_u64()
-            .map(crate::workspace::TabId)
-            .ok_or("no Tab opened")?;
-        // The new Tab's Verse map is known once the UI has loaded it.
-        self.workspace.push_effect(Effect::NavigateStandard {
-            tab: t,
-            verse: passage.start(),
-        });
-        Ok(("new", t))
-    }
-
     fn create_plan(&mut self, p: &Params<'_>) -> Result<Value, String> {
         let template = p.str("template").unwrap_or_default();
         let custom;
@@ -1099,7 +1066,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
             let (label, position) = (reading.label.clone(), reading.position);
             let bible = plan.bible_id.clone();
             let (how, tab) = s
-                .open_reading(passage, &bible, p.bool("split").unwrap_or(false))
+                .show_passage_in(passage, &bible, p.bool("split").unwrap_or(false))
                 .map_err(|e| failed(CMD, e))?;
             Ok(json!({ "tab": tab.0, "how": how, "label": label, "position": position }))
         },

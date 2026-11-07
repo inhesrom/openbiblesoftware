@@ -280,7 +280,7 @@ fn kjv_selection(h: &Harness, verse: Verse, words: Option<&str>) -> serde_json::
 fn a_kjv_highlight_of_john_3_16_shows_in_web_bsb_and_tagnt() {
     let dir = folder("jn316");
     let mut h = launch_with(&dir, &four_bibles(), "Jn 3:15");
-    let yellow = h.shell.st.palette.highlights[0];
+    let yellow = h.shell.st.palette.built_in_color("yellow");
     for t in ["KJV", "WEB", "BSB", "TAGNT"] {
         assert!(painted_in(&h, t, yellow).is_empty(), "{t}");
     }
@@ -316,7 +316,7 @@ fn a_kjv_highlight_of_john_3_16_shows_in_web_bsb_and_tagnt() {
     // The whole of Jn 3:16, and nothing else, in all four Bibles.
     for t in ["KJV", "WEB", "BSB", "TAGNT"] {
         assert_verse_highlighted(&h, t, jn(16), yellow);
-        assert!(painted_in(&h, t, h.shell.st.palette.marks[0]).is_empty());
+        assert!(painted_in(&h, t, h.shell.st.palette.built_in_mark("yellow")).is_empty());
     }
 
     // View → Show Highlights hides them everywhere, and shows them again.
@@ -376,7 +376,7 @@ fn a_partial_verse_highlight_shows_only_a_margin_mark_in_other_bibles() {
             .unwrap()
             .whole_verses
     );
-    let green = palette.highlights[1];
+    let green = palette.built_in_color("green");
     // The KJV: exactly the words, no margin mark.
     let kjv = painted_in(&h, "KJV", green);
     let words = kjv.iter().copied().reduce(|a, b| a.union(b)).unwrap();
@@ -388,11 +388,11 @@ fn a_partial_verse_highlight_shows_only_a_margin_mark_in_other_bibles() {
             && words.bottom() <= first_line.bottom() + 0.1,
         "{kjv:?} vs {first_line:?}"
     );
-    assert!(painted_in(&h, "KJV", palette.marks[1]).is_empty());
+    assert!(painted_in(&h, "KJV", palette.built_in_mark("green")).is_empty());
     // The others: no green background, one green margin mark beside the 16.
     for t in ["WEB", "BSB", "TAGNT"] {
         assert!(painted_in(&h, t, green).is_empty(), "{t} has a background");
-        assert_margin_mark(&h, t, jn(16), palette.marks[1]);
+        assert_margin_mark(&h, t, jn(16), palette.built_in_mark("green"));
     }
 
     // A Note made in the KJV: its marker at the end of its words there, at the verse number
@@ -404,7 +404,7 @@ fn a_partial_verse_highlight_shows_only_a_margin_mark_in_other_bibles() {
     for t in ["WEB", "BSB", "TAGNT"] {
         let markers = painted_in(&h, t, palette.note_marker);
         assert_eq!(markers.len(), 1, "{t}: {markers:?}");
-        let mark = painted_in(&h, t, palette.marks[1])[0];
+        let mark = painted_in(&h, t, palette.built_in_mark("green"))[0];
         assert!(
             markers[0].right() <= mark.left(),
             "{t}: {markers:?} vs {mark:?}"
@@ -422,9 +422,12 @@ fn a_partial_verse_highlight_shows_only_a_margin_mark_in_other_bibles() {
     h.frames(2);
     let dark = crate::Palette::DARK;
     for t in ["WEB", "BSB", "TAGNT"] {
-        assert_margin_mark(&h, t, jn(16), dark.marks[1]);
+        assert_margin_mark(&h, t, jn(16), dark.built_in_mark("green"));
     }
-    assert_eq!(painted_in(&h, "KJV", dark.highlights[1]).len(), kjv.len());
+    assert_eq!(
+        painted_in(&h, "KJV", dark.built_in_color("green")).len(),
+        kjv.len()
+    );
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -434,7 +437,7 @@ fn an_annotation_on_hebrew_numbered_ps_51_3_maps_to_standard_ps_51_1() {
     let dir = folder("ps51");
     let resources = vec![hebrew_numbered(), english("kjv", "KJV", JOHN_KJV)];
     let mut h = launch_with(&dir, &resources, "Ps 51:1");
-    let yellow = h.shell.st.palette.highlights[0];
+    let yellow = h.shell.st.palette.built_in_color("yellow");
     // Highlight Ps 51:3 as the Hebrew-numbered Bible numbers it, whole.
     let hp = h.tab_id("HPSA");
     let (unit, start) = view(&h, hp).doc.verse_position(ps(3)).unwrap();
@@ -468,7 +471,12 @@ fn an_annotation_on_hebrew_numbered_ps_51_3_maps_to_standard_ps_51_1() {
         Some(Passage::verse(ps(2)))
     );
     assert!(painted_in(&h, "HPSA", yellow).is_empty());
-    assert_margin_mark(&h, "HPSA", ps(4), h.shell.st.palette.marks[0]);
+    assert_margin_mark(
+        &h,
+        "HPSA",
+        ps(4),
+        h.shell.st.palette.built_in_mark("yellow"),
+    );
     // And a Note on the KJV's 51:1 shows at the Hebrew 51:3.
     h.shell.run("edit.undo", &json!({}));
     h.shell.run(
@@ -517,8 +525,8 @@ fn marks_in_a_paragraphed_bible_sit_on_the_verse_numbers_line() {
     );
     assert!(!anchor.text_range().unwrap().whole_verses);
     let palette = h.shell.st.palette;
-    let green = palette.marks[1];
-    assert!(painted_in(&h, "BSB", palette.highlights[1]).is_empty());
+    let green = palette.built_in_mark("green");
+    assert!(painted_in(&h, "BSB", palette.built_in_color("green")).is_empty());
     let marks = painted_in(&h, "BSB", green);
     assert_eq!(marks.len(), 2, "{marks:?}");
     let mut marks = marks;
@@ -616,8 +624,8 @@ fn marks_in_a_right_to_left_bible_stay_inside_the_pane() {
     );
     h.frames(2);
     let palette = h.shell.st.palette;
-    assert_margin_mark(&h, "HEB", gn(2), palette.marks[0]);
-    let mark = painted_in(&h, "HEB", palette.marks[0])[0];
+    assert_margin_mark(&h, "HEB", gn(2), palette.built_in_mark("yellow"));
+    let mark = painted_in(&h, "HEB", palette.built_in_mark("yellow"))[0];
     let markers = painted_in(&h, "HEB", palette.note_marker);
     assert_eq!(markers.len(), 1, "{markers:?}");
     assert_in_margin(&h, "HEB", gn(2), markers[0]);
@@ -657,14 +665,22 @@ fn text_range_anchors_show_only_in_their_resource() {
         id: "a".into(),
         notebook_id: "n".into(),
         content: Content::Highlight {
-            style: obs_engine::HighlightStyle::Blue,
+            style: "blue".into(),
         },
         anchor: Some(Anchor::TextRange { range }),
         created_at: 1,
         modified_at: 1,
     };
-    assert_eq!(crate::marks_for(&kjv, std::slice::from_ref(&a)).len(), 1);
-    assert!(crate::marks_for(&web, &[a]).is_empty());
+    assert_eq!(
+        crate::marks_for(
+            &kjv,
+            std::slice::from_ref(&a),
+            &crate::HighlightLooks::built_in()
+        )
+        .len(),
+        1
+    );
+    assert!(crate::marks_for(&web, &[a], &crate::HighlightLooks::built_in()).is_empty());
 }
 
 /// The Starter library: a KJV Highlight of Jn 3:16 shows over the whole Verse in the WEB,
@@ -721,7 +737,7 @@ fn starter_library_annotations_show_across_bibles() {
     let check = |id: &str, verse: Verse| {
         let doc = open(id);
         let t = std::time::Instant::now();
-        let marks = crate::marks_for(&doc, &annotations);
+        let marks = crate::marks_for(&doc, &annotations, &crate::HighlightLooks::built_in());
         let (unit, start) = doc.verse_position(verse).unwrap();
         let range = doc.verse_range_at(unit, start).unwrap();
         let hit = marks.iter().find(|m| {

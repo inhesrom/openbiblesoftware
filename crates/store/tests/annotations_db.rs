@@ -10,8 +10,8 @@ use obs_model::UnitId;
 use obs_scripture::{Book, Passage, Verse};
 use obs_store::annotation::{inverse, new_id};
 use obs_store::{
-    Anchor, Annotation, Change, Content, DEFAULT_NOTEBOOK_NAME, HighlightStyle, Notebook, Row,
-    StoreError, TextRange, USER_SCHEMA_VERSION, UserStore,
+    Anchor, Annotation, Change, Content, DEFAULT_NOTEBOOK_NAME, Notebook, Row, StoreError,
+    TextRange, USER_SCHEMA_VERSION, UserStore,
 };
 
 struct Dir(PathBuf);
@@ -81,7 +81,7 @@ fn highlight(notebook: &str, anchor: Anchor) -> Annotation {
         id: new_id(),
         notebook_id: notebook.into(),
         content: Content::Highlight {
-            style: HighlightStyle::Green,
+            style: "green".into(),
         },
         anchor: Some(anchor),
         created_at: 30,
@@ -748,20 +748,20 @@ fn the_v9_migration_refuses_text_ranges_that_cover_no_text_and_keeps_every_row()
     assert_eq!(db.annotation(&back.id).unwrap(), Some(back));
 }
 
-/// Migration 9 → 10 (#186, ADR 0010): Note text becomes Note formatting. A Note written as
+/// Migration 10 → 11 (#186, ADR 0010): Note text becomes Note formatting. A Note written as
 /// plain text whose lines would now read as formatting is escaped so it shows exactly as it
 /// did; every other Note, and every Note's change time, is untouched; `notes_fts` holds the
 /// words the Notes show.
 #[test]
-fn the_v10_migration_keeps_plain_text_notes_looking_as_they_did() {
-    let dir = Dir::new("migrate10");
+fn the_v11_migration_keeps_plain_text_notes_looking_as_they_did() {
+    let dir = Dir::new("migrate11");
     let plain = "# not a heading\n- nor a list\n1. nor this\n*stars* and a_b, [x](y)\n> no quote";
     let (ordinary, awkward) = {
-        let (v9, _) = UserStore::open_to(&dir.db(), 9).unwrap();
-        let nb = default_of(&v9).id;
+        let (v10, _) = UserStore::open_to(&dir.db(), 10).unwrap();
+        let nb = default_of(&v10).id;
         let ordinary = note(&nb, "Esau ran to meet him; compare Gen 32:24.", None);
         let awkward = note(&nb, plain, None);
-        v9.apply_changes(&[
+        v10.apply_changes(&[
             Change::insert(Row::Annotation(ordinary.clone())),
             Change::insert(Row::Annotation(awkward.clone())),
         ])
@@ -769,7 +769,7 @@ fn the_v10_migration_keeps_plain_text_notes_looking_as_they_did() {
         (ordinary, awkward)
     };
     let (db, report) = UserStore::open(&dir.db()).unwrap();
-    assert_eq!(report.found_version, 9);
+    assert_eq!(report.found_version, 10);
     assert!(report.migration_backup.unwrap().is_file());
     assert_eq!(db.schema_version().unwrap(), USER_SCHEMA_VERSION);
     // Untouched: it reads as plain text already.

@@ -104,6 +104,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::starter::COMMANDS)
         .chain(crate::compare::COMMANDS)
         .chain(crate::annotations::COMMANDS)
+        .chain(crate::highlight_styles::COMMANDS)
         .chain(crate::reanchor::COMMANDS)
         .chain(crate::notes::COMMANDS)
         .chain(crate::search::COMMANDS)
@@ -118,6 +119,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::word_sections::COMMANDS)
         .chain(crate::favorites::COMMANDS)
         .chain(crate::reading_plans::COMMANDS)
+        .chain(crate::home::COMMANDS)
         .chain(crate::lookups::COMMANDS)
         .chain(crate::command_box::COMMANDS)
         .chain(crate::copy_verses::COMMANDS)
@@ -126,6 +128,8 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::interlinear::COMMANDS)
         .chain(crate::contents::COMMANDS)
         .chain(crate::toolbar_settings::COMMANDS)
+        .chain(crate::key_bindings::COMMANDS)
+        .chain(crate::settings::COMMANDS)
     {
         // Ids in COMMANDS are unique (checked by a test), so registration cannot fail.
         let _ = r.register(*spec);
@@ -152,7 +156,8 @@ fn list_commands(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> 
             json!({
                 "id": c.id,
                 "label": c.label,
-                "shortcut": c.shortcut,
+                "shortcut": s.shortcut(c.id),
+                "default_shortcut": c.shortcut,
                 "params": c.params.iter().map(|p| json!({
                     "name": p.name,
                     "kind": p.kind.name(),

@@ -125,3 +125,85 @@ pub struct Mention {
     pub entity: String,
     pub passage: Passage,
 }
+
+/// What one record of a Timeline's Events dataset is (#185).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EventKind {
+    /// A period of the biblical story (the Patriarchs, the Exile), drawn as a band.
+    Era,
+    /// One person's life, from birth to death.
+    Lifespan,
+    /// Something that happened, on a day or a year, or over years (a reign, a journey).
+    Event,
+}
+
+/// A date in history: an astronomical year (1 BC is `0`, 2 BC is `-1`, AD 30 is `30`), with
+/// the month and day when the source fixes them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct HistoricalDate {
+    pub year: i32,
+    /// 1 to 12.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub month: Option<u8>,
+    /// 1 to 31; only with a month.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub day: Option<u8>,
+}
+
+impl HistoricalDate {
+    pub fn year(year: i32) -> Self {
+        Self {
+            year,
+            month: None,
+            day: None,
+        }
+    }
+
+    /// A year written the usual way: `1012 BC` is `-1011`, `AD 30` is `30`.
+    pub fn bc(year: i32) -> Self {
+        Self::year(1 - year)
+    }
+}
+
+/// A person or place an Event names: its People & places id when an index knows it, and the
+/// name to show.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct EventEntity {
+    /// The entity's id in a People & places index (TIPNR's unique name), so a click opens its
+    /// Factbook; `None` when no index has it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity: Option<String>,
+    pub name: String,
+}
+
+/// One record of a Timeline's Events dataset, carried by a People & places index (ADR 0011):
+/// an Era, a Lifespan or an Event, with its dates, the people and places it names and the
+/// Passages that tell it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct Event {
+    /// Stable id within the Resource: `event:162`, `lifespan:david_994`, `era:exile`.
+    pub id: String,
+    /// `Construction of Solomon's Temple`; a Lifespan's is the person's name.
+    pub title: String,
+    pub kind: EventKind,
+    pub start: HistoricalDate,
+    /// When it ended, for one that lasts (a reign, a life, an era); `None` for one on a single
+    /// day or within one year. An Era's end is the date the next Era begins, not its own last
+    /// day.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<HistoricalDate>,
+    /// The source marks the date as approximate ("c. 2242 BC").
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub approximate: bool,
+    /// The id of the longer Event (or Lifespan) this one is part of.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part_of: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub people: Vec<EventEntity>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub places: Vec<EventEntity>,
+    /// The Passages (Standard versification) that tell it, in Bible order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub passages: Vec<Passage>,
+}

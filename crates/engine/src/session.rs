@@ -57,6 +57,8 @@ pub struct Session {
     pub fonts: crate::appearance::FontChoices,
     /// Where the toolbar sits and what it shows (#141), an app preference.
     pub toolbar: crate::toolbar_settings::ToolbarSettings,
+    /// The user's own keyboard shortcuts (#177), an app preference.
+    pub(crate) keys: crate::key_bindings::KeyBindings,
     /// What Word Info shows and whether it is pinned (#50).
     pub word_info: crate::word_info::WordInfo,
     /// Guide arrangements and Guide sections computed on the job queue (#53).
@@ -79,6 +81,8 @@ pub struct Session {
     pub(crate) saved_searches: crate::saved_searches::SavedSearches,
     /// Reading plans as the User database has them, and today's date (#147).
     pub(crate) plans: crate::reading_plans::ReadingPlans,
+    /// The Home arrangement and "Open Home at launch" (#178).
+    pub(crate) home: crate::home::HomeSettings,
     /// Command ids run so far, oldest first (bounded); for diagnostics and tests.
     log: Vec<&'static str>,
     /// The User database, when there is one.
@@ -120,6 +124,7 @@ impl Session {
             appearance: crate::appearance::Appearance::default(),
             fonts: crate::appearance::FontChoices::default(),
             toolbar: crate::toolbar_settings::ToolbarSettings::default(),
+            keys: crate::key_bindings::KeyBindings::default(),
             word_info: crate::word_info::WordInfo::default(),
             guides,
             word_study,
@@ -131,6 +136,7 @@ impl Session {
             command_box: crate::command_box::CommandBox::default(),
             saved_searches: crate::saved_searches::SavedSearches::default(),
             plans: crate::reading_plans::ReadingPlans::default(),
+            home: crate::home::HomeSettings::default(),
             log: Vec::new(),
             user: None,
             history: crate::annotations::UndoHistory::default(),
@@ -206,9 +212,11 @@ impl Session {
         self.load_guide_arrangements();
         self.load_favorites_and_history();
         self.load_reading_plans();
+        self.load_home();
         self.load_copy_verses();
         self.load_collections();
         self.load_saved_searches();
+        self.load_key_bindings();
         // Library load: Annotations made against another revision of a Resource move with
         // their text (or are orphaned) before it shows them (#65).
         self.remember_resource_names();

@@ -37,8 +37,8 @@ use std::sync::Arc;
 
 use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, UiBuilder, pos2, vec2};
 use obs_engine::{
-    Card, CardOrder, Content, HighlightStyle, NoteBodyLine, Notebook, NotesFilter, NotesFormat,
-    TabId, link_passages, note_body,
+    Card, CardOrder, Content, NoteBodyLine, Notebook, NotesFilter, NotesFormat, TabId,
+    link_passages, note_body,
 };
 use obs_layout::{ColorRole, LaidBlock, SnippetStyle};
 use obs_model::{NoteLineKind, NoteMarkKind};
@@ -302,7 +302,8 @@ impl State {
             if let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) {
                 view.selection = None;
             }
-            self.toast("Re-attached. Ctrl+Z to undo.".to_string());
+            let undo = super::with_key(&self.session, "Edit → Undo brings it back", "edit.undo");
+            self.toast(format!("Re-attached. {undo}."));
         }
     }
 
@@ -737,6 +738,7 @@ impl State {
             .iter()
             .find(|n| n.is_default)
             .map_or_else(String::new, |n| n.name.clone());
+        let undo = super::with_key(&self.session, "Edit → Undo brings it all back", "edit.undo");
         let mut done: Option<bool> = None;
         egui::Window::new("Delete Notebook")
             .collapsible(false)
@@ -755,7 +757,7 @@ impl State {
                     ui.radio_value(&mut d.delete, true, "Delete them");
                 }
                 ui.label(
-                    RichText::new("Ctrl+Z (Edit → Undo) brings it all back.")
+                    RichText::new(format!("{undo}."))
                         .small()
                         .color(theme::c().muted),
                 );
@@ -777,10 +779,9 @@ impl State {
                     "notebook.delete",
                     json!({ "id": d.id, "annotations": annotations }),
                 ));
-                self.toast(format!(
-                    "Deleted the Notebook “{}”. Ctrl+Z to undo.",
-                    d.name
-                ));
+                let undo =
+                    super::with_key(&self.session, "Edit → Undo brings it back", "edit.undo");
+                self.toast(format!("Deleted the Notebook “{}”. {undo}.", d.name));
             }
             Some(false) => {}
             None => self.notes_ui.deleting = Some(d),
@@ -878,11 +879,14 @@ impl State {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
-                    match a.content {
+                    match &a.content {
                         Content::Highlight { style } => {
-                            let (rect, _) =
+                            let (rect, r) =
                                 ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
-                            paint_swatch(ui, rect, style, &self.palette, false);
+                            let book = self.marks.styles(&self.session);
+                            let look = book.appearance(style);
+                            r.on_hover_text(book.label(style));
+                            paint_swatch(ui, rect, &look, &self.palette, false);
                         }
                         Content::Note { .. } => {
                             ui.label(RichText::new("✏").color(theme::c().muted));
@@ -1368,15 +1372,17 @@ impl State {
                 ui.label(RichText::new("No other Notebook").color(theme::c().muted));
             }
         });
-        if let Content::Highlight { style } = a.content {
-            let palette = self.palette;
+        if let Content::Highlight { style } = &a.content {
+            // The active palette's styles (#181).
+            let book = self.marks.styles(&self.session).clone();
             ui.menu_button("Highlight style", |ui| {
-                for s in HighlightStyle::ALL {
+                for s in book.active_styles() {
+                    let label = menu_label(ui, &book.label(&s.id), &s.appearance);
                     if ui
-                        .add_enabled(s != style, egui::Button::new(menu_label(ui, s, &palette)))
+                        .add_enabled(s.id != *style, egui::Button::new(label))
                         .clicked()
                     {
-                        run.push(("annotation.style", json!({ "id": a.id, "style": s.id() })));
+                        run.push(("annotation.style", json!({ "id": a.id, "style": s.id })));
                         ui.close();
                     }
                 }

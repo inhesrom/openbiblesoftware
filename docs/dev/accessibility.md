@@ -3,7 +3,7 @@
 #68 gave Resource text an AccessKit tree. This audit covers the chrome added since #131:
 toolbar Launchers and panes, the Command box, Get Resources, the Starter library, the Guides
 (Passage Guide, Word Study, Factbook, Exegetical Guide, Topic Guide), interlinear lines, the Search views,
-Reading plans, Favorites and History, the Atlas (#150), Collections, Copy verses, Fonts, Customize toolbar and the
+Reading plans, Home, Favorites and History, the Atlas (#150), the Timeline (#185), Collections, Copy verses, Fonts, Customize toolbar and the
 right-click menu. It checks three things, and all three run in `cargo xtask ci` (gate `a11y`, and again in
 `test`):
 
@@ -54,12 +54,16 @@ control has the keyboard and then checks that a ring in the focus colour is draw
 | Exegetical Guide (#144) | Ctrl+L `eg Lk 1:30` | Tab to a word, Enter (Word Study) | Ctrl+W |
 | Search views (#146) | Ctrl+Shift+F | query, Enter; Tab to *Grid*, Enter | Ctrl+W |
 | Reading plans (#147) | Ctrl+L `reading plans` | Tab to *Start plan*, Enter | Ctrl+W |
+| Home (#178) | Alt+H | Tab to *Open Home at launch*, Space; Tab to *Move Today's reading down*, Enter; Tab to *Word Study*, Enter (a Word Study) | Ctrl+W |
 | Factbook (#149) | Alt+G, Tab to the Factbook box, `Abraham`, Enter | Tab to the *Terah* link, Enter (his Factbook) | Ctrl+W |
 | Topic Guide (#148) | Ctrl+L `topic forgiveness` | Tab to *Topic Guide: Forgiveness*, Enter; Tab to *Search your library for “Forgiveness”*, Enter (Search) | Ctrl+W |
 | Parallel resources (#151) | Ctrl+] | Tab to *Previous of your Bibles*, Enter | — |
 | Collections (#153) | Tab to *New Collection…*, Enter | *Name*, *Rules*, Tab to *Save*, Enter | Esc |
 | Copy verses (#154) | Ctrl+L `copy verses` | Tab to *Copy plain text*, Enter | Esc |
 | Favorites (#155) | Ctrl+D, Ctrl+L `favorites` | Tab to the Favorite, Enter | Ctrl+W |
+| Keyboard shortcuts (#177) | Ctrl+L `keyboard shortcuts` | *Filter* `larger`; Tab to *Larger text shortcut: Ctrl+Plus*, Enter, Ctrl+↑; Tab to *Reset the Larger text shortcut*, Enter | Ctrl+W |
+| Settings (#213) | Ctrl+, (the search box has the keyboard) | `page tone`; Tab to *Page tone: Sepia*, Space; Tab to *Reset Page tone*, Enter; *Search settings* `red letter`; Tab to *Red letter*, Space; Tab to *Reset Red letter*, Enter | Ctrl+W |
+| Timeline (#185) | Ctrl+L `timeline` | Tab to *Fit*, Enter; Tab to *Era: Patriarchs, …*, Enter (the view fits it); Tab to *Event: Birth of Abraham, …*, Enter (the Link set moves to Gen 11:26); Tab to *Lifespan: Abraham, …*, Enter (his Factbook) | Ctrl+W |
 | Panel separator | Tab | → → widens the left Panel by 48 points | — |
 | Floating window (#152), an OS window of its own | `tab.float` on a Search Tab, a Bible split beside it (set-up) | In that window: Tab to *Search for*, query, Enter; Tab to *Grid*, Enter; Tab to *Resize Panels*, → → | — |
 

@@ -1,5 +1,6 @@
 //! Annotation records of the User database (#17, #61): Notebooks, Notes and Highlights with
-//! their Anchors, and the row-level [`Change`]s that edit them.
+//! their Anchors, Highlight styles and palettes (#181), and the row-level [`Change`]s that
+//! edit them.
 //!
 //! These types compile everywhere (wasm included); only the SQLite code that stores them is
 //! desktop-only. Every edit of the annotation tables is a list of [`Change`]s applied in one
@@ -10,6 +11,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use obs_model::UnitId;
 use obs_scripture::Passage;
 use serde::{Deserialize, Serialize};
+
+use crate::highlight_style::{HighlightPalette, HighlightStyle};
 
 /// Characters of context kept on each side of a quote (ADR 0006: "about 32").
 pub const CONTEXT_CHARS: usize = 32;
@@ -33,43 +36,6 @@ pub struct Notebook {
 
 fn shown() -> bool {
     true
-}
-
-/// One look from the small fixed set used to render a Highlight.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HighlightStyle {
-    Yellow,
-    Green,
-    Blue,
-    Pink,
-    RedUnderline,
-}
-
-impl HighlightStyle {
-    /// Every style, in toolbar order (Ctrl+1 … Ctrl+5).
-    pub const ALL: [HighlightStyle; 5] = [
-        HighlightStyle::Yellow,
-        HighlightStyle::Green,
-        HighlightStyle::Blue,
-        HighlightStyle::Pink,
-        HighlightStyle::RedUnderline,
-    ];
-
-    /// Stable id, as stored.
-    pub fn id(self) -> &'static str {
-        match self {
-            HighlightStyle::Yellow => "yellow",
-            HighlightStyle::Green => "green",
-            HighlightStyle::Blue => "blue",
-            HighlightStyle::Pink => "pink",
-            HighlightStyle::RedUnderline => "red_underline",
-        }
-    }
-
-    pub fn from_id(id: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|s| s.id() == id)
-    }
 }
 
 /// A span of text inside one specific Resource, with what ADR 0006 needs to find it again
@@ -150,11 +116,10 @@ impl Anchor {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Content {
     /// The user's own text.
-    Note {
-        body: String,
-    },
+    Note { body: String },
     Highlight {
-        style: HighlightStyle,
+        /// The id of its Highlight style (ADR 0012).
+        style: String,
     },
 }
 
@@ -215,6 +180,8 @@ impl Annotation {
 pub enum Row {
     Notebook(Notebook),
     Annotation(Annotation),
+    HighlightStyle(HighlightStyle),
+    HighlightPalette(HighlightPalette),
 }
 
 /// Which row a [`Row`] is.
@@ -222,6 +189,8 @@ pub enum Row {
 pub enum RowKey {
     Notebook(String),
     Annotation(String),
+    HighlightStyle(String),
+    HighlightPalette(String),
 }
 
 impl Row {
@@ -229,6 +198,8 @@ impl Row {
         match self {
             Row::Notebook(n) => RowKey::Notebook(n.id.clone()),
             Row::Annotation(a) => RowKey::Annotation(a.id.clone()),
+            Row::HighlightStyle(s) => RowKey::HighlightStyle(s.id.clone()),
+            Row::HighlightPalette(p) => RowKey::HighlightPalette(p.id.clone()),
         }
     }
 }

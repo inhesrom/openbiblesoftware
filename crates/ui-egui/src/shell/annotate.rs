@@ -2,11 +2,13 @@
 //! 15 and 17). The engine stores them and keeps undo (#61); this is the UI around a reading
 //! pane's selection:
 //!
-//! - releasing a selection shows a floating **selection toolbar** (5 style swatches, Note,
-//!   Copy, Search this); the right-click menu's Selection target offers the same actions
-//!   (`context_menu.rs`, #142); Ctrl+1…5 and Ctrl+Shift+N are
-//!   their keys, and Ctrl+Z / Ctrl+Shift+Z undo and redo. None of these keys fire while a
-//!   text field has focus: there they belong to the field.
+//! - releasing a selection shows a floating **selection toolbar** (the active Highlight
+//!   palette's swatches, Note, Copy, Search this); the right-click menu's Selection target
+//!   offers the same actions (`context_menu.rs`, #142); Ctrl+1…9 (the palette's first nine
+//!   styles, #181) and Ctrl+Shift+N are
+//!   their keys by default (the Selection keys, rebindable in Help → Keyboard shortcuts, #177),
+//!   and Ctrl+Z / Ctrl+Shift+Z undo and redo. None of these keys fire while a text field has
+//!   focus: there they belong to the field.
 //! - Note opens a **popup editor** anchored at the selection with a Notebook picker; it saves
 //!   when focus leaves it (a click elsewhere, Esc) or on Ctrl+Enter. New Annotations go into
 //!   the Notebook last used, which the engine remembers in the User database.
@@ -15,33 +17,81 @@
 //!   and clicking it opens the Note in the Notes Tool (#64). Notebooks hidden with their
 //!   Show-in-text toggle are not drawn.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use egui::{Key, Modifiers, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
-use obs_engine::{Annotation, HighlightStyle, Session, TabId};
+use obs_engine::{
+    Annotation, HighlightLook, HighlightPalette, HighlightStyle, SELECTION_KEYS, STYLE_SLOTS,
+    SelectionAction, SelectionKey, Session, StyleAppearance, TabId, style_label,
+};
 use obs_model::ResourceType;
 use serde_json::{Value, json};
 
-use super::{State, bindings, consume_key, extra_held};
+use super::{State, bindings, consume_key, extra_held, parse_shortcut, pressed_as};
 use crate::doc::ReadingDoc;
-use crate::marks::{Mark, marks_for};
-use crate::palette::{HIGHLIGHT_STYLES, Palette};
+use crate::marks::{HighlightLooks, Mark, marks_for};
+use crate::palette::Palette;
 use crate::pane::{PaneOutput, has_text};
 use crate::selection::{Selection, copy_text, selected_text};
 use crate::theme;
 
-/// The keys of the 5 Highlight styles, in [`HighlightStyle::ALL`] order.
-const STYLE_KEYS: [Key; 5] = [Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5];
+/// The Selection keys as the user has them (Ctrl+Shift+N and Ctrl+1…9 by default), with what
+/// each does: each as every key report that presses it ([`pressed_as`]), so one bound to
+/// Ctrl+Plus runs on Ctrl+= too, as a command's does.
+fn selection_keys(
+    session: &Session,
+) -> impl Iterator<Item = (&'static SelectionKey, egui::KeyboardShortcut)> + '_ {
+    (SELECTION_KEYS.iter())
+        .filter_map(|k| Some((k, session.shortcut(k.id).and_then(parse_shortcut)?)))
+        .flat_map(|(k, sc)| pressed_as(sc).map(move |sc| (k, sc)))
+}
 
-/// Ctrl+Shift+N, the Note key.
-const NOTE_KEY: egui::KeyboardShortcut =
-    egui::KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::N);
+/// The Selection keys' shortcuts.
+pub(super) fn shortcuts(session: &Session) -> impl Iterator<Item = egui::KeyboardShortcut> + '_ {
+    selection_keys(session).map(|(_, sc)| sc)
+}
 
-/// The annotation keys: Ctrl+Shift+N and Ctrl+1…5.
-pub(super) fn shortcuts() -> impl Iterator<Item = egui::KeyboardShortcut> {
-    let styles = STYLE_KEYS.map(|k| egui::KeyboardShortcut::new(Modifiers::COMMAND, k));
-    std::iter::once(NOTE_KEY).chain(styles)
+/// The Selection keys as text, for tooltips and menus (empty: no key).
+#[derive(Debug, Clone, Default)]
+pub(super) struct SelectionKeyText {
+    note: String,
+    /// By place in the active palette.
+    slots: [String; STYLE_SLOTS],
+}
+
+impl SelectionKeyText {
+    pub(super) fn of(session: &Session) -> Self {
+        let key = |action: SelectionAction| {
+            (SELECTION_KEYS.iter())
+                .find(|k| k.action == action)
+                .and_then(|k| session.shortcut(k.id))
+                .unwrap_or_default()
+                .to_string()
+        };
+        Self {
+            note: key(SelectionAction::Note),
+            slots: std::array::from_fn(|i| key(SelectionAction::Highlight(i))),
+        }
+    }
+
+    pub(super) fn note(&self) -> &str {
+        &self.note
+    }
+
+    /// The key of the active palette's style at place `i` (0 first); none past the ninth.
+    pub(super) fn slot(&self, i: usize) -> &str {
+        self.slots.get(i).map_or("", String::as_str)
+    }
+}
+
+/// `text (key)`, or `text` when `key` is empty.
+fn with_key_text(text: &str, key: &str) -> String {
+    if key.is_empty() {
+        text.to_string()
+    } else {
+        format!("{text} ({key})")
+    }
 }
 
 /// Shortcuts that text fields use themselves (undo, redo, leaving the field, moving by word on
@@ -59,22 +109,86 @@ pub(super) fn yields_to_text_fields(shortcut: &str) -> bool {
 }
 
 /// Something done to a reading pane's selection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Annotate {
-    Highlight(HighlightStyle),
+    /// Highlight with the style of this id.
+    Highlight(String),
     Note,
     Copy,
     /// Search for the selected text (#59, #142).
     Search,
+    /// Open the Highlight styles window (#181).
+    Styles,
+}
+
+/// The Highlight styles and palettes as loaded from the User database (#181).
+#[derive(Debug, Clone, Default)]
+pub(super) struct StyleBook {
+    /// Every style, by palette and then in order.
+    pub(super) all: Vec<HighlightStyle>,
+    pub(super) palettes: Vec<HighlightPalette>,
+    /// The active palette's id.
+    pub(super) active: String,
+    /// How many Highlights use each style.
+    pub(super) uses: HashMap<String, u64>,
+}
+
+impl StyleBook {
+    fn load(session: &Session) -> Self {
+        if session.user.is_none() {
+            return Self::default();
+        }
+        Self {
+            all: session.highlight_styles().unwrap_or_default(),
+            palettes: session.highlight_palettes().unwrap_or_default(),
+            active: session
+                .active_highlight_palette()
+                .map(|p| p.id)
+                .unwrap_or_default(),
+            uses: session.highlight_style_uses().unwrap_or_default(),
+        }
+    }
+
+    /// The styles of palette `id`, in order.
+    pub(super) fn of_palette<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> impl Iterator<Item = &'a HighlightStyle> {
+        self.all.iter().filter(move |s| s.palette_id == id)
+    }
+
+    /// The active palette's styles, in order (Ctrl+1 … Ctrl+9 for the first nine).
+    pub(super) fn active_styles(&self) -> Vec<&HighlightStyle> {
+        self.of_palette(&self.active).collect()
+    }
+
+    pub(super) fn get(&self, id: &str) -> Option<&HighlightStyle> {
+        self.all.iter().find(|s| s.id == id)
+    }
+
+    /// What the UI calls style `id`: its name, or its place ("Style 3").
+    pub(super) fn label(&self, id: &str) -> String {
+        self.get(id)
+            .map_or_else(|| id.to_string(), |s| style_label(s, &self.all))
+    }
+
+    /// Style `id`'s look (a missing one shows as the first built-in).
+    pub(super) fn appearance(&self, id: &str) -> StyleAppearance {
+        self.get(id)
+            .map_or_else(obs_store::fallback_appearance, |s| s.appearance)
+    }
 }
 
 /// Annotations shown in text as loaded from the User database, and each Resource's [`Mark`]s,
 /// reloaded when the engine's annotation revision moves (any new, edited, undone or redone
-/// Annotation, a Notebook's Show in text, View → Show Highlights).
+/// Annotation, a Notebook's Show in text, View → Show Highlights, a Highlight style or
+/// palette edited or switched).
 #[derive(Default)]
 pub(super) struct MarkCache {
     revision: Option<u64>,
     annotations: Vec<Annotation>,
+    pub(super) styles: StyleBook,
+    looks: HighlightLooks,
     /// Notebook names by id (for Note previews).
     notebooks: BTreeMap<String, String>,
     by_resource: BTreeMap<String, Arc<Vec<Mark>>>,
@@ -102,7 +216,15 @@ impl MarkCache {
         .into_iter()
         .map(|n| (n.id, n.name))
         .collect();
+        self.styles = StyleBook::load(session);
+        self.looks = HighlightLooks::new(&self.styles.all);
         self.by_resource.clear();
+    }
+
+    /// The Highlight styles as of the engine's annotation revision now.
+    pub(super) fn styles(&mut self, session: &Session) -> &StyleBook {
+        self.refresh(session);
+        &self.styles
     }
 
     /// Forget a Resource's Marks (it was removed; a re-import may change its text units).
@@ -118,11 +240,11 @@ impl MarkCache {
             return Arc::new(Vec::new());
         }
         self.refresh(session);
-        let annotations = &self.annotations;
+        let (annotations, looks) = (&self.annotations, &self.looks);
         Arc::clone(
             self.by_resource
                 .entry(doc.manifest.resource_id.clone())
-                .or_insert_with(|| Arc::new(marks_for(doc, annotations))),
+                .or_insert_with(|| Arc::new(marks_for(doc, annotations, looks))),
         )
     }
 
@@ -166,38 +288,49 @@ pub(super) fn selection_params(doc: &ReadingDoc, sel: &Selection) -> Option<Valu
     }))
 }
 
-fn style_name(style: HighlightStyle) -> &'static str {
-    HighlightStyle::ALL
-        .iter()
-        .position(|s| *s == style)
-        .map_or("", |i| HIGHLIGHT_STYLES[i])
-}
-
-pub(super) fn style_shortcut(style: HighlightStyle) -> String {
-    let n = HighlightStyle::ALL
-        .iter()
-        .position(|s| *s == style)
-        .map_or(0, |i| i + 1);
-    format!("Ctrl+{n}")
-}
-
-/// Paint one style's swatch into `rect`: its background, or the red underline on the page.
+/// Paint one style's swatch into `rect` as it shows on the page of `palette`'s tone: a
+/// background, a line under a sample stroke, a box, or a letter in its colour.
 pub(super) fn paint_swatch(
     ui: &Ui,
     rect: Rect,
-    style: HighlightStyle,
+    style: &StyleAppearance,
     palette: &Palette,
     hovered: bool,
 ) {
     let p = ui.painter();
-    let fill = palette.highlight(style).unwrap_or(palette.page);
-    p.rect_filled(rect, 3.0, fill);
-    if palette.highlight(style).is_none() {
-        let y = rect.bottom() - rect.height() * 0.28;
-        p.line_segment(
-            [pos2(rect.left() + 3.0, y), pos2(rect.right() - 3.0, y)],
-            Stroke::new(2.0, palette.underline),
-        );
+    let paint = palette.paint(style);
+    let inner = rect.shrink(rect.height() * 0.22);
+    match paint.look {
+        HighlightLook::Background => {
+            p.rect_filled(rect, 3.0, paint.color);
+        }
+        HighlightLook::Underline => {
+            p.rect_filled(rect, 3.0, palette.page);
+            let y = rect.bottom() - rect.height() * 0.28;
+            p.line_segment(
+                [pos2(rect.left() + 3.0, y), pos2(rect.right() - 3.0, y)],
+                Stroke::new(2.0, paint.color),
+            );
+        }
+        HighlightLook::Box => {
+            p.rect_filled(rect, 3.0, palette.page);
+            p.rect_stroke(
+                inner,
+                1.5,
+                Stroke::new(2.0, paint.color),
+                egui::StrokeKind::Inside,
+            );
+        }
+        HighlightLook::TextColor => {
+            p.rect_filled(rect, 3.0, palette.page);
+            p.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "A",
+                egui::FontId::proportional(rect.height() * 0.7),
+                paint.color,
+            );
+        }
     }
     let stroke = if hovered {
         Stroke::new(1.5, theme::c().lapis)
@@ -207,9 +340,18 @@ pub(super) fn paint_swatch(
     p.rect_stroke(rect, 3.0, stroke, egui::StrokeKind::Inside);
 }
 
+/// The "Highlight styles…" button that opens the styles window from the toolbar.
+const STYLES_BUTTON: &str = "…";
+
 /// The selection toolbar's buttons in a row; returns the one clicked. Without a User database
 /// (`can_annotate` false) only Copy works.
-fn toolbar_row(ui: &mut Ui, palette: &Palette, can_annotate: bool) -> Option<Annotate> {
+fn toolbar_row(
+    ui: &mut Ui,
+    palette: &Palette,
+    can_annotate: bool,
+    keys: &SelectionKeyText,
+    styles: &StyleBook,
+) -> Option<Annotate> {
     let mut picked = None;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
@@ -218,23 +360,35 @@ fn toolbar_row(ui: &mut Ui, palette: &Palette, can_annotate: bool) -> Option<Ann
         } else {
             Sense::hover()
         };
-        for style in HighlightStyle::ALL {
+        for (i, style) in styles.active_styles().into_iter().enumerate() {
             let (rect, r) = ui.allocate_exact_size(vec2(22.0, 22.0), sense);
-            paint_swatch(ui, rect.shrink(2.0), style, palette, r.hovered());
-            if r.on_hover_text(format!(
-                "Highlight {} ({})",
-                style_name(style).to_lowercase(),
-                style_shortcut(style)
-            ))
-            .clicked()
+            paint_swatch(
+                ui,
+                rect.shrink(2.0),
+                &style.appearance,
+                palette,
+                r.hovered(),
+            );
+            let name = format!("Highlight: {}", style_label(style, &styles.all));
+            let r = r.accessible_name(&name);
+            if r.on_hover_text(with_key_text(&name, keys.slot(i)))
+                .clicked()
             {
-                picked = Some(Annotate::Highlight(style));
+                picked = Some(Annotate::Highlight(style.id.clone()));
             }
+        }
+        if ui
+            .add_enabled(can_annotate, egui::Button::new(STYLES_BUTTON).small())
+            .on_hover_text("Highlight styles…")
+            .accessible_name("Highlight styles…")
+            .clicked()
+        {
+            picked = Some(Annotate::Styles);
         }
         ui.separator();
         if ui
             .add_enabled(can_annotate, egui::Button::new("✏ Note"))
-            .on_hover_text("Write a Note on the selection (Ctrl+Shift+N)")
+            .on_hover_text(with_key_text("Write a Note on the selection", keys.note()))
             .clicked()
         {
             picked = Some(Annotate::Note);
@@ -257,13 +411,9 @@ fn toolbar_row(ui: &mut Ui, palette: &Palette, can_annotate: bool) -> Option<Ann
     picked
 }
 
-/// "■ Yellow": the style's name after a square of its colour; the red underline's name is
+/// "■ Yellow": the style's name after a square of its colour; an underline style's name is
 /// underlined in its colour.
-pub(super) fn menu_label(
-    ui: &Ui,
-    style: HighlightStyle,
-    palette: &Palette,
-) -> egui::text::LayoutJob {
+pub(super) fn menu_label(ui: &Ui, name: &str, style: &StyleAppearance) -> egui::text::LayoutJob {
     use egui::text::TextFormat;
     let font = egui::TextStyle::Button.resolve(ui.style());
     let ink = ui.visuals().text_color();
@@ -275,16 +425,13 @@ pub(super) fn menu_label(
     } else {
         Palette::PAPER
     };
-    job.append(
-        "■",
-        0.0,
-        TextFormat::simple(font.clone(), chrome.mark(style)),
-    );
-    let mut name = TextFormat::simple(font, ink);
-    if palette.highlight(style).is_none() {
-        name.underline = Stroke::new(2.0, palette.underline);
+    let paint = chrome.paint(style);
+    job.append("■", 0.0, TextFormat::simple(font.clone(), paint.mark));
+    let mut text = TextFormat::simple(font, ink);
+    if paint.look == HighlightLook::Underline {
+        text.underline = Stroke::new(2.0, paint.mark);
     }
-    job.append(style_name(style), 6.0, name);
+    job.append(name, 6.0, text);
     job
 }
 
@@ -297,7 +444,7 @@ impl State {
             .is_some_and(|v| v.selection.is_some_and(|s| has_text(v, &s)))
     }
 
-    /// Ctrl+1…5 and Ctrl+Shift+N on the selection of `tab`, the Tab focused in the window
+    /// Ctrl+1…9 and Ctrl+Shift+N on the selection of `tab`, the Tab focused in the window
     /// the keys were typed in: whether one ran. Not while a text field has focus, and the
     /// keys stay unconsumed when there is no selection.
     pub(super) fn annotation_keys(&mut self, ui: &Ui, tab: Option<TabId>) -> bool {
@@ -318,13 +465,25 @@ impl State {
             ..extra_held(sc, &all)
         };
         let mut action = None;
+        // Ctrl+1…9 follow the active palette's order; a place past its last style is no key.
+        let active: Vec<String> = (self.marks.styles(&self.session).active_styles().iter())
+            .map(|s| s.id.clone())
+            .collect();
+        let keys: Vec<_> = selection_keys(&self.session)
+            .filter(|(k, _)| match k.action {
+                SelectionAction::Highlight(slot) => slot < active.len(),
+                SelectionAction::Note => true,
+            })
+            .collect();
         ui.input_mut(|i| {
-            if consume_key(i, NOTE_KEY.modifiers, NOTE_KEY.logical_key, extra(NOTE_KEY)) {
-                action = Some(Annotate::Note);
-            }
-            for (style, sc) in HighlightStyle::ALL.into_iter().zip(shortcuts().skip(1)) {
+            for (k, sc) in keys {
                 if consume_key(i, sc.modifiers, sc.logical_key, extra(sc)) {
-                    action = Some(Annotate::Highlight(style));
+                    action = Some(match k.action {
+                        SelectionAction::Note => Annotate::Note,
+                        SelectionAction::Highlight(slot) => {
+                            Annotate::Highlight(active[slot].clone())
+                        }
+                    });
                 }
             }
         });
@@ -365,9 +524,10 @@ impl State {
         });
         match action {
             Annotate::Copy => ctx.copy_text(copied.unwrap_or_default()),
+            Annotate::Styles => self.styles_ui.open = true,
             Annotate::Highlight(style) => {
                 let mut params = target;
-                params["style"] = json!(style.id());
+                params["style"] = json!(style);
                 if self.run("annotation.highlight", &params).is_some()
                     && let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut())
                 {
@@ -529,6 +689,8 @@ impl State {
         }
         let palette = self.palette;
         let can_annotate = self.session.is_enabled("annotation.highlight");
+        let keys = SelectionKeyText::of(&self.session);
+        let styles = self.marks.styles(&self.session).clone();
         let mut picked: Option<(Annotate, Option<Rect>)> = None;
         // The floating toolbar, just above the selection (below it at the top of the pane).
         if let (true, true, false, Some(sel)) = (
@@ -554,7 +716,8 @@ impl State {
                     egui::Frame::popup(ui.style())
                         .inner_margin(egui::Margin::symmetric(6, 4))
                         .show(ui, |ui| {
-                            if let Some(a) = toolbar_row(ui, &palette, can_annotate) {
+                            if let Some(a) = toolbar_row(ui, &palette, can_annotate, &keys, &styles)
+                            {
                                 picked = Some((a, Some(sel)));
                             }
                         });

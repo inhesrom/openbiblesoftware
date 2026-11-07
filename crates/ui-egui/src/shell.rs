@@ -45,7 +45,10 @@ mod fonts_window;
 mod get_bibles_tab;
 mod guide_tab;
 mod guide_words;
+mod highlight_styles_window;
+mod home_tab;
 mod import_tab;
+mod keys_tab;
 mod library_tab;
 mod missing_resource;
 mod note_editor;
@@ -56,8 +59,10 @@ pub(crate) mod references;
 mod search_sidebar;
 mod search_tab;
 mod search_views;
+mod settings_tab;
 mod starter_tab;
 mod tile_handles;
+mod timeline_tab;
 mod toolbar;
 mod toolbar_bar;
 mod toolbar_look;
@@ -128,6 +133,9 @@ struct TabUi {
     /// in `topic_previews_for`.
     topic_previews: std::collections::BTreeSet<topic_guide_tab::SubtopicId>,
     topic_previews_for: Option<String>,
+    /// Topic Guide: each subtopic row's width and height when last drawn, for the topic in
+    /// `topic_previews_for`: a row out of view takes its place without being laid out.
+    topic_rows: BTreeMap<topic_guide_tab::SubtopicId, (f32, f32)>,
     /// Where the header's Favorites ☆ was drawn last frame (#155).
     favorite_star: Option<egui::Rect>,
     /// History: "Clear History…" is asking to confirm.
@@ -144,6 +152,8 @@ struct TabUi {
     contents: contents_pane::ContentsUi,
     /// An Atlas Tab's map: view, search and the place picked (#150).
     map: Option<atlas_tab::MapUi>,
+    /// A Timeline Tab's view: where it looks and what it was fitted to (#185).
+    timeline: Option<timeline_tab::TimelineUi>,
 }
 
 /// A Resource Tab's location when it switched to a parallel resource (#151), in that
@@ -219,6 +229,8 @@ pub(crate) struct State {
     notes_ui: notes_tab::NotesUi,
     /// The Fonts window and the fonts loaded for View → Fonts (#138).
     fonts_ui: fonts_window::FontsUi,
+    /// The Highlight styles window (View → Highlight styles…, #181).
+    styles_ui: highlight_styles_window::StylesUi,
     /// The Reading plans Tool's New plan form (#147).
     plans_ui: reading_plans_tab::PlansUi,
     /// The Copy verses window (#154).
@@ -231,6 +243,23 @@ pub(crate) struct State {
     rich_clipboard: Option<Arc<dyn crate::RichClipboard>>,
     /// Each Resource's Contents, built on a worker the first time its pane opens (#176).
     contents: contents_pane::ContentsCache,
+    /// The Keyboard shortcuts Tab's key being recorded and conflict being resolved (#177).
+    keys_ui: keys_tab::KeysUi,
+    /// The Settings Tab's confirmations and search focus (#213).
+    settings_ui: settings_tab::SettingsUi,
+    /// The bench's feature scenarios (#183): one Tab's UI-thread work, timed each frame.
+    pub(crate) timed_tab: TimedTab,
+}
+
+/// A Tab whose drawing is timed each frame, for the bench's synchronous-work budget (#183,
+/// #19: ≤ 2 ms per frame). Off (no Tab) outside the bench.
+#[derive(Default)]
+pub(crate) struct TimedTab {
+    pub(crate) tab: Option<TabId>,
+    /// Time the Tab's body took since last taken.
+    pub(crate) took: Option<std::time::Duration>,
+    /// Extra work added to the Tab's body, for the bench's seeded-slowdown check.
+    pub(crate) slowdown: std::time::Duration,
 }
 
 /// The app window's content: menus, Command box and the docked Workspace.
@@ -282,12 +311,16 @@ impl Shell {
                 note_editor: None,
                 notes_ui: notes_tab::NotesUi::default(),
                 fonts_ui: fonts_window::FontsUi::default(),
+                styles_ui: highlight_styles_window::StylesUi::default(),
                 plans_ui: reading_plans_tab::PlansUi::default(),
                 copy_ui: copy_window::CopyUi::default(),
                 collection_editor: None,
                 export_ui: export::ExportUi::default(),
                 rich_clipboard: None,
                 contents: Default::default(),
+                keys_ui: Default::default(),
+                settings_ui: Default::default(),
+                timed_tab: TimedTab::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -482,6 +515,7 @@ impl Shell {
                 } => self.st.confirm = Some((resource_id, title, message)),
                 Effect::PickImport => self.st.pick_import = true,
                 Effect::ShowFonts => self.st.fonts_ui.open = true,
+                Effect::ShowHighlightStyles => self.st.styles_ui.open = true,
                 Effect::FocusCommandBox => {
                     self.st.toolbar.close();
                     self.st.command_box.focus = true;
@@ -718,6 +752,22 @@ impl Shell {
         self.st.palette = Palette::for_tone(tone);
     }
 
+    /// Show the Resource `id` given at startup (a file on the command line) on top of what
+    /// [`Self::restore_at_launch`] opened, Home included: its most recently active Tab is
+    /// focused, else it opens.
+    pub fn show_startup_resource(&mut self, id: &str) {
+        let kind = TabKind::Resource(id.to_string());
+        match self.st.session.workspace.most_recent(|t| t.kind == kind) {
+            Some(tab) => {
+                self.st.session.workspace.focus(tab);
+                self.apply_effects();
+            }
+            None => {
+                self.run("resource.open", &json!({ "id": id }));
+            }
+        }
+    }
+
     /// Save the Last session now (on quit), or at most once a second while running.
     pub fn save_session(&mut self, now: bool) {
         if !now && self.st.now - self.st.last_save < 1.0 {
@@ -729,12 +779,25 @@ impl Shell {
         }
     }
 
-    /// Restore the Last session if there is one, else open the default layout.
-    pub fn restore_or_default(&mut self) {
+    /// Restore the Last session if there is one, else open the default layout. Returns
+    /// whether there was one.
+    pub fn restore_or_default(&mut self) -> bool {
         if self.st.session.restore_last_session() {
             self.apply_effects();
+            true
         } else {
             self.reset_layout();
+            false
+        }
+    }
+
+    /// The Workspace at launch: the Last session (else the default layout), with Home on top
+    /// on the first run (no Last session) and at every launch when "Open Home at launch" is
+    /// on (#178).
+    pub fn restore_at_launch(&mut self) {
+        let restored = self.restore_or_default();
+        if !restored || self.st.session.home_opens_at_launch() {
+            self.run("home.open", &json!({}));
         }
     }
 
@@ -795,6 +858,7 @@ impl Shell {
         if let Some(after) = self.background_repaint() {
             ui.ctx().request_repaint_after(after);
         }
+        self.st.keys_ui.begin_frame();
         self.shortcuts(ui, None);
         self.st.toolbar.begin_frame();
         let menus = egui::Panel::top("menus")
@@ -875,16 +939,20 @@ impl Shell {
         if gained {
             self.focus_here(focused);
         }
+        // A key being recorded in the Keyboard shortcuts Tab (#177) runs nothing in its window.
+        if self.st.keys_ui.is_recording_in(ui) {
+            return;
+        }
         // Keys a text field uses itself (Ctrl+Z, Esc …) are left to it while it has focus.
         let typing = ui.ctx().text_edit_focused();
         let all = bindings(&self.st.session);
-        let bound: Vec<(&obs_engine::CommandSpec, egui::KeyboardShortcut)> = self
-            .st
-            .session
+        let session = &self.st.session;
+        let bound: Vec<(&obs_engine::CommandSpec, egui::KeyboardShortcut)> = session
             .commands()
             .iter()
-            .filter(|spec| !(typing && spec.shortcut.is_some_and(annotate::yields_to_text_fields)))
-            .filter_map(|spec| Some((spec, spec.shortcut.and_then(parse_shortcut)?)))
+            .filter_map(|spec| Some((spec, session.shortcut(spec.id)?)))
+            .filter(|(_, key)| !(typing && annotate::yields_to_text_fields(key)))
+            .filter_map(|(spec, key)| Some((spec, parse_shortcut(key)?)))
             .flat_map(|(spec, sc)| pressed_as(sc).map(move |sc| (spec, sc)))
             .collect();
         let mut run: Vec<(&'static str, Value)> = Vec::new();
@@ -967,9 +1035,12 @@ impl Shell {
             let menus = ui.cursor().left() - rest;
             let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 self.command_box(ui);
-                // Today's reading (#147), left of the Command box.
+                // Today's reading (#147), left of the Command box, and Home (#178).
                 ui.add_space(8.0);
                 if self.st.todays_reading_button(ui) {
+                    self.apply_effects();
+                }
+                if self.st.home_button(ui) {
                     self.apply_effects();
                 }
                 ui.min_rect().width()
@@ -1006,7 +1077,7 @@ impl Shell {
                     _ => spec.label.to_string(),
                 };
                 let mut b = egui::Button::new(label);
-                if let Some(sc) = spec.shortcut {
+                if let Some(sc) = self.st.session.shortcut(id) {
                     b = b.shortcut_text(sc);
                 }
                 let enabled = self.st.session.is_enabled(id);
@@ -1305,13 +1376,22 @@ fn build_node(
     }
 }
 
-/// Every key binding in the app: the commands' and the annotation keys.
+/// Every key binding in the app as the user has them (#177): the commands' and the Selection
+/// keys.
 pub(crate) fn bindings(session: &obs_engine::Session) -> Vec<egui::KeyboardShortcut> {
     (session.commands().iter())
-        .filter_map(|spec| spec.shortcut.and_then(parse_shortcut))
+        .filter_map(|spec| session.shortcut(spec.id).and_then(parse_shortcut))
         .flat_map(pressed_as)
-        .chain(annotate::shortcuts())
+        .chain(annotate::shortcuts(session))
         .collect()
+}
+
+/// `text (key)` with the key `id` has now (#177), or `text` alone when it has none.
+pub(crate) fn with_key(session: &obs_engine::Session, text: &str, id: &str) -> String {
+    match session.shortcut(id) {
+        Some(key) => format!("{text} ({key})"),
+        None => text.to_string(),
+    }
 }
 
 /// The key reports that press `sc`: itself, and for `+` also `=`. On US, UK and AZERTY
@@ -1724,6 +1804,9 @@ impl State {
             TabKind::GetBibles => self.get_bibles_body(&mut body),
             TabKind::StarterLibrary => self.starter_body(&mut body),
             TabKind::Credits => self.credits_body(&mut body, tab),
+            TabKind::Home => self.home_body(&mut body, tab),
+            TabKind::KeyboardShortcuts => self.keys_body(&mut body, tab),
+            TabKind::Settings => self.settings_body(&mut body, tab),
             TabKind::Guide(
                 g @ (obs_engine::Guide::PassageGuide | obs_engine::Guide::ExegeticalGuide),
             ) => self.passage_keyed_guide_body(&mut body, tab, g),
@@ -1741,6 +1824,7 @@ impl State {
             TabKind::Tool(Tool::History) => self.history_body(&mut body, tab),
             TabKind::Tool(Tool::ReadingPlans) => self.reading_plans_body(&mut body, tab),
             TabKind::Tool(Tool::Atlas) => self.atlas_body(&mut body, tab),
+            TabKind::Tool(Tool::Timeline) => self.timeline_body(&mut body, tab),
         }
     }
 
@@ -2345,7 +2429,11 @@ impl State {
         let next = ui
             .add_enabled(others, arrow("▶"))
             .accessible_name(format!("Next of your {what}"))
-            .on_hover_text(format!("Next of your {what} (Ctrl+])"))
+            .on_hover_text(with_key(
+                &self.session,
+                &format!("Next of your {what}"),
+                "tab.parallel_next",
+            ))
             .on_disabled_hover_text(format!("There are no other {what} in the library"));
         if next.clicked() {
             run = Some(("tab.parallel_next", json!({ "tab": tab.0 })));
@@ -2374,7 +2462,11 @@ impl State {
         let previous = ui
             .add_enabled(others, arrow("◀"))
             .accessible_name(format!("Previous of your {what}"))
-            .on_hover_text(format!("Previous of your {what} (Ctrl+[)"))
+            .on_hover_text(with_key(
+                &self.session,
+                &format!("Previous of your {what}"),
+                "tab.parallel_previous",
+            ))
             .on_disabled_hover_text(format!("There are no other {what} in the library"));
         if previous.clicked() {
             run = Some(("tab.parallel_previous", json!({ "tab": tab.0 })));
@@ -2470,15 +2562,28 @@ impl State {
                 }
             }
             HeaderBox::Filter => {
+                // The Settings Tab's box searches its Settings (#213), and has the keyboard
+                // when the Tab is focused, so Ctrl+, opens it ready to type.
+                let settings =
+                    (self.session.workspace.tab(tab)).is_some_and(|t| t.kind == TabKind::Settings);
+                let name = if settings {
+                    "Search settings"
+                } else {
+                    "Filter"
+                };
+                let focused = settings && self.session.workspace.focused() == Some(tab);
                 if let Some(t) = self.tabs.get_mut(&tab) {
                     let r = ui
                         .add(
                             egui::TextEdit::singleline(&mut t.filter)
-                                .hint_text("Filter")
+                                .hint_text(name)
                                 .desired_width(width)
                                 .margin(egui::Margin::symmetric(8, 4)),
                         )
-                        .accessible_name("Filter");
+                        .accessible_name(name);
+                    if settings && self.settings_ui.search_drawn(ui, focused) {
+                        r.request_focus();
+                    }
                     if r.lost_focus() {
                         // TextEdit releases focus on Enter; don't let that same key open a row.
                         ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
@@ -2554,10 +2659,20 @@ impl State {
             .workspace
             .tab(tab)
             .is_some_and(|t| t.kind.has_find_bar());
+        let find_key = self
+            .session
+            .shortcut("tab.find")
+            .unwrap_or_default()
+            .to_string();
+        let close_key = self
+            .session
+            .shortcut("tab.close")
+            .unwrap_or_default()
+            .to_string();
         ui.menu_button(RichText::new("…").color(theme::c().muted), |ui| {
             if findable
                 && ui
-                    .add(egui::Button::new("Find…").shortcut_text("Ctrl+F"))
+                    .add(egui::Button::new("Find…").shortcut_text(find_key))
                     .clicked()
             {
                 self.session.workspace.user_focused(tab);
@@ -2580,7 +2695,7 @@ impl State {
             self.favorite_folder_menu(ui, tab);
             self.window_menu(ui, tab);
             if ui
-                .add(egui::Button::new("Close Tab").shortcut_text("Ctrl+W"))
+                .add(egui::Button::new("Close Tab").shortcut_text(close_key))
                 .clicked()
             {
                 self.run("tab.close", &json!({ "tab": tab.0 }));
@@ -2656,6 +2771,7 @@ impl State {
         self.remove_prompt(&ctx);
         self.import_chooser(&ctx);
         self.fonts_window(&ctx);
+        self.highlight_styles_window(&ctx);
         self.copy_window(&ctx);
         self.collection_editor_window(&ctx);
         if let Some((msg, t)) = &self.toast {
@@ -2813,7 +2929,17 @@ fn load(path: &std::path::Path) -> Result<Arc<ReadingDoc>, String> {
 
 impl egui_tiles::Behavior<TabId> for State {
     fn pane_ui(&mut self, ui: &mut Ui, _tile: TileId, tab: &mut TabId) -> UiResponse {
+        if self.timed_tab.tab != Some(*tab) {
+            self.tab_body(ui, *tab);
+            return UiResponse::None;
+        }
+        let start = std::time::Instant::now();
         self.tab_body(ui, *tab);
+        if !self.timed_tab.slowdown.is_zero() {
+            std::thread::sleep(self.timed_tab.slowdown);
+        }
+        let took = self.timed_tab.took.unwrap_or_default() + start.elapsed();
+        self.timed_tab.took = Some(took);
         UiResponse::None
     }
 
@@ -2907,6 +3033,7 @@ impl egui_tiles::Behavior<TabId> for State {
                 "tool.word_info",
                 "tool.cross_references",
                 "tool.atlas",
+                "tool.timeline",
                 "tool.favorites",
                 "tool.history",
             ] {

@@ -325,7 +325,7 @@ fn following_a_text_range_anchor_reveals_it_in_its_resource() {
         id: obs_store::annotation::new_id_at(now),
         notebook_id: s.default_notebook().unwrap().id,
         content: Content::Highlight {
-            style: HighlightStyle::Blue,
+            style: "blue".into(),
         },
         anchor: Some(Anchor::TextRange { range }),
         created_at: now,

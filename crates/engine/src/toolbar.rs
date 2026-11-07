@@ -133,7 +133,7 @@ impl LibraryLauncherSection {
 }
 
 /// The Resource types in the order the Library lists them.
-const TYPE_ORDER: [ResourceType; 6] = [
+pub(crate) const TYPE_ORDER: [ResourceType; 6] = [
     ResourceType::Bible,
     ResourceType::Commentary,
     ResourceType::Lexicon,
@@ -507,6 +507,8 @@ impl Session {
                     });
                     if t.kind.is_reading() {
                         snap.focused = snap.focused.or(Some(id));
+                    }
+                    if t.kind.opens_in_reading_panel() {
                         snap.last_reading_panel = snap.last_reading_panel.or(Some(panel));
                     } else {
                         snap.last_other_panel = snap.last_other_panel.or(Some(panel));

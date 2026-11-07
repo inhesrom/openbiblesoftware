@@ -137,7 +137,7 @@ target decides where it goes (`notes::note_body`). Each line is laid out by the 
 `obs_layout::formatted_snippet_paragraph` (bold, italic and link-colour byte ranges, which may
 overlap, at a heading's scale); a plain line is laid out exactly as before (`a_plain_formatted_snippet_is_the_styled_snippet_it_replaces`).
 
-- **Old Notes**: User database migration 9 → 10 escapes each Note written before that would
+- **Old Notes**: User database migration 10 → 11 escapes each Note written before that would
   not show exactly as typed: on each line, what CommonMark would read as markup gets a `\`
   (`# not a heading` becomes `\# not a heading`) and leading or trailing spaces become `&#32;`,
   so every old Note shows exactly as it did; Notes that read as plain text are untouched.

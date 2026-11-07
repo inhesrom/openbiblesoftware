@@ -336,7 +336,9 @@ impl Session {
                 Some((entry(key), label))
             }
             TabKind::Guide(Guide::PassageGuide | Guide::ExegeticalGuide)
-            | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences | Tool::Atlas) => {
+            | TabKind::Tool(
+                Tool::TextComparison | Tool::CrossReferences | Tool::Atlas | Tool::Timeline,
+            ) => {
                 let v = verse?;
                 Some((place(v), format!("{} · {}", reference(v), title(&t.kind))))
             }
@@ -403,7 +405,9 @@ impl Session {
             kind,
             TabKind::Resource(_)
                 | TabKind::Guide(Guide::PassageGuide | Guide::ExegeticalGuide)
-                | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences | Tool::Atlas)
+                | TabKind::Tool(
+                    Tool::TextComparison | Tool::CrossReferences | Tool::Atlas | Tool::Timeline
+                )
         );
         if !keyed || (location.verse.is_none() && location.key.is_none()) {
             return Err(format!("{} has no location to open", title(&kind)));

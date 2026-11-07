@@ -492,7 +492,13 @@ fn collect_glyphs(shape: &Shape, out: &mut Vec<Rect>) {
 fn collect_rects(shape: &Shape, out: &mut Vec<(Rect, egui::Color32)>) {
     match shape {
         Shape::Vec(v) => v.iter().for_each(|s| collect_rects(s, out)),
-        Shape::Rect(r) => out.push((r.rect, r.fill)),
+        Shape::Rect(r) => {
+            out.push((r.rect, r.fill));
+            // An outline (a Box Highlight style, #181) counts in its stroke's colour too.
+            if r.fill == egui::Color32::TRANSPARENT && r.stroke.width > 0.0 {
+                out.push((r.rect, r.stroke.color));
+            }
+        }
         Shape::LineSegment { points, stroke } => {
             out.push((Rect::from_two_pos(points[0], points[1]), stroke.color));
         }
@@ -539,7 +545,7 @@ fn default_layout_has_a_bible_and_a_tools_panel() {
         "Layouts",
         "View",
         "Help",
-        crate::shell::command_box::HINT,
+        &format!("{} (Ctrl+L)", crate::shell::command_box::HINT),
     ] {
         assert!(h.find(t).is_some(), "{t}");
     }
@@ -1928,6 +1934,7 @@ mod library {
         // while HNUM remains the mouse-selected row.
         let target = row_pos(&h, "HEB");
         let mut focused_row = false;
+        // Tab wraps round through the menu bar (the Launchers, Home, the Command box).
         for _ in 0..64 {
             key(&mut h, egui::Key::Tab);
             if h.ctx
@@ -2724,6 +2731,9 @@ mod annotations_across;
 #[path = "notes_tests.rs"]
 mod notes;
 
+#[path = "highlight_styles_tests.rs"]
+mod highlight_styles;
+
 /// Import from the Library menu and the live Import report Tab (#47).
 mod import {
     use std::path::{Path, PathBuf};
@@ -3137,6 +3147,8 @@ mod guide;
 mod open_catalogue;
 #[path = "starter_library_tests.rs"]
 mod starter_library;
+#[path = "timeline_tests.rs"]
+mod timeline;
 #[path = "word_study_tests.rs"]
 mod word_study;
 
@@ -3154,6 +3166,9 @@ mod favorites;
 
 #[path = "reading_plans_tests.rs"]
 mod reading_plans;
+
+#[path = "home_tests.rs"]
+mod home;
 
 #[path = "context_menu_tests.rs"]
 mod context_menu;
@@ -3176,6 +3191,10 @@ mod a11y_audit;
 mod floating_windows;
 #[path = "interlinear_tests.rs"]
 mod interlinear;
+#[path = "keyboard_shortcuts_tests.rs"]
+mod keyboard_shortcuts;
+#[path = "settings_tests.rs"]
+mod settings;
 #[path = "toolbar_tests.rs"]
 mod toolbar;
 #[path = "toolbar_position_tests.rs"]

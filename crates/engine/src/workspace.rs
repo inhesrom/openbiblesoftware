@@ -38,6 +38,8 @@ pub enum Tool {
     ReadingPlans,
     /// An offline map of the places a Passage names (#150).
     Atlas,
+    /// Biblical history on a zoomable axis: Eras, Lifespans and Events (#185).
+    Timeline,
 }
 
 /// The Guides.
@@ -65,6 +67,7 @@ impl Tool {
             Tool::History => "History",
             Tool::ReadingPlans => "Reading plans",
             Tool::Atlas => "Atlas",
+            Tool::Timeline => "Timeline",
         }
     }
 }
@@ -99,6 +102,15 @@ pub enum TabKind {
     /// Help → Credits (#67): Starter Resources, data built into the app, fonts and
     /// third-party licences. Keyless, single instance.
     Credits,
+    /// Home (#178): today's reading, where the user left off, History and Favorites, the
+    /// Verse of the day, Quick start and the library summary. Keyless, single instance.
+    Home,
+    /// Help → Keyboard shortcuts (#177): every key binding, to see and change. Single
+    /// instance, with a filter box.
+    KeyboardShortcuts,
+    /// Settings (#213, Ctrl+,): every preference in one place, with a search box. Single
+    /// instance.
+    Settings,
     Guide(Guide),
     Tool(Tool),
 }
@@ -136,6 +148,9 @@ enum Slot {
     GetBibles,
     StarterLibrary,
     Credits,
+    Home,
+    KeyboardShortcuts,
+    Settings,
     Guide(Guide),
     Tool(Tool),
 }
@@ -152,6 +167,9 @@ impl TabKind {
                 | TabKind::GetBibles
                 | TabKind::StarterLibrary
                 | TabKind::Credits
+                | TabKind::Home
+                | TabKind::KeyboardShortcuts
+                | TabKind::Settings
                 | TabKind::Tool(
                     Tool::Notes
                         | Tool::WordInfo
@@ -167,11 +185,20 @@ impl TabKind {
         matches!(self, TabKind::Resource(_))
     }
 
+    /// Whether Tabs of this kind belong with reading Panels: a new one goes to the last
+    /// reading Panel when no Panel is remembered for it, and focusing one makes its Panel the
+    /// last reading Panel. Resources, and Home, which wants the room (#178) but is not Bible
+    /// content ([`TabKind::is_reading`]).
+    pub(crate) fn opens_in_reading_panel(&self) -> bool {
+        matches!(self, TabKind::Resource(_) | TabKind::Home)
+    }
+
     pub fn header_box(&self) -> HeaderBox {
         match self {
-            TabKind::Library | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History) => {
-                HeaderBox::Filter
-            }
+            TabKind::Library
+            | TabKind::KeyboardShortcuts
+            | TabKind::Settings
+            | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History) => HeaderBox::Filter,
             TabKind::Tool(Tool::WordInfo) => HeaderBox::FollowsHover,
             TabKind::Guide(Guide::WordStudy) => HeaderBox::Word,
             TabKind::Guide(Guide::Factbook) => HeaderBox::Name,
@@ -183,6 +210,7 @@ impl TabKind {
             | TabKind::GetBibles
             | TabKind::StarterLibrary
             | TabKind::Credits
+            | TabKind::Home
             | TabKind::Tool(Tool::ReadingPlans) => HeaderBox::Keyless,
             _ => HeaderBox::Reference,
         }
@@ -206,6 +234,9 @@ impl TabKind {
                 | TabKind::GetBibles
                 | TabKind::StarterLibrary
                 | TabKind::Credits
+                | TabKind::Home
+                | TabKind::KeyboardShortcuts
+                | TabKind::Settings
                 | TabKind::Guide(Guide::Factbook)
                 | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History | Tool::ReadingPlans)
         )
@@ -215,7 +246,9 @@ impl TabKind {
     pub fn default_key_schemes(&self) -> Vec<KeyScheme> {
         match self {
             TabKind::Guide(Guide::PassageGuide | Guide::ExegeticalGuide)
-            | TabKind::Tool(Tool::TextComparison | Tool::CrossReferences | Tool::Atlas)
+            | TabKind::Tool(
+                Tool::TextComparison | Tool::CrossReferences | Tool::Atlas | Tool::Timeline,
+            )
             | TabKind::Resource(_) => vec![KeyScheme::Passage],
             TabKind::Guide(Guide::WordStudy) => vec![KeyScheme::StrongsNumber],
             // A Topic Guide follows (and moves) its Link set's Dictionary headwords.
@@ -233,6 +266,9 @@ impl TabKind {
             TabKind::GetBibles => Slot::GetBibles,
             TabKind::StarterLibrary => Slot::StarterLibrary,
             TabKind::Credits => Slot::Credits,
+            TabKind::Home => Slot::Home,
+            TabKind::KeyboardShortcuts => Slot::KeyboardShortcuts,
+            TabKind::Settings => Slot::Settings,
             TabKind::Guide(g) => Slot::Guide(*g),
             TabKind::Tool(t) => Slot::Tool(*t),
         }
@@ -671,6 +707,8 @@ pub enum Effect {
     PickImport,
     /// Open the Fonts window (View → Fonts…, #138).
     ShowFonts,
+    /// Open the Highlight styles window (View → Highlight styles…, #181).
+    ShowHighlightStyles,
     /// A Resource Tab now shows another Resource (a parallel resource, or Back/Forward across
     /// a switch, #151): load it, at the Tab's location.
     Switched(TabId),
@@ -908,7 +946,7 @@ impl Workspace {
             .filter(live)
             .or_else(|| self.remembered.get(&kind.slot()).copied().filter(live))
             .or_else(|| {
-                if kind.is_reading() {
+                if kind.opens_in_reading_panel() {
                     self.last_reading_panel.filter(live)
                 } else {
                     self.last_other_panel.filter(live)
@@ -1017,7 +1055,7 @@ impl Workspace {
         self.activity.insert(tab, self.clock);
         if let Some(p) = self.panel_of(tab) {
             self.remembered.insert(kind.slot(), p);
-            if kind.is_reading() {
+            if kind.opens_in_reading_panel() {
                 self.last_reading_panel = Some(p);
             } else {
                 self.last_other_panel = Some(p);

@@ -24,9 +24,7 @@ use obs_store::annotation::{inverse, new_id_at, now_ms, quote_with_context};
 use obs_store::{ResourceStore, StoreError};
 use serde_json::{Value, json};
 
-pub use obs_store::{
-    Anchor, Annotation, CONTEXT_CHARS, Change, Content, HighlightStyle, Notebook, Row, TextRange,
-};
+pub use obs_store::{Anchor, Annotation, CONTEXT_CHARS, Change, Content, Notebook, Row, TextRange};
 
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params};
 use crate::session::Session;
@@ -212,7 +210,7 @@ fn words_of(text: &str, range: std::ops::Range<usize>) -> std::ops::Range<usize>
     }
 }
 
-fn store_err(e: StoreError) -> String {
+pub(crate) fn store_err(e: StoreError) -> String {
     e.to_string()
 }
 
@@ -427,7 +425,7 @@ pub fn notes_query(text: &str) -> Option<String> {
 // --------------------------------------------------------------------------------- Session
 
 impl Session {
-    fn user_data(&self) -> Result<&dyn crate::persist::UserData, String> {
+    pub(crate) fn user_data(&self) -> Result<&dyn crate::persist::UserData, String> {
         self.user
             .as_deref()
             .ok_or_else(|| "There is no User database".to_string())
@@ -445,7 +443,7 @@ impl Session {
     }
 
     /// Write `changes` as one undo step labelled `label`.
-    fn commit(&mut self, label: &str, changes: Vec<Change>) -> Result<(), String> {
+    pub(crate) fn commit(&mut self, label: &str, changes: Vec<Change>) -> Result<(), String> {
         if changes.is_empty() {
             return Ok(());
         }
@@ -601,9 +599,10 @@ impl Session {
     pub fn highlight(
         &mut self,
         sel: &Selection,
-        style: HighlightStyle,
+        style: &str,
         notebook_id: Option<&str>,
     ) -> Result<Vec<Annotation>, String> {
+        let style = self.highlight_style(style)?.id;
         let notebook = self.notebook_for_new(notebook_id)?;
         let parts = self.selection_segments(sel)?;
         let now = now_ms();
@@ -612,7 +611,9 @@ impl Session {
             .map(|part| Annotation {
                 id: new_id_at(now),
                 notebook_id: notebook.id.clone(),
-                content: Content::Highlight { style },
+                content: Content::Highlight {
+                    style: style.clone(),
+                },
                 anchor: Some(part.anchor()),
                 created_at: now,
                 modified_at: now,
@@ -752,11 +753,8 @@ impl Session {
     }
 
     /// Change a Highlight's style.
-    pub fn set_highlight_style(
-        &mut self,
-        id: &str,
-        style: HighlightStyle,
-    ) -> Result<Annotation, String> {
+    pub fn set_highlight_style(&mut self, id: &str, style: &str) -> Result<Annotation, String> {
+        let style = self.highlight_style(style)?.id;
         self.edit_annotation(id, "Highlight style", true, |a| match &mut a.content {
             Content::Highlight { style: s } => {
                 *s = style;
@@ -1002,7 +1000,7 @@ const STYLE: ParamSpec = ParamSpec {
     name: "style",
     kind: ParamKind::String,
     required: false,
-    help: "Highlight style: yellow (default), green, blue, pink or red_underline",
+    help: "Highlight style id (default: the first style of the active Highlight palette)",
 };
 const NAME: ParamSpec = ParamSpec {
     name: "name",
@@ -1025,7 +1023,7 @@ fn can_redo(s: &Session) -> bool {
 
 /// Ctrl+Z and Ctrl+Shift+Z are the undo keys of text fields too, so the Shell leaves them to a
 /// focused text field (a Note being written, a reference box) instead of running these
-/// commands (#62). Ctrl+1…5 and Ctrl+Shift+N act on the reading-pane selection, which only the
+/// commands (#62). Ctrl+1…9 and Ctrl+Shift+N act on the reading-pane selection, which only the
 /// Shell knows, so the Shell binds them itself.
 pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
@@ -1282,14 +1280,14 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     },
 ];
 
-fn failed(command: &'static str, message: impl ToString) -> CommandError {
+pub(crate) fn failed(command: &'static str, message: impl ToString) -> CommandError {
     CommandError::Failed {
         command,
         message: message.to_string(),
     }
 }
 
-fn to_json<T: serde::Serialize>(v: &T) -> Value {
+pub(crate) fn to_json<T: serde::Serialize>(v: &T) -> Value {
     serde_json::to_value(v).unwrap_or(Value::Null)
 }
 
@@ -1325,17 +1323,17 @@ fn selection(cmd: &'static str, p: &Params<'_>) -> Result<Selection, CommandErro
     })
 }
 
-fn style(cmd: &'static str, p: &Params<'_>) -> Result<HighlightStyle, CommandError> {
+/// The `style` param, or else the first style of the active Highlight palette.
+fn style(s: &Session, cmd: &'static str, p: &Params<'_>) -> Result<String, CommandError> {
     match p.str("style") {
-        None => Ok(HighlightStyle::Yellow),
-        Some(id) => HighlightStyle::from_id(id).ok_or_else(|| {
-            failed(
-                cmd,
-                format!(
-                    "“{id}” is not a Highlight style (yellow, green, blue, pink, red_underline)"
-                ),
-            )
-        }),
+        Some(id) => Ok(id.to_string()),
+        None => s
+            .active_highlight_styles()
+            .map_err(|e| failed(cmd, e))?
+            .into_iter()
+            .next()
+            .map(|st| st.id)
+            .ok_or_else(|| failed(cmd, "the active Highlight palette has no styles")),
     }
 }
 
@@ -1352,9 +1350,9 @@ fn run_redo(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
 fn run_highlight(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const CMD: &str = "annotation.highlight";
     let sel = selection(CMD, &p)?;
-    let style = style(CMD, &p)?;
+    let style = style(s, CMD, &p)?;
     let made = s
-        .highlight(&sel, style, p.str("notebook"))
+        .highlight(&sel, &style, p.str("notebook"))
         .map_err(|e| failed(CMD, e))?;
     Ok(json!({
         "ids": made.iter().map(|a| a.id.clone()).collect::<Vec<_>>(),
@@ -1411,9 +1409,9 @@ fn run_edit(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
 
 fn run_style(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const CMD: &str = "annotation.style";
-    let style = style(CMD, &p)?;
+    let style = style(s, CMD, &p)?;
     let a = s
-        .set_highlight_style(p.str("id").unwrap_or_default(), style)
+        .set_highlight_style(p.str("id").unwrap_or_default(), &style)
         .map_err(|e| failed(CMD, e))?;
     Ok(json!({ "annotation": to_json(&a) }))
 }

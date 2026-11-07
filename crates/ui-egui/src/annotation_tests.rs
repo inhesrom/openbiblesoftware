@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use egui::Color32;
-use obs_engine::{Content, HighlightStyle, TabId};
+use obs_engine::{Content, HighlightLook, TabId};
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::*;
@@ -177,7 +177,7 @@ fn ctrl_2_draws_a_green_highlight_at_once_and_ctrl_z_removes_it() {
     for label in ["✏ Note", "Copy", "🔎 Search this"] {
         assert!(h.find(label).is_some(), "{label}: {:?}", h.texts());
     }
-    let green = h.shell.st.palette.highlights[1];
+    let green = h.shell.st.palette.built_in_color("green");
     assert!(painted(&h, green).is_empty());
     // Ctrl+Alt+2 (AltGr+2 on Windows) is not Ctrl+2: no style.
     press_key(&mut h, egui::Key::Num2, Modifiers::COMMAND | Modifiers::ALT);
@@ -197,7 +197,7 @@ fn ctrl_2_draws_a_green_highlight_at_once_and_ctrl_z_removes_it() {
     assert_eq!(
         stored[0].content,
         Content::Highlight {
-            style: HighlightStyle::Green
+            style: "green".into()
         }
     );
     let range = stored[0].anchor.as_ref().unwrap().text_range().unwrap();
@@ -242,7 +242,7 @@ fn keys_that_need_shift_on_some_layouts_still_work_and_ctrl_shift_z_never_undoes
     assert_eq!(
         stored[0].content,
         Content::Highlight {
-            style: HighlightStyle::ALL[0]
+            style: "yellow".into()
         }
     );
 
@@ -266,6 +266,81 @@ fn keys_that_need_shift_on_some_layouts_still_work_and_ctrl_shift_z_never_undoes
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A Selection key rebound in Help → Keyboard shortcuts (#177) works at once, its old key no
+/// longer does, and the selection toolbar's tooltip names the new key.
+#[test]
+fn a_rebound_selection_key_highlights_and_its_old_key_does_not() {
+    let dir = folder("rebound");
+    let mut h = launch(&dir);
+    h.shell.run(
+        "keys.set",
+        &json!({ "command": "selection.highlight_2", "key": "F7" }),
+    );
+    let tb = h.tab_id("TB");
+    let (_, _, _, r) = word_in_view(&h, tb, 200.0);
+    double_click(&mut h, r.center());
+    // The swatch's tooltip names the new key.
+    let keys = crate::shell::annotate::SelectionKeyText::of(&h.shell.st.session);
+    assert_eq!(keys.slot(1), "F7");
+    assert_eq!(keys.note(), "Ctrl+Shift+N");
+    press_key(&mut h, egui::Key::Num2, Modifiers::COMMAND);
+    h.frame();
+    assert!(h.shell.st.session.annotations(None).unwrap().is_empty());
+    assert!(h.shell.st.has_selection(tb));
+    press_key(&mut h, egui::Key::F7, Modifiers::NONE);
+    h.frame();
+    let stored = h.shell.st.session.annotations(None).unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(
+        stored[0].content,
+        Content::Highlight {
+            style: "green".into()
+        }
+    );
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A Selection key swapped onto Ctrl+Plus (#177) runs on Ctrl+= too, as a command's does
+/// (#137): Larger text rebound to Ctrl+1 and swapped with yellow Highlight.
+#[test]
+fn a_selection_key_on_ctrl_plus_also_runs_on_ctrl_equals() {
+    let dir = folder("plus-equals");
+    let mut h = launch(&dir);
+    h.shell.run(
+        "keys.set",
+        &json!({ "command": "view.text_larger", "key": "Ctrl+1", "swap": true }),
+    );
+    assert_eq!(
+        h.shell.st.session.shortcut("selection.highlight_1"),
+        Some("Ctrl+Plus")
+    );
+    let size = h.shell.st.session.text.size;
+    let tb = h.tab_id("TB");
+    let yellow = Content::Highlight {
+        style: "yellow".into(),
+    };
+    for (key, mods) in [
+        (egui::Key::Plus, cmd_shift()),
+        (egui::Key::Equals, Modifiers::COMMAND),
+    ] {
+        let (_, _, _, r) = word_in_view(&h, tb, 200.0);
+        double_click(&mut h, r.center());
+        assert!(h.shell.st.has_selection(tb));
+        press_key(&mut h, key, mods);
+        h.frame();
+        let stored = h.shell.st.session.annotations(None).unwrap();
+        assert_eq!(stored.len(), 1, "{key:?}");
+        assert_eq!(stored[0].content, yellow, "{key:?}");
+        assert_eq!(h.shell.st.session.text.size, size, "{key:?}");
+        // Undo it so the next key highlights afresh.
+        press_key(&mut h, egui::Key::Z, Modifiers::COMMAND);
+        assert!(h.shell.st.session.annotations(None).unwrap().is_empty());
+    }
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn toolbar_swatches_and_right_click_apply_styles_and_the_newest_is_drawn_on_top() {
     let dir = folder("toolbar");
@@ -278,7 +353,9 @@ fn toolbar_swatches_and_right_click_apply_styles_and_the_newest_is_drawn_on_top(
     let swatch = h
         .rects
         .iter()
-        .filter(|(s, c)| *c == palette.highlights[2] && s.width() < 30.0 && s.bottom() <= r.top())
+        .filter(|(s, c)| {
+            *c == palette.built_in_color("blue") && s.width() < 30.0 && s.bottom() <= r.top()
+        })
         .map(|(s, _)| *s)
         .next()
         .unwrap_or_else(|| {
@@ -293,7 +370,10 @@ fn toolbar_swatches_and_right_click_apply_styles_and_the_newest_is_drawn_on_top(
             )
         });
     h.click(swatch.center());
-    assert!(covers(union(&painted(&h, palette.highlights[2])), r));
+    assert!(covers(
+        union(&painted(&h, palette.built_in_color("blue"))),
+        r
+    ));
 
     // Right-click on the same word: the menu acts on it. Pink overlaps blue and wins.
     h.events.push(Event::PointerMoved(r.center()));
@@ -319,11 +399,11 @@ fn toolbar_swatches_and_right_click_apply_styles_and_the_newest_is_drawn_on_top(
         .collect();
     let blue = order
         .iter()
-        .position(|c| *c == palette.highlights[2])
+        .position(|c| *c == palette.built_in_color("blue"))
         .unwrap();
     let pink = order
         .iter()
-        .position(|c| *c == palette.highlights[3])
+        .position(|c| *c == palette.built_in_color("pink"))
         .unwrap();
     assert!(pink > blue, "the newest Highlight is drawn last: {order:?}");
 
@@ -551,7 +631,7 @@ fn a_passage_anchor_with_a_stale_origin_falls_back_to_its_whole_verses() {
     let mut stored = h.shell.st.session.annotations(None).unwrap();
     assert_eq!(stored.len(), 1);
     let doc = std::sync::Arc::clone(&view(&h, tb).doc);
-    let exact = crate::marks_for(&doc, &stored);
+    let exact = crate::marks_for(&doc, &stored, &crate::HighlightLooks::built_in());
     assert_eq!(exact.len(), 1);
     assert_eq!(exact[0].start, a);
     // An origin re-anchoring did not find (#65) is kept but not drawn as words, even where
@@ -565,7 +645,7 @@ fn a_passage_anchor_with_a_stale_origin_falls_back_to_its_whole_verses() {
     {
         origin.orphaned = true;
     }
-    let marks = crate::marks_for(&doc, &not_found);
+    let marks = crate::marks_for(&doc, &not_found, &crate::HighlightLooks::built_in());
     assert_eq!(marks.len(), 1, "still drawn: {marks:?}");
     assert_eq!(
         (marks[0].start.byte, marks[0].end.byte),
@@ -582,7 +662,7 @@ fn a_passage_anchor_with_a_stale_origin_falls_back_to_its_whole_verses() {
         );
     };
     origin.quote = "no longer here".into();
-    let marks = crate::marks_for(&doc, &stored);
+    let marks = crate::marks_for(&doc, &stored, &crate::HighlightLooks::built_in());
     assert_eq!(marks.len(), 1, "the Highlight is still drawn");
     assert_eq!(
         marks[0].start,
@@ -605,7 +685,7 @@ fn a_passage_anchor_with_a_stale_origin_falls_back_to_its_whole_verses() {
     stored[0].anchor = Some(obs_engine::Anchor::TextRange {
         range: origin.unwrap(),
     });
-    assert!(crate::marks_for(&doc, &stored).is_empty());
+    assert!(crate::marks_for(&doc, &stored, &crate::HighlightLooks::built_in()).is_empty());
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -645,7 +725,7 @@ fn highlights_stay_aligned_with_their_glyphs_while_scrolling_and_after_a_text_si
     let dir = folder("aligned");
     let mut h = launch(&dir);
     let tb = h.tab_id("TB");
-    let yellow = h.shell.st.palette.highlights[0];
+    let yellow = h.shell.st.palette.built_in_color("yellow");
     let (a, b, word, r) = word_in_view(&h, tb, 250.0);
     double_click(&mut h, r.center());
     press_key(&mut h, egui::Key::Num1, Modifiers::COMMAND);
@@ -692,7 +772,7 @@ fn highlights_stay_aligned_with_their_glyphs_while_scrolling_and_after_a_text_si
     // And a theme switch recolours it without a relayout.
     h.shell.run("view.page_tone", &json!({ "value": "dark" }));
     h.frame();
-    assert_aligned(&h, crate::Palette::DARK.highlights[0], &word);
+    assert_aligned(&h, crate::Palette::DARK.built_in_color("yellow"), &word);
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -706,17 +786,27 @@ fn highlight_swatches_and_note_markers_are_legible_in_every_tone() {
         crate::Palette::SEPIA,
         crate::Palette::DARK,
     ] {
-        for style in HighlightStyle::ALL {
-            let bg = palette.highlight(style).unwrap_or(palette.page);
-            for (_, ink) in palette.inks() {
-                assert!(crate::contrast(ink, bg) >= 4.5, "{style:?} in {palette:?}");
+        for style in obs_store::built_in_styles() {
+            let paint = palette.paint(&style.appearance);
+            assert_eq!(
+                palette.check(style.appearance.look, paint.color),
+                Ok(()),
+                "{style:?}"
+            );
+            if paint.look == HighlightLook::Background {
+                for (_, ink) in palette.inks() {
+                    assert!(
+                        crate::contrast(ink, paint.color) >= 4.5,
+                        "{style:?} in {palette:?}"
+                    );
+                }
             }
         }
         assert!(crate::contrast(palette.note_marker, palette.page) >= 3.0);
         // Margin marks in other Bibles (#63) are thin bars: WCAG's 3:1 for graphics.
-        for style in HighlightStyle::ALL {
-            let c = crate::contrast(palette.mark(style), palette.page);
-            assert!(c >= 3.0, "{style:?} margin mark {c:.2}:1 in {palette:?}");
+        for style in obs_store::built_in_styles() {
+            let c = crate::contrast(palette.paint(&style.appearance).mark, palette.page);
+            assert!(c >= 3.0, "{} margin mark {c:.2}:1 in {palette:?}", style.id);
         }
         assert!(crate::contrast(palette.underline, palette.page) >= 3.0);
     }
@@ -807,7 +897,7 @@ fn reattach_moves_an_orphaned_annotation_to_the_selection_and_clears_its_warning
         id: obs_store::annotation::new_id(),
         notebook_id: notebook,
         content: Content::Highlight {
-            style: HighlightStyle::Yellow,
+            style: "yellow".into(),
         },
         anchor: Some(obs_engine::Anchor::TextRange {
             range: obs_engine::TextRange {
@@ -853,7 +943,7 @@ fn reattach_moves_an_orphaned_annotation_to_the_selection_and_clears_its_warning
         "the report toast: {:?}",
         h.texts()
     );
-    let yellow = h.shell.st.palette.highlights[0];
+    let yellow = h.shell.st.palette.built_in_color("yellow");
     assert!(painted(&h, yellow).is_empty(), "an orphan is not drawn");
 
     // Notes → ⚠ Needs attention lists it with its quote and the warning.
@@ -915,7 +1005,7 @@ fn marks_are_not_painted_while_their_resource_is_being_reanchored() {
     let (_, _, _, r) = word_in_view(&h, tb, 200.0);
     double_click(&mut h, r.center());
     press_key(&mut h, egui::Key::Num2, Modifiers::COMMAND);
-    let green = h.shell.st.palette.highlights[1];
+    let green = h.shell.st.palette.built_in_color("green");
     assert!(covers(union(&painted(&h, green)), r));
 
     // Its anchor now says it was made against an older revision of TB.

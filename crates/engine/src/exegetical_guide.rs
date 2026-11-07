@@ -246,6 +246,7 @@ pub fn short_entry(text: &str) -> String {
 #[cfg(not(target_arch = "wasm32"))]
 mod library {
     use std::collections::{BTreeMap, HashSet};
+    use std::ops::Range;
     use std::sync::Arc;
 
     use obs_model::{ResourceType, SpanKind, UnitId, transliterate};
@@ -272,24 +273,104 @@ mod library {
         texts: BTreeMap<UnitId, String>,
         /// Its Verses already listed, by unit and start.
         listed: HashSet<(UnitId, u32)>,
+        /// The Tagged words of the whole Passage in one unit, by start, read at once: a span
+        /// query costs as much as the unit's spans before it, so one per Verse made a chapter
+        /// late in a book take a fifth of a second (#183).
+        passage_words: Option<PassageWords>,
     }
 
+    /// The Tagged words of one unit's text range, sorted by start.
+    type PassageWords = (UnitId, Range<u32>, Vec<obs_model::Span>);
+
     impl Opened {
+        fn open(
+            entry: &LibraryEntry,
+            cache: &BibleCache,
+            passage: Passage,
+        ) -> Result<Self, String> {
+            let reader = ObrReader::open(&entry.path)
+                .map_err(|e| format!("{}: {e}", entry.manifest.abbreviation))?;
+            let map = cache.verse_map(&reader)?;
+            let mut opened = Opened {
+                reader,
+                map,
+                texts: BTreeMap::new(),
+                listed: HashSet::new(),
+                passage_words: None,
+            };
+            // A Passage that cannot be read at once is read Verse by Verse.
+            if passage.start() != passage.end() {
+                opened.passage_words = opened.read_passage_words(passage).ok().flatten();
+            }
+            Ok(opened)
+        }
+
+        /// The Bible's own Verse for a Standard one (the first, when it has several).
+        fn native(&self, standard: Verse) -> Result<Option<obs_model::BibleVerse>, StoreError> {
+            let native = match self.map.as_ref() {
+                Some(m) => m.to_native(standard).into_iter().next(),
+                None => Some(standard),
+            };
+            native.map_or(Ok(None), |v| self.reader.verse(v))
+        }
+
+        /// The Tagged words from the Passage's first Verse to its last, when both are in one
+        /// unit.
+        fn read_passage_words(&self, passage: Passage) -> Result<Option<PassageWords>, StoreError> {
+            let (Some(first), Some(last)) =
+                (self.native(passage.start())?, self.native(passage.end())?)
+            else {
+                return Ok(None);
+            };
+            if first.unit != last.unit || first.start > last.end {
+                return Ok(None);
+            }
+            let range = first.start..last.end;
+            let mut spans: Vec<obs_model::Span> = self
+                .reader
+                .spans_in(&first.unit, range.start as usize..range.end as usize)?
+                .into_iter()
+                .filter(|s| {
+                    s.start >= range.start
+                        && s.end <= range.end
+                        && matches!(s.kind, SpanKind::TaggedWord { .. })
+                })
+                .collect();
+            spans.sort_by_key(|s| (s.start, s.end));
+            Ok(Some((first.unit, range, spans)))
+        }
+
         /// The Tagged words of one of the Bible's own Verses, in text order.
         fn words(
             &mut self,
             verse: &obs_model::BibleVerse,
         ) -> Result<Vec<ExegeticalWord>, StoreError> {
-            let mut spans: Vec<obs_model::Span> = self
-                .reader
-                .spans_in(&verse.unit, verse.range())?
-                .into_iter()
-                .filter(|s| {
-                    s.start >= verse.start
-                        && s.end <= verse.end
-                        && matches!(s.kind, SpanKind::TaggedWord { .. })
-                })
-                .collect();
+            let in_verse = |s: &obs_model::Span| {
+                s.start >= verse.start
+                    && s.end <= verse.end
+                    && matches!(s.kind, SpanKind::TaggedWord { .. })
+            };
+            let mut spans: Vec<obs_model::Span> = match &self.passage_words {
+                Some((unit, range, spans))
+                    if *unit == verse.unit
+                        && range.start <= verse.start
+                        && verse.end <= range.end =>
+                {
+                    let from = spans.partition_point(|s| s.start < verse.start);
+                    spans[from..]
+                        .iter()
+                        .take_while(|s| s.start < verse.end)
+                        .filter(|s| in_verse(s))
+                        .cloned()
+                        .collect()
+                }
+                _ => self
+                    .reader
+                    .spans_in(&verse.unit, verse.range())?
+                    .into_iter()
+                    .filter(in_verse)
+                    .collect(),
+            };
             if spans.is_empty() {
                 return Ok(Vec::new());
             }
@@ -340,17 +421,7 @@ mod library {
                 if !is_original_language(&entry.manifest.language, want) {
                     continue;
                 }
-                let bible = opened[i].get_or_insert_with(|| {
-                    let reader = ObrReader::open(&entry.path)
-                        .map_err(|e| format!("{}: {e}", entry.manifest.abbreviation))?;
-                    let map = cache.verse_map(&reader)?;
-                    Ok(Opened {
-                        reader,
-                        map,
-                        texts: BTreeMap::new(),
-                        listed: HashSet::new(),
-                    })
-                });
+                let bible = opened[i].get_or_insert_with(|| Opened::open(entry, cache, passage));
                 let Ok(bible) = bible else {
                     continue;
                 };

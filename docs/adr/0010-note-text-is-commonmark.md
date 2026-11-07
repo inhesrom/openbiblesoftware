@@ -6,7 +6,7 @@ What is shown is laid out **per line of the text**: a line break inside a paragr
 
 Exports never re-write a Note's Markdown from a parse. The Markdown export is the text byte for byte as typed, never transformed or wrapped (no `\` added for line breaks: in a shortcut or collapsed reference link the text is the label, and a `\` there stops it matching its definition); only a closing line follows a code fence or HTML block the Note leaves open. The HTML export is pulldown-cmark's HTML of the text.
 
-Plain text is not always the same CommonMark: a line like `# not a heading`, `- item`, `1. step`, `*stars*` or `    indented` would show differently. So the User database migration 9 → 10 runs `escape_note_text` over every Note: a Note that does not already show exactly as typed gets, on each line, what CommonMark would read as markup backslash-escaped and its leading and trailing spaces written as `&#32;`; every other Note is left byte for byte. `modified_at` is not touched, and `notes_fts` is rebuilt from the words the Notes show.
+Plain text is not always the same CommonMark: a line like `# not a heading`, `- item`, `1. step`, `*stars*` or `    indented` would show differently. So the User database migration 10 → 11 runs `escape_note_text` over every Note: a Note that does not already show exactly as typed gets, on each line, what CommonMark would read as markup backslash-escaped and its leading and trailing spaces written as `&#32;`; every other Note is left byte for byte. `modified_at` is not touched, and `notes_fts` is rebuilt from the words the Notes show.
 
 ## Considered Options
 

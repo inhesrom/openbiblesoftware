@@ -1,0 +1,79 @@
+{
+  "resource_id": "theographic",
+  "resource_type": "people_and_places",
+  "key": "1 Kgs 6:1",
+  "entities": [],
+  "mentions": [],
+  "events": [
+    {
+      "id": "event:161",
+      "title": "Reign of Solomon",
+      "kind": "event",
+      "start": {
+        "year": -1014
+      },
+      "end": {
+        "year": -974
+      },
+      "part_of": "event:156",
+      "people": [
+        {
+          "entity": "Solomon@2Sa.5.14-Act",
+          "name": "Solomon"
+        }
+      ],
+      "places": [
+        {
+          "entity": "Jerusalem@Gen.14.18-Rev",
+          "name": "Jerusalem"
+        }
+      ],
+      "passages": [
+        {
+          "start": {
+            "book": "1KI",
+            "chapter": 2,
+            "verse": 12
+          },
+          "end": {
+            "book": "1KI",
+            "chapter": 11,
+            "verse": 42
+          }
+        }
+      ]
+    },
+    {
+      "id": "event:162",
+      "title": "Construction of Solomon's Temple",
+      "kind": "event",
+      "start": {
+        "year": -1011
+      },
+      "end": {
+        "year": -1004
+      },
+      "part_of": "event:156",
+      "places": [
+        {
+          "entity": "Jerusalem@Gen.14.18-Rev",
+          "name": "Jerusalem"
+        }
+      ],
+      "passages": [
+        {
+          "start": {
+            "book": "1KI",
+            "chapter": 5,
+            "verse": 1
+          },
+          "end": {
+            "book": "1KI",
+            "chapter": 7,
+            "verse": 51
+          }
+        }
+      ]
+    }
+  ]
+}

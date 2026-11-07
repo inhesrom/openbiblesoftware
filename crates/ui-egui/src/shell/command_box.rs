@@ -17,8 +17,8 @@ use crate::theme;
 /// The box's widget id.
 pub(crate) const BOX_ID: &str = "command-box";
 
-/// Placeholder shown in the empty box.
-pub(crate) const HINT: &str = "Go to, study, open or search  (Ctrl+L)";
+/// Placeholder shown in the empty box, followed by the box's key (#177).
+pub(crate) const HINT: &str = "Go to, study, open or search";
 
 /// Height of one suggestion row.
 const ROW: f32 = 26.0;
@@ -67,7 +67,7 @@ impl Shell {
         let cb = &mut self.st.command_box;
         let mut out = egui::TextEdit::singleline(&mut cb.text)
             .id(id)
-            .hint_text(HINT)
+            .hint_text(super::with_key(&self.st.session, HINT, "command_box.focus"))
             .desired_width(280.0)
             .margin(egui::Margin::symmetric(8, 4))
             .show(ui);

@@ -289,6 +289,7 @@ fn the_real_lock_passes_the_provenance_gate() {
             "smith",
             "hitchcock",
             "openbible-geo",
+            "theographic",
         ]
     );
     // STEPBible splits TAHOT over four files and TAGNT over two.
@@ -303,6 +304,8 @@ fn the_real_lock_passes_the_provenance_gate() {
     assert_eq!(files("tagnt"), Some(2));
     // The geocoding reads `ancient.jsonl`, `modern.jsonl` and TIPNR (to match places).
     assert_eq!(files("openbible-geo"), Some(3));
+    // The Timeline reads `Events.csv`, `events.json`, `People.csv` and TIPNR (to match people).
+    assert_eq!(files("theographic"), Some(4));
 }
 
 /// Zip the OpenBible.info excerpt as the publisher does; write the TIPNR excerpt as-is.
@@ -1404,8 +1407,12 @@ fn every_cc_by_source_in_the_real_lock_has_a_complete_changes_record() {
         let id = &source.resource_id;
         assert!(text.starts_with(&format!("# Changes we made: {}\n", source.title)));
         assert!(text.contains(&format!("`{id}`")), "{id}");
+        // CC BY 4.0, or CC BY-SA 4.0 for Theographic's events (#185).
+        let link = obs_model::cc_by_license_url(&source.spdx).unwrap();
         assert!(
-            text.contains("https://creativecommons.org/licenses/by/4.0/"),
+            link.starts_with("https://creativecommons.org/licenses/by")
+                && link.ends_with("/4.0/")
+                && text.contains(&link),
             "{id}: no licence link"
         );
         assert!(text.contains(source.attribution.trim()), "{id}: no credit");

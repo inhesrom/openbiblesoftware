@@ -388,3 +388,90 @@ fn a_font_without_outlines_is_refused_and_text_still_paints() {
         assert!(!proportional.iter().any(|f| f == "interface"));
     });
 }
+
+/// The Topic Guide's subtopic row heights (#183), measured in the old interface font, are
+/// forgotten when the font changes, even when the rows keep their width: every row, in view
+/// or not, is measured again in the new face, so the Guide's scroll height never mixes the two.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn an_interface_font_change_remeasures_topic_rows_out_of_view() {
+    use crate::bench::library;
+    let mut h = with_fonts(None);
+    let dir = std::env::temp_dir().join(format!("obs-fonts-topic-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let nave = library::topical_index("nave").unwrap();
+    let path = dir.join("nave.obr");
+    obs_store::write_obr(&nave, &path).unwrap();
+    h.shell.st.session.library.add_file(&path).unwrap();
+    h.shell.reset_layout();
+    let font = |h: &mut Harness, style: &str| {
+        h.shell.run(
+            "view.font",
+            &json!({ "slot": "interface", "family": "Test Serif", "style": style }),
+        );
+    };
+    font(&mut h, "Regular");
+    let (topic, subtopics, _) = library::LONG_TOPICS[0];
+    let tab = obs_engine::TabId(
+        h.shell
+            .run(
+                "guide.topic_guide",
+                &json!({ "topic": topic, "split": true }),
+            )
+            .unwrap()["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    h.frames(4);
+    h.shell
+        .st
+        .tabs
+        .get_mut(&tab)
+        .unwrap()
+        .guide_expanded
+        .insert(obs_engine::GuideSection::TopicalEntries);
+    let over = {
+        let tiles = &h.shell.tree.tiles;
+        tiles.rect(tiles.find_pane(&tab).unwrap()).unwrap().center()
+    };
+    let rows = |h: &Harness| h.shell.st.tabs[&tab].topic_rows.clone();
+    // Wheel through the topic, every subtopic row drawn (and measured) on the way.
+    let scroll = |h: &mut Harness, dy: f32| {
+        for _ in 0..400 {
+            h.events.push(Event::PointerMoved(over));
+            h.events.push(Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(0.0, dy),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers: Modifiers::NONE,
+            });
+            h.frame();
+        }
+        h.frames(10);
+    };
+    scroll(&mut h, -200.0);
+    let regular = rows(&h);
+    assert_eq!(regular.len(), subtopics, "every row measured");
+    scroll(&mut h, 200.0);
+    assert_eq!(rows(&h), regular, "out of view, rows keep their heights");
+
+    // Back at the top, most rows are out of view. The italic wraps some rows differently at
+    // the same width.
+    font(&mut h, "Italic");
+    h.frame();
+    let italic = rows(&h);
+    // Measuring every row afresh in the new face gives the same heights: none is stale.
+    h.shell.st.tabs.get_mut(&tab).unwrap().topic_rows.clear();
+    h.frame();
+    assert_eq!(rows(&h), italic);
+    assert!(
+        regular
+            .iter()
+            .any(|(id, (w, ht))| italic[id].0 == *w && italic[id].1 != *ht),
+        "the italic wraps some row differently at the same width"
+    );
+    drop(h);
+    let _ = std::fs::remove_dir_all(dir);
+}

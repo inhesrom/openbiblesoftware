@@ -454,16 +454,101 @@ fn bench_runs_and_reports_every_scenario() {
         jumps: 2,
         panes: 2,
         pace: false,
+        shell_scenarios: false,
         ..bench::BenchConfig::default()
     };
     let report = bench::run(bench::synthetic_bible(), cfg);
     let names: Vec<&str> = report.scenarios.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(names, ["steady", "fling", "jumps"]);
+    assert_eq!(names, ["steady", "fling", "jumps", "interlinear", "find"]);
     assert_eq!(report.scenarios[0].frames, 20);
     assert!(report.blocks > 1000);
     assert!(report.text_gpu_mib > 0.0);
     // Every pane draws a Find bar's matches (#175).
     assert!(report.find_matches > 10_000, "{}", report.find_matches);
+    // Interlinear lines (#143) on every pane, scrolled for half the steady frames.
+    assert_eq!(report.scenarios[3].frames, 10);
+    // Find next (#175, #183): every step measured, each a jump that settles.
+    let find = &report.scenarios[4];
+    assert!(find.settle_frames_max.is_some_and(|n| n <= 2), "{find:?}");
+    assert!(
+        report.feature_errors.is_empty(),
+        "{:?}",
+        report.feature_errors
+    );
+}
+
+/// The word the Find scenario steps through is in the bench Bible a few dozen times, far
+/// apart, so each Find next jumps (#183).
+#[test]
+fn the_find_scenarios_word_is_sparse() {
+    let doc = bench::synthetic_bible();
+    let finder = obs_search::Finder::new(bench::FIND_SPARSE, Default::default()).unwrap();
+    let found: Vec<(usize, usize)> = doc
+        .units
+        .iter()
+        .enumerate()
+        .flat_map(|(u, unit)| {
+            finder
+                .find(&unit.text)
+                .into_iter()
+                .map(move |r| (u, r.start))
+        })
+        .collect();
+    assert!((12..200).contains(&found.len()), "{}", found.len());
+    let books: std::collections::BTreeSet<usize> = found.iter().map(|(u, _)| *u).collect();
+    assert!(books.len() >= 3, "{books:?}");
+}
+
+/// Every Shell-driven feature scenario (#183) sets up, shows its feature with realistic data
+/// and measures it: the Atlas on a chapter of 120 places, a whole-Bible search's Grid and
+/// Chart, the Exegetical Guide on Genesis 24, the Topic Guide on Prayer with every subtopic,
+/// and Get Resources over 3,000 rows. Each waits for what it must show, so a scenario that
+/// shows nothing fails here rather than measuring an empty Tab. Each times its feature Tab's
+/// synchronous work every frame: a seeded 3 ms there (within a 60 Hz frame, over #19's 2 ms
+/// budget) shows in every scenario's p99, where the gate catches it.
+#[test]
+fn every_shell_scenario_shows_its_feature_and_measures_it() {
+    let slowdown = std::time::Duration::from_millis(3);
+    let cfg = bench::BenchConfig {
+        pace: false,
+        tool_frames: 8,
+        tool_steps: 2,
+        feature_slowdown: slowdown,
+        ..bench::BenchConfig::default()
+    };
+    let (reports, errors) = bench::tools::run(&cfg);
+    assert!(errors.is_empty(), "{errors:?}");
+    let names: Vec<&str> = reports.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, bench::SHELL_SCENARIOS);
+    for r in &reports {
+        assert!(r.frames >= 8, "{r:?}");
+        let settle = r.settle_frames_max.expect("settle frames");
+        assert!(settle < bench::SETTLE_LIMIT, "{r:?}");
+        assert!(r.sync_layout_p50_ms >= 3.0, "{r:?}");
+        assert!(r.sync_layout_p99_ms >= 3.0, "{r:?}");
+    }
+}
+
+/// Get Resources filters and sorts its catalog on the UI thread in the frame its search or
+/// type filter changes (#183): those frames are held to #19's 2 ms synchronous-work budget, not
+/// exempt as a jump's target block is. 3 ms seeded only in an action's own frame (each key
+/// typed, each type filter change) shows in the scenario's p99, where the gate catches it.
+#[test]
+fn get_resources_holds_catalog_filtering_frames_to_the_sync_budget() {
+    let cfg = bench::BenchConfig {
+        pace: false,
+        tool_frames: 8,
+        tool_steps: 2,
+        action_slowdown: std::time::Duration::from_millis(3),
+        ..bench::BenchConfig::default()
+    };
+    let s = bench::tools::get_resources(&cfg).expect("the Get Resources scenario");
+    let r = s.report("get-resources", 1000.0 / 60.0);
+    assert!(
+        r.settle_frames_max.expect("settle frames") < bench::SETTLE_LIMIT,
+        "{r:?}"
+    );
+    assert!(r.sync_layout_p99_ms >= 3.0, "{r:?}");
 }
 
 #[test]
@@ -629,7 +714,17 @@ fn every_ink_on_every_highlight_meets_wcag_aa_in_every_tone() {
         ("Sepia", Palette::SEPIA),
         ("Dark", Palette::DARK),
     ] {
-        for (bg_name, bg) in p.backgrounds() {
+        // The page, each overlay and each built-in background style as this tone draws it.
+        let mut backgrounds: Vec<(String, egui::Color32)> = (p.overlays().into_iter())
+            .map(|(n, c)| (n.to_string(), c))
+            .collect();
+        for style in obs_store::built_in_styles() {
+            let paint = p.paint(&style.appearance);
+            if paint.look == obs_engine::HighlightLook::Background {
+                backgrounds.push((style.name, paint.color));
+            }
+        }
+        for (bg_name, bg) in backgrounds {
             for (role, ink) in p.inks() {
                 let c = contrast(ink, bg);
                 assert!(
@@ -643,8 +738,10 @@ fn every_ink_on_every_highlight_meets_wcag_aa_in_every_tone() {
             }
         }
         // The red underline is a mark, not text: WCAG's 3:1 for graphics, against the page.
+        let u = contrast(p.built_in_color("red_underline"), p.page);
+        assert!(u >= 3.0, "{name}: red underline {u:.2}:1");
         let u = contrast(p.underline, p.page);
-        assert!(u >= 3.0, "{name}: underline {u:.2}:1");
+        assert!(u >= 3.0, "{name}: word underline {u:.2}:1");
         // So is the current Find match's outline (#175), against the page and its fill.
         for (what, bg) in [("page", p.page), ("search hit", p.search_hit)] {
             let o = contrast(p.find_current, bg);
@@ -653,6 +750,15 @@ fn every_ink_on_every_highlight_meets_wcag_aa_in_every_tone() {
     }
     assert_eq!(pairs, 3 * 10 * 7);
     eprintln!("lowest contrast {:.2}:1 ({})", worst.0, worst.1);
+    // The built-in styles keep the colours v0.1 tuned for each tone (#21 decision 3).
+    assert_eq!(
+        Palette::DARK.built_in_color("yellow"),
+        egui::Color32::from_rgb(70, 60, 16)
+    );
+    assert_eq!(
+        Palette::SEPIA.built_in_color("red_underline"),
+        egui::Color32::from_rgb(184, 40, 32)
+    );
     // The formula itself: black on white is 21:1, a colour on itself 1:1.
     assert!((contrast(egui::Color32::BLACK, egui::Color32::WHITE) - 21.0).abs() < 0.01);
     assert!((contrast(Palette::DARK.ink, Palette::DARK.ink) - 1.0).abs() < 1e-6);
