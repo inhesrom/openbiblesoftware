@@ -7,9 +7,9 @@
 //!   name commands, jobs and problems, never Notes, Highlights or Resource text: another
 //!   library's message is withheld unless it is vetted ([`log_line`]).
 //! - A panic writes a **Crash report** there ([`install_panic_hook`]): what panicked and
-//!   where (quoted text in the message withheld, [`withhold_quoted`]), a backtrace, the app
-//!   version, the OS and the recent log lines, with the home folder written as `~`. It is a
-//!   plain text file; nothing is sent automatically.
+//!   where (of the message only the standard library's own phrase, [`panic_summary`]), a
+//!   backtrace, the app version, the OS and the recent log lines, with the home folder
+//!   written as `~`. It is a plain text file; nothing is sent automatically.
 //! - At the next launch the app offers **Report a problem** for a new Crash report
 //!   ([`CrashReport::is_new`]): the user reads it, then may copy it or open GitHub's new-issue
 //!   form with it in the web address ([`issue_url`]; opening it sends the report to GitHub,
@@ -53,8 +53,6 @@ pub(crate) const LOG_LEVEL_PREF: &str = "log_level";
 /// objects and pixels but never text (egui turns text into glyph images before they get it).
 /// Vetted against the locked versions (#219); any other library's message is withheld.
 const VETTED_TARGETS: &[&str] = &["wgpu", "naga", "egui_wgpu"];
-/// A panic message longer than this is cut.
-const PANIC_MESSAGE_CHARS: usize = 300;
 
 const CRASH_PREFIX: &str = "crash-";
 const SEEN_SUFFIX: &str = ".seen.txt";
@@ -457,7 +455,7 @@ pub fn install_panic_hook(dir: PathBuf) {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let facts = PanicFacts {
-            message: withhold_quoted(&panic_message(info.payload())),
+            message: panic_summary(&panic_message(info.payload())),
             location: info
                 .location()
                 .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column())),
@@ -539,74 +537,30 @@ pub fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
         .unwrap_or_else(|| "(no message)".into())
 }
 
-/// A panic message without the text it quotes, which may be the user's: the standard
-/// library quotes a whole string it could not slice (`` of `…` ``), and an error's details
-/// are often in double quotes. Only the standard library's own opening phrases keep their
-/// backticks ([`STD_PANIC_PHRASES`], e.g. ``called `Option::unwrap()` on a `None` value``);
-/// any other backtick span runs to the message's last backtick, since the quoted string may
-/// hold backticks itself, and is written `…`. A span in double quotes (up to the first
-/// unescaped `"`), or a character's debug form in single quotes, is written `…` too. The
-/// message is cut at [`PANIC_MESSAGE_CHARS`].
-pub fn withhold_quoted(message: &str) -> String {
-    let (mut out, rest) = match STD_PANIC_PHRASES
+/// What a Crash report says about a panic message: only the standard library's own phrase
+/// it starts with ([`STD_PANIC_PHRASES`], e.g. ``called `Option::unwrap()` on a `None` value``
+/// or `index out of bounds`), followed by [`DETAILS_WITHHELD`] when the message goes on; any
+/// other message is [`MESSAGE_WITHHELD`]. A panic message is text the code formatted, and it
+/// may hold the user's own (a Note, a search, a file name), quoted or not, so nothing past a
+/// known phrase is kept. The location and the backtrace say where it happened.
+pub fn panic_summary(message: &str) -> String {
+    match STD_PANIC_PHRASES
         .iter()
         .find(|phrase| message.starts_with(*phrase))
     {
-        Some(phrase) => (phrase.to_string(), &message[phrase.len()..]),
-        None => (String::new(), message),
-    };
-    let chars: Vec<char> = rest.chars().collect();
-    let last_backtick = chars.iter().rposition(|&c| c == '`');
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        match c {
-            '`' => {
-                out.push_str("`…");
-                match last_backtick.filter(|&end| end > i) {
-                    Some(end) => {
-                        out.push('`');
-                        i = end + 1;
-                    }
-                    None => i = chars.len(),
-                }
-            }
-            '"' => {
-                out.push_str("\"…");
-                match closing_quote(&chars, i + 1, '"') {
-                    Some(end) => {
-                        out.push('"');
-                        i = end + 1;
-                    }
-                    None => i = chars.len(),
-                }
-            }
-            // A char's debug form: 'é', '\n', '\'', '\u{301}' (not an apostrophe in words).
-            '\'' => match closing_quote(&chars, i + 1, '\'') {
-                Some(end) if end == i + 2 || (chars.get(i + 1) == Some(&'\\') && end - i <= 11) => {
-                    out.push_str("'…'");
-                    i = end + 1;
-                }
-                _ => {
-                    out.push(c);
-                    i += 1;
-                }
-            },
-            _ => {
-                out.push(c);
-                i += 1;
-            }
-        }
+        Some(phrase) if message.len() == phrase.len() => (*phrase).to_string(),
+        Some(phrase) => format!("{phrase} {DETAILS_WITHHELD}"),
+        None => MESSAGE_WITHHELD.to_string(),
     }
-    if out.chars().count() > PANIC_MESSAGE_CHARS {
-        out = out.chars().take(PANIC_MESSAGE_CHARS).collect();
-        out.push('…');
-    }
-    out
 }
 
-/// The opening phrases of the standard library's panic messages whose backticks name code,
-/// kept as they are at the start of a panic message by [`withhold_quoted`].
+/// A Crash report's panic message when it is not one of the standard library's.
+pub const MESSAGE_WITHHELD: &str = "(message withheld)";
+/// Written after a standard library phrase in place of the rest of the panic message.
+pub const DETAILS_WITHHELD: &str = "(details withheld)";
+
+/// The opening phrases of the standard library's panic messages, kept by [`panic_summary`].
+/// Each is fixed text; what follows it (a value, an index, a quoted string) is not kept.
 const STD_PANIC_PHRASES: &[&str] = &[
     "called `Result::unwrap()` on an `Err` value",
     "called `Result::unwrap_err()` on an `Ok` value",
@@ -614,21 +568,27 @@ const STD_PANIC_PHRASES: &[&str] = &[
     "assertion `left == right` failed",
     "assertion `left != right` failed",
     "assertion `left matches right` failed",
+    "index out of bounds",
+    "byte index",
+    "range start index",
+    "range end index",
+    "slice index starts at",
+    "attempt to add with overflow",
+    "attempt to subtract with overflow",
+    "attempt to multiply with overflow",
+    "attempt to divide by zero",
+    "attempt to calculate the remainder with a divisor of zero",
+    "attempt to negate with overflow",
+    "attempt to shift left with overflow",
+    "attempt to shift right with overflow",
+    "already borrowed",
+    "already mutably borrowed",
+    "capacity overflow",
+    "explicit panic",
+    "internal error: entered unreachable code",
+    "not yet implemented",
+    "not implemented",
 ];
-
-/// The index of the `quote` closing a span that starts at `from`, skipping a debug string's
-/// escapes (`\"`, `\\`).
-fn closing_quote(chars: &[char], from: usize, quote: char) -> Option<usize> {
-    let mut i = from;
-    while i < chars.len() {
-        match chars[i] {
-            '\\' => i += 2,
-            c if c == quote => return Some(i),
-            _ => i += 1,
-        }
-    }
-    None
-}
 
 /// One Crash report in the Log folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1052,57 +1012,58 @@ mod tests {
     }
 
     #[test]
-    fn quoted_text_in_a_panic_message_is_withheld() {
-        // The standard library quotes the whole string it could not slice.
+    fn a_panic_message_keeps_only_the_standard_librarys_phrase() {
+        // Text the code put in a panic message is withheld, quoted or not.
+        for private in [
+            "invalid note: PRIVATE_NOTE",
+            "PRIVATE_NOTE",
+            "of `PRIVATE_NOTE`",
+            "Error { msg: \"PRIVATE_NOTE\" }",
+            "",
+        ] {
+            assert_eq!(panic_summary(private), MESSAGE_WITHHELD, "{private}");
+        }
+        // The standard library's own phrase is kept; what follows it is not.
         assert_eq!(
-            withhold_quoted(
-                "byte index 5 is not a char boundary; it is inside 'é' (bytes 4..6) of \
-                 `my PRIVATE_NOTE text`"
-            ),
-            "byte index 5 is not a char boundary; it is inside '…' (bytes 4..6) of `…`"
-        );
-        assert_eq!(
-            withhold_quoted(
-                "called `Result::unwrap()` on an `Err` value: Error { msg: \"PRIVATE_NOTE\" }"
-            ),
-            "called `Result::unwrap()` on an `Err` value: Error { msg: \"…\" }"
-        );
-        assert_eq!(
-            withhold_quoted("char '\\u{301}' and \"open"),
-            "char '…' and \"…"
-        );
-        assert_eq!(
-            withhold_quoted("index out of bounds: the len is 3 but the index is 7"),
-            "index out of bounds: the len is 3 but the index is 7"
-        );
-        assert_eq!(withhold_quoted("can't open it's"), "can't open it's");
-        // Quoted text that looks like code is still withheld; only the standard library's
-        // own phrases keep their backticks, and only at the start of the message.
-        assert_eq!(withhold_quoted("of `PRIVATE::NOTE`"), "of `…`");
-        assert_eq!(withhold_quoted("of `Err`"), "of `…`");
-        assert_eq!(
-            withhold_quoted("of `Err` PRIVATE_NOTE `Option::unwrap()` [...]"),
-            "of `…` [...]"
-        );
-        assert_eq!(
-            withhold_quoted("called `Option::unwrap()` on a `None` value"),
+            panic_summary("called `Option::unwrap()` on a `None` value"),
             "called `Option::unwrap()` on a `None` value"
         );
         assert_eq!(
-            withhold_quoted("assertion `left == right` failed\n  left: \"PRIVATE\"\n right: 2"),
-            "assertion `left == right` failed\n  left: \"…\"\n right: 2"
-        );
-        // Escaped quotes in a debug string do not end it.
-        assert_eq!(
-            withhold_quoted(r#"Error { msg: "a \"PRIVATE_NOTE\" \\" }"#),
-            r#"Error { msg: "…" }"#
+            panic_summary("called `Result::unwrap()` on an `Err` value: Error(PRIVATE_NOTE)"),
+            "called `Result::unwrap()` on an `Err` value (details withheld)"
         );
         assert_eq!(
-            withhold_quoted(r"char '\'' PRIVATE '\\'"),
-            "char '…' PRIVATE '…'"
+            panic_summary("assertion `left == right` failed\n  left: PRIVATE_NOTE\n right: 2"),
+            "assertion `left == right` failed (details withheld)"
         );
-        let long = withhold_quoted(&"x".repeat(1000));
-        assert_eq!(long.chars().count(), PANIC_MESSAGE_CHARS + 1);
+        assert_eq!(
+            panic_summary(
+                "byte index 5 is not a char boundary; it is inside 'é' (bytes 4..6) of \
+                 `my PRIVATE_NOTE text`"
+            ),
+            "byte index (details withheld)"
+        );
+        assert_eq!(
+            panic_summary("index out of bounds: the len is 3 but the index is 7"),
+            "index out of bounds (details withheld)"
+        );
+        assert_eq!(panic_summary("explicit panic"), "explicit panic");
+        // A phrase later in the message does not count.
+        assert_eq!(
+            panic_summary("PRIVATE_NOTE: called `Option::unwrap()` on a `None` value"),
+            MESSAGE_WITHHELD
+        );
+
+        // Neither the Crash report nor its GitHub issue address carries the withheld text.
+        let report = crash_report_text(
+            &facts(&panic_summary("invalid note: PRIVATE_NOTE"), 0),
+            &[],
+            None,
+        );
+        assert!(report.contains("Panic: (message withheld)\n"), "{report}");
+        for text in [&report, &issue_url(&report)] {
+            assert!(!text.contains("PRIVATE_NOTE"), "{text}");
+        }
     }
 
     #[test]

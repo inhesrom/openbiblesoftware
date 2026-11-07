@@ -31,7 +31,7 @@ fn preview(h: &Harness, name: &str) {
 /// A Crash report as the panic hook writes it, left in `logs` by the last run.
 fn crashed_last_time(logs: &Path) -> String {
     let facts = PanicFacts {
-        message: "index out of bounds: the len is 3 but the index is 7".into(),
+        message: diagnostics::panic_summary("index out of bounds: the len is 3 but the index is 7"),
         location: Some("crates/ui-egui/src/shell.rs:120:9".into()),
         thread: "main".into(),
         backtrace: "   0: obs_ui_egui::shell::Shell::ui\n             at ./crates/ui-egui/src/shell.rs:120:9".into(),

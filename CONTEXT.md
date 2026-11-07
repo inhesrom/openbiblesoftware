@@ -570,7 +570,7 @@ How much the app writes to its log files: Errors only, Warnings, Normal (the def
 _Avoid_: Verbosity, Debug mode
 
 **Crash report**:
-A text file the app writes to the Log folder when it hits a bug it cannot recover from: what failed and where in the program, a backtrace, the app version, the operating system and the recent log lines, with the home folder written as `~` and any quoted text in the failure message withheld. It holds none of the user's content. The next launch offers Report a problem for it, once; the last ten are kept.
+A text file the app writes to the Log folder when it hits a bug it cannot recover from: what failed and where in the program, a backtrace, the app version, the operating system and the recent log lines, with the home folder written as `~`. Of the failure message only the standard library's own wording is kept (such as "index out of bounds"); anything else in it is withheld. It holds none of the user's content. The next launch offers Report a problem for it, once; the last ten are kept.
 _Avoid_: Crash dump, Telemetry, Error log
 
 **Report a problem**:

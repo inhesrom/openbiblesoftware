@@ -1,7 +1,8 @@
 //! A forced panic in a test build writes a Crash report to the Log folder (#219): the panic,
 //! where it happened, a backtrace, the app version, the OS and the recent log lines, with the
-//! home folder written as `~`; neither a library's log message quoting typed text nor quoted
-//! text in the panic message reaches it. The next launch finds it as a new report to offer
+//! home folder written as `~`; neither a library's log message quoting typed text nor text
+//! the code put in the panic message reaches it, nor the log file, nor the GitHub issue
+//! address. The next launch finds it as a new report to offer
 //! (`ui-egui`'s `report_problem_tests` show the offer and the review).
 //!
 //! Only test (debug) builds panic on `OBS_FORCE_PANIC`; a release build would start the
@@ -69,10 +70,7 @@ fn a_forced_panic_writes_a_crash_report_the_next_launch_offers() {
         obs_engine::diagnostics::os_description()
     )));
     assert!(text.contains("Thread: main\n"), "{text}");
-    assert!(
-        text.contains("Panic: forced panic (OBS_FORCE_PANIC) of `…`\n"),
-        "{text}"
-    );
+    assert!(text.contains("Panic: (message withheld)\n"), "{text}");
     assert!(text.contains("At: apps/openbible/src/main.rs:"), "{text}");
     // The backtrace starts where the panic was raised, not in the panic machinery.
     assert!(text.contains("\nBacktrace:\n"), "{text}");
@@ -91,6 +89,8 @@ fn a_forced_panic_writes_a_crash_report_the_next_launch_offers() {
         "{text}"
     );
     assert!(!text.contains("PRIVATE_NOTE"), "{text}");
+    let url = obs_engine::diagnostics::issue_url(&report.text);
+    assert!(!url.contains("PRIVATE_NOTE"), "{url}");
     // The log file has the launch and the panic too, and not the typed text.
     let log = std::fs::read_to_string(logs.join(obs_engine::diagnostics::LOG_FILE)).unwrap();
     assert!(

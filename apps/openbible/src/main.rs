@@ -98,7 +98,8 @@ fn start_diagnostics() {
     diagnostics::install_panic_hook(dir);
     // A test build panics here on request, to check the Crash report end to end: after a
     // windowing-library warning quoting typed text, as egui-winit's for an IME event it
-    // ignores, and with quoted text in the panic message. Neither text may reach the report.
+    // ignores, and with text the code put in the panic message, unquoted. Neither text may
+    // reach the log file or the report.
     #[cfg(debug_assertions)]
     if std::env::var_os("OBS_FORCE_PANIC").is_some() {
         log::warn!(
@@ -107,7 +108,7 @@ fn start_diagnostics() {
         );
         #[allow(clippy::panic)]
         {
-            panic!("forced panic (OBS_FORCE_PANIC) of `PRIVATE_NOTE`");
+            panic!("forced panic (OBS_FORCE_PANIC): invalid note PRIVATE_NOTE");
         }
     }
 }
