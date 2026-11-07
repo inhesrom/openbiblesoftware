@@ -56,9 +56,9 @@ pub(crate) struct StylesUi {
     /// The style whose tone colours are shown.
     chosen: Option<String>,
     /// Text being typed into fields, by style id (committed on Enter or leaving the field).
-    names: std::collections::HashMap<String, String>,
-    colors: std::collections::HashMap<String, String>,
-    tones: std::collections::HashMap<(String, StyleTone), String>,
+    names: std::collections::HashMap<String, Draft>,
+    colors: std::collections::HashMap<String, Draft>,
+    tones: std::collections::HashMap<(String, StyleTone), Draft>,
     /// A palette name being typed: for a new palette (`None`) or a rename.
     palette_name: Option<(Option<String>, String)>,
     /// A deletion waiting for its replacement: the style (or palette) id, whether it is a
@@ -68,6 +68,24 @@ pub(crate) struct StylesUi {
     error: Option<String>,
     #[cfg(not(target_arch = "wasm32"))]
     file: Option<FileWait>,
+}
+
+/// A field's text and the stored value it showed when the user began typing. A draft still
+/// equal to its start is clean: it follows the style as it changes (undo, redo, a new colour
+/// clearing the tone adjustments), so leaving the field commits only what the user typed.
+#[derive(Debug, Clone)]
+struct Draft {
+    start: String,
+    text: String,
+}
+
+impl Draft {
+    fn of(stored: &str) -> Self {
+        Self {
+            start: stored.to_string(),
+            text: stored.to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -142,17 +160,35 @@ fn paint_sample(ui: &Ui, rect: Rect, a: &StyleAppearance, palette: &Palette) {
     p.galley(text.min, galley, ink);
 }
 
-/// A text field that reports its text when the user presses Enter or leaves it.
-fn commit_field(ui: &mut Ui, text: &mut String, width: f32, name: &str, hint: &str) -> bool {
+/// A text field over `stored`, the value saved now: shows the user's draft while it differs
+/// from what it started as, else `stored`. Returns the text the user typed when they press
+/// Enter or leave the field having changed it.
+fn draft_field<K: std::hash::Hash + Eq + Clone>(
+    ui: &mut Ui,
+    drafts: &mut std::collections::HashMap<K, Draft>,
+    key: &K,
+    stored: &str,
+    (width, name, hint): (f32, &str, &str),
+) -> Option<String> {
+    let draft = drafts
+        .entry(key.clone())
+        .or_insert_with(|| Draft::of(stored));
+    if draft.text == draft.start && draft.start != stored {
+        *draft = Draft::of(stored);
+    }
     let r = ui
         .add(
-            egui::TextEdit::singleline(text)
+            egui::TextEdit::singleline(&mut draft.text)
                 .desired_width(width)
                 .min_size(vec2(width, 0.0))
                 .hint_text(hint),
         )
         .accessible_name(name);
-    r.lost_focus()
+    if !r.lost_focus() {
+        return None;
+    }
+    let draft = drafts.remove(key)?;
+    (draft.text != draft.start).then_some(draft.text)
 }
 
 impl State {
@@ -377,18 +413,19 @@ impl State {
                         ui_state.chosen = Some(style.id.clone());
                     }
                     ui.label(RichText::new(keys.slot(i)).small().color(theme::c().muted));
-                    let name = ui_state
-                        .names
-                        .entry(style.id.clone())
-                        .or_insert_with(|| style.name.clone());
-                    if commit_field(ui, name, 140.0, &format!("Name of {label}"), &label)
-                        && *name != style.name
+                    let field_name = format!("Name of {label}");
+                    if let Some(name) = draft_field(
+                        ui,
+                        &mut ui_state.names,
+                        &style.id,
+                        &style.name,
+                        (140.0, &field_name, &label),
+                    ) && name != style.name
                     {
                         acts.push(Act::Run(
                             "highlight_style.edit",
                             json!({ "id": style.id, "name": name }),
                         ));
-                        ui_state.names.remove(&style.id);
                     }
                     let mut look = style.appearance.look;
                     egui::ComboBox::from_id_salt(("highlight-look", &style.id))
@@ -569,14 +606,13 @@ impl State {
                     );
                     ui.horizontal(|ui| {
                         let key = (style.id.clone(), tone);
-                        let text = ui_state
-                            .tones
-                            .entry(key.clone())
-                            .or_insert_with(|| adjusted.map(hex).unwrap_or_default());
+                        let stored = adjusted.map(hex).unwrap_or_default();
                         let name = format!("{} colour of {label}", tone.label());
-                        if commit_field(ui, text, 80.0, &name, "#rrggbb") {
-                            let typed = text.trim().to_string();
-                            ui_state.tones.remove(&key);
+                        let field = (80.0, name.as_str(), "#rrggbb");
+                        if let Some(typed) =
+                            draft_field(ui, &mut ui_state.tones, &key, &stored, field)
+                        {
+                            let typed = typed.trim().to_string();
                             if typed.is_empty() {
                                 if adjusted.is_some() {
                                     acts.push(Act::Run(
@@ -769,14 +805,16 @@ fn color_field(
     label: &str,
     acts: &mut Vec<Act>,
 ) {
-    let text = ui_state
-        .colors
-        .entry(style.id.clone())
-        .or_insert_with(|| hex(style.appearance.color));
-    if commit_field(ui, text, 80.0, &format!("Colour of {label}"), "#rrggbb") {
-        let typed = text.trim().to_string();
-        ui_state.colors.remove(&style.id);
-        match typed.parse::<Rgb>() {
+    let name = format!("Colour of {label}");
+    let stored = hex(style.appearance.color);
+    if let Some(typed) = draft_field(
+        ui,
+        &mut ui_state.colors,
+        &style.id,
+        &stored,
+        (80.0, &name, "#rrggbb"),
+    ) {
+        match typed.trim().parse::<Rgb>() {
             Ok(c) if c != style.appearance.color => acts.push(Act::Run(
                 "highlight_style.edit",
                 json!({ "id": style.id, "color": hex(c) }),

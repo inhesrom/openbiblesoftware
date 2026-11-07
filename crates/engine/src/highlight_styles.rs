@@ -131,6 +131,15 @@ fn clean_name(name: &str, what: &str, may_be_empty: bool) -> Result<String, Stri
     Ok(name.to_string())
 }
 
+/// `base` numbered `n` ("Themes (2)"), shortened so the whole stays within
+/// [`MAX_STYLE_NAME`]: an imported palette's name must import again once exported.
+fn numbered_name(base: &str, n: u32) -> String {
+    let suffix = format!(" ({n})");
+    let room = MAX_STYLE_NAME.saturating_sub(suffix.chars().count());
+    let stem: String = base.chars().take(room).collect();
+    format!("{}{suffix}", stem.trim_end())
+}
+
 /// What the UI calls a style: its name, or its place in its palette ("Style 3").
 pub fn style_label(style: &HighlightStyle, styles: &[HighlightStyle]) -> String {
     if !style.name.is_empty() {
@@ -523,7 +532,7 @@ impl Session {
             .map(|p| p.name.to_lowercase())
             .collect();
         let name = std::iter::once(base.clone())
-            .chain((2..).map(|n| format!("{base} ({n})")))
+            .chain((2..).map(|n| numbered_name(&base, n)))
             .find(|n| !taken.contains(&n.to_lowercase()))
             .unwrap_or(base);
         let palette = self.new_palette(name)?;

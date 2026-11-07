@@ -465,6 +465,47 @@ fn a_palette_exports_to_a_small_json_file_and_imports_as_a_new_palette() {
     }
 }
 
+/// A palette name at the length limit, imported where it is taken, is shortened to fit its
+/// number; exported again, that copy imports again.
+#[test]
+fn an_imported_palette_numbered_at_the_name_limit_exports_and_imports_again() {
+    let t = Temp::new("long-name");
+    let mut s = launch(&t);
+    let long = "Psalms of ascent and other songs for the pilgrim road to Zion";
+    let long = &long[..obs_store::MAX_STYLE_NAME];
+    assert_eq!(long.chars().count(), obs_store::MAX_STYLE_NAME);
+    let file = json!({
+        "format": "openbible-highlight-palette", "version": 1, "name": long,
+        "styles": [{ "name": "Ascent", "look": "underline", "color": "#284696" }],
+    })
+    .to_string();
+    let first = run(&mut s, "highlight_palette.import", json!({ "text": file }));
+    assert_eq!(first["palette"]["name"], long);
+    let second = run(&mut s, "highlight_palette.import", json!({ "text": file }));
+    let numbered = second["palette"]["name"].as_str().unwrap().to_string();
+    assert!(numbered.ends_with(" (2)"), "{numbered}");
+    assert_eq!(numbered.chars().count(), obs_store::MAX_STYLE_NAME);
+    assert!(long.starts_with(numbered.trim_end_matches(" (2)")));
+
+    let path = t.0.join("numbered.json");
+    run(
+        &mut s,
+        "highlight_palette.export",
+        json!({ "id": second["id"], "path": path.to_string_lossy() }),
+    );
+    let again = run(
+        &mut s,
+        "highlight_palette.import",
+        json!({ "path": path.to_string_lossy() }),
+    );
+    let name = again["palette"]["name"].as_str().unwrap();
+    assert!(name.ends_with(" (3)"), "{name}");
+    assert!(name.chars().count() <= obs_store::MAX_STYLE_NAME);
+    let styles = s.palette_styles(again["id"].as_str().unwrap()).unwrap();
+    assert_eq!(styles.len(), 1);
+    assert_eq!(styles[0].name, "Ascent");
+}
+
 /// Exported Notes name a Highlight by its style, escaped: a name is the user's own text.
 #[test]
 fn notes_exports_name_highlights_by_their_style() {

@@ -397,6 +397,173 @@ fn a_tone_adjustment_that_fails_aa_is_refused_and_never_drawn() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// The name field on the row whose key reads `key` ("Ctrl+1"): the text just right of it.
+fn name_field(h: &Harness, key: &str) -> Option<(Rect, String)> {
+    let k = h.find(key)?;
+    (h.shapes.iter())
+        .filter(|(r, t)| {
+            (r.center().y - k.center().y).abs() < 6.0 && r.left() > k.right() && !t.is_empty()
+        })
+        .min_by(|a, b| a.0.left().total_cmp(&b.0.left()))
+        .cloned()
+}
+
+/// A rename typed in the window, undone with Ctrl+Z outside the field: the field shows the
+/// old name again, and focusing and leaving it without typing neither renames nor loses redo.
+#[test]
+fn undoing_a_rename_typed_in_the_window_refreshes_the_field_and_keeps_redo() {
+    let dir = folder("undo-rename");
+    let mut h = launch(&dir);
+    h.shell.run("view.highlight_styles", &json!({}));
+    h.frames(3);
+    let (field, text) = name_field(&h, "Ctrl+1").unwrap();
+    assert_eq!(text, "Yellow");
+    h.click(field.right_center() + vec2(2.0, 0.0));
+    press_key(&mut h, egui::Key::End, Modifiers::NONE);
+    h.events.push(Event::Text("ish".into()));
+    h.frame();
+    press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    let name = |h: &Harness| h.shell.st.session.highlight_style("yellow").unwrap().name;
+    assert_eq!(name(&h), "Yellowish");
+    assert_eq!(name_field(&h, "Ctrl+1").unwrap().1, "Yellowish");
+
+    press_key(&mut h, egui::Key::Z, Modifiers::COMMAND);
+    assert_eq!(name(&h), "Yellow");
+    assert_eq!(name_field(&h, "Ctrl+1").unwrap().1, "Yellow");
+    assert_eq!(
+        h.shell.st.session.undo_history().redo_label(),
+        Some("Edit Highlight style")
+    );
+    // In and out of the field without typing: nothing is saved, redo still there.
+    let (field, _) = name_field(&h, "Ctrl+1").unwrap();
+    h.click(field.center());
+    press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    assert_eq!(name(&h), "Yellow");
+    assert_eq!(
+        h.shell.st.session.undo_history().redo_label(),
+        Some("Edit Highlight style")
+    );
+    h.shell.run("edit.redo", &json!({}));
+    h.frames(2);
+    assert_eq!(name(&h), "Yellowish");
+    assert_eq!(name_field(&h, "Ctrl+1").unwrap().1, "Yellowish");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A new colour clears a style's tone adjustments: the tone field empties with it, and
+/// focusing and leaving it does not bring the old adjustment back.
+#[test]
+fn a_new_colour_empties_the_adjusted_tone_field_for_good() {
+    let dir = folder("colour-reset");
+    let mut h = launch(&dir);
+    h.shell.run("view.highlight_styles", &json!({}));
+    h.frames(2);
+    h.click_text("+ New style");
+    let made = (h.shell.st.session.active_highlight_styles().unwrap())
+        .last()
+        .unwrap()
+        .clone();
+    let tone_fields = |h: &Harness| {
+        let mut f: Vec<Rect> = (h.shapes.iter())
+            .filter(|(_, t)| t == "#rrggbb")
+            .map(|(r, _)| *r)
+            .collect();
+        f.sort_by(|a, b| a.top().total_cmp(&b.top()));
+        f
+    };
+    let paper = tone_fields(&h)[0].center();
+    h.click(paper);
+    h.events.push(Event::Text("#ffe0f0".into()));
+    h.frame();
+    press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    let style = |h: &Harness| h.shell.st.session.highlight_style(&made.id).unwrap();
+    assert_eq!(style(&h).appearance.paper, Some(Rgb::new(0xff, 0xe0, 0xf0)));
+    assert_eq!(tone_fields(&h).len(), 2, "Paper shows its adjustment");
+    assert!(h.find("#ffe0f0").is_some(), "{:?}", h.texts());
+    // The style's colour field shows its colour.
+    let lavender = made.appearance.color.to_string();
+    assert!(h.find(&lavender).is_some(), "{:?}", h.texts());
+    h.frames(3);
+
+    h.shell.run(
+        "highlight_style.edit",
+        &json!({ "id": made.id, "color": "#c8eebe" }),
+    );
+    h.frames(2);
+    assert_eq!(style(&h).appearance.paper, None, "a new colour clears it");
+    assert_eq!(tone_fields(&h).len(), 3, "{:?}", h.texts());
+    assert!(h.find("#ffe0f0").is_none(), "{:?}", h.texts());
+    assert!(h.find(&lavender).is_none(), "{:?}", h.texts());
+    assert!(h.find("#c8eebe").is_some(), "{:?}", h.texts());
+    h.click(paper);
+    press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    assert_eq!(style(&h).appearance.paper, None, "not brought back");
+    assert_eq!(
+        h.shell.st.session.undo_history().undo_label(),
+        Some("Edit Highlight style")
+    );
+    // Undo brings the adjustment back, and the field shows it again.
+    press_key(&mut h, egui::Key::Z, Modifiers::COMMAND);
+    assert_eq!(style(&h).appearance.paper, Some(Rgb::new(0xff, 0xe0, 0xf0)));
+    assert!(h.find("#ffe0f0").is_some(), "{:?}", h.texts());
+    assert!(h.find(&lavender).is_some(), "{:?}", h.texts());
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A text-colour Highlight over a background Highlight: each passes WCAG AA alone on Paper,
+/// but grey on grey does not, so the glyphs are drawn deepened until they read on the
+/// background actually under them (#21).
+#[test]
+fn text_coloured_over_a_background_highlight_still_meets_wcag_aa() {
+    let dir = folder("overlap");
+    let mut h = launch(&dir);
+    let make = |h: &mut Harness, look: &str, color: &str| {
+        let out = h
+            .shell
+            .run(
+                "highlight_style.create",
+                &json!({ "look": look, "color": color }),
+            )
+            .unwrap();
+        out["id"].as_str().unwrap().to_string()
+    };
+    let grey = make(&mut h, "background", "#d0d0d0");
+    let slate = make(&mut h, "text_color", "#5e5e5e");
+    let palette = h.shell.st.palette;
+    assert_eq!(palette.tone, StyleTone::Paper);
+    let appearance =
+        |h: &Harness, id: &str| h.shell.st.session.highlight_style(id).unwrap().appearance;
+    let ground = palette.paint(&appearance(&h, &grey)).color;
+    let text = palette.paint(&appearance(&h, &slate)).color;
+    assert_eq!(ground, Color32::from_rgb(0xd0, 0xd0, 0xd0), "passes alone");
+    assert_eq!(text, Color32::from_rgb(0x5e, 0x5e, 0x5e), "passes alone");
+    assert!(crate::contrast(text, ground) < 4.5, "but not together");
+
+    let (mut params, verse) = rom_8_28(&h);
+    for style in [&grey, &slate] {
+        params["style"] = json!(style);
+        h.shell.run("annotation.highlight", &params).unwrap();
+    }
+    // Past the jump flash.
+    h.frames(150);
+    assert!(marks_each(&h, ground, &verse));
+    let drawn: Vec<Color32> = (h.glyphs.iter().zip(h.meshes.chunks(4)))
+        .filter(|(g, _)| verse.iter().any(|r| r.contains(g.center())))
+        .map(|(_, c)| c[0])
+        .collect();
+    assert!(drawn.len() > 50, "{} glyphs", drawn.len());
+    for c in &drawn {
+        let ratio = crate::contrast(*c, ground);
+        assert!(ratio >= 4.5, "{c:?} on {ground:?}: {ratio:.2}:1");
+        assert_ne!(*c, palette.ink, "still a text colour, not the ink");
+    }
+    assert!(drawn.iter().all(|c| *c == drawn[0]), "{drawn:?}");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// Export the active palette to a JSON file and import it back, as the window's file dialogs
 /// would: the copy is a new palette, made active.
 #[test]

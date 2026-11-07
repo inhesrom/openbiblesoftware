@@ -283,6 +283,9 @@ pub fn reading_pane(
         |a: obs_engine::StyleAppearance| *paints.entry(a).or_insert_with(|| palette.paint(&a));
     // Text-colour Highlights recolour the glyphs inside their rects, the newest on top.
     let mut recolour: Vec<(Rect, Color32)> = Vec::new();
+    // What is painted under the glyphs above the page, in paint order (the last one holding a
+    // glyph is the one it sits on): a recoloured glyph must read on it, not only on the page.
+    let mut grounds: Vec<(Rect, Color32)> = Vec::new();
     for (mark, rects) in marks.iter().zip(&mark_rects) {
         if let MarkKind::Highlight(a) = mark.kind {
             let p = paint(a);
@@ -291,6 +294,7 @@ pub fn reading_pane(
                 match p.look {
                     HighlightLook::Background => {
                         painter.rect_filled(r, 1.5, p.color);
+                        grounds.push((r, p.color));
                     }
                     HighlightLook::TextColor => recolour.push((r, p.color)),
                     HighlightLook::Underline | HighlightLook::Box => {}
@@ -302,13 +306,21 @@ pub fn reading_pane(
     for (k, rects) in found_rects(view, found, rect.height()) {
         for r in rects {
             let r = to_screen(text_band(r, size));
-            paint_find_match(&painter, r, found.current == Some(k), palette);
+            let current = found.current == Some(k);
+            paint_find_match(&painter, r, current, palette);
+            let ground = if current {
+                palette.search_hit
+            } else {
+                palette.find_match
+            };
+            grounds.push((r, ground));
         }
     }
     if let Some(sel) = view.selection {
         for r in selection_rects(view, &sel, rect.height()) {
             let r = to_screen(r);
             painter.rect_filled(r, 0.0, palette.selection);
+            grounds.push((r, palette.selection));
             out.selection_rect = Some(out.selection_rect.map_or(r, |u| u.union(r)));
         }
     }
@@ -372,9 +384,18 @@ pub fn reading_pane(
     mesh.reserve_triangles(quads.len() * 2);
     for q in quads {
         let glyph = Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max));
+        let at = glyph.center();
         let color = (recolour.iter().rev())
-            .find(|(r, _)| r.contains(glyph.center()))
-            .map_or_else(|| palette.color(q.role), |(_, c)| *c);
+            .find(|(r, _)| r.contains(at))
+            .map_or_else(
+                || palette.color(q.role),
+                |(_, c)| {
+                    let ground = (grounds.iter().rev())
+                        .find(|(r, _)| r.contains(at))
+                        .map_or(palette.page, |(_, g)| *g);
+                    palette.text_on(*c, ground)
+                },
+            );
         mesh.add_rect_with_uv(
             glyph,
             Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),

@@ -209,6 +209,16 @@ impl Palette {
             .unwrap_or(toward)
     }
 
+    /// A text-colour Highlight's `color` as drawn on `ground`, the background actually painted
+    /// under the glyph (#21): itself when it reads there (4.5:1), else deepened toward the ink
+    /// just enough. A Highlight background lets every ink read on it, so the ink always does.
+    pub fn text_on(&self, color: Color32, ground: Color32) -> Color32 {
+        (0..=DERIVE_STEPS)
+            .map(|k| mix(color, self.ink, f32::from(k) / f32::from(DERIVE_STEPS)))
+            .find(|c| contrast(*c, ground) >= TEXT_CONTRAST)
+            .unwrap_or(self.ink)
+    }
+
     /// A style's colours in this tone: the user's adjustment for the tone when it passes the
     /// check, else derived from the style's colour; and its margin mark, the colour itself
     /// for a line, box or text colour, a deepened one for a background.

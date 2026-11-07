@@ -1,7 +1,7 @@
 # Annotation service, storage and undo (#61)
 
 Notebooks, Notes and Highlights live in the User database (`obs_store::UserStore`, schema
-v9). The engine reaches them only through the `UserData` trait; `crates/engine/src/
+v10). The engine reaches them only through the `UserData` trait; `crates/engine/src/
 annotations.rs` holds the service on `Session` and the `annotation.*`, `notebook.*` and
 `edit.*` commands. The origin Bible's UI is #62 and other Bibles #63 (both below); the Notes
 Tool and Notes search are #64 ([notes-tool.md](notes-tool.md)); re-anchoring and Orphaned
@@ -16,6 +16,7 @@ annotations are #65 (below, `crates/engine/src/reanchor.rs`).
 | `anchors` | at most one per Annotation. Passage anchors: Standard start/end as canonical book number (1–66), chapter, verse. Text range (a Text-range anchor, or a Passage anchor's origin): `resource_id`, `unit_id`, `start_byte`, `end_byte`, `quote`, `prefix`, `suffix`, `content_hash`, `native_ref`, `whole_verses` (schema v5), `status` `ok`/`orphaned` (schema v6: the quote was not found after the Resource changed; on a Text-range anchor an Orphaned annotation, on a Passage anchor's origin a range kept while the Annotation shows as whole Verses) |
 | `resource_names` | schema v6: `resource_id`, last known `abbreviation` and `title` of every Resource seen, so cards of a Resource no longer in the library still name it |
 | `notes_fts` | FTS5 over Note bodies in normalized-word form (the Search index's form), keyed by `annotation_id` |
+| `highlight_palettes`, `highlight_styles` | schema v10 (#181): the user's Highlight palettes and styles; see [below](#highlight-styles-and-palettes-181-adr-0012) |
 
 A CHECK makes a stored Text range without its quote, context or content hash impossible
 (ADR 0006), and since schema v9 (#115) one that covers no text too: `end_byte > start_byte`
@@ -88,7 +89,7 @@ already makes one Highlight per unit; a Note to one place is what the Notes Tool
 
 | Command | Params |
 |---|---|
-| `annotation.highlight` | `resource`, `start_unit`, `start`, `end_unit`?, `end`, `style`? (`yellow` default, `green`, `blue`, `pink`, `red_underline`), `notebook`? |
+| `annotation.highlight` | `resource`, `start_unit`, `start`, `end_unit`?, `end`, `style`? (a Highlight style id; default: the first style of the active palette), `notebook`? |
 | `edit.undo` / `edit.redo` | Ctrl+Z / Ctrl+Shift+Z; enabled only when there is something to undo or redo |
 | `annotation.note` | `body`?, then a selection (as above), or `passage` (one Standard Passage), or neither (no Anchor); `notebook`? |
 | `annotation.edit` / `annotation.style` / `annotation.move` / `annotation.delete` | `id` and `body` / `style` / `notebook` |
@@ -195,8 +196,9 @@ changing it after the first lookup would leave the index stale.
   Show Highlights and a "Notebooks in text" submenu with each Notebook's toggle; the Notes
   Tool (#64) shows the same toggle (👁) per Notebook. Toggling either moves
   `annotations_revision`, so `MarkCache` reloads.
-- **Colours** come from the Page tone's palette: each tone has a margin-mark colour per style
-  (`Palette::marks`), at least 3:1 against its page (tested with the other palette pairs).
+- **Colours** come from the Page tone's palette: `Palette::paint` gives each style its colour
+  and margin mark there, the mark at least 3:1 against the page (see [Highlight styles and
+  palettes](#highlight-styles-and-palettes-181-adr-0012)).
 - Text Comparison does not draw Annotations in v0.1; its rows carry the diff tints.
 
 ## Re-anchoring and Orphaned annotations (#65)
@@ -269,14 +271,21 @@ View → Highlight styles….
   to 3:1. The window refuses an adjustment that fails, saying why.
 - **Drawing.** `marks_for` carries each style's look in the `Mark`, and the pane draws a
   background under the glyphs, a text colour on the glyphs it covers, and a line or box over
-  them. Style edits move the annotation revision, so Marks are remade.
+  them. A text colour is checked against what is actually painted under each glyph (a
+  background Highlight, a Find match, the selection): where two styles overlap and it does
+  not read there at 4.5:1, `Palette::text_on` deepens it toward the ink just enough. Style
+  edits move the annotation revision, so Marks are remade.
+- **The window's fields** keep a draft only while the user changes it; an untouched field
+  follows the stored style, so undo, redo and a new colour (which drops the tone
+  adjustments) show at once, and leaving a field saves only what was typed.
 - **The active palette** is the preference `highlights.palette` (not undone). The Selection
   keys `selection.highlight_1` … `_9` are places in it; keys saved under the v0.1 ids
   (`selection.highlight_yellow` …) apply to places 1–5.
 - **Export / import.** `highlight_palette.export {id, path?}` writes
   `{"format": "openbible-highlight-palette", "version": 1, "name", "styles": [{"name", "look",
   "color", "paper"?, "sepia"?, "dark"?}]}` (no ids); `highlight_palette.import {path | text}`
-  always makes a new palette ("Standard (2)" when the name is taken), as one undo step.
+  always makes a new palette ("Standard (2)" when the name is taken, the name shortened so
+  the number fits the 60-character limit), as one undo step.
 
 | Command | Params |
 |---|---|
