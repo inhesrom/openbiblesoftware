@@ -2191,6 +2191,9 @@ impl crate::UserData for WritesFail {
     fn back_up(&self, dest: &Path) -> Result<(), String> {
         crate::UserData::back_up(&self.store, dest)
     }
+    fn refuse_own_file(&self, dest: &Path) -> Result<(), String> {
+        crate::UserData::refuse_own_file(&self.store, dest)
+    }
     fn backups(&self) -> Result<Vec<obs_store::BackupFile>, String> {
         crate::UserData::backups(&self.store)
     }

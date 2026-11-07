@@ -1194,6 +1194,11 @@ impl Guides {
             .cloned()
             .unwrap_or_else(|| GuideArrangement::default_for(guide))
     }
+
+    /// Forget every arrangement: each Guide is back at its default until one is loaded.
+    pub(crate) fn forget_arrangements(&mut self) {
+        self.arrangements.clear();
+    }
 }
 
 fn pref(guide: Guide) -> String {

@@ -520,11 +520,11 @@ _Avoid_: Profile, User library, Settings file
 ### Your data
 
 **Backup**:
-One file (`.obsbackup`) holding everything in the User database, made with Back up now in Back up & restore (Tools → Back up & restore…, or Settings → Privacy and data), and restored with Restore from backup… after a preview of what will change (Notebooks, Notes, Highlights, Layouts, Reading plans, Favorites, History and Settings, now and after, with the Notebooks, Layouts and Reading plans it brings back or removes by name). A restore replaces all of the user's data; the open Workspace stays as it is. A Backup knows its format version: one from an older app is upgraded as it is restored, one from a newer app is refused. The app also keeps Backups by itself, listed there with their dates and each restorable: one at each launch (the last five), one before an app upgrade changes the User database's format, and the Safety backups.
+One file (`.obsbackup`) holding everything in the User database, made with Back up now in Back up & restore (Tools → Back up & restore…, or Settings → Privacy and data), and restored with Restore from backup… after a preview of what will change (Notebooks, Notes, Highlights, Layouts, Reading plans, Favorites, History and Settings, now and after, with the Notebooks, Layouts and Reading plans it brings back or removes by name). A restore replaces all of the user's data, settings included (one the Backup does not have goes back to its default); the open Workspace stays as it is. A Backup knows its format version: one from an older app is upgraded as it is restored, one from a newer app is refused. The app also keeps Backups by itself, listed there with their dates and each restorable: one at each launch (the last five), one before an app upgrade changes the User database's format, and the Safety backups.
 _Avoid_: Snapshot, Archive, Export (for this), Restore point
 
 **Safety backup**:
-The Backup the app takes of the User database just before a restore replaces it, so the restore can be undone: Undo restore (in Back up & restore) restores it, and it stays in the list of kept Backups (the last five). A restore of an unreadable or newer file takes none and changes nothing.
+The Backup the app takes of the User database just before a restore replaces it, so the restore can be undone: Undo restore (in Back up & restore) restores it, and it stays in the list of kept Backups (the last five). A restore of an unreadable, damaged or newer file takes none and changes nothing.
 _Avoid_: Undo file, Restore point
 
 **Data export**:

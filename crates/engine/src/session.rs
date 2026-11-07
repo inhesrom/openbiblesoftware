@@ -226,6 +226,24 @@ impl Session {
         self.reanchor_library();
     }
 
+    /// Forget the preferences read from the User database that [`Session::attach_user`] only
+    /// overwrites when the database has them, so attaching a replaced one (a restore, #217)
+    /// leaves each it lacks at its default, as a launch with it would.
+    pub(crate) fn forget_user_preferences(&mut self) {
+        // The reading faces are what the UI loaded for the font choices, not a preference: it
+        // loads them again when the choices change.
+        self.text = TextSettings {
+            fonts: self.text.fonts,
+            ..TextSettings::default()
+        };
+        self.appearance = crate::appearance::Appearance::default();
+        self.fonts = crate::appearance::FontChoices::default();
+        self.toolbar = crate::toolbar_settings::ToolbarSettings::default();
+        self.guides.forget_arrangements();
+        self.copy_verses = crate::copy_verses::CopyVerses::default();
+        self.imports.reports.clear();
+    }
+
     /// Save the library's Preferred order.
     pub(crate) fn save_preferred_order(&self) -> Result<(), String> {
         let Some(user) = &self.user else {

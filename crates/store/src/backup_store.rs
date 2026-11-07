@@ -4,10 +4,13 @@
 //!   self-contained file (rollback journal, so no `-wal` file belongs with it), written beside
 //!   its destination and renamed into place, so a failed write never leaves half a Backup.
 //! - **Restore** first reads the Backup into memory, checks it is a User database this build
-//!   can read (a newer format is refused) and runs the migrations on it, so nothing is touched
-//!   if the file is unusable. Then it takes a Safety backup of the database as it is, and
+//!   can read (a newer format is refused), runs the migrations on it and checks the result is
+//!   whole (every table, column, index and trigger this build's format has, every row readable,
+//!   SQLite's integrity check passing), so nothing is touched if the file is unusable. Then it takes a Safety backup of the database as it is, and
 //!   copies the Backup's pages over the live database in one step (rebuilding the copy with
 //!   the live database's page size first, if they differ).
+//! - Nothing is ever written over the live database or SQLite's files beside it
+//!   ([`UserStore::refuse_own_file`]), whatever path names them.
 
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -22,8 +25,10 @@ use crate::user::{USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore, backups_i
 const SAFETY_INFIX: &str = "safety-";
 
 impl UserStore {
-    /// Write a Backup of the whole database to `dest`, replacing a file there.
+    /// Write a Backup of the whole database to `dest`, replacing a file there (but never the
+    /// database itself, see [`UserStore::refuse_own_file`]).
     pub fn back_up(&self, dest: &Path) -> Result<(), StoreError> {
+        self.refuse_own_file(dest)?;
         let name = dest
             .file_name()
             .map_or_else(|| "backup".into(), |n| n.to_string_lossy().into_owned());
@@ -88,12 +93,56 @@ impl UserStore {
         if found < USER_SCHEMA_VERSION {
             migrate(&mut conn, found, USER_SCHEMA_VERSION)?;
         }
+        check_whole(&conn).map_err(|why| not_a_backup(&why))?;
         let store = UserStore {
             conn,
             path: path.to_path_buf(),
         };
         store.ensure_default_notebook()?;
+        store
+            .read_everything()
+            .map_err(|e| not_a_backup(&format!("it is damaged ({e})")))?;
         Ok((store, found))
+    }
+
+    /// Read everything the app reads of a User database, so a row it could not read refuses
+    /// the Backup now rather than failing after the restore.
+    fn read_everything(&self) -> Result<(), StoreError> {
+        self.contents()?;
+        self.annotations(None)?;
+        self.notebook_counts()?;
+        for name in self.layouts()? {
+            self.layout(&name)?;
+        }
+        self.last_session()?;
+        self.preferred_order()?;
+        self.preferences()?;
+        self.resource_names()?;
+        self.favorites()?;
+        self.history()?;
+        for plan in self.reading_plans()? {
+            self.plan_readings(plan.id)?;
+        }
+        Ok(())
+    }
+
+    /// Refuse `dest` if writing there would overwrite this database or one of SQLite's files
+    /// beside it (`-wal`, `-shm`, `-journal`), by any path naming it (a link, `..`, another
+    /// case on a case-insensitive disk). Writing there would destroy the data being saved.
+    pub fn refuse_own_file(&self, dest: &Path) -> Result<(), StoreError> {
+        let mut own = vec![self.path.clone()];
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let mut name = self.path.as_os_str().to_os_string();
+            name.push(suffix);
+            own.push(PathBuf::from(name));
+        }
+        if own.iter().any(|f| same_file(dest, f)) {
+            return Err(StoreError::Rejected(format!(
+                "{} is where your data is kept, so nothing was written there; choose another file",
+                dest.display()
+            )));
+        }
+        Ok(())
     }
 
     /// What the Backup at `path` holds, read as [`UserStore::open_backup`] reads it.
@@ -250,6 +299,101 @@ impl UserStore {
         }
         Ok(dest)
     }
+}
+
+/// Why the migrated database `conn` is not whole, if it is not: a table, column, index or
+/// trigger this build's format has is missing, a row cannot be read, or SQLite's integrity
+/// check (and the Notes search index's own) fails.
+fn check_whole(conn: &Connection) -> Result<(), String> {
+    let integrity: Vec<String> = conn
+        .prepare("PRAGMA integrity_check")
+        .and_then(|mut s| {
+            s.query_map([], |r| r.get(0))?
+                .collect::<Result<Vec<String>, _>>()
+        })
+        .map_err(|e| format!("it is damaged ({e})"))?;
+    if integrity != ["ok"] {
+        return Err(format!("it is damaged ({})", integrity.join("; ")));
+    }
+    let mut reference = Connection::open_in_memory().map_err(|e| e.to_string())?;
+    migrate(&mut reference, 0, USER_SCHEMA_VERSION).map_err(|e| e.to_string())?;
+    let objects = |c: &Connection| -> rusqlite::Result<Vec<(String, String)>> {
+        c.prepare(
+            "SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect()
+    };
+    let columns = |c: &Connection, table: &str| -> rusqlite::Result<Vec<String>> {
+        c.prepare("SELECT name FROM pragma_table_info(?1)")?
+            .query_map([table], |r| r.get(0))?
+            .collect()
+    };
+    let have = objects(conn).map_err(|e| format!("it is damaged ({e})"))?;
+    for (kind, name) in objects(&reference).map_err(|e| e.to_string())? {
+        if !have.iter().any(|(k, n)| *k == kind && *n == name) {
+            return Err(format!("it has no {kind} `{name}`"));
+        }
+        if kind != "table" {
+            continue;
+        }
+        let found = columns(conn, &name).map_err(|e| format!("it is damaged ({e})"))?;
+        let wanted = columns(&reference, &name).map_err(|e| e.to_string())?;
+        if let Some(missing) = wanted.iter().find(|c| !found.contains(c)) {
+            return Err(format!("its table `{name}` has no column `{missing}`"));
+        }
+        // Every row of every table can be read.
+        let read = || -> rusqlite::Result<()> {
+            let mut stmt = conn.prepare(&format!("SELECT * FROM \"{name}\""))?;
+            let n = stmt.column_count();
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
+                for i in 0..n {
+                    row.get_ref(i)?;
+                }
+            }
+            Ok(())
+        };
+        read().map_err(|e| format!("its table `{name}` cannot be read ({e})"))?;
+    }
+    conn.execute(
+        "INSERT INTO notes_fts (notes_fts, rank) VALUES ('integrity-check', 1)",
+        [],
+    )
+    .map_err(|e| format!("its Notes search index is damaged ({e})"))?;
+    Ok(())
+}
+
+/// Whether `a` and `b` name one file, existing or not.
+fn same_file(a: &Path, b: &Path) -> bool {
+    #[cfg(unix)]
+    if let (Ok(ma), Ok(mb)) = (std::fs::metadata(a), std::fs::metadata(b)) {
+        // A hard link has its own path but the same file.
+        use std::os::unix::fs::MetadataExt as _;
+        return ma.dev() == mb.dev() && ma.ino() == mb.ino();
+    }
+    match (resolved(a), resolved(b)) {
+        (Some(a), Some(b)) if cfg!(any(windows, target_os = "macos")) => {
+            // Their disks ignore case by default.
+            a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+        }
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
+/// `path` with links, `.` and `..` resolved: the file itself, or (if it does not exist yet)
+/// its folder and its name.
+fn resolved(path: &Path) -> Option<PathBuf> {
+    if let Ok(p) = std::fs::canonicalize(path) {
+        return Some(p);
+    }
+    let name = path.file_name()?;
+    let dir = match path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => Path::new("."),
+    };
+    Some(std::fs::canonicalize(dir).ok()?.join(name))
 }
 
 fn backup_file(path: PathBuf, kind: BackupKind) -> BackupFile {

@@ -264,8 +264,12 @@ pub trait UserData: std::fmt::Debug {
 
     // Backups (#217); see `backups.rs`.
 
-    /// Write a Backup of everything to `dest`, replacing a file there.
+    /// Write a Backup of everything to `dest`, replacing a file there (never the User
+    /// database itself, see [`UserData::refuse_own_file`]).
     fn back_up(&self, dest: &Path) -> Result<(), String>;
+    /// Refuse `dest` if writing there would overwrite the User database or SQLite's files
+    /// beside it, by whatever path names them.
+    fn refuse_own_file(&self, dest: &Path) -> Result<(), String>;
     /// The Backups the app keeps by itself (at launch, Safety backups, before an upgrade),
     /// newest first.
     fn backups(&self) -> Result<Vec<BackupFile>, String>;
@@ -406,6 +410,9 @@ impl UserData for obs_store::UserStore {
     }
     fn back_up(&self, dest: &Path) -> Result<(), String> {
         obs_store::UserStore::back_up(self, dest).map_err(|e| e.to_string())
+    }
+    fn refuse_own_file(&self, dest: &Path) -> Result<(), String> {
+        obs_store::UserStore::refuse_own_file(self, dest).map_err(|e| e.to_string())
     }
     fn backups(&self) -> Result<Vec<BackupFile>, String> {
         obs_store::UserStore::backups(self).map_err(|e| e.to_string())
