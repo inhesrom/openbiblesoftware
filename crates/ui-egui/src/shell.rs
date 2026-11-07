@@ -125,6 +125,9 @@ struct TabUi {
     /// the number in `lexicon_entries_for` (otherwise only the first is expanded).
     lexicon_open: BTreeMap<String, bool>,
     lexicon_entries_for: Option<obs_scripture::StrongsNumber>,
+    /// A reopened Tab's scroll position (#214), put back once its pane has drawn at its real
+    /// width (a relayout keeps only the line), with the width it was put back at.
+    restore_scroll: Option<(crate::view::TextAnchor, Option<f32>)>,
     /// Word Study (#56): the form filtering Occurrences (a [`obs_engine::Form::label`]) and
     /// whether Translated as shows every rendering, for `lexicon_entries_for`.
     occurrence_form: Option<String>,
@@ -415,9 +418,11 @@ impl Shell {
                 }
                 Effect::Focus(tab) => self.make_active(tab),
                 Effect::Closed(tab) => {
+                    self.st.keep_closed_scroll(tab);
                     self.remove_pane(tab);
                     self.st.tabs.remove(&tab);
                 }
+                Effect::RestoreScroll { tab, at } => self.st.restore_scroll(tab, &at),
                 Effect::Float {
                     tab,
                     window,
@@ -433,6 +438,7 @@ impl Shell {
                         Placement::NewPanel {
                             panel,
                             beside: None,
+                            before: false,
                         },
                     );
                 }
@@ -648,6 +654,13 @@ impl Shell {
             self.st.session.workspace.sync_panels(shown.clone());
             self.shown = shown;
             let live: Vec<TabId> = self.st.session.workspace.tabs().map(|t| t.id).collect();
+            let closed: Vec<TabId> = (self.st.tabs.keys())
+                .filter(|t| !live.contains(t))
+                .copied()
+                .collect();
+            for t in closed {
+                self.st.keep_closed_scroll(t);
+            }
             self.st.tabs.retain(|t, _| live.contains(t));
         }
         let arrangement = self
@@ -1147,6 +1160,27 @@ impl Shell {
                     self.run("notebook.show_in_text", &json!({ "id": id, "show": show }));
                 }
             }
+            MenuItem::RecentlyClosed => {
+                // Recently closed (#214), newest first: each reopens in its old Panel.
+                let closed = self.st.session.recently_closed_labels();
+                let mut reopen = None;
+                ui.add_enabled_ui(!closed.is_empty(), |ui| {
+                    ui.menu_button("Recently closed", |ui| {
+                        for (id, label) in &closed {
+                            if ui.button(label).clicked() {
+                                reopen = Some(*id);
+                                ui.close();
+                            }
+                        }
+                    })
+                    .response
+                    .on_disabled_hover_text("No Tab has been closed yet");
+                });
+                if let Some(id) = reopen {
+                    self.run("tab.reopen_closed", &json!({ "closed": id }));
+                    ui.close();
+                }
+            }
             // The Library and Layouts menus are the Library and Layouts Launchers' panes now.
             MenuItem::Favorites | MenuItem::Layouts | MenuItem::Resources => {}
         }
@@ -1199,18 +1233,23 @@ fn insert_pane(tree: &mut Tree<TabId>, panels: &mut PanelTiles, tab: TabId, plac
         tabs.set_active(pane);
         return;
     }
-    let (panel, beside) = match placement {
-        Placement::Panel(p) => (p, None),
-        Placement::NewPanel { panel, beside } => (panel, beside),
+    let (panel, beside, before) = match placement {
+        Placement::Panel(p) => (p, None, false),
+        Placement::NewPanel {
+            panel,
+            beside,
+            before,
+        } => (panel, beside, before),
     };
     let container = tree.tiles.insert_tab_tile(vec![pane]);
     panels.insert(container, panel);
     let anchor = beside.and_then(|b| container_of(tree, panels, b));
-    attach_beside(tree, container, anchor);
+    attach_beside(tree, container, anchor, before);
 }
 
-/// Put `tile` to the right of `anchor` (none: of the whole dock), in a row.
-fn attach_beside(tree: &mut Tree<TabId>, tile: TileId, anchor: Option<TileId>) {
+/// Put `tile` to the right of `anchor` (none: of the whole dock), or to its left when
+/// `before`, in a row.
+fn attach_beside(tree: &mut Tree<TabId>, tile: TileId, anchor: Option<TileId>, before: bool) {
     let Some(root) = tree.root() else {
         tree.root = Some(tile);
         return;
@@ -1225,15 +1264,20 @@ fn attach_beside(tree: &mut Tree<TabId>, tile: TileId, anchor: Option<TileId>) {
             .children
             .iter()
             .position(|c| *c == anchor)
-            .map_or(l.children.len(), |i| i + 1);
+            .map_or(l.children.len(), |i| if before { i } else { i + 1 });
         l.children.insert(at, tile);
         return;
     }
+    let children = if before {
+        vec![tile, anchor]
+    } else {
+        vec![anchor, tile]
+    };
     let row = tree
         .tiles
         .insert_new(Tile::Container(Container::Linear(Linear::new(
             LinearDir::Horizontal,
-            vec![anchor, tile],
+            children,
         ))));
     match parent {
         None => tree.root = Some(row),
@@ -1492,6 +1536,45 @@ impl State {
                 None
             }
         }
+    }
+
+    /// Tab `tab` is closing: Recently closed keeps where its view was scrolled (#214).
+    fn keep_closed_scroll(&mut self, tab: TabId) {
+        let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) else {
+            return;
+        };
+        let Some(anchor) = view.text_anchor() else {
+            return;
+        };
+        let Some(unit) = view.doc.units.get(anchor.unit).map(|u| u.id.clone()) else {
+            return;
+        };
+        let at = obs_engine::ScrollPosition {
+            unit,
+            byte: anchor.byte,
+            into: anchor.into,
+        };
+        self.session.workspace.closed_scroll(tab, at);
+    }
+
+    /// A reopened Tab (#214), loaded at its Current location, scrolls back to where its view
+    /// was when it closed, once its pane has drawn ([`Self::restore_scroll_drawn`]).
+    fn restore_scroll(&mut self, tab: TabId, at: &obs_engine::ScrollPosition) {
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        let Some(view) = t.view.as_ref() else {
+            return;
+        };
+        let Some(unit) = view.doc.units.iter().position(|u| u.id == at.unit) else {
+            return;
+        };
+        let anchor = crate::view::TextAnchor {
+            unit,
+            byte: at.byte,
+            into: at.into,
+        };
+        t.restore_scroll = Some((anchor, None));
     }
 
     /// A Tab was opened: load its Resource if it has one.
@@ -1886,6 +1969,9 @@ impl State {
         self.sync_interlinear(tab, false);
         let palette = self.palette;
         let text = self.session.text;
+        let restoring_at = (self.session.workspace.tab(tab))
+            .filter(|t| !t.keeps_entries())
+            .and_then(|t| t.history.current());
         let Some(t) = self.tabs.get_mut(&tab) else {
             return;
         };
@@ -1921,6 +2007,17 @@ impl State {
         let marks = self.marks.marks(&self.session, &view.doc);
         let out = reading_pane(ui, view, &mut self.atlas, &palette, flash, &marks, found);
         let user_moved = out.user_moved || found_moved;
+        // A reopened Tab's scroll position (#214) goes back at the width the pane drew at, and
+        // again if that changes before the user scrolls.
+        if let Some((anchor, width)) = t.restore_scroll {
+            if user_moved || width == Some(view.width()) {
+                t.restore_scroll = None;
+            } else {
+                view.restore_text_anchor(anchor, restoring_at);
+                t.restore_scroll = Some((anchor, Some(view.width())));
+                ui.ctx().request_repaint();
+            }
+        }
         let following = view.is_following();
         let at = view.current_location();
         let reference = out
@@ -2744,6 +2841,11 @@ impl State {
                     .clicked()
                 {
                     self.run("tab.close", &json!({ "tab": tab.0 }));
+                    ui.close();
+                }
+                // Its Panel and every Tab in it, as one Recently closed entry (#214).
+                if ui.button("Close Panel").clicked() {
+                    self.run("panel.close", &json!({ "tab": tab.0 }));
                     ui.close();
                 }
             },

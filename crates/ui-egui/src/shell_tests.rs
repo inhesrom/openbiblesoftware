@@ -3304,6 +3304,8 @@ mod settings;
 mod toolbar;
 #[path = "toolbar_position_tests.rs"]
 mod toolbar_position;
+#[path = "recently_closed_tests.rs"]
+mod recently_closed;
 
 /// Get Bibles (#91) against mock `file://` SWORD repositories built from open texts.
 mod get_bibles {

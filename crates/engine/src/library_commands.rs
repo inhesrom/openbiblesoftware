@@ -286,6 +286,7 @@ fn remove(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     for t in open {
         s.workspace.close(t);
     }
+    s.workspace.forget_closed_resource(&id);
     s.library.remove(&id);
     // A removed Starter Resource is never added back silently (#131).
     if entry.manifest.origin == obs_model::Origin::Starter {

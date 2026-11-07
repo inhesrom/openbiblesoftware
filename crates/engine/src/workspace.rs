@@ -14,7 +14,10 @@ use serde::{Deserialize, Serialize};
 use crate::compare::{Comparison, in_range_chapters};
 use crate::floating_windows::{FloatingWindow, WindowId, WindowPlacement};
 use crate::link::{ToStandard, to_native, to_standard};
-use crate::persist::{LayoutNode, WorkspaceSnapshot};
+use crate::persist::{LayoutNode, ScrollPosition, TabSnapshot, WorkspaceSnapshot};
+
+mod recently_closed;
+pub use recently_closed::{ClosedTabs, RECENTLY_CLOSED_LIMIT};
 
 /// A Tab, stable for the life of the Workspace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -178,6 +181,14 @@ impl TabKind {
                         | Tool::ReadingPlans
                 )
         )
+    }
+
+    /// The Resource a Tab of this kind shows or is about, by resource id.
+    pub fn resource_id(&self) -> Option<&str> {
+        match self {
+            TabKind::Resource(id) | TabKind::About(id) | TabKind::ImportReport(id) => Some(id),
+            _ => None,
+        }
     }
 
     /// Resources open in reading Panels; everything else in non-reading Panels.
@@ -458,6 +469,38 @@ pub struct Tab {
 }
 
 impl Tab {
+    /// A Tab as saved in a snapshot, given id `id`: at its saved locations without history,
+    /// with nothing of its Resource loaded yet.
+    pub(crate) fn from_snapshot(id: TabId, t: TabSnapshot) -> Self {
+        let mut history = History::default();
+        if let Some(v) = t.location {
+            history.scrolled_to(v);
+        }
+        let mut entry_history = History::default();
+        if let Some(k) = t.entry_location {
+            entry_history.scrolled_to(k);
+        }
+        Tab {
+            id,
+            key_schemes: t.kind.default_key_schemes(),
+            kind: t.kind,
+            title: t.title,
+            history,
+            entry_history,
+            navigation: None,
+            versification: None,
+            verse_map: None,
+            link: t.link,
+            comparison: Comparison::default(),
+            search: Default::default(),
+            arriving_at: None,
+            interlinear: t.interlinear,
+            contents: t.contents,
+            view_unit: None,
+            passage: None,
+        }
+    }
+
     pub fn header_box(&self) -> HeaderBox {
         if matches!(self.kind, TabKind::Resource(_)) {
             if self.key_schemes.contains(&KeyScheme::Headword) {
@@ -605,10 +648,12 @@ impl Tab {
 pub enum Placement {
     /// Into an existing Panel.
     Panel(PanelId),
-    /// Into a new Panel split off to the right of `beside` (or of the whole Workspace).
+    /// Into a new Panel split off to the right of `beside` (or of the whole Workspace), or
+    /// to its left when `before` (a reopened Panel that was first in its window, #214).
     NewPanel {
         panel: PanelId,
         beside: Option<PanelId>,
+        before: bool,
     },
 }
 
@@ -752,6 +797,12 @@ pub enum Effect {
         tab: TabId,
         forward: bool,
     },
+    /// Scroll a reopened Resource Tab (#214) back to where its view was when it was closed,
+    /// once it is loaded at its Current location.
+    RestoreScroll {
+        tab: TabId,
+        at: ScrollPosition,
+    },
 }
 
 /// How the caller asked for a Tab to be opened.
@@ -790,6 +841,9 @@ pub struct Workspace {
     visits: Vec<PendingVisit>,
     /// Tabs closed while History still had Visits of theirs to record, kept until it has.
     closed_with_visits: BTreeMap<TabId, Tab>,
+    /// Recently closed Tabs and Panels, oldest first, at most [`RECENTLY_CLOSED_LIMIT`] (#214).
+    closed: Vec<ClosedTabs>,
+    next_closed: u64,
 }
 
 /// A Tab opened or jumped, for History to record (#155).
@@ -939,7 +993,11 @@ impl Workspace {
         let beside = self.focused.and_then(|t| self.panel_of(t));
         if req.split {
             let panel = self.new_panel_id();
-            return Placement::NewPanel { panel, beside };
+            return Placement::NewPanel {
+                panel,
+                beside,
+                before: false,
+            };
         }
         let chosen = req
             .panel
@@ -957,7 +1015,11 @@ impl Workspace {
             None => {
                 let panel = self.new_panel_id();
                 let beside = beside.or_else(|| self.panels.keys().next_back().copied());
-                Placement::NewPanel { panel, beside }
+                Placement::NewPanel {
+                    panel,
+                    beside,
+                    before: false,
+                }
             }
         }
     }
@@ -1103,6 +1165,8 @@ impl Workspace {
             .filter(|t| !shown.contains(t))
             .copied()
             .collect();
+        // The user closed them (× or a middle click): Reopen closed Tab brings them back (#214).
+        self.remember_gone(&gone);
         for t in gone {
             self.remove_tab(t);
             self.activity.remove(&t);
@@ -1547,42 +1611,11 @@ impl Workspace {
         self.remembered.clear();
         self.activity.clear();
         self.focused = None;
+        self.restore_closed(snap.recently_closed);
         for t in snap.tabs {
-            let mut history = History::default();
-            if let Some(v) = t.location {
-                history.scrolled_to(v);
-            }
-            let key_schemes = t.kind.default_key_schemes();
             let id = TabId(t.id);
             self.next_tab = self.next_tab.max(t.id);
-            self.tabs.insert(
-                id,
-                Tab {
-                    id,
-                    kind: t.kind,
-                    title: t.title,
-                    history,
-                    entry_history: {
-                        let mut h = History::default();
-                        if let Some(k) = t.entry_location {
-                            h.scrolled_to(k);
-                        }
-                        h
-                    },
-                    navigation: None,
-                    versification: None,
-                    verse_map: None,
-                    key_schemes,
-                    link: t.link,
-                    comparison: Comparison::default(),
-                    search: Default::default(),
-                    arriving_at: None,
-                    interlinear: t.interlinear,
-                    contents: t.contents,
-                    view_unit: None,
-                    passage: None,
-                },
-            );
+            self.tabs.insert(id, Tab::from_snapshot(id, t));
         }
         let mut placed: Vec<(u64, Vec<u64>, Option<u64>)> = snap
             .layout
@@ -1675,6 +1708,7 @@ impl Workspace {
         self.last_other_panel = None;
         self.arrangement = None;
         self.floating.clear();
+        self.forget_closed_panels();
     }
 
     /// The floating window a Tab is in (none: the main window).
