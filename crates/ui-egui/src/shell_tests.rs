@@ -2836,6 +2836,9 @@ mod notes;
 #[path = "highlight_styles_tests.rs"]
 mod highlight_styles;
 
+#[path = "visual_filters_tests.rs"]
+mod visual_filters;
+
 /// Import from the Library menu and the live Import report Tab (#47).
 mod import {
     use std::path::{Path, PathBuf};

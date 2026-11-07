@@ -1,0 +1,408 @@
+//! Visual filters (#211) in a reading pane: the words of each visible block that a Tab's
+//! filters match, found on a worker thread and drawn as [`Mark`]s in the filters' styles.
+//!
+//! - Matching is [`obs_engine::block_hits`] (the Search Tool's highlighter on the block's
+//!   text and Tagged words). A pane asks for the blocks it shows and a few on either side;
+//!   each block is matched once per set of filters and kept, so scrolling back costs nothing
+//!   and the UI thread only turns ready matches into rectangles, as for Highlights.
+//! - A Mark carries its filter's [`obs_engine::StyleAppearance`]: the painter resolves its
+//!   colour from the Page tone's palette each frame, so a theme switch needs no relayout.
+//! - Strong's alignment (ADR 0015): a Bible not in Hebrew, Aramaic or Greek takes the `@…`
+//!   and `lemma:` terms from the first original-language Bible in Preferred order that has
+//!   each Verse ([`OriginalBible`]), loaded on the worker the first time it is needed.
+
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex, OnceLock};
+
+use obs_engine::{AlignedWords, FilterMatcher, VerseSlice, VisualFilter, block_hits};
+use obs_model::{ResourceType, SpanKind};
+use obs_scripture::{Passage, StrongsLanguage, Testament, Verse};
+
+use crate::doc::ReadingDoc;
+use crate::marks::{Mark, MarkKind};
+use crate::selection::DocPos;
+use crate::view::ReadingView;
+
+/// Blocks matched beyond each end of the view, so text scrolled into view is ready.
+const READ_AHEAD_BLOCKS: usize = 4;
+
+/// An original-language Bible the filters align through.
+pub struct OriginalBible {
+    pub language: StrongsLanguage,
+    /// Its `.obr`, loaded on the worker when not given loaded.
+    pub path: Option<PathBuf>,
+    doc: OnceLock<Option<Arc<ReadingDoc>>>,
+}
+
+impl OriginalBible {
+    pub fn new(
+        language: StrongsLanguage,
+        path: Option<PathBuf>,
+        loaded: Option<Arc<ReadingDoc>>,
+    ) -> Self {
+        let doc = OnceLock::new();
+        if loaded.is_some() {
+            let _ = doc.set(loaded);
+        }
+        Self {
+            language,
+            path,
+            doc,
+        }
+    }
+
+    /// Its text, loaded the first time (none when it cannot be read).
+    fn doc(&self) -> Option<&Arc<ReadingDoc>> {
+        self.doc
+            .get_or_init(|| {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let path = self.path.as_ref()?;
+                    ReadingDoc::open(path).ok().map(Arc::new)
+                }
+                #[cfg(target_arch = "wasm32")]
+                None
+            })
+            .as_ref()
+    }
+
+    /// The morphemes of each Tagged word of its Verses at a Standard Passage, in order: none
+    /// when it lacks the Passage or tags none of it.
+    fn words_at(&self, standard: Passage) -> AlignedWords {
+        let Some(doc) = self.doc() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for i in doc.verses_for_standard(standard) {
+            let (Some(v), Some(unit)) = (
+                doc.verses.get(i),
+                doc.verse_unit(i).and_then(|u| doc.units.get(u)),
+            ) else {
+                continue;
+            };
+            for s in &unit.spans {
+                if let SpanKind::TaggedWord { parts } = &s.kind
+                    && v.start <= s.start
+                    && s.end <= v.end
+                    && !parts.is_empty()
+                {
+                    out.push(parts.clone());
+                }
+            }
+        }
+        out
+    }
+}
+
+/// What a pane's filters are matched with, shared by every job for one set of filters.
+pub struct FilterSource {
+    filters: Vec<VisualFilter>,
+    /// Lexicons for `lemma:` terms typed in transliteration.
+    lexicons: Vec<PathBuf>,
+    /// Original-language Bibles in Preferred order.
+    originals: Vec<OriginalBible>,
+    matchers: OnceLock<Vec<FilterMatcher>>,
+}
+
+impl FilterSource {
+    pub fn new(
+        filters: Vec<VisualFilter>,
+        lexicons: Vec<PathBuf>,
+        originals: Vec<OriginalBible>,
+    ) -> Self {
+        Self {
+            filters,
+            lexicons,
+            originals,
+            matchers: OnceLock::new(),
+        }
+    }
+
+    /// The filters compiled (a filter that no longer compiles is left out).
+    fn matchers(&self) -> &[FilterMatcher] {
+        self.matchers.get_or_init(|| {
+            let lookup = LexiconLookup(&self.lexicons);
+            self.filters
+                .iter()
+                .filter_map(|f| FilterMatcher::new(f, &lookup).ok())
+                .collect()
+        })
+    }
+
+    /// The original-language words at a Standard Passage: from the first Bible in Preferred
+    /// order in its Testament's language that has them.
+    fn aligned(&self, standard: Passage) -> AlignedWords {
+        let language = match standard.start().book.testament() {
+            Testament::Old => StrongsLanguage::Hebrew,
+            Testament::New => StrongsLanguage::Greek,
+        };
+        for o in self.originals.iter().filter(|o| o.language == language) {
+            let words = o.words_at(standard);
+            if !words.is_empty() {
+                return words;
+            }
+        }
+        Vec::new()
+    }
+}
+
+/// `lemma:` transliterations through the Lexicons' transliteration index.
+struct LexiconLookup<'a>(&'a [PathBuf]);
+
+impl obs_search::LemmaLookup for LexiconLookup<'_> {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn lemmas_for_transliteration(&self, translit: &str) -> Vec<String> {
+        use obs_store::ResourceStore;
+        let mut out = Vec::new();
+        for path in self.0 {
+            if let Ok(reader) = obs_store::ObrReader::open(path)
+                && let Ok(found) = reader.lemmas_for_transliteration(translit)
+            {
+                out.extend(found);
+            }
+        }
+        out
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn lemmas_for_transliteration(&self, _: &str) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+/// Whether a Bible in `language` is in Hebrew, Aramaic or Greek (it has its own Morphology).
+pub fn is_original(language: &str) -> bool {
+    [StrongsLanguage::Hebrew, StrongsLanguage::Greek]
+        .into_iter()
+        .any(|l| obs_engine::key_words::is_original_language(language, l))
+}
+
+/// Matching jobs, run one at a time on their own thread (inline on wasm).
+type Work = Box<dyn FnOnce() + Send>;
+
+fn worker() -> Option<Sender<Work>> {
+    static WORKER: OnceLock<Mutex<Option<Sender<Work>>>> = OnceLock::new();
+    WORKER
+        .get_or_init(|| Mutex::new(spawn_worker()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_worker() -> Option<Sender<Work>> {
+    let (tx, rx) = channel::<Work>();
+    std::thread::Builder::new()
+        .name("obs-filters".into())
+        .spawn(move || {
+            while let Ok(work) = rx.recv() {
+                work();
+            }
+        })
+        .ok()
+        .map(|_| tx)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn spawn_worker() -> Option<Sender<Work>> {
+    None
+}
+
+fn submit(work: Work) {
+    match worker() {
+        Some(tx) => {
+            if let Err(e) = tx.send(work) {
+                (e.0)();
+            }
+        }
+        None => work(),
+    }
+}
+
+/// The Bible Verses of `doc` inside `bytes` of unit `unit`, with their Standard Passages.
+fn verse_slices(doc: &ReadingDoc, unit: usize, bytes: &std::ops::Range<usize>) -> Vec<VerseSlice> {
+    if doc.manifest.resource_type != ResourceType::Bible {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for (i, v) in doc.verses.iter().enumerate() {
+        if doc.verse_unit(i) != Some(unit) {
+            continue;
+        }
+        let range = v.start as usize..v.end as usize;
+        if range.start >= bytes.end || range.end <= bytes.start {
+            continue;
+        }
+        let standard = match &doc.verse_map {
+            Some(map) => map.to_standard(v.verse),
+            None => Passage::new(
+                v.verse,
+                Verse::new(v.verse.book, v.verse.chapter, v.last.max(v.verse.verse)),
+            )
+            .ok(),
+        };
+        out.push(VerseSlice { range, standard });
+    }
+    out
+}
+
+/// The Marks `source`'s filters make in block `index` of `doc`.
+fn block_marks(doc: &ReadingDoc, index: usize, source: &FilterSource) -> Vec<Mark> {
+    let matchers = source.matchers();
+    let Some(block) = doc.blocks.get(index) else {
+        return Vec::new();
+    };
+    let Some(unit) = doc.units.get(block.unit) else {
+        return Vec::new();
+    };
+    if matchers.is_empty() {
+        return Vec::new();
+    }
+    let range = block.source.range.clone();
+    let verses = verse_slices(doc, block.unit, &range);
+    let align = !verses.is_empty()
+        && !is_original(&doc.manifest.language)
+        && matchers.iter().any(FilterMatcher::needs_alignment)
+        && doc.has_tagged_words();
+    let mut original = |p: Passage| source.aligned(p);
+    block_hits(matchers, unit, range, &verses, align, &mut original)
+        .into_iter()
+        .filter_map(|h| {
+            let m = matchers.get(h.filter)?;
+            Some(Mark {
+                id: format!("filter:{}", m.id),
+                start: DocPos {
+                    unit: block.unit,
+                    byte: h.range.start,
+                },
+                end: DocPos {
+                    unit: block.unit,
+                    byte: h.range.end,
+                },
+                kind: MarkKind::Highlight(m.appearance),
+            })
+        })
+        .collect()
+}
+
+/// One pane's Visual filters: the matches of each block found so far, and those being found.
+pub struct FilterPainter {
+    /// What the matches are for (the filters, the Bibles aligned through, the document).
+    key: Option<u64>,
+    source: Option<Arc<FilterSource>>,
+    done: HashMap<usize, Arc<Vec<Mark>>>,
+    pending: HashSet<usize>,
+    /// Bumped by each new key, so replies for an older one are dropped.
+    generation: u64,
+    tx: Sender<(u64, usize, Arc<Vec<Mark>>)>,
+    rx: Receiver<(u64, usize, Arc<Vec<Mark>>)>,
+}
+
+impl Default for FilterPainter {
+    fn default() -> Self {
+        let (tx, rx) = channel();
+        Self {
+            key: None,
+            source: None,
+            done: HashMap::new(),
+            pending: HashSet::new(),
+            generation: 0,
+            tx,
+            rx,
+        }
+    }
+}
+
+impl std::fmt::Debug for FilterPainter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FilterPainter")
+            .field("key", &self.key)
+            .field("done", &self.done.len())
+            .field("pending", &self.pending.len())
+            .finish()
+    }
+}
+
+impl FilterPainter {
+    /// Match with `wanted`'s source (none: no filters) when its key differs from the one
+    /// matched so far; otherwise keep what was found.
+    pub fn set(&mut self, wanted: Option<(u64, FilterSource)>) {
+        let key = wanted.as_ref().map(|(k, _)| *k);
+        if self.key == key {
+            return;
+        }
+        self.key = key;
+        self.generation += 1;
+        self.done.clear();
+        self.pending.clear();
+        self.source = wanted.map(|(_, source)| Arc::new(source));
+    }
+
+    /// Whether some block's matches are still being found.
+    pub fn is_pending(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
+    /// The Marks of the blocks in view (a viewport `height` tall), asking for the matches of
+    /// those not found yet and of a few blocks beyond the view. `ctx` repaints when a job is
+    /// done.
+    pub fn marks(
+        &mut self,
+        view: &ReadingView,
+        height: f32,
+        ctx: Option<&egui::Context>,
+    ) -> Vec<Mark> {
+        for (generation, block, marks) in self.rx.try_iter() {
+            if generation == self.generation {
+                self.pending.remove(&block);
+                self.done.insert(block, marks);
+            }
+        }
+        let Some(source) = self.source.clone() else {
+            return Vec::new();
+        };
+        let shown: Vec<usize> = view
+            .laid_in_view(height)
+            .iter()
+            .map(|(i, _, _)| *i)
+            .collect();
+        let (Some(&first), Some(&last)) = (shown.first(), shown.last()) else {
+            return Vec::new();
+        };
+        let blocks = view.doc.blocks.len();
+        let wanted = first.saturating_sub(READ_AHEAD_BLOCKS)..(last + 1 + READ_AHEAD_BLOCKS).min(blocks);
+        // The blocks in view first, then the ones around them.
+        let order = shown
+            .iter()
+            .copied()
+            .chain(wanted.clone().filter(|i| !shown.contains(i)));
+        for block in order {
+            if self.done.contains_key(&block) || !self.pending.insert(block) {
+                continue;
+            }
+            let doc = Arc::clone(&view.doc);
+            let source = Arc::clone(&source);
+            let tx = self.tx.clone();
+            let generation = self.generation;
+            let ctx = ctx.cloned();
+            submit(Box::new(move || {
+                let marks = Arc::new(block_marks(&doc, block, &source));
+                if tx.send((generation, block, marks)).is_ok()
+                    && let Some(ctx) = ctx
+                {
+                    ctx.request_repaint();
+                }
+            }));
+        }
+        // Keep only the blocks near the view: a whole Bible's matches are never held.
+        let keep = first.saturating_sub(4 * READ_AHEAD_BLOCKS)..last + 1 + 4 * READ_AHEAD_BLOCKS;
+        self.done.retain(|i, _| keep.contains(i));
+        shown
+            .iter()
+            .filter_map(|i| self.done.get(i))
+            .flat_map(|m| m.iter().cloned())
+            .collect()
+    }
+}
