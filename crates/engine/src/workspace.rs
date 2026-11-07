@@ -648,13 +648,64 @@ impl Tab {
 pub enum Placement {
     /// Into an existing Panel.
     Panel(PanelId),
-    /// Into a new Panel split off to the right of `beside` (or of the whole Workspace), or
-    /// to its left when `before` (a reopened Panel that was first in its window, #214).
+    /// Into a new Panel split off on `side` of `beside` (or of the whole Workspace). A
+    /// reopened Panel (#214) goes back on whichever side it was, and beside the row or column
+    /// it was next to when that held more than one Panel: `levels` rows and columns out from
+    /// `beside`, the nearest Panel of it.
     NewPanel {
         panel: PanelId,
         beside: Option<PanelId>,
-        before: bool,
+        side: Side,
+        levels: u8,
     },
+}
+
+impl Placement {
+    /// A new Panel to the right of `beside` (or of the whole Workspace).
+    pub fn right_of(panel: PanelId, beside: Option<PanelId>) -> Self {
+        Placement::NewPanel {
+            panel,
+            beside,
+            side: Side::Right,
+            levels: 0,
+        }
+    }
+}
+
+/// Which side of another a new Panel goes on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Side {
+    #[default]
+    Right,
+    Left,
+    Below,
+    Above,
+}
+
+impl Side {
+    /// Beside, above or below: whether it splits a row (else a column).
+    pub fn in_row(self) -> bool {
+        matches!(self, Side::Right | Side::Left)
+    }
+
+    /// Left or above: before the other in its row or column.
+    pub fn before(self) -> bool {
+        matches!(self, Side::Left | Side::Above)
+    }
+
+    pub fn opposite(self) -> Side {
+        match self {
+            Side::Right => Side::Left,
+            Side::Left => Side::Right,
+            Side::Below => Side::Above,
+            Side::Above => Side::Below,
+        }
+    }
+
+    pub fn is_right(&self) -> bool {
+        *self == Side::Right
+    }
 }
 
 /// A change for the UI to apply to what it shows.
@@ -993,11 +1044,7 @@ impl Workspace {
         let beside = self.focused.and_then(|t| self.panel_of(t));
         if req.split {
             let panel = self.new_panel_id();
-            return Placement::NewPanel {
-                panel,
-                beside,
-                before: false,
-            };
+            return Placement::right_of(panel, beside);
         }
         let chosen = req
             .panel
@@ -1015,11 +1062,7 @@ impl Workspace {
             None => {
                 let panel = self.new_panel_id();
                 let beside = beside.or_else(|| self.panels.keys().next_back().copied());
-                Placement::NewPanel {
-                    panel,
-                    beside,
-                    before: false,
-                }
+                Placement::right_of(panel, beside)
             }
         }
     }

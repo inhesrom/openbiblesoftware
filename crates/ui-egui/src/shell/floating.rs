@@ -7,7 +7,7 @@
 use egui::{Pos2, Rect, Ui, pos2, vec2};
 use egui_tiles::{Tile, Tree};
 use obs_engine::floating_windows::MIN_WINDOW;
-use obs_engine::{PanelId, Placement, ScreenRect, TabId, WindowId, WindowPlacement};
+use obs_engine::{PanelId, Placement, ScreenRect, Side, TabId, WindowId, WindowPlacement};
 
 use super::{PanelTiles, Shell, attach_beside, build_node, dock_node, insert_pane, tile_handles};
 use crate::theme;
@@ -275,11 +275,7 @@ impl Shell {
             &mut d.tree,
             &mut d.panels,
             tab,
-            Placement::NewPanel {
-                panel,
-                beside: None,
-                before: false,
-            },
+            Placement::right_of(panel, None),
         );
         self.floating.push(d);
     }
@@ -296,7 +292,7 @@ impl Shell {
         };
         let ws = &mut self.st.session.workspace;
         if let Some(tile) = build_node(&mut self.tree, &mut self.st.panels, ws, &node) {
-            attach_beside(&mut self.tree, tile, None, false);
+            attach_beside(&mut self.tree, tile, None, Side::Right, 0);
         }
     }
 

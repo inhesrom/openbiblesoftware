@@ -140,20 +140,14 @@ fn closing_three_tabs_then_reopening_three_times_brings_them_back_newest_first_w
     assert_eq!(
         opened,
         [
-            (
-                back[0],
-                Placement::NewPanel {
-                    panel: second,
-                    beside: None,
-                    before: false
-                }
-            ),
+            (back[0], Placement::right_of(second, None)),
             (
                 back[1],
                 Placement::NewPanel {
                     panel: first,
                     beside: Some(second),
-                    before: true
+                    side: Side::Left,
+                    levels: 0,
                 }
             ),
             (back[2], Placement::Panel(first)),
@@ -163,6 +157,115 @@ fn closing_three_tabs_then_reopening_three_times_brings_them_back_newest_first_w
         !effects.iter().any(|e| matches!(e, Effect::Follow { .. })),
         "{effects:?}"
     );
+}
+
+/// Close Tab `t` and reopen it: the Tab back and where its Panel was placed.
+fn close_and_reopen(s: &mut Session, t: TabId) -> (TabId, Placement) {
+    s.run("tab.close", &json!({ "tab": t.0 })).unwrap();
+    s.workspace.take_effects();
+    let back = reopen(s);
+    let placement = (s.workspace.take_effects().into_iter())
+        .find_map(|e| match e {
+            Effect::Opened { placement, .. } => Some(placement),
+            _ => None,
+        })
+        .unwrap();
+    (back[0], placement)
+}
+
+/// A Panel closed from a column comes back above or below what it was next to, and one
+/// closed beside a column comes back beside the whole column.
+#[test]
+fn a_reopened_panel_goes_back_above_below_or_beside_a_column_as_it_was() {
+    let (mut s, _t) = session("column");
+    let mut kjv = open(&mut s, "kjv", json!({}));
+    let mut web = open(&mut s, "web", json!({ "split": true }));
+    let mut asv = open(&mut s, "asv", json!({ "split": true }));
+    let [top, bottom, right] = [kjv, web, asv].map(|t| s.workspace.panel_of(t).unwrap());
+    let leaf = |p: PanelId, t: TabId| {
+        (
+            LayoutNode::Panel {
+                panel: p.0,
+                tabs: vec![t.0],
+                active: Some(t.0),
+            },
+            1.0,
+        )
+    };
+    // KJV over WEB, ASV to the right of both, as the UI reports them.
+    let arrange = |s: &mut Session, [kjv, web, asv]: [TabId; 3]| {
+        let column = LayoutNode::Column {
+            children: vec![leaf(top, kjv), leaf(bottom, web)],
+        };
+        s.workspace.arrangement = Some(LayoutNode::Row {
+            children: vec![(column, 1.0), leaf(right, asv)],
+        });
+    };
+    arrange(&mut s, [kjv, web, asv]);
+    let placement;
+    (kjv, placement) = close_and_reopen(&mut s, kjv);
+    assert_eq!(
+        placement,
+        Placement::NewPanel {
+            panel: top,
+            beside: Some(bottom),
+            side: Side::Above,
+            levels: 0,
+        }
+    );
+    arrange(&mut s, [kjv, web, asv]);
+    let placement;
+    (web, placement) = close_and_reopen(&mut s, web);
+    assert_eq!(
+        placement,
+        Placement::NewPanel {
+            panel: bottom,
+            beside: Some(top),
+            side: Side::Below,
+            levels: 0,
+        }
+    );
+    // ASV was next to the column, nearest WEB at its bottom: one column out from WEB.
+    arrange(&mut s, [kjv, web, asv]);
+    let placement;
+    (asv, placement) = close_and_reopen(&mut s, asv);
+    assert_eq!(
+        placement,
+        Placement::NewPanel {
+            panel: right,
+            beside: Some(bottom),
+            side: Side::Right,
+            levels: 1,
+        }
+    );
+    // Saved with the Last session as it is.
+    arrange(&mut s, [kjv, web, asv]);
+    s.run("tab.close", &json!({ "tab": kjv.0 })).unwrap();
+    let closed = s.workspace.recently_closed().next().unwrap().clone();
+    let json = serde_json::to_string(&closed).unwrap();
+    assert!(json.contains(r#""side":"above""#), "{json}");
+    assert_eq!(serde_json::from_str::<ClosedTabs>(&json).unwrap(), closed);
+}
+
+/// A closed Panel whose active Tab is a single-instance Tool open again: reopening the Panel
+/// focuses that Tool, as the Panel's active Tab, not the Tab reopened with it.
+#[test]
+fn the_closed_panels_active_tool_open_again_is_focused_on_reopen() {
+    let (mut s, _t) = session("active");
+    let _kjv = open(&mut s, "kjv", json!({}));
+    let library = tab(&s.run("library.open", &json!({ "split": true })).unwrap());
+    let panel = s.workspace.panel_of(library).unwrap();
+    let info = tab(&s
+        .run("tool.word_info", &json!({ "panel": panel.0 }))
+        .unwrap());
+    assert_eq!(s.workspace.panel_of(info), Some(panel));
+    s.workspace.focus(info);
+    s.run("panel.close", &json!({})).unwrap();
+    let again = tab(&s.run("tool.word_info", &json!({})).unwrap());
+    let back = reopen(&mut s);
+    assert_eq!(back.len(), 1, "Library reopens; Word Info is open already");
+    assert_eq!(state(&s, back[0]).0, TabKind::Library);
+    assert_eq!(s.workspace.focused(), Some(again));
 }
 
 #[test]

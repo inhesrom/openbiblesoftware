@@ -270,7 +270,7 @@ pub use word_study::{
 };
 pub use workspace::{
     ClosedTabs, Effect, Guide, HeaderBox, History, OpenRequest, PanelId, Placement,
-    RECENTLY_CLOSED_LIMIT, Tab, TabId, TabKind, Tool, Workspace,
+    RECENTLY_CLOSED_LIMIT, Side, Tab, TabId, TabKind, Tool, Workspace,
 };
 pub use workspace_commands::{MENUS, Menu, MenuItem, choices, parallel_resources};
 
