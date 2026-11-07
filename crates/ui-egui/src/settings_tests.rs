@@ -144,10 +144,10 @@ fn search_finds_every_setting() {
         search(&mut h, tab, setting.label);
         let label = match setting.kind {
             // An action's row is its button.
-            SettingKind::Action { .. } if setting.id.starts_with("clear") => {
+            SettingKind::Action { confirm: true, .. } => {
                 format!("{}…", setting.label)
             }
-            SettingKind::Action { command } => h
+            SettingKind::Action { command, .. } => h
                 .shell
                 .st
                 .session
@@ -357,4 +357,22 @@ fn clearing_history_asks_first() {
     let p = beside(&h, tab, "Clear History? This cannot be undone.", "Clear");
     h.click(p);
     assert!(h.shell.st.session.history().is_empty());
+}
+
+/// Privacy and data opens Back up & restore (#217) at once: opening a Tab needs no
+/// confirmation.
+#[test]
+fn privacy_and_data_opens_back_up_and_restore() {
+    let db = temp_db("settings-backups");
+    let mut h = Harness::launch(Some(&db));
+    let tab = open_settings(&mut h);
+    search(&mut h, tab, "backup");
+    assert!(in_tab(&h, tab, "This cannot be undone.").is_none());
+    click_in_tab(&mut h, tab, "Back up & restore…");
+    let backups = h.tab_id(obs_engine::BACKUPS_TITLE);
+    assert_eq!(
+        h.shell.st.session.workspace.tab(backups).unwrap().kind,
+        TabKind::Backups
+    );
+    assert_eq!(h.shell.st.session.workspace.focused(), Some(backups));
 }

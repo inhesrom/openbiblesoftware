@@ -70,6 +70,7 @@ fn every_tab_kind() -> Vec<TabKind> {
         TabKind::Home,
         TabKind::KeyboardShortcuts,
         TabKind::Settings,
+        TabKind::Backups,
         TabKind::Guide(Guide::PassageGuide),
         TabKind::Tool(Tool::Search),
     ] {
@@ -99,7 +100,8 @@ fn every_tab_kind() -> Vec<TabKind> {
             | TabKind::Credits
             | TabKind::Home
             | TabKind::KeyboardShortcuts
-            | TabKind::Settings => kinds.push(kind),
+            | TabKind::Settings
+            | TabKind::Backups => kinds.push(kind),
         }
     }
     kinds
@@ -143,6 +145,7 @@ fn open_tab(h: &mut Harness, lab: &Lab, kind: &TabKind) {
         }
         TabKind::KeyboardShortcuts => ("help.keyboard_shortcuts", split),
         TabKind::Settings => ("app.settings", split),
+        TabKind::Backups => ("data.backups", split),
         TabKind::Guide(Guide::PassageGuide) => (
             "guide.passage_guide",
             json!({ "passage": "Jn 3:16", "split": true }),
