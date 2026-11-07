@@ -238,7 +238,7 @@ impl State {
         self.reveal_card(tab);
         let rect = ui.max_rect();
         let column = Rect::from_min_max(rect.min, pos2(rect.left() + COLUMN, rect.bottom()));
-        let cards = Rect::from_min_max(pos2(column.right() + 1.0, rect.top()), rect.max);
+        let cards = Rect::from_min_max(pos2(column.right() + stroke::HAIR, rect.top()), rect.max);
         ui.painter().rect_filled(column, 0.0, theme::c().surface);
         ui.painter().vline(
             column.right(),
@@ -1230,8 +1230,11 @@ impl State {
             }
             if line.kind == NoteLineKind::Quote {
                 let bar = Rect::from_min_max(
-                    rect.min + vec2(space::XXS, 1.0),
-                    pos2(rect.left() + space::XXS + size::DOT, rect.bottom() - 1.0),
+                    rect.min + vec2(space::XXS, space::PX),
+                    pos2(
+                        rect.left() + space::XXS + size::DOT,
+                        rect.bottom() - space::PX,
+                    ),
                 );
                 ui.painter()
                     .rect_filled(bar, size::DOT / 2.0, theme::c().rule);
@@ -1297,7 +1300,7 @@ impl State {
             for r in &rects {
                 ui.painter().hline(
                     r.x_range(),
-                    r.bottom() - 2.0,
+                    r.bottom() - space::XXS,
                     Stroke::new(stroke::HAIR, self.palette.link.gamma_multiply(alpha::SOFT)),
                 );
             }

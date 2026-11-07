@@ -535,7 +535,7 @@ fn bible_row(
         let abbreviation = bible.map_or("", |b| b.abbreviation.as_str());
         let rtl = bible.is_some_and(|b| b.rtl);
         paint.painter.text(
-            pos2(left, row_y + 2.0),
+            pos2(left, row_y + space::XXS),
             Align2::LEFT_TOP,
             abbreviation,
             FontId::proportional(text::LABEL),
@@ -634,7 +634,7 @@ fn library_row(
     let mut measured = true;
     // The unit's title or Key, through the text pipeline (Lexicon titles are Greek or Hebrew).
     let label = row_label(row);
-    let origin = pos2(text_left, row_y + 2.0);
+    let origin = pos2(text_left, row_y + space::XXS);
     let label_h = match view.snippets.get(
         &label,
         ColorRole::Accent,
@@ -650,7 +650,7 @@ fn library_row(
             h
         }
     };
-    row_y += 2.0 + label_h + 2.0;
+    row_y += space::XXS + label_h + space::XXS;
     let mut height = view.line_height();
     let origin = pos2(text_left, row_y);
     let snippet = tab.snippet(i, 0);

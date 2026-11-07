@@ -933,7 +933,7 @@ impl Shell {
                                 pos2(x, slot.bottom() - size::BADGE),
                                 vec2(w, size::BADGE),
                             );
-                            x -= 2.0;
+                            x -= space::XXS;
                             if look::card_action(ui, r, text).clicked() {
                                 if what == 0 {
                                     tb.renaming = Some((card.name.clone(), card.name.clone()));

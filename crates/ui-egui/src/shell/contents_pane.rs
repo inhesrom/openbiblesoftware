@@ -20,7 +20,7 @@ use super::State;
 use crate::doc::ReadingDoc;
 use crate::icons::{self, Icon};
 use crate::theme;
-use crate::tokens::{radius, share, size, space};
+use crate::tokens::{radius, share, size, space, stroke};
 
 /// Height of one line of the outline.
 const ROW_H: f32 = size::ROW_COMPACT;
@@ -178,7 +178,7 @@ impl State {
         }
         ui.painter().rect_filled(rect, 0.0, theme::c().surface);
         ui.painter().vline(
-            rect.right() - 0.5,
+            rect.right() - stroke::HAIR / 2.0,
             rect.y_range(),
             crate::components::rule_stroke(),
         );
@@ -314,7 +314,7 @@ impl State {
                     }
                 }
                 let text = egui::Rect::from_min_max(
-                    egui::pos2((icon.right() + 2.0).min(row.right()), row.top()),
+                    egui::pos2((icon.right() + space::XXS).min(row.right()), row.top()),
                     row.max,
                 );
                 let label = egui::Button::selectable(Some(n) == current, &node.label).truncate();

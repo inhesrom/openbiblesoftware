@@ -8,7 +8,7 @@ guide to using them.
 
 | Module | What | Values |
 |---|---|---|
-| `space` | Gaps, insets, indents | `XXS` 2, `XS` 4, `S` 6, `M` 8, `L` 12, `XL` 16, `XXL` 24, `XXXL` 32 |
+| `space` | Gaps, insets, indents | `PX` 1, `XXS` 2, `XS` 4, `S` 6, `M` 8, `L` 12, `XL` 16, `XXL` 24, `XXXL` 32 |
 | `text` | Type sizes of the chrome | `CAPTION` 11, `SMALL` 12, `LABEL` 13, `BODY` 14, `SUBTITLE` 16, `TITLE` 20, `DISPLAY` 24, `MONO` 12 |
 | `radius` | Corner radii | `XS` 2, `S` 4, `M` 6 (controls, cards), `L` 8 (menus, popovers), `XL` 10 (windows), `PILL` (half a chip) |
 | `stroke` | Line widths | `HAIR` 1, `MEDIUM` 1.5, `THICK` 2 |
@@ -47,8 +47,13 @@ style swatches. Page colours (ink, paper, Highlight tones) are `Palette`.
 `tokens::tests::no_spacing_size_or_colour_literals_outside_the_tokens` fails on a literal
 spacing, size or colour anywhere in the crate outside `tokens.rs` and `palette.rs`. Use a
 token, add a named one to `tokens.rs`, or, for a number that is not part of the look (a
-duration, a zoom speed, a height estimate), add an entry with its reason to the test's
-`ALLOWED` list.
+duration, a zoom speed, a height estimate, a hit test's tolerance), add an entry with its
+reason to the test's `ALLOWED` list.
+
+A bare ½, 1 or 2 passes only as a factor, a bound or a tolerance (`/ 2.0`, `* 0.5`,
+`.clamp(0.0, 1.0)`, `.abs() < 0.5`). Added to or taken from a coordinate it is a spacing:
+`icon.right() + space::XXS`, `last[2] + space::PX`, and `rect.bottom() - stroke::HAIR / 2.0`
+to centre a hairline on a pixel.
 
 ## Previews
 

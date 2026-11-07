@@ -464,7 +464,7 @@ fn axis(
             Stroke::new(stroke::HAIR, mix(ch.field, ch.rule, chart::GRID)),
         );
         let galley = painter.layout_no_wrap(label, FontId::proportional(text::CAPTION), ch.muted);
-        let at = pos2(tx - galley.size().x / 2.0, rect.min.y + 2.0);
+        let at = pos2(tx - galley.size().x / 2.0, rect.min.y + space::XXS);
         if at.x >= rect.min.x && at.x + galley.size().x <= rect.max.x {
             painter.galley(at, galley, ch.muted);
         }
@@ -726,7 +726,11 @@ fn place_rows(
             // No room: in the last row, unlabelled.
             None => (taken.len() - 1, false),
         };
-        let occupied = if labelled { wanted } else { (start, end + 2.0) };
+        let occupied = if labelled {
+            wanted
+        } else {
+            (start, end + space::XXS)
+        };
         taken[row].push(occupied);
         let y = top + row as f32 * ROW_H;
         let shape = if span {

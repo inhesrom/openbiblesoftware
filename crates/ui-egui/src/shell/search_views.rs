@@ -431,7 +431,7 @@ impl State {
                             self.table_cell_text(ui, cells[5], clip, &excerpt, row.rtl, Some(word));
                             painter.hline(
                                 rect.x_range(),
-                                rect.bottom() - 0.5,
+                                rect.bottom() - stroke::HAIR / 2.0,
                                 Stroke::new(
                                     stroke::HAIR,
                                     palette.verse_number.gamma_multiply(alpha::TINT),

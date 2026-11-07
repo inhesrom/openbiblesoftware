@@ -585,7 +585,7 @@ pub fn comparison_pane(
             // The label column: abbreviation (a star for the base), the Bible's own number where it
             // differs, and "not compared".
             let label = painter.text(
-                pos2(left, row_y + 2.0),
+                pos2(left, row_y + space::XXS),
                 Align2::LEFT_TOP,
                 view.abbreviation(row),
                 label_font.clone(),
@@ -614,7 +614,7 @@ pub fn comparison_pane(
             for note in notes.into_iter().flatten() {
                 accessible_label.push_str(&format!(" — {note}"));
                 painter.text(
-                    pos2(left, row_y + label_h + 1.0),
+                    pos2(left, row_y + label_h + space::PX),
                     Align2::LEFT_TOP,
                     note,
                     small.clone(),

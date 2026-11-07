@@ -2998,7 +2998,7 @@ impl State {
         );
         ui.painter().hline(
             r.x_range(),
-            r.bottom() - 0.5,
+            r.bottom() - stroke::HAIR / 2.0,
             crate::components::rule_stroke(),
         );
     }

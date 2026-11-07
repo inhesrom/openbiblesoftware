@@ -508,8 +508,8 @@ pub fn reading_pane(
     // The pane's own room, in text coordinates: marks never go under the scrollbar or
     // outside the pane.
     let (room_left, room_right) = (
-        rect.left() - text_rect.left() + 1.0,
-        track.left() - text_rect.left() - 1.0,
+        rect.left() - text_rect.left() + space::PX,
+        track.left() - text_rect.left() - space::PX,
     );
     for (a, rects) in &filtered {
         draw_line_or_box(&painter, paint(*a), rects, size, &to_screen);
@@ -874,9 +874,9 @@ fn note_marker(
     }
     let (w, h) = (size * mark::NOTE_WIDTH_EMS, size * mark::NOTE_HEIGHT_EMS);
     let x = if rtl {
-        last[0] - w - 1.0
+        last[0] - w - space::PX
     } else {
-        last[2] + 1.0
+        last[2] + space::PX
     };
     // Raised like a superscript: its top at the text band's top, so it sits over the cap
     // height rather than over the next word's lowercase letters.
@@ -910,7 +910,13 @@ fn paint_note_marker(painter: &egui::Painter, r: Rect, palette: &Palette) {
     let stroke = egui::Stroke::new(stroke::HAIR, palette.page);
     for f in mark::NOTE_RULES {
         let y = r.top() + r.height() * f;
-        painter.line_segment([pos2(r.left() + 2.0, y), pos2(r.right() - 2.0, y)], stroke);
+        painter.line_segment(
+            [
+                pos2(r.left() + space::XXS, y),
+                pos2(r.right() - space::XXS, y),
+            ],
+            stroke,
+        );
     }
 }
 

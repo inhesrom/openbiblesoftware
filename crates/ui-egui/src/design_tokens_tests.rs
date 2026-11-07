@@ -9,8 +9,10 @@
 //!   `corner_radius`, `Stroke::new`, `FontId::*`, `.size`, `Color32::from_*`,
 //!   `gamma_multiply`, the width and height setters, the painter's rects and circles, and an
 //!   assignment to `ui.spacing_mut()`);
-//! - any other float literal except the unitless 0, ½, 1 and 2 (halving, doubling, a pixel
-//!   nudge), since a bare `rect.left() + 6.0` is a spacing too;
+//! - any other float literal, since a bare `rect.left() + 6.0` is a spacing too, except 0
+//!   and ½, 1 or 2 used without units: a factor, a bound or a tolerance (`/ 2.0`, `* 0.5`,
+//!   `.clamp(0.0, 1.0)`, `Some(2.0)`, `.abs() < 0.5`, `1.0 - t`). Added to or taken from a
+//!   coordinate (`icon.right() + 2.0`, `x -= 2.0`) even these are spacings and flagged;
 //! - a named `Color32` constant other than `TRANSPARENT` and `PLACEHOLDER`.
 //!
 //! What is not a measurement of the look (a duration, a zoom range, a contrast ratio, a
@@ -264,6 +266,36 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "view.rs",
         "view.set_width(600.0)",
         "a reading view's width before its pane first measures it",
+    ),
+    (
+        "pane.rs",
+        "rect.bottom() - 1.0",
+        "a hit test: the pointer kept inside the pane's last row",
+    ),
+    (
+        "view.rs",
+        "laid_in_view(y + 1.0)",
+        "a hit test: the blocks laid out round the point",
+    ),
+    (
+        "view.rs",
+        "l.bottom > offset + 0.5",
+        "a tolerance: the first line not scrolled past",
+    ),
+    (
+        "shell/tile_handles.rs",
+        "resize_grab_radius_side + 0.5",
+        "a tolerance: how wide a widget may be and still be a separator",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "(factor - 1.0).abs()",
+        "a zoom factor's distance from no zoom, not points",
+    ),
+    (
+        "shell/timeline_tab.rs",
+        "(factor - 1.0).abs()",
+        "a zoom factor's distance from no zoom, not points",
     ),
 ];
 
@@ -652,15 +684,15 @@ pub(crate) fn violations(src: &str) -> Vec<(usize, String)> {
                 .iter()
                 .position(|c| !(c.is_alphanumeric() || *c == '.' || *c == '_'))
                 .map_or(line.len(), |k| num.start + k);
-            let operator = line[..num.start]
-                .iter()
-                .rev()
-                .find(|c| **c != ' ')
-                .is_some_and(|c| *c == '*' || *c == '/')
-                || line[after..]
-                    .iter()
-                    .find(|c| **c != ' ')
-                    .is_some_and(|c| *c == '*' || *c == '/');
+            let before = line[..num.start].iter().rev().find(|c| **c != ' ');
+            let next = line[after..].iter().find(|c| **c != ' ');
+            let operator = before.is_some_and(|c| *c == '*' || *c == '/')
+                || next.is_some_and(|c| *c == '*' || *c == '/');
+            // `x + 2.0`, `x -= 2.0`, `2.0 + x`: an offset, so a spacing. A unary minus
+            // (`(-1.0`, `= -2.0`) is not, nor a leading 1 (`1.0 - t`, `1.0 + share`: the
+            // whole of a fraction).
+            let additive = additive_before(&line[..num.start])
+                || (v != 1.0 && next.is_some_and(|c| *c == '+' || *c == '-'));
             if let Some((_, _, sink)) = spans.iter().find(|(o, c, _)| *o < at && at < *c) {
                 // A one-point rect (a pointer's position, a hairline's length).
                 let point = v == 1.0 && POINT_SINKS.contains(&sink.as_str());
@@ -669,7 +701,7 @@ pub(crate) fn violations(src: &str) -> Vec<(usize, String)> {
                 if v != 0.0 && !unitless {
                     out.push((n + 1, format!("{} in {sink}(…)", num.text)));
                 }
-            } else if num.float && ![0.0, 0.5, 1.0, 2.0].contains(&v) {
+            } else if num.float && !unitless_outside_sinks(v, operator, additive) {
                 out.push((n + 1, format!("float literal {}", num.text)));
             }
         }
@@ -688,6 +720,28 @@ pub(crate) fn violations(src: &str) -> Vec<(usize, String)> {
     }
     out.dedup();
     out
+}
+
+/// Whether the code before a literal ends in a binary `+` or `-` (or `+=`, `-=`): the
+/// literal is added to a coordinate or a length.
+fn additive_before(before: &[char]) -> bool {
+    let mut rest = before.iter().rev().filter(|c| **c != ' ');
+    match rest.next() {
+        Some('+') => true,
+        Some('-') => rest
+            .next()
+            .is_some_and(|c| c.is_alphanumeric() || matches!(c, '_' | ')' | ']')),
+        Some('=') => matches!(rest.next(), Some('+' | '-')),
+        _ => false,
+    }
+}
+
+/// A float literal outside a sink call that is not a measurement: 0, and ½, 1 or 2 as a
+/// factor, a bound or a tolerance (`/ 2.0`, `* 0.5`, `.clamp(0.0, 1.0)`, `Some(2.0)`,
+/// `.abs() < 0.5`). Any of them added to or taken from a coordinate is a spacing: use
+/// `space::*` (or `stroke::HAIR / 2.0` to centre a hairline on a pixel).
+fn unitless_outside_sinks(v: f64, operator: bool, additive: bool) -> bool {
+    v == 0.0 || ([0.5, 1.0, 2.0].contains(&v) && (operator || !additive))
 }
 
 fn ui_sources() -> Vec<PathBuf> {
@@ -782,7 +836,33 @@ mod tests {
 }
 ";
     let lines: Vec<usize> = violations(src).into_iter().map(|(l, _)| l).collect();
-    assert_eq!(lines, vec![3, 5, 7, 7, 8, 8, 8, 9, 11, 12]);
+    // Line 6: `/ 2.0` halves, but `+ 1.0` nudges a coordinate by a point.
+    assert_eq!(lines, vec![3, 5, 6, 7, 7, 8, 8, 8, 9, 11, 12]);
+}
+
+/// ½, 1 and 2 are unitless only as factors, bounds and tolerances; added to or taken from a
+/// coordinate they are spacings.
+#[test]
+fn the_literal_lint_sees_small_offsets_added_to_coordinates() {
+    let src = "\
+let text = pos2((icon.right() + 2.0).min(row.right()), row.top());
+x -= 2.0;
+painter.line_segment([pos2(r.left() + 2.0, y), pos2(r.right() - 2.0, y)], stroke);
+let y = rect.bottom() - 0.5;
+row_y += 2.0 + label_h + 2.0;
+let x = last[2] + 1.0;
+x += 1.0;
+let ok = (1.0 - age / FLASH_SECS).clamp(0.0, 1.0);
+let ok = height * (1.0 + PREFETCH);
+let ok = size / 2.0 + space::XXS * 2.0 - w * 0.5;
+if (width - self.width).abs() > 0.5 {}
+zoom = Some(2.0);
+let ok = vec2(-1.0, 0.0).x * -2.0;
+let ok = rect.bottom() - stroke::HAIR / 2.0;
+";
+    let found = violations(src);
+    let lines: Vec<usize> = found.iter().map(|(l, _)| *l).collect();
+    assert_eq!(lines, vec![1, 2, 3, 4, 5, 6, 7], "{found:?}");
 }
 
 /// The scales grow step by step, so a surface that wants "a bit more room" has one.
@@ -791,6 +871,7 @@ fn the_scales_are_ordered() {
     use crate::tokens::{radius, size, space, stroke, text};
     let ordered = |v: &[f32]| v.windows(2).all(|w| w[0] < w[1]);
     assert!(ordered(&[
+        space::PX,
         space::XXS,
         space::XS,
         space::S,

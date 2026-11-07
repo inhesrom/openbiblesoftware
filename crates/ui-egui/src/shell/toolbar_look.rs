@@ -205,7 +205,7 @@ pub(super) fn bar_thickness(vertical: bool) -> f32 {
     } else {
         BUTTON_HEIGHT
     };
-    button + 2.0 * BAR_MARGIN + 2.0
+    button + 2.0 * BAR_MARGIN + space::XXS
 }
 /// The grip's length along the toolbar.
 const GRIP: f32 = space::L;
@@ -601,7 +601,7 @@ pub(super) fn small_width(ui: &Ui, text: &str) -> f32 {
 pub(super) fn card_name(ui: &Ui, slot: Rect, name: &str, dim: bool) {
     let lk = look();
     ui.painter().with_clip_rect(slot).text(
-        pos2(slot.left(), slot.top() + 2.0),
+        pos2(slot.left(), slot.top() + space::XXS),
         Align2::LEFT_TOP,
         name,
         FontId::proportional(text::LABEL),
