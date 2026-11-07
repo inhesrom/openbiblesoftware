@@ -802,7 +802,9 @@ fn handle_selection(
 }
 
 /// What a drag pressed at `p` (screen points) carries out of the pane: the Scripture reference
-/// there, else the selection when `p` is inside it; `None` selects as usual.
+/// there, else the selection when the text exactly under `p` is in it (not the nearest caret:
+/// the right half of a selection's last glyph is in it, the margin beside it is not); `None`
+/// selects as usual.
 fn drag_out_at(view: &mut ReadingView, p: Pos2, rect: Rect, text_rect: Rect) -> Option<DragOut> {
     if !rect.contains(p) {
         return None;
@@ -812,8 +814,13 @@ fn drag_out_at(view: &mut ReadingView, p: Pos2, rect: Rect, text_rect: Rect) -> 
         return Some(DragOut::Reference { unit, span });
     }
     let sel = view.selection.filter(|s| has_text(view, s))?;
-    let at = view.pos_at(x, y)?;
-    sel.contains(&view.doc, at).then_some(DragOut::Selection)
+    let (unit, hit) = view.hit_in_unit_at(x, y)?;
+    let byte = match hit {
+        UnitPos::Text(b) => b,
+        UnitPos::Object { anchor, .. } => anchor,
+    };
+    sel.contains(&view.doc, DocPos { unit, byte })
+        .then_some(DragOut::Selection)
 }
 
 /// Shift+F10 or the Menu key: open the right-click menu from the keyboard (#142).

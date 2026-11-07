@@ -10,8 +10,9 @@ look. Every drag has a keyboard or click equivalent (listed last).
   Dragged out of its window it floats (#152).
 - **A Bible reference** in any text (a Commentary's "Rom 8:28", a Lexicon's citation, a Bible's
   cross-reference): drag it instead of clicking it.
-- **Selected text**: a drag that starts inside the selection carries the selected text (a
-  word, or a reference written plainly). A drag that starts outside it selects, as before.
+- **Selected text**: a drag that starts on selected text carries it (a word, or a reference
+  written plainly). A drag that starts anywhere else, the margin beside it included, selects,
+  as before.
 - **Resources**: drag a row out of the Library launcher's pane, or a row of the Library Tab
   (by the row itself; its ≡ handle still reorders the Preferred order).
 - **Note cards**: drag a Note card's grip (its Note icon) onto a Resource's text. A **Move Note** box asks
@@ -54,12 +55,13 @@ Files dragged onto the window from the system (a `.obr`) still join the library 
 
 - Engine: `workspace.drop` (`crates/engine/src/drag_drop.rs`) takes `passage` (a Standard
   reference) or `text` (with `from`, the Tab it was dragged from: a Bible reference in a
-  Bible's text is parsed in its Versification and translated through its Verse map; an
-  Unmapped verse fails), an optional `bible`, and where: `tab`, `panel` (its tab bar) or
+  Bible's text is parsed in its Versification and translated through its Verse map, a range
+  to the Standard range covering every Verse it maps to, even when the map reorders them; an
+  Unmapped first verse fails), an optional `bible`, and where: `tab`, `panel` (its tab bar) or
   `beside` (its right edge); none, a new Tab where its kind opens. A new Bible Tab gets
   `Effect::NavigateStandard`, so it moves once its Verse map is loaded.
-- UI, `pane.rs`: a drag whose press was on a Scripture reference, or inside a selection with
-  text, reports `PaneOutput::drag_out` and sets `ReadingView::dragging_out`, which keeps the
+- UI, `pane.rs`: a drag whose press was on a Scripture reference, or on a glyph inside a
+  selection with text (the cluster hit, not the nearest caret), reports `PaneOutput::drag_out` and sets `ReadingView::dragging_out`, which keeps the
   selection as it is for the rest of the drag.
 - UI, `shell/drag_drop.rs`: `DragDropUi` holds the drag and the OS window it started in.
   After each window's dock is drawn, `workspace_drag` finds the Drop target under the pointer

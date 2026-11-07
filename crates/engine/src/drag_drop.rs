@@ -17,7 +17,9 @@
 //! own when it was dragged out of a Bible Tab (`from`), translated through its Verse map.
 
 use obs_model::ResourceType;
-use obs_scripture::{Passage, RefStyle, Standard, VerseMap, format_passage, parse_reference};
+use obs_scripture::{
+    Passage, RefStyle, Standard, Verse, VerseMap, format_passage, parse_reference,
+};
 use serde_json::{Value, json};
 
 use crate::bible_search::SearchRequestFields;
@@ -176,18 +178,31 @@ fn as_passage(
     }
 }
 
-/// A Passage in a Bible's own numbering → the Standard Passage it covers: from where its
-/// first Verse maps to, to the end of where its last does. `None` when its first Verse is
-/// Unmapped.
+/// A Passage in a Bible's own numbering → the Standard Passage covering every Verse it
+/// maps to, from the earliest to the latest. A map may reorder Verses (a Bible's 1:16 the
+/// Standard 1:17 and its 1:17 the Standard 1:16), so the ends are not simply where its first
+/// and last Verses map. Unmapped Verses inside it add nothing; Verses outside the map count
+/// as they are. `None` when its first Verse is Unmapped.
 fn standard_passage(map: &VerseMap, native: Passage) -> Option<Passage> {
-    let ToStandard::Verse(start) = to_standard(Some(map), native.start()) else {
+    let ToStandard::Verse(_) = to_standard(Some(map), native.start()) else {
         return None;
     };
-    let end = match map.entry(native.end()) {
-        Some(e) => e.standard.map_or(start, |p| p.end()),
-        None => native.end(),
-    };
-    Some(Passage::new(start, end).unwrap_or(Passage::verse(start)))
+    let covered = map
+        .entries()
+        .iter()
+        .filter(|e| {
+            let last = Verse::new(e.verse.book, e.verse.chapter, e.last);
+            e.verse <= native.end() && native.start() <= last
+        })
+        .filter_map(|e| e.standard);
+    let outside = [native.start(), native.end()]
+        .into_iter()
+        .filter(|&v| map.entry(v).is_none())
+        .map(Passage::verse);
+    let all = || covered.clone().chain(outside.clone());
+    let start = all().map(|p| p.start()).min()?;
+    let end = all().map(|p| p.end()).max()?;
+    Passage::new(start, end).ok()
 }
 
 fn drop_passage(

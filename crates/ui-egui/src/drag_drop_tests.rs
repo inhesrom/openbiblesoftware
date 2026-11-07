@@ -136,6 +136,12 @@ fn romans_harness() -> (Harness, TabId, TabId) {
 
 /// Where byte `byte` of unit `unit` of Tab `tab`'s text is on screen.
 fn text_spot(h: &Harness, tab: TabId, unit: usize, byte: usize) -> Pos2 {
+    glyph_rect(h, tab, unit, byte).center()
+}
+
+/// The screen box of the glyph at byte `byte` of unit `unit` of Tab `tab`'s text, its line
+/// high.
+fn glyph_rect(h: &Harness, tab: TabId, unit: usize, byte: usize) -> Rect {
     let view = h.shell.st.tabs[&tab].view.as_ref().unwrap();
     let [ox, oy] = view.text_origin;
     for (block, top, laid) in view.laid_in_view(900.0) {
@@ -146,8 +152,10 @@ fn text_spot(h: &Harness, tab: TabId, unit: usize, byte: usize) -> Pos2 {
             for item in &line.items {
                 for (bytes, x0, x1) in item.clusters() {
                     if laid.to_unit(bytes.start) == Some(obs_layout::UnitPos::Text(byte)) {
-                        let y = top + (line.top + line.bottom) / 2.0;
-                        return pos2(ox + (x0 + x1) / 2.0, oy + y);
+                        return Rect::from_min_max(
+                            pos2(ox + x0, oy + top + line.top),
+                            pos2(ox + x1, oy + top + line.bottom),
+                        );
                     }
                 }
             }
@@ -339,6 +347,46 @@ fn a_drag_started_inside_the_selection_moves_it_and_one_outside_selects_anew() {
     let view = h.shell.st.tabs[&commentary].view.as_ref().unwrap();
     let text = crate::selection::selected_text(&view.doc, &view.selection.unwrap());
     assert!(text.contains("work together for"), "{text:?}");
+}
+
+#[test]
+fn a_drag_carries_the_selection_only_from_text_inside_it() {
+    let (mut h, _, commentary) = romans_harness();
+    let love = commentary_spot(&h, commentary, "love");
+    double_click(&mut h, love);
+    // The right half of the selection's last glyph is in it, though the caret nearest there
+    // is the selection's end.
+    let e = glyph_rect(&h, commentary, 0, COMMENTARY_TEXT.find("love").unwrap() + 3);
+    let right_half = pos2(e.right() - e.width() / 4.0, e.center().y);
+    let elsewhere = commentary_spot(&h, commentary, "things");
+    drag_to(&mut h, right_half, elsewhere);
+    assert!(
+        h.shell.st.drag.dragging.is_some(),
+        "the selection is carried"
+    );
+    release(&mut h, elsewhere);
+    settle_all(&mut h);
+    let view = h.shell.st.tabs[&commentary].view.as_ref().unwrap();
+    let sel = view.selection.unwrap();
+    assert_eq!(crate::selection::selected_text(&view.doc, &sel), "love");
+
+    // The margin beside a selection that starts its line is not in it: a press there selects
+    // anew, though the caret nearest there is the selection's start.
+    let all = commentary_spot(&h, commentary, "All");
+    double_click(&mut h, all);
+    let view = h.shell.st.tabs[&commentary].view.as_ref().unwrap();
+    let sel = view.selection.unwrap();
+    assert_eq!(crate::selection::selected_text(&view.doc, &sel), "All");
+    let first = glyph_rect(&h, commentary, 0, 0);
+    let margin = pos2(first.left() - crate::view::MARGIN / 2.0, first.center().y);
+    let good = commentary_spot(&h, commentary, "good");
+    drag_to(&mut h, margin, good);
+    assert!(h.shell.st.drag.dragging.is_none(), "nothing is carried");
+    release(&mut h, good);
+    let view = h.shell.st.tabs[&commentary].view.as_ref().unwrap();
+    let text = crate::selection::selected_text(&view.doc, &view.selection.unwrap());
+    assert!(text.starts_with("All things work together"), "{text:?}");
+    assert!(!h.shell.session().command_log().contains(&"workspace.drop"));
 }
 
 #[test]

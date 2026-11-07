@@ -332,6 +332,58 @@ fn a_reference_selected_in_a_bible_is_read_in_that_bibles_numbering() {
     assert_eq!(at(&s, kjv), Some(ge(32, 1)));
 }
 
+#[test]
+fn a_range_from_a_bible_whose_map_swaps_verses_keeps_every_verse_it_covers() {
+    let (mut s, kjv, _) = session();
+    // GRK numbers Philippians 1 the Greek way: its 1:16 is the Standard 1:17 and its 1:17
+    // the Standard 1:16.
+    s.library.add(entry(
+        "grk",
+        "GRK",
+        ResourceType::Bible,
+        vec![KeyScheme::Passage],
+    ));
+    let grk = open(&mut s, json!({ "id": "grk", "split": true }));
+    let php = |v| Verse::new(Book::Philippians, 1, v);
+    let entries = (15..=18)
+        .map(|n| VerseMapEntry {
+            verse: php(n),
+            last: n,
+            standard: Some(Passage::verse(php(match n {
+                16 => 17,
+                17 => 16,
+                n => n,
+            }))),
+        })
+        .collect();
+    let map = VerseMap::new(entries, vec![], &Standard);
+    let t = s.workspace.tab_mut(grk).unwrap();
+    t.versification = Some(Arc::new(ListedVersification::new(
+        map.entries().iter().map(|e| (e.verse, e.last)),
+    )));
+    t.verse_map = Some(Arc::new(map));
+    s.workspace.take_effects();
+    let out = s.run("guide.passage_guide", &json!({})).unwrap();
+    let guide = TabId(out["tab"].as_u64().unwrap());
+    // Its 1:16-17 maps to the Standard 1:17 then 1:16: the Guide shows both, not just 1:17.
+    s.run(
+        "workspace.drop",
+        &json!({ "text": "Phil 1:16-17", "from": grk.0, "tab": guide.0 }),
+    )
+    .unwrap();
+    assert_eq!(
+        s.workspace.tab(guide).unwrap().shown_passage(),
+        Passage::new(php(16), php(17)).ok()
+    );
+    // One Verse still goes where it maps.
+    s.run(
+        "workspace.drop",
+        &json!({ "text": "Phil 1:16", "from": grk.0, "tab": kjv.0 }),
+    )
+    .unwrap();
+    assert_eq!(at(&s, kjv), Some(php(17)));
+}
+
 fn at(s: &Session, tab: TabId) -> Option<Verse> {
     s.workspace.tab(tab).unwrap().history.current()
 }
