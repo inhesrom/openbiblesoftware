@@ -275,6 +275,11 @@ impl Session {
         self.location_at(self.workspace.tab(tab)?, None)
     }
 
+    /// How [`Self::location_of`] names Tab `t` where it is (#214, Recently closed).
+    pub(crate) fn location_label(&self, t: &Tab) -> Option<String> {
+        self.location_at(t, None).map(|(_, label)| label)
+    }
+
     /// [`Self::location_of`] for Tab `t`, with its Passage location, entry Key and Search
     /// fields taken from `at` when given (where a jump went, read later).
     fn location_at(&self, t: &Tab, at: Option<&VisitedAt>) -> Option<(TabLocation, String)> {

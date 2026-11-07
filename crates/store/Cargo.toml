@@ -19,6 +19,9 @@ obs-search.workspace = true
 # is native-only until a sqlite-wasm-rs backend lands (#12 rule 5).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rusqlite = { workspace = true, features = ["backup"] }
+# Whether a Backup or Export destination is the User database itself, by any path (hard links
+# included, which Windows' std offers no stable way to tell, #217).
+same-file = "1"
 
 [features]
 # `UserStore::annotation_dump`, for tests in this and dependent crates.

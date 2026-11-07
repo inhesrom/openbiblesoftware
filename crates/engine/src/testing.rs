@@ -2216,6 +2216,30 @@ impl crate::UserData for WritesFail {
     fn annotation_dump(&self) -> Result<String, String> {
         crate::UserData::annotation_dump(&self.store)
     }
+    fn back_up(&self, dest: &Path) -> Result<(), String> {
+        crate::UserData::back_up(&self.store, dest)
+    }
+    fn refuse_own_file(&self, dest: &Path) -> Result<(), String> {
+        crate::UserData::refuse_own_file(&self.store, dest)
+    }
+    fn backups(&self) -> Result<Vec<obs_store::BackupFile>, String> {
+        crate::UserData::backups(&self.store)
+    }
+    fn contents(&self) -> Result<obs_store::BackupContents, String> {
+        crate::UserData::contents(&self.store)
+    }
+    fn backup_contents(&self, path: &Path) -> Result<obs_store::BackupContents, String> {
+        crate::UserData::backup_contents(&self.store, path)
+    }
+    fn restore(&mut self, path: &Path) -> Result<PathBuf, String> {
+        crate::UserData::restore(&mut self.store, path)
+    }
+    fn preferences(&self) -> Result<Vec<(String, String)>, String> {
+        crate::UserData::preferences(&self.store)
+    }
+    fn local_time(&self, at: i64) -> Result<String, String> {
+        crate::UserData::local_time(&self.store, at)
+    }
 }
 
 /// A small Starter library (#131): a KJV-style Bible with the Starter id `kjv-strongs`

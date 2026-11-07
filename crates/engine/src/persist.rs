@@ -2,17 +2,18 @@
 //! [`WorkspaceSnapshot`]s, stored as JSON in the User database through [`UserData`].
 
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use obs_scripture::Verse;
 use obs_store::{
-    Annotation, Change, FavoriteRow, HighlightPalette, HighlightStyle, Notebook, PlanReadingRow,
-    ReadingPlanRow, VisitRow,
+    Annotation, BackupContents, BackupFile, Change, FavoriteRow, HighlightPalette, HighlightStyle,
+    Notebook, PlanReadingRow, ReadingPlanRow, VisitRow,
 };
 
 use crate::floating_windows::WindowSnapshot;
-use crate::workspace::{TabKind, Workspace};
+use crate::workspace::{RecentlyClosed, TabKind, Workspace};
 
 /// Snapshot format version; bump when the shape changes incompatibly.
 pub const SNAPSHOT_VERSION: u32 = 1;
@@ -122,9 +123,50 @@ pub struct TabSnapshot {
     /// A Resource Tab shows its Contents pane (#176).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub contents: bool,
+    /// Where a closed Resource Tab's view was scrolled, for Reopen closed Tab (#214). Only
+    /// Recently closed Tabs have one ([`TabSnapshot::closing`]); Layouts and the Last
+    /// session's open Tabs do not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scroll: Option<ScrollPosition>,
     /// The user hid the Tab's Footnote markers (#208).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub footnote_markers_hidden: bool,
+}
+
+impl TabSnapshot {
+    /// Tab `t` as a Layout or the Last session saves it.
+    pub fn of(t: &crate::workspace::Tab) -> Self {
+        TabSnapshot {
+            id: t.id.0,
+            kind: t.kind.clone(),
+            title: t.title.clone(),
+            location: t.history.current(),
+            entry_location: t.entry_history.current(),
+            link: t.link,
+            interlinear: t.interlinear.clone(),
+            contents: t.contents,
+            scroll: None,
+            footnote_markers_hidden: !t.footnote_markers,
+        }
+    }
+
+    /// Tab `t` as Recently closed keeps it, closed by the user now: scrolled as its view is.
+    pub fn closing(t: &crate::workspace::Tab) -> Self {
+        TabSnapshot {
+            scroll: t.scroll.clone(),
+            ..Self::of(t)
+        }
+    }
+}
+
+/// A place in a Resource Tab's text finer than its Current location: the text unit at the
+/// top of its view, a UTF-8 byte offset into it, and how far, in points, the view is scrolled
+/// past the top of the line holding that byte (#214).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScrollPosition {
+    pub unit: obs_model::UnitId,
+    pub byte: usize,
+    pub into: f32,
 }
 
 /// The Workspace as saved: Tabs, the arrangement of Panels, Link sets, focus and each Tab
@@ -142,6 +184,10 @@ pub struct WorkspaceSnapshot {
     /// Floating windows (#152), each with its own Panels and where it was on screen.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub windows: Vec<WindowSnapshot>,
+    /// Recently closed Tabs and Panels (#214): kept with the Last session, also when no Tab
+    /// is open, never with a Layout.
+    #[serde(default, skip_serializing_if = "RecentlyClosed::is_default")]
+    pub recently_closed: RecentlyClosed,
 }
 
 impl WorkspaceSnapshot {
@@ -157,10 +203,8 @@ impl WorkspaceSnapshot {
 
     /// Drop Tabs whose Resource is no longer in the library.
     pub fn without_missing(mut self, has: impl Fn(&str) -> bool) -> Self {
-        self.tabs.retain(|t| match &t.kind {
-            TabKind::Resource(id) | TabKind::About(id) | TabKind::ImportReport(id) => has(id),
-            _ => true,
-        });
+        let kept = |t: &TabSnapshot| t.kind.resource_id().is_none_or(&has);
+        self.tabs.retain(kept);
         let keep: BTreeSet<u64> = self.tabs.iter().map(|t| t.id).collect();
         self.layout = self.layout.and_then(|l| l.retain_tabs(&keep));
         self.windows = std::mem::take(&mut self.windows)
@@ -175,6 +219,11 @@ impl WorkspaceSnapshot {
         if self.focused.is_some_and(|f| !keep.contains(&f)) {
             self.focused = None;
         }
+        let closed = &mut self.recently_closed.closed;
+        for c in closed.iter_mut() {
+            c.tabs.retain(kept);
+        }
+        closed.retain(|c| !c.tabs.is_empty());
         self
     }
 }
@@ -262,6 +311,29 @@ pub trait UserData: std::fmt::Debug {
     /// The annotation tables as text, for tests comparing database states.
     #[cfg(any(test, feature = "test-support"))]
     fn annotation_dump(&self) -> Result<String, String>;
+
+    // Backups (#217); see `backups.rs`.
+
+    /// Write a Backup of everything to `dest`, replacing a file there (never the User
+    /// database itself, see [`UserData::refuse_own_file`]).
+    fn back_up(&self, dest: &Path) -> Result<(), String>;
+    /// Refuse `dest` if writing there would overwrite the User database or SQLite's files
+    /// beside it, by whatever path names them.
+    fn refuse_own_file(&self, dest: &Path) -> Result<(), String>;
+    /// The Backups the app keeps by itself (at launch, Safety backups, before an upgrade),
+    /// newest first.
+    fn backups(&self) -> Result<Vec<BackupFile>, String>;
+    /// What the User database holds now.
+    fn contents(&self) -> Result<BackupContents, String>;
+    /// What the Backup at `path` holds, migrated to this build's format; the file is only read.
+    fn backup_contents(&self, path: &Path) -> Result<BackupContents, String>;
+    /// Replace everything with the Backup at `path`, after taking a Safety backup, whose path
+    /// is returned. An unreadable or newer Backup changes nothing.
+    fn restore(&mut self, path: &Path) -> Result<PathBuf, String>;
+    /// Every saved preference, `(key, value)`, by key.
+    fn preferences(&self) -> Result<Vec<(String, String)>, String>;
+    /// The local date and time of `at` (Unix seconds), `YYYY-MM-DD HH:MM`.
+    fn local_time(&self, at: i64) -> Result<String, String>;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -386,6 +458,30 @@ impl UserData for obs_store::UserStore {
     fn annotation_dump(&self) -> Result<String, String> {
         obs_store::UserStore::annotation_dump(self).map_err(|e| e.to_string())
     }
+    fn back_up(&self, dest: &Path) -> Result<(), String> {
+        obs_store::UserStore::back_up(self, dest).map_err(|e| e.to_string())
+    }
+    fn refuse_own_file(&self, dest: &Path) -> Result<(), String> {
+        obs_store::UserStore::refuse_own_file(self, dest).map_err(|e| e.to_string())
+    }
+    fn backups(&self) -> Result<Vec<BackupFile>, String> {
+        obs_store::UserStore::backups(self).map_err(|e| e.to_string())
+    }
+    fn contents(&self) -> Result<BackupContents, String> {
+        obs_store::UserStore::contents(self).map_err(|e| e.to_string())
+    }
+    fn backup_contents(&self, path: &Path) -> Result<BackupContents, String> {
+        obs_store::UserStore::backup_contents(path).map_err(|e| e.to_string())
+    }
+    fn restore(&mut self, path: &Path) -> Result<PathBuf, String> {
+        obs_store::UserStore::restore(self, path).map_err(|e| e.to_string())
+    }
+    fn preferences(&self) -> Result<Vec<(String, String)>, String> {
+        obs_store::UserStore::preferences(self).map_err(|e| e.to_string())
+    }
+    fn local_time(&self, at: i64) -> Result<String, String> {
+        obs_store::UserStore::local_time(self, at).map_err(|e| e.to_string())
+    }
 }
 
 impl Workspace {
@@ -394,20 +490,7 @@ impl Workspace {
         let live: BTreeSet<u64> = self.tabs().map(|t| t.id.0).collect();
         WorkspaceSnapshot {
             version: SNAPSHOT_VERSION,
-            tabs: self
-                .tabs()
-                .map(|t| TabSnapshot {
-                    id: t.id.0,
-                    kind: t.kind.clone(),
-                    title: t.title.clone(),
-                    location: t.history.current(),
-                    entry_location: t.entry_history.current(),
-                    link: t.link,
-                    interlinear: t.interlinear.clone(),
-                    contents: t.contents,
-                    footnote_markers_hidden: !t.footnote_markers,
-                })
-                .collect(),
+            tabs: self.tabs().map(TabSnapshot::of).collect(),
             layout: self.arrangement.clone(),
             focused: self.focused().map(|t| t.0),
             remembered: self.remembered_slots(),
@@ -424,6 +507,7 @@ impl Workspace {
                     })
                 })
                 .collect(),
+            recently_closed: self.closed_snapshot(),
         }
     }
 }

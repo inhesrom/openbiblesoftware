@@ -96,8 +96,12 @@ pub enum SettingKind {
     KeyboardShortcuts,
     /// Where the library is kept. Shown, not changed here; it has no Reset.
     LibraryFolder,
-    /// A button that runs a command: something to do, not a value, so it has no Reset.
-    Action { command: &'static str },
+    /// A button that runs a command: something to do, not a value, so it has no Reset. With
+    /// `confirm`, the Tab asks first (it cannot be undone).
+    Action {
+        command: &'static str,
+        confirm: bool,
+    },
 }
 
 /// One row of the Settings Tab.
@@ -254,6 +258,7 @@ pub const SETTINGS: &[Setting] = &[
         "highlight styles palette palettes colour color custom underline box promises",
         SettingKind::Action {
             command: "view.highlight_styles",
+            confirm: false,
         },
     ),
     setting(
@@ -354,6 +359,7 @@ pub const SETTINGS: &[Setting] = &[
         "download get resources bibles sword catalogue catalog",
         SettingKind::Action {
             command: "library.get_resources",
+            confirm: false,
         },
     ),
     setting(
@@ -364,6 +370,7 @@ pub const SETTINGS: &[Setting] = &[
         "starter library download add back",
         SettingKind::Action {
             command: "library.starter",
+            confirm: false,
         },
     ),
     setting(
@@ -387,6 +394,7 @@ pub const SETTINGS: &[Setting] = &[
         "history privacy forget visits delete clear",
         SettingKind::Action {
             command: "history.clear",
+            confirm: true,
         },
     ),
     setting(
@@ -397,6 +405,18 @@ pub const SETTINGS: &[Setting] = &[
         "search history privacy forget delete clear",
         SettingKind::Action {
             command: "search.clear_history",
+            confirm: true,
+        },
+    ),
+    setting(
+        "back_up_and_restore",
+        S::PrivacyAndData,
+        "Backups",
+        "Back up, restore or export all your data",
+        "backup back up restore export zip safety copy move computer data",
+        SettingKind::Action {
+            command: "data.backups",
+            confirm: false,
         },
     ),
 ];

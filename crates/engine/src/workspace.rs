@@ -14,7 +14,10 @@ use serde::{Deserialize, Serialize};
 use crate::compare::{Comparison, in_range_chapters};
 use crate::floating_windows::{FloatingWindow, WindowId, WindowPlacement};
 use crate::link::{ToStandard, to_native, to_standard};
-use crate::persist::{LayoutNode, WorkspaceSnapshot};
+use crate::persist::{LayoutNode, ScrollPosition, TabSnapshot, WorkspaceSnapshot};
+
+mod recently_closed;
+pub use recently_closed::{CameBackBeside, ClosedTabs, RECENTLY_CLOSED_LIMIT, RecentlyClosed};
 
 /// A Tab, stable for the life of the Workspace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -111,6 +114,9 @@ pub enum TabKind {
     /// Settings (#213, Ctrl+,): every preference in one place, with a search box. Single
     /// instance.
     Settings,
+    /// Back up & restore (#217): Back up now, Restore from backup…, the Backups the app keeps
+    /// and Export everything. Keyless, single instance.
+    Backups,
     Guide(Guide),
     Tool(Tool),
 }
@@ -151,6 +157,7 @@ enum Slot {
     Home,
     KeyboardShortcuts,
     Settings,
+    Backups,
     Guide(Guide),
     Tool(Tool),
 }
@@ -170,6 +177,7 @@ impl TabKind {
                 | TabKind::Home
                 | TabKind::KeyboardShortcuts
                 | TabKind::Settings
+                | TabKind::Backups
                 | TabKind::Tool(
                     Tool::Notes
                         | Tool::WordInfo
@@ -178,6 +186,14 @@ impl TabKind {
                         | Tool::ReadingPlans
                 )
         )
+    }
+
+    /// The Resource a Tab of this kind shows or is about, by resource id.
+    pub fn resource_id(&self) -> Option<&str> {
+        match self {
+            TabKind::Resource(id) | TabKind::About(id) | TabKind::ImportReport(id) => Some(id),
+            _ => None,
+        }
     }
 
     /// Resources open in reading Panels; everything else in non-reading Panels.
@@ -211,6 +227,7 @@ impl TabKind {
             | TabKind::StarterLibrary
             | TabKind::Credits
             | TabKind::Home
+            | TabKind::Backups
             | TabKind::Tool(Tool::ReadingPlans) => HeaderBox::Keyless,
             _ => HeaderBox::Reference,
         }
@@ -237,6 +254,7 @@ impl TabKind {
                 | TabKind::Home
                 | TabKind::KeyboardShortcuts
                 | TabKind::Settings
+                | TabKind::Backups
                 | TabKind::Guide(Guide::Factbook)
                 | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History | Tool::ReadingPlans)
         )
@@ -269,6 +287,7 @@ impl TabKind {
             TabKind::Home => Slot::Home,
             TabKind::KeyboardShortcuts => Slot::KeyboardShortcuts,
             TabKind::Settings => Slot::Settings,
+            TabKind::Backups => Slot::Backups,
             TabKind::Guide(g) => Slot::Guide(*g),
             TabKind::Tool(t) => Slot::Tool(*t),
         }
@@ -457,9 +476,48 @@ pub struct Tab {
     /// a command or typed reference gave a chapter or range (Standard numbering). Kept while
     /// the Tab's location is the Passage's first Verse; otherwise the Tab shows that Verse.
     pub passage: Option<Passage>,
+    /// Where a Resource Tab's view is scrolled, finer than its Current location, as the UI
+    /// reports it each time the view draws ([`Workspace::view_scrolled`]); a reopened Tab
+    /// (#214) carries the one it closed with until it draws. Cleared when the Tab is sent
+    /// somewhere else. Recently closed takes it as the user closes the Tab.
+    pub scroll: Option<ScrollPosition>,
 }
 
 impl Tab {
+    /// A Tab as saved in a snapshot, given id `id`: at its saved locations without history,
+    /// with nothing of its Resource loaded yet.
+    pub(crate) fn from_snapshot(id: TabId, t: TabSnapshot) -> Self {
+        let mut history = History::default();
+        if let Some(v) = t.location {
+            history.scrolled_to(v);
+        }
+        let mut entry_history = History::default();
+        if let Some(k) = t.entry_location {
+            entry_history.scrolled_to(k);
+        }
+        Tab {
+            id,
+            key_schemes: t.kind.default_key_schemes(),
+            kind: t.kind,
+            title: t.title,
+            history,
+            entry_history,
+            navigation: None,
+            versification: None,
+            verse_map: None,
+            link: t.link,
+            comparison: Comparison::default(),
+            search: Default::default(),
+            arriving_at: None,
+            interlinear: t.interlinear,
+            contents: t.contents,
+            footnote_markers: !t.footnote_markers_hidden,
+            view_unit: None,
+            passage: None,
+            scroll: t.scroll,
+        }
+    }
+
     pub fn header_box(&self) -> HeaderBox {
         if matches!(self.kind, TabKind::Resource(_)) {
             if self.key_schemes.contains(&KeyScheme::Headword) {
@@ -569,6 +627,7 @@ impl Tab {
     /// the new one.
     fn show_resource(&mut self, resource: String) {
         self.kind = TabKind::Resource(resource);
+        self.scroll = None;
         self.navigation = None;
         self.view_unit = None;
         self.versification = None;
@@ -607,11 +666,64 @@ impl Tab {
 pub enum Placement {
     /// Into an existing Panel.
     Panel(PanelId),
-    /// Into a new Panel split off to the right of `beside` (or of the whole Workspace).
+    /// Into a new Panel split off on `side` of `beside` (or of the whole Workspace). A
+    /// reopened Panel (#214) goes back on whichever side it was, and beside the row or column
+    /// it was next to when that held more than one Panel: `levels` rows and columns out from
+    /// `beside`, the nearest Panel of it.
     NewPanel {
         panel: PanelId,
         beside: Option<PanelId>,
+        side: Side,
+        levels: u8,
     },
+}
+
+impl Placement {
+    /// A new Panel to the right of `beside` (or of the whole Workspace).
+    pub fn right_of(panel: PanelId, beside: Option<PanelId>) -> Self {
+        Placement::NewPanel {
+            panel,
+            beside,
+            side: Side::Right,
+            levels: 0,
+        }
+    }
+}
+
+/// Which side of another a new Panel goes on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Side {
+    #[default]
+    Right,
+    Left,
+    Below,
+    Above,
+}
+
+impl Side {
+    /// Beside, above or below: whether it splits a row (else a column).
+    pub fn in_row(self) -> bool {
+        matches!(self, Side::Right | Side::Left)
+    }
+
+    /// Left or above: before the other in its row or column.
+    pub fn before(self) -> bool {
+        matches!(self, Side::Left | Side::Above)
+    }
+
+    pub fn opposite(self) -> Side {
+        match self {
+            Side::Right => Side::Left,
+            Side::Left => Side::Right,
+            Side::Below => Side::Above,
+            Side::Above => Side::Below,
+        }
+    }
+
+    pub fn is_right(&self) -> bool {
+        *self == Side::Right
+    }
 }
 
 /// A change for the UI to apply to what it shows.
@@ -754,6 +866,29 @@ pub enum Effect {
         tab: TabId,
         forward: bool,
     },
+    /// Scroll a reopened Resource Tab (#214) back to where its view was when it was closed,
+    /// once it is loaded at its Current location.
+    RestoreScroll {
+        tab: TabId,
+        at: ScrollPosition,
+    },
+}
+
+impl Effect {
+    /// The Tab whose view this sends somewhere else (another place, or another Resource),
+    /// if it does.
+    pub fn moved_view(&self) -> Option<TabId> {
+        match self {
+            Effect::Navigate { tab, .. }
+            | Effect::Switched(tab)
+            | Effect::NavigateEntry { tab, .. }
+            | Effect::Follow { tab, .. }
+            | Effect::NavigateText { tab, .. }
+            | Effect::ShowUnit { tab, .. }
+            | Effect::RevealText { tab, .. } => Some(*tab),
+            _ => None,
+        }
+    }
 }
 
 /// How the caller asked for a Tab to be opened.
@@ -792,6 +927,9 @@ pub struct Workspace {
     visits: Vec<PendingVisit>,
     /// Tabs closed while History still had Visits of theirs to record, kept until it has.
     closed_with_visits: BTreeMap<TabId, Tab>,
+    /// Recently closed Tabs and Panels (#214).
+    closed: RecentlyClosed,
+    next_closed: u64,
 }
 
 /// A Tab opened or jumped, for History to record (#155).
@@ -872,10 +1010,27 @@ impl Workspace {
 
     /// Effects queued since the last call, for the UI to apply in order.
     pub fn take_effects(&mut self) -> Vec<Effect> {
+        // A view drawn between queueing a move and this drain reported where it still was
+        // (#214): it is no longer scrolled there.
+        for e in &self.effects {
+            if let Some(t) = e.moved_view().and_then(|t| self.tabs.get_mut(&t)) {
+                t.scroll = None;
+            }
+        }
         std::mem::take(&mut self.effects)
     }
 
     pub fn push_effect(&mut self, e: Effect) {
+        self.queue(e);
+    }
+
+    /// Queue an effect. A Tab it sends somewhere else is no longer scrolled where its view
+    /// was, from now on: a Tab closed before the UI drains the effect must not keep the old
+    /// place's scroll (#214).
+    fn queue(&mut self, e: Effect) {
+        if let Some(t) = e.moved_view().and_then(|t| self.tabs.get_mut(&t)) {
+            t.scroll = None;
+        }
         self.effects.push(e);
     }
 
@@ -941,7 +1096,7 @@ impl Workspace {
         let beside = self.focused.and_then(|t| self.panel_of(t));
         if req.split {
             let panel = self.new_panel_id();
-            return Placement::NewPanel { panel, beside };
+            return Placement::right_of(panel, beside);
         }
         let chosen = req
             .panel
@@ -959,7 +1114,7 @@ impl Workspace {
             None => {
                 let panel = self.new_panel_id();
                 let beside = beside.or_else(|| self.panels.keys().next_back().copied());
-                Placement::NewPanel { panel, beside }
+                Placement::right_of(panel, beside)
             }
         }
     }
@@ -1009,6 +1164,7 @@ impl Workspace {
                 footnote_markers: true,
                 view_unit: None,
                 passage: None,
+                scroll: None,
             },
         );
         // A linked Tool or Guide starts at its Link set's location. (Bibles wait until their
@@ -1019,7 +1175,7 @@ impl Workspace {
         {
             t.history.scrolled_to(v);
         }
-        self.effects.push(Effect::Opened { tab: id, placement });
+        self.queue(Effect::Opened { tab: id, placement });
         self.visits.push(PendingVisit { tab: id, at: None });
         self.focus(id);
         id
@@ -1049,7 +1205,7 @@ impl Workspace {
             return;
         };
         self.note_active(tab, &kind);
-        self.effects.push(Effect::Focus(tab));
+        self.queue(Effect::Focus(tab));
         self.focused = Some(tab);
     }
 
@@ -1092,7 +1248,7 @@ impl Workspace {
         if self.focused == Some(tab) {
             self.focused = None;
         }
-        self.effects.push(Effect::Closed(tab));
+        self.queue(Effect::Closed(tab));
         true
     }
 
@@ -1106,6 +1262,8 @@ impl Workspace {
             .filter(|t| !shown.contains(t))
             .copied()
             .collect();
+        // The user closed them (× or a middle click): Reopen closed Tab brings them back (#214).
+        self.remember_gone(&gone);
         for t in gone {
             self.remove_tab(t);
             self.activity.remove(&t);
@@ -1142,7 +1300,7 @@ impl Workspace {
         {
             t.visit(local, None);
             t.moved_to(local);
-            self.effects.push(Effect::Navigate { tab, verse: local });
+            self.queue(Effect::Navigate { tab, verse: local });
             self.visited(tab);
             self.broadcast(tab, verse, true);
         }
@@ -1166,7 +1324,7 @@ impl Workspace {
                 let start = p.start();
                 t.visit(start, Some(&unit));
                 t.moved_to(start);
-                self.effects.push(Effect::NavigateText {
+                self.queue(Effect::NavigateText {
                     tab,
                     unit,
                     range,
@@ -1176,7 +1334,7 @@ impl Workspace {
             }
             Some(k) if !matches!(k, Key::Passage(_)) => {
                 t.visit_entry(k.clone(), Some(&unit));
-                self.effects.push(Effect::NavigateText {
+                self.queue(Effect::NavigateText {
                     tab,
                     unit,
                     range,
@@ -1184,7 +1342,7 @@ impl Workspace {
                 });
                 self.broadcast_entry(tab, k);
             }
-            _ => self.effects.push(Effect::NavigateText {
+            _ => self.queue(Effect::NavigateText {
                 tab,
                 unit,
                 range,
@@ -1200,7 +1358,7 @@ impl Workspace {
             return;
         };
         t.visit_entry(key.clone(), None);
-        self.effects.push(Effect::NavigateEntry {
+        self.queue(Effect::NavigateEntry {
             tab,
             key: key.clone(),
         });
@@ -1223,13 +1381,17 @@ impl Workspace {
         let Some(link) = self.tabs.get(&tab).and_then(|t| t.link) else {
             return;
         };
+        let mut moved = Vec::new();
         for t in self.tabs.values_mut().filter(|t| {
             t.id != tab && t.link == Some(link) && t.key_schemes.contains(&key.scheme())
         }) {
             if let Some(key) = t.entry_key(key) {
                 t.entry_history.scrolled_to(key.clone());
-                self.effects.push(Effect::NavigateEntry { tab: t.id, key });
+                moved.push(Effect::NavigateEntry { tab: t.id, key });
             }
+        }
+        for e in moved {
+            self.queue(e);
         }
     }
 
@@ -1242,12 +1404,12 @@ impl Workspace {
             t.entry_history.forward(shown)?
         };
         if t.follow_history_resource() {
-            self.effects.push(Effect::Switched(tab));
+            self.queue(Effect::Switched(tab));
             self.show_unit(tab, unit);
             self.visited(tab);
             return Some(key);
         }
-        self.effects.push(Effect::NavigateEntry {
+        self.queue(Effect::NavigateEntry {
             tab,
             key: key.clone(),
         });
@@ -1260,7 +1422,7 @@ impl Workspace {
     /// Back or Forward returned to a history entry whose view showed `unit` (#176).
     fn show_unit(&mut self, tab: TabId, unit: Option<UnitId>) {
         if let Some(unit) = unit {
-            self.effects.push(Effect::ShowUnit { tab, unit });
+            self.queue(Effect::ShowUnit { tab, unit });
         }
     }
 
@@ -1295,7 +1457,7 @@ impl Workspace {
         {
             t.visit(native, None);
             t.moved_to(native);
-            self.effects.push(Effect::Navigate { tab, verse: native });
+            self.queue(Effect::Navigate { tab, verse: native });
             self.visited(tab);
         }
         // A Lexicon can open a Scripture reference without following Passages itself.
@@ -1321,6 +1483,13 @@ impl Workspace {
         }
         t.history.scrolled_to(verse);
         self.broadcast(tab, verse, false);
+    }
+
+    /// The UI reports where a Tab's view is scrolled ([`Tab::scroll`]), as it draws.
+    pub fn view_scrolled(&mut self, tab: TabId, at: Option<ScrollPosition>) {
+        if let Some(t) = self.tabs.get_mut(&tab) {
+            t.scroll = at;
+        }
     }
 
     /// The UI reports the text unit at the top of a Tab's view ([`Tab::view_unit`]).
@@ -1350,13 +1519,13 @@ impl Workspace {
             return v;
         };
         if t.follow_history_resource() {
-            self.effects.push(Effect::Switched(tab));
+            self.queue(Effect::Switched(tab));
             self.show_unit(tab, unit);
             self.visited(tab);
             return v;
         }
         t.moved_to(v);
-        self.effects.push(Effect::Navigate { tab, verse: v });
+        self.queue(Effect::Navigate { tab, verse: v });
         self.show_unit(tab, unit);
         self.visited(tab);
         self.broadcast(tab, v, false);
@@ -1398,7 +1567,7 @@ impl Workspace {
         }
         t.show_resource(to);
         t.arriving_at = arriving_at;
-        self.effects.push(Effect::Switched(tab));
+        self.queue(Effect::Switched(tab));
         // History records the new Resource where the UI places it, as for a Tab just opened.
         self.visits.push(PendingVisit { tab, at: None });
         true
@@ -1430,7 +1599,7 @@ impl Workspace {
             if let Some(t) = self.tabs.get_mut(&tab) {
                 t.entry_history.scrolled_to(key.clone());
             }
-            self.effects.push(Effect::NavigateEntry { tab, key });
+            self.queue(Effect::NavigateEntry { tab, key });
         }
     }
 
@@ -1470,7 +1639,7 @@ impl Workspace {
         if let Some(t) = self.tabs.get_mut(&tab) {
             t.history.scrolled_to(verse);
             t.moved_to(verse);
-            self.effects.push(Effect::Follow { tab, verse, flash });
+            self.queue(Effect::Follow { tab, verse, flash });
         }
     }
 
@@ -1550,43 +1719,11 @@ impl Workspace {
         self.remembered.clear();
         self.activity.clear();
         self.focused = None;
+        self.restore_closed(snap.recently_closed);
         for t in snap.tabs {
-            let mut history = History::default();
-            if let Some(v) = t.location {
-                history.scrolled_to(v);
-            }
-            let key_schemes = t.kind.default_key_schemes();
             let id = TabId(t.id);
             self.next_tab = self.next_tab.max(t.id);
-            self.tabs.insert(
-                id,
-                Tab {
-                    id,
-                    kind: t.kind,
-                    title: t.title,
-                    history,
-                    entry_history: {
-                        let mut h = History::default();
-                        if let Some(k) = t.entry_location {
-                            h.scrolled_to(k);
-                        }
-                        h
-                    },
-                    navigation: None,
-                    versification: None,
-                    verse_map: None,
-                    key_schemes,
-                    link: t.link,
-                    comparison: Comparison::default(),
-                    search: Default::default(),
-                    arriving_at: None,
-                    interlinear: t.interlinear,
-                    contents: t.contents,
-                    footnote_markers: !t.footnote_markers_hidden,
-                    view_unit: None,
-                    passage: None,
-                },
-            );
+            self.tabs.insert(id, Tab::from_snapshot(id, t));
         }
         let mut placed: Vec<(u64, Vec<u64>, Option<u64>)> = snap
             .layout
@@ -1665,7 +1802,7 @@ impl Workspace {
             .focused
             .map(TabId)
             .filter(|t| self.tabs.contains_key(t));
-        self.effects.push(Effect::Rebuild);
+        self.queue(Effect::Rebuild);
     }
 
     /// Close everything (before a layout reset).
@@ -1679,6 +1816,7 @@ impl Workspace {
         self.last_other_panel = None;
         self.arrangement = None;
         self.floating.clear();
+        self.panels_replaced();
     }
 
     /// The floating window a Tab is in (none: the main window).
@@ -1716,7 +1854,7 @@ impl Workspace {
             }),
             placement,
         });
-        self.effects.push(Effect::Float {
+        self.queue(Effect::Float {
             tab,
             window,
             panel,
@@ -1741,7 +1879,7 @@ impl Workspace {
                 active: Some(tab.0),
             },
         ));
-        self.effects.push(Effect::Dock { tab, panel });
+        self.queue(Effect::Dock { tab, panel });
         self.focus(tab);
         true
     }
@@ -1756,7 +1894,7 @@ impl Workspace {
         if let Some(node) = w.arrangement {
             self.arrangement = Some(beside_right(self.arrangement.take(), node));
         }
-        self.effects.push(Effect::DockWindow(window));
+        self.queue(Effect::DockWindow(window));
         true
     }
 

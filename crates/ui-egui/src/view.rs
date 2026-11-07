@@ -106,9 +106,10 @@ pub struct ReadingView {
     anchor: (usize, f32),
     /// After a jump, the Current location stays on the target until the user scrolls (#13).
     sticky: Option<Verse>,
-    /// After a jump to a Text range (a Library search hit, #60): its unit index and byte,
-    /// kept at the top across relayouts until the user scrolls.
-    sticky_text: Option<(usize, usize)>,
+    /// After a jump to a Text range (a Library search hit, #60) or back to where a view was
+    /// scrolled (#151, #214): that text, kept at the top across relayouts until the user
+    /// scrolls or the view jumps elsewhere.
+    sticky_text: Option<TextAnchor>,
     /// Blocks laid out so far, on any thread (for tests and the performance overlay).
     pub layouts: u64,
     client: LayoutClient,
@@ -233,8 +234,8 @@ impl ReadingView {
         self.laid.clear();
         self.generation += 1;
         self.client.forget_pending();
-        if let Some((unit, byte)) = self.sticky_text {
-            self.jump_to_text(unit, byte);
+        if let Some(at) = self.sticky_text {
+            self.place_text(at);
         } else if let Some(v) = keep {
             self.jump_to(v);
         }
@@ -677,20 +678,37 @@ impl ReadingView {
     /// to the top of the view and stays there across relayouts until the user scrolls. This
     /// is how a Library search hit scrolls to its paragraph (#60).
     pub fn jump_to_text(&mut self, unit: usize, byte: usize) -> bool {
-        let Some(block) = self.doc.block_at(unit, byte) else {
+        let at = TextAnchor {
+            unit,
+            byte,
+            into: 0.0,
+        };
+        if !self.place_text(at) {
+            return false;
+        }
+        self.sticky = None;
+        self.sticky_text = Some(at);
+        self.pending_follow = None;
+        true
+    }
+
+    /// Put the line holding `at` at the top of the view, `at.into` above it.
+    fn place_text(&mut self, at: TextAnchor) -> bool {
+        let Some(block) = self.doc.block_at(at.unit, at.byte) else {
             return false;
         };
         let Some(laid) = self.laid(block) else {
             return false;
         };
         let top = laid
-            .from_unit(byte)
+            .from_unit(at.byte)
             .and_then(|p| laid.lines.iter().find(|l| l.bytes.end > p))
             .map_or(0.0, |l| l.top);
         self.anchor = (block, top);
-        self.sticky = None;
-        self.sticky_text = Some((unit, byte));
-        self.pending_follow = None;
+        if at.into != 0.0 {
+            self.anchor.1 += at.into;
+            self.normalize();
+        }
         true
     }
 
@@ -721,20 +739,17 @@ impl ReadingView {
         }
     }
 
-    /// Scroll back to a [`TextAnchor`] taken from a view of the same document. With a
-    /// `verse`, that stays the Current location until the user scrolls, as after
-    /// [`Self::jump_to`]; without, the anchor's line stays at the top across relayouts, as
-    /// after [`Self::jump_to_text`].
+    /// Scroll back to a [`TextAnchor`] taken from a view of the same document; it stays
+    /// there, as far into its line, across relayouts (a narrower or wider pane) until the
+    /// user scrolls or the view jumps elsewhere. With a `verse`, that stays the Current
+    /// location meanwhile, as after [`Self::jump_to`].
     pub fn restore_text_anchor(&mut self, at: TextAnchor, verse: Option<Verse>) -> bool {
-        if !self.jump_to_text(at.unit, at.byte) {
+        if !self.place_text(at) {
             return false;
         }
-        self.anchor.1 += at.into;
-        self.normalize();
-        if verse.is_some() {
-            self.sticky = verse;
-            self.sticky_text = None;
-        }
+        self.sticky = verse;
+        self.sticky_text = Some(at);
+        self.pending_follow = None;
         true
     }
 
@@ -774,6 +789,7 @@ impl ReadingView {
             .map_or(0.0, |l| l.top);
         self.anchor = (block, top);
         self.sticky = None;
+        self.sticky_text = None;
         self.pending_follow = None;
         true
     }

@@ -2647,6 +2647,7 @@ dependencies = [
  "obs-search",
  "obs-store",
  "rusqlite",
+ "same-file",
  "serde",
  "serde_json",
 ]

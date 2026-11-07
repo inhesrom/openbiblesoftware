@@ -44,7 +44,7 @@ fn commands_of(kind: SettingKind) -> Vec<&'static str> {
     match kind {
         SettingKind::Choice { command, .. }
         | SettingKind::Toggle { command, .. }
-        | SettingKind::Action { command } => vec![command],
+        | SettingKind::Action { command, .. } => vec![command],
         SettingKind::TextSize => vec!["view.text_larger", "view.text_smaller", "view.text_reset"],
         SettingKind::Font(_) => vec!["view.fonts", "view.font"],
         SettingKind::NotebooksInText => vec!["notebook.show_in_text"],
@@ -100,6 +100,7 @@ fn every_preference_command_is_a_setting() {
         "search.word_forms",
         "history.clear",
         "search.clear_history",
+        "data.backups",
     ]);
     let missing: Vec<&&str> = wanted.iter().filter(|c| !covered.contains(**c)).collect();
     assert!(missing.is_empty(), "no Setting for {missing:?}");
@@ -173,6 +174,8 @@ fn search_finds_every_setting_by_its_label_and_plain_words() {
     assert_eq!(ids("hotkeys"), ["keyboard_shortcuts"]);
     assert_eq!(ids("greek font"), ["font_greek"]);
     assert!(ids("privacy").contains(&"clear_history"));
+    assert_eq!(ids("backup"), ["back_up_and_restore"]);
+    assert!(ids("export").contains(&"back_up_and_restore"));
     assert_eq!(ids("superscript"), ["verse_numbers"]);
     assert!(ids("no such setting anywhere").is_empty());
     assert_eq!(settings_matching(&s, "").len(), SETTINGS.len());
@@ -222,7 +225,7 @@ fn choice_defaults_are_the_app_defaults() {
 }
 
 /// Change `id` away from its default through the command the Settings Tab runs for it.
-fn change(s: &mut Session, id: &str) {
+pub(crate) fn change(s: &mut Session, id: &str) {
     let setting = setting_by_id(id).unwrap();
     let ok = |r: Result<Value, CommandError>| {
         r.unwrap_or_else(|e| panic!("{id}: {e}"));
