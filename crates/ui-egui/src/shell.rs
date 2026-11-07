@@ -58,6 +58,7 @@ mod library_tab;
 mod missing_resource;
 mod note_editor;
 mod notes_tab;
+mod page_tone;
 mod reading_plans_tab;
 #[path = "references.rs"]
 pub(crate) mod references;
@@ -265,6 +266,8 @@ pub(crate) struct State {
     keyboard_to: Option<TabId>,
     /// Where F6 puts the keyboard in the menu bar and the Toolbar (#215).
     pub(crate) areas: keyboard_nav::AreaMarks,
+    /// The hint offering Page tone Auto when the theme turns dark over a light tone (#240).
+    page_tone_hint: page_tone::PageToneHint,
 }
 
 /// A Tab whose drawing is timed each frame, for the bench's synchronous-work budget (#183,
@@ -348,6 +351,7 @@ impl Shell {
                 drag: drag_drop::DragDropUi::default(),
                 keyboard_to: None,
                 areas: Default::default(),
+                page_tone_hint: page_tone::PageToneHint::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -781,13 +785,10 @@ impl Shell {
         if ctx.zoom_factor() != zoom {
             ctx.set_zoom_factor(zoom);
         }
-        let tone = self
-            .st
-            .session
-            .appearance
-            .page_tone
-            .resolve(theme::c().dark);
+        let dark = theme::c().dark;
+        let tone = self.st.session.appearance.page_tone.resolve(dark);
         self.st.palette = Palette::for_tone(tone);
+        self.st.follow_page_tone_hint(dark);
     }
 
     /// Show the Resource `id` given at startup (a file on the command line) on top of what
@@ -3051,6 +3052,7 @@ impl State {
         self.highlight_styles_window(&ctx);
         self.copy_window(&ctx);
         self.collection_editor_window(&ctx);
+        self.page_tone_hint_ui(&ctx);
         if let Some((msg, t)) = &self.toast {
             if self.now - t < 4.0 {
                 let screen = ctx.content_rect();

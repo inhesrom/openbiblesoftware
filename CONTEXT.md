@@ -395,6 +395,14 @@ _Avoid_: Zoom, Font size
 One zoom on the whole app window: menus, Tab bars, headers and dialogs grow or shrink, with Resource text scaled along on top of its Text size (View → Interface size: Smaller, Default, Larger). It is kept in the User database. No Text size key changes it.
 _Avoid_: Zoom, UI scale, DPI
 
+**Theme**:
+The colours of the app's own chrome (menus, Tab bars, headers, dialogs): Light, Dark, or Follow system (the default), which follows the operating system live. View → Theme or Settings.
+_Avoid_: Dark mode (as a setting's name), Skin, Colour scheme
+
+**Page tone**:
+The colour of Resource pages (reading panes, Text Comparison, Guides, Notes cards, reference previews): Auto (the default), Paper, Sepia or Dark. Auto follows the Theme at once: Paper in a light Theme, Dark in a dark one. A tone the user chooses is kept in every Theme; the first time the Theme turns dark over a chosen Paper or Sepia, a one-time hint offers Auto ("Page tone is set to Paper. Use Auto to follow the theme?"). Settings shows the tone the pages are in now.
+_Avoid_: Page colour, Background, Reading theme
+
 **Reading font**:
 The font Resource text of one script is drawn in: one each for Latin, Greek and Hebrew, chosen in View → Fonts. It is a Bundled font by default, or a font installed on the computer, stored by family and style name. Characters a Reading font lacks are drawn in the Bundled font for that script.
 _Avoid_: Text font, Body font, Resource font
