@@ -311,7 +311,7 @@ fn fit_shows_the_whole_timeline_across_the_whole_axis() {
     );
 
     // Zoom in, then Fit: the same view as on opening.
-    let plus = all_in(&h, tab, "+")[0];
+    let plus = all_in(&h, tab, "[zoom-in]")[0];
     h.click(plus.center());
     h.frames(3);
     assert!(view(&h).scale > opened.scale * 1.5, "+ did not zoom in");

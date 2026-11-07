@@ -1,5 +1,5 @@
 //! The Word Info Tool (#50, #18 rules 15–16): the Tagged word the pointer rests on (~150 ms
-//! dwell, sticky) or the one clicked (📌 pinned). Shows the word as written, transliteration,
+//! dwell, sticky) or the one clicked (pinned). Shows the word as written, transliteration,
 //! contextual gloss and reference; the main Lemma card (Lemma, Strong's number, plain-English
 //! Morphology, the first Lexicon's gloss); and prefixes and suffixes under Parts. Original-
 //! script text is drawn by the inline-snippet mode.
@@ -13,6 +13,7 @@ use obs_scripture::{Passage, RefStyle, StrongsNumber, format_passage};
 use serde_json::json;
 
 use super::{Dwell, HOVER_DWELL_SECS, State};
+use crate::icons::{self, Icon};
 use crate::pane::WordHit;
 use crate::theme;
 
@@ -214,7 +215,13 @@ impl State {
                             for id in ["word_info.word_study", "word_info.search"] {
                                 let label = self.session.commands().get(id).map_or(id, |c| c.label);
                                 let enabled = self.session.is_enabled(id);
-                                let r = ui.add_enabled(enabled, egui::Button::new(label));
+                                let icon = if id == "word_info.search" {
+                                    Icon::Search
+                                } else {
+                                    Icon::WordStudy
+                                };
+                                let button = egui::Button::new(icons::with_icon(ui, icon, label));
+                                let r = ui.add_enabled(enabled, button);
                                 if enabled {
                                     if r.clicked() {
                                         run = Some(id);

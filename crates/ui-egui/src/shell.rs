@@ -17,8 +17,9 @@ use obs_model::{Key, ResourceType};
 use obs_scripture::{Passage, RefStyle, Standard, Verse, format_passage};
 use serde_json::{Value, json};
 
-use crate::compare_view::{ComparisonBible, ComparisonView, comparison_pane, paint_star};
+use crate::compare_view::{ComparisonBible, ComparisonView, comparison_pane};
 use crate::doc::ReadingDoc;
+use crate::icons;
 use crate::interlinear::InterlinearSource;
 use crate::palette::Palette;
 use crate::pane::{AtlasTexture, WordHit, reading_pane};
@@ -1058,14 +1059,14 @@ impl Shell {
                 let Some(spec) = self.st.session.commands().get(id).copied() else {
                     return;
                 };
+                // A toggle shows a check while it is on; a command with an icon shows it.
+                let checked = match id {
+                    "view.red_letter" => Some(self.st.session.text.red_letter),
+                    "view.highlights" => Some(self.st.session.appearance.show_highlights),
+                    "view.toolbar_auto_hide" => Some(self.st.session.toolbar.auto_hide),
+                    _ => None,
+                };
                 let label = match id {
-                    "view.red_letter" if self.st.session.text.red_letter => "✓ Red letter".into(),
-                    "view.highlights" if self.st.session.appearance.show_highlights => {
-                        format!("✓ {}", spec.label)
-                    }
-                    "view.toolbar_auto_hide" if self.st.session.toolbar.auto_hide => {
-                        format!("✓ {}", spec.label)
-                    }
                     "library.get_resources" => {
                         match self.st.session.resource_updates().updates.len() {
                             0 => spec.label.to_string(),
@@ -1075,12 +1076,25 @@ impl Shell {
                     }
                     _ => spec.label.to_string(),
                 };
-                let mut b = egui::Button::new(label);
+                let icon = match checked {
+                    Some(true) => Some(icons::Icon::Check),
+                    Some(false) => None,
+                    None => icons::for_command(id),
+                };
+                // Without an icon (an unchecked toggle), the icon's room is left blank so the
+                // menu's labels line up.
+                let mut b = match icon {
+                    Some(icon) => egui::Button::new(icons::with_icon(ui, icon, label)),
+                    None => egui::Button::new((icons::blank(), label)),
+                };
                 if let Some(sc) = self.st.session.shortcut(id) {
                     b = b.shortcut_text(sc);
                 }
                 let enabled = self.st.session.is_enabled(id);
                 let r = ui.add_enabled(enabled, b);
+                if let Some(on) = checked {
+                    icons::announce_toggled(&r, on);
+                }
                 let r = if enabled {
                     r
                 } else {
@@ -1094,7 +1108,7 @@ impl Shell {
             MenuItem::Choice { title, command } => {
                 let (options, current) = obs_engine::choices(&self.st.session, command);
                 let mut picked = None;
-                ui.menu_button(title, |ui| {
+                ui.menu_button((icons::blank(), title), |ui| {
                     for (id, label) in options {
                         if ui.selectable_label(id == current, label).clicked() {
                             picked = Some(id);
@@ -1118,7 +1132,7 @@ impl Shell {
                 let mut toggled = None;
                 let enabled = self.st.session.is_enabled("notebook.show_in_text");
                 ui.add_enabled_ui(enabled, |ui| {
-                    ui.menu_button("Notebooks in text", |ui| {
+                    ui.menu_button((icons::blank(), "Notebooks in text"), |ui| {
                         for n in &notebooks {
                             let mut on = n.show_in_text;
                             if ui.checkbox(&mut on, &n.name).clicked() {
@@ -2061,24 +2075,32 @@ impl State {
             InterlinearKind::Interlinear => "English and grammar under each word",
         };
         let mut run: Option<Value> = None;
-        ui.menu_button(RichText::new("⏷").small(), |ui| {
-            ui.label(
-                RichText::new("Interlinear lines")
-                    .small()
-                    .color(theme::c().muted),
-            );
-            for line in kind.lines() {
-                let mut chosen = lines.is_chosen(kind, *line);
-                // The last line picked stays.
-                let last = chosen && lines.shown(kind).len() <= 1 && lines.on;
-                if ui
-                    .add_enabled(!last, egui::Checkbox::new(&mut chosen, line.name()))
-                    .clicked()
-                {
-                    run = Some(json!({ "tab": tab.0, "line": line.id(), "shown": chosen }));
+        ui.menu_button(
+            icons::image(
+                ui.ctx(),
+                icons::Icon::ChevronDown,
+                icons::SMALL,
+                theme::c().muted,
+            ),
+            |ui| {
+                ui.label(
+                    RichText::new("Interlinear lines")
+                        .small()
+                        .color(theme::c().muted),
+                );
+                for line in kind.lines() {
+                    let mut chosen = lines.is_chosen(kind, *line);
+                    // The last line picked stays.
+                    let last = chosen && lines.shown(kind).len() <= 1 && lines.on;
+                    if ui
+                        .add_enabled(!last, egui::Checkbox::new(&mut chosen, line.name()))
+                        .clicked()
+                    {
+                        run = Some(json!({ "tab": tab.0, "line": line.id(), "shown": chosen }));
+                    }
                 }
-            }
-        })
+            },
+        )
         .response
         .on_hover_text("Choose the interlinear lines");
         let label = if narrow { "Int." } else { "Interlinear" };
@@ -2205,11 +2227,6 @@ impl State {
                 ui.set_width(ui.available_width());
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    let small = |s: &str| {
-                        egui::Button::new(RichText::new(s).size(12.0))
-                            .frame(false)
-                            .min_size(vec2(16.0, 20.0))
-                    };
                     for (i, id) in bibles.iter().enumerate() {
                         egui::Frame::new()
                             .fill(theme::c().field)
@@ -2228,11 +2245,15 @@ impl State {
                                     } else {
                                         theme::c().muted
                                     };
-                                    paint_star(
+                                    icons::paint(
                                         ui.painter(),
-                                        rect.center(),
-                                        6.0,
-                                        Some(i) == base,
+                                        if Some(i) == base {
+                                            icons::Icon::StarFilled
+                                        } else {
+                                            icons::Icon::Star
+                                        },
+                                        rect,
+                                        icons::SMALL,
                                         color,
                                     );
                                     if r.on_hover_text("Compare the others with this Bible")
@@ -2244,7 +2265,14 @@ impl State {
                                         ));
                                     }
                                     ui.label(RichText::new(abbrev(id)).size(12.5));
-                                    if ui.add(small("×")).on_hover_text("Remove").clicked() {
+                                    let remove = icons::button(
+                                        ui,
+                                        icons::Icon::Close,
+                                        icons::SMALL,
+                                        theme::c().muted,
+                                        "Remove",
+                                    );
+                                    if remove.on_hover_text("Remove").clicked() {
                                         run = Some((
                                             "compare.bible",
                                             json!({ "tab": tab.0, "id": id }),
@@ -2275,8 +2303,16 @@ impl State {
                         let text = format_passage(range, &Standard, RefStyle::Short);
                         if ui
                             .add(
-                                egui::Button::new(RichText::new(format!("{text}  ×")).size(12.5))
-                                    .corner_radius(11.0),
+                                egui::Button::new((
+                                    RichText::new(text).size(12.5),
+                                    icons::image(
+                                        ui.ctx(),
+                                        icons::Icon::Close,
+                                        icons::SMALL,
+                                        theme::c().muted,
+                                    ),
+                                ))
+                                .corner_radius(11.0),
                             )
                             .on_hover_text("Show the whole chapter")
                             .clicked()
@@ -2419,14 +2455,15 @@ impl State {
         let what = self.session.library.get(&current).map_or("Resources", |e| {
             obs_engine::library_search::type_plural(e.manifest.resource_type)
         });
-        let arrow = |s: &str| {
-            egui::Button::new(RichText::new(s).small())
+        let ctx = ui.ctx().clone();
+        let arrow = |icon| {
+            egui::Button::new(icons::image(&ctx, icon, icons::BODY, theme::c().muted))
                 .frame(false)
                 .min_size(vec2(18.0, 22.0))
         };
         let mut run: Option<(&'static str, Value)> = None;
         let next = ui
-            .add_enabled(others, arrow("▶"))
+            .add_enabled(others, arrow(icons::Icon::ChevronRight))
             .accessible_name(format!("Next of your {what}"))
             .on_hover_text(with_key(
                 &self.session,
@@ -2459,7 +2496,7 @@ impl State {
                 .on_disabled_hover_text(format!("There are no other {what} in the library"));
         });
         let previous = ui
-            .add_enabled(others, arrow("◀"))
+            .add_enabled(others, arrow(icons::Icon::ChevronLeft))
             .accessible_name(format!("Previous of your {what}"))
             .on_hover_text(with_key(
                 &self.session,
@@ -2516,20 +2553,23 @@ impl State {
                 (t.history.can_go_back(), t.history.can_go_forward())
             }
         });
-        let arrow = |s: &str| {
-            egui::Button::new(RichText::new(s).size(18.0))
+        let ctx = ui.ctx().clone();
+        let arrow = |icon| {
+            egui::Button::new(icons::image(&ctx, icon, icons::BODY, theme::c().ink))
                 .frame(false)
                 .min_size(vec2(22.0, 24.0))
         };
         if ui
-            .add_enabled(back, arrow("‹"))
+            .add_enabled(back, arrow(icons::Icon::Back))
+            .accessible_name("Back")
             .on_hover_text("Back (Alt+←)")
             .clicked()
         {
             self.run("tab.back", &json!({ "tab": tab.0 }));
         }
         if ui
-            .add_enabled(fwd, arrow("›"))
+            .add_enabled(fwd, arrow(icons::Icon::Forward))
+            .accessible_name("Forward")
             .on_hover_text("Forward (Alt+→)")
             .clicked()
         {
@@ -2543,7 +2583,11 @@ impl State {
             HeaderBox::FollowsHover => {
                 if self.session.word_info.pinned {
                     let r = ui.add(
-                        egui::Button::new(RichText::new("📌 Pinned").small()).corner_radius(11.0),
+                        egui::Button::new((
+                            icons::image(ui.ctx(), icons::Icon::Pin, icons::SMALL, theme::c().ink),
+                            RichText::new("Pinned").small(),
+                        ))
+                        .corner_radius(11.0),
                     );
                     if r.on_hover_text(
                         "Pinned to the clicked word. Click (or press Esc) to follow hover again.",
@@ -2668,39 +2712,42 @@ impl State {
             .shortcut("tab.close")
             .unwrap_or_default()
             .to_string();
-        ui.menu_button(RichText::new("…").color(theme::c().muted), |ui| {
-            if findable
-                && ui
-                    .add(egui::Button::new("Find…").shortcut_text(find_key))
+        ui.menu_button(
+            icons::image(ui.ctx(), icons::Icon::More, icons::BODY, theme::c().muted),
+            |ui| {
+                if findable
+                    && ui
+                        .add(egui::Button::new("Find…").shortcut_text(find_key))
+                        .clicked()
+                {
+                    self.session.workspace.user_focused(tab);
+                    self.run("tab.find", &json!({ "tab": tab.0 }));
+                    ui.close();
+                }
+                if library && ui.button("Import…").clicked() {
+                    self.run("library.import", &json!({}));
+                    ui.close();
+                }
+                if let Some(g) = guide {
+                    self.guide_menu(ui, g);
+                }
+                if let Some(id) = &resource
+                    && ui.button("About").clicked()
+                {
+                    self.run("resource.about", &json!({ "id": id }));
+                    ui.close();
+                }
+                self.favorite_folder_menu(ui, tab);
+                self.window_menu(ui, tab);
+                if ui
+                    .add(egui::Button::new("Close Tab").shortcut_text(close_key))
                     .clicked()
-            {
-                self.session.workspace.user_focused(tab);
-                self.run("tab.find", &json!({ "tab": tab.0 }));
-                ui.close();
-            }
-            if library && ui.button("Import…").clicked() {
-                self.run("library.import", &json!({}));
-                ui.close();
-            }
-            if let Some(g) = guide {
-                self.guide_menu(ui, g);
-            }
-            if let Some(id) = &resource
-                && ui.button("About").clicked()
-            {
-                self.run("resource.about", &json!({ "id": id }));
-                ui.close();
-            }
-            self.favorite_folder_menu(ui, tab);
-            self.window_menu(ui, tab);
-            if ui
-                .add(egui::Button::new("Close Tab").shortcut_text(close_key))
-                .clicked()
-            {
-                self.run("tab.close", &json!({ "tab": tab.0 }));
-                ui.close();
-            }
-        })
+                {
+                    self.run("tab.close", &json!({ "tab": tab.0 }));
+                    ui.close();
+                }
+            },
+        )
         .response
         .accessible_name("Tab menu");
     }
@@ -3000,63 +3047,66 @@ impl egui_tiles::Behavior<TabId> for State {
         _scroll: &mut f32,
     ) {
         let panel = self.panel_for_tile(tile_id);
-        ui.menu_button(" + ", |ui| {
-            let split = ui.input(|i| i.modifiers.command);
-            let mut picked: Option<(&'static str, Value)> = None;
-            let bibles: Vec<(String, String)> = self
-                .session
-                .library
-                .entries()
-                .iter()
-                .map(|e| {
-                    (
-                        e.manifest.resource_id.clone(),
-                        format!("{} — {}", e.manifest.abbreviation, e.manifest.title),
-                    )
-                })
-                .collect();
-            for (id, label) in bibles {
-                if ui.button(label).clicked() {
-                    picked = Some(("resource.open", json!({ "id": id })));
-                }
-            }
-            ui.separator();
-            for id in [
-                "library.open",
-                "guide.passage_guide",
-                "guide.exegetical_guide",
-                "guide.word_study",
-                "tool.search",
-                "tool.text_comparison",
-                "tool.notes",
-                "tool.word_info",
-                "tool.cross_references",
-                "tool.atlas",
-                "tool.timeline",
-                "tool.favorites",
-                "tool.history",
-            ] {
-                let label = self.session.commands().get(id).map_or(id, |c| c.label);
-                if ui.button(label).clicked() {
-                    picked = Some((id, json!({})));
-                }
-            }
-            ui.label(
-                RichText::new("Ctrl/Cmd-click opens a new split")
-                    .small()
-                    .color(theme::c().muted),
-            );
-            if let Some((id, mut params)) = picked {
-                if let Some(obj) = params.as_object_mut() {
-                    obj.insert("split".into(), json!(split));
-                    if let Some(p) = panel {
-                        obj.insert("panel".into(), json!(p.0));
+        ui.menu_button(
+            icons::image(ui.ctx(), icons::Icon::Add, icons::BODY, theme::c().muted),
+            |ui| {
+                let split = ui.input(|i| i.modifiers.command);
+                let mut picked: Option<(&'static str, Value)> = None;
+                let bibles: Vec<(String, String)> = self
+                    .session
+                    .library
+                    .entries()
+                    .iter()
+                    .map(|e| {
+                        (
+                            e.manifest.resource_id.clone(),
+                            format!("{} — {}", e.manifest.abbreviation, e.manifest.title),
+                        )
+                    })
+                    .collect();
+                for (id, label) in bibles {
+                    if ui.button(label).clicked() {
+                        picked = Some(("resource.open", json!({ "id": id })));
                     }
                 }
-                self.run(id, &params);
-                ui.close();
-            }
-        })
+                ui.separator();
+                for id in [
+                    "library.open",
+                    "guide.passage_guide",
+                    "guide.exegetical_guide",
+                    "guide.word_study",
+                    "tool.search",
+                    "tool.text_comparison",
+                    "tool.notes",
+                    "tool.word_info",
+                    "tool.cross_references",
+                    "tool.atlas",
+                    "tool.timeline",
+                    "tool.favorites",
+                    "tool.history",
+                ] {
+                    let label = self.session.commands().get(id).map_or(id, |c| c.label);
+                    if ui.button(label).clicked() {
+                        picked = Some((id, json!({})));
+                    }
+                }
+                ui.label(
+                    RichText::new("Ctrl/Cmd-click opens a new split")
+                        .small()
+                        .color(theme::c().muted),
+                );
+                if let Some((id, mut params)) = picked {
+                    if let Some(obj) = params.as_object_mut() {
+                        obj.insert("split".into(), json!(split));
+                        if let Some(p) = panel {
+                            obj.insert("panel".into(), json!(p.0));
+                        }
+                    }
+                    self.run(id, &params);
+                    ui.close();
+                }
+            },
+        )
         .response
         .accessible_name("Open a Tab in this Panel");
     }

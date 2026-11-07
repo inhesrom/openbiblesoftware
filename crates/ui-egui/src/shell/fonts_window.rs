@@ -410,7 +410,7 @@ impl State {
             }
             None => {
                 ui.label(
-                    RichText::new("Menus, buttons and labels: Library · Guides · Tools ★")
+                    RichText::new("Menus, buttons and labels: Library · Guides · Tools")
                         .color(theme::c().ink),
                 );
             }

@@ -202,10 +202,10 @@ fn a_picked_place_sharing_a_spot_is_the_one_clicked() {
     );
     h.frames(2);
     until(&mut h, "the place list", |h| {
-        !all_in(h, atlas, "Factbook ›").is_empty()
+        !all_in(h, atlas, "Factbook").is_empty()
     });
     // Wheel the list down to Pisidia, its last place.
-    let list = all_in(&h, atlas, "Factbook ›")[0].center();
+    let list = all_in(&h, atlas, "Factbook")[0].center();
     h.events.push(Event::PointerMoved(list));
     for _ in 0..200 {
         if !all_in(&h, atlas, "Pisidia").is_empty() {

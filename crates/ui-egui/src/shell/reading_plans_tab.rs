@@ -13,6 +13,7 @@ use obs_scripture::{RefStyle, Standard, format_passage};
 use serde_json::{Value, json};
 
 use super::State;
+use crate::icons::{self, Icon};
 use crate::theme;
 
 /// The New plan form's fields.
@@ -94,7 +95,7 @@ impl State {
             .session
             .library
             .abbreviation_of(&plan.bible_id)
-            .map_or_else(|| "★ Bible".to_string(), str::to_string);
+            .map_or_else(|| "First Bible".to_string(), str::to_string);
         let summary = format!(
             "{bible} · {} · {} of {} read · ends {}",
             plan.weekdays.label(),
@@ -250,12 +251,17 @@ impl State {
                     .bible
                     .as_ref()
                     .and_then(|b| bibles.iter().find(|(id, _)| id == b))
-                    .map_or("★ Bible (first in your Preferred order)", |(_, l)| l);
+                    .map(|(_, l)| l.as_str());
+                let star = icons::image(ui.ctx(), Icon::StarFilled, icons::BODY, theme::c().gilt);
+                let first_bible = "First Bible (in your Preferred order)";
                 egui::ComboBox::from_id_salt("reading-plan-bible")
-                    .selected_text(shown)
+                    .selected_text(match shown {
+                        Some(label) => egui::Atoms::new(label),
+                        None => egui::Atoms::new((star.clone(), first_bible)),
+                    })
                     .width(260.0)
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut f.bible, None, "★ Bible");
+                        ui.selectable_value(&mut f.bible, None, (star, "First Bible"));
                         for (id, label) in &bibles {
                             ui.selectable_value(&mut f.bible, Some(id.clone()), label);
                         }
@@ -321,7 +327,7 @@ impl State {
         let (label, open) = if !unread.is_empty() {
             (format!("Today: {}", unread.join("; ")), true)
         } else if !due.is_empty() {
-            ("✓ Today's reading".to_string(), false)
+            ("Today's reading".to_string(), false)
         } else if behind > 0 {
             (
                 format!(
@@ -351,11 +357,24 @@ impl State {
                 run = Some(("tool.reading_plans", json!({})));
             }
         }
-        let r = ui.add(egui::Button::new(RichText::new(label).size(12.5)));
+        let text = RichText::new(label).size(12.5);
+        let icon = if open {
+            Icon::ReadingPlans
+        } else {
+            Icon::CheckCircle
+        };
+        let icon = icons::image(ui.ctx(), icon, icons::BODY, theme::c().verdigris);
+        let r = ui.add(egui::Button::new((icon, text)));
         let r = if open {
             r.on_hover_text(hover)
         } else {
             r.on_hover_text("Open Reading plans")
+        };
+        // The check that says today's Readings are done is an image a screen reader skips.
+        let r = if !open && !due.is_empty() {
+            r.accessible_name("Today's reading, done")
+        } else {
+            r
         };
         if r.clicked() {
             run = Some(if open {

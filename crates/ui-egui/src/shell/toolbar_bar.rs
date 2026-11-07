@@ -453,7 +453,7 @@ fn reveal_zone(window: Rect, edge: ToolbarPosition) -> Rect {
 /// The toolbar's right-click menu: Position ▸, Auto-hide, Customize….
 fn toolbar_menu(ui: &mut Ui, settings: &ToolbarSettings) -> Act {
     let mut act: Act = None;
-    ui.menu_button("Position", |ui| {
+    ui.menu_button((crate::icons::blank(), "Position"), |ui| {
         for (position, id, label) in ToolbarPosition::ALL {
             if ui
                 .selectable_label(settings.position == position, label)
@@ -464,15 +464,25 @@ fn toolbar_menu(ui: &mut Ui, settings: &ToolbarSettings) -> Act {
             }
         }
     });
-    let auto_hide = if settings.auto_hide {
-        "✓ Auto-hide"
+    let check = if settings.auto_hide {
+        egui::Atom::from(crate::icons::image(
+            ui.ctx(),
+            crate::icons::Icon::Check,
+            crate::icons::BODY,
+            crate::theme::c().muted,
+        ))
     } else {
-        "Auto-hide"
+        crate::icons::blank()
     };
-    if ui.button(auto_hide).clicked() {
+    let auto_hide = ui.add(egui::Button::new((check, "Auto-hide")));
+    crate::icons::announce_toggled(&auto_hide, settings.auto_hide);
+    if auto_hide.clicked() {
         act = Some(("view.toolbar_auto_hide", json!({})));
     }
-    if ui.button("Customize…").clicked() {
+    if ui
+        .add(egui::Button::new((crate::icons::blank(), "Customize…")))
+        .clicked()
+    {
         act = Some(("view.toolbar_customize", json!({})));
     }
     if act.is_some() {

@@ -384,13 +384,14 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
         assert!(!has_prefix_in(&h, *g, hint));
     }
 
-    // Hide from a header's ×, show again from the footer, then Reset arrangement from ⋯.
+    // Hide from a header's Close, show again from the footer, then Reset arrangement from
+    // the More menu.
     let title = find_in(&h, guides[0], "Cross-references").unwrap();
     let hide = h
         .shapes
         .iter()
         .find(|(r, t)| {
-            t == "×"
+            t == "[x]"
                 && pane(&h, guides[0]).contains(r.center())
                 && (r.center().y - title.center().y).abs() < 6.0
         })
@@ -417,7 +418,7 @@ fn arrangement_changes_apply_to_every_passage_guide_and_persist_across_restarts(
             "People & places"
         ]
     );
-    let menu = find_in(&h, guides[0], "…").unwrap().center();
+    let menu = find_in(&h, guides[0], "[ellipsis]").unwrap().center();
     h.click(menu);
     h.click_text("Reset arrangement");
     h.frames(2);
@@ -1278,7 +1279,7 @@ fn topic_guide_on_forgiveness_shows_naves_subtopics_and_a_passage_moves_the_link
     let toggle = h
         .shapes
         .iter()
-        .filter(|(s, t)| t == "▶" && (s.center().y - esau.center().y).abs() < 4.0)
+        .filter(|(s, t)| t == "[chevron-right]" && (s.center().y - esau.center().y).abs() < 4.0)
         .map(|(s, _)| *s)
         .next()
         .unwrap();
@@ -1301,7 +1302,10 @@ fn topic_guide_on_forgiveness_shows_naves_subtopics_and_a_passage_moves_the_link
         let row = find_in(h, topic, label)?;
         h.shapes
             .iter()
-            .find(|(s, t)| (t == "▶" || t == "▼") && (s.center().y - row.center().y).abs() < 4.0)
+            .find(|(s, t)| {
+                (t == "[chevron-right]" || t == "[chevron-down]")
+                    && (s.center().y - row.center().y).abs() < 4.0
+            })
             .cloned()
     };
     // They are below the fold: wheel down to them.
@@ -1330,11 +1334,11 @@ fn topic_guide_on_forgiveness_shows_naves_subtopics_and_a_passage_moves_the_link
     let (injuries_toggle, _) = arrow_beside(&h, "Christ set an example of").unwrap();
     h.click(injuries_toggle.center());
     until(&mut h, "Torrey's first subtopic open", |h| {
-        arrow_beside(h, "Christ set an example of").is_some_and(|(_, a)| a == "▼")
+        arrow_beside(h, "Christ set an example of").is_some_and(|(_, a)| a == "[chevron-down]")
     });
     assert_eq!(
         arrow_beside(&h, "Promised through Christ").map(|(_, a)| a),
-        Some("▶".to_string()),
+        Some("[chevron-right]".to_string()),
         "the other Torrey entry's first subtopic stays closed"
     );
 

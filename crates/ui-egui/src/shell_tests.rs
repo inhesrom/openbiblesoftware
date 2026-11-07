@@ -248,6 +248,7 @@ impl Harness {
             collect_meshes(&c.shape, &mut self.meshes);
             collect_glyphs(&c.shape, &mut self.glyphs);
             collect_rects(&c.shape, &mut self.rects);
+            collect_icons(&self.ctx, &c.shape, &mut self.shapes);
         }
     }
 
@@ -506,6 +507,29 @@ fn collect_rects(shape: &Shape, out: &mut Vec<(Rect, egui::Color32)>) {
     }
 }
 
+/// Icons drawn, listed with the painted text as their [`crate::icons::Icon::marker`]
+/// (`[x]`, `[pin]`), so tests find them as they find labels.
+fn collect_icons(ctx: &egui::Context, shape: &Shape, out: &mut Vec<(Rect, String)>) {
+    let (rect, tex) = match shape {
+        Shape::Vec(v) => {
+            v.iter().for_each(|s| collect_icons(ctx, s, out));
+            return;
+        }
+        Shape::Rect(r) => match &r.brush {
+            Some(b) => (r.rect, b.fill_texture_id),
+            None => return,
+        },
+        Shape::Mesh(m) if m.texture_id != egui::TextureId::default() => (
+            Rect::from_points(&m.vertices.iter().map(|v| v.pos).collect::<Vec<_>>()),
+            m.texture_id,
+        ),
+        _ => return,
+    };
+    if let Some(icon) = crate::icons::icon_of(ctx, tex) {
+        out.push((rect, icon.marker()));
+    }
+}
+
 fn collect(shape: &Shape, out: &mut Vec<(Rect, String)>) {
     match shape {
         Shape::Vec(v) => v.iter().for_each(|s| collect(s, out)),
@@ -522,7 +546,7 @@ fn library_badge(h: &Harness) -> Option<String> {
     let button = h.shell.st.toolbar.buttons[&obs_engine::Launcher::Library];
     h.shapes
         .iter()
-        .find(|(r, t)| t != "Library" && button.contains(r.center()))
+        .find(|(r, t)| t != "Library" && t != "[library]" && button.contains(r.center()))
         .map(|(_, t)| t.clone())
 }
 
@@ -534,7 +558,14 @@ fn default_layout_has_a_bible_and_a_tools_panel() {
     assert_eq!(panels[0].1, ["TB"]);
     assert_eq!(panels[1].1, ["Library", "Word Info"]);
     // The Bible's header: link chip slot, ‹ ›, reference box with the location, title.
-    for t in ["A", "‹", "›", "Genesis 30:1", "Test Bible", "…"] {
+    for t in [
+        "A",
+        "[arrow-left]",
+        "[arrow-right]",
+        "Genesis 30:1",
+        "Test Bible",
+        "[ellipsis]",
+    ] {
         assert!(h.find(t).is_some(), "{t:?} missing: {:?}", h.texts());
     }
     // The launcher menus and the Command box (#139).
@@ -666,7 +697,7 @@ fn each_tab_navigates_and_keeps_its_own_history() {
     let back = h
         .shapes
         .iter()
-        .filter(|(_, t)| t == "‹")
+        .filter(|(_, t)| t == "[arrow-left]")
         .map(|(r, _)| *r)
         .min_by(|a, b| a.left().total_cmp(&b.left()))
         .unwrap();
@@ -738,7 +769,7 @@ fn menu_items_are_dispatched_through_the_command_registry() {
         Some(TabKind::Credits)
     );
     h.open_menu("View");
-    h.click_text("✓ Red letter");
+    h.click_text("Red letter");
     assert!(!h.shell.st.session.text.red_letter);
     h.open_menu("Guides");
     h.click_text("Passage Guide");
@@ -756,7 +787,7 @@ fn menu_items_are_dispatched_through_the_command_registry() {
     let plus = h
         .shapes
         .iter()
-        .filter(|(_, t)| t.trim() == "+")
+        .filter(|(_, t)| t == "[plus]")
         .map(|(r, _)| *r)
         .min_by(|a, b| a.left().total_cmp(&b.left()))
         .unwrap();
@@ -1558,6 +1589,78 @@ mod a11y {
         h.frames(2);
         assert!(h.tree.is_none());
     }
+
+    /// Whether the open menu's `label` item is on, as a screen reader hears it: the check
+    /// beside a toggle is an image, so the state is the node's (#220).
+    fn toggled(h: &Harness, label: &str) -> Option<bool> {
+        use egui::accesskit::Toggled;
+        let n = nodes(h);
+        let item = n
+            .values()
+            .find(|n| n.role() == Role::Button && n.label() == Some(label))
+            .unwrap_or_else(|| panic!("no {label} item"));
+        item.toggled().map(|t| t == Toggled::True)
+    }
+
+    #[test]
+    fn toggle_menu_items_tell_screen_readers_whether_they_are_on() {
+        let mut h = Harness::new();
+        h.ctx.enable_accesskit();
+        h.frames(2);
+        for (label, before) in [
+            ("Red letter", true),
+            ("Show Highlights", true),
+            ("Auto-hide toolbar", false),
+        ] {
+            h.open_menu("View");
+            assert_eq!(toggled(&h, label), Some(before), "{label}");
+            h.click_text(label);
+            h.frames(2);
+            h.open_menu("View");
+            assert_eq!(toggled(&h, label), Some(!before), "{label} after a click");
+            h.events.push(Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            });
+            h.frames(2);
+        }
+        // A command that is not a toggle is not announced as one.
+        h.open_menu("View");
+        assert_eq!(toggled(&h, "Customize toolbar…"), None);
+
+        // The toolbar's right-click menu: Auto-hide (now on) reads as on.
+        h.events.push(Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        });
+        h.frames(2);
+        h.shell.run("view.toolbar_auto_hide", &json!({}));
+        h.frames(2);
+        assert!(!h.shell.st.session.toolbar.auto_hide);
+        let tools = h.shell.st.toolbar.buttons[&obs_engine::Launcher::Tools].center();
+        h.events.push(Event::PointerMoved(tools));
+        h.frame();
+        for pressed in [true, false] {
+            h.events.push(Event::PointerButton {
+                pos: tools,
+                button: PointerButton::Secondary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+            h.frame();
+        }
+        h.frames(2);
+        assert_eq!(toggled(&h, "Auto-hide"), Some(false));
+        h.click_text("Auto-hide");
+        h.frames(2);
+        assert!(h.shell.st.session.toolbar.auto_hide);
+    }
 }
 
 /// The Library Tab and the About Tab (#46).
@@ -1596,7 +1699,7 @@ mod library {
 
     /// The row the ★ is on.
     fn starred(h: &Harness) -> String {
-        let star = h.at("★");
+        let star = h.at("[star-filled]");
         rows(h)
             .into_iter()
             .find(|(_, y)| (y - star.y).abs() < 6.0)
@@ -1621,7 +1724,7 @@ mod library {
         let (r, _) = h
             .shapes
             .iter()
-            .rfind(|(r, t)| t == "≡" && (r.center().y - y).abs() < 6.0)
+            .rfind(|(r, t)| t == "[grip-vertical]" && (r.center().y - y).abs() < 6.0)
             .unwrap();
         r.center()
     }
@@ -2397,11 +2500,10 @@ mod text_comparison {
             .run("tab.go", &json!({ "tab": cmp.0, "text": "Gen 31:50-32:2" }));
         settle(&mut h, cmp);
         assert_eq!(view(&h, cmp).blocks.len(), 8);
-        let chip = texts_in(&h, cmp)
-            .into_iter()
-            .find(|t| t.ends_with('×') && t.len() > 2)
-            .unwrap_or_else(|| panic!("no range chip in {:?}", texts_in(&h, cmp)));
-        h.click_text(&chip);
+        // The range's chip: its Passage and a Close icon.
+        assert!(texts_in(&h, cmp).iter().any(|t| t == "Gen 31:50-32:2"));
+        let chip = h.at("Gen 31:50-32:2");
+        h.click(chip);
         assert_eq!(
             h.shell
                 .st
@@ -2701,12 +2803,12 @@ mod text_comparison {
         h.screenshot(&dir.join("text-comparison-jn-3-16.ppm"));
     }
 
-    /// ★ and ☆ are painted shapes: the chrome fonts lack them.
+    /// The chips' text is in the chrome fonts; their stars and Close buttons are icons.
     #[test]
     fn chip_symbols_are_in_the_chrome_fonts() {
         let h = Harness::new();
         h.ctx.fonts_mut(|f| {
-            for s in ["×", "—", "+ Bible"] {
+            for s in ["—", "+ Bible"] {
                 assert!(f.has_glyphs(&egui::FontId::proportional(12.0), s), "{s}");
             }
         });
@@ -3175,6 +3277,9 @@ mod context_menu;
 
 #[path = "parallel_resources_tests.rs"]
 mod parallel_resources;
+
+#[path = "icon_previews_tests.rs"]
+mod icon_previews;
 
 #[path = "collections_tests.rs"]
 mod collections;

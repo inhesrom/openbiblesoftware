@@ -942,7 +942,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 name: "bible",
                 kind: ParamKind::String,
                 required: false,
-                help: "Bible the Readings open in (default: the ★ Bible)",
+                help: "Bible the Readings open in (default: the first Bible in Preferred order)",
             },
             ParamSpec {
                 name: "weekdays",

@@ -1059,7 +1059,7 @@ fn escape_in_the_note_editor_leaves_the_window_behind_open() {
     key(&mut h, Key::F10, Modifiers::SHIFT);
     assert!(egui::Popup::is_any_open(&h.ctx), "Shift+F10 opened no menu");
     tab_to(&mut h, "Verse: Gen 1:1");
-    tab_to(&mut h, "✏ Add Note on verse");
+    tab_to(&mut h, "Add Note on verse");
     key(&mut h, Key::Enter, Modifiers::NONE);
     assert!(h.shell.st.note_editor.is_some(), "no Note editor");
     type_text(&mut h, "Light first");

@@ -130,7 +130,7 @@ A span of text inside one specific Resource, given by position rather than by Ke
 _Avoid_: Offset, Selection (for the stored span)
 
 **Preferred order**:
-The user's ranking of Resources within one Resource type. The first Resource in the ranking is used for lookups, and guides follow the ranking.
+The user's ranking of Resources within one Resource type. The first Resource in the ranking is used for lookups, and guides follow the ranking. The interface marks it with a filled star; these notes call it the ★ Bible (★ Lexicon), and a label without the star calls it the first Bible in Preferred order.
 _Avoid_: Priority, Top Bibles, Favorites
 
 **Collection**:

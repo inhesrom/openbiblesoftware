@@ -9,6 +9,7 @@ mod compare_view;
 mod doc;
 mod find;
 mod heights;
+pub mod icons;
 mod interlinear;
 mod marks;
 mod palette;

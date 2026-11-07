@@ -422,7 +422,13 @@ impl State {
             Some(Ok(preview)) => preview,
         };
         if !one_line {
-            ui.label(format!("★ {}", preview.abbreviation));
+            crate::icons::label(
+                ui,
+                crate::icons::Icon::StarFilled,
+                crate::theme::c().gilt,
+                &preview.abbreviation,
+            )
+            .on_hover_text("The first Bible in your Preferred order");
         }
         let laid = self.references.snippets.get(
             &preview.text,

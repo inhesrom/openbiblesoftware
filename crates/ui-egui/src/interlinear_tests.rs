@@ -243,13 +243,8 @@ fn kjv_john_3_16_shows_greek_lemmas_under_its_english_words_aligned() {
             .join("../../target/previews/interlinear");
         h.screenshot(&dir.join("interlinear-kjv-john-3-16.ppm"));
     }
-    // The ⏷ menu picks the lines: adding Gloss puts it at the bottom.
-    // (Its symbol is in the chrome fonts.)
-    assert!(
-        h.ctx
-            .fonts_mut(|f| f.has_glyphs(&egui::FontId::proportional(12.0), "⏷"))
-    );
-    click_header(&mut h, kjv, "⏷");
+    // The lines menu (a chevron) picks the lines: adding Gloss puts it at the bottom.
+    click_header(&mut h, kjv, "[chevron-down]");
     h.click_text("Gloss");
     settle_all(&mut h);
     let source = view(&h, kjv).interlinear().unwrap();
@@ -482,7 +477,7 @@ fn clicking_the_line_under_a_multiword_tagged_word_acts_on_the_whole_word() {
         // A Highlight from the menu anchors on the whole word.
         h.click(spot);
         hover_text(&mut h, &title);
-        h.click_text("■Yellow");
+        h.click_text("Yellow");
         let stored = h.shell.st.session.annotations(None).unwrap();
         assert_eq!(stored.len(), n + 1);
         let range = stored

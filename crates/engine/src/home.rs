@@ -624,7 +624,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
             name: "split",
             kind: ParamKind::Boolean,
             required: false,
-            help: "Open a new ★ Bible Tab split off to the right",
+            help: "Open a new Tab of the first Bible in Preferred order, split off to the right",
         }],
         enabled: always,
         run: |s, p| {
