@@ -14,15 +14,20 @@ single-instance Tab with all of it.
 ## The Backup file
 
 - `UserStore::back_up(dest)` copies the database with SQLite's online backup API into
-  `.<name>.partial` beside `dest`, switches the copy to a rollback journal (so it is one file,
-  with no `-wal` or `-shm`) and renames it over `dest`. A failed write leaves no half file.
+  a new scratch file beside `dest` (`.<name>.<pid>-<n>.partial`, created with `create_new` and
+  never one of the database's own files, so a file already there is never removed), switches
+  the copy to a rollback journal (so it is one file, with no `-wal` or `-shm`) and renames it
+  over `dest`. A failed write leaves no half file.
 - Its format version is the database's own: `PRAGMA application_id` (`OBSU`) says it is a
   User database, `PRAGMA user_version` which schema it has. There is no other header.
 - `back_up` (and Export everything) first calls `UserStore::refuse_own_file(dest)`, which
   refuses the live database and its `-wal`, `-shm` and `-journal` files by any path naming
   them: `.`/`..`, symlinks and hard links (the `same-file` crate: device and inode on Unix, volume
-  and file index on Windows), and another case on Windows and macOS, whose disks ignore case by default. Writing there would destroy the data
-  being saved.
+  and file index on Windows), and another case on Windows and macOS, whose disks ignore case by default. SQLite names its
+  files beside the database's real file, so for a database opened through a symlink the
+  sidecars beside the link's target (from SQLite's own filename for the connection and the
+  canonical path) are refused as well as those beside the link. Writing there would destroy
+  the data being saved.
 - The launch backups (`backups/user-000006.db`) and the before-upgrade copy
   (`user.v8-<time>.bak`) are written the same way, so they are Backups too.
 
@@ -38,13 +43,15 @@ single-instance Tab with all of it.
    column, index and trigger of a database freshly migrated to this build's version is there;
    every row of every table can be read; the Notes search index passes its own check; and
    every read the app makes of a User database (Notebooks, Annotations with their Anchors,
-   Layouts, Favorites, History, Reading plans, preferences...) succeeds. It makes the default
+   Layouts, Highlight palettes and styles with their colours, Favorites, History, Reading
+   plans, preferences...) succeeds. It makes the default
    Notebook if there is none. Nothing has been written yet.
 2. A **Safety backup** of the live database goes to `backups/user-safety-000001.db` (the last
    `SAFETY_BACKUPS` = 5 are kept; their numbering is separate from the launch backups').
 3. The migrated copy's pages are copied over the live connection with the backup API, in one
    step. The live database stays in WAL mode. Pages copy only between databases of one page
-   size: a copy with another is first rebuilt in `backups/.user-restoring.db` with the live
+   size: a copy with another is first rebuilt in a new scratch file
+   `backups/.user-restoring.<pid>-<n>.db` with the live
    page size (`VACUUM`), then deleted.
 
 `Session::restore_backup(path)` then sets the preferences `attach_user` only overwrites when the

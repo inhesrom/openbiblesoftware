@@ -1,8 +1,9 @@
 //! Back up, list and restore the User database (#217).
 //!
 //! - **Back up now** copies the whole database with SQLite's online backup API into one
-//!   self-contained file (rollback journal, so no `-wal` file belongs with it), written beside
-//!   its destination and renamed into place, so a failed write never leaves half a Backup.
+//!   self-contained file (rollback journal, so no `-wal` file belongs with it), written to
+//!   a new scratch file beside its destination and renamed into place, so a failed write never
+//!   leaves half a Backup and no file already there is removed.
 //! - **Restore** first reads the Backup into memory, checks it is a User database this build
 //!   can read (a newer format is refused), runs the migrations on it and checks the result is
 //!   whole (every table, column, index and trigger this build's format has, every row readable,
@@ -32,8 +33,7 @@ impl UserStore {
         let name = dest
             .file_name()
             .map_or_else(|| "backup".into(), |n| n.to_string_lossy().into_owned());
-        let partial = dest.with_file_name(format!(".{name}.partial"));
-        let _ = std::fs::remove_file(&partial);
+        let partial = self.new_scratch_file(&dest.with_file_name(format!(".{name}")), "partial")?;
         let written = self.backup_to(&partial).and_then(|()| {
             let out = Connection::open(&partial).map_err(sql)?;
             // One file: a WAL database would want its `-wal` and `-shm` beside it.
@@ -115,6 +115,9 @@ impl UserStore {
             self.layout(&name)?;
         }
         self.last_session()?;
+        self.highlight_palettes()?;
+        self.highlight_styles()?;
+        self.highlight_style_uses()?;
         self.preferred_order()?;
         self.preferences()?;
         self.resource_names()?;
@@ -129,12 +132,25 @@ impl UserStore {
     /// Refuse `dest` if writing there would overwrite this database or one of SQLite's files
     /// beside it (`-wal`, `-shm`, `-journal`), by any path naming it (a link, `..`, another
     /// case on a case-insensitive disk). Writing there would destroy the data being saved.
+    ///
+    /// SQLite names its files beside the database's real file: opened through a symbolic
+    /// link, they sit beside the link's target, not beside the link. So both are protected.
     pub fn refuse_own_file(&self, dest: &Path) -> Result<(), StoreError> {
-        let mut own = vec![self.path.clone()];
-        for suffix in ["-wal", "-shm", "-journal"] {
-            let mut name = self.path.as_os_str().to_os_string();
-            name.push(suffix);
-            own.push(PathBuf::from(name));
+        let mut databases = vec![self.path.clone()];
+        if let Some(real) = self.conn.path().filter(|p| !p.is_empty()) {
+            databases.push(PathBuf::from(real));
+        }
+        if let Ok(real) = std::fs::canonicalize(&self.path) {
+            databases.push(real);
+        }
+        let mut own = Vec::new();
+        for db in databases {
+            for suffix in ["-wal", "-shm", "-journal"] {
+                let mut name = db.as_os_str().to_os_string();
+                name.push(suffix);
+                own.push(PathBuf::from(name));
+            }
+            own.push(db);
         }
         if own.iter().any(|f| names_one_file(dest, f)) {
             return Err(StoreError::Rejected(format!(
@@ -143,6 +159,33 @@ impl UserStore {
             )));
         }
         Ok(())
+    }
+
+    /// Create a new, empty file named `<base>.<n>.<extension>` (`n` makes it unique) for a
+    /// file being written, and return its path. A file already there is never touched, and
+    /// a name that is this database or SQLite's files beside it is skipped, so removing the
+    /// scratch file afterwards can only remove what this call created.
+    fn new_scratch_file(&self, base: &Path, extension: &str) -> Result<PathBuf, StoreError> {
+        let base = base.as_os_str().to_string_lossy().into_owned();
+        let mut last = None;
+        for n in 0..1000u32 {
+            let path = PathBuf::from(format!("{base}.{}-{n}.{extension}", std::process::id()));
+            if self.refuse_own_file(&path).is_err() {
+                continue;
+            }
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(_) => return Ok(path),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last = Some(e),
+                Err(e) => return Err(StoreError::Io(e)),
+            }
+        }
+        Err(StoreError::Io(last.unwrap_or_else(|| {
+            std::io::Error::other(format!("no free name for {base}.{extension}"))
+        })))
     }
 
     /// What the Backup at `path` holds, read as [`UserStore::open_backup`] reads it.
@@ -170,12 +213,17 @@ impl UserStore {
         let rebuilt = if page_size(&backup.conn)? == live {
             None
         } else {
-            let file = self
-                .backup_dir()
-                .join(format!(".{}-restoring.db", self.stem()));
             std::fs::create_dir_all(self.backup_dir()).map_err(StoreError::Io)?;
-            let _ = std::fs::remove_file(&file);
-            backup.backup_to(&file)?;
+            let file = self.new_scratch_file(
+                &self
+                    .backup_dir()
+                    .join(format!(".{}-restoring", self.stem())),
+                "db",
+            )?;
+            if let Err(e) = backup.backup_to(&file) {
+                let _ = std::fs::remove_file(&file);
+                return Err(e);
+            }
             let c = Connection::open(&file).map_err(sql)?;
             c.pragma_update(None, "journal_mode", "DELETE")
                 .map_err(sql)?;
