@@ -1,8 +1,8 @@
 //! Visual filters (#211) in a reading pane: the words of each visible block that a Tab's
 //! filters match, found on a worker thread and drawn in the filters' looks.
 //!
-//! - Matching is [`obs_engine::block_hits`] (the Search Tool's highlighter on the block's
-//!   text and Tagged words). A pane asks for the blocks it shows and a few on either side;
+//! - Matching is [`obs_engine::block_hits`] (the Search query read Verse by Verse, as the
+//!   Search Tool reads it, on the block's text and Tagged words). A pane asks for the blocks it shows and a few on either side;
 //!   each block is matched once per set of filters and kept while it is near the view.
 //! - Each block's match rectangles are taken from its layout once (and again only when it is
 //!   laid out again), so a scrolling frame only moves them.
@@ -226,20 +226,36 @@ fn submit(work: Work) {
     }
 }
 
-/// The Bible Verses of `doc` inside `bytes` of unit `unit`, with their Standard Passages.
-fn verse_slices(doc: &ReadingDoc, unit: usize, bytes: &std::ops::Range<usize>) -> Vec<VerseSlice> {
+/// The Bible Verses of `doc` inside `bytes` of unit `unit`, and up to `context` more of the
+/// unit's Verses on either side (for `WITHIN n verses`), in order, with their Standard
+/// Passages.
+fn verse_slices(
+    doc: &ReadingDoc,
+    unit: usize,
+    bytes: &std::ops::Range<usize>,
+    context: usize,
+) -> Vec<VerseSlice> {
     if doc.manifest.resource_type != ResourceType::Bible {
         return Vec::new();
     }
+    let in_unit: Vec<usize> = (0..doc.verses.len())
+        .filter(|&i| doc.verse_unit(i) == Some(unit))
+        .collect();
+    let inside = |i: usize| {
+        let v = &doc.verses[i];
+        (v.start as usize) < bytes.end && bytes.start < v.end as usize
+    };
+    let (Some(first), Some(last)) = (
+        in_unit.iter().position(|&i| inside(i)),
+        in_unit.iter().rposition(|&i| inside(i)),
+    ) else {
+        return Vec::new();
+    };
+    let wanted = first.saturating_sub(context)..(last + context + 1).min(in_unit.len());
     let mut out = Vec::new();
-    for (i, v) in doc.verses.iter().enumerate() {
-        if doc.verse_unit(i) != Some(unit) {
-            continue;
-        }
+    for &i in &in_unit[wanted] {
+        let v = &doc.verses[i];
         let range = v.start as usize..v.end as usize;
-        if range.start >= bytes.end || range.end <= bytes.start {
-            continue;
-        }
         let standard = match &doc.verse_map {
             Some(map) => map.to_standard(v.verse),
             None => Passage::new(
@@ -269,7 +285,12 @@ fn block_matches(doc: &ReadingDoc, index: usize, source: &FilterSource) -> Vec<B
         return Vec::new();
     }
     let range = block.source.range.clone();
-    let verses = verse_slices(doc, block.unit, &range);
+    let context = matchers
+        .iter()
+        .map(FilterMatcher::context_verses)
+        .max()
+        .unwrap_or(0);
+    let verses = verse_slices(doc, block.unit, &range, context);
     let align = !verses.is_empty()
         && !is_original(&doc.manifest.language)
         && matchers.iter().any(FilterMatcher::needs_alignment)

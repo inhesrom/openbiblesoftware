@@ -463,3 +463,124 @@ fn a_block_colours_only_its_own_bytes() {
     );
     assert_eq!(words(unit, &ranges), ["Bless", "bless", "curse"]);
 }
+
+/// Review of #211: a filter reads its query as the Search Tool does, Verse by Verse, so an
+/// excluded word, a word the Verse lacks or a proximity it misses colours nothing.
+#[test]
+fn a_filter_colours_only_verses_that_satisfy_the_whole_query() {
+    let kjv = kjv_romans_12();
+    let tagnt = tagnt_romans_12();
+    let colour = |query: &str, scope: &str| -> Vec<String> {
+        let mut original = aligned(&tagnt);
+        coloured(&kjv, &[filter("F", query, scope)], true, &mut original)[0]
+            .iter()
+            .map(|w| w.to_string())
+            .collect()
+    };
+    // NOT: 12:14 says "persecute", so nothing in it is coloured.
+    assert!(colour("bless NOT persecute", "Rom 12:14").is_empty());
+    assert!(colour("bless -persecute", "").is_empty());
+    assert_eq!(colour("bless NOT hospitality", ""), ["Bless", "bless"]);
+    // Implicit AND: both words in one Verse.
+    assert!(
+        colour("bless world", "").is_empty(),
+        "\"world\" is in 12:2, \"bless\" in 12:14"
+    );
+    assert_eq!(colour("bless curse", ""), ["Bless", "bless", "curse"]);
+    assert_eq!(colour("world OR curse", ""), ["world", "curse"]);
+    // Proximity: only the occurrences close enough, counted as the Search index counts.
+    assert_eq!(colour("bless NEAR/1 them", ""), ["Bless", "them"]);
+    assert_eq!(colour("curse NEAR/1 bless", ""), ["bless", "curse"]);
+    assert!(colour("curse BEFORE/1 bless", "").is_empty());
+    assert_eq!(colour("bless BEFORE/1 curse", ""), ["bless", "curse"]);
+    assert!(colour("persecute NEAR/0 curse", "").is_empty());
+    // WITHIN n verses: neighbouring Verses (12:13 and 12:14; 12:2 is two Verses away).
+    assert_eq!(
+        colour("hospitality WITHIN 2 verses curse", ""),
+        ["hospitality", "curse"]
+    );
+    assert!(colour("world WITHIN 2 verses curse", "").is_empty());
+    assert_eq!(
+        colour("world WITHIN 3 verses curse", ""),
+        ["world", "curse"]
+    );
+    // Aligned terms obey the same operators.
+    assert_eq!(
+        colour("@imperative NOT persecute", "Rom 12"),
+        ["be", "conformed", "transformed"]
+    );
+    assert_eq!(
+        colour("@imperative bless", ""),
+        ["Bless", "bless", "curse"],
+        "12:14 only: the Verse with both"
+    );
+}
+
+/// `WITHIN n verses` reads the Verses around a block, but colours only the block's bytes.
+#[test]
+fn within_verses_reads_neighbouring_verses_outside_the_block() {
+    let kjv = kjv_romans_12();
+    let unit = &kjv.units[0];
+    let v14 = kjv
+        .verses
+        .iter()
+        .find(|v| v.verse.verse == 14)
+        .map(|v| v.start as usize..v.end as usize)
+        .unwrap();
+    let matcher = FilterMatcher::new(
+        &filter("W", "hospitality WITHIN 2 verses curse", ""),
+        &obs_search::NoLexicon,
+    )
+    .unwrap();
+    assert_eq!(matcher.context_verses(), 1);
+    let mut never = |_: Passage| -> AlignedWords { panic!("not aligned") };
+    let hits = block_hits(&[matcher], unit, v14, &slices(&kjv), false, &mut never);
+    let ranges: Vec<Range<usize>> = hits.into_iter().map(|h| h.range).collect();
+    assert_eq!(words(unit, &ranges), ["curse"]);
+}
+
+/// Review of #211: a deleted filter's id is never given to a new one, so a Layout that
+/// switched the deleted filter on does not switch on an unrelated new filter, even after a
+/// relaunch.
+#[test]
+fn a_deleted_filters_id_is_never_reused_so_restored_layouts_do_not_switch_new_filters() {
+    let (mut s, t) = launch("ids");
+    let kjv = open(&mut s, "kjv", false);
+    let made = s
+        .run("filter.save", &json!({ "name": "Love", "query": "love" }))
+        .unwrap();
+    assert_eq!(made["id"], "filter-1");
+    s.run(
+        "tab.visual_filter",
+        &json!({ "tab": kjv.0, "id": "filter-1", "on": true }),
+    )
+    .unwrap();
+    s.run("layout.save", &json!({ "name": "Love" })).unwrap();
+    s.run("filter.delete", &json!({ "id": "filter-1" }))
+        .unwrap();
+    let other = s
+        .run("filter.save", &json!({ "name": "Grace", "query": "grace" }))
+        .unwrap();
+    assert_eq!(other["id"], "filter-2", "filter-1 is not given again");
+    s.run("layout.restore", &json!({ "name": "Love" })).unwrap();
+    let kjv = s
+        .workspace
+        .tabs()
+        .find(|t| t.kind == TabKind::Resource("kjv".into()))
+        .unwrap()
+        .id;
+    assert!(
+        shown(&s, kjv).is_empty(),
+        "the Layout's switch of the deleted filter does not reach the new one"
+    );
+
+    // The counter is kept in the User database: deleting the newest filter and relaunching
+    // does not give its id again either.
+    s.run("filter.delete", &json!({ "id": "filter-2" }))
+        .unwrap();
+    let mut s = reopen(&t.0);
+    let third = s
+        .run("filter.save", &json!({ "name": "Peace", "query": "peace" }))
+        .unwrap();
+    assert_eq!(third["id"], "filter-3");
+}

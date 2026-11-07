@@ -14,7 +14,9 @@
 //!   like the Collections. Until the user changes them the three built-ins are there: Words of
 //!   Christ, Divine names and Imperatives (off until switched on).
 //! - **Matching** ([`FilterMatcher`], [`block_hits`]) is pure and runs per visible block on
-//!   a worker in the UI. A Bible that is not in Hebrew, Aramaic or Greek has no Morphology or
+//!   a worker in the UI. The query is read as the Search Tool reads it, one document (Verse,
+//!   or block outside Bibles) at a time: `NOT`, implicit `AND` and proximity decide whether a
+//!   document matches before any of its words are coloured. A Bible that is not in Hebrew, Aramaic or Greek has no Morphology or
 //!   Lemmas of its own (KJV+Strong's tags numbers only), so the `@…` and `lemma:` terms reach
 //!   it through **Strong's alignment** (ADR 0015): in each Verse, the words whose Strong's
 //!   number is that of a matching word in the same Standard Verse of the first Hebrew (Old
@@ -26,7 +28,7 @@ use std::ops::Range;
 
 use obs_model::{MorphemePart, SpanKind, TextUnit};
 use obs_scripture::{Passage, PassageList, StrongsNumber};
-use obs_search::{Highlighter, LemmaLookup};
+use obs_search::{Highlighter, LemmaLookup, Query};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -38,6 +40,11 @@ use obs_store::{HighlightLook, Rgb, StyleAppearance};
 
 /// The User database preference that keeps the filters.
 pub const VISUAL_FILTERS_PREF: &str = "reading.visual_filters";
+
+/// The User database preference that keeps the number of the next new filter's id, so a
+/// deleted filter's id is never given to another: a Layout that switched the deleted filter
+/// must not switch the new one.
+pub const VISUAL_FILTERS_NEXT_ID_PREF: &str = "reading.visual_filters_next_id";
 
 /// Longest filter name, in characters.
 pub const MAX_FILTER_NAME: usize = 60;
@@ -187,6 +194,8 @@ pub(crate) struct VisualFilters {
     pub(crate) list: Vec<VisualFilter>,
     /// Bumped by every change to `list`.
     pub(crate) revision: u64,
+    /// The number of the next new filter's id (`filter-<n>`): ids are never reused.
+    pub(crate) next_id: u64,
 }
 
 impl Default for VisualFilters {
@@ -194,18 +203,345 @@ impl Default for VisualFilters {
         Self {
             list: built_in_filters(),
             revision: 0,
+            next_id: 1,
         }
     }
 }
 
 // ------------------------------------------------------------------------------- matching
 
+/// A filter's Search query as a condition on one document, read as the Search Tool reads it:
+/// a document (a Verse in a Bible, the block elsewhere) is coloured only when it satisfies the
+/// whole query, and then only in the terms that made it so. `bless NOT persecute` colours
+/// nothing in a Verse that says "persecute"; `bless curse` nothing in a Verse without both.
+#[derive(Debug, Clone)]
+enum Condition {
+    /// One term (a word, phrase, `strong:`, `lemma:` or `@…`): the words it marks.
+    Term(Highlighter),
+    /// Every one of them (`love neighbour`); a `NOT` among them colours nothing.
+    All(Vec<Condition>),
+    /// Any of them (`faith OR hope`).
+    Any(Vec<Condition>),
+    /// `NOT x`, `-x`: satisfied where `x` is not.
+    Not(Box<Condition>),
+    /// `NEAR/n`, `WITHIN n words` (either order) and `BEFORE/n` (`left` first): words or
+    /// phrases of each side with at most `words` words between them.
+    Near {
+        left: Highlighter,
+        right: Highlighter,
+        words: u32,
+        ordered: bool,
+    },
+    /// `WITHIN n verses`: each side in a document at most `documents - 1` documents from one
+    /// the other side is in.
+    Within {
+        left: Box<Condition>,
+        right: Box<Condition>,
+        documents: u32,
+    },
+}
+
+impl Condition {
+    fn new(q: &Query, lemmas: &dyn LemmaLookup) -> Self {
+        let all = |qs: &[Query]| qs.iter().map(|q| Condition::new(q, lemmas)).collect();
+        match q {
+            Query::And(qs) => Condition::All(all(qs)),
+            Query::Or(qs) => Condition::Any(all(qs)),
+            Query::Not { query, .. } => Condition::Not(Box::new(Condition::new(query, lemmas))),
+            Query::Near {
+                left,
+                right,
+                words,
+                ordered,
+                ..
+            } => Condition::Near {
+                left: Highlighter::new(left, lemmas),
+                right: Highlighter::new(right, lemmas),
+                words: *words,
+                ordered: *ordered,
+            },
+            Query::Within {
+                left,
+                right,
+                documents,
+                ..
+            } => Condition::Within {
+                left: Box::new(Condition::new(left, lemmas)),
+                right: Box::new(Condition::new(right, lemmas)),
+                documents: *documents,
+            },
+            Query::Word { .. }
+            | Query::Phrase { .. }
+            | Query::Stem { .. }
+            | Query::Strong { .. }
+            | Query::Lemma { .. }
+            | Query::Morph { .. } => Condition::Term(Highlighter::new(q, lemmas)),
+        }
+    }
+
+    /// Whether any term asks for Morphology or a Lemma.
+    fn uses_original_language_data(&self) -> bool {
+        match self {
+            Condition::Term(h) => h.uses_original_language_data(),
+            Condition::All(cs) | Condition::Any(cs) => {
+                cs.iter().any(Condition::uses_original_language_data)
+            }
+            Condition::Not(c) => c.uses_original_language_data(),
+            Condition::Near { left, right, .. } => {
+                left.uses_original_language_data() || right.uses_original_language_data()
+            }
+            Condition::Within { left, right, .. } => {
+                left.uses_original_language_data() || right.uses_original_language_data()
+            }
+        }
+    }
+
+    /// The most documents away a `WITHIN n verses` looks.
+    fn reach(&self) -> usize {
+        match self {
+            Condition::Term(_) | Condition::Near { .. } => 0,
+            Condition::All(cs) | Condition::Any(cs) => {
+                cs.iter().map(Condition::reach).max().unwrap_or(0)
+            }
+            Condition::Not(c) => c.reach(),
+            Condition::Within {
+                left,
+                right,
+                documents,
+            } => (documents.saturating_sub(1) as usize)
+                .max(left.reach())
+                .max(right.reach()),
+        }
+    }
+
+    /// For each of `docs`: `None` where it does not satisfy the condition, else the bytes
+    /// (of the unit) of the terms that satisfied it.
+    fn eval(&self, docs: &[Document], cx: &mut MatchContext<'_>) -> Vec<Option<Vec<Range<usize>>>> {
+        let found = |ranges: Vec<Range<usize>>| (!ranges.is_empty()).then_some(ranges);
+        match self {
+            Condition::Term(h) => docs.iter().map(|d| found(cx.term(h, d))).collect(),
+            Condition::All(cs) => {
+                let mut out: Vec<Option<Vec<Range<usize>>>> = vec![Some(Vec::new()); docs.len()];
+                for c in cs {
+                    if out.iter().all(Option::is_none) {
+                        break;
+                    }
+                    for (o, r) in out.iter_mut().zip(c.eval(docs, cx)) {
+                        match (o.as_mut(), r) {
+                            (Some(o), Some(r)) => o.extend(r),
+                            _ => *o = None,
+                        }
+                    }
+                }
+                out
+            }
+            Condition::Any(cs) => {
+                let mut out: Vec<Option<Vec<Range<usize>>>> = vec![None; docs.len()];
+                for c in cs {
+                    for (o, r) in out.iter_mut().zip(c.eval(docs, cx)) {
+                        if let Some(r) = r {
+                            o.get_or_insert_with(Vec::new).extend(r);
+                        }
+                    }
+                }
+                out
+            }
+            Condition::Not(c) => c
+                .eval(docs, cx)
+                .into_iter()
+                .map(|r| r.is_none().then(Vec::new))
+                .collect(),
+            Condition::Near {
+                left,
+                right,
+                words,
+                ordered,
+            } => docs
+                .iter()
+                .map(|d| found(cx.near(left, right, *words, *ordered, d)))
+                .collect(),
+            Condition::Within {
+                left,
+                right,
+                documents,
+            } => {
+                let reach = documents.saturating_sub(1) as usize;
+                let l = left.eval(docs, cx);
+                let r = right.eval(docs, cx);
+                // A side counts in document `i` when the other side is in a neighbour of it.
+                let partnered = |i: usize, other: &[Option<Vec<Range<usize>>>]| {
+                    let lo = i.saturating_sub(reach);
+                    let hi = (i + reach).min(docs.len().saturating_sub(1));
+                    (lo..=hi).any(|j| other[j].is_some() && docs[i].neighbours(&docs[j]))
+                };
+                (0..docs.len())
+                    .map(|i| {
+                        let mut out: Option<Vec<Range<usize>>> = None;
+                        if let Some(ranges) = &l[i]
+                            && partnered(i, &r)
+                        {
+                            out.get_or_insert_with(Vec::new)
+                                .extend(ranges.iter().cloned());
+                        }
+                        if let Some(ranges) = &r[i]
+                            && partnered(i, &l)
+                        {
+                            out.get_or_insert_with(Vec::new)
+                                .extend(ranges.iter().cloned());
+                        }
+                        out
+                    })
+                    .collect()
+            }
+        }
+    }
+}
+
+/// One document a filter's query is read against: a Verse's bytes in the unit and its
+/// Standard Passage, or a whole block outside Bibles.
+#[derive(Debug, Clone)]
+struct Document {
+    range: Range<usize>,
+    standard: Option<Passage>,
+}
+
+impl Document {
+    /// Whether `WITHIN n verses` can join the two: Verses of one book, or paragraphs.
+    fn neighbours(&self, other: &Document) -> bool {
+        match (self.standard, other.standard) {
+            (Some(a), Some(b)) => a.start().book == b.start().book,
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+
+/// What reading a query against the documents of one block needs.
+struct MatchContext<'a> {
+    unit: &'a TextUnit,
+    /// The block's Bible has no original-language data: `@…` and `lemma:` terms take the
+    /// words aligned with the original-language Bible's.
+    align: bool,
+    original: &'a mut dyn FnMut(Passage) -> AlignedWords,
+    /// Original words, looked up once per Verse whichever filters need them.
+    aligned: std::collections::HashMap<Passage, AlignedWords>,
+}
+
+impl MatchContext<'_> {
+    /// The bytes term `h` marks in `doc`: its own words, and in an aligned Bible the words
+    /// whose Strong's number is that of a word `h` marks in the original-language Verse.
+    fn term(&mut self, h: &Highlighter, doc: &Document) -> Vec<Range<usize>> {
+        let Some(slice) = self.unit.text.get(doc.range.clone()) else {
+            return Vec::new();
+        };
+        let tagged = tagged_in(self.unit, doc.range.clone());
+        let base = doc.range.start;
+        let local = tagged
+            .iter()
+            .map(|(r, parts)| (r.start - base..r.end - base, *parts));
+        let mut out: Vec<Range<usize>> = h
+            .ranges(slice, local)
+            .into_iter()
+            .map(|r| r.start + base..r.end + base)
+            .collect();
+        if self.align
+            && h.uses_original_language_data()
+            && let Some(standard) = doc.standard
+        {
+            let original = &mut self.original;
+            let words = self
+                .aligned
+                .entry(standard)
+                .or_insert_with(|| original(standard));
+            let numbers = aligned_numbers(h, words.iter().map(Vec::as_slice));
+            if !numbers.is_empty() {
+                for (range, parts) in &tagged {
+                    if parts.iter().any(|p| {
+                        p.strongs.number() < AFFIX_NUMBERS_FROM
+                            && numbers.contains(&p.strongs.base())
+                    }) {
+                        out.push(range.clone());
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The occurrences of `left` and `right` in `doc` that have one of the other side at most
+    /// `words` words away (after it when `ordered`), counted as the Search index counts them.
+    fn near(
+        &self,
+        left: &Highlighter,
+        right: &Highlighter,
+        words: u32,
+        ordered: bool,
+        doc: &Document,
+    ) -> Vec<Range<usize>> {
+        let Some(slice) = self.unit.text.get(doc.range.clone()) else {
+            return Vec::new();
+        };
+        let tokens = obs_model::tokenize(slice);
+        // Each occurrence as its first and last word.
+        let occurrences = |h: &Highlighter| -> Vec<(usize, usize, Range<usize>)> {
+            h.ranges(slice, std::iter::empty())
+                .into_iter()
+                .filter_map(|r| {
+                    let first = tokens.iter().position(|t| t.range.start >= r.start)?;
+                    let last = tokens.iter().rposition(|t| t.range.end <= r.end)?;
+                    (first <= last).then_some((first, last, r))
+                })
+                .collect()
+        };
+        let a = occurrences(left);
+        let b = occurrences(right);
+        let within = |(_, end, _): &(usize, usize, Range<usize>),
+                      (start, _, _): &(usize, usize, Range<usize>)| {
+            *start > *end && *start - *end - 1 <= words as usize
+        };
+        let paired = |x: &(usize, usize, Range<usize>), y: &(usize, usize, Range<usize>)| {
+            within(x, y) || (!ordered && within(y, x))
+        };
+        let base = doc.range.start;
+        let mut out = Vec::new();
+        for x in &a {
+            if b.iter().any(|y| paired(x, y)) {
+                out.push(x.2.start + base..x.2.end + base);
+            }
+        }
+        for y in &b {
+            if a.iter().any(|x| paired(x, y)) {
+                out.push(y.2.start + base..y.2.end + base);
+            }
+        }
+        out
+    }
+}
+
+/// The Strong's numbers (base forms, affixes left out) of the words among `words` (the
+/// morphemes of each Tagged word of one original-language Verse) that term `h` marks.
+fn aligned_numbers<'a>(
+    h: &Highlighter,
+    words: impl IntoIterator<Item = &'a [MorphemePart]>,
+) -> BTreeSet<StrongsNumber> {
+    let mut out = BTreeSet::new();
+    for parts in words {
+        for (part, matched) in parts.iter().zip(h.matching_parts(parts)) {
+            if matched && part.strongs.number() < AFFIX_NUMBERS_FROM {
+                out.insert(part.strongs.base());
+            }
+        }
+    }
+    out
+}
+
 /// One filter ready to match text.
 #[derive(Debug, Clone)]
 pub struct FilterMatcher {
     pub id: String,
     pub appearance: StyleAppearance,
-    highlighter: Highlighter,
+    /// Its query; `None` when it has none (it colours marked text only).
+    condition: Option<Condition>,
     marked: Option<MarkedText>,
     /// The Standard Passages it is limited to; `None`: everywhere.
     scope: Option<PassageList>,
@@ -214,11 +550,11 @@ pub struct FilterMatcher {
 impl FilterMatcher {
     /// `filter` compiled; `lemmas` resolves transliterated `lemma:` terms as a search does.
     pub fn new(filter: &VisualFilter, lemmas: &dyn LemmaLookup) -> Result<Self, String> {
-        let highlighter = if filter.query.trim().is_empty() {
-            Highlighter::default()
+        let condition = if filter.query.trim().is_empty() {
+            None
         } else {
             let parsed = obs_search::parse(&filter.query).map_err(|e| e.kind.to_string())?;
-            Highlighter::new(&parsed, lemmas)
+            Some(Condition::new(&parsed, lemmas))
         };
         let scope = match parse_scope(&filter.scope).map_err(|e| e.message)? {
             Scope::WholeBible => None,
@@ -227,7 +563,7 @@ impl FilterMatcher {
         Ok(Self {
             id: filter.id.clone(),
             appearance: filter.appearance(),
-            highlighter,
+            condition,
             marked: filter.marked,
             scope,
         })
@@ -252,29 +588,20 @@ impl FilterMatcher {
     /// Whether its query asks for Morphology or a Lemma, which only an original-language
     /// Bible carries: other Bibles are coloured through Strong's alignment.
     pub fn needs_alignment(&self) -> bool {
-        self.highlighter.uses_original_language_data()
+        self.condition
+            .as_ref()
+            .is_some_and(Condition::uses_original_language_data)
     }
 
-    /// The Strong's numbers (base forms, affixes left out) of the words among `words` (the
-    /// morphemes of each Tagged word of one original-language Verse) that it matches.
-    pub fn aligned_numbers<'a>(
-        &self,
-        words: impl IntoIterator<Item = &'a [MorphemePart]>,
-    ) -> BTreeSet<StrongsNumber> {
-        let mut out = BTreeSet::new();
-        for parts in words {
-            for (part, matched) in parts.iter().zip(self.highlighter.matching_parts(parts)) {
-                if matched && part.strongs.number() < AFFIX_NUMBERS_FROM {
-                    out.insert(part.strongs.base());
-                }
-            }
-        }
-        out
+    /// How many Verses on either side of a block its query reads (`WITHIN n verses`), so
+    /// that the Verses passed to [`block_hits`] can include them.
+    pub fn context_verses(&self) -> usize {
+        self.condition.as_ref().map_or(0, Condition::reach)
     }
 }
 
-/// One Bible Verse inside a block: its bytes in the unit and its Standard Passage (`None`
-/// for an Unmapped verse).
+/// One Bible Verse inside or near a block: its bytes in the unit and its Standard Passage
+/// (`None` for an Unmapped verse).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerseSlice {
     pub range: Range<usize>,
@@ -309,8 +636,11 @@ fn tagged_in(unit: &TextUnit, bytes: Range<usize>) -> Vec<(Range<usize>, &[Morph
 
 /// What `filters` colour in `block` (bytes of `unit`), sorted by filter then start.
 ///
-/// - `verses`: the Bible Verses the block holds (empty outside Bibles). A filter limited to
-///   Passages colours only inside its Verses; the others colour the whole block.
+/// - `verses`: the Bible Verses of the unit the block holds, in order, and any Verses on
+///   either side a `WITHIN n verses` query reads ([`FilterMatcher::context_verses`]); empty
+///   outside Bibles. In a Bible each Verse is a document the query is read against, as the
+///   Search Tool reads it (outside Bibles the block is the one document), and a filter
+///   limited to Passages reads only the Verses in them. Only the block's bytes are coloured.
 /// - `align`: the block is in a Bible without original-language data of its own; `original`
 ///   gives the aligned original-language words at a Standard Passage (see the module docs).
 pub fn block_hits(
@@ -324,38 +654,42 @@ pub fn block_hits(
     let text = unit.text.as_str();
     let block = block.start.min(text.len())..block.end.min(text.len());
     let clip = |r: &Range<usize>| r.start.max(block.start)..r.end.min(block.end);
+    let mut cx = MatchContext {
+        unit,
+        align,
+        original,
+        aligned: Default::default(),
+    };
     let mut out = Vec::new();
-    // Original words are looked up once per Verse, whichever filters need them.
-    let mut aligned: std::collections::HashMap<Passage, AlignedWords> = Default::default();
     for (k, f) in filters.iter().enumerate() {
-        let segments: Vec<Range<usize>> = if f.is_scoped() {
+        let docs: Vec<Document> = if verses.is_empty() {
+            vec![Document {
+                range: block.clone(),
+                standard: None,
+            }]
+        } else {
             verses
                 .iter()
                 .filter(|v| f.in_scope(v.standard))
-                .map(|v| clip(&v.range))
-                .filter(|r| r.start < r.end)
+                .map(|v| Document {
+                    range: v.range.start.min(text.len())..v.range.end.min(text.len()),
+                    standard: v.standard,
+                })
                 .collect()
-        } else {
-            vec![block.clone()]
         };
         let mut ranges: Vec<Range<usize>> = Vec::new();
-        for seg in &segments {
-            let Some(slice) = text.get(seg.clone()) else {
-                continue;
-            };
-            if !f.highlighter.is_empty() {
-                let tagged = tagged_in(unit, seg.clone());
-                let local = tagged
-                    .iter()
-                    .map(|(r, parts)| (r.start - seg.start..r.end - seg.start, *parts));
-                ranges.extend(
-                    f.highlighter
-                        .ranges(slice, local)
-                        .into_iter()
-                        .map(|r| r.start + seg.start..r.end + seg.start),
-                );
+        if let Some(condition) = &f.condition {
+            for found in condition.eval(&docs, &mut cx).into_iter().flatten() {
+                ranges.extend(found.iter().map(clip));
             }
-            if let Some(marked) = f.marked {
+        }
+        if let Some(marked) = f.marked {
+            let segments: Vec<Range<usize>> = if f.is_scoped() {
+                docs.iter().map(|d| clip(&d.range)).collect()
+            } else {
+                vec![block.clone()]
+            };
+            for seg in segments.iter().filter(|s| s.start < s.end) {
                 ranges.extend(
                     unit.spans
                         .iter()
@@ -364,32 +698,6 @@ pub fn block_hits(
                         .filter(|r| r.start < seg.end && seg.start < r.end)
                         .map(|r| r.start.max(seg.start)..r.end.min(seg.end)),
                 );
-            }
-        }
-        if align && f.needs_alignment() {
-            for v in verses.iter().filter(|v| f.in_scope(v.standard)) {
-                let Some(standard) = v.standard else {
-                    continue;
-                };
-                let seg = clip(&v.range);
-                if seg.start >= seg.end {
-                    continue;
-                }
-                let words = aligned
-                    .entry(standard)
-                    .or_insert_with(|| original(standard));
-                let numbers = f.aligned_numbers(words.iter().map(Vec::as_slice));
-                if numbers.is_empty() {
-                    continue;
-                }
-                for (range, parts) in tagged_in(unit, seg) {
-                    if parts.iter().any(|p| {
-                        p.strongs.number() < AFFIX_NUMBERS_FROM
-                            && numbers.contains(&p.strongs.base())
-                    }) {
-                        ranges.push(range);
-                    }
-                }
             }
         }
         out.extend(
@@ -438,6 +746,13 @@ impl Session {
             .and_then(|u| u.preference(VISUAL_FILTERS_PREF).ok().flatten())
             .and_then(|json| serde_json::from_str::<Vec<VisualFilter>>(&json).ok());
         self.visual_filters.list = stored.unwrap_or_else(built_in_filters);
+        let next = self
+            .user
+            .as_ref()
+            .and_then(|u| u.preference(VISUAL_FILTERS_NEXT_ID_PREF).ok().flatten())
+            .and_then(|n| n.trim().parse::<u64>().ok())
+            .unwrap_or(1);
+        self.visual_filters.next_id = next.max(after_ids(&self.visual_filters.list));
         self.visual_filters.revision += 1;
     }
 
@@ -447,7 +762,11 @@ impl Session {
             return;
         };
         let json = serde_json::to_string(&self.visual_filters.list).unwrap_or_default();
-        if let Err(e) = user.set_preference(VISUAL_FILTERS_PREF, &json) {
+        let next = self.visual_filters.next_id.to_string();
+        if let Err(e) = user
+            .set_preference(VISUAL_FILTERS_NEXT_ID_PREF, &next)
+            .and_then(|()| user.set_preference(VISUAL_FILTERS_PREF, &json))
+        {
             self.workspace.push_effect(Effect::Message(format!(
                 "Could not save the Visual filters: {e}"
             )));
@@ -524,7 +843,7 @@ fn run_save(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let mut f = match existing {
         Some(i) => s.visual_filters.list[i].clone(),
         None => VisualFilter {
-            id: next_id(&s.visual_filters.list),
+            id: format!("filter-{}", s.visual_filters.next_id),
             name: String::new(),
             query: String::new(),
             marked: None,
@@ -576,20 +895,22 @@ fn run_save(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let out = filter_json(&f);
     match existing {
         Some(i) => s.visual_filters.list[i] = f,
-        None => s.visual_filters.list.push(f),
+        None => {
+            s.visual_filters.list.push(f);
+            s.visual_filters.next_id += 1;
+        }
     }
     s.save_visual_filters();
     Ok(out)
 }
 
-/// A new filter's id: `filter-<n>`, after the highest one in use.
-fn next_id(list: &[VisualFilter]) -> String {
-    let n = list
-        .iter()
+/// The number after the highest `filter-<n>` id in `list` (1 when there is none): the least
+/// the next id can be, should the kept counter be missing.
+fn after_ids(list: &[VisualFilter]) -> u64 {
+    list.iter()
         .filter_map(|f| f.id.strip_prefix("filter-")?.parse::<u64>().ok())
         .max()
-        .unwrap_or(0);
-    format!("filter-{}", n + 1)
+        .map_or(1, |n| n.saturating_add(1))
 }
 
 /// `filter.delete`
