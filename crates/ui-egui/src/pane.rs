@@ -14,7 +14,7 @@ use crate::palette::Palette;
 use crate::selection::{
     DocPos, Granularity, Selection, range_rects, selection_rects, text_range_rects,
 };
-use crate::view::{MARGIN, ReadingView, SYNC_BUDGET};
+use crate::view::{FootnoteMarker, MARGIN, ReadingView, SYNC_BUDGET};
 use obs_layout::{InlineObject, UnitPos};
 use obs_scripture::Verse;
 
@@ -91,6 +91,32 @@ pub struct WordHit {
     pub range: std::ops::Range<usize>,
 }
 
+/// A Footnote marker the pointer or the keyboard is on (#208): which Resource and note, where
+/// its marker is in the unit, its label as drawn and its box on screen.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FootnoteHit {
+    /// The Resource whose note it is: two Resources can share unit, anchor and note id.
+    pub resource: String,
+    pub unit: usize,
+    pub anchor: usize,
+    pub note: obs_model::UnitId,
+    pub kind: obs_model::NoteKind,
+    pub label: String,
+    pub rect: Rect,
+    /// The marker's widget, which keyboard focus returns to when its popover closes.
+    pub widget: egui::Id,
+}
+
+impl FootnoteHit {
+    /// What the marker is called, to a screen reader and in its popover.
+    pub fn name(&self) -> String {
+        match self.kind {
+            obs_model::NoteKind::Footnote => format!("Footnote {}", self.label),
+            obs_model::NoteKind::CrossReference => "Cross-reference note".to_string(),
+        }
+    }
+}
+
 /// What happened in the reading pane this frame.
 #[derive(Debug, Clone, Default)]
 pub struct PaneOutput {
@@ -128,6 +154,13 @@ pub struct PaneOutput {
     /// An interlinear line (#143) was clicked: the right-click menu opens for its word, which
     /// is now the selection.
     pub cell_clicked: bool,
+    /// The Footnote marker under the pointer, else the one with keyboard focus (#208).
+    pub hovered_footnote: Option<FootnoteHit>,
+    /// The Footnote marker clicked (or Enter pressed on it) this frame: its popover pins.
+    pub clicked_footnote: Option<FootnoteHit>,
+    /// `clicked_footnote` came from the keyboard (or a screen reader), not the pointer: focus
+    /// moves into its popover.
+    pub footnote_by_keyboard: bool,
 }
 
 /// Draw the reading pane into all the space `ui` has, and handle its input. `flash` marks a
@@ -167,8 +200,17 @@ pub fn reading_pane(
     }
     if response.has_focus() || response.hovered() {
         let page = rect.height() * 0.9;
+        // Space on a focused Footnote marker (#208) activates it: the text does not page
+        // first and carry the marker out of view.
+        let marker_focused = ui.memory(|m| m.focused()).is_some_and(|f| {
+            f != response.id
+                && (view.footnote_markers(rect.height()).iter())
+                    .any(|m| footnote_marker_id(response.id, m) == f)
+        });
         ui.input(|i| {
-            if i.key_pressed(egui::Key::PageDown) || i.key_pressed(egui::Key::Space) {
+            if i.key_pressed(egui::Key::PageDown)
+                || (i.key_pressed(egui::Key::Space) && !marker_focused)
+            {
                 view.scroll_by(page);
             }
             if i.key_pressed(egui::Key::PageUp) {
@@ -505,6 +547,8 @@ pub fn reading_pane(
         }
     }
 
+    footnote_markers(ui, &response, view, rect, text_rect, &painter, &mut out);
+
     // Scrollbar.
     let (y, total) = view.position();
     if total > f64::from(rect.height()) {
@@ -551,6 +595,75 @@ pub fn reading_pane(
     }
     out.response = Some(response);
     out
+}
+
+/// The widget of Footnote marker `m` in the reading pane `pane`.
+fn footnote_marker_id(pane: egui::Id, m: &FootnoteMarker) -> egui::Id {
+    pane.with(("footnote", m.unit, m.anchor, m.note.as_str()))
+}
+
+/// Each Footnote marker in view (#208) is a small widget of its own over the text, so the
+/// pointer and the keyboard (Tab to it, Enter) reach it, and a screen reader names it and
+/// reads its note.
+fn footnote_markers(
+    ui: &mut Ui,
+    pane: &egui::Response,
+    view: &ReadingView,
+    rect: Rect,
+    text_rect: Rect,
+    painter: &egui::Painter,
+    out: &mut PaneOutput,
+) {
+    let mut focused = None;
+    for m in view.footnote_markers(rect.height()) {
+        let [x0, y0, x1, y1] = m.rect;
+        let r = Rect::from_min_max(
+            pos2(text_rect.left() + x0, rect.top() + y0),
+            pos2(text_rect.left() + x1, rect.top() + y1),
+        );
+        if !rect.intersects(r) {
+            continue;
+        }
+        let id = footnote_marker_id(pane.id, &m);
+        let response = ui.interact(r.expand(3.0).intersect(rect), id, Sense::click());
+        let hit = FootnoteHit {
+            resource: view.doc.manifest.resource_id.clone(),
+            unit: m.unit,
+            anchor: m.anchor,
+            note: m.note,
+            kind: m.kind,
+            label: m.label,
+            rect: r,
+            widget: id,
+        };
+        let name = hit.name();
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &name));
+        if let Some(body) = view.doc.footnote(&hit.note) {
+            let text = body.text.clone();
+            ui.ctx()
+                .accesskit_node_builder(response.id, |n| n.set_description(text));
+        }
+        if response.has_focus() {
+            painter.rect_stroke(
+                r.expand(2.0),
+                2.0,
+                ui.visuals().selection.stroke,
+                egui::StrokeKind::Outside,
+            );
+            focused = Some(hit.clone());
+        }
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            out.hovered_footnote = Some(hit.clone());
+        }
+        if response.clicked() {
+            out.footnote_by_keyboard = !response.clicked_by(egui::PointerButton::Primary);
+            out.clicked_footnote = Some(hit);
+        }
+    }
+    if out.hovered_footnote.is_none() {
+        out.hovered_footnote = focused;
+    }
 }
 
 /// The Find matches (#175) in the blocks laid out in a viewport `height` tall, by index, with

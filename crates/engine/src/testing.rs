@@ -704,6 +704,34 @@ pub mod bibles {
         import.finish().unwrap().0
     }
 
+    /// Isaiah 40:1-3 and John 1:1-23 of the BSB (public domain) from its official USFM
+    /// download, with their Footnotes, imported as the Starter library imports the BSB (#208).
+    /// John 1:23's Footnote cites Isaiah 40:3.
+    pub fn bsb_john_1() -> Resource {
+        let mut import = obs_formats::UsfmImport::new(obs_formats::UsfmOptions {
+            resource_id: "bsb".into(),
+            title: "Berean Standard Bible (test)".into(),
+            abbreviation: "BSB".into(),
+            language: "en".into(),
+            source_file: "bsb_usfm.zip".into(),
+            tool_version: "test".into(),
+            ..Default::default()
+        });
+        for (file, usfm) in [
+            (
+                "ISA.usfm",
+                include_str!("../../formats/tests/assets/usfm/bsb/ISA.usfm"),
+            ),
+            (
+                "JHN.usfm",
+                include_str!("../../formats/tests/assets/usfm/bsb/JHN.usfm"),
+            ),
+        ] {
+            import.add_book(file, usfm.into()).unwrap();
+        }
+        import.finish().unwrap().0
+    }
+
     /// Write each Resource to `dir/<id>.obr`.
     pub fn write_library(dir: &Path, resources: &[Resource]) {
         std::fs::create_dir_all(dir).unwrap();

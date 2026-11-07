@@ -390,6 +390,24 @@ fn scripture_references_in_typed_text() {
     assert!(scripture_references("\u{202E}Jn 3:\u{FEFF}16").is_empty());
 }
 
+/// A Footnote's references (#208) are read in its Bible's own numbering: Hebrew Ps 3:9 (the
+/// Standard's Ps 3:8, its superscription being verse 1) is found there, not in the Standard.
+#[test]
+fn scripture_references_in_a_bibles_own_numbering() {
+    let hebrew = obs_scripture::ListedVersification::new(
+        (1..=9).map(|n| (Verse::new(Book::Psalms, 3, n), n)),
+    );
+    let text = "Cited in Ps 3:9.";
+    assert!(scripture_references(text).is_empty(), "no Standard Ps 3:9");
+    let found = scripture_references_in(text, &hebrew);
+    assert_eq!(found.len(), 1);
+    assert_eq!(&text[found[0].0.clone()], "Ps 3:9");
+    assert_eq!(
+        found[0].1,
+        parse_reference("Ps 3:9", &hebrew, None).unwrap()
+    );
+}
+
 /// English words that are also book spellings (`Is`, `So`, `Re`, `Am`) are times or prose in a
 /// Note, not references, unless written with a period; a list stops before one.
 #[test]

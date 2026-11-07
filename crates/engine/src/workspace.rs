@@ -447,6 +447,8 @@ pub struct Tab {
     pub interlinear: crate::interlinear::InterlinearLines,
     /// A Resource Tab shows its Contents pane (#176).
     pub contents: bool,
+    /// A Resource Tab shows Footnote markers in its text (#208); on unless the user hid them.
+    pub footnote_markers: bool,
     /// The text unit at the top of the Tab's view, as the UI reports it from the live view
     /// each time it draws or moves it ([`Workspace::view_shows`]); `None` for a Bible, or
     /// until reported. Each history entry snapshots it as it is pushed (#176).
@@ -1004,6 +1006,7 @@ impl Workspace {
                 arriving_at: None,
                 interlinear: Default::default(),
                 contents: false,
+                footnote_markers: true,
                 view_unit: None,
                 passage: None,
             },
@@ -1579,6 +1582,7 @@ impl Workspace {
                     arriving_at: None,
                     interlinear: t.interlinear,
                     contents: t.contents,
+                    footnote_markers: !t.footnote_markers_hidden,
                     view_unit: None,
                     passage: None,
                 },

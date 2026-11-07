@@ -1,9 +1,10 @@
 //! Bible references found in text: the spellings the locked Commentary editions use in their
 //! links and prose, and references the user typed in a Note body (#64,
-//! [`scripture_references`]). Both are read by the Standard reference parser; nothing here
+//! [`scripture_references`]). Both are read by the reference parser, in the Standard
+//! versification unless a Bible's own is given ([`scripture_references_in`]); nothing here
 //! adds a grammar of its own. Note prose is matched conservatively (see
 //! [`scripture_references`]): English words that are also book abbreviations need a period.
-use obs_scripture::{Book, PassageList, Standard, Verse, parse_reference};
+use obs_scripture::{Book, PassageList, Standard, Verse, Versification, parse_reference};
 use regex::{Captures, Regex};
 use std::sync::OnceLock;
 
@@ -24,6 +25,16 @@ const ONLINE: [&str; 66] = [
 ];
 
 pub(super) fn parse(text: &str, context: Option<Verse>, roman: bool) -> Option<PassageList> {
+    parse_in(text, context, roman, &Standard)
+}
+
+/// [`parse`], reading chapter and verse numbers in `v11n`.
+fn parse_in(
+    text: &str,
+    context: Option<Verse>,
+    roman: bool,
+    v11n: &dyn Versification,
+) -> Option<PassageList> {
     let mut text = html_escape::decode_html_entities(text)
         .replace('+', " ")
         .replace("Bible:", "");
@@ -103,12 +114,7 @@ pub(super) fn parse(text: &str, context: Option<Verse>, roman: bool) -> Option<P
             .into_owned();
         text = text.replace(", &c.", "").replace("&c.", "");
     }
-    parse_reference(
-        text.trim().trim_end_matches([',', ';', '.']),
-        &Standard,
-        context,
-    )
-    .ok()
+    parse_reference(text.trim().trim_end_matches([',', ';', '.']), v11n, context).ok()
 }
 
 /// Unlinked references in prose (notably Genesis in MHC) use the same Standard parser.
@@ -201,8 +207,18 @@ fn english_book(text: &str) -> Option<usize> {
 /// app's own abbreviations (`Isa`, `Song`, `Rev`, `Amos`) always work. A candidate that does
 /// not parse (verse out of range) shrinks to its longest leading list that does, else stays
 /// text.
-#[expect(clippy::expect_used, reason = "the pattern is a source-code constant")]
 pub fn scripture_references(text: &str) -> Vec<(std::ops::Range<usize>, PassageList)> {
+    scripture_references_in(text, &Standard)
+}
+
+/// [`scripture_references`] read in another numbering: a Bible's own, for the references
+/// written in its Footnotes (#208, ADR 0002), so a verse only that numbering has (Hebrew
+/// Ps 3:9) is found.
+#[expect(clippy::expect_used, reason = "the pattern is a source-code constant")]
+pub fn scripture_references_in(
+    text: &str,
+    v11n: &dyn Versification,
+) -> Vec<(std::ops::Range<usize>, PassageList)> {
     static CANDIDATE: OnceLock<Regex> = OnceLock::new();
     static SEPARATOR: OnceLock<Regex> = OnceLock::new();
     let regex = CANDIDATE.get_or_init(|| {
@@ -241,7 +257,7 @@ pub fn scripture_references(text: &str) -> Vec<(std::ops::Range<usize>, PassageL
             let Some(head) = candidate.get(..end) else {
                 continue;
             };
-            if let Some(list) = parse(head, None, false).filter(|l| !l.is_empty()) {
+            if let Some(list) = parse_in(head, None, false, v11n).filter(|l| !l.is_empty()) {
                 out.push((found.start()..found.start() + end, list));
                 break;
             }

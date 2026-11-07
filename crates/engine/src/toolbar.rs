@@ -504,6 +504,7 @@ impl Session {
                         link: t.link,
                         interlinear: Default::default(),
                         contents: false,
+                        footnote_markers_hidden: false,
                     });
                     if t.kind.is_reading() {
                         snap.focused = snap.focused.or(Some(id));

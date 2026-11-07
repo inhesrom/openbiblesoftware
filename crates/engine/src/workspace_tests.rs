@@ -552,3 +552,52 @@ fn ctrl_f_opens_the_find_bar_of_a_resource_or_text_comparison_tab() {
         }]
     );
 }
+
+/// #208: View → Footnote markers hides and shows one Resource Tab's markers (the focused one
+/// by default); a Layout and the Last session keep a Tab that hid them, and other kinds of
+/// Tab have none.
+#[test]
+fn view_footnote_markers_toggles_one_resource_tab_and_is_kept_in_layouts() {
+    let mut s = session();
+    let kjv = tab(&s.run("resource.open", &json!({ "id": "kjv" })).unwrap());
+    let web = tab(&s
+        .run("resource.open", &json!({ "id": "web", "split": true }))
+        .unwrap());
+    assert!(
+        s.workspace.tab(kjv).unwrap().footnote_markers,
+        "shown by default"
+    );
+    assert!(s.is_enabled("view.footnote_markers"));
+    let out = s.run("view.footnote_markers", &json!({})).unwrap();
+    assert_eq!(out, json!({ "tab": web.0, "on": false }), "the focused Tab");
+    assert!(s.workspace.tab(kjv).unwrap().footnote_markers);
+    assert!(!s.workspace.tab(web).unwrap().footnote_markers);
+    let snap = s.workspace.snapshot();
+    let back = crate::persist::WorkspaceSnapshot::from_json(&snap.to_json()).unwrap();
+    assert_eq!(back, snap);
+    s.workspace.restore(back);
+    let shown: Vec<(String, bool)> = s
+        .workspace
+        .tabs()
+        .map(|t| (t.title.clone(), t.footnote_markers))
+        .collect();
+    assert!(shown.contains(&("WEB".into(), false)), "{shown:?}");
+    assert!(shown.contains(&("KJV".into(), true)), "{shown:?}");
+    let web = s.workspace.tabs().find(|t| t.title == "WEB").unwrap().id;
+    s.run(
+        "view.footnote_markers",
+        &json!({ "tab": web.0, "on": true }),
+    )
+    .unwrap();
+    // Tabs that show them save nothing extra.
+    assert!(!s.workspace.snapshot().to_json().contains("footnote"));
+    let tool = tab(&s.run("tool.word_info", &json!({})).unwrap());
+    assert!(
+        !s.is_enabled("view.footnote_markers"),
+        "Word Info is focused"
+    );
+    assert!(
+        s.run("view.footnote_markers", &json!({ "tab": tool.0 }))
+            .is_err()
+    );
+}

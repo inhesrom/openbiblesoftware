@@ -648,3 +648,135 @@ fn a_line_reads_right_to_left_when_its_first_strong_character_does() {
         assert!(!crate::starts_rtl(ltr), "{ltr}");
     }
 }
+
+/// John 1:1-2 and 2:1 with Footnotes after 1:1, two after 1:2 and one after 2:1, and a
+/// cross-reference note (with its zero-width Cross-reference) after 2:1 (#208).
+fn footnoted_unit() -> TextUnit {
+    let text =
+        "In the beginning was the Word. He was with God.\nOn the third day there was a wedding.";
+    let v1 = find(text, "In the beginning was the Word.");
+    let v2 = find(text, "He was with God.");
+    let v3 = find(text, "On the third day there was a wedding.");
+    let verse = |r: std::ops::Range<usize>, c, v| {
+        span(
+            r,
+            SpanKind::Verse {
+                verse: Verse::new(Book::John, c, v),
+                last: v,
+            },
+        )
+    };
+    let note = |at: usize, n: u32, note_kind| {
+        span(
+            at..at,
+            SpanKind::NoteRef {
+                note: UnitId::note(n),
+                note_kind,
+            },
+        )
+    };
+    let mut spans = vec![
+        span(
+            0..v2.end,
+            SpanKind::Para {
+                style: ParaStyle::Prose,
+            },
+        ),
+        span(
+            v3.clone(),
+            SpanKind::Para {
+                style: ParaStyle::Prose,
+            },
+        ),
+        verse(v1.clone(), 1, 1),
+        verse(v2.clone(), 1, 2),
+        verse(v3.clone(), 2, 1),
+        note(v1.end, 1, NoteKind::Footnote),
+        note(v2.end, 2, NoteKind::Footnote),
+        note(v2.end, 3, NoteKind::Footnote),
+        note(v3.end - 1, 4, NoteKind::Footnote),
+        note(v3.end, 5, NoteKind::CrossReference),
+        span(
+            v3.end..v3.end,
+            SpanKind::Xref {
+                targets: PassageList::from(vec![Passage::verse(Verse::new(Book::John, 4, 46))]),
+            },
+        ),
+    ];
+    spans.sort_by(|a, b| {
+        (a.start, std::cmp::Reverse(a.end), a.kind.name() != "verse").cmp(&(
+            b.start,
+            std::cmp::Reverse(b.end),
+            b.kind.name() != "verse",
+        ))
+    });
+    TextUnit {
+        id: UnitId::book(Book::John),
+        kind: UnitKind::BibleBook,
+        title: None,
+        text: text.into(),
+        spans,
+    }
+}
+
+fn object_runs(p: &Paragraph) -> Vec<(String, InlineObject)> {
+    p.runs
+        .iter()
+        .filter_map(|r| match &r.source {
+            RunSource::Object { object, .. } if !matches!(object, InlineObject::VerseNumber(_)) => {
+                Some((r.text.clone(), object.clone()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// #208: Footnote markers are raised italic letters counted from each chapter's first; a
+/// cross-reference note shows as its Cross-reference's ↗ only.
+#[test]
+fn footnote_markers_are_letters_counted_from_each_chapters_first() {
+    let unit = footnoted_unit();
+    let blocks = laid(&unit, Direction::Ltr, 600.0);
+    let first = object_runs(&blocks[0].1);
+    let labels: Vec<&str> = first.iter().map(|(t, _)| t.as_str()).collect();
+    assert_eq!(labels, ["a", "b", "c"]);
+    assert_eq!(
+        first[1].1,
+        InlineObject::NoteMarker {
+            note: UnitId::note(2),
+            kind: NoteKind::Footnote
+        }
+    );
+    let marker = blocks[0]
+        .1
+        .runs
+        .iter()
+        .find(|r| r.text == "a")
+        .unwrap()
+        .style;
+    assert_eq!(marker.role, ColorRole::NoteMarker);
+    assert_eq!(marker.face, FaceId::Italic);
+    assert!(marker.raise > 0.0, "raised, like a superscript");
+    let second = object_runs(&blocks[1].1);
+    let labels: Vec<&str> = second.iter().map(|(t, _)| t.as_str()).collect();
+    assert_eq!(labels, ["a", "↗"], "chapter 2 starts again at a");
+    assert_eq!(footnote_label(25), "z");
+    assert_eq!(footnote_label(26), "aa");
+    assert_eq!(footnote_label(27), "ab");
+}
+
+/// #208: with the markers off nothing but the text (and verse numbers) is laid out, and the
+/// settings key changes so views lay out again.
+#[test]
+fn footnote_markers_off_lay_out_no_markers() {
+    let unit = footnoted_unit();
+    let off = TextSettings {
+        footnote_markers: false,
+        ..TextSettings::default()
+    };
+    assert_ne!(off.key(), TextSettings::default().key());
+    for b in unit_blocks(&unit) {
+        let p = block_paragraph(&unit, &b, Direction::Ltr, &off);
+        assert_eq!(object_runs(&p), []);
+    }
+}
