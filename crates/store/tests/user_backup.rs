@@ -380,7 +380,8 @@ fn back_up_refuses_the_user_database_and_its_sidecar_files() {
         refused.push(symlink);
     }
     for dest in &refused {
-        let err = db.back_up(dest).unwrap_err();
+        let err = (db.back_up(dest).err())
+            .unwrap_or_else(|| panic!("{} was written over", dest.display()));
         assert!(
             matches!(&err, StoreError::Rejected(m) if m.contains("where your data is kept")),
             "{}: {err}",

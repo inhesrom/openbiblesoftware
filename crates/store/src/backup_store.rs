@@ -136,7 +136,7 @@ impl UserStore {
             name.push(suffix);
             own.push(PathBuf::from(name));
         }
-        if own.iter().any(|f| same_file(dest, f)) {
+        if own.iter().any(|f| names_one_file(dest, f)) {
             return Err(StoreError::Rejected(format!(
                 "{} is where your data is kept, so nothing was written there; choose another file",
                 dest.display()
@@ -365,12 +365,11 @@ fn check_whole(conn: &Connection) -> Result<(), String> {
 }
 
 /// Whether `a` and `b` name one file, existing or not.
-fn same_file(a: &Path, b: &Path) -> bool {
-    #[cfg(unix)]
-    if let (Ok(ma), Ok(mb)) = (std::fs::metadata(a), std::fs::metadata(b)) {
-        // A hard link has its own path but the same file.
-        use std::os::unix::fs::MetadataExt as _;
-        return ma.dev() == mb.dev() && ma.ino() == mb.ino();
+fn names_one_file(a: &Path, b: &Path) -> bool {
+    if a.exists() && b.exists() {
+        // By the file system's identity of the file: a hard link has its own path but is the
+        // same file.
+        return same_file::is_same_file(a, b).unwrap_or(false);
     }
     match (resolved(a), resolved(b)) {
         (Some(a), Some(b)) if cfg!(any(windows, target_os = "macos")) => {
