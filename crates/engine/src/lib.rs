@@ -80,6 +80,9 @@ pub mod key_bindings;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod key_bindings_tests;
 pub mod key_words;
+pub mod keyboard_navigation;
+#[cfg(test)]
+mod keyboard_navigation_tests;
 mod library;
 mod library_commands;
 pub mod library_search;

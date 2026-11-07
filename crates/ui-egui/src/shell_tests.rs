@@ -204,8 +204,14 @@ impl Harness {
         self.time += 1.0 / 60.0;
         let shell = &mut self.shell;
         let mut out = self.ctx.run_ui(input, |ui| shell.ui(ui));
-        if let Some(n) = &self.native {
-            n.borrow_mut().end_frame(&out.viewport_output);
+        let front =
+            (self.native.as_ref()).and_then(|n| n.borrow_mut().end_frame(&out.viewport_output));
+        if let Some(front) = front {
+            let here = front == egui::ViewportId::ROOT;
+            if self.root_info.focused != Some(here) {
+                self.events.push(Event::WindowFocused(here));
+            }
+            self.root_info.focused = Some(here);
         }
         // No GPU here: texture uploads are kept as images, for screenshots only.
         for (id, deltas) in std::mem::take(&mut out.textures_delta.set) {
@@ -3300,6 +3306,8 @@ mod a11y_audit;
 mod floating_windows;
 #[path = "interlinear_tests.rs"]
 mod interlinear;
+#[path = "keyboard_navigation_tests.rs"]
+mod keyboard_navigation;
 #[path = "keyboard_shortcuts_tests.rs"]
 mod keyboard_shortcuts;
 #[path = "recently_closed_tests.rs"]

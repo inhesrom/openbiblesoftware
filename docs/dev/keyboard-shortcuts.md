@@ -12,8 +12,8 @@ the menus, tooltips, the Launchers and the key handling all read them.
 | Group | Bindings |
 |---|---|
 | Each menu (Library, Guides, Tools, Layouts, View, Help), in menu order | the menu's commands that a key can run |
-| Selection | the Selection keys (`obs_engine::SELECTION_KEYS`): Note and Ctrl+1…9, the first nine styles of the active Highlight palette (#181) |
-| Other commands | every other command a key can run (Back, Forward, Find, Close Tab, the Launchers …), in registration order |
+| Selection | the Selection keys (`obs_engine::SELECTION_KEYS`): Note and Alt+1…9, the first nine styles of the active Highlight palette (#181) |
+| Other commands | every other command a key can run (Back, Forward, Find, Close Tab, the Launchers, the keyboard navigation keys of #215 …), in registration order |
 
 A command can run from a key when it needs no parameter except its Tab
 (`key_bindings::runs_from_a_key`); the Shell gives such a command the focused Tab. The
@@ -39,7 +39,8 @@ stored and rebound like commands.
   that order, then egui's key name (`Ctrl+Up`, `Ctrl+OpenBracket`). Ctrl+Plus drops Shift and
   is the same key as Ctrl+= (#137), so they conflict.
 - Refused keys (`not_bindable`): Esc (closes and cancels; Esc also cancels recording), Enter
-  (text fields use Enter, Shift+, Ctrl+ and Alt+Enter), Tab (moves the keyboard focus), and
+  (text fields use Enter, Shift+, Ctrl+ and Alt+Enter), Tab without Ctrl (Tab and Shift+Tab
+  move the keyboard focus, Alt+Tab is the system's; Ctrl+Tab is the Tab switcher's, #215), and
   any key without Ctrl or Alt except F1–F35 (a key alone or with Shift types text or moves
   in a pane). Defaults are not checked: Unpin Word Info keeps Esc.
 - The User database preference `key_bindings` is a JSON object, command id → key, or `null`

@@ -11,7 +11,7 @@
 //! - A style's colour per Page tone is derived when drawn unless the user adjusted it
 //!   (`paper`, `sepia`, `dark`); the contrast check of an adjustment (#21) belongs to the UI,
 //!   which knows the tones' colours. Changing the colour drops the adjustments.
-//! - The active palette's first nine styles are the Selection keys Ctrl+1…9.
+//! - The active palette's first nine styles are the Selection keys Alt+1…9.
 //! - **Export** writes a palette as a small JSON file ([`PaletteFile`]): names, colours,
 //!   looks and adjustments, no ids. **Import** always makes a new palette from one.
 
@@ -33,7 +33,7 @@ use crate::session::Session;
 /// User database preference holding the active Highlight palette's id.
 pub const ACTIVE_PALETTE_PREF: &str = "highlights.palette";
 
-/// How many styles of the active palette have a Selection key (Ctrl+1 … Ctrl+9).
+/// How many styles of the active palette have a Selection key (Alt+1 … Alt+9).
 pub const STYLE_SLOTS: usize = 9;
 
 /// `format` of an exported palette file.
@@ -199,7 +199,7 @@ impl Session {
     }
 
     /// The active palette's styles, in order: the selection toolbar's swatches and, the
-    /// first nine, Ctrl+1…9.
+    /// first nine, Alt+1…9.
     pub fn active_highlight_styles(&self) -> Result<Vec<HighlightStyle>, String> {
         self.palette_styles(&self.active_highlight_palette()?.id)
     }

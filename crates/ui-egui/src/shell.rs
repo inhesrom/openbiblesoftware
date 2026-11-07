@@ -52,6 +52,7 @@ mod guide_words;
 mod highlight_styles_window;
 mod home_tab;
 mod import_tab;
+mod keyboard_nav;
 mod keys_tab;
 mod library_tab;
 mod missing_resource;
@@ -260,6 +261,10 @@ pub(crate) struct State {
     pub(crate) timed_tab: TimedTab,
     /// A reference, text or Note card being dragged across the Workspace (#216).
     pub(crate) drag: drag_drop::DragDropUi,
+    /// A Tab whose button in its Panel's tab bar takes the keyboard when next drawn (#215).
+    keyboard_to: Option<TabId>,
+    /// Where F6 puts the keyboard in the menu bar and the Toolbar (#215).
+    pub(crate) areas: keyboard_nav::AreaMarks,
 }
 
 /// A Tab whose drawing is timed each frame, for the bench's synchronous-work budget (#183,
@@ -284,6 +289,13 @@ pub struct Shell {
     screens: floating::Screens,
     /// The Tab last focused in each window (none: the main one), for the keys typed there.
     last_focused: BTreeMap<Option<obs_engine::WindowId>, TabId>,
+    /// The Tab switcher, while Ctrl+Tab's Ctrl is held (#215).
+    pub(crate) switcher: Option<keyboard_nav::TabSwitcher>,
+    /// F6 (true) or Shift+F6 asked to move the keyboard to another area (#215).
+    next_area: Option<bool>,
+    /// A Tab the keyboard was sent to (#215), whose OS window is brought to the front at the
+    /// end of the frame.
+    os_focus_to: Option<TabId>,
 }
 
 impl Default for Shell {
@@ -334,12 +346,17 @@ impl Shell {
                 backups_ui: Default::default(),
                 timed_tab: TimedTab::default(),
                 drag: drag_drop::DragDropUi::default(),
+                keyboard_to: None,
+                areas: Default::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
             floating: Vec::new(),
             screens: floating::Screens::default(),
             last_focused: BTreeMap::new(),
+            switcher: None,
+            next_area: None,
+            os_focus_to: None,
         }
     }
 
@@ -436,6 +453,12 @@ impl Shell {
                     self.st.tabs.remove(&tab);
                 }
                 Effect::RestoreScroll { tab, at } => self.st.restore_scroll(tab, &at),
+                Effect::KeyboardToTab(tab) => {
+                    self.make_active(tab);
+                    self.st.keyboard_to(tab);
+                    self.os_focus_to = Some(tab);
+                }
+                Effect::NextArea { forward } => self.next_area = Some(forward),
                 Effect::Float {
                     tab,
                     window,
@@ -877,6 +900,8 @@ impl Shell {
         }
         self.st.keys_ui.begin_frame();
         self.shortcuts(ui, None);
+        // F6's marks are drawn again this frame (the Toolbar not at all while Auto-hidden).
+        self.st.areas = Default::default();
         self.st.toolbar.begin_frame();
         let menus = egui::Panel::top("menus")
             .frame(
@@ -885,6 +910,7 @@ impl Shell {
                     .inner_margin(egui::Margin::symmetric(14, 6)),
             )
             .show(ui, |ui| self.menu_bar(ui));
+        self.st.areas.menus = menus.inner.map(|id| (id, menus.response.rect));
         self.st.toolbar.menus_bottom = menus.response.rect.bottom();
         // The toolbar at the Bottom, Left or Right, or Auto-hidden (#141); then its open pane.
         self.toolbar_outside_menus(ui);
@@ -934,6 +960,7 @@ impl Shell {
         // drawn (#64): checked here, since the Notes Tab's own code only runs while drawn.
         self.st.notes_after_frame(ui.ctx());
         self.apply_effects();
+        self.focus_os_window(ui.ctx());
         let closing = ui.input(|i| i.viewport().close_requested());
         if closing {
             // A Note being written is saved, as if focus had left it. One that cannot be saved
@@ -970,6 +997,7 @@ impl Shell {
         if self.st.keys_ui.is_recording_in(ui) {
             return;
         }
+        self.tab_switcher_keys(ui, window);
         // Keys a text field uses itself (Ctrl+Z, Esc …) are left to it while it has focus.
         let typing = ui.ctx().text_edit_focused();
         let all = bindings(&self.st.session);
@@ -983,6 +1011,7 @@ impl Shell {
             .flat_map(|(spec, sc)| pressed_as(sc).map(move |sc| (spec, sc)))
             .collect();
         let mut run: Vec<(&'static str, Value)> = Vec::new();
+        let mut switch: Vec<(bool, egui::Modifiers)> = Vec::new();
         for (spec, sc) in bound {
             let needs_tab = spec.params.iter().any(|p| p.name == "tab" && p.required);
             let other_required = spec.params.iter().any(|p| p.required && p.name != "tab");
@@ -995,6 +1024,14 @@ impl Shell {
             }
             if ui.input_mut(|i| consume_key(i, sc.modifiers, sc.logical_key, extra_held(sc, &all)))
             {
+                // Ctrl+Tab and Ctrl+Shift+Tab open the Tab switcher (#215).
+                if let Some(i) = keyboard_nav::SWITCHER_COMMANDS
+                    .iter()
+                    .position(|c| *c == spec.id)
+                {
+                    switch.push((i == 0, sc.modifiers));
+                    continue;
+                }
                 let params = match (needs_tab, focused) {
                     (true, Some(t)) => json!({ "tab": t.0 }),
                     _ => json!({}),
@@ -1002,16 +1039,23 @@ impl Shell {
                 run.push((spec.id, params));
             }
         }
-        if !run.is_empty() {
+        if !run.is_empty() || !switch.is_empty() {
             self.focus_here(focused);
         }
         for (id, p) in run {
             self.run(id, &p);
         }
+        if let Some(tab) = focused {
+            for (forward, modifiers) in switch {
+                self.tab_switcher_step(window, tab, forward, modifiers);
+            }
+        }
         if self.st.annotation_keys(ui, focused) {
             self.focus_here(focused);
         }
         self.apply_effects();
+        self.cycle_area(ui.ctx(), window);
+        self.tab_switcher_ui(ui.ctx(), window);
     }
 
     /// The Tab focused in the window whose keys are being read becomes the focused one.
@@ -1026,7 +1070,9 @@ impl Shell {
 
     /// The menu bar: the app's name, the Launchers (#140) when the toolbar is at the Top (#141),
     /// the View and Help menus, and the Command box on the right.
-    fn menu_bar(&mut self, ui: &mut Ui) {
+    /// The menu bar; the first menu's id, where F6 puts the keyboard (#215).
+    fn menu_bar(&mut self, ui: &mut Ui) -> Option<egui::Id> {
+        let mut first = None;
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new("Open Bible")
@@ -1052,11 +1098,12 @@ impl Shell {
                     .map(|l| l.title())
                     .collect();
                 for menu in MENUS.iter().filter(|m| !launched.contains(&m.title)) {
-                    ui.menu_button(menu.title, |ui| {
+                    let r = ui.menu_button(menu.title, |ui| {
                         for item in menu.items {
                             self.menu_item(ui, *item);
                         }
                     });
+                    first = first.or(Some(r.response.id));
                 }
             });
             let menus = ui.cursor().left() - rest;
@@ -1075,6 +1122,7 @@ impl Shell {
             // What the Launchers leave room for next frame: the menus, the right side and gaps.
             self.st.toolbar.reserve = menus + right.inner + 8.0 + 2.0 * ui.spacing().item_spacing.x;
         });
+        first
     }
 
     fn menu_item(&mut self, ui: &mut Ui, item: MenuItem) {
@@ -1486,28 +1534,60 @@ pub(crate) fn with_key(session: &obs_engine::Session, text: &str, id: &str) -> S
 /// The key reports that press `sc`: itself, and for `+` also `=`. On US, UK and AZERTY
 /// keyboards `+` is Shift+=, so Ctrl+Plus is pressed as Ctrl+= too, as in browsers (#137).
 /// The numpad's + and − report Plus and Minus.
+///
+/// Ctrl+Tab is also the Control key with Tab on macOS, where Cmd+Tab switches apps and never
+/// reaches the app (#215).
 pub(crate) fn pressed_as(
     sc: egui::KeyboardShortcut,
 ) -> impl Iterator<Item = egui::KeyboardShortcut> {
     let also = (sc.logical_key == egui::Key::Plus)
         .then(|| egui::KeyboardShortcut::new(sc.modifiers, egui::Key::Equals));
-    std::iter::once(sc).chain(also)
+    let control = (sc.logical_key == egui::Key::Tab && sc.modifiers.command).then(|| {
+        let modifiers = egui::Modifiers {
+            ctrl: true,
+            command: false,
+            mac_cmd: false,
+            ..sc.modifiers
+        };
+        egui::KeyboardShortcut::new(modifiers, egui::Key::Tab)
+    });
+    std::iter::once(sc).chain(also).chain(control)
 }
 
 /// Which of Shift and Alt may be held on top of `sc`'s own modifiers and still press it.
 ///
 /// Usually both, as egui matches: some keys need them on some layouts (Ctrl+Plus is
-/// Ctrl+Shift+= on a US keyboard). None when another binding in `all` is the same key with other
-/// modifiers, so the two are told apart exactly: Ctrl+Shift+Z is never Ctrl+Z, even when there
-/// is nothing to redo.
+/// Ctrl+Shift+= on a US keyboard). None when another binding in `all` is the same key with the
+/// same Ctrl (or Cmd) and other Shift or Alt, so the two are told apart exactly: Ctrl+Shift+Z
+/// is never Ctrl+Z, even when there is nothing to redo. A binding with other Ctrl is told
+/// apart by Ctrl itself (Ctrl+1 a Panel, Alt+1 a Highlight, #215). Never an extra Alt on
+/// Ctrl+digit: Ctrl+Alt is AltGr on Windows, which types { [ ] } on digits on some layouts.
 pub(crate) fn extra_held(
     sc: egui::KeyboardShortcut,
     all: &[egui::KeyboardShortcut],
 ) -> egui::Modifiers {
-    if (all.iter()).any(|o| o.logical_key == sc.logical_key && o.modifiers != sc.modifiers) {
-        egui::Modifiers::NONE
-    } else {
-        egui::Modifiers::SHIFT | egui::Modifiers::ALT
+    let same_ctrl = |m: egui::Modifiers| {
+        (m.ctrl, m.command, m.mac_cmd)
+            == (
+                sc.modifiers.ctrl,
+                sc.modifiers.command,
+                sc.modifiers.mac_cmd,
+            )
+    };
+    if (all.iter()).any(|o| {
+        o.logical_key == sc.logical_key && o.modifiers != sc.modifiers && same_ctrl(o.modifiers)
+    }) {
+        return egui::Modifiers::NONE;
+    }
+    use egui::Key::{Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9};
+    let digit = matches!(
+        sc.logical_key,
+        Num0 | Num1 | Num2 | Num3 | Num4 | Num5 | Num6 | Num7 | Num8 | Num9
+    );
+    egui::Modifiers {
+        shift: true,
+        alt: !(digit && (sc.modifiers.command || sc.modifiers.ctrl)),
+        ..egui::Modifiers::NONE
     }
 }
 
@@ -3173,6 +3253,7 @@ impl egui_tiles::Behavior<TabId> for State {
             if resp.clicked() {
                 self.session.workspace.user_focused(t);
             }
+            self.tab_button_drawn(t, &resp);
             let linkable = self
                 .session
                 .workspace
