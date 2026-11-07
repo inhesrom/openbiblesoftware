@@ -871,12 +871,25 @@ impl State {
                             paint_swatch(ui, rect, &look, &self.palette, false);
                         }
                         Content::Note { .. } => {
-                            ui.add(icons::image(
-                                ui.ctx(),
-                                Icon::Note,
-                                icons::BODY,
-                                icons::page_muted(&self.palette),
-                            ));
+                            // The grip a Note is dragged by onto text, to move it there (#216).
+                            let grip = ui
+                                .add(
+                                    icons::image(
+                                        ui.ctx(),
+                                        Icon::Note,
+                                        icons::BODY,
+                                        icons::page_muted(&self.palette),
+                                    )
+                                    .sense(Sense::drag()),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::Grab)
+                                .on_hover_text(
+                                    "Drag onto a Resource's text to move this Note there",
+                                )
+                                .accessible_name("Drag to move this Note");
+                            if grip.drag_started() {
+                                self.note_drag_started(ui, &a.id, &card.reference);
+                            }
                         }
                     }
                     let reference = RichText::new(&card.reference).strong();

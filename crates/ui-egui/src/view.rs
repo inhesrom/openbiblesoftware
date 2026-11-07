@@ -108,6 +108,9 @@ pub struct ReadingView {
     pub selection: Option<Selection>,
     /// Whether the pointer drag in progress is on the scrollbar rather than the text.
     pub(crate) dragging_scrollbar: bool,
+    /// Whether the pointer drag in progress carries a Bible reference or the selection out of
+    /// the pane (#216) rather than selecting.
+    pub(crate) dragging_out: bool,
     /// Where the pane last drew the text's top-left corner, in screen points.
     pub(crate) text_origin: [f32; 2],
     /// The interlinear lines under its Tagged words, when the Tab shows them (#143).
@@ -152,6 +155,7 @@ impl ReadingView {
             pending_follow: None,
             selection: None,
             dragging_scrollbar: false,
+            dragging_out: false,
             text_origin: [0.0, 0.0],
             interlinear: None,
         };

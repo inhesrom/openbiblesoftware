@@ -35,6 +35,7 @@ mod contents_pane;
 mod context_menu;
 mod copy_window;
 mod credits_tab;
+mod drag_drop;
 mod exegetical_guide;
 mod export;
 mod factbook_tab;
@@ -249,6 +250,8 @@ pub(crate) struct State {
     settings_ui: settings_tab::SettingsUi,
     /// The bench's feature scenarios (#183): one Tab's UI-thread work, timed each frame.
     pub(crate) timed_tab: TimedTab,
+    /// A reference, text or Note card being dragged across the Workspace (#216).
+    pub(crate) drag: drag_drop::DragDropUi,
 }
 
 /// A Tab whose drawing is timed each frame, for the bench's synchronous-work budget (#183,
@@ -321,6 +324,7 @@ impl Shell {
                 keys_ui: Default::default(),
                 settings_ui: Default::default(),
                 timed_tab: TimedTab::default(),
+                drag: drag_drop::DragDropUi::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -888,11 +892,18 @@ impl Shell {
                             .color(theme::c().muted),
                         );
                     });
+                    self.st.workspace_drag(ui, &[]);
                 } else {
                     self.main_drag_out(ui);
                     let before = tile_handles::widgets_so_far(ui);
                     self.tree.ui(&mut self.st, ui);
                     tile_handles::after_tree(ui, &mut self.tree, before);
+                    let panels = drag_drop::drop_panels(
+                        &self.tree,
+                        &self.st.panels,
+                        &self.st.session.workspace,
+                    );
+                    self.st.workspace_drag(ui, &panels);
                 }
             });
         self.apply_effects();
@@ -1979,6 +1990,9 @@ impl State {
                 }
             }
         }
+        if let Some(drag) = out.drag_out {
+            self.text_drag_started(ui, tab, drag);
+        }
         self.after_reading_pane(ui, tab, &out);
     }
 
@@ -2815,6 +2829,7 @@ impl State {
         }
         self.layout_prompt(&ctx);
         self.remove_prompt(&ctx);
+        self.reanchor_prompt(&ctx);
         self.import_chooser(&ctx);
         self.fonts_window(&ctx);
         self.highlight_styles_window(&ctx);

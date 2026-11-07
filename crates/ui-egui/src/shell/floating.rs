@@ -510,7 +510,13 @@ impl Shell {
                 let before = tile_handles::widgets_so_far(ui);
                 d.tree.ui(&mut self.st, ui);
                 tile_handles::after_tree(ui, &mut d.tree, before);
+                let panels = super::drag_drop::drop_panels(
+                    &d.tree,
+                    &self.st.panels,
+                    &self.st.session.workspace,
+                );
                 std::mem::swap(&mut self.st.panels, &mut d.panels);
+                self.st.workspace_drag(ui, &panels);
             });
         // A Note being written on one of this window's Tabs is written here.
         if native

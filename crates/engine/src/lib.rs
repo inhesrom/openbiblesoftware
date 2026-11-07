@@ -39,6 +39,9 @@ pub mod copy_verses;
 mod copy_verses_tests;
 pub mod credits;
 pub mod cross_references;
+pub mod drag_drop;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod drag_drop_tests;
 pub mod exegetical_guide;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod exegetical_guide_tests;
