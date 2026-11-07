@@ -223,7 +223,7 @@ fn choice_defaults_are_the_app_defaults() {
 }
 
 /// Change `id` away from its default through the command the Settings Tab runs for it.
-fn change(s: &mut Session, id: &str) {
+pub(crate) fn change(s: &mut Session, id: &str) {
     let setting = setting_by_id(id).unwrap();
     let ok = |r: Result<Value, CommandError>| {
         r.unwrap_or_else(|e| panic!("{id}: {e}"));

@@ -296,3 +296,106 @@ fn a_backup_with_another_page_size_is_restored_too() {
     assert_eq!(db.annotation_dump().unwrap(), expected);
     assert_eq!(db.layouts().unwrap(), ["Study"]);
 }
+
+/// A Backup this build cannot use (a table or index missing, a row of the wrong type) is
+/// refused by the preview and by restore, before anything is touched: the live data, its
+/// undo (the Safety backups) and the next launch are as they were.
+#[test]
+fn a_backup_missing_part_of_the_format_or_with_unreadable_rows_is_refused() {
+    let dir = Dir::new("damaged");
+    let (mut db, _) = UserStore::open(&dir.db()).unwrap();
+    let (nb, _) = filled(&db);
+    let before = db.annotation_dump().unwrap();
+    for (name, damage, why) in [
+        ("no-anchors", "DROP TABLE anchors", "no table `anchors`"),
+        (
+            "no-index",
+            "DROP INDEX anchors_passage",
+            "no index `anchors_passage`",
+        ),
+        (
+            "no-column",
+            "ALTER TABLE favorite DROP COLUMN label",
+            "no column `label`",
+        ),
+        (
+            "bad-row",
+            &*format!(
+                "UPDATE notebooks SET created_at = 'yesterday' WHERE id = '{}'",
+                nb.id
+            ),
+            "it is damaged (database error: Invalid column type Text",
+        ),
+    ] {
+        let backup = dir.0.join(format!("{name}.obsbackup"));
+        db.back_up(&backup).unwrap();
+        {
+            let c = rusqlite::Connection::open(&backup).unwrap();
+            c.execute_batch(damage).unwrap();
+        }
+        let err = UserStore::backup_contents(&backup).unwrap_err().to_string();
+        assert!(
+            err.contains("not a backup") && err.contains(why),
+            "{name}: {err}"
+        );
+        let err = db.restore(&backup).unwrap_err().to_string();
+        assert!(err.contains(why), "{name}: {err}");
+        assert_eq!(db.annotation_dump().unwrap(), before, "{name}");
+    }
+    assert!(
+        !db.backups()
+            .unwrap()
+            .iter()
+            .any(|b| b.kind == BackupKind::Safety)
+    );
+    drop(db);
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    assert_eq!(db.annotation_dump().unwrap(), before);
+}
+
+/// Back up now never writes over the User database or SQLite's files beside it, whatever path
+/// names them; the database goes on working.
+#[test]
+fn back_up_refuses_the_user_database_and_its_sidecar_files() {
+    let dir = Dir::new("own-file");
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    filled(&db);
+    let before = db.annotation_dump().unwrap();
+    std::fs::create_dir_all(dir.0.join("sub")).unwrap();
+    let mut refused = vec![
+        dir.db(),
+        dir.0.join(".").join("user.db"),
+        dir.0.join("sub").join("..").join("user.db"),
+        dir.0.join("user.db-wal"),
+        dir.0.join("user.db-shm"),
+        dir.0.join("user.db-journal"),
+    ];
+    let hard_link = dir.0.join("linked.db");
+    std::fs::hard_link(dir.db(), &hard_link).unwrap();
+    refused.push(hard_link);
+    #[cfg(unix)]
+    {
+        let symlink = dir.0.join("sub").join("alias.db");
+        std::os::unix::fs::symlink(dir.db(), &symlink).unwrap();
+        refused.push(symlink);
+    }
+    for dest in &refused {
+        let err = db.back_up(dest).unwrap_err();
+        assert!(
+            matches!(&err, StoreError::Rejected(m) if m.contains("where your data is kept")),
+            "{}: {err}",
+            dest.display()
+        );
+        assert!(db.refuse_own_file(dest).is_err(), "{}", dest.display());
+    }
+    // Another file beside it is fine.
+    db.refuse_own_file(&dir.0.join("user.db.obsbackup"))
+        .unwrap();
+    // The database still reads and writes, and reopens with everything.
+    assert_eq!(db.annotation_dump().unwrap(), before);
+    db.save_layout("After", "{}").unwrap();
+    drop(db);
+    let (db, _) = UserStore::open(&dir.db()).unwrap();
+    assert_eq!(db.annotation_dump().unwrap(), before);
+    assert_eq!(db.layouts().unwrap(), ["After", "Study"]);
+}

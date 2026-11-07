@@ -193,7 +193,9 @@ impl Session {
                 return Err(e);
             }
         };
-        // Reload everything the Session keeps of the User database, as at launch.
+        // Reload everything the Session keeps of the User database, as at launch: a
+        // preference the Backup does not have is back at its default.
+        self.forget_user_preferences();
         self.attach_user(user);
         self.after_restore();
         self.last_restore = Some(LastRestore {
@@ -239,8 +241,9 @@ impl Session {
 
     /// Export everything: a zip of Markdown (each Notebook's Notes) and JSON (every table of
     /// the User database) at `dest`. It is a copy for reading elsewhere; the app restores
-    /// Backups, not exports.
+    /// Backups, not exports. `dest` is never the User database itself.
     pub fn export_everything(&self, dest: &Path) -> Result<DataExport, String> {
+        self.user_db()?.refuse_own_file(dest)?;
         let files = self.data_export_files()?;
         let annotations = self.user_db()?.annotations(None)?.len();
         let mut out = std::io::Cursor::new(Vec::new());

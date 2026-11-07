@@ -36,6 +36,45 @@ impl Fixture {
     fn file(&self, name: &str) -> PathBuf {
         self.root.join(name)
     }
+
+    /// A Session launched on a copy of `backup`: what a restore of it must leave.
+    fn launched_on(&self, backup: &std::path::Path) -> Session {
+        let db = self.root.join("launched").join("user.db");
+        let _ = std::fs::remove_dir_all(db.parent().unwrap());
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        std::fs::copy(backup, &db).unwrap();
+        let mut s = Session::new(JobMode::Inline);
+        assert!(s.library.scan(&self.root.join("library")).is_empty());
+        let (store, _) = obs_store::UserStore::open(&db).unwrap();
+        s.attach_user(Box::new(store));
+        s
+    }
+}
+
+/// The preferences two Sessions must agree on after a restore.
+fn assert_same_preferences(restored: &mut Session, launched: &mut Session) {
+    assert_eq!(restored.text, launched.text);
+    assert_eq!(restored.appearance, launched.appearance);
+    assert_eq!(restored.fonts, launched.fonts);
+    assert_eq!(restored.toolbar, launched.toolbar);
+    assert_eq!(restored.copy_verses, launched.copy_verses);
+    assert_eq!(restored.home_settings(), launched.home_settings());
+    assert_eq!(restored.key_bindings(), launched.key_bindings());
+    for g in Guide::ALL {
+        assert_eq!(
+            restored.guides.arrangement(g),
+            launched.guides.arrangement(g),
+            "{g:?}"
+        );
+    }
+    for setting in crate::settings::SETTINGS {
+        assert_eq!(
+            restored.setting_is_default(setting.id),
+            launched.setting_is_default(setting.id),
+            "{}",
+            setting.id
+        );
+    }
 }
 
 impl Drop for Fixture {
@@ -195,6 +234,103 @@ fn a_restore_reloads_settings_layouts_and_writes_the_workspace_as_it_is() {
         s.user.as_ref().unwrap().last_session().unwrap().as_deref(),
         Some(workspace.as_str())
     );
+}
+
+/// A restore leaves every preference as a launch on the Backup would: one the Backup does
+/// not have (it was made before the preference was changed) is back at its default, not kept
+/// from before the restore.
+#[test]
+fn a_restore_puts_back_the_default_of_every_preference_the_backup_lacks() {
+    let f = Fixture::new("defaults");
+    let mut s = f.session();
+    let backup = f.file("fresh.obsbackup");
+    s.run("data.back_up", &path(&backup)).unwrap();
+
+    let resettable: Vec<&str> = (crate::settings::SETTINGS.iter())
+        .filter(|s| s.has_reset())
+        .map(|s| s.id)
+        .collect();
+    for id in &resettable {
+        crate::settings_tests::change(&mut s, id);
+        assert_eq!(s.setting_is_default(id), Some(false), "{id} did not change");
+    }
+    s.run(
+        "copy.option",
+        &json!({ "name": "layout", "value": "verse_per_line" }),
+    )
+    .unwrap();
+    s.run("copy.preset_save", &json!({ "name": "Handout" }))
+        .unwrap();
+    assert_ne!(s.copy_verses, CopyVerses::default());
+
+    s.run("data.restore", &path(&backup)).unwrap();
+    for id in &resettable {
+        assert_eq!(s.setting_is_default(id), Some(true), "{id} was kept");
+    }
+    assert_eq!(s.text.size, obs_layout::TextSettings::default().size);
+    assert_eq!(s.fonts, FontChoices::default());
+    assert_eq!(s.copy_verses, CopyVerses::default());
+    assert_same_preferences(&mut s, &mut f.launched_on(&backup));
+}
+
+/// A Backup with View preferences but no font chosen leaves no font chosen, and keeps its own
+/// text size.
+#[test]
+fn a_restore_without_font_choices_leaves_the_bundled_fonts() {
+    let f = Fixture::new("fonts");
+    let mut s = f.session();
+    s.run("view.text_larger", &Value::Null).unwrap();
+    let larger = s.text.size;
+    let backup = f.file("larger.obsbackup");
+    s.run("data.back_up", &path(&backup)).unwrap();
+
+    s.run(
+        "view.font",
+        &json!({ "slot": "latin", "family": "Charis SIL" }),
+    )
+    .unwrap();
+    s.run("view.text_larger", &Value::Null).unwrap();
+    assert!(s.fonts.get(FontSlot::Latin).is_some());
+
+    s.run("data.restore", &path(&backup)).unwrap();
+    assert_eq!(s.fonts, FontChoices::default());
+    assert_eq!(s.text.size, larger);
+    assert_same_preferences(&mut s, &mut f.launched_on(&backup));
+}
+
+/// Back up now and Export everything never write over the User database or SQLite's files
+/// beside it; it goes on saving and reopens with everything.
+#[test]
+fn back_up_and_export_refuse_the_user_database_itself() {
+    let f = Fixture::new("own-file");
+    let mut s = f.session();
+    romans(&mut s);
+    let before = dump(&s);
+    let db = f.file("user.db");
+    for dest in [
+        db.clone(),
+        f.root.join(".").join("user.db"),
+        f.root.join("library").join("..").join("user.db"),
+        f.file("user.db-wal"),
+        f.file("user.db-shm"),
+    ] {
+        for command in ["data.back_up", "data.export"] {
+            let err = s.run(command, &path(&dest)).unwrap_err().to_string();
+            assert!(
+                err.contains("where your data is kept"),
+                "{command} {}: {err}",
+                dest.display()
+            );
+        }
+    }
+    assert_eq!(dump(&s), before);
+    s.run("annotation.note", &json!({ "body": "still saving" }))
+        .unwrap();
+    let after = dump(&s);
+    drop(s);
+    let s = f.session();
+    assert_eq!(dump(&s), after);
+    assert_eq!(s.annotations(None).unwrap().len(), 4);
 }
 
 #[test]
