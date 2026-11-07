@@ -511,6 +511,29 @@ fn esc_closes_a_pinned_footnote_before_it_unpins_word_info() {
     );
 }
 
+/// Review repro: with the Tab's Find bar open, Esc on a pinned Footnote closes the Footnote
+/// alone (the Find row in the header runs before the pane that consumes it); the next Esc
+/// closes the Find bar.
+#[test]
+fn esc_closes_a_pinned_footnote_before_the_find_bar() {
+    let (mut h, _files, tab) = bsb("esc-find", "Jn 1:19");
+    h.shell.run("tab.find", &json!({ "tab": tab.0 }));
+    h.frames(3);
+    let find_open = |h: &Harness| h.shell.st.tabs[&tab].find.is_some();
+    assert!(find_open(&h), "the Find bar is open");
+    focus_marker(&mut h, tab, "Isaiah 40:3");
+    press(&mut h, Key::Enter);
+    h.frames(3);
+    assert!(popover(&h).is_some_and(|p| p.pinned));
+    press(&mut h, Key::Escape);
+    h.frames(2);
+    assert!(popover(&h).is_none(), "Esc closes the Footnote");
+    assert!(find_open(&h), "the Find bar stays open");
+    press(&mut h, Key::Escape);
+    h.frames(2);
+    assert!(!find_open(&h), "the next Esc closes the Find bar");
+}
+
 /// Space on a focused marker pins its popover, even with the pointer resting on the text:
 /// the text does not page first and carry the marker away.
 #[test]

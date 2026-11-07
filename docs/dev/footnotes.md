@@ -22,8 +22,8 @@ the pointer or focus stays on it, however long it rests there, even after anothe
 popover has shown meanwhile (the pointer on another marker, the focus still on this one): it
 shows again once both have left it, or at once on a click (Enter). Resting the pointer on another marker, in any pane, leaves
 a pinned popover (clicking that marker replaces it). A shown popover has first refusal on Esc: a
-command bound to Esc (Unpin Word Info) waits for the next Esc while one is on screen in that
-window, and the popover consumes the Esc it closes on, so no floating window behind it closes too.
+command bound to Esc (Unpin Word Info) and the Tab's Find bar wait for the next Esc while one is
+on screen in that window, and the popover consumes the Esc it closes on, so no floating window behind it closes too.
 Space on a focused marker activates it; no reading pane pages on that Space, neither the
 marker's nor another one under the pointer. A note
 taller than `MAX_BODY_HEIGHT` (or than the window allows) scrolls inside the popover, which stays
