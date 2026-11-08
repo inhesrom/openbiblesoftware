@@ -574,7 +574,8 @@ fn study_golden_sections_open_by_passage_and_dictionary_alias() {
                 .any(|s| matches!(s.kind, SpanKind::ScriptureRef { .. })),
             "{id}"
         );
-        if id == "easton" {
+        // Easton's TEI titles each entry; Smith's opens with its headword too (#261).
+        if id == "easton" || id == "smith" {
             let blocks = obs_layout::unit_blocks(&unit);
             assert_eq!(blocks[0].kind, obs_layout::BlockKind::Heading(2));
             assert_eq!(&unit.text[blocks[0].range.clone()], "Abraham");
