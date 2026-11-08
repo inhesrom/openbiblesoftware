@@ -860,6 +860,7 @@ fn a_revision_that_only_corrects_the_verse_map_is_searched_through_the_new_map()
 /// AUD-SEARCH-INDEX-7 (#257): a merged verse (one Bible Verse mapped to Standard Gen 1:1-2)
 /// found in a scope of Gen 1:2 is in the Gen 1:2 row, with the other Bible's Gen 1:2.
 #[test]
+#[allow(clippy::single_range_in_vec_init)]
 fn a_merged_verse_is_in_the_row_of_its_standard_verse_inside_the_scope() {
     let merged = BibleOutline::new(
         &[(v(Book::Genesis, 1, 1), 1)],
