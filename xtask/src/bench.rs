@@ -1,6 +1,9 @@
 //! `cargo xtask bench`: run the headless reading-pane benchmark and its feature scenarios
 //! (#183) in release mode and fail if any number is past its threshold in `xtask/bench.toml`
 //! (#19), or a feature scenario listed there did not run.
+//!
+//! `cargo xtask bench --scale` runs the scale scenario (#227) instead: the app over a
+//! generated library of 2,000 Resources, held to `[scale]` in `xtask/bench.toml`.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -18,6 +21,46 @@ pub struct Thresholds {
     pub budget: BudgetLimits,
     /// Feature scenarios (#183) by name; every one listed must be in the report.
     pub features: BTreeMap<String, FeatureLimits>,
+    pub scale: ScaleLimits,
+}
+
+/// The scale scenario's budgets (#227).
+#[derive(Debug, Deserialize)]
+pub struct ScaleLimits {
+    /// Resources the library must have: the scenario fails on a smaller one.
+    pub resources: usize,
+    pub max_cold_start_ms: f64,
+    pub max_library_filter_ms: f64,
+    /// The Library Tab scrolled and typed into, as a feature scenario.
+    pub library: FeatureLimits,
+    pub max_peak_rss_mib: f64,
+    pub min_panels: usize,
+}
+
+/// What `openbible --bench --scale` reports (`obs_ui_egui::bench::scale::ScaleReport`).
+#[derive(Debug, Deserialize)]
+pub struct ScaleReport {
+    pub resources: usize,
+    pub cold_start_ms: f64,
+    pub launch_ms: f64,
+    pub library_filter_ms_max: f64,
+    pub library_filter_ms_p50: f64,
+    pub library: Option<Scenario>,
+    pub get_resources_filter_ms_max: f64,
+    pub get_resources: Option<Scenario>,
+    pub library_search: String,
+    pub library_search_ms: f64,
+    pub library_search_resources: usize,
+    pub library_search_hits: usize,
+    pub passage_guide_ms: f64,
+    pub passage_guide_moved_ms: f64,
+    pub panels: usize,
+    pub rss_mib: f64,
+    pub peak_rss_mib: f64,
+    #[serde(default)]
+    pub rss_after: Vec<(String, f64)>,
+    #[serde(default)]
+    pub errors: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -156,51 +199,227 @@ pub fn violations(report: &Report, t: &Thresholds) -> Vec<String> {
             check(false, format!("{name}: not measured"));
             continue;
         };
-        check(
-            s.missed_pct <= limits.max_missed_pct,
-            format!(
-                "{name}: {:.2}% missed frames (max {}%)",
-                s.missed_pct, limits.max_missed_pct
-            ),
-        );
-        match s.sync_layout_p99_ms {
-            Some(ms) => check(
-                ms <= limits.max_sync_p99_ms,
-                format!(
-                    "{name}: synchronous work p99 {ms:.2} ms a frame (max {})",
-                    limits.max_sync_p99_ms
-                ),
-            ),
-            None => check(false, format!("{name}: no synchronous work measured")),
-        }
-        if let Some(max) = limits.max_settle_frames {
-            match s.settle_frames_max {
-                Some(n) => check(
-                    n <= max,
-                    format!("{name}: an action took {n} frames to show (max {max})"),
-                ),
-                None => check(false, format!("{name}: no settle frames measured")),
-            }
-        }
-        if let Some(max) = limits.max_placeholder_frames {
-            check(
-                s.placeholder_frames <= max,
-                format!(
-                    "{name}: {} placeholder frames (max {max})",
-                    s.placeholder_frames
-                ),
-            );
+        for m in feature_violations(name, s, limits) {
+            check(false, m);
         }
     }
     out
 }
 
-pub fn run(root: &Path) -> Result<()> {
-    let thresholds: Thresholds = toml::from_str(
+/// The feature budgets `limits` holds `name`'s scenario `s` to.
+fn feature_violations(name: &str, s: &Scenario, limits: &FeatureLimits) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut check = |ok: bool, what: String| {
+        if !ok {
+            out.push(what);
+        }
+    };
+    check(
+        s.missed_pct <= limits.max_missed_pct,
+        format!(
+            "{name}: {:.2}% missed frames (max {}%)",
+            s.missed_pct, limits.max_missed_pct
+        ),
+    );
+    match s.sync_layout_p99_ms {
+        Some(ms) => check(
+            ms <= limits.max_sync_p99_ms,
+            format!(
+                "{name}: synchronous work p99 {ms:.2} ms a frame (max {})",
+                limits.max_sync_p99_ms
+            ),
+        ),
+        None => check(false, format!("{name}: no synchronous work measured")),
+    }
+    if let Some(max) = limits.max_settle_frames {
+        match s.settle_frames_max {
+            Some(n) => check(
+                n <= max,
+                format!("{name}: an action took {n} frames to show (max {max})"),
+            ),
+            None => check(false, format!("{name}: no settle frames measured")),
+        }
+    }
+    if let Some(max) = limits.max_placeholder_frames {
+        check(
+            s.placeholder_frames <= max,
+            format!(
+                "{name}: {} placeholder frames (max {max})",
+                s.placeholder_frames
+            ),
+        );
+    }
+    out
+}
+
+/// Every `[scale]` budget the scale report breaks, as messages.
+pub fn scale_violations(r: &ScaleReport, t: &ScaleLimits) -> Vec<String> {
+    let mut out: Vec<String> = r
+        .errors
+        .iter()
+        .map(|e| format!("scale step failed: {e}"))
+        .collect();
+    let mut check = |ok: bool, what: String| {
+        if !ok {
+            out.push(what);
+        }
+    };
+    check(
+        r.resources >= t.resources,
+        format!(
+            "scale: the library has {} Resources (needs {})",
+            r.resources, t.resources
+        ),
+    );
+    check(
+        r.cold_start_ms <= t.max_cold_start_ms,
+        format!(
+            "scale: cold start {:.0} ms (max {})",
+            r.cold_start_ms, t.max_cold_start_ms
+        ),
+    );
+    check(
+        r.library_filter_ms_max <= t.max_library_filter_ms,
+        format!(
+            "scale: the Library Tool filtered in {:.1} ms (max {})",
+            r.library_filter_ms_max, t.max_library_filter_ms
+        ),
+    );
+    check(
+        r.peak_rss_mib <= t.max_peak_rss_mib,
+        format!(
+            "scale: peak RSS {:.0} MiB (max {})",
+            r.peak_rss_mib, t.max_peak_rss_mib
+        ),
+    );
+    check(
+        r.panels >= t.min_panels,
+        format!(
+            "scale: {} Panels open when memory was measured (needs {})",
+            r.panels, t.min_panels
+        ),
+    );
+    match &r.library {
+        Some(s) => out.extend(feature_violations("scale library", s, &t.library)),
+        None => out.push("scale library: not measured".into()),
+    }
+    out
+}
+
+fn thresholds(root: &Path) -> Result<Thresholds> {
+    toml::from_str(
         &std::fs::read_to_string(root.join("xtask/bench.toml"))
             .context("cannot read xtask/bench.toml")?,
     )
-    .context("cannot parse xtask/bench.toml")?;
+    .context("cannot parse xtask/bench.toml")
+}
+
+/// `cargo xtask bench --scale [--dir DIR] [--resources N] [--quick]`: the scale scenario
+/// (#227). The library is generated under `DIR` (default `target/bench-scale`) the first time
+/// and kept for later runs; it needs about 22 GB of disk, nearly none on a filesystem that
+/// clones files (APFS, Btrfs, XFS).
+pub fn run_scale(root: &Path, args: &[String]) -> Result<()> {
+    let thresholds = thresholds(root)?;
+    let limits = &thresholds.scale;
+    let mut dir = root.join("target/bench-scale");
+    let mut extra: Vec<String> = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--scale" => {}
+            "--dir" => dir = it.next().context("--dir needs a folder")?.into(),
+            "--resources" => {
+                extra.push(a.clone());
+                extra.push(it.next().context("--resources needs a number")?.clone());
+            }
+            "--quick" => extra.push(a.clone()),
+            other => bail!("bench --scale: unknown option {other}"),
+        }
+    }
+    let json = root.join("target/bench-scale-report.json");
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let status = Command::new(&cargo)
+        .args([
+            "run",
+            "--release",
+            "--locked",
+            "--quiet",
+            "-p",
+            "openbible",
+            "--",
+            "--bench",
+            "--scale",
+            "--hz",
+        ])
+        .arg(thresholds.refresh_hz.to_string())
+        .arg("--dir")
+        .arg(&dir)
+        .args(&extra)
+        .arg("--json")
+        .arg(&json)
+        .current_dir(root)
+        .stdout(std::process::Stdio::null())
+        .status()
+        .context("could not run the scale bench")?;
+    if !status.success() {
+        bail!("the scale bench exited with {status}");
+    }
+    let report: ScaleReport = serde_json::from_str(&std::fs::read_to_string(&json)?)
+        .context("cannot parse the scale bench report")?;
+    eprintln!(
+        "bench --scale at {} Hz, {} Resources:",
+        thresholds.refresh_hz, report.resources
+    );
+    eprintln!(
+        "  cold start {:.0} ms (launch {:.0} ms); Library filter max {:.1} ms, median {:.1} ms",
+        report.cold_start_ms,
+        report.launch_ms,
+        report.library_filter_ms_max,
+        report.library_filter_ms_p50
+    );
+    for s in report.library.iter().chain(&report.get_resources) {
+        eprintln!(
+            "  {:<16} missed {:>5.2}%  frame CPU p50 {:>5.2} ms, p99 {:>5.2} ms  sync p99 {:>5.2} ms",
+            s.name,
+            s.missed_pct,
+            s.cpu_p50_ms,
+            s.cpu_p99_ms,
+            s.sync_layout_p99_ms.unwrap_or(0.0)
+        );
+    }
+    eprintln!(
+        "  Get Resources filter max {:.1} ms; Library search {:?}: {} hits in {} Resources, {:.0} ms",
+        report.get_resources_filter_ms_max,
+        report.library_search,
+        report.library_search_hits,
+        report.library_search_resources,
+        report.library_search_ms
+    );
+    eprintln!(
+        "  Passage Guide {:.0} ms opened, {:.0} ms moved; {} Panels; RSS {:.0} MiB, peak {:.0} MiB",
+        report.passage_guide_ms,
+        report.passage_guide_moved_ms,
+        report.panels,
+        report.rss_mib,
+        report.peak_rss_mib
+    );
+    let steps: Vec<String> = (report.rss_after.iter())
+        .map(|(step, mib)| format!("{step} {mib:.0}"))
+        .collect();
+    eprintln!("  RSS after each step, MiB: {}", steps.join(", "));
+    let v = scale_violations(&report, limits);
+    if v.is_empty() {
+        eprintln!("bench --scale: all thresholds met");
+        return Ok(());
+    }
+    for m in &v {
+        eprintln!("bench --scale: REGRESSION {m}");
+    }
+    bail!("{} scale threshold(s) exceeded", v.len())
+}
+
+pub fn run(root: &Path) -> Result<()> {
+    let thresholds = thresholds(root)?;
     let json = root.join("target/bench-report.json");
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let status = Command::new(&cargo)
@@ -378,6 +597,72 @@ mod tests {
             );
         }
         assert_eq!(v.len(), 5, "{v:?}");
+    }
+
+    fn scale_report() -> ScaleReport {
+        ScaleReport {
+            resources: 2001,
+            cold_start_ms: 900.0,
+            launch_ms: 700.0,
+            library_filter_ms_max: 6.0,
+            library_filter_ms_p50: 1.0,
+            library: Some(scenario("library", 0.0, 0, Some(1))),
+            get_resources_filter_ms_max: 6.0,
+            get_resources: Some(scenario("get-resources", 0.0, 0, Some(1))),
+            library_search: "lord".into(),
+            library_search_ms: 800.0,
+            library_search_resources: 240,
+            library_search_hits: 190_000,
+            passage_guide_ms: 1800.0,
+            passage_guide_moved_ms: 100.0,
+            panels: 6,
+            rss_mib: 400.0,
+            peak_rss_mib: 400.0,
+            rss_after: Vec::new(),
+            errors: Vec::new(),
+        }
+    }
+
+    /// The scale gate holds #227's criteria: cold start at most twice #19's floor-machine
+    /// target, the Library Tool filtering in 50 ms, peak RSS at most 500 MB with 6 Panels.
+    #[test]
+    fn the_scale_gate_holds_the_issue_targets() {
+        let t = thresholds().scale;
+        assert_eq!(t.resources, 2000);
+        assert!((t.max_cold_start_ms - 2.0 * 1500.0).abs() < f64::EPSILON);
+        assert!((t.max_library_filter_ms - 50.0).abs() < f64::EPSILON);
+        assert!((t.max_peak_rss_mib - 500.0).abs() < f64::EPSILON);
+        assert_eq!(t.min_panels, 6);
+        assert_eq!(scale_violations(&scale_report(), &t), Vec::<String>::new());
+        let mut r = scale_report();
+        r.resources = 120;
+        r.cold_start_ms = 3200.0;
+        r.library_filter_ms_max = 61.0;
+        r.peak_rss_mib = 951.0;
+        r.panels = 3;
+        if let Some(s) = r.library.as_mut() {
+            s.sync_layout_p99_ms = Some(4.1);
+        }
+        r.errors
+            .push("passage guide: never saw every section".into());
+        assert_eq!(
+            scale_violations(&r, &t),
+            [
+                "scale step failed: passage guide: never saw every section",
+                "scale: the library has 120 Resources (needs 2000)",
+                "scale: cold start 3200 ms (max 3000)",
+                "scale: the Library Tool filtered in 61.0 ms (max 50)",
+                "scale: peak RSS 951 MiB (max 500)",
+                "scale: 3 Panels open when memory was measured (needs 6)",
+                "scale library: synchronous work p99 4.10 ms a frame (max 2)",
+            ]
+        );
+        r.library = None;
+        assert!(
+            scale_violations(&r, &t)
+                .iter()
+                .any(|m| m == "scale library: not measured")
+        );
     }
 
     /// 3 ms of synchronous work in every frame fits a 60 Hz frame (no missed frames) but is

@@ -573,8 +573,9 @@ impl Session {
         let Some(user) = self.user.as_deref() else {
             return;
         };
-        let known = match user.resource_names() {
-            Ok(known) => known,
+        let known: std::collections::HashSet<(String, String, String)> = match user.resource_names()
+        {
+            Ok(known) => known.into_iter().collect(),
             Err(e) => {
                 self.workspace.push_effect(Effect::Message(format!(
                     "Could not read the Resource names: {e}"

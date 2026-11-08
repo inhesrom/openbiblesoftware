@@ -403,30 +403,31 @@ pub struct SearchedResource {
 }
 
 /// Each Resource's hits (best first) → groups in the given order (Resources without hits
-/// left out) and their rows.
+/// left out) and their rows. The hits move into the rows: a search of a big library can
+/// find a million paragraphs, which are never held twice (#227).
 pub fn library_rows(
-    found: &[(SearchedResource, Vec<SearchHit>)],
+    found: Vec<(SearchedResource, Vec<SearchHit>)>,
 ) -> (Vec<LibraryGroup>, Vec<LibraryRow>) {
     let mut groups = Vec::new();
-    let mut rows = Vec::new();
+    let mut rows = Vec::with_capacity(found.iter().map(|(_, hits)| hits.len()).sum());
     for (resource, hits) in found {
         if hits.is_empty() {
             continue;
         }
         let group = groups.len();
         let start = rows.len();
-        rows.extend(hits.iter().map(|h| LibraryRow {
+        rows.extend(hits.into_iter().map(|h| LibraryRow {
             group,
-            unit: h.unit.clone(),
-            range: h.range.clone(),
-            key: h.key.clone(),
-            title: h.title.clone(),
+            unit: h.unit,
+            range: h.range,
+            key: h.key,
+            title: h.title,
             score: h.score,
         }));
         groups.push(LibraryGroup {
-            id: resource.id.clone(),
-            abbreviation: resource.abbreviation.clone(),
-            title: resource.title.clone(),
+            id: resource.id,
+            abbreviation: resource.abbreviation,
+            title: resource.title,
             resource_type: resource.resource_type,
             rtl: resource.rtl,
             rows: start..rows.len(),
@@ -773,38 +774,36 @@ mod desktop {
             order: HitOrder::Relevance,
             limit: None,
         };
-        let failed = input.failed.clone();
+        let failed = input.failed;
         let mut damaged = Vec::new();
         let mut found = Vec::new();
         let mut obrs = Vec::new();
-        for (resource, obr, index) in &input.resources {
+        // Each index is closed once searched: a library of hundreds of Resources never holds
+        // every index's page cache at once (#227).
+        for (resource, obr, index) in input.resources {
             if ctx.is_cancelled() {
                 return Err("cancelled".into());
             }
             match index.search(&compiled, &options) {
                 Ok(hits) => {
                     if !hits.is_empty() {
-                        obrs.push(Some(obr.clone()));
+                        obrs.push(Some(obr));
                     }
-                    found.push((resource.clone(), hits));
+                    found.push((resource, hits));
                 }
-                Err(e) => damaged.push((
-                    resource.id.clone(),
-                    resource.abbreviation.clone(),
-                    e.to_string(),
-                )),
+                Err(e) => damaged.push((resource.id, resource.abbreviation, e.to_string())),
             }
         }
-        let (groups, rows) = library_rows(&found);
+        let (groups, rows) = library_rows(found);
         let results = Arc::new(LibraryResults {
             query: input.query.clone(),
             searched: input.searched_count,
             groups,
             rows,
             highlighter,
-            indexing: input.indexing.clone(),
+            indexing: input.indexing,
             failed,
-            stale: input.stale.clone(),
+            stale: input.stale,
             elapsed_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         });
         let first_page = page_snippets(&results, &obrs, 0);

@@ -47,17 +47,17 @@ const TOPICS: usize = 1_000;
 pub(crate) const LONG_TOPICS: [(&str, usize, usize); 2] = [("Prayer", 60, 20), ("Faith", 30, 15)];
 
 /// A deterministic xorshift generator.
-struct Rng(u64);
+pub(super) struct Rng(pub(super) u64);
 
 impl Rng {
-    fn below(&mut self, n: u64) -> u64 {
+    pub(super) fn below(&mut self, n: u64) -> u64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
         self.0 ^= self.0 << 17;
         self.0 % n.max(1)
     }
 
-    fn pick<'a, T>(&mut self, items: &'a [T]) -> &'a T {
+    pub(super) fn pick<'a, T>(&mut self, items: &'a [T]) -> &'a T {
         let i = usize::try_from(self.below(items.len() as u64)).unwrap_or(0);
         &items[i]
     }
@@ -69,28 +69,32 @@ const SYLLABLES: &[&str] = &[
     "ta", "li", "jo", "seph", "re", "sim", "e", "on",
 ];
 
-const WORDS: &[&str] = &[
+pub(super) const WORDS: &[&str] = &[
     "and", "the", "LORD", "said", "unto", "of", "that", "they", "me", "an", "every", "man", "his",
     "ye", "shall", "my", "this", "is", "which", "in", "to", "be", "for", "with",
 ];
 
-fn made_up_word(rng: &mut Rng, syllables: u64) -> String {
+pub(super) fn made_up_word(rng: &mut Rng, syllables: u64) -> String {
     (0..syllables).map(|_| *rng.pick(SYLLABLES)).collect()
 }
 
-fn capitalized(word: &str) -> String {
+pub(super) fn capitalized(word: &str) -> String {
     let mut c = word.chars();
     c.next()
         .map(|f| f.to_uppercase().chain(c).collect())
         .unwrap_or_default()
 }
 
-/// An English Bible of `books` with short verses (6–17 words) and a paragraph every 3–8
-/// verses; untagged. Several of these make a whole-Bible search across Bibles.
+/// An English Bible of `books` with verses of `words` words (6–17 make short verses; a real
+/// English Bible averages about 25) and a paragraph every 3–8 verses. With `strongs`, seven
+/// words in ten are Tagged words with a Strong's number only, as in the KJV with Strong's;
+/// otherwise untagged. Several of these make a whole-Bible search across Bibles.
 pub(crate) fn english_bible(
     id: &str,
     abbreviation: &str,
     books: &[Book],
+    words: std::ops::Range<u64>,
+    strongs: bool,
     seed: u64,
 ) -> Option<Resource> {
     let mut m = Manifest::new(
@@ -109,6 +113,12 @@ pub(crate) fn english_bible(
         let mut text = String::new();
         let mut verses = Vec::new();
         let mut paras = Vec::new();
+        let mut tagged = Vec::new();
+        // Strong's numbers of the book's language: Hebrew 1–8674, Greek 1–5624.
+        let (prefix, numbers) = match book.testament() {
+            obs_scripture::Testament::Old => ('H', 8674),
+            obs_scripture::Testament::New => ('G', 5624),
+        };
         for chapter in 1..=Standard.chapter_count(book) {
             let last = Standard.last_verse(book, chapter).unwrap_or(1);
             let mut para_start = text.len();
@@ -118,8 +128,8 @@ pub(crate) fn english_bible(
                     text.push(' ');
                 }
                 let start = text.len();
-                let words = 6 + rng.below(12);
-                let verse: Vec<String> = (0..words)
+                let count = words.start + rng.below(words.end - words.start);
+                let verse: Vec<String> = (0..count)
                     .map(|_| {
                         if rng.below(10) < 6 {
                             (*rng.pick(WORDS)).to_string()
@@ -129,6 +139,17 @@ pub(crate) fn english_bible(
                         }
                     })
                     .collect();
+                if strongs {
+                    let mut at = start;
+                    for w in &verse {
+                        if rng.below(10) < 7
+                            && let Ok(n) = format!("{prefix}{}", 1 + rng.below(numbers)).parse()
+                        {
+                            tagged.push((at..at + w.len(), MorphemePart::new(n)));
+                        }
+                        at += w.len() + 1;
+                    }
+                }
                 text.push_str(&verse.join(" "));
                 text.push('.');
                 verses.push((start..text.len(), Verse::new(book, chapter, v)));
@@ -158,6 +179,9 @@ pub(crate) fn english_bible(
         }
         for (r, v) in verses {
             b.add_verse(&unit, r, v, v.verse);
+        }
+        for (r, part) in tagged {
+            b.add_span(&unit, r, SpanKind::TaggedWord { parts: vec![part] });
         }
     }
     b.build().ok()

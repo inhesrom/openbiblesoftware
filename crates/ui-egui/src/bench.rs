@@ -14,6 +14,8 @@
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod library;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod scale;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod tools;
 
 /// The Shell-driven feature scenarios, in report order.

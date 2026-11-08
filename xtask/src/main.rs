@@ -31,6 +31,7 @@ tasks:
 
 performance:
   bench    headless reading-pane and feature benchmark; fails past the thresholds in xtask/bench.toml
+           (`--scale`: the app over a generated 2,000-Resource library, a manual gate; docs/dev/bench.md)
 
 starter library:
   starter  build dist/starter/*.obr from starter/sources.toml (`cargo xtask starter --help`)
@@ -63,7 +64,14 @@ fn run() -> Result<()> {
             eprintln!("\nxtask ci: all gates passed");
             Ok(())
         }
-        "bench" => bench::run(&root),
+        "bench" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            if rest.iter().any(|a| a == "--scale") {
+                bench::run_scale(&root, &rest)
+            } else {
+                bench::run(&root)
+            }
+        }
         "starter" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             starter::run(&root, &rest)

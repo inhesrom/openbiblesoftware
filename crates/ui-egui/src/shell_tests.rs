@@ -1833,6 +1833,78 @@ mod library {
         assert!(h.find("Test Dictionary").is_some());
     }
 
+    /// A library of thousands of Resources (#227): the Library Tab draws only the rows in
+    /// view, each type's heading above its rows, and scrolling reaches the last one.
+    #[test]
+    fn a_big_library_draws_only_the_rows_in_view_and_scrolls_to_the_last() {
+        let mut h = Harness::new();
+        for n in 0..400 {
+            h.shell.st.session.library.add(LibraryEntry {
+                manifest: obs_model::Manifest::new(
+                    format!("dict-{n:03}"),
+                    format!("Dictionary {n:03}"),
+                    format!("D{n:03}"),
+                    obs_model::ResourceType::Dictionary,
+                    "en",
+                ),
+                path: format!("/nonexistent/dict-{n:03}.obr").into(),
+            });
+        }
+        h.frames(2);
+        let panel = library_panel(&h);
+        let drawn = |h: &Harness| -> Vec<String> {
+            let mut d: Vec<(f32, String)> = (h.shapes.iter())
+                .filter(|(r, t)| t.starts_with('D') && t.len() == 4 && panel.contains(r.center()))
+                .map(|(r, t)| (r.center().y, t.clone()))
+                .collect();
+            d.sort_by(|a, b| a.0.total_cmp(&b.0));
+            d.into_iter().map(|(_, t)| t).collect()
+        };
+        // Rows laid out, whether or not in view: each row's widgets reach the accessibility
+        // tree.
+        h.ctx.enable_accesskit();
+        h.frames(2);
+        let laid_out = (h.tree.as_ref().unwrap().nodes.iter())
+            .filter(|(_, n)| {
+                [n.label(), n.value()]
+                    .into_iter()
+                    .flatten()
+                    .any(|t| t.starts_with("Dictionary "))
+            })
+            .count();
+        let first = drawn(&h);
+        assert!(!first.is_empty(), "no Dictionary rows in view");
+        let screenful = (panel.height() / ROW_H) as usize + 2;
+        assert!(
+            (1..=screenful).contains(&laid_out),
+            "{laid_out} rows laid out for a panel {} high",
+            panel.height()
+        );
+        // The Bibles' rows and the Dictionaries' heading come before the first Dictionary.
+        let dictionaries = h.find("DICTIONARIES").unwrap();
+        assert!(row_pos(&h, "HNUM").y < dictionaries.top());
+        assert!(dictionaries.bottom() < row_pos(&h, &first[0]).y);
+        h.events.push(Event::PointerMoved(panel.center()));
+        for _ in 0..200 {
+            if drawn(&h).last().map(String::as_str) == Some("D399") {
+                break;
+            }
+            h.events.push(Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(0.0, -400.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers: Modifiers::NONE,
+            });
+            h.frame();
+        }
+        let last = drawn(&h);
+        assert_eq!(last.last().map(String::as_str), Some("D399"), "{last:?}");
+        // Rows in view sit one under the other, in Preferred order, none skipped.
+        let numbers: Vec<u32> = last.iter().map(|t| t[1..].parse().unwrap()).collect();
+        assert!(numbers.windows(2).all(|w| w[1] == w[0] + 1), "{numbers:?}");
+    }
+
     #[test]
     fn reordering_persists_across_restarts_and_changes_which_bible_is_starred() {
         let db = temp_db("preferred-order");

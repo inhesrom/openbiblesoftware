@@ -376,6 +376,15 @@ impl Shell {
         }
     }
 
+    /// Whether Resource Tab `tab` has drawn its text: the block at the top of its view is
+    /// laid out (the scale bench's "first Bible text", #227).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn reading_text_shown(&self, tab: TabId) -> bool {
+        (self.st.tabs.get(&tab))
+            .and_then(|t| t.view.as_ref())
+            .is_some_and(crate::view::ReadingView::top_block_laid)
+    }
+
     pub fn session(&self) -> &Session {
         &self.st.session
     }

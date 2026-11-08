@@ -71,3 +71,79 @@ CI runs the gate three more times, each with a seeded slowdown that must fail it
   shows its feature (unpaced, a few frames each).
 - `cargo test -p obs-ui-egui -- get_resources_holds`: catalog filtering frames count toward
   the 2 ms budget.
+
+## The scale scenario (#227)
+
+`cargo xtask bench --scale` runs the app over a library of 2,000 Resources, as Get Resources
+makes possible, and holds it to `[scale]` in `xtask/bench.toml`. It is a manual gate, not run
+in CI: its library is about 22 GB of `.obr` files and Search index caches, more than a CI
+runner's disk. Run it before a release, and after any change to the launch, the Library Tab,
+Library search or the Passage Guide.
+
+- `cargo xtask bench --scale [--dir DIR] [--quick]`: the gate. The library is generated under
+  `DIR` (default `target/bench-scale`) the first time, in seconds, and kept for later runs
+  (it is made again when the generator or the Search index format changes). On a filesystem
+  that clones files (APFS, Btrfs, XFS) its copies share their data, so it takes about 4 GB of
+  disk; elsewhere the full 22 GB. Delete the folder when done.
+- `cargo run --release -p openbible -- --bench --scale --dir DIR [--resources N] [--quick]
+  [--json OUT]`: the scenario alone, with a smaller library for a quick look (the gate needs
+  2,000).
+
+The library (`crates/ui-egui/src/bench/scale.rs`) mixes kinds as the live SWORD repositories
+do: 880 whole Bibles and New Testaments of about 25 words a verse (one in eight with Strong's
+numbers), 120 Commentaries about the size of Jamieson-Fausset-Brown, 80 Dictionaries about
+Easton's size and 40 Lexicons about Strong's size, in about 40 languages, plus a People & places
+index. Fifteen templates are built once with their Search index caches, then copied under
+2,000 identities (`obs_store::copy_obr_as`, `obs_store::copy_search_index_as`). Every app
+folder (library, User database, caches, logs, Starter library) is inside `DIR`, so a run never
+reads or writes the user's own.
+
+The app is launched once to save the default layout as the Last session (a returning user),
+then again for the measured run, from `main`:
+
+| Measure | What it is | Budget |
+|---|---|---|
+| cold start | `main` to the first frame drawing the ★ Bible's text | ≤ 3 s (twice #19's 1.5 s) |
+| Library filter | each key typed into the Library Tab's Filter box, to the frame showing the list | ≤ 50 ms |
+| `scale library` | the Library Tab typed into, then scrolled | the feature budgets: ≤ 1% missed, sync ≤ 2 ms p99, ≤ 1 settle frame |
+| peak RSS | the process's resident set, at its peak over the run, with 6 Panels open at the end | ≤ 500 MB |
+
+Get Resources (its catalog typed into and scrolled), a Library search for `lord` across every
+Commentary, Dictionary and Lexicon, and a Passage Guide (Romans 8:28, then moved to 9:1) are
+measured and reported, not gated: the regular gate holds their per-frame budgets. On Linux the
+peak RSS is the kernel's; elsewhere a thread samples the resident set every 250 ms.
+
+### Results
+
+On a Mac mini (Apple M6, 16 GB), 2,001 Resources, 60 Hz, before and after the fixes made with
+the scenario (before: the same harness over the earlier code, `--quick`; after: five runs,
+`--quick` and full, with other builds running on the machine):
+
+| | before | after |
+|---|---|---|
+| cold start | 2,462 ms | 1,073–1,462 ms |
+| Library filter, slowest key | 23 ms | 5.7–12 ms (median 0.9–2.4 ms) |
+| Library Tab, synchronous work p99 | 6.0 ms (over 2 ms) | 0.45–1.0 ms |
+| Library search `lord` (240 Resources, 192,434 hits) | 837 ms | 398–976 ms |
+| Passage Guide opened / moved | 2,016 / 124 ms | 970–2,136 / 103–179 ms |
+| RSS with 6 Panels (peak) | 792 MiB | 391–426 MiB |
+
+The gate holds cold start to twice #19's floor-machine target (1.5 s). Of the launch, the
+scale library itself costs about 0.4 s over one of 100 Resources: reading 2,000 manifests
+(about 0.2 s) and checking 2,000 Search index caches (about 0.2 s). Doing either on several
+threads made it about three times slower on macOS, so both stay on one.
+
+The fixes:
+
+- **Preferred order** (`obs_engine::Library`): each Resource's rank was a linear search of
+  the saved order, and applying it re-inserted every Resource one by one, quadratic in the
+  library's size; ranks are now a map and the order is applied in one pass. Recording the
+  known Resource names at launch (`reanchor`) checks a set, not a list.
+- **The Library Tab** lays out only the rows in view (every row keeps its place, for dragging
+  and drop lines), instead of all 2,000 every frame.
+- **The Passage Guide** keeps each Commentary's Passage Keys compact (`CommentarySections`:
+  sorted, each unit id once), about a fifth of a reading Tab's navigation, so 120
+  Commentaries' stay in memory.
+- **Library search** moves each Resource's hits into the result rows instead of copying them,
+  and closes each Search index once searched: a search finding 190,000 paragraphs no longer
+  holds them twice or every index's page cache at once.

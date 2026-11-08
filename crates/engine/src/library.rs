@@ -42,6 +42,9 @@ pub struct Library {
     /// The saved Preferred order: resource ids, best first. Resources not in it (new imports)
     /// go to the bottom of their type. It may name Resources that are not here right now.
     ranking: Vec<String>,
+    /// Each id's place in `ranking` (its first), so ranking a library of thousands stays fast
+    /// (#227).
+    ranks: std::collections::HashMap<String, usize>,
     /// The library directory, once scanned: Remove deletes only `.obr` files inside it.
     dir: Option<PathBuf>,
     /// Last known abbreviations of Resources not in the library (removed in this session, or
@@ -103,9 +106,9 @@ impl Library {
     /// Resource the user has not ranked, its place in [`STARTER_PREFERRED_ORDER`] after every
     /// saved one; else the bottom.
     fn rank(&self, resource_id: &str) -> usize {
-        self.ranking
-            .iter()
-            .position(|r| r == resource_id)
+        self.ranks
+            .get(resource_id)
+            .copied()
             .or_else(|| {
                 STARTER_PREFERRED_ORDER
                     .iter()
@@ -172,18 +175,28 @@ impl Library {
             .iter()
             .map(|e| e.manifest.resource_id.clone())
             .collect();
+        let mut seen: std::collections::HashSet<String> = ids.iter().cloned().collect();
         for r in &self.ranking {
-            if !ids.contains(r) {
+            if seen.insert(r.clone()) {
                 ids.push(r.clone());
             }
         }
         ids
     }
 
+    /// The saved Preferred order becomes `ranking`.
+    fn set_ranking(&mut self, ranking: Vec<String>) {
+        self.ranks.clear();
+        for (i, id) in ranking.iter().enumerate() {
+            self.ranks.entry(id.clone()).or_insert(i);
+        }
+        self.ranking = ranking;
+    }
+
     /// Apply a saved Preferred order: Resources it names move to their rank within their
     /// type; the rest keep their order below them.
     pub fn set_preferred_order(&mut self, ranking: Vec<String>) {
-        self.ranking = ranking;
+        self.set_ranking(ranking);
         let entries = std::mem::take(&mut self.entries);
         let mut ranked: Vec<(usize, usize, LibraryEntry)> = entries
             .into_iter()
@@ -191,9 +204,21 @@ impl Library {
             .map(|(i, e)| (self.rank(&e.manifest.resource_id), i, e))
             .collect();
         ranked.sort_by_key(|(rank, i, _)| (*rank, *i));
-        for (_, _, e) in ranked {
-            self.add(e);
+        // As adding them one by one in that order would: each type's Resources together, in
+        // that order, the types in the order their first Resource comes.
+        let mut types: Vec<ResourceType> = Vec::new();
+        for (_, _, e) in &ranked {
+            if !types.contains(&e.manifest.resource_type) {
+                types.push(e.manifest.resource_type);
+            }
         }
+        let mut by_type: Vec<Vec<LibraryEntry>> = types.iter().map(|_| Vec::new()).collect();
+        for (_, _, e) in ranked {
+            if let Some(t) = types.iter().position(|t| *t == e.manifest.resource_type) {
+                by_type[t].push(e);
+            }
+        }
+        self.entries = by_type.into_iter().flatten().collect();
     }
 
     /// Move a Resource to position `to` within its type (clamped to the bottom). Returns its
@@ -218,7 +243,7 @@ impl Library {
             None => same.last().map_or(from.min(self.entries.len()), |i| i + 1),
         };
         self.entries.insert(at, entry);
-        self.ranking = self.preferred_order();
+        self.set_ranking(self.preferred_order());
         Some(to)
     }
 
@@ -229,7 +254,9 @@ impl Library {
             .entries
             .iter()
             .position(|e| e.manifest.resource_id == resource_id)?;
-        self.ranking.retain(|r| r != resource_id);
+        let mut ranking = std::mem::take(&mut self.ranking);
+        ranking.retain(|r| r != resource_id);
+        self.set_ranking(ranking);
         let entry = self.entries.remove(i);
         self.departed
             .insert(resource_id.to_string(), entry.manifest.abbreviation.clone());

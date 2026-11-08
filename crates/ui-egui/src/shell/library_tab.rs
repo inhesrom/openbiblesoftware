@@ -18,6 +18,16 @@ use crate::theme;
 pub(crate) const ROW_H: f32 = 28.0;
 /// Width of the drag handle at the left of a row.
 const HANDLE_W: f32 = 22.0;
+/// A Resource type's heading in the list: its text size, and the space above it.
+const HEADER_SIZE: f32 = 10.5;
+const HEADER_GAP: f32 = 6.0;
+
+/// One line of the list: a Resource type's heading, or a row (its type, its position within
+/// the type in the full Preferred order, its manifest).
+enum Item<'a> {
+    Header(ResourceType),
+    Row(ResourceType, usize, &'a Manifest),
+}
 
 /// One row as drawn this frame, for working out where a dragged row lands.
 struct Row {
@@ -108,74 +118,110 @@ impl State {
                 });
                 bar = super::collections_ui::collections_bar(ui, lib, filter.collection.as_deref());
                 ui.add_space(4.0);
+                // Only the rows in view are drawn (#227): a library of thousands of Resources
+                // lays out a screenful a frame. Every row still has its place, for dragging.
+                let mut items: Vec<Item> = Vec::new();
+                for ty in RESOURCE_TYPES {
+                    let start = items.len();
+                    items.extend(
+                        lib.of_type(ty)
+                            .enumerate()
+                            .filter(|(_, e)| filter.matches_in(lib, &e.manifest))
+                            .map(|(position, e)| Item::Row(ty, position, &e.manifest)),
+                    );
+                    if items.len() > start {
+                        items.insert(start, Item::Header(ty));
+                    }
+                }
+                let gap = ui.spacing().item_spacing.y;
+                let header_h = HEADER_GAP
+                    + ui.fonts_mut(|f| f.row_height(&FontId::proportional(HEADER_SIZE)))
+                    + gap;
+                let row_h = ROW_H + gap;
+                let height = |item: &Item| match item {
+                    Item::Header(_) => header_h,
+                    Item::Row(..) => row_h,
+                };
+                let total: f32 = items.iter().map(height).sum();
                 let scroll = egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        let mut any = false;
-                        for ty in RESOURCE_TYPES {
-                            let shown: Vec<(usize, &Manifest)> = lib
-                                .of_type(ty)
-                                .enumerate()
-                                .filter(|(_, e)| filter.matches_in(lib, &e.manifest))
-                                .map(|(i, e)| (i, &e.manifest))
-                                .collect();
-                            if shown.is_empty() {
-                                continue;
-                            }
-                            any = true;
-                            ui.add_space(6.0);
-                            ui.label(
-                                RichText::new(type_name(ty).to_uppercase())
-                                    .size(10.5)
-                                    .strong()
-                                    .color(theme::c().muted),
-                            );
-                            for (position, m) in shown {
-                                let id = &m.resource_id;
-                                let row = library_row(
-                                    ui,
-                                    tab,
-                                    m,
-                                    position == 0,
-                                    selected.as_deref() == Some(id.as_str()),
-                                    dragging.as_deref() == Some(id.as_str()),
-                                );
-                                if row.handle.drag_started() {
-                                    drag_start = Some(id.clone());
-                                }
-                                if row.handle.drag_stopped() {
-                                    drag_end = true;
-                                }
-                                // The row itself drags the Resource into the Workspace (#216).
-                                if row.body.drag_started() {
-                                    resource_drag = Some((id.clone(), m.abbreviation.clone()));
-                                }
-                                if row.body.clicked() || row.body.secondary_clicked() {
-                                    select = Some(id.clone());
-                                }
-                                if row.body.double_clicked()
-                                    || (row.body.has_focus() && enter_pressed)
-                                {
-                                    action = Some(Action::Open(id.clone()));
-                                }
-                                row.body.context_menu(|ui| {
-                                    if let Some(a) = row_menu(ui, lib, id) {
-                                        action = Some(a);
-                                    }
-                                });
-                                rows.push(Row {
-                                    id: id.clone(),
-                                    ty,
-                                    position,
-                                    rect: row.body.rect,
-                                });
-                            }
-                        }
-                        if !any {
+                    .show_viewport(ui, |ui, viewport| {
+                        if items.is_empty() {
                             ui.label(
                                 RichText::new("Nothing matches the filter.")
                                     .color(theme::c().muted),
                             );
+                            return;
+                        }
+                        ui.set_height(total - gap);
+                        let origin = ui.max_rect().min;
+                        let width = ui.available_width();
+                        let mut top = 0.0;
+                        for item in &items {
+                            let h = height(item);
+                            let shown = top + h > viewport.top() && top < viewport.bottom();
+                            let at = origin + vec2(0.0, top);
+                            top += h;
+                            let Item::Row(ty, position, m) = *item else {
+                                if shown && let Item::Header(ty) = item {
+                                    let rect = Rect::from_min_size(at, vec2(width, h));
+                                    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                                        ui.add_space(HEADER_GAP);
+                                        ui.label(
+                                            RichText::new(type_name(*ty).to_uppercase())
+                                                .size(HEADER_SIZE)
+                                                .strong()
+                                                .color(theme::c().muted),
+                                        );
+                                    });
+                                }
+                                continue;
+                            };
+                            let id = &m.resource_id;
+                            let rect = Rect::from_min_size(at, vec2(width, ROW_H));
+                            rows.push(Row {
+                                id: id.clone(),
+                                ty,
+                                position,
+                                rect,
+                            });
+                            if !shown {
+                                continue;
+                            }
+                            let row = ui
+                                .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                                    library_row(
+                                        ui,
+                                        tab,
+                                        m,
+                                        position == 0,
+                                        selected.as_deref() == Some(id.as_str()),
+                                        dragging.as_deref() == Some(id.as_str()),
+                                    )
+                                })
+                                .inner;
+                            if row.handle.drag_started() {
+                                drag_start = Some(id.clone());
+                            }
+                            if row.handle.drag_stopped() {
+                                drag_end = true;
+                            }
+                            // The row itself drags the Resource into the Workspace (#216).
+                            if row.body.drag_started() {
+                                resource_drag = Some((id.clone(), m.abbreviation.clone()));
+                            }
+                            if row.body.clicked() || row.body.secondary_clicked() {
+                                select = Some(id.clone());
+                            }
+                            if row.body.double_clicked() || (row.body.has_focus() && enter_pressed)
+                            {
+                                action = Some(Action::Open(id.clone()));
+                            }
+                            row.body.context_menu(|ui| {
+                                if let Some(a) = row_menu(ui, lib, id) {
+                                    action = Some(a);
+                                }
+                            });
                         }
                     });
                 drop_region = scroll.inner_rect.intersect(ui.clip_rect());

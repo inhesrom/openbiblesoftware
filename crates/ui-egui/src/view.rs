@@ -524,6 +524,13 @@ impl ReadingView {
         self.pending_follow.is_some()
     }
 
+    /// Whether the block at the top of the view is laid out, so a frame draws its text (the
+    /// scale bench's "first Bible text", #227).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn top_block_laid(&self) -> bool {
+        self.laid.contains_key(&self.anchor.0)
+    }
+
     /// Whether workers still have layouts for this view in flight.
     pub fn has_pending(&self) -> bool {
         self.client.pending() > 0

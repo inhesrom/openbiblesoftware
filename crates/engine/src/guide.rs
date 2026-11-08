@@ -23,7 +23,6 @@ use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, al
 use crate::cross_references::ReferenceGroup;
 use crate::key_words::{BibleCache, KeyWords};
 use crate::people_places::PersonOrPlace;
-use crate::resource_navigation::ResourceNavigation;
 use crate::workspace::Guide;
 use crate::{Effect, JobContext, JobEvent, JobEventKind, JobId, Library, Session};
 
@@ -748,12 +747,12 @@ pub trait SectionSource: std::fmt::Debug + Send + Sync {
 }
 
 /// Reads sections from the library's `.obr` files. Each Commentary's Passage Keys are loaded
-/// once per Resource revision and shared by later jobs, as are Bibles' Verse maps and
-/// Strong's totals and the Dictionary alias tables.
+/// once per Resource revision ([`CommentarySections`]) and shared by later jobs, as are
+/// Bibles' Verse maps and Strong's totals and the Dictionary alias tables.
 #[derive(Debug, Default)]
 pub struct LibrarySections {
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    navigation: Mutex<BTreeMap<(String, u32, String), Arc<ResourceNavigation>>>,
+    navigation: Mutex<BTreeMap<(String, u32, String), Arc<CommentarySections>>>,
     bibles: BibleCache,
     aliases: Arc<AliasCache>,
     /// Bibles' rendering indexes, shared with the Word Study header and chooser.
@@ -980,7 +979,7 @@ impl LibrarySections {
             Some(nav) => nav,
             None => {
                 let keys = reader.keys(obs_model::KeyScheme::Passage)?;
-                let nav = Arc::new(ResourceNavigation::new(keys));
+                let nav = Arc::new(CommentarySections::new(keys));
                 let mut navs = self.navigation.lock().unwrap_or_else(|p| p.into_inner());
                 navs.retain(|(id, _, _), _| *id != identity.0);
                 navs.insert(identity, Arc::clone(&nav));
@@ -996,6 +995,99 @@ impl LibrarySections {
     }
 }
 
+/// One Commentary's Passage Keys, as the Passage Guide reads them: sorted (by Passage, then
+/// as [`KeyEntry`]s sort) and compact, with each unit id kept once, so a library of hundreds
+/// of Commentaries keeps every one's in memory (about a fifth of what a reading Tab's
+/// navigation takes, #227).
+#[derive(Debug, Clone, Default)]
+pub struct CommentarySections {
+    sections: Vec<CommentarySection>,
+    units: Vec<obs_model::UnitId>,
+}
+
+/// One Passage Key of a [`CommentarySections`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CommentarySection {
+    passage: Passage,
+    /// Index into [`CommentarySections::units`].
+    unit: u32,
+    range: Option<(u32, u32)>,
+    alias: bool,
+}
+
+impl CommentarySections {
+    /// From a Commentary's Keys; those that are not Passages are left out.
+    pub fn new(mut keys: Vec<KeyEntry>) -> Self {
+        keys.sort();
+        let mut units: Vec<obs_model::UnitId> = Vec::new();
+        let mut index: BTreeMap<obs_model::UnitId, u32> = BTreeMap::new();
+        let mut sections = Vec::new();
+        for e in keys {
+            let Key::Passage(passage) = e.key else {
+                continue;
+            };
+            let unit = *index.entry(e.unit.clone()).or_insert_with(|| {
+                units.push(e.unit);
+                u32::try_from(units.len() - 1).unwrap_or(u32::MAX)
+            });
+            sections.push(CommentarySection {
+                passage,
+                unit,
+                range: e.range,
+                alias: e.alias,
+            });
+        }
+        sections.shrink_to_fit();
+        units.shrink_to_fit();
+        Self { sections, units }
+    }
+
+    /// The section a Commentary's own Tab shows at `verse`: the last to start at or before
+    /// it, the narrowest of those starting there ([`ResourceNavigation::section`]).
+    ///
+    /// [`ResourceNavigation::section`]: crate::resource_navigation::ResourceNavigation::section
+    fn section(&self, verse: obs_scripture::Verse) -> Option<&CommentarySection> {
+        let after = self
+            .sections
+            .partition_point(|s| s.passage.start() <= verse);
+        let start = self.sections.get(after.checked_sub(1)?)?.passage.start();
+        let first = self.sections.partition_point(|s| s.passage.start() < start);
+        self.sections.get(first)
+    }
+
+    /// The section that best covers `passage` (see [`commentary_row`]).
+    pub(crate) fn best(&self, passage: Passage) -> Option<BestSection<'_>> {
+        let overlapping = |s: &&CommentarySection| s.passage.overlaps(passage);
+        let primary = || self.sections.iter().filter(|s| !s.alias);
+        let section = self
+            .section(passage.start())
+            .filter(overlapping)
+            .or_else(|| primary().find(|s| passage.contains_verse(s.passage.start())))
+            .or_else(|| {
+                primary().filter(overlapping).max_by(|a, b| {
+                    // Latest start, then the narrowest.
+                    a.passage
+                        .start()
+                        .cmp(&b.passage.start())
+                        .then(b.passage.end().cmp(&a.passage.end()))
+                })
+            })?;
+        Some(BestSection {
+            passage: section.passage,
+            unit: self.units.get(section.unit as usize)?,
+            range: section.range,
+        })
+    }
+}
+
+/// The section [`CommentarySections::best`] picks: its Passage, unit and byte range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BestSection<'a> {
+    pub(crate) passage: Passage,
+    pub(crate) unit: &'a obs_model::UnitId,
+    pub(crate) range: Option<(u32, u32)>,
+}
+
 /// The section of one Commentary that best covers `passage`, as a row; `None` when no
 /// section's Passage overlaps it. The section that the Commentary's own Tab would show for
 /// the Passage's first Verse (the nearest earlier section, narrowest first) wins when it
@@ -1003,16 +1095,21 @@ impl LibrarySections {
 /// narrowest section that still covers part of it (a chapter or book introduction).
 pub fn commentary_row(
     store: &dyn ResourceStore,
-    nav: &ResourceNavigation,
+    sections: &CommentarySections,
     passage: Passage,
 ) -> Result<Option<CommentaryRow>, StoreError> {
-    let Some((section, entry)) = section_for(nav, passage) else {
+    let Some(BestSection {
+        passage: section,
+        unit: unit_id,
+        range,
+    }) = sections.best(passage)
+    else {
         return Ok(None);
     };
-    let Some(unit) = store.unit(&entry.unit)? else {
+    let Some(unit) = store.unit(unit_id)? else {
         return Ok(None);
     };
-    let range = entry.range.map_or(0..unit.text.len(), |(s, e)| {
+    let range = range.map_or(0..unit.text.len(), |(s, e)| {
         (s as usize).min(unit.text.len())..(e as usize).min(unit.text.len())
     });
     let (heading, excerpt) = heading_and_excerpt(&unit, range);
@@ -1026,37 +1123,6 @@ pub fn commentary_row(
         excerpt,
         direction: m.direction,
     }))
-}
-
-fn section_for(nav: &ResourceNavigation, passage: Passage) -> Option<(Passage, &KeyEntry)> {
-    let as_passage = |e: &KeyEntry| match e.key {
-        Key::Passage(p) => Some(p),
-        _ => None,
-    };
-    let overlapping = |e: &&KeyEntry| as_passage(e).is_some_and(|p| p.overlaps(passage));
-    let entry = nav
-        .section(passage.start())
-        .filter(overlapping)
-        .or_else(|| {
-            nav.keys
-                .iter()
-                .filter(|e| !e.alias)
-                .find(|e| as_passage(e).is_some_and(|p| passage.contains_verse(p.start())))
-        })
-        .or_else(|| {
-            nav.keys
-                .iter()
-                .filter(|e| !e.alias)
-                .filter(overlapping)
-                .max_by(|a, b| {
-                    let (a, b) = (as_passage(a), as_passage(b));
-                    // Latest start, then the narrowest.
-                    a.map(|p| p.start())
-                        .cmp(&b.map(|p| p.start()))
-                        .then(b.map(|p| p.end()).cmp(&a.map(|p| p.end())))
-                })
-        })?;
-    Some((as_passage(entry)?, entry))
 }
 
 /// The heading a section's text starts with, and the text after it (whitespace collapsed,

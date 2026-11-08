@@ -573,6 +573,48 @@ pub fn write_search_index(
     Ok(path)
 }
 
+/// Copy the Search index cache at `src` into `dir` as the cache of another Resource with the
+/// same content (`manifest`, as [`crate::copy_obr_as`] makes it): the copy is named and keyed
+/// for `manifest`'s resource id. Returns the new cache file. For synthetic libraries (the
+/// scale bench, #227).
+pub fn copy_search_index_as(
+    src: &Path,
+    dir: &Path,
+    manifest: &Manifest,
+) -> Result<PathBuf, StoreError> {
+    let from = SqliteSearchIndex::open(src, None)?.key;
+    if from.content_hash != manifest.content_hash {
+        return Err(StoreError::Rejected(format!(
+            "{} indexes content {}, not {}",
+            src.display(),
+            from.content_hash,
+            manifest.content_hash
+        )));
+    }
+    let key = IndexKey::new(manifest, from.version);
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join(key.file_name());
+    let tmp = dir.join(format!("{}.copy.partial", key.file_name()));
+    std::fs::copy(src, &tmp)?;
+    let relabel = || -> Result<(), StoreError> {
+        let conn = Connection::open(&tmp).map_err(sql)?;
+        conn.execute_batch("PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;")
+            .map_err(sql)?;
+        conn.execute(
+            "UPDATE meta SET value = ?1 WHERE name = 'resource_id'",
+            [&key.resource_id],
+        )
+        .map_err(sql)?;
+        Ok(())
+    };
+    if let Err(e) = relabel() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    std::fs::rename(&tmp, &path)?;
+    Ok(path)
+}
+
 fn write_index(
     r: &Resource,
     key: &IndexKey,
