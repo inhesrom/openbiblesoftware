@@ -166,6 +166,27 @@ fn move_note(h: &mut Harness, _: &Path) {
     h.frames(3);
 }
 
+/// A Footnote's popover: BSB John 1 (the first Bible in the library), the pointer resting on
+/// its first marker for the dwell.
+fn footnote_popover(h: &mut Harness, dir: &Path) {
+    let bsb = obs_engine::testing::bibles::bsb_john_1();
+    let path = dir.join("bsb.obr");
+    obs_store::write_obr(&bsb, &path).unwrap();
+    h.shell.st.session.library = obs_engine::Library::new();
+    h.shell.st.session.library.add_file(&path).unwrap();
+    h.shell.reset_layout();
+    let tab = h.tab_id(&bsb.manifest.abbreviation);
+    h.shell
+        .run("tab.go", &json!({ "tab": tab.0, "text": "Jn 1:5" }));
+    settle_all(h);
+    let view = h.shell.st.tabs[&tab].view.as_ref().unwrap();
+    let [ox, oy] = view.text_origin;
+    let [x0, y0, x1, y1] = view.footnote_markers(900.0)[0].rect;
+    let at = egui::pos2(ox + (x0 + x1) / 2.0, oy + (y0 + y1) / 2.0);
+    h.events.push(Event::PointerMoved(at));
+    h.frames(20);
+}
+
 /// Run queued jobs and draw until no Search index is building and no search running.
 fn settle_search(h: &mut Harness) {
     for _ in 0..5000 {
@@ -364,6 +385,7 @@ const SURFACES: &[Surface] = &[
     ("tab-switcher", &[], Then::Run(tab_switcher)),
     ("new-collection", &[], Then::Run(new_collection)),
     ("move-note", &[], Then::Run(move_note)),
+    ("footnote-popover", &[], Then::Run(footnote_popover)),
     (
         "page-tone-hint",
         &[

@@ -13,7 +13,7 @@ use crate::doc::ReadingDoc;
 use crate::heights::HeightIndex;
 use crate::interlinear::InterlinearSource;
 use crate::selection::{DocPos, Selection};
-use crate::tokens::{size, space};
+use crate::tokens::{mark, size, space};
 use crate::workers::{LayoutClient, lay_out};
 
 /// UI-thread layout per frame. #19 allows 2 ms; one block may overrun the check, so stop
@@ -436,7 +436,7 @@ impl ReadingView {
         for m in &mut out {
             m.label.retain(|c| !c.is_control() && c != '\u{200F}');
             // The glyph sits high in the line: its box is the line's upper half.
-            m.rect[3] = m.rect[1] + (m.rect[3] - m.rect[1]) * 0.6;
+            m.rect[3] = m.rect[1] + (m.rect[3] - m.rect[1]) * mark::FOOTNOTE_BOX;
         }
         out
     }

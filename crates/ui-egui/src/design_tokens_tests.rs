@@ -629,7 +629,7 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "shell.rs",
-        "if !now && self.st.now - self.st.last_save < 1.0 {",
+        "if !now && since < 1.0 {",
         "1.0",
         "seconds between saves of the Workspace",
     ),

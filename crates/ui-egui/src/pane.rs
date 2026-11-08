@@ -712,7 +712,7 @@ fn footnote_markers(
             continue;
         }
         let id = footnote_marker_id(pane.id, &m);
-        let response = ui.interact(r.expand(3.0).intersect(rect), id, Sense::click());
+        let response = ui.interact(r.expand(mark::HIT_SLOP).intersect(rect), id, Sense::click());
         let hit = FootnoteHit {
             resource: view.doc.manifest.resource_id.clone(),
             unit: m.unit,
@@ -733,8 +733,8 @@ fn footnote_markers(
         register_footnote_widget(ui.ctx(), id);
         if response.has_focus() {
             painter.rect_stroke(
-                r.expand(2.0),
-                2.0,
+                r.expand(space::XXS),
+                radius::XS,
                 ui.visuals().selection.stroke,
                 egui::StrokeKind::Outside,
             );

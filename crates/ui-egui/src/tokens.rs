@@ -170,10 +170,18 @@ pub mod size {
     pub const PROSE: f32 = 460.0;
     /// A hover card or a preview pop-up.
     pub const POPOVER: f32 = 360.0;
+    /// The text column of a pop-up showing Resource text beside its marker (a Footnote).
+    pub const POPOVER_TEXT: f32 = 340.0;
+    /// A pop-up's scrolling text: the room it leaves for its header and the window's edges,
+    /// and the shortest it gets.
+    pub const POPOVER_ROOM: f32 = 120.0;
+    pub const POPOVER_BODY_MIN: f32 = 60.0;
     /// How far a toast floats above the window's bottom edge.
     pub const TOAST_RISE: f32 = super::space::XXXL + super::space::XL;
     /// A dialog window's width.
     pub const DIALOG_WIDTH: f32 = 480.0;
+    /// A dialog that shows a document to read (a Crash report).
+    pub const DIALOG_WIDE: f32 = 640.0;
     /// A scrolling list inside a dialog or a pop-up, at most.
     pub const LIST_MAX: f32 = 260.0;
     /// A menu's column (the right-click menu's targets and actions).
@@ -444,6 +452,8 @@ pub mod mark {
     pub const NOTE_RULES: [f32; 2] = [0.38, 0.66];
     /// How far round a marker the pointer still hovers it.
     pub const HIT_SLOP: f32 = 3.0;
+    /// A Footnote marker's box: the upper share of its line, where the raised glyph sits.
+    pub const FOOTNOTE_BOX: f32 = 0.6;
     /// The caret under a difference in Text Comparison: its half-width and its rise, in ems
     /// and in half-widths.
     pub const CARET_EMS: f32 = 0.3;

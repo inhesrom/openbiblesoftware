@@ -22,6 +22,7 @@ use serde_json::json;
 
 use super::State;
 use crate::theme;
+use crate::tokens::{share, size, space};
 
 /// Shows a folder in the system file manager. It returns once the file manager is started;
 /// how that ends (it may exit with an error) comes later on the receiver, when there is one.
@@ -407,7 +408,7 @@ impl State {
         let mut open = true;
         let escape = super::escape_closes_window(ctx);
         let mut acts = Vec::new();
-        let max_height = ctx.content_rect().height() * 0.45;
+        let max_height = ctx.content_rect().height() * share::LIST;
         let saving = self.report_ui.saving.is_some();
         let title = match shown {
             Shown::Offer(_) => "Open Bible Software closed unexpectedly",
@@ -419,23 +420,23 @@ impl State {
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
-            .default_width(640.0)
+            .default_width(size::DIALOG_WIDE)
             .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .show(ctx, |ui| match shown {
                 Shown::Offer(_) => {
-                    ui.set_max_width(460.0);
+                    ui.set_max_width(size::PROSE);
                     ui.label(
                         "Last time, the app stopped because of a problem. It saved a crash \
                          report on this computer: the app version, your operating system, \
                          where in the program it happened and recent log lines. It holds \
                          none of your Notes, Highlights or Resource text.",
                     );
-                    ui.add_space(4.0);
+                    ui.add_space(space::XS);
                     ui.label(
                         RichText::new("Nothing has been sent. You can read the report first.")
                             .strong(),
                     );
-                    ui.add_space(8.0);
+                    ui.add_space(space::M);
                     ui.horizontal(|ui| {
                         if ui.button("Report a problem…").clicked() {
                             acts.push(Act::Review);
@@ -446,14 +447,14 @@ impl State {
                     });
                 }
                 Shown::Diagnostics { zip, .. } => {
-                    ui.set_max_width(460.0);
+                    ui.set_max_width(size::PROSE);
                     ui.label(
                         "One zip of the app's log files, to send to the developers by email or \
                          a message when something goes wrong.",
                     );
-                    ui.add_space(4.0);
+                    ui.add_space(space::XS);
                     zip_list(ui, "Save as zip… saves one file holding:", zip);
-                    ui.add_space(8.0);
+                    ui.add_space(space::M);
                     ui.horizontal(|ui| {
                         if ui
                             .add_enabled(!saving, egui::Button::new("Save as zip…"))
@@ -469,12 +470,12 @@ impl State {
                 Shown::Review {
                     report, text, zip, ..
                 } => {
-                    ui.set_width(620.0);
+                    ui.set_width(size::DIALOG_WIDE);
                     ui.label(REVIEW_NOTE);
-                    ui.add_space(4.0);
+                    ui.add_space(space::XS);
                     egui::Frame::new()
                         .fill(theme::c().field)
-                        .inner_margin(egui::Margin::same(8))
+                        .inner_margin(egui::Margin::same(space::M as i8))
                         .show(ui, |ui| {
                             egui::ScrollArea::vertical()
                                 .id_salt("report-text")
@@ -490,11 +491,11 @@ impl State {
                                     .accessible_name("Report");
                                 });
                         });
-                    ui.add_space(6.0);
+                    ui.add_space(space::S);
                     // Without a Log folder (the web build) there is nothing to save.
                     if !zip.is_empty() {
                         zip_list(ui, "Save report as zip… saves one file holding:", zip);
-                        ui.add_space(6.0);
+                        ui.add_space(space::S);
                     }
                     ui.horizontal_wrapped(|ui| {
                         if ui.button("Copy report").clicked() {
