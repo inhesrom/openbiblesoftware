@@ -4,314 +4,700 @@
 //! The scanner reads every non-test source file of the crate with comments, strings and
 //! `#[cfg(test)]` items blanked out, and flags:
 //!
-//! - any numeric literal other than 0 in a call that takes a spacing, a size, a radius, a
-//!   stroke width, a font size or a colour (`add_space`, `vec2`, `Margin::*`,
-//!   `corner_radius`, `Stroke::new`, `FontId::*`, `.size`, `Color32::from_*`,
-//!   `gamma_multiply`, the width and height setters, the painter's rects and circles, and an
-//!   assignment to `ui.spacing_mut()`) — a 1 included (`expand(1.0)`, `Margin::same(1)`),
-//!   unless it counts (`n.saturating_sub(1)`) or leads a fraction (`1.0 - t`);
-//! - any other float literal, since a bare `rect.left() + 6.0` is a spacing too, except 0
-//!   and ½, 1 or 2 used without units: a factor, a bound or a tolerance (`/ 2.0`, `* 0.5`,
-//!   `.clamp(0.0, 1.0)`, `Some(2.0)`, `.abs() < 0.5`, `1.0 - t`). Added to or taken from a
-//!   coordinate (`icon.right() + 2.0`, `x -= 2.0`) even these are spacings and flagged;
+//! - any numeric literal in a call that takes a spacing, a size, a radius, a stroke width, a
+//!   font size or a colour (`add_space`, `vec2`, `Margin::*`, `corner_radius`,
+//!   `Stroke::new`, `FontId::*`, `.size`, `Color32::from_*`, `gamma_multiply`, `expand`,
+//!   `shrink`, the width and height setters, the painter's rects and circles, and an
+//!   assignment to `ui.spacing_mut()`);
+//! - any float literal anywhere else, since a bare `rect.left() + 6.0` is a spacing too;
 //! - a named `Color32` constant other than `TRANSPARENT` and `PLACEHOLDER`.
 //!
-//! What is not a measurement of the look (a duration, a zoom range, a contrast ratio, a
-//! benchmark window) is listed in [`ALLOWED`] with its reason; each entry must still match.
+//! Exempt by rule are only the literals that cannot be a measurement: 0, halving or
+//! doubling a length (`w / 2.0`, `h * 0.5`, `2.0 * MARGIN`), the rest of a fraction
+//! (`1.0 - t`) and, inside a call, an integer 1 that counts (`n.saturating_sub(1)`).
+//! Everything else that is not a measurement of the look (a duration, a zoom factor, a
+//! tolerance, a clamp bound, a default before the first layout) is an exact [`ALLOWED`]
+//! entry — file, whole line and literal — with its reason; each entry must still match.
 
 use std::path::{Path, PathBuf};
 
 /// Files that are the tokens themselves.
 const TOKEN_FILES: &[&str] = &["tokens.rs", "palette.rs"];
 
-/// Lines allowed to keep a literal: (file, text on the line, why it is not a token).
-const ALLOWED: &[(&str, &str, &str)] = &[
-    (
-        "shell/floating.rs",
-        "const DEFAULT_SIZE",
-        "an OS window's size before its Tab's Panel size is known",
-    ),
-    (
-        "shell/floating.rs",
-        "const CASCADE",
-        "where an OS window opens on the screen",
-    ),
-    (
-        "shell/floating.rs",
-        "size.x.min(160.0)",
-        "where the pointer grabs a new OS window's title bar",
-    ),
-    (
-        "shell/floating.rs",
-        "at.y - 12.0 * k",
-        "where the pointer grabs a new OS window's title bar",
-    ),
-    ("shell/import_tab.rs", "1_000_000.0", "bytes in a megabyte"),
-    (
-        "shell/tile_handles.rs",
-        "const STEP",
-        "how far an arrow key moves a Panel separator",
-    ),
-    (
-        "shell/tile_handles.rs",
-        "const MIN_PANEL",
-        "the narrowest the arrow keys make a Panel",
-    ),
-    (
-        "shell/toolbar_bar.rs",
-        "const REVEAL",
-        "the pointer's reveal zone at the window edge",
-    ),
-    (
-        "shell/toolbar_bar.rs",
-        "const KEEP",
-        "the pointer's keep-showing zone round an Auto-hide toolbar",
-    ),
-    (
-        "pane.rs",
-        "rect.height() * 0.9",
-        "Page Up/Down scroll this share of the pane",
-    ),
-    (
-        "pane.rs",
-        "view.scroll_by(40.0)",
-        "how far an arrow key scrolls",
-    ),
-    (
-        "pane.rs",
-        "view.scroll_by(-40.0)",
-        "how far an arrow key scrolls",
-    ),
-    (
-        "pane.rs",
-        "abs() > 0.01",
-        "a scroll smaller than this is not the user's",
-    ),
-    (
-        "pane.rs",
-        "(band[1] * 4.0).round()",
-        "a line's key: its top to a quarter point",
-    ),
-    (
-        "pane.rs",
-        "past * 0.3",
-        "how fast a drag past the pane's edge scrolls",
-    ),
-    (
-        "shell.rs",
-        "HOVER_DWELL_SECS: f64",
-        "seconds the pointer rests before a hover card",
-    ),
-    (
-        "shell.rs",
-        "FLASH_SECS: f64",
-        "seconds a jump's flash lasts",
-    ),
-    ("shell.rs", "self.now - t < 4.0", "seconds a toast shows"),
-    (
-        "shell/notes_tab.rs",
-        "as f32 / 60.0",
-        "characters a Note's line holds, for a height estimate",
-    ),
-    (
-        "shell/notes_tab.rs",
-        "vec2(width, 10_000.0)",
-        "a card may grow as tall as it needs",
-    ),
-    (
-        "shell/toolbar.rs",
-        "const DROP_EDGE",
-        "the share of a Panel's edge that drops a Resource beside it",
-    ),
-    (
-        "shell/atlas_tab.rs",
-        "const MIN_SPAN",
-        "degrees of latitude, not points",
-    ),
-    (
-        "shell/atlas_tab.rs",
-        "const MINI_MAP_SPAN",
-        "degrees of latitude, not points",
-    ),
-    (
-        "shell/atlas_tab.rs",
-        "/ 300.0).exp()",
-        "how fast the wheel zooms",
-    ),
-    (
-        "shell/atlas_tab.rs",
-        "v.scale < 12.0",
-        "zoom levels at which smaller places show",
-    ),
-    (
-        "shell/atlas_tab.rs",
-        "v.scale < 40.0",
-        "zoom levels at which smaller places show",
-    ),
-    (
-        "shell/atlas_tab.rs",
-        "view.scale.max(60.0)",
-        "the zoom a found place is shown at",
-    ),
-    (
-        "shell/atlas_tab.rs",
-        "/ 16.0",
-        "segments of a half-filled marker's arc",
-    ),
-    (
-        "shell/atlas_tab.rs",
-        "west: 28.0",
-        "longitude of the default map",
-    ),
-    (
-        "shell/atlas_tab.rs",
-        "south: 27.0",
-        "latitude of the default map",
-    ),
-    (
-        "shell/atlas_tab.rs",
-        "east: 46.0",
-        "longitude of the default map",
-    ),
-    (
-        "shell/atlas_tab.rs",
-        "north: 38.0",
-        "latitude of the default map",
-    ),
-    (
-        "shell/atlas_tab.rs",
-        "* 2.4",
-        "the Tab is wide enough for the place list beside the map",
-    ),
-    (
-        "shell/timeline_tab.rs",
-        "const FOCUS_YEARS",
-        "years, not points",
-    ),
-    (
-        "shell/timeline_tab.rs",
-        "const PAN_SHARE",
-        "how far Earlier and Later move the view",
-    ),
-    (
-        "shell/timeline_tab.rs",
-        "/ 300.0).exp()",
-        "how fast the wheel zooms",
-    ),
-    (
-        "shell/toolbar_look.rs",
-        "s.max(0.01)",
-        "a Panel's share in a thumbnail is never zero",
-    ),
-    (
-        "shell/toolbar_look.rs",
-        "share.max(0.01)",
-        "a Panel's share in a thumbnail is never zero",
-    ),
-    (
-        "shell/search_views.rs",
-        "let width = 2000.0",
-        "a layout width meaning do not wrap, not a size on screen",
-    ),
-    (
-        "view.rs",
-        "const PREFETCH",
-        "how far ahead text is laid out, in viewport heights",
-    ),
+/// Lines allowed to keep a literal, each exactly: (file, the whole line, the literal, why it
+/// is not a measurement of the look).
+const ALLOWED: &[(&str, &str, &str, &str)] = &[
     (
         "compare_view.rs",
-        "width: 400.0",
+        "width: 400.0,",
+        "400.0",
         "a view's width before its pane first measures it",
     ),
     (
         "compare_view.rs",
-        "vec2(400.0, 400.0)",
+        "viewport: Rect::from_min_size(Pos2::ZERO, vec2(400.0, 400.0)),",
+        "400.0",
         "a view's size before its pane first measures it",
     ),
     (
         "compare_view.rs",
-        "rect.height() * 0.9",
-        "Page Up/Down scroll this share of the pane",
+        "if (width - self.width).abs() > 0.5 {",
+        "0.5",
+        "a tolerance: a width change smaller than this is not a resize",
     ),
     (
         "compare_view.rs",
-        "abs() > 0.01",
-        "a scroll smaller than this is not the user's",
-    ),
-    (
-        "compare_view.rs",
-        ".max(10.0)",
+        "let per_line = (self.text_width() / (self.settings.size * 0.5)).max(10.0);",
+        "10.0",
         "characters a line holds at the least, for a height estimate",
     ),
     (
+        "compare_view.rs",
+        "_ => 1.0,",
+        "1.0",
+        "a row's height estimate in lines for a cell with no text",
+    ),
+    (
+        "compare_view.rs",
+        "lines.max(1.0) * self.line_height() + ROW_GAP",
+        "1.0",
+        "a block's height estimate is at least one line",
+    ),
+    (
+        "compare_view.rs",
+        "(Some(r), true) if (r[2] - x0).abs() < 0.5 || (r[0] - x1).abs() < 0.5 => {",
+        "0.5",
+        "a tolerance: selection rects that touch join",
+    ),
+    (
+        "compare_view.rs",
+        "view.scroll_by(rect.height() * 0.9);",
+        "0.9",
+        "Page Down scrolls this share of the pane",
+    ),
+    (
+        "compare_view.rs",
+        "view.scroll_by(-rect.height() * 0.9);",
+        "0.9",
+        "Page Up scrolls this share of the pane",
+    ),
+    (
+        "compare_view.rs",
+        "let frac = f64::from(((p.y - track.top()) / track.height()).clamp(0.0, 1.0));",
+        "1.0",
+        "the scrollbar's track as a fraction, 0 to 1",
+    ),
+    (
+        "compare_view.rs",
+        "out.user_moved = (view.position().0 - before).abs() > 0.01;",
+        "0.01",
+        "a scroll smaller than this is not the user's",
+    ),
+    (
+        "components.rs",
+        "let top = track.top() + frac.clamp(0.0, 1.0) * (track.height() - h);",
+        "1.0",
+        "the scrollbar thumb's place as a fraction, 0 to 1",
+    ),
+    (
+        "icons.rs",
+        "(size * ctx.pixels_per_point()).round().max(1.0) as u32",
+        "1.0",
+        "an icon texture is at least one pixel",
+    ),
+    (
+        "icons.rs",
+        "Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),",
+        "1.0",
+        "the whole icon texture in UV coordinates",
+    ),
+    (
+        "pane.rs",
+        "let page = rect.height() * 0.9;",
+        "0.9",
+        "Page Up/Down scroll this share of the pane",
+    ),
+    (
+        "pane.rs",
+        "view.scroll_by(40.0);",
+        "40.0",
+        "how far an arrow key scrolls",
+    ),
+    (
+        "pane.rs",
+        "view.scroll_by(-40.0);",
+        "40.0",
+        "how far an arrow key scrolls",
+    ),
+    (
+        "pane.rs",
+        "let frac = f64::from(((p.y - track.top()) / track.height()).clamp(0.0, 1.0));",
+        "1.0",
+        "the scrollbar's track as a fraction, 0 to 1",
+    ),
+    (
+        "pane.rs",
+        "out.user_moved = (view.position().0 - before).abs() > 0.01;",
+        "0.01",
+        "a scroll smaller than this is not the user's",
+    ),
+    (
+        "pane.rs",
+        "let used = beside.entry((band[1] * 4.0).round() as i64).or_insert(0.0);",
+        "4.0",
+        "a line's key: its top to a quarter point",
+    ),
+    (
+        "pane.rs",
+        "let y = p.y.clamp(rect.top(), rect.bottom() - 1.0) - rect.top();",
+        "1.0",
+        "a hit test: the pointer kept inside the pane's last row",
+    ),
+    (
+        "pane.rs",
+        "&& (last[1] - y0).abs() < 0.5",
+        "0.5",
+        "a tolerance: selection rects on one line join",
+    ),
+    (
+        "pane.rs",
+        "&& (last[3] - y1).abs() < 0.5",
+        "0.5",
+        "a tolerance: selection rects on one line join",
+    ),
+    (
+        "pane.rs",
+        "view.scroll_by(past * 0.3);",
+        "0.3",
+        "how fast a drag past the pane's edge scrolls",
+    ),
+    (
         "search_view.rs",
-        "width: 400.0",
+        "width: 400.0,",
+        "400.0",
         "a view's width before its pane first measures it",
     ),
     (
         "search_view.rs",
-        "viewport_height: 400.0",
+        "viewport_height: 400.0,",
+        "400.0",
         "a view's height before its pane first measures it",
     ),
     (
         "search_view.rs",
-        "rect.height() * 0.9",
-        "Page Up/Down scroll this share of the pane",
-    ),
-    (
-        "search_view.rs",
-        "(LABEL_SCALE + 3.0)",
+        "head + self.line_height() * (LABEL_SCALE + 3.0) + HIT_GAP + ROW_GAP",
+        "3.0",
         "a Library hit's excerpt is three lines",
     ),
     (
-        "view.rs",
-        "view.set_width(600.0)",
-        "a reading view's width before its pane first measures it",
+        "search_view.rs",
+        "if (width - self.width).abs() > 0.5 {",
+        "0.5",
+        "a tolerance: a width change smaller than this is not a resize",
     ),
     (
-        "pane.rs",
-        "rect.bottom() - 1.0",
-        "a hit test: the pointer kept inside the pane's last row",
+        "search_view.rs",
+        "view.scroll_by(rect.height() * 0.9);",
+        "0.9",
+        "Page Down scrolls this share of the pane",
     ),
     (
-        "view.rs",
-        "laid_in_view(y + 1.0)",
-        "a hit test: the blocks laid out round the point",
+        "search_view.rs",
+        "view.scroll_by(-rect.height() * 0.9);",
+        "0.9",
+        "Page Up scrolls this share of the pane",
     ),
     (
-        "view.rs",
-        "l.bottom > offset + 0.5",
-        "a tolerance: the first line not scrolled past",
+        "search_view.rs",
+        "let frac = f64::from(((p.y - track.top()) / track.height()).clamp(0.0, 1.0));",
+        "1.0",
+        "the scrollbar's track as a fraction, 0 to 1",
     ),
     (
-        "shell/tile_handles.rs",
-        "resize_grab_radius_side + 0.5",
-        "a tolerance: how wide a widget may be and still be a separator",
+        "search_view.rs",
+        "let max = view.max_scroll().max(1.0);",
+        "1.0",
+        "the scroll range is never zero, so the thumb's fraction is defined",
+    ),
+    (
+        "selection.rs",
+        "if (r[2] - x0).abs() < 0.5 || (r[0] - x1).abs() < 0.5 =>",
+        "0.5",
+        "a tolerance: selection rects that touch join",
+    ),
+    (
+        "shell/annotate.rs",
+        "vec2(1.0, size::CONTROL_COMPACT),",
+        "1.0",
+        "a rect that anchors the popup Note editor; its width is not drawn",
     ),
     (
         "shell/atlas_tab.rs",
-        "(factor - 1.0).abs()",
+        "const MIN_SPAN: f64 = 3.0;",
+        "3.0",
+        "degrees of latitude, not points",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "pub(super) const MINI_MAP_SPAN: f64 = 7.0;",
+        "7.0",
+        "degrees of latitude, not points",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "let factor = f64::from(pinch) * (f64::from(scroll) / 300.0).exp();",
+        "300.0",
+        "how fast the wheel zooms",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "if (factor - 1.0).abs() > 1e-6",
+        "1.0",
         "a zoom factor's distance from no zoom, not points",
     ),
     (
-        "shell/timeline_tab.rs",
-        "(factor - 1.0).abs()",
-        "a zoom factor's distance from no zoom, not points",
+        "shell/atlas_tab.rs",
+        "view.zoom_about(2.0, f64::from(local.x), f64::from(local.y), size, world);",
+        "2.0",
+        "the zoom factor of a double-click",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "let max_rank = if v.scale < 12.0 {",
+        "12.0",
+        "zoom levels at which smaller places show",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "} else if v.scale < 40.0 {",
+        "40.0",
+        "zoom levels at which smaller places show",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "let a = std::f32::consts::PI * f32::from(i) / 16.0;",
+        "16.0",
+        "segments of a half-filled marker's arc",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "west: 28.0,",
+        "28.0",
+        "longitude of the default map",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "south: 27.0,",
+        "27.0",
+        "latitude of the default map",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "east: 46.0,",
+        "46.0",
+        "longitude of the default map",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "north: 38.0,",
+        "38.0",
+        "latitude of the default map",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "zoom = Some(0.5);",
+        "0.5",
+        "the zoom factor of Zoom out",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "zoom = Some(2.0);",
+        "2.0",
+        "the zoom factor of Zoom in",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "view.scale = view.scale.max(60.0);",
+        "60.0",
+        "the zoom a found place is shown at",
+    ),
+    (
+        "shell/atlas_tab.rs",
+        "let (map_rect, list_rect) = if area.width() >= LIST_WIDTH * 2.4 {",
+        "2.4",
+        "the Tab is wide enough for the place list beside the map",
+    ),
+    (
+        "shell/contents_pane.rs",
+        "if open { 1.0 } else { 0.0 },",
+        "1.0",
+        "the Contents pane's open animation target, a fraction",
     ),
     (
         "shell/context_menu.rs",
-        "vec2(1.0, 1.0)",
+        ".map(|p| Rect::from_min_size(p, vec2(1.0, 1.0)));",
+        "1.0",
         "a rect at the pointer that anchors a popup; not drawn",
     ),
     (
         "shell/context_menu.rs",
-        "vec2(1.0, size::CONTROL_COMPACT)",
+        "vec2(1.0, size::CONTROL_COMPACT),",
+        "1.0",
         "a rect that anchors the popup Note editor; its width is not drawn",
     ),
     (
-        "shell/annotate.rs",
-        "vec2(1.0, size::CONTROL_COMPACT)",
-        "a rect that anchors the popup Note editor; its width is not drawn",
+        "shell/floating.rs",
+        "const DEFAULT_SIZE: (f32, f32) = (640.0, 720.0);",
+        "640.0",
+        "an OS window's size before its Tab's Panel size is known",
+    ),
+    (
+        "shell/floating.rs",
+        "const DEFAULT_SIZE: (f32, f32) = (640.0, 720.0);",
+        "720.0",
+        "an OS window's size before its Tab's Panel size is known",
+    ),
+    (
+        "shell/floating.rs",
+        "const CASCADE: f32 = 48.0;",
+        "48.0",
+        "where an OS window opens on the screen",
+    ),
+    (
+        "shell/floating.rs",
+        "const SCREENS_EVERY_SECS: f64 = 2.0;",
+        "2.0",
+        "seconds between checks of the screens' sizes",
+    ),
+    (
+        "shell/floating.rs",
+        "Self::Pixels => 1.0,",
+        "1.0",
+        "pixels per pixel: no scale",
+    ),
+    (
+        "shell/floating.rs",
+        "Self::Points => 1.0 / scale,",
+        "1.0",
+        "points per pixel: the reciprocal of the scale",
+    ),
+    (
+        "shell/floating.rs",
+        ".unwrap_or(1.0)",
+        "1.0",
+        "a screen's scale when the OS reports none",
+    ),
+    (
+        "shell/floating.rs",
+        ".map_or((pos2(0.0, 0.0), 1.0), |(r, k)| (r.min, k));",
+        "1.0",
+        "a screen's scale when the OS reports none",
+    ),
+    (
+        "shell/floating.rs",
+        "x: at.x - size.x.min(160.0) / 2.0 * k,",
+        "160.0",
+        "where the pointer grabs a new OS window's title bar",
+    ),
+    (
+        "shell/floating.rs",
+        "y: at.y - 12.0 * k,",
+        "12.0",
+        "where the pointer grabs a new OS window's title bar",
+    ),
+    (
+        "shell/floating.rs",
+        "&& (want.x - at.x).abs().max((want.y - at.y).abs()) > 1.0",
+        "1.0",
+        "a tolerance: an OS window moved by less than a pixel has not moved",
+    ),
+    (
+        "shell/get_bibles_tab.rs",
+        "_ => (1.0, \"Importing…\".to_string()),",
+        "1.0",
+        "the progress fraction of an import with no byte count",
+    ),
+    (
+        "shell/import_tab.rs",
+        "format!(\"{:.1} MB\", bytes as f64 / 1_000_000.0)",
+        "1_000_000.0",
+        "bytes in a megabyte",
+    ),
+    (
+        "shell/note_editor.rs",
+        "let size = body.size * scale::HEADINGS.get(usize::from(n) - 1).unwrap_or(&1.0);",
+        "1.0",
+        "a heading's text scale when it has no step: the body size",
+    ),
+    (
+        "shell/notes_tab.rs",
+        "pub(crate) const AUTOSAVE_SECS: f64 = 1.0;",
+        "1.0",
+        "seconds between Note autosaves",
+    ),
+    (
+        "shell/notes_tab.rs",
+        "let lines = 2.0 + card.annotation.body().len() as f32 / 60.0;",
+        "2.0",
+        "a Note card's height estimate: two lines beside its text",
+    ),
+    (
+        "shell/notes_tab.rs",
+        "let lines = 2.0 + card.annotation.body().len() as f32 / 60.0;",
+        "60.0",
+        "characters a Note's line holds, for a height estimate",
+    ),
+    (
+        "shell/notes_tab.rs",
+        "let rect = Rect::from_min_size(origin + vec2(0.0, top), vec2(width, 10_000.0));",
+        "10_000.0",
+        "a card may grow as tall as it needs",
+    ),
+    (
+        "shell/notes_tab.rs",
+        "NoteLineKind::Text => (1.0, ColorRole::Ink, None, 0.0),",
+        "1.0",
+        "a Note line's text scale: the body size",
+    ),
+    (
+        "shell/notes_tab.rs",
+        "let scale = scale::HEADINGS.get(usize::from(n) - 1).unwrap_or(&1.0);",
+        "1.0",
+        "a heading's text scale when it has no step: the body size",
+    ),
+    (
+        "shell/notes_tab.rs",
+        "1.0,",
+        "1.0",
+        "a Note line's text scale: the body size",
+    ),
+    (
+        "shell/notes_tab.rs",
+        "NoteLineKind::Quote => (1.0, ColorRole::Ink, None, space::L),",
+        "1.0",
+        "a Note line's text scale: the body size",
+    ),
+    (
+        "shell/search_views.rs",
+        "let width = 2000.0;",
+        "2000.0",
+        "a layout width meaning do not wrap, not a size on screen",
+    ),
+    (
+        "shell/tile_handles.rs",
+        "const STEP: f32 = 24.0;",
+        "24.0",
+        "how far an arrow key moves a Panel separator",
+    ),
+    (
+        "shell/tile_handles.rs",
+        "const MIN_PANEL: f32 = 120.0;",
+        "120.0",
+        "the narrowest the arrow keys make a Panel",
+    ),
+    (
+        "shell/tile_handles.rs",
+        "let grab = 2.0 * ui.style().interaction.resize_grab_radius_side + 0.5;",
+        "0.5",
+        "a tolerance: how wide a widget may be and still be a separator",
+    ),
+    (
+        "shell/tile_handles.rs",
+        "&& (rect.center().x - (a.right() + b.left()) / 2.0).abs() < 1.0",
+        "1.0",
+        "a tolerance: a widget centred on the gap is its separator",
+    ),
+    (
+        "shell/tile_handles.rs",
+        "&& (rect.center().y - (a.bottom() + b.top()) / 2.0).abs() < 1.0",
+        "1.0",
+        "a tolerance: a widget centred on the gap is its separator",
+    ),
+    (
+        "shell/tile_handles.rs",
+        "if !is_tab && (rect.min - r.min).length() < 1.0 && rect.height() < r.height() {",
+        "1.0",
+        "a tolerance: a widget at the Panel's corner is its tab bar",
+    ),
+    (
+        "shell/timeline_tab.rs",
+        "const FOCUS_YEARS: f64 = 160.0;",
+        "160.0",
+        "years, not points",
+    ),
+    (
+        "shell/timeline_tab.rs",
+        "const PAN_SHARE: f64 = 1.0 / 3.0;",
+        "1.0",
+        "how far Earlier and Later move the view: a third of it",
+    ),
+    (
+        "shell/timeline_tab.rs",
+        "const PAN_SHARE: f64 = 1.0 / 3.0;",
+        "3.0",
+        "how far Earlier and Later move the view: a third of it",
+    ),
+    (
+        "shell/timeline_tab.rs",
+        "zoom = Some(0.5);",
+        "0.5",
+        "the zoom factor of Zoom out",
+    ),
+    (
+        "shell/timeline_tab.rs",
+        "zoom = Some(2.0);",
+        "2.0",
+        "the zoom factor of Zoom in",
+    ),
+    (
+        "shell/timeline_tab.rs",
+        "let factor = f64::from(pinch) * (f64::from(scroll.y) / 300.0).exp();",
+        "300.0",
+        "how fast the wheel zooms",
+    ),
+    (
+        "shell/timeline_tab.rs",
+        "if (factor - 1.0).abs() > 1e-6 {",
+        "1.0",
+        "a zoom factor's distance from no zoom, not points",
+    ),
+    (
+        "shell/toolbar.rs",
+        "pub(super) const DROP_EDGE: f32 = 0.25;",
+        "0.25",
+        "the share of a Panel's edge that drops a Resource beside it",
+    ),
+    (
+        "shell/toolbar_bar.rs",
+        "pub(crate) const REVEAL: f32 = 6.0;",
+        "6.0",
+        "the pointer's reveal zone at the window edge",
+    ),
+    (
+        "shell/toolbar_bar.rs",
+        "const KEEP: f32 = 12.0;",
+        "12.0",
+        "the pointer's keep-showing zone round an Auto-hide toolbar",
+    ),
+    (
+        "shell/toolbar_look.rs",
+        "for j in [-1.0, 1.0] {",
+        "1.0",
+        "which side of the grip's centre line a dot sits, a sign",
+    ),
+    (
+        "shell/toolbar_look.rs",
+        "let total: f32 = children.iter().map(|(_, s)| s.max(0.01)).sum();",
+        "0.01",
+        "a Panel's share in a thumbnail is never zero",
+    ),
+    (
+        "shell/toolbar_look.rs",
+        "let size = room * share.max(0.01) / total;",
+        "0.01",
+        "a Panel's share in a thumbnail is never zero",
+    ),
+    (
+        "shell/toolbar_look.rs",
+        "job.wrap = egui::text::TextWrapping::truncate_at_width(width.max(1.0));",
+        "1.0",
+        "a truncation width is never zero",
+    ),
+    (
+        "shell.rs",
+        "pub(crate) const HOVER_DWELL_SECS: f64 = 0.15;",
+        "0.15",
+        "seconds the pointer rests before a hover card",
+    ),
+    (
+        "shell.rs",
+        "const FLASH_SECS: f64 = 1.2;",
+        "1.2",
+        "seconds a jump's flash lasts",
+    ),
+    (
+        "shell.rs",
+        "l.shares.set_share(a, 2.0);",
+        "2.0",
+        "the shares of a two-to-one split",
+    ),
+    (
+        "shell.rs",
+        "l.shares.set_share(b, 1.0);",
+        "1.0",
+        "the shares of a two-to-one split",
+    ),
+    (
+        "shell.rs",
+        "if !now && self.st.now - self.st.last_save < 1.0 {",
+        "1.0",
+        "seconds between saves of the Workspace",
+    ),
+    (
+        "shell.rs",
+        ".filter_map(|c| Some((dock_node(tree, panels, *c)?, 1.0)))",
+        "1.0",
+        "a docked Panel's share: all equal",
+    ),
+    (
+        "shell.rs",
+        "let a = (1.0 - age / FLASH_SECS).clamp(0.0, 1.0) as f32;",
+        "1.0",
+        "the flash's fading strength, 0 to 1",
+    ),
+    (
+        "shell.rs",
+        "&& (t.header_controls - measured).abs() > 0.5",
+        "0.5",
+        "a tolerance: a header width change smaller than this is not a resize",
+    ),
+    (
+        "shell.rs",
+        "if self.now - t < 4.0 {",
+        "4.0",
+        "seconds a toast shows",
+    ),
+    (
+        "view.rs",
+        "const PREFETCH: f32 = 1.5;",
+        "1.5",
+        "how far ahead text is laid out, in viewport heights",
+    ),
+    (
+        "view.rs",
+        "view.set_width(600.0);",
+        "600.0",
+        "a reading view's width before its pane first measures it",
+    ),
+    (
+        "view.rs",
+        "if (width - self.width).abs() < 0.5 && !self.heights.is_empty() {",
+        "0.5",
+        "a tolerance: a width change smaller than this is not a resize",
+    ),
+    (
+        "view.rs",
+        "for (index, top, laid) in self.laid_in_view(y + 1.0) {",
+        "1.0",
+        "a hit test: the blocks laid out round the point",
+    ),
+    (
+        "view.rs",
+        "for (block, top, laid) in self.laid_in_view(y + 1.0) {",
+        "1.0",
+        "a hit test: the blocks laid out round the point",
+    ),
+    (
+        "view.rs",
+        "while top < height * (1.0 + PREFETCH) && below < n {",
+        "1.0",
+        "how far ahead text is laid out: the viewport and the prefetch",
+    ),
+    (
+        "view.rs",
+        "if let Some(line) = laid.lines.iter().find(|l| l.bottom > offset + 0.5) {",
+        "0.5",
+        "a tolerance: the first line not scrolled past",
     ),
 ];
 
@@ -664,8 +1050,8 @@ fn sink_spans(code: &[char]) -> Vec<(usize, usize, String)> {
     spans
 }
 
-/// Every literal the rules flag in `src`, as (line, reason).
-pub(crate) fn violations(src: &str) -> Vec<(usize, String)> {
+/// Every literal the rules flag in `src`, as (line, literal, reason).
+pub(crate) fn violations(src: &str) -> Vec<(usize, String, String)> {
     let code: Vec<char> = code_of(src).chars().collect();
     let spans = sink_spans(&code);
     // Line starts, char-indexed.
@@ -678,7 +1064,7 @@ pub(crate) fn violations(src: &str) -> Vec<(usize, String)> {
     if starts.last() != Some(&code.len()) {
         starts.push(code.len());
     }
-    let mut out: Vec<(usize, String)> = Vec::new();
+    let mut out: Vec<(usize, String, String)> = Vec::new();
     for (n, w) in starts.windows(2).map(|w| (w[0], w[1])).enumerate() {
         let (s, e) = w;
         let line = &code[s..e];
@@ -694,25 +1080,28 @@ pub(crate) fn violations(src: &str) -> Vec<(usize, String)> {
             let next = line[after..].iter().find(|c| **c != ' ');
             let operator = before.is_some_and(|c| *c == '*' || *c == '/')
                 || next.is_some_and(|c| *c == '*' || *c == '/');
-            // `x + 2.0`, `x -= 2.0`, `2.0 + x`: an offset, so a spacing. A unary minus
-            // (`(-1.0`, `= -2.0`) is not, nor a leading 1 (`1.0 - t`, `1.0 + share`: the
-            // whole of a fraction).
-            let offset_before = additive_before(&line[..num.start]);
-            let leads = next.is_some_and(|c| *c == '+' || *c == '-');
-            let additive = offset_before || (v != 1.0 && leads);
+            // `1.0 - t`: the rest of a fraction, unless it is itself taken from something
+            // (`x - 1.0 - t`).
+            let fraction =
+                v == 1.0 && next.is_some_and(|c| *c == '-') && !additive_before(&line[..num.start]);
             if let Some((open, _, sink)) = spans.iter().find(|(o, c, _)| *o < at && at < *c) {
-                // Inside a sink a 1 is a size (`expand(1.0)`, `vec2(1.0, h)`,
-                // `Margin::same(1)`): only the leading 1 of a fraction
-                // (`lerp_to_gamma(c, 1.0 - t)`) and an integer 1 that counts
-                // (`level.saturating_sub(1)`, `n - 1`) are unitless.
-                let fraction = v == 1.0 && leads && !offset_before;
+                // Inside a sink an integer 1 that counts (`level.saturating_sub(1)`,
+                // `n - 1`) is unitless too; as a whole argument it is a size
+                // (`Margin::same(1)`).
                 let count = !num.float && v == 1.0 && !whole_argument(&code, *open, at, s + after);
-                let unitless = (operator && [0.5, 2.0].contains(&v)) || count || fraction;
-                if v != 0.0 && !unitless {
-                    out.push((n + 1, format!("{} in {sink}(…)", num.text)));
+                if !(unitless(v, operator, fraction) || count) {
+                    out.push((
+                        n + 1,
+                        num.text.clone(),
+                        format!("{} in {sink}(…)", num.text),
+                    ));
                 }
-            } else if num.float && !unitless_outside_sinks(v, operator, additive) {
-                out.push((n + 1, format!("float literal {}", num.text)));
+            } else if num.float && !unitless(v, operator, fraction) {
+                out.push((
+                    n + 1,
+                    num.text.clone(),
+                    format!("float literal {}", num.text),
+                ));
             }
         }
         let text: String = line.iter().collect();
@@ -723,7 +1112,7 @@ pub(crate) fn violations(src: &str) -> Vec<(usize, String)> {
                 .take_while(|c| c.is_ascii_uppercase() || *c == '_')
                 .collect();
             if name.len() > 1 && !NAMED_COLOR_OK.contains(&name.as_str()) {
-                out.push((n + 1, format!("named colour Color32::{name}")));
+                out.push((n + 1, name.clone(), format!("named colour Color32::{name}")));
             }
             from += off + "Color32::".len();
         }
@@ -760,12 +1149,12 @@ fn additive_before(before: &[char]) -> bool {
     }
 }
 
-/// A float literal outside a sink call that is not a measurement: 0, and ½, 1 or 2 as a
-/// factor, a bound or a tolerance (`/ 2.0`, `* 0.5`, `.clamp(0.0, 1.0)`, `Some(2.0)`,
-/// `.abs() < 0.5`). Any of them added to or taken from a coordinate is a spacing: use
-/// `space::*` (or `stroke::HAIR / 2.0` to centre a hairline on a pixel).
-fn unitless_outside_sinks(v: f64, operator: bool, additive: bool) -> bool {
-    v == 0.0 || ([0.5, 1.0, 2.0].contains(&v) && (operator || !additive))
+/// The only literals that are never a measurement, wherever they stand: 0, halving or
+/// doubling a length (`w / 2.0`, `h * 0.5`, `2.0 * MARGIN`) and the rest of a fraction
+/// (`1.0 - t`). Every other literal — a bound, a tolerance, a zoom factor, a 1 or a 2
+/// added to a coordinate — is a token or an exact [`ALLOWED`] entry.
+fn unitless(v: f64, operator: bool, fraction: bool) -> bool {
+    v == 0.0 || (operator && (v == 0.5 || v == 2.0)) || fraction
 }
 
 fn ui_sources() -> Vec<PathBuf> {
@@ -804,6 +1193,13 @@ fn relative(p: &Path) -> String {
         .replace('\\', "/")
 }
 
+/// The [`ALLOWED`] entry for `literal` on the line `text` of `file`, if any.
+fn allowed_entry(file: &str, text: &str, literal: &str) -> Option<usize> {
+    ALLOWED
+        .iter()
+        .position(|(f, whole, value, _)| *f == file && *value == literal && text.trim() == *whole)
+}
+
 #[test]
 fn no_spacing_size_or_colour_literals_outside_the_tokens() {
     let mut problems = Vec::new();
@@ -812,20 +1208,17 @@ fn no_spacing_size_or_colour_literals_outside_the_tokens() {
         let src = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = src.lines().collect();
         let file = relative(&path);
-        for (line, why) in violations(&src) {
+        for (line, literal, why) in violations(&src) {
             let text = lines.get(line - 1).copied().unwrap_or("");
-            let allowed = ALLOWED
-                .iter()
-                .position(|(f, snippet, _)| *f == file && text.contains(snippet));
-            match allowed {
+            match allowed_entry(&file, text, &literal) {
                 Some(i) => used[i] = true,
                 None => problems.push(format!("{file}:{line}: {why}: {}", text.trim())),
             }
         }
     }
-    for (i, (f, snippet, _)) in ALLOWED.iter().enumerate() {
+    for (i, (f, whole, value, _)) in ALLOWED.iter().enumerate() {
         if !used[i] {
-            problems.push(format!("stale allowlist entry {f}: {snippet:?}"));
+            problems.push(format!("stale allowlist entry {f}: {whole:?} ({value})"));
         }
     }
     assert!(
@@ -859,15 +1252,16 @@ mod tests {
     fn f() { ui.add_space(6.0); }
 }
 ";
-    let lines: Vec<usize> = violations(src).into_iter().map(|(l, _)| l).collect();
+    let lines: Vec<usize> = violations(src).into_iter().map(|(l, _, _)| l).collect();
     // Line 6: `/ 2.0` halves, but `+ 1.0` nudges a coordinate by a point.
     assert_eq!(lines, vec![3, 5, 6, 7, 7, 8, 8, 8, 9, 11, 12]);
 }
 
-/// ½, 1 and 2 are unitless only as factors, bounds and tolerances; added to or taken from a
-/// coordinate they are spacings.
+/// No value is exempt as such: a ½, 1 or 2 added to a coordinate is a spacing, and as a
+/// bound, a tolerance or a zoom factor it is an exact [`ALLOWED`] entry. Only halving,
+/// doubling and the rest of a fraction are unitless.
 #[test]
-fn the_literal_lint_sees_small_offsets_added_to_coordinates() {
+fn the_literal_lint_sees_small_offsets_bounds_and_tolerances() {
     let src = "\
 let text = pos2((icon.right() + 2.0).min(row.right()), row.top());
 x -= 2.0;
@@ -876,17 +1270,35 @@ let y = rect.bottom() - 0.5;
 row_y += 2.0 + label_h + 2.0;
 let x = last[2] + 1.0;
 x += 1.0;
-let ok = (1.0 - age / FLASH_SECS).clamp(0.0, 1.0);
-let ok = height * (1.0 + PREFETCH);
-let ok = size / 2.0 + space::XXS * 2.0 - w * 0.5;
+let a = (1.0 - age / FLASH_SECS).clamp(0.0, 1.0);
+let p = height * (1.0 + PREFETCH);
 if (width - self.width).abs() > 0.5 {}
 zoom = Some(2.0);
-let ok = Some(-1.0).map(|d| d * -2.0);
+let n = Some(-1.0).map(|d| d * -2.0);
+let w = width.max(1.0);
+let ok = size / 2.0 + space::XXS * 2.0 - w * 0.5;
 let ok = rect.bottom() - stroke::HAIR / 2.0;
+let ok = ink.lerp_to_gamma(lapis, 1.0 - t);
 ";
     let found = violations(src);
-    let lines: Vec<usize> = found.iter().map(|(l, _)| *l).collect();
-    assert_eq!(lines, vec![1, 2, 3, 4, 5, 6, 7], "{found:?}");
+    let lines: Vec<usize> = found.iter().map(|(l, _, _)| *l).collect();
+    assert_eq!(
+        lines,
+        vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 12, 13],
+        "{found:?}"
+    );
+}
+
+/// An allowlist entry covers its own line only: the same literal on another line, or the
+/// line grown by a measurement, is flagged again.
+#[test]
+fn an_allowlist_entry_matches_its_whole_line_and_literal_only() {
+    let entry = |file: &str, text: &str, literal: &str| allowed_entry(file, text, literal);
+    assert!(entry("pane.rs", "        view.scroll_by(40.0);", "40.0").is_some());
+    assert!(entry("pane.rs", "view.scroll_by(40.0 + 6.0);", "6.0").is_none());
+    assert!(entry("pane.rs", "view.scroll_by(40.0).expand(1.0);", "40.0").is_none());
+    assert!(entry("view.rs", "view.scroll_by(40.0);", "40.0").is_none());
+    assert!(entry("pane.rs", "view.scroll_by(40.0);", "4.0").is_none());
 }
 
 /// A one-point size is a measurement inside a sink too: a focus ring pushed out, a clip
@@ -908,7 +1320,7 @@ let ok = vec2(n - 1, w * 0.5);
 let ok = rect.expand(space::PX);
 ";
     let found = violations(src);
-    let lines: Vec<usize> = found.iter().map(|(l, _)| *l).collect();
+    let lines: Vec<usize> = found.iter().map(|(l, _, _)| *l).collect();
     assert_eq!(lines, vec![1, 2, 3, 4, 5, 6, 7], "{found:?}");
 }
 

@@ -46,16 +46,21 @@ style swatches. Page colours (ink, paper, Highlight tones) are `Palette`.
 
 `tokens::tests::no_spacing_size_or_colour_literals_outside_the_tokens` fails on a literal
 spacing, size or colour anywhere in the crate outside `tokens.rs` and `palette.rs`. Use a
-token, add a named one to `tokens.rs`, or, for a number that is not part of the look (a
-duration, a zoom speed, a height estimate, a hit test's tolerance), add an entry with its
-reason to the test's `ALLOWED` list.
+token, or add a named one to `tokens.rs`.
 
-A bare ½, 1 or 2 passes only as a factor, a bound or a tolerance (`/ 2.0`, `* 0.5`,
-`.clamp(0.0, 1.0)`, `.abs() < 0.5`). Added to or taken from a coordinate it is a spacing:
-`icon.right() + space::XXS`, `last[2] + space::PX`, and `rect.bottom() - stroke::HAIR / 2.0`
-to centre a hairline on a pixel. Inside a spacing or size call even a 1 is a size
-(`rect.expand(space::PX)`, not `expand(1.0)`), unless it counts (`level.saturating_sub(1)`)
-or leads a fraction (`lerp_to_gamma(c, 1.0 - t)`).
+No value is exempt as such. The rule lets through only what cannot be a measurement: 0,
+halving or doubling a length (`w / 2.0`, `h * 0.5`, `2.0 * MARGIN`), the rest of a fraction
+(`1.0 - t`) and, inside a call, an integer 1 that counts (`level.saturating_sub(1)`). A ½, 1
+or 2 added to or taken from a coordinate is a spacing: `icon.right() + space::XXS`,
+`last[2] + space::PX`, and `rect.bottom() - stroke::HAIR / 2.0` to centre a hairline on a
+pixel. Inside a spacing or size call a 1 is a size (`rect.expand(space::PX)`, not
+`expand(1.0)`).
+
+A number that is not part of the look (a duration, a zoom factor, a clamp bound, a hit
+test's tolerance, a default before the first layout) gets an exact entry in the test's
+`ALLOWED` list: the file, the whole line (trimmed), the literal and the reason. The entry
+covers that line only; editing the line flags it again, and an entry that no longer matches
+fails the test as stale.
 
 ## Previews
 
