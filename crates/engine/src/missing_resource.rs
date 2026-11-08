@@ -326,7 +326,8 @@ impl Session {
             // TIPNR records where almost no one lived (one link in 4,135 records), so no
             // Resource fills this; say so instead of offering one.
             return EmptyState {
-                message: "No home is recorded for them: the People & places index names where                           very few people lived. The Atlas maps the places of any Passage.",
+                message: "No home is recorded for them: the People & places index names where \
+                          very few people lived. The Atlas maps the places of any Passage.",
                 missing: MissingResource {
                     resource_type: ResourceType::PeopleAndPlaces,
                     tagging: Tagging::None,

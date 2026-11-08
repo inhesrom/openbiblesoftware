@@ -514,17 +514,16 @@ fn entity_link(ui: &mut Ui, p: &EntityLink, new_tab: bool) -> Option<FactbookAct
 }
 
 /// Items in a wrapping row, separated by commas that sit right after each item (`Nahor,
-/// Haran`): an item and its comma are one unit with no spacing between them, so the row's
-/// item spacing falls after the comma, not before it (#261).
+/// Haran`): the row's item spacing falls after the comma, not before it (#261). Each item
+/// and comma stays its own widget, so the row still wraps between items.
 fn comma_list<T>(ui: &mut Ui, items: &[T], mut item: impl FnMut(&mut Ui, &T)) {
     for (i, it) in items.iter().enumerate() {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            item(ui, it);
-            if i + 1 < items.len() {
-                ui.label(RichText::new(",").color(theme::c().muted));
-            }
-        });
+        item(ui, it);
+        if i + 1 < items.len() {
+            // Take back the item spacing the row just added, so the comma touches the item.
+            ui.add_space(-ui.spacing().item_spacing.x);
+            ui.label(RichText::new(",").color(theme::c().muted));
+        }
     }
 }
 
@@ -591,19 +590,32 @@ mod tests {
         let ctx = egui::Context::default();
         let names = ["Nahor", "Haran", "Sarah"];
         let mut rects: Vec<Rect> = Vec::new();
+        let (mut comma_width, mut haran_width) = (0.0, 0.0);
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let width = |text: &str| {
+                let font = egui::TextStyle::Body.resolve(ui.style());
+                (ui.painter())
+                    .layout_no_wrap(text.into(), font, egui::Color32::PLACEHOLDER)
+                    .size()
+                    .x
+            };
+            comma_width = width(",");
+            haran_width = width("Haran");
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 comma_list(ui, &names, |ui, n| rects.push(ui.label(*n).rect));
             });
         });
         out.textures_delta.clear();
+        // A label in a wrapping row is laid out from the row's start: its comma is the
+        // galley's last `comma_width` points.
         let commas: Vec<Rect> = out
             .shapes
             .iter()
             .filter_map(|c| match &c.shape {
                 egui::Shape::Text(t) if t.galley.text() == "," => {
-                    Some(t.galley.rect.translate(t.pos.to_vec2()))
+                    let r = t.galley.rect.translate(t.pos.to_vec2());
+                    Some(Rect::from_x_y_ranges(r.right() - comma_width..=r.right(), r.y_range()))
                 }
                 _ => None,
             })
@@ -615,7 +627,12 @@ mod tests {
                 "comma {comma:?} apart from {name:?}"
             );
         }
-        assert!(rects[1].left() - commas[0].right() >= 3.5, "a space after the comma");
+        let haran_left = rects[1].right() - haran_width;
+        assert!(
+            (haran_left - commas[0].right() - 4.0).abs() < 0.5,
+            "the item spacing after the comma: {haran_left} vs {:?}",
+            commas[0]
+        );
     }
 
     #[test]
