@@ -185,7 +185,12 @@ impl GuideSection {
 
     /// Whether the section header shows how many rows it has (the Summary has none to count).
     pub fn counted(self) -> bool {
-        !matches!(self, GuideSection::Summary | GuideSection::TopicSearch)
+        // A Map counts places, but its rows are a place's locations or a person's places, so
+        // a number beside it contradicted them (Jerusalem: `Map 1` above 4 locations, #261).
+        !matches!(
+            self,
+            GuideSection::Summary | GuideSection::TopicSearch | GuideSection::Map
+        )
     }
 
     /// Whether the section starts collapsed in a new (or reset) Guide arrangement (#15:
@@ -340,8 +345,7 @@ impl GuideSection {
                 "None in your library: no Passage is listed for this person or place."
             }
             (GuideSection::Map, true) => {
-                "None in your library: no location is known for this place, or for any place \
-                 they lived in."
+                "None in your library: no location is known for this place."
             }
             (GuideSection::Related, true) => {
                 "None in your library: no person or place is linked or named with them."

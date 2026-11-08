@@ -45,7 +45,7 @@ impl State {
             {
                 action = Some(("library.starter", json!({})));
             }
-            if self.session.is_enabled("library.import") {
+            if missing.import && self.session.is_enabled("library.import") {
                 // On a row of its own when it does not fit: a link wrapped across rows is two
                 // widgets, and screen readers get no name for the second (#182).
                 let font = egui::TextStyle::Small.resolve(ui.style());

@@ -391,6 +391,28 @@ fn an_unlocated_place_has_an_empty_map_that_says_why() {
     assert!(!map_section(&mut s, "Perga@Act.13.13-").is_empty());
 }
 
+/// #261 GUIDES-9: TIPNR records where almost no one lived, so a person's empty Map says so
+/// and offers no Import that could not help; a place's says no location is known.
+#[test]
+fn a_persons_empty_map_says_no_home_is_recorded_and_offers_no_import() {
+    let t = Temp::new("factbook-map-person");
+    let mut resources = starter_pair();
+    resources.push(crate::testing::johns());
+    let mut s = session(&t, &resources);
+    let apostle = crate::testing::APOSTLE;
+    assert!(map_section(&mut s, apostle).is_empty());
+    let empty = s.guide_empty_state(&Key::Headword(apostle.into()), GuideSection::Map);
+    assert!(
+        empty.message.starts_with("No home is recorded for them"),
+        "{}",
+        empty.message
+    );
+    assert!(!empty.missing.import);
+    assert!(!empty.missing.offers_starter());
+    assert_eq!(empty.missing.get_label(), None);
+    assert!(!GuideSection::Map.counted(), "the Map's rows are not its places");
+}
+
 #[test]
 fn the_atlas_tool_opens_at_a_passage_and_follows_its_link_set() {
     let t = Temp::new("tool");

@@ -48,6 +48,9 @@ pub struct MissingResource {
     /// places indexes).
     pub get_resources: Option<ResourceFilter>,
     pub starter: StarterOffer,
+    /// Whether importing a file could fill it. Not for a person's Factbook Map: no file the
+    /// app imports records where people lived beyond TIPNR's few (#261).
+    pub import: bool,
 }
 
 impl MissingResource {
@@ -271,7 +274,22 @@ impl GuideSection {
             tagging: self.tagging(),
             get_resources: self.get_resources_filter().filter(|_| !index_only),
             starter,
+            import: true,
         }
+    }
+}
+
+impl Session {
+    /// Whether a Factbook Key is a person or people group, once the directory is loaded.
+    fn factbook_is_about_people(&self, key: &Key) -> bool {
+        let Key::Headword(id) = key else {
+            return false;
+        };
+        self.guides
+            .directory()
+            .current(&self.library)
+            .and_then(|d| d.get(id).map(|e| e.entity.kind))
+            .is_some_and(|kind| kind != obs_model::EntityKind::Place)
     }
 }
 
@@ -304,6 +322,20 @@ impl Session {
             _ => section.has_needed(&self.library, &indexes),
         };
         let tagged = section.has_needed_tagging(&self.library, &indexes, &concordances, language);
+        if section == GuideSection::Map && has && self.factbook_is_about_people(key) {
+            // TIPNR records where almost no one lived (one link in 4,135 records), so no
+            // Resource fills this; say so instead of offering one.
+            return EmptyState {
+                message: "No home is recorded for them: the People & places index names where                           very few people lived. The Atlas maps the places of any Passage.",
+                missing: MissingResource {
+                    resource_type: ResourceType::PeopleAndPlaces,
+                    tagging: Tagging::None,
+                    get_resources: None,
+                    starter: StarterOffer::None,
+                    import: false,
+                },
+            };
+        }
         let message = match (section.lacks_people_index(&self.library), has) {
             (true, true) => {
                 "None in your library. Add a People & places index (TIPNR) to find the \
