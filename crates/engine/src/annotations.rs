@@ -979,6 +979,12 @@ const END: ParamSpec = ParamSpec {
     required: false,
     help: "UTF-8 byte offset just past the selection end in its unit",
 };
+const REVISION: ParamSpec = ParamSpec {
+    name: "revision",
+    kind: ParamKind::String,
+    required: false,
+    help: "Content hash of the Resource revision the selection was made in: refused if the Resource has changed since (#259)",
+};
 const NOTEBOOK: ParamSpec = ParamSpec {
     name: "notebook",
     kind: ParamKind::String,
@@ -1065,6 +1071,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 required: true,
                 ..END
             },
+            REVISION,
             STYLE,
             NOTEBOOK,
         ],
@@ -1087,6 +1094,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
             START,
             END_UNIT,
             END,
+            REVISION,
             ParamSpec {
                 name: "passage",
                 kind: ParamKind::String,
@@ -1179,6 +1187,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 required: true,
                 ..END
             },
+            REVISION,
         ],
         enabled: has_user,
         run: run_reattach,
@@ -1293,7 +1302,21 @@ pub(crate) fn to_json<T: serde::Serialize>(v: &T) -> Value {
 }
 
 /// The selection named by the `resource`, `start_unit`, `start`, `end_unit`, `end` params.
-fn selection(cmd: &'static str, p: &Params<'_>) -> Result<Selection, CommandError> {
+/// With `revision`, it must still be the Resource's revision: byte offsets taken from text
+/// that has since been replaced would land on other words (#259).
+fn selection(s: &Session, cmd: &'static str, p: &Params<'_>) -> Result<Selection, CommandError> {
+    if let (Some(id), Some(revision)) = (p.str("resource"), p.str("revision"))
+        && let Some(entry) = s.library.get(id)
+        && entry.manifest.content_hash != revision
+    {
+        return Err(failed(
+            cmd,
+            format!(
+                "{} changed after this text was selected: select it again",
+                entry.manifest.abbreviation
+            ),
+        ));
+    }
     let missing = |name: &str| failed(cmd, format!("a selection needs `{name}`"));
     let unit = |name: &'static str| -> Result<UnitId, CommandError> {
         let raw = p.str(name).ok_or_else(|| missing(name))?;
@@ -1350,7 +1373,7 @@ fn run_redo(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
 
 fn run_highlight(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const CMD: &str = "annotation.highlight";
-    let sel = selection(CMD, &p)?;
+    let sel = selection(s, CMD, &p)?;
     let style = style(s, CMD, &p)?;
     let made = s
         .highlight(&sel, &style, p.str("notebook"))
@@ -1370,7 +1393,7 @@ fn run_note(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         if p.str("passage").is_some() {
             return Err(failed(CMD, "give a selection or a `passage`, not both"));
         }
-        NoteTarget::Selection(selection(CMD, &p)?)
+        NoteTarget::Selection(selection(s, CMD, &p)?)
     } else if let Some(text) = p.str("passage") {
         let list = parse_reference(text, &Standard, None).map_err(|e| {
             failed(
@@ -1437,7 +1460,7 @@ fn run_delete(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
 
 fn run_reattach(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     const CMD: &str = "annotation.reattach";
-    let sel = selection(CMD, &p)?;
+    let sel = selection(s, CMD, &p)?;
     let a = s
         .reattach(p.str("id").unwrap_or_default(), &sel)
         .map_err(|e| failed(CMD, e))?;

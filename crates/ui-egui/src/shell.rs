@@ -626,6 +626,7 @@ impl Shell {
                             self.st.opened(tab);
                         }
                     }
+                    self.st.note_editor_replaced(&id);
                     self.st.lexicon_replaced(&id);
                 }
                 Effect::Switched(tab) => self.st.switched(tab),

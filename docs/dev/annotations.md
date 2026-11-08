@@ -89,7 +89,7 @@ already makes one Highlight per unit; a Note to one place is what the Notes Tool
 
 | Command | Params |
 |---|---|
-| `annotation.highlight` | `resource`, `start_unit`, `start`, `end_unit`?, `end`, `style`? (a Highlight style id; default: the first style of the active palette), `notebook`? |
+| `annotation.highlight` | `resource`, `start_unit`, `start`, `end_unit`?, `end`, `revision`? (the content hash of the revision the selection was made in: refused once the Resource has been replaced, #259; the UI always sends it), `style`? (a Highlight style id; default: the first style of the active palette), `notebook`? |
 | `edit.undo` / `edit.redo` | Ctrl+Z / Ctrl+Shift+Z; enabled only when there is something to undo or redo |
 | `annotation.note` | `body`?, then a selection (as above), or `passage` (one Standard Passage), or neither (no Anchor); `notebook`? |
 | `annotation.edit` / `annotation.style` / `annotation.move` / `annotation.delete` | `id` and `body` / `style` / `notebook` |
@@ -141,7 +141,12 @@ or deleted).
   saved; Discard closes it without saving. If the save fails, the editor stays open with its
   text and the error. Starting another Note does not replace it, and closing the window is
   cancelled until the Note is saved or discarded. **Open in Notes** saves the Note and opens
-  it in the Notes Tool (#64) to go on writing there.
+  it in the Notes Tool (#64) to go on writing there. When a new revision of its Resource
+  replaces the one it was opened in (#259, `State::note_editor_replaced` on
+  `Effect::Replaced`), the Note goes on to be made in the new revision only if that has the
+  same text at the selection; otherwise the editor says the text changed and saving is
+  refused (its `revision` is the old one), so a Note never quotes words the user did not
+  select.
 - **Drawing them.** `MarkCache` reloads the Annotations when `Session::annotations_revision`
   moves and turns those whose Text range is in a Resource into `Mark`s over document
   positions. Orphaned annotations are not drawn. A range whose text no longer reads as its

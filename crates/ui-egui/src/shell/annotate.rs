@@ -257,11 +257,15 @@ impl MarkCache {
 /// The popup Note editor, anchored at the selection it was opened on.
 pub(super) struct NoteEditor {
     pub(super) tab: TabId,
-    /// The selection, as `annotation.note` params (resource, start_unit, start, end_unit, end).
+    /// The selection, as `annotation.note` params (resource, start_unit, start, end_unit, end,
+    /// and the revision it was made in).
     target: Value,
     /// "Genesis 30:3 (TB)": where the Note goes.
     label: String,
     quote: String,
+    /// The text selected, whole, as [`selected_text`] read it: what a new revision of the
+    /// Resource must still have at `target` for the Note to be made in it (#259).
+    selected: String,
     pub(super) body: String,
     /// The Notebook chosen in the picker (it becomes the last used one when the Note saves).
     pub(super) notebook: String,
@@ -274,7 +278,9 @@ pub(super) struct NoteEditor {
     error: Option<String>,
 }
 
-/// The selection as command params: resource, start_unit, start, end_unit, end.
+/// The selection as command params: resource, start_unit, start, end_unit, end, and the
+/// revision (content hash) its offsets belong to, so the engine refuses them once the
+/// Resource has been replaced (#259).
 pub(super) fn selection_params(doc: &ReadingDoc, sel: &Selection) -> Option<Value> {
     let (a, b) = sel.range(doc);
     if a >= b {
@@ -286,7 +292,28 @@ pub(super) fn selection_params(doc: &ReadingDoc, sel: &Selection) -> Option<Valu
         "start": a.byte,
         "end_unit": doc.units.get(b.unit)?.id.as_str(),
         "end": b.byte,
+        "revision": doc.manifest.content_hash,
     }))
+}
+
+/// The text selection params `target` cover in `doc`, as [`selected_text`] reads it; `None`
+/// when `doc` has no such units or offsets.
+fn text_at(doc: &ReadingDoc, target: &Value) -> Option<String> {
+    let pos = |unit: &str, byte: &str| {
+        let id = target[unit].as_str()?;
+        let unit = doc.units.iter().position(|u| u.id.as_str() == id)?;
+        let byte = usize::try_from(target[byte].as_u64()?).ok()?;
+        doc.units[unit]
+            .text
+            .is_char_boundary(byte)
+            .then_some(crate::selection::DocPos { unit, byte })
+    };
+    let sel = Selection {
+        anchor: pos("start_unit", "start")?,
+        head: pos("end_unit", "end")?,
+        granularity: crate::selection::Granularity::Grapheme,
+    };
+    Some(selected_text(doc, &sel))
 }
 
 /// Paint one style's swatch into `rect` as it shows on the page of `palette`'s tone: a
@@ -559,25 +586,24 @@ impl State {
             Annotate::Note => {
                 let copied = copy_text(&doc, &sel);
                 let label = copied.lines().last().unwrap_or_default().to_string();
-                let mut quote: String = selected_text(&doc, &sel)
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .join(" ");
+                let selected = selected_text(&doc, &sel);
+                let mut quote: String = selected.split_whitespace().collect::<Vec<_>>().join(" ");
                 if quote.chars().count() > 90 {
                     quote = quote.chars().take(89).collect::<String>() + "…";
                 }
-                self.open_note_editor(ctx, tab, target, label, quote, at);
+                self.open_note_editor(ctx, tab, (target, selected), label, quote, at);
             }
         }
     }
 
     /// Open the popup Note editor at `at` for a Note on `target` (`annotation.note` params: a
-    /// selection, or a `passage`). `label` says where the Note goes, `quote` what it is on.
+    /// selection, with the text selected whole, or a `passage` and no text). `label` says
+    /// where the Note goes, `quote` what it is on.
     pub(super) fn open_note_editor(
         &mut self,
         ctx: &egui::Context,
         tab: TabId,
-        target: Value,
+        (target, selected): (Value, String),
         label: String,
         quote: String,
         at: Rect,
@@ -618,6 +644,7 @@ impl State {
             target,
             label,
             quote,
+            selected,
             body: String::new(),
             notebook,
             notebooks,
@@ -650,6 +677,36 @@ impl State {
             json!({ "text": query, "mode": "library", "resources": resource, "split": new_tab })
         };
         self.run("search.run", &params);
+    }
+
+    /// A new revision of Resource `id` replaced the one the open Note editor's selection was
+    /// made in (#259). Where the new one has the same text there, the Note will be made in it;
+    /// otherwise the editor says so, keeping the text, and saving is refused (the selection's
+    /// `revision` is the old one), so the Note never quotes other words.
+    pub(super) fn note_editor_replaced(&mut self, id: &str) {
+        let Some(ed) = self.note_editor.as_ref() else {
+            return;
+        };
+        if ed.target["resource"].as_str() != Some(id) {
+            return;
+        }
+        let doc = self.doc(id).ok();
+        let Some(ed) = self.note_editor.as_mut() else {
+            return;
+        };
+        match doc {
+            Some(doc) if text_at(&doc, &ed.target).as_deref() == Some(ed.selected.as_str()) => {
+                ed.target["revision"] = json!(doc.manifest.content_hash);
+            }
+            doc => {
+                let abbreviation = doc.map_or_else(|| id.to_string(), |d| d.manifest.abbreviation.clone());
+                ed.error = Some(format!(
+                    "{abbreviation} changed while this Note was open: “{}” is no longer where it \
+                     was. Copy your text, then Discard and select the text again.",
+                    ed.quote
+                ));
+            }
+        }
     }
 
     /// Save the open Note editor's Note (nothing is saved when it is only white space) and
