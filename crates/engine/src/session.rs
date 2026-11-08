@@ -382,6 +382,7 @@ impl Session {
             return false;
         }
         self.workspace.restore(snap);
+        self.rerun_restored_searches();
         self.saved_session = Some(json);
         true
     }

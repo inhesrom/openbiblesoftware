@@ -1249,6 +1249,7 @@ fn reopen_closed(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> 
         Some(n) => failed(ID, format!("no closing {n}")),
         None => failed(ID, "nothing to reopen"),
     })?;
+    s.rerun_restored_searches();
     Ok(json!({ "tabs": tabs.iter().map(|t| t.0).collect::<Vec<_>>() }))
 }
 
@@ -1512,6 +1513,7 @@ fn layout_restore(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError>
     // Where the closing Tabs went is History before they are replaced.
     s.record_history();
     s.workspace.restore(snap);
+    s.rerun_restored_searches();
     Ok(json!({ "name": name }))
 }
 

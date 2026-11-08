@@ -507,6 +507,8 @@ impl Session {
                         contents: false,
                         scroll: None,
                         footnote_markers_hidden: false,
+                        search: None,
+                        comparison: Default::default(),
                     });
                     if t.kind.is_reading() {
                         snap.focused = snap.focused.or(Some(id));

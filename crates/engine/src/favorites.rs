@@ -20,7 +20,7 @@ use crate::workspace::{
 };
 
 /// A Search as a Favorite or Visit keeps it: what the Search Tool's fields held.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedSearch {
     pub mode: SearchMode,
     pub query: String,
@@ -46,7 +46,12 @@ pub struct SavedSearch {
 impl SavedSearch {
     /// A Search Tab's fields, unless its query is empty.
     pub(crate) fn of(st: &SearchTab) -> Option<Self> {
-        (!st.query.trim().is_empty()).then(|| Self {
+        (!st.query.trim().is_empty()).then(|| Self::fields(st))
+    }
+
+    /// A Search Tab's fields, whatever they hold: what a Workspace snapshot keeps (#259).
+    pub(crate) fn fields(st: &SearchTab) -> Self {
+        Self {
             mode: st.mode,
             query: st.query.clone(),
             scope: st.scope.clone(),
@@ -55,7 +60,7 @@ impl SavedSearch {
             resources: st.library.resources.clone(),
             collections: st.library.collections.clone(),
             notebook: st.notebook.clone(),
-        })
+        }
     }
 }
 
