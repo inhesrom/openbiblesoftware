@@ -357,8 +357,7 @@ impl<'a> UnitMarks<'a> {
                 }
                 // Every `morph` phrase has a code's token, so a part without a code has no
                 // run.
-                let Some(code) = p.morph.as_deref().map(str::trim).filter(|c| !c.is_empty())
-                else {
+                let Some(code) = p.morph.as_deref().map(str::trim).filter(|c| !c.is_empty()) else {
                     continue;
                 };
                 let token = codes.token(code).to_string();

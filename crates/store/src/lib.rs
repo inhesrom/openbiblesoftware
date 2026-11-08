@@ -57,12 +57,12 @@ pub use reading_plans::{PlanReadingRow, ReadingPlanRow};
 pub use resource_store::{MappedVerse, MentionStats, ResourceStore, Summary};
 #[cfg(not(target_arch = "wasm32"))]
 pub use sample::sample_resource;
+#[cfg(all(feature = "test-support", not(target_arch = "wasm32")))]
+pub use search_index::damage_search_index;
 #[cfg(not(target_arch = "wasm32"))]
 pub use search_index::{
     IndexKey, SEARCH_APPLICATION_ID, SEARCH_INDEX_EXTENSION, SqliteSearchIndex, build_search_index,
     remove_search_indexes, search_index_files, write_search_index,
 };
-#[cfg(all(feature = "test-support", not(target_arch = "wasm32")))]
-pub use search_index::damage_search_index;
 #[cfg(not(target_arch = "wasm32"))]
 pub use user::{OpenReport, USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore};

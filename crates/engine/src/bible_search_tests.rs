@@ -840,12 +840,18 @@ fn a_revision_that_only_corrects_the_verse_map_is_searched_through_the_new_map()
     settle(&mut s);
     assert!(s.search.is_ready("hnum"));
 
-    s.run("search.scope", &json!({ "tab": tab.0, "value": "Gen 31:54" }))
-        .unwrap();
+    s.run(
+        "search.scope",
+        &json!({ "tab": tab.0, "value": "Gen 31:54" }),
+    )
+    .unwrap();
     settle(&mut s);
     assert_eq!(refs(&s, tab), ["Genesis 31:54"]);
-    s.run("search.scope", &json!({ "tab": tab.0, "value": "Gen 31:55" }))
-        .unwrap();
+    s.run(
+        "search.scope",
+        &json!({ "tab": tab.0, "value": "Gen 31:55" }),
+    )
+    .unwrap();
     settle(&mut s);
     assert!(refs(&s, tab).is_empty());
     cleanup(s, root);
@@ -907,7 +913,10 @@ fn a_bible_index_that_fails_the_search_is_rebuilt() {
     obs_store::damage_search_index(&path, "UPDATE docs SET start = -1;").unwrap();
     s.bible_search.no_read_ahead = true;
     let out = s
-        .run("search.run", &json!({ "text": "love", "bibles": "kjv,web" }))
+        .run(
+            "search.run",
+            &json!({ "text": "love", "bibles": "kjv,web" }),
+        )
         .unwrap();
     let tab = TabId(out["tab"].as_u64().unwrap());
     // The search job, then its events: the rebuild is queued.

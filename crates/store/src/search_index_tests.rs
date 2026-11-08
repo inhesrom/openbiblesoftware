@@ -870,8 +870,8 @@ fn morphology_with_a_lemma_finds_any_word_of_a_multiword_lemma() {
             &[("πάγος", "G4078", "πήγνυμι", "V-PAI-3S")],
         ],
     );
-    let index = SqliteSearchIndex::open(&build(&r, obs_search::INDEX_VERSION, &dir.0), None)
-        .unwrap();
+    let index =
+        SqliteSearchIndex::open(&build(&r, obs_search::INDEX_VERSION, &dir.0), None).unwrap();
     let table: &[(&str, &[i64])] = &[
         ("lemma:Πάγος", &[0, 1]),
         ("lemma:Πάγος @noun", &[0, 1]),
@@ -909,8 +909,8 @@ fn a_lemma_phrase_stays_inside_one_tagged_word() {
             &[("Ἄρειος Πάγος", "G697", "Ἄρειος Πάγος", "N-NSM-L")],
         ],
     );
-    let index = SqliteSearchIndex::open(&build(&r, obs_search::INDEX_VERSION, &dir.0), None)
-        .unwrap();
+    let index =
+        SqliteSearchIndex::open(&build(&r, obs_search::INDEX_VERSION, &dir.0), None).unwrap();
     let table: &[(&str, &[i64])] = &[
         ("lemma:\"ἀγάπη ἐλπίς\"", &[]),
         ("lemma:\"ἀγάπη ἐλπίς\" @noun", &[]),
@@ -949,8 +949,8 @@ fn the_text_field_finds_a_word_shaped_like_a_strongs_number() {
     );
     b.add_key(Key::Headword("Love".into()), &love, None, false);
     let r = b.build().unwrap();
-    let index = SqliteSearchIndex::open(&build(&r, obs_search::INDEX_VERSION, &dir.0), None)
-        .unwrap();
+    let index =
+        SqliteSearchIndex::open(&build(&r, obs_search::INDEX_VERSION, &dir.0), None).unwrap();
     assert_eq!(docs(&index, "text:G26"), [0]);
     assert_eq!(docs(&index, "text:\"G26\""), [0]);
     // Bare, it is a Strong's number, and this Dictionary has no Tagged words.
@@ -989,7 +989,12 @@ fn within_scores_both_sides_whichever_is_written_first() {
     let mut b = ResourceBuilder::new(m);
     let entry = UnitId::new("Faith").unwrap();
     let text = "faith faith faith works\nfaith works works works";
-    b.add_unit(entry.clone(), UnitKind::Entry, Some("Faith".into()), text.into());
+    b.add_unit(
+        entry.clone(),
+        UnitKind::Entry,
+        Some("Faith".into()),
+        text.into(),
+    );
     let split = text.find('\n').unwrap();
     for p in [0..split, split + 1..text.len()] {
         b.add_span(
@@ -1002,8 +1007,8 @@ fn within_scores_both_sides_whichever_is_written_first() {
     }
     b.add_key(Key::Headword("Faith".into()), &entry, None, false);
     let r = b.build().unwrap();
-    let index = SqliteSearchIndex::open(&build(&r, obs_search::INDEX_VERSION, &dir.0), None)
-        .unwrap();
+    let index =
+        SqliteSearchIndex::open(&build(&r, obs_search::INDEX_VERSION, &dir.0), None).unwrap();
     let ranked = |q: &str| -> Vec<(i64, f64)> {
         let options = SearchOptions {
             order: HitOrder::Relevance,
