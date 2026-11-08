@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::Arc;
 
-use obs_fonts::{ShapeCache, ShapedRun};
+use obs_fonts::{Cluster, ShapeCache, ShapeStyle, ShapedRun};
 use unicode_bidi::{BidiInfo, Level};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -327,11 +327,18 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
         bounds.extend([c.chunk.start, c.bytes.start, c.bytes.end, c.chunk.end]);
     }
     let mut breaks = HashSet::new();
-    for (i, _) in unicode_linebreak::linebreaks(&text) {
+    // Breaks the line must take (after a newline or a line or paragraph separator).
+    let mut mandatory = HashSet::new();
+    for (i, kind) in unicode_linebreak::linebreaks(&text) {
         // An interlinear column is never broken: its lines stand under all of its word.
         if i < n && column_at(i).is_none_or(|c| columns[c].chunk.start == i) {
             bounds.push(i);
             breaks.insert(i);
+            if kind == unicode_linebreak::BreakOpportunity::Mandatory {
+                mandatory.insert(i);
+                // The separator before it is an item of its own, which draws nothing.
+                bounds.push(text[..i].trim_end_matches(is_line_separator).len());
+            }
         }
     }
     for i in 1..n {
@@ -351,9 +358,8 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
         let run = run_of(a);
         let style = para.runs[run].style;
         let rtl = levels[a].is_rtl();
-        let shaped = match cache.shape(&text[a..b], style.shape_style(rtl)) {
-            Ok(s) => s,
-            Err(_) => continue,
+        let Some(shaped) = shape_segment(&text[a..b], style.shape_style(rtl), cache) else {
+            continue;
         };
         items.push(LaidItem {
             x: 0.0,
@@ -462,28 +468,58 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
         chunk_w += it.width;
         let br = it.breakable_after;
         let trail = it.trailing_space;
+        let end = it.bytes.end;
+        let style = it.style;
         chunk.push(it);
         if br {
             let avail = available(lines_items.is_empty());
+            // Broken at a soft hyphen, the line ends in a hyphen: leave room for it.
+            let hyphen = if end < n && ends_in_soft_hyphen(&text, end) {
+                hyphen_run(style, false, cache).map_or(0.0, |h| h.width)
+            } else {
+                0.0
+            };
             let fits = cur.is_empty()
                 || if columns.is_empty() {
-                    cur_w + chunk_w - trail <= avail
+                    cur_w + chunk_w - trail + hyphen <= avail
                 } else {
                     // Interlinear columns take space at their edges, more at the line's
                     // ends than between neighbours: measure the line as it would be drawn.
                     let line: Vec<LaidItem> = cur.iter().chain(&chunk).cloned().collect();
                     let (ordered, pads, hang) = arrange_line(line, levels, &columns, &text);
-                    line_content(&ordered, &pads, hang) <= avail
+                    line_content(&ordered, &pads, hang) + hyphen <= avail
                 };
-            if fits {
+            if fits && !cur.is_empty() {
                 cur.append(&mut chunk);
                 cur_w += chunk_w;
             } else {
-                lines_items.push(std::mem::take(&mut cur));
+                if !cur.is_empty() {
+                    lines_items.push(std::mem::take(&mut cur));
+                }
+                // Alone on its line and still too wide (a long name in a narrow Panel):
+                // wrap it between grapheme clusters so all of it stays in the column. An
+                // interlinear column is never broken.
+                let avail = available(lines_items.is_empty());
+                if chunk_w - trail > avail && chunk.iter().all(|i| i.word.is_none()) {
+                    let mut pieces = split_overwide(
+                        std::mem::take(&mut chunk),
+                        avail,
+                        available(false),
+                        &text,
+                        cache,
+                    );
+                    chunk = pieces.pop().unwrap_or_default();
+                    lines_items.extend(pieces);
+                    chunk_w = chunk.iter().map(|i| i.width).sum();
+                }
                 cur.append(&mut chunk);
                 cur_w = chunk_w;
             }
             chunk_w = 0.0;
+            if mandatory.contains(&end) {
+                lines_items.push(std::mem::take(&mut cur));
+                cur_w = 0.0;
+            }
         }
     }
     cur.append(&mut chunk);
@@ -515,10 +551,31 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
     let mut lines = Vec::with_capacity(lines_items.len());
     let mut cells = Vec::new();
     let mut y = para.space_before;
-    for (li, its) in lines_items.into_iter().enumerate() {
+    let line_count = lines_items.len();
+    for (li, mut its) in lines_items.into_iter().enumerate() {
         let start = its.iter().map(|i| i.bytes.start).min().unwrap_or(n);
         let end = its.iter().map(|i| i.bytes.end).max().unwrap_or(n);
-        let (mut ordered, edge_pads, hang) = arrange_line(its, levels, &columns, &text);
+        // UAX #9 rule L1: whitespace at the line's end (and before a tab) takes the
+        // paragraph's level before the line is reordered.
+        let line_levels = bidi
+            .has_rtl()
+            .then(|| {
+                let p = bidi
+                    .paragraphs
+                    .iter()
+                    .find(|p| p.range.contains(&start))
+                    .or(bidi.paragraphs.last())?;
+                Some(bidi.reordered_levels(p, start..end))
+            })
+            .flatten();
+        if let Some(line_levels) = &line_levels {
+            its = split_at_levels(its, line_levels, &text, cache);
+        }
+        if li + 1 < line_count && ends_in_soft_hyphen(&text, end) {
+            its = show_hyphen(its, end, &text, cache);
+        }
+        let line_levels = line_levels.as_deref().unwrap_or(levels);
+        let (mut ordered, edge_pads, hang) = arrange_line(its, line_levels, &columns, &text);
         let (mut asc, mut desc) = (0.0f32, 0.0f32);
         for it in &ordered {
             let (a, d) = it.style.line_extent(para.hebrew_line_height);
@@ -643,6 +700,219 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
         lines,
         cells,
     }
+}
+
+/// Whether `c` ends a line wherever it is (UAX #14 classes BK, CR, LF and NL).
+fn is_line_separator(c: char) -> bool {
+    matches!(
+        c,
+        '\n' | '\r' | '\u{0B}' | '\u{0C}' | '\u{85}' | '\u{2028}' | '\u{2029}'
+    )
+}
+
+/// One segment of paragraph text, shaped through `cache`. Line and paragraph separators draw
+/// nothing: a segment of them is one empty cluster over its bytes.
+fn shape_segment(text: &str, style: ShapeStyle, cache: &ShapeCache) -> Option<Arc<ShapedRun>> {
+    if !text.is_empty() && text.chars().all(is_line_separator) {
+        return Some(Arc::new(ShapedRun {
+            glyphs: Vec::new(),
+            clusters: vec![Cluster {
+                bytes: 0..text.len(),
+                x0: 0.0,
+                x1: 0.0,
+            }],
+            width: 0.0,
+            trailing_space: 0.0,
+        }));
+    }
+    cache.shape(text, style).ok()
+}
+
+/// U+00AD SOFT HYPHEN: a break opportunity that draws nothing unless the line breaks at it.
+const SOFT_HYPHEN: char = '\u{00AD}';
+
+/// Whether the paragraph text before byte `end` ends in a soft hyphen.
+fn ends_in_soft_hyphen(text: &str, end: usize) -> bool {
+    text.get(..end).is_some_and(|t| t.ends_with(SOFT_HYPHEN))
+}
+
+/// The visible hyphen a line broken at a soft hyphen ends in.
+fn hyphen_run(style: RunStyle, rtl: bool, cache: &ShapeCache) -> Option<Arc<ShapedRun>> {
+    cache.shape("-", style.shape_style(rtl)).ok()
+}
+
+/// Bytes `bytes` of `it` shaped on their own, right to left or not.
+fn reshape(
+    it: &LaidItem,
+    bytes: Range<usize>,
+    rtl: bool,
+    breakable_after: bool,
+    text: &str,
+    cache: &ShapeCache,
+) -> Option<LaidItem> {
+    let shaped = shape_segment(&text[bytes.clone()], it.style.shape_style(rtl), cache)?;
+    Some(LaidItem {
+        x: 0.0,
+        width: shaped.width,
+        run: it.run,
+        rtl,
+        style: it.style,
+        trailing_space: shaped.trailing_space,
+        shaped,
+        bytes,
+        breakable_after,
+        word: it.word,
+        in_word: it.in_word,
+    })
+}
+
+/// An unbreakable chunk (items in logical order) too wide for a line, cut between grapheme
+/// clusters into pieces that fit: the first in `first` px, the rest in `rest`. A cluster wider
+/// than the line is a piece of its own, and trailing space never starts a piece.
+fn split_overwide(
+    chunk: Vec<LaidItem>,
+    first: f32,
+    rest: f32,
+    text: &str,
+    cache: &ShapeCache,
+) -> Vec<Vec<LaidItem>> {
+    let (Some(a), Some(b)) = (
+        chunk.first().map(|i| i.bytes.start),
+        chunk.last().map(|i| i.bytes.end),
+    ) else {
+        return vec![chunk];
+    };
+    let graphemes: HashSet<usize> = text[a..b]
+        .grapheme_indices(true)
+        .map(|(i, _)| a + i)
+        .collect();
+    let mut cuts = Vec::new();
+    let mut avail = first;
+    let mut used = 0.0f32;
+    let mut placed = false;
+    for it in &chunk {
+        let mut clusters: Vec<(Range<usize>, f32)> =
+            it.clusters().map(|(r, x0, x1)| (r, x1 - x0)).collect();
+        clusters.sort_by_key(|(r, _)| r.start);
+        for (r, w) in clusters {
+            let space = text[r.clone()].chars().all(char::is_whitespace);
+            if placed && used + w > avail && !space && graphemes.contains(&r.start) {
+                cuts.push(r.start);
+                avail = rest;
+                used = 0.0;
+            }
+            used += w;
+            placed = true;
+        }
+    }
+    if cuts.is_empty() {
+        return vec![chunk];
+    }
+    let mut pieces: Vec<Vec<LaidItem>> = vec![Vec::new(); cuts.len() + 1];
+    for it in chunk {
+        let mut start = it.bytes.start;
+        let inner = cuts
+            .iter()
+            .copied()
+            .filter(|&c| c > it.bytes.start && c < it.bytes.end);
+        for edge in inner.chain([it.bytes.end]) {
+            let piece = if start == it.bytes.start && edge == it.bytes.end {
+                Some(it.clone())
+            } else {
+                let breakable = edge != it.bytes.end || it.breakable_after;
+                reshape(&it, start..edge, it.rtl, breakable, text, cache)
+            };
+            if let Some(p) = piece {
+                pieces[cuts.partition_point(|&c| c <= start)].push(p);
+            }
+            start = edge;
+        }
+    }
+    pieces.retain(|p| !p.is_empty());
+    pieces
+}
+
+/// A line's items split where its levels (after rule L1) differ within one, or from the
+/// direction it was shaped in, each piece shaped in its own direction.
+fn split_at_levels(
+    its: Vec<LaidItem>,
+    levels: &[Level],
+    text: &str,
+    cache: &ShapeCache,
+) -> Vec<LaidItem> {
+    let mut out = Vec::with_capacity(its.len());
+    for it in its {
+        let r = it.bytes.clone();
+        let mut cuts: Vec<usize> = text[r.clone()]
+            .char_indices()
+            .map(|(i, _)| r.start + i)
+            .collect::<Vec<_>>()
+            .windows(2)
+            .filter(|w| levels[w[0]] != levels[w[1]])
+            .map(|w| w[1])
+            .collect();
+        if cuts.is_empty() && levels[r.start].is_rtl() == it.rtl {
+            out.push(it);
+            continue;
+        }
+        cuts.push(r.end);
+        let mut start = r.start;
+        for edge in cuts {
+            let breakable = edge == r.end && it.breakable_after;
+            let rtl = levels[start].is_rtl();
+            if let Some(p) = reshape(&it, start..edge, rtl, breakable, text, cache) {
+                out.push(p);
+            }
+            start = edge;
+        }
+    }
+    out
+}
+
+/// A line broken at a soft hyphen: the soft hyphen ending it becomes an item of its own that
+/// draws a visible hyphen over its bytes.
+fn show_hyphen(
+    mut its: Vec<LaidItem>,
+    end: usize,
+    text: &str,
+    cache: &ShapeCache,
+) -> Vec<LaidItem> {
+    let Some(k) = its.iter().position(|i| i.bytes.end == end) else {
+        return its;
+    };
+    let shy = end - SOFT_HYPHEN.len_utf8();
+    let Some(hyphen) = hyphen_run(its[k].style, its[k].rtl, cache) else {
+        return its;
+    };
+    let it = its.remove(k);
+    let mut run = (*hyphen).clone();
+    for g in &mut run.glyphs {
+        g.cluster = 0;
+    }
+    for c in &mut run.clusters {
+        c.bytes = 0..SOFT_HYPHEN.len_utf8();
+    }
+    run.trailing_space = 0.0;
+    let mut pieces = Vec::with_capacity(2);
+    if shy > it.bytes.start {
+        pieces.extend(reshape(
+            &it,
+            it.bytes.start..shy,
+            it.rtl,
+            false,
+            text,
+            cache,
+        ));
+    }
+    pieces.push(LaidItem {
+        width: run.width,
+        trailing_space: 0.0,
+        shaped: Arc::new(run),
+        bytes: shy..end,
+        ..it
+    });
+    its.splice(k..k, pieces);
+    its
 }
 
 /// A line's items in visual order, the space each takes at its left and right, and the
@@ -848,20 +1118,30 @@ impl LaidBlock {
             .iter()
             .map(|i| i.x + i.width)
             .fold(f32::MIN, f32::max);
-        // Beyond the line: its logical start on the paragraph's start side, else its end.
-        if x < left {
-            return if self.rtl {
-                line.bytes.end
+        // Beyond the line: the boundary at its visual edge, as just inside it, so a drag across
+        // the edge never jumps to the far end of a run in the other direction.
+        if x < left || x >= right {
+            let edge = if x < left {
+                line.items.iter().min_by(|a, b| a.x.total_cmp(&b.x))
             } else {
-                line.bytes.start
+                line.items
+                    .iter()
+                    .max_by(|a, b| (a.x + a.width).total_cmp(&(b.x + b.width)))
             };
-        }
-        if x >= right {
-            return if self.rtl {
-                line.bytes.start
+            let Some(it) = edge else {
+                return line.bytes.start;
+            };
+            let cluster = if x < left {
+                it.clusters().next()
             } else {
-                line.bytes.end
+                it.clusters().last()
             };
+            let bytes = cluster.map_or(it.bytes.clone(), |(b, _, _)| b);
+            return self.snap(if (x < left) ^ it.rtl {
+                bytes.start
+            } else {
+                bytes.end
+            });
         }
         for it in &line.items {
             if x < it.x || x >= it.x + it.width {

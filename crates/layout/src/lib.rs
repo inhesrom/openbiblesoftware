@@ -40,6 +40,8 @@ pub use style::{ColorRole, RunStyle, TextSettings, VerseNumbers};
 #[cfg(test)]
 mod interlinear_tests;
 #[cfg(test)]
+mod line_breaking_tests;
+#[cfg(test)]
 mod reading_font_tests;
 #[cfg(test)]
 mod tests;

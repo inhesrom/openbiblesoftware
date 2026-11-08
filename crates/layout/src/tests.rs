@@ -441,9 +441,19 @@ fn carets_land_on_grapheme_boundaries() {
         }
         x += 3.0;
     }
-    // Beyond the right of an RTL line is its logical start; beyond the left, its end.
-    assert_eq!(block.caret_at(block.width + 50.0, y), line.bytes.start);
+    // Beyond the right of an RTL line is its logical start (its verse number, at the unit's
+    // first byte); beyond the left, its end. Either is where the caret is just inside the edge.
+    let unit_byte = |p: usize| match block.to_unit(p).unwrap() {
+        UnitPos::Text(b) => b,
+        UnitPos::Object { anchor, .. } => anchor,
+    };
+    assert_eq!(
+        unit_byte(block.caret_at(block.width + 50.0, y)),
+        unit_byte(line.bytes.start)
+    );
     assert_eq!(block.caret_at(-50.0, y), line.bytes.end);
+    let left = line.items.iter().map(|i| i.x).fold(f32::MAX, f32::min);
+    assert_eq!(block.caret_at(-50.0, y), block.caret_at(left + 0.01, y));
 }
 
 #[test]

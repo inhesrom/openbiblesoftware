@@ -790,7 +790,8 @@ pub struct SnippetStyle {
 /// in `styled` bold, italic or in their own colour role (a Note's formatting, its links and
 /// Bible references). Ranges may overlap, such as a reference in bold text: each byte takes
 /// every style over it. Byte positions map back to `text`, as in
-/// [`styled_snippet_paragraph`].
+/// [`styled_snippet_paragraph`]. Like a Note line exported with `dir="auto"`, it reads right
+/// to left when its first strong letter does.
 pub fn formatted_snippet_paragraph(
     text: &str,
     base: ColorRole,
@@ -798,7 +799,7 @@ pub fn formatted_snippet_paragraph(
     scale: f32,
     settings: &TextSettings,
 ) -> Paragraph {
-    let mut para = snippet_paragraph("", base, false, settings);
+    let mut para = snippet_paragraph("", base, starts_rtl(text), settings);
     let mut cuts: Vec<usize> = vec![0, text.len()];
     for (r, _) in styled {
         cuts.extend([r.start.min(text.len()), r.end.min(text.len())]);
