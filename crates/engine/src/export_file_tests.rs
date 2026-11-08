@@ -224,6 +224,7 @@ fn each_export_replaces_a_previous_file_and_leaves_no_scratch_file() {
 
 /// The child half of [`a_failed_export_leaves_the_previous_file_byte_identical`]: run in a
 /// process that may not write files larger than a block, so each export fails mid-write.
+#[cfg(unix)]
 const FAILURE_CHILD: &str = "OBS_EXPORT_FAILURE_CHILD";
 
 /// AUD-ENGINE-DATA-7: a failed Export everything (or Notes export) truncated the previous
