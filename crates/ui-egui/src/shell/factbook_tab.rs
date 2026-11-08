@@ -156,7 +156,7 @@ impl State {
                     }
                     return;
                 }
-                ui.label(RichText::new(chooser_heading(&chooser, &name)).color(theme::c().muted));
+                ui.label(RichText::new(chooser_heading(chooser, name)).color(theme::c().muted));
                 ui.add_space(6.0);
                 egui::ScrollArea::vertical()
                     .id_salt(("factbook-chooser", tab))
