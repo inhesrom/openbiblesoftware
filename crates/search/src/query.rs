@@ -726,9 +726,11 @@ impl Parser {
                     span,
                 }))
             }
+            // `text:` searches the words as written: `text:G26` is the word G26, never a
+            // Strong's number (#257).
             Field::Text => Ok(match quoted_prefix {
                 Some(prefix) => quoted(&value, prefix, span),
-                None => raw_term(&value, span),
+                None => surface_term(&value, span),
             }),
             Field::Morph => self.morph(&value, span),
         }
@@ -861,13 +863,20 @@ fn bare_strongs(raw: &str) -> Option<StrongsNumber> {
     StrongsNumber::new(lang, num.parse().ok()?, homograph)
 }
 
+/// A bare token: a Strong's number if it is shaped like one, else its words.
 fn raw_term(raw: &str, span: Range<usize>) -> Option<Query> {
-    let trimmed = raw.trim_end_matches('*');
-    let prefix = trimmed.len() < raw.len();
-    if !prefix && let Some(number) = bare_strongs(trimmed) {
+    if !raw.ends_with('*')
+        && let Some(number) = bare_strongs(raw)
+    {
         return Some(Query::Strong { number, span });
     }
-    words(trimmed, prefix, span)
+    surface_term(raw, span)
+}
+
+/// The words of a bare token, the last one a prefix when it ends in `*`.
+fn surface_term(raw: &str, span: Range<usize>) -> Option<Query> {
+    let trimmed = raw.trim_end_matches('*');
+    words(trimmed, trimmed.len() < raw.len(), span)
 }
 
 /// The words of a quoted `text`: a phrase, even of one word, so it is exact and never stemmed.

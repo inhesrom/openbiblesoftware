@@ -23,8 +23,9 @@ use crate::query::Compiled;
 /// The version of the Search index: what a document is, its fields, the tokenizer and the
 /// normalizer. A cache built with another version is stale and is rebuilt in the background.
 /// Bump it whenever any of those change (including [`obs_model::NORMALIZER_VERSION`]).
-/// Version 2 added the `morph` field (#145).
-pub const INDEX_VERSION: u32 = 2;
+/// Version 2 added the `morph` field (#145). Version 3 ends each morpheme part's words in
+/// `lemma` and `morph` with a boundary, and gives `morph` a run per Lemma word (#257).
+pub const INDEX_VERSION: u32 = 3;
 
 // A normalizer change must bump INDEX_VERSION too (and then this pin).
 const _: () = assert!(

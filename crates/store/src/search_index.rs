@@ -64,6 +64,12 @@ pub const SEARCH_INDEX_EXTENSION: &str = "obsidx";
 /// [`obs_model::tokenize`], so both sides split words the same way.
 const TOKENIZER: &str = "unicode61 remove_diacritics 0 categories 'L* N* Co M*'";
 
+/// Ends each morpheme part's words in the `lemma` and `morph` fields, so a phrase stays inside
+/// one part. A private-use character: [`TOKENIZER`] keeps it as a word (`Co`), and
+/// [`obs_model::tokenize`], which makes every word of a query, never does, so no query
+/// can ask for it.
+const PART_BOUNDARY: &str = "\u{E000}";
+
 fn schema() -> String {
     format!(
         "CREATE TABLE meta (name TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
@@ -298,6 +304,13 @@ impl<'a> UnitMarks<'a> {
 
     /// The `strong`, `lemma` and `morph` fields of the Tagged words that start inside
     /// `range`.
+    ///
+    /// A `lemma:` term means words of one morpheme part's Lemma, anywhere in it, as the
+    /// highlighter reads it (#257). So in `lemma` each part's Lemma ends at a
+    /// [`PART_BOUNDARY`], and a phrase never runs on into the next part's. In `morph` each
+    /// part's run (Strong's numbers, code token, Lemma) ends at one too, and a part with a code
+    /// has a run for each word its Lemma may be searched from (`morph7 αρειοσ παγοσ`, then
+    /// `morph7 παγοσ`), so `token word` is a phrase whichever Lemma word is asked for.
     fn fields(
         &self,
         range: std::ops::Range<usize>,
@@ -319,17 +332,42 @@ impl<'a> UnitMarks<'a> {
             }
             for p in *parts {
                 let n = p.strongs;
-                for form in std::iter::once(n).chain(n.is_extended().then(|| n.base())) {
-                    let form = form.to_string().to_lowercase();
-                    push(&mut strong, &form);
-                    push(&mut morph, &form);
+                let forms: Vec<String> = std::iter::once(n)
+                    .chain(n.is_extended().then(|| n.base()))
+                    .map(|f| f.to_string().to_lowercase())
+                    .collect();
+                for form in &forms {
+                    push(&mut strong, form);
                 }
-                if let Some(code) = p.morph.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
-                    push(&mut morph, codes.token(code));
+                let words: Vec<String> = p
+                    .lemma
+                    .as_deref()
+                    .map(|l| tokenize(l).into_iter().map(|t| t.text).collect())
+                    .unwrap_or_default();
+                if !words.is_empty() {
+                    if !lemma.is_empty() {
+                        push(&mut lemma, PART_BOUNDARY);
+                    }
+                    for w in &words {
+                        push(&mut lemma, w);
+                    }
                 }
-                if let Some(l) = &p.lemma {
-                    push_words(l, 0..l.len(), &[], &mut lemma);
-                    push_words(l, 0..l.len(), &[], &mut morph);
+                let code = p.morph.as_deref().map(str::trim).filter(|c| !c.is_empty());
+                let token = code.map(|c| codes.token(c).to_string());
+                let runs = if token.is_some() { words.len().max(1) } else { 1 };
+                for from in 0..runs {
+                    if !morph.is_empty() {
+                        push(&mut morph, PART_BOUNDARY);
+                    }
+                    for form in &forms {
+                        push(&mut morph, form);
+                    }
+                    if let Some(token) = &token {
+                        push(&mut morph, token);
+                    }
+                    for w in words.get(from..).unwrap_or_default() {
+                        push(&mut morph, w);
+                    }
                 }
             }
         }
@@ -764,6 +802,21 @@ fn read_codes(conn: &Connection) -> Result<IndexCodes, StoreError> {
     Ok(IndexCodes(out))
 }
 
+/// Run a search that finds nothing through every table a search reads, so a cache whose
+/// tables are gone or unreadable fails to open (and is rebuilt) instead of failing every
+/// search (#257). The term is a private-use character no document holds, so FTS5 only
+/// seeks it.
+fn probe(conn: &Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare(
+        "SELECT search.rowid, u.id, d.start FROM search
+         JOIN docs d ON d.id = search.rowid JOIN units u ON u.ord = d.unit
+         WHERE search MATCH ?1 LIMIT 1",
+    )?;
+    let mut rows = stmt.query(["\"\u{E001}\""])?;
+    while rows.next()?.is_some() {}
+    Ok(())
+}
+
 impl SqliteSearchIndex {
     /// Open a cache read-only. With `expected`, refuse one built for another Resource,
     /// content or version.
@@ -824,6 +877,7 @@ impl SqliteSearchIndex {
             .ok_or_else(|| StoreError::Corrupt("unknown document kind".into()))?;
         let documents = number("documents")?;
         let codes = read_codes(&conn)?;
+        probe(&conn).map_err(|e| StoreError::Corrupt(format!("Search index is damaged: {e}")))?;
         Ok(Self {
             conn,
             key,
@@ -1033,19 +1087,30 @@ impl SqliteSearchIndex {
                 }
                 let right = self.evaluate(right, options)?;
                 let reach = i64::from(documents.saturating_sub(1));
-                let mut out = Found::new();
+                let mut near_left = BTreeSet::new();
+                let mut near_right = BTreeSet::new();
                 for (id, hit) in &left {
-                    let mut near = false;
                     for (other, h) in
                         right.range(id.saturating_sub(reach)..=id.saturating_add(reach))
                     {
                         if self.neighbours(hit, h) {
-                            near = true;
-                            out.entry(*other).or_insert_with(|| h.clone());
+                            near_left.insert(*id);
+                            near_right.insert(*other);
                         }
                     }
-                    if near {
-                        out.entry(*id).or_insert_with(|| hit.clone());
+                }
+                // A document found by both sides scores for both, as with `AND`, so the
+                // two sides can be swapped (#257).
+                let mut out = Found::new();
+                for (side, ids) in [(&left, near_left), (&right, near_right)] {
+                    for id in ids {
+                        let Some(hit) = side.get(&id) else { continue };
+                        match out.get_mut(&id) {
+                            Some(h) => h.score += hit.score,
+                            None => {
+                                out.insert(id, hit.clone());
+                            }
+                        }
                     }
                 }
                 Ok(out)

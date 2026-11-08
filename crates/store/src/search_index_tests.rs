@@ -780,19 +780,247 @@ fn word_forms_find_the_other_words_of_a_stem() {
     assert_eq!(docs_with_word_forms(&index, "doth"), [0, 5]);
 }
 
-/// A cache whose words cannot be read fails a Word forms search instead of finding nothing.
+/// A cache whose words cannot be read (damaged after it was opened) fails a Word forms
+/// search instead of finding nothing.
 #[test]
 fn unreadable_words_are_a_search_error() {
     let dir = TempDir::new("stems-damaged");
     let path = build(&james(), 1, &dir.0);
+    let index = SqliteSearchIndex::open(&path, None).unwrap();
     let conn = Connection::open(&path).unwrap();
     conn.execute_batch("DROP TABLE search;").unwrap();
     drop(conn);
-    let index = SqliteSearchIndex::open(&path, None).unwrap();
     let parsed = obs_search::parse("work").unwrap().with_word_forms();
     let compiled = obs_search::compile(&parsed, &NoLexicon).unwrap();
     assert!(
         index.search(&compiled, &SearchOptions::default()).is_err(),
         "a damaged cache must not look like no hits"
     );
+}
+
+/// A Greek Bible of Tagged words (word, Strong's, Lemma, code), one Verse per row, in Acts 17.
+fn greek_words(id: &str, verses: &[&[(&str, &str, &str, &str)]]) -> Resource {
+    let mut m = Manifest::new(id, "Greek", "GRC", ResourceType::Bible, "grc");
+    m.key_schemes = vec![KeyScheme::Passage];
+    m.license = "LicenseRef-PD".into();
+    let mut b = ResourceBuilder::new(m);
+    let acts = UnitId::book(Book::Acts);
+    let mut text = String::new();
+    let mut spans = Vec::new();
+    let mut ranges = Vec::new();
+    for words in verses {
+        let start = text.len();
+        for (word, strongs, lemma, code) in *words {
+            if text.len() > start {
+                text.push(' ');
+            }
+            let at = text.len();
+            text.push_str(word);
+            let mut part = MorphemePart::new(strongs.parse().unwrap());
+            part.lemma = Some((*lemma).into());
+            part.morph = Some((*code).into());
+            spans.push((at..text.len(), part));
+        }
+        ranges.push(start..text.len());
+        text.push(' ');
+    }
+    b.add_unit(acts.clone(), UnitKind::BibleBook, None, text);
+    for (range, part) in spans {
+        b.add_span(&acts, range, SpanKind::TaggedWord { parts: vec![part] });
+    }
+    for (i, range) in ranges.into_iter().enumerate() {
+        let verse = 19 + i as u16;
+        b.add_verse(&acts, range, Verse::new(Book::Acts, 17, verse), verse);
+    }
+    b.build().unwrap()
+}
+
+/// Whether the highlighter marks a Tagged word of document `doc` for query `q`: the index
+/// and the highlighter must agree on what a `lemma:` term means.
+fn highlights_in(r: &Resource, doc: usize, q: &str) -> bool {
+    let h = obs_search::Highlighter::new(&obs_search::parse(q).unwrap(), &NoLexicon);
+    let v = &r.verses[doc];
+    let unit = r.unit(&v.unit).unwrap();
+    unit.spans.iter().any(|s| match &s.kind {
+        SpanKind::TaggedWord { parts } if s.start >= v.start && s.start < v.end => {
+            h.matching_parts(parts).iter().any(|m| *m)
+        }
+        _ => false,
+    })
+}
+
+/// AUD-SEARCH-INDEX-2 (#257): a Lemma of several words (TAGNT `Ἄρειος Πάγος`) with
+/// Morphology criteria finds the part from any of its words, as the bare Lemma does.
+#[test]
+fn morphology_with_a_lemma_finds_any_word_of_a_multiword_lemma() {
+    let dir = TempDir::new("morph-multiword");
+    let r = greek_words(
+        "areopagus",
+        &[
+            &[
+                ("ἐπὶ", "G1909", "ἐπί", "PREP"),
+                ("τὸν", "G3588", "ὁ", "T-ASM"),
+                ("Ἄρειον Πάγον", "G697", "Ἄρειος Πάγος", "N-ASM-L"),
+            ],
+            &[
+                ("μέσῳ", "G3319", "μέσος", "A-DSN"),
+                ("τοῦ", "G3588", "ὁ", "T-GSM"),
+                ("Ἀρείου Πάγου", "G697", "Ἄρειος Πάγος", "N-GSM-L"),
+            ],
+            &[("πάγος", "G4078", "πήγνυμι", "V-PAI-3S")],
+        ],
+    );
+    let index = SqliteSearchIndex::open(&build(&r, obs_search::INDEX_VERSION, &dir.0), None)
+        .unwrap();
+    let table: &[(&str, &[i64])] = &[
+        ("lemma:Πάγος", &[0, 1]),
+        ("lemma:Πάγος @noun", &[0, 1]),
+        ("lemma:Ἄρειος @noun", &[0, 1]),
+        ("lemma:\"Ἄρειος Πάγος\" @noun", &[0, 1]),
+        ("lemma:Πάγος @noun genitive", &[1]),
+        ("strong:G697 @noun accusative", &[0]),
+        ("lemma:Πάγος @verb", &[]),
+        ("lemma:\"Πάγος Ἄρειος\" @noun", &[]),
+    ];
+    for (q, want) in table {
+        assert_eq!(docs(&index, q), *want, "{q}");
+        for doc in 0..r.verses.len() {
+            assert_eq!(
+                highlights_in(&r, doc, q),
+                want.contains(&(doc as i64)),
+                "{q}: highlight of document {doc}"
+            );
+        }
+    }
+}
+
+/// AUD-SEARCH-INDEX-3 (#257): one `lemma:` term is words of one part's Lemma. Two Tagged
+/// words in a row with their own Lemmas are not one Lemma of two words.
+#[test]
+fn a_lemma_phrase_stays_inside_one_tagged_word() {
+    let dir = TempDir::new("lemma-phrase");
+    let r = greek_words(
+        "agape",
+        &[
+            &[
+                ("ἀγάπη", "G26", "ἀγάπη", "N-NSF"),
+                ("ἐλπίς", "G1680", "ἐλπίς", "N-NSF"),
+            ],
+            &[("Ἄρειος Πάγος", "G697", "Ἄρειος Πάγος", "N-NSM-L")],
+        ],
+    );
+    let index = SqliteSearchIndex::open(&build(&r, obs_search::INDEX_VERSION, &dir.0), None)
+        .unwrap();
+    let table: &[(&str, &[i64])] = &[
+        ("lemma:\"ἀγάπη ἐλπίς\"", &[]),
+        ("lemma:\"ἀγάπη ἐλπίς\" @noun", &[]),
+        ("lemma:ἀγάπη lemma:ἐλπίς", &[0]),
+        ("lemma:ἐλπίς", &[0]),
+        ("lemma:\"Ἄρειος Πάγος\"", &[1]),
+        ("lemma:\"ἐλπίς Ἄρειος\"", &[]),
+    ];
+    for (q, want) in table {
+        assert_eq!(docs(&index, q), *want, "{q}");
+        for doc in 0..r.verses.len() {
+            assert_eq!(
+                highlights_in(&r, doc, q),
+                want.contains(&(doc as i64)),
+                "{q}: highlight of document {doc}"
+            );
+        }
+    }
+}
+
+/// AUD-SEARCH-INDEX-4 (#257): `text:` searches the words as written, even one shaped like a
+/// Strong's number.
+#[test]
+fn the_text_field_finds_a_word_shaped_like_a_strongs_number() {
+    let dir = TempDir::new("text-field");
+    let mut m = Manifest::new("notes-dict", "Notes", "ND", ResourceType::Dictionary, "en");
+    m.key_schemes = vec![KeyScheme::Headword];
+    m.license = "LicenseRef-PD".into();
+    let mut b = ResourceBuilder::new(m);
+    let love = UnitId::new("Love").unwrap();
+    b.add_unit(
+        love.clone(),
+        UnitKind::Entry,
+        Some("Love".into()),
+        "Love (G26) is the word in 1 Corinthians 13.".into(),
+    );
+    b.add_key(Key::Headword("Love".into()), &love, None, false);
+    let r = b.build().unwrap();
+    let index = SqliteSearchIndex::open(&build(&r, obs_search::INDEX_VERSION, &dir.0), None)
+        .unwrap();
+    assert_eq!(docs(&index, "text:G26"), [0]);
+    assert_eq!(docs(&index, "text:\"G26\""), [0]);
+    // Bare, it is a Strong's number, and this Dictionary has no Tagged words.
+    assert_eq!(docs(&index, "G26"), Vec::<i64>::new());
+}
+
+/// AUD-SEARCH-INDEX-5 (#257): a cache whose `search` table is gone does not open, so the
+/// engine discards and rebuilds it instead of failing every search.
+#[test]
+fn a_cache_missing_its_search_table_does_not_open() {
+    let dir = TempDir::new("no-search-table");
+    let r = james();
+    let key = IndexKey::new(&r.manifest, 1);
+    let path = build(&r, 1, &dir.0);
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch("DROP TABLE search;").unwrap();
+    drop(conn);
+    let err = SqliteSearchIndex::open(&path, Some(&key)).unwrap_err();
+    assert!(err.to_string().contains("no such table: search"), "{err}");
+    // Nor without its documents.
+    let path = build(&r, 1, &dir.0);
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch("DROP TABLE units;").unwrap();
+    drop(conn);
+    assert!(SqliteSearchIndex::open(&path, Some(&key)).is_err());
+}
+
+/// AUD-SEARCH-INDEX-8 (#257): `WITHIN n paragraphs` scores a document both sides find for
+/// both, so swapping the sides keeps the order, as `AND` does.
+#[test]
+fn within_scores_both_sides_whichever_is_written_first() {
+    let dir = TempDir::new("within-rank");
+    let mut m = Manifest::new("rank", "Rank", "RK", ResourceType::Dictionary, "en");
+    m.key_schemes = vec![KeyScheme::Headword];
+    m.license = "LicenseRef-PD".into();
+    let mut b = ResourceBuilder::new(m);
+    let entry = UnitId::new("Faith").unwrap();
+    let text = "faith faith faith works\nfaith works works works";
+    b.add_unit(entry.clone(), UnitKind::Entry, Some("Faith".into()), text.into());
+    let split = text.find('\n').unwrap();
+    for p in [0..split, split + 1..text.len()] {
+        b.add_span(
+            &entry,
+            p,
+            SpanKind::Para {
+                style: ParaStyle::Prose,
+            },
+        );
+    }
+    b.add_key(Key::Headword("Faith".into()), &entry, None, false);
+    let r = b.build().unwrap();
+    let index = SqliteSearchIndex::open(&build(&r, obs_search::INDEX_VERSION, &dir.0), None)
+        .unwrap();
+    let ranked = |q: &str| -> Vec<(i64, f64)> {
+        let options = SearchOptions {
+            order: HitOrder::Relevance,
+            ..Default::default()
+        };
+        hits(&index, q, &options)
+            .into_iter()
+            .map(|h| (h.document, h.score))
+            .collect()
+    };
+    let forward = ranked("faith WITHIN 1 paragraphs works");
+    let reverse = ranked("works WITHIN 1 paragraphs faith");
+    let and = ranked("faith AND works");
+    assert_eq!(forward.len(), 2);
+    assert_eq!(forward, reverse);
+    for ((d, s), (ad, a)) in forward.iter().zip(&and) {
+        assert_eq!(d, ad);
+        assert!((s - a).abs() <= a.abs() * 1e-9, "{s} vs AND {a}");
+    }
 }

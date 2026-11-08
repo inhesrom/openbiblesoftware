@@ -102,6 +102,10 @@ fn every_form_in_the_search_syntax() {
         ("H1254A", r#"strong : "h1254a""#),
         ("strong:h1254a", r#"strong : "h1254a""#),
         ("strong:G05485", r#"strong : "g5485""#),
+        // `text:` is the words as written, even shaped like a Strong's number (#257).
+        ("text:G26", r#"text : "g26""#),
+        ("text:H1254A", r#"text : "h1254a""#),
+        ("text:G26*", r#"text : "g26" *"#),
         // Lemma: original script, or transliteration through the Lexicon.
         ("lemma:ἀγάπη", r#"lemma : "αγαπη""#),
         ("lemma:agape", r#"lemma : "αγαπη""#),
