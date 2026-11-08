@@ -53,7 +53,9 @@ reason to the test's `ALLOWED` list.
 A bare ½, 1 or 2 passes only as a factor, a bound or a tolerance (`/ 2.0`, `* 0.5`,
 `.clamp(0.0, 1.0)`, `.abs() < 0.5`). Added to or taken from a coordinate it is a spacing:
 `icon.right() + space::XXS`, `last[2] + space::PX`, and `rect.bottom() - stroke::HAIR / 2.0`
-to centre a hairline on a pixel.
+to centre a hairline on a pixel. Inside a spacing or size call even a 1 is a size
+(`rect.expand(space::PX)`, not `expand(1.0)`), unless it counts (`level.saturating_sub(1)`)
+or leads a fraction (`lerp_to_gamma(c, 1.0 - t)`).
 
 ## Previews
 
