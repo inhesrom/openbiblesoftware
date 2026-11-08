@@ -112,6 +112,48 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
         "the whole icon texture in UV coordinates",
     ),
     (
+        "key_labels.rs",
+        "let side = (font_size_px * 0.92).round().max(4.0);",
+        "0.92",
+        "a modifier glyph's square as a share of the em, to stand as tall as a capital",
+    ),
+    (
+        "key_labels.rs",
+        "let side = (font_size_px * 0.92).round().max(4.0);",
+        "4.0",
+        "a modifier glyph's bitmap is at least this many pixels, to stay legible",
+    ),
+    (
+        "key_labels.rs",
+        "let unit = side / 24.0;",
+        "24.0",
+        "the icon drawing's 24-unit grid",
+    ),
+    (
+        "key_labels.rs",
+        "let bearing = (font_size_px * 0.06).round();",
+        "0.06",
+        "a modifier glyph's side bearing as a share of the em, like a font's",
+    ),
+    (
+        "key_labels.rs",
+        "offset_px: egui::vec2(bearing - (3.0 * unit).round(), -(21.0 * unit).round()),",
+        "3.0",
+        "the drawing's left edge on the icon's 24-unit grid",
+    ),
+    (
+        "key_labels.rs",
+        "offset_px: egui::vec2(bearing - (3.0 * unit).round(), -(21.0 * unit).round()),",
+        "21.0",
+        "the drawing's baseline on the icon's 24-unit grid",
+    ),
+    (
+        "key_labels.rs",
+        "advance_px: (18.0 * unit).round() + 2.0 * bearing,",
+        "18.0",
+        "the drawing's width on the icon's 24-unit grid",
+    ),
+    (
         "pane.rs",
         "let page = rect.height() * 0.9;",
         "0.9",
