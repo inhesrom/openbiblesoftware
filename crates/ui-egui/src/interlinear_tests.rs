@@ -1042,7 +1042,8 @@ fn spacing_snapshot(laid: &LaidBlock) -> serde_json::Value {
 
 /// The spacing rules every interlinear line keeps (#243): punctuation stays against its
 /// word, a gap opens between two pieces of text only beside a word with a line wider than
-/// itself, and cells never come closer than the column gap.
+/// itself, cells never come closer than the column gap, and never stand under an untagged
+/// word.
 fn check_spacing(laid: &LaidBlock, size: f32) {
     // Each Tagged word on each line: its x extent and whether a line under it is wider.
     for (li, line) in laid.lines.iter().enumerate() {
@@ -1106,6 +1107,30 @@ fn check_spacing(laid: &LaidBlock, size: f32) {
                     "{} / {}: {gap}",
                     w[0].text,
                     w[1].text
+                );
+            }
+        }
+        // No cell stands under an untagged word (#243 review).
+        let tagged: Vec<std::ops::Range<usize>> = laid
+            .cells
+            .iter()
+            .map(|c| laid.from_unit(c.word.start).unwrap()..laid.from_unit(c.word.end).unwrap())
+            .collect();
+        for (b, x0, x1) in line.items.iter().flat_map(|i| i.clusters()) {
+            let cluster = &laid.text[b.clone()];
+            if tagged.iter().any(|w| w.contains(&b.start))
+                || !cluster.chars().any(char::is_alphanumeric)
+            {
+                continue;
+            }
+            let (left, right) = (x0.min(x1), x0.max(x1));
+            for c in laid.cells.iter().filter(|c| c.line == li) {
+                assert!(
+                    c.x >= right - 0.01 || c.x + c.width <= left + 0.01,
+                    "{:?} at {}..{} reaches under untagged {cluster:?} at {left}..{right}",
+                    c.text,
+                    c.x,
+                    c.x + c.width
                 );
             }
         }

@@ -144,8 +144,9 @@ type CellPieces = (String, Vec<CellPiece>, f32);
 /// Its column is the word with the punctuation right against it (`said,`, `“Let there be`),
 /// which is never broken or spaced apart (#243). Its lines are centred on the word. Space is
 /// added at the column's edges only where its widest line would come too close to the next
-/// column's ([`COLUMN_GAP`]) or stick out past the line's edge, so lines narrower than their
-/// words leave the text exactly as it is without them.
+/// column's ([`COLUMN_GAP`]), reach under the text beside it (another column's or an untagged
+/// word) or stick out past the line's edge, so lines narrower than their words leave the text
+/// exactly as it is without them.
 struct WordColumn {
     /// Paragraph-text bytes of the word.
     bytes: Range<usize>,
@@ -162,6 +163,32 @@ struct WordColumn {
     pad: [f32; 2],
     /// Whether it reads right to left (its logical start is at the right).
     rtl: bool,
+}
+
+/// The untagged text between two neighbouring interlinear columns (or a column and the
+/// paragraph's start or end), in logical order.
+#[derive(Default)]
+struct Between {
+    /// Its whole width.
+    width: f32,
+    /// Width of the space before its first visible text, if it has any.
+    lead: Option<f32>,
+    /// Width of the space after its last visible text (all of it, until some shows).
+    trail: f32,
+}
+
+impl Between {
+    /// Add an item `width` wide, `visible` unless it is only space, ending in
+    /// `trailing_space` of space.
+    fn add(&mut self, width: f32, visible: bool, trailing_space: f32) {
+        self.width += width;
+        if visible {
+            self.lead.get_or_insert(self.trail);
+            self.trail = trailing_space;
+        } else {
+            self.trail += width;
+        }
+    }
 }
 
 /// The paragraph bytes of unit bytes `unit`, if the runs show all of them as text.
@@ -375,37 +402,51 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
             }
         }
         // Text between neighbouring columns (logical order): the space, untagged words.
-        let mut between = 0.0f32;
+        let mut between = Between::default();
         let mut previous: Option<usize> = None;
         let mut i = 0;
-        while i < items.len() {
-            match items[i].word {
-                Some(w) => {
-                    if let Some(p) = previous
-                        && p != w
-                    {
-                        // Their lines keep the gap between them, and neither reaches
-                        // under the other's text.
-                        let (end, start) = (columns[p].over[1], columns[w].over[0]);
-                        let short = (end + start + gap).max(end).max(start)
-                            - between
-                            - columns[p].pad[1]
-                            - columns[w].pad[0];
-                        if short > 0.0 {
-                            columns[p].pad[1] += short / 2.0;
-                            columns[w].pad[0] += short / 2.0;
-                        }
-                    }
-                    previous = Some(w);
-                    between = 0.0;
-                    while i < items.len() && items[i].word == Some(w) {
-                        i += 1;
-                    }
+        loop {
+            let next = items.get(i).map(|it| it.word);
+            if let Some(None) = next {
+                let it = &items[i];
+                let visible = !text[it.bytes.clone()].trim().is_empty();
+                between.add(it.width, visible, it.trailing_space);
+                i += 1;
+                continue;
+            }
+            // The next column, if any.
+            let w = next.flatten();
+            // Lines never reach under untagged text beside them: no lines stand under it
+            // to tell whose they are, and at a line's start or end that text is all that
+            // keeps them inside the line (#243 review).
+            if let Some(lead) = between.lead {
+                if let Some(p) = previous {
+                    let c = &mut columns[p];
+                    c.pad[1] = c.pad[1].max(c.over[1] - lead);
                 }
-                None => {
-                    between += items[i].width;
-                    i += 1;
+                if let Some(w) = w {
+                    let c = &mut columns[w];
+                    c.pad[0] = c.pad[0].max(c.over[0] - between.trail);
                 }
+            }
+            if let (Some(p), Some(w)) = (previous, w) {
+                // Their lines keep the gap between them, and neither reaches under the
+                // other's text.
+                let (end, start) = (columns[p].over[1], columns[w].over[0]);
+                let short = (end + start + gap).max(end).max(start)
+                    - between.width
+                    - columns[p].pad[1]
+                    - columns[w].pad[0];
+                if short > 0.0 {
+                    columns[p].pad[1] += short / 2.0;
+                    columns[w].pad[0] += short / 2.0;
+                }
+            }
+            let Some(w) = w else { break };
+            previous = Some(w);
+            between = Between::default();
+            while i < items.len() && items[i].word == Some(w) {
+                i += 1;
             }
         }
     }
