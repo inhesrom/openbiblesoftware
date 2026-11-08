@@ -97,6 +97,8 @@ pub struct Session {
     pub(crate) annotations_revision: u64,
     /// The Last session as last written, to skip writes that change nothing.
     saved_session: Option<String>,
+    /// The Log folder and Log level (#219).
+    pub(crate) diagnostics: crate::diagnostics::Diagnostics,
     /// The last restore of a Backup, which Undo restore takes back (#217).
     pub(crate) last_restore: Option<crate::backups::LastRestore>,
     /// How SWORD repositories are reached (#91). The app installs its network transport;
@@ -148,6 +150,7 @@ impl Session {
             reanchoring: crate::reanchor::Reanchoring::default(),
             annotations_revision: 0,
             saved_session: None,
+            diagnostics: crate::diagnostics::Diagnostics::default(),
             last_restore: None,
             fetch: std::sync::Arc::new(obs_formats::sword_repo::LocalFetch),
         }
@@ -230,6 +233,7 @@ impl Session {
         self.load_collections();
         self.load_saved_searches();
         self.load_key_bindings();
+        self.load_log_level();
         // Library load: Annotations made against another revision of a Resource move with
         // their text (or are orphaned) before it shows them (#65).
         self.remember_resource_names();
@@ -407,6 +411,12 @@ impl Session {
             self.log.remove(0);
         }
         self.log.push(spec.id);
-        (spec.run)(self, params)
+        // Command ids only: parameters can hold the user's text.
+        log::debug!("command {}", spec.id);
+        let out = (spec.run)(self, params);
+        if out.is_err() {
+            log::info!("command {} failed", spec.id);
+        }
+        out
     }
 }

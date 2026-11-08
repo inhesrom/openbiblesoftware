@@ -444,15 +444,13 @@ impl Session {
             if let Some(dir) = self.search.cache_dir.clone() {
                 let obr = entry.path.clone();
                 let version = self.search.version;
-                let job = self
-                    .jobs()
-                    .submit_fn(format!("Search index {id}"), move |ctx| {
-                        use obs_store::ResourceStore;
-                        let resource = obs_store::ObrReader::open(&obr)
-                            .and_then(|r| r.load())
-                            .map_err(|e| format!("{}: {e}", obr.display()))?;
-                        build_cache(&resource, version, &dir, ctx)
-                    });
+                let job = self.jobs().submit_fn("Search index", move |ctx| {
+                    use obs_store::ResourceStore;
+                    let resource = obs_store::ObrReader::open(&obr)
+                        .and_then(|r| r.load())
+                        .map_err(|e| format!("{}: {e}", obr.display()))?;
+                    build_cache(&resource, version, &dir, ctx)
+                });
                 self.search.running = Some(Running {
                     job,
                     id,

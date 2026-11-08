@@ -62,6 +62,7 @@ mod page_tone;
 mod reading_plans_tab;
 #[path = "references.rs"]
 pub(crate) mod references;
+pub(crate) mod report_problem;
 mod search_sidebar;
 mod search_tab;
 mod search_views;
@@ -258,6 +259,11 @@ pub(crate) struct State {
     settings_ui: settings_tab::SettingsUi,
     /// The Back up & restore Tab's file dialog and restore preview (#217).
     backups_ui: backups_tab::BackupsUi,
+    /// The Report a problem window and how folders are shown (#219).
+    pub(crate) report_ui: report_problem::ReportProblemUi,
+    /// The Last session has a save due that a later frame must make (#219): set when a
+    /// frame's save was skipped, so a crash soon after still finds the Workspace saved.
+    save_due: bool,
     /// The bench's feature scenarios (#183): one Tab's UI-thread work, timed each frame.
     pub(crate) timed_tab: TimedTab,
     /// A reference, text or Note card being dragged across the Workspace (#216).
@@ -347,6 +353,8 @@ impl Shell {
                 keys_ui: Default::default(),
                 settings_ui: Default::default(),
                 backups_ui: Default::default(),
+                report_ui: Default::default(),
+                save_due: false,
                 timed_tab: TimedTab::default(),
                 drag: drag_drop::DragDropUi::default(),
                 keyboard_to: None,
@@ -557,6 +565,8 @@ impl Shell {
                 } => self.st.confirm = Some((resource_id, title, message)),
                 Effect::PickImport => self.st.pick_import = true,
                 Effect::ShowFonts => self.st.fonts_ui.open = true,
+                Effect::OpenFolder(path) => self.st.open_folder(&path),
+                Effect::ReportProblem => self.st.show_report_problem(),
                 Effect::ShowHighlightStyles => self.st.styles_ui.open = true,
                 Effect::FocusCommandBox => {
                     self.st.toolbar.close();
@@ -807,11 +817,16 @@ impl Shell {
         }
     }
 
-    /// Save the Last session now (on quit), or at most once a second while running.
+    /// Save the Last session now (on quit), or at most once a second while running. A
+    /// skipped save asks for the frame that makes it, so the Workspace is saved within a
+    /// second of a change even when the app then idles (and survives a crash, #219).
     pub fn save_session(&mut self, now: bool) {
-        if !now && self.st.now - self.st.last_save < 1.0 {
+        let since = self.st.now - self.st.last_save;
+        if !now && since < 1.0 {
+            self.st.save_due = true;
             return;
         }
+        self.st.save_due = false;
         self.st.last_save = self.st.now;
         if let Err(e) = self.st.session.save_last_session() {
             self.st.toast(format!("Could not save the session: {e}"));
@@ -859,7 +874,7 @@ impl Shell {
             || self.st.session.topic_guides.is_busy()
         {
             Some(std::time::Duration::from_millis(16))
-        } else if self.st.session.search.is_building() {
+        } else if self.st.session.search.is_building() || self.st.folder_opening() {
             Some(std::time::Duration::from_millis(250))
         } else {
             None
@@ -895,6 +910,7 @@ impl Shell {
         self.st.poll_export();
         self.st.poll_data_dialog();
         self.st.poll_csv_picker();
+        self.st.poll_folder_opening();
         self.apply_effects();
         if let Some(after) = self.background_repaint() {
             ui.ctx().request_repaint_after(after);
@@ -979,6 +995,16 @@ impl Shell {
             }
         }
         self.save_session(closing);
+        if self.st.save_due {
+            let left = (1.0 - (self.st.now - self.st.last_save)).max(0.0);
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_secs_f64(left));
+        }
+    }
+
+    /// Offer Report a problem for a new Crash report in the Log folder (at launch, #219).
+    pub fn offer_crash_report(&mut self) {
+        self.st.offer_crash_report();
     }
 
     /// The keys typed in `window` (none: the main one), on the Tab focused there
@@ -3053,6 +3079,7 @@ impl State {
         self.copy_window(&ctx);
         self.collection_editor_window(&ctx);
         self.page_tone_hint_ui(&ctx);
+        self.report_problem_window(&ctx);
         if let Some((msg, t)) = &self.toast {
             if self.now - t < 4.0 {
                 let screen = ctx.content_rect();

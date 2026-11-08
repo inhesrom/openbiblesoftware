@@ -97,6 +97,10 @@ impl App {
                 session.set_alias_cache_dir(dir);
             }
             session.refresh_alias_caches();
+            // Help → Open log folder and Report a problem (#219).
+            if let Some(dir) = obs_engine::diagnostics::default_log_dir() {
+                session.set_log_dir(dir);
+            }
         }
         #[cfg(target_arch = "wasm32")]
         if let Some(p) = &path {
@@ -128,6 +132,8 @@ impl App {
         let offer_starter = false;
         let mut shell = Shell::new(session);
         shell.restore_at_launch();
+        // A Crash report from the last run is offered, on top of the restored Workspace.
+        shell.offer_crash_report();
         // A file given on the command line shows on top of the restored Workspace and Home.
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(p) = &path
