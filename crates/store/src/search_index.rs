@@ -395,42 +395,6 @@ fn key_at(keys: &[&KeyEntry], start: u32) -> Option<Key> {
         .map(|k| k.key.clone())
 }
 
-/// Paragraph ranges of a unit: its non-empty `para` spans (outermost first, nested ones
-/// skipped), plus every stretch outside them that holds a word (headings, unparagraphed
-/// entries).
-fn paragraphs(unit: &TextUnit) -> Vec<(usize, usize)> {
-    let mut paras: Vec<(usize, usize)> = unit
-        .spans
-        .iter()
-        .filter(|s| matches!(s.kind, SpanKind::Para { .. }) && s.start < s.end)
-        .map(|s| (s.start as usize, s.end as usize))
-        .collect();
-    paras.sort_by_key(|&(s, e)| (s, std::cmp::Reverse(e)));
-    let mut out: Vec<(usize, usize)> = Vec::new();
-    // A stretch outside the paragraphs, trimmed of white space, if it holds a word.
-    let gap = |a: usize, b: usize, out: &mut Vec<(usize, usize)>| {
-        let Some(t) = unit.text.get(a..b) else {
-            return;
-        };
-        if t.chars().any(char::is_alphanumeric) {
-            let start = a + (t.len() - t.trim_start().len());
-            let end = a + t.trim_end().len();
-            out.push((start, end));
-        }
-    };
-    let mut at = 0;
-    for (s, e) in paras {
-        if s < at {
-            continue; // nested inside (or overlapping) the previous paragraph
-        }
-        gap(at, s, &mut out);
-        out.push((s, e));
-        at = e;
-    }
-    gap(at, unit.text.len(), &mut out);
-    out
-}
-
 /// Every document of `r`, in id order, passed to `emit` with the unit's position in
 /// `r.units`. `emit` returns false to stop (cancelled).
 fn documents(
@@ -482,7 +446,7 @@ fn documents(
     for (ui, unit) in r.units.iter().enumerate() {
         let marks = UnitMarks::of(unit);
         let unit_keys = keys.get(&unit.id).map_or(&[][..], Vec::as_slice);
-        for (s, e) in paragraphs(unit) {
+        for std::ops::Range { start: s, end: e } in unit.paragraphs() {
             let mut text = String::new();
             push_words(&unit.text, s..e, &[], &mut text);
             let (strong, lemma, morph) = marks.fields(s..e, codes);

@@ -1,8 +1,10 @@
 //! Visual filters (#211) in a reading pane: the words of each visible block that a Tab's
 //! filters match, found on a worker thread and drawn in the filters' looks.
 //!
-//! - Matching is [`obs_engine::block_hits`] (the Search query read Verse by Verse, as the
-//!   Search Tool reads it, on the block's text and Tagged words). A pane asks for the blocks it shows and a few on either side;
+//! - Matching is [`obs_engine::block_hits`] (the Search query read Verse by Verse, or
+//!   paragraph by paragraph outside Bibles, as the Search Tool reads it, on the block's text
+//!   and Tagged words, with the documents around the block a `WITHIN n` query reads). A pane
+//!   asks for the blocks it shows and a few on either side;
 //!   each block is matched once per set of filters and kept while it is near the view.
 //! - Each block's match rectangles are taken from its layout once (and again only when it is
 //!   laid out again), so a scrolling frame only moves them.
@@ -18,7 +20,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use obs_engine::{
-    AlignedWords, FilterMatcher, StyleAppearance, VerseSlice, VisualFilter, block_hits,
+    AlignedWords, DocumentSlice, FilterMatcher, StyleAppearance, VisualFilter, block_hits,
+    paragraph_slices,
 };
 use obs_model::{ResourceType, SpanKind};
 use obs_scripture::{Passage, StrongsLanguage, Testament, Verse};
@@ -226,17 +229,21 @@ fn submit(work: Work) {
     }
 }
 
-/// The Bible Verses of `doc` inside `bytes` of unit `unit`, and up to `context` more of the
-/// unit's Verses on either side (for `WITHIN n verses`), in order, with their Standard
-/// Passages.
-fn verse_slices(
+/// The documents a filter reads `bytes` of unit `unit` of `doc` against, and up to `context`
+/// more of the unit's on either side (for `WITHIN n`), in order: in a Bible its Verses, with
+/// their Standard Passages; elsewhere its paragraphs.
+fn document_slices(
     doc: &ReadingDoc,
     unit: usize,
     bytes: &std::ops::Range<usize>,
     context: usize,
-) -> Vec<VerseSlice> {
+) -> Vec<DocumentSlice> {
     if doc.manifest.resource_type != ResourceType::Bible {
-        return Vec::new();
+        return doc
+            .units
+            .get(unit)
+            .map(|u| paragraph_slices(u, bytes.clone(), context))
+            .unwrap_or_default();
     }
     let in_unit: Vec<usize> = (0..doc.verses.len())
         .filter(|&i| doc.verse_unit(i) == Some(unit))
@@ -251,7 +258,11 @@ fn verse_slices(
     ) else {
         return Vec::new();
     };
-    let wanted = first.saturating_sub(context)..(last + context + 1).min(in_unit.len());
+    let wanted = first.saturating_sub(context)
+        ..last
+            .saturating_add(context)
+            .saturating_add(1)
+            .min(in_unit.len());
     let mut out = Vec::new();
     for &i in &in_unit[wanted] {
         let v = &doc.verses[i];
@@ -264,7 +275,7 @@ fn verse_slices(
             )
             .ok(),
         };
-        out.push(VerseSlice { range, standard });
+        out.push(DocumentSlice { range, standard });
     }
     out
 }
@@ -287,16 +298,17 @@ fn block_matches(doc: &ReadingDoc, index: usize, source: &FilterSource) -> Vec<B
     let range = block.source.range.clone();
     let context = matchers
         .iter()
-        .map(FilterMatcher::context_verses)
+        .map(FilterMatcher::context_documents)
         .max()
         .unwrap_or(0);
-    let verses = verse_slices(doc, block.unit, &range, context);
-    let align = !verses.is_empty()
+    let documents = document_slices(doc, block.unit, &range, context);
+    let align = doc.manifest.resource_type == ResourceType::Bible
+        && !documents.is_empty()
         && !is_original(&doc.manifest.language)
         && matchers.iter().any(FilterMatcher::needs_alignment)
         && doc.has_tagged_words();
     let mut original = |p: Passage| source.aligned(p);
-    block_hits(matchers, unit, range, &verses, align, &mut original)
+    block_hits(matchers, unit, range, &documents, align, &mut original)
         .into_iter()
         .filter_map(|h| {
             let m = matchers.get(h.filter)?;
@@ -507,6 +519,65 @@ mod tests {
         };
         assert!(count(&aligned) > 20, "{}", count(&aligned));
         assert_eq!(count(&unaligned), 0);
+    }
+
+    /// Review of #211: outside Bibles a block's matches read the paragraphs around it, as the
+    /// Search index reads `WITHIN n paragraphs`, and a filter limited to Passages colours
+    /// nothing there.
+    #[test]
+    fn a_dictionary_block_reads_its_neighbouring_paragraphs() {
+        let manifest = obs_model::Manifest::new(
+            "test-dict",
+            "Test Dictionary",
+            "TD",
+            ResourceType::Dictionary,
+            "en",
+        );
+        let doc = ReadingDoc::from_text(
+            manifest,
+            "GRACE\nFavour freely shown.\nThe grace of God that bringeth salvation.",
+        );
+        assert_eq!(doc.blocks.len(), 3);
+        let filter = |query: &str, scope: &str| VisualFilter {
+            id: "f".into(),
+            name: "F".into(),
+            query: query.into(),
+            marked: None,
+            scope: scope.into(),
+            look: obs_engine::HighlightLook::Underline,
+            color: obs_engine::Rgb::new(20, 130, 120),
+            all_tabs: false,
+        };
+        let coloured = |f: VisualFilter| -> Vec<Vec<String>> {
+            let source = FilterSource::new(vec![f], vec![], vec![]);
+            (0..doc.blocks.len())
+                .map(|i| {
+                    block_matches(&doc, i, &source)
+                        .into_iter()
+                        .map(|(_, a, b)| doc.units[a.unit].text[a.byte..b.byte].to_string())
+                        .collect()
+                })
+                .collect()
+        };
+        assert_eq!(
+            coloured(filter("favour WITHIN 2 paragraphs salvation", "")),
+            [
+                vec![],
+                vec!["Favour".to_string()],
+                vec!["salvation".to_string()]
+            ]
+        );
+        assert!(
+            coloured(filter("favour salvation", ""))
+                .iter()
+                .all(Vec::is_empty)
+        );
+        assert!(
+            coloured(filter("grace", "Rom 12"))
+                .iter()
+                .all(Vec::is_empty),
+            "no Verse of Romans 12 is in a dictionary"
+        );
     }
 
     /// Manual check against the built Starter set (`cargo xtask starter` writes `dist/starter`;

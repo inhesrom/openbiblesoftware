@@ -15,8 +15,11 @@
 //!   Christ, Divine names and Imperatives (off until switched on).
 //! - **Matching** ([`FilterMatcher`], [`block_hits`]) is pure and runs per visible block on
 //!   a worker in the UI. The query is read as the Search Tool reads it, one document (Verse,
-//!   or block outside Bibles) at a time: `NOT`, implicit `AND` and proximity decide whether a
-//!   document matches before any of its words are coloured. A Bible that is not in Hebrew, Aramaic or Greek has no Morphology or
+//!   or paragraph outside Bibles: [`TextUnit::paragraphs`]) at a time: `NOT`, implicit `AND`
+//!   and proximity decide whether a document matches before any of its words are coloured. A
+//!   filter limited to Passages reads only the Verses in them (so nothing outside Bibles),
+//!   and `WITHIN n` counts documents as the Search index numbers them, the ones out of scope
+//!   included. A Bible that is not in Hebrew, Aramaic or Greek has no Morphology or
 //!   Lemmas of its own (KJV+Strong's tags numbers only), so the `@…` and `lemma:` terms reach
 //!   it through **Strong's alignment** (ADR 0015): in each Verse, the words whose Strong's
 //!   number is that of a matching word in the same Standard Verse of the first Hebrew (Old
@@ -211,7 +214,7 @@ impl Default for VisualFilters {
 // ------------------------------------------------------------------------------- matching
 
 /// A filter's Search query as a condition on one document, read as the Search Tool reads it:
-/// a document (a Verse in a Bible, the block elsewhere) is coloured only when it satisfies the
+/// a document (a Verse in a Bible, a paragraph elsewhere) is coloured only when it satisfies the
 /// whole query, and then only in the terms that made it so. `bless NOT persecute` colours
 /// nothing in a Verse that says "persecute"; `bless curse` nothing in a Verse without both.
 #[derive(Debug, Clone)]
@@ -296,7 +299,9 @@ impl Condition {
         }
     }
 
-    /// The most documents away a `WITHIN n verses` looks.
+    /// The most documents away a `WITHIN n verses` looks, nested ones added: in
+    /// `(a WITHIN 2 verses b) WITHIN 2 verses c`, `c` is read with `b` a Verse away and `b`
+    /// with `a` a Verse further.
     fn reach(&self) -> usize {
         match self {
             Condition::Term(_) | Condition::Near { .. } => 0,
@@ -309,8 +314,7 @@ impl Condition {
                 right,
                 documents,
             } => (documents.saturating_sub(1) as usize)
-                .max(left.reach())
-                .max(right.reach()),
+                .saturating_add(left.reach().max(right.reach())),
         }
     }
 
@@ -368,11 +372,15 @@ impl Condition {
                 let reach = documents.saturating_sub(1) as usize;
                 let l = left.eval(docs, cx);
                 let r = right.eval(docs, cx);
-                // A side counts in document `i` when the other side is in a neighbour of it.
+                // A side counts in document `i` when the other side is in a neighbour of it at
+                // most `reach` documents away, counted by ordinal so that documents left out
+                // of a filter's scope still count.
                 let partnered = |i: usize, other: &[Option<Vec<Range<usize>>>]| {
-                    let lo = i.saturating_sub(reach);
-                    let hi = (i + reach).min(docs.len().saturating_sub(1));
-                    (lo..=hi).any(|j| other[j].is_some() && docs[i].neighbours(&docs[j]))
+                    (0..docs.len()).any(|j| {
+                        other[j].is_some()
+                            && docs[i].ordinal.abs_diff(docs[j].ordinal) <= reach
+                            && docs[i].neighbours(&docs[j])
+                    })
                 };
                 (0..docs.len())
                     .map(|i| {
@@ -398,11 +406,13 @@ impl Condition {
 }
 
 /// One document a filter's query is read against: a Verse's bytes in the unit and its
-/// Standard Passage, or a whole block outside Bibles.
+/// Standard Passage, or a paragraph outside Bibles.
 #[derive(Debug, Clone)]
 struct Document {
     range: Range<usize>,
     standard: Option<Passage>,
+    /// Its position among the documents [`block_hits`] was given, which `WITHIN n` counts.
+    ordinal: usize,
 }
 
 impl Document {
@@ -593,19 +603,59 @@ impl FilterMatcher {
             .is_some_and(Condition::uses_original_language_data)
     }
 
-    /// How many Verses on either side of a block its query reads (`WITHIN n verses`), so
-    /// that the Verses passed to [`block_hits`] can include them.
-    pub fn context_verses(&self) -> usize {
+    /// How many documents (Verses, or paragraphs outside Bibles) on either side of a block
+    /// its query reads (`WITHIN n`, nested ones added), so that the documents passed to
+    /// [`block_hits`] can include them.
+    pub fn context_documents(&self) -> usize {
         self.condition.as_ref().map_or(0, Condition::reach)
     }
 }
 
-/// One Bible Verse inside or near a block: its bytes in the unit and its Standard Passage
-/// (`None` for an Unmapped verse).
+/// One document inside or near a block, as the Search index reads the Resource: a Bible
+/// Verse (its bytes in the unit and its Standard Passage, `None` for an Unmapped verse), or
+/// outside Bibles a paragraph (`standard` is `None`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VerseSlice {
+pub struct DocumentSlice {
     pub range: Range<usize>,
     pub standard: Option<Passage>,
+}
+
+/// The paragraphs of `unit` (outside Bibles) that hold a word and overlap `block`, and up to
+/// `context` more on either side ([`FilterMatcher::context_documents`]), in order: the
+/// documents [`block_hits`] reads a block outside Bibles against.
+pub fn paragraph_slices(
+    unit: &TextUnit,
+    block: Range<usize>,
+    context: usize,
+) -> Vec<DocumentSlice> {
+    let paragraphs: Vec<Range<usize>> = unit
+        .paragraphs()
+        .into_iter()
+        .filter(|p| {
+            unit.text
+                .get(p.clone())
+                .is_some_and(|t| !obs_model::tokenize(t).is_empty())
+        })
+        .collect();
+    let inside = |p: &Range<usize>| p.start < block.end && block.start < p.end;
+    let (Some(first), Some(last)) = (
+        paragraphs.iter().position(inside),
+        paragraphs.iter().rposition(inside),
+    ) else {
+        return Vec::new();
+    };
+    let wanted = first.saturating_sub(context)
+        ..last
+            .saturating_add(context)
+            .saturating_add(1)
+            .min(paragraphs.len());
+    paragraphs[wanted]
+        .iter()
+        .map(|p| DocumentSlice {
+            range: p.clone(),
+            standard: None,
+        })
+        .collect()
 }
 
 /// Bytes of a unit that one filter colours.
@@ -636,18 +686,19 @@ fn tagged_in(unit: &TextUnit, bytes: Range<usize>) -> Vec<(Range<usize>, &[Morph
 
 /// What `filters` colour in `block` (bytes of `unit`), sorted by filter then start.
 ///
-/// - `verses`: the Bible Verses of the unit the block holds, in order, and any Verses on
-///   either side a `WITHIN n verses` query reads ([`FilterMatcher::context_verses`]); empty
-///   outside Bibles. In a Bible each Verse is a document the query is read against, as the
-///   Search Tool reads it (outside Bibles the block is the one document), and a filter
-///   limited to Passages reads only the Verses in them. Only the block's bytes are coloured.
+/// - `documents`: the documents of the unit the block holds, consecutive and in order, and
+///   any on either side a `WITHIN n` query reads ([`FilterMatcher::context_documents`]):
+///   Bible Verses, or outside Bibles paragraphs ([`paragraph_slices`]). Each is read as the
+///   Search Tool reads it; `WITHIN n` counts their positions in this list. A filter limited
+///   to Passages reads only the Verses in them (nothing outside Bibles), its marked text
+///   too. Only the block's bytes are coloured.
 /// - `align`: the block is in a Bible without original-language data of its own; `original`
 ///   gives the aligned original-language words at a Standard Passage (see the module docs).
 pub fn block_hits(
     filters: &[FilterMatcher],
     unit: &TextUnit,
     block: Range<usize>,
-    verses: &[VerseSlice],
+    documents: &[DocumentSlice],
     align: bool,
     original: &mut dyn FnMut(Passage) -> AlignedWords,
 ) -> Vec<FilterHit> {
@@ -662,21 +713,16 @@ pub fn block_hits(
     };
     let mut out = Vec::new();
     for (k, f) in filters.iter().enumerate() {
-        let docs: Vec<Document> = if verses.is_empty() {
-            vec![Document {
-                range: block.clone(),
-                standard: None,
-            }]
-        } else {
-            verses
-                .iter()
-                .filter(|v| f.in_scope(v.standard))
-                .map(|v| Document {
-                    range: v.range.start.min(text.len())..v.range.end.min(text.len()),
-                    standard: v.standard,
-                })
-                .collect()
-        };
+        let docs: Vec<Document> = documents
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| f.in_scope(d.standard))
+            .map(|(ordinal, d)| Document {
+                range: d.range.start.min(text.len())..d.range.end.min(text.len()),
+                standard: d.standard,
+                ordinal,
+            })
+            .collect();
         let mut ranges: Vec<Range<usize>> = Vec::new();
         if let Some(condition) = &f.condition {
             for found in condition.eval(&docs, &mut cx).into_iter().flatten() {

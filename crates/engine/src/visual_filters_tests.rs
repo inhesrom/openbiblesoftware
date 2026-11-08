@@ -14,7 +14,8 @@ use serde_json::json;
 use crate::testing::bibles::write_library;
 use crate::testing::{kjv_romans_12, tagnt_romans_12};
 use crate::visual_filters::{
-    AlignedWords, FilterMatcher, MarkedText, VerseSlice, VisualFilter, block_hits, built_in_filters,
+    AlignedWords, DocumentSlice, FilterMatcher, MarkedText, VisualFilter, block_hits,
+    built_in_filters, paragraph_slices,
 };
 use crate::*;
 
@@ -243,10 +244,10 @@ fn words<'a>(unit: &'a TextUnit, hits: &[Range<usize>]) -> Vec<&'a str> {
 }
 
 /// Every Verse of a Resource numbered like the Standard versification.
-fn slices(r: &Resource) -> Vec<VerseSlice> {
+fn slices(r: &Resource) -> Vec<DocumentSlice> {
     r.verses
         .iter()
-        .map(|v| VerseSlice {
+        .map(|v| DocumentSlice {
             range: v.start as usize..v.end as usize,
             standard: Passage::new(
                 v.verse,
@@ -532,7 +533,7 @@ fn within_verses_reads_neighbouring_verses_outside_the_block() {
         &obs_search::NoLexicon,
     )
     .unwrap();
-    assert_eq!(matcher.context_verses(), 1);
+    assert_eq!(matcher.context_documents(), 1);
     let mut never = |_: Passage| -> AlignedWords { panic!("not aligned") };
     let hits = block_hits(&[matcher], unit, v14, &slices(&kjv), false, &mut never);
     let ranges: Vec<Range<usize>> = hits.into_iter().map(|h| h.range).collect();
@@ -583,4 +584,218 @@ fn a_deleted_filters_id_is_never_reused_so_restored_layouts_do_not_switch_new_fi
         .run("filter.save", &json!({ "name": "Peace", "query": "peace" }))
         .unwrap();
     assert_eq!(third["id"], "filter-3");
+}
+
+// ------------------------------------------------------- review of #211: scope and reach
+
+/// A unit of one word per Verse (Romans 1:1, 1:2, …), and its Verses as documents.
+fn one_word_verses(words: &[&str]) -> (TextUnit, Vec<DocumentSlice>) {
+    let mut text = String::new();
+    let mut slices = Vec::new();
+    for (i, w) in words.iter().enumerate() {
+        if !text.is_empty() {
+            text.push(' ');
+        }
+        let start = text.len();
+        text.push_str(w);
+        let v = Verse::new(
+            obs_scripture::Book::Romans,
+            1,
+            u16::try_from(i + 1).unwrap(),
+        );
+        slices.push(DocumentSlice {
+            range: start..text.len(),
+            standard: Some(Passage::new(v, v).unwrap()),
+        });
+    }
+    let unit = TextUnit {
+        id: obs_model::UnitId::new("ROM").unwrap(),
+        kind: obs_model::UnitKind::BibleBook,
+        title: None,
+        text,
+        spans: Vec::new(),
+    };
+    (unit, slices)
+}
+
+/// The words one filter colours in `block`, given `documents`.
+fn colour_block(
+    unit: &TextUnit,
+    f: &VisualFilter,
+    block: Range<usize>,
+    documents: &[DocumentSlice],
+) -> Vec<String> {
+    let matcher = FilterMatcher::new(f, &obs_search::NoLexicon).unwrap();
+    let mut never = |_: Passage| -> AlignedWords { panic!("not aligned") };
+    let hits = block_hits(&[matcher], unit, block, documents, false, &mut never);
+    let ranges: Vec<Range<usize>> = hits.into_iter().map(|h| h.range).collect();
+    words(unit, &ranges).into_iter().map(String::from).collect()
+}
+
+/// A dictionary entry as the Search index test reads it: a heading and two paragraphs.
+fn grace_entry() -> TextUnit {
+    let text = "GRACE\nFavour freely shown.\nThe grace of God that bringeth salvation.";
+    let para = |r: Range<usize>| obs_model::Span {
+        start: r.start as u32,
+        end: r.end as u32,
+        kind: SpanKind::Para {
+            style: obs_model::ParaStyle::Prose,
+        },
+    };
+    let p1 = text.find("Favour").unwrap()..text.find('.').unwrap() + 1;
+    let p2 = text.find("The").unwrap()..text.len();
+    TextUnit {
+        id: obs_model::UnitId::new("Grace").unwrap(),
+        kind: obs_model::UnitKind::Entry,
+        title: Some("Grace".into()),
+        text: text.into(),
+        spans: vec![
+            obs_model::Span {
+                start: 0,
+                end: 5,
+                kind: SpanKind::Heading { level: 1 },
+            },
+            para(p1),
+            para(p2),
+        ],
+    }
+}
+
+/// A filter limited to Passages colours nothing outside the Verses in them: not a
+/// paragraph outside Bibles, not a block with no Verse, its marked text neither.
+#[test]
+fn a_scoped_filter_colours_nothing_outside_the_verses_in_its_passages() {
+    let mut unit = grace_entry();
+    let all = 0..unit.text.len();
+    unit.spans.push(obs_model::Span {
+        start: 6,
+        end: 12,
+        kind: SpanKind::Woj,
+    });
+    let paragraphs = paragraph_slices(&unit, all.clone(), 0);
+    assert_eq!(paragraphs.len(), 3, "the heading and both paragraphs");
+    let grace = filter("Grace", "grace", "Rom 12");
+    assert!(colour_block(&unit, &grace, all.clone(), &paragraphs).is_empty());
+    assert!(colour_block(&unit, &grace, all.clone(), &[]).is_empty());
+    let red = VisualFilter {
+        marked: Some(MarkedText::WordsOfChrist),
+        ..filter("Red", "", "Rom 12")
+    };
+    assert!(colour_block(&unit, &red, all.clone(), &paragraphs).is_empty());
+    // An Unmapped verse is in no Passage either.
+    let unmapped = [DocumentSlice {
+        range: all.clone(),
+        standard: None,
+    }];
+    assert!(colour_block(&unit, &grace, all.clone(), &unmapped).is_empty());
+    // Without a scope both colour there.
+    assert_eq!(
+        colour_block(
+            &unit,
+            &filter("Grace", "grace", ""),
+            all.clone(),
+            &paragraphs
+        ),
+        ["GRACE", "grace"]
+    );
+    assert_eq!(
+        colour_block(
+            &unit,
+            &VisualFilter {
+                scope: String::new(),
+                ..red
+            },
+            all,
+            &paragraphs
+        ),
+        ["Favour"]
+    );
+}
+
+/// `WITHIN n verses` counts the Verses left out of a filter's scope, as the Search index
+/// numbers its documents: Romans 1:1 and 1:3 are two Verses apart with 1:2 out of scope.
+#[test]
+fn within_verses_counts_the_verses_a_scope_leaves_out() {
+    let (unit, verses) = one_word_verses(&["alpha", "beta", "gamma"]);
+    let all = 0..unit.text.len();
+    let scoped = |q: &str| filter("F", q, "Rom 1:1; Rom 1:3");
+    assert!(
+        colour_block(
+            &unit,
+            &scoped("alpha WITHIN 2 verses gamma"),
+            all.clone(),
+            &verses
+        )
+        .is_empty()
+    );
+    assert_eq!(
+        colour_block(
+            &unit,
+            &scoped("alpha WITHIN 3 verses gamma"),
+            all.clone(),
+            &verses
+        ),
+        ["alpha", "gamma"]
+    );
+    assert!(
+        colour_block(&unit, &scoped("alpha WITHIN 2 verses beta"), all, &verses).is_empty(),
+        "1:2 is out of scope"
+    );
+}
+
+/// A nested `WITHIN` reads as far as its reaches added: a block holding only 1:3 reads 1:1
+/// for `(alpha WITHIN 2 verses beta) WITHIN 2 verses gamma`, and colours what reading the
+/// whole unit colours there.
+#[test]
+fn nested_within_reads_the_verses_its_reaches_add_up_to() {
+    let (unit, verses) = one_word_verses(&["alpha", "beta", "gamma", "delta"]);
+    let nested = filter(
+        "N",
+        "(alpha WITHIN 2 verses beta) WITHIN 2 verses gamma",
+        "",
+    );
+    let matcher = FilterMatcher::new(&nested, &obs_search::NoLexicon).unwrap();
+    assert_eq!(matcher.context_documents(), 2);
+    let whole = colour_block(&unit, &nested, 0..unit.text.len(), &verses);
+    assert_eq!(
+        whole,
+        ["beta", "gamma"],
+        "alpha is two Verses from gamma: not within the outer WITHIN"
+    );
+    for (i, v) in verses.iter().enumerate() {
+        // As a pane passes them: the block's Verse and `context_documents` on either side.
+        let window = &verses[i.saturating_sub(2)..(i + 3).min(verses.len())];
+        let block = colour_block(&unit, &nested, v.range.clone(), window);
+        let expected: Vec<String> = whole
+            .iter()
+            .filter(|w| unit.text[v.range.clone()] == **w)
+            .cloned()
+            .collect();
+        assert_eq!(block, expected, "Verse {}", i + 1);
+    }
+}
+
+/// Outside Bibles `WITHIN n paragraphs` joins neighbouring paragraphs of the unit, as the
+/// Search index does, each block colouring only its own words.
+#[test]
+fn within_paragraphs_reads_the_paragraphs_around_a_block() {
+    let unit = grace_entry();
+    let f = filter("F", "favour WITHIN 2 paragraphs salvation", "");
+    let context = FilterMatcher::new(&f, &obs_search::NoLexicon)
+        .unwrap()
+        .context_documents();
+    let favour = unit.text.find("Favour").unwrap()..unit.text.find('.').unwrap() + 1;
+    let the = unit.text.find("The").unwrap()..unit.text.len();
+    // The heading, "Favour …" and "The grace …" are three paragraphs.
+    for (block, word, read) in [(favour, "Favour", 3), (the, "salvation", 2)] {
+        let documents = paragraph_slices(&unit, block.clone(), context);
+        assert_eq!(documents.len(), read, "{word}");
+        assert_eq!(colour_block(&unit, &f, block, &documents), [word]);
+    }
+    let both = filter("F", "favour salvation", "");
+    let all = 0..unit.text.len();
+    assert!(
+        colour_block(&unit, &both, all.clone(), &paragraph_slices(&unit, all, 0)).is_empty(),
+        "each paragraph is its own document"
+    );
 }

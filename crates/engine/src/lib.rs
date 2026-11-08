@@ -285,8 +285,8 @@ pub use topic_guide::{
     CitedPassage, Subtopic, TopicChoice, TopicChooser, TopicDirectory, TopicGuides, TopicalEntry,
 };
 pub use visual_filters::{
-    AlignedWords, FilterHit, FilterMatcher, MarkedText, TabFilters, VerseSlice, VisualFilter,
-    block_hits, built_in_filters,
+    AlignedWords, DocumentSlice, FilterHit, FilterMatcher, MarkedText, TabFilters, VisualFilter,
+    block_hits, built_in_filters, paragraph_slices,
 };
 pub use word_info::{LemmaCard, LexiconGloss, PartRole, ShownWord, WordInfo, WordPart};
 pub use word_sections::{
