@@ -254,7 +254,7 @@ fn slices(r: &Resource) -> Vec<DocumentSlice> {
                 Verse::new(v.verse.book, v.verse.chapter, v.last.max(v.verse.verse)),
             )
             .ok(),
-            verse: true,
+            book: Some(v.verse.book),
         })
         .collect()
 }
@@ -607,7 +607,7 @@ fn one_word_verses(words: &[&str]) -> (TextUnit, Vec<DocumentSlice>) {
         slices.push(DocumentSlice {
             range: start..text.len(),
             standard: Some(Passage::new(v, v).unwrap()),
-            verse: true,
+            book: Some(v.book),
         });
     }
     let unit = TextUnit {
@@ -688,7 +688,7 @@ fn a_scoped_filter_colours_nothing_outside_the_verses_in_its_passages() {
     let unmapped = [DocumentSlice {
         range: all.clone(),
         standard: None,
-        verse: true,
+        book: Some(obs_scripture::Book::Romans),
     }];
     assert!(colour_block(&unit, &grace, all.clone(), &unmapped).is_empty());
     // Without a scope both colour there.
@@ -833,6 +833,15 @@ fn search_verses(r: &Resource, query: &str) -> Vec<Verse> {
 /// The Verses of `r`'s first unit in which a filter of `query` colours a word, each read as
 /// its own block (with every Verse as context), and the words it colours in all of them.
 fn filter_verses<'a>(r: &'a Resource, query: &str) -> (Vec<Verse>, Vec<&'a str>) {
+    filter_verses_reading(r, query, &slices(r))
+}
+
+/// [`filter_verses`] with `documents` as the Verses of `r`'s first unit.
+fn filter_verses_reading<'a>(
+    r: &'a Resource,
+    query: &str,
+    documents: &[DocumentSlice],
+) -> (Vec<Verse>, Vec<&'a str>) {
     let matcher = FilterMatcher::new(&filter("F", query, ""), &obs_search::NoLexicon).unwrap();
     let unit = &r.units[0];
     let mut verses = Vec::new();
@@ -844,7 +853,7 @@ fn filter_verses<'a>(r: &'a Resource, query: &str) -> (Vec<Verse>, Vec<&'a str>)
             std::slice::from_ref(&matcher),
             unit,
             block,
-            &slices(r),
+            documents,
             false,
             &mut never,
         );
@@ -1085,5 +1094,84 @@ fn near_pairs_overlapping_operands_as_search_does() {
         let (found, words) = filter_verses(&kjv, query);
         assert_eq!(found, verses, "filter: {query}");
         assert_eq!(words, coloured, "{query}");
+    }
+}
+
+/// Review of #211: Strong's alignment does not reach a word in one of the Verse's headings,
+/// as no term does: with the KJV's first "Bless" of 12:14 marked as a heading, TAGNT's
+/// imperative G2127 colours only the second.
+#[test]
+fn alignment_leaves_a_verses_headings_out() {
+    let tagnt = tagnt_romans_12();
+    let mut kjv = kjv_romans_12();
+    let unit = &mut kjv.units[0];
+    let first_bless = unit.text.find("Bless them").unwrap();
+    unit.spans.push(obs_model::Span {
+        start: first_bless as u32,
+        end: (first_bless + "Bless".len()) as u32,
+        kind: SpanKind::Heading { level: 2 },
+    });
+    let rom_12 = filter("Imperatives in Romans 12", "@imperative", "Rom 12");
+    let english = coloured(&kjv, &[rom_12], true, &mut aligned(&tagnt));
+    assert_eq!(
+        english[0],
+        ["be", "conformed", "transformed", "bless", "curse"],
+        "the heading \"Bless\" is left plain"
+    );
+}
+
+/// Review of #211: `WITHIN n verses` joins Verses of one book of the Bible whether or not
+/// they are mapped to a Standard Passage, as the Search index joins them by the Bible's own
+/// book: Romans 1:1 is mapped and 1:2 Unmapped, and both are found.
+#[test]
+fn within_verses_joins_a_mapped_verse_and_an_unmapped_one_as_search_does() {
+    let rom = |v| Verse::new(obs_scripture::Book::Romans, 1, v);
+    let r = crate::testing::tagged_bible(
+        "unmapped",
+        "Unmapped Bible",
+        "UB",
+        "en",
+        &[(rom(1), "alpha"), (rom(2), "beta")],
+    );
+    let query = "alpha WITHIN 2 verses beta";
+    assert_eq!(
+        search_verses(&r, query),
+        [rom(1), rom(2)],
+        "Search: {query}"
+    );
+    let mut documents = slices(&r);
+    assert_eq!(documents.len(), 2);
+    documents[1].standard = None;
+    for reading in [slices(&r), documents] {
+        let (found, words) = filter_verses_reading(&r, query, &reading);
+        assert_eq!(
+            found,
+            [rom(1), rom(2)],
+            "filter: {query} reading {reading:?}"
+        );
+        assert_eq!(words, ["alpha", "beta"]);
+    }
+    // Verses of two books are not joined, mapped or not.
+    let two_books = crate::testing::tagged_bible(
+        "books",
+        "Two Books",
+        "TB",
+        "en",
+        &[
+            (rom(1), "alpha"),
+            (
+                Verse::new(obs_scripture::Book::FirstCorinthians, 1, 1),
+                "beta",
+            ),
+        ],
+    );
+    assert!(search_verses(&two_books, query).is_empty());
+    let (unit, mut verses) = one_word_verses(&["alpha", "beta"]);
+    for standard in [None, verses[0].standard] {
+        verses[1].book = Some(obs_scripture::Book::FirstCorinthians);
+        verses[1].standard = standard;
+        let all = 0..unit.text.len();
+        let within = filter("F", query, "");
+        assert!(colour_block(&unit, &within, all, &verses).is_empty());
     }
 }

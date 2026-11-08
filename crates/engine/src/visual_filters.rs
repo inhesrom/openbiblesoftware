@@ -31,7 +31,7 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 
 use obs_model::{MorphemePart, SpanKind, TextUnit};
-use obs_scripture::{Passage, PassageList};
+use obs_scripture::{Book, Passage, PassageList};
 use obs_search::{Highlighter, LemmaLookup, Query};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -416,6 +416,8 @@ impl Condition {
 struct Document<'a> {
     range: Range<usize>,
     standard: Option<Passage>,
+    /// A Verse's book in the Bible's own numbering; `None` for a paragraph.
+    book: Option<Book>,
     /// Its position among the documents [`block_hits`] was given, which `WITHIN n` counts.
     ordinal: usize,
     /// Its bytes as the Search index reads them ([`obs_model::searchable_text`]): a Verse's
@@ -461,10 +463,19 @@ impl Document<'_> {
         out
     }
 
-    /// Whether `WITHIN n verses` can join the two: Verses of one book, or paragraphs.
+    /// Whether `bytes` (of the unit) overlap one of the headings left out of a Verse.
+    fn in_heading(&self, bytes: &Range<usize>) -> bool {
+        self.skipped
+            .iter()
+            .any(|h| h.start < bytes.end && bytes.start < h.end)
+    }
+
+    /// Whether `WITHIN n verses` can join the two, as the Search index joins its documents:
+    /// Verses of one book of the Bible (its own book, whether or not the Verse is mapped to
+    /// a Standard Passage), or paragraphs (of the one unit read).
     fn neighbours(&self, other: &Document<'_>) -> bool {
-        match (self.standard, other.standard) {
-            (Some(a), Some(b)) => a.start().book == b.start().book,
+        match (self.book, other.book) {
+            (Some(a), Some(b)) => a == b,
             (None, None) => true,
             _ => false,
         }
@@ -501,9 +512,11 @@ impl MatchContext<'_> {
         };
         // Only words without the data, and only what they lack: a word tagged as a
         // participle stays one, whatever the original-language Bible says of its Strong's
-        // number, and its own Morphology still has to meet `lemma:… @imperative`.
+        // number, and its own Morphology still has to meet `lemma:… @imperative`. A word in
+        // one of the Verse's headings is not read, aligned or not.
         let untagged: Vec<&(Range<usize>, &[MorphemePart])> = tagged
             .iter()
+            .filter(|(r, _)| !doc.in_heading(r))
             .filter(|(_, parts)| h.lacks_original_language_data(parts))
             .collect();
         if untagged.is_empty() {
@@ -687,9 +700,10 @@ impl FilterMatcher {
 pub struct DocumentSlice {
     pub range: Range<usize>,
     pub standard: Option<Passage>,
-    /// A Bible Verse, whose headings are not read (the Search index leaves them out of the
-    /// Verse), rather than a paragraph.
-    pub verse: bool,
+    /// For a Bible Verse, its book in the Bible's own numbering, which `WITHIN n verses`
+    /// keeps to; `None` for a paragraph. A Verse's headings are not read (the Search index
+    /// leaves them out of the Verse).
+    pub book: Option<Book>,
 }
 
 /// The paragraphs of `unit` (outside Bibles) that hold a word and overlap `block`, and up to
@@ -726,7 +740,7 @@ pub fn paragraph_slices(
         .map(|p| DocumentSlice {
             range: p.clone(),
             standard: None,
-            verse: false,
+            book: None,
         })
         .collect()
 }
@@ -784,7 +798,7 @@ pub fn block_hits(
         original,
         aligned: Default::default(),
     };
-    let headings = if documents.iter().any(|d| d.verse) {
+    let headings = if documents.iter().any(|d| d.book.is_some()) {
         unit.heading_ranges()
     } else {
         Vec::new()
@@ -794,12 +808,17 @@ pub fn block_hits(
         .enumerate()
         .map(|(ordinal, d)| {
             let range = d.range.start.min(text.len())..d.range.end.min(text.len());
-            let skipped = if d.verse { headings.as_slice() } else { &[] };
+            let skipped = if d.book.is_some() {
+                headings.as_slice()
+            } else {
+                &[]
+            };
             Document {
                 text: obs_model::searchable_text(text, range.clone(), skipped),
                 skipped,
                 range,
                 standard: d.standard,
+                book: d.book,
                 ordinal,
             }
         })

@@ -272,7 +272,7 @@ fn document_slices(
         out.push(DocumentSlice {
             range,
             standard,
-            verse: true,
+            book: Some(v.verse.book),
         });
     }
     out
