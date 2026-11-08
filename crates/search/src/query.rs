@@ -7,7 +7,8 @@
 //! | `faith OR hope`, `faith -works`, `faith NOT works`, `(faith OR hope) love` | Boolean; operators are uppercase, `-` is NOT |
 //! | `lov*` | prefix |
 //! | `strong:G26`, `G26`, `H1254A` | Strong's number; extended matches exactly, base matches all homographs |
-//! | `lemma:ἀγάπη`, `lemma:agape` | Lemma, in original script or transliteration |
+//! | `text:G26`, `text:love` | Words as written, even one shaped like a Strong's number |
+//! | `lemma:ἀγάπη`, `lemma:agape` | Lemma, in original script or transliteration; words of one Tagged word's Lemma (`lemma:Πάγος` finds Ἄρειος Πάγος) |
 //! | `@verb aorist imperative`, `morph:genitive` | Morphology criteria that one Tagged word meets (#145) |
 //! | `strong:G26 @noun genitive`, `lemma:ἀγαπάω @verb aorist` | The same word has that Strong's number or Lemma too |
 //! | `faith NEAR/5 works`, `faith WITHIN 5 words works` | Proximity: at most 5 words between them, either order (#180) |
