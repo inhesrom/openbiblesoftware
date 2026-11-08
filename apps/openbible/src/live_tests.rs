@@ -438,3 +438,49 @@ fn live_free_to_share_over_the_live_catalog_keeps_only_free_rows() {
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// #244: over the live catalog every language filter choice has a name, and "Bengali",
+/// "Bangla" and "ben" find the Bengali Bibles. Prints them, and every choice no table names,
+/// for the research note (docs/research/language-names.md).
+#[test]
+#[ignore = "network"]
+fn live_searching_bengali_bangla_or_ben_finds_the_live_catalogs_bengali_bibles() {
+    use obs_engine::LicenceFilter;
+    use obs_engine::get_bibles::ResourceFilter;
+    let root = temp("language-names");
+    let mut s = session(&root);
+    refresh(&mut s);
+    let gb = &s.get_bibles;
+    let bibles = ResourceFilter::Type(ResourceType::Bible);
+    let choices = gb.languages(bibles, LicenceFilter::All);
+    let unknown: Vec<&str> = choices
+        .iter()
+        .filter(|c| !c.name.is_known())
+        .map(|c| c.code.as_str())
+        .collect();
+    println!(
+        "{} languages of Bibles; no name for {unknown:?}",
+        choices.len()
+    );
+    for query in ["Bengali", "Bangla", "ben"] {
+        let found: Vec<_> = choices.iter().filter(|c| c.name.matches(query)).collect();
+        assert!(!found.is_empty(), "{query:?} finds no language");
+        for c in found {
+            let rows = gb.all_listings("", Some(&c.code), bibles, LicenceFilter::All);
+            println!("{query:?}: {} · {}", c.name.label(), c.count);
+            for b in &rows {
+                println!(
+                    "    {} ({}, {}, Lang={})",
+                    b.title, b.module, b.repo, b.language
+                );
+            }
+            assert_eq!(rows.len(), c.count);
+            assert!(
+                rows.iter()
+                    .all(|b| c.name.key == obs_engine::language(&b.language).key)
+            );
+        }
+    }
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}

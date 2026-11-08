@@ -6,18 +6,22 @@
 //! available, with Update all above the list (#136). A licence filter (Free to share, Free for
 //! personal use, All licences) applies to every section, and the Open catalogue's rows (#134)
 //! follow the Featured sections; they list even before the SWORD catalog is loaded.
+//! Languages show by name (#244): the language filter is a searchable list of names with how
+//! many Resources each has, the OS language first, and each row names its language, the code
+//! on hover.
 
 use egui::{Color32, RichText, Ui};
 use obs_engine::get_bibles::{
-    ListingStatus, ResourceFilter, ResourceListing, TAG_MORPHOLOGY, TAG_STRONGS, UpdateCheck,
-    UpdatesSummary,
+    LanguageChoice, ListingStatus, ResourceFilter, ResourceListing, TAG_MORPHOLOGY, TAG_STRONGS,
+    UpdateCheck, UpdatesSummary,
 };
-use obs_engine::{ImportPhase, LicenceClass, LicenceFilter, language_name, licence_class};
+use obs_engine::{ImportPhase, LanguageName, LicenceClass, LicenceFilter, language, licence_class};
 use serde_json::json;
 
 use super::State;
 use super::import_tab::megabytes;
 use super::library_tab::{section, type_singular};
+use crate::icons::{self, Icon};
 use crate::theme;
 
 /// Every row (and section header) is this tall, so the list can be virtualized.
@@ -28,6 +32,119 @@ const ROW_HEIGHT: f32 = 80.0;
 pub(super) struct GetBiblesUi {
     pub(super) query: String,
     pub(super) language: Option<String>,
+    /// What is typed into the language filter's search.
+    pub(super) language_search: String,
+}
+
+/// A language's name as the chrome can draw it: "Bangla — বাংলা", or only "Bangla" when the
+/// interface fonts lack the native name's letters (it would draw as boxes).
+pub(super) fn language_label(ui: &Ui, name: &LanguageName) -> String {
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    match name.native {
+        Some(native) if ui.ctx().fonts_mut(|f| f.has_glyphs(&font, native)) => name.label(),
+        _ => name.english_label(),
+    }
+}
+
+/// On hover over a language's name: its code, and the other names a search finds it by.
+fn language_hover(name: &LanguageName) -> String {
+    let mut text = format!("Language code: {}", name.tag);
+    if !name.also.is_empty() {
+        text.push_str(&format!("\nAlso called {}", name.also.join(", ")));
+    }
+    text
+}
+
+/// The language filter: a button naming the chosen language, opening a searchable list of
+/// every language with how many Resources each has. A search matches English names, names in
+/// the language itself and codes; Enter takes the first match.
+fn language_filter(
+    ui: &mut Ui,
+    filter: &mut GetBiblesUi,
+    choices: &dyn Fn() -> std::sync::Arc<[LanguageChoice]>,
+) {
+    let shown = filter
+        .language
+        .as_deref()
+        .map_or("All languages".to_string(), |l| {
+            language_label(ui, &language(l))
+        });
+    let chevron = icons::image(ui.ctx(), Icon::ChevronDown, icons::SMALL, theme::c().muted);
+    let button = ui
+        .add(egui::Button::new((shown, chevron)))
+        .accessible_name("Language");
+    let button = match filter.language.as_deref() {
+        Some(l) => button.on_hover_text(language_hover(&language(l))),
+        None => button.on_hover_text("Show Resources in one language"),
+    };
+    let popup_id = ui.make_persistent_id("get-bibles-language");
+    let opening = button.clicked() && !egui::Popup::is_id_open(ui.ctx(), popup_id);
+    egui::Popup::menu(&button)
+        .id(popup_id)
+        .width(300.0)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            if opening {
+                filter.language_search.clear();
+            }
+            let search = ui.add(
+                egui::TextEdit::singleline(&mut filter.language_search)
+                    .hint_text("Search languages: name or code")
+                    .desired_width(f32::INFINITY),
+            );
+            let search = search.accessible_name("Search languages");
+            if opening {
+                search.request_focus();
+            }
+            let enter = search.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let choices = choices();
+            // Best matches first ("ben" is Bengali's code before it is part of "Benabena"),
+            // each group in the list's order.
+            let mut found: Vec<(u8, &LanguageChoice)> = choices
+                .iter()
+                .filter_map(|c| Some((c.name.match_rank(&filter.language_search)?, c)))
+                .collect();
+            found.sort_by_key(|(rank, _)| *rank);
+            let found: Vec<&LanguageChoice> = found.into_iter().map(|(_, c)| c).collect();
+            if enter && let Some(first) = found.first() {
+                filter.language = Some(first.code.clone());
+                ui.close();
+            }
+            ui.add_space(4.0);
+            egui::ScrollArea::vertical()
+                .max_height(360.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                    if filter.language_search.trim().is_empty()
+                        && ui
+                            .selectable_label(filter.language.is_none(), "All languages")
+                            .clicked()
+                    {
+                        filter.language = None;
+                        ui.close();
+                    }
+                    if found.is_empty() {
+                        ui.label(
+                            RichText::new("No language matches")
+                                .small()
+                                .color(theme::c().muted),
+                        );
+                    }
+                    for c in found {
+                        let selected = filter.language.as_deref() == Some(c.code.as_str());
+                        let label = format!("{} · {}", language_label(ui, &c.name), c.count);
+                        if ui
+                            .selectable_label(selected, label)
+                            .on_hover_text(language_hover(&c.name))
+                            .clicked()
+                        {
+                            filter.language = Some(c.code.clone());
+                            ui.close();
+                        }
+                    }
+                });
+        });
 }
 
 enum Item<'a> {
@@ -290,24 +407,7 @@ impl State {
                             .desired_width(search_width),
                     )
                     .accessible_name("Search by name or abbreviation");
-                    let shown = filter
-                        .language
-                        .as_deref()
-                        .map_or("All languages".to_string(), |l| {
-                            format!("{} ({l})", language_name(l))
-                        });
-                    egui::ComboBox::from_id_salt("get-bibles-language")
-                        .selected_text(shown)
-                        .height(400.0)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut filter.language, None, "All languages");
-                            for (code, n) in gb.languages(shown_filter, shown_licence) {
-                                let label = format!("{} ({code}) · {n}", language_name(&code));
-                                ui.selectable_value(&mut filter.language, Some(code), label);
-                            }
-                        })
-                        .response
-                        .accessible_name("Language");
+                    language_filter(ui, filter, &|| gb.languages(shown_filter, shown_licence));
                     if !gb.is_refreshing()
                         && ui
                             .small_button("Refresh")
@@ -546,24 +646,26 @@ fn listing_row(
                     ui.label(RichText::new(tag).small().strong().color(theme::c().lapis))
                         .on_hover_text(tag_hover(tag));
                 }
-                let mut facts = Vec::new();
+                // Type, abbreviation, language (its code on hover), size, repository.
+                let fact = |t: String| RichText::new(t).small().color(theme::c().muted);
+                let mut before = Vec::new();
                 if show_type {
-                    facts.push(type_singular(b.kind).to_string());
+                    before.push(type_singular(b.kind).to_string());
                 }
-                facts.push(b.abbreviation.clone());
-                facts.push(language_name(&b.language).to_string());
+                before.push(b.abbreviation.clone());
+                let mut after = Vec::new();
                 if let Some(size) = b.size {
-                    facts.push(megabytes(size));
+                    after.push(megabytes(size));
                 }
-                facts.push(b.source_label());
-                ui.add(
-                    egui::Label::new(
-                        RichText::new(facts.join(" · "))
-                            .small()
-                            .color(theme::c().muted),
-                    )
-                    .truncate(),
-                );
+                after.push(b.source_label());
+                let name = language(&b.language);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    ui.label(fact(format!("{} · ", before.join(" · "))));
+                    ui.label(fact(language_label(ui, &name)))
+                        .on_hover_text(language_hover(&name));
+                    ui.add(egui::Label::new(fact(format!(" · {}", after.join(" · ")))).truncate());
+                });
             });
             let notes: Vec<&str> = b
                 .used_by()

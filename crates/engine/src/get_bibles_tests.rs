@@ -1746,3 +1746,151 @@ fn from_a_fresh_library_a_tagged_greek_nt_and_hebrew_ot_download_and_forms_fill_
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// A Get Resources state showing `listings` (module, language) as its SWORD catalog.
+fn get_bibles_with(listings: &[(&str, &str)]) -> GetBibles {
+    let mut gb = GetBibles::default();
+    gb.set_open_catalogue(Vec::new());
+    gb.set_catalog(ResourceCatalog::new(
+        0,
+        Vec::new(),
+        listings
+            .iter()
+            .map(|(module, lang)| ResourceListing {
+                language: (*lang).into(),
+                ..listing(module, "CrossWire")
+            })
+            .collect(),
+    ));
+    gb
+}
+
+fn choice_labels(gb: &GetBibles) -> Vec<String> {
+    gb.languages(ResourceFilter::All, LicenceFilter::All)
+        .iter()
+        .map(|c| format!("{} · {}", c.name.label(), c.count))
+        .collect()
+}
+
+#[test]
+fn the_language_filter_names_every_language_sorted_by_name_with_counts() {
+    let gb = get_bibles_with(&[
+        ("benirv2019eb", "bn"),
+        ("ben2006eb", "bn"),
+        ("benobcv2019eb", "bn"),
+        ("kmoeb", "kmo"),
+        ("KJV", "en"),
+        ("ChiUns", "zh-Hans"),
+        ("Odd", "qqq"),
+    ]);
+    assert_eq!(
+        choice_labels(&gb),
+        [
+            "Bangla — বাংলা · 3",
+            "English · 1",
+            "Kwoma · 1",
+            "Simplified Chinese — 简体中文 · 1",
+            "Unknown language (qqq) · 1",
+        ]
+    );
+    // No choice is a bare code.
+    let choices = gb.languages(ResourceFilter::All, LicenceFilter::All);
+    assert!(choices.iter().all(|c| c.name.label() != c.code));
+}
+
+#[test]
+fn the_os_language_heads_the_language_filter() {
+    let mut gb = get_bibles_with(&[("KJV", "en"), ("ben2006eb", "bn"), ("Luther", "de")]);
+    gb.set_system_language(Some("de-CH".into()));
+    assert_eq!(
+        choice_labels(&gb),
+        ["German — Deutsch · 1", "Bangla — বাংলা · 1", "English · 1"]
+    );
+    // A 639-3 OS tag is the same language.
+    gb.set_system_language(Some("ben".into()));
+    assert_eq!(choice_labels(&gb)[0], "Bangla — বাংলা · 1");
+    gb.set_system_language(None);
+    assert_eq!(choice_labels(&gb)[0], "Bangla — বাংলা · 1");
+}
+
+#[test]
+fn searching_bengali_bangla_or_ben_finds_the_bengali_bibles() {
+    let gb = get_bibles_with(&[
+        ("benirv2019eb", "bn"),
+        ("ben2006eb", "bn"),
+        ("KJV", "en"),
+        ("Byz", "grc"),
+    ]);
+    for query in ["Bengali", "Bangla", "ben", "বাংলা"] {
+        let found: Vec<String> = gb
+            .languages(ResourceFilter::All, LicenceFilter::All)
+            .iter()
+            .filter(|c| c.name.matches(query))
+            .map(|c| c.code.clone())
+            .collect();
+        assert_eq!(found, ["bn"], "{query:?}");
+        // Choosing it lists the Bengali Bibles.
+        assert_eq!(
+            modules(&gb.all_listings("", Some(&found[0]), ResourceFilter::All, LicenceFilter::All)),
+            ["ben2006eb", "benirv2019eb"]
+        );
+    }
+}
+
+#[test]
+fn getbibles_list_names_each_rows_language_and_lists_the_language_filter() {
+    let (mut s, _repos, root) = session("language-names");
+    refresh(&mut s);
+    let out = s
+        .run("getbibles.list", &json!({"language": "grc"}))
+        .unwrap();
+    let all = out["all"].as_array().unwrap();
+    assert!(!all.is_empty());
+    assert!(
+        all.iter().all(|r| r["language_name"] == "Ancient Greek"),
+        "{all:#?}"
+    );
+    let languages = out["languages"].as_array().unwrap();
+    assert!(
+        languages
+            .iter()
+            .any(|l| l["code"] == "grc" && l["name"] == "Ancient Greek"),
+        "{languages:#?}"
+    );
+    assert!(languages.iter().all(|l| l["name"] != l["code"]));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn tags_of_one_language_are_one_language_filter_choice() {
+    // Live catalogs tag English `en` and `en-Latn`, and Ossetic `os` and `oss-Cyrl`.
+    let gb = get_bibles_with(&[
+        ("KJV", "en"),
+        ("WEB", "en-Latn"),
+        ("Oss", "os"),
+        ("Oss2", "oss-Cyrl"),
+        ("ben2006eb", "bn"),
+        ("ben_bss", "ben-Beng-IN"),
+    ]);
+    assert_eq!(
+        choice_labels(&gb),
+        [
+            "Bangla — বাংলা · 1",
+            "Bangla (India) — বাংলা · 1",
+            "English · 2",
+            "Ossetic — ирон · 2",
+        ]
+    );
+    let all =
+        |l: &str| modules(&gb.all_listings("", Some(l), ResourceFilter::All, LicenceFilter::All));
+    assert_eq!(all("en"), ["KJV", "WEB"]);
+    assert_eq!(all("oss"), ["Oss", "Oss2"]);
+    assert_eq!(all("bn-IN"), ["ben_bss"]);
+    // Searching Bengali finds both.
+    let found = gb
+        .languages(ResourceFilter::All, LicenceFilter::All)
+        .iter()
+        .filter(|c| c.name.matches("Bengali"))
+        .count();
+    assert_eq!(found, 2);
+}

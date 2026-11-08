@@ -58,15 +58,47 @@ const EMBEDDED_USE: &[(&str, &str)] = &[
         "crates/ui-egui/assets/icons/",
         "Built into the app: the icons of the toolbar, menus, Tab headers, Guides and Tools.",
     ),
+    (
+        "crates/engine/assets/languages/",
+        "Built into the app: the language names Get Resources shows and searches, in English \
+         and in each language itself.",
+    ),
 ];
 
 /// Licence texts shown with a piece of data built into the app, by `ATTRIBUTION.toml` path
 /// prefix: (prefix, title, text).
-const EMBEDDED_TEXTS: &[(&str, &str, &str)] = &[(
-    "crates/ui-egui/assets/icons/",
-    "Lucide licence (ISC, and MIT for the icons from Feather)",
-    include_str!("../../ui-egui/assets/icons/LICENSE"),
-)];
+const EMBEDDED_TEXTS: &[(&str, &str, &str)] = &[
+    (
+        "crates/ui-egui/assets/icons/",
+        "Lucide licence (ISC, and MIT for the icons from Feather)",
+        include_str!("../../ui-egui/assets/icons/LICENSE"),
+    ),
+    (
+        "crates/engine/assets/languages/{cldr-names",
+        "Unicode CLDR licence (Unicode License v3)",
+        include_str!("../assets/languages/LICENSE-CLDR"),
+    ),
+    (
+        "crates/engine/assets/languages/iso-639-3",
+        "ISO 639-3 code tables terms of use",
+        ISO_639_3_TERMS,
+    ),
+];
+
+/// SIL International's terms for the ISO 639-3 code tables, as published with the downloads
+/// (https://iso639-3.sil.org/code_tables/download_tables).
+const ISO_639_3_TERMS: &str = "The ISO 639-3 code set may be downloaded and incorporated into \
+software products, web-based systems, digital devices, etc., either commercial or \
+non-commercial, provided that:\n\n\
+- attribution is given to iso639-3.sil.org as the source of the codes;\n\
+- the identifiers of the code set are not modified or extended except as may be privately \
+agreed using the Private Use Area (range qaa to qtz), and then such extensions shall not be \
+distributed publicly;\n\
+- the product, system, or device does not provide a means to redistribute the code set.\n\n\
+Expansions to the information provided by the standard (e.g., population data, names in other \
+languages, geographic coordinates, etc.) may be made and distributed as long as such added \
+information is clearly identified as not being part of the standard itself. The ISO 639-3 \
+website is the only authorized distribution site for the ISO 639-3 code tables.";
 
 /// One credited work.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -568,6 +600,37 @@ mod tests {
         assert_eq!(
             index.license_url.as_deref(),
             Some("https://creativecommons.org/licenses/by/4.0/")
+        );
+    }
+
+    /// #244: the built-in language names credit Unicode CLDR and the ISO 639-3 code tables,
+    /// with CLDR's licence and SIL's terms.
+    #[test]
+    fn the_language_names_credit_cldr_and_iso_639_3() {
+        let embedded = &credits().sections[1];
+        let find = |asset: &str| {
+            embedded
+                .credits
+                .iter()
+                .find(|c| c.asset.as_deref() == Some(asset))
+                .unwrap_or_else(|| panic!("{asset} is not credited: {embedded:#?}"))
+        };
+        let cldr = find("crates/engine/assets/languages/{cldr-names.tsv,LICENSE-CLDR}");
+        assert!(cldr.name.contains("Unicode CLDR"));
+        assert_eq!(cldr.license, "Unicode-3.0");
+        assert!(cldr.source.contains("cldr.unicode.org"));
+        assert!(cldr.note.as_deref().unwrap().contains("language names"));
+        assert_eq!(cldr.texts.len(), 1);
+        assert!(cldr.texts[0].1.contains("Unicode, Inc."));
+        let iso = find("crates/engine/assets/languages/iso-639-3.tsv");
+        assert!(iso.name.contains("ISO 639-3"));
+        assert!(iso.source.contains("iso639-3.sil.org"));
+        assert!(iso.credit.contains("iso639-3.sil.org"));
+        assert_eq!(iso.texts.len(), 1);
+        assert!(
+            iso.texts[0]
+                .1
+                .contains("attribution is given to iso639-3.sil.org")
         );
     }
 

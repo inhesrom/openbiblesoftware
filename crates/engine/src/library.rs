@@ -382,7 +382,8 @@ impl LibraryFilter {
     }
 }
 
-/// A language chip's label: the language's English name for tags the app knows, else the tag.
+/// A language chip's label: the language's English name, Hebrew and Greek of every period
+/// together; the tag itself only when no table names it ([`crate::language_names`]).
 pub fn language_name(tag: &str) -> &str {
     match tag.split('-').next().unwrap_or(tag) {
         "en" => "English",
@@ -393,7 +394,7 @@ pub fn language_name(tag: &str) -> &str {
         "de" => "German",
         "es" => "Spanish",
         "fr" => "French",
-        _ => tag,
+        _ => crate::language_names::english_name(tag).unwrap_or(tag),
     }
 }
 

@@ -84,6 +84,9 @@ pub mod key_words;
 pub mod keyboard_navigation;
 #[cfg(test)]
 mod keyboard_navigation_tests;
+pub mod language_names;
+#[cfg(test)]
+mod language_names_tests;
 mod library;
 mod library_commands;
 pub mod library_search;
@@ -229,6 +232,7 @@ pub use jobs::{
 };
 pub use key_bindings::{KeyBinding, KeyConflict, SELECTION_KEYS, SelectionAction, SelectionKey};
 pub use key_words::{KeyWord, KeyWords};
+pub use language_names::{LanguageName, language};
 pub use library::{
     Library, LibraryEntry, LibraryFilter, STARTER_PREFERRED_ORDER, default_library_dir,
     default_user_db, language_name,

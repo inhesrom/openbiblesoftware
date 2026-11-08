@@ -277,6 +277,7 @@ fn main() -> ExitCode {
             Ok(Box::new(
                 obs_ui_egui::App::with_file(file)
                     .with_fetch(Arc::new(fetch::HttpFetch::new()))
+                    .with_system_language(sys_locale::get_locale())
                     .with_system_fonts(Arc::new(fonts::FontdbFonts::system()))
                     .with_rich_clipboard(Arc::new(clipboard::SystemClipboard::default()))
                     .with_automation_from_env(),

@@ -3,6 +3,7 @@
 mod assets;
 mod atlas_basemap;
 mod bench;
+mod language_names;
 mod layers;
 mod licenses;
 mod release;
@@ -43,7 +44,8 @@ releases (docs/dev/releasing.md):
 maintenance:
   tvtms <TVTMS.txt>   regenerate the embedded STEPBible TVTMS rules
   atlas-basemap       regenerate the Atlas's built-in base map from Natural Earth (`--help`)
-  strongs-index       regenerate the built-in Strong's index from STEPBible TBESH/TBESG (`--help`)";
+  strongs-index       regenerate the built-in Strong's index from STEPBible TBESH/TBESG (`--help`)
+  language-names      regenerate the built-in language names from CLDR and ISO 639-3 (`--help`)";
 
 fn main() {
     if let Err(err) = run() {
@@ -95,6 +97,10 @@ fn run() -> Result<()> {
         "strongs-index" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             strongs_index::run(&root, &rest)
+        }
+        "language-names" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            language_names::run(&root, &rest)
         }
         "tvtms" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
