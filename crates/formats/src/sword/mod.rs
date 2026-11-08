@@ -799,7 +799,10 @@ fn import_dictionary(
             }
             feed(entry.markup, &entry.raw, w);
         }
-        let out = w.finish_unit();
+        let mut out = w.finish_unit();
+        if lexicon.is_none() {
+            out.lead_with_headword(key.trim());
+        }
         add_unit(builder, &id, UnitKind::Entry, id.to_string(), out, report);
         builder.add_key(entry_key, &id, None, false);
         by_key.insert(fold_stored(&key), id);

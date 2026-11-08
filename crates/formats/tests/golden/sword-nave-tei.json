@@ -1,5 +1,5 @@
 {
-  "content_hash": "sha256:63d632b2ac81bb94054f15b2ac2aebdfca0122086b0a156c394f8bcd2de922bf",
+  "content_hash": "sha256:aaf39016181610f4d3ef7be84dcd099ee2fc930d2c3c7d5e1e7e7a221348e38c",
   "keys": [
     [
       "ENEMY",
@@ -61,13 +61,19 @@
       "kind": "entry",
       "spans": [
         {
-          "at": "0..35",
+          "at": "0..5",
+          "kind": "heading",
+          "level": 2,
+          "text": "ENEMY"
+        },
+        {
+          "at": "6..41",
           "kind": "para",
           "style": "prose",
           "text": "→ Kindness to Ex 23:4,5; Pr 25:21"
         },
         {
-          "at": "16..23",
+          "at": "22..29",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -86,7 +92,7 @@
           "text": "Ex 23:4"
         },
         {
-          "at": "24..25",
+          "at": "30..31",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -105,7 +111,7 @@
           "text": "5"
         },
         {
-          "at": "27..35",
+          "at": "33..41",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -124,7 +130,7 @@
           "text": "Pr 25:21"
         }
       ],
-      "text": "→ Kindness to Ex 23:4,5; Pr 25:21",
+      "text": "ENEMY\n→ Kindness to Ex 23:4,5; Pr 25:21",
       "title": "ENEMY"
     },
     {
@@ -132,13 +138,19 @@
       "kind": "entry",
       "spans": [
         {
-          "at": "0..108",
+          "at": "0..11",
+          "kind": "heading",
+          "level": 2,
+          "text": "FORGIVENESS"
+        },
+        {
+          "at": "12..120",
           "kind": "para",
           "style": "prose",
           "text": "→ OF ENEMIES Ex 23:4,5; Pr 19:11; Mt 5:7; 6:12,14,15; 18:21-35; Mr 11:25,26; Lu 17:3,4; Eph 4:32; Col 3:13"
         },
         {
-          "at": "15..22",
+          "at": "27..34",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -157,7 +169,7 @@
           "text": "Ex 23:4"
         },
         {
-          "at": "23..24",
+          "at": "35..36",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -176,7 +188,7 @@
           "text": "5"
         },
         {
-          "at": "26..34",
+          "at": "38..46",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -195,7 +207,7 @@
           "text": "Pr 19:11"
         },
         {
-          "at": "36..42",
+          "at": "48..54",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -214,7 +226,7 @@
           "text": "Mt 5:7"
         },
         {
-          "at": "44..48",
+          "at": "56..60",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -233,7 +245,7 @@
           "text": "6:12"
         },
         {
-          "at": "49..51",
+          "at": "61..63",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -252,7 +264,7 @@
           "text": "14"
         },
         {
-          "at": "52..54",
+          "at": "64..66",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -271,7 +283,7 @@
           "text": "15"
         },
         {
-          "at": "56..64",
+          "at": "68..76",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -290,7 +302,7 @@
           "text": "18:21-35"
         },
         {
-          "at": "66..74",
+          "at": "78..86",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -309,7 +321,7 @@
           "text": "Mr 11:25"
         },
         {
-          "at": "75..77",
+          "at": "87..89",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -328,7 +340,7 @@
           "text": "26"
         },
         {
-          "at": "79..86",
+          "at": "91..98",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -347,7 +359,7 @@
           "text": "Lu 17:3"
         },
         {
-          "at": "87..88",
+          "at": "99..100",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -366,7 +378,7 @@
           "text": "4"
         },
         {
-          "at": "90..98",
+          "at": "102..110",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -385,7 +397,7 @@
           "text": "Eph 4:32"
         },
         {
-          "at": "100..108",
+          "at": "112..120",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -404,25 +416,25 @@
           "text": "Col 3:13"
         },
         {
-          "at": "109..118",
+          "at": "121..130",
           "kind": "para",
           "style": "list",
           "text": "See ENEMY"
         },
         {
-          "at": "119..135",
+          "at": "131..147",
           "kind": "para",
           "style": "prose",
           "text": "→ INSTANCES OF"
         },
         {
-          "at": "136..166",
+          "at": "148..178",
           "kind": "para",
           "style": "list",
           "text": "Esau forgives Jacob Ge 33:4,11"
         },
         {
-          "at": "156..163",
+          "at": "168..175",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -441,7 +453,7 @@
           "text": "Ge 33:4"
         },
         {
-          "at": "164..166",
+          "at": "176..178",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -460,13 +472,13 @@
           "text": "11"
         },
         {
-          "at": "167..216",
+          "at": "179..228",
           "kind": "para",
           "style": "list",
           "text": "Joseph forgives his brothers Ge 45:5-15; 50:19-21"
         },
         {
-          "at": "196..206",
+          "at": "208..218",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -485,7 +497,7 @@
           "text": "Ge 45:5-15"
         },
         {
-          "at": "208..216",
+          "at": "220..228",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -504,13 +516,13 @@
           "text": "50:19-21"
         },
         {
-          "at": "217..252",
+          "at": "229..264",
           "kind": "para",
           "style": "list",
           "text": "Jesus forgives his enemies Lu 23:34"
         },
         {
-          "at": "244..252",
+          "at": "256..264",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -529,19 +541,19 @@
           "text": "Lu 23:34"
         },
         {
-          "at": "253..264",
+          "at": "265..276",
           "kind": "para",
           "style": "prose",
           "text": "→ OF SINS"
         },
         {
-          "at": "265..288",
+          "at": "277..300",
           "kind": "para",
           "style": "list",
           "text": "See SIN, FORGIVENESS OF"
         }
       ],
-      "text": "→ OF ENEMIES Ex 23:4,5; Pr 19:11; Mt 5:7; 6:12,14,15; 18:21-35; Mr 11:25,26; Lu 17:3,4; Eph 4:32; Col 3:13\nSee ENEMY\n→ INSTANCES OF\nEsau forgives Jacob Ge 33:4,11\nJoseph forgives his brothers Ge 45:5-15; 50:19-21\nJesus forgives his enemies Lu 23:34\n→ OF SINS\nSee SIN, FORGIVENESS OF",
+      "text": "FORGIVENESS\n→ OF ENEMIES Ex 23:4,5; Pr 19:11; Mt 5:7; 6:12,14,15; 18:21-35; Mr 11:25,26; Lu 17:3,4; Eph 4:32; Col 3:13\nSee ENEMY\n→ INSTANCES OF\nEsau forgives Jacob Ge 33:4,11\nJoseph forgives his brothers Ge 45:5-15; 50:19-21\nJesus forgives his enemies Lu 23:34\n→ OF SINS\nSee SIN, FORGIVENESS OF",
       "title": "FORGIVENESS"
     },
     {
@@ -549,13 +561,19 @@
       "kind": "entry",
       "spans": [
         {
-          "at": "0..14",
+          "at": "0..11",
+          "kind": "heading",
+          "level": 2,
+          "text": "IMPORTUNITY"
+        },
+        {
+          "at": "12..26",
           "kind": "para",
           "style": "prose",
           "text": "→ See PRAYER"
         }
       ],
-      "text": "→ See PRAYER",
+      "text": "IMPORTUNITY\n→ See PRAYER",
       "title": "IMPORTUNITY"
     },
     {
@@ -563,19 +581,25 @@
       "kind": "entry",
       "spans": [
         {
-          "at": "0..10",
+          "at": "0..6",
+          "kind": "heading",
+          "level": 2,
+          "text": "PARDON"
+        },
+        {
+          "at": "7..17",
           "kind": "para",
           "style": "prose",
           "text": "→ OF SIN"
         },
         {
-          "at": "11..34",
+          "at": "18..41",
           "kind": "para",
           "style": "list",
           "text": "See SIN, FORGIVENESS OF"
         }
       ],
-      "text": "→ OF SIN\nSee SIN, FORGIVENESS OF",
+      "text": "PARDON\n→ OF SIN\nSee SIN, FORGIVENESS OF",
       "title": "PARDON"
     },
     {
@@ -583,13 +607,19 @@
       "kind": "entry",
       "spans": [
         {
-          "at": "0..34",
+          "at": "0..3",
+          "kind": "heading",
+          "level": 2,
+          "text": "SIN"
+        },
+        {
+          "at": "4..38",
           "kind": "para",
           "style": "prose",
           "text": "→ CONFESSION OF Ps 32:5; 1Jo 1:9"
         },
         {
-          "at": "18..25",
+          "at": "22..29",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -608,7 +638,7 @@
           "text": "Ps 32:5"
         },
         {
-          "at": "27..34",
+          "at": "31..38",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -627,13 +657,13 @@
           "text": "1Jo 1:9"
         },
         {
-          "at": "35..102",
+          "at": "39..106",
           "kind": "para",
           "style": "prose",
           "text": "→ FORGIVENESS OF Ps 32:1,2; 103:12; Mt 6:12,14; Eph 4:32; 1Jo 1:9"
         },
         {
-          "at": "54..61",
+          "at": "58..65",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -652,7 +682,7 @@
           "text": "Ps 32:1"
         },
         {
-          "at": "62..63",
+          "at": "66..67",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -671,7 +701,7 @@
           "text": "2"
         },
         {
-          "at": "65..71",
+          "at": "69..75",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -690,7 +720,7 @@
           "text": "103:12"
         },
         {
-          "at": "73..80",
+          "at": "77..84",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -709,7 +739,7 @@
           "text": "Mt 6:12"
         },
         {
-          "at": "81..83",
+          "at": "85..87",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -728,7 +758,7 @@
           "text": "14"
         },
         {
-          "at": "85..93",
+          "at": "89..97",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -747,7 +777,7 @@
           "text": "Eph 4:32"
         },
         {
-          "at": "95..102",
+          "at": "99..106",
           "kind": "scripture_ref",
           "targets": [
             {
@@ -766,7 +796,7 @@
           "text": "1Jo 1:9"
         }
       ],
-      "text": "→ CONFESSION OF Ps 32:5; 1Jo 1:9\n→ FORGIVENESS OF Ps 32:1,2; 103:12; Mt 6:12,14; Eph 4:32; 1Jo 1:9",
+      "text": "SIN\n→ CONFESSION OF Ps 32:5; 1Jo 1:9\n→ FORGIVENESS OF Ps 32:1,2; 103:12; Mt 6:12,14; Eph 4:32; 1Jo 1:9",
       "title": "SIN"
     }
   ],

@@ -1,5 +1,5 @@
 {
-  "content_hash": "sha256:f45d2997ac3746d8ddb76306639e4693033d9369ddd46824cbb470c991d2b066",
+  "content_hash": "sha256:8886b536c8129c5acf3e6e2b37b2d85823e89bcd5547765ad67eb93c428d6021",
   "keys": [
     [
       "A",
@@ -75,13 +75,19 @@
       "kind": "entry",
       "spans": [
         {
-          "at": "0..17",
+          "at": "0..3",
+          "kind": "heading",
+          "level": 2,
+          "text": "ABC"
+        },
+        {
+          "at": "4..21",
           "kind": "para",
           "style": "prose",
           "text": "Upper-case entry."
         }
       ],
-      "text": "Upper-case entry.",
+      "text": "ABC\nUpper-case entry.",
       "title": "ABC"
     },
     {
@@ -89,13 +95,19 @@
       "kind": "entry",
       "spans": [
         {
-          "at": "0..15",
+          "at": "0..1",
+          "kind": "heading",
+          "level": 2,
+          "text": "C"
+        },
+        {
+          "at": "2..17",
           "kind": "para",
           "style": "prose",
           "text": "Terminal entry."
         }
       ],
-      "text": "Terminal entry.",
+      "text": "C\nTerminal entry.",
       "title": "C"
     },
     {
@@ -103,13 +115,19 @@
       "kind": "entry",
       "spans": [
         {
-          "at": "0..17",
+          "at": "0..3",
+          "kind": "heading",
+          "level": 2,
+          "text": "abc"
+        },
+        {
+          "at": "4..21",
           "kind": "para",
           "style": "prose",
           "text": "Lower-case entry."
         }
       ],
-      "text": "Lower-case entry.",
+      "text": "abc\nLower-case entry.",
       "title": "abc"
     }
   ],

@@ -484,8 +484,10 @@ fn dictionary_keyed_by_headword_with_link_aliases() {
     // A headword listed twice (#149: Hitchcock's two Abels) keeps both senses, as paragraphs
     // of one entry, in module order.
     let abel = r.units.iter().find(|u| u.id.as_str() == "ABEL").unwrap();
-    assert_eq!(abel.text, "A city of Naphtali.\nAdam's second son.");
+    // The entry opens with its headword (#261): the Dictionary Tab draws only the text.
+    assert_eq!(abel.text, "ABEL\nA city of Naphtali.\nAdam's second son.");
     assert_eq!(spans_of(&r, "ABEL", "para").len(), 2);
+    assert_eq!(spans_of(&r, "ABEL", "heading"), ["ABEL"]);
     assert!(
         report
             .warnings
@@ -519,8 +521,9 @@ fn tei_topical_index_keeps_each_subtopic_item_a_paragraph() {
         .find(|u| u.id.as_str() == "FORGIVENESS")
         .unwrap();
     let lines: Vec<&str> = entry.text.lines().collect();
+    assert_eq!(lines[0], "FORGIVENESS");
     assert_eq!(
-        lines[1..],
+        lines[2..],
         [
             "See ENEMY",
             "→ INSTANCES OF",
@@ -532,9 +535,9 @@ fn tei_topical_index_keeps_each_subtopic_item_a_paragraph() {
         ]
     );
     assert!(
-        lines[0].starts_with("→ OF ENEMIES Ex 23:4,5;"),
+        lines[1].starts_with("→ OF ENEMIES Ex 23:4,5;"),
         "{}",
-        lines[0]
+        lines[1]
     );
     let list_items = entry
         .spans
