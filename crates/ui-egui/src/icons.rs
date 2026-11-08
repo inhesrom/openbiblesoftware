@@ -79,6 +79,10 @@ icons! {
     Contents => "table-of-contents",
     Home => "house",
     Copy => "copy",
+    // Modifier keys in shortcuts (#262), drawn as text glyphs by `key_labels`; ⌃ is ChevronUp.
+    CommandKey => "command",
+    OptionKey => "option",
+    ShiftKey => "arrow-big-up",
     // The Note editor's toolbar.
     BulletList => "list",
     Link => "link",

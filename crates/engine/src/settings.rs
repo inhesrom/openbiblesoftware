@@ -339,7 +339,7 @@ pub const SETTINGS: &[Setting] = &[
         "keyboard_shortcuts",
         S::KeyboardShortcuts,
         "Keyboard shortcuts",
-        "Click a shortcut, then press the new key (Esc cancels). Ctrl is ⌘ on macOS.",
+        "Click a shortcut, then press the new key (Esc cancels).",
         "keys hotkeys keybindings bindings shortcuts",
         SettingKind::KeyboardShortcuts,
     ),

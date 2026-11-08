@@ -11,6 +11,7 @@ mod find;
 mod heights;
 pub mod icons;
 mod interlinear;
+mod key_labels;
 mod marks;
 mod palette;
 mod pane;

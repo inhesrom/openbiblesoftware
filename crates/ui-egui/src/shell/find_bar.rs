@@ -161,8 +161,14 @@ impl State {
                 egui::Label::new(RichText::new(count).small().color(theme::c().muted)),
             );
             let any = matches!(status, FindStatus::Found { total, .. } if total > 0);
-            let previous = arrow_button(ui, true, any, "Previous match (Shift+Enter)");
-            let next = arrow_button(ui, false, any, "Next match (Enter)");
+            let key = crate::key_labels::label;
+            let previous = arrow_button(
+                ui,
+                true,
+                any,
+                &format!("Previous match ({})", key("Shift+Enter")),
+            );
+            let next = arrow_button(ui, false, any, &format!("Next match ({})", key("Enter")));
             bar.arrows = Some([previous.rect, next.rect]);
             if previous.clicked() {
                 bar.step = Some(false);
@@ -205,7 +211,7 @@ impl State {
                     !bar.text.trim().is_empty(),
                     egui::Button::new(RichText::new("Search all Resources").small()),
                 )
-                .on_hover_text("Open Search with this text (Alt+Enter)")
+                .on_hover_text(format!("Open Search with this text ({})", key("Alt+Enter")))
                 .clicked()
             {
                 search_all = true;

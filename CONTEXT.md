@@ -364,7 +364,7 @@ The bar holding the Launchers. It sits at the Top of the window (in the menu bar
 _Avoid_: Ribbon, Dock, Menu bar (for the toolbar)
 
 **Keyboard shortcut**:
-A key that runs a command, or does something to the reading-pane selection (a Selection key). Each has a default key; Help → Keyboard shortcuts lists them all, grouped by menu and searchable, and there the user clicks one to record a new key, Clears it or Resets it to its default (Reset all restores every default). A key another Keyboard shortcut already has is not saved until the user swaps the two keys or cancels. Esc, Enter, and Tab without Ctrl are never Keyboard shortcuts (Ctrl+Tab is the Tab switcher's), and a key needs Ctrl or Alt unless it is a function key. Ctrl means Cmd on macOS. The user's own keys are a preference in the User database and apply at once.
+A key that runs a command, or does something to the reading-pane selection (a Selection key). Each has a default key; Help → Keyboard shortcuts lists them all, grouped by menu and searchable, and there the user clicks one to record a new key, Clears it or Resets it to its default (Reset all restores every default). A key another Keyboard shortcut already has is not saved until the user swaps the two keys or cancels. Esc, Enter, and Tab without Ctrl are never Keyboard shortcuts (Ctrl+Tab is the Tab switcher's), and a key needs Ctrl or Alt unless it is a function key. Ctrl means Cmd on macOS, where keys are shown with Apple's symbols (⇧⌘N, ⌥←). The user's own keys are a preference in the User database and apply at once.
 _Avoid_: Hotkey, Key map, Accelerator, Key binding (in the UI)
 
 **Settings**:

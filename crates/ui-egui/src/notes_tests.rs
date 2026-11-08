@@ -292,6 +292,52 @@ fn deleting_a_notebook_offers_move_to_default_preselected_or_delete_and_is_undoa
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// #262 (PERSONAL-2): the Delete Notebook dialog and its toast name Undo where the menu bar
+/// has it (never an Edit menu that is not there) with the key macOS shows, and the hint draws
+/// without a missing-glyph box.
+#[test]
+fn the_delete_notebook_undo_hint_names_a_real_menu_path_and_the_macos_key() {
+    let dir = folder("undo-hint");
+    let mut h = launch(&dir);
+    h.ctx.set_os(egui::os::OperatingSystem::Mac);
+    h.shell
+        .run("notebook.create", &json!({ "name": "Study" }))
+        .unwrap();
+    open_notes(&mut h);
+    let p = leftmost(&h, "Study");
+    right_click(&mut h, p);
+    h.click_text("Delete…");
+    let session = &h.shell.st.session;
+    let want = match session.menu_path("edit.undo") {
+        Some(path) => format!("{path} brings it all back (⌘Z)."),
+        None => "Undo (⌘Z) brings it all back.".to_string(),
+    };
+    assert!(h.find(&want).is_some(), "{want:?} not in {:?}", h.texts());
+    for t in h.texts() {
+        assert!(!t.contains("Ctrl+Z"), "{t:?}");
+        if let Some((menu, _)) = t.split_once(" → Undo") {
+            assert!(
+                obs_engine::MENUS.iter().any(|m| m.title == menu),
+                "{t:?} names no menu"
+            );
+        }
+    }
+    h.ctx
+        .set_missing_glyph_policy(egui::MissingGlyphPolicy::Panic);
+    h.frames(2);
+    h.ctx
+        .set_missing_glyph_policy(egui::MissingGlyphPolicy::Tofu);
+    h.click_text("Delete");
+    let toast = h.shell.st.toast.as_ref().map(|(t, _)| t.clone());
+    let want = match h.shell.st.session.menu_path("edit.undo") {
+        Some(path) => format!("Deleted the Notebook “Study”. {path} brings it back (⌘Z)."),
+        None => "Deleted the Notebook “Study”. Undo (⌘Z) brings it back.".to_string(),
+    };
+    assert_eq!(toast.as_deref(), Some(want.as_str()));
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn notes_search_finds_a_word_typed_in_a_note_seconds_earlier() {
     let dir = folder("search");

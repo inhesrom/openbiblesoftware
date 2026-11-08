@@ -67,8 +67,8 @@ impl SelectionKeyText {
             (SELECTION_KEYS.iter())
                 .find(|k| k.action == action)
                 .and_then(|k| session.shortcut(k.id))
+                .map(crate::key_labels::label)
                 .unwrap_or_default()
-                .to_string()
         };
         Self {
             note: key(SelectionAction::Note),
@@ -399,7 +399,10 @@ fn toolbar_row(
         }
         if ui
             .add(egui::Button::new(with_icon(ui, Icon::Copy, "Copy")))
-            .on_hover_text("Copy the text with its reference (Ctrl+C)")
+            .on_hover_text(format!(
+                "Copy the text with its reference ({})",
+                crate::key_labels::label("Ctrl+C")
+            ))
             .clicked()
         {
             picked = Some(Annotate::Copy);
@@ -865,7 +868,10 @@ impl State {
                     });
                     ui.horizontal(|ui| {
                         if ui
-                            .add(egui::Button::new("Save").shortcut_text("Ctrl+Enter"))
+                            .add(
+                                egui::Button::new("Save")
+                                    .shortcut_text(crate::key_labels::label("Ctrl+Enter")),
+                            )
                             .clicked()
                         {
                             save = true;
@@ -889,9 +895,12 @@ impl State {
                         }
                     });
                     ui.label(
-                        RichText::new("Saves when you click away, press Esc or Ctrl+Enter.")
-                            .small()
-                            .color(theme::c().muted),
+                        RichText::new(format!(
+                            "Saves when you click away, press Esc or {}.",
+                            crate::key_labels::label("Ctrl+Enter")
+                        ))
+                        .small()
+                        .color(theme::c().muted),
                     );
                     if let Some(e) = &ed.error {
                         ui.label(RichText::new(e).small().color(theme::c().warn));

@@ -144,6 +144,9 @@ impl Harness {
 
     fn open(shell: Shell, native: bool) -> Self {
         let ctx = egui::Context::default();
+        // Shortcuts as Windows and Linux write them on every host, unless a test sets macOS
+        // (#262).
+        ctx.set_os(egui::os::OperatingSystem::Nix);
         crate::theme::install(&ctx);
         let mut h = Self {
             ctx,
@@ -3323,6 +3326,8 @@ mod floating_windows;
 mod footnotes_ui;
 #[path = "interlinear_tests.rs"]
 mod interlinear;
+#[path = "key_labels_tests.rs"]
+mod key_labels;
 #[path = "keyboard_navigation_tests.rs"]
 mod keyboard_navigation;
 #[path = "keyboard_shortcuts_tests.rs"]

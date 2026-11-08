@@ -145,9 +145,14 @@ pub fn install(ctx: &egui::Context) {
 
 const INTERFACE: &str = "interface";
 
+const FALLBACK: &str = "gentium-regular";
+
 /// Install the chrome's fonts: egui's defaults, Gentium Plus Bold for display headings and,
 /// when one is chosen (View → Fonts, #138), the interface font ahead of egui's proportional
-/// fonts. Those stay behind it as fallbacks, so emoji and symbols still draw.
+/// fonts. Those stay behind it as fallbacks, so emoji and symbols still draw. Gentium Plus
+/// Regular comes last in the interface and monospace families, for what egui's fonts lack:
+/// arrows (→ in "Edit → Undo", #262), polytonic Greek, IPA. The modifier symbols of shortcuts
+/// (⌘ ⌥ ⇧ ⌃) are drawn by [`crate::key_labels::modifier_rasterizer`].
 pub fn install_fonts(ctx: &egui::Context, interface: Option<egui::FontData>) {
     let mut fonts = egui::FontDefinitions::default();
     if let Some(bold) = FaceId::Bold.bundled_bytes() {
@@ -155,6 +160,19 @@ pub fn install_fonts(ctx: &egui::Context, interface: Option<egui::FontData>) {
             "gentium-bold".into(),
             Arc::new(egui::FontData::from_static(bold)),
         );
+    }
+    if let Some(regular) = FaceId::Regular.bundled_bytes() {
+        fonts.font_data.insert(
+            FALLBACK.into(),
+            Arc::new(egui::FontData::from_static(regular)),
+        );
+        for family in [FontFamily::Proportional, FontFamily::Monospace] {
+            fonts
+                .families
+                .entry(family)
+                .or_default()
+                .push(FALLBACK.into());
+        }
     }
     if let Some(data) = interface {
         fonts.font_data.insert(INTERFACE.into(), Arc::new(data));
@@ -172,6 +190,7 @@ pub fn install_fonts(ctx: &egui::Context, interface: Option<egui::FontData>) {
         .families
         .insert(FontFamily::Name(DISPLAY.into()), family);
     ctx.set_fonts(fonts);
+    ctx.add_glyph_rasterizer(crate::key_labels::modifier_rasterizer());
 }
 
 fn style(style: &mut egui::Style, ch: &Chrome) {

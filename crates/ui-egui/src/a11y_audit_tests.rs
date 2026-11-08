@@ -969,7 +969,7 @@ fn keyboard_only_keyboard_shortcuts() {
     assert_eq!(focused_kind(&h), Some(TabKind::KeyboardShortcuts));
     tab_to(&mut h, "Filter");
     type_text(&mut h, "larger");
-    tab_to(&mut h, "Larger text shortcut: Ctrl+Plus");
+    tab_to(&mut h, "Larger text shortcut: Ctrl++");
     key(&mut h, Key::Enter, Modifiers::NONE);
     assert!(h.shell.st.keys_ui.is_recording());
     key(&mut h, Key::ArrowUp, CTRL);
