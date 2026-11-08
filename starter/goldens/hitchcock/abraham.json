@@ -7,11 +7,17 @@
       "id": "ABRAHAM",
       "kind": "entry",
       "title": "ABRAHAM",
-      "text": "father of a great multitude",
+      "text": "ABRAHAM\nfather of a great multitude",
       "spans": [
         {
           "start": 0,
-          "end": 27,
+          "end": 7,
+          "kind": "heading",
+          "level": 2
+        },
+        {
+          "start": 8,
+          "end": 35,
           "kind": "para",
           "style": "prose"
         }
