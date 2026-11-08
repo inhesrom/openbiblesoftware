@@ -300,24 +300,37 @@ fn has_lower(s: &str) -> bool {
     s.chars().any(char::is_lowercase)
 }
 
-/// A headword for display: as written when it has lower case letters, else each comma part in
-/// sentence case (`SIN, FORGIVENESS OF` → `Sin, Forgiveness of`).
+/// Words an all-capitals headword keeps in lower case after its first word.
+const MINOR_WORDS: [&str; 18] = [
+    "a", "an", "and", "as", "at", "by", "for", "from", "in", "into", "of", "on", "or", "the",
+    "to", "unto", "upon", "with",
+];
+
+/// A headword for display: as written when it has lower case letters, else in title case
+/// with minor words in lower case (`SIN, FORGIVENESS OF` → `Sin, Forgiveness of`, `FAITH IN
+/// CHRIST` → `Faith in Christ`). All capitals say nothing about which words are proper names,
+/// and sentence case lower-cased them (`Faith in christ`, #261).
 pub fn display_topic(headword: &str) -> String {
     let headword = headword.split_whitespace().collect::<Vec<_>>().join(" ");
     if has_lower(&headword) {
         return headword;
     }
     headword
-        .split(", ")
-        .map(|part| {
-            let lower = part.to_lowercase();
+        .split(' ')
+        .enumerate()
+        .map(|(i, word)| {
+            let lower = word.to_lowercase();
+            let bare = lower.trim_end_matches(|c: char| !c.is_alphanumeric());
+            if i > 0 && MINOR_WORDS.contains(&bare) {
+                return lower;
+            }
             let mut chars = lower.chars();
             chars.next().map_or_else(String::new, |c| {
                 c.to_uppercase().chain(chars).collect::<String>()
             })
         })
         .collect::<Vec<_>>()
-        .join(", ")
+        .join(" ")
 }
 
 // ---- Reading a topical index entry ---------------------------------------------------------
@@ -325,7 +338,8 @@ pub fn display_topic(headword: &str) -> String {
 /// Split one topical index entry into subtopics. Each line (paragraph) is one: its label is
 /// the text before its first Bible reference, its Passages the references' targets, and `See
 /// X` sends the reader to topic X. A line with no label of its own (Torrey's reference lines,
-/// Nave's `See ENEMY` item under a subtopic) adds to the line before it.
+/// Nave's `See ENEMY` item under a subtopic) adds to the line before it. A heading line (the
+/// entry's headword) is skipped.
 pub fn subtopics(text: &str, spans: &[Span]) -> Vec<Subtopic> {
     let mut out: Vec<Subtopic> = Vec::new();
     let mut at = 0usize;
@@ -334,6 +348,14 @@ pub fn subtopics(text: &str, spans: &[Span]) -> Vec<Subtopic> {
         let end = at + line.len();
         at = end + 1;
         let in_line = |s: &&Span| (s.start as usize) >= start && (s.end as usize) <= end;
+        // The entry's headword, which an imported entry opens with (#261), is no subtopic.
+        if spans
+            .iter()
+            .filter(in_line)
+            .any(|s| s.start as usize == start && matches!(s.kind, SpanKind::Heading { .. }))
+        {
+            continue;
+        }
         let mut refs: Vec<&Span> = spans
             .iter()
             .filter(in_line)

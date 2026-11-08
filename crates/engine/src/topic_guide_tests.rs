@@ -472,6 +472,45 @@ fn torrey_lines_join_their_label_and_see_splits_off_topics() {
     assert_eq!(display_topic("Forgiveness of sin"), "Forgiveness of sin");
 }
 
+/// #261 GUIDES-1: an imported entry opens with its headword as a heading, which is no
+/// subtopic.
+#[test]
+fn the_headword_heading_is_not_a_subtopic() {
+    use obs_model::{Span, SpanKind};
+    use obs_scripture::PassageList;
+    let text = "FORGIVENESS\n→ Commanded Mr 11:25";
+    let at = text.find("Mr 11:25").unwrap();
+    let spans = vec![
+        Span {
+            start: 0,
+            end: 11,
+            kind: SpanKind::Heading { level: 2 },
+        },
+        Span {
+            start: at as u32,
+            end: (at + 8) as u32,
+            kind: SpanKind::ScriptureRef {
+                targets: PassageList::from(vec![v(Book::Mark, 11, 25)]),
+            },
+        },
+    ];
+    let rows = subtopics(text, &spans);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].label, "Commanded");
+}
+
+/// #261 GUIDES-16: an all-capitals headword keeps its proper names capitalised.
+#[test]
+fn all_capitals_topics_read_in_title_case() {
+    assert_eq!(display_topic("FAITH IN CHRIST"), "Faith in Christ");
+    assert_eq!(
+        display_topic("FEAST OF PURIM, OR LOTS, THE"),
+        "Feast of Purim, or Lots, the"
+    );
+    assert_eq!(display_topic("LOVE OF GOD"), "Love of God");
+    assert_eq!(display_topic("SELF-DENIAL"), "Self-denial");
+}
+
 /// Manual check against a real library holding CrossWire's Nave, Torrey and the Starter's
 /// Easton: `OBS_TOPIC_LIBRARY=<dir> cargo test -p obs-engine real_library_forgiveness --
 /// --ignored --nocapture`.

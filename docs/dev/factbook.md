@@ -31,7 +31,7 @@ sections are engine data computed on the job queue, the Guide arrangement is per
   then by another name (`Mark`, also called `John`), each group most often named first; with no
   exact match, names that start with the text.
 - **Sections** (`GuideSection`, ids stored, never renamed): `summary` (other names, the Name
-  meaning, family: Father, Mother, Descended from, Siblings, Married to, Children, Founded by),
+  meaning, family: Father, Mother, Descended from, Siblings, Partners, Children, Founded by),
   `key_passages` (every mention, neighbouring Verses joined, Bible order), `dictionary_articles`
   (each Dictionary's article in Preferred order, through the #54 alias cache, with ~600
   characters of it), `related` (the entity's other links, the entities whose records link to

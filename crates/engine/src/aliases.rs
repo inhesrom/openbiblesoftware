@@ -11,7 +11,9 @@
 //! the entity's names (its usual name, then its other names) against the Dictionary's
 //! headwords, their parts (`Pilate, Pontius` → `Pilate`; `Nebuchadnezzar, Or Nebuchadrezzar`
 //! → both) and their aliases (`Abram` → `Abraham`), first as written and then as a plural or
-//! singular (`Kenite` → `Kenites`). Headwords compare after [`obs_model::normalize`].
+//! singular of a whole headword (`Kenite` → `Kenites`). A man or woman never links to an
+//! article about a tribe (`SIMEON, THE TRIBE OF`). Headwords compare after
+//! [`obs_model::normalize`].
 //!
 //! Where the caches live: the app's cache folder (`aliases/` beside `search/`), and prebuilt
 //! for the Starter library in `aliases/` beside its `.obr` files (`cargo xtask starter`).
@@ -24,7 +26,7 @@ use obs_model::{Entity, Key, KeyEntry, Manifest};
 use serde::{Deserialize, Serialize};
 
 /// Bump when matching or the file format changes: every cache is then rebuilt.
-pub const ALIAS_VERSION: u32 = 1;
+pub const ALIAS_VERSION: u32 = 2;
 
 /// The committed overrides (`starter/aliases.toml`), applied to every table built.
 pub const STARTER_OVERRIDES: &str = include_str!("../../../starter/aliases.toml");
@@ -240,6 +242,9 @@ const OTHER_PART: u8 = 2;
 /// A Dictionary's headwords by every form a name may match.
 struct Headwords {
     forms: HashMap<String, (u8, String)>,
+    /// The same without articles about a people group (`SIMEON, THE TRIBE OF`), for a man or
+    /// woman: Simeon called Niger is not his namesake's tribe (#261).
+    personal: HashMap<String, (u8, String)>,
     /// Normalized headword → as written, for overrides.
     exact: HashMap<String, String>,
 }
@@ -251,15 +256,18 @@ impl Headwords {
         let mut keys = keys.to_vec();
         keys.sort();
         let mut forms: HashMap<String, (u8, String)> = HashMap::new();
+        let mut personal: HashMap<String, (u8, String)> = HashMap::new();
         let mut exact = HashMap::new();
-        let mut put = |form: &str, rank: u8, headword: &str| {
+        let mut put = |form: &str, rank: u8, headword: &str, group: bool| {
             let form = obs_model::normalize(form);
             if form.is_empty() {
                 return;
             }
-            let better = forms.get(&form).is_none_or(|(r, _)| rank < *r);
-            if better {
-                forms.insert(form, (rank, headword.to_string()));
+            for (map, add) in [(&mut forms, true), (&mut personal, !group)] {
+                let better = map.get(&form).is_none_or(|(r, _)| rank < *r);
+                if add && better {
+                    map.insert(form.clone(), (rank, headword.to_string()));
+                }
             }
         };
         // The headword of each article (unit, range), for its aliases.
@@ -270,15 +278,16 @@ impl Headwords {
             exact
                 .entry(obs_model::normalize(h))
                 .or_insert_with(|| h.clone());
-            put(h, WHOLE, h);
+            let group = is_group_headword(h);
+            put(h, WHOLE, h, group);
             let mut parts = h.split(',').map(str::trim);
             if let Some(first) = parts.next() {
-                put(first, FIRST_PART, h);
+                put(first, FIRST_PART, h, group);
             }
             for part in parts {
                 let part = strip_prefix_word(part, "or");
                 let part = strip_prefix_word(part, "the");
-                put(part, OTHER_PART, h);
+                put(part, OTHER_PART, h, group);
             }
         }
         for k in keys.iter().filter(|k| k.alias) {
@@ -286,33 +295,53 @@ impl Headwords {
                 continue;
             };
             if let Some(h) = articles.get(&(k.unit.as_str(), k.range)) {
-                put(alias, ALIAS, h);
+                put(alias, ALIAS, h, is_group_headword(h));
             }
         }
-        Self { forms, exact }
+        Self {
+            forms,
+            personal,
+            exact,
+        }
     }
 
-    /// The best article for any of `names`: the first name that matches wins; within one
-    /// name, the closest form, then a plural or singular.
-    fn find(&self, names: &[String]) -> Option<&str> {
+    /// The best article for entity `e`, by any of its `names`: the first name that matches
+    /// wins; within one name, the closest form, then a plural or singular of a whole
+    /// headword. A part of a headword matched only as a plural is too weak (`FEAST OF PURIM,
+    /// OR LOTS, THE` is no article on Lot, #261).
+    fn find(&self, e: &Entity, names: &[String]) -> Option<&str> {
+        let forms = match e.kind {
+            obs_model::EntityKind::Male | obs_model::EntityKind::Female => &self.personal,
+            _ => &self.forms,
+        };
         for name in names {
             let norm = obs_model::normalize(name);
             if norm.is_empty() {
                 continue;
             }
-            let mut variants = vec![norm.clone()];
-            match norm.strip_suffix('s') {
-                Some(singular) if !singular.is_empty() => variants.push(singular.to_string()),
-                _ => variants.push(format!("{norm}s")),
+            if let Some((_, h)) = forms.get(&norm) {
+                return Some(h);
             }
-            for v in variants {
-                if let Some((_, h)) = self.forms.get(&v) {
-                    return Some(h);
-                }
+            let other = match norm.strip_suffix('s') {
+                Some(singular) if !singular.is_empty() => singular.to_string(),
+                _ => format!("{norm}s"),
+            };
+            if let Some((WHOLE, h)) = forms.get(&other) {
+                return Some(h);
             }
         }
         None
     }
+}
+
+/// Whether a headword names an article about a people group: a part after its first is
+/// `THE TRIBE OF` (`SIMEON, THE TRIBE OF`).
+fn is_group_headword(headword: &str) -> bool {
+    headword.split(',').skip(1).any(|part| {
+        obs_model::normalize(part)
+            .split_whitespace()
+            .any(|w| w == "tribe" || w == "tribes")
+    })
 }
 
 fn strip_prefix_word<'a>(s: &'a str, word: &str) -> &'a str {
@@ -346,7 +375,7 @@ pub fn build(
     let headwords = Headwords::new(headword_keys);
     let mut links = BTreeMap::new();
     for e in entities {
-        if let Some(h) = headwords.find(&entity_names(e)) {
+        if let Some(h) = headwords.find(e, &entity_names(e)) {
             links.insert(e.id.clone(), h.to_string());
         }
     }
@@ -755,6 +784,35 @@ mod tests {
         assert_eq!(t.headword("Abram@Gen.11.26"), Some("Abraham"));
     }
 
+    /// #261 GUIDES-5: Lot is not the Feast of Purim, or Lots, and Simeon called Niger is not
+    /// the tribe of Simeon.
+    #[test]
+    fn plurals_of_headword_parts_and_tribe_articles_do_not_link_a_person() {
+        let (i, d) = manifests();
+        let keys = [
+            key("FEAST OF PURIM, OR LOTS, THE", "u1", false),
+            key("SIMEON, THE TRIBE OF", "u2", false),
+            key("Lots, Feats Of", "u3", false),
+            key("KENITES", "u4", false),
+        ];
+        let mut tribe = entity("Simeonites@Num.26.14", &["Simeon"]);
+        tribe.kind = EntityKind::Group;
+        let entities = [
+            entity("Lot@Gen.11.27-2Pe", &[]),
+            entity("Simeon@Act.13.1", &["Niger"]),
+            entity("Kenite@Gen.15.19-", &[]),
+            tribe,
+        ];
+        let (t, _) = build(&i, &entities, &d, &keys, &Overrides::none());
+        assert_eq!(t.headword("Lot@Gen.11.27-2Pe"), None);
+        assert_eq!(t.headword("Simeon@Act.13.1"), None);
+        assert_eq!(t.headword("Kenite@Gen.15.19-"), Some("KENITES"));
+        assert_eq!(
+            t.headword("Simeonites@Num.26.14"),
+            Some("SIMEON, THE TRIBE OF")
+        );
+    }
+
     #[test]
     fn overrides_pin_or_remove_an_article_and_report_what_they_cannot_find() {
         let (i, d) = manifests();
@@ -818,7 +876,7 @@ headword = "No Such Article"
     fn file_names_change_with_either_content_hash_and_stay_in_their_folder() {
         let (i, mut d) = manifests();
         let a = file_name(&i, &d);
-        assert_eq!(a, "tipnr.aaaa--easton.bbbb.v1.aliases.json");
+        assert_eq!(a, "tipnr.aaaa--easton.bbbb.v2.aliases.json");
         d.content_hash = "sha256:cccc".into();
         assert_ne!(file_name(&i, &d), a);
         let mut odd = i.clone();

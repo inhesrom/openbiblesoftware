@@ -176,7 +176,7 @@ fn abraham_in_the_passage_guide_opens_his_factbook_with_family_and_passages() {
     assert!(fam.contains(&("Father", vec!["Terah"])), "{fam:?}");
     assert!(
         fam.iter()
-            .any(|(label, names)| *label == "Married to" && names.contains(&"Sarah")),
+            .any(|(label, names)| *label == "Partners" && names.contains(&"Sarah")),
         "{fam:?}"
     );
     // Structured facts only; nothing of TIPNR's description prose.
@@ -432,6 +432,22 @@ fn name_meanings_drop_the_headword() {
         ),
         "that quavers or totters (Zelophehad's daughter) · repose; consolation"
     );
+    // #261 GUIDES-8: a longer name at the start is not the headword.
+    assert_eq!(
+        meaning_text("LOT", "Lotan, wrapt up; hidden; covered; myrrh; rosin"),
+        "Lotan, wrapt up; hidden; covered; myrrh; rosin"
+    );
+    assert_eq!(meaning_text("JAIR", "Jairus, my light"), "Jairus, my light");
+    assert_eq!(meaning_text("PUR", "Purim, lot"), "Purim, lot");
+    // #261 GUIDES-1: the headword heading an imported entry opens with is dropped.
+    assert_eq!(
+        meaning_text("NOAH", "NOAH\nthat quavers or totters\nrepose; consolation"),
+        "that quavers or totters · repose; consolation"
+    );
+    assert_eq!(
+        meaning_text("LOT", "LOT\nLotan, wrapt up; hidden"),
+        "Lotan, wrapt up; hidden"
+    );
 }
 
 #[test]
@@ -533,4 +549,132 @@ fn starter_library_abraham_factbook_and_john_chooser() {
         "every John is told apart: {titles:?}"
     );
     let _ = std::fs::remove_dir_all(&cache);
+}
+
+fn entry(
+    id: &str,
+    kind: obs_model::EntityKind,
+    others: &[&str],
+    passages: u32,
+    locations: &[(&str, u16)],
+) -> crate::factbook::DirectoryEntry {
+    crate::factbook::DirectoryEntry {
+        index_id: "tipnr".into(),
+        entity: obs_model::Entity {
+            id: id.into(),
+            name: id.split('@').next().unwrap().into(),
+            kind,
+            strongs: None,
+            other_strongs: Vec::new(),
+            other_names: others.iter().map(|n| n.to_string()).collect(),
+            region: None,
+            relations: Vec::new(),
+            locations: locations
+                .iter()
+                .map(|(name, score)| obs_model::PlaceLocation {
+                    name: name.to_string(),
+                    lon_e6: 0,
+                    lat_e6: 0,
+                    score: *score,
+                })
+                .collect(),
+        },
+        passages,
+        first: None,
+        last: None,
+    }
+}
+
+/// #261 GUIDES-13: a name that is exactly another name of a few places (`Beth`) still lists
+/// the places whose names start with it, after them; the Tab moves only on an exact name.
+#[test]
+fn the_chooser_lists_names_that_start_with_the_text_after_exact_ones() {
+    use obs_model::EntityKind::Place;
+    let dir = PeopleDirectory::new(vec![
+        entry("Beth-eked@2Ki.10.12", Place, &["Beth"], 2, &[]),
+        entry("Bethlehem@Gen.35.16-Jhn", Place, &[], 44, &[]),
+        entry("Bethel@Gen.12.8-Zec", Place, &[], 70, &[]),
+        entry("Bethany@Mat.21.17-Jhn", Place, &[], 11, &[]),
+        entry("Lot@Gen.11.27-2Pe", obs_model::EntityKind::Male, &[], 30, &[]),
+        entry("Lotan@Gen.36.20-1Ch", obs_model::EntityKind::Male, &[], 7, &[]),
+    ]);
+    let beth = dir.choose("Beth");
+    let names: Vec<&str> = beth.choices.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["Beth-eked", "Bethel", "Bethlehem", "Bethany"]);
+    assert_eq!(beth.exact, 1);
+    let lot = dir.choose("Lot");
+    assert_eq!(lot.exact, 1);
+    assert_eq!(lot.choices.len(), 2);
+    assert_eq!(lot.choices[0].entity, "Lot@Gen.11.27-2Pe");
+    let lo = dir.choose("Lo");
+    assert_eq!((lo.exact, lo.choices.len()), (0, 2));
+}
+
+/// #261 GUIDES-6: places of one name without a region are told apart by where their
+/// likeliest location is.
+#[test]
+fn places_without_a_region_are_told_apart_by_their_location() {
+    use obs_model::EntityKind::Place;
+    let dir = PeopleDirectory::new(vec![
+        entry("Antioch@Act.6.5-Gal", Place, &[], 18, &[("Antioch on the Orontes", 1000)]),
+        entry(
+            "Antioch@Act.13.14-2Ti",
+            Place,
+            &[],
+            3,
+            &[("Yalvaç", 300), ("Antioch in Pisidia", 1000)],
+        ),
+        entry("Ai@Gen.12.8-Isa", Place, &[], 30, &[("Et Tell", 600)]),
+        entry("Amphipolis@Act.17.1", Place, &[], 1, &[("Amphipolis", 1000)]),
+        entry("Zoar@Gen.13.10-Jer", Place, &[], 9, &[]),
+    ]);
+    let titles: Vec<String> = dir.choose("Antioch").choices.iter().map(EntityCard::title).collect();
+    assert_eq!(titles, ["Antioch (on the Orontes)", "Antioch (in Pisidia)"]);
+    assert_eq!(dir.card("Ai@Gen.12.8-Isa").unwrap().title(), "Ai (Et Tell)");
+    assert_eq!(dir.card("Amphipolis@Act.17.1").unwrap().title(), "Amphipolis");
+    assert_eq!(dir.card("Zoar@Gen.13.10-Jer").unwrap().title(), "Zoar");
+}
+
+/// #261 GUIDES-7: an unnamed relative reads the same in the Passage Guide as in the Factbook,
+/// and TIPNR's `partner` is not called a marriage.
+#[test]
+fn passage_guide_relatives_read_as_in_the_factbook() {
+    use obs_model::{EntityKind::Female, EntityKind::Male, EntityRelation, Relation};
+    let mut lot = entry("Lot@Gen.11.27-2Pe", Male, &[], 30, &[]);
+    lot.entity.relations = vec![
+        EntityRelation {
+            relation: Relation::Partner,
+            entity: "daughter1_of_Lot@Gen.19.37".into(),
+            uncertain: false,
+        },
+        EntityRelation {
+            relation: Relation::Offspring,
+            entity: "daughter1_of_Lot@Gen.19.37".into(),
+            uncertain: false,
+        },
+    ];
+    let daughter = entry("daughter1_of_Lot@Gen.19.37", Female, &["1st daughter of Lot"], 2, &[]);
+    let lot_entity = lot.entity.clone();
+    let dir = PeopleDirectory::new(vec![lot, daughter]);
+    let (_, row) = crate::people_places::row("tipnr", &lot_entity, vec![], "", vec![], Some(&dir));
+    let facts: Vec<(&str, Vec<&str>)> = row
+        .facts
+        .iter()
+        .map(|f| (f.label, f.values.iter().map(String::as_str).collect()))
+        .collect();
+    assert_eq!(
+        facts,
+        [
+            ("Partners", vec!["1st daughter of Lot"]),
+            ("Children", vec!["1st daughter of Lot"])
+        ]
+    );
+    let summary = dir.summary("Lot@Gen.11.27-2Pe", None).unwrap();
+    assert_eq!(
+        family(&summary),
+        [
+            ("Partners", vec!["1st daughter of Lot"]),
+            ("Children", vec!["1st daughter of Lot"])
+        ]
+    );
 }

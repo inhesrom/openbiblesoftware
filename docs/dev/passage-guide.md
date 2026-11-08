@@ -72,7 +72,7 @@ Decisions #15 (sections, Guide arrangement, navigation), #18 (Tab header, placem
   (an entity once). Name as the ★ Bible's text of the Passage gives it (`Abram` in Gen 12:1,
   whole word, case-sensitive) with the usual name beside it (`Abraham`); rows in the order the
   text names them, then by first mention. Facts are TIPNR's structured fields only: kind,
-  region and relations (Father, Mother, Descended from, Siblings, Married to, Children,
+  region and relations (Father, Mother, Descended from, Siblings, Partners, Children,
   Founded, Founded by, Lived here). TIPNR's descriptions are never stored (#43) or shown.
 - Article links: one per Dictionary in Preferred order with an article on the entity. Click
   opens that Dictionary at the headword (its open Tab moves there; Ctrl/Cmd-click: a new Tab).

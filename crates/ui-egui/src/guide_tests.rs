@@ -832,7 +832,7 @@ fn abram_opens_his_factbook_and_the_john_chooser_lists_the_johns() {
         h.texts()
     );
     assert!(find_in(&h, factbook, "Father").is_some());
-    assert!(find_in(&h, factbook, "Married to").is_some());
+    assert!(find_in(&h, factbook, "Partners").is_some());
     assert!(find_in(&h, factbook, "Abram").is_some(), "Also called");
     let titles = headers(&h, factbook);
     // Map (#150) sits under the Summary.

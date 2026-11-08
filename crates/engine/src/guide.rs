@@ -851,6 +851,7 @@ impl SectionSource for LibrarySections {
                 *passage,
                 &self.bibles,
                 &self.aliases,
+                &self.directory,
             )
             .map(SectionData::PeopleAndPlaces),
             GuideSection::LexiconEntries
