@@ -241,7 +241,7 @@ pub use link::LINK_SETS;
 pub use missing_resource::{EmptyState, MissingResource, StarterOffer, Tagging};
 pub use notes::{
     Card, CardOrder, NoteBodyLine, NoteHit, NotesFilter, NotesResults, NotesTool, body_references,
-    link_passages, note_body,
+    body_references_in, link_passages, note_body,
 };
 pub use notes_export::{NotesExport, NotesFormat, NotesSource};
 /// The Morphology chooser's menus and choices (#145).

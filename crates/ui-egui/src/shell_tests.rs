@@ -3319,6 +3319,8 @@ mod report_problem;
 mod a11y_audit;
 #[path = "floating_windows_tests.rs"]
 mod floating_windows;
+#[path = "footnotes_tests.rs"]
+mod footnotes_ui;
 #[path = "interlinear_tests.rs"]
 mod interlinear;
 #[path = "keyboard_navigation_tests.rs"]

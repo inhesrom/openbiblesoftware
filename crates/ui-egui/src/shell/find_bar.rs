@@ -107,6 +107,11 @@ impl State {
     pub(super) fn find_row(&mut self, ui: &mut Ui, tab: TabId) {
         let id = field_id(tab);
         let focused_tab = self.session.workspace.focused() == Some(tab);
+        // A Footnote popover shown on this Tab, or on screen in this window, has first refusal
+        // on Esc (#208): the bar waits for the next one. The header runs before the pane that
+        // consumes that Esc, so the bar asks first.
+        let footnote_shown = (self.footnotes.tabs.get(&tab)).is_some_and(|f| f.state.phase.shown())
+            || self.footnotes.on_screen(ui.ctx(), |_| true);
         let Some(bar) = self.tabs.get_mut(&tab).and_then(|t| t.find.as_mut()) else {
             return;
         };
@@ -126,7 +131,8 @@ impl State {
         }
         // Esc leaves the field before any widget runs (egui), so ask whether it had the keyboard;
         // or Esc in the focused Tab while nothing else has the keyboard.
-        let escape = ui.input(|i| i.key_pressed(Key::Escape))
+        let escape = !footnote_shown
+            && ui.input(|i| i.key_pressed(Key::Escape))
             && (ui.memory(|m| m.had_focus_last_frame(id))
                 || (focused_tab && ui.memory(|m| m.focused().is_none())));
         close |= escape;

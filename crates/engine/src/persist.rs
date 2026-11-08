@@ -128,6 +128,9 @@ pub struct TabSnapshot {
     /// session's open Tabs do not.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scroll: Option<ScrollPosition>,
+    /// The user hid the Tab's Footnote markers (#208).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub footnote_markers_hidden: bool,
 }
 
 impl TabSnapshot {
@@ -143,6 +146,7 @@ impl TabSnapshot {
             interlinear: t.interlinear.clone(),
             contents: t.contents,
             scroll: None,
+            footnote_markers_hidden: !t.footnote_markers,
         }
     }
 

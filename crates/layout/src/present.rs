@@ -13,7 +13,10 @@
 //! | `scripture_ref`, non-empty `xref` | `Link` role |
 //! | `tagged_word` in an `entry` unit (a Lexicon's Strong's link) | `Link` role |
 //! | `verse` start | verse number object, superscript; verse 1 shows the chapter number |
-//! | zero-width `note_ref` | note marker object `†` |
+//! | zero-width `note_ref` (footnote) | Footnote marker object: a raised italic letter, a … z then aa …, counted from each chapter's first (#208) |
+//! | zero-width `note_ref` (cross-reference) | Footnote marker object: `↗` when its zero-width `xref` is beside it (that `xref` then draws nothing of its own), else a raised `‡` |
+//!
+//! With `footnote_markers` off, no zero-width `note_ref`, `xref` or `scripture_ref` is laid out.
 //!
 //! Each script's text uses its reading font (#138; by default Ezra SIL for Hebrew, at
 //! `hebrew_scale`, and Gentium Plus for everything else), falling back per cluster to the
@@ -25,7 +28,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use obs_fonts::{Face, FaceId, FaceSet, ReadingScript, face};
-use obs_model::{Direction, ParaStyle, Span, SpanKind, TextUnit, UnitKind};
+use obs_model::{Direction, NoteKind, ParaStyle, Span, SpanKind, TextUnit, UnitKind};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::paragraph::{Align, InlineObject, Paragraph, Run, RunSource};
@@ -174,13 +177,33 @@ pub fn block_paragraph(
     let body = size * scale;
     let range = block.range.clone();
     // Only spans touching the block matter; scanning all of a book's spans per piece is what
-    // made whole-book layout slow.
-    let local: Vec<(usize, &Span)> = unit
-        .spans
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| s.start as usize <= range.end && s.end as usize >= range.start)
-        .collect();
+    // made whole-book layout slow. The same pass counts each chapter's Footnotes, for the
+    // letters of the block's markers.
+    let mut local: Vec<(usize, &Span)> = Vec::new();
+    let mut footnotes: Vec<(usize, usize)> = Vec::new();
+    let mut chapter = None;
+    let mut in_chapter = 0;
+    for (i, s) in unit.spans.iter().enumerate() {
+        match &s.kind {
+            SpanKind::Verse { verse, .. } if chapter != Some((verse.book, verse.chapter)) => {
+                chapter = Some((verse.book, verse.chapter));
+                in_chapter = 0;
+            }
+            SpanKind::NoteRef {
+                note_kind: NoteKind::Footnote,
+                ..
+            } => {
+                if range.contains(&(s.start as usize)) || s.start as usize == range.end {
+                    footnotes.push((i, in_chapter));
+                }
+                in_chapter += 1;
+            }
+            _ => {}
+        }
+        if s.start as usize <= range.end && s.end as usize >= range.start {
+            local.push((i, s));
+        }
+    }
 
     let mut cuts: Vec<usize> = vec![range.start, range.end];
     for (_, s) in &local {
@@ -199,7 +222,12 @@ pub fn block_paragraph(
         .map(|w| (w[0], w[1]))
         .chain(std::iter::once((range.end, range.end)));
     for (a, b) in pieces {
-        push_objects(unit, &local, a, &range, settings, body, &mut runs);
+        let objects = Objects {
+            spans: &local,
+            footnotes: &footnotes,
+            rtl: direction == Direction::Rtl,
+        };
+        push_objects(unit, &objects, a, &range, settings, body, &mut runs);
         if b <= a {
             continue;
         }
@@ -280,58 +308,144 @@ fn owns_marker(unit: &TextUnit, block: &Range<usize>, a: usize) -> bool {
     a == block.start && unit.text[..a].chars().next_back().is_none_or(|c| c == '\n')
 }
 
-/// Verse numbers and note markers anchored at byte `a`.
+/// The label of a chapter's `n`th Footnote marker, from 0: a … z, then aa, ab … (#208).
+pub fn footnote_label(n: usize) -> String {
+    let mut n = n + 1;
+    let mut letters = Vec::new();
+    while n > 0 {
+        n -= 1;
+        letters.push(char::from(b'a' + (n % 26) as u8));
+        n /= 26;
+    }
+    letters.iter().rev().collect()
+}
+
+/// The spans touching a block, and its Footnotes' places in their chapters (span index,
+/// ordinal).
+struct Objects<'a> {
+    spans: &'a [(usize, &'a Span)],
+    footnotes: &'a [(usize, usize)],
+    /// A right-to-left paragraph: a letter marker ends with a right-to-left mark, so that it
+    /// does not join the verse number after it in one left-to-right run.
+    rtl: bool,
+}
+
+/// The zero-width Scripture references or Cross-references at byte `a`, and its
+/// cross-reference notes, as span indices in text order.
+fn zero_width_references_at(spans: &[(usize, &Span)], a: usize) -> Vec<usize> {
+    zero_width_at(spans, a, |k| {
+        matches!(k, SpanKind::ScriptureRef { .. } | SpanKind::Xref { .. })
+    })
+}
+
+fn cross_reference_notes_at(spans: &[(usize, &Span)], a: usize) -> Vec<usize> {
+    zero_width_at(spans, a, |k| {
+        matches!(
+            k,
+            SpanKind::NoteRef {
+                note_kind: NoteKind::CrossReference,
+                ..
+            }
+        )
+    })
+}
+
+fn zero_width_at(
+    spans: &[(usize, &Span)],
+    a: usize,
+    kind: impl Fn(&SpanKind) -> bool,
+) -> Vec<usize> {
+    spans
+        .iter()
+        .filter(|(_, s)| s.start as usize == a && s.start == s.end && kind(&s.kind))
+        .map(|(i, _)| *i)
+        .collect()
+}
+
+/// Verse numbers and Footnote markers anchored at byte `a`.
 fn push_objects(
     unit: &TextUnit,
-    spans: &[(usize, &Span)],
+    objects: &Objects<'_>,
     a: usize,
     block: &Range<usize>,
     settings: &TextSettings,
     body: f32,
     runs: &mut Vec<Run>,
 ) {
-    for &(span, s) in spans {
+    let marker = |text: String, face: FaceId, object: InlineObject| Run {
+        text,
+        style: RunStyle {
+            face,
+            size: body * 0.7,
+            small_caps: false,
+            raise: body * 0.35,
+            role: match object {
+                InlineObject::NoteMarker { .. } => ColorRole::NoteMarker,
+                _ => ColorRole::Link,
+            },
+        },
+        source: RunSource::Object { anchor: a, object },
+    };
+    for &(span, s) in objects.spans {
         let start = s.start as usize;
         if start != a {
             continue;
         }
         match &s.kind {
             SpanKind::ScriptureRef { .. } | SpanKind::Xref { .. }
-                if s.start == s.end && owns_marker(unit, block, a) =>
+                if s.start == s.end && settings.footnote_markers && owns_marker(unit, block, a) =>
             {
-                runs.push(Run {
-                    text: "↗".into(),
-                    style: RunStyle {
-                        face: FaceId::Regular,
-                        size: body * 0.7,
-                        small_caps: false,
-                        raise: body * 0.35,
-                        role: ColorRole::Link,
-                    },
-                    source: RunSource::Object {
-                        anchor: a,
-                        object: InlineObject::ScriptureReference { span },
-                    },
-                });
+                // The `n`th reference beside the `n`th cross-reference note is that note's
+                // `↗`, drawn as its Footnote marker (an importer adds both for one note).
+                let nth = zero_width_references_at(objects.spans, a)
+                    .iter()
+                    .position(|&i| i == span);
+                if nth.is_some_and(|n| n < cross_reference_notes_at(objects.spans, a).len()) {
+                    continue;
+                }
+                runs.push(marker(
+                    "↗".into(),
+                    FaceId::Regular,
+                    InlineObject::ScriptureReference { span },
+                ));
             }
-            SpanKind::NoteRef { note, note_kind } if owns_marker(unit, block, a) => {
-                runs.push(Run {
-                    text: "†".into(),
-                    style: RunStyle {
-                        face: FaceId::Regular,
-                        size: body * 0.7,
-                        small_caps: false,
-                        raise: body * 0.35,
-                        role: ColorRole::NoteMarker,
+            SpanKind::NoteRef { note, note_kind }
+                if settings.footnote_markers && owns_marker(unit, block, a) =>
+            {
+                let (text, face) = match note_kind {
+                    NoteKind::Footnote => {
+                        let n = objects
+                            .footnotes
+                            .iter()
+                            .find(|(i, _)| *i == span)
+                            .map_or(0, |(_, n)| *n);
+                        let mut label = footnote_label(n);
+                        if objects.rtl {
+                            label.push('\u{200F}');
+                        }
+                        (label, FaceId::Italic)
+                    }
+                    NoteKind::CrossReference => {
+                        let nth = cross_reference_notes_at(objects.spans, a)
+                            .iter()
+                            .position(|&i| i == span);
+                        let references = zero_width_references_at(objects.spans, a).len();
+                        let glyph = if nth.is_some_and(|n| n < references) {
+                            "↗"
+                        } else {
+                            "‡"
+                        };
+                        (glyph.to_string(), FaceId::Regular)
+                    }
+                };
+                runs.push(marker(
+                    text,
+                    face,
+                    InlineObject::NoteMarker {
+                        note: note.clone(),
+                        kind: *note_kind,
                     },
-                    source: RunSource::Object {
-                        anchor: a,
-                        object: InlineObject::NoteMarker {
-                            note: note.clone(),
-                            kind: *note_kind,
-                        },
-                    },
-                });
+                ));
             }
             SpanKind::Verse { verse, .. }
                 if verse.verse > 0

@@ -132,6 +132,7 @@ pub const MENUS: &[Menu] = &[
                 command: "view.verse_numbers",
             },
             C("view.red_letter"),
+            C("view.footnote_markers"),
             C("view.fonts"),
             Separator,
             C("view.highlights"),
@@ -654,6 +655,27 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         s.text.red_letter = !s.text.red_letter;
         view_saved(s, json!({ "on": s.text.red_letter }))
     }),
+    CommandSpec {
+        id: "view.footnote_markers",
+        label: "Footnote markers",
+        shortcut: None,
+        params: &[
+            ParamSpec {
+                name: "tab",
+                kind: ParamKind::Integer,
+                required: false,
+                help: "The Resource Tab (default: the focused Tab)",
+            },
+            ParamSpec {
+                name: "on",
+                kind: ParamKind::Boolean,
+                required: false,
+                help: "Show (true) or hide (false) the Tab's Footnote markers; without it, toggle them",
+            },
+        ],
+        enabled: focused_resource_tab,
+        run: set_footnote_markers,
+    },
     simple("view.fonts", "Fonts…", None, always, |s, _| {
         s.workspace.push_effect(Effect::ShowFonts);
         Ok(Value::Null)
@@ -1408,6 +1430,34 @@ fn set_font(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     };
     s.fonts.set(slot, choice);
     view_saved(s, out)
+}
+
+/// Whether the focused Tab shows a Resource (Footnote markers are per Resource Tab, #208).
+fn focused_resource_tab(s: &Session) -> bool {
+    s.workspace
+        .focused()
+        .and_then(|t| s.workspace.tab(t))
+        .is_some_and(|t| matches!(t.kind, TabKind::Resource(_)))
+}
+
+/// `view.footnote_markers`: show or hide one Resource Tab's Footnote markers (#208).
+fn set_footnote_markers(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
+    const ID: &str = "view.footnote_markers";
+    let tab = p
+        .i64("tab")
+        .and_then(|n| u64::try_from(n).ok())
+        .map(TabId)
+        .or_else(|| s.workspace.focused())
+        .ok_or_else(|| failed(ID, "no Tab"))?;
+    let t = s
+        .workspace
+        .tab_mut(tab)
+        .ok_or_else(|| failed(ID, format!("no Tab {}", tab.0)))?;
+    if !matches!(t.kind, TabKind::Resource(_)) {
+        return Err(failed(ID, "only a Resource Tab has Footnote markers"));
+    }
+    t.footnote_markers = p.bool("on").unwrap_or(!t.footnote_markers);
+    Ok(json!({ "tab": tab.0, "on": t.footnote_markers }))
 }
 
 fn view_saved(s: &mut Session, out: Value) -> Result<Value, CommandError> {

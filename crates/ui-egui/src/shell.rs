@@ -43,6 +43,7 @@ mod factbook_tab;
 mod favorites_tab;
 mod find_bar;
 mod floating;
+mod footnotes;
 pub use floating::DesktopUnits;
 mod fonts_window;
 mod get_bibles_tab;
@@ -266,6 +267,8 @@ pub(crate) struct State {
     save_due: bool,
     /// The bench's feature scenarios (#183): one Tab's UI-thread work, timed each frame.
     pub(crate) timed_tab: TimedTab,
+    /// The Footnote popover (#208).
+    footnotes: footnotes::Footnotes,
     /// A reference, text or Note card being dragged across the Workspace (#216).
     pub(crate) drag: drag_drop::DragDropUi,
     /// A Tab whose button in its Panel's tab bar takes the keyboard when next drawn (#215).
@@ -356,6 +359,7 @@ impl Shell {
                 report_ui: Default::default(),
                 save_due: false,
                 timed_tab: TimedTab::default(),
+                footnotes: Default::default(),
                 drag: drag_drop::DragDropUi::default(),
                 keyboard_to: None,
                 areas: Default::default(),
@@ -463,6 +467,7 @@ impl Shell {
                 Effect::Closed(tab) => {
                     self.remove_pane(tab);
                     self.st.tabs.remove(&tab);
+                    self.st.footnotes.tab_closed(tab);
                 }
                 Effect::RestoreScroll { tab, at } => self.st.restore_scroll(tab, &at),
                 Effect::KeyboardToTab(tab) => {
@@ -701,6 +706,7 @@ impl Shell {
             self.shown = shown;
             let live: Vec<TabId> = self.st.session.workspace.tabs().map(|t| t.id).collect();
             self.st.tabs.retain(|t, _| live.contains(t));
+            self.st.footnotes.retain_tabs(&live);
         }
         let arrangement = self
             .tree
@@ -723,6 +729,7 @@ impl Shell {
         self.tree = Tree::empty(egui::Id::unique("workspace"));
         self.st.panels.clear();
         self.st.tabs.clear();
+        self.st.footnotes.tabs.clear();
         self.shown.clear();
         let ids: Vec<TabId> = self.st.session.workspace.tabs().map(|t| t.id).collect();
         for t in ids {
@@ -1027,6 +1034,10 @@ impl Shell {
         self.tab_switcher_keys(ui, window);
         // Keys a text field uses itself (Ctrl+Z, Esc …) are left to it while it has focus.
         let typing = ui.ctx().text_edit_focused();
+        // A Footnote popover shown in this window has first refusal on Esc (#208): a command
+        // bound to Esc (Unpin Word Info, say) waits for the next one.
+        let footnote_shown =
+            (self.st.footnotes).on_screen(ui.ctx(), |t| self.keys_window(t) == window);
         let all = bindings(&self.st.session);
         let session = &self.st.session;
         let bound: Vec<(&obs_engine::CommandSpec, egui::KeyboardShortcut)> = session
@@ -1035,6 +1046,9 @@ impl Shell {
             .filter_map(|spec| Some((spec, session.shortcut(spec.id)?)))
             .filter(|(_, key)| !(typing && annotate::yields_to_text_fields(key)))
             .filter_map(|(spec, key)| Some((spec, parse_shortcut(key)?)))
+            .filter(|(_, sc)| {
+                !(footnote_shown && sc.logical_key == egui::Key::Escape && sc.modifiers.is_none())
+            })
             .flat_map(|(spec, sc)| pressed_as(sc).map(move |sc| (spec, sc)))
             .collect();
         let mut run: Vec<(&'static str, Value)> = Vec::new();
@@ -1166,6 +1180,12 @@ impl Shell {
                     "view.red_letter" => Some(self.st.session.text.red_letter),
                     "view.highlights" => Some(self.st.session.appearance.show_highlights),
                     "view.toolbar_auto_hide" => Some(self.st.session.toolbar.auto_hide),
+                    "view.footnote_markers" => Some(
+                        self.st.session.is_enabled(id)
+                            && (self.st.session.workspace.focused())
+                                .and_then(|t| self.st.session.workspace.tab(t))
+                                .is_some_and(|t| t.footnote_markers),
+                    ),
                     _ => None,
                 };
                 let label = match id {
@@ -1737,6 +1757,8 @@ impl State {
     /// and load the new one in a pane as wide, where Back or Forward scrolls it back to
     /// where it was parked.
     fn switched(&mut self, tab: TabId) {
+        self.footnotes
+            .send(tab, footnotes::FootnoteEvent::ResourceChanged);
         let Some(mut old) = self.tabs.remove(&tab) else {
             return;
         };
@@ -2120,7 +2142,12 @@ impl State {
         }
         self.sync_interlinear(tab, false);
         let palette = self.palette;
-        let text = self.session.text;
+        let mut text = self.session.text;
+        text.footnote_markers = self
+            .session
+            .workspace
+            .tab(tab)
+            .is_none_or(|t| t.footnote_markers);
         let restoring_at = (self.session.workspace.tab(tab))
             .filter(|t| !t.keeps_entries())
             .and_then(|t| t.history.current());
@@ -2226,6 +2253,7 @@ impl State {
                 }
             }
         }
+        self.footnote_frame(ui, tab, &out);
         if let Some(drag) = out.drag_out {
             self.text_drag_started(ui, tab, drag);
         }

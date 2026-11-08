@@ -146,7 +146,7 @@ impl Hash for TargetKey {
 
 /// One group per written target, even when its map has gaps. Popup limits count groups,
 /// not individual mapped Verses; separate written targets are never sorted or merged.
-type Targets = Vec<PassageList>;
+pub(crate) type Targets = Vec<PassageList>;
 
 #[derive(Default)]
 pub(crate) struct TargetCache {
@@ -246,11 +246,18 @@ fn targets(doc: &ReadingDoc, unit: usize, span: usize) -> Targets {
     let Some(span) = doc.units.get(unit).and_then(|u| u.spans.get(span)) else {
         return vec![];
     };
-    let (written, map) = match &span.kind {
-        SpanKind::Xref { targets } => (targets, None),
-        SpanKind::ScriptureRef { targets } => (targets, doc.verse_map.as_ref()),
-        _ => return vec![],
-    };
+    match &span.kind {
+        SpanKind::Xref { targets } => standard_targets(doc, targets, false),
+        SpanKind::ScriptureRef { targets } => standard_targets(doc, targets, true),
+        _ => vec![],
+    }
+}
+
+/// A reference's written targets in the Standard versification: `native` ones are read in
+/// the Bible's own numbering and go through its Verse map (a Scripture reference in its
+/// text, ADR 0002); others already are Standard (a Cross-reference).
+pub(crate) fn standard_targets(doc: &ReadingDoc, written: &PassageList, native: bool) -> Targets {
+    let map = if native { doc.verse_map.as_ref() } else { None };
     written
         .iter()
         .map(|p| {

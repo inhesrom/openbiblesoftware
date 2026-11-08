@@ -239,6 +239,47 @@ impl SnippetCache {
         None
     }
 
+    /// A Resource's own text unit (a Footnote's body, #208) as one paragraph, styled by its
+    /// spans as the reading pane styles them.
+    pub fn get_unit(
+        &mut self,
+        unit: &obs_model::TextUnit,
+        direction: obs_model::Direction,
+        width: f32,
+        settings: &obs_layout::TextSettings,
+    ) -> Option<Arc<LaidBlock>> {
+        use std::hash::{Hash, Hasher};
+        self.drain();
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (
+            "unit",
+            &unit.text,
+            &unit.spans,
+            direction == obs_model::Direction::Rtl,
+            width.to_bits(),
+            settings.key(),
+        )
+            .hash(&mut h);
+        let key = h.finish();
+        if let Some(l) = self.ready.get(&key) {
+            return Some(Arc::clone(l));
+        }
+        if self.ready.len() > 2000 {
+            self.ready.clear();
+        }
+        let unit = unit.clone();
+        let settings = *settings;
+        self.client.submit_with(key, move || {
+            let block = obs_layout::BlockSource {
+                kind: obs_layout::BlockKind::Plain,
+                range: 0..unit.text.len(),
+            };
+            let para = obs_layout::block_paragraph(&unit, &block, direction, &settings);
+            lay_out(&para, width)
+        });
+        None
+    }
+
     /// Like [`Self::get`], with Note formatting (#186): byte ranges bold, italic or in their
     /// own colour role, at `scale` times the text size.
     pub fn get_formatted(

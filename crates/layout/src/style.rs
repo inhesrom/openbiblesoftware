@@ -48,6 +48,9 @@ pub struct TextSettings {
     pub hebrew_line_height: f32,
     pub red_letter: bool,
     pub verse_numbers: VerseNumbers,
+    /// Footnote markers (#208): a raised letter where each Footnote of the Resource belongs,
+    /// and the marker of each cross-reference note. Off: neither is laid out.
+    pub footnote_markers: bool,
     /// The reading font of each script (View → Fonts, #138). A character the chosen face
     /// lacks is drawn in the bundled face for its script.
     pub fonts: ReadingFaces,
@@ -62,6 +65,7 @@ impl Default for TextSettings {
             hebrew_line_height: 0.82,
             red_letter: true,
             verse_numbers: VerseNumbers::Superscript,
+            footnote_markers: true,
             fonts: ReadingFaces::default(),
         }
     }
@@ -82,6 +86,7 @@ impl TextSettings {
             self.hebrew_line_height.to_bits(),
             u32::from(self.red_letter),
             self.verse_numbers as u32,
+            u32::from(self.footnote_markers),
         ]
         .into_iter()
         .chain(
