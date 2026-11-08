@@ -3784,7 +3784,7 @@ mod get_bibles {
         );
         let at = |t: &str| choices.iter().position(|c| c.starts_with(t)).unwrap();
         assert!(at("Ancient Greek") < at("Bangla") && at("Bangla") < at("English"));
-        preview(&h, "get-resources-language-filter-names");
+        preview_settled(&mut h, "get-resources-language-filter-names");
 
         for query in ["Bengali", "Bangla", "ben"] {
             search_languages(&mut h, query);
@@ -3811,7 +3811,7 @@ mod get_bibles {
             assert!(shown[0].starts_with("Bangla"), "{query:?}: {shown:?}");
             assert!(h.find("English · 4").is_none(), "{query:?} hides the rest");
             if query == "Bengali" {
-                preview(&h, "get-resources-language-filter-search-bengali");
+                preview_settled(&mut h, "get-resources-language-filter-search-bengali");
             }
         }
         search_languages(&mut h, "klingon");
@@ -4060,6 +4060,14 @@ mod get_bibles {
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
             std::fs::create_dir_all(&dir).unwrap();
             h.screenshot(&dir.join(format!("{name}.ppm")));
+        }
+    }
+
+    /// `preview` once a popup's fade-in has finished.
+    fn preview_settled(h: &mut Harness, name: &str) {
+        if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+            h.frames(30);
+            preview(h, name);
         }
     }
 
