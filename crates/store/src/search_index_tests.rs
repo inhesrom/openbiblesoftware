@@ -1029,3 +1029,25 @@ fn within_scores_both_sides_whichever_is_written_first() {
         assert!((s - a).abs() <= a.abs() * 1e-9, "{s} vs AND {a}");
     }
 }
+
+/// A copied cache opens as the copy's key, and only as it; the original is untouched.
+#[test]
+fn a_copied_search_index_is_keyed_for_the_copy() {
+    let tmp = TempDir::new("copy");
+    let dir = &tmp.0;
+    let r = sample_resource();
+    let src = build_search_index(&r, 1, &dir.join("a"), &mut |_, _| true).unwrap();
+    let mut copy = r.manifest.clone();
+    copy.resource_id = "copy-of-sample".into();
+    let path = copy_search_index_as(&src, &dir.join("b"), &copy).unwrap();
+    assert_eq!(
+        path.file_name().unwrap().to_string_lossy(),
+        IndexKey::new(&copy, 1).file_name()
+    );
+    SqliteSearchIndex::open(&path, Some(&IndexKey::new(&copy, 1))).unwrap();
+    assert!(SqliteSearchIndex::open(&path, Some(&IndexKey::new(&r.manifest, 1))).is_err());
+    SqliteSearchIndex::open(&src, Some(&IndexKey::new(&r.manifest, 1))).unwrap();
+    // Another Resource's content is refused.
+    copy.content_hash = "sha256:00".into();
+    assert!(copy_search_index_as(&src, &dir.join("c"), &copy).is_err());
+}

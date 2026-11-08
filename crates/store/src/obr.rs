@@ -297,6 +297,43 @@ pub fn write_obr(resource: &Resource, path: &Path) -> Result<(), StoreError> {
     Ok(())
 }
 
+/// Copy the `.obr` at `src` to `dst` as another Resource with the same content: `manifest`
+/// replaces its manifest row. The content is not touched, so `manifest` must carry the file's
+/// `content_hash` and format version. This makes synthetic libraries of thousands of
+/// Resources (the scale bench, #227) in seconds, where building each one would take hours.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn copy_obr_as(src: &Path, dst: &Path, manifest: &Manifest) -> Result<(), StoreError> {
+    let from = ObrReader::open(src)?.manifest;
+    if from.content_hash != manifest.content_hash || from.format_version != manifest.format_version
+    {
+        return Err(StoreError::Rejected(format!(
+            "{} has content {} (format {}), not {} (format {})",
+            src.display(),
+            from.content_hash,
+            from.format_version,
+            manifest.content_hash,
+            manifest.format_version
+        )));
+    }
+    let tmp = temp_path(dst);
+    std::fs::copy(src, &tmp)?;
+    let relabel = || -> Result<(), StoreError> {
+        let mut conn = Connection::open(&tmp).map_err(sql)?;
+        conn.execute_batch("PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;")
+            .map_err(sql)?;
+        let tx = conn.transaction().map_err(sql)?;
+        tx.execute("DELETE FROM manifest", []).map_err(sql)?;
+        insert_manifest(&tx, manifest)?;
+        tx.commit().map_err(sql)
+    };
+    if let Err(e) = relabel() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    std::fs::rename(&tmp, dst)?;
+    Ok(())
+}
+
 fn temp_path(path: &Path) -> PathBuf {
     let mut name = path
         .file_name()

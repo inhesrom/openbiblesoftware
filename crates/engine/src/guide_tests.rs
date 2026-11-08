@@ -641,3 +641,90 @@ fn an_unlinked_passage_guide_opens_at_the_focused_tabs_passage() {
         .unwrap();
     assert_eq!(guide.history.current(), None);
 }
+
+/// The Passage Guide's compact Commentary sections (#227) pick the section the reading Tab's
+/// full navigation would have: the one shown at the Passage's first Verse when it overlaps,
+/// else the first starting inside it, else the latest, narrowest one covering part of it;
+/// aliases, coincident introductions and Keys that are not Passages included.
+#[test]
+fn compact_commentary_sections_pick_what_the_full_navigation_picks() {
+    use crate::guide::CommentarySections;
+    use crate::resource_navigation::ResourceNavigation;
+    use obs_model::{KeyEntry, UnitId};
+    fn reference(nav: &ResourceNavigation, passage: Passage) -> Option<(Passage, UnitId)> {
+        let p = |e: &KeyEntry| match e.key {
+            Key::Passage(p) => Some(p),
+            _ => None,
+        };
+        let overlapping = |e: &&KeyEntry| p(e).is_some_and(|q| q.overlaps(passage));
+        let e = nav
+            .section(passage.start())
+            .filter(overlapping)
+            .or_else(|| {
+                (nav.keys.iter().filter(|e| !e.alias))
+                    .find(|e| p(e).is_some_and(|q| passage.contains_verse(q.start())))
+            })
+            .or_else(|| {
+                (nav.keys.iter().filter(|e| !e.alias))
+                    .filter(overlapping)
+                    .max_by(|a, b| {
+                        let (a, b) = (p(a), p(b));
+                        a.map(|q| q.start())
+                            .cmp(&b.map(|q| q.start()))
+                            .then(b.map(|q| q.end()).cmp(&a.map(|q| q.end())))
+                    })
+            })?;
+        Some((p(e)?, e.unit.clone()))
+    }
+    let key = |a: Verse, b: Verse, unit: &str, alias: bool| KeyEntry {
+        key: Key::Passage(range(a, b)),
+        unit: UnitId::new(unit).unwrap(),
+        range: Some((0, 1)),
+        alias,
+    };
+    let keys = vec![
+        // John's book introduction, chapter 3's introduction and its sections.
+        key(john(1, 1), john(21, 25), "intro", false),
+        key(john(3, 1), john(3, 36), "c3", false),
+        key(john(3, 1), john(3, 8), "c3a", false),
+        key(john(3, 9), john(3, 15), "c3b", false),
+        key(john(3, 9), john(3, 15), "c3b-alias", true),
+        key(john(3, 16), john(3, 21), "c3c", false),
+        key(john(3, 31), john(3, 36), "c3e", false),
+        key(john(5, 1), john(5, 9), "c5", true),
+        KeyEntry {
+            key: Key::Headword("Nicodemus".into()),
+            unit: UnitId::new("nicodemus").unwrap(),
+            range: None,
+            alias: false,
+        },
+    ];
+    let nav = ResourceNavigation::new(keys.clone());
+    let compact = CommentarySections::new(keys);
+    let mut checked = 0;
+    for (c, last) in [(1u16, 51u16), (2, 25), (3, 36), (4, 54), (5, 47), (21, 25)] {
+        for v in 1..=last {
+            for len in [0u16, 1, 5, 20] {
+                let end = (v + len).min(last);
+                let passage = range(john(c, v), john(c, end));
+                let got = compact.best(passage).map(|s| (s.passage, s.unit.clone()));
+                assert_eq!(got, reference(&nav, passage), "{passage:?}");
+                checked += 1;
+            }
+        }
+    }
+    // Before every section, and in a book with none.
+    for passage in [
+        range(john(1, 1), john(1, 1)),
+        range(
+            Verse::new(Book::Genesis, 1, 1),
+            Verse::new(Book::Genesis, 1, 3),
+        ),
+    ] {
+        assert_eq!(
+            compact.best(passage).map(|s| (s.passage, s.unit.clone())),
+            reference(&nav, passage)
+        );
+    }
+    assert!(checked > 500);
+}

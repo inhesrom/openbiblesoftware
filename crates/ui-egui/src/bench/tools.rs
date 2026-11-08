@@ -70,15 +70,15 @@ impl Drop for Folder {
 }
 
 /// The Shell in a headless egui context, timed frame by frame.
-struct ShellBench {
-    ctx: egui::Context,
-    shell: Shell,
+pub(super) struct ShellBench {
+    pub(super) ctx: egui::Context,
+    pub(super) shell: Shell,
     time: f64,
-    events: Vec<Event>,
+    pub(super) events: Vec<Event>,
     interval: Duration,
     pace: bool,
     /// Texts painted last frame, with where.
-    texts: Vec<(Rect, String)>,
+    pub(super) texts: Vec<(Rect, String)>,
     /// Seeded extra work in the feature Tab's body ([`BenchConfig::feature_slowdown`]).
     slowdown: Duration,
     /// Seeded extra work in the feature Tab's body in each action's own frame only
@@ -91,8 +91,9 @@ struct ShellBench {
     /// The frames from an action whose result is exempt from the synchronous-work budget
     /// ([`ActionWork::Exempt`]) until it shows.
     in_exempt_action: bool,
-    /// Kept until the Shell is dropped (it may hold its files open).
-    _folder: Folder,
+    /// Kept until the Shell is dropped (it may hold its files open); `None` for a Shell the
+    /// scenario made itself ([`Self::over`]).
+    _folder: Option<Folder>,
 }
 
 fn collect_texts(shape: &Shape, out: &mut Vec<(Rect, String)>) {
@@ -130,9 +131,19 @@ impl ShellBench {
         session(&mut s, &root);
         let mut shell = Shell::new(s);
         shell.reset_layout();
+        let mut b = Self::over(cfg, shell);
+        b._folder = Some(folder);
+        for _ in 0..3 {
+            b.frame(None, |_| {});
+        }
+        Ok(b)
+    }
+
+    /// A Shell the scenario made (the app's own launch, say), before its first frame.
+    pub(super) fn over(cfg: &BenchConfig, shell: Shell) -> Self {
         let ctx = egui::Context::default();
         crate::theme::install(&ctx);
-        let mut b = Self {
+        Self {
             ctx,
             shell,
             time: 0.0,
@@ -145,17 +156,13 @@ impl ShellBench {
             undrawn_frames: 0,
             action_frame: false,
             in_exempt_action: false,
-            _folder: folder,
-        };
-        for _ in 0..3 {
-            b.frame(None, |_| {});
+            _folder: None,
         }
-        Ok(b)
     }
 
     /// One frame, with `action` (a command, say) done first, inside the timed work; timed into
     /// `samples` when given. Paced to the refresh rate when the bench is.
-    fn frame(&mut self, samples: Option<&mut Samples>, action: impl FnOnce(&mut Shell)) {
+    pub(super) fn frame(&mut self, samples: Option<&mut Samples>, action: impl FnOnce(&mut Shell)) {
         let mut viewports = egui::ViewportIdMap::default();
         viewports.insert(
             egui::ViewportId::ROOT,
@@ -207,13 +214,13 @@ impl ShellBench {
     }
 
     /// Time Tab `tab`'s drawing from now on: the scenario's synchronous feature work.
-    fn time_tab(&mut self, tab: TabId) {
+    pub(super) fn time_tab(&mut self, tab: TabId) {
         self.shell.st.timed_tab.tab = Some(tab);
     }
 
     /// The scenario's samples, once every timed frame drew the feature Tab: a scenario whose
     /// synchronous work went unmeasured must not pass.
-    fn measured(&self, s: Samples) -> Result<Samples, String> {
+    pub(super) fn measured(&self, s: Samples) -> Result<Samples, String> {
         if self.undrawn_frames > 0 || s.sync.is_empty() {
             return Err(format!(
                 "the feature's Tab was not drawn in {} of {} timed frames",
@@ -227,7 +234,7 @@ impl ShellBench {
     /// Timed frames until `ready`, after `action`: how many frames after the action's own
     /// ([`SETTLE_LIMIT`] if never). `work` says whether those frames are held to the
     /// synchronous-work budget.
-    fn settle(
+    pub(super) fn settle(
         &mut self,
         samples: &mut Samples,
         work: ActionWork,
@@ -250,7 +257,7 @@ impl ShellBench {
     }
 
     /// Untimed frames until `ready` (the scenario's setup).
-    fn wait(&mut self, what: &str, ready: impl Fn(&Self) -> bool) -> Result<(), String> {
+    pub(super) fn wait(&mut self, what: &str, ready: impl Fn(&Self) -> bool) -> Result<(), String> {
         let start = Instant::now();
         while start.elapsed() < SETUP_LIMIT {
             self.frame(None, |_| {});
@@ -263,15 +270,15 @@ impl ShellBench {
         Err(format!("never saw {what}; showing {shown:?}"))
     }
 
-    fn has_text(&self, text: &str) -> bool {
+    pub(super) fn has_text(&self, text: &str) -> bool {
         self.texts.iter().any(|(_, t)| t == text)
     }
 
-    fn has_text_starting(&self, prefix: &str) -> bool {
+    pub(super) fn has_text_starting(&self, prefix: &str) -> bool {
         self.texts.iter().any(|(_, t)| t.starts_with(prefix))
     }
 
-    fn text_at(&self, text: &str) -> Option<Pos2> {
+    pub(super) fn text_at(&self, text: &str) -> Option<Pos2> {
         self.texts
             .iter()
             .find(|(_, t)| t == text)
@@ -279,13 +286,13 @@ impl ShellBench {
     }
 
     /// Where Tab `tab`'s pane is drawn.
-    fn pane(&self, tab: TabId) -> Option<Rect> {
+    pub(super) fn pane(&self, tab: TabId) -> Option<Rect> {
         let tiles = &self.shell.tree.tiles;
         tiles.find_pane(&tab).and_then(|id| tiles.rect(id))
     }
 
     /// The first Tab of `kind`.
-    fn tab_of(&self, kind: &TabKind) -> Option<TabId> {
+    pub(super) fn tab_of(&self, kind: &TabKind) -> Option<TabId> {
         self.shell
             .session()
             .workspace
@@ -295,7 +302,11 @@ impl ShellBench {
     }
 
     /// Run a command whose answer names a Tab (`{"tab": n}`).
-    fn open(&mut self, command: &str, params: &serde_json::Value) -> Result<TabId, String> {
+    pub(super) fn open(
+        &mut self,
+        command: &str,
+        params: &serde_json::Value,
+    ) -> Result<TabId, String> {
         self.shell
             .run(command, params)
             .and_then(|v| v["tab"].as_u64())
@@ -304,7 +315,7 @@ impl ShellBench {
     }
 
     /// `frames` timed frames of the wheel over `at`, `dy` points a frame (negative: down).
-    fn wheel(&mut self, samples: &mut Samples, at: Pos2, dy: f32, frames: usize) {
+    pub(super) fn wheel(&mut self, samples: &mut Samples, at: Pos2, dy: f32, frames: usize) {
         for _ in 0..frames {
             self.events.push(Event::PointerMoved(at));
             self.events.push(Event::MouseWheel {
@@ -319,7 +330,7 @@ impl ShellBench {
     }
 
     /// Click `text` over untimed frames, once scrolling has come to rest.
-    fn click_text(&mut self, text: &str) -> Result<(), String> {
+    pub(super) fn click_text(&mut self, text: &str) -> Result<(), String> {
         for _ in 0..30 {
             self.frame(None, |_| {});
         }
@@ -329,7 +340,7 @@ impl ShellBench {
     }
 
     /// A click at `at` over untimed frames (focusing a field, say).
-    fn click(&mut self, at: Pos2) {
+    pub(super) fn click(&mut self, at: Pos2) {
         self.events.push(Event::PointerMoved(at));
         self.frame(None, |_| {});
         for pressed in [true, false] {
@@ -347,7 +358,7 @@ impl ShellBench {
 /// How the frames from an action until its result shows count toward #19's synchronous-work
 /// budget (2 ms a frame).
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum ActionWork {
+pub(super) enum ActionWork {
     /// The result is made off the UI thread (a worker finds a chapter's places, a Guide reads
     /// its Passage) or drawn afresh (a Search view switched): exempt, as #19 exempts the
     /// block a jump lands in, and held to the settle budget instead.
@@ -484,7 +495,7 @@ fn search_views(cfg: &BenchConfig) -> Result<(Samples, Samples), String> {
         .zip(1u64..)
         .map(|((id, abbreviation), seed)| {
             built(
-                library::english_bible(id, abbreviation, &Book::ALL, seed),
+                library::english_bible(id, abbreviation, &Book::ALL, 6..18, false, seed),
                 "whole Bible",
             )
         })

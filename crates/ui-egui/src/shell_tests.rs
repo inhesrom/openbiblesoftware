@@ -1836,6 +1836,180 @@ mod library {
         assert!(h.find("Test Dictionary").is_some());
     }
 
+    /// `n` Dictionaries, `dict-000` (abbreviated `D000`) on, after the test Bibles.
+    fn add_dictionaries(h: &mut Harness, n: usize) {
+        for n in 0..n {
+            h.shell.st.session.library.add(LibraryEntry {
+                manifest: obs_model::Manifest::new(
+                    format!("dict-{n:03}"),
+                    format!("Dictionary {n:03}"),
+                    format!("D{n:03}"),
+                    obs_model::ResourceType::Dictionary,
+                    "en",
+                ),
+                path: format!("/nonexistent/dict-{n:03}.obr").into(),
+            });
+        }
+    }
+
+    /// Only the rows in view are laid out (#227), yet a row keeps keyboard focus as the list
+    /// scrolls: Enter opens the row Tab focused, not whichever row took its place.
+    #[test]
+    fn a_focused_row_keeps_focus_as_the_big_library_scrolls() {
+        let mut h = Harness::new();
+        add_dictionaries(&mut h, 400);
+        h.frames(2);
+        let target = row_pos(&h, "D004");
+        let mut focused_row = false;
+        for _ in 0..80 {
+            key(&mut h, egui::Key::Tab);
+            if h.ctx
+                .memory(|m| m.focused())
+                .and_then(|id| h.ctx.read_response(id))
+                .is_some_and(|r| r.has_focus() && r.rect.contains(target))
+            {
+                focused_row = true;
+                break;
+            }
+        }
+        assert!(focused_row, "Tab must reach the D004 row");
+        // Scrolled by about two rows: the rows above D004 leave the view, D004 stays.
+        h.events
+            .push(Event::PointerMoved(library_panel(&h).center()));
+        h.events.push(Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: vec2(0.0, -2.0 * ROW_H),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: Modifiers::NONE,
+        });
+        h.frames(20);
+        assert!(
+            row_pos(&h, "D004").y < target.y - ROW_H,
+            "the list did not scroll"
+        );
+        key(&mut h, egui::Key::Enter);
+        let workspace = &h.shell.st.session.workspace;
+        let opened = workspace.tab(workspace.focused().unwrap()).unwrap();
+        assert_eq!(opened.kind, TabKind::Resource("dict-004".into()));
+    }
+
+    /// A row dragged while the wheel scrolls it out of view still drops where it is released.
+    #[test]
+    fn a_row_dragged_out_of_view_by_the_wheel_still_drops() {
+        let mut h = Harness::new();
+        add_dictionaries(&mut h, 400);
+        h.frames(2);
+        let from = handle(&h, "D001");
+        h.events.push(Event::PointerMoved(from));
+        h.frame();
+        h.button(from, true);
+        h.frame();
+        let to = from + vec2(0.0, 3.0 * ROW_H);
+        for i in 1..=10 {
+            h.events
+                .push(Event::PointerMoved(from + (to - from) * (i as f32 / 10.0)));
+            h.frame();
+        }
+        let panel = library_panel(&h);
+        h.events.push(Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: vec2(0.0, -panel.height()),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: Modifiers::NONE,
+        });
+        h.frames(20);
+        let mut drawn: Vec<(f32, String)> = (h.shapes.iter())
+            .filter(|(r, t)| t.starts_with('D') && t.len() == 4 && panel.contains(r.center()))
+            .map(|(r, t)| (r.center().y, t.clone()))
+            .collect();
+        drawn.sort_by(|a, b| a.0.total_cmp(&b.0));
+        assert!(
+            drawn.len() > 3 && drawn.iter().all(|(_, t)| t != "D001"),
+            "D001 still in view: {drawn:?}"
+        );
+        let below = row_pos(&h, &drawn[2].1) + vec2(0.0, 8.0);
+        h.events.push(Event::PointerMoved(below));
+        h.frame();
+        h.button(below, false);
+        h.frames(3);
+        assert!(
+            h.shell.st.session.command_log().contains(&"library.move"),
+            "the drop moved nothing"
+        );
+        let order: Vec<String> = (h
+            .shell
+            .st
+            .session
+            .library
+            .of_type(obs_model::ResourceType::Dictionary))
+        .map(|e| e.manifest.resource_id.clone())
+        .collect();
+        assert_ne!(order[1], "dict-001", "{:?}", &order[..8]);
+    }
+
+    /// A library of thousands of Resources (#227): the Library Tab draws only the rows in
+    /// view, each type's heading above its rows, and scrolling reaches the last one.
+    #[test]
+    fn a_big_library_draws_only_the_rows_in_view_and_scrolls_to_the_last() {
+        let mut h = Harness::new();
+        add_dictionaries(&mut h, 400);
+        h.frames(2);
+        let panel = library_panel(&h);
+        let drawn = |h: &Harness| -> Vec<String> {
+            let mut d: Vec<(f32, String)> = (h.shapes.iter())
+                .filter(|(r, t)| t.starts_with('D') && t.len() == 4 && panel.contains(r.center()))
+                .map(|(r, t)| (r.center().y, t.clone()))
+                .collect();
+            d.sort_by(|a, b| a.0.total_cmp(&b.0));
+            d.into_iter().map(|(_, t)| t).collect()
+        };
+        // Rows laid out, whether or not in view: each row's widgets reach the accessibility
+        // tree.
+        h.ctx.enable_accesskit();
+        h.frames(2);
+        let laid_out = (h.tree.as_ref().unwrap().nodes.iter())
+            .filter(|(_, n)| {
+                [n.label(), n.value()]
+                    .into_iter()
+                    .flatten()
+                    .any(|t| t.starts_with("Dictionary "))
+            })
+            .count();
+        let first = drawn(&h);
+        assert!(!first.is_empty(), "no Dictionary rows in view");
+        let screenful = (panel.height() / ROW_H) as usize + 2;
+        assert!(
+            (1..=screenful).contains(&laid_out),
+            "{laid_out} rows laid out for a panel {} high",
+            panel.height()
+        );
+        // The Bibles' rows and the Dictionaries' heading come before the first Dictionary.
+        let dictionaries = h.find("DICTIONARIES").unwrap();
+        assert!(row_pos(&h, "HNUM").y < dictionaries.top());
+        assert!(dictionaries.bottom() < row_pos(&h, &first[0]).y);
+        h.events.push(Event::PointerMoved(panel.center()));
+        for _ in 0..200 {
+            if drawn(&h).last().map(String::as_str) == Some("D399") {
+                break;
+            }
+            h.events.push(Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(0.0, -400.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Wheel,
+                modifiers: Modifiers::NONE,
+            });
+            h.frame();
+        }
+        let last = drawn(&h);
+        assert_eq!(last.last().map(String::as_str), Some("D399"), "{last:?}");
+        // Rows in view sit one under the other, in Preferred order, none skipped.
+        let numbers: Vec<u32> = last.iter().map(|t| t[1..].parse().unwrap()).collect();
+        assert!(numbers.windows(2).all(|w| w[1] == w[0] + 1), "{numbers:?}");
+    }
+
     #[test]
     fn reordering_persists_across_restarts_and_changes_which_bible_is_starred() {
         let db = temp_db("preferred-order");

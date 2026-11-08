@@ -1219,3 +1219,26 @@ fn the_builder_writes_only_the_current_format_version() {
         "{errors}"
     );
 }
+
+/// A copy made as another Resource reads as that Resource, with the original's content intact,
+/// and refuses a manifest for other content.
+#[test]
+fn a_copied_obr_reads_as_the_copy() {
+    let dir = TempDir::new("copy-as");
+    let r = sample_resource();
+    let src = dir.path("a.obr");
+    write_obr(&r, &src).unwrap();
+    let mut m = r.manifest.clone();
+    m.resource_id = "copy-of-sample".into();
+    m.title = "Copy of the sample".into();
+    let dst = dir.path("copy-of-sample.obr");
+    copy_obr_as(&src, &dst, &m).unwrap();
+    let copy = ObrReader::open(&dst).unwrap();
+    assert_eq!(copy.manifest(), &m);
+    // Loading checks the content against the manifest's content hash.
+    let read = copy.load().unwrap();
+    assert_eq!(read.units, r.units);
+    assert_eq!(ObrReader::open(&src).unwrap().manifest(), &r.manifest);
+    m.content_hash = "sha256:00".into();
+    assert!(copy_obr_as(&src, &dir.path("other.obr"), &m).is_err());
+}

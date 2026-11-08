@@ -427,3 +427,29 @@ fn remove_succeeds_when_the_obr_was_deleted_outside_the_app() {
     drop(s);
     std::fs::remove_dir_all(lib.parent().unwrap()).unwrap();
 }
+
+/// A library of many Resources (#227) lists them in file-name order, the unreadable ones
+/// reported, and takes a saved Preferred order (applied in one pass) with the unranked
+/// Resources after the ranked ones, in their order.
+#[test]
+fn a_big_library_scans_in_file_order_and_takes_its_preferred_order() {
+    let (lib, _) = temp("big-scan");
+    let ids: Vec<String> = (0..60).map(|n| format!("b{n:02}")).collect();
+    for id in &ids {
+        write_bible(&lib, id, &id.to_uppercase(), "en");
+    }
+    std::fs::write(lib.join("b30x.obr"), b"not a library file").unwrap();
+    let mut s = Session::new(JobMode::Inline);
+    let failed = s.library.scan(&lib);
+    assert_eq!(failed.len(), 1, "{failed:?}");
+    assert!(failed[0].0.ends_with("b30x.obr"));
+    let mut sorted = ids.clone();
+    sorted.sort();
+    assert_eq!(bibles(&s), sorted);
+    // Ranked: every odd one, last first; then the rest in their order.
+    let ranking: Vec<String> = ids.iter().skip(1).step_by(2).rev().cloned().collect();
+    s.library.set_preferred_order(ranking.clone());
+    let unranked: Vec<String> = ids.iter().step_by(2).cloned().collect();
+    assert_eq!(bibles(&s), [ranking.clone(), unranked].concat());
+    assert_eq!(s.library.preferred_order()[..ranking.len()], ranking[..]);
+}

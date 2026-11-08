@@ -52,7 +52,7 @@ pub use highlight_style::{
     STANDARD_PALETTE_NAME, StyleAppearance, built_in_styles, fallback_appearance, standard_palette,
 };
 #[cfg(not(target_arch = "wasm32"))]
-pub use obr::{APPLICATION_ID, ObrReader, write_obr};
+pub use obr::{APPLICATION_ID, ObrReader, copy_obr_as, write_obr};
 pub use reading_plans::{PlanReadingRow, ReadingPlanRow};
 pub use resource_store::{MappedVerse, MentionStats, ResourceStore, Summary};
 #[cfg(not(target_arch = "wasm32"))]
@@ -62,7 +62,7 @@ pub use search_index::damage_search_index;
 #[cfg(not(target_arch = "wasm32"))]
 pub use search_index::{
     IndexKey, SEARCH_APPLICATION_ID, SEARCH_INDEX_EXTENSION, SqliteSearchIndex, build_search_index,
-    remove_search_indexes, search_index_files, write_search_index,
+    copy_search_index_as, remove_search_indexes, search_index_files, write_search_index,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use user::{OpenReport, USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore};
