@@ -3784,6 +3784,7 @@ mod get_bibles {
         );
         let at = |t: &str| choices.iter().position(|c| c.starts_with(t)).unwrap();
         assert!(at("Ancient Greek") < at("Bangla") && at("Bangla") < at("English"));
+        preview(&h, "get-resources-language-filter-names");
 
         for query in ["Bengali", "Bangla", "ben"] {
             search_languages(&mut h, query);
@@ -3809,6 +3810,9 @@ mod get_bibles {
                 .collect();
             assert!(shown[0].starts_with("Bangla"), "{query:?}: {shown:?}");
             assert!(h.find("English · 4").is_none(), "{query:?} hides the rest");
+            if query == "Bengali" {
+                preview(&h, "get-resources-language-filter-search-bengali");
+            }
         }
         search_languages(&mut h, "klingon");
         assert!(h.find("No language matches").is_some());
@@ -3872,6 +3876,7 @@ mod get_bibles {
         h.events.push(Event::PointerMoved(kwoma.center()));
         h.frames(60);
         assert!(h.texts().contains(&"Language code: kmo"), "{:?}", h.texts());
+        preview(&h, "get-resources-language-code-on-hover");
         drop(h);
         std::fs::remove_dir_all(root).unwrap();
     }
