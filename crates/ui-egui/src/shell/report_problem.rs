@@ -165,8 +165,8 @@ fn system_reveal_file(_: &Path) -> Result<Option<FolderShown>, String> {
 }
 
 /// Run `commands` one after another on a thread of their own until one succeeds; the
-/// receiver gets `Ok` then, or every failure.
-#[cfg(not(target_arch = "wasm32"))]
+/// receiver gets `Ok` then, or every failure. (Windows shows a file with Explorer alone.)
+#[cfg(unix)]
 pub(crate) fn run_in_turn(
     commands: Vec<std::process::Command>,
 ) -> Result<Option<FolderShown>, String> {
