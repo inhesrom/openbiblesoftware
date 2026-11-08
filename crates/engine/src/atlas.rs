@@ -274,7 +274,35 @@ pub fn passage_places(
     Err("Opening Resources is not supported here".into())
 }
 
+/// The Atlas's empty state when the library has no People & places index: where places come
+/// from and how to get them, like the Timeline's (#261: it said `No place is listed for this
+/// Passage`, which is untrue for Acts 13, and offered nothing).
+pub const ATLAS_NO_INDEX: &str = "None in your library. Add a People & places index (TIPNR) \
+     and the OpenBible.info geocoding, both in the Starter library, to see the places of a \
+     Passage on the map.";
+
 impl Session {
+    /// What the Atlas shows instead of a map when no People & places index lists places.
+    pub fn atlas_empty_state(&self) -> Option<crate::missing_resource::EmptyState> {
+        if self
+            .library
+            .of_type(obs_model::ResourceType::PeopleAndPlaces)
+            .next()
+            .is_some()
+        {
+            return None;
+        }
+        Some(crate::missing_resource::EmptyState {
+            message: ATLAS_NO_INDEX,
+            missing: crate::GuideSection::PeopleAndPlaces.missing_resource(
+                false,
+                None,
+                &self.library,
+                self.starter.manifest(),
+            ),
+        })
+    }
+
     /// The Atlas search box: located places called `query`, once the People & places
     /// directory is loaded (it loads on the job queue; ask again on a later frame).
     pub fn atlas_search(&mut self, query: &str) -> WordStatus<Vec<MapPlace>> {

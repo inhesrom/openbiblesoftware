@@ -458,6 +458,13 @@ impl State {
             ui.label("Enter a Bible reference (Acts 13) or join a Link set");
             return;
         };
+        if let Some(empty) = self.session.atlas_empty_state() {
+            if let Some((id, params)) = self.missing_resource_ui(ui, empty.message, &empty.missing)
+            {
+                self.run(id, &params);
+            }
+            return;
+        }
         let passage = atlas::atlas_passage(shown);
         // The Verse the Passage is at, when the Tab follows one: its places stand out.
         let current = (shown.start() == shown.end()).then_some(shown.start());
