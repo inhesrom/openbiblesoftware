@@ -1366,9 +1366,9 @@ fn topic_guide_on_forgiveness_shows_naves_subtopics_and_a_passage_moves_the_link
         find_in(h, topic, "Pardon").is_some()
             && find_in(h, topic, "see Sin, Forgiveness of").is_some()
     });
-    assert!(find_in(&h, topic, "Forgiveness of injuries").is_some());
+    assert!(find_in(&h, topic, "Forgiveness of Injuries").is_some());
     preview(&mut h, "topic-guide-chooser");
-    let injuries = find_in(&h, topic, "Forgiveness of injuries").unwrap();
+    let injuries = find_in(&h, topic, "Forgiveness of Injuries").unwrap();
     h.click(injuries.center());
     h.frames(3);
     assert_eq!(
@@ -1379,7 +1379,7 @@ fn topic_guide_on_forgiveness_shows_naves_subtopics_and_a_passage_moves_the_link
             .unwrap()
             .entry_history
             .current(),
-        Some(Key::Headword("Forgiveness of injuries".into()))
+        Some(Key::Headword("Forgiveness of Injuries".into()))
     );
     until(&mut h, "Torrey's entry", |h| {
         find_in(h, topic, "Christ set an example of").is_some()

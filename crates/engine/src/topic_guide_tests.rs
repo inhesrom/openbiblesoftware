@@ -232,7 +232,7 @@ fn the_chooser_lists_the_topic_longer_headwords_and_synonyms() {
         rows,
         [
             ("Forgiveness", vec!["Nave"], vec![]),
-            ("Forgiveness of injuries", vec!["Torrey"], vec![]),
+            ("Forgiveness of Injuries", vec!["Torrey"], vec![]),
             ("Forgiveness of sin", vec!["Easton", "Torrey"], vec![]),
             // A synonym from the topical index: Nave's PARDON only says "See SIN,
             // FORGIVENESS OF". Easton's spelling is shown; sources in Preferred order.
@@ -253,7 +253,7 @@ fn the_chooser_lists_the_topic_longer_headwords_and_synonyms() {
         prefix,
         [
             "Forgiveness",
-            "Forgiveness of injuries",
+            "Forgiveness of Injuries",
             "Forgiveness of sin"
         ]
     );

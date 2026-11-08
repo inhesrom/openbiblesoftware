@@ -13,7 +13,7 @@
 //!   Passages (the Passages cited most often across the topical entries) and Search (a Library
 //!   search for the topic).
 //! - **Chooser:** text typed into the header box lists the topics it names: the headword
-//!   itself, longer headwords that start with it (Torrey's "Forgiveness of injuries"), and its
+//!   itself, longer headwords that start with it (Torrey's "Forgiveness of Injuries"), and its
 //!   synonyms from the topical indexes: entries that only send the reader to it ("Pardon: see
 //!   Sin, forgiveness of").
 
