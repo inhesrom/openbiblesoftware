@@ -2580,18 +2580,17 @@ impl State {
         };
         let mut action = None;
         let mut close = false;
-        egui::Frame::new()
-            .fill(theme::c().surface)
-            .stroke(egui::Stroke::new(1.0, theme::c().rule))
-            .corner_radius(4.0)
-            .inner_margin(egui::Margin::symmetric(10, 6))
+        crate::components::card_frame()
+            .corner_radius(crate::tokens::corner(radius::S))
+            .inner_margin(inset::NOTICE)
             .outer_margin(egui::Margin {
-                bottom: 6,
+                bottom: space::S as i8,
                 ..Default::default()
             })
             .show(ui, |ui| {
                 ui.horizontal_top(|ui| {
-                    let width = (ui.available_width() - 28.0).max(120.0);
+                    // Room for the Close button beside the message.
+                    let width = (ui.available_width() - size::CONTROL).max(size::FIELD_NARROW);
                     ui.vertical(|ui| {
                         ui.set_max_width(width);
                         action = self.missing_resource_ui(ui, hint.message, &hint.missing);

@@ -1,7 +1,7 @@
 //! Visual evidence for the design-token pass (#221): `target/previews/tokens/<surface>.ppm`
 //! when `UPDATE_PREVIEWS` is set, one per Tab kind, pane, window, menu and popover, each in a
-//! fresh window. The PR's kittest before and after images are this test run on master and on the
-//! branch.
+//! fresh window; `TOKEN_PREVIEW=<surface>` draws that one only. The PR's kittest before and
+//! after images are this test run on master and on the branch.
 
 use std::path::Path;
 
@@ -185,6 +185,33 @@ fn footnote_popover(h: &mut Harness, dir: &Path) {
     let at = egui::pos2(ox + (x0 + x1) / 2.0, oy + (y0 + y1) / 2.0);
     h.events.push(Event::PointerMoved(at));
     h.frames(20);
+}
+
+/// The interlinear hint (#243): BSB Genesis 1 with the Morphology line, which its words leave
+/// empty.
+fn interlinear_hint(h: &mut Harness, dir: &Path) {
+    let bsb = obs_engine::testing::bsb_gen_1_john_1();
+    let path = dir.join("bsb.obr");
+    obs_store::write_obr(&bsb, &path).unwrap();
+    h.shell.st.session.library = obs_engine::Library::new();
+    h.shell.st.session.library.add_file(&path).unwrap();
+    h.shell.reset_layout();
+    let tab = h.tab_id(&bsb.manifest.abbreviation);
+    h.shell
+        .run("tab.go", &json!({ "tab": tab.0, "text": "Gn 1:1" }));
+    h.shell.run(
+        "tab.interlinear",
+        &json!({ "tab": tab.0, "line": "morphology" }),
+    );
+    settle_all(h);
+    h.frames(2);
+    assert!(
+        h.texts()
+            .iter()
+            .any(|t| t.starts_with("The Morphology line is empty")),
+        "no hint: {:?}",
+        h.texts()
+    );
 }
 
 /// Run queued jobs and draw until no Search index is building and no search running.
@@ -386,6 +413,7 @@ const SURFACES: &[Surface] = &[
     ("new-collection", &[], Then::Run(new_collection)),
     ("move-note", &[], Then::Run(move_note)),
     ("footnote-popover", &[], Then::Run(footnote_popover)),
+    ("interlinear-hint", &[], Then::Run(interlinear_hint)),
     (
         "page-tone-hint",
         &[
@@ -403,7 +431,11 @@ fn design_token_previews() {
     }
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews/tokens");
     std::fs::create_dir_all(&out).unwrap();
+    let only = std::env::var("TOKEN_PREVIEW").ok();
     for (name, commands, then) in SURFACES {
+        if only.as_deref().is_some_and(|only| only != *name) {
+            continue;
+        }
         let dir = std::env::temp_dir().join(format!("obs-token-previews-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
