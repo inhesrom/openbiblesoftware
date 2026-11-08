@@ -31,6 +31,7 @@ mod normalize;
 mod note_text;
 mod renderings;
 mod translit;
+mod translit_academic;
 mod unit;
 
 pub use builder::{Resource, ResourceBuilder, ValidationError, ValidationErrors};
@@ -56,6 +57,7 @@ pub use translit::{
     LemmaTransliteration, TRANSLITERATION_VERSION, transliterate, transliteration_index,
     transliteration_key,
 };
+pub use translit_academic::{transliterate_academic, without_cantillation};
 pub use unit::{
     BibleVerse, MorphemePart, NoteKind, ParaStyle, Span, SpanKind, TextAccumulator, TextUnit,
     UnitId, UnitIdError, UnitKind,

@@ -744,7 +744,9 @@ pub mod bibles {
 /// A small Strong's-tagged Bible (one unit per Bible book, one paragraph per chapter) for
 /// Guide tests (#54). Each verse is written as words; a tagged word carries its parts in
 /// braces: `loved{G25}`, `loved{G25|ἀγαπάω|V-AAI-3S|loved}`, several parts joined by `+`.
-/// `_` inside a word or a part is a space (`only_begotten{G3439}`).
+/// `_` inside a word or a part is a space (`only_begotten{G3439}`). Punctuation before a tagged
+/// word (`“Let_there_be{H1961}`) is not part of it; tagged words may follow one another with
+/// no space (`morning{H1242}—the_first{H259}`).
 pub fn tagged_bible(
     id: &str,
     title: &str,
@@ -773,8 +775,22 @@ pub fn tagged_bible(
                 text.push(' ');
             }
             let start = text.len();
-            for (i, token) in words.split_whitespace().enumerate() {
-                if i > 0 {
+            // Tagged words with no space between them (`morning{H1242}—the_first{H259}`) are
+            // tokens of their own.
+            let tokens = words.split_whitespace().flat_map(|t| {
+                let mut pieces = Vec::new();
+                let mut rest = t;
+                while let Some(close) = rest.find('}')
+                    && rest[close..].contains('{')
+                {
+                    pieces.push((pieces.is_empty(), &rest[..=close]));
+                    rest = &rest[close + 1..];
+                }
+                pieces.push((pieces.is_empty(), rest));
+                pieces
+            });
+            for (i, (spaced, token)) in tokens.enumerate() {
+                if i > 0 && spaced {
                     text.push(' ');
                 }
                 // `word{parts}` and any punctuation after the brace.
@@ -785,6 +801,17 @@ pub fn tagged_bible(
                         &token[close + 1..],
                     ),
                     _ => (token, None, ""),
+                };
+                let word = match tags {
+                    Some(_) => {
+                        let lead = word.len()
+                            - word
+                                .trim_start_matches(|c: char| !c.is_alphanumeric())
+                                .len();
+                        text.push_str(&word[..lead]);
+                        &word[lead..]
+                    }
+                    None => word,
                 };
                 let at = text.len();
                 text.push_str(&word.replace('_', " "));
@@ -843,6 +870,41 @@ pub fn tagged_bible(
         }
     }
     b.build().unwrap()
+}
+
+/// Genesis 1:1-5 and John 1:1 of the Berean Standard Bible (public domain) as CrossWire's
+/// `BSB` SWORD module tags them (#243): each English word or phrase with a base Strong's
+/// number and the Hebrew or Greek word it translates, accents and all
+/// (`lemma.BSBlex:בְּרֵאשִׁ֖ית strong:H7225`); no Gloss, Morphology or Lexicon.
+pub fn bsb_gen_1_john_1() -> obs_model::Resource {
+    use obs_scripture::{Book, Verse};
+    let verses = [
+        (
+            Verse::new(Book::Genesis, 1, 1),
+            "In_the_beginning{H7225|בְּרֵאשִׁ֖ית} God{H430|אֱלֹהִ֑ים} created{H1254|בָּרָ֣א} the_heavens{H8064|הַשָּׁמַ֖יִם} and{H853|וְאֵ֥ת} the_earth{H776|הָאָֽרֶץ׃}.",
+        ),
+        (
+            Verse::new(Book::Genesis, 1, 2),
+            "Now_the_earth{H776|וְהָאָ֗רֶץ} was{H1961|הָיְתָ֥ה} formless{H8414|תֹ֙הוּ֙} and_void{H922|וָבֹ֔הוּ}, and_darkness{H2822|וְחֹ֖שֶׁךְ} was_over{H5921|עַל־} the_surface{H6440|פְּנֵ֣י} of_the_deep{H8415|תְה֑וֹם}. And_the_Spirit{H7307|וְר֣וּחַ} of_God{H430|אֱלֹהִ֔ים} was_hovering{H7363|מְרַחֶ֖פֶת} over{H5921|עַל־} the_surface{H6440|פְּנֵ֥י} of_the_waters{H4325|הַמָּֽיִם׃}.",
+        ),
+        (
+            Verse::new(Book::Genesis, 1, 3),
+            "And_God{H430|אֱלֹהִ֖ים} said{H559|וַיֹּ֥אמֶר}, “Let_there_be{H1961|יְהִ֣י} light{H216|א֑וֹר},” and_there_was{H1961|וַֽיְהִי־} light{H216|אֽוֹר׃}.",
+        ),
+        (
+            Verse::new(Book::Genesis, 1, 4),
+            "And_God{H430|אֱלֹהִ֛ים} saw{H7200|וַיַּ֧רְא} that{H3588|כִּי־} the_light{H216|הָא֖וֹר} was good{H2896|ט֑וֹב}, and{H430|אֱלֹהִ֔ים} He separated{H914|וַיַּבְדֵּ֣ל} the_light{H216|הָא֖וֹר} from{H996|וּבֵ֥ין} the_darkness{H2822|הַחֹֽשֶׁךְ׃}.",
+        ),
+        (
+            Verse::new(Book::Genesis, 1, 5),
+            "God{H430|אֱלֹהִ֤ים׀} called{H7121|וַיִּקְרָ֨א} the_light{H216|לָאוֹר֙} “day{H3117|י֔וֹם},” and_the_darkness{H2822|וְלַחֹ֖שֶׁךְ} He_called{H7121|קָ֣רָא} “night{H3915|לָ֑יְלָה}.” And_there_was{H1961|וַֽיְהִי־} evening{H6153|עֶ֥רֶב}, and_there_was{H1961|וַֽיְהִי־} morning{H1242|בֹ֖קֶר}—the_first{H259|אֶחָֽד׃פ} day{H3117|י֥וֹם}.",
+        ),
+        (
+            Verse::new(Book::John, 1, 1),
+            "In{G1722|Ἐν} the beginning{G746|ἀρχῇ} was{G1510|ἦν} the{G3588|ὁ} Word{G3056|Λόγος}, and{G2532|καὶ} the{G3588|ὁ} Word{G3056|Λόγος} was{G1510|ἦν} with{G4314|πρὸς} God{G2316|Θεόν}, and{G2532|καὶ} the{G3588|ὁ} Word{G3056|Λόγος} was{G1510|ἦν} God{G2316|Θεὸς}.",
+        ),
+    ];
+    tagged_bible("bsb", "Berean Standard Bible (test)", "BSB", "en", &verses)
 }
 
 /// The TIPNR excerpt of the format tests (STEPBible, CC BY) as a People & places index.

@@ -16,8 +16,8 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::paragraph::{Align, InlineObject, Paragraph, RunSource};
 use crate::style::RunStyle;
 
-/// Space between neighbouring interlinear columns, as a share of the lines' text size.
-const COLUMN_GAP: f32 = 0.9;
+/// Least space between neighbouring interlinear cells, as a share of the lines' text size.
+const COLUMN_GAP: f32 = 0.6;
 
 /// One shaped piece of a line: a single run, direction and line-break segment.
 #[derive(Debug, Clone)]
@@ -35,8 +35,11 @@ pub struct LaidItem {
     pub bytes: Range<usize>,
     trailing_space: f32,
     breakable_after: bool,
-    /// The interlinear word (index into the paragraph's interlinear words) it is part of.
+    /// The interlinear column (index into the paragraph's interlinear words) it is part of:
+    /// its word, or the punctuation against it.
     word: Option<usize>,
+    /// Whether it is the column's word itself (not the punctuation against it).
+    in_word: bool,
 }
 
 impl LaidItem {
@@ -137,15 +140,55 @@ struct CellPiece {
 type CellPieces = (String, Vec<CellPiece>, f32);
 
 /// An interlinear word as laid out: its paragraph bytes and its lines, shaped.
+///
+/// Its column is the word with the punctuation right against it (`said,`, `“Let there be`),
+/// which is never broken or spaced apart (#243). Its lines are centred on the word. Space is
+/// added at the column's edges only where its widest line would come too close to the next
+/// column's ([`COLUMN_GAP`]), reach under the text beside it (another column's or an untagged
+/// word) or stick out past the line's edge, so lines narrower than their words leave the text
+/// exactly as it is without them.
 struct WordColumn {
     /// Paragraph-text bytes of the word.
     bytes: Range<usize>,
+    /// Paragraph-text bytes of the column: the word and the punctuation against it.
+    chunk: Range<usize>,
     /// Unit bytes of the word.
     unit: Range<usize>,
     /// Each row's text and shaped pieces (logical order), with its width.
     cells: Vec<CellPieces>,
-    /// Space added on each side of the word so its column fits its widest line.
-    pad: f32,
+    /// How far its widest line reaches past the column at its logical start and end
+    /// (negative: it stops short of the edge).
+    over: [f32; 2],
+    /// Space added at its logical start and end.
+    pad: [f32; 2],
+    /// Whether it reads right to left (its logical start is at the right).
+    rtl: bool,
+}
+
+/// The untagged text between two neighbouring interlinear columns (or a column and the
+/// paragraph's start or end), in logical order.
+#[derive(Default)]
+struct Between {
+    /// Its whole width.
+    width: f32,
+    /// Width of the space before its first visible text, if it has any.
+    lead: Option<f32>,
+    /// Width of the space after its last visible text (all of it, until some shows).
+    trail: f32,
+}
+
+impl Between {
+    /// Add an item `width` wide, `visible` unless it is only space, ending in
+    /// `trailing_space` of space.
+    fn add(&mut self, width: f32, visible: bool, trailing_space: f32) {
+        self.width += width;
+        if visible {
+            self.lead.get_or_insert(self.trail);
+            self.trail = trailing_space;
+        } else {
+            self.trail += width;
+        }
+    }
 }
 
 /// The paragraph bytes of unit bytes `unit`, if the runs show all of them as text.
@@ -239,31 +282,54 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
         .iter()
         .flat_map(|il| &il.words)
         .filter_map(|w| {
+            let bytes = para_range(&run_starts, &sources, n, &w.word)?;
             Some(WordColumn {
-                bytes: para_range(&run_starts, &sources, n, &w.word)?,
+                chunk: bytes.clone(),
+                bytes,
                 unit: w.word.clone(),
                 cells: w.cells.iter().map(|c| shape_cell(c, cache)).collect(),
-                pad: 0.0,
+                over: [0.0; 2],
+                pad: [0.0; 2],
+                rtl: false,
             })
         })
         .collect();
     columns.sort_by_key(|c| c.bytes.start);
+    // Each column takes the punctuation right against its word, up to a space or the next
+    // column.
+    for i in 0..columns.len() {
+        let floor = i.checked_sub(1).map_or(0, |p| columns[p].chunk.end);
+        let ceiling = columns.get(i + 1).map_or(n, |c| c.bytes.start);
+        let c = &mut columns[i];
+        let lead = text[floor..c.bytes.start]
+            .char_indices()
+            .rev()
+            .take_while(|(_, ch)| !ch.is_whitespace())
+            .last()
+            .map_or(c.bytes.start, |(k, _)| floor + k);
+        let trail = text[c.bytes.end..ceiling]
+            .char_indices()
+            .find(|(_, ch)| ch.is_whitespace())
+            .map_or(ceiling, |(k, _)| c.bytes.end + k);
+        c.chunk = lead..trail;
+        c.rtl = levels.get(c.bytes.start).is_some_and(|l| l.is_rtl());
+    }
     let column_at = |p: usize| {
-        let i = columns.partition_point(|c| c.bytes.start <= p);
-        i.checked_sub(1).filter(|&i| columns[i].bytes.contains(&p))
+        let i = columns.partition_point(|c| c.chunk.start <= p);
+        i.checked_sub(1).filter(|&i| columns[i].chunk.contains(&p))
     };
 
-    // Segment at run starts, break opportunities, direction changes and interlinear words.
+    // Segment at run starts, break opportunities, direction changes and interlinear columns
+    // and words.
     let mut bounds: Vec<usize> = vec![0, n];
     bounds.extend(run_starts.iter().copied());
     for c in &columns {
-        bounds.push(c.bytes.start);
-        bounds.push(c.bytes.end);
+        bounds.extend([c.chunk.start, c.bytes.start, c.bytes.end, c.chunk.end]);
     }
     let mut breaks = HashSet::new();
     for (i, _) in unicode_linebreak::linebreaks(&text) {
-        // An interlinear word is never broken: its lines stand under all of it.
-        if i < n && column_at(i).is_none_or(|c| columns[c].bytes.start == i) {
+        // An interlinear column is never broken: its lines stand under all of its word.
+        if i < n && column_at(i).is_none_or(|c| columns[c].chunk.start == i) {
             bounds.push(i);
             breaks.insert(i);
         }
@@ -300,39 +366,90 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
             bytes: a..b,
             breakable_after: breaks.contains(&b) || b == n,
             word: column_at(a),
+            in_word: column_at(a).is_some_and(|c| columns[c].bytes.contains(&a)),
         });
     }
 
-    // Each interlinear word is as wide as its widest line, plus a gap between columns.
+    // How far each column's widest line reaches past it, then the space each pair of
+    // neighbouring columns needs between them, shared between the two.
     if !columns.is_empty() {
         let gap = para
             .interlinear
             .as_ref()
             .map_or(0.0, |il| il.size * COLUMN_GAP);
-        let mut word_widths = vec![0.0f32; columns.len()];
+        // Width of each column's word, its punctuation at the start and at the end.
+        let mut widths = vec![[0.0f32; 3]; columns.len()];
         for it in &items {
             if let Some(w) = it.word {
-                word_widths[w] += it.width;
+                let c = &columns[w];
+                let part = if it.in_word {
+                    1
+                } else if it.bytes.start < c.bytes.start {
+                    0
+                } else {
+                    2
+                };
+                widths[w][part] += it.width;
             }
         }
-        for (c, word) in columns.iter_mut().zip(word_widths) {
+        for (c, [lead, word, trail]) in columns.iter_mut().zip(widths) {
             let widest = c.cells.iter().map(|(_, _, w)| *w).fold(0.0, f32::max);
             if widest > 0.0 {
-                c.pad = ((widest + gap - word) / 2.0).max(0.0);
+                let half = (widest - word) / 2.0;
+                c.over = [half - lead, half - trail];
+            } else {
+                c.over = [f32::MIN, f32::MIN];
+            }
+        }
+        // Text between neighbouring columns (logical order): the space, untagged words.
+        let mut between = Between::default();
+        let mut previous: Option<usize> = None;
+        let mut i = 0;
+        loop {
+            let next = items.get(i).map(|it| it.word);
+            if let Some(None) = next {
+                let it = &items[i];
+                let visible = !text[it.bytes.clone()].trim().is_empty();
+                between.add(it.width, visible, it.trailing_space);
+                i += 1;
+                continue;
+            }
+            // The next column, if any.
+            let w = next.flatten();
+            // Lines never reach under untagged text beside them: no lines stand under it
+            // to tell whose they are, and at a line's start or end that text is all that
+            // keeps them inside the line (#243 review).
+            if let Some(lead) = between.lead {
+                if let Some(p) = previous {
+                    let c = &mut columns[p];
+                    c.pad[1] = c.pad[1].max(c.over[1] - lead);
+                }
+                if let Some(w) = w {
+                    let c = &mut columns[w];
+                    c.pad[0] = c.pad[0].max(c.over[0] - between.trail);
+                }
+            }
+            if let (Some(p), Some(w)) = (previous, w) {
+                // Their lines keep the gap between them, and neither reaches under the
+                // other's text.
+                let (end, start) = (columns[p].over[1], columns[w].over[0]);
+                let short = (end + start + gap).max(end).max(start)
+                    - between.width
+                    - columns[p].pad[1]
+                    - columns[w].pad[0];
+                if short > 0.0 {
+                    columns[p].pad[1] += short / 2.0;
+                    columns[w].pad[0] += short / 2.0;
+                }
+            }
+            let Some(w) = w else { break };
+            previous = Some(w);
+            between = Between::default();
+            while i < items.len() && items[i].word == Some(w) {
+                i += 1;
             }
         }
     }
-    // Extra width an item takes in line filling: its word's padding, once on each side.
-    let pads = |items: &[LaidItem], i: usize| {
-        let Some(w) = items[i].word else {
-            return 0.0;
-        };
-        let first = i == 0 || items[i - 1].word != Some(w);
-        let last = i + 1 == items.len() || items[i + 1].word != Some(w);
-        columns[w].pad * (f32::from(u8::from(first)) + f32::from(u8::from(last)))
-    };
-    let extra: Vec<f32> = (0..items.len()).map(|i| pads(&items, i)).collect();
-
     // Greedy line filling over unbreakable chunks.
     let available =
         |first: bool| (width - para.inset - if first { para.indent } else { 0.0 }).max(1.0);
@@ -341,14 +458,24 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
     let mut cur_w = 0.0f32;
     let mut chunk: Vec<LaidItem> = Vec::new();
     let mut chunk_w = 0.0f32;
-    for (it, extra) in items.into_iter().zip(extra) {
-        chunk_w += it.width + extra;
+    for it in items {
+        chunk_w += it.width;
         let br = it.breakable_after;
         let trail = it.trailing_space;
         chunk.push(it);
         if br {
             let avail = available(lines_items.is_empty());
-            if cur.is_empty() || cur_w + chunk_w - trail <= avail {
+            let fits = cur.is_empty()
+                || if columns.is_empty() {
+                    cur_w + chunk_w - trail <= avail
+                } else {
+                    // Interlinear columns take space at their edges, more at the line's
+                    // ends than between neighbours: measure the line as it would be drawn.
+                    let line: Vec<LaidItem> = cur.iter().chain(&chunk).cloned().collect();
+                    let (ordered, pads, hang) = arrange_line(line, levels, &columns, &text);
+                    line_content(&ordered, &pads, hang) <= avail
+                };
+            if fits {
                 cur.append(&mut chunk);
                 cur_w += chunk_w;
             } else {
@@ -391,13 +518,7 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
     for (li, its) in lines_items.into_iter().enumerate() {
         let start = its.iter().map(|i| i.bytes.start).min().unwrap_or(n);
         let end = its.iter().map(|i| i.bytes.end).max().unwrap_or(n);
-        let lv: Vec<u8> = its.iter().map(|i| levels[i.bytes.start].number()).collect();
-        let mut ordered = reorder(its, &lv);
-        // Trailing whitespace at the logical end of the line hangs past the margin.
-        let hang = ordered
-            .iter()
-            .find(|i| i.bytes.end == end)
-            .map_or(0.0, |i| i.trailing_space);
+        let (mut ordered, edge_pads, hang) = arrange_line(its, levels, &columns, &text);
         let (mut asc, mut desc) = (0.0f32, 0.0f32);
         for it in &ordered {
             let (a, d) = it.style.line_extent(para.hebrew_line_height);
@@ -411,8 +532,7 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
         }
         let natural = asc + desc;
         let line_height = natural * para.line_spacing;
-        let padding: f32 = (0..ordered.len()).map(|i| pads(&ordered, i)).sum();
-        let content: f32 = ordered.iter().map(|i| i.width).sum::<f32>() + padding - hang;
+        let content = line_content(&ordered, &edge_pads, hang);
         let first_indent = if li == 0 { para.indent } else { 0.0 };
         let mut x = match (para.align, para.rtl) {
             (Align::Center, _) => ((width - content) / 2.0).max(0.0),
@@ -423,19 +543,10 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
             // Hanging space sits at the logical end, which is the left edge in RTL.
             x -= hang;
         }
-        for i in 0..ordered.len() {
-            let w = ordered[i].word;
-            let first = i == 0 || ordered[i - 1].word != w;
-            let last = i + 1 == ordered.len() || ordered[i + 1].word != w;
-            let pad = w.map_or(0.0, |w| columns[w].pad);
-            if first {
-                x += pad;
-            }
-            ordered[i].x = x;
-            x += ordered[i].width;
-            if last {
-                x += pad;
-            }
+        for (item, [left, right]) in ordered.iter_mut().zip(&edge_pads) {
+            x += left;
+            item.x = x;
+            x += item.width + right;
         }
         let top = y;
         let baseline = (top + (line_height - natural) / 2.0 + asc).round();
@@ -460,7 +571,7 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
                 seen.push(w);
                 let (left, right) = ordered
                     .iter()
-                    .filter(|o| o.word == Some(w))
+                    .filter(|o| o.word == Some(w) && o.in_word)
                     .fold((f32::MAX, f32::MIN), |(l, r), o| {
                         (l.min(o.x), r.max(o.x + o.width))
                     });
@@ -489,6 +600,7 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
                             trailing_space: p.shaped.trailing_space,
                             breakable_after: false,
                             word: Some(w),
+                            in_word: true,
                         })
                         .collect();
                     let cell_levels: Vec<u8> = pieces.iter().map(|p| p.level).collect();
@@ -531,6 +643,64 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
         lines,
         cells,
     }
+}
+
+/// A line's items in visual order, the space each takes at its left and right, and the
+/// trailing space that hangs past the margin at its logical end.
+///
+/// An interlinear column gets what its neighbours need between them, except at the line's
+/// ends, where only what keeps its lines inside the line counts. Line filling measures
+/// candidate lines with this too, so a line never runs wider than it is drawn (#243).
+fn arrange_line(
+    its: Vec<LaidItem>,
+    levels: &[Level],
+    columns: &[WordColumn],
+    text: &str,
+) -> (Vec<LaidItem>, Vec<[f32; 2]>, f32) {
+    let end = its.iter().map(|i| i.bytes.end).max();
+    let lv: Vec<u8> = its.iter().map(|i| levels[i.bytes.start].number()).collect();
+    let ordered = reorder(its, &lv);
+    let hang = ordered
+        .iter()
+        .find(|i| Some(i.bytes.end) == end)
+        .map_or(0.0, |i| i.trailing_space);
+    let line_pads = |w: usize, at_left: bool, at_right: bool| -> [f32; 2] {
+        let c = &columns[w];
+        // Logical start and end as left and right.
+        let (pad, over) = if c.rtl {
+            ([c.pad[1], c.pad[0]], [c.over[1], c.over[0]])
+        } else {
+            (c.pad, c.over)
+        };
+        [
+            if at_left { over[0].max(0.0) } else { pad[0] },
+            if at_right { over[1].max(0.0) } else { pad[1] },
+        ]
+    };
+    let edge_pads: Vec<[f32; 2]> = (0..ordered.len())
+        .map(|i| {
+            let Some(w) = ordered[i].word else {
+                return [0.0; 2];
+            };
+            let first = i == 0 || ordered[i - 1].word != Some(w);
+            let last = i + 1 == ordered.len() || ordered[i + 1].word != Some(w);
+            // Space (a trailing one) is not text beside it.
+            let beside =
+                |o: &LaidItem| o.word != Some(w) && !text[o.bytes.clone()].trim().is_empty();
+            let at_left = !ordered[..i].iter().any(beside);
+            let at_right = !ordered[i + 1..].iter().any(beside);
+            let [l, r] = line_pads(w, at_left, at_right);
+            [if first { l } else { 0.0 }, if last { r } else { 0.0 }]
+        })
+        .collect();
+    (ordered, edge_pads, hang)
+}
+
+/// Width a line arranged by [`arrange_line`] takes: its items, their padding, less the
+/// hanging trailing space.
+fn line_content(ordered: &[LaidItem], edge_pads: &[[f32; 2]], hang: f32) -> f32 {
+    let padding: f32 = edge_pads.iter().map(|[l, r]| l + r).sum();
+    ordered.iter().map(|i| i.width).sum::<f32>() + padding - hang
 }
 
 /// UAX #9 rule L2: from the highest level down to the lowest odd level, reverse every run of

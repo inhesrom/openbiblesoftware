@@ -1,8 +1,11 @@
 //! Interlinear lines in a Bible Tab (#143): what the lines under each Tagged word read, from
-//! the word's own tagging and the library's Lexicons, ready for the layout workers.
+//! the word's own tagging, the library's Lexicons and the built-in Strong's index (#243),
+//! ready for the layout workers. It notes which lines have had nothing to show, for the Tab's
+//! hint.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use obs_engine::word_info::lexicon_excerpt;
@@ -29,6 +32,10 @@ pub struct InterlinearSource {
     lexicons: Vec<Arc<ReadingDoc>>,
     /// Lexicon answers by number, filled as words are laid out.
     looked_up: Mutex<HashMap<StrongsNumber, Option<LexiconWord>>>,
+    /// Whether any word has been laid out with its lines yet.
+    asked: AtomicBool,
+    /// Per line (as `lines`): whether it has shown something under some word.
+    filled: Vec<AtomicBool>,
     key: u64,
 }
 
@@ -69,10 +76,12 @@ impl InterlinearSource {
         Some(Self {
             key: h.finish(),
             kind,
+            filled: lines.iter().map(|_| AtomicBool::new(false)).collect(),
             lines,
             wanted,
             lexicons,
             looked_up: Mutex::new(HashMap::new()),
+            asked: AtomicBool::new(false),
         })
     }
 
@@ -99,24 +108,47 @@ impl InterlinearSource {
 
     /// Whether `lines` of a `kind` Bible need the Lexicons: an English Bible's words carry
     /// only their Strong's numbers, so their Lemma (and its transliteration) and Gloss are
-    /// looked up.
+    /// looked up; a Hebrew or Greek Bible's words may lack a Lemma or Gloss (#243), which an
+    /// installed Lexicon gives before the built-in index.
     pub fn needs_lexicons(kind: InterlinearKind, lines: &[InterlinearLine]) -> bool {
-        kind == InterlinearKind::Reverse
-            && lines.iter().any(|l| {
-                matches!(
-                    l,
-                    InterlinearLine::Lemma
-                        | InterlinearLine::Transliteration
-                        | InterlinearLine::Gloss
-                )
-            })
+        lines.iter().any(|l| match kind {
+            InterlinearKind::Reverse => matches!(
+                l,
+                InterlinearLine::Lemma | InterlinearLine::Transliteration | InterlinearLine::Gloss
+            ),
+            // Its transliteration is of the written word.
+            InterlinearKind::Interlinear => {
+                matches!(l, InterlinearLine::Lemma | InterlinearLine::Gloss)
+            }
+        })
     }
 
     /// The text of each line under a word.
     pub fn cells(&self, written: &str, parts: &[MorphemePart]) -> Vec<String> {
-        cell_texts(&self.lines, self.kind, written, parts, &|n| {
+        let cells = cell_texts(&self.lines, self.kind, written, parts, &|n| {
             self.lexicon_word(n)
-        })
+        });
+        self.asked.store(true, Ordering::Relaxed);
+        for (filled, cell) in self.filled.iter().zip(&cells) {
+            if !cell.trim().is_empty() {
+                filled.store(true, Ordering::Relaxed);
+            }
+        }
+        cells
+    }
+
+    /// The lines that have shown nothing under any word laid out so far (none before the
+    /// first word is), for the Tab's hint (#243).
+    pub fn empty_lines(&self) -> Vec<InterlinearLine> {
+        if !self.asked.load(Ordering::Relaxed) {
+            return Vec::new();
+        }
+        self.lines
+            .iter()
+            .zip(&self.filled)
+            .filter(|(_, filled)| !filled.load(Ordering::Relaxed))
+            .map(|(line, _)| *line)
+            .collect()
     }
 
     /// The Lemma (the first Lexicon headword) and Gloss the Lexicons give a number.

@@ -441,3 +441,295 @@ fn a_mixed_direction_cell_is_laid_out_in_bidi_order() {
         ]
     );
 }
+
+/// BSB Gen 1:3 as CrossWire tags it (#243): punctuation and quotation marks outside the
+/// Tagged words, right against them.
+fn bsb_gen_1_3() -> TextUnit {
+    let text = "And God said, “Let there be light,” and there was light.".to_string();
+    let spans = tagged(
+        &text,
+        &[
+            ("And God", "H430"),
+            ("said", "H559"),
+            ("Let there be", "H1961"),
+            ("light", "H216"),
+            ("and there was", "H1961"),
+            ("light", "H216"),
+        ],
+    );
+    TextUnit {
+        id: UnitId::book(Book::Genesis),
+        kind: UnitKind::BibleBook,
+        title: None,
+        text,
+        spans,
+    }
+}
+
+/// Each text item of `laid` as (text, x, width), in visual order, line by line.
+fn items(laid: &LaidBlock) -> Vec<Vec<(String, f32, f32)>> {
+    laid.lines
+        .iter()
+        .map(|l| {
+            l.items
+                .iter()
+                .map(|i| (laid.text[i.bytes.clone()].to_string(), i.x, i.width))
+                .collect()
+        })
+        .collect()
+}
+
+/// The left edge of the item starting with `text` on line 0, and the right edge of the item
+/// before it.
+fn edges_around(laid: &LaidBlock, text: &str) -> (f32, f32) {
+    let line = &items(laid)[0];
+    let i = line
+        .iter()
+        .position(|(t, _, _)| t.starts_with(text))
+        .unwrap_or_else(|| panic!("no {text:?} in {line:?}"));
+    let (_, px, pw) = &line[i - 1];
+    (px + pw, line[i].1)
+}
+
+/// #243: lines narrower than their words add no space at all: the text sits exactly where
+/// it does without them, punctuation and quotation marks against their words.
+#[test]
+fn narrow_lines_leave_the_text_where_it_is() {
+    let unit = bsb_gen_1_3();
+    let plain = {
+        let settings = TextSettings::default();
+        let block = unit_blocks(&unit).remove(0);
+        let para = block_paragraph(&unit, &block, Direction::Ltr, &settings);
+        layout(&para, 900.0, ShapeCache::shared())
+    };
+    // One short line under each word, narrower than any word here.
+    let short_lines = [("H430", "a"), ("H559", "b"), ("H1961", "c"), ("H216", "d")];
+    let (_, laid) = interlinear_block(&unit, Direction::Ltr, 900.0, &short_lines, 1);
+    assert_eq!(laid.cells.len(), 6);
+    // Where each character is drawn (however the line is cut into items).
+    let short = |laid: &LaidBlock| -> Vec<(usize, f32)> {
+        let mut at: Vec<(usize, f32)> = laid
+            .lines
+            .iter()
+            .flat_map(|l| &l.items)
+            .flat_map(|i| i.clusters())
+            .map(|(bytes, x0, _)| (bytes.start, (x0 * 10.0).round() / 10.0))
+            .collect();
+        at.sort_by_key(|(b, _)| *b);
+        at
+    };
+    assert_eq!(short(&laid), short(&plain));
+}
+
+/// #243: a line wider than its word widens the word's column, but never between the word and
+/// the punctuation or quotation mark against it: "said," and "“Let there be" stay whole.
+#[test]
+fn wide_lines_never_part_a_word_from_its_punctuation() {
+    let unit = bsb_gen_1_3();
+    let wide = [
+        ("H430", "ʾĕlōhîm ʾĕlōhîm ʾĕlōhîm"),
+        ("H559", "wayyōʾmer wayyōʾmer"),
+        ("H1961", "yᵊhî yᵊhî yᵊhî yᵊhî yᵊhî"),
+        ("H216", "ʾôr ʾôr ʾôr ʾôr ʾôr ʾôr"),
+    ];
+    let (_, laid) = interlinear_block(&unit, Direction::Ltr, 1400.0, &wide, 2);
+    assert_eq!(laid.lines.len(), 1);
+    for punct in [",", ",”", "."] {
+        let (before, at) = edges_around(&laid, punct);
+        assert!(
+            (at - before).abs() < 0.01,
+            "{punct:?} is right against the word before it: {before} → {at}"
+        );
+    }
+    let (said_end, _) = edges_around(&laid, ",");
+    let (quote_end, let_start) = edges_around(&laid, "Let");
+    assert!(
+        (let_start - quote_end).abs() < 0.01,
+        "“ is right against Let"
+    );
+    assert!(said_end < quote_end);
+    // The cells still never touch.
+    for row in 0..2 {
+        let mut cells: Vec<&LaidCell> = laid.cells.iter().filter(|c| c.row == row).collect();
+        cells.sort_by(|a, b| a.x.total_cmp(&b.x));
+        for w in cells.windows(2) {
+            assert!(
+                w[0].x + w[0].width < w[1].x,
+                "{} / {}",
+                w[0].text,
+                w[1].text
+            );
+        }
+    }
+}
+
+/// Whether every line of `para` laid out as `laid` whose cells each fit the line's width, and
+/// those cells, stay inside `0..=width`.
+fn lines_stay_inside(para: &Paragraph, laid: &LaidBlock, width: f32) -> Result<(), String> {
+    for (li, line) in laid.lines.iter().enumerate() {
+        // A word whose line alone is wider than the line (the first one indented) cannot fit.
+        let room = width - para.inset - if li == 0 { para.indent } else { 0.0 };
+        if laid.cells.iter().any(|c| c.line == li && c.width > room) {
+            continue;
+        }
+        // Visible text: whitespace at the line's end hangs past the margin.
+        let text = line
+            .items
+            .iter()
+            .flat_map(|i| i.clusters())
+            .filter_map(|(b, x0, x1)| {
+                (!laid.text[b].trim().is_empty()).then_some((x0.min(x1), x0.max(x1)))
+            });
+        let cells = laid
+            .cells
+            .iter()
+            .filter(|c| c.line == li)
+            .map(|c| (c.x, c.x + c.width));
+        for (left, right) in text.chain(cells) {
+            if left < -0.5 || right > width + 0.5 {
+                return Err(format!("line {li}: {left}..{right} outside 0..{width}"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// #243 review: line filling counts the space a column takes at the line's ends as drawn, so
+/// short words with wide lines wrap instead of running past the pane, left to right and right
+/// to left.
+#[test]
+fn wide_lines_wrap_inside_the_width() {
+    let unit = bsb_gen_1_3();
+    let wide = [
+        ("H430", "ʾĕlōhîm ʾĕlōhîm ʾĕlōhîm"),
+        ("H559", "wayyōʾmer wayyōʾmer"),
+        ("H1961", "yᵊhî yᵊhî yᵊhî yᵊhî yᵊhî"),
+        ("H216", "ʾôr ʾôr ʾôr ʾôr ʾôr ʾôr"),
+    ];
+    let hebrew = tahot_unit();
+    let long_glosses = [
+        ("H7225", "in the beginning of all"),
+        ("H1254", "he brought into being"),
+        ("H430", "God, the mighty one"),
+        ("H853", "<the direct object>"),
+        ("H8064", "the heavens above"),
+        ("H776", "the earth below"),
+    ];
+    for step in 0..60 {
+        let width = 150.0 + step as f32 * 10.0;
+        let (para, ltr) = interlinear_block(&unit, Direction::Ltr, width, &wide, 2);
+        lines_stay_inside(&para, &ltr, width).unwrap_or_else(|e| panic!("LTR at {width}: {e}"));
+        let (para, rtl) = interlinear_block(&hebrew, Direction::Rtl, width, &long_glosses, 1);
+        lines_stay_inside(&para, &rtl, width).unwrap_or_else(|e| panic!("RTL at {width}: {e}"));
+    }
+}
+
+/// Whether no cell of `laid` stands under visible text outside every Tagged word on its line
+/// (the tests using it put no punctuation against Tagged words).
+fn cells_clear_untagged_text(laid: &LaidBlock) -> Result<(), String> {
+    let words: Vec<std::ops::Range<usize>> = laid
+        .cells
+        .iter()
+        .map(|c| laid.from_unit(c.word.start).unwrap()..laid.from_unit(c.word.end).unwrap())
+        .collect();
+    for (li, line) in laid.lines.iter().enumerate() {
+        let untagged = line
+            .items
+            .iter()
+            .flat_map(|i| i.clusters())
+            .filter(|(b, _, _)| !words.iter().any(|w| w.contains(&b.start)))
+            .filter(|(b, _, _)| !laid.text[b.clone()].trim().is_empty());
+        for (b, x0, x1) in untagged {
+            let (left, right) = (x0.min(x1), x0.max(x1));
+            for c in laid.cells.iter().filter(|c| c.line == li) {
+                if c.x < right - 0.01 && c.x + c.width > left + 0.01 {
+                    return Err(format!(
+                        "line {li}: {:?} at {}..{} reaches under {:?} at {left}..{right}",
+                        c.text,
+                        c.x,
+                        c.x + c.width,
+                        &laid.text[b]
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// #243 review: a Tagged word's lines never reach under the untagged words before, between
+/// or after Tagged words, nor past the pane where an untagged word starts or ends the line,
+/// left to right and right to left, one or more columns to a line.
+#[test]
+fn wide_lines_keep_clear_of_untagged_words() {
+    let text = "So he said to them go now".to_string();
+    let spans = tagged(&text, &[("said", "H559"), ("go", "H3212")]);
+    let english = TextUnit {
+        id: UnitId::book(Book::Genesis),
+        kind: UnitKind::BibleBook,
+        title: None,
+        text,
+        spans,
+    };
+    let english_lines = [
+        ("H559", "wayyōʾmer wayyōʾmer"),
+        ("H3212", "lᵊkû lᵊkû lᵊkû lᵊkû"),
+    ];
+    // Untagged: the first, third, fifth and last words.
+    let text = "בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ׃".to_string();
+    let spans = tagged(&text, &[("בָּרָ֣א", "H1254"), ("אֵ֥ת", "H853"), ("וְאֵ֥ת", "H853")]);
+    let hebrew = TextUnit {
+        id: UnitId::book(Book::Genesis),
+        kind: UnitKind::BibleBook,
+        title: None,
+        text,
+        spans,
+    };
+    let hebrew_lines = [
+        ("H1254", "he brought into being"),
+        ("H853", "<the direct object>"),
+    ];
+    for step in 0..60 {
+        let width = 120.0 + step as f32 * 10.0;
+        let ltr = interlinear_block(&english, Direction::Ltr, width, &english_lines, 2);
+        let rtl = interlinear_block(&hebrew, Direction::Rtl, width, &hebrew_lines, 1);
+        for (name, (para, laid)) in [("LTR", &ltr), ("RTL", &rtl)] {
+            assert!(laid.cells.iter().any(|c| c.width > 40.0));
+            cells_clear_untagged_text(laid).unwrap_or_else(|e| panic!("{name} at {width}: {e}"));
+            lines_stay_inside(para, laid, width)
+                .unwrap_or_else(|e| panic!("{name} at {width}: {e}"));
+        }
+    }
+    // One Tagged word after an untagged one, its line wider than both: the line stays
+    // inside the pane, past the untagged word.
+    let text = "He went".to_string();
+    let spans = tagged(&text, &[("went", "H3212")]);
+    let single = TextUnit {
+        id: UnitId::book(Book::Genesis),
+        kind: UnitKind::BibleBook,
+        title: None,
+        text,
+        spans,
+    };
+    let wide = [("H3212", "wayyēlek wayyēlek wayyēlek")];
+    let (para, laid) = interlinear_block(&single, Direction::Ltr, 400.0, &wide, 1);
+    assert_eq!(laid.lines.len(), 1);
+    cells_clear_untagged_text(&laid).unwrap();
+    lines_stay_inside(&para, &laid, 400.0).unwrap();
+    // The same right to left: an untagged word starts the line at the right edge.
+    let text = "אֱלֹהִ֑ים בָּרָ֣א".to_string();
+    let spans = tagged(&text, &[("בָּרָ֣א", "H1254")]);
+    let single = TextUnit {
+        id: UnitId::book(Book::Genesis),
+        kind: UnitKind::BibleBook,
+        title: None,
+        text,
+        spans,
+    };
+    let wide = [("H1254", "he brought into being, he made")];
+    let (para, laid) = interlinear_block(&single, Direction::Rtl, 400.0, &wide, 1);
+    assert_eq!(laid.lines.len(), 1);
+    assert!(laid.cells.iter().any(|c| c.width > 100.0));
+    cells_clear_untagged_text(&laid).unwrap();
+    lines_stay_inside(&para, &laid, 400.0).unwrap();
+}
