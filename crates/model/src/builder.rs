@@ -964,6 +964,43 @@ fn is_standard_passage(passage: Passage) -> bool {
     Standard.contains(passage.start()) && Standard.contains(passage.end())
 }
 
+impl TextUnit {
+    /// Whether `range` slices this unit's text: in order, inside it and on character
+    /// boundaries. A file read one unit at a time checks offsets with this before anything
+    /// slices with them (#253); [`Resource::validate`] does the same for a whole Resource.
+    pub fn check_range(
+        &self,
+        kind: &'static str,
+        range: Range<usize>,
+    ) -> Result<(), ValidationError> {
+        let mut errors = Vec::new();
+        if check_range(&self.id, &self.text, kind, range, &mut errors) {
+            Ok(())
+        } else {
+            Err(errors.swap_remove(0))
+        }
+    }
+
+    /// [`TextUnit::check_range`] for every span of the unit.
+    pub fn check_span_ranges(&self) -> Result<(), ValidationErrors> {
+        let mut errors = Vec::new();
+        for span in &self.spans {
+            check_range(
+                &self.id,
+                &self.text,
+                span.kind.name(),
+                span.range(),
+                &mut errors,
+            );
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationErrors(errors))
+        }
+    }
+}
+
 /// Checks order, bounds and UTF-8 boundaries; returns whether the range is usable.
 fn check_range(
     unit: &UnitId,

@@ -1242,3 +1242,149 @@ fn a_copied_obr_reads_as_the_copy() {
     m.content_hash = "sha256:00".into();
     assert!(copy_obr_as(&src, &dir.path("other.obr"), &m).is_err());
 }
+
+/// AUD-FORMATS-1 (#253): a unit read lazily rejects span offsets that do not slice its text
+/// (past its end, reversed, or inside a character) with an error, where layout would panic.
+#[test]
+fn lazily_read_units_reject_spans_that_do_not_slice_their_text() {
+    let dir = TempDir::new("bad-offsets");
+    let path = dir.path("sample.obr");
+    let john = UnitId::book(Book::John);
+    for change in [
+        // The QA repro: JHN is 250 bytes; a paragraph and a note reference past its end.
+        "UPDATE spans SET start = 251, end = 252 WHERE unit = 1 AND kind = 2;
+         UPDATE spans SET start = 251, end = 251 WHERE unit = 1 AND kind = 5;",
+        "UPDATE spans SET start = 5, end = 4 WHERE unit = 1 AND kind = 2;",
+    ] {
+        write_obr(&sample_resource(), &path).unwrap();
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(change)
+            .unwrap();
+        let reader = ObrReader::open(&path).unwrap();
+        let err = reader.unit(&john).unwrap_err();
+        assert!(
+            matches!(err, StoreError::Invalid(_) | StoreError::Corrupt(_)),
+            "{err}"
+        );
+    }
+    // A span end inside a multi-byte character: the unit text gains one before the offset.
+    write_obr(&sample_resource(), &path).unwrap();
+    let conn = Connection::open(&path).unwrap();
+    let text: String = conn
+        .query_row("SELECT text FROM units WHERE ord = 1", [], |r| r.get(0))
+        .unwrap();
+    let text = format!("\u{e9}{}", &text[1..]);
+    conn.execute("UPDATE units SET text = ?1 WHERE ord = 1", [&text])
+        .unwrap();
+    conn.execute_batch("UPDATE spans SET end = 1 WHERE unit = 1 AND kind = 2")
+        .unwrap();
+    drop(conn);
+    let err = ObrReader::open(&path).unwrap().unit(&john).unwrap_err();
+    assert!(
+        matches!(&err, StoreError::Invalid(e) if e.to_string().contains("inside a UTF-8 character")),
+        "{err}"
+    );
+}
+
+/// A seeded xorshift, so a failing case of the hostile-file test below replays.
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+
+    fn below(&mut self, n: u64) -> u64 {
+        self.next() % n.max(1)
+    }
+}
+
+/// Everything a reader of `path` can be asked, checking that what it hands over is usable:
+/// units whose spans slice their text, and a loaded Resource that validates.
+fn read_everything(path: &std::path::Path, case: u64) {
+    let Ok(reader) = ObrReader::open(path) else {
+        return;
+    };
+    let _ = reader.summary();
+    for id in reader.unit_ids().unwrap_or_default() {
+        if let Ok(Some(unit)) = reader.unit(&id) {
+            unit.check_span_ranges()
+                .unwrap_or_else(|e| panic!("case {case}: {id}: {e}"));
+        }
+        let _ = reader.unit_text(&id);
+        let _ = reader.keys_of_unit(&id);
+    }
+    let _ = reader.verses();
+    for scheme in [
+        KeyScheme::Passage,
+        KeyScheme::StrongsNumber,
+        KeyScheme::Headword,
+    ] {
+        let _ = reader.keys(scheme);
+    }
+    let _ = reader.verse_map();
+    if let Ok(resource) = reader.load() {
+        resource
+            .validate()
+            .unwrap_or_else(|e| panic!("case {case}: loaded Resource is invalid: {e}"));
+    }
+}
+
+/// #253: arbitrary bytes, a sample file with bytes changed, and a sample file with random
+/// offsets written into its span, Verse and Key rows all open and read without a panic.
+#[test]
+fn hostile_obr_files_never_panic_the_reader() {
+    let dir = TempDir::new("hostile");
+    let path = dir.path("hostile.obr");
+    write_obr(&sample_resource(), &path).unwrap();
+    let pristine = std::fs::read(&path).unwrap();
+    let text_len = sample_resource().units[1].text.len() as u64;
+    for case in 0..120_u64 {
+        let mut rng = Rng((case + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        match case % 3 {
+            0 => {
+                let n = rng.below(4096) as usize;
+                let bytes: Vec<u8> = (0..n).map(|_| rng.next() as u8).collect();
+                std::fs::write(&path, bytes).unwrap();
+            }
+            1 => {
+                let mut bytes = pristine.clone();
+                for _ in 0..1 + rng.below(16) {
+                    let at = rng.below(bytes.len() as u64) as usize;
+                    bytes[at] = rng.next() as u8;
+                }
+                std::fs::write(&path, bytes).unwrap();
+            }
+            _ => {
+                std::fs::write(&path, &pristine).unwrap();
+                let conn = Connection::open(&path).unwrap();
+                for _ in 0..1 + rng.below(4) {
+                    let (table, row_key) = [
+                        ("spans", "unit, seq"),
+                        ("verses", "rowid"),
+                        ("keys", "rowid"),
+                    ][rng.below(3) as usize];
+                    let column = ["start", "end"][rng.below(2) as usize];
+                    let value = rng.below(text_len + 8) as i64 - 3;
+                    let rows: i64 = conn
+                        .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+                        .unwrap();
+                    let row = rng.below(rows as u64) as i64;
+                    conn.execute(
+                        &format!(
+                            "UPDATE {table} SET {column} = ?1 WHERE ({row_key}) IN \
+                             (SELECT {row_key} FROM {table} ORDER BY {row_key} LIMIT 1 OFFSET ?2)"
+                        ),
+                        [value, row],
+                    )
+                    .unwrap();
+                }
+            }
+        }
+        read_everything(&path, case);
+    }
+}
