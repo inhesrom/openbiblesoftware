@@ -445,6 +445,14 @@ pub fn setting_by_id(id: &str) -> Option<&'static Setting> {
     SETTINGS.iter().find(|s| s.id == id)
 }
 
+/// The Setting whose button runs `command` only once the user confirms it (Clear History,
+/// Clear Search history): the Command box asks there too instead of running it (#226).
+pub fn setting_asking_first(command: &str) -> Option<&'static Setting> {
+    SETTINGS.iter().find(
+        |s| matches!(s.kind, SettingKind::Action { command: c, confirm: true } if c == command),
+    )
+}
+
 /// The words a Setting is found by: its label, section, help, keywords and choices.
 fn search_text(s: &Session, setting: &Setting) -> String {
     let mut text = format!(

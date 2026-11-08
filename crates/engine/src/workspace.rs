@@ -840,6 +840,12 @@ pub enum Effect {
     /// Put the keyboard in the Command box listing every command it can run (Help → All
     /// commands, Ctrl+Shift+P, #226).
     ListCommands,
+    /// Settings Tab `tab` was opened from the Command box for a Setting that asks first
+    /// (Clear History, #226): show that Setting's row asking Clear or Cancel.
+    ConfirmSetting {
+        tab: TabId,
+        setting: &'static str,
+    },
     /// Put this text on the clipboard (Word Info's Copy, from its button, a key or the
     /// Command box, #226).
     CopyText(String),

@@ -641,6 +641,27 @@ fn all_commands_lists_them_in_the_command_box_and_runs_one() {
     );
 }
 
+/// All commands opened again after its list was scrolled down shows its first command, the
+/// one highlighted, not the rows it was scrolled to.
+#[test]
+fn all_commands_reopened_after_a_scroll_shows_its_first_command() {
+    let mut h = Harness::new();
+    key(&mut h, Key::P, CTRL_SHIFT);
+    let first = h.shell.st.command_box.suggestions[0].detail.clone();
+    // The first row's detail (its key) is painted only in the list.
+    let top = h.at(&first).y;
+    for _ in 0..40 {
+        key(&mut h, Key::ArrowDown, Modifiers::NONE);
+    }
+    assert_eq!(h.shell.st.command_box.selected, 40);
+    assert!(h.at(&first).y < top - 20.0 * 26.0, "scrolled down");
+    escape(&mut h);
+    assert!(h.find(&first).is_none(), "the list closed");
+    key(&mut h, Key::P, CTRL_SHIFT);
+    assert_eq!(h.shell.st.command_box.selected, 0);
+    assert_eq!(h.at(&first).y, top, "{:?}", h.texts());
+}
+
 /// All commands run from the Command box keeps the list it asked for: the box is not emptied
 /// after it, and keeps the keyboard.
 #[test]

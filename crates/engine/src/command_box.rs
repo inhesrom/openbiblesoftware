@@ -528,7 +528,12 @@ impl Session {
             Some(key) => format!("Command · {key}"),
             None => "Command".to_string(),
         };
-        Suggestion::new(CommandBoxAction::Command(spec.id), spec.label, detail)
+        // One that asks first (Clear History) says so, as its Settings button does.
+        let label = match crate::settings::setting_asking_first(spec.id) {
+            Some(_) => format!("{}…", spec.label),
+            None => spec.label.to_string(),
+        };
+        Suggestion::new(CommandBoxAction::Command(spec.id), label, detail)
     }
 
     /// The commands the Command box lists (#226): every command that runs with no parameter
@@ -668,21 +673,34 @@ impl Session {
         self.command_box.recent = Some(recent);
     }
 
-    /// The command `command_box.run` runs for suggestion `choice` of `text` when that
-    /// suggestion runs a command by name (a recent entry: its text's best suggestion), so the
-    /// UI can guard it as it guards the command run from a menu or a key (Undo restore, #226).
-    pub fn command_box_command(&mut self, text: &str, choice: usize) -> Option<&'static str> {
-        let mut action = self
+    /// Suggestion `choice` of `text` as `command_box.run` runs it: what it does (for a
+    /// recent entry, its text's best suggestion) and the text kept among the recent entries.
+    pub fn command_box_choice(
+        &mut self,
+        text: &str,
+        choice: usize,
+    ) -> Option<(String, CommandBoxAction)> {
+        let chosen = self
             .command_box_suggestions(text)
             .into_iter()
             .nth(choice)?
             .action;
-        if let CommandBoxAction::Recent(t) = &action {
-            action = self.command_box_suggestions(t).into_iter().next()?.action;
-        }
-        match action {
-            CommandBoxAction::Command(id) => Some(id),
-            _ => None,
+        self.resolve_recent(text, chosen)
+    }
+
+    /// What `chosen`, a suggestion for `text`, does and the text kept: a recent entry runs
+    /// its text's best suggestion.
+    fn resolve_recent(
+        &mut self,
+        text: &str,
+        chosen: CommandBoxAction,
+    ) -> Option<(String, CommandBoxAction)> {
+        match chosen {
+            CommandBoxAction::Recent(t) => {
+                let top = self.command_box_suggestions(&t).into_iter().next()?.action;
+                Some((t, top))
+            }
+            action => Some((text.trim().to_string(), action)),
         }
     }
 
@@ -736,6 +754,18 @@ impl Session {
                 &json!({ "name": name, "split": new_tab }),
             ),
             CommandBoxAction::Command(id) => {
+                // It cannot be undone: Settings asks Clear or Cancel, as its button does.
+                if let Some(setting) = crate::settings::setting_asking_first(id) {
+                    let out = self.run("app.settings", &json!({}))?;
+                    let tab = (out["tab"].as_u64())
+                        .map(TabId)
+                        .ok_or_else(|| failed(RUN, "no Settings Tab opened"))?;
+                    self.workspace.push_effect(Effect::ConfirmSetting {
+                        tab,
+                        setting: setting.id,
+                    });
+                    return Ok(json!({ "tab": tab.0, "confirm": setting.id }));
+                }
                 let needs_tab = (self.commands().get(id))
                     .is_some_and(|c| c.params.iter().any(|p| p.name == "tab" && p.required));
                 if !needs_tab {
@@ -925,6 +955,12 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 required: false,
                 help: "Open a new Tab instead of moving an open one (Alt+Enter)",
             },
+            ParamSpec {
+                name: "command",
+                kind: ParamKind::String,
+                required: false,
+                help: "The listed command suggestion `choice` was already found to run, run as it instead of looking again (the UI saves the Notes being written before a restore's undo, which changes the suggestions, #226); `text` is the entry kept",
+            },
         ],
         enabled: always,
         run: run_from_box,
@@ -938,19 +974,28 @@ fn run_from_box(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
         .and_then(|c| usize::try_from(c).ok())
         .unwrap_or(0);
     let new_tab = p.bool("new_tab").unwrap_or(false);
-    let list = s.command_box_suggestions(&text);
-    let chosen = list
-        .get(choice)
-        .ok_or_else(|| failed(RUN, format!("no suggestion {choice} for “{text}”")))?;
-    let kept = match &chosen.action {
-        CommandBoxAction::Recent(t) => t.clone(),
-        _ => text,
+    let (kind, kept, action) = match p.str("command") {
+        Some(id) => {
+            let spec = (s.commands().get(id).copied())
+                .filter(is_listed)
+                .ok_or_else(|| failed(RUN, format!("the Command box does not run “{id}”")))?;
+            let action = CommandBoxAction::Command(spec.id);
+            (action.kind(), text, action)
+        }
+        None => {
+            let chosen = (s.command_box_suggestions(&text).into_iter().nth(choice))
+                .ok_or_else(|| failed(RUN, format!("no suggestion {choice} for “{text}”")))?
+                .action;
+            let kind = chosen.kind();
+            let (kept, action) =
+                (s.resolve_recent(&text, chosen)).ok_or_else(|| failed(RUN, "nothing to run"))?;
+            (kind, kept, action)
+        }
     };
-    let action = chosen.action.clone();
     let out = s.run_command_box_action(&action, new_tab)?;
     // The command list is a way in, not an entry worth keeping.
     if !kept.starts_with(COMMANDS_PREFIX) {
         s.remember_command_box(&kept);
     }
-    Ok(json!({ "kind": action.kind(), "out": out }))
+    Ok(json!({ "kind": kind, "out": out }))
 }

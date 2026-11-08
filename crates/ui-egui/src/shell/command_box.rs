@@ -27,6 +27,9 @@ const ROW: f32 = 26.0;
 /// Rows the dropdown shows before it scrolls.
 const MAX_ROWS: usize = 12;
 
+/// The dropdown's scrolling list, by which its scroll is forgotten when it is made again.
+const LIST: &str = "command_box_list";
+
 /// The Command box's text and dropdown.
 #[derive(Default)]
 pub(crate) struct CommandBoxUi {
@@ -38,6 +41,9 @@ pub(crate) struct CommandBoxUi {
     pub(crate) selected: usize,
     /// ↑/↓ moved the highlight: scroll it into view.
     scroll_to_selected: bool,
+    /// The suggestions were made again: the list shows from its first row, the highlighted
+    /// one (it may still be scrolled from the last time it showed).
+    from_the_top: bool,
     /// Ctrl+L asked for the keyboard.
     pub(crate) focus: bool,
     /// The keyboard goes in with the caret after the text instead of the text selected (All
@@ -110,6 +116,7 @@ impl Shell {
             cb.suggestions = self.st.session.command_box_suggestions(&cb.text);
             cb.for_text = Some(cb.text.clone());
             cb.selected = 0;
+            cb.from_the_top = true;
         }
         if leave {
             ui.memory_mut(|m| m.surrender_focus(id));
@@ -150,57 +157,61 @@ impl Shell {
                     .show(ui, |ui| {
                         // All commands (#226) can be more rows than fit: they scroll, keeping
                         // the highlighted one in view.
-                        egui::ScrollArea::vertical()
-                            .max_height(ROW * (MAX_ROWS as f32 + 0.5))
-                            .show(ui, |ui| {
-                                let c = theme::c();
-                                for (i, s) in cb.suggestions.iter().enumerate() {
-                                    let (rect, resp) =
-                                        ui.allocate_exact_size(vec2(width, ROW), Sense::click());
-                                    if i == cb.selected && cb.scroll_to_selected {
-                                        ui.scroll_to_rect(rect, None);
-                                    }
-                                    let painter = ui.painter();
-                                    if i == cb.selected {
-                                        painter.rect_filled(rect, 4.0, c.selection);
-                                    } else if resp.hovered() {
-                                        painter.rect_filled(rect, 4.0, c.hover);
-                                    }
-                                    let font = egui::TextStyle::Body.resolve(ui.style());
-                                    let detail = painter.text(
-                                        pos2(rect.right() - 8.0, rect.center().y),
-                                        Align2::RIGHT_CENTER,
-                                        &s.detail,
-                                        font.clone(),
-                                        c.muted,
-                                    );
-                                    let label =
-                                        painter.layout_no_wrap(s.label.clone(), font, c.ink);
-                                    let room = (detail.left() - rect.left() - 24.0).max(0.0);
-                                    let clip = Rect::from_min_size(rect.min, vec2(room + 8.0, ROW));
-                                    painter.with_clip_rect(clip).galley(
-                                        pos2(
-                                            rect.left() + 8.0,
-                                            rect.center().y - label.size().y / 2.0,
-                                        ),
-                                        label,
-                                        c.ink,
-                                    );
-                                    resp.widget_info(|| {
-                                        egui::WidgetInfo::selected(
-                                            egui::Role::ListBoxOption,
-                                            true,
-                                            i == cb.selected,
-                                            format!("{} · {}", s.label, s.detail),
-                                        )
-                                    });
-                                    if resp.clicked() {
-                                        clicked = Some((i, ui.input(|i| i.modifiers.alt)));
-                                    }
+                        // Made again, it forgets where it was scrolled to, and any scroll
+                        // to a highlight still under way.
+                        if cb.from_the_top {
+                            let list = ui.make_persistent_id(egui::IdSalt::new(LIST));
+                            ui.data_mut(|d| d.remove::<egui::scroll_area::State>(list));
+                        }
+                        let list = egui::ScrollArea::vertical()
+                            .id_salt(LIST)
+                            .max_height(ROW * (MAX_ROWS as f32 + 0.5));
+                        list.show(ui, |ui| {
+                            let c = theme::c();
+                            for (i, s) in cb.suggestions.iter().enumerate() {
+                                let (rect, resp) =
+                                    ui.allocate_exact_size(vec2(width, ROW), Sense::click());
+                                if i == cb.selected && cb.scroll_to_selected {
+                                    ui.scroll_to_rect(rect, None);
                                 }
-                            });
+                                let painter = ui.painter();
+                                if i == cb.selected {
+                                    painter.rect_filled(rect, 4.0, c.selection);
+                                } else if resp.hovered() {
+                                    painter.rect_filled(rect, 4.0, c.hover);
+                                }
+                                let font = egui::TextStyle::Body.resolve(ui.style());
+                                let detail = painter.text(
+                                    pos2(rect.right() - 8.0, rect.center().y),
+                                    Align2::RIGHT_CENTER,
+                                    &s.detail,
+                                    font.clone(),
+                                    c.muted,
+                                );
+                                let label = painter.layout_no_wrap(s.label.clone(), font, c.ink);
+                                let room = (detail.left() - rect.left() - 24.0).max(0.0);
+                                let clip = Rect::from_min_size(rect.min, vec2(room + 8.0, ROW));
+                                painter.with_clip_rect(clip).galley(
+                                    pos2(rect.left() + 8.0, rect.center().y - label.size().y / 2.0),
+                                    label,
+                                    c.ink,
+                                );
+                                resp.widget_info(|| {
+                                    egui::WidgetInfo::selected(
+                                        egui::Role::ListBoxOption,
+                                        true,
+                                        i == cb.selected,
+                                        format!("{} · {}", s.label, s.detail),
+                                    )
+                                });
+                                if resp.clicked() {
+                                    clicked = Some((i, ui.input(|i| i.modifiers.alt)));
+                                }
+                            }
+                        });
                     });
             });
+        cb.from_the_top = false;
         cb.dropdown = Some(shown.response.rect);
         clicked
     }

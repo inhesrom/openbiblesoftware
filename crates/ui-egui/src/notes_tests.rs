@@ -1101,6 +1101,22 @@ fn undo_restore_from_the_command_box_saves_the_card_being_edited_first() {
         "no later save writes the old words over it"
     );
 
+    // `>undo` names Undo restore first while nothing else can be undone. Saving the words
+    // makes an Undo of them, which `>undo` names first after; the restore is still what
+    // the box undoes, as it was found once before the words were saved.
+    restore(&mut h);
+    retype(&mut h, &id, "Typed again");
+    assert_eq!(
+        (h.shell.st.session.command_box_choice(">undo", 0)).map(|(_, a)| a),
+        Some(obs_engine::CommandBoxAction::Command("data.undo_restore"))
+    );
+    assert!((h.shell.run("command_box.run", &json!({ "text": ">undo" }))).is_some());
+    assert_eq!(saved(&h), "Galeed", "the data from before the restore");
+    assert!(h.shell.st.session.last_restore().is_none());
+    assert!(card_editor(&h).is_none(), "the editing pass ended");
+    autosave_window_passes(&mut h);
+    assert_eq!(saved(&h), "Galeed");
+
     // Words the database refuses, typed into the box and Enter: nothing is undone, the card
     // keeps its words and the box its text.
     restore(&mut h);

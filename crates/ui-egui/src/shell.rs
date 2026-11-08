@@ -596,6 +596,7 @@ impl Shell {
                     self.st.toolbar.close();
                     self.st.command_box.list_commands();
                 }
+                Effect::ConfirmSetting { tab, setting } => self.st.confirm_setting(tab, setting),
                 Effect::CopyText(text) => {
                     self.copy_out = Some(text);
                     self.st.toast("Copied");
@@ -1753,8 +1754,11 @@ impl State {
     /// restore or its undo (#217) always saves the Notes being written first and forgets the
     /// Notes Tab's drafts after.
     fn run(&mut self, id: &str, params: &Value) -> Option<Value> {
-        let replaces_user_data = backups_tab::replaces_user_data(id)
-            || (id == "command_box.run" && self.command_box_replaces_user_data(params));
+        let pinned = (id == "command_box.run")
+            .then(|| self.command_box_replacing_user_data(params))
+            .flatten();
+        let params = pinned.as_ref().unwrap_or(params);
+        let replaces_user_data = backups_tab::replaces_user_data(id) || pinned.is_some();
         if replaces_user_data && !self.settle_note_editors() {
             return None;
         }
@@ -1771,15 +1775,31 @@ impl State {
         out
     }
 
-    /// Whether `command_box.run` with `params` runs a restore or its undo (`>Undo restore`,
-    /// #226), so it is guarded as from a menu or a key.
-    fn command_box_replaces_user_data(&mut self, params: &Value) -> bool {
-        let text = params["text"].as_str().unwrap_or_default().trim();
+    /// When `command_box.run` with `params` runs a restore or its undo (`>Undo restore`,
+    /// #226), so it is guarded as from a menu or a key: its params with that command found
+    /// once. Saving the Notes first can change the suggestions (an Undo appears), so the
+    /// command guarded is the one run.
+    fn command_box_replacing_user_data(&mut self, params: &Value) -> Option<Value> {
+        if let Some(command) = params["command"].as_str() {
+            return backups_tab::replaces_user_data(command).then(|| params.clone());
+        }
+        let text = params["text"].as_str().unwrap_or_default();
         let choice = (params["choice"].as_u64())
             .and_then(|c| usize::try_from(c).ok())
             .unwrap_or(0);
-        (self.session.command_box_command(text, choice))
-            .is_some_and(backups_tab::replaces_user_data)
+        let (kept, action) = self.session.command_box_choice(text, choice)?;
+        match action {
+            obs_engine::CommandBoxAction::Command(command)
+                if backups_tab::replaces_user_data(command) =>
+            {
+                Some(json!({
+                    "text": kept,
+                    "command": command,
+                    "new_tab": params["new_tab"].as_bool().unwrap_or(false),
+                }))
+            }
+            _ => None,
+        }
     }
 
     /// Report where Resource Tab `tab`'s view, just drawn, is scrolled to the Workspace,

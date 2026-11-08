@@ -477,12 +477,32 @@ fn all_commands_lists_every_command_and_runs_a_tab_command_on_the_focused_tab() 
 
     let bsb = tab(&s.run("resource.open", &json!({ "id": "bsb" })).unwrap());
     assert_eq!(s.workspace.focused(), Some(bsb));
-    // The UI asks which command a suggestion runs before running it (its guards, #226).
-    assert_eq!(s.command_box_command("> close tab", 0), Some("tab.close"));
-    assert_eq!(s.command_box_command("> close tab", 99), None);
-    assert_eq!(s.command_box_command("jn 3:16", 0), None);
+    // The UI asks what a suggestion runs before running it (its guards, #226).
+    assert_eq!(
+        s.command_box_choice("> close tab", 0),
+        Some((
+            "> close tab".to_string(),
+            CommandBoxAction::Command("tab.close")
+        ))
+    );
+    assert_eq!(s.command_box_choice("> close tab", 99), None);
     s.run("command_box.run", &json!({ "text": "> close tab" }))
         .unwrap();
+    assert!(s.workspace.tab(bsb).is_none());
+    // The command it found runs as found, whatever the text suggests now; only a listed one.
+    let bsb = tab(&s.run("resource.open", &json!({ "id": "bsb" })).unwrap());
+    let err = (s.run(
+        "command_box.run",
+        &json!({ "text": "> close tab", "command": "app.version" }),
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("does not run"), "{err}");
+    assert!(s.workspace.tab(bsb).is_some());
+    s.run(
+        "command_box.run",
+        &json!({ "text": "> nothing like it", "command": "tab.close" }),
+    )
+    .unwrap();
     assert!(s.workspace.tab(bsb).is_none());
     assert!(s.command_box_recent().is_empty(), "a > text is not kept");
     // With no Tab open, it says so instead of failing on a missing parameter.
@@ -497,4 +517,41 @@ fn all_commands_lists_every_command_and_runs_a_tab_command_on_the_focused_tab() 
     s.workspace.take_effects();
     s.run("app.commands", &json!({})).unwrap();
     assert!(s.workspace.take_effects().contains(&Effect::ListCommands));
+}
+
+/// Clear History and Clear Search history cannot be undone (#226): from the Command box they
+/// open Settings asking Clear or Cancel, as their Settings buttons do, and delete nothing.
+#[test]
+fn a_command_that_asks_first_opens_settings_asking_instead_of_running() {
+    let t = Temp::new("asks-first");
+    let mut s = launch(&t);
+    s.run("search.run", &json!({ "text": "loved" })).unwrap();
+    s.record_history();
+    assert!(!s.history().is_empty());
+    assert!(!s.search_history().is_empty());
+    for (text, id, label) in [
+        ("> clear history", "history.clear", "Clear History…"),
+        (
+            "> clear search history",
+            "search.clear_history",
+            "Clear Search history…",
+        ),
+    ] {
+        let first = &s.command_box_suggestions(text)[0];
+        assert_eq!(first.action, CommandBoxAction::Command(id));
+        assert_eq!(first.label, label);
+        s.workspace.take_effects();
+        let out = s.run("command_box.run", &json!({ "text": text })).unwrap();
+        let settings = TabId(out["out"]["tab"].as_u64().unwrap());
+        assert_eq!(s.workspace.tab(settings).unwrap().kind, TabKind::Settings);
+        let setting = crate::setting_asking_first(id).unwrap().id;
+        assert!(
+            (s.workspace.take_effects()).contains(&Effect::ConfirmSetting {
+                tab: settings,
+                setting
+            })
+        );
+    }
+    assert!(!s.history().is_empty(), "nothing deleted");
+    assert!(!s.search_history().is_empty(), "nothing deleted");
 }
