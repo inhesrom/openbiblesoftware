@@ -1284,6 +1284,78 @@ fn drawn_line<'a>(h: &'a Harness, text: &str) -> &'a crate::shell::notes_tab::Dr
         })
 }
 
+/// A Hebrew line of a Note reads right to left from the card's right edge, its "!" at its
+/// left end, beside an English line that starts at the left (#260, AUD-LAYOUT-TEXT-4).
+#[test]
+fn a_hebrew_note_line_starts_at_the_cards_right() {
+    let dir = folder("hebrew-line");
+    let mut h = launch(&dir);
+    open_romans(&mut h, &dir);
+    let tb = h.tab_id("TB");
+    h.shell.run("tab.close", &json!({ "tab": tb.0 }));
+    settle_all(&mut h);
+    h.shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Rom 5:8", "body": "שָׁלוֹם עֲלֵיכֶם!\nPeace be with you!" }),
+        )
+        .unwrap();
+    open_notes(&mut h);
+    let edges = |text: &str| {
+        let line = drawn_line(&h, text);
+        let items = line.laid.lines.iter().flat_map(|l| &l.items);
+        let left = items.clone().map(|i| i.x).fold(f32::MAX, f32::min);
+        let right = items.map(|i| i.x + i.width).fold(f32::MIN, f32::max);
+        (line.laid.rtl, left, right, line.text_rect.width())
+    };
+    let (rtl, left, right, width) = edges("שָׁלוֹם עֲלֵיכֶם!");
+    assert!(rtl);
+    assert!((right - width).abs() < 0.5, "{left}..{right} of {width}");
+    assert!(left > 10.0, "{left}..{right} of {width}");
+    let hebrew = drawn_line(&h, "שָׁלוֹם עֲלֵיכֶם!");
+    let leftmost = hebrew.laid.lines[0].items[0].clusters().next().unwrap();
+    assert_eq!(&hebrew.laid.text[leftmost.0], "!");
+    let (rtl, left, ..) = edges("Peace be with you!");
+    assert!(!rtl);
+    assert!(left.abs() < 0.5, "{left}");
+    preview(&h, "notes-hebrew-line-kittest");
+}
+
+/// A word wider than a Note card wraps inside it, and a line broken at a soft hyphen ends in
+/// a hyphen (#260, AUD-LAYOUT-TEXT-7 and -8).
+#[test]
+fn an_overlong_word_in_a_note_wraps_inside_the_card() {
+    let dir = folder("overlong-word");
+    let mut h = launch(&dir);
+    open_romans(&mut h, &dir);
+    let tb = h.tab_id("TB");
+    h.shell.run("tab.close", &json!({ "tab": tb.0 }));
+    settle_all(&mut h);
+    let long = "Mahershalalhashbaz".repeat(3);
+    let soft = "Mahershalal\u{00AD}hashbaz".repeat(3);
+    h.shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Rom 5:8", "body": format!("{long}\n{soft}") }),
+        )
+        .unwrap();
+    open_notes(&mut h);
+    for text in [&long, &soft] {
+        let line = drawn_line(&h, text);
+        assert!(line.laid.lines.len() > 1, "{text} wraps");
+        for l in &line.laid.lines {
+            let right = l.items.iter().map(|i| i.x + i.width).fold(0.0, f32::max);
+            assert!(right <= line.text_rect.width() + 0.5, "{right}");
+        }
+    }
+    let soft_line = drawn_line(&h, &soft);
+    let first = &soft_line.laid.lines[0];
+    assert!(soft_line.laid.text[first.bytes.clone()].ends_with('\u{00AD}'));
+    let hyphen = first.items.last().unwrap();
+    assert!(hyphen.width > 0.0, "the soft hyphen shows");
+    preview(&h, "notes-overlong-word-kittest");
+}
+
 /// Acceptance (#186): a Note with a heading, a list and "Rom 5:8" is drawn formatted;
 /// hovering the reference previews the verse and clicking it goes there.
 #[test]
