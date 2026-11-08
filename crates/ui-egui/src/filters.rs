@@ -18,12 +18,13 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use obs_engine::{
     AlignedWords, DocumentSlice, FilterMatcher, StyleAppearance, VisualFilter, block_hits,
     paragraph_slices,
 };
+use obs_layout::LaidBlock;
 use obs_model::{ResourceType, SpanKind};
 use obs_scripture::{Passage, StrongsLanguage, Testament, Verse};
 
@@ -329,8 +330,10 @@ pub struct FilterPainter {
     key: Option<u64>,
     source: Option<Arc<FilterSource>>,
     done: HashMap<usize, Arc<Vec<BlockMatch>>>,
-    /// Each block's match rectangles (its top at 0), for the layout they were taken from.
-    rects: HashMap<usize, (usize, Arc<Vec<FilterRects>>)>,
+    /// Each block's match rectangles (its top at 0), for the layout they were taken from. The
+    /// `Weak` holds that layout's allocation, so a relayout (new width, Text settings or
+    /// interlinear lines) can never be given its address and pass for it.
+    rects: HashMap<usize, (Weak<LaidBlock>, Arc<Vec<FilterRects>>)>,
     pending: HashSet<usize>,
     /// Bumped by each new key, so replies for an older one are dropped.
     generation: u64,
@@ -454,9 +457,8 @@ impl FilterPainter {
                 self.missing += 1;
                 continue;
             };
-            let layout = Arc::as_ptr(laid) as usize;
             let rects = match self.rects.get(index) {
-                Some((l, r)) if *l == layout => Arc::clone(r),
+                Some((l, r)) if std::ptr::eq(l.as_ptr(), Arc::as_ptr(laid)) => Arc::clone(r),
                 _ => {
                     let ranges: Vec<(DocPos, DocPos)> =
                         found.iter().map(|(_, a, b)| (*a, *b)).collect();
@@ -469,7 +471,8 @@ impl FilterPainter {
                             .map(|((look, _, _), rects)| (*look, rects))
                             .collect(),
                     );
-                    self.rects.insert(*index, (layout, Arc::clone(&r)));
+                    self.rects
+                        .insert(*index, (Arc::downgrade(laid), Arc::clone(&r)));
                     r
                 }
             };
@@ -518,6 +521,82 @@ mod tests {
         };
         assert!(count(&aligned) > 20, "{}", count(&aligned));
         assert_eq!(count(&unaligned), 0);
+    }
+
+    /// Review of #211: a relayout (new width, Text settings) gives every block a new layout, and
+    /// the painter's cached rectangles follow it rather than the layout they were taken from,
+    /// even should the new layout reuse the old one's address.
+    #[test]
+    fn cached_rectangles_follow_each_relayout() {
+        let source = || {
+            FilterSource::new(
+                obs_engine::built_in_filters()
+                    .into_iter()
+                    .filter(|f| f.id == "imperatives")
+                    .collect(),
+                vec![],
+                vec![OriginalBible::new(
+                    StrongsLanguage::Hebrew,
+                    None,
+                    Some(crate::bench::synthetic_hebrew_bible()),
+                )],
+            )
+        };
+        let height = 600.0;
+        let mut view = ReadingView::new(
+            crate::bench::synthetic_bible(),
+            obs_layout::TextSettings::default(),
+        );
+        view.set_width(450.0);
+        let mut painter = FilterPainter::default();
+        painter.set(Some((1, source())));
+        let fresh_source = source();
+        // Lay out the view and find its matches, then the painter's rectangles.
+        let painted = |view: &mut ReadingView, painter: &mut FilterPainter| {
+            for _ in 0..5000 {
+                view.frame(height, None);
+                let rects = painter.rects(view, height, None);
+                if !view.has_pending() && !painter.is_pending() && painter.missing() == 0 {
+                    return rects;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            panic!("layout or matching never finished");
+        };
+        // The same rectangles worked out afresh from the layouts in view.
+        let fresh = |view: &ReadingView| -> Vec<Vec<[f32; 4]>> {
+            let mut out = Vec::new();
+            for (index, top, laid) in view.laid_in_view(height) {
+                let ranges: Vec<(DocPos, DocPos)> = block_matches(&view.doc, index, &fresh_source)
+                    .into_iter()
+                    .map(|(_, a, b)| (a, b))
+                    .collect();
+                let rects = crate::selection::block_range_rects(&view.doc, index, &laid, &ranges);
+                out.extend(rects.into_iter().map(|r| {
+                    r.into_iter()
+                        .map(|[x0, y0, x1, y1]| [x0, y0 + top, x1, y1 + top])
+                        .collect::<Vec<_>>()
+                }));
+            }
+            out
+        };
+        let only_rects =
+            |r: Vec<FilterRects>| -> Vec<Vec<[f32; 4]>> { r.into_iter().map(|(_, r)| r).collect() };
+        let first = only_rects(painted(&mut view, &mut painter));
+        assert!(!first.is_empty());
+        assert_eq!(first, fresh(&view));
+        let settings = obs_layout::TextSettings {
+            size: view.settings().size * 1.5,
+            ..*view.settings()
+        };
+        view.set_settings(settings);
+        let larger = only_rects(painted(&mut view, &mut painter));
+        assert_ne!(larger, first, "a larger text size moves the matches");
+        assert_eq!(larger, fresh(&view));
+        view.set_width(300.0);
+        let narrower = only_rects(painted(&mut view, &mut painter));
+        assert_ne!(narrower, larger, "a narrower pane moves the matches");
+        assert_eq!(narrower, fresh(&view));
     }
 
     /// Review of #211: outside Bibles a block's matches read the paragraphs around it, as the
