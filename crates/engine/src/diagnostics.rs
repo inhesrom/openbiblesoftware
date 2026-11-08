@@ -420,18 +420,27 @@ pub fn home_dir() -> Option<String> {
 /// Write a Crash report into the Log folder `dir`, as a new report, keeping the newest
 /// [`CRASH_REPORTS_KEPT`]. Returns its path. Each report gets a file of its own, even when
 /// threads panic in the same second: the name is taken by creating the file, never by
-/// checking first.
+/// checking first, and its number is above every report of that second still in the folder,
+/// so it sorts newest and the reports removed to keep [`CRASH_REPORTS_KEPT`] are older ones.
 pub fn write_crash_report(dir: &Path, when: u64, text: &str) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
     let stamp = file_stamp(when);
-    let mut n = 1;
+    let mut n = std::fs::read_dir(dir)?
+        .filter_map(Result::ok)
+        .filter_map(|e| {
+            let name = e.file_name();
+            let (s, n) = crash_name_parts(name.to_str()?)?;
+            (s == stamp).then_some(n)
+        })
+        .max()
+        .map_or(1, |n| n.saturating_add(1));
     let (path, mut file) = loop {
         let path = if n == 1 {
             dir.join(format!("{CRASH_PREFIX}{stamp}{NEW_SUFFIX}"))
         } else {
             dir.join(format!("{CRASH_PREFIX}{stamp}-{n}{NEW_SUFFIX}"))
         };
-        n += 1;
+        n = n.saturating_add(1);
         if seen_path(&path).exists() {
             continue;
         }
@@ -444,7 +453,9 @@ pub fn write_crash_report(dir: &Path, when: u64, text: &str) -> std::io::Result<
     file.write_all(text.as_bytes())?;
     drop(file);
     for old in crash_reports(dir).into_iter().skip(CRASH_REPORTS_KEPT) {
-        let _ = std::fs::remove_file(&old.path);
+        if old.path != path {
+            let _ = std::fs::remove_file(&old.path);
+        }
     }
     Ok(path)
 }
@@ -631,18 +642,25 @@ pub fn crash_reports(dir: &Path) -> Vec<CrashReport> {
 }
 
 fn crash_sort_key(path: &Path) -> (String, u32) {
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .and_then(crash_name_parts)
+        .map_or((String::new(), 0), |(stamp, n)| (stamp.to_string(), n))
+}
+
+/// The time and number in a Crash report's file name: `crash-20231114-221320-3.txt` is
+/// `("20231114-221320", 3)`. The first report of a second has no number and is 1.
+fn crash_name_parts(name: &str) -> Option<(&str, u32)> {
     let stem = name
         .strip_suffix(SEEN_SUFFIX)
-        .or_else(|| name.strip_suffix(NEW_SUFFIX))
-        .unwrap_or(name);
-    let stamp: String = stem.chars().skip(CRASH_PREFIX.len()).take(15).collect();
-    let n = stem
-        .rsplit_once('-')
-        .filter(|(_, n)| n.len() < 4)
-        .and_then(|(_, n)| n.parse().ok())
-        .unwrap_or(1);
-    (stamp, n)
+        .or_else(|| name.strip_suffix(NEW_SUFFIX))?;
+    let rest = stem.strip_prefix(CRASH_PREFIX)?;
+    let stamp = rest.get(..15)?;
+    let n = match rest.get(15..)? {
+        "" => 1,
+        more => more.strip_prefix('-')?.parse().ok()?,
+    };
+    Some((stamp, n))
 }
 
 /// The report has been offered: it is not offered again at the next launch (Help → Report
@@ -1167,6 +1185,30 @@ mod tests {
         }
         assert_eq!(crash_reports(&dir).len(), CRASH_REPORTS_KEPT);
         assert!(!older.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn more_reports_in_one_second_than_are_kept_keep_the_newest() {
+        let dir = folder("same-second");
+        let total = CRASH_REPORTS_KEPT + 5;
+        for i in 0..total {
+            let path = write_crash_report(&dir, 1_700_000_000, &format!("report {i}")).unwrap();
+            assert_eq!(
+                std::fs::read_to_string(&path).unwrap(),
+                format!("report {i}")
+            );
+            let reports = crash_reports(&dir);
+            assert_eq!(reports.len(), (i + 1).min(CRASH_REPORTS_KEPT));
+            assert_eq!(reports[0].path, path);
+            assert_eq!(reports[0].text, format!("report {i}"));
+        }
+        let texts: Vec<String> = crash_reports(&dir).into_iter().map(|r| r.text).collect();
+        let want: Vec<String> = (total - CRASH_REPORTS_KEPT..total)
+            .rev()
+            .map(|i| format!("report {i}"))
+            .collect();
+        assert_eq!(texts, want);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

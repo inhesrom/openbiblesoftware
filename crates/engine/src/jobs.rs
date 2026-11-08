@@ -34,7 +34,10 @@ pub enum Step {
 /// Unit of background work. Keep each step short (a few milliseconds) so cancellation and the
 /// inline mode stay responsive.
 pub trait Job: Send + 'static {
-    fn label(&self) -> String;
+    /// The kind of work, as fixed text (`"Search index"`, not `"Search index kjv"`). A failed
+    /// or panicked job is logged by it, and the log goes into Crash reports, so it never
+    /// names a Resource, a file or anything the user typed.
+    fn label(&self) -> &'static str;
     fn step(&mut self, ctx: &JobContext) -> Result<Step, String>;
 }
 
@@ -114,7 +117,7 @@ impl JobEventKind {
 
 /// A job made from a closure that runs in one step.
 pub struct FnJob<F> {
-    label: String,
+    label: &'static str,
     f: Option<F>,
 }
 
@@ -123,8 +126,8 @@ where
     F: FnOnce(&JobContext) -> Result<T, String> + Send + 'static,
     T: Send + 'static,
 {
-    fn label(&self) -> String {
-        self.label.clone()
+    fn label(&self) -> &'static str {
+        self.label
     }
 
     fn step(&mut self, ctx: &JobContext) -> Result<Step, String> {
@@ -350,15 +353,12 @@ impl JobQueue {
     }
 
     /// Submit a closure that runs in one step; its result arrives as `Finished(Box<T>)`.
-    pub fn submit_fn<T, F>(&self, label: impl Into<String>, f: F) -> JobId
+    pub fn submit_fn<T, F>(&self, label: &'static str, f: F) -> JobId
     where
         F: FnOnce(&JobContext) -> Result<T, String> + Send + 'static,
         T: Send + 'static,
     {
-        self.submit(FnJob {
-            label: label.into(),
-            f: Some(f),
-        })
+        self.submit(FnJob { label, f: Some(f) })
     }
 
     /// Ask a job to stop; it ends with `Cancelled` at its next step boundary.
@@ -511,8 +511,8 @@ mod tests {
     }
 
     impl Job for Counter {
-        fn label(&self) -> String {
-            "counter".into()
+        fn label(&self) -> &'static str {
+            "counter"
         }
 
         fn step(&mut self, ctx: &JobContext) -> Result<Step, String> {
@@ -714,7 +714,7 @@ mod tests {
     fn many_jobs_all_finish_on_the_pool() {
         let q = JobQueue::threaded(4);
         let ids: Vec<JobId> = (0..50u64)
-            .map(|i| q.submit_fn(format!("square {i}"), move |_| Ok(i * i)))
+            .map(|i| q.submit_fn("square", move |_| Ok(i * i)))
             .collect();
         let mut sum = 0u64;
         let mut finished = 0;

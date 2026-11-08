@@ -1317,11 +1317,9 @@ impl Session {
             let source = Arc::clone(&self.guides.source);
             let library = self.library.clone();
             let job_key = key.clone();
-            let job = self
-                .jobs()
-                .submit_fn(format!("Guide: {}", section.title()), move |ctx| {
-                    source.compute(&library, &job_key, section, ctx)
-                });
+            let job = self.jobs().submit_fn(section.title(), move |ctx| {
+                source.compute(&library, &job_key, section, ctx)
+            });
             self.guides.pending.insert(job, wanted);
         }
         SectionStatus::Loading
