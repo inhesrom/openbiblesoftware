@@ -171,6 +171,15 @@ CREATE INDEX anchors_resource ON anchors (resource_id) WHERE resource_id IS NOT 
 /// plain text so it shows exactly as before, and re-indexes it.
 pub(crate) const SCHEMA_11: &str = "";
 
+/// Migration 11 → 12 (#259): `anchors.checked_hash`, the content hash of the revision
+/// re-anchoring last looked for a range it could not find (`status = 'orphaned'`). Without
+/// it an orphan was looked for again only when its own revision came back, never in a later
+/// one that has its quote again. Rows orphaned before it have none: they are looked for once
+/// more, in whichever revision is in the library.
+pub(crate) const SCHEMA_12: &str = "
+ALTER TABLE anchors ADD COLUMN checked_hash TEXT;
+";
+
 /// Before migration 10 → 11: every Note body was plain text. A body that would now read as
 /// formatting (`# heading`, `- item`, `*stars*`, `[link](x)`, leading spaces) is escaped
 /// (`escape_note_text`), so every Note looks exactly as it did; other bodies are untouched.
@@ -251,7 +260,8 @@ const NOTEBOOK_COLUMNS: &str = "id, name, is_default, created_at, modified_at, s
 const ANNOTATION_COLUMNS: &str = "a.id, a.notebook_id, a.kind, a.style, a.body, a.created_at,
      a.modified_at, x.kind, x.start_book, x.start_chapter, x.start_verse, x.end_book,
      x.end_chapter, x.end_verse, x.resource_id, x.unit_id, x.start_byte, x.end_byte, x.quote,
-     x.prefix, x.suffix, x.content_hash, x.native_ref, x.whole_verses, x.status";
+     x.prefix, x.suffix, x.content_hash, x.native_ref, x.whole_verses, x.status,
+     x.checked_hash";
 
 const ANNOTATION_FROM: &str = "annotations a LEFT JOIN anchors x ON x.annotation_id = a.id";
 
@@ -296,6 +306,7 @@ fn text_range_from(r: &SqlRow<'_>) -> rusqlite::Result<Option<TextRange>> {
         native_ref: r.get(22)?,
         whole_verses: r.get(23)?,
         orphaned: r.get::<_, Option<String>>(24)?.as_deref() == Some("orphaned"),
+        checked_hash: r.get(25)?,
     }))
 }
 
@@ -409,9 +420,9 @@ fn write_anchor(c: &Connection, id: &str, anchor: Option<&Anchor>) -> Result<(),
     c.execute(
         "INSERT INTO anchors (annotation_id, kind, start_book, start_chapter, start_verse,
              end_book, end_chapter, end_verse, resource_id, unit_id, start_byte, end_byte,
-             quote, prefix, suffix, content_hash, native_ref, whole_verses, status)
+             quote, prefix, suffix, content_hash, native_ref, whole_verses, status, checked_hash)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                 ?18, ?19)",
+                 ?18, ?19, ?20)",
         params![
             id,
             kind,
@@ -436,6 +447,7 @@ fn write_anchor(c: &Connection, id: &str, anchor: Option<&Anchor>) -> Result<(),
             } else {
                 "ok"
             },
+            range.and_then(|r| r.checked_hash.as_ref()),
         ],
     )
     .map(drop)

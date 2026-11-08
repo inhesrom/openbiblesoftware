@@ -3,7 +3,8 @@
 //!
 //! - **When.** At library load ([`Session::reanchor_library`], from `attach_user`) and after
 //!   an Import adds or replaces a Resource ([`Session::reanchor_resource`]), for each Resource
-//!   whose content hash differs from the one stored on its anchors. The work runs as a
+//!   whose content hash differs from the one stored on its anchors, or that has an Orphaned
+//!   annotation not yet looked for in its current revision ([`is_stale`], #259). The work runs as a
 //!   background job; until it is applied the Resource is **re-anchoring**
 //!   ([`Session::is_reanchoring`]) and reading panes do not draw its Marks, so nothing is
 //!   ever drawn over the wrong words. A [`ReanchorReport`] says how many moved, fell back to
@@ -165,13 +166,21 @@ impl Plan {
 }
 
 /// Whether an Annotation's Text range in Resource `resource_id` (current content hash
-/// `hash`) needs re-anchoring: it was made against another revision; or it is orphaned and
-/// the Resource is back at the revision it was made against.
+/// `hash`) needs re-anchoring: it was made against another revision; or it was not found
+/// (`orphaned`) and has not been looked for in this revision yet (#259), so a later revision
+/// that has its quote again finds it, as does its own revision coming back.
 pub fn is_stale(a: &Annotation, resource_id: &str, hash: &str) -> bool {
     a.anchor
         .as_ref()
         .and_then(Anchor::text_range)
-        .is_some_and(|r| r.resource_id == resource_id && (r.content_hash != hash) != r.orphaned)
+        .is_some_and(|r| {
+            r.resource_id == resource_id
+                && if r.orphaned {
+                    r.checked_hash.as_deref() != Some(hash)
+                } else {
+                    r.content_hash != hash
+                }
+        })
 }
 
 /// Whether an Annotation has a Text range in Resource `resource_id`.
@@ -401,6 +410,7 @@ fn found_at(
         native_ref,
         whole_verses: cover.whole_verses,
         orphaned: false,
+        checked_hash: None,
         ..range.clone()
     }))
 }
@@ -492,6 +502,7 @@ pub fn plan(store: &dyn ResourceStore, annotations: &[Annotation]) -> Result<Pla
                     passage: *passage,
                     origin: Some(TextRange {
                         orphaned: true,
+                        checked_hash: Some(hash.to_string()),
                         ..range.clone()
                     }),
                 },
@@ -507,6 +518,7 @@ pub fn plan(store: &dyn ResourceStore, annotations: &[Annotation]) -> Result<Pla
                 Anchor::TextRange {
                     range: TextRange {
                         orphaned: true,
+                        checked_hash: Some(hash.to_string()),
                         ..range.clone()
                     },
                 },
@@ -862,6 +874,7 @@ mod tests {
             native_ref: None,
             whole_verses: false,
             orphaned: false,
+            checked_hash: None,
         }
     }
 
@@ -936,7 +949,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_means_another_revision_or_an_orphan_back_at_its_own() {
+    fn stale_means_another_revision_or_an_orphan_not_looked_for_in_this_one() {
         let mut a = Annotation {
             id: "a".into(),
             notebook_id: "n".into(),
@@ -950,10 +963,18 @@ mod tests {
         assert!(is_stale(&a, "r", "sha256:new"));
         assert!(!is_stale(&a, "r", "sha256:old"));
         assert!(!is_stale(&a, "other", "sha256:new"));
+        // An orphan is looked for in each revision once: a later one (#259) or its own back.
         if let Some(Anchor::TextRange { range }) = a.anchor.as_mut() {
             range.orphaned = true;
+            range.checked_hash = Some("sha256:new".into());
         }
         assert!(!is_stale(&a, "r", "sha256:new"));
         assert!(is_stale(&a, "r", "sha256:old"));
+        assert!(is_stale(&a, "r", "sha256:newer"));
+        // One orphaned before the revision searched was kept is looked for once more.
+        if let Some(Anchor::TextRange { range }) = a.anchor.as_mut() {
+            range.checked_hash = None;
+        }
+        assert!(is_stale(&a, "r", "sha256:new"));
     }
 }

@@ -329,6 +329,17 @@ row replacing what is typed). Previews:
 [a Saved search whose Bible was removed](../previews/search-saved-notice-kittest.png), from
 `UPDATE_PREVIEWS=1 cargo test -p obs-ui-egui --lib saved_searches`.
 
+## The Last session, Layouts and Recently closed (#259)
+
+A Search Tab's search is its Current location, so a Workspace snapshot keeps it:
+`TabSnapshot::search` holds its fields as a `SavedSearch` (left out while they are all
+empty), and `TabSnapshot::comparison` a Text Comparison's choices (Bibles, base, range,
+Differences; left out while default). `Tab::from_snapshot` puts the fields back
+(`SearchTab::restored_from`, which bumps `restored` so the UI shows them) and marks the search
+to run again; `Session::rerun_restored_searches`, called after restoring the Last session, a
+Layout or a Recently closed Tab, runs it without a Visit or a Search history entry. Older
+snapshots, without either field, read as before. Tests: `crates/engine/src/persist_tests.rs`.
+
 ## Hand-over from other Tools
 
 `search.run` takes `text`, plus optional `scope`, `bibles` (comma-separated resource ids),

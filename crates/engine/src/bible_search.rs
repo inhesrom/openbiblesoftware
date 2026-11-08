@@ -591,9 +591,32 @@ pub struct SearchTab {
     pub(crate) analysis_order: Arc<Vec<usize>>,
     /// The job making the Analysis.
     pub(crate) analysis_job: Option<JobId>,
+    /// Restored from a Workspace snapshot with a query whose search has not run again yet
+    /// ([`Session::rerun_restored_searches`], #259).
+    pub(crate) rerun: bool,
 }
 
 impl SearchTab {
+    /// A Search Tab as a Workspace snapshot kept it (#259): its mode and fields as they were,
+    /// shown over anything typed, its search to run again.
+    pub(crate) fn restored_from(f: &crate::favorites::SavedSearch) -> Self {
+        Self {
+            mode: f.mode,
+            query: f.query.clone(),
+            scope: f.scope.clone(),
+            bibles: f.bibles.clone(),
+            library: crate::library_search::LibraryScope {
+                types: f.types.clone(),
+                collections: f.collections.clone(),
+                resources: f.resources.clone(),
+            },
+            notebook: f.notebook.clone(),
+            restored: 1,
+            rerun: !f.query.trim().is_empty(),
+            ..Self::default()
+        }
+    }
+
     /// The chosen Bibles that are still in the library, in picker order; by default the ★
     /// Bible (first in Preferred order).
     pub fn bibles(&self, library: &Library) -> Vec<String> {
@@ -941,11 +964,7 @@ impl Session {
         if !fields.query.trim().is_empty() {
             self.workspace.visited(tab);
         }
-        let error = match fields.mode {
-            SearchMode::Bible => self.start_bible_search(tab, &fields),
-            SearchMode::Library => self.start_library_search(tab, &fields),
-            SearchMode::Notes => self.run_notes_search(tab),
-        };
+        let error = self.start_search(tab, &fields);
         if let Some(st) = self.search_tab_mut(tab) {
             st.error = error.clone();
         }
@@ -953,6 +972,41 @@ impl Session {
             self.record_search_history(&fields);
         }
         error
+    }
+
+    /// Start a Search Tab's search in its mode over fields `st`. Returns the inline error.
+    fn start_search(&mut self, tab: TabId, st: &SearchTab) -> Option<InlineError> {
+        match st.mode {
+            SearchMode::Bible => self.start_bible_search(tab, st),
+            SearchMode::Library => self.start_library_search(tab, st),
+            SearchMode::Notes => self.run_notes_search(tab),
+        }
+    }
+
+    /// Run again the searches of the Search Tabs a Workspace snapshot brought back (the Last
+    /// session, a Layout, Recently closed; #259), so they show their results as they did. It
+    /// is not a new search: no Visit and no Search history entry. A Search scope naming
+    /// something gone runs over what is left, with a notice, as a Saved search does.
+    pub fn rerun_restored_searches(&mut self) {
+        let tabs: Vec<TabId> = self
+            .workspace
+            .tabs()
+            .filter(|t| t.search.rerun)
+            .map(|t| t.id)
+            .collect();
+        for tab in tabs {
+            let Some(st) = self.search_tab_mut(tab) else {
+                continue;
+            };
+            st.rerun = false;
+            let fields = st.clone();
+            let error = self.start_search(tab, &fields);
+            let notice = self.gone_from_scope(&crate::favorites::SavedSearch::fields(&fields));
+            if let Some(st) = self.search_tab_mut(tab) {
+                st.error = error;
+                st.notice = notice;
+            }
+        }
     }
 
     fn start_bible_search(&mut self, tab: TabId, st: &SearchTab) -> Option<InlineError> {

@@ -16,8 +16,9 @@ use crate::workspace::{TabId, TabKind, Tool};
 /// How many Bibles a new Text Comparison shows: the first ones in Preferred order.
 pub const DEFAULT_BIBLES: usize = 5;
 
-/// One Text Comparison Tab's choices.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One Text Comparison Tab's choices. A Workspace snapshot keeps them with the Tab (#259).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct Comparison {
     /// The Bibles compared, as resource ids in row order. `None` until the user picks: the
     /// first [`DEFAULT_BIBLES`] Bibles in Preferred order.
@@ -42,6 +43,11 @@ impl Default for Comparison {
 }
 
 impl Comparison {
+    /// Nothing chosen: what a new Text Comparison shows (a snapshot leaves it out).
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
     /// The Bibles compared, in row order (only those still in the library).
     pub fn bibles(&self, library: &Library) -> Vec<String> {
         match &self.bibles {

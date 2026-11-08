@@ -465,6 +465,7 @@ fn a_note_across_units_with_nothing_mapped_keeps_the_first_text_range() {
         native_ref: None,
         whole_verses: false,
         orphaned: false,
+        checked_hash: None,
     };
     let parts = [
         Segment {
@@ -483,6 +484,57 @@ fn a_note_across_units_with_nothing_mapped_keeps_the_first_text_range() {
         Some(Anchor::TextRange { range: range("A") })
     );
     assert_eq!(note_anchor(&[]), None);
+}
+
+/// #259 AUD-UI-SHELL-5: a selection made in a revision that has since been replaced is
+/// refused, never stored over whatever words now sit at its offsets.
+#[test]
+fn a_selection_from_a_replaced_revision_is_refused() {
+    let f = Fixture::new("revision");
+    let mut s = f.session();
+    let at = f.at("test-notes", "JHN.3.17", "Christ", false);
+    let selected = sel("test-notes", "JHN.3.17", at, "JHN.3.17", at + 6);
+    let current = f.commentary.manifest.content_hash.clone();
+    for (cmd, extra) in [
+        ("annotation.highlight", json!({})),
+        ("annotation.note", json!({ "body": "x" })),
+    ] {
+        let err = s
+            .run(
+                cmd,
+                &with(
+                    with(selected.clone(), extra),
+                    json!({ "revision": "sha256:replaced" }),
+                ),
+            )
+            .map(|_| ())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("changed after this text was selected"),
+            "{cmd}: {err}"
+        );
+    }
+    assert!(s.annotations(None).unwrap().is_empty(), "nothing stored");
+    let a = s
+        .run(
+            "annotation.highlight",
+            &with(selected.clone(), json!({ "revision": current })),
+        )
+        .unwrap();
+    let id = a["ids"][0].as_str().unwrap().to_string();
+    let err = s
+        .run(
+            "annotation.reattach",
+            &with(selected, json!({ "id": id, "revision": "sha256:replaced" })),
+        )
+        .map(|_| ())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("changed after this text was selected"),
+        "{err}"
+    );
 }
 
 #[test]

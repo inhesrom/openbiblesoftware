@@ -305,6 +305,9 @@ mod workspace_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod recently_closed_tests;
 
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod persist_tests;
+
 #[cfg(test)]
 mod link_tests;
 

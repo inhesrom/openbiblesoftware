@@ -19,7 +19,7 @@ use crate::error::StoreError;
 pub const USER_APPLICATION_ID: i32 = 0x4F42_5355;
 
 /// Schema version this build writes.
-pub const USER_SCHEMA_VERSION: u32 = 11;
+pub const USER_SCHEMA_VERSION: u32 = 12;
 
 pub use crate::backup::ROLLING_BACKUPS;
 
@@ -51,6 +51,8 @@ const MIGRATIONS: &[&str] = &[
     // 10 → 11: Note text is Note formatting; plain-text Notes are escaped to look the same
     // (#186).
     crate::annotation_store::SCHEMA_11,
+    // 11 → 12: the revision an Orphaned annotation's range was last looked for in (#259).
+    crate::annotation_store::SCHEMA_12,
 ];
 
 pub(crate) fn sql(e: rusqlite::Error) -> StoreError {

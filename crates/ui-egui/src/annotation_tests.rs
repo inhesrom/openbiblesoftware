@@ -618,6 +618,123 @@ fn a_note_that_fails_to_save_keeps_its_text() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A new revision of TB in `dir`, under a file name of its own, with `edit` applied to the
+/// text of unit `unit` (same length, so its spans still fit), put in the library as an Import
+/// replacing it would: the library entry, then [`obs_engine::Effect::Replaced`].
+fn replace_tb(h: &mut Harness, dir: &Path, unit: &str, edit: impl FnOnce(&mut String)) {
+    let mut r = crate::tests::numbered_bible_resource("test-bible", "Test Bible", "TB", false);
+    let u = r.units.iter_mut().find(|u| u.id.as_str() == unit).unwrap();
+    let len = u.text.len();
+    edit(&mut u.text);
+    assert_eq!(u.text.len(), len);
+    r.manifest.revision = 2;
+    r.manifest.content_hash = r.content_hash();
+    let path = (2..)
+        .map(|n| dir.join(format!("test-bible-{n}.obr")))
+        .find(|p| !p.exists())
+        .unwrap();
+    obs_store::write_obr(&r, &path).unwrap();
+    h.shell.st.session.library.add_file(&path).unwrap();
+    h.shell
+        .st
+        .session
+        .workspace
+        .push_effect(obs_engine::Effect::Replaced("test-bible".into()));
+    h.frames(3);
+}
+
+/// #259 AUD-UI-SHELL-5: a new revision of the Resource arriving while the popup Note editor
+/// is open never makes the Note quote other words. Where the new revision has other text at
+/// the selection, saving is refused and the editor keeps the text and says why; where it has
+/// the same text there, the Note saves on it as usual, against the new revision.
+#[test]
+fn a_revision_arriving_under_an_open_note_never_changes_its_quote() {
+    let dir = folder("note-revision");
+    let mut h = launch(&dir);
+    let tb = h.tab_id("TB");
+    let (a, b, word, r) = word_in_view(&h, tb, 120.0);
+    let unit = view(&h, tb).doc.units[a.unit].id.as_str().to_string();
+    double_click(&mut h, r.center());
+    press_key(&mut h, egui::Key::N, cmd_shift());
+    h.events.push(Event::Text("Started on the word".into()));
+    h.frame();
+    assert!(h.shell.st.note_editor.is_some());
+    let shot = |h: &mut Harness, name: &str| {
+        if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+            let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+            h.screenshot(&out.join(name));
+        }
+    };
+    // The same bytes now read XXXXX.
+    replace_tb(&mut h, &dir, &unit, |t| {
+        t.replace_range(a.byte..b.byte, &"X".repeat(b.byte - a.byte));
+    });
+    shot(&mut h, "note-editor-revision-changed.ppm");
+    press_key(&mut h, egui::Key::Enter, Modifiers::COMMAND);
+    h.frame();
+    let saved = h.shell.st.session.annotations(None).unwrap();
+    let quotes: Vec<String> = saved
+        .iter()
+        .filter_map(|n| Some(n.anchor.as_ref()?.text_range()?.quote.clone()))
+        .collect();
+    assert!(
+        quotes.is_empty(),
+        "selected quote={word:?}; saved quote={quotes:?}: a background revision must not \
+         silently change a pending Note's selected quote"
+    );
+    let ed = h
+        .shell
+        .st
+        .note_editor
+        .as_ref()
+        .expect("the editor stays open, with its text");
+    assert_eq!(ed.body, "Started on the word");
+    assert!(
+        h.texts().iter().any(|t| t.contains("TB changed")),
+        "{:?}",
+        h.texts()
+    );
+    h.click_text("Discard");
+    assert!(h.shell.st.note_editor.is_none());
+
+    // A word on a later line, and a revision that changes other text only (the X's go
+    // back, and one letter before the word changes): the Note saves on it.
+    let (a, b, word, r) = word_in_view(&h, tb, r.bottom() + 1.0);
+    let unit = view(&h, tb).doc.units[a.unit].id.as_str().to_string();
+    double_click(&mut h, r.center());
+    press_key(&mut h, egui::Key::N, cmd_shift());
+    h.events.push(Event::Text("Still here".into()));
+    h.frame();
+    replace_tb(&mut h, &dir, &unit, |t| {
+        let at = if a.byte > 0 { 0 } else { b.byte + 1 };
+        let c = t[at..].chars().next().unwrap();
+        let to = if c == 'Q' { "Z" } else { "Q" };
+        assert!(c.is_ascii(), "{t}");
+        t.replace_range(at..at + 1, to);
+    });
+    press_key(&mut h, egui::Key::Enter, Modifiers::COMMAND);
+    h.frame();
+    assert!(h.shell.st.note_editor.is_none(), "saved");
+    let notes = h.shell.st.session.annotations(None).unwrap();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].body(), "Still here");
+    let range = notes[0].anchor.as_ref().unwrap().text_range().unwrap();
+    assert_eq!(range.quote, word);
+    assert_eq!(
+        range.content_hash,
+        h.shell
+            .st
+            .session
+            .library
+            .get("test-bible")
+            .unwrap()
+            .manifest
+            .content_hash
+    );
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// ADR 0006: a Passage anchor whose origin range no longer reads as its quote (the Resource
 /// changed) is drawn over its whole Verse(s) rather than disappearing.
 #[test]
@@ -912,6 +1029,7 @@ fn reattach_moves_an_orphaned_annotation_to_the_selection_and_clears_its_warning
                 native_ref: None,
                 whole_verses: false,
                 orphaned: false,
+                checked_hash: None,
             },
         }),
         created_at: 1,

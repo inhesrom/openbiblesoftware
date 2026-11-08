@@ -550,6 +550,66 @@ fn linked_lexicon_reference_click_moves_bible_without_moving_lexicon() {
     assert_eq!(ws.tabs().count(), count);
 }
 
+/// #259 AUD-UI-SHELL-4: a reference click still waiting for its targets when a Layout (or the
+/// Last session) replaces the Workspace is dropped with the Workspace it was made in: the
+/// restored Tab that took the clicked Tab's id stays where the snapshot put it.
+#[test]
+fn a_pending_reference_click_does_not_move_a_restored_layout() {
+    let (mut h, files, bible, _tool) = setup("references-restore", false);
+    let (resource, _) = obs_formats::import_abbott_smith(
+        &obs_formats::LexiconOptions {
+            resource_id: "reference-lexicon".into(),
+            ..Default::default()
+        },
+        r#"<TEI><body><entry n="test|G1"><ref osisRef="John.3.17">John 3:17</ref></entry></body></TEI>"#,
+    )
+    .unwrap();
+    let span = resource.units[0]
+        .spans
+        .iter()
+        .position(|s| matches!(s.kind, obs_model::SpanKind::ScriptureRef { .. }))
+        .unwrap();
+    add_file(&mut h, &files, &resource);
+    h.shell.session_mut().workspace.focus(bible);
+    h.shell
+        .run("resource.open", &json!({"id": "reference-lexicon"}));
+    let lexicon = h.shell.session().workspace.focused().unwrap();
+    h.frames(3);
+    let at = |h: &Harness| {
+        h.shell
+            .session()
+            .workspace
+            .tab(bible)
+            .unwrap()
+            .history
+            .current()
+    };
+    assert_eq!(at(&h), Some(john(16).start()));
+    // The Layout as saved: the linked Bible at John 3:16.
+    let saved = h.shell.session().workspace.snapshot();
+    // A click on a cold reference: its targets wait for the worker.
+    h.shell.st.references.targets = crate::shell::references::TargetCache::held();
+    let spot = reference_spot(&h, lexicon, span);
+    h.click(spot);
+    h.frames(2);
+    assert!(
+        h.shell.st.references.pending_clicks.contains_key(&lexicon),
+        "the click waits for its targets"
+    );
+    // The saved Layout comes back before they arrive; its Tabs take the same ids.
+    h.shell.session_mut().workspace.restore(saved);
+    h.frames(3);
+    assert!(h.shell.session().workspace.tab(lexicon).is_some());
+    assert_eq!(at(&h), Some(john(16).start()), "after restore");
+    h.shell.st.references.targets.release();
+    h.frames(5);
+    assert_eq!(
+        at(&h),
+        Some(john(16).start()),
+        "a click made before the restore must not move the restored Layout"
+    );
+}
+
 #[test]
 fn descending_scripture_reference_click_keeps_first_written_target() {
     let (mut h, _files, bible, tool) = setup("references-descending", false);

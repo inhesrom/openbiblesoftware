@@ -332,7 +332,7 @@ The other Resources of a Resource Tab's Resource type, in Preferred order. The T
 _Avoid_: Parallel Tabs, Resource swap, Synced resources
 
 **Layout**:
-A named, saved snapshot of the Workspace, including its Link sets and Floating windows, that the user can restore.
+A named, saved snapshot of the Workspace, including its Link sets and Floating windows and where each Tab is (a Search's search, a Text Comparison's Bibles and choices), that the user can restore.
 _Avoid_: Workspace (for the saved snapshot), Preset, Arrangement
 
 **Favorite**:

@@ -991,7 +991,7 @@ impl State {
         self.open_note_editor(
             ctx,
             tab,
-            json!({ "passage": label }),
+            (json!({ "passage": label }), String::new()),
             label.clone(),
             String::new(),
             at,

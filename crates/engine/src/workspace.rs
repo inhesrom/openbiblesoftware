@@ -507,8 +507,11 @@ impl Tab {
             versification: None,
             verse_map: None,
             link: t.link,
-            comparison: Comparison::default(),
-            search: Default::default(),
+            comparison: t.comparison,
+            search: t
+                .search
+                .map(|f| crate::bible_search::SearchTab::restored_from(&f))
+                .unwrap_or_default(),
             arriving_at: None,
             interlinear: t.interlinear,
             contents: t.contents,

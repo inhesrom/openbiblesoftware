@@ -660,6 +660,7 @@ fn text_range_anchors_show_only_in_their_resource() {
         native_ref: Some("Ps.51.1".into()),
         whole_verses: false,
         orphaned: false,
+        checked_hash: None,
     };
     let a = obs_engine::Annotation {
         id: "a".into(),
