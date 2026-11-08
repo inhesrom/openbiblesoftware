@@ -17,7 +17,9 @@ in the KJV. We decided:
    for `@…` terms, one with a Lemma by it for `lemma:` terms, whatever its Bible's language: an
    English import that carries both (USFM `x-morph`, `lemma`) is not overruled by another
    Bible's number. Only the words without the data a term asks for take it from the aligned
-   Verse.
+   Verse, and only the data they lack: for a term asking for both (`lemma:εὐλογέω @imperative`)
+   a word with Morphology of its own but no Lemma takes the original word's Lemma, and its own
+   Morphology must still meet the term.
 3. **Grammatical morphemes are never aligned.** STEPBible numbers prefixes and suffixes from
    H9001 up; every Hebrew word has one (`וְ`), so aligning them would colour every "and".
 4. **Filters are a preference, not a table.** The list is the `reading.visual_filters` User

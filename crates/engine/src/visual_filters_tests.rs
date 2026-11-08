@@ -872,7 +872,8 @@ fn proximity_pairs_overlapping_alternatives_one_by_one_as_search_does() {
         (
             "(\"bless them\" OR bless) NEAR/0 them",
             vec![rom(14)],
-            vec!["Bless", "them"],
+            // NEAR pairs "Bless them" with the "them" inside it too, as FTS5 does.
+            vec!["Bless them"],
         ),
         (
             "(\"bless them\" OR bless) BEFORE/1 which",
@@ -985,4 +986,104 @@ fn alignment_reaches_only_words_without_tags_of_their_own() {
         &mut never,
     );
     assert_eq!(greek[0].len(), 5);
+}
+
+/// Review of #211: a query asking for a Lemma and Morphology at once takes from alignment
+/// only the one a word lacks, and the one it has must still meet the query. In the KJV's
+/// 12:14 the first "Bless" has Morphology (a participle) and no Lemma, the second "bless" a
+/// Lemma and no Morphology, "persecute" Morphology (an imperative) and "curse" a Lemma
+/// (another) of their own.
+#[test]
+fn a_lemma_and_morphology_query_aligns_only_the_field_a_word_lacks() {
+    let tagnt = tagnt_romans_12();
+    let mut kjv = kjv_romans_12();
+    let unit = &mut kjv.units[0];
+    let first_bless = unit.text.find("Bless them").unwrap();
+    let second_bless = unit.text.find("bless,").unwrap();
+    let persecute = unit.text.find("persecute").unwrap();
+    let curse = unit.text.find("curse").unwrap();
+    for s in &mut unit.spans {
+        let at = s.start as usize;
+        let SpanKind::TaggedWord { parts } = &mut s.kind else {
+            continue;
+        };
+        let part = &mut parts[0];
+        match at {
+            at if at == first_bless => part.morph = Some("V-PAP-NPM".into()),
+            at if at == persecute => part.morph = Some("V-PAM-2P".into()),
+            at if at == second_bless => part.lemma = Some("εὐλογέω".into()),
+            at if at == curse => part.lemma = Some("ἀρά".into()),
+            _ => {}
+        }
+    }
+    for (query, expected, why) in [
+        (
+            "lemma:εὐλογέω @imperative",
+            vec!["bless"],
+            "the participle \"Bless\" keeps its own Morphology though TAGNT's G2127 is an \
+             imperative; the second takes only the Morphology it lacks",
+        ),
+        (
+            "lemma:διώκω @imperative",
+            vec!["persecute"],
+            "its own imperative Morphology with TAGNT's Lemma, though TAGNT's διώκοντας is a \
+             participle",
+        ),
+        (
+            "lemma:καταράομαι @imperative",
+            vec![],
+            "\"curse\" keeps its own Lemma though TAGNT's G2672 is καταράομαι",
+        ),
+    ] {
+        let found = coloured(&kjv, &[filter("F", query, "")], true, &mut aligned(&tagnt));
+        assert_eq!(found[0], expected, "{query}: {why}");
+    }
+    // Without the local tags the same queries read TAGNT's words whole.
+    let plain = kjv_romans_12();
+    for (query, expected) in [
+        ("lemma:εὐλογέω @imperative", vec!["Bless", "bless"]),
+        ("lemma:διώκω @imperative", vec![]),
+        ("lemma:καταράομαι @imperative", vec!["curse"]),
+    ] {
+        let found = coloured(
+            &plain,
+            &[filter("F", query, "")],
+            true,
+            &mut aligned(&tagnt),
+        );
+        assert_eq!(found[0], expected, "{query}");
+    }
+}
+
+/// Review of #211: `NEAR/n` pairs operands as FTS5's NEAR does, overlapping ones too:
+/// "them" lies inside "Bless them", so `"bless them" NEAR/0 them` finds 12:14 in Search and
+/// the filter colours it; `BEFORE/n` still wants the second after the first.
+#[test]
+fn near_pairs_overlapping_operands_as_search_does() {
+    let kjv = kjv_romans_12();
+    let rom = |v| Verse::new(obs_scripture::Book::Romans, 12, v);
+    for (query, verses, coloured) in [
+        (
+            "\"bless them\" NEAR/0 them",
+            vec![rom(14)],
+            vec!["Bless them"],
+        ),
+        (
+            "them NEAR/0 \"bless them\"",
+            vec![rom(14)],
+            vec!["Bless them"],
+        ),
+        (
+            "\"them which\" NEAR/0 \"bless them\"",
+            vec![rom(14)],
+            vec!["Bless them which"],
+        ),
+        ("\"bless them\" BEFORE/0 them", vec![], vec![]),
+        ("them BEFORE/0 \"bless them\"", vec![], vec![]),
+    ] {
+        assert_eq!(search_verses(&kjv, query), verses, "Search: {query}");
+        let (found, words) = filter_verses(&kjv, query);
+        assert_eq!(found, verses, "filter: {query}");
+        assert_eq!(words, coloured, "{query}");
+    }
 }

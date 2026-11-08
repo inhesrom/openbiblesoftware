@@ -31,7 +31,7 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 
 use obs_model::{MorphemePart, SpanKind, TextUnit};
-use obs_scripture::{Passage, PassageList, StrongsNumber};
+use obs_scripture::{Passage, PassageList};
 use obs_search::{Highlighter, LemmaLookup, Query};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -484,8 +484,8 @@ struct MatchContext<'a> {
 
 impl MatchContext<'_> {
     /// The bytes term `h` marks in `doc`: its own words, judged by their own tags, and in an
-    /// aligned Bible the words lacking the tags `h` asks for whose Strong's number is that of
-    /// a word `h` marks in the original-language Verse.
+    /// aligned Bible the words lacking the tags `h` asks for that `h` marks once what they
+    /// lack is taken from a word of the original-language Verse with their Strong's number.
     fn term(&mut self, h: &Highlighter, doc: &Document<'_>) -> Vec<Range<usize>> {
         let tagged = tagged_in(self.unit, doc.range.clone());
         let base = doc.range.start;
@@ -499,8 +499,9 @@ impl MatchContext<'_> {
         let Some(standard) = doc.standard else {
             return out;
         };
-        // Only words without the data: a word tagged as a participle stays one, whatever
-        // the original-language Bible says of its Strong's number.
+        // Only words without the data, and only what they lack: a word tagged as a
+        // participle stays one, whatever the original-language Bible says of its Strong's
+        // number, and its own Morphology still has to meet `lemma:… @imperative`.
         let untagged: Vec<&(Range<usize>, &[MorphemePart])> = tagged
             .iter()
             .filter(|(_, parts)| h.lacks_original_language_data(parts))
@@ -513,14 +514,16 @@ impl MatchContext<'_> {
             .aligned
             .entry(standard)
             .or_insert_with(|| original(standard));
-        let numbers = aligned_numbers(h, words.iter().map(Vec::as_slice));
-        if !numbers.is_empty() {
-            for (range, parts) in untagged {
-                if parts.iter().any(|p| {
-                    p.strongs.number() < AFFIX_NUMBERS_FROM && numbers.contains(&p.strongs.base())
-                }) {
-                    out.push(range.clone());
-                }
+        for (range, parts) in untagged {
+            let matched = parts.iter().any(|p| {
+                words
+                    .iter()
+                    .flatten()
+                    .filter_map(|o| filled_from(p, o))
+                    .any(|filled| h.matches_part(&filled))
+            });
+            if matched {
+                out.push(range.clone());
             }
         }
         out
@@ -529,7 +532,7 @@ impl MatchContext<'_> {
     /// The occurrences of `left` and `right` in `doc` that have one of the other side at most
     /// `words` words away (after it when `ordered`), counted as the Search index counts them:
     /// each word or phrase on its own, even where one overlaps another (`"bless them" OR
-    /// bless`), and without the Verse's headings.
+    /// bless`, or `"bless them" NEAR/0 them`), and without the Verse's headings.
     fn near(
         &self,
         left: &Highlighter,
@@ -553,12 +556,18 @@ impl MatchContext<'_> {
         };
         let a = occurrences(left);
         let b = occurrences(right);
-        let within = |(_, end, _): &(usize, usize, Range<usize>),
-                      (start, _, _): &(usize, usize, Range<usize>)| {
-            *start > *end && *start - *end - 1 <= words as usize
-        };
+        let words = words as usize;
+        // `BEFORE/n`: `y` starts after `x` ends, with at most `words` words between (the
+        // Search index's check of its NEAR candidates). `NEAR/n`: FTS5's NEAR, where the
+        // one starting later starts at most `words` words after the other ends, overlapping
+        // it or not (`"bless them" NEAR/0 them`).
         let paired = |x: &(usize, usize, Range<usize>), y: &(usize, usize, Range<usize>)| {
-            within(x, y) || (!ordered && within(y, x))
+            if ordered {
+                y.0 > x.1 && y.0 - x.1 - 1 <= words
+            } else {
+                let (earlier, later) = if x.0 <= y.0 { (x, y) } else { (y, x) };
+                later.0 <= earlier.1 + 1 + words
+            }
         };
         let mut out = Vec::new();
         for x in &a {
@@ -575,21 +584,34 @@ impl MatchContext<'_> {
     }
 }
 
-/// The Strong's numbers (base forms, affixes left out) of the words among `words` (the
-/// morphemes of each Tagged word of one original-language Verse) that term `h` marks.
-fn aligned_numbers<'a>(
-    h: &Highlighter,
-    words: impl IntoIterator<Item = &'a [MorphemePart]>,
-) -> BTreeSet<StrongsNumber> {
-    let mut out = BTreeSet::new();
-    for parts in words {
-        for (part, matched) in parts.iter().zip(h.matching_parts(parts)) {
-            if matched && part.strongs.number() < AFFIX_NUMBERS_FROM {
-                out.insert(part.strongs.base());
-            }
-        }
+/// Morpheme `local` of a Tagged word with what it lacks (Morphology, a Lemma) taken from
+/// `original`, a morpheme of the aligned original-language Verse with its Strong's number
+/// (base forms compared, so KJV `G4160` takes TAGNT `G4160G`'s); what `local` has stays.
+/// `None` for another number or a grammatical morpheme (ADR 0015).
+fn filled_from(local: &MorphemePart, original: &MorphemePart) -> Option<MorphemePart> {
+    if local.strongs.number() >= AFFIX_NUMBERS_FROM
+        || original.strongs.number() >= AFFIX_NUMBERS_FROM
+        || local.strongs.base() != original.strongs.base()
+    {
+        return None;
     }
-    out
+    let own_or = |own: &Option<String>, other: &Option<String>| {
+        if own.as_deref().is_some_and(|v| !v.trim().is_empty()) {
+            own.clone()
+        } else {
+            other.clone()
+        }
+    };
+    Some(MorphemePart {
+        strongs: if local.strongs == local.strongs.base() {
+            original.strongs
+        } else {
+            local.strongs
+        },
+        lemma: own_or(&local.lemma, &original.lemma),
+        morph: own_or(&local.morph, &original.morph),
+        gloss: None,
+    })
 }
 
 /// One filter ready to match text.

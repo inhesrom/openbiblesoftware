@@ -169,14 +169,14 @@ impl Highlighter {
 
     /// Which morpheme parts of a Tagged word match a `strong:`, `lemma:` or `@…` term.
     pub fn matching_parts(&self, parts: &[MorphemePart]) -> Vec<bool> {
-        parts
-            .iter()
-            .map(|p| {
-                self.strong_matches(p.strongs)
-                    || self.lemma_matches(p.lemma.as_deref())
-                    || self.morph.iter().any(|m| m.matches(p))
-            })
-            .collect()
+        parts.iter().map(|p| self.matches_part(p)).collect()
+    }
+
+    /// Whether one morpheme part matches a `strong:`, `lemma:` or `@…` term.
+    pub fn matches_part(&self, p: &MorphemePart) -> bool {
+        self.strong_matches(p.strongs)
+            || self.lemma_matches(p.lemma.as_deref())
+            || self.morph.iter().any(|m| m.matches(p))
     }
 
     /// Whether a Tagged word with morphemes `parts` lacks what it asks for: Morphology for a
