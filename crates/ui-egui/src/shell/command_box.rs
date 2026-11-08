@@ -228,10 +228,13 @@ impl Shell {
         let typed = std::mem::take(&mut cb.text);
         let suggestions = std::mem::take(&mut cb.suggestions);
         let for_text = cb.for_text.take();
-        let ran = self.run(
-            "command_box.run",
-            &json!({ "text": typed.trim(), "choice": choice, "new_tab": new_tab }),
-        );
+        let mut params = json!({ "text": typed.trim(), "choice": choice, "new_tab": new_tab });
+        // The command shown runs, not whichever the suggestions found again put at `choice`:
+        // they leave out disabled commands, so one becoming possible (an Undo) shifts them.
+        if let obs_engine::CommandBoxAction::Command(id) = suggestions[choice].action {
+            params["command"] = json!(id);
+        }
+        let ran = self.run("command_box.run", &params);
         let cb = &mut self.st.command_box;
         if ran.is_none() {
             cb.text = typed;

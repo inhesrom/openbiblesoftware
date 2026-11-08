@@ -959,7 +959,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
                 name: "command",
                 kind: ParamKind::String,
                 required: false,
-                help: "The listed command suggestion `choice` was already found to run, run as it instead of looking again (the UI saves the Notes being written before a restore's undo, which changes the suggestions, #226); `text` is the entry kept",
+                help: "The listed command suggestion `choice` showed, run as it instead of looking again: the suggestions leave out disabled commands, so one made possible since they were shown (an Undo, say by the Notes saved before a restore's undo, #226) shifts them; `text` is the entry kept",
             },
         ],
         enabled: always,

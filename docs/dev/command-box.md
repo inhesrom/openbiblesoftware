@@ -63,8 +63,11 @@ A command run from the box behaves as from its menu, button or key:
 
 - The box empties before the command runs, so one that puts the keyboard back in it (All
   commands, Command box) keeps what it put there; a failed run puts the text back.
+- The command run is the one the dropdown showed: the UI passes its id (`command`), since the
+  suggestions, found again, leave out disabled commands and one made possible meanwhile (an
+  Undo) would shift them.
 - Undo restore (`data.undo_restore`) is guarded as everywhere else (#217): the UI asks
-  `Session::command_box_command` which command the chosen suggestion runs and, for a restore
+  `Session::command_box_choice` which command the chosen suggestion runs and, for a restore
   or its undo, saves the Notes being written first (holding the undo back if the database
   refuses them) and forgets the Notes Tab's drafts after.
 - Word Info's Copy (`word_info.copy`) hands its text to the UI as `Effect::CopyText`, which

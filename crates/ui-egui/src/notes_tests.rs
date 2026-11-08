@@ -1155,6 +1155,75 @@ fn undo_restore_from_the_command_box_saves_the_card_being_edited_first() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// The Command box runs the command its dropdown shows (#226). `>undo` lists Undo restore
+/// first while nothing else can be undone; a Note saved while the dropdown is open makes an
+/// Undo, which the suggestions found again would put first. Enter still undoes the restore.
+#[test]
+fn the_command_box_runs_the_command_shown_when_an_undo_appears_under_it() {
+    let dir = folder("command-box-shown");
+    let mut h = launch(&dir);
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Gen 31:49", "body": "The heap" }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let backup = dir.join("before.obsbackup");
+    let backup_path = json!({ "path": backup.to_string_lossy() });
+    h.shell.run("data.back_up", &backup_path).unwrap();
+    h.shell
+        .run("annotation.edit", &json!({ "id": id, "body": "Galeed" }))
+        .unwrap();
+    h.shell.run("data.restore", &backup_path).unwrap();
+    let saved = |h: &Harness| {
+        h.shell
+            .st
+            .session
+            .annotation(&id)
+            .unwrap()
+            .body()
+            .to_string()
+    };
+    assert_eq!(saved(&h), "The heap", "the Backup's Note");
+
+    h.shell.run("command_box.focus", &json!({}));
+    h.frames(2);
+    h.events.push(Event::Text(">undo".into()));
+    h.frames(2);
+    let restore = obs_engine::CommandBoxAction::Command("data.undo_restore");
+    assert_eq!(h.shell.st.command_box.suggestions[0].action, restore);
+    assert!(h.shell.st.command_box.dropdown.is_some());
+
+    // A Note saved while the dropdown is open (an autosave, a retried save) can be undone.
+    h.shell
+        .run("annotation.edit", &json!({ "id": id, "body": "Mizpah" }))
+        .unwrap();
+    h.frames(1);
+    assert_ne!(
+        (h.shell.st.session.command_box_choice(">undo", 0)).map(|(_, a)| a),
+        Some(restore.clone()),
+        "found again, `>undo` names another Undo first"
+    );
+    assert_eq!(
+        h.shell.st.command_box.suggestions[0].action, restore,
+        "the dropdown still shows Undo restore highlighted"
+    );
+    press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    h.frames(2);
+    assert!(
+        h.shell.st.session.last_restore().is_none(),
+        "the restore was undone"
+    );
+    assert_eq!(saved(&h), "Galeed", "the data from before the restore");
+    assert!(h.shell.st.command_box.text.is_empty());
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// A refused save is retried on its own clock (#129): with the Notes Tab covered, its toast
 /// gone and nothing else moving, each failed try still asks for the frame of the next one, so
 /// the words save once the disk has room without the user touching the window.
