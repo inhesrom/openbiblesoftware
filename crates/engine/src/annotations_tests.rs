@@ -531,7 +531,10 @@ fn a_selection_from_a_replaced_revision_is_refused() {
         .map(|_| ())
         .unwrap_err()
         .to_string();
-    assert!(err.contains("changed after this text was selected"), "{err}");
+    assert!(
+        err.contains("changed after this text was selected"),
+        "{err}"
+    );
 }
 
 #[test]

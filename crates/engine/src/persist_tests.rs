@@ -94,7 +94,11 @@ fn assert_search_back(s: &Session, history: usize) {
     assert!(st.restored > 0, "the UI shows the restored fields");
     let found = st.notes.as_ref().expect("the search ran again");
     assert_eq!(found.hits.len(), 1);
-    assert_eq!(s.search_history().len(), history, "restoring is not a search");
+    assert_eq!(
+        s.search_history().len(),
+        history,
+        "restoring is not a search"
+    );
 }
 
 fn assert_comparison_back(s: &Session) {

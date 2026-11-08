@@ -699,7 +699,8 @@ impl State {
                 ed.target["revision"] = json!(doc.manifest.content_hash);
             }
             doc => {
-                let abbreviation = doc.map_or_else(|| id.to_string(), |d| d.manifest.abbreviation.clone());
+                let abbreviation =
+                    doc.map_or_else(|| id.to_string(), |d| d.manifest.abbreviation.clone());
                 ed.error = Some(format!(
                     "{abbreviation} changed while this Note was open: “{}” is no longer where it \
                      was. Copy your text, then Discard and select the text again.",

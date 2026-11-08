@@ -135,7 +135,10 @@ pub struct TabSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search: Option<crate::favorites::SavedSearch>,
     /// A Text Comparison's choices: Bibles, base, range and Differences (#259).
-    #[serde(default, skip_serializing_if = "crate::compare::Comparison::is_default")]
+    #[serde(
+        default,
+        skip_serializing_if = "crate::compare::Comparison::is_default"
+    )]
     pub comparison: crate::compare::Comparison,
 }
 

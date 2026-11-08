@@ -715,7 +715,14 @@ fn a_revision_arriving_under_an_open_note_never_changes_its_quote() {
     assert_eq!(range.quote, word);
     assert_eq!(
         range.content_hash,
-        h.shell.st.session.library.get("test-bible").unwrap().manifest.content_hash
+        h.shell
+            .st
+            .session
+            .library
+            .get("test-bible")
+            .unwrap()
+            .manifest
+            .content_hash
     );
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
