@@ -219,14 +219,11 @@ impl State {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.label(RichText::new(fact.label).small().color(theme::c().muted));
-                for (i, p) in fact.people.iter().enumerate() {
-                    if i > 0 {
-                        ui.label(RichText::new(",").color(theme::c().muted));
-                    }
+                comma_list(ui, &fact.people, |ui, p| {
                     if let Some(a) = entity_link(ui, p, new_tab) {
                         action = Some(a);
                     }
-                }
+                });
             });
         }
         action
@@ -533,6 +530,21 @@ fn entity_link(ui: &mut Ui, p: &EntityLink, new_tab: bool) -> Option<FactbookAct
         .then(|| FactbookAction::Entity(p.entity.clone(), new_tab))
 }
 
+/// Items in a wrapping row, separated by commas that sit right after each item (`Nahor,
+/// Haran`): an item and its comma are one unit with no spacing between them, so the row's
+/// item spacing falls after the comma, not before it (#261).
+fn comma_list<T>(ui: &mut Ui, items: &[T], mut item: impl FnMut(&mut Ui, &T)) {
+    for (i, it) in items.iter().enumerate() {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            item(ui, it);
+            if i + 1 < items.len() {
+                ui.label(RichText::new(",").color(theme::c().muted));
+            }
+        });
+    }
+}
+
 /// One person or place as a clickable row: `John (son of Zebedee)`, its details, and `why`
 /// (Related) or what else it is called (chooser). Returns whether it was clicked.
 fn card_row(ui: &mut Ui, c: &EntityCard, why: Option<&str>) -> bool {
@@ -589,6 +601,39 @@ mod tests {
     use obs_scripture::Verse;
 
     use super::*;
+
+    /// #261 GUIDES-17: `Nahor, Haran, Sarah` — no space before a comma, one after it.
+    #[test]
+    fn comma_list_puts_each_comma_right_after_its_item() {
+        let ctx = egui::Context::default();
+        let names = ["Nahor", "Haran", "Sarah"];
+        let mut rects: Vec<Rect> = Vec::new();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                comma_list(ui, &names, |ui, n| rects.push(ui.label(*n).rect));
+            });
+        });
+        out.textures_delta.clear();
+        let commas: Vec<Rect> = out
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(t) if t.galley.text() == "," => {
+                    Some(t.galley.rect.translate(t.pos.to_vec2()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!((rects.len(), commas.len()), (3, 2));
+        for (name, comma) in rects.iter().zip(&commas) {
+            assert!(
+                (comma.left() - name.right()).abs() < 0.5,
+                "comma {comma:?} apart from {name:?}"
+            );
+        }
+        assert!(rects[1].left() - commas[0].right() >= 3.5, "a space after the comma");
+    }
 
     #[test]
     fn in_book_drops_the_whole_book_abbreviation() {
