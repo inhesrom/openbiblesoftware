@@ -396,7 +396,7 @@ The bar Ctrl+F opens under a Resource or Text Comparison Tab's header (also the 
 _Avoid_: Search (for this), Find dialog, Quick find
 
 **Text size**:
-How large Resource text is drawn in every Tab, in points. View → Larger text, Smaller text and Reset text size change it (Ctrl/Cmd with +, = or numpad +; − or numpad −; 0). It never changes the Interface size.
+How large Resource text is drawn in every Tab, in points. View → Larger text, Smaller text and Reset text size change it (Ctrl/Cmd with +, = or numpad +; − or numpad −; 0). The default is 20 pt, the same for Bibles and every other Resource, and the readable range is 12–40 pt: a saved size below 12 (left by an older build) opens at the default once, with a notice. A point is a logical pixel, so on a 2× display text keeps its size and gets sharper. It never changes the Interface size.
 _Avoid_: Zoom, Font size
 
 **Interface size**:

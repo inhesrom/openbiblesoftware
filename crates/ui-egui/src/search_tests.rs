@@ -359,6 +359,8 @@ fn word_info_search_this_word_searches_its_bible() {
 #[test]
 fn covenant_in_library_mode_draws_commentary_and_dictionary_hits_grouped_by_resource() {
     let (mut h, files) = library_harness("library-covenant");
+    // Tall enough for all three groups' first rows at the default Text size (#241).
+    h.screen = vec2(1400.0, 1100.0);
     type_query_in(&mut h, obs_engine::SearchMode::Library, "covenant");
     settle(&mut h);
     let tab = search_tab(&h);

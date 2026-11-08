@@ -121,7 +121,8 @@ fn every_stored_view_and_toolbar_field_has_a_setting() {
             "theme" => vec!["theme"],
             "page_tone" => vec!["page_tone"],
             "interface_size" => vec!["interface_size"],
-            "text_size" => vec!["text_size"],
+            // The default a size was saved under is part of the Text size (#241).
+            "text_size" | "text_size_default" => vec!["text_size"],
             "line_spacing" => vec!["line_spacing"],
             "red_letter" => vec!["red_letter"],
             "verse_numbers" => vec!["verse_numbers"],

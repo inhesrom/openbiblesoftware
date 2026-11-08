@@ -62,10 +62,10 @@ fn word_in_view(h: &Harness, tb: TabId, nth: usize) -> serde_json::Value {
     })
 }
 
-/// A Note on the first long word of the third block in view in TB, made by the command the
+/// A Note on the first long word of the second block in view in TB, made by the command the
 /// Note editor runs. Returns its id.
 fn note_in_view(h: &mut Harness, tb: TabId, body: &str) -> String {
-    let mut params = word_in_view(h, tb, 2);
+    let mut params = word_in_view(h, tb, 1);
     params["body"] = json!(body);
     let out = h.shell.run("annotation.note", &params).unwrap();
     h.frames(2);

@@ -435,17 +435,18 @@ fn a_hebrew_bibles_preview_reads_right_to_left_through_the_text_pipeline() {
             }
             assert!(line.rtl, "{label}: {:?} reads right to left", line.text);
             // In the Hebrew Reading font's size, the first word to the right of the last.
-            let items: Vec<_> = laid.lines.iter().flat_map(|l| &l.items).collect();
+            // (line, x) of a word: a later line, or further left on the same one.
             let at = |word: &str| {
                 let start = line.text.find(word).unwrap();
-                let item = (items.iter())
-                    .find(|i| i.bytes.contains(&start))
+                let (row, item) = (laid.lines.iter().enumerate())
+                    .flat_map(|(row, l)| l.items.iter().map(move |i| (row, i)))
+                    .find(|(_, i)| i.bytes.contains(&start))
                     .unwrap_or_else(|| panic!("{label}: no item for {word}"));
                 assert!(item.rtl && (item.style.size - hebrew_size).abs() < 0.01);
-                item.x
+                (row, -item.x)
             };
             assert!(
-                at(first_word) > at(last_word),
+                at(first_word) < at(last_word),
                 "{label}: Hebrew runs right to left"
             );
             hebrew_lines += 1;
