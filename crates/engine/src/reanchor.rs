@@ -692,13 +692,11 @@ impl Session {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let path = entry.path.clone();
-            let job = self
-                .jobs()
-                .submit_fn(format!("Re-anchor {resource_id}"), move |_ctx| {
-                    let reader = obs_store::ObrReader::open(&path)
-                        .map_err(|e| format!("{}: {e}", path.display()))?;
-                    plan(&reader, &mine)
-                });
+            let job = self.jobs().submit_fn("Re-anchor", move |_ctx| {
+                let reader = obs_store::ObrReader::open(&path)
+                    .map_err(|e| format!("{}: {e}", path.display()))?;
+                plan(&reader, &mine)
+            });
             self.reanchoring
                 .running
                 .insert(job, resource_id.to_string());

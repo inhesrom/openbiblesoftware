@@ -822,6 +822,11 @@ pub enum Effect {
     PickImport,
     /// Open the Fonts window (View → Fonts…, #138).
     ShowFonts,
+    /// Show a folder in the system file manager (Help → Open log folder, #219).
+    OpenFolder(std::path::PathBuf),
+    /// Open the Report a problem window on the newest Crash report, or a problem report made
+    /// now (Help → Report a problem…, #219).
+    ReportProblem,
     /// Open the Highlight styles window (View → Highlight styles…, #181).
     ShowHighlightStyles,
     /// A Resource Tab now shows another Resource (a parallel resource, or Back/Forward across

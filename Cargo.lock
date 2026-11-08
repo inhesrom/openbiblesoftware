@@ -2541,6 +2541,7 @@ dependencies = [
 name = "obs-engine"
 version = "0.0.0"
 dependencies = [
+ "log",
  "obs-fonts",
  "obs-formats",
  "obs-layout",
@@ -2659,6 +2660,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_tiles",
+ "log",
  "obs-engine",
  "obs-fonts",
  "obs-formats",
@@ -2689,6 +2691,7 @@ dependencies = [
  "arboard",
  "eframe",
  "fontdb",
+ "log",
  "obs-engine",
  "obs-fonts",
  "obs-formats",
