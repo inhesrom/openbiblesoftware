@@ -14,7 +14,7 @@ Layouts drop-downs are what they were before the audit.
 | Go | moving in the focused Tab (Back, Forward, chapter, entry, parallel resource), Home, the Command box |
 | Tools | the Guides, then the Tools |
 | Window | Reopen closed Tab and Recently closed, Close Tab and Close Panel, moving between Tabs, Panels and areas, Floating windows |
-| Help | All commands, Keyboard shortcuts, Credits, About Open Bible |
+| Help | All commands, Keyboard shortcuts, Report a problem… and Open log folder, Credits, About Open Bible |
 
 Rarely used items are grouped: View's choices (Theme, Page tone …) and Window → Go to Panel
 (Panels 1–9) are submenus. A menu command that needs a Tab (Close Tab, Back, Find in
@@ -38,6 +38,9 @@ Every registered command is in exactly one of these places (the test
   (`workspace.drop`), a file from a window (`highlight_palette.import`). The test finds the
   command's id in the UI's sources. `obs_engine::IN_PLACE_COMMANDS` lists the ones that need
   no parameter but are still left out of the Command box.
+- **A Setting**, for a choice only Settings offers (`app.log_level`, Log level): its row in
+  the Settings Tab runs the command with the value picked (`SettingKind::Choice` in
+  `obs_engine::SETTINGS`).
 - **Scripting only** (`obs_engine::SCRIPTING_COMMANDS`): commands that answer
   `obs-cli run …` with data and change nothing on screen (`reference.parse`,
   `annotation.list`, `command_box.suggest` …). No menu offers them.
@@ -62,9 +65,9 @@ Checked for every command's label and every menu, choice and submenu title
 - **Ellipses.** "…" is one character, at the end, after a word, and only on a label that
   starts with a verb for a command that asks for something before it acts (a name, a file, a
   choice in a window or Tab, a confirmation): Import…, Get Bibles…, Save Layout as…, Rename
-  Layout…, Remove…, Copy verses…, Customize toolbar…, Back up & restore…. A command named for
-  what it opens has none: Library, Starter library, Settings, Fonts, Highlight styles,
-  Keyboard shortcuts.
+  Layout…, Remove…, Copy verses…, Customize toolbar…, Back up & restore…, Report a problem…
+  (the report is shown before anything is sent). A command named for what it opens has
+  none: Library, Starter library, Settings, Fonts, Highlight styles, Keyboard shortcuts.
 - **No two listed commands share a label** (Word Info's own Word Study button is "Word Study
   of this word", beside "Search this word").
 
@@ -215,6 +218,9 @@ Checked for every command's label and every menu, choice and submenu title
 |---|---|---|
 | All commands | `app.commands` | Ctrl+Shift+P |
 | Keyboard shortcuts | `help.keyboard_shortcuts` |  |
+| — | | |
+| Report a problem… | `help.report_problem` |  |
+| Open log folder | `help.open_log_folder` |  |
 | — | | |
 | Credits | `help.credits` |  |
 | About Open Bible | `help.about` |  |

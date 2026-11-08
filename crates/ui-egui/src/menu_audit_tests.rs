@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use egui::Key;
 use obs_engine::{
     COMMANDS_PREFIX, CommandBoxAction, CommandSpec, IN_PLACE_COMMANDS, MENUS, MenuItem,
-    SCRIPTING_COMMANDS, is_listed,
+    SCRIPTING_COMMANDS, SETTINGS, SettingKind, is_listed,
 };
 
 use super::*;
@@ -115,13 +115,19 @@ fn the_menu_bar_is_file_edit_view_go_tools_window_help() {
 }
 
 /// No orphans: every registered command is in a menu, listed by the Command box, a scripting
-/// command, or run from the UI with the parameters only its own place has.
+/// command, a Setting's choices, or run from the UI with the parameters only its own place
+/// has.
 #[test]
 fn every_command_is_in_a_menu_the_command_box_or_its_own_place() {
     let h = Harness::new();
     let in_menus: BTreeSet<&str> = menu_commands().into_iter().map(|(_, id)| id).collect();
     let sources = ui_sources();
     let run_by_the_ui = |id: &str| sources.contains(&format!("\"{id}\""));
+    // A choice only Settings offers (Log level): its row runs it with the value picked.
+    let a_settings_choice = |id: &str| {
+        (SETTINGS.iter())
+            .any(|s| matches!(s.kind, SettingKind::Choice { command, .. } if command == id))
+    };
     let mut orphans = Vec::new();
     for spec in specs(&h) {
         let id = spec.id;
@@ -129,6 +135,7 @@ fn every_command_is_in_a_menu_the_command_box_or_its_own_place() {
         let reached = in_menus.contains(id)
             || is_listed(&spec)
             || scripting
+            || a_settings_choice(id)
             || (IN_PLACE_COMMANDS.contains(&id) || !spec.params.is_empty()) && run_by_the_ui(id);
         if !reached {
             orphans.push(id);
@@ -305,6 +312,7 @@ const ASKING_VERBS: &[&str] = &[
     "New",
     "Remove",
     "Rename",
+    "Report",
     "Save",
 ];
 
