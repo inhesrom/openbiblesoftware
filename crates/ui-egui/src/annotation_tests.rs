@@ -659,10 +659,18 @@ fn a_revision_arriving_under_an_open_note_never_changes_its_quote() {
     h.events.push(Event::Text("Started on the word".into()));
     h.frame();
     assert!(h.shell.st.note_editor.is_some());
+    let shot = |h: &mut Harness, name: &str| {
+        if std::env::var_os("UPDATE_PREVIEWS").is_some() {
+            let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+            h.screenshot(&out.join(name));
+        }
+    };
+    shot(&mut h, "note-editor-before-revision.ppm");
     // The same bytes now read XXXXX.
     replace_tb(&mut h, &dir, &unit, |t| {
         t.replace_range(a.byte..b.byte, &"X".repeat(b.byte - a.byte));
     });
+    shot(&mut h, "note-editor-revision-changed.ppm");
     press_key(&mut h, egui::Key::Enter, Modifiers::COMMAND);
     h.frame();
     let saved = h.shell.st.session.annotations(None).unwrap();
