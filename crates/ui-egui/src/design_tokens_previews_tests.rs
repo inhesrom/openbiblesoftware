@@ -153,6 +153,74 @@ fn new_collection(h: &mut Harness, _: &Path) {
     h.shell.st.collection_editor = Some(Default::default());
 }
 
+/// The Move Note confirmation: a Note dropped on the Test Bible's text.
+fn move_note(h: &mut Harness, _: &Path) {
+    let tab = bible_tab(h);
+    h.shell.st.confirm_reanchor(
+        "n".into(),
+        "Genesis 31:48 (TB)".into(),
+        tab,
+        json!({}),
+        "Genesis 31:49 (TB)".into(),
+    );
+    h.frames(3);
+}
+
+/// Run queued jobs and draw until no Search index is building and no search running.
+fn settle_search(h: &mut Harness) {
+    for _ in 0..5000 {
+        h.shell.st.session.jobs().pump(16);
+        h.frame();
+        let s = &h.shell.st.session;
+        if !s.search.is_building() && !s.bible_search_running() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+/// A Search Tab with the Test Bible's hits for "witness", in `view`.
+fn search_in(h: &mut Harness, dir: &Path, view: &str) {
+    let s = &mut h.shell.st.session;
+    s.set_search_cache_dir(dir.join("cache"));
+    s.refresh_search_indexes();
+    settle_search(h);
+    h.shell.run("tool.search", &json!({}));
+    h.frames(2);
+    let tab = h
+        .shell
+        .st
+        .session
+        .workspace
+        .tabs()
+        .find(|t| t.kind == TabKind::Tool(Tool::Search))
+        .map(|t| t.id)
+        .expect("a Search Tab");
+    h.shell
+        .run("search.run", &json!({ "tab": tab.0, "text": "witness" }));
+    settle_search(h);
+    h.shell
+        .run("search.view", &json!({ "tab": tab.0, "value": view }));
+    settle_search(h);
+    settle_all(h);
+}
+
+fn search_verses(h: &mut Harness, dir: &Path) {
+    search_in(h, dir, "verses");
+}
+
+fn search_grid(h: &mut Harness, dir: &Path) {
+    search_in(h, dir, "grid");
+}
+
+fn search_chart(h: &mut Harness, dir: &Path) {
+    search_in(h, dir, "chart");
+}
+
+fn search_analysis(h: &mut Harness, dir: &Path) {
+    search_in(h, dir, "analysis");
+}
+
 const SURFACES: &[Surface] = &[
     ("workspace", &[], Then::Nothing),
     (
@@ -220,11 +288,10 @@ const SURFACES: &[Surface] = &[
         &[("guide.topic_guide", r#"{"text":"faith"}"#)],
         Then::Nothing,
     ),
-    (
-        "search",
-        &[("search.run", r#"{"text":"love"}"#)],
-        Then::Nothing,
-    ),
+    ("search", &[], Then::Run(search_verses)),
+    ("search-grid", &[], Then::Run(search_grid)),
+    ("search-chart", &[], Then::Run(search_chart)),
+    ("search-analysis", &[], Then::Run(search_analysis)),
     (
         "text-comparison",
         &[("tool.text_comparison", r#"{"passage":"Jn 3:16"}"#)],
@@ -296,6 +363,15 @@ const SURFACES: &[Surface] = &[
     ("notes-with-a-card", &[], Then::Run(notes_with_a_card)),
     ("tab-switcher", &[], Then::Run(tab_switcher)),
     ("new-collection", &[], Then::Run(new_collection)),
+    ("move-note", &[], Then::Run(move_note)),
+    (
+        "page-tone-hint",
+        &[
+            ("view.page_tone", r#"{"value":"paper"}"#),
+            ("view.theme", r#"{"value":"dark"}"#),
+        ],
+        Then::Nothing,
+    ),
 ];
 
 #[test]
