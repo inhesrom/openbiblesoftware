@@ -335,10 +335,12 @@ impl VerseRow {
     }
 }
 
-/// Hits of each Bible (index = Bible) → the Verse list in Standard canonical order. Several
-/// Bible Verses that map to one Standard Verse share its row; an Unmapped verse gets a row of
-/// its own at its own number, after any mapped row there.
-pub fn verse_rows(hits: &[(&[SearchHit], &BibleOutline)]) -> Vec<VerseRow> {
+/// Hits of each Bible (index = Bible) in `scope` → the Verse list in Standard canonical
+/// order. Several Bible Verses that map to one Standard Verse share its row; a Bible Verse
+/// that maps to several (a merged verse) is in the row of the first of them inside `scope`
+/// (#257); an Unmapped verse gets a row of its own at its own number, after any mapped row
+/// there.
+pub fn verse_rows(hits: &[(&[SearchHit], &BibleOutline)], scope: &Scope) -> Vec<VerseRow> {
     let mut rows: BTreeMap<(Verse, u8, usize, Verse), VerseRow> = BTreeMap::new();
     for (bible, (hits, outline)) in hits.iter().enumerate() {
         for h in hits.iter() {
@@ -350,8 +352,8 @@ pub fn verse_rows(hits: &[(&[SearchHit], &BibleOutline)]) -> Vec<VerseRow> {
                 _ => None,
             };
             let (native, last, standard) = match (outlined, keyed) {
-                (Some(o), _) => (o.native, o.last, o.standard.map(|p| p.start())),
-                (None, Some(p)) => (p.start(), p.end().verse, Some(p.start())),
+                (Some(o), _) => (o.native, o.last, o.standard.map(|p| row_verse(p, scope))),
+                (None, Some(p)) => (p.start(), p.end().verse, Some(row_verse(p, scope))),
                 (None, None) => continue,
             };
             let key = match standard {
@@ -374,6 +376,20 @@ pub fn verse_rows(hits: &[(&[SearchHit], &BibleOutline)]) -> Vec<VerseRow> {
         }
     }
     rows.into_values().collect()
+}
+
+/// The Standard Verse whose row a hit mapped to `standard` sits in: the first of its
+/// Verses inside `scope`.
+fn row_verse(standard: Passage, scope: &Scope) -> Verse {
+    match scope {
+        Scope::Passages(list) => list
+            .iter()
+            .filter_map(|p| standard.intersection(*p))
+            .map(Passage::start)
+            .min()
+            .unwrap_or(standard.start()),
+        Scope::WholeBible => standard.start(),
+    }
 }
 
 /// A Bible that was searched.
@@ -680,7 +696,7 @@ pub struct BibleSearches {
     recent: BTreeMap<SearchMode, Vec<String>>,
     /// The Word forms setting, once read from the User database.
     word_forms: Option<bool>,
-    /// Outlines by resource id and content hash, shared with the jobs that read them.
+    /// Outlines by [`outline_key`], shared with the jobs that read them.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     outlines: Arc<Mutex<BTreeMap<String, Arc<BibleOutline>>>>,
     /// Outlines being read ahead of a search, by job.
@@ -715,7 +731,7 @@ impl BibleSearches {
         !self.warming.is_empty() || !self.read_ahead.is_empty()
     }
 
-    /// Whether the outline with this key (resource id `@` content hash) has been read.
+    /// Whether the outline with this key ([`outline_key`]) has been read.
     pub fn has_outline(&self, key: &str) -> bool {
         self.outlines
             .lock()
@@ -730,22 +746,25 @@ impl BibleSearches {
     }
 }
 
-/// A Bible's outline cache key: its resource id and content hash.
-fn outline_key(entry: &LibraryEntry) -> String {
+/// A Bible's outline cache key: its resource id, content hash and Resource revision. The
+/// content hash leaves out the Verse map, so a revision that only corrects the map keeps
+/// its Search index but must not keep its outline (#257).
+pub(crate) fn outline_key(entry: &LibraryEntry) -> String {
     format!(
-        "{}@{}",
-        entry.manifest.resource_id, entry.manifest.content_hash
+        "{}@{}#{}",
+        entry.manifest.resource_id, entry.manifest.content_hash, entry.manifest.revision
     )
 }
 
-/// A cheap fingerprint of what the library holds (each Resource's id, content and file),
-/// to notice that it changed.
+/// A cheap fingerprint of what the library holds (each Resource's id, content, revision
+/// and file), to notice that it changed.
 fn library_fingerprint(library: &Library) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     for e in library.entries() {
         e.manifest.resource_id.hash(&mut h);
         e.manifest.content_hash.hash(&mut h);
+        e.manifest.revision.hash(&mut h);
         e.path.hash(&mut h);
     }
     h.finish()
@@ -755,6 +774,9 @@ fn library_fingerprint(library: &Library) -> u64 {
 struct RunOutput {
     results: Arc<BibleResults>,
     first_page: Vec<Vec<Snippet>>,
+    /// Bibles whose index failed the search: (resource id, abbreviation, error), for
+    /// [`Session::index_search_failed`].
+    damaged: Vec<(String, String, String)>,
 }
 
 /// What a snippet job hands back.
@@ -1227,6 +1249,12 @@ impl Session {
                 continue;
             }
             self.bible_search.jobs.remove(&event.id);
+            let mut event = event;
+            if job.kind == JobKind::Run
+                && let JobEventKind::Finished(out) = &mut event.kind
+            {
+                self.repair_damaged_indexes(out);
+            }
             let Some(st) = self.search_tab_mut(job.tab) else {
                 continue;
             };
@@ -1264,6 +1292,7 @@ impl Session {
                             let RunOutput {
                                 results,
                                 first_page,
+                                ..
                             } = *out;
                             st.selected = (!results.rows.is_empty()).then_some(0);
                             st.results = Some(results);
@@ -1279,6 +1308,7 @@ impl Session {
                                 let crate::library_search::LibraryRunOutput {
                                     results,
                                     first_page,
+                                    ..
                                 } = *out;
                                 st.selected = (!results.rows.is_empty()).then_some(0);
                                 st.library_results = Some(results);
@@ -1304,6 +1334,33 @@ impl Session {
             self.start_analysis(tab);
         }
         other
+    }
+
+    /// A Bible or Library search job's indexes that failed the search: each is rebuilt
+    /// ([`Session::index_search_failed`]), and its results list it as indexing rather than
+    /// failed.
+    fn repair_damaged_indexes(&mut self, out: &mut crate::jobs::JobOutput) {
+        if let Some(run) = out.downcast_mut::<RunOutput>() {
+            let r = Arc::make_mut(&mut run.results);
+            let mut lists = crate::search::NotSearched {
+                indexing: &mut r.indexing,
+                failed: &mut r.failed,
+                stale: &mut r.stale,
+            };
+            for (id, label, error) in std::mem::take(&mut run.damaged) {
+                self.index_search_failed(&id, &label, error, &mut lists);
+            }
+        } else if let Some(run) = out.downcast_mut::<crate::library_search::LibraryRunOutput>() {
+            let r = Arc::make_mut(&mut run.results);
+            let mut lists = crate::search::NotSearched {
+                indexing: &mut r.indexing,
+                failed: &mut r.failed,
+                stale: &mut r.stale,
+            };
+            for (id, label, error) in std::mem::take(&mut run.damaged) {
+                self.index_search_failed(&id, &label, error, &mut lists);
+            }
+        }
     }
 
     /// Open a hit (#16 rule 14): the Search Tab's Link set navigates to the Verse; without
@@ -1401,7 +1458,7 @@ pub(crate) mod desktop {
         pub abbreviation: String,
         pub rtl: bool,
         pub obr: PathBuf,
-        /// Resource id and content hash: the outline cache key.
+        /// The outline cache key ([`outline_key`]).
         pub outline_key: String,
     }
 
@@ -1421,7 +1478,7 @@ pub(crate) mod desktop {
 
     pub(super) type Outlines = Arc<Mutex<BTreeMap<String, Arc<BibleOutline>>>>;
 
-    /// A Bible's outline, read once per content hash: from its Verse map (which lists every
+    /// A Bible's outline, read once per [`outline_key`]: from its Verse map (which lists every
     /// Verse) when it has one, else from its verse list.
     pub(super) fn outline(
         outlines: &Outlines,
@@ -1487,47 +1544,53 @@ pub(crate) mod desktop {
         let highlighter = Highlighter::new(&parsed, &lookup);
         let mut per_bible: Vec<(Vec<SearchHit>, Arc<BibleOutline>)> = Vec::new();
         let mut failed = input.failed.clone();
+        let mut damaged = Vec::new();
         let mut bibles = Vec::new();
         for (b, index) in &input.bibles {
             if ctx.is_cancelled() {
                 return Err("cancelled".into());
             }
-            let found = outline(&input.outlines, &b.outline_key, &b.obr)
-                .map_err(|e| format!("{}: {e}", b.abbreviation))
-                .and_then(|o| {
-                    let hits = match o.ordinal_ranges(&input.scope) {
-                        Some(r) if r.is_empty() => Vec::new(),
-                        documents => index
-                            .search(
-                                &compiled,
-                                &SearchOptions {
-                                    documents: documents.unwrap_or_default(),
-                                    order: HitOrder::Document,
-                                    limit: None,
-                                },
-                            )
-                            .map_err(|e| format!("{}: {e}", b.abbreviation))?,
-                    };
-                    Ok((hits, o))
-                });
-            match found {
-                Ok((hits, o)) => {
-                    bibles.push(SearchedBible {
-                        id: b.id.clone(),
-                        abbreviation: b.abbreviation.clone(),
-                        rtl: b.rtl,
-                        hits: hits.len(),
-                    });
-                    per_bible.push((hits, o));
+            let o = match outline(&input.outlines, &b.outline_key, &b.obr) {
+                Ok(o) => o,
+                Err(e) => {
+                    failed.push((b.abbreviation.clone(), format!("{}: {e}", b.abbreviation)));
+                    continue;
                 }
-                Err(e) => failed.push((b.abbreviation.clone(), e)),
-            }
+            };
+            let hits = match o.ordinal_ranges(&input.scope) {
+                Some(r) if r.is_empty() => Vec::new(),
+                documents => {
+                    let options = SearchOptions {
+                        documents: documents.unwrap_or_default(),
+                        order: HitOrder::Document,
+                        limit: None,
+                    };
+                    match index.search(&compiled, &options) {
+                        Ok(hits) => hits,
+                        Err(e) => {
+                            damaged.push((
+                                b.id.clone(),
+                                b.abbreviation.clone(),
+                                format!("{}: {e}", b.abbreviation),
+                            ));
+                            continue;
+                        }
+                    }
+                }
+            };
+            bibles.push(SearchedBible {
+                id: b.id.clone(),
+                abbreviation: b.abbreviation.clone(),
+                rtl: b.rtl,
+                hits: hits.len(),
+            });
+            per_bible.push((hits, o));
         }
         let refs: Vec<(&[SearchHit], &BibleOutline)> = per_bible
             .iter()
             .map(|(h, o)| (h.as_slice(), o.as_ref()))
             .collect();
-        let rows = verse_rows(&refs);
+        let rows = verse_rows(&refs, &input.scope);
         let results = Arc::new(BibleResults {
             query: input.query.clone(),
             scope: input.scope_text.clone(),
@@ -1549,6 +1612,7 @@ pub(crate) mod desktop {
         Ok(RunOutput {
             results,
             first_page,
+            damaged,
         })
     }
 

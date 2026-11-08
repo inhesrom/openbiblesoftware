@@ -33,13 +33,16 @@ hits. The Search index caches they read are described in [search-index.md](searc
    as "Indexing …" under the summary.
 3. A background job then compiles the query, resolving `lemma:` transliterations through the
    Lexicons. For each Bible it takes the **outline** (verse list plus Verse map, cached for
-   each content hash; see *Outline read-ahead* below) and turns the Standard scope into
+   each content hash and Resource revision, since a revision may correct only the Verse
+   map; see *Outline read-ahead* below) and turns the Standard scope into
    **verse-ordinal ranges**. A Bible
    Verse is in scope when its Standard Passage overlaps the scope's Passage list. Unmapped
    verses have no Standard Passage, so they are in scope only for Whole Bible, which searches
    every document. The job then searches each index in document order.
 4. Hits become the **Verse list**: one row per Standard Verse, holding each Bible that
-   matched there. An Unmapped verse gets a row of its own at its own number. The job also
+   matched there. A Bible Verse that maps to several Standard Verses (a merged verse) sits
+   in the row of the first of them inside the scope, so its row is never outside the scope
+   searched. An Unmapped verse gets a row of its own at its own number. The job also
    reads the first page of snippets (`PAGE_ROWS` rows). Each snippet is the hit's text from
    its `.obr`, with headings left out and white space collapsed, plus its highlight ranges.
 5. The pane lays out only the rows in view, on the layout workers, and asks the engine for

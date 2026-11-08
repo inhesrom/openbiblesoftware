@@ -1201,6 +1201,15 @@ impl SqliteSearchIndex {
     }
 }
 
+/// Damage a cache file as a disk fault or another program might, by running `sql` on it
+/// (`DROP TABLE search`, `UPDATE docs SET start = -1`): for tests of what the app does
+/// with a damaged cache.
+#[cfg(feature = "test-support")]
+pub fn damage_search_index(path: &Path, sql_text: &str) -> Result<(), StoreError> {
+    let conn = Connection::open(path).map_err(sql)?;
+    conn.execute_batch(sql_text).map_err(sql)
+}
+
 fn search_error(e: rusqlite::Error) -> SearchError {
     SearchError(e.to_string())
 }

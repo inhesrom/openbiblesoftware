@@ -8,7 +8,8 @@
 //! are ready, and a Resource being rebuilt after an index version change keeps being searched
 //! through its old cache (reported as stale) until the new one is Ready, when the old one is
 //! swapped out and deleted. A cache that has gone missing, is corrupt or belongs to another
-//! key is deleted (from the cache directory) and rebuilt.
+//! key is deleted (from the cache directory) and rebuilt, and so is one a search fails on
+//! (once per Resource per session).
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -47,6 +48,9 @@ pub struct SearchIndexes {
     stale: BTreeMap<String, PathBuf>,
     /// Resources whose Failed build a search has already retried this session.
     retried: BTreeSet<String>,
+    /// Resources whose cache a failed search has already discarded and requeued this
+    /// session ([`Session::index_search_failed`]).
+    repaired: BTreeSet<String>,
     queue: VecDeque<String>,
     running: Option<Running>,
 }
@@ -69,6 +73,7 @@ impl Default for SearchIndexes {
             ready: BTreeMap::new(),
             stale: BTreeMap::new(),
             retried: BTreeSet::new(),
+            repaired: BTreeSet::new(),
             queue: VecDeque::new(),
             running: None,
         }
@@ -415,6 +420,7 @@ impl Session {
         self.search.ready.remove(resource_id);
         self.search.stale.remove(resource_id);
         self.search.retried.remove(resource_id);
+        self.search.repaired.remove(resource_id);
         self.search.queue.retain(|q| q != resource_id);
         if let Some(run) = self.search.running.as_mut()
             && run.id == resource_id
@@ -616,10 +622,59 @@ impl Session {
                     resource_id: id,
                     hits,
                 }),
-                Err(e) => results.failed.push((id, e.to_string())),
+                Err(e) => {
+                    let mut lists = NotSearched {
+                        indexing: &mut results.indexing,
+                        failed: &mut results.failed,
+                        stale: &mut results.stale,
+                    };
+                    self.index_search_failed(&id, &id, e.to_string(), &mut lists);
+                }
             }
         }
         Ok(results)
+    }
+
+    /// Searching `id`'s open index failed with `error`: the cache was damaged after it
+    /// opened (#257). Like a cache that no longer opens, it is deleted (from the cache
+    /// directory) and rebuilt, and the Resource (`label` in `lists`) is listed as indexing
+    /// rather than failed. A query that fails on every cache would rebuild forever, so this
+    /// happens once per Resource per session; after that the error is reported.
+    pub(crate) fn index_search_failed(
+        &mut self,
+        id: &str,
+        label: &str,
+        error: String,
+        lists: &mut NotSearched<'_>,
+    ) {
+        let requeued = self.search.cache_dir.is_some()
+            && self.library.get(id).is_some()
+            && self.search.repaired.insert(id.to_string())
+            && match self.search.status.get(id) {
+                Some(IndexStatus::Ready) => {
+                    if let Some(path) = self.search.ready.remove(id) {
+                        self.search.discard(&path);
+                    }
+                    true
+                }
+                Some(IndexStatus::Indexing { .. }) => {
+                    if let Some(path) = self.search.stale.remove(id) {
+                        self.search.discard(&path);
+                    }
+                    true
+                }
+                _ => false,
+            };
+        if !requeued {
+            lists.failed.push((label.to_string(), error));
+            return;
+        }
+        self.search.set_indexing(id);
+        self.start_next_index_build();
+        lists.stale.retain(|s| s != label);
+        if !lists.indexing.iter().any(|s| s == label) {
+            lists.indexing.push(label.to_string());
+        }
     }
 
     /// Open a Resource's ready index, or its stale one while it is rebuilt. A cache that has
@@ -672,6 +727,14 @@ impl Session {
         }
         Err(NotReady::Indexing)
     }
+}
+
+/// A search's lists of the Resources it could not search, by label (resource id or
+/// abbreviation), for [`Session::index_search_failed`].
+pub(crate) struct NotSearched<'a> {
+    pub(crate) indexing: &'a mut Vec<String>,
+    pub(crate) failed: &'a mut Vec<(String, String)>,
+    pub(crate) stale: &'a mut Vec<String>,
 }
 
 /// An index a search can use.

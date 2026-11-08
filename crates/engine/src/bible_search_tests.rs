@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use obs_model::MorphemePart;
-use obs_scripture::{Book, Passage, VerseMap, VerseMapEntry};
+use obs_scripture::{Book, Passage, Verse, VerseMap, VerseMapEntry};
 use serde_json::json;
 
 use crate::testing::bibles::{bible, kjv, psalms, tahot, v, web, write_library};
@@ -20,28 +20,12 @@ fn fixture(name: &str, user: bool) -> (Session, PathBuf) {
     let root = std::env::temp_dir().join(format!("obs-bible-search-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("library")).unwrap();
-    let hnum = [
-        (
-            v(Book::Genesis, 32, 1),
-            "And Laban rose early, and kissed his sons, for he did love them.",
-        ),
-        (
-            v(Book::Genesis, 32, 33),
-            "An extra verse about love, found in no Standard verse.",
-        ),
-    ];
     write_library(
         &root.join("library"),
         &[
             kjv(),
             web(),
-            bible(
-                "hnum",
-                "HNUM",
-                &hnum,
-                Some(&[Some(v(Book::Genesis, 31, 55)), None]),
-                &[],
-            ),
+            hnum(v(Book::Genesis, 31, 55)),
             psalms(80),
             tahot(),
         ],
@@ -61,6 +45,22 @@ fn fixture(name: &str, user: bool) -> (Session, PathBuf) {
     s.refresh_search_indexes();
     settle(&mut s);
     (s, root)
+}
+
+/// The Hebrew-numbered Bible `hnum`: its Gen 32:1 is Standard `gen_32_1`, its Gen 32:33 is
+/// Unmapped.
+fn hnum(gen_32_1: Verse) -> obs_model::Resource {
+    let verses = [
+        (
+            v(Book::Genesis, 32, 1),
+            "And Laban rose early, and kissed his sons, for he did love them.",
+        ),
+        (
+            v(Book::Genesis, 32, 33),
+            "An extra verse about love, found in no Standard verse.",
+        ),
+    ];
+    bible("hnum", "HNUM", &verses, Some(&[Some(gen_32_1), None]), &[])
 }
 
 /// Run every queued job and apply its events.
@@ -137,7 +137,7 @@ fn cleanup(s: Session, root: PathBuf) {
 
 /// The outline cache key of a library Bible.
 fn key_of(s: &Session, id: &str) -> String {
-    format!("{id}@{}", s.library.get(id).unwrap().manifest.content_hash)
+    crate::bible_search::outline_key(s.library.get(id).unwrap())
 }
 
 fn outline_read(s: &Session, id: &str) -> bool {
@@ -810,5 +810,122 @@ fn proximity_searches_highlight_both_sides() {
         json!({ "text": "grudge WITHIN 2 verses hate", "bibles": "kjv", "tab": tab.0 }),
     );
     assert_eq!(results(&s, tab).rows.len(), 0);
+    cleanup(s, root);
+}
+
+/// AUD-SEARCH-INDEX-6 (#257): a Resource revision that only corrects the Verse map keeps
+/// its content hash (and Search index) but is searched through the new map at once.
+#[test]
+fn a_revision_that_only_corrects_the_verse_map_is_searched_through_the_new_map() {
+    let (mut s, root) = fixture("map-revision", false);
+    let refs = |s: &Session, tab| -> Vec<String> {
+        let r = results(s, tab);
+        r.rows.iter().map(|row| r.row_reference(row)).collect()
+    };
+    let tab = search(
+        &mut s,
+        json!({ "text": "love", "bibles": "hnum", "scope": "Gen 31:55" }),
+    );
+    assert_eq!(refs(&s, tab), ["Genesis 31:55"]);
+    let old = s.library.get("hnum").unwrap().manifest.clone();
+
+    let mut revised = hnum(v(Book::Genesis, 31, 54));
+    revised.manifest.revision = old.revision + 1;
+    write_library(&root.join("library"), &[revised]);
+    assert!(s.library.scan(&root.join("library")).is_empty());
+    let new = s.library.get("hnum").unwrap().manifest.clone();
+    assert_eq!(new.revision, old.revision + 1);
+    assert_eq!(new.content_hash, old.content_hash, "the map is not content");
+    s.refresh_search_indexes();
+    settle(&mut s);
+    assert!(s.search.is_ready("hnum"));
+
+    s.run("search.scope", &json!({ "tab": tab.0, "value": "Gen 31:54" }))
+        .unwrap();
+    settle(&mut s);
+    assert_eq!(refs(&s, tab), ["Genesis 31:54"]);
+    s.run("search.scope", &json!({ "tab": tab.0, "value": "Gen 31:55" }))
+        .unwrap();
+    settle(&mut s);
+    assert!(refs(&s, tab).is_empty());
+    cleanup(s, root);
+}
+
+/// AUD-SEARCH-INDEX-7 (#257): a merged verse (one Bible Verse mapped to Standard Gen 1:1-2)
+/// found in a scope of Gen 1:2 is in the Gen 1:2 row, with the other Bible's Gen 1:2.
+#[test]
+fn a_merged_verse_is_in_the_row_of_its_standard_verse_inside_the_scope() {
+    let merged = BibleOutline::new(
+        &[(v(Book::Genesis, 1, 1), 1)],
+        Some(&VerseMap::new(
+            vec![VerseMapEntry {
+                verse: v(Book::Genesis, 1, 1),
+                last: 1,
+                standard: Some(
+                    Passage::new(v(Book::Genesis, 1, 1), v(Book::Genesis, 1, 2)).unwrap(),
+                ),
+            }],
+            Vec::new(),
+            &obs_scripture::Standard,
+        )),
+    );
+    let standard = BibleOutline::new(
+        &[(v(Book::Genesis, 1, 1), 1), (v(Book::Genesis, 1, 2), 2)],
+        None,
+    );
+    let hit = |document: i64| obs_search::SearchHit {
+        document,
+        unit: obs_model::UnitId::book(Book::Genesis),
+        range: 0..10,
+        key: None,
+        title: None,
+        score: 0.0,
+    };
+    let (merged_hits, standard_hits) = ([hit(0)], [hit(1)]);
+    let scope = parse_scope("Gen 1:2").unwrap();
+    assert_eq!(merged.ordinal_ranges(&scope), Some(vec![0..=0]));
+    let rows = verse_rows(
+        &[(&merged_hits, &merged), (&standard_hits, &standard)],
+        &scope,
+    );
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].standard, Some(v(Book::Genesis, 1, 2)));
+    let bibles: Vec<usize> = rows[0].hits.iter().map(|h| h.bible).collect();
+    assert_eq!(bibles, [0, 1]);
+    assert_eq!(rows[0].hits[0].native, v(Book::Genesis, 1, 1));
+    // Over the Whole Bible it is in the row of its first Standard Verse.
+    let rows = verse_rows(&[(&merged_hits, &merged)], &Scope::WholeBible);
+    assert_eq!(rows[0].standard, Some(v(Book::Genesis, 1, 1)));
+}
+
+/// AUD-SEARCH-INDEX-5 (#257): a Bible whose index fails the search job is rebuilt, listed
+/// as indexing meanwhile, and found by the next search.
+#[test]
+fn a_bible_index_that_fails_the_search_is_rebuilt() {
+    let (mut s, root) = fixture("damaged-index", false);
+    let path = s.search.path("kjv").unwrap().to_path_buf();
+    obs_store::damage_search_index(&path, "UPDATE docs SET start = -1;").unwrap();
+    s.bible_search.no_read_ahead = true;
+    let out = s
+        .run("search.run", &json!({ "text": "love", "bibles": "kjv,web" }))
+        .unwrap();
+    let tab = TabId(out["tab"].as_u64().unwrap());
+    // The search job, then its events: the rebuild is queued.
+    s.jobs().pump(1);
+    s.poll_imports();
+    let r = results(&s, tab);
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    assert_eq!(r.indexing, ["KJV"]);
+    assert_eq!(r.bibles.len(), 1);
+    assert!(s.search.is_building(), "queued");
+    settle(&mut s);
+    assert!(s.search.is_ready("kjv"));
+    s.run("search.run", &json!({ "tab": tab.0, "text": "love" }))
+        .unwrap();
+    settle(&mut s);
+    let r = results(&s, tab);
+    assert!(r.indexing.is_empty() && r.failed.is_empty());
+    assert_eq!(r.bibles.len(), 2);
+    assert!(r.bibles.iter().all(|b| b.hits > 0));
     cleanup(s, root);
 }

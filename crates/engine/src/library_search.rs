@@ -509,6 +509,8 @@ pub fn paragraph_snippet(
 pub(crate) struct LibraryRunOutput {
     pub(crate) results: Arc<LibraryResults>,
     pub(crate) first_page: Vec<Vec<Snippet>>,
+    /// Resources whose index failed the search: (resource id, abbreviation, error).
+    pub(crate) damaged: Vec<(String, String, String)>,
 }
 
 // ---------------------------------------------------------------------------------- session
@@ -771,7 +773,8 @@ mod desktop {
             order: HitOrder::Relevance,
             limit: None,
         };
-        let mut failed = input.failed.clone();
+        let failed = input.failed.clone();
+        let mut damaged = Vec::new();
         let mut found = Vec::new();
         let mut obrs = Vec::new();
         for (resource, obr, index) in &input.resources {
@@ -785,7 +788,11 @@ mod desktop {
                     }
                     found.push((resource.clone(), hits));
                 }
-                Err(e) => failed.push((resource.abbreviation.clone(), e.to_string())),
+                Err(e) => damaged.push((
+                    resource.id.clone(),
+                    resource.abbreviation.clone(),
+                    e.to_string(),
+                )),
             }
         }
         let (groups, rows) = library_rows(&found);
@@ -804,6 +811,7 @@ mod desktop {
         Ok(LibraryRunOutput {
             results,
             first_page,
+            damaged,
         })
     }
 
