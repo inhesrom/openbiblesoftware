@@ -680,7 +680,8 @@ fn run_export(s: &mut Session, p: Params<'_>) -> Result<Value, CommandError> {
     let export = s.notes_export(&source).map_err(failed)?;
     let text = export.render(format);
     if let Some(path) = p.str("path") {
-        std::fs::write(path, &text).map_err(|e| failed(format!("{path}: {e}")))?;
+        s.write_export(std::path::Path::new(path), text.as_bytes())
+            .map_err(failed)?;
     }
     Ok(json!({
         "title": export.title,

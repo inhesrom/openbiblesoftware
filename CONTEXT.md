@@ -596,7 +596,7 @@ The Backup the app takes of the User database just before a restore replaces it,
 _Avoid_: Undo file, Restore point
 
 **Data export**:
-What Export everything writes: a zip with each Notebook's Notes as Markdown (as a Notes export) and every other part of the User database as JSON (Annotations with the remembered names of the Resources they were made on, Layouts, the Last session, Favorites, History, Reading plans, the Preferred order and settings), to read or keep elsewhere. Like a Notes export it is a copy, not a Backup: the app does not read it back.
+What Export everything writes: a zip with each Notebook's Notes as Markdown (as a Notes export) and every other part of the User database as JSON (Annotations with the remembered names of the Resources they were made on, Layouts, the Last session, Favorites, History, Reading plans, the Preferred order and settings), to read or keep elsewhere. Like a Notes export it is a copy, not a Backup: the app does not read it back. Each Notebook's file is named apart from every other ignoring case (`Romans.md`, `romans (2).md`), so none is lost when the zip is extracted on macOS or Windows. No export (a Notes export, a Data export, a highlight palette or an Analysis CSV) is ever written over the User database or SQLite's files beside it, and an export replaces a file already there only once it is complete, so a failed export leaves the previous one as it was.
 _Avoid_: Backup, Dump, Archive
 
 ### Problems

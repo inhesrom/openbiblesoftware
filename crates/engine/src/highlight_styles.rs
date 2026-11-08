@@ -900,7 +900,8 @@ fn run_palette_export(s: &mut Session, p: Params<'_>) -> Result<Value, CommandEr
         .map_err(|e| failed(CMD, e))?;
     let text = serde_json::to_string_pretty(&file).map_err(|e| failed(CMD, e))?;
     if let Some(path) = p.str("path") {
-        std::fs::write(path, &text).map_err(|e| failed(CMD, format!("{path}: {e}")))?;
+        s.write_export(std::path::Path::new(path), text.as_bytes())
+            .map_err(|e| failed(CMD, e))?;
     }
     Ok(json!({ "name": file.name, "styles": file.styles.len(), "text": text }))
 }
