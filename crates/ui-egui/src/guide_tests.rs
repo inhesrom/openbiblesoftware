@@ -1488,16 +1488,22 @@ fn the_reference_box_shows_a_guides_whole_range_and_enter_keeps_it() {
     h.frames(2);
     let text = h.shell.st.location_text(tab);
     assert_eq!(text, "Mark 1:9-11");
-    h.shell.run("tab.go", &json!({ "tab": tab.0, "text": text }));
+    h.shell
+        .run("tab.go", &json!({ "tab": tab.0, "text": text }));
     h.frames(2);
     let t = h.shell.session().workspace.tab(tab).unwrap();
-    assert_eq!(t.shown_passage().map(|p| p.to_string()).as_deref(), Some("Mark 1:9-11"));
+    assert_eq!(
+        t.shown_passage().map(|p| p.to_string()).as_deref(),
+        Some("Mark 1:9-11")
+    );
     assert_eq!(h.shell.st.location_text(tab), "Mark 1:9-11");
     // A chapter reads as the chapter, not its title slot or first Verse.
-    h.shell.run("tab.go", &json!({ "tab": tab.0, "text": "Acts 13" }));
+    h.shell
+        .run("tab.go", &json!({ "tab": tab.0, "text": "Acts 13" }));
     h.frames(2);
     assert_eq!(h.shell.st.location_text(tab), "Acts 13");
-    h.shell.run("tab.go", &json!({ "tab": tab.0, "text": "Ps 119" }));
+    h.shell
+        .run("tab.go", &json!({ "tab": tab.0, "text": "Ps 119" }));
     h.frames(2);
     assert_eq!(h.shell.st.location_text(tab), "Psalms 119");
 }
@@ -1528,7 +1534,13 @@ fn an_unlinked_guides_reference_moves_the_most_recent_bible_tab() {
             .st
             .reference_navigate(guide, Passage::verse(john(3, verse)), false);
         assert_eq!(
-            h.shell.session().workspace.tab(bible).unwrap().history.current(),
+            h.shell
+                .session()
+                .workspace
+                .tab(bible)
+                .unwrap()
+                .history
+                .current(),
             Some(john(3, verse))
         );
         h.frames(2);

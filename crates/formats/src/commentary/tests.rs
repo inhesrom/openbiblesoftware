@@ -129,7 +129,11 @@ fn smith_headword_and_alias_preserve_both_entries() {
     assert_eq!(r.units.len(), 2);
     // Smith's entries carry no title of their own: each opens with its headword (#261).
     let abraham = r.units.iter().find(|u| u.id.as_str() == "Abraham").unwrap();
-    assert!(abraham.text.starts_with("Abraham\nFather."), "{}", abraham.text);
+    assert!(
+        abraham.text.starts_with("Abraham\nFather."),
+        "{}",
+        abraham.text
+    );
     assert!(
         abraham
             .spans

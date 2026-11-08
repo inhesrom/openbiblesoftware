@@ -542,9 +542,9 @@ fn chooser_heading(chooser: &obs_engine::FactbookChooser, name: &str) -> String 
     match (chooser.exact, more) {
         (_, 0) => format!("{all} people and places called “{name}”. Choose one:"),
         (0, _) => format!("{all} people and places whose names start with “{name}”. Choose one:"),
-        (exact, more) => format!(
-            "{exact} called “{name}”, then {more} whose names start with it. Choose one:"
-        ),
+        (exact, more) => {
+            format!("{exact} called “{name}”, then {more} whose names start with it. Choose one:")
+        }
     }
 }
 
@@ -640,7 +640,10 @@ mod tests {
             .filter_map(|c| match &c.shape {
                 egui::Shape::Text(t) if t.galley.text() == "," => {
                     let r = t.galley.rect.translate(t.pos.to_vec2());
-                    Some(Rect::from_x_y_ranges(r.right() - comma_width..=r.right(), r.y_range()))
+                    Some(Rect::from_x_y_ranges(
+                        r.right() - comma_width..=r.right(),
+                        r.y_range(),
+                    ))
                 }
                 _ => None,
             })

@@ -256,9 +256,7 @@ fn single_line_gloss(line: &str) -> Option<String> {
     let rest = line
         .split_whitespace()
         .skip_while(|w| {
-            has_original_script(w)
-                || abbreviation(w)
-                || w.chars().all(|c| !c.is_alphanumeric())
+            has_original_script(w) || abbreviation(w) || w.chars().all(|c| !c.is_alphanumeric())
         })
         .collect::<Vec<_>>()
         .join(" ");

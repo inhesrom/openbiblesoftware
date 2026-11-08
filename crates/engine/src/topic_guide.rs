@@ -302,8 +302,8 @@ fn has_lower(s: &str) -> bool {
 
 /// Words an all-capitals headword keeps in lower case after its first word.
 const MINOR_WORDS: [&str; 18] = [
-    "a", "an", "and", "as", "at", "by", "for", "from", "in", "into", "of", "on", "or", "the",
-    "to", "unto", "upon", "with",
+    "a", "an", "and", "as", "at", "by", "for", "from", "in", "into", "of", "on", "or", "the", "to",
+    "unto", "upon", "with",
 ];
 
 /// A headword for display: as written when it has lower case letters, else in title case

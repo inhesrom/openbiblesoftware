@@ -765,7 +765,10 @@ fn the_atlas_without_a_people_and_places_index_offers_the_starter_library() {
     let (mut h, lab) = setup("atlas", &[]);
     let atlas = h
         .shell
-        .run("tool.atlas", &json!({ "passage": "Acts 13", "split": true }))
+        .run(
+            "tool.atlas",
+            &json!({ "passage": "Acts 13", "split": true }),
+        )
         .unwrap()["tab"]
         .as_u64()
         .map(TabId)

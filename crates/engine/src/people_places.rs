@@ -400,7 +400,14 @@ mod tests {
             ]
         );
         // Not named in the text (another Bible's wording): the usual name, ranked last.
-        let (at, r) = row("tipnr", &abraham(), vec![], "Abrams and abram", vec![], None);
+        let (at, r) = row(
+            "tipnr",
+            &abraham(),
+            vec![],
+            "Abrams and abram",
+            vec![],
+            None,
+        );
         assert_eq!((at, r.name.as_str(), r.usual_name), (None, "Abraham", None));
     }
 

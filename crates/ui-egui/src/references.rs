@@ -568,9 +568,9 @@ impl State {
         let recent_bible = (!new_tab && !from_text)
             .then(|| {
                 self.session.workspace.most_recent(|t| match &t.kind {
-                    obs_engine::TabKind::Resource(id) => library
-                        .get(id)
-                        .is_some_and(|e| e.manifest.resource_type == obs_model::ResourceType::Bible),
+                    obs_engine::TabKind::Resource(id) => library.get(id).is_some_and(|e| {
+                        e.manifest.resource_type == obs_model::ResourceType::Bible
+                    }),
                     _ => false,
                 })
             })

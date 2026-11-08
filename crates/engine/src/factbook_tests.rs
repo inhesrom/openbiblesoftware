@@ -595,8 +595,20 @@ fn the_chooser_lists_names_that_start_with_the_text_after_exact_ones() {
         entry("Bethlehem@Gen.35.16-Jhn", Place, &[], 44, &[]),
         entry("Bethel@Gen.12.8-Zec", Place, &[], 70, &[]),
         entry("Bethany@Mat.21.17-Jhn", Place, &[], 11, &[]),
-        entry("Lot@Gen.11.27-2Pe", obs_model::EntityKind::Male, &[], 30, &[]),
-        entry("Lotan@Gen.36.20-1Ch", obs_model::EntityKind::Male, &[], 7, &[]),
+        entry(
+            "Lot@Gen.11.27-2Pe",
+            obs_model::EntityKind::Male,
+            &[],
+            30,
+            &[],
+        ),
+        entry(
+            "Lotan@Gen.36.20-1Ch",
+            obs_model::EntityKind::Male,
+            &[],
+            7,
+            &[],
+        ),
     ]);
     let beth = dir.choose("Beth");
     let names: Vec<&str> = beth.choices.iter().map(|c| c.name.as_str()).collect();
@@ -616,7 +628,13 @@ fn the_chooser_lists_names_that_start_with_the_text_after_exact_ones() {
 fn places_without_a_region_are_told_apart_by_their_location() {
     use obs_model::EntityKind::Place;
     let dir = PeopleDirectory::new(vec![
-        entry("Antioch@Act.6.5-Gal", Place, &[], 18, &[("Antioch on the Orontes", 1000)]),
+        entry(
+            "Antioch@Act.6.5-Gal",
+            Place,
+            &[],
+            18,
+            &[("Antioch on the Orontes", 1000)],
+        ),
         entry(
             "Antioch@Act.13.14-2Ti",
             Place,
@@ -625,13 +643,27 @@ fn places_without_a_region_are_told_apart_by_their_location() {
             &[("Yalvaç", 300), ("Antioch in Pisidia", 1000)],
         ),
         entry("Ai@Gen.12.8-Isa", Place, &[], 30, &[("Et Tell", 600)]),
-        entry("Amphipolis@Act.17.1", Place, &[], 1, &[("Amphipolis", 1000)]),
+        entry(
+            "Amphipolis@Act.17.1",
+            Place,
+            &[],
+            1,
+            &[("Amphipolis", 1000)],
+        ),
         entry("Zoar@Gen.13.10-Jer", Place, &[], 9, &[]),
     ]);
-    let titles: Vec<String> = dir.choose("Antioch").choices.iter().map(EntityCard::title).collect();
+    let titles: Vec<String> = dir
+        .choose("Antioch")
+        .choices
+        .iter()
+        .map(EntityCard::title)
+        .collect();
     assert_eq!(titles, ["Antioch (on the Orontes)", "Antioch (in Pisidia)"]);
     assert_eq!(dir.card("Ai@Gen.12.8-Isa").unwrap().title(), "Ai (Et Tell)");
-    assert_eq!(dir.card("Amphipolis@Act.17.1").unwrap().title(), "Amphipolis");
+    assert_eq!(
+        dir.card("Amphipolis@Act.17.1").unwrap().title(),
+        "Amphipolis"
+    );
     assert_eq!(dir.card("Zoar@Gen.13.10-Jer").unwrap().title(), "Zoar");
 }
 
@@ -653,7 +685,13 @@ fn passage_guide_relatives_read_as_in_the_factbook() {
             uncertain: false,
         },
     ];
-    let daughter = entry("daughter1_of_Lot@Gen.19.37", Female, &["1st daughter of Lot"], 2, &[]);
+    let daughter = entry(
+        "daughter1_of_Lot@Gen.19.37",
+        Female,
+        &["1st daughter of Lot"],
+        2,
+        &[],
+    );
     let lot_entity = lot.entity.clone();
     let dir = PeopleDirectory::new(vec![lot, daughter]);
     let (_, row) = crate::people_places::row("tipnr", &lot_entity, vec![], "", vec![], Some(&dir));

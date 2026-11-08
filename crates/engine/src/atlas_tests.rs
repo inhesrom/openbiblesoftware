@@ -410,7 +410,10 @@ fn a_persons_empty_map_says_no_home_is_recorded_and_offers_no_import() {
     assert!(!empty.missing.import);
     assert!(!empty.missing.offers_starter());
     assert_eq!(empty.missing.get_label(), None);
-    assert!(!GuideSection::Map.counted(), "the Map's rows are not its places");
+    assert!(
+        !GuideSection::Map.counted(),
+        "the Map's rows are not its places"
+    );
 }
 
 #[test]
