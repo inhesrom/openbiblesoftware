@@ -222,6 +222,61 @@ fn each_export_replaces_a_previous_file_and_leaves_no_scratch_file() {
     assert!(left.is_empty(), "scratch files left: {left:?}");
 }
 
+/// Re-exporting over a file only its owner may read keeps it that way (the replacing file
+/// is not given a new file's wider permissions), for every export command.
+#[cfg(unix)]
+#[test]
+fn an_export_keeps_the_permissions_of_the_file_it_replaces() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let f = Fixture::new("permissions");
+    let mut s = f.session();
+    let tab = analysis_tab(&mut s);
+    let cases = [
+        ("notes.export", json!({ "format": "markdown" }), "n.md"),
+        (
+            "highlight_palette.export",
+            json!({ "id": STANDARD_PALETTE_ID }),
+            "p.json",
+        ),
+        ("search.export_csv", json!({ "tab": tab }), "a.csv"),
+        ("data.export", json!({}), "d.zip"),
+    ];
+    let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    for (command, params, name) in cases {
+        let dest = f.file(name);
+        s.run(command, &with_path(&params, &dest, None)).unwrap();
+        let fresh = mode(&dest);
+        assert_ne!(fresh & 0o600, 0, "{command}: a new export is the owner's");
+        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o600)).unwrap();
+        s.run(command, &with_path(&params, &dest, None)).unwrap();
+        assert_eq!(mode(&dest), 0o600, "{command}");
+        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o640)).unwrap();
+        s.run(command, &with_path(&params, &dest, None)).unwrap();
+        assert_eq!(mode(&dest), 0o640, "{command}");
+    }
+}
+
+/// A destination whose name is as long as a disk allows is exported to like any other: the
+/// scratch file's name does not grow with the destination's.
+#[test]
+fn an_export_writes_to_a_name_as_long_as_the_disk_allows() {
+    let f = Fixture::new("long-name");
+    let mut s = f.session();
+    // 84 three-byte characters plus `.md`: 255 bytes, the limit on a name on Linux and
+    // macOS disks (87 UTF-16 units on Windows, well inside its limit).
+    let name = format!("{}.md", "\u{8a9e}".repeat(84));
+    assert_eq!(name.len(), 255);
+    let dest = f.file(&name);
+    std::fs::write(&dest, "an older export").unwrap();
+    s.run(
+        "notes.export",
+        &json!({ "format": "markdown", "path": dest.to_string_lossy() }),
+    )
+    .unwrap();
+    let written = bytes(&dest).unwrap();
+    assert!(String::from_utf8(written).unwrap().contains("all things"));
+}
+
 /// The child half of [`a_failed_export_leaves_the_previous_file_byte_identical`]: run in a
 /// process that may not write files larger than a block, so each export fails mid-write.
 #[cfg(unix)]
