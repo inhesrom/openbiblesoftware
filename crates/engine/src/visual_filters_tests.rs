@@ -254,6 +254,7 @@ fn slices(r: &Resource) -> Vec<DocumentSlice> {
                 Verse::new(v.verse.book, v.verse.chapter, v.last.max(v.verse.verse)),
             )
             .ok(),
+            verse: true,
         })
         .collect()
 }
@@ -606,6 +607,7 @@ fn one_word_verses(words: &[&str]) -> (TextUnit, Vec<DocumentSlice>) {
         slices.push(DocumentSlice {
             range: start..text.len(),
             standard: Some(Passage::new(v, v).unwrap()),
+            verse: true,
         });
     }
     let unit = TextUnit {
@@ -686,6 +688,7 @@ fn a_scoped_filter_colours_nothing_outside_the_verses_in_its_passages() {
     let unmapped = [DocumentSlice {
         range: all.clone(),
         standard: None,
+        verse: true,
     }];
     assert!(colour_block(&unit, &grace, all.clone(), &unmapped).is_empty());
     // Without a scope both colour there.
@@ -798,4 +801,188 @@ fn within_paragraphs_reads_the_paragraphs_around_a_block() {
         colour_block(&unit, &both, all.clone(), &paragraph_slices(&unit, all, 0)).is_empty(),
         "each paragraph is its own document"
     );
+}
+
+// ------------------------------------- review of #211: proximity, headings and local tags
+
+/// The Verses (the Bible's own numbering) the Search index finds `query` in.
+fn search_verses(r: &Resource, query: &str) -> Vec<Verse> {
+    use obs_search::SearchIndex;
+    let dir = std::env::temp_dir().join(format!(
+        "obs-filters-search-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = obs_store::build_search_index(r, 1, &dir, &mut |_, _| true).unwrap();
+    let index = obs_store::SqliteSearchIndex::open(&path, None).unwrap();
+    let compiled = obs_search::to_fts5(query, &obs_search::NoLexicon).unwrap();
+    let hits = index
+        .search(&compiled, &obs_search::SearchOptions::default())
+        .unwrap();
+    drop(index);
+    let _ = std::fs::remove_dir_all(&dir);
+    hits.into_iter()
+        .map(|h| match h.key {
+            Some(obs_model::Key::Passage(p)) => p.start(),
+            other => panic!("a Verse, not {other:?}"),
+        })
+        .collect()
+}
+
+/// The Verses of `r`'s first unit in which a filter of `query` colours a word, each read as
+/// its own block (with every Verse as context), and the words it colours in all of them.
+fn filter_verses<'a>(r: &'a Resource, query: &str) -> (Vec<Verse>, Vec<&'a str>) {
+    let matcher = FilterMatcher::new(&filter("F", query, ""), &obs_search::NoLexicon).unwrap();
+    let unit = &r.units[0];
+    let mut verses = Vec::new();
+    let mut ranges = Vec::new();
+    for v in &r.verses {
+        let mut never = |_: Passage| -> AlignedWords { panic!("not aligned") };
+        let block = v.start as usize..v.end as usize;
+        let hits = block_hits(
+            std::slice::from_ref(&matcher),
+            unit,
+            block,
+            &slices(r),
+            false,
+            &mut never,
+        );
+        if !hits.is_empty() {
+            verses.push(v.verse);
+        }
+        ranges.extend(hits.into_iter().map(|h| h.range));
+    }
+    (verses, words(unit, &ranges))
+}
+
+/// Review of #211: proximity pairs each word or phrase on its own, as the Search index does,
+/// even where alternatives overlap: in 12:14 `"bless them" OR bless` has "Bless" just before
+/// "them", though "Bless them" holds it.
+#[test]
+fn proximity_pairs_overlapping_alternatives_one_by_one_as_search_does() {
+    let kjv = kjv_romans_12();
+    let rom = |v| Verse::new(obs_scripture::Book::Romans, 12, v);
+    for (query, verses, coloured) in [
+        (
+            "(\"bless them\" OR bless) BEFORE/0 them",
+            vec![rom(14)],
+            vec!["Bless", "them"],
+        ),
+        (
+            "(\"bless them\" OR bless) NEAR/0 them",
+            vec![rom(14)],
+            vec!["Bless", "them"],
+        ),
+        (
+            "(\"bless them\" OR bless) BEFORE/1 which",
+            vec![rom(14)],
+            // Both "Bless them" and the "Bless" in it, drawn as one range.
+            vec!["Bless them", "which"],
+        ),
+    ] {
+        assert_eq!(search_verses(&kjv, query), verses, "Search: {query}");
+        let (found, words) = filter_verses(&kjv, query);
+        assert_eq!(found, verses, "filter: {query}");
+        assert_eq!(words, coloured, "{query}");
+    }
+}
+
+/// A Bible Verse holding a heading, as some Bibles place a section heading inside the Verse
+/// before it: Romans 1:1 "Bless Persecution bless", "Persecution" a heading, and 1:2
+/// "persecution of saints".
+fn verse_with_heading() -> Resource {
+    let rom = |v| Verse::new(obs_scripture::Book::Romans, 1, v);
+    let mut r = crate::testing::tagged_bible(
+        "headed",
+        "Headed Bible",
+        "HB",
+        "en",
+        &[
+            (rom(1), "Bless Persecution bless"),
+            (rom(2), "persecution of saints"),
+        ],
+    );
+    let unit = &mut r.units[0];
+    let at = unit.text.find("Persecution").unwrap();
+    unit.spans.push(obs_model::Span {
+        start: at as u32,
+        end: (at + "Persecution".len()) as u32,
+        kind: SpanKind::Heading { level: 2 },
+    });
+    r
+}
+
+/// Review of #211: a Verse's headings are not read, as the Search index leaves them out:
+/// they neither satisfy nor exclude a term, nor stand between the words of a phrase or of
+/// a proximity.
+#[test]
+fn a_verses_headings_are_read_out_as_search_reads_them() {
+    let r = verse_with_heading();
+    let rom = |v| Verse::new(obs_scripture::Book::Romans, 1, v);
+    for (query, verses, coloured) in [
+        (
+            "bless NOT persecution",
+            vec![rom(1)],
+            vec!["Bless", "bless"],
+        ),
+        ("persecution", vec![rom(2)], vec!["persecution"]),
+        ("\"bless bless\"", vec![rom(1)], vec!["Bless", "bless"]),
+        ("bless NEAR/0 bless", vec![rom(1)], vec!["Bless", "bless"]),
+        ("bless BEFORE/0 bless", vec![rom(1)], vec!["Bless", "bless"]),
+        ("bless persecution", vec![], vec![]),
+    ] {
+        assert_eq!(search_verses(&r, query), verses, "Search: {query}");
+        let (found, words) = filter_verses(&r, query);
+        assert_eq!(found, verses, "filter: {query}");
+        assert_eq!(words, coloured, "{query}");
+    }
+}
+
+/// Review of #211: Strong's alignment fills in only what a word lacks. A Tagged word with
+/// Morphology of its own is read by it: here the KJV's first "Bless" of 12:14 is tagged as a
+/// participle and "persecute" as an imperative, against what TAGNT says of G2127 and G1377.
+#[test]
+fn alignment_reaches_only_words_without_tags_of_their_own() {
+    let mut kjv = kjv_romans_12();
+    let tagnt = tagnt_romans_12();
+    let unit = &mut kjv.units[0];
+    let v14 = unit.text.find("Bless them").unwrap();
+    let persecute = unit.text.find("persecute").unwrap();
+    for s in &mut unit.spans {
+        let morph = match s.start as usize {
+            at if at == v14 => "V-PAP-NPM",
+            at if at == persecute => "V-PAM-2P",
+            _ => continue,
+        };
+        let SpanKind::TaggedWord { parts } = &mut s.kind else {
+            continue;
+        };
+        parts[0].morph = Some(morph.into());
+    }
+    let rom_12 = filter("Imperatives in Romans 12", "@imperative", "Rom 12");
+    let english = coloured(&kjv, &[rom_12], true, &mut aligned(&tagnt));
+    assert_eq!(
+        english[0],
+        [
+            "be",
+            "conformed",
+            "transformed",
+            "persecute",
+            "bless",
+            "curse"
+        ],
+        "the participle \"Bless\" is left plain, the imperative \"persecute\" coloured by its \
+         own tag; the untagged words still through TAGNT"
+    );
+
+    // A Bible whose words all carry Morphology never asks for the original-language Bible.
+    let mut never = |_: Passage| -> AlignedWords { panic!("TAGNT reads its own tags") };
+    let greek = coloured(
+        &tagnt,
+        &[filter("Imp", "@imperative", "Rom 12")],
+        true,
+        &mut never,
+    );
+    assert_eq!(greek[0].len(), 5);
 }

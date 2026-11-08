@@ -263,6 +263,19 @@ pub struct TextUnit {
 }
 
 impl TextUnit {
+    /// The bytes of its headings, sorted by start: a Bible's Search index leaves them out of
+    /// the Verse they sit in ([`crate::searchable_text`]).
+    pub fn heading_ranges(&self) -> Vec<Range<usize>> {
+        let mut out: Vec<Range<usize>> = self
+            .spans
+            .iter()
+            .filter(|s| matches!(s.kind, SpanKind::Heading { .. }) && s.start < s.end)
+            .map(|s| s.start as usize..s.end as usize)
+            .collect();
+        out.sort_unstable_by_key(|r| (r.start, r.end));
+        out
+    }
+
     /// The paragraphs a Resource outside Bibles is searched by (the Search index's documents,
     /// which Visual filters read alike): the unit's non-empty `para` spans (outermost first,
     /// nested ones skipped), plus every stretch outside them that holds a word (headings,

@@ -19,12 +19,13 @@
 //!   and proximity decide whether a document matches before any of its words are coloured. A
 //!   filter limited to Passages reads only the Verses in them (so nothing outside Bibles),
 //!   and `WITHIN n` counts documents as the Search index numbers them, the ones out of scope
-//!   included. A Bible that is not in Hebrew, Aramaic or Greek has no Morphology or
-//!   Lemmas of its own (KJV+Strong's tags numbers only), so the `@…` and `lemma:` terms reach
-//!   it through **Strong's alignment** (ADR 0015): in each Verse, the words whose Strong's
-//!   number is that of a matching word in the same Standard Verse of the first Hebrew (Old
-//!   Testament) or Greek (New Testament) Bible in Preferred order, as the Exegetical Guide
-//!   picks it.
+//!   included. A Verse is read without its headings, as the Search index reads it
+//!   ([`obs_model::searchable_text`]). A Tagged word without the Morphology or Lemma a `@…`
+//!   or `lemma:` term asks for (KJV+Strong's tags numbers only) is reached through
+//!   **Strong's alignment** (ADR 0015): in each Verse, the words whose Strong's number is
+//!   that of a matching word in the same Standard Verse of the first Hebrew (Old Testament)
+//!   or Greek (New Testament) Bible in Preferred order, as the Exegetical Guide picks it. A
+//!   word with tags of its own is read by them only.
 
 use std::collections::BTreeSet;
 use std::ops::Range;
@@ -320,7 +321,11 @@ impl Condition {
 
     /// For each of `docs`: `None` where it does not satisfy the condition, else the bytes
     /// (of the unit) of the terms that satisfied it.
-    fn eval(&self, docs: &[Document], cx: &mut MatchContext<'_>) -> Vec<Option<Vec<Range<usize>>>> {
+    fn eval(
+        &self,
+        docs: &[Document<'_>],
+        cx: &mut MatchContext<'_>,
+    ) -> Vec<Option<Vec<Range<usize>>>> {
         let found = |ranges: Vec<Range<usize>>| (!ranges.is_empty()).then_some(ranges);
         match self {
             Condition::Term(h) => docs.iter().map(|d| found(cx.term(h, d))).collect(),
@@ -408,16 +413,56 @@ impl Condition {
 /// One document a filter's query is read against: a Verse's bytes in the unit and its
 /// Standard Passage, or a paragraph outside Bibles.
 #[derive(Debug, Clone)]
-struct Document {
+struct Document<'a> {
     range: Range<usize>,
     standard: Option<Passage>,
     /// Its position among the documents [`block_hits`] was given, which `WITHIN n` counts.
     ordinal: usize,
+    /// Its bytes as the Search index reads them ([`obs_model::searchable_text`]): a Verse's
+    /// headings blanked, so they neither match nor count in proximity.
+    text: std::borrow::Cow<'a, str>,
+    /// The headings (bytes of the unit) left out of a Verse; none in a paragraph.
+    skipped: &'a [Range<usize>],
 }
 
-impl Document {
+impl Document<'_> {
+    /// `ranges` (bytes of the document) as bytes of the unit, less the headings left out:
+    /// a phrase read across a heading colours its words, not the heading.
+    fn unit_ranges(&self, ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
+        let base = self.range.start;
+        let bytes = self.text.as_bytes();
+        // A piece of a range split at a heading, trimmed of the white space beside it.
+        let push = |out: &mut Vec<Range<usize>>, mut a: usize, mut b: usize| {
+            while a < b && bytes.get(a - base).is_some_and(u8::is_ascii_whitespace) {
+                a += 1;
+            }
+            while a < b && bytes.get(b - 1 - base).is_some_and(u8::is_ascii_whitespace) {
+                b -= 1;
+            }
+            if a < b {
+                out.push(a..b);
+            }
+        };
+        let mut out = Vec::with_capacity(ranges.len());
+        for r in ranges {
+            let start = r.start + base;
+            let end = r.end + base;
+            let mut at = start;
+            for h in self
+                .skipped
+                .iter()
+                .filter(|h| h.start < end && start < h.end)
+            {
+                push(&mut out, at, h.start.max(at));
+                at = at.max(h.end);
+            }
+            push(&mut out, at, end);
+        }
+        out
+    }
+
     /// Whether `WITHIN n verses` can join the two: Verses of one book, or paragraphs.
-    fn neighbours(&self, other: &Document) -> bool {
+    fn neighbours(&self, other: &Document<'_>) -> bool {
         match (self.standard, other.standard) {
             (Some(a), Some(b)) => a.start().book == b.start().book,
             (None, None) => true,
@@ -429,8 +474,8 @@ impl Document {
 /// What reading a query against the documents of one block needs.
 struct MatchContext<'a> {
     unit: &'a TextUnit,
-    /// The block's Bible has no original-language data: `@…` and `lemma:` terms take the
-    /// words aligned with the original-language Bible's.
+    /// The block is in a Bible to align: its Tagged words that lack the Morphology or Lemma a
+    /// `@…` or `lemma:` term asks for take the original-language Bible's.
     align: bool,
     original: &'a mut dyn FnMut(Passage) -> AlignedWords,
     /// Original words, looked up once per Verse whichever filters need them.
@@ -438,40 +483,43 @@ struct MatchContext<'a> {
 }
 
 impl MatchContext<'_> {
-    /// The bytes term `h` marks in `doc`: its own words, and in an aligned Bible the words
-    /// whose Strong's number is that of a word `h` marks in the original-language Verse.
-    fn term(&mut self, h: &Highlighter, doc: &Document) -> Vec<Range<usize>> {
-        let Some(slice) = self.unit.text.get(doc.range.clone()) else {
-            return Vec::new();
-        };
+    /// The bytes term `h` marks in `doc`: its own words, judged by their own tags, and in an
+    /// aligned Bible the words lacking the tags `h` asks for whose Strong's number is that of
+    /// a word `h` marks in the original-language Verse.
+    fn term(&mut self, h: &Highlighter, doc: &Document<'_>) -> Vec<Range<usize>> {
         let tagged = tagged_in(self.unit, doc.range.clone());
         let base = doc.range.start;
         let local = tagged
             .iter()
             .map(|(r, parts)| (r.start - base..r.end - base, *parts));
-        let mut out: Vec<Range<usize>> = h
-            .ranges(slice, local)
-            .into_iter()
-            .map(|r| r.start + base..r.end + base)
+        let mut out = doc.unit_ranges(h.ranges(&doc.text, local));
+        if !self.align || !h.uses_original_language_data() {
+            return out;
+        }
+        let Some(standard) = doc.standard else {
+            return out;
+        };
+        // Only words without the data: a word tagged as a participle stays one, whatever
+        // the original-language Bible says of its Strong's number.
+        let untagged: Vec<&(Range<usize>, &[MorphemePart])> = tagged
+            .iter()
+            .filter(|(_, parts)| h.lacks_original_language_data(parts))
             .collect();
-        if self.align
-            && h.uses_original_language_data()
-            && let Some(standard) = doc.standard
-        {
-            let original = &mut self.original;
-            let words = self
-                .aligned
-                .entry(standard)
-                .or_insert_with(|| original(standard));
-            let numbers = aligned_numbers(h, words.iter().map(Vec::as_slice));
-            if !numbers.is_empty() {
-                for (range, parts) in &tagged {
-                    if parts.iter().any(|p| {
-                        p.strongs.number() < AFFIX_NUMBERS_FROM
-                            && numbers.contains(&p.strongs.base())
-                    }) {
-                        out.push(range.clone());
-                    }
+        if untagged.is_empty() {
+            return out;
+        }
+        let original = &mut self.original;
+        let words = self
+            .aligned
+            .entry(standard)
+            .or_insert_with(|| original(standard));
+        let numbers = aligned_numbers(h, words.iter().map(Vec::as_slice));
+        if !numbers.is_empty() {
+            for (range, parts) in untagged {
+                if parts.iter().any(|p| {
+                    p.strongs.number() < AFFIX_NUMBERS_FROM && numbers.contains(&p.strongs.base())
+                }) {
+                    out.push(range.clone());
                 }
             }
         }
@@ -479,22 +527,22 @@ impl MatchContext<'_> {
     }
 
     /// The occurrences of `left` and `right` in `doc` that have one of the other side at most
-    /// `words` words away (after it when `ordered`), counted as the Search index counts them.
+    /// `words` words away (after it when `ordered`), counted as the Search index counts them:
+    /// each word or phrase on its own, even where one overlaps another (`"bless them" OR
+    /// bless`), and without the Verse's headings.
     fn near(
         &self,
         left: &Highlighter,
         right: &Highlighter,
         words: u32,
         ordered: bool,
-        doc: &Document,
+        doc: &Document<'_>,
     ) -> Vec<Range<usize>> {
-        let Some(slice) = self.unit.text.get(doc.range.clone()) else {
-            return Vec::new();
-        };
+        let slice: &str = &doc.text;
         let tokens = obs_model::tokenize(slice);
         // Each occurrence as its first and last word.
         let occurrences = |h: &Highlighter| -> Vec<(usize, usize, Range<usize>)> {
-            h.ranges(slice, std::iter::empty())
+            h.occurrences(slice, std::iter::empty())
                 .into_iter()
                 .filter_map(|r| {
                     let first = tokens.iter().position(|t| t.range.start >= r.start)?;
@@ -512,19 +560,18 @@ impl MatchContext<'_> {
         let paired = |x: &(usize, usize, Range<usize>), y: &(usize, usize, Range<usize>)| {
             within(x, y) || (!ordered && within(y, x))
         };
-        let base = doc.range.start;
         let mut out = Vec::new();
         for x in &a {
             if b.iter().any(|y| paired(x, y)) {
-                out.push(x.2.start + base..x.2.end + base);
+                out.push(x.2.clone());
             }
         }
         for y in &b {
             if a.iter().any(|x| paired(x, y)) {
-                out.push(y.2.start + base..y.2.end + base);
+                out.push(y.2.clone());
             }
         }
-        out
+        doc.unit_ranges(out)
     }
 }
 
@@ -618,6 +665,9 @@ impl FilterMatcher {
 pub struct DocumentSlice {
     pub range: Range<usize>,
     pub standard: Option<Passage>,
+    /// A Bible Verse, whose headings are not read (the Search index leaves them out of the
+    /// Verse), rather than a paragraph.
+    pub verse: bool,
 }
 
 /// The paragraphs of `unit` (outside Bibles) that hold a word and overlap `block`, and up to
@@ -654,6 +704,7 @@ pub fn paragraph_slices(
         .map(|p| DocumentSlice {
             range: p.clone(),
             standard: None,
+            verse: false,
         })
         .collect()
 }
@@ -711,17 +762,32 @@ pub fn block_hits(
         original,
         aligned: Default::default(),
     };
-    let mut out = Vec::new();
-    for (k, f) in filters.iter().enumerate() {
-        let docs: Vec<Document> = documents
-            .iter()
-            .enumerate()
-            .filter(|(_, d)| f.in_scope(d.standard))
-            .map(|(ordinal, d)| Document {
-                range: d.range.start.min(text.len())..d.range.end.min(text.len()),
+    let headings = if documents.iter().any(|d| d.verse) {
+        unit.heading_ranges()
+    } else {
+        Vec::new()
+    };
+    let all: Vec<Document<'_>> = documents
+        .iter()
+        .enumerate()
+        .map(|(ordinal, d)| {
+            let range = d.range.start.min(text.len())..d.range.end.min(text.len());
+            let skipped = if d.verse { headings.as_slice() } else { &[] };
+            Document {
+                text: obs_model::searchable_text(text, range.clone(), skipped),
+                skipped,
+                range,
                 standard: d.standard,
                 ordinal,
-            })
+            }
+        })
+        .collect();
+    let mut out = Vec::new();
+    for (k, f) in filters.iter().enumerate() {
+        let docs: Vec<Document<'_>> = all
+            .iter()
+            .filter(|d| f.in_scope(d.standard))
+            .cloned()
             .collect();
         let mut ranges: Vec<Range<usize>> = Vec::new();
         if let Some(condition) = &f.condition {

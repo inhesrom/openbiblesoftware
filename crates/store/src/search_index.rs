@@ -44,7 +44,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use obs_model::{
-    Key, KeyEntry, Manifest, Resource, ResourceType, SpanKind, TextUnit, UnitId, tokenize,
+    Key, KeyEntry, Manifest, Resource, ResourceType, SpanKind, TextUnit, UnitId, searchable_text,
+    tokenize,
 };
 use obs_scripture::{Passage, Verse};
 use obs_search::{
@@ -246,62 +247,41 @@ impl MorphCodes {
     }
 }
 
-/// Normalized words of `text[range]`, skipping `holes` (sorted, e.g. headings), appended to
-/// `out` with single spaces.
+/// Normalized words of `text[range]`, skipping `holes` (e.g. headings), appended to `out`
+/// with single spaces.
 fn push_words(
     text: &str,
     range: std::ops::Range<usize>,
-    holes: &[(usize, usize)],
+    holes: &[std::ops::Range<usize>],
     out: &mut String,
 ) {
-    let mut push = |a: usize, b: usize| {
-        if a < b
-            && let Some(piece) = text.get(a..b)
-        {
-            for t in tokenize(piece) {
-                if !out.is_empty() {
-                    out.push(' ');
-                }
-                out.push_str(&t.text);
-            }
+    for t in tokenize(&searchable_text(text, range, holes)) {
+        if !out.is_empty() {
+            out.push(' ');
         }
-    };
-    let mut at = range.start;
-    let first = holes.partition_point(|&(_, e)| e <= range.start);
-    for &(s, e) in &holes[first..] {
-        if s >= range.end {
-            break;
-        }
-        push(at, s.min(range.end));
-        at = at.max(e);
+        out.push_str(&t.text);
     }
-    push(at, range.end);
 }
 
 /// One unit's Tagged words and headings, sorted by start, for slicing by document.
 struct UnitMarks<'a> {
     tagged: Vec<(usize, usize, &'a [obs_model::MorphemePart])>,
-    headings: Vec<(usize, usize)>,
+    headings: Vec<std::ops::Range<usize>>,
 }
 
 impl<'a> UnitMarks<'a> {
     fn of(unit: &'a TextUnit) -> Self {
         let mut tagged = Vec::new();
-        let mut headings = Vec::new();
         for s in &unit.spans {
-            match &s.kind {
-                SpanKind::TaggedWord { parts } => {
-                    tagged.push((s.start as usize, s.end as usize, parts.as_slice()));
-                }
-                SpanKind::Heading { .. } if s.start < s.end => {
-                    headings.push((s.start as usize, s.end as usize));
-                }
-                _ => {}
+            if let SpanKind::TaggedWord { parts } = &s.kind {
+                tagged.push((s.start as usize, s.end as usize, parts.as_slice()));
             }
         }
         tagged.sort_by_key(|t| (t.0, t.1));
-        headings.sort_unstable();
-        Self { tagged, headings }
+        Self {
+            tagged,
+            headings: unit.heading_ranges(),
+        }
     }
 
     /// The `strong`, `lemma` and `morph` fields of the Tagged words that start inside

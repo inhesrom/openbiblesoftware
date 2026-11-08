@@ -10,9 +10,10 @@
 //!   laid out again), so a scrolling frame only moves them.
 //! - A match carries its filter's [`obs_engine::StyleAppearance`]: the painter resolves its
 //!   colour from the Page tone's palette each frame, so a theme switch needs no relayout.
-//! - Strong's alignment (ADR 0015): a Bible not in Hebrew, Aramaic or Greek takes the `@…`
-//!   and `lemma:` terms from the first original-language Bible in Preferred order that has
-//!   each Verse ([`OriginalBible`]), loaded on the worker the first time it is needed.
+//! - Strong's alignment (ADR 0015): a Bible's Tagged words without the Morphology or Lemma a
+//!   `@…` or `lemma:` term asks for (KJV+Strong's) take it from the first original-language
+//!   Bible in Preferred order that has each Verse ([`OriginalBible`]), loaded on the worker
+//!   the first time it is needed.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -180,13 +181,6 @@ impl obs_search::LemmaLookup for LexiconLookup<'_> {
     }
 }
 
-/// Whether a Bible in `language` is in Hebrew, Aramaic or Greek (it has its own Morphology).
-pub fn is_original(language: &str) -> bool {
-    [StrongsLanguage::Hebrew, StrongsLanguage::Greek]
-        .into_iter()
-        .any(|l| obs_engine::key_words::is_original_language(language, l))
-}
-
 /// Matching jobs, run one at a time on their own thread (inline on wasm).
 type Work = Box<dyn FnOnce() + Send>;
 
@@ -275,7 +269,11 @@ fn document_slices(
             )
             .ok(),
         };
-        out.push(DocumentSlice { range, standard });
+        out.push(DocumentSlice {
+            range,
+            standard,
+            verse: true,
+        });
     }
     out
 }
@@ -302,9 +300,10 @@ fn block_matches(doc: &ReadingDoc, index: usize, source: &FilterSource) -> Vec<B
         .max()
         .unwrap_or(0);
     let documents = document_slices(doc, block.unit, &range, context);
+    // Whatever its language: only its Tagged words that lack the Morphology or Lemma a term
+    // asks for are aligned, the others read by their own tags.
     let align = doc.manifest.resource_type == ResourceType::Bible
         && !documents.is_empty()
-        && !is_original(&doc.manifest.language)
         && matchers.iter().any(FilterMatcher::needs_alignment)
         && doc.has_tagged_words();
     let mut original = |p: Passage| source.aligned(p);

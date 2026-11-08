@@ -13,9 +13,14 @@ in the KJV. We decided:
    those words' Strong's numbers (base forms, so KJV `G4160` matches TAGNT `G4160G`). Romans 12:14
    colours KJV "Bless … bless … curse" because TAGNT's εὐλογεῖτε and καταρᾶσθε are imperatives,
    and leaves "persecute" (G1377, a participle in TAGNT) plain.
-2. **Grammatical morphemes are never aligned.** STEPBible numbers prefixes and suffixes from
+2. **Only what a word lacks is aligned.** A Tagged word with Morphology of its own is read by it
+   for `@…` terms, one with a Lemma by it for `lemma:` terms, whatever its Bible's language: an
+   English import that carries both (USFM `x-morph`, `lemma`) is not overruled by another
+   Bible's number. Only the words without the data a term asks for take it from the aligned
+   Verse.
+3. **Grammatical morphemes are never aligned.** STEPBible numbers prefixes and suffixes from
    H9001 up; every Hebrew word has one (`וְ`), so aligning them would colour every "and".
-3. **Filters are a preference, not a table.** The list is the `reading.visual_filters` User
+4. **Filters are a preference, not a table.** The list is the `reading.visual_filters` User
    database preference (JSON), as Collections are; which filters a Tab switched is kept in the
    Tab (Layouts and the Last session), as Interlinear lines are. No schema change.
 
