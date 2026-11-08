@@ -563,12 +563,13 @@ fn wide_lines_never_part_a_word_from_its_punctuation() {
     }
 }
 
-/// Whether every line of `laid` whose cells each fit `width`, and those cells, stay inside
-/// `0..=width`.
-fn lines_stay_inside(laid: &LaidBlock, width: f32) -> Result<(), String> {
+/// Whether every line of `para` laid out as `laid` whose cells each fit the line's width, and
+/// those cells, stay inside `0..=width`.
+fn lines_stay_inside(para: &Paragraph, laid: &LaidBlock, width: f32) -> Result<(), String> {
     for (li, line) in laid.lines.iter().enumerate() {
-        // A word whose line alone is wider than the pane cannot fit.
-        if laid.cells.iter().any(|c| c.line == li && c.width > width) {
+        // A word whose line alone is wider than the line (the first one indented) cannot fit.
+        let room = width - para.inset - if li == 0 { para.indent } else { 0.0 };
+        if laid.cells.iter().any(|c| c.line == li && c.width > room) {
             continue;
         }
         // Visible text: whitespace at the line's end hangs past the margin.
@@ -616,10 +617,10 @@ fn wide_lines_wrap_inside_the_width() {
     ];
     for step in 0..60 {
         let width = 150.0 + step as f32 * 10.0;
-        let (_, ltr) = interlinear_block(&unit, Direction::Ltr, width, &wide, 2);
-        lines_stay_inside(&ltr, width).unwrap_or_else(|e| panic!("LTR at {width}: {e}"));
-        let (_, rtl) = interlinear_block(&hebrew, Direction::Rtl, width, &long_glosses, 1);
-        lines_stay_inside(&rtl, width).unwrap_or_else(|e| panic!("RTL at {width}: {e}"));
+        let (para, ltr) = interlinear_block(&unit, Direction::Ltr, width, &wide, 2);
+        lines_stay_inside(&para, &ltr, width).unwrap_or_else(|e| panic!("LTR at {width}: {e}"));
+        let (para, rtl) = interlinear_block(&hebrew, Direction::Rtl, width, &long_glosses, 1);
+        lines_stay_inside(&para, &rtl, width).unwrap_or_else(|e| panic!("RTL at {width}: {e}"));
     }
 }
 
@@ -690,12 +691,13 @@ fn wide_lines_keep_clear_of_untagged_words() {
     ];
     for step in 0..60 {
         let width = 120.0 + step as f32 * 10.0;
-        let (_, ltr) = interlinear_block(&english, Direction::Ltr, width, &english_lines, 2);
-        let (_, rtl) = interlinear_block(&hebrew, Direction::Rtl, width, &hebrew_lines, 1);
-        for (name, laid) in [("LTR", &ltr), ("RTL", &rtl)] {
+        let ltr = interlinear_block(&english, Direction::Ltr, width, &english_lines, 2);
+        let rtl = interlinear_block(&hebrew, Direction::Rtl, width, &hebrew_lines, 1);
+        for (name, (para, laid)) in [("LTR", &ltr), ("RTL", &rtl)] {
             assert!(laid.cells.iter().any(|c| c.width > 40.0));
             cells_clear_untagged_text(laid).unwrap_or_else(|e| panic!("{name} at {width}: {e}"));
-            lines_stay_inside(laid, width).unwrap_or_else(|e| panic!("{name} at {width}: {e}"));
+            lines_stay_inside(para, laid, width)
+                .unwrap_or_else(|e| panic!("{name} at {width}: {e}"));
         }
     }
     // One Tagged word after an untagged one, its line wider than both: the line stays
@@ -710,8 +712,24 @@ fn wide_lines_keep_clear_of_untagged_words() {
         spans,
     };
     let wide = [("H3212", "wayyēlek wayyēlek wayyēlek")];
-    let (_, laid) = interlinear_block(&single, Direction::Ltr, 400.0, &wide, 1);
+    let (para, laid) = interlinear_block(&single, Direction::Ltr, 400.0, &wide, 1);
     assert_eq!(laid.lines.len(), 1);
     cells_clear_untagged_text(&laid).unwrap();
-    lines_stay_inside(&laid, 400.0).unwrap();
+    lines_stay_inside(&para, &laid, 400.0).unwrap();
+    // The same right to left: an untagged word starts the line at the right edge.
+    let text = "אֱלֹהִ֑ים בָּרָ֣א".to_string();
+    let spans = tagged(&text, &[("בָּרָ֣א", "H1254")]);
+    let single = TextUnit {
+        id: UnitId::book(Book::Genesis),
+        kind: UnitKind::BibleBook,
+        title: None,
+        text,
+        spans,
+    };
+    let wide = [("H1254", "he brought into being, he made")];
+    let (para, laid) = interlinear_block(&single, Direction::Rtl, 400.0, &wide, 1);
+    assert_eq!(laid.lines.len(), 1);
+    assert!(laid.cells.iter().any(|c| c.width > 100.0));
+    cells_clear_untagged_text(&laid).unwrap();
+    lines_stay_inside(&para, &laid, 400.0).unwrap();
 }

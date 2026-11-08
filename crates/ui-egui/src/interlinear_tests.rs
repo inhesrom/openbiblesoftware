@@ -220,8 +220,9 @@ fn kjv_john_3_16_shows_greek_lemmas_under_its_english_words_aligned() {
                 "row {row} under {word} is below it"
             );
             if c.line == last_x.0 {
+                // A line may reach right up to the text before it, not under it.
                 assert!(
-                    c.x >= last_x.1,
+                    c.x >= last_x.1 - 0.01,
                     "{word}'s column overlaps the one before: row {row} {} at {} w {} vs {}",
                     c.text,
                     c.x,
