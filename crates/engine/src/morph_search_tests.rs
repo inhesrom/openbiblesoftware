@@ -312,3 +312,54 @@ fn real_starter_tagnt_aorist_imperatives_in_romans() {
         assert!(r.elapsed_ms <= budget, "{query}: {} ms", r.elapsed_ms);
     }
 }
+
+/// The real Starter TAGNT (#257): a word of a Lemma of several words (`Ἄρειος Πάγος`) is
+/// found with Morphology criteria as without, and a `lemma:` phrase of two Tagged words'
+/// Lemmas (`θεός ἀγάπη`, 1 Jn 4:8, 16) finds nothing; every row found has a highlight. Run
+/// with `cargo test --release -p obs-engine real_starter_tagnt -- --ignored --nocapture`.
+#[test]
+#[ignore = "needs the Starter library in the platform data folder"]
+fn real_starter_tagnt_lemma_terms_stay_inside_one_word() {
+    let dir = default_library_dir().unwrap_or_default();
+    let path = dir.join("tagnt.obr");
+    assert!(path.is_file(), "{} not found", path.display());
+    let mut s = Session::new(JobMode::Inline);
+    let id = s
+        .library
+        .add_file(&path)
+        .unwrap()
+        .manifest
+        .resource_id
+        .clone();
+    s.set_search_cache_dir(std::env::temp_dir().join("obs-real-search-cache"));
+    s.refresh_search_indexes();
+    settle(&mut s);
+    let mut found = |query: &str| -> Vec<String> {
+        let out = s
+            .run(
+                "search.run",
+                &json!({ "text": query, "bibles": id, "mode": "bible" }),
+            )
+            .unwrap();
+        settle(&mut s);
+        let tab = TabId(out["tab"].as_u64().unwrap());
+        let st = s.search_tab(tab).unwrap();
+        let r = st.results.clone().unwrap();
+        let refs: Vec<String> = r.rows.iter().map(|row| r.row_reference(row)).collect();
+        for (i, reference) in refs.iter().enumerate().take(crate::bible_search::PAGE_ROWS) {
+            let snippet = st.snippet(i, 0).unwrap();
+            assert!(
+                !snippet.highlights.is_empty(),
+                "{query}: {reference} has no highlight"
+            );
+        }
+        eprintln!("real TAGNT query={query} hit_count={} {refs:?}", refs.len());
+        refs
+    };
+    let areopagus = ["Acts 17:19", "Acts 17:22"];
+    assert_eq!(found("lemma:Πάγος"), areopagus);
+    assert_eq!(found("lemma:Πάγος @noun"), areopagus);
+    assert_eq!(found("lemma:Ἄρειος @noun"), areopagus);
+    assert_eq!(found("lemma:\"θεός ἀγάπη\""), Vec::<String>::new());
+    assert_eq!(found("lemma:θεός lemma:ἀγάπη").len(), 32);
+}

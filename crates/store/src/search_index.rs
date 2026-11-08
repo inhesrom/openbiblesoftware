@@ -16,10 +16,12 @@
 //! | `morph_codes` | `token` → `code`: each Morphology code in the Resource and its token in the `morph` column |
 //! | `search` | FTS5 over `text`, `strong`, `lemma`, `morph`; `detail=full` for phrases |
 //!
-//! `morph` lists every morpheme part of the Tagged words in turn: its Strong's number (then
-//! the base form of an extended one), its code's token, then its Lemma's words. A phrase
-//! such as `"g26 morph3"` therefore finds one part with both (#145); which tokens a query's
-//! Morphology criteria mean is read from `morph_codes` ([`obs_search::IndexQuery::plan`]).
+//! `morph` lists every morpheme part of the Tagged words that has a Morphology code, in turn:
+//! its Strong's number (then the base form of an extended one), its code's token, then its
+//! Lemma's words, once from each Lemma word. A phrase such as `"g26 morph3"` therefore finds
+//! one part with both (#145); which tokens a query's Morphology criteria mean is read from
+//! `morph_codes` ([`obs_search::IndexQuery::plan`]). In `lemma` and `morph` each part ends at
+//! a boundary word no query can contain, so a phrase stays inside one part (#257).
 //!
 //! Queries one MATCH cannot answer (#180) are planned per index ([`obs_search::Plan`]): a
 //! stemmed word becomes the index's own words of that stem, found through an `fts5vocab`
@@ -308,9 +310,10 @@ impl<'a> UnitMarks<'a> {
     /// A `lemma:` term means words of one morpheme part's Lemma, anywhere in it, as the
     /// highlighter reads it (#257). So in `lemma` each part's Lemma ends at a
     /// [`PART_BOUNDARY`], and a phrase never runs on into the next part's. In `morph` each
-    /// part's run (Strong's numbers, code token, Lemma) ends at one too, and a part with a code
-    /// has a run for each word its Lemma may be searched from (`morph7 αρειοσ παγοσ`, then
-    /// `morph7 παγοσ`), so `token word` is a phrase whichever Lemma word is asked for.
+    /// part with a code has a run (Strong's numbers, code token, Lemma) for each word its
+    /// Lemma may be searched from (`g697 morph7 αρειοσ παγοσ`, then `g697 morph7 παγοσ`), so
+    /// `token word` is a phrase whichever Lemma word is asked for; each run ends at a
+    /// boundary too.
     fn fields(
         &self,
         range: std::ops::Range<usize>,
@@ -352,19 +355,21 @@ impl<'a> UnitMarks<'a> {
                         push(&mut lemma, w);
                     }
                 }
-                let code = p.morph.as_deref().map(str::trim).filter(|c| !c.is_empty());
-                let token = code.map(|c| codes.token(c).to_string());
-                let runs = if token.is_some() { words.len().max(1) } else { 1 };
-                for from in 0..runs {
+                // Every `morph` phrase has a code's token, so a part without a code has no
+                // run.
+                let Some(code) = p.morph.as_deref().map(str::trim).filter(|c| !c.is_empty())
+                else {
+                    continue;
+                };
+                let token = codes.token(code).to_string();
+                for from in 0..words.len().max(1) {
                     if !morph.is_empty() {
                         push(&mut morph, PART_BOUNDARY);
                     }
                     for form in &forms {
                         push(&mut morph, form);
                     }
-                    if let Some(token) = &token {
-                        push(&mut morph, token);
-                    }
+                    push(&mut morph, &token);
                     for w in words.get(from..).unwrap_or_default() {
                         push(&mut morph, w);
                     }
