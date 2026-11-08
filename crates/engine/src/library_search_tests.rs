@@ -680,3 +680,24 @@ fn word_forms_from_settings_rerun_every_open_bible_and_library_search() {
     assert!(Arc::ptr_eq(&notes_before, &notes_reset));
     cleanup(s, root);
 }
+
+/// AUD-SEARCH-INDEX-5 (#257): a Resource whose index fails the Library search job is
+/// rebuilt, listed as indexing meanwhile, and found by the next search.
+#[test]
+fn a_resource_index_that_fails_the_search_is_rebuilt() {
+    let (mut s, root) = fixture("damaged-index", false);
+    let path = s.search.path("tcc").unwrap().to_path_buf();
+    obs_store::damage_search_index(&path, "UPDATE docs SET start = -1;").unwrap();
+    let tab = search(&mut s, json!({ "text": "covenant" }));
+    let r = results(&s, tab);
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    assert_eq!(r.indexing, ["TCC"]);
+    assert!(r.groups.iter().all(|g| g.id != "tcc"));
+    // `search` settled: the rebuild ran.
+    assert!(s.search.is_ready("tcc"));
+    let tab = search(&mut s, json!({ "tab": tab.0, "text": "covenant" }));
+    let r = results(&s, tab);
+    assert!(r.indexing.is_empty() && r.failed.is_empty());
+    assert_eq!(r.groups[0].id, "tcc");
+    cleanup(s, root);
+}
