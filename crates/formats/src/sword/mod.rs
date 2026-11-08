@@ -18,6 +18,8 @@
 //! Attribution. Import is never blocked on licence.
 
 mod gbf;
+#[cfg(test)]
+mod hostile_input_tests;
 mod osis;
 pub mod repo;
 mod thml;

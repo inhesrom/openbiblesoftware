@@ -85,8 +85,10 @@ fn tag(s: &str) -> Option<(Token<'_>, usize)> {
         let len = end_tag
             .find(|c: char| !is_name_char(c))
             .unwrap_or(end_tag.len());
-        let close = end_tag.find('>')?;
-        if len == 0 || !end_tag[len..close].trim().is_empty() {
+        // Only space may follow the name; looking no further keeps a run of unclosed `</`
+        // linear (#253).
+        let close = len + (end_tag[len..].len() - end_tag[len..].trim_start().len());
+        if len == 0 || !end_tag[close..].starts_with('>') {
             return None;
         }
         return Some((Token::End(&end_tag[..len]), 2 + close + 1));
@@ -128,12 +130,17 @@ fn tag(s: &str) -> Option<(Token<'_>, usize)> {
         let v = &s[i..];
         let (value, used) = match v.chars().next() {
             Some(q @ ('"' | '\'')) => {
-                let end = v[1..].find(q)?;
+                // `<` cannot appear in a value; stopping there keeps unclosed quotes linear.
+                let end = v[1..].find([q, '<'])?;
+                if v[1 + end..].starts_with('<') {
+                    return None;
+                }
                 (&v[1..1 + end], end + 2)
             }
             _ => {
+                // Stopping at `<` too keeps a run of unclosed `<a b=x` linear (#253).
                 let end = v
-                    .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
+                    .find(|c: char| c.is_whitespace() || matches!(c, '>' | '/' | '<'))
                     .unwrap_or(v.len());
                 (&v[..end], end)
             }
@@ -143,7 +150,13 @@ fn tag(s: &str) -> Option<(Token<'_>, usize)> {
     }
 }
 
+/// Longest entity read, `&` to `;` inclusive: names and numbers stay under ten bytes.
+const MAX_ENTITY_BYTES: usize = 11;
+
 /// Decode XML and common HTML entities; unknown ones are kept as written.
+///
+/// The `;` is looked for only within [`MAX_ENTITY_BYTES`], so an `&` that starts no entity
+/// costs constant work and the whole decode stays linear (#253).
 pub(crate) fn decode_entities(s: &str) -> Cow<'_, str> {
     if !s.contains('&') {
         return Cow::Borrowed(s);
@@ -153,9 +166,10 @@ pub(crate) fn decode_entities(s: &str) -> Cow<'_, str> {
     while let Some(amp) = rest.find('&') {
         out.push_str(&rest[..amp]);
         let tail = &rest[amp..];
-        let decoded = tail
-            .find(';')
-            .filter(|&semi| semi <= 10)
+        let reach = &tail.as_bytes()[..tail.len().min(MAX_ENTITY_BYTES)];
+        let decoded = reach
+            .iter()
+            .position(|&b| b == b';')
             .and_then(|semi| entity(&tail[1..semi]).map(|c| (c, semi + 1)));
         match decoded {
             Some((c, used)) => {
@@ -245,6 +259,39 @@ mod tests {
                 Token::Text("note".into()),
             ]
         );
+    }
+
+    /// AUD-FORMATS-7 (#253): an `&` with no `;` within entity reach costs constant work,
+    /// so a megabyte of them decodes in linear time.
+    #[test]
+    fn unterminated_ampersands_decode_in_linear_time() {
+        let s = "&".repeat(1 << 20);
+        let started = std::time::Instant::now();
+        assert_eq!(decode_entities(&s), s);
+        let mixed = format!("{}&amp;", "& x".repeat(1 << 18));
+        assert!(decode_entities(&mixed).ends_with("& x&"));
+        let elapsed = started.elapsed();
+        assert!(elapsed < std::time::Duration::from_secs(1), "{elapsed:?}");
+    }
+
+    /// #253: unclosed end tags and attribute quotes cost work up to the next `<` only, so
+    /// a megabyte of them tokenizes in linear time and stays text.
+    #[test]
+    fn unclosed_tags_tokenize_in_linear_time() {
+        let started = std::time::Instant::now();
+        for unit in ["</a", "<a b=\"", "<a b='", "<a b=x"] {
+            let s = unit.repeat((1 << 20) / unit.len());
+            let text: String = tokenize(&s)
+                .into_iter()
+                .map(|t| match t {
+                    Token::Text(t) => t.into_owned(),
+                    other => panic!("{other:?}"),
+                })
+                .collect();
+            assert_eq!(text, s);
+        }
+        let elapsed = started.elapsed();
+        assert!(elapsed < std::time::Duration::from_secs(1), "{elapsed:?}");
     }
 
     #[test]

@@ -706,3 +706,79 @@ fn dictionary_aliases_follow_chains_detect_cycles_and_respect_case() {
     assert_eq!(report.warnings.len(), 3);
     check_golden("aliases-osis", &snapshot(&r, &report));
 }
+
+/// Every file under `dir`, recursively, sorted.
+fn files_under(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            out.extend(files_under(&path));
+        } else {
+            out.push(path);
+        }
+    }
+    out.sort();
+    out
+}
+
+/// #253: a SWORD module whose index or data files are damaged (bytes changed, cut short or
+/// grown) imports or fails with an error, never a panic, and what imports is valid. The
+/// damage comes from a seeded xorshift, so a failing seed replays.
+#[test]
+fn damaged_module_files_never_panic_the_import() {
+    let dir = std::env::temp_dir().join(format!("obs-sword-damaged-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for file in files_under(&root()) {
+        let to = dir.join(file.strip_prefix(root()).unwrap());
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        std::fs::copy(&file, &to).unwrap();
+    }
+    let pristine: Vec<(std::path::PathBuf, Vec<u8>)> = files_under(&dir.join("modules"))
+        .into_iter()
+        .map(|p| {
+            let bytes = std::fs::read(&p).unwrap();
+            (p, bytes)
+        })
+        .collect();
+    let modules: Vec<String> = SwordSource::open(&dir)
+        .unwrap()
+        .modules()
+        .into_iter()
+        .map(|m| m.name)
+        .collect();
+    let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    for seed in 0..150 {
+        for (path, bytes) in &pristine {
+            std::fs::write(path, bytes).unwrap();
+        }
+        let (path, bytes) = &pristine[next() as usize % pristine.len()];
+        let mut damaged = bytes.clone();
+        match next() % 3 {
+            0 if !damaged.is_empty() => {
+                for _ in 0..1 + next() % 8 {
+                    let at = next() as usize % damaged.len();
+                    damaged[at] = next() as u8;
+                }
+            }
+            1 => damaged.truncate(next() as usize % (damaged.len() + 1)),
+            _ => damaged.extend((0..1 + next() % 64).map(|_| next() as u8)),
+        }
+        std::fs::write(path, &damaged).unwrap();
+        let source = SwordSource::open(&dir).unwrap();
+        for module in &modules {
+            if let Ok((resource, _)) = import_sword(&source, module, &SwordOptions::default()) {
+                resource
+                    .validate()
+                    .unwrap_or_else(|e| panic!("seed {seed}, {module}: {e}"));
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

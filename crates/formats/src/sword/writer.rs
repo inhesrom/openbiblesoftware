@@ -523,8 +523,9 @@ impl Writer {
     fn finish(&mut self, open: Open) {
         match open.kind {
             OpenKind::Span(kind) => {
-                let buf = self.buf_for(open.in_note);
-                if let Some(start) = open.start {
+                if let Some(buf) = self.buf_for(open.in_note)
+                    && let Some(start) = open.start
+                {
                     let end = buf.pos();
                     if end > start {
                         buf.add_span(start..end, kind);
@@ -549,16 +550,42 @@ impl Writer {
                 self.end_block();
                 self.styles.pop();
             }
-            OpenKind::Note => self.finish_note(),
+            OpenKind::Note => {
+                self.close_note_contents();
+                self.finish_note();
+            }
             OpenKind::Container => {}
             OpenKind::Hidden => self.hidden = self.hidden.saturating_sub(1),
         }
     }
 
-    fn buf_for(&mut self, in_note: bool) -> &mut TextBuf {
+    /// Everything opened inside a note ends with it: milestones, and elements a milestone
+    /// note leaves on the stack. Their starts are offsets into the note's text, which mean
+    /// nothing in the unit's or in a later note's (#253).
+    fn close_note_contents(&mut self) {
+        let in_note: Vec<(String, String)> = self
+            .milestones
+            .iter()
+            .filter(|(_, open)| open.in_note)
+            .map(|(key, _)| key.clone())
+            .collect();
+        for key in in_note {
+            if let Some(open) = self.milestones.remove(&key) {
+                self.finish(open);
+            }
+        }
+        while let Some(i) = self.stack.iter().rposition(|o| o.in_note) {
+            let open = self.stack.remove(i);
+            self.finish(open);
+        }
+    }
+
+    /// The text `in_note` offsets point into, or `None` once that note has ended.
+    fn buf_for(&mut self, in_note: bool) -> Option<&mut TextBuf> {
         match (&mut self.note, in_note) {
-            (Some(n), true) => &mut n.buf,
-            _ => &mut self.buf,
+            (Some(n), true) => Some(&mut n.buf),
+            (None, true) => None,
+            (_, false) => Some(&mut self.buf),
         }
     }
 
@@ -570,7 +597,9 @@ impl Writer {
     ) {
         let Some(start) = start else { return };
         let text = {
-            let buf = self.buf_for(in_note);
+            let Some(buf) = self.buf_for(in_note) else {
+                return;
+            };
             let end = buf.pos();
             if end <= start {
                 return;
@@ -579,7 +608,9 @@ impl Writer {
         };
         let targets = targets.or_else(|| self.parse_reference(&text).filter(|l| !l.is_empty()));
         let Some(targets) = targets else { return };
-        let buf = self.buf_for(in_note);
+        let Some(buf) = self.buf_for(in_note) else {
+            return;
+        };
         let end = buf.pos();
         buf.add_span(
             start..end,
