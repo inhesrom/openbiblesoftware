@@ -312,8 +312,97 @@ pub fn canonical_key(key: &str) -> Result<String, String> {
     Ok(out.join("+"))
 }
 
+/// How a key is written for people to read (#262).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyStyle {
+    /// Windows and Linux: modifier names joined by `+` (`Ctrl+Shift+N`, `Ctrl+,`).
+    Pc,
+    /// macOS: Apple's modifier symbols in Apple's order, ⌃ ⌥ ⇧ ⌘, then the key (`⇧⌘N`, `⌘,`).
+    /// Ctrl is ⌘, except Ctrl+Tab, which is the Control key there (⌘Tab switches apps).
+    Mac,
+}
+
+/// The keys shown as the sign on the key rather than their name.
+const KEY_SIGNS: &[(&str, char)] = &[
+    ("Up", '↑'),
+    ("Down", '↓'),
+    ("Left", '←'),
+    ("Right", '→'),
+    ("Colon", ':'),
+    ("Comma", ','),
+    ("Minus", '−'),
+    ("Period", '.'),
+    ("Plus", '+'),
+    ("Equals", '='),
+    ("Semicolon", ';'),
+    ("Backslash", '\\'),
+    ("Slash", '/'),
+    ("Pipe", '|'),
+    ("Questionmark", '?'),
+    ("Exclamationmark", '!'),
+    ("OpenBracket", '['),
+    ("CloseBracket", ']'),
+    ("OpenCurlyBracket", '{'),
+    ("CloseCurlyBracket", '}'),
+    ("Backtick", '`'),
+    ("Quote", '\''),
+];
+
+/// Key `name` (canonical) as shown in `style`.
+fn shown_key_name(name: &str, style: KeyStyle) -> String {
+    match (name, style) {
+        ("Escape", _) => "Esc".into(),
+        ("PageUp", _) => "Page Up".into(),
+        ("PageDown", _) => "Page Down".into(),
+        ("Enter", KeyStyle::Mac) => "Return".into(),
+        _ => (KEY_SIGNS.iter())
+            .find(|(k, _)| *k == name)
+            .map_or_else(|| name.to_string(), |(_, sign)| sign.to_string()),
+    }
+}
+
+/// `key` (written any way [`canonical_key`] reads) as people read it in `style`: `Ctrl+Comma`
+/// is `Ctrl+,` on Windows and Linux and `⌘,` on macOS, `Ctrl+Shift+N` is `⇧⌘N`, `Alt+Left`
+/// is `⌥←`. Text that is not a key is returned as it is.
+pub fn key_label(key: &str, style: KeyStyle) -> String {
+    let Ok(key) = canonical_key(key) else {
+        return key.to_string();
+    };
+    let mut parts: Vec<&str> = key.split('+').collect();
+    let name = parts.pop().unwrap_or_default();
+    let held = |m: &str| parts.contains(&m);
+    let shown = shown_key_name(name, style);
+    match style {
+        KeyStyle::Pc => {
+            parts.push(&shown);
+            parts.join("+")
+        }
+        KeyStyle::Mac => {
+            let control = held("Ctrl") && name == "Tab";
+            let mut out = String::new();
+            for (on, symbol) in [
+                (control, '⌃'),
+                (held("Alt"), '⌥'),
+                (held("Shift"), '⇧'),
+                (held("Ctrl") && !control, '⌘'),
+            ] {
+                if on {
+                    out.push(symbol);
+                }
+            }
+            out.push_str(&shown);
+            out
+        }
+    }
+}
+
 /// Why `key` (canonical) cannot be bound, if it cannot.
 pub fn not_bindable(key: &str) -> Option<String> {
+    not_bindable_as(key, KeyStyle::Pc)
+}
+
+/// Why `key` (canonical) cannot be bound, if it cannot, naming keys in `style` (#262).
+pub fn not_bindable_as(key: &str, style: KeyStyle) -> Option<String> {
     let (mods, name) = key.rsplit_once('+').unwrap_or(("", key));
     match name {
         "Escape" => return Some("Esc is kept for closing and cancelling".into()),
@@ -327,9 +416,15 @@ pub fn not_bindable(key: &str) -> Option<String> {
     let function = name.len() > 1 && name.starts_with('F') && name[1..].parse::<u8>().is_ok();
     let ctrl_or_alt = mods.split('+').any(|m| m == "Ctrl" || m == "Alt");
     if !ctrl_or_alt && !function {
-        return Some(format!(
-            "{key} is kept for typing and moving: add Ctrl or Alt (a function key needs neither)"
-        ));
+        let key = key_label(key, style);
+        return Some(match style {
+            KeyStyle::Pc => format!(
+                "{key} is kept for typing and moving: add Ctrl or Alt (a function key needs neither)"
+            ),
+            KeyStyle::Mac => format!(
+                "{key} is kept for typing and moving: add ⌘ or ⌥ (a function key needs neither)"
+            ),
+        });
     }
     None
 }
@@ -373,6 +468,14 @@ pub fn key_binding_groups() -> Vec<&'static str> {
 }
 
 impl Session {
+    /// Where command `id` is in the menu bar, as a hint names it (`Edit → Undo`), if it is in
+    /// a menu (#262).
+    pub fn menu_path(&self, id: &str) -> Option<String> {
+        let menu = menu_of(id)?;
+        let label = self.commands().get(id)?.label;
+        Some(format!("{menu} → {label}"))
+    }
+
     /// The key `id` (a command or a [`SelectionKey`]) has now: the user's own, else its
     /// default.
     pub fn shortcut(&self, id: &str) -> Option<&str> {
@@ -513,7 +616,10 @@ impl Session {
         let label = (self.key_bindings().into_iter())
             .find(|b| b.id == other)
             .map_or(other, |b| b.label);
-        Some(format!("“{label}” cannot take {old}: {why}"))
+        Some(format!(
+            "“{label}” cannot take {}: {why}",
+            key_label(old, KeyStyle::Pc)
+        ))
     }
 
     /// Bind `key` (`None`: clear) to `id`; with `swap`, a binding that has the key takes `id`'s

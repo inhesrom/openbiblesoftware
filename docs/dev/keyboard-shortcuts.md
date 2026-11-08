@@ -11,7 +11,7 @@ the menus, tooltips, the Launchers and the key handling all read them.
 
 | Group | Bindings |
 |---|---|
-| Each menu (Library, Guides, Tools, Layouts, View, Help), in menu order | the menu's commands that a key can run |
+| Each menu (Library, Guides, Tools, Layouts, View, Window, Help), in menu order | the menu's commands that a key can run |
 | Selection | the Selection keys (`obs_engine::SELECTION_KEYS`): Note and Alt+1…9, the first nine styles of the active Highlight palette (#181) |
 | Other commands | every other command a key can run (Back, Forward, Find, Close Tab, the Launchers, the keyboard navigation keys of #215 …), in registration order |
 
@@ -57,6 +57,43 @@ stored and rebound like commands.
   click or key press; that window's keys then run as usual.
 - Every list of commands shows the user's key (`Session::shortcut`), never the default in the
   command's spec: menus, the Tools pane, the Home button's tooltip, Find… and Close Tab.
+
+## How keys are shown (#262)
+
+Keys are stored in egui notation, but never shown that way. Everything the interface shows a
+key in (menus, the Launchers, the Command box hint, tooltips, hints such as the Undo hint, the
+Keyboard shortcuts Tab and its messages) goes through `key_labels::label`
+(`crates/ui-egui/src/key_labels.rs`), which calls the engine's
+`key_bindings::key_label(key, KeyStyle)`:
+
+| Stored | Windows and Linux (`KeyStyle::Pc`) | macOS (`KeyStyle::Mac`) |
+|---|---|---|
+| `Ctrl+Comma` | Ctrl+, | ⌘, |
+| `Ctrl+Plus` / `Ctrl+Minus` | Ctrl++ / Ctrl+− | ⌘+ / ⌘− |
+| `Ctrl+Shift+N` | Ctrl+Shift+N | ⇧⌘N |
+| `Alt+Left` | Alt+← | ⌥← |
+| `Ctrl+PageDown` | Ctrl+Page Down | ⌘Page Down |
+| `Ctrl+Enter` | Ctrl+Enter | ⌘Return |
+| `Ctrl+Tab` | Ctrl+Tab | ⌃Tab (Cmd+Tab is the system's app switcher) |
+| `Escape` | Esc | Esc |
+
+macOS modifiers are in Apple's order (⌃ ⌥ ⇧ ⌘) with no separator. The style is taken each
+frame from the context's operating system (`egui::Context::os`), so the web build on a Mac
+shows ⌘ too; the test harness pins Windows/Linux unless a test sets macOS. The Tab's filter
+matches both the stored and the shown key.
+
+No interface font has all of ⌘ ⌥ ⇧ ⌃ (⌥ is in none), so `key_labels::modifier_rasterizer`
+draws them from the icon set (Lucide `command`, `option`, `arrow-big-up`, `chevron-up`) as text
+glyphs in every font family, ahead of any font. Arrows (→ in "Edit → Undo", ← in "Alt+←") come
+from Gentium Plus Regular, last in the interface and monospace families (`theme::install_fonts`).
+
+A hint that names a menu item takes its place from the menus (`Session::menu_path`): the Undo
+hint (`shell::undo_hint`) reads "Edit → Undo brings it back (⌘Z)" when Undo is in a menu and
+"Undo (⌘Z) brings it back" while it is in none, so it never names a menu that is not there.
+
+Help no longer lists `app.commands` (List commands): it answers scripts with JSON the app has
+no place to show, so it has no menu item and no default key (`obs-cli run app.commands` still
+works).
 - A recorded key in use shows "Ctrl+F is already the key of “Find in Resource”." with
   **Swap keys** and **Cancel**; nothing is saved until one is chosen. When the other binding
   may not take the old key (`swap_refused`), the row says why and Swap keys is disabled.
@@ -69,7 +106,13 @@ stored and rebound like commands.
 
 - Engine: `key_bindings_tests.rs` (rebinding survives a restart, Reset, conflicts and swap,
   reserved keys, one spelling per key, every binding listed once with no conflicting
-  defaults, flagged conflicts).
+  defaults, flagged conflicts, keys shown per platform, menu paths, List commands for scripts
+  only).
+- UI, #262: `key_labels_tests.rs` (⌘ ⌥ ⇧ in the View menu, a Tab's ⋯ menu, the Tools pane,
+  the Command box, tooltips and the Keyboard shortcuts Tab on macOS; key signs on
+  Windows/Linux; no List commands in Help; arrows and modifier symbols drawn with no
+  missing-glyph box), `icons_tests::every_character_of_ui_text_is_in_the_chrome_fonts`,
+  `notes_tests::the_delete_notebook_undo_hint_names_a_real_menu_path_and_the_macos_key`.
 - UI: `keyboard_shortcuts_tests.rs` (the acceptance criteria with real key events and a
   restart, Swap keys never handing Esc away, recording stopping when a floating OS window is
   used), `toolbar_tests::the_tools_pane_shows_a_rebound_or_cleared_key`,

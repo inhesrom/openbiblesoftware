@@ -562,9 +562,12 @@ impl State {
                 }
             });
             ui.label(
-                RichText::new("Ctrl+Z brings back the style and its Highlights.")
-                    .small()
-                    .color(theme::c().muted),
+                RichText::new(format!(
+                    "{}.",
+                    super::undo_hint(&self.session, "brings back the style and its Highlights")
+                ))
+                .small()
+                .color(theme::c().muted),
             );
         });
         if close {

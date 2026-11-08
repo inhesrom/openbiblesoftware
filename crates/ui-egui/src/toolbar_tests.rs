@@ -347,7 +347,7 @@ fn the_tools_pane_shows_a_rebound_or_cleared_key() {
         &json!({ "command": "tool.search", "key": "Ctrl+Up" }),
     );
     key(&mut h, Key::T, Modifiers::ALT);
-    assert_eq!(search(&h), ["Ctrl+Up"], "{:?}", pane_texts(&h));
+    assert_eq!(search(&h), ["Ctrl+↑"], "{:?}", pane_texts(&h));
     assert!(!pane_texts(&h).contains(&"Ctrl+Shift+F"));
     key(&mut h, Key::T, Modifiers::ALT);
     h.shell

@@ -28,7 +28,9 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "app.commands",
         label: "List commands",
-        shortcut: Some("Ctrl+Shift+P"),
+        // For scripts (`obs-cli run app.commands`): it answers JSON, which the app has no
+        // place to show, so it is in no menu and has no key (#262).
+        shortcut: None,
         params: &[],
         enabled: always,
         run: list_commands,

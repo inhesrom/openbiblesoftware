@@ -421,8 +421,8 @@ const SYMBOL_BLOCKS: &[(u32, u32)] = &[
     (0x2B00, 0x2BFF),
 ];
 
-/// Keyboard symbols the Keyboard shortcuts help writes as text.
-const KEY_SYMBOLS: &[char] = &['⌘', '⌥', '⌃'];
+/// The modifier symbols of shortcuts on macOS (#262): text, drawn by `key_labels`.
+const KEY_SYMBOLS: &[char] = &['⌘', '⌥', '⌃', '⇧'];
 
 /// Signs that are text, wherever they stand: ellipsis, dashes, the middle dot, quotes, and
 /// the copyright and trademark signs of Resources' copyright lines.
@@ -647,4 +647,36 @@ fn no_emoji_code_points_remain_in_ui_code() {
         }
     }
     assert!(problems.is_empty(), "{}", problems.join("\n"));
+}
+
+/// #262: every character of the interface's text (its string literals) draws in the chrome
+/// fonts: no arrow, dash or quote falls to a missing-glyph box. Hebrew (lexical forms) is
+/// drawn with the reading fonts and left out; the modifier symbols are `key_labels`' glyphs.
+#[test]
+fn every_character_of_ui_text_is_in_the_chrome_fonts() {
+    let ctx = egui::Context::default();
+    theme::install(&ctx);
+    let mut out = ctx.run_ui(RawInput::default(), |_| {});
+    out.textures_delta.clear();
+    let hebrew = |ch: char| (0x0590..=0x05FF).contains(&(ch as u32));
+    let mut missing = Vec::new();
+    ctx.fonts_mut(|f| {
+        for path in ui_sources() {
+            let src = std::fs::read_to_string(&path).unwrap();
+            for (line, text) in string_literals(&src) {
+                for ch in text.chars().filter(|c| !c.is_ascii() && !hebrew(*c)) {
+                    if !KEY_SYMBOLS.contains(&ch)
+                        && !f.has_glyph(&egui::FontId::proportional(14.0), ch)
+                    {
+                        missing.push(format!(
+                            "{}:{line}: U+{:04X} {ch}",
+                            path.display(),
+                            ch as u32
+                        ));
+                    }
+                }
+            }
+        }
+    });
+    assert!(missing.is_empty(), "{}", missing.join("\n"));
 }

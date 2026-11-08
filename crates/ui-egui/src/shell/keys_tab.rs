@@ -5,12 +5,13 @@
 //! engine's ([`obs_engine::key_bindings`]); this Tab changes them only through `keys.*`.
 
 use egui::{Align, Layout, RichText, Ui, vec2};
-use obs_engine::key_bindings::{canonical_key, key_binding_groups, not_bindable};
+use obs_engine::key_bindings::{canonical_key, key_binding_groups, not_bindable_as};
 use obs_engine::{KeyBinding, KeyConflict, TabId};
 use serde_json::{Value, json};
 
 use super::State;
 use super::library_tab::section;
+use crate::key_labels;
 use crate::theme;
 
 /// Widest the command column gets.
@@ -120,15 +121,11 @@ fn key_text(key: egui::Key, m: egui::Modifiers) -> String {
     parts.join("+")
 }
 
-/// Whether every word of `filter` (lowercase) is in the binding's name, key or group.
+/// Whether every word of `filter` (lowercase) is in the binding's name, key (as written in
+/// the engine or as shown) or group.
 fn matches(b: &KeyBinding, filter: &str) -> bool {
-    let text = format!(
-        "{} {} {}",
-        b.label,
-        b.key.as_deref().unwrap_or_default(),
-        b.group
-    )
-    .to_lowercase();
+    let key = b.key.as_deref().unwrap_or_default();
+    let text = format!("{} {key} {} {}", b.label, key_labels::label(key), b.group).to_lowercase();
     filter.split_whitespace().all(|w| text.contains(w))
 }
 
@@ -160,8 +157,8 @@ impl State {
                         );
                         ui.label(
                             RichText::new(
-                                "Click a shortcut, then press the new key (Esc cancels). Ctrl \
-                                 is ⌘ on macOS. Your keys are kept in the User database.",
+                                "Click a shortcut, then press the new key (Esc cancels). Your \
+                                 keys are kept in the User database.",
                             )
                             .color(theme::c().muted),
                         );
@@ -281,10 +278,16 @@ impl State {
             ui.indent(("key-conflict", b.id), |ui| {
                 ui.colored_label(
                     theme::c().warn,
-                    format!("{} is already the key of “{}”.", p.key, p.conflict.label),
+                    format!(
+                        "{} is already the key of “{}”.",
+                        key_labels::label(&p.key),
+                        p.conflict.label
+                    ),
                 );
                 let swap_tip = match self.session.shortcut(b.id) {
-                    Some(old) => format!("“{}” gets {old}", p.conflict.label),
+                    Some(old) => {
+                        format!("“{}” gets {}", p.conflict.label, key_labels::label(old))
+                    }
                     None => format!("“{}” is left without a key", p.conflict.label),
                 };
                 // A reserved key (Esc) stays with the binding it is the default of.
@@ -317,7 +320,11 @@ impl State {
             ui.indent(("key-clash", b.id), |ui| {
                 ui.colored_label(
                     theme::c().warn,
-                    format!("{} is also the key of “{}”.", c.key, c.label),
+                    format!(
+                        "{} is also the key of “{}”.",
+                        key_labels::label(&c.key),
+                        c.label
+                    ),
                 );
             });
         }
@@ -331,7 +338,9 @@ impl State {
         let shown = if recording {
             "Press a key…".to_string()
         } else {
-            b.key.clone().unwrap_or_else(|| "None".into())
+            b.key
+                .as_deref()
+                .map_or_else(|| "None".into(), key_labels::label)
         };
         let text = if b.key.is_some() || recording {
             RichText::new(&shown).monospace().color(theme::c().ink)
@@ -369,7 +378,7 @@ impl State {
             self.keys_ui.pending = None;
             act = Some(("keys.clear", json!({ "command": b.id })));
         }
-        let default = b.default.unwrap_or("none");
+        let default = b.default.map_or_else(|| "none".into(), key_labels::label);
         if ui
             .add_enabled(b.is_custom(), egui::Button::new("Reset"))
             .accessible_name(format!("Reset the {} shortcut", b.label))
@@ -427,7 +436,7 @@ impl State {
             return;
         }
         let key = canonical_key(&key_text(key, modifiers))
-            .and_then(|k| not_bindable(&k).map_or(Ok(k), Err));
+            .and_then(|k| not_bindable_as(&k, key_labels::style()).map_or(Ok(k), Err));
         match key {
             Err(why) => self.keys_ui.message = Some((id, why)),
             Ok(key) => match self.session.key_conflict(id, &key) {

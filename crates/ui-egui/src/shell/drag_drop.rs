@@ -537,8 +537,7 @@ impl State {
                     if let Some(view) = self.tabs.get_mut(&r.tab).and_then(|t| t.view.as_mut()) {
                         view.selection = None;
                     }
-                    let undo =
-                        super::with_key(&self.session, "Edit → Undo moves it back", "edit.undo");
+                    let undo = super::undo_hint(&self.session, "moves it back");
                     self.toast(format!("Moved the Note to {}. {undo}.", r.to));
                 }
             }

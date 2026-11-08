@@ -322,7 +322,7 @@ fn keyboard_shortcuts_are_embedded_and_reset_together() {
         "{:?}",
         h.texts()
     );
-    assert!(in_tab(&h, tab, "Ctrl+Up").is_some(), "{:?}", h.texts());
+    assert!(in_tab(&h, tab, "Ctrl+↑").is_some(), "{:?}", h.texts());
     assert!(in_tab(&h, tab, "Smaller text").is_none());
     let p = reset_of(&h, tab, "Keyboard shortcuts");
     h.click(p);

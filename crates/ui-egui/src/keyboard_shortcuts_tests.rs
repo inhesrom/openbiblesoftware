@@ -113,7 +113,7 @@ fn rebinding_larger_text_to_ctrl_up_works_at_once_survives_a_restart_and_reset_r
     // Only what the filter matches is listed, under its menu.
     assert!(in_tab(&h, tab, "Smaller text").is_none());
     assert!(in_tab(&h, tab, "VIEW").is_some());
-    click_in_tab(&mut h, tab, "Ctrl+Plus");
+    click_in_tab(&mut h, tab, "Ctrl++");
     assert!(in_tab(&h, tab, "Press a key…").is_some());
     // Recording: the key runs nothing else.
     let size = text_size(&h);
@@ -123,7 +123,7 @@ fn rebinding_larger_text_to_ctrl_up_works_at_once_survives_a_restart_and_reset_r
         h.shell.st.session.shortcut("view.text_larger"),
         Some("Ctrl+Up")
     );
-    assert!(in_tab(&h, tab, "Ctrl+Up").is_some(), "{:?}", h.texts());
+    assert!(in_tab(&h, tab, "Ctrl+↑").is_some(), "{:?}", h.texts());
     preview(&h, "keyboard-shortcuts");
 
     // At once: Ctrl+Up is Larger text, Ctrl+= no longer is.
@@ -132,7 +132,7 @@ fn rebinding_larger_text_to_ctrl_up_works_at_once_survives_a_restart_and_reset_r
     assert!(!is_larger_text(&mut h, Key::Plus, CTRL | Modifiers::SHIFT));
     // The View menu shows the new key.
     h.open_menu("View");
-    assert!(h.find("Ctrl+Up").is_some(), "{:?}", h.texts());
+    assert!(h.find("Ctrl+↑").is_some(), "{:?}", h.texts());
     key(&mut h, Key::Escape, Modifiers::NONE);
 
     // After a restart.
@@ -152,7 +152,7 @@ fn rebinding_larger_text_to_ctrl_up_works_at_once_survives_a_restart_and_reset_r
         h.shell.st.session.shortcut("view.text_larger"),
         Some("Ctrl+Plus")
     );
-    assert!(in_tab(&h, tab, "Ctrl+Plus").is_some());
+    assert!(in_tab(&h, tab, "Ctrl++").is_some());
     assert!(is_larger_text(&mut h, Key::Equals, CTRL));
     assert!(is_larger_text(&mut h, Key::Plus, CTRL | Modifiers::SHIFT));
     assert!(!is_larger_text(&mut h, Key::ArrowUp, CTRL));
@@ -173,7 +173,7 @@ fn binding_a_key_in_use_shows_the_conflict_and_offers_swap_or_cancel() {
     let conflict = "Ctrl+F is already the key of “Find in Resource”.";
 
     // Cancel: both keep their keys.
-    click_in_tab(&mut h, tab, "Ctrl+Plus");
+    click_in_tab(&mut h, tab, "Ctrl++");
     key(&mut h, Key::F, CTRL);
     assert!(in_tab(&h, tab, conflict).is_some(), "{:?}", h.texts());
     assert!(in_tab(&h, tab, "Swap keys").is_some());
@@ -188,7 +188,7 @@ fn binding_a_key_in_use_shows_the_conflict_and_offers_swap_or_cancel() {
     assert_eq!(s.shortcut("tab.find"), Some("Ctrl+F"));
 
     // Swap keys: Larger text gets Ctrl+F, Find in Resource Ctrl+Plus.
-    click_in_tab(&mut h, tab, "Ctrl+Plus");
+    click_in_tab(&mut h, tab, "Ctrl++");
     key(&mut h, Key::F, CTRL);
     click_in_tab(&mut h, tab, "Swap keys");
     assert!(in_tab(&h, tab, conflict).is_none());
@@ -212,11 +212,11 @@ fn swap_keys_never_hands_esc_to_another_command() {
     let db = temp_db("keys-reserved-swap");
     let mut h = Harness::launch(Some(&db));
     let tab = open_keys(&mut h, "unpin");
-    click_in_tab(&mut h, tab, "Escape");
+    click_in_tab(&mut h, tab, "Esc");
     key(&mut h, Key::F, CTRL);
     let conflict = "Ctrl+F is already the key of “Find in Resource”.";
     assert!(in_tab(&h, tab, conflict).is_some(), "{:?}", h.texts());
-    let why = "“Find in Resource” cannot take Escape: Esc is kept for closing and cancelling; \
+    let why = "“Find in Resource” cannot take Esc: Esc is kept for closing and cancelling; \
                pick another key.";
     assert!(in_tab(&h, tab, why).is_some(), "{:?}", h.texts());
     click_in_tab(&mut h, tab, "Swap keys");
@@ -245,7 +245,7 @@ fn esc_cancels_reserved_keys_are_refused_and_clear_removes_the_key() {
     }
     preview(&h, "keyboard-shortcuts-all");
     filter_to(&mut h, tab, "larger");
-    click_in_tab(&mut h, tab, "Ctrl+Plus");
+    click_in_tab(&mut h, tab, "Ctrl++");
     key(&mut h, Key::Escape, Modifiers::NONE);
     assert!(in_tab(&h, tab, "Press a key…").is_none());
     assert_eq!(
@@ -253,14 +253,14 @@ fn esc_cancels_reserved_keys_are_refused_and_clear_removes_the_key() {
         Some("Ctrl+Plus")
     );
 
-    click_in_tab(&mut h, tab, "Ctrl+Plus");
+    click_in_tab(&mut h, tab, "Ctrl++");
     key(&mut h, Key::Enter, CTRL);
     assert!(
         in_tab(&h, tab, "Enter is kept for text fields and buttons").is_some(),
         "{:?}",
         h.texts()
     );
-    click_in_tab(&mut h, tab, "Ctrl+Plus");
+    click_in_tab(&mut h, tab, "Ctrl++");
     key(&mut h, Key::Q, Modifiers::NONE);
     assert!(
         in_tab(
@@ -290,7 +290,7 @@ fn esc_cancels_reserved_keys_are_refused_and_clear_removes_the_key() {
 fn recording_stops_when_the_tab_is_not_shown() {
     let mut h = Harness::new();
     let tab = open_keys(&mut h, "larger");
-    click_in_tab(&mut h, tab, "Ctrl+Plus");
+    click_in_tab(&mut h, tab, "Ctrl++");
     assert!(h.shell.st.keys_ui.is_recording());
     h.shell.run("tab.close", &json!({ "tab": tab.0 }));
     h.frames(3);
@@ -358,7 +358,7 @@ fn recording_stops_when_another_os_window_is_used() {
     let tab = open_keys(&mut h, "larger");
 
     // A click in the floating window, then a shortcut typed there.
-    click_in_tab(&mut h, tab, "Ctrl+Plus");
+    click_in_tab(&mut h, tab, "Ctrl++");
     assert!(h.shell.st.keys_ui.is_recording());
     h.click_in(w, pos2(200.0, 200.0), 1);
     assert!(!h.shell.st.keys_ui.is_recording());
@@ -371,7 +371,7 @@ fn recording_stops_when_another_os_window_is_used() {
     assert!(in_tab(&h, tab, "Press a key…").is_none());
 
     // A shortcut typed there at once (the window took focus without a click).
-    click_in_tab(&mut h, tab, "Ctrl+Plus");
+    click_in_tab(&mut h, tab, "Ctrl++");
     assert!(h.shell.st.keys_ui.is_recording());
     let size = text_size(&h);
     h.window(w).events.push(Event::WindowFocused(true));
@@ -387,7 +387,7 @@ fn recording_stops_when_another_os_window_is_used() {
     );
 
     // The main window losing focus stops recording too.
-    click_in_tab(&mut h, tab, "Ctrl+Plus");
+    click_in_tab(&mut h, tab, "Ctrl++");
     assert!(h.shell.st.keys_ui.is_recording());
     h.events.push(Event::WindowFocused(false));
     h.frames(2);

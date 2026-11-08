@@ -581,7 +581,7 @@ impl Shell {
             .into_iter()
             .filter_map(|(id, _, enabled)| {
                 let spec = s.commands().get(id)?;
-                let key = s.shortcut(id).unwrap_or_default().to_string();
+                let key = super::key_of(s, id);
                 Some((id, spec.label, key, enabled))
             })
             .filter(|(_, label, _, _)| needle.is_empty() || label.to_lowercase().contains(&needle))

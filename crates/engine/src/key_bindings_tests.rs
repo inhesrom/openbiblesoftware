@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use serde_json::json;
 
 use crate::key_bindings::{
-    KEY_BINDINGS_PREF, OTHER_GROUP, SELECTION_GROUP, canonical_key, key_binding_groups,
-    not_bindable,
+    KEY_BINDINGS_PREF, KeyStyle, OTHER_GROUP, SELECTION_GROUP, canonical_key, key_binding_groups,
+    key_label, not_bindable,
 };
 use crate::*;
 
@@ -159,10 +159,7 @@ fn a_swap_never_moves_esc_off_unpin_word_info() {
     assert_eq!(s.shortcut("word_info.unpin"), Some("Escape"));
     assert_eq!(s.swap_refused("view.text_larger", "tab.find"), None);
     let why = s.swap_refused("word_info.unpin", "tab.find").unwrap();
-    assert!(
-        why.contains("“Find in Resource” cannot take Escape"),
-        "{why}"
-    );
+    assert!(why.contains("“Find in Resource” cannot take Esc:"), "{why}");
     let err = s
         .run(
             "keys.set",
@@ -170,7 +167,7 @@ fn a_swap_never_moves_esc_off_unpin_word_info() {
         )
         .unwrap_err()
         .to_string();
-    assert!(err.contains("cannot take Escape: Esc is kept"), "{err}");
+    assert!(err.contains("cannot take Esc: Esc is kept"), "{err}");
     assert_eq!(s.shortcut("word_info.unpin"), Some("Escape"));
     assert_eq!(s.shortcut("tab.find"), Some("Ctrl+F"));
     drop(s);
@@ -283,6 +280,92 @@ fn keys_are_written_one_way() {
     for bad in ["", "Ctrl", "Ctrl+A+B", "Ctrl+F0", "Ctrl+F36", "Ctrl+Wat"] {
         assert!(canonical_key(bad).is_err(), "{bad}");
     }
+}
+
+/// #262: keys read as people write them: key names, not egui's ("Comma", "Plus", "Minus"),
+/// on every platform, and Apple's modifier symbols in Apple's order on macOS.
+#[test]
+fn keys_are_shown_with_key_names_and_on_macos_with_modifier_symbols() {
+    for (key, pc, mac) in [
+        ("Ctrl+Comma", "Ctrl+,", "⌘,"),
+        ("Ctrl+Plus", "Ctrl++", "⌘+"),
+        ("Ctrl+Shift+Plus", "Ctrl++", "⌘+"),
+        ("Ctrl+Minus", "Ctrl+−", "⌘−"),
+        ("Ctrl+0", "Ctrl+0", "⌘0"),
+        ("Ctrl+W", "Ctrl+W", "⌘W"),
+        ("Ctrl+Shift+N", "Ctrl+Shift+N", "⇧⌘N"),
+        ("Ctrl+Shift+Alt+X", "Ctrl+Shift+Alt+X", "⌥⇧⌘X"),
+        ("Alt+Left", "Alt+←", "⌥←"),
+        ("Alt+1", "Alt+1", "⌥1"),
+        ("Ctrl+[", "Ctrl+[", "⌘["),
+        ("Ctrl+PageDown", "Ctrl+Page Down", "⌘Page Down"),
+        ("Ctrl+Enter", "Ctrl+Enter", "⌘Return"),
+        ("Shift+F6", "Shift+F6", "⇧F6"),
+        ("F6", "F6", "F6"),
+        // Cmd+Tab switches apps on macOS: Ctrl+Tab is the Control key there.
+        ("Ctrl+Tab", "Ctrl+Tab", "⌃Tab"),
+        ("Ctrl+Shift+Tab", "Ctrl+Shift+Tab", "⌃⇧Tab"),
+        ("Escape", "Esc", "Esc"),
+    ] {
+        assert_eq!(key_label(key, KeyStyle::Pc), pc, "{key}");
+        assert_eq!(key_label(key, KeyStyle::Mac), mac, "{key}");
+    }
+    // Not a key: left as it is.
+    assert_eq!(key_label("Ctrl+Wat", KeyStyle::Mac), "Ctrl+Wat");
+    // Every default key reads without an egui key name.
+    let s = Session::new(JobMode::Inline);
+    for b in s.key_bindings() {
+        let Some(key) = b.default else { continue };
+        for style in [KeyStyle::Pc, KeyStyle::Mac] {
+            let label = key_label(key, style);
+            for name in [
+                "Comma",
+                "Plus",
+                "Minus",
+                "OpenBracket",
+                "CloseBracket",
+                "Left",
+                "Right",
+            ] {
+                assert!(!label.contains(name), "{} shows {label}", b.id);
+            }
+        }
+        assert!(!key_label(key, KeyStyle::Mac).contains("Ctrl"), "{key}");
+    }
+}
+
+/// #262: a hint names a command by its real place in the menu bar, and only when it is in a
+/// menu.
+#[test]
+fn menu_path_names_the_menu_a_command_is_in() {
+    let s = Session::new(JobMode::Inline);
+    assert_eq!(
+        s.menu_path("help.keyboard_shortcuts").as_deref(),
+        Some("Help → Keyboard shortcuts")
+    );
+    assert_eq!(
+        s.menu_path("app.settings").as_deref(),
+        Some("View → Settings")
+    );
+    assert_eq!(s.menu_path("no.such_command"), None);
+    for b in s.key_bindings() {
+        let path = s.menu_path(b.id);
+        if b.group == OTHER_GROUP || b.group == SELECTION_GROUP {
+            assert_eq!(path, None, "{}", b.id);
+        } else {
+            assert_eq!(path, Some(format!("{} → {}", b.group, b.label)), "{}", b.id);
+        }
+    }
+}
+
+/// #262 (WORKSPACE-MAC-9): List commands answers scripts with JSON the app has no place to
+/// show, so no menu item or key runs it to no effect.
+#[test]
+fn list_commands_is_for_scripts_only() {
+    let mut s = Session::new(JobMode::Inline);
+    assert_eq!(s.menu_path("app.commands"), None);
+    assert_eq!(s.shortcut("app.commands"), None);
+    assert!(s.run("app.commands", &json!({})).unwrap().is_array());
 }
 
 /// Every command a key can run is listed once, grouped by its menu, with the Selection keys

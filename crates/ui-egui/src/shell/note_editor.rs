@@ -84,10 +84,11 @@ impl Format {
         }
     }
 
-    fn hint(self) -> &'static str {
+    fn hint(self) -> String {
+        let key = crate::key_labels::label;
         match self {
-            Format::Bold => "Bold (Ctrl+B)",
-            Format::Italic => "Italic (Ctrl+I)",
+            Format::Bold => return format!("Bold ({})", key("Ctrl+B")),
+            Format::Italic => return format!("Italic ({})", key("Ctrl+I")),
             Format::Heading => "Heading: click again for a smaller one, then back to text",
             Format::Bullet => "Bulleted list (or type “- ” at the start of a line)",
             Format::Numbered => "Numbered list (or type “1. ” at the start of a line)",
@@ -96,6 +97,7 @@ impl Format {
                 "Link: type a Bible reference (Rom 5:8) or a web address between the < and >"
             }
         }
+        .to_string()
     }
 }
 

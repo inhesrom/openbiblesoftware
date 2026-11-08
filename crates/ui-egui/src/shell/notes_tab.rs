@@ -303,7 +303,7 @@ impl State {
             if let Some(view) = self.tabs.get_mut(&tab).and_then(|t| t.view.as_mut()) {
                 view.selection = None;
             }
-            let undo = super::with_key(&self.session, "Edit → Undo brings it back", "edit.undo");
+            let undo = super::undo_hint(&self.session, "brings it back");
             self.toast(format!("Re-attached. {undo}."));
         }
     }
@@ -755,7 +755,7 @@ impl State {
             .iter()
             .find(|n| n.is_default)
             .map_or_else(String::new, |n| n.name.clone());
-        let undo = super::with_key(&self.session, "Edit → Undo brings it all back", "edit.undo");
+        let undo = super::undo_hint(&self.session, "brings it all back");
         let mut done: Option<bool> = None;
         egui::Window::new("Delete Notebook")
             .collapsible(false)
@@ -796,8 +796,7 @@ impl State {
                     "notebook.delete",
                     json!({ "id": d.id, "annotations": annotations }),
                 ));
-                let undo =
-                    super::with_key(&self.session, "Edit → Undo brings it back", "edit.undo");
+                let undo = super::undo_hint(&self.session, "brings it back");
                 self.toast(format!("Deleted the Notebook “{}”. {undo}.", d.name));
             }
             Some(false) => {}
@@ -1061,9 +1060,10 @@ impl State {
                 finished = true;
             }
             ui.label(
-                RichText::new(
-                    "Saves as you type, and when you click away, press Esc or Ctrl+Enter.",
-                )
+                RichText::new(format!(
+                    "Saves as you type, and when you click away, press Esc or {}.",
+                    crate::key_labels::label("Ctrl+Enter")
+                ))
                 .small()
                 .color(theme::c().muted),
             );

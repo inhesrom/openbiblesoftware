@@ -162,7 +162,6 @@ pub const MENUS: &[Menu] = &[
             C("help.about"),
             C("help.credits"),
             C("help.keyboard_shortcuts"),
-            C("app.commands"),
             Separator,
             C("help.report_problem"),
             C("help.open_log_folder"),

@@ -348,7 +348,8 @@ fn actions_ui(
             item(
                 ui,
                 true,
-                egui::Button::new(with_icon(ui, Icon::Copy, "Copy")).shortcut_text("Ctrl+C"),
+                egui::Button::new(with_icon(ui, Icon::Copy, "Copy"))
+                    .shortcut_text(crate::key_labels::label("Ctrl+C")),
                 MenuAction::Annotate(Annotate::Copy),
                 "",
             );

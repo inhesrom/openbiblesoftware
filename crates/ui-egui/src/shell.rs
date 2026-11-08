@@ -793,6 +793,7 @@ impl Shell {
             ctx.set_theme(want);
         }
         theme::set_for(ctx);
+        crate::key_labels::set_for(ctx);
         // Interface size is the only whole-window zoom (#137). egui's own Ctrl+Plus/Minus/0
         // zoom is off: those keys are Text size. A stale zoom is put back at once.
         if ctx.options(|o| o.zoom_with_keyboard) {
@@ -1210,7 +1211,7 @@ impl Shell {
                     None => egui::Button::new((icons::blank(), label)),
                 };
                 if let Some(sc) = self.st.session.shortcut(id) {
-                    b = b.shortcut_text(sc);
+                    b = b.shortcut_text(crate::key_labels::label(sc));
                 }
                 let enabled = self.st.session.is_enabled(id);
                 let r = ui.add_enabled(enabled, b);
@@ -1570,11 +1571,30 @@ pub(crate) fn bindings(session: &obs_engine::Session) -> Vec<egui::KeyboardShort
         .collect()
 }
 
-/// `text (key)` with the key `id` has now (#177), or `text` alone when it has none.
+/// `text (key)` with the key `id` has now (#177) as the platform writes it (#262), or `text`
+/// alone when it has none.
 pub(crate) fn with_key(session: &obs_engine::Session, text: &str, id: &str) -> String {
     match session.shortcut(id) {
-        Some(key) => format!("{text} ({key})"),
+        Some(key) => format!("{text} ({})", crate::key_labels::label(key)),
         None => text.to_string(),
+    }
+}
+
+/// The key `id` has now as the platform writes it (#262); empty when it has none.
+pub(crate) fn key_of(session: &obs_engine::Session, id: &str) -> String {
+    session
+        .shortcut(id)
+        .map(crate::key_labels::label)
+        .unwrap_or_default()
+}
+
+/// A hint that Undo brings back what was just done: `Edit → Undo brings it back (⌘Z)` naming
+/// Undo's place in the menu bar, or `Undo (⌘Z) brings it back` while Undo is in no menu, so
+/// the hint never names a menu that is not there (#262). `brings` is the rest of the sentence.
+pub(crate) fn undo_hint(session: &obs_engine::Session, brings: &str) -> String {
+    match session.menu_path("edit.undo") {
+        Some(path) => with_key(session, &format!("{path} {brings}"), "edit.undo"),
+        None => format!("{} {brings}", with_key(session, "Undo", "edit.undo")),
     }
 }
 
@@ -2905,7 +2925,7 @@ impl State {
         if ui
             .add_enabled(back, arrow(icons::Icon::Back))
             .accessible_name("Back")
-            .on_hover_text("Back (Alt+←)")
+            .on_hover_text(with_key(&self.session, "Back", "tab.back"))
             .clicked()
         {
             self.run("tab.back", &json!({ "tab": tab.0 }));
@@ -2913,7 +2933,7 @@ impl State {
         if ui
             .add_enabled(fwd, arrow(icons::Icon::Forward))
             .accessible_name("Forward")
-            .on_hover_text("Forward (Alt+→)")
+            .on_hover_text(with_key(&self.session, "Forward", "tab.forward"))
             .clicked()
         {
             self.run("tab.forward", &json!({ "tab": tab.0 }));
@@ -3045,16 +3065,8 @@ impl State {
             .workspace
             .tab(tab)
             .is_some_and(|t| t.kind.has_find_bar());
-        let find_key = self
-            .session
-            .shortcut("tab.find")
-            .unwrap_or_default()
-            .to_string();
-        let close_key = self
-            .session
-            .shortcut("tab.close")
-            .unwrap_or_default()
-            .to_string();
+        let find_key = key_of(&self.session, "tab.find");
+        let close_key = key_of(&self.session, "tab.close");
         ui.menu_button(
             icons::image(ui.ctx(), icons::Icon::More, icons::BODY, theme::c().muted),
             |ui| {
