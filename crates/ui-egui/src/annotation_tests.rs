@@ -665,7 +665,6 @@ fn a_revision_arriving_under_an_open_note_never_changes_its_quote() {
             h.screenshot(&out.join(name));
         }
     };
-    shot(&mut h, "note-editor-before-revision.ppm");
     // The same bytes now read XXXXX.
     replace_tb(&mut h, &dir, &unit, |t| {
         t.replace_range(a.byte..b.byte, &"X".repeat(b.byte - a.byte));
