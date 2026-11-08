@@ -8,7 +8,8 @@
 //!   stroke width, a font size or a colour (`add_space`, `vec2`, `Margin::*`,
 //!   `corner_radius`, `Stroke::new`, `FontId::*`, `.size`, `Color32::from_*`,
 //!   `gamma_multiply`, the width and height setters, the painter's rects and circles, and an
-//!   assignment to `ui.spacing_mut()`);
+//!   assignment to `ui.spacing_mut()`) — a 1 included (`expand(1.0)`, `Margin::same(1)`),
+//!   unless it counts (`n.saturating_sub(1)`) or leads a fraction (`1.0 - t`);
 //! - any other float literal, since a bare `rect.left() + 6.0` is a spacing too, except 0
 //!   and ½, 1 or 2 used without units: a factor, a bound or a tolerance (`/ 2.0`, `* 0.5`,
 //!   `.clamp(0.0, 1.0)`, `Some(2.0)`, `.abs() < 0.5`, `1.0 - t`). Added to or taken from a
@@ -297,6 +298,21 @@ const ALLOWED: &[(&str, &str, &str)] = &[
         "(factor - 1.0).abs()",
         "a zoom factor's distance from no zoom, not points",
     ),
+    (
+        "shell/context_menu.rs",
+        "vec2(1.0, 1.0)",
+        "a rect at the pointer that anchors a popup; not drawn",
+    ),
+    (
+        "shell/context_menu.rs",
+        "vec2(1.0, size::CONTROL_COMPACT)",
+        "a rect that anchors the popup Note editor; its width is not drawn",
+    ),
+    (
+        "shell/annotate.rs",
+        "vec2(1.0, size::CONTROL_COMPACT)",
+        "a rect that anchors the popup Note editor; its width is not drawn",
+    ),
 ];
 
 /// The calls whose numeric arguments are spacings, sizes or colours.
@@ -373,16 +389,6 @@ const SINKS: &[&str] = &[
     "circle",
     "circle_filled",
     "circle_stroke",
-];
-
-/// Sinks that may take 1.0, as the side of a one-point rect.
-const POINT_SINKS: &[&str] = &[
-    "vec2",
-    "allocate_space",
-    "allocate_exact_size",
-    "expand",
-    "shrink",
-    "lerp_to_gamma",
 ];
 
 /// Named colours: a colour role or a token instead.
@@ -691,13 +697,17 @@ pub(crate) fn violations(src: &str) -> Vec<(usize, String)> {
             // `x + 2.0`, `x -= 2.0`, `2.0 + x`: an offset, so a spacing. A unary minus
             // (`(-1.0`, `= -2.0`) is not, nor a leading 1 (`1.0 - t`, `1.0 + share`: the
             // whole of a fraction).
-            let additive = additive_before(&line[..num.start])
-                || (v != 1.0 && next.is_some_and(|c| *c == '+' || *c == '-'));
-            if let Some((_, _, sink)) = spans.iter().find(|(o, c, _)| *o < at && at < *c) {
-                // A one-point rect (a pointer's position, a hairline's length).
-                let point = v == 1.0 && POINT_SINKS.contains(&sink.as_str());
-                let unitless =
-                    (operator && [0.5, 2.0].contains(&v)) || (!num.float && v == 1.0) || point;
+            let offset_before = additive_before(&line[..num.start]);
+            let leads = next.is_some_and(|c| *c == '+' || *c == '-');
+            let additive = offset_before || (v != 1.0 && leads);
+            if let Some((open, _, sink)) = spans.iter().find(|(o, c, _)| *o < at && at < *c) {
+                // Inside a sink a 1 is a size (`expand(1.0)`, `vec2(1.0, h)`,
+                // `Margin::same(1)`): only the leading 1 of a fraction
+                // (`lerp_to_gamma(c, 1.0 - t)`) and an integer 1 that counts
+                // (`level.saturating_sub(1)`, `n - 1`) are unitless.
+                let fraction = v == 1.0 && leads && !offset_before;
+                let count = !num.float && v == 1.0 && !whole_argument(&code, *open, at, s + after);
+                let unitless = (operator && [0.5, 2.0].contains(&v)) || count || fraction;
                 if v != 0.0 && !unitless {
                     out.push((n + 1, format!("{} in {sink}(…)", num.text)));
                 }
@@ -720,6 +730,20 @@ pub(crate) fn violations(src: &str) -> Vec<(usize, String)> {
     }
     out.dedup();
     out
+}
+
+/// Whether the literal from `at` to `end` (char offsets in `code`) is a whole argument of
+/// the sink call whose `(` is at `open`: directly inside its parentheses, between `(` or `,`
+/// and `,` or `)`.
+fn whole_argument(code: &[char], open: usize, at: usize, end: usize) -> bool {
+    let depth = code[open..at].iter().fold(0i32, |d, c| match c {
+        '(' | '[' => d + 1,
+        ')' | ']' => d - 1,
+        _ => d,
+    });
+    let before = code[..at].iter().rev().find(|c| !c.is_whitespace());
+    let next = code[end..].iter().find(|c| !c.is_whitespace());
+    depth == 1 && matches!(before, Some('(' | ',')) && matches!(next, Some(',' | ')'))
 }
 
 /// Whether the code before a literal ends in a binary `+` or `-` (or `+=`, `-=`): the
@@ -857,8 +881,31 @@ let ok = height * (1.0 + PREFETCH);
 let ok = size / 2.0 + space::XXS * 2.0 - w * 0.5;
 if (width - self.width).abs() > 0.5 {}
 zoom = Some(2.0);
-let ok = vec2(-1.0, 0.0).x * -2.0;
+let ok = Some(-1.0).map(|d| d * -2.0);
 let ok = rect.bottom() - stroke::HAIR / 2.0;
+";
+    let found = violations(src);
+    let lines: Vec<usize> = found.iter().map(|(l, _)| *l).collect();
+    assert_eq!(lines, vec![1, 2, 3, 4, 5, 6, 7], "{found:?}");
+}
+
+/// A one-point size is a measurement inside a sink too: a focus ring pushed out, a clip
+/// pulled in, a hairline's length. Only a counting integer 1 and the leading 1 of a fraction
+/// are not.
+#[test]
+fn the_literal_lint_sees_one_point_sizes_in_sinks() {
+    let src = "\
+ring.rect_stroke(rect.expand(1.0), radius::S, stroke, kind);
+p.with_clip_rect(r.shrink(1.0)).galley(at, galley, ink);
+let hit = placed.iter().any(|p| p.expand(1.0).intersects(*r));
+let at = Rect::from_min_size(p, vec2(1.0, 1.0));
+ui.allocate_space(vec2(width, 1.0));
+let m = egui::Margin::same(1);
+let c = CornerRadius::new(1, 0, 0, 1);
+ui.add_space(space::XL * f32::from(level.saturating_sub(1)));
+let ok = ink.lerp_to_gamma(lapis, MIN + (1.0 - MIN) * heat);
+let ok = vec2(n - 1, w * 0.5);
+let ok = rect.expand(space::PX);
 ";
     let found = violations(src);
     let lines: Vec<usize> = found.iter().map(|(l, _)| *l).collect();

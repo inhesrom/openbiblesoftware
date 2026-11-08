@@ -532,7 +532,8 @@ pub(super) fn paint_thumbnail(p: &Painter, t: &LayoutThumbnail, r: Rect, lk: &Lo
                 if dim { lk.muted } else { lk.ink },
             );
             let at = r.center() - galley.size() / 2.0;
-            p.with_clip_rect(r.shrink(1.0)).galley(at, galley, lk.ink);
+            p.with_clip_rect(r.shrink(space::PX))
+                .galley(at, galley, lk.ink);
         }
         LayoutThumbnail::Row(children) | LayoutThumbnail::Column(children) => {
             let horizontal = matches!(t, LayoutThumbnail::Row(_));

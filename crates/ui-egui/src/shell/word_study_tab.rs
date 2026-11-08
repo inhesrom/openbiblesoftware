@@ -248,7 +248,7 @@ impl State {
                                 self.snippet(ui, lemma, rtl, LEMMA_WIDTH, &big);
                             }
                             None => {
-                                ui.allocate_space(vec2(LEMMA_WIDTH, 1.0));
+                                ui.allocate_space(vec2(LEMMA_WIDTH, space::PX));
                             }
                         }
                         ui.label(RichText::new(format!("×{}", choice.count)).color(theme::c().ink));

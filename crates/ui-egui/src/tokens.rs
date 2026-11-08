@@ -12,7 +12,8 @@ use egui::{Color32, CornerRadius, Margin, Shadow, Vec2, vec2};
 
 /// The spacing scale, in points: gaps between widgets, insets of frames, indents.
 pub mod space {
-    /// One point: a mark or a rect kept clear of an edge or a hairline.
+    /// One point: a mark, a ring or a rect kept one point clear of an edge, a hairline or a
+    /// neighbour.
     pub const PX: f32 = 1.0;
     /// Between a glyph and its mark; inside a chip.
     pub const XXS: f32 = 2.0;

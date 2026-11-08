@@ -271,7 +271,7 @@ pub(super) fn map_canvas(
             .into_iter()
             .map(|offset| Rect::from_min_size(m.at + offset, size))
             .find(|r| {
-                rect.contains_rect(*r) && !placed.iter().any(|p| p.expand(1.0).intersects(*r))
+                rect.contains_rect(*r) && !placed.iter().any(|p| p.expand(space::PX).intersects(*r))
             })
         else {
             continue;

@@ -3817,7 +3817,7 @@ fn focus_ring(ctx: &egui::Context) {
     }
     let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::unique(FOCUS_RING));
     ctx.layer_painter(layer).rect_stroke(
-        rect.expand(1.0),
+        rect.expand(space::PX),
         radius::S,
         Stroke::new(FOCUS_RING_WIDTH, theme::c().lapis),
         egui::StrokeKind::Outside,
