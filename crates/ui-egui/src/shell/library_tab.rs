@@ -165,7 +165,10 @@ impl State {
                             let Item::Row(ty, position, m) = *item else {
                                 if shown && let Item::Header(ty) = item {
                                     let rect = Rect::from_min_size(at, vec2(width, h));
-                                    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                                    let header = egui::UiBuilder::new().max_rect(rect).scope_id(
+                                        ui.scope_id().with(("library-header", tab, type_name(*ty))),
+                                    );
+                                    ui.scope_builder(header, |ui| {
                                         ui.add_space(HEADER_GAP);
                                         ui.label(
                                             RichText::new(type_name(*ty).to_uppercase())
@@ -185,18 +188,26 @@ impl State {
                                 position,
                                 rect,
                             });
-                            if !shown {
+                            // The dragged row is laid out out of view too, so its drag ends
+                            // with a drop when the list scrolled under it.
+                            let dragged_row = dragging.as_deref() == Some(id.as_str());
+                            if !shown && !dragged_row {
                                 continue;
                             }
+                            // Ids of the row's own, not of its place among the rows in view:
+                            // keyboard focus stays on the row as the list scrolls.
+                            let builder = egui::UiBuilder::new()
+                                .max_rect(rect)
+                                .scope_id(ui.scope_id().with(("library-row", tab, id.as_str())));
                             let row = ui
-                                .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                                .scope_builder(builder, |ui| {
                                     library_row(
                                         ui,
                                         tab,
                                         m,
                                         position == 0,
                                         selected.as_deref() == Some(id.as_str()),
-                                        dragging.as_deref() == Some(id.as_str()),
+                                        dragged_row,
                                     )
                                 })
                                 .inner;

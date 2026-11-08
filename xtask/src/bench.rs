@@ -285,10 +285,15 @@ pub fn scale_violations(r: &ScaleReport, t: &ScaleLimits) -> Vec<String> {
             r.library_filter_ms_max, t.max_library_filter_ms
         ),
     );
+    // A platform whose resident set cannot be read reports 0: not measured is not met.
+    check(
+        r.peak_rss_mib > 0.0,
+        "scale: peak RSS not measured on this platform".into(),
+    );
     check(
         r.peak_rss_mib <= t.max_peak_rss_mib,
         format!(
-            "scale: peak RSS {:.0} MiB (max {})",
+            "scale: peak RSS {:.0} MiB (max {:.1} MiB)",
             r.peak_rss_mib, t.max_peak_rss_mib
         ),
     );
@@ -601,7 +606,7 @@ mod tests {
 
     fn scale_report() -> ScaleReport {
         ScaleReport {
-            resources: 2001,
+            resources: 2000,
             cold_start_ms: 900.0,
             launch_ms: 700.0,
             library_filter_ms_max: 6.0,
@@ -631,7 +636,8 @@ mod tests {
         assert_eq!(t.resources, 2000);
         assert!((t.max_cold_start_ms - 2.0 * 1500.0).abs() < f64::EPSILON);
         assert!((t.max_library_filter_ms - 50.0).abs() < f64::EPSILON);
-        assert!((t.max_peak_rss_mib - 500.0).abs() < f64::EPSILON);
+        // 500 MB, in MiB.
+        assert!((t.max_peak_rss_mib - 500e6 / 1_048_576.0).abs() < 0.05);
         assert_eq!(t.min_panels, 6);
         assert_eq!(scale_violations(&scale_report(), &t), Vec::<String>::new());
         let mut r = scale_report();
@@ -652,7 +658,7 @@ mod tests {
                 "scale: the library has 120 Resources (needs 2000)",
                 "scale: cold start 3200 ms (max 3000)",
                 "scale: the Library Tool filtered in 61.0 ms (max 50)",
-                "scale: peak RSS 951 MiB (max 500)",
+                "scale: peak RSS 951 MiB (max 476.8 MiB)",
                 "scale: 3 Panels open when memory was measured (needs 6)",
                 "scale library: synchronous work p99 4.10 ms a frame (max 2)",
             ]
@@ -662,6 +668,13 @@ mod tests {
             scale_violations(&r, &t)
                 .iter()
                 .any(|m| m == "scale library: not measured")
+        );
+        // Where the resident set cannot be read (0), the memory criterion fails.
+        let mut r = scale_report();
+        r.peak_rss_mib = 0.0;
+        assert_eq!(
+            scale_violations(&r, &t),
+            ["scale: peak RSS not measured on this platform"]
         );
     }
 

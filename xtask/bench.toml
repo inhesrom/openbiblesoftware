@@ -78,17 +78,19 @@ max_sync_p99_ms = 2.0
 max_settle_frames = 1
 
 # The scale scenario (#227): `cargo xtask bench --scale`, a manual gate (its library needs
-# about 22 GB of disk, about 4 GB where files are cloned; docs/dev/bench.md). The app over a generated library of 2,000 Resources, from `main` to
-# the ★ Bible's text, its Library Tab typed into and scrolled, Get Resources, a Library search
-# and a Passage Guide, then 6 Panels open.
+# about 22 GB of disk, about 4 GB where files are cloned; docs/dev/bench.md). The app over a
+# generated library of 2,000 Resources, from `main` to the ★ Bible's text, its Library Tab
+# typed into and scrolled, Get Resources, a Library search and a Passage Guide, then 6 Panels
+# open.
 [scale]
 resources = 2000
 # Twice #19's cold start on the floor machine (1.5 s, with the Starter library).
 max_cold_start_ms = 3000.0
 # From a key typed into the Library Tab's Filter box to the frame showing the list.
 max_library_filter_ms = 50.0
-# #19: RSS ≤ 500 MB with 6 Panels open (the peak over the run, where the platform tells it).
-max_peak_rss_mib = 500.0
+# #19: RSS ≤ 500 MB (476.8 MiB) with 6 Panels open: the peak over the run. A platform whose
+# resident set cannot be read fails the gate.
+max_peak_rss_mib = 476.8
 min_panels = 6
 
 [scale.library]             # the Library Tab of 2,000 rows typed into and scrolled

@@ -84,7 +84,9 @@ Library search or the Passage Guide.
   `DIR` (default `target/bench-scale`) the first time, in seconds, and kept for later runs
   (it is made again when the generator or the Search index format changes). On a filesystem
   that clones files (APFS, Btrfs, XFS) its copies share their data, so it takes about 4 GB of
-  disk; elsewhere the full 22 GB. Delete the folder when done.
+  disk; elsewhere the full 22 GB. Delete the folder when done. `DIR` must be new, empty or
+  a scale folder from an earlier run (it has a `stamp` file): any other folder is refused,
+  never cleared.
 - `cargo run --release -p openbible -- --bench --scale --dir DIR [--resources N] [--quick]
   [--json OUT]`: the scenario alone, with a smaller library for a quick look (the gate needs
   2,000).
@@ -106,18 +108,20 @@ then again for the measured run, from `main`:
 | cold start | `main` to the first frame drawing the ★ Bible's text | ≤ 3 s (twice #19's 1.5 s) |
 | Library filter | each key typed into the Library Tab's Filter box, to the frame showing the list | ≤ 50 ms |
 | `scale library` | the Library Tab typed into, then scrolled | the feature budgets: ≤ 1% missed, sync ≤ 2 ms p99, ≤ 1 settle frame |
-| peak RSS | the process's resident set, at its peak over the run, with 6 Panels open at the end | ≤ 500 MB |
+| peak RSS | the process's resident set, at its peak over the run, with 6 Panels open at the end | ≤ 500 MB (476.8 MiB) |
 
 Get Resources (its catalog typed into and scrolled), a Library search for `lord` across every
 Commentary, Dictionary and Lexicon, and a Passage Guide (Romans 8:28, then moved to 9:1) are
 measured and reported, not gated: the regular gate holds their per-frame budgets. On Linux the
-peak RSS is the kernel's; elsewhere a thread samples the resident set every 250 ms.
+peak RSS is the kernel's; on macOS a thread samples the resident set (`ps`) every 250 ms.
+Where the resident set cannot be read (Windows, which has neither), the peak is 0 and the
+gate fails: memory not measured is not memory met.
 
 ### Results
 
-On a Mac mini (Apple M6, 16 GB), 2,001 Resources, 60 Hz, before and after the fixes made with
-the scenario (before: the same harness over the earlier code, `--quick`; after: five runs,
-`--quick` and full, with other builds running on the machine):
+On a Mac mini (Apple M6, 16 GB), 2,000 Resources and a People & places index, 60 Hz, before
+and after the fixes made with the scenario (before: the same harness over the earlier code,
+`--quick`; after: five runs, `--quick` and full, with other builds running on the machine):
 
 | | before | after |
 |---|---|---|

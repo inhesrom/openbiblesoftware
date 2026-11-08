@@ -173,16 +173,65 @@ impl ScaleDirs {
     }
 }
 
+/// What a thread of [`write_scale_library`] that panicked reports.
+const THREAD_PANICKED: &str = "a thread making the scale library panicked";
+
 /// The library [`write_scale_library`] left.
 #[derive(Debug, Clone, Serialize)]
 pub struct ScaleLibrary {
-    /// Resources in the library: the generated ones and a People & places index.
+    /// Resources generated in the library (it also has a People & places index).
     pub resources: usize,
     /// `.obr` files and Search index caches, bytes.
     pub bytes: u64,
     /// Whether it was made now (else one made earlier for the same build was kept).
     pub made: bool,
     pub seconds: f64,
+}
+
+/// The stamp of a scale folder whose library is being made (or whose making was stopped).
+const STAMP_INCOMPLETE: &str = "scale library incomplete";
+
+/// Make `dirs.root` an empty scale folder, stamped [`STAMP_INCOMPLETE`]. Only a folder that
+/// is new, empty or already a scale folder (it has a stamp) is cleared: any other is refused
+/// and left as it is, since `--dir` may name any folder.
+fn clear_scale_folder(dirs: &ScaleDirs) -> Result<(), String> {
+    let fail = |what: &Path, e: &dyn std::fmt::Display| format!("{}: {e}", what.display());
+    match std::fs::read_dir(&dirs.root) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(fail(&dirs.root, &e)),
+        Ok(mut entries) => {
+            let stamped =
+                std::fs::read_to_string(dirs.stamp()).is_ok_and(|s| s.starts_with("scale library"));
+            if entries.next().is_some() && !stamped {
+                return Err(format!(
+                    "{} is not a scale folder; give a new or empty one",
+                    dirs.root.display()
+                ));
+            }
+            std::fs::remove_dir_all(&dirs.root).map_err(|e| fail(&dirs.root, &e))?;
+        }
+    }
+    std::fs::create_dir_all(&dirs.root).map_err(|e| fail(&dirs.root, &e))?;
+    std::fs::write(dirs.stamp(), STAMP_INCOMPLETE).map_err(|e| fail(&dirs.stamp(), &e))
+}
+
+/// Check that this process runs in the scale folder `root` ([`ScaleDirs::env`]) over a
+/// complete library, before the app opens a User database: a child process of the scale
+/// scenario started by hand would otherwise reset the user's own Last session.
+pub fn check_scale_env(root: &Path) -> Result<(), String> {
+    let dirs = ScaleDirs::new(root);
+    let stamp = std::fs::read_to_string(dirs.stamp()).unwrap_or_default();
+    if !stamp.starts_with("scale library v") {
+        return Err(format!("{} holds no scale library", root.display()));
+    }
+    for (var, want) in dirs.env() {
+        if matches!(var, "OBS_LIBRARY" | "OBS_USER_DB")
+            && std::env::var_os(var).map(PathBuf::from) != Some(want)
+        {
+            return Err(format!("{var} is not inside {}", root.display()));
+        }
+    }
+    Ok(())
 }
 
 fn stamp_text(resources: usize) -> String {
@@ -252,16 +301,14 @@ pub fn write_scale_library(dirs: &ScaleDirs, resources: usize) -> Result<ScaleLi
     let bytes = || folder_bytes(&dirs.library()) + folder_bytes(&dirs.search());
     if std::fs::read_to_string(dirs.stamp()).is_ok_and(|s| s == stamp) {
         return Ok(ScaleLibrary {
-            resources: resources + 1,
+            resources,
             bytes: bytes(),
             made: false,
             seconds: start.elapsed().as_secs_f64(),
         });
     }
     let fail = |what: &Path, e: &dyn std::fmt::Display| format!("{}: {e}", what.display());
-    if dirs.root.exists() {
-        std::fs::remove_dir_all(&dirs.root).map_err(|e| fail(&dirs.root, &e))?;
-    }
+    clear_scale_folder(dirs)?;
     for d in [dirs.library(), dirs.templates(), dirs.search()] {
         std::fs::create_dir_all(&d).map_err(|e| fail(&d, &e))?;
     }
@@ -303,7 +350,10 @@ pub fn write_scale_library(dirs: &ScaleDirs, resources: usize) -> Result<ScaleLi
             })
             .collect();
         jobs.into_iter()
-            .flat_map(|j| j.join().unwrap_or_default())
+            .flat_map(|j| {
+                j.join()
+                    .unwrap_or_else(|_| vec![Err(THREAD_PANICKED.into())])
+            })
             .collect()
     });
     let templates = templates.into_iter().collect::<Result<Vec<_>, _>>()?;
@@ -345,7 +395,10 @@ pub fn write_scale_library(dirs: &ScaleDirs, resources: usize) -> Result<ScaleLi
             })
             .collect();
         jobs.into_iter()
-            .flat_map(|j| j.join().unwrap_or_default())
+            .flat_map(|j| {
+                j.join()
+                    .unwrap_or_else(|_| vec![Err(THREAD_PANICKED.into())])
+            })
             .collect()
     });
     copied.into_iter().collect::<Result<Vec<()>, String>>()?;
@@ -365,7 +418,7 @@ pub fn write_scale_library(dirs: &ScaleDirs, resources: usize) -> Result<ScaleLi
     std::fs::remove_dir_all(dirs.templates()).map_err(|e| fail(&dirs.templates(), &e))?;
     std::fs::write(dirs.stamp(), &stamp).map_err(|e| fail(&dirs.stamp(), &e))?;
     Ok(ScaleLibrary {
-        resources: resources + 1,
+        resources,
         bytes: bytes(),
         made: true,
         seconds: start.elapsed().as_secs_f64(),
@@ -542,7 +595,7 @@ pub fn prepare_launch() -> Result<(), String> {
 #[derive(Debug, Clone, Serialize)]
 pub struct ScaleReport {
     pub refresh_hz: f32,
-    /// Resources in the library.
+    /// Resources in the library, besides its People & places index.
     pub resources: usize,
     /// From `main` to the first frame drawing the ★ Bible's text (#19: ≤ 1.5 s on the floor
     /// machine with the Starter library; the scale gate allows twice that).
@@ -663,7 +716,9 @@ pub fn run(started: Instant, cfg: &BenchConfig, search: &str) -> ScaleReport {
     let launch_ms = started.elapsed().as_secs_f64() * 1000.0;
     let mut report = ScaleReport {
         refresh_hz: cfg.refresh_hz,
-        resources: app.shell.session().library.entries().len(),
+        resources: (app.shell.session().library.entries().iter())
+            .filter(|e| e.manifest.resource_type != ResourceType::PeopleAndPlaces)
+            .count(),
         cold_start_ms: 0.0,
         launch_ms,
         first_text_frames: 0,
@@ -960,6 +1015,46 @@ fn open_panels(b: &mut ShellBench) -> Result<usize, String> {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
+
+    /// `--dir` may name any folder: only a new, empty or scale folder is cleared, and a scale
+    /// folder whose making stopped is cleared again.
+    #[test]
+    fn only_a_new_empty_or_scale_folder_is_cleared() {
+        let base = std::env::temp_dir().join(format!("obs-scale-folder-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let refused = "is not a scale folder; give a new or empty one";
+        let own = base.join("own");
+        std::fs::create_dir_all(&own).unwrap();
+        std::fs::write(own.join("notes.txt"), "mine").unwrap();
+        let err = clear_scale_folder(&ScaleDirs::new(&own)).unwrap_err();
+        assert!(err.ends_with(refused), "{err}");
+        std::fs::write(own.join("stamp"), "not ours").unwrap();
+        let err = clear_scale_folder(&ScaleDirs::new(&own)).unwrap_err();
+        assert!(err.ends_with(refused), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(own.join("notes.txt")).unwrap(),
+            "mine"
+        );
+
+        let empty = base.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        clear_scale_folder(&ScaleDirs::new(&empty)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(empty.join("stamp")).unwrap(),
+            STAMP_INCOMPLETE
+        );
+        // Its making stopped: cleared again, and no child process runs over it.
+        std::fs::write(empty.join("half.obr"), "half").unwrap();
+        assert!(check_scale_env(&empty).is_err());
+        let new = ScaleDirs::new(base.join("new"));
+        for dirs in [ScaleDirs::new(&empty), new] {
+            clear_scale_folder(&dirs).unwrap();
+            let left: Vec<_> = std::fs::read_dir(&dirs.root).unwrap().collect();
+            assert_eq!(left.len(), 1, "{left:?}");
+            assert!(dirs.stamp().is_file());
+        }
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 
     #[test]
     fn the_mix_is_mostly_bibles_and_the_first_is_a_whole_bible() {

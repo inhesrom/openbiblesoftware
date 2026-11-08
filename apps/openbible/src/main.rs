@@ -172,7 +172,16 @@ fn bench_scale(
 }
 
 /// One process of the scale scenario ([`bench_scale`]), started with its folders' environment.
-fn bench_scale_child(started: std::time::Instant, mode: &str, args: &[String]) -> ExitCode {
+fn bench_scale_child(
+    started: std::time::Instant,
+    mode: &str,
+    root: &str,
+    args: &[String],
+) -> ExitCode {
+    if let Err(e) = scale::check_scale_env(std::path::Path::new(root)) {
+        eprintln!("openbible {mode}: {e}");
+        return ExitCode::FAILURE;
+    }
     let mut cfg = BenchConfig::default();
     let mut json: Option<String> = None;
     let mut it = args.iter();
@@ -249,8 +258,9 @@ fn main() -> ExitCode {
         .first()
         .filter(|a| *a == "--bench-scale-prepare" || *a == "--bench-scale-run")
     {
-        // The folder argument is for `ps`; the folders come from the environment.
-        return bench_scale_child(started, mode, args.get(2..).unwrap_or_default());
+        // The folders come from the environment; the folder argument checks it.
+        let root = args.get(1).map(String::as_str).unwrap_or_default();
+        return bench_scale_child(started, mode, root, args.get(2..).unwrap_or_default());
     }
     start_diagnostics();
     let options = eframe::NativeOptions {
