@@ -2073,6 +2073,11 @@ impl State {
         let Some(v) = t.history.current() else {
             return String::new();
         };
+        // A Guide or Tool at a range or chapter shows all of it (Standard numbering): its first
+        // Verse alone narrowed the Guide when the box was confirmed (#261).
+        if let Some(p) = t.shown_passage().filter(|p| !p.is_single_verse()) {
+            return format_passage(p, &Standard, RefStyle::Long);
+        }
         let p = Passage::verse(v);
         match &t.versification {
             Some(own) => format_passage(p, own.as_ref(), RefStyle::Long),

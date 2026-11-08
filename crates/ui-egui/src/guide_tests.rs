@@ -1468,3 +1468,36 @@ fn parallel_passages_list_the_baptism_and_a_click_compares_it() {
     preview(&mut h, "parallel-passages-compare-matthew");
     drop(h);
 }
+
+/// #261 GUIDES-3: a Guide at a range shows the whole range in its reference box, and
+/// confirming the box keeps it.
+#[test]
+fn the_reference_box_shows_a_guides_whole_range_and_enter_keeps_it() {
+    let mut h = Harness::launch(None);
+    let (_files, _bible) = setup(&mut h, "range-box", false);
+    let tab = TabId(
+        h.shell
+            .run(
+                "guide.passage_guide",
+                &json!({ "passage": "Mark 1:9-11", "split": true }),
+            )
+            .unwrap()["tab"]
+            .as_u64()
+            .unwrap(),
+    );
+    h.frames(2);
+    let text = h.shell.st.location_text(tab);
+    assert_eq!(text, "Mark 1:9-11");
+    h.shell.run("tab.go", &json!({ "tab": tab.0, "text": text }));
+    h.frames(2);
+    let t = h.shell.session().workspace.tab(tab).unwrap();
+    assert_eq!(t.shown_passage().map(|p| p.to_string()).as_deref(), Some("Mark 1:9-11"));
+    assert_eq!(h.shell.st.location_text(tab), "Mark 1:9-11");
+    // A chapter reads as the chapter, not its title slot or first Verse.
+    h.shell.run("tab.go", &json!({ "tab": tab.0, "text": "Acts 13" }));
+    h.frames(2);
+    assert_eq!(h.shell.st.location_text(tab), "Acts 13");
+    h.shell.run("tab.go", &json!({ "tab": tab.0, "text": "Ps 119" }));
+    h.frames(2);
+    assert_eq!(h.shell.st.location_text(tab), "Psalms 119");
+}
