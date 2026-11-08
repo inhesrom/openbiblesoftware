@@ -71,6 +71,11 @@ pub struct TextRange {
     /// is kept so a later revision (or the old one back) can find it again (ADR 0006).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub orphaned: bool,
+    /// On a range not found (`orphaned`): the content hash of the revision re-anchoring last
+    /// looked for it in (none: only `content_hash`'s). Re-anchoring looks again in any other
+    /// revision, so a later one that has the quote again finds it (#259).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked_hash: Option<String>,
 }
 
 /// What ties an Annotation to the text.

@@ -320,6 +320,7 @@ fn following_a_text_range_anchor_reveals_it_in_its_resource() {
         native_ref: None,
         whole_verses: false,
         orphaned: false,
+        checked_hash: None,
     };
     let a = Annotation {
         id: obs_store::annotation::new_id_at(now),

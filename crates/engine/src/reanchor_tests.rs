@@ -624,6 +624,87 @@ fn a_removed_resource_keeps_its_annotations_dormant_and_a_reimport_brings_them_b
     assert!(card.missing.is_none() && card.attention.is_none());
 }
 
+/// #259 AUD-ENGINE-DATA-2: an Orphaned annotation is looked for again in every new revision,
+/// not only when its own revision comes back, and only once per revision.
+#[test]
+fn an_orphan_is_found_again_in_a_later_revision() {
+    let lib = Lib::new("third");
+    let v1 = notes_on(&[("intro", "grace and peace")], &[], 1);
+    let old_tb = tb(GEN_1, 1);
+    lib.write(&v1);
+    lib.write(&old_tb);
+    let (hl, passage_hl) = {
+        let mut s = lib.launch();
+        (
+            highlight(&mut s, &v1, "intro", "grace", 0),
+            highlight(&mut s, &old_tb, "GEN", "and void", 0),
+        )
+    };
+    // Revision 2 loses both quotes.
+    lib.write(&notes_on(&[("intro", "peace alone")], &[], 2));
+    let mut edited = GEN_1;
+    edited[1] = "And the earth was without form; and darkness was upon the face of the deep.";
+    lib.write(&tb(edited, 2));
+    {
+        let s = lib.launch();
+        assert!(s.annotation(&hl).unwrap().is_orphaned());
+        assert!(range(&s, &passage_hl).unwrap().orphaned);
+    }
+    // Nothing is looked for again while the revision stays the one already searched.
+    {
+        let mut s = lib.launch_pending();
+        assert!(!s.reanchoring.is_busy(), "revision 2 was searched already");
+        let out = s
+            .run("annotation.reanchor", &json!({ "resource": "tcm" }))
+            .unwrap();
+        assert_eq!(out["queued"], json!([]));
+    }
+    // Revision 3 has both quotes again: found at launch, and no longer orphaned.
+    let v3 = notes_on(&[("intro", "renewed grace and peace")], &[], 3);
+    lib.write(&v3);
+    let mut back = GEN_1;
+    back[1] = "And the earth was without form, and void; and darkness was over the deep.";
+    let tb3 = tb(back, 3);
+    lib.write(&tb3);
+    let s = lib.launch();
+    assert!(!s.annotation(&hl).unwrap().is_orphaned(), "found again");
+    let r = range(&s, &hl).unwrap();
+    assert_eq!(pointed(&v3, &r), "grace");
+    assert_eq!(r.content_hash, v3.manifest.content_hash);
+    let r = range(&s, &passage_hl).unwrap();
+    assert!(!r.orphaned);
+    assert_eq!(pointed(&tb3, &r), "and void");
+    assert_eq!(s.reanchoring.report("tcm").unwrap().moved, 1);
+}
+
+/// #259: an explicit re-anchoring of a Resource at a revision its orphan was not yet looked
+/// for in queues a job.
+#[test]
+fn asking_to_reanchor_looks_for_an_orphan_in_a_new_revision() {
+    let lib = Lib::new("manual");
+    let v1 = notes_on(&[("intro", "grace and peace")], &[], 1);
+    lib.write(&v1);
+    let hl = {
+        let mut s = lib.launch();
+        highlight(&mut s, &v1, "intro", "grace", 0)
+    };
+    lib.write(&notes_on(&[("intro", "peace alone")], &[], 2));
+    drop(lib.launch());
+    let v3 = notes_on(&[("intro", "renewed grace and peace")], &[], 3);
+    lib.write(&v3);
+    let mut s = Session::new(JobMode::Inline);
+    let (store, _) = obs_store::UserStore::open(&lib.root.join("user.db")).unwrap();
+    s.attach_user(Box::new(store));
+    // The library is scanned after the User database: no load-time job ran for it.
+    assert!(s.library.scan(&lib.root.join("library")).is_empty());
+    let out = s
+        .run("annotation.reanchor", &json!({ "resource": "tcm" }))
+        .unwrap();
+    assert_eq!(out["queued"], json!(["tcm"]), "manual retry queues");
+    settle(&mut s);
+    assert!(!s.annotation(&hl).unwrap().is_orphaned());
+}
+
 #[test]
 fn removing_in_session_names_the_resource_on_its_cards() {
     let lib = Lib::new("departed");
@@ -1006,6 +1087,7 @@ fn plan_on_the_starter_kjv() {
                     native_ref: None,
                     whole_verses: false,
                     orphaned: false,
+                    checked_hash: None,
                 },
             }),
             created_at: 0,

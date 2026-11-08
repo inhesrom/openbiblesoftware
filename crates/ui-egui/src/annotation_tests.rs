@@ -912,6 +912,7 @@ fn reattach_moves_an_orphaned_annotation_to_the_selection_and_clears_its_warning
                 native_ref: None,
                 whole_verses: false,
                 orphaned: false,
+                checked_hash: None,
             },
         }),
         created_at: 1,

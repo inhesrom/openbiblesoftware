@@ -58,7 +58,21 @@ fn range(quote: &str) -> TextRange {
         native_ref: None,
         whole_verses: false,
         orphaned: false,
+        checked_hash: None,
     }
+}
+
+/// Run `write` (today's code writing rows) on a User database left at an older schema: the
+/// anchor columns added since (`checked_hash`, schema 12) are there while it runs and are
+/// dropped after, so the file is as that schema had it.
+fn with_todays_anchor_columns<T>(db: &std::path::Path, write: impl FnOnce() -> T) -> T {
+    let raw = rusqlite::Connection::open(db).unwrap();
+    raw.execute_batch("ALTER TABLE anchors ADD COLUMN checked_hash TEXT")
+        .unwrap();
+    let out = write();
+    raw.execute_batch("ALTER TABLE anchors DROP COLUMN checked_hash")
+        .unwrap();
+    out
 }
 
 fn jn(v: u16) -> Verse {
@@ -259,6 +273,8 @@ fn the_v6_migration_adds_the_orphaned_status_and_resource_names() {
         anchor: Some(Anchor::TextRange {
             range: TextRange {
                 orphaned: true,
+                // The revision it was last looked for in round-trips too (#259).
+                checked_hash: Some("sha256:searched".into()),
                 ..range("God")
             },
         }),
@@ -272,6 +288,7 @@ fn the_v6_migration_adds_the_orphaned_status_and_resource_names() {
     let back = db.annotation(&kept.id).unwrap().unwrap();
     assert!(back.is_orphaned());
     assert_eq!(back, orphaned);
+    assert!(db.annotation_dump().unwrap().contains("sha256:searched"));
     assert!(db.annotation_dump().unwrap().contains("orphaned"));
 
     let nb = default_of(&db);
@@ -604,11 +621,13 @@ fn the_v9_migration_refuses_text_ranges_that_cover_no_text_and_keeps_every_row()
                 },
             }),
         );
-        v8.apply_changes(&[
-            Change::insert(Row::Annotation(good.clone())),
-            Change::insert(Row::Annotation(good_note.clone())),
-        ])
-        .unwrap();
+        with_todays_anchor_columns(&dir.db(), || {
+            v8.apply_changes(&[
+                Change::insert(Row::Annotation(good.clone())),
+                Change::insert(Row::Annotation(good_note.clone())),
+            ])
+            .unwrap();
+        });
         drop(v8);
         // Rows schema 8 accepted although they cover no text, written past the model.
         // As read back once fixed by hand: each covers "x".
@@ -761,11 +780,13 @@ fn the_v11_migration_keeps_plain_text_notes_looking_as_they_did() {
         let nb = default_of(&v10).id;
         let ordinary = note(&nb, "Esau ran to meet him; compare Gen 32:24.", None);
         let awkward = note(&nb, plain, None);
-        v10.apply_changes(&[
-            Change::insert(Row::Annotation(ordinary.clone())),
-            Change::insert(Row::Annotation(awkward.clone())),
-        ])
-        .unwrap();
+        with_todays_anchor_columns(&dir.db(), || {
+            v10.apply_changes(&[
+                Change::insert(Row::Annotation(ordinary.clone())),
+                Change::insert(Row::Annotation(awkward.clone())),
+            ])
+            .unwrap();
+        });
         (ordinary, awkward)
     };
     let (db, report) = UserStore::open(&dir.db()).unwrap();

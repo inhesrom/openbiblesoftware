@@ -13,7 +13,7 @@ annotations are #65 (below, `crates/engine/src/reanchor.rs`).
 |---|---|
 | `notebooks` | `id` (UUIDv7), `name`, `is_default` (exactly one row, partial unique index), timestamps (ms), `show_in_text` (schema v5) |
 | `annotations` | `id`, `notebook_id` (deferred FK), `kind` `note`/`highlight`, `style` (Highlights), `body` (Notes), timestamps |
-| `anchors` | at most one per Annotation. Passage anchors: Standard start/end as canonical book number (1–66), chapter, verse. Text range (a Text-range anchor, or a Passage anchor's origin): `resource_id`, `unit_id`, `start_byte`, `end_byte`, `quote`, `prefix`, `suffix`, `content_hash`, `native_ref`, `whole_verses` (schema v5), `status` `ok`/`orphaned` (schema v6: the quote was not found after the Resource changed; on a Text-range anchor an Orphaned annotation, on a Passage anchor's origin a range kept while the Annotation shows as whole Verses) |
+| `anchors` | at most one per Annotation. Passage anchors: Standard start/end as canonical book number (1–66), chapter, verse. Text range (a Text-range anchor, or a Passage anchor's origin): `resource_id`, `unit_id`, `start_byte`, `end_byte`, `quote`, `prefix`, `suffix`, `content_hash`, `native_ref`, `whole_verses` (schema v5), `status` `ok`/`orphaned` (schema v6: the quote was not found after the Resource changed; on a Text-range anchor an Orphaned annotation, on a Passage anchor's origin a range kept while the Annotation shows as whole Verses), `checked_hash` (schema v12: the revision a range not found was last looked for in) |
 | `resource_names` | schema v6: `resource_id`, last known `abbreviation` and `title` of every Resource seen, so cards of a Resource no longer in the library still name it |
 | `notes_fts` | FTS5 over Note bodies in normalized-word form (the Search index's form), keyed by `annotation_id` |
 | `highlight_palettes`, `highlight_styles` | schema v10 (#181): the user's Highlight palettes and styles; see [below](#highlight-styles-and-palettes-181-adr-0012) |
@@ -213,8 +213,12 @@ background job; the Notes Tool's side is in [notes-tool.md](notes-tool.md).
 
 - **When.** `attach_user` (library load) checks every library Resource; an Import that adds or
   replaces one (and a file dropped on the window) checks that one. A Resource needs it when
-  one of its Text ranges was made against another content hash, or when an Orphaned
-  annotation's own hash is the current one again (a revision reverted). Then a job reads the
+  one of its Text ranges was made against another content hash, or when a range not found
+  (`status = 'orphaned'`) has not been looked for in the current revision yet: its
+  `checked_hash` (schema v12, #259) records the revision it was last looked for in, so a later
+  revision that has the quote again, or the old one back, finds it, and a revision already
+  searched queues nothing. Ranges orphaned before v12 have none and are looked for once more.
+  Then a job reads the
   `.obr` on a worker and plans every Annotation with a Text range in it; Orphaned ones are
   tried again too.
 - **Gate.** Until the plan is applied, `Session::is_reanchoring` is true and `MarkCache`
@@ -234,7 +238,7 @@ background job; the Notes Tool's side is in [notes-tool.md](notes-tool.md).
   whole Verses everywhere and is not listed under Needs attention; its card keeps the
   quote; the range is never lost, and is found again if a later revision, or the old one,
   has it); a Text-range anchor keeps everything it had and gets `status = 'orphaned'`
-  (`Orphaned`). A
+  (`Orphaned`). Either way `checked_hash` becomes the revision just searched. A
   `ReanchorReport` counts each; a toast reports moves, fall-backs and new orphans
   ("WEB changed: 2 Annotations moved with their text, 1 needs attention ...").
 - **Writes.** One `apply_changes` list of row updates (never an insert or delete): a row

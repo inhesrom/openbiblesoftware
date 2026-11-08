@@ -354,6 +354,7 @@ pub fn segments(store: &dyn ResourceStore, sel: &Selection) -> Result<Vec<Segmen
                 native_ref,
                 whole_verses,
                 orphaned: false,
+                checked_hash: None,
             },
             standard: span,
             in_bible,
