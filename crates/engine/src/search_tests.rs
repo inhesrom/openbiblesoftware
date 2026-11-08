@@ -494,3 +494,77 @@ fn bad_queries_are_errors_and_status_is_a_command() {
     drop(s);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// AUD-SEARCH-INDEX-5 (#257): a Ready cache whose `search` table is dropped underneath the
+/// app is discarded and rebuilt by the next search (and by a refresh), not searched (and
+/// failed) again and again.
+#[test]
+fn a_cache_missing_its_search_table_is_rebuilt() {
+    let (mut s, root) = fixture("dropped-table");
+    s.refresh_search_indexes();
+    step(&mut s);
+    step(&mut s);
+    let a = s.search.path("kjv-a").unwrap().to_path_buf();
+    obs_store::damage_search_index(&a, "DROP TABLE search;").unwrap();
+    let r = search(&mut s, "world");
+    assert_eq!(counts(&r), [("kjv-b", 2)]);
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    assert_eq!(r.indexing, ["kjv-a"]);
+    assert!(s.search.is_building(), "queued");
+    step(&mut s);
+    assert_eq!(
+        counts(&search(&mut s, "world")),
+        [("kjv-a", 2), ("kjv-b", 2)]
+    );
+
+    // A refresh does not take the damaged cache as current either.
+    let a = s.search.path("kjv-a").unwrap().to_path_buf();
+    obs_store::damage_search_index(&a, "DROP TABLE search;").unwrap();
+    s.refresh_search_indexes();
+    assert!(matches!(
+        s.search.status("kjv-a"),
+        Some(IndexStatus::Indexing { .. })
+    ));
+    step(&mut s);
+    assert_eq!(
+        counts(&search(&mut s, "world")),
+        [("kjv-a", 2), ("kjv-b", 2)]
+    );
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// AUD-SEARCH-INDEX-5 (#257): a cache that opens but fails the search itself is rebuilt
+/// once per session, and the search lists it as indexing; after that the error shows.
+#[test]
+fn a_cache_that_fails_a_search_is_rebuilt_once_per_session() {
+    let (mut s, root) = fixture("fails-search");
+    s.refresh_search_indexes();
+    step(&mut s);
+    step(&mut s);
+    let damage = |s: &Session| {
+        let a = s.search.path("kjv-a").unwrap();
+        obs_store::damage_search_index(a, "UPDATE docs SET start = -1;").unwrap();
+    };
+    damage(&s);
+    let r = search(&mut s, "world");
+    assert_eq!(counts(&r), [("kjv-b", 2)]);
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    assert_eq!(r.indexing, ["kjv-a"]);
+    assert!(s.search.is_building(), "queued");
+    step(&mut s);
+    assert_eq!(
+        counts(&search(&mut s, "world")),
+        [("kjv-a", 2), ("kjv-b", 2)]
+    );
+
+    // Failing again: reported, not rebuilt again.
+    damage(&s);
+    let r = search(&mut s, "world");
+    assert_eq!(r.failed.len(), 1, "{r:?}");
+    assert_eq!(r.failed[0].0, "kjv-a");
+    assert!(r.indexing.is_empty());
+    assert!(!s.search.is_building(), "no second rebuild");
+    drop(s);
+    std::fs::remove_dir_all(root).unwrap();
+}

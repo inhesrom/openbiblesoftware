@@ -16,10 +16,12 @@
 //! | `morph_codes` | `token` → `code`: each Morphology code in the Resource and its token in the `morph` column |
 //! | `search` | FTS5 over `text`, `strong`, `lemma`, `morph`; `detail=full` for phrases |
 //!
-//! `morph` lists every morpheme part of the Tagged words in turn: its Strong's number (then
-//! the base form of an extended one), its code's token, then its Lemma's words. A phrase
-//! such as `"g26 morph3"` therefore finds one part with both (#145); which tokens a query's
-//! Morphology criteria mean is read from `morph_codes` ([`obs_search::IndexQuery::plan`]).
+//! `morph` lists every morpheme part of the Tagged words that has a Morphology code, in turn:
+//! its Strong's number (then the base form of an extended one), its code's token, then its
+//! Lemma's words, once from each Lemma word. A phrase such as `"g26 morph3"` therefore finds
+//! one part with both (#145); which tokens a query's Morphology criteria mean is read from
+//! `morph_codes` ([`obs_search::IndexQuery::plan`]). In `lemma` and `morph` each part ends at
+//! a boundary word no query can contain, so a phrase stays inside one part (#257).
 //!
 //! Queries one MATCH cannot answer (#180) are planned per index ([`obs_search::Plan`]): a
 //! stemmed word becomes the index's own words of that stem, found through an `fts5vocab`
@@ -63,6 +65,12 @@ pub const SEARCH_INDEX_EXTENSION: &str = "obsidx";
 /// unicode61 over already-normalized words. Marks count as word characters, as in
 /// [`obs_model::tokenize`], so both sides split words the same way.
 const TOKENIZER: &str = "unicode61 remove_diacritics 0 categories 'L* N* Co M*'";
+
+/// Ends each morpheme part's words in the `lemma` and `morph` fields, so a phrase stays inside
+/// one part. A private-use character: [`TOKENIZER`] keeps it as a word (`Co`), and
+/// [`obs_model::tokenize`], which makes every word of a query, never does, so no query
+/// can ask for it.
+const PART_BOUNDARY: &str = "\u{E000}";
 
 fn schema() -> String {
     format!(
@@ -298,6 +306,14 @@ impl<'a> UnitMarks<'a> {
 
     /// The `strong`, `lemma` and `morph` fields of the Tagged words that start inside
     /// `range`.
+    ///
+    /// A `lemma:` term means words of one morpheme part's Lemma, anywhere in it, as the
+    /// highlighter reads it (#257). So in `lemma` each part's Lemma ends at a
+    /// [`PART_BOUNDARY`], and a phrase never runs on into the next part's. In `morph` each
+    /// part with a code has a run (Strong's numbers, code token, Lemma) for each word its
+    /// Lemma may be searched from (`g697 morph7 αρειοσ παγοσ`, then `g697 morph7 παγοσ`), so
+    /// `token word` is a phrase whichever Lemma word is asked for; each run ends at a
+    /// boundary too.
     fn fields(
         &self,
         range: std::ops::Range<usize>,
@@ -319,17 +335,43 @@ impl<'a> UnitMarks<'a> {
             }
             for p in *parts {
                 let n = p.strongs;
-                for form in std::iter::once(n).chain(n.is_extended().then(|| n.base())) {
-                    let form = form.to_string().to_lowercase();
-                    push(&mut strong, &form);
-                    push(&mut morph, &form);
+                let forms: Vec<String> = std::iter::once(n)
+                    .chain(n.is_extended().then(|| n.base()))
+                    .map(|f| f.to_string().to_lowercase())
+                    .collect();
+                for form in &forms {
+                    push(&mut strong, form);
                 }
-                if let Some(code) = p.morph.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
-                    push(&mut morph, codes.token(code));
+                let words: Vec<String> = p
+                    .lemma
+                    .as_deref()
+                    .map(|l| tokenize(l).into_iter().map(|t| t.text).collect())
+                    .unwrap_or_default();
+                if !words.is_empty() {
+                    if !lemma.is_empty() {
+                        push(&mut lemma, PART_BOUNDARY);
+                    }
+                    for w in &words {
+                        push(&mut lemma, w);
+                    }
                 }
-                if let Some(l) = &p.lemma {
-                    push_words(l, 0..l.len(), &[], &mut lemma);
-                    push_words(l, 0..l.len(), &[], &mut morph);
+                // Every `morph` phrase has a code's token, so a part without a code has no
+                // run.
+                let Some(code) = p.morph.as_deref().map(str::trim).filter(|c| !c.is_empty()) else {
+                    continue;
+                };
+                let token = codes.token(code).to_string();
+                for from in 0..words.len().max(1) {
+                    if !morph.is_empty() {
+                        push(&mut morph, PART_BOUNDARY);
+                    }
+                    for form in &forms {
+                        push(&mut morph, form);
+                    }
+                    push(&mut morph, &token);
+                    for w in words.get(from..).unwrap_or_default() {
+                        push(&mut morph, w);
+                    }
                 }
             }
         }
@@ -764,6 +806,21 @@ fn read_codes(conn: &Connection) -> Result<IndexCodes, StoreError> {
     Ok(IndexCodes(out))
 }
 
+/// Run a search that finds nothing through every table a search reads, so a cache whose
+/// tables are gone or unreadable fails to open (and is rebuilt) instead of failing every
+/// search (#257). The term is a private-use character no document holds, so FTS5 only
+/// seeks it.
+fn probe(conn: &Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare(
+        "SELECT search.rowid, u.id, d.start FROM search
+         JOIN docs d ON d.id = search.rowid JOIN units u ON u.ord = d.unit
+         WHERE search MATCH ?1 LIMIT 1",
+    )?;
+    let mut rows = stmt.query(["\"\u{E001}\""])?;
+    while rows.next()?.is_some() {}
+    Ok(())
+}
+
 impl SqliteSearchIndex {
     /// Open a cache read-only. With `expected`, refuse one built for another Resource,
     /// content or version.
@@ -824,6 +881,7 @@ impl SqliteSearchIndex {
             .ok_or_else(|| StoreError::Corrupt("unknown document kind".into()))?;
         let documents = number("documents")?;
         let codes = read_codes(&conn)?;
+        probe(&conn).map_err(|e| StoreError::Corrupt(format!("Search index is damaged: {e}")))?;
         Ok(Self {
             conn,
             key,
@@ -1033,19 +1091,30 @@ impl SqliteSearchIndex {
                 }
                 let right = self.evaluate(right, options)?;
                 let reach = i64::from(documents.saturating_sub(1));
-                let mut out = Found::new();
+                let mut near_left = BTreeSet::new();
+                let mut near_right = BTreeSet::new();
                 for (id, hit) in &left {
-                    let mut near = false;
                     for (other, h) in
                         right.range(id.saturating_sub(reach)..=id.saturating_add(reach))
                     {
                         if self.neighbours(hit, h) {
-                            near = true;
-                            out.entry(*other).or_insert_with(|| h.clone());
+                            near_left.insert(*id);
+                            near_right.insert(*other);
                         }
                     }
-                    if near {
-                        out.entry(*id).or_insert_with(|| hit.clone());
+                }
+                // A document found by both sides scores for both, as with `AND`, so the
+                // two sides can be swapped (#257).
+                let mut out = Found::new();
+                for (side, ids) in [(&left, near_left), (&right, near_right)] {
+                    for id in ids {
+                        let Some(hit) = side.get(&id) else { continue };
+                        match out.get_mut(&id) {
+                            Some(h) => h.score += hit.score,
+                            None => {
+                                out.insert(id, hit.clone());
+                            }
+                        }
                     }
                 }
                 Ok(out)
@@ -1134,6 +1203,15 @@ impl SqliteSearchIndex {
         }
         Ok(out)
     }
+}
+
+/// Damage a cache file as a disk fault or another program might, by running `sql` on it
+/// (`DROP TABLE search`, `UPDATE docs SET start = -1`): for tests of what the app does
+/// with a damaged cache.
+#[cfg(feature = "test-support")]
+pub fn damage_search_index(path: &Path, sql_text: &str) -> Result<(), StoreError> {
+    let conn = Connection::open(path).map_err(sql)?;
+    conn.execute_batch(sql_text).map_err(sql)
 }
 
 fn search_error(e: rusqlite::Error) -> SearchError {
