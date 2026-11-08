@@ -440,8 +440,8 @@ fn live_free_to_share_over_the_live_catalog_keeps_only_free_rows() {
 }
 
 /// #244: over the live catalog every language filter choice has a name, and "Bengali",
-/// "Bangla" and "ben" find the Bengali Bibles. Prints them, and every choice no table names,
-/// for the research note (docs/research/language-names.md).
+/// "Bangla" and "ben" find the Bengali Bibles. Prints them for the research note
+/// (docs/research/language-names.md), and fails naming every choice no table names.
 #[test]
 #[ignore = "network"]
 fn live_searching_bengali_bangla_or_ben_finds_the_live_catalogs_bengali_bibles() {
@@ -461,6 +461,10 @@ fn live_searching_bengali_bangla_or_ben_finds_the_live_catalogs_bengali_bibles()
     println!(
         "{} languages of Bibles; no name for {unknown:?}",
         choices.len()
+    );
+    assert!(
+        unknown.is_empty(),
+        "live catalog languages no table names: {unknown:?}"
     );
     for query in ["Bengali", "Bangla", "ben"] {
         let found: Vec<_> = choices.iter().filter(|c| c.name.matches(query)).collect();

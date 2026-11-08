@@ -1894,3 +1894,35 @@ fn tags_of_one_language_are_one_language_filter_choice() {
         .count();
     assert_eq!(found, 2);
 }
+
+#[test]
+fn searching_a_catalogs_own_tag_finds_its_grouped_language_filter_choice() {
+    // `ben-Beng-IN` groups as `bn-IN` and `en-Latn` as `en`; the catalog's tags still find them.
+    let gb = get_bibles_with(&[
+        ("KJV", "en"),
+        ("WEB", "en-Latn"),
+        ("ben2006eb", "bn"),
+        ("ben_bss", "ben-Beng-IN"),
+        ("Oss2", "oss-Cyrl"),
+    ]);
+    let choices = gb.languages(ResourceFilter::All, LicenceFilter::All);
+    for (query, code, listed) in [
+        ("ben-Beng-IN", "bn-IN", &["ben_bss"][..]),
+        ("BEN-beng-in", "bn-IN", &["ben_bss"]),
+        ("en-Latn", "en", &["KJV", "WEB"]),
+        ("oss-Cyrl", "os", &["Oss2"]),
+    ] {
+        let found: Vec<&str> = choices
+            .iter()
+            .filter(|c| c.name.match_rank(query) == Some(0))
+            .map(|c| c.code.as_str())
+            .collect();
+        assert_eq!(found, [code], "{query:?}");
+        // Choosing it lists the tag's Bibles.
+        assert_eq!(
+            modules(&gb.all_listings("", Some(code), ResourceFilter::All, LicenceFilter::All)),
+            listed,
+            "{query:?}"
+        );
+    }
+}

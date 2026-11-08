@@ -6,7 +6,7 @@
 //! through the app's transport ([`Session::set_fetch`]), keeps the modules SWORD Import knows,
 //! and caches them so the Tab opens offline. Every byte comes from the repositories themselves.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use obs_model::ResourceType;
@@ -714,6 +714,8 @@ pub struct LanguageChoice {
     /// The language's [`LanguageName::key`]; the filter selects the listings whose `Lang`
     /// tag has it (`bn`, `ben` and `bn-Beng` alike).
     pub code: String,
+    /// The key's names; its codes also hold the listings' own tags (`ben-beng-in`, `en-latn`),
+    /// so searching a tag the catalog gives finds the choice.
     pub name: LanguageName,
     /// How many listings the type and licence filters accept are in it.
     pub count: usize,
@@ -981,19 +983,30 @@ impl GetBibles {
         filter: ResourceFilter,
         licence: LicenceFilter,
     ) -> Vec<LanguageChoice> {
-        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        // Each key's listing count and the `Lang` tags it was made from.
+        let mut counts: BTreeMap<String, (usize, BTreeSet<&str>)> = BTreeMap::new();
         let catalog = self.catalog.iter().flat_map(|c| c.listings.iter());
         for b in catalog
             .chain(self.open_listings())
             .filter(|b| filter.accepts(b) && licence.accepts(b.licence_class()))
         {
-            *counts.entry(language_key(&b.language)).or_default() += 1;
+            let entry = counts.entry(language_key(&b.language)).or_default();
+            entry.0 += 1;
+            entry.1.insert(b.language.trim());
         }
         let system = self.system_language.as_deref().map(|l| language(l).primary);
         let mut out: Vec<(bool, String, LanguageChoice)> = counts
             .into_iter()
-            .map(|(code, count)| {
-                let name = language(&code);
+            .map(|(code, (count, tags))| {
+                let mut name = language(&code);
+                // The catalog's own tags find the choice too: `ben-Beng-IN` is `bn-IN`.
+                for tag in tags {
+                    for c in language(tag).codes {
+                        if !name.codes.contains(&c) {
+                            name.codes.push(c);
+                        }
+                    }
+                }
                 let first = system.as_ref().is_some_and(|s| *s == name.primary);
                 let sort = name.english_label().to_lowercase();
                 let choice = LanguageChoice { code, name, count };
