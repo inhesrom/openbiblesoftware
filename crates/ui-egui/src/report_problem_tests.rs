@@ -420,7 +420,7 @@ fn save_report_as_zip_lists_what_it_saves_then_saves_it_and_shows_it() {
     h.frames(30);
     preview(&h, "report-problem-zip-review-kittest");
 
-    let dest = dir.join("saved/openbible-report.zip");
+    let dest = dir.join("saved").join("openbible-report.zip");
     std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
     let (asked, shown) = save_to(&mut h, &dest);
     h.click_text("Save report as zip…");
@@ -457,7 +457,7 @@ fn save_report_as_zip_lists_what_it_saves_then_saves_it_and_shows_it() {
         !h.shell.st.zip_dialog_waiting()
     });
     assert_eq!(std::fs::read(&dest).unwrap(), first);
-    let beside = dir.join("saved/openbible-report (2).zip");
+    let beside = dir.join("saved").join("openbible-report (2).zip");
     assert_eq!(
         unzip(&beside).into_iter().map(|f| f.0).collect::<Vec<_>>(),
         names
