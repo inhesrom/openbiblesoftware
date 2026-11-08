@@ -156,13 +156,7 @@ impl State {
                     }
                     return;
                 }
-                ui.label(
-                    RichText::new(format!(
-                        "{} people and places called “{name}”. Choose one:",
-                        chooser.choices.len()
-                    ))
-                    .color(theme::c().muted),
-                );
+                ui.label(RichText::new(chooser_heading(&chooser, &name)).color(theme::c().muted));
                 ui.add_space(6.0);
                 egui::ScrollArea::vertical()
                     .id_salt(("factbook-chooser", tab))
@@ -220,9 +214,11 @@ impl State {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.label(RichText::new(fact.label).small().color(theme::c().muted));
                 comma_list(ui, &fact.people, |ui, p| {
-                    if let Some(a) = entity_link(ui, p, new_tab) {
-                        action = Some(a);
+                    let (r, clicked) = entity_link(ui, p, new_tab);
+                    if clicked.is_some() {
+                        action = clicked;
                     }
+                    r
                 });
             });
         }
@@ -486,15 +482,18 @@ fn factbook_header(ui: &mut Ui, id: &str, card: &WordStatus<EntityCard>) {
 }
 
 /// A relative's name as a link to their Factbook (plain text when there is none).
-fn entity_link(ui: &mut Ui, p: &EntityLink, new_tab: bool) -> Option<FactbookAction> {
+fn entity_link(
+    ui: &mut Ui,
+    p: &EntityLink,
+    new_tab: bool,
+) -> (egui::Response, Option<FactbookAction>) {
     let text = if p.uncertain {
         format!("{} (?)", p.name)
     } else {
         p.name.clone()
     };
     if !p.known {
-        ui.label(RichText::new(text).color(theme::c().ink));
-        return None;
+        return (ui.label(RichText::new(text).color(theme::c().ink)), None);
     }
     let tip = if p.uncertain {
         format!(
@@ -507,23 +506,45 @@ fn entity_link(ui: &mut Ui, p: &EntityLink, new_tab: bool) -> Option<FactbookAct
             p.name
         )
     };
-    super::unbroken_link(ui, text)
-        .on_hover_text(tip)
+    let r = super::unbroken_link(ui, text).on_hover_text(tip);
+    let clicked = r
         .clicked()
-        .then(|| FactbookAction::Entity(p.entity.clone(), new_tab))
+        .then(|| FactbookAction::Entity(p.entity.clone(), new_tab));
+    (r, clicked)
 }
 
 /// Items in a wrapping row, separated by commas that sit right after each item (`Nahor,
-/// Haran`): the row's item spacing falls after the comma, not before it (#261). Each item
-/// and comma stays its own widget, so the row still wraps between items.
-fn comma_list<T>(ui: &mut Ui, items: &[T], mut item: impl FnMut(&mut Ui, &T)) {
+/// Haran`): the comma is painted against the item and the row's item spacing follows it, so
+/// there is no space before a comma and a comma never wraps onto a line by itself (#261).
+fn comma_list<T>(ui: &mut Ui, items: &[T], mut item: impl FnMut(&mut Ui, &T) -> egui::Response) {
     for (i, it) in items.iter().enumerate() {
-        item(ui, it);
+        let r = item(ui, it);
         if i + 1 < items.len() {
-            // Take back the item spacing the row just added, so the comma touches the item.
-            ui.add_space(-ui.spacing().item_spacing.x);
-            ui.label(RichText::new(",").color(theme::c().muted));
+            let font = egui::TextStyle::Body.resolve(ui.style());
+            let comma = ui.painter().text(
+                pos2(r.rect.right(), r.rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                ",",
+                font,
+                theme::c().muted,
+            );
+            // The row put its item spacing after the item: the comma takes that place, and
+            // the spacing follows it.
+            ui.add_space(comma.width());
         }
+    }
+}
+
+/// What the chooser lists: those called `name`, then those whose names start with it (#261).
+fn chooser_heading(chooser: &obs_engine::FactbookChooser, name: &str) -> String {
+    let all = chooser.choices.len();
+    let more = all - chooser.exact.min(all);
+    match (chooser.exact, more) {
+        (_, 0) => format!("{all} people and places called “{name}”. Choose one:"),
+        (0, _) => format!("{all} people and places whose names start with “{name}”. Choose one:"),
+        (exact, more) => format!(
+            "{exact} called “{name}”, then {more} whose names start with it. Choose one:"
+        ),
     }
 }
 
@@ -603,7 +624,11 @@ mod tests {
             haran_width = width("Haran");
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
-                comma_list(ui, &names, |ui, n| rects.push(ui.label(*n).rect));
+                comma_list(ui, &names, |ui, n| {
+                    let r = ui.label(*n);
+                    rects.push(r.rect);
+                    r
+                });
             });
         });
         out.textures_delta.clear();
@@ -632,6 +657,40 @@ mod tests {
             (haran_left - commas[0].right() - 4.0).abs() < 0.5,
             "the item spacing after the comma: {haran_left} vs {:?}",
             commas[0]
+        );
+    }
+
+    /// #261 GUIDES-13: the chooser says which are called the name and which only start
+    /// with it.
+    #[test]
+    fn the_chooser_heading_tells_exact_names_from_longer_ones() {
+        let card = |name: &str| EntityCard {
+            entity: format!("{name}@Gen.1.1"),
+            name: name.into(),
+            distinction: None,
+            kind: obs_model::EntityKind::Place,
+            region: None,
+            passages: 1,
+            first: None,
+            last: None,
+            also_called: None,
+        };
+        let chooser = |exact, names: &[&str]| obs_engine::FactbookChooser {
+            query: "Beth".into(),
+            choices: names.iter().map(|n| card(n)).collect(),
+            exact,
+        };
+        assert_eq!(
+            chooser_heading(&chooser(1, &["Beth-eked", "Bethel", "Bethlehem"]), "Beth"),
+            "1 called “Beth”, then 2 whose names start with it. Choose one:"
+        );
+        assert_eq!(
+            chooser_heading(&chooser(0, &["Bethel", "Bethlehem"]), "Beth"),
+            "2 people and places whose names start with “Beth”. Choose one:"
+        );
+        assert_eq!(
+            chooser_heading(&chooser(2, &["Antioch", "Antioch"]), "Antioch"),
+            "2 people and places called “Antioch”. Choose one:"
         );
     }
 
