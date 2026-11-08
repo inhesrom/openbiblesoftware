@@ -136,6 +136,7 @@ Checked for every command's label and every menu, choice and submenu title
 | Line spacing ▸ | `view.line_spacing` (one per choice) | |
 | Verse numbers ▸ | `view.verse_numbers` (one per choice) | |
 | Red letter | `view.red_letter` |  |
+| Footnote markers | `view.footnote_markers` |  |
 | Fonts | `view.fonts` |  |
 | — | | |
 | Show Highlights | `view.highlights` |  |
