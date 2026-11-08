@@ -2524,7 +2524,7 @@ dependencies = [
 
 [[package]]
 name = "obs-cli"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "obs-engine",
  "obs-fonts",
@@ -2539,7 +2539,7 @@ dependencies = [
 
 [[package]]
 name = "obs-engine"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "log",
  "obs-fonts",
@@ -2560,7 +2560,7 @@ dependencies = [
 
 [[package]]
 name = "obs-fonts"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "harfrust 0.15.0",
  "skrifa 0.49.0",
@@ -2569,7 +2569,7 @@ dependencies = [
 
 [[package]]
 name = "obs-formats"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "encoding_rs",
@@ -2590,7 +2590,7 @@ dependencies = [
 
 [[package]]
 name = "obs-layout"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "obs-fonts",
  "obs-model",
@@ -2603,7 +2603,7 @@ dependencies = [
 
 [[package]]
 name = "obs-model"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "obs-scripture",
  "pulldown-cmark",
@@ -2615,7 +2615,7 @@ dependencies = [
 
 [[package]]
 name = "obs-render"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "obs-fonts",
  "obs-layout",
@@ -2624,7 +2624,7 @@ dependencies = [
 
 [[package]]
 name = "obs-scripture"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2632,7 +2632,7 @@ dependencies = [
 
 [[package]]
 name = "obs-search"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "obs-model",
  "obs-scripture",
@@ -2641,7 +2641,7 @@ dependencies = [
 
 [[package]]
 name = "obs-store"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "obs-model",
  "obs-scripture",
@@ -2655,7 +2655,7 @@ dependencies = [
 
 [[package]]
 name = "obs-ui-egui"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "eframe",
  "egui",
@@ -2686,7 +2686,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "openbible"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "arboard",
  "eframe",
@@ -5014,7 +5014,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "cargo_metadata",
