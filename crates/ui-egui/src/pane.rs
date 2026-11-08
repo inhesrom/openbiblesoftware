@@ -19,8 +19,6 @@ use obs_layout::{InlineObject, UnitPos};
 use obs_scripture::Verse;
 
 const SCROLLBAR: f32 = 10.0;
-/// Widest text column, in ems of the text size.
-pub const MEASURE_EMS: f32 = 38.0;
 
 /// The atlas plus its GPU copy.
 pub struct AtlasTexture {
@@ -214,9 +212,11 @@ pub fn reading_pane(
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, palette.page);
 
-    // A comfortable measure (about 70 characters), centred in wide panes.
+    // The Reading column (#209), centred in wide panes: Medium is a comfortable measure of
+    // about 70 characters.
     let room = (rect.width() - 2.0 * MARGIN - SCROLLBAR).max(40.0);
-    let measure = room.min(view.settings().size * MEASURE_EMS);
+    let settings = view.settings();
+    let measure = (settings.layout.column.ems()).map_or(room, |ems| room.min(settings.size * ems));
     let left = rect.left() + MARGIN + ((room - measure) / 2.0).floor();
     let text_rect = Rect::from_min_max(pos2(left, rect.top()), pos2(left + measure, rect.bottom()));
     view.set_width(text_rect.width());

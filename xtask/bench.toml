@@ -42,6 +42,11 @@ max_missed_pct = 1.0
 max_sync_p99_ms = 2.0
 max_placeholder_frames = 0
 
+[features.reading-layout]   # every Reading layout option on (#209), switched then scrolled
+max_missed_pct = 1.0
+max_sync_p99_ms = 2.0
+max_placeholder_frames = 0
+
 [features.find]             # Find next through matches far apart
 max_missed_pct = 1.0
 max_sync_p99_ms = 2.0

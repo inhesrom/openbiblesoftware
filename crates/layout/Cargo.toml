@@ -15,6 +15,8 @@ unicode-linebreak.workspace = true
 unicode-segmentation.workspace = true
 obs-model.workspace = true
 obs-fonts.workspace = true
+serde.workspace = true
+hypher.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

@@ -133,7 +133,7 @@ pub struct ReadingView {
 }
 
 /// Block `i` of `doc` as a paragraph: with its interlinear lines when there are any (or, for
-/// an `estimate`, room for them).
+/// an `estimate`, room for them). Justified text of an English Resource is hyphenated (#209).
 fn paragraph(
     doc: &ReadingDoc,
     i: usize,
@@ -141,16 +141,22 @@ fn paragraph(
     interlinear: Option<&InterlinearSource>,
     estimate: bool,
 ) -> Option<Paragraph> {
-    if let Some(source) = interlinear {
-        return source.paragraph(doc, i, settings, estimate);
-    }
-    let b = doc.blocks.get(i)?;
-    Some(block_paragraph(
-        doc.units.get(b.unit)?,
-        &b.source,
-        doc.direction(),
-        settings,
-    ))
+    let mut p = match interlinear {
+        Some(source) => source.paragraph(doc, i, settings, estimate)?,
+        None => {
+            let b = doc.blocks.get(i)?;
+            block_paragraph(doc.units.get(b.unit)?, &b.source, doc.direction(), settings)
+        }
+    };
+    p.hyphenate = p.justify && hyphenates(&doc.manifest.language);
+    Some(p)
+}
+
+/// Whether text in `language` (a BCP 47 tag or ISO 639 code) is hyphenated when justified:
+/// only English has a hyphenation dictionary (#209).
+pub fn hyphenates(language: &str) -> bool {
+    let primary = language.split(['-', '_']).next().unwrap_or_default();
+    primary.eq_ignore_ascii_case("en") || primary.eq_ignore_ascii_case("eng")
 }
 
 impl ReadingView {
@@ -194,9 +200,12 @@ impl ReadingView {
         self.reset_heights();
     }
 
+    /// New settings lay the text out again only if they change its layout; a new Reading
+    /// column width changes the width the pane gives [`Self::set_width`] instead.
     pub fn set_settings(&mut self, settings: TextSettings) {
-        if settings.key() != self.settings.key() {
-            self.settings = settings;
+        let relayout = settings.key() != self.settings.key();
+        self.settings = settings;
+        if relayout {
             self.reset_heights();
         }
     }

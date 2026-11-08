@@ -16,6 +16,7 @@ Deuteronomy, Tagged words), frame by frame at 60 Hz (`crates/ui-egui/src/bench.r
 | `fling` | flings up and down | ≤ 5% missed frames, no placeholders |
 | `jumps` | Link-set jumps | origin settles in ≤ 1 frame, followers in ≤ 3 |
 | `interlinear` | every pane with interlinear lines (#143), scrolling | ≤ 1% missed, no placeholders |
+| `reading-layout` | every Reading layout option on in every pane (#209: one verse per line, drop numerals, justified and hyphenated, Narrow, no headings), scrolling | ≤ 1% missed, no placeholders |
 | `find` | Find next (#175) through matches far apart | ≤ 1% missed, each step ≤ 1 frame |
 
 The feature scenarios (#183) drive the whole Shell (`crates/ui-egui/src/bench/tools.rs`):
@@ -44,7 +45,7 @@ Every feature scenario also has the #19 synchronous-work budget: at most 2 ms a 
 Work that fits in a frame but takes longer than that still fails the gate, though no frame is
 missed at 60 Hz.
 
-- `interlinear` and `find` measure the reading panes' UI-thread layout, as the reading
+- `interlinear`, `reading-layout` and `find` measure the reading panes' UI-thread layout, as the reading
   scenarios do.
 - The Shell-driven scenarios measure the feature Tab's own drawing (its body, egui text
   layout included). Every timed frame must draw it. When an action's result is made off the

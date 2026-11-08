@@ -7,8 +7,8 @@
 //! included; the prototype measured those as a small, constant share of the frame.
 //!
 //! Feature scenarios (#183) follow the reading ones: `interlinear` (every pane with
-//! interlinear lines) and `find` (stepping a Find bar through matches far apart) on the same
-//! panes, and the Shell-driven ones of [`tools`] (Atlas, Search Grid and Chart, Exegetical and
+//! interlinear lines), `reading-layout` (every Reading layout option on, #209) and `find`
+//! (stepping a Find bar through matches far apart) on the same panes, and the Shell-driven ones of [`tools`] (Atlas, Search Grid and Chart, Exegetical and
 //! Topic Guides, Get Resources), each with its own settle-frame count.
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -453,15 +453,18 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         .flat_map(|s| s.sync.iter().copied())
         .collect();
     let lines = interlinear_scenario(&mut bench, interlinear.as_ref());
+    let reading = reading_layout_scenario(&mut bench);
     let find = find_scenario(&mut bench);
     let filters = filters_scenario(&mut bench);
     all_sync.extend(
         (lines.sync.iter())
+            .chain(&reading.sync)
             .chain(&find.sync)
             .chain(&filters.sync)
             .copied(),
     );
     scenarios.push(lines.report("interlinear", interval_ms));
+    scenarios.push(reading.report("reading-layout", interval_ms));
     scenarios.push(find.report("find", interval_ms));
     scenarios.push(filters.report("filters", interval_ms));
     let mut feature_errors = Vec::new();
@@ -512,6 +515,43 @@ fn interlinear_scenario(
     }
     for v in &mut bench.views {
         v.set_interlinear(None);
+    }
+    s
+}
+
+/// Every Reading layout option on (#209) in every pane: One verse per line, Large chapter
+/// numbers, Justified text with English hyphenation, a Narrow column, no section headings:
+/// steady scrolling, as in `steady`. The switch is set up before, as `interlinear`'s is.
+fn reading_layout_scenario(bench: &mut Bench) -> Samples {
+    let everything = TextSettings {
+        layout: obs_layout::ReadingLayout {
+            flow: obs_layout::TextFlow::VersePerLine,
+            large_chapter_numbers: true,
+            section_headings: false,
+            column: obs_layout::ColumnWidth::Narrow,
+            justified: true,
+        },
+        ..TextSettings::default()
+    };
+    let narrow = obs_layout::ColumnWidth::Narrow
+        .ems()
+        .map_or(bench.cfg.viewport.0, |ems| ems * everything.size);
+    for v in &mut bench.views {
+        v.set_settings(everything);
+        v.set_width(narrow.min(v.width()));
+    }
+    bench.settle();
+    let mut s = Samples::default();
+    let dy = bench.cfg.steady_px;
+    for _ in 0..bench.cfg.steady_frames / 2 {
+        bench.frame(&mut s, |views| {
+            views.iter_mut().for_each(|v| v.scroll_by(dy))
+        });
+    }
+    let width = bench.cfg.viewport.0 - 2.0 * crate::view::MARGIN;
+    for v in &mut bench.views {
+        v.set_settings(TextSettings::default());
+        v.set_width(width);
     }
     s
 }

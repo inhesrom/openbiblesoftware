@@ -126,6 +126,12 @@ pub struct TabSnapshot {
         skip_serializing_if = "crate::visual_filters::TabFilters::is_default"
     )]
     pub visual_filters: crate::visual_filters::TabFilters,
+    /// A Resource Tab's own Reading layout choices (#209).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::reading_layout::TabReadingLayout::is_default"
+    )]
+    pub reading_layout: crate::reading_layout::TabReadingLayout,
     /// A Resource Tab shows its Contents pane (#176).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub contents: bool,
@@ -160,6 +166,7 @@ impl TabSnapshot {
             link: t.link,
             interlinear: t.interlinear.clone(),
             visual_filters: t.visual_filters.clone(),
+            reading_layout: t.reading_layout,
             contents: t.contents,
             scroll: None,
             footnote_markers_hidden: !t.footnote_markers,

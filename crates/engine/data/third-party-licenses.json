@@ -860,6 +860,12 @@
       "repository": "https://github.com/RustCrypto/hybrid-array"
     },
     {
+      "name": "hypher",
+      "version": "0.1.8",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/typst/hypher"
+    },
+    {
       "name": "icu_collections",
       "version": "2.4.0",
       "license": "Unicode-3.0",
@@ -2954,6 +2960,7 @@
       "used_by": [
         "color 0.3.3",
         "half 2.7.1",
+        "hypher 0.1.8",
         "linebender_resource_handle 0.1.1",
         "simdutf8 0.1.5"
       ],

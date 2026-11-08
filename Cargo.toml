@@ -39,6 +39,8 @@ unicode-normalization = "0.1"
 pulldown-cmark = { version = "0.13", default-features = false }
 # The logging facade; the desktop app installs the one logger (Log files, #219).
 log = "0.4"
+# Knuth-Liang hyphenation, for Justified text (#209): only the English patterns are built in.
+hypher = { version = "0.1", default-features = false, features = ["alloc", "english"] }
 
 # UI (L6 only; enforced by `cargo xtask layers`).
 egui = "0.37"

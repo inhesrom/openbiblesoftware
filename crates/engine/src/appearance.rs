@@ -325,6 +325,7 @@ pub(crate) fn to_json(a: &Appearance, t: &TextSettings, f: &FontChoices) -> Valu
         "verse_numbers": verse_numbers_id(t.verse_numbers),
         "highlights": a.show_highlights,
         "fonts": f.to_json(),
+        "reading_layout": serde_json::to_value(t.layout).unwrap_or(Value::Null),
     })
 }
 
@@ -374,6 +375,9 @@ pub(crate) fn apply_json(
     }
     if let Some(b) = v["highlights"].as_bool() {
         a.show_highlights = b;
+    }
+    if let Ok(layout) = serde_json::from_value(v["reading_layout"].clone()) {
+        t.layout = layout;
     }
     match &v["verse_numbers"] {
         Value::String(s) => {

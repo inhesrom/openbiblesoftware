@@ -545,6 +545,7 @@ impl Session {
                         link: t.link,
                         interlinear: Default::default(),
                         visual_filters: Default::default(),
+                        reading_layout: Default::default(),
                         contents: false,
                         scroll: None,
                         footnote_markers_hidden: false,

@@ -557,6 +557,7 @@ mod tests {
         let names: Vec<&str> = t.features.keys().map(String::as_str).collect();
         for feature in [
             "interlinear",
+            "reading-layout",
             "atlas",
             "search-grid",
             "search-chart",

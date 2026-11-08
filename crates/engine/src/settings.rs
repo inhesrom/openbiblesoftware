@@ -225,6 +225,63 @@ pub const SETTINGS: &[Setting] = &[
         choice("view.verse_numbers", "superscript"),
     ),
     setting(
+        "text_flow",
+        S::ReadingLayout,
+        "Paragraphs or verse per line",
+        "Bibles in paragraphs, or each verse on a line of its own; a Tab can choose its own \
+         in View → Reading layout",
+        "verse per line paragraphs flow layout one verse each line",
+        choice("view.text_flow", "paragraphs"),
+    ),
+    setting(
+        "large_chapter_numbers",
+        S::ReadingLayout,
+        "Large chapter numbers",
+        "A large numeral, two lines tall, opens each chapter of a Bible",
+        "chapter numbers drop cap numeral big",
+        SettingKind::Toggle {
+            command: "view.large_chapter_numbers",
+            param: Some("on"),
+            default: false,
+            get: |s| s.text.layout.large_chapter_numbers,
+        },
+    ),
+    setting(
+        "section_headings",
+        S::ReadingLayout,
+        "Section headings",
+        "Show the headings a Bible's translators put over its sections",
+        "headings titles sections show hide",
+        SettingKind::Toggle {
+            command: "view.section_headings",
+            param: Some("on"),
+            default: true,
+            get: |s| s.text.layout.section_headings,
+        },
+    ),
+    setting(
+        "column_width",
+        S::ReadingLayout,
+        "Reading column width",
+        "How wide the column of Resource text is in a reading pane",
+        "column width measure narrow medium wide full margins line length",
+        choice("view.column_width", "medium"),
+    ),
+    setting(
+        "justified",
+        S::ReadingLayout,
+        "Justified text",
+        "Prose fills each line to both edges; English words are hyphenated to fit, Greek and \
+         Hebrew never are",
+        "justify justification hyphenation hyphenate alignment ragged edges",
+        SettingKind::Toggle {
+            command: "view.justified",
+            param: Some("on"),
+            default: false,
+            get: |s| s.text.layout.justified,
+        },
+    ),
+    setting(
         "red_letter",
         S::ReadingLayout,
         "Red letter",

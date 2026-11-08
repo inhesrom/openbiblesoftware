@@ -1691,6 +1691,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hypher"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45f2b4f6b5da34d400d4c112eadcc14512cc5d04307a8eee182586d9bebd7ce6"
+
+[[package]]
 name = "icu_collections"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2592,9 +2598,11 @@ dependencies = [
 name = "obs-layout"
 version = "0.1.0"
 dependencies = [
+ "hypher",
  "obs-fonts",
  "obs-model",
  "obs-scripture",
+ "serde",
  "serde_json",
  "unicode-bidi",
  "unicode-linebreak",

@@ -116,6 +116,9 @@ pub mod parallel_passages;
 mod parallel_passages_tests;
 pub mod people_places;
 pub mod persist;
+pub mod reading_layout;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod reading_layout_tests;
 pub mod reading_plans;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod reading_plans_tests;
@@ -261,6 +264,7 @@ pub use people_places::{ArticleLink, Fact, PersonOrPlace};
 pub use persist::{
     LayoutNode, SNAPSHOT_VERSION, ScrollPosition, TabSnapshot, UserData, WorkspaceSnapshot,
 };
+pub use reading_layout::{COLUMN_WIDTHS, TEXT_FLOWS, TabReadingLayout};
 pub use reading_plans::{
     PlanDate, PlanTemplate, Reading, ReadingPlan, ReadingPlans, WEEKDAY_NAMES, Weekdays,
 };
