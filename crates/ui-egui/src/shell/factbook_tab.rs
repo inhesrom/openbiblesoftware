@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use egui::{Rect, RichText, Sense, Stroke, Ui, pos2};
 use obs_engine::{
     ArticleLink, DictionaryArticle, EntityCard, EntityLink, FactbookSummary, Guide, GuideSection,
-    RelatedEntity, TabId, TabKind, WordStatus,
+    RelatedEntity, TabId, WordStatus,
 };
 use obs_layout::ColorRole;
 use obs_model::{Direction, Key, ResourceType};
@@ -444,24 +444,7 @@ impl State {
     /// Read a Key Passage: the most recently active Bible Tab goes there (its Link set
     /// follows); with Ctrl/Cmd, or with no Bible open, the ★ Bible opens there.
     pub(super) fn open_key_passage(&mut self, factbook: TabId, passage: Passage, new_tab: bool) {
-        let library = &self.session.library;
-        let bible = (!new_tab)
-            .then(|| {
-                self.session.workspace.most_recent(|t| match &t.kind {
-                    TabKind::Resource(id) => library
-                        .get(id)
-                        .is_some_and(|e| e.manifest.resource_type == ResourceType::Bible),
-                    _ => false,
-                })
-            })
-            .flatten();
-        match bible {
-            Some(t) => {
-                self.session.workspace.focus(t);
-                self.session.workspace.navigate_standard(t, passage.start());
-            }
-            None => self.reference_navigate(factbook, passage, true),
-        }
+        self.reference_navigate(factbook, passage, new_tab);
     }
 }
 

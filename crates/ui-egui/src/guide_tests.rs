@@ -1501,3 +1501,42 @@ fn the_reference_box_shows_a_guides_whole_range_and_enter_keeps_it() {
     h.frames(2);
     assert_eq!(h.shell.st.location_text(tab), "Psalms 119");
 }
+
+/// #261 GUIDES-12: a reference clicked in an unlinked Guide moves the most recent Bible Tab,
+/// click after click, instead of opening one more Bible Tab each time; Ctrl/Cmd still opens
+/// a new one.
+#[test]
+fn an_unlinked_guides_reference_moves_the_most_recent_bible_tab() {
+    let mut h = Harness::launch(None);
+    let (_files, bible) = setup(&mut h, "unlinked-ref", false);
+    let guide = open_guide(&mut h);
+    h.shell
+        .run("tab.link", &json!({ "tab": guide.0, "set": "" }));
+    h.frames(2);
+    assert_eq!(h.shell.session().workspace.tab(guide).unwrap().link, None);
+    let bibles = |h: &Harness| {
+        h.shell
+            .session()
+            .workspace
+            .tabs()
+            .filter(|t| t.kind == TabKind::Resource("kjv-sample".into()))
+            .count()
+    };
+    // The sample Bible has John 3:16-17: go back and forth.
+    for verse in [17, 16, 17] {
+        h.shell
+            .st
+            .reference_navigate(guide, Passage::verse(john(3, verse)), false);
+        assert_eq!(
+            h.shell.session().workspace.tab(bible).unwrap().history.current(),
+            Some(john(3, verse))
+        );
+        h.frames(2);
+        assert_eq!(bibles(&h), 1, "a click opened another Bible Tab");
+    }
+    h.shell
+        .st
+        .reference_navigate(guide, Passage::verse(john(3, 16)), true);
+    h.frames(2);
+    assert_eq!(bibles(&h), 2, "Ctrl/Cmd-click opens a new Bible Tab");
+}

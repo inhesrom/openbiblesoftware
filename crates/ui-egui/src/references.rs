@@ -542,16 +542,44 @@ impl State {
         });
     }
 
+    /// Go to a Passage clicked in Tab `opener`: its Link set goes there. Unlinked, from a Guide
+    /// or Tool the most recent Bible Tab does (its Link set follows), as the app-wide "most
+    /// recent Tab of that kind moves, else one opens" rule says — a new Tab per click piled up
+    /// Bible Tabs (#261); from a Resource's own text a new Tab opens, leaving the text where
+    /// it was. With Ctrl/Cmd (`new_tab`), or with no Bible Tab open, the ★ Bible opens there.
     pub(super) fn reference_navigate(&mut self, opener: TabId, passage: Passage, new_tab: bool) {
-        let linked = self
+        let (linked, from_text) = self
             .session
             .workspace
             .tab(opener)
-            .is_some_and(|t| t.link.is_some());
+            .map_or((false, false), |t| {
+                (
+                    t.link.is_some(),
+                    matches!(t.kind, obs_engine::TabKind::Resource(_)),
+                )
+            });
         if linked && !new_tab {
             self.session
                 .workspace
                 .navigate_standard(opener, passage.start());
+            return;
+        }
+        let library = &self.session.library;
+        let recent_bible = (!new_tab && !from_text)
+            .then(|| {
+                self.session.workspace.most_recent(|t| match &t.kind {
+                    obs_engine::TabKind::Resource(id) => library
+                        .get(id)
+                        .is_some_and(|e| e.manifest.resource_type == obs_model::ResourceType::Bible),
+                    _ => false,
+                })
+            })
+            .flatten();
+        if let Some(bible) = recent_bible {
+            self.session.workspace.focus(bible);
+            self.session
+                .workspace
+                .navigate_standard(bible, passage.start());
             return;
         }
         let id = self

@@ -159,7 +159,10 @@ Decisions #15 (sections, Guide arrangement, navigation), #18 (Tab header, placem
   sets by its Passage Key scheme. Opened while unlinked, it starts at the Passage of the
   focused Tab.
 - Cross-reference rows: hover shows the Scripture popup; click navigates the Guide's Link
-  set; Ctrl/Cmd-click opens the ★ Bible in a new Tab (#51 rules).
+  set (unlinked, the most recent Bible Tab goes there, #261, as for every Guide and Tool);
+  Ctrl/Cmd-click opens the ★ Bible in a new Tab (#51 rules).
+- The header box shows the Guide's whole Passage (`Mark 1:9-11`, `Acts 13`), so confirming
+  it never narrows the Guide to its first Verse (#261).
 - Commentary rows: hover shows a popup with more of the section; click opens the Commentary
   at that section (its open Tab if there is one, otherwise a new Tab in the usual place,
   joining the Guide's Link set), without moving the Guide or its Link set; Ctrl/Cmd-click

@@ -462,20 +462,9 @@ impl State {
                     .workspace
                     .navigate_entry(tab, Key::Headword(topic));
             }
-            TopicAction::Passage(p, new_tab) => {
-                // In a Link set, the set goes there (a Bible in it follows); otherwise the
-                // most recent Bible Tab, or a new ★ Bible Tab.
-                let linked = self
-                    .session
-                    .workspace
-                    .tab(tab)
-                    .is_some_and(|t| t.link.is_some());
-                if linked && !new_tab {
-                    self.reference_navigate(tab, p, false);
-                } else {
-                    self.open_key_passage(tab, p, new_tab);
-                }
-            }
+            // In a Link set, the set goes there (a Bible in it follows); otherwise the most
+            // recent Bible Tab, or a new ★ Bible Tab.
+            TopicAction::Passage(p, new_tab) => self.reference_navigate(tab, p, new_tab),
             TopicAction::Article(a, new_tab) => self.open_article(tab, &a, new_tab),
             TopicAction::TogglePreview(id) => {
                 if let Some(t) = self.tabs.get_mut(&tab)
