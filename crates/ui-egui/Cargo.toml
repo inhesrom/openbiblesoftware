@@ -35,6 +35,8 @@ obs-formats.workspace = true
 obs-engine = { workspace = true, features = ["test-support"] }
 # Reads ATTRIBUTION.toml and starter/sources.toml in the Credits tests (#67).
 toml = "1"
+# Opens the Diagnostics zip Report a problem saves (#249); the engine's version and features.
+zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
 
 [lints]
 workspace = true

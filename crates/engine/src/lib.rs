@@ -201,7 +201,7 @@ pub use copy_verses::{
     BookNames, CopiedBible, CopiedBlock, CopiedText, CopiedVerse, CopyFormat, CopyOptions,
     CopyPreset, CopyVerses, ReferencePlacement, VerseLayout, copy_verses, html_document,
 };
-pub use diagnostics::{CrashReport, LogLevel};
+pub use diagnostics::{CrashReport, LogLevel, ZipEntry};
 pub use exegetical_guide::{
     ExegeticalVerse, ExegeticalWord, GrammarNote, LexiconSummary, WordByWord,
 };

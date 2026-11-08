@@ -833,6 +833,9 @@ pub enum Effect {
     /// Open the Report a problem window on the newest Crash report, or a problem report made
     /// now (Help → Report a problem…, #219).
     ReportProblem,
+    /// Show what a Diagnostics zip holds and ask where to save it (Help → Save diagnostics
+    /// as zip…, #249).
+    SaveDiagnosticsZip,
     /// Open the Highlight styles window (View → Highlight styles, #181).
     ShowHighlightStyles,
     /// Open the Visual filters window (View → Visual filters…, #211).

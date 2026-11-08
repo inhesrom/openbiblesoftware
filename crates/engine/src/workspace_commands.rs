@@ -241,6 +241,7 @@ pub const MENUS: &[Menu] = &[
             C("help.keyboard_shortcuts"),
             Separator,
             C("help.report_problem"),
+            C("help.save_diagnostics_zip"),
             C("help.open_log_folder"),
             Separator,
             C("help.credits"),

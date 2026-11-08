@@ -2676,6 +2676,7 @@ dependencies = [
  "serde_json",
  "toml 1.1.8+spec-1.1.0",
  "unicode-segmentation",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -2701,6 +2702,7 @@ dependencies = [
  "serde_json",
  "sys-locale",
  "ureq",
+ "zip 8.6.0",
 ]
 
 [[package]]

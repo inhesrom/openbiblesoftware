@@ -593,6 +593,7 @@ impl Shell {
                 Effect::ShowFonts => self.st.fonts_ui.open = true,
                 Effect::OpenFolder(path) => self.st.open_folder(&path),
                 Effect::ReportProblem => self.st.show_report_problem(),
+                Effect::SaveDiagnosticsZip => self.st.show_diagnostics_zip(),
                 Effect::ShowHighlightStyles => self.st.styles_ui.open = true,
                 Effect::ShowVisualFilters => self.st.filters_ui.open = true,
                 Effect::FocusCommandBox => {
@@ -910,6 +911,7 @@ impl Shell {
             || self.st.picker.is_some()
             || self.st.export_waiting()
             || self.st.data_dialog_waiting()
+            || self.st.zip_dialog_waiting()
             || self.st.session.guides.is_busy()
             || self.st.session.bible_search_running()
             || self.st.session.word_study.is_busy()
@@ -954,6 +956,7 @@ impl Shell {
         self.st.poll_export();
         self.st.poll_data_dialog();
         self.st.poll_csv_picker();
+        self.st.poll_zip_dialog();
         self.st.poll_folder_opening();
         self.apply_effects();
         if let Some(after) = self.background_repaint() {
