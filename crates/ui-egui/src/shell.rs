@@ -477,6 +477,8 @@ impl Shell {
                     self.remove_pane(tab);
                     self.st.tabs.remove(&tab);
                     self.st.footnotes.tab_closed(tab);
+                    let live: Vec<TabId> = self.st.session.workspace.tabs().map(|t| t.id).collect();
+                    self.st.references.retain_tabs(&live);
                 }
                 Effect::RestoreScroll { tab, at } => self.st.restore_scroll(tab, &at),
                 Effect::KeyboardToTab(tab) => {
@@ -716,6 +718,7 @@ impl Shell {
             let live: Vec<TabId> = self.st.session.workspace.tabs().map(|t| t.id).collect();
             self.st.tabs.retain(|t, _| live.contains(t));
             self.st.footnotes.retain_tabs(&live);
+            self.st.references.retain_tabs(&live);
         }
         let arrangement = self
             .tree
@@ -739,6 +742,9 @@ impl Shell {
         self.st.panels.clear();
         self.st.tabs.clear();
         self.st.footnotes.tabs.clear();
+        // Clicks and jumps made in the Workspace just replaced wait for Tabs whose ids the
+        // restored ones may reuse: they go with it (#259).
+        self.st.references.retain_tabs(&[]);
         self.shown.clear();
         let ids: Vec<TabId> = self.st.session.workspace.tabs().map(|t| t.id).collect();
         for t in ids {

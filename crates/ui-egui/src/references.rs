@@ -193,6 +193,14 @@ pub(super) struct References {
 }
 
 impl References {
+    /// Keep only the clicks and jumps still waiting for Tabs in `live`; the others' Tabs are
+    /// gone, or the Workspace they were made in was replaced (a Layout or the Last session
+    /// restored, whose Tabs may take the same ids, #259).
+    pub(super) fn retain_tabs(&mut self, live: &[TabId]) {
+        self.pending_clicks.retain(|t, _| live.contains(t));
+        self.pending_navigation.retain(|t, _| live.contains(t));
+    }
+
     pub(super) fn refresh(&mut self, library: &Library) {
         let key = library
             .entries()
