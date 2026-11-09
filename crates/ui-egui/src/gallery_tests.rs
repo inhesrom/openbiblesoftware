@@ -135,6 +135,7 @@ fn tab_title(kind: &TabKind) -> String {
         TabKind::KeyboardShortcuts => "Keyboard shortcuts".into(),
         TabKind::Settings => "Settings".into(),
         TabKind::Backups => "Back up & restore".into(),
+        TabKind::UserGuide => "User guide".into(),
         TabKind::Guide(g) => g.title().into(),
         TabKind::Tool(t) => t.title().into(),
     }
@@ -1853,6 +1854,7 @@ const SITES: &[(&str, &str, &[&str])] = &[
         "components::menu(",
         &["toolbar-menu-position"],
     ),
+    ("shell/tour_ui.rs", "egui::Area::new(", &["first-run-tour"]),
     (
         "shell/update_notice.rs",
         "egui::Area::new(",

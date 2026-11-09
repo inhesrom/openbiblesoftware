@@ -83,6 +83,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser in each 
 | ![Back up & restore, Light](gallery/tab-back-up-restore-light-1x.png) | ![Back up & restore, Dark](gallery/tab-back-up-restore-dark-1x.png) | ![Back up & restore, Sepia](gallery/tab-back-up-restore-sepia-1x.png) |
 | [2×](gallery/tab-back-up-restore-light-2x.png) | [2×](gallery/tab-back-up-restore-dark-2x.png) | [2×](gallery/tab-back-up-restore-sepia-2x.png) |
 
+### User guide
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![User guide, Light](gallery/tab-user-guide-light-1x.png) | ![User guide, Dark](gallery/tab-user-guide-dark-1x.png) | ![User guide, Sepia](gallery/tab-user-guide-sepia-1x.png) |
+| [2×](gallery/tab-user-guide-light-2x.png) | [2×](gallery/tab-user-guide-dark-2x.png) | [2×](gallery/tab-user-guide-sepia-2x.png) |
+
 ### Passage Guide
 
 | Light | Dark | Sepia |
@@ -245,6 +252,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser in each 
 |---|---|---|
 | ![Help menu, Light](gallery/help-menu-light-1x.png) | ![Help menu, Dark](gallery/help-menu-dark-1x.png) | ![Help menu, Sepia](gallery/help-menu-sepia-1x.png) |
 | [2×](gallery/help-menu-light-2x.png) | [2×](gallery/help-menu-dark-2x.png) | [2×](gallery/help-menu-sepia-2x.png) |
+
+### First-run tour
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![First-run tour, Light](gallery/first-run-tour-light-1x.png) | ![First-run tour, Dark](gallery/first-run-tour-dark-1x.png) | ![First-run tour, Sepia](gallery/first-run-tour-sepia-1x.png) |
+| [2×](gallery/first-run-tour-light-2x.png) | [2×](gallery/first-run-tour-dark-2x.png) | [2×](gallery/first-run-tour-sepia-2x.png) |
 
 ### Customize toolbar
 
