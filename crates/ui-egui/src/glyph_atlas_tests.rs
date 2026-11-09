@@ -130,36 +130,48 @@ fn draw_blocks(
     })
 }
 
-/// Glyph quads of `blocks` (each at its origin) on the lines within `visible`, every one
-/// placed: as many atlases as it takes.
-fn glyphs_in_view(blocks: &[(Arc<LaidBlock>, Pos2)], visible: Rect) -> usize {
+/// The glyphs of `blocks` (each at its origin) on the lines within `visible`, every one placed
+/// at `scale` device px per point and drawn as [`Gpu::paint`] reads them back, sorted: as many
+/// atlases as it takes. Also how many full atlases that is.
+fn glyphs_in_view(
+    blocks: &[(Arc<LaidBlock>, Pos2)],
+    visible: Rect,
+    scale: f32,
+) -> (Vec<Drawn>, usize) {
     let mut atlas = obs_render::GlyphAtlas::new();
-    let mut quads = 0;
+    let (mut drawn, mut full) = (Vec::new(), 0);
     for (laid, origin) in blocks {
         let mut from = 0;
         loop {
             let placed = atlas.quads_from(
                 laid,
                 [origin.x, origin.y],
-                SCALE,
+                scale,
                 [visible.top(), visible.bottom()],
                 from,
             );
-            quads += placed.quads.len();
+            let side = atlas.side();
+            for q in &placed.quads {
+                let px = |v: f32| (v * SCALE).round() as i32;
+                let [u0, v0] = q.uv_min.map(|v| (v * side as f32).round() as usize);
+                let [u1, v1] = q.uv_max.map(|v| (v * side as f32).round() as usize);
+                let coverage = (v0..v1)
+                    .flat_map(|y| (u0..u1).map(move |x| (x, y)))
+                    .map(|(x, y)| atlas.coverage()[y * side + x])
+                    .collect();
+                let [x0, y0, x1, y1] = [q.min[0], q.min[1], q.max[0], q.max[1]].map(px);
+                drawn.push(([x0, y0, x1, y1], coverage));
+            }
             let Some(next) = placed.resume else { break };
             atlas.start_over();
+            full += 1;
             from = next;
         }
     }
-    quads
+    drawn.sort();
+    (drawn, full)
 }
 
-/// A frame grows the atlas twice, a block each (512² → 1024² → 2048²), and then needs it to
-/// start over. Its earlier blocks sample the textures replaced until the frame is painted, so
-/// starting over at once would hold 1 + 4 + 16 + 16 = 37 MiB: the glyphs past the full atlas
-/// wait for the next frame, which draws every glyph in view. GPU memory as painted stays
-/// within the text GPU budget in every frame, also when the view needs a start-over each frame
-/// (#255 review).
 /// Textures as a GPU holds them: coverage (alpha) and size.
 #[derive(Default)]
 struct Gpu {
@@ -180,10 +192,20 @@ fn preview(name: &str, drawn: &[Drawn], size: [usize; 2]) {
     }
     let [w, h] = size;
     let mut px = vec![255u8; w * h];
-    for ([x0, y0, x1, _], coverage) in drawn {
-        let gw = (x1 - x0) as usize;
-        for (k, a) in coverage.iter().enumerate() {
-            let (x, y) = (*x0 + (k % gw.max(1)) as i32, *y0 + (k / gw.max(1)) as i32);
+    for ([x0, y0, x1, y1], coverage) in drawn {
+        // Texels across and down: as many as device pixels, or fewer when rastered coarser.
+        let (bw, bh) = ((x1 - x0).max(1) as usize, (y1 - y0).max(1) as usize);
+        let tw = ((coverage.len() * bw) as f32 / bh as f32)
+            .sqrt()
+            .round()
+            .max(1.0) as usize;
+        let th = coverage.len() / tw;
+        for (bx, by) in (0..bh).flat_map(|y| (0..bw).map(move |x| (x, y))) {
+            let (tx, ty) = (bx * tw / bw, by * th.max(1) / bh);
+            let Some(&a) = coverage.get(ty * tw + tx) else {
+                continue;
+            };
+            let (x, y) = (*x0 + bx as i32, *y0 + by as i32);
             if (0..w as i32).contains(&x) && (0..h as i32).contains(&y) {
                 let p = &mut px[y as usize * w + x as usize];
                 *p = (*p).min(255 - a);
@@ -342,6 +364,12 @@ fn a_block_larger_than_the_atlas_paints_in_its_first_frame() {
     assert_eq!(first, fresh);
 }
 
+/// A frame grows the atlas twice, a block each (512² → 1024² → 2048²), and then needs it to
+/// start over. Its earlier blocks sample the textures replaced until the frame is painted, so
+/// starting over at once would hold 1 + 4 + 16 + 16 = 37 MiB: the glyphs past the full atlas
+/// wait for the next frame, which draws every glyph in view. GPU memory as painted stays
+/// within the text GPU budget in every frame, also when the view needs a start-over each frame
+/// (#255 review).
 #[test]
 fn growing_and_starting_over_stays_within_the_text_gpu_budget() {
     let (latin, big) = (covered('\u{20}'..='\u{FF}'), covered('\u{20}'..='\u{2FFF}'));
@@ -372,7 +400,7 @@ fn growing_and_starting_over_stays_within_the_text_gpu_budget() {
             "the atlas did not start over"
         );
         if bottom == 4000.0 {
-            let in_view = glyphs_in_view(&blocks, visible);
+            let in_view = glyphs_in_view(&blocks, visible, SCALE).0.len();
             let (first, repaint) = &frames[0];
             assert!(
                 first.len() < in_view,
@@ -383,4 +411,114 @@ fn growing_and_starting_over_stays_within_the_text_gpu_budget() {
             assert!(frames[2..].iter().all(|(f, _)| *f == frames[1].0));
         }
     }
+}
+
+/// The covered characters U+0020..U+2FFF at Text size 40, each block at its origin: at 2x,
+/// three at a quarter-pixel apart are more distinct glyphs than two full atlases hold.
+fn oversized_blocks() -> Vec<(Arc<LaidBlock>, Pos2)> {
+    let big = covered('\u{20}'..='\u{2FFF}');
+    let mut view = view(doc(&[&big]));
+    let laid = Arc::clone(&view.visible(900.0)[0].laid);
+    [20.0, 20.125, 20.25]
+        .into_iter()
+        .map(|x| (Arc::clone(&laid), Pos2::new(x, 0.0)))
+        .collect()
+}
+
+/// Frames drawn with `atlas` until one asks for no other (at most `limit`): what each drew,
+/// whether it asked for another, and the GPU memory held as it was painted.
+fn frames_until_settled(
+    ctx: &egui::Context,
+    atlas: &mut AtlasTexture,
+    gpu: &mut Gpu,
+    blocks: &[(Arc<LaidBlock>, Pos2)],
+    visible: Rect,
+    limit: usize,
+) -> Vec<Vec<Drawn>> {
+    let mut frames = Vec::new();
+    for _ in 0..limit {
+        let output = draw_blocks(ctx, atlas, blocks, visible);
+        let repaint = output.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+        frames.push(gpu.paint(output));
+        assert!(
+            gpu.painted_bytes <= TEXT_GPU_BUDGET + 4 * 4,
+            "{} bytes painted",
+            gpu.painted_bytes
+        );
+        if repaint == std::time::Duration::MAX {
+            return frames;
+        }
+    }
+    panic!("still asking for frames after {limit}");
+}
+
+/// AUD-LAYOUT-TEXT-1, #255 review: more distinct glyphs in view than the text GPU budget's two
+/// full atlases hold. Every frame cannot draw them all at full scale, so later frames raster
+/// them coarser: within a few frames, each asked for, every glyph in view is drawn, and then
+/// frames stop being asked for and draw the same. Once the view needs less, the glyphs go back
+/// to full scale.
+#[test]
+fn more_glyphs_in_view_than_the_budget_holds_are_all_drawn_coarser() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let blocks = oversized_blocks();
+        let visible = Rect::from_min_max(Pos2::ZERO, Pos2::new(640.0, 100_000.0));
+        let (_, full) = glyphs_in_view(&blocks, visible, SCALE);
+        let ctx = egui::Context::default();
+        let (mut atlas, mut gpu) = (AtlasTexture::default(), Gpu::default());
+        let limit = 8;
+        let frames = frames_until_settled(&ctx, &mut atlas, &mut gpu, &blocks, visible, limit);
+        let coarse = atlas.coarse;
+        let settled = draw_blocks(&ctx, &mut atlas, &blocks, visible);
+        let again = gpu.paint(settled);
+        // The view changes to a small one on input (a jump): egui draws a frame after the
+        // one that took it, and from there the glyphs go back to full scale.
+        let grace = view(doc(&["Grace"])).visible(900.0)[0].laid.clone();
+        let small = [(grace, Pos2::new(20.0, 0.0))];
+        let input = egui::RawInput {
+            events: vec![egui::Event::PointerMoved(Pos2::new(100.0, 100.0))],
+            ..window()
+        };
+        let jumped = ctx.run_ui(input, |ui| {
+            for (laid, origin) in &small {
+                let runs = atlas.runs(ui.ctx(), laid, *origin, visible);
+                paint_runs(ui.painter(), runs, |_| Color32::BLACK);
+            }
+        });
+        let next = jumped.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+        assert_eq!(next, std::time::Duration::ZERO, "no frame after the input");
+        gpu.paint(jumped);
+        let back = frames_until_settled(&ctx, &mut atlas, &mut gpu, &small, visible, limit);
+        let fresh = Gpu::default().paint(draw_blocks(
+            &egui::Context::default(),
+            &mut AtlasTexture::default(),
+            &small,
+            visible,
+        ));
+        let _ = tx.send((full, frames, coarse, again, back, atlas.coarse, fresh));
+    });
+    let (full, frames, coarse, again, back, coarse_after, fresh) = rx
+        .recv_timeout(std::time::Duration::from_secs(300))
+        .expect("the frames did not finish");
+    assert!(full >= 2, "the glyphs in view fit in {} atlases", full + 1);
+    assert!(frames.len() > 1, "the first frame drew every glyph");
+    preview("over-budget-settled", frames.last().unwrap(), [1280, 1800]);
+    // Every glyph in view, each the glyph it stands for: as an atlas at that scale draws them.
+    let blocks = oversized_blocks();
+    let visible = Rect::from_min_max(Pos2::ZERO, Pos2::new(640.0, 100_000.0));
+    let scale = SCALE / (1u32 << coarse) as f32;
+    let (in_view, _) = glyphs_in_view(&blocks, visible, scale);
+    // egui asks for one frame more after any asked for: the first whole one need not be last.
+    let whole = frames.iter().position(|f| *f == in_view);
+    let whole = whole.expect("no frame drew every glyph in view");
+    assert!(frames[..whole].iter().all(|f| f.len() < in_view.len()));
+    assert!(frames[whole..].iter().all(|f| *f == in_view));
+    assert!(
+        whole <= 1 + super::MAX_COARSE as usize,
+        "{whole} frames partial"
+    );
+    assert!(coarse > 0, "every glyph drawn at full scale");
+    assert_eq!(again, in_view);
+    assert_eq!(coarse_after, 0, "the small view stays coarse");
+    assert_eq!(*back.last().unwrap(), fresh);
 }

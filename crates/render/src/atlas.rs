@@ -38,6 +38,15 @@ struct Entry {
     h: u16,
     left: f32,
     top: f32,
+    /// The count ([`GlyphAtlas::take_used_area`]) the glyph was last placed in.
+    used: u64,
+}
+
+impl Entry {
+    /// Atlas area the glyph takes, the gap after it included.
+    fn area(&self) -> usize {
+        (usize::from(self.w) + 1) * (usize::from(self.h) + 1)
+    }
 }
 
 /// One glyph to draw: a rectangle in logical points and its texture coordinates (0..1).
@@ -88,6 +97,8 @@ pub struct GlyphAtlas {
     dirty: Option<[usize; 4]>,
     generation: u64,
     rasters: u64,
+    /// The current count of [`Self::take_used_area`], and the area it has so far.
+    used: (u64, usize),
 }
 
 impl Default for GlyphAtlas {
@@ -210,6 +221,7 @@ impl GlyphAtlas {
             dirty: None,
             generation: 0,
             rasters: 0,
+            used: (0, 0),
         }
     }
 
@@ -234,6 +246,15 @@ impl GlyphAtlas {
             side: self.side,
             generation: self.generation,
         }
+    }
+
+    /// Atlas area (device px², gaps included) of the distinct glyphs placed since the last
+    /// call: what a frame's text needs of the atlas, when called once a frame. A glyph placed
+    /// again after [`Self::start_over`] counts again.
+    pub fn take_used_area(&mut self) -> usize {
+        let (count, area) = self.used;
+        self.used = (count + 1, 0);
+        area
     }
 
     /// The region changed since the last call, `[x0, y0, x1, y1]`, for a partial upload.
@@ -296,8 +317,15 @@ impl GlyphAtlas {
     }
 
     fn entry(&mut self, key: GlyphKey) -> Slot {
-        if let Some(e) = self.map.get(&key) {
-            return e.map_or(Slot::Blank, Slot::Ink);
+        if let Some(slot) = self.map.get_mut(&key) {
+            let Some(e) = slot else {
+                return Slot::Blank;
+            };
+            if e.used != self.used.0 {
+                e.used = self.used.0;
+                self.used.1 += e.area();
+            }
+            return Slot::Ink(*e);
         }
         self.rasters += 1;
         let Some((cov, w, h, left, top)) = raster(key) else {
@@ -321,7 +349,9 @@ impl GlyphAtlas {
             h: h as u16,
             left,
             top,
+            used: self.used.0,
         };
+        self.used.1 += e.area();
         self.map.insert(key, Some(e));
         Slot::Ink(e)
     }
@@ -589,6 +619,24 @@ mod tests {
         let after = atlas.quads(&grace, [0.0, 0.0], 2.0);
         assert_eq!(at(&after, atlas.side() as f32), texels);
         assert!(after.iter().all(|q| ink(&atlas, q) > 0));
+    }
+
+    #[test]
+    fn used_area_counts_each_glyph_placed_since_the_last_take_once() {
+        let mut atlas = GlyphAtlas::new();
+        let grace = block("Grace", false);
+        atlas.quads(&grace, [0.0, 0.0], 2.0);
+        let once = atlas.take_used_area();
+        assert!(once > 0);
+        // Drawn twice in one count, or again in the next with nothing rastered: the same.
+        atlas.quads(&grace, [0.0, 0.0], 2.0);
+        atlas.quads(&grace, [0.0, 0.0], 2.0);
+        assert_eq!(atlas.take_used_area(), once);
+        assert_eq!(atlas.take_used_area(), 0);
+        // Half the device scale: about a quarter of the area, never more.
+        atlas.quads(&grace, [0.0, 0.0], 1.0);
+        let half = atlas.take_used_area();
+        assert!(half * 2 < once && once <= half * 4, "{half} vs {once}");
     }
 
     #[test]

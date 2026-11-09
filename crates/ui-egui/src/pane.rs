@@ -25,13 +25,23 @@ const SCROLLBAR: f32 = size::SCROLLBAR;
 /// budget (`max_text_gpu_mib` in `xtask/bench.toml`).
 pub const TEXT_GPU_BUDGET: usize = 32 * 1024 * 1024;
 
+/// How many times glyphs may be rastered at half the device scale, when more distinct
+/// glyphs are in view than [`TEXT_GPU_BUDGET`] holds at full scale: down to an eighth.
+const MAX_COARSE: u32 = 3;
+
+/// GPU memory of the largest atlas texture.
+const FULL_TEXTURE: usize = obs_render::MAX_SIZE * obs_render::MAX_SIZE * 4;
+
 /// The atlas plus its GPU copy.
 ///
 /// Every draw pairs its quads with the texture as it is right after they are made
 /// ([`Self::runs`]): a later draw in the same pass that grows the atlas or starts it over gets
 /// a texture of its own, and the one the earlier quads sample stays until that pass has been
 /// painted (#255). Those textures together stay within [`TEXT_GPU_BUDGET`]: a start-over that
-/// would go past it waits for the next frame.
+/// would go past it waits for the next frame. When the glyphs in view need more than the
+/// budget's textures hold, later frames raster them coarser, so every glyph in view is drawn
+/// again within a few frames; once they would fit at the finer scale with room to spare, it
+/// goes back to it.
 ///
 /// Passes are counted in the root viewport's, as floating windows are immediate viewports drawn
 /// within its pass with this same atlas.
@@ -44,8 +54,12 @@ pub struct AtlasTexture {
     /// until it is painted. In a later pass they are spare, emptied to one pixel (so the GPU
     /// lets go of them before it paints again) and filled again rather than a texture made.
     retired: Vec<(u64, TextureHandle)>,
-    /// The root frame in which a draw last left glyphs for the next frame.
+    /// The root pass in which a draw last left glyphs for a later frame.
     deferred: Option<u64>,
+    /// The last root pass that drew.
+    last_pass: Option<u64>,
+    /// Glyphs raster at the device scale halved this many times (up to [`MAX_COARSE`]).
+    coarse: u32,
 }
 
 impl Default for AtlasTexture {
@@ -56,6 +70,8 @@ impl Default for AtlasTexture {
             generation: u64::MAX,
             retired: Vec::new(),
             deferred: None,
+            last_pass: None,
+            coarse: 0,
         }
     }
 }
@@ -158,21 +174,53 @@ impl AtlasTexture {
         self.gpu_bytes(root_pass(ctx)) + side * side * 4 <= TEXT_GPU_BUDGET
     }
 
-    /// Glyphs left for the next frame: ask for it, unless the frame before left some too
-    /// (more glyphs in view than the budget holds; another frame would leave the same).
+    /// Glyphs left for a later frame (once a pass). When the textures this pass samples are
+    /// as many full-size ones as the budget holds, the glyphs in view need more than it: later
+    /// frames raster them coarser, and the next is asked for. Otherwise (the pass grew the
+    /// atlas first), or at the coarsest scale, the next frame is asked for unless the pass
+    /// before left glyphs too (another would leave the same).
     fn defer(&mut self, ctx: &egui::Context) {
-        let frame = ctx.cumulative_frame_nr_for(egui::ViewportId::ROOT);
-        if self.deferred.is_none_or(|d| d + 1 < frame) {
+        let pass = root_pass(ctx);
+        if self.deferred == Some(pass) {
+            return;
+        }
+        let again = self.deferred.is_some_and(|d| d + 1 == pass);
+        self.deferred = Some(pass);
+        let full = (self.retired.iter())
+            .filter(|(at, h)| *at == pass && h.byte_size() == FULL_TEXTURE)
+            .count()
+            + 1;
+        let over = (full + 1) * FULL_TEXTURE > TEXT_GPU_BUDGET;
+        if over && self.coarse < MAX_COARSE {
+            self.coarse += 1;
+        } else if again {
+            return;
+        }
+        ctx.request_repaint();
+        ctx.request_repaint_of(egui::ViewportId::ROOT);
+    }
+
+    /// At a pass's first draw: back to a finer scale if the last pass's glyphs, rastered at
+    /// it (at most four times the area), would take a quarter of the largest atlas or less.
+    /// That is far from the two full atlases that made it coarser, so it does not go back and
+    /// forth.
+    fn next_pass(&mut self, ctx: &egui::Context, pass: u64) {
+        if self.last_pass == Some(pass) {
+            return;
+        }
+        self.last_pass = Some(pass);
+        let used = self.atlas.take_used_area();
+        if self.coarse > 0 && used * 4 <= obs_render::MAX_SIZE * obs_render::MAX_SIZE / 4 {
+            self.coarse -= 1;
             ctx.request_repaint();
             ctx.request_repaint_of(egui::ViewportId::ROOT);
         }
-        self.deferred = Some(frame);
     }
 
     /// The glyphs of `laid`, its top-left at `origin`, on the lines that reach into `visible`,
     /// each run with the texture it samples. More glyphs than the atlas holds at once come in
     /// more than one run: the atlas starts over between them, as far as [`TEXT_GPU_BUDGET`]
-    /// allows in this pass. The glyphs it does not allow are left to the next frame.
+    /// allows in this pass. The glyphs it does not allow are left to a later frame ([`Self`]).
     pub fn runs(
         &mut self,
         ctx: &egui::Context,
@@ -180,7 +228,8 @@ impl AtlasTexture {
         origin: Pos2,
         visible: Rect,
     ) -> Vec<GlyphRun> {
-        let scale = ctx.pixels_per_point();
+        self.next_pass(ctx, root_pass(ctx));
+        let scale = ctx.pixels_per_point() / (1u32 << self.coarse) as f32;
         let (origin, visible) = ([origin.x, origin.y], [visible.top(), visible.bottom()]);
         let mut runs = Vec::new();
         let (mut from, mut fresh) = (0, false);
