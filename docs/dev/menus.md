@@ -14,7 +14,7 @@ Layouts drop-downs are what they were before the audit.
 | Go | moving in the focused Tab (Back, Forward, chapter, entry, parallel resource), Home, the Command box |
 | Tools | the Guides, then the Tools |
 | Window | Reopen closed Tab and Recently closed, Close Tab and Close Panel, moving between Tabs, Panels and areas, Floating windows |
-| Help | All commands, Keyboard shortcuts, Report a problem… and Open log folder, Credits, About Open Bible |
+| Help | All commands, Keyboard shortcuts, Report a problem…, Save diagnostics as zip… and Open log folder, Credits, About Open Bible |
 
 Rarely used items are grouped: View's choices (Theme, Page tone …) and Window → Go to Panel
 (Panels 1–9) are submenus. A menu command that needs a Tab (Close Tab, Back, Find in
@@ -141,6 +141,7 @@ Checked for every command's label and every menu, choice and submenu title
 | — | | |
 | Show Highlights | `view.highlights` |  |
 | Highlight styles | `view.highlight_styles` |  |
+| Visual filters | `view.visual_filters` |  |
 | Notebooks in text ▸ | `notebook.show_in_text` (one per Notebook) | |
 | — | | |
 | Toolbar position ▸ | `view.toolbar_position` (one per choice) | |
@@ -221,6 +222,7 @@ Checked for every command's label and every menu, choice and submenu title
 | Keyboard shortcuts | `help.keyboard_shortcuts` |  |
 | — | | |
 | Report a problem… | `help.report_problem` |  |
+| Save diagnostics as zip… | `help.save_diagnostics_zip` |  |
 | Open log folder | `help.open_log_folder` |  |
 | — | | |
 | Credits | `help.credits` |  |

@@ -1,4 +1,4 @@
-//! View → Visual filters… (#211): the user's Visual filters, each a Search query (and/or text
+//! View → Visual filters (#211): the user's Visual filters, each a Search query (and/or text
 //! the Resource marks) with the style its matches are painted in.
 //!
 //! - Each filter is a row: its swatch, name, what it finds, whether it is on in all Tabs, and
@@ -436,7 +436,7 @@ impl State {
             ui.label("No Visual filters yet.");
         }
         ui.separator();
-        if ui.button("Visual filters…").clicked() {
+        if ui.button("Visual filters").clicked() {
             run = Some(("view.visual_filters", json!({})));
             ui.close();
         }
