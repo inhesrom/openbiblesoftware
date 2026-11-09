@@ -25,6 +25,7 @@ use serde_json::json;
 
 use super::State;
 use crate::theme;
+use crate::tokens::{inset, size, space};
 
 /// Starts the updated app (its executable) as a new process.
 pub(crate) type Relauncher = Arc<dyn Fn(&Path) -> Result<(), String> + Send + Sync>;
@@ -209,10 +210,10 @@ impl State {
         if updates.first_run_note() && !updates.notice_shown() {
             egui::Area::new(egui::Id::unique("update-first-run"))
                 .order(egui::Order::Foreground)
-                .anchor(egui::Align2::RIGHT_BOTTOM, vec2(-16.0, -16.0))
+                .anchor(egui::Align2::RIGHT_BOTTOM, vec2(-space::XL, -space::XL))
                 .show(ctx, |ui| {
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
-                        ui.set_max_width(380.0);
+                        ui.set_max_width(size::POPOVER);
                         ui.label(
                             RichText::new("Update checks")
                                 .strong()
@@ -266,10 +267,10 @@ impl State {
                 .id(egui::Id::unique("update-notice"))
                 .collapsible(false)
                 .resizable(false)
-                .default_width(440.0)
-                .anchor(egui::Align2::RIGHT_BOTTOM, vec2(-16.0, -16.0))
+                .default_width(size::PROSE)
+                .anchor(egui::Align2::RIGHT_BOTTOM, vec2(-space::XL, -space::XL))
                 .show(ctx, |ui| {
-                    ui.set_max_width(440.0);
+                    ui.set_max_width(size::PROSE);
                     match &status {
                         UpdateStatus::Checking { .. } => {
                             ui.horizontal(|ui| {
@@ -392,10 +393,10 @@ fn available_ui(ui: &mut egui::Ui, release: &Release, current: &str, max_notes: 
     );
     ui.label(RichText::new(format!("You have {current}.")).color(theme::c().muted));
     if !release.notes_blocks.is_empty() {
-        ui.add_space(4.0);
+        ui.add_space(space::XS);
         egui::Frame::new()
             .fill(theme::c().field)
-            .inner_margin(egui::Margin::same(8))
+            .inner_margin(inset::POPOVER)
             .show(ui, |ui| {
                 egui::ScrollArea::vertical()
                     .id_salt("update-notes")
@@ -405,7 +406,7 @@ fn available_ui(ui: &mut egui::Ui, release: &Release, current: &str, max_notes: 
                         notes_ui(ui, &release.notes_blocks);
                     });
             });
-        ui.add_space(4.0);
+        ui.add_space(space::XS);
     }
 }
 

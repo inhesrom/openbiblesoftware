@@ -652,6 +652,30 @@ const ALLOWED: &[(&str, &str, &str, &str)] = &[
         "a truncation width is never zero",
     ),
     (
+        "shell/update_notice.rs",
+        "format!(\"{:.1} MB\", bytes as f64 / 1_000_000.0)",
+        "1_000_000.0",
+        "bytes in a megabyte, for a download's size",
+    ),
+    (
+        "shell/update_notice.rs",
+        "let max_notes = ctx.content_rect().height() * 0.35;",
+        "0.35",
+        "release notes scroll past this share of the window's height",
+    ),
+    (
+        "steps.rs",
+        "pub(crate) const SETTLE_SECS: f64 = 0.4;",
+        "0.4",
+        "seconds an automation step's conditions hold before it runs",
+    ),
+    (
+        "steps.rs",
+        "(Some(a), Some(b)) => (a.min - b.min).length() < 0.5 && (a.max - b.max).length() < 0.5,",
+        "0.5",
+        "a tolerance: a button that moved less than this has settled",
+    ),
+    (
         "shell.rs",
         "pub(crate) const HOVER_DWELL_SECS: f64 = 0.15;",
         "0.15",
