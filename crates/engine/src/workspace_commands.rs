@@ -59,6 +59,7 @@ impl MenuItem {
             MenuItem::Command(id) | MenuItem::Choice { command: id, .. } => vec![*id],
             MenuItem::Notebooks => vec!["notebook.show_in_text"],
             MenuItem::RecentlyClosed => vec!["tab.reopen_closed"],
+            MenuItem::ReadingLayout => vec!["tab.reading_layout"],
             MenuItem::Favorites => vec!["favorite.open"],
             MenuItem::Layouts => vec!["layout.restore", "layout.rename", "layout.delete"],
             MenuItem::Resources => vec!["resource.open"],
