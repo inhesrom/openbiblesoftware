@@ -73,6 +73,15 @@ impl State {
 }
 
 impl Shell {
+    /// The keyboard was sent to the main window's Command box or Launchers: the main window is
+    /// brought to the front, and the Tab focused in a floating OS window, the one they act on,
+    /// stays focused when it gains the keyboard.
+    pub(super) fn raise_main_window(&mut self) {
+        self.os_focus_to = Some(None);
+        self.main_raised_keeping =
+            (self.st.session.workspace.focused()).filter(|t| self.keys_window(*t).is_some());
+    }
+
     /// The keyboard was sent to a Tab (Ctrl+1…9, the Tab switcher), or to the main window's
     /// Command box or Launchers: when floating windows are OS windows of their own, the window
     /// showing it is brought to the front and takes the keyboard, so the keys typed next reach
@@ -86,6 +95,12 @@ impl Shell {
         // keyboard already.
         if !self.floating.iter().any(|d| d.native) {
             return;
+        }
+        // The main window in front already gains no keyboard: nothing is kept for it.
+        if window.is_none()
+            && ctx.input_for(egui::ViewportId::ROOT, |i| i.viewport().focused) == Some(true)
+        {
+            self.main_raised_keeping = None;
         }
         let viewport = match window {
             None => egui::ViewportId::ROOT,

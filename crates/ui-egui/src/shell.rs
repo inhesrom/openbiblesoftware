@@ -316,6 +316,10 @@ pub struct Shell {
     /// window's for its Command box or Launchers (#256). Its OS window is brought to the front
     /// at the end of the frame.
     os_focus_to: Option<Option<obs_engine::WindowId>>,
+    /// The Tab in a floating OS window that was focused when the main window was brought to
+    /// the front for its Command box or Launchers: the main window gaining the keyboard leaves
+    /// it focused, the Tab they act on (#256).
+    main_raised_keeping: Option<TabId>,
     /// The widget with the keyboard in each window (none: the main one) when its keys were
     /// last read: a new one inside a Panel focuses that Panel's Tab (#256).
     keyboard_seen: BTreeMap<Option<obs_engine::WindowId>, Option<egui::Id>>,
@@ -395,6 +399,7 @@ impl Shell {
             switcher: None,
             next_area: None,
             os_focus_to: None,
+            main_raised_keeping: None,
             keyboard_seen: BTreeMap::new(),
             dock_layer: None,
             copy_out: None,
@@ -647,12 +652,12 @@ impl Shell {
                 Effect::FocusCommandBox => {
                     self.st.toolbar.close();
                     self.st.command_box.focus = true;
-                    self.os_focus_to = Some(None);
+                    self.raise_main_window();
                 }
                 Effect::ListCommands => {
                     self.st.toolbar.close();
                     self.st.command_box.list_commands();
-                    self.os_focus_to = Some(None);
+                    self.raise_main_window();
                 }
                 Effect::ConfirmSetting { tab, setting } => self.st.confirm_setting(tab, setting),
                 Effect::CopyText(text) => {
@@ -661,7 +666,7 @@ impl Shell {
                 }
                 Effect::OpenLauncher(which) => {
                     self.st.toolbar.toggle(which);
-                    self.os_focus_to = Some(None);
+                    self.raise_main_window();
                 }
                 Effect::Find { tab, text } => self.st.open_find(tab, text),
                 Effect::FindStep { tab, forward } => self.st.step_find(tab, forward),
@@ -1166,7 +1171,14 @@ impl Shell {
         let gained =
             ui.input(|i| (i.events.iter()).any(|e| matches!(e, egui::Event::WindowFocused(true))));
         if gained {
-            self.focus_here(focused);
+            // Brought to the front for the Command box or a Launcher: they act on the Tab
+            // focused when they were asked for, in the floating window they were asked from.
+            let kept = self.main_raised_keeping.take();
+            let keep =
+                window.is_none() && kept.is_some() && kept == self.st.session.workspace.focused();
+            if !keep {
+                self.focus_here(focused);
+            }
         }
         // A key being recorded in the Keyboard shortcuts Tab (#177) runs nothing in its window.
         if self.st.keys_ui.is_recording_in(ui) {

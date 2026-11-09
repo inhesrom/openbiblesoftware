@@ -186,20 +186,30 @@ fn a_jump_into_a_bible_never_drawn_can_go_back() {
 }
 
 /// AUD-UI-SHELL-3: Ctrl+L typed in a floating OS window brings the main window, where the
-/// Command box is, to the front; what is typed next goes into the Command box.
+/// Command box is, to the front; what is typed next goes into the Command box, and the Passage
+/// entered goes to the Tab Ctrl+L was typed on, not to the main window's (PR #284 review).
 #[test]
 fn ctrl_l_in_a_floating_os_window_brings_the_main_window_to_the_front() {
     let mut h = harness();
     h.native_windows();
-    h.shell.run("resource.open", &json!({ "id": "heb-test" }));
-    let heb = h.tab_id("HEB");
-    h.shell.run("tab.float", &json!({ "tab": heb.0 }));
+    let tb = h.tab_id("TB");
+    let p = h.tab_at("TB");
+    h.click(p);
+    assert_eq!(focused_tab(&h), Some(tb));
+    let tb_at = at(&h, tb);
+    h.shell.run("resource.open", &json!({ "id": "heb-num" }));
+    let hnum = h.tab_id("HNUM");
+    // Out of TB's Link set, so only the Tab the Passage goes to moves.
+    h.shell
+        .run("tab.link", &json!({ "tab": hnum.0, "set": "" }))
+        .unwrap();
+    h.shell.run("tab.float", &json!({ "tab": hnum.0 }));
     h.frames(3);
     let w = h.shell.floating[0].id;
     h.root_info.focused = Some(true);
-    // Ctrl+3: HEB's Panel, in the floating window, which takes the keyboard.
+    // Ctrl+3: HNUM's Panel, in the floating window, which takes the keyboard.
     key(&mut h, Key::Num3, CTRL);
-    assert_eq!(focused_tab(&h), Some(heb));
+    assert_eq!(focused_tab(&h), Some(hnum));
     assert_eq!(
         h.root_info.focused,
         Some(false),
@@ -211,9 +221,18 @@ fn ctrl_l_in_a_floating_os_window_brings_the_main_window_to_the_front() {
         Some(true),
         "the main window came to the front"
     );
-    h.events.push(Event::Text("Gen 31:55".into()));
+    assert_eq!(
+        focused_tab(&h),
+        Some(hnum),
+        "still the Tab Ctrl+L was typed on"
+    );
+    h.events.push(Event::Text("Gen 33:4".into()));
     h.frames(2);
-    assert_eq!(h.shell.st.command_box.text, "Gen 31:55");
+    assert_eq!(h.shell.st.command_box.text, "Gen 33:4");
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    h.frames(2);
+    assert_eq!(at(&h, hnum), Some(ge(33, 4)), "HNUM went to the Passage");
+    assert_eq!(at(&h, tb), tb_at, "TB, the main window's Tab, stayed");
 }
 
 /// WORKSPACE-MAC-2: at a Larger Interface size, » opens its own list of the Launchers it
@@ -227,8 +246,10 @@ fn more_launchers_lists_the_launchers_it_holds_at_every_interface_size() {
             .run("view.interface_size", &json!({ "value": size }));
         h.frames(4);
         let tb = &h.shell.st.toolbar;
-        let Some(more) = tb.overflow else {
-            continue;
+        let more = match (tb.overflow, size) {
+            (Some(more), _) => more,
+            (None, "default") => continue,
+            (None, _) => panic!("{size}: no » at 1100 points wide"),
         };
         let rest: Vec<Launcher> = (Launcher::ALL.into_iter())
             .filter(|w| tb.buttons.get(w) == Some(&more))
