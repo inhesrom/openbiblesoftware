@@ -44,8 +44,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use obs_model::{
-    Key, KeyEntry, Manifest, Resource, ResourceType, SpanKind, TextUnit, UnitId, searchable_text,
-    tokenize,
+    Key, KeyEntry, Manifest, Resource, ResourceType, SpanKind, TextUnit, UnitId, overlaps_heading,
+    searchable_text, tokenize,
 };
 use obs_scripture::{Passage, Verse};
 use obs_search::{
@@ -285,7 +285,8 @@ impl<'a> UnitMarks<'a> {
     }
 
     /// The `strong`, `lemma` and `morph` fields of the Tagged words that start inside
-    /// `range`.
+    /// `range`, less those in `headings` (a Bible Verse's, left out as its text leaves them:
+    /// [`obs_model::overlaps_heading`]).
     ///
     /// A `lemma:` term means words of one morpheme part's Lemma, anywhere in it, as the
     /// highlighter reads it (#257). So in `lemma` each part's Lemma ends at a
@@ -297,6 +298,7 @@ impl<'a> UnitMarks<'a> {
     fn fields(
         &self,
         range: std::ops::Range<usize>,
+        headings: &[std::ops::Range<usize>],
         codes: &mut MorphCodes,
     ) -> (String, String, String) {
         let mut strong = String::new();
@@ -309,9 +311,12 @@ impl<'a> UnitMarks<'a> {
             out.push_str(word);
         };
         let first = self.tagged.partition_point(|t| t.0 < range.start);
-        for (s, _, parts) in &self.tagged[first..] {
+        for (s, e, parts) in &self.tagged[first..] {
             if *s >= range.end {
                 break;
+            }
+            if overlaps_heading(headings, &(*s..*e)) {
+                continue;
             }
             for p in *parts {
                 let n = p.strongs;
@@ -399,7 +404,7 @@ fn documents(
             let range = v.range();
             let mut text = String::new();
             push_words(&unit.text, range.clone(), &m.headings, &mut text);
-            let (strong, lemma, morph) = m.fields(range, codes);
+            let (strong, lemma, morph) = m.fields(range, &m.headings, codes);
             let last = Verse::new(v.verse.book, v.verse.chapter, v.last.max(v.verse.verse));
             let doc = Doc {
                 id: i64::try_from(ordinal).unwrap_or(i64::MAX),
@@ -429,7 +434,7 @@ fn documents(
         for std::ops::Range { start: s, end: e } in unit.paragraphs() {
             let mut text = String::new();
             push_words(&unit.text, s..e, &[], &mut text);
-            let (strong, lemma, morph) = marks.fields(s..e, codes);
+            let (strong, lemma, morph) = marks.fields(s..e, &[], codes);
             if text.is_empty() && strong.is_empty() && lemma.is_empty() {
                 continue;
             }

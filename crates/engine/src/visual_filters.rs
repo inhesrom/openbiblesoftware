@@ -22,7 +22,7 @@
 //!   included. A Verse is read without its headings, as the Search index reads it
 //!   ([`obs_model::searchable_text`]). A Tagged word without the Morphology or Lemma a `@…`
 //!   or `lemma:` term asks for (KJV+Strong's tags numbers only) is reached through
-//!   **Strong's alignment** (ADR 0015): in each Verse, the words whose Strong's number is
+//!   **Strong's alignment** (ADR 0017): in each Verse, the words whose Strong's number is
 //!   that of a matching word in the same Standard Verse of the first Hebrew (Old Testament)
 //!   or Greek (New Testament) Bible in Preferred order, as the Exegetical Guide picks it. A
 //!   word with tags of its own is read by them only.
@@ -465,9 +465,7 @@ impl Document<'_> {
 
     /// Whether `bytes` (of the unit) overlap one of the headings left out of a Verse.
     fn in_heading(&self, bytes: &Range<usize>) -> bool {
-        self.skipped
-            .iter()
-            .any(|h| h.start < bytes.end && bytes.start < h.end)
+        obs_model::overlaps_heading(self.skipped, bytes)
     }
 
     /// Whether `WITHIN n verses` can join the two, as the Search index joins its documents:
@@ -498,7 +496,12 @@ impl MatchContext<'_> {
     /// aligned Bible the words lacking the tags `h` asks for that `h` marks once what they
     /// lack is taken from a word of the original-language Verse with their Strong's number.
     fn term(&mut self, h: &Highlighter, doc: &Document<'_>) -> Vec<Range<usize>> {
-        let tagged = tagged_in(self.unit, doc.range.clone());
+        // A Tagged word in one of the Verse's headings is not read, as the Search index
+        // leaves its tags out with the heading: it neither satisfies nor excludes a term.
+        let tagged: Vec<(Range<usize>, &[MorphemePart])> = tagged_in(self.unit, doc.range.clone())
+            .into_iter()
+            .filter(|(r, _)| !doc.in_heading(r))
+            .collect();
         let base = doc.range.start;
         let local = tagged
             .iter()
@@ -512,11 +515,9 @@ impl MatchContext<'_> {
         };
         // Only words without the data, and only what they lack: a word tagged as a
         // participle stays one, whatever the original-language Bible says of its Strong's
-        // number, and its own Morphology still has to meet `lemma:… @imperative`. A word in
-        // one of the Verse's headings is not read, aligned or not.
+        // number, and its own Morphology still has to meet `lemma:… @imperative`.
         let untagged: Vec<&(Range<usize>, &[MorphemePart])> = tagged
             .iter()
-            .filter(|(r, _)| !doc.in_heading(r))
             .filter(|(_, parts)| h.lacks_original_language_data(parts))
             .collect();
         if untagged.is_empty() {
@@ -600,7 +601,7 @@ impl MatchContext<'_> {
 /// Morpheme `local` of a Tagged word with what it lacks (Morphology, a Lemma) taken from
 /// `original`, a morpheme of the aligned original-language Verse with its Strong's number
 /// (base forms compared, so KJV `G4160` takes TAGNT `G4160G`'s); what `local` has stays.
-/// `None` for another number or a grammatical morpheme (ADR 0015).
+/// `None` for another number or a grammatical morpheme (ADR 0017).
 fn filled_from(local: &MorphemePart, original: &MorphemePart) -> Option<MorphemePart> {
     if local.strongs.number() >= AFFIX_NUMBERS_FROM
         || original.strongs.number() >= AFFIX_NUMBERS_FROM

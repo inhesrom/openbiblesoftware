@@ -1175,3 +1175,35 @@ fn within_verses_joins_a_mapped_verse_and_an_unmapped_one_as_search_does() {
         assert!(colour_block(&unit, &within, all, &verses).is_empty());
     }
 }
+
+/// Review of #211: a Tagged word in one of a Verse's headings is left out as Search leaves
+/// it out (its Strong's number, Lemma and Morphology with the heading's text), so it neither
+/// satisfies nor excludes a term. With the KJV's "persecute" (G1377) of 12:14 marked as a
+/// heading, `curse NOT strong:G1377` finds 12:14 in Search and the filter colours "curse".
+#[test]
+fn a_tagged_word_in_a_verses_heading_is_read_out_as_search_reads_it() {
+    let mut kjv = kjv_romans_12();
+    let unit = &mut kjv.units[0];
+    let persecute = unit.text.find("persecute").unwrap();
+    unit.spans.push(obs_model::Span {
+        start: persecute as u32,
+        end: (persecute + "persecute".len()) as u32,
+        kind: SpanKind::Heading { level: 2 },
+    });
+    let rom = |v| Verse::new(obs_scripture::Book::Romans, 12, v);
+    for (query, verses, coloured) in [
+        ("curse NOT strong:G1377", vec![rom(14)], vec!["curse"]),
+        ("curse strong:G1377", vec![], vec![]),
+        ("strong:G1377", vec![rom(13)], vec!["to"]),
+        (
+            "strong:G2672 NOT strong:G1377",
+            vec![rom(14)],
+            vec!["curse"],
+        ),
+    ] {
+        assert_eq!(search_verses(&kjv, query), verses, "Search: {query}");
+        let (found, words) = filter_verses(&kjv, query);
+        assert_eq!(found, verses, "filter: {query}");
+        assert_eq!(words, coloured, "{query}");
+    }
+}

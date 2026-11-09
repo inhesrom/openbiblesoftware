@@ -10,7 +10,7 @@
 //!   laid out again), so a scrolling frame only moves them.
 //! - A match carries its filter's [`obs_engine::StyleAppearance`]: the painter resolves its
 //!   colour from the Page tone's palette each frame, so a theme switch needs no relayout.
-//! - Strong's alignment (ADR 0015): a Bible's Tagged words without the Morphology or Lemma a
+//! - Strong's alignment (ADR 0017): a Bible's Tagged words without the Morphology or Lemma a
 //!   `@…` or `lemma:` term asks for (KJV+Strong's) take it from the first original-language
 //!   Bible in Preferred order that has each Verse ([`OriginalBible`]), loaded on the worker
 //!   the first time it is needed.
@@ -76,8 +76,9 @@ impl OriginalBible {
             .as_ref()
     }
 
-    /// The morphemes of each Tagged word of its Verses at a Standard Passage, in order: none
-    /// when it lacks the Passage or tags none of it.
+    /// The morphemes of each Tagged word of its Verses at a Standard Passage, in order, less
+    /// those in the Verses' headings (which no term reads: [`obs_model::overlaps_heading`]):
+    /// none when it lacks the Passage or tags none of it.
     fn words_at(&self, standard: Passage) -> AlignedWords {
         let Some(doc) = self.doc() else {
             return Vec::new();
@@ -90,11 +91,13 @@ impl OriginalBible {
             ) else {
                 continue;
             };
+            let headings = unit.heading_ranges();
             for s in &unit.spans {
                 if let SpanKind::TaggedWord { parts } = &s.kind
                     && v.start <= s.start
                     && s.end <= v.end
                     && !parts.is_empty()
+                    && !obs_model::overlaps_heading(&headings, &(s.start as usize..s.end as usize))
                 {
                     out.push(parts.clone());
                 }
@@ -521,6 +524,58 @@ mod tests {
         };
         assert!(count(&aligned) > 20, "{}", count(&aligned));
         assert_eq!(count(&unaligned), 0);
+    }
+
+    /// Review of #211: Strong's alignment reads the original-language Bible's Verses as a
+    /// search does, without their headings. With TAGNT's καταρᾶσθε (G2672, an imperative) of
+    /// Romans 12:14 marked as a heading, the Imperatives filter leaves it plain in TAGNT and
+    /// the KJV's "curse" (G2672) plain too.
+    #[test]
+    fn alignment_leaves_the_original_bibles_headings_out() {
+        let imperatives: Vec<VisualFilter> = obs_engine::built_in_filters()
+            .into_iter()
+            .filter(|f| f.id == "imperatives")
+            .collect();
+        let kjv = ReadingDoc::from_resource(obs_engine::testing::kjv_romans_12());
+        let words = |doc: &ReadingDoc, original: &Arc<ReadingDoc>| -> Vec<String> {
+            let source = FilterSource::new(
+                imperatives.clone(),
+                vec![],
+                vec![OriginalBible::new(
+                    StrongsLanguage::Greek,
+                    None,
+                    Some(Arc::clone(original)),
+                )],
+            );
+            (0..doc.blocks.len())
+                .flat_map(|i| block_matches(doc, i, &source))
+                .map(|(_, a, b)| doc.units[a.unit].text[a.byte..b.byte].to_string())
+                .collect()
+        };
+        let plain = Arc::new(ReadingDoc::from_resource(
+            obs_engine::testing::tagnt_romans_12(),
+        ));
+        assert!(words(&kjv, &plain).contains(&"curse".to_string()));
+        assert!(words(&plain, &plain).contains(&"καταρᾶσθε".to_string()));
+
+        let mut tagnt = obs_engine::testing::tagnt_romans_12();
+        let unit = &mut tagnt.units[0];
+        let at = unit.text.find("καταρᾶσθε").unwrap();
+        unit.spans.push(obs_model::Span {
+            start: at as u32,
+            end: (at + "καταρᾶσθε".len()) as u32,
+            kind: SpanKind::Heading { level: 2 },
+        });
+        let headed = Arc::new(ReadingDoc::from_resource(tagnt));
+        let greek = words(&headed, &headed);
+        assert!(!greek.contains(&"καταρᾶσθε".to_string()), "{greek:?}");
+        assert!(greek.contains(&"εὐλογεῖτε".to_string()), "{greek:?}");
+        let english = words(&kjv, &headed);
+        assert!(
+            !english.contains(&"curse".to_string()),
+            "the heading's G2672 aligns nothing: {english:?}"
+        );
+        assert!(english.contains(&"bless".to_string()), "{english:?}");
     }
 
     /// Review of #211: a relayout (new width, Text settings) gives every block a new layout, and

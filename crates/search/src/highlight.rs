@@ -181,7 +181,7 @@ impl Highlighter {
 
     /// Whether a Tagged word with morphemes `parts` lacks what it asks for: Morphology for a
     /// `@…` term, a Lemma for a `lemma:` term (or a `@…` with one). Such a word cannot be
-    /// read by its own tags (Visual filters then take Strong's alignment, ADR 0015).
+    /// read by its own tags (Visual filters then take Strong's alignment, ADR 0017).
     pub fn lacks_original_language_data(&self, parts: &[MorphemePart]) -> bool {
         let has = |field: fn(&MorphemePart) -> Option<&str>| {
             parts

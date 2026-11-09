@@ -62,5 +62,5 @@ pub use translit::{
 pub use translit_academic::{transliterate_academic, without_cantillation};
 pub use unit::{
     BibleVerse, MorphemePart, NoteKind, ParaStyle, Span, SpanKind, TextAccumulator, TextUnit,
-    UnitId, UnitIdError, UnitKind,
+    UnitId, UnitIdError, UnitKind, overlaps_heading,
 };
