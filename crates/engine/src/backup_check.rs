@@ -6,7 +6,9 @@
 //! location, and the settings it keeps as JSON ([`JSON_SETTINGS`]). The app reads each of
 //! those leniently at launch: an unreadable one is left out or back at its default, and so is
 //! an unreadable field of a setting read field by field (a View setting, a Keyboard
-//! shortcut, an Update check flag), a repeated or unknown card of Home or section of a Guide
+//! shortcut, an Update check flag), a View Text size or Line spacing beyond what the app
+//! allows (it would be clamped), a Search history longer than the app keeps (its oldest
+//! entries would be dropped), a repeated or unknown card of Home or section of a Guide
 //! arrangement, and an Import report filed under another Resource's key. So a restore checks
 //! them first, and a Backup holding one the app would not keep is refused, naming it, rather
 //! than silently losing it after the live data is gone.
@@ -17,7 +19,10 @@
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::appearance::{FontSlot, InterfaceSize, PageTone, Theme, VERSE_NUMBER_STYLES};
+use crate::appearance::{
+    FontSlot, InterfaceSize, LINE_SPACING_MAX, LINE_SPACING_MIN, PageTone, TEXT_SIZE_MAX, Theme,
+    VERSE_NUMBER_STYLES,
+};
 use crate::favorites::TabLocation;
 use crate::persist::{UserData, WorkspaceSnapshot};
 use crate::toolbar::Launcher;
@@ -77,7 +82,9 @@ fn is_number(v: &Value) -> bool {
 }
 
 /// The View settings, as `appearance::apply_json` reads them, with the records from #37 (a
-/// `dark_page` flag and a boolean `verse_numbers`).
+/// `dark_page` flag and a boolean `verse_numbers`). A Text size above the maximum or a Line
+/// spacing outside its range would be clamped, so is refused; a Text size below the minimum
+/// is read, since the app resets it with a notice (#241).
 fn reads_view(_key: &str, json: &str) -> bool {
     object_with(
         json,
@@ -90,9 +97,14 @@ fn reads_view(_key: &str, json: &str) -> bool {
             ("interface_size", |v| {
                 v.as_str().and_then(InterfaceSize::from_id).is_some()
             }),
-            ("text_size", is_number),
+            ("text_size", |v| {
+                v.as_f64().is_some_and(|s| s as f32 <= TEXT_SIZE_MAX)
+            }),
             ("text_size_default", is_number),
-            ("line_spacing", is_number),
+            ("line_spacing", |v| {
+                v.as_f64()
+                    .is_some_and(|s| (LINE_SPACING_MIN..=LINE_SPACING_MAX).contains(&(s as f32)))
+            }),
             ("red_letter", is_bool),
             ("highlights", is_bool),
             ("reduce_motion", is_bool),
@@ -244,7 +256,11 @@ pub(crate) const JSON_SETTINGS: &[JsonSetting] = &[
     JsonSetting {
         key: crate::saved_searches::HISTORY_PREF,
         what: "Search history",
-        reads: reads::<Vec<crate::saved_searches::SearchHistoryEntry>>,
+        // The loader keeps the newest `SEARCH_HISTORY_LIMIT` entries.
+        reads: |_, json| {
+            serde_json::from_str::<Vec<crate::saved_searches::SearchHistoryEntry>>(json)
+                .is_ok_and(|h| h.len() <= crate::saved_searches::SEARCH_HISTORY_LIMIT)
+        },
     },
     JsonSetting {
         key: crate::bible_search::RECENT_PREF_PREFIX,

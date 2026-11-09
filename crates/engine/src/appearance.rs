@@ -177,6 +177,10 @@ pub const TEXT_SIZE_DEFAULT: f32 = TextSettings::DEFAULT_SIZE;
 /// it, and any View change saved the size too, so a size equal to it was not chosen.
 const TEXT_SIZE_OLD_DEFAULT: f32 = 17.0;
 
+/// The line spacing a saved View setting may hold; one outside is clamped on load.
+pub(crate) const LINE_SPACING_MIN: f32 = 1.0;
+pub(crate) const LINE_SPACING_MAX: f32 = 2.0;
+
 /// Line spacing choices, as multiples of the tallest font on a line.
 pub const LINE_SPACINGS: [(&str, &str, f32); 4] = [
     ("compact", "Compact", 1.1),
@@ -412,7 +416,7 @@ pub(crate) fn apply_json(
         };
     }
     if let Some(ls) = v["line_spacing"].as_f64() {
-        t.line_spacing = (ls as f32).clamp(1.0, 2.0);
+        t.line_spacing = (ls as f32).clamp(LINE_SPACING_MIN, LINE_SPACING_MAX);
     }
     if let Some(b) = v["red_letter"].as_bool() {
         t.red_letter = b;

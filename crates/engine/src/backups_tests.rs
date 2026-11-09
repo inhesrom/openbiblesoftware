@@ -788,9 +788,83 @@ fn field_by_field_settings_refuse_unreadable_fields_and_read_older_records() {
         ("key_bindings", r#"{"annotation.note":"Ctrl+Nowhere"}"#),
         ("updates", r#"{"auto_check":"false"}"#),
         ("updates", r#"{"skipped":1}"#),
+        ("view", r#"{"text_size":41}"#),
+        ("view", r#"{"line_spacing":0.9}"#),
+        ("view", r#"{"line_spacing":2.1}"#),
     ] {
         assert!(!reads(key, json), "{key} {json}");
     }
+}
+
+/// #258: a View setting whose Text size or Line spacing the loader would clamp, and a Search
+/// history longer than the app keeps (the loader would drop the oldest), are refused by the
+/// preview and by restore before any Safety backup; the limits themselves, a Text size below
+/// the minimum (reset with a notice, #241) and a pre-#241 default size still read.
+#[test]
+fn a_backup_with_view_values_or_history_the_loaders_would_change_is_refused() {
+    let reads = |key: &str, json: &str| {
+        let setting = crate::backup_check::JSON_SETTINGS
+            .iter()
+            .find(|j| j.names(key))
+            .unwrap();
+        (setting.reads)(key, json)
+    };
+    let history = |n: usize| {
+        let entries: Vec<Value> = (0..n)
+            .map(
+                |i| json!({ "search": { "mode": "bible", "query": format!("love {i}") }, "at": i }),
+            )
+            .collect();
+        let json = serde_json::to_string(&entries).unwrap();
+        // Each entry is one the loader reads.
+        let read: Vec<SearchHistoryEntry> = serde_json::from_str(&json).unwrap();
+        assert_eq!(read.len(), n);
+        json
+    };
+    for (key, json) in [
+        ("view", r#"{"text_size":40,"line_spacing":2}"#.to_string()),
+        ("view", r#"{"text_size":8,"line_spacing":1}"#.to_string()),
+        ("view", r#"{"text_size":17}"#.to_string()),
+        ("search.history", history(SEARCH_HISTORY_LIMIT)),
+    ] {
+        assert!(reads(key, &json), "{key} {json}");
+    }
+
+    let f = Fixture::new("changed-values");
+    let mut s = f.session();
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
+    let backup = f.file("damaged.obsbackup");
+    let too_long = history(SEARCH_HISTORY_LIMIT + 1);
+    damaged_copy(&f, &good, &backup, |db| {
+        db.set_preference("view", r#"{"text_size":999,"line_spacing":9}"#)
+            .unwrap();
+        db.set_preference("search.history", &too_long).unwrap();
+    });
+    s.run(
+        "annotation.note",
+        &json!({ "body": "made after the backup" }),
+    )
+    .unwrap();
+    let before = dump(&s);
+
+    let refused = s.restore_preview(&backup).unwrap_err();
+    for named in [
+        "the setting `view` (View settings",
+        "the setting `search.history` (Search history)",
+        "Nothing was changed",
+    ] {
+        assert!(refused.contains(named), "{named}: {refused}");
+    }
+    let err = s.run("data.restore", &path(&backup)).unwrap_err();
+    assert!(err.to_string().contains("(Search history)"), "{err}");
+    assert_eq!(dump(&s), before);
+    assert!(s.last_restore().is_none());
+    assert!(
+        !s.kept_backups()
+            .iter()
+            .any(|b| b.kind == BackupKind::Safety)
+    );
 }
 
 /// Everything the app itself writes passes the check: a Backup of a Session that has used
