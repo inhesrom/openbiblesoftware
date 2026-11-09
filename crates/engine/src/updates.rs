@@ -17,7 +17,7 @@
 //!   and unpacked beside the installed copy ([`stage_update`]). Only then, on the UI thread, a
 //!   Before-update backup of the User database is taken and the new files are renamed into
 //!   place ([`swap_in`]); the old ones wait in [`UPDATE_DIR`] until the next launch removes
-//!   them ([`clean_up_update_folder`]). Restart now relaunches the new executable. Any
+//!   them ([`clean_up_update_folder_at_launch`]). Restart now relaunches the new executable. Any
 //!   failure leaves the installed copy as it was and says why in plain words
 //!   ([`UpdateError::message`]), with the download page as the way on.
 //! - Only a Release archive install ([`INSTALL_MARKER`] beside the executable) can replace
@@ -699,6 +699,7 @@ impl Install {
 /// with the app's executable in it.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn stage_update(install: &Install, name: &str, bytes: &[u8]) -> Result<PathBuf, UpdateError> {
+    let _folder = lock_update_folder();
     let work = install.dir.join(UPDATE_DIR);
     let failed = |e: std::io::Error| match e.kind() {
         std::io::ErrorKind::PermissionDenied => UpdateError::NotWritable(install.dir.clone()),
@@ -799,6 +800,7 @@ fn unpack_zip(bytes: &[u8], dest: &Path) -> Result<(), UpdateError> {
 /// it). On any failure everything moved so far is moved back. Returns the new executable.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn swap_in(install: &Install, staged: &Path) -> Result<PathBuf, UpdateError> {
+    let _folder = lock_update_folder();
     let old = install.dir.join(UPDATE_DIR).join("old");
     let io = |e: std::io::Error| match e.kind() {
         std::io::ErrorKind::PermissionDenied => UpdateError::NotWritable(install.dir.clone()),
@@ -864,18 +866,89 @@ pub fn swap_in(install: &Install, staged: &Path) -> Result<PathBuf, UpdateError>
     let exe = install
         .dir
         .join(install.exe.file_name().unwrap_or_default());
-    log::info!("update installed; the replaced files wait for the next launch to remove them");
+    log::info!(
+        "update installed; the replaced files (the running executable among them) wait in {} \
+         for the next launch to remove them",
+        old.display()
+    );
     Ok(exe)
 }
 
 /// Remove what an update left beside the executable in `dir`: the replaced files (on
-/// Windows the old executable, which could not be deleted while it ran) and an unpacked
-/// download that was never installed. Called at launch, off the UI thread. Errors are
-/// ignored: whatever is still in use goes at a later launch. After a failed update that
-/// could not put everything back ([`ROLLBACK_INCOMPLETE`]) the replaced files in `old/` are
-/// kept; only the unpacked download goes.
+/// Windows the old executable, which cannot be deleted while it runs) and an unpacked
+/// download that was never installed. One try; whatever is still in use stays for a later
+/// one. After a failed update that could not put everything back ([`ROLLBACK_INCOMPLETE`])
+/// the replaced files in `old/` are kept; only the unpacked download goes.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn clean_up_update_folder(dir: &Path) {
+    match remove_update_folder(dir) {
+        Ok(true) => log::info!("removed the files the last update replaced"),
+        Ok(false) => {}
+        Err(e) => log::warn!("could not remove the files the last update replaced: {e}"),
+    }
+}
+
+/// The launch clean-up, off the UI thread: [`clean_up_update_folder`], trying again for up
+/// to `patience` while the replaced files are still in use. Restart now starts this process
+/// before the old one has closed, and on Windows the old executable (in `old/`) cannot be
+/// deleted until then. The retries remove only `old/`, and the folder once it is empty,
+/// never an update this process may be unpacking into `new/` meanwhile.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn clean_up_update_folder_at_launch(dir: &Path, patience: std::time::Duration) {
+    let first = match remove_update_folder(dir) {
+        Ok(removed) => {
+            if removed {
+                log::info!("removed the files the last update replaced");
+            }
+            return;
+        }
+        Err(e) => e,
+    };
+    log::info!(
+        "the files the last update replaced are still in use ({first}); the version that \
+         started this one may still be closing, so trying again for up to {} s",
+        patience.as_secs()
+    );
+    let work = dir.join(UPDATE_DIR);
+    let started = std::time::Instant::now();
+    let mut wait = std::time::Duration::from_millis(100);
+    loop {
+        std::thread::sleep(wait.min(patience.saturating_sub(started.elapsed())));
+        let result = {
+            let _folder = lock_update_folder();
+            let old = work.join("old");
+            if work.join(ROLLBACK_INCOMPLETE).exists() || !old.exists() {
+                Ok(())
+            } else {
+                std::fs::remove_dir_all(&old).map(|()| {
+                    // Only when empty: not while this process unpacks an update into them.
+                    let _ = std::fs::remove_dir(work.join("new"));
+                    let _ = std::fs::remove_dir(&work);
+                })
+            }
+        };
+        match result {
+            Ok(()) => {
+                log::info!("removed the files the last update replaced");
+                return;
+            }
+            Err(e) if started.elapsed() >= patience => {
+                log::warn!(
+                    "could not remove the files the last update replaced within {} s ({e}); a \
+                     later launch will try again",
+                    patience.as_secs()
+                );
+                return;
+            }
+            Err(_) => wait = (wait * 2).min(std::time::Duration::from_secs(2)),
+        }
+    }
+}
+
+/// One try at [`clean_up_update_folder`]; `Ok(true)` when something was removed.
+#[cfg(not(target_arch = "wasm32"))]
+fn remove_update_folder(dir: &Path) -> std::io::Result<bool> {
+    let _folder = lock_update_folder();
     let work = dir.join(UPDATE_DIR);
     if work.join(ROLLBACK_INCOMPLETE).exists() {
         log::warn!(
@@ -883,14 +956,33 @@ pub fn clean_up_update_folder(dir: &Path) {
             work.join("old").display()
         );
         let _ = std::fs::remove_dir_all(work.join("new"));
-        return;
+        return Ok(false);
     }
-    if work.exists() {
-        match std::fs::remove_dir_all(&work) {
-            Ok(()) => log::info!("removed the files the last update replaced"),
-            Err(e) => log::warn!("could not remove the files the last update replaced: {e}"),
-        }
+    if !work.exists() {
+        return Ok(false);
     }
+    // The unpacked download first, so that it goes even when `old/` is still in use.
+    let new = work.join("new");
+    if new.exists() {
+        std::fs::remove_dir_all(&new)?;
+    }
+    std::fs::remove_dir_all(&work).map(|()| true)
+}
+
+/// How long the launch clean-up waits for the old version to close
+/// ([`clean_up_update_folder_at_launch`]).
+pub const CLEAN_UP_PATIENCE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Held while [`UPDATE_DIR`] is changed (unpacking, swapping, cleaning up), so the launch
+/// clean-up's retries never interleave with an update this process is installing.
+#[cfg(not(target_arch = "wasm32"))]
+static UPDATE_FOLDER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(not(target_arch = "wasm32"))]
+fn lock_update_folder() -> std::sync::MutexGuard<'static, ()> {
+    UPDATE_FOLDER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 // ---------------------------------------------------------------------- Session and state
@@ -927,6 +1019,7 @@ pub enum UpdateStatus {
 }
 
 /// What an Update download job hands back.
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 struct Staged {
     top: PathBuf,
     verification: Verification,
@@ -1248,7 +1341,7 @@ impl Session {
             None => None,
         };
         let fetch = self.fetch();
-        log::info!("downloading an update");
+        log::info!("downloading the update {}", archive.name);
         Ok(self.jobs().submit_fn("Update download", move |ctx| {
             let staged = (|| {
                 let small = |a: &ReleaseAsset| {
@@ -1272,6 +1365,14 @@ impl Session {
                     signature_bytes.as_deref(),
                     key.as_deref(),
                 )?;
+                log::info!(
+                    "{} matches its SHA-256 in {CHECKSUMS_ASSET}{}",
+                    archive.name,
+                    match verification {
+                        Verification::Signed => ", whose signature is verified",
+                        Verification::ChecksumOnly => " (no release key is compiled in)",
+                    }
+                );
                 if ctx.is_cancelled() {
                     return Err(UpdateError::Cancelled);
                 }
@@ -1376,7 +1477,7 @@ impl Session {
         let manual = matches!(self.updates.status, UpdateStatus::Checking { manual: true });
         match found {
             Ok(Some(release)) => {
-                log::info!("an update is available");
+                log::info!("an update is available: {}", release.version);
                 let skipped = self.updates.skipped.as_deref() == Some(release.tag.as_str());
                 self.updates.status = UpdateStatus::Available(release);
                 if manual || !skipped {

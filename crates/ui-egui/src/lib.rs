@@ -21,6 +21,7 @@ mod rich_clipboard;
 pub mod search_view;
 mod selection;
 mod shell;
+mod steps;
 mod system_fonts;
 pub mod theme;
 pub mod tokens;
@@ -60,6 +61,8 @@ pub struct App {
     script: Vec<(u32, String, serde_json::Value)>,
     input_script: Vec<(u32, egui::Event)>,
     shot: Option<(u32, PathBuf)>,
+    /// `OBS_STEPS`: clicks and screenshots once what they wait for is on screen.
+    steps: steps::Steps,
     /// Open Library → Starter library on the first frame, to offer the download (#131).
     /// Not at construction: its list comes through the transport [`Self::with_fetch`] sets.
     offer_starter: bool,
@@ -165,6 +168,7 @@ impl App {
             script: Vec::new(),
             input_script: Vec::new(),
             shot: None,
+            steps: steps::Steps::default(),
             offer_starter,
         }
     }
@@ -184,20 +188,22 @@ impl App {
     }
 
     /// Update checks (#276, ADR 0017): this executable's install (removing what the last
-    /// update replaced, off the UI thread), the release source (`OBS_UPDATE_URL` names a
-    /// mock one) and, when "Check for updates automatically" is on, one Update check a few
-    /// seconds after the first frame. Releases come through the transport
-    /// [`Self::with_fetch`] sets.
+    /// update replaced, off the UI thread, once the old version has closed), the release
+    /// source (`OBS_UPDATE_URL` names a mock one) and, when "Check for updates
+    /// automatically" is on, one Update check a few seconds after the first frame. Releases
+    /// come through the transport [`Self::with_fetch`] sets.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn with_update_checks(mut self) -> Self {
-        use obs_engine::updates::{Install, UpdateSource, clean_up_update_folder};
+        use obs_engine::updates::{
+            CLEAN_UP_PATIENCE, Install, UpdateSource, clean_up_update_folder_at_launch,
+        };
         let session = self.shell.session_mut();
         session.set_update_source(UpdateSource::from_env());
         if let Some(install) = Install::current() {
             let dir = install.dir.clone();
             let _ = std::thread::Builder::new()
                 .name("update clean-up".into())
-                .spawn(move || clean_up_update_folder(&dir));
+                .spawn(move || clean_up_update_folder_at_launch(&dir, CLEAN_UP_PATIENCE));
             session.set_install(install);
         }
         self.shell.arm_launch_update_check();
@@ -223,6 +229,8 @@ impl App {
     /// Tab). `OBS_SHOT=out.ppm` saves a screenshot at `OBS_SHOT_FRAME` (default 60) and closes.
     /// `OBS_INPUT` is a JSON array of `[frame, egui::Event]` pairs, injected before that
     /// frame's UI. It exercises pointer/keyboard-only controls without OS input permissions.
+    /// `OBS_STEPS` is a JSON array of steps that click buttons by label and take screenshots
+    /// once what they wait for is on screen (`steps::Step`).
     pub fn with_automation_from_env(mut self) -> Self {
         if let Ok(script) = std::env::var("OBS_SCRIPT") {
             for step in script.split(';') {
@@ -245,6 +253,12 @@ impl App {
                 Err(e) => eprintln!("openbible: invalid OBS_INPUT: {e}"),
             }
         }
+        if let Ok(steps) = std::env::var("OBS_STEPS") {
+            match steps::Steps::parse(&steps) {
+                Ok(steps) => self.steps = steps,
+                Err(e) => eprintln!("openbible: invalid OBS_STEPS: {e}"),
+            }
+        }
         if let Ok(path) = std::env::var("OBS_SHOT") {
             let at = std::env::var("OBS_SHOT_FRAME")
                 .ok()
@@ -257,7 +271,11 @@ impl App {
 
     fn automate(&mut self, ctx: &egui::Context) {
         self.frame += 1;
-        if self.script.is_empty() && self.input_script.is_empty() && self.shot.is_none() {
+        if self.script.is_empty()
+            && self.input_script.is_empty()
+            && self.shot.is_none()
+            && self.steps.is_empty()
+        {
             return;
         }
         ctx.request_repaint();
@@ -276,24 +294,12 @@ impl App {
             }
             self.shell.run(&cmd, &params);
         }
+        if let Some(path) = self.steps.run_due(ctx, now, &mut self.input_script) {
+            screenshot(ctx, path, false);
+        }
         if let Some((at, path)) = &self.shot {
             if now == *at {
-                let path = path.clone();
-                let c2 = ctx.clone();
-                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(
-                    egui::ScreenshotCallback::new(move |img| {
-                        let [w, h] = img.size;
-                        let mut out = format!("P6 {w} {h} 255\n").into_bytes();
-                        for p in &img.pixels {
-                            out.extend([p.r(), p.g(), p.b()]);
-                        }
-                        if let Err(e) = std::fs::write(&path, out) {
-                            eprintln!("openbible: {}: {e}", path.display());
-                        }
-                        c2.send_viewport_cmd(egui::ViewportCommand::Close);
-                        c2.request_repaint();
-                    }),
-                ));
+                screenshot(ctx, path.clone(), true);
             }
             if now > *at + 240 {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -349,6 +355,30 @@ impl App {
             }
         }
     }
+}
+
+/// Save the frame being drawn to `path` as a PPM; then close the window if `close`.
+fn screenshot(ctx: &egui::Context, path: PathBuf, close: bool) {
+    let c2 = ctx.clone();
+    ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(
+        egui::ScreenshotCallback::new(move |img| {
+            let [w, h] = img.size;
+            let mut out = format!("P6 {w} {h} 255\n").into_bytes();
+            for p in &img.pixels {
+                out.extend([p.r(), p.g(), p.b()]);
+            }
+            // Whole or not at all, for whoever waits for the file.
+            let part = path.with_extension("ppm.part");
+            if let Err(e) = std::fs::write(&part, out).and_then(|()| std::fs::rename(&part, &path))
+            {
+                eprintln!("openbible: {}: {e}", path.display());
+            }
+            if close {
+                c2.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            c2.request_repaint();
+        }),
+    ));
 }
 
 impl eframe::App for App {

@@ -42,7 +42,8 @@ releases (docs/dev/releasing.md):
   release-archive  pack the app and dist/starter/ into a Release archive (`--help`)
   release-smoke    launch an unpacked Release archive, check its Starter library got in (`--help`)
   update-e2e       install this version from an archive, update it to the next from a mock
-                   release source and restart into it (`--help`, #276; needs a display)
+                   release source and restart into it, clicked and photographed; with
+                   `--real-release X.Y.Z`, from the published release (`--help`, #276; needs a display)
 
 maintenance:
   tvtms <TVTMS.txt>   regenerate the embedded STEPBible TVTMS rules

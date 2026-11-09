@@ -73,11 +73,49 @@ impl Default for UpdateUi {
     }
 }
 
-/// Start `exe` with this process's arguments.
+/// The smoke-check automation settings (`App::with_automation_from_env`): they drive this
+/// process only, so the restarted app never replays them.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) const AUTOMATION_VARS: [&str; 5] = [
+    "OBS_SCRIPT",
+    "OBS_INPUT",
+    "OBS_SHOT",
+    "OBS_SHOT_FRAME",
+    "OBS_STEPS",
+];
+/// `OBS_RELAUNCH_<NAME>` becomes `OBS_<NAME>` in the restarted app: the update e2e's
+/// automation for the new version.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) const RELAUNCH_PREFIX: &str = "OBS_RELAUNCH_";
+
+/// The restarted app's environment, from this one's `vars`: the variables to remove and the
+/// ones to set.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn relaunch_env(
+    vars: impl IntoIterator<Item = (std::ffi::OsString, std::ffi::OsString)>,
+) -> (Vec<std::ffi::OsString>, Vec<(String, std::ffi::OsString)>) {
+    let mut remove: Vec<std::ffi::OsString> = AUTOMATION_VARS.iter().map(Into::into).collect();
+    let mut set = Vec::new();
+    for (name, value) in vars {
+        if let Some(rest) = name.to_str().and_then(|n| n.strip_prefix(RELAUNCH_PREFIX)) {
+            set.push((format!("OBS_{rest}"), value));
+            remove.push(name);
+        }
+    }
+    (remove, set)
+}
+
+/// Start `exe` with this process's arguments, without its automation settings.
 #[cfg(not(target_arch = "wasm32"))]
 fn system_relaunch(exe: &Path) -> Result<(), String> {
-    std::process::Command::new(exe)
-        .args(std::env::args_os().skip(1))
+    let (remove, set) = relaunch_env(std::env::vars_os());
+    let mut command = std::process::Command::new(exe);
+    command.args(std::env::args_os().skip(1));
+    for name in remove {
+        command.env_remove(name);
+    }
+    command
+        .envs(set)
         .spawn()
         .map(|_| ())
         .map_err(|e| e.to_string())

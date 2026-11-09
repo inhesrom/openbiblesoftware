@@ -362,3 +362,33 @@ fn an_install_folder_without_write_permission_offers_only_the_download_page() {
     drop(_restore);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn restart_now_drops_this_runs_automation_and_hands_on_only_the_relaunch_settings() {
+    use crate::shell::update_notice::{AUTOMATION_VARS, relaunch_env};
+    use std::ffi::OsString;
+    let vars = [
+        ("OBS_SCRIPT", "30 help.check_for_updates"),
+        ("OBS_STEPS", r#"[{"click":"Update now"}]"#),
+        ("OBS_RELAUNCH_STEPS", r#"[{"shot":"restarted.ppm"}]"#),
+        ("OBS_RELAUNCH_SCRIPT", "20 help.about"),
+        ("OBS_USER_DB", "/tmp/user.db"),
+    ]
+    .map(|(k, v)| (OsString::from(k), OsString::from(v)));
+    let (remove, set) = relaunch_env(vars);
+    for name in AUTOMATION_VARS {
+        assert!(remove.contains(&OsString::from(name)), "{name}");
+    }
+    assert!(remove.contains(&OsString::from("OBS_RELAUNCH_STEPS")));
+    assert!(!remove.contains(&OsString::from("OBS_USER_DB")));
+    assert_eq!(
+        set,
+        [
+            (
+                "OBS_STEPS".to_string(),
+                OsString::from(r#"[{"shot":"restarted.ppm"}]"#)
+            ),
+            ("OBS_SCRIPT".to_string(), OsString::from("20 help.about")),
+        ]
+    );
+}

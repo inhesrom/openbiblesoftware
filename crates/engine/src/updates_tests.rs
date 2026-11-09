@@ -916,3 +916,107 @@ fn the_check_asks_for_public_release_metadata_only() {
         "openbible-v1.0.0-aarch64-apple-darwin.tar.gz"
     );
 }
+
+/// `old/` held so its files cannot be removed (a read-only folder in it), as Windows holds
+/// the old executable while the version that ran Restart now is still closing.
+#[cfg(unix)]
+fn held_old_folder(lab: &Lab) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let work = lab.app().join(UPDATE_DIR);
+    let held = work.join("old").join("held");
+    std::fs::create_dir_all(&held).unwrap();
+    std::fs::write(held.join(app_exe_name()), b"old app, still running").unwrap();
+    std::fs::create_dir_all(work.join("new")).unwrap();
+    std::fs::set_permissions(&held, std::fs::Permissions::from_mode(0o555)).unwrap();
+    held
+}
+
+#[cfg(unix)]
+fn release_held(held: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(held, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn the_launch_clean_up_waits_for_the_old_version_to_let_go_of_its_files() {
+    let lab = Lab::new("clean-up-waits");
+    installed_archive(&lab.app(), b"new app");
+    let held = held_old_folder(&lab);
+    // Root may delete anything; then there is nothing to test.
+    if std::fs::remove_file(held.join(app_exe_name())).is_ok() {
+        release_held(&held);
+        return;
+    }
+    let work = lab.app().join(UPDATE_DIR);
+    let letting_go = {
+        let held = held.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            release_held(&held);
+        })
+    };
+    let started = std::time::Instant::now();
+    clean_up_update_folder_at_launch(&lab.app(), std::time::Duration::from_secs(20));
+    letting_go.join().unwrap();
+    assert!(!work.exists(), "removed once the old version let go");
+    assert!(started.elapsed() >= std::time::Duration::from_millis(400));
+    assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    assert_eq!(
+        std::fs::read(lab.app().join(app_exe_name())).unwrap(),
+        b"new app"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_launch_clean_up_gives_up_after_its_patience_and_leaves_the_rest_for_a_later_launch() {
+    let lab = Lab::new("clean-up-gives-up");
+    installed_archive(&lab.app(), b"new app");
+    let held = held_old_folder(&lab);
+    if std::fs::remove_file(held.join(app_exe_name())).is_ok() {
+        release_held(&held);
+        return;
+    }
+    let work = lab.app().join(UPDATE_DIR);
+    let started = std::time::Instant::now();
+    clean_up_update_folder_at_launch(&lab.app(), std::time::Duration::from_millis(500));
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    // The unpacked download went at the first try; the held files stay for a later launch.
+    assert!(!work.join("new").exists());
+    assert!(held.join(app_exe_name()).exists());
+    release_held(&held);
+    clean_up_update_folder_at_launch(&lab.app(), std::time::Duration::from_millis(500));
+    assert!(!work.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn the_launch_clean_ups_retries_never_remove_an_update_this_process_is_unpacking() {
+    let lab = Lab::new("clean-up-spares-new");
+    installed_archive(&lab.app(), b"new app");
+    let held = held_old_folder(&lab);
+    if std::fs::remove_file(held.join(app_exe_name())).is_ok() {
+        release_held(&held);
+        return;
+    }
+    let work = lab.app().join(UPDATE_DIR);
+    // After the first try, while the retries wait, Update now unpacks into `new/`.
+    let unpacking = {
+        let (work, held) = (work.clone(), held.clone());
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            std::fs::create_dir_all(work.join("new/openbible-next")).unwrap();
+            std::fs::write(work.join("new/openbible-next/openbible"), b"next app").unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            release_held(&held);
+        })
+    };
+    clean_up_update_folder_at_launch(&lab.app(), std::time::Duration::from_secs(20));
+    unpacking.join().unwrap();
+    assert!(!work.join("old").exists());
+    assert_eq!(
+        std::fs::read(work.join("new/openbible-next/openbible")).unwrap(),
+        b"next app"
+    );
+}

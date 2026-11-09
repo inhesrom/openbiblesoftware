@@ -36,6 +36,8 @@ jobs:
 
   # Update now end to end (#276): vN installed from a Release archive updates itself to vN+1
   # served from a mock release source on localhost, restarts into it and keeps the user's data.
+  # Update now and Restart now are clicked with pointer events; the screenshots (the notice,
+  # the download's progress, the installed update, the restarted app) are uploaded.
   update-e2e:
     name: update e2e (${{ matrix.os }})
     strategy:
@@ -66,6 +68,15 @@ jobs:
           else
             cargo xtask update-e2e
           fi
+      - name: Screenshots and log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-e2e-${{ matrix.os }}
+          path: |
+            target/update-e2e/shots/
+            target/update-e2e/data/logs/
+          if-no-files-found: warn
 
   bench:
     name: xtask bench

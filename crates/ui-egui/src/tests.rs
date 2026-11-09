@@ -23,6 +23,7 @@ fn automation_injects_input_before_its_scheduled_ui_frame() {
         script: Vec::new(),
         input_script: events.clone(),
         shot: None,
+        steps: steps::Steps::default(),
         offer_starter: false,
     };
     let ctx = egui::Context::default();
@@ -37,6 +38,57 @@ fn automation_injects_input_before_its_scheduled_ui_frame() {
             .collect();
         assert_eq!(input.events, expected);
     }
+}
+
+#[test]
+fn automation_steps_wait_for_what_they_need_then_click_a_button_by_its_label() {
+    let go = std::env::temp_dir().join(format!("obs-steps-go-{}", std::process::id()));
+    let _ = std::fs::remove_file(&go);
+    let json = serde_json::json!([
+        { "when": "Ready", "shot": "ready.ppm" },
+        { "when": "Never shown", "shot": "never.ppm", "skip_if": "Ready" },
+        { "click": "Go", "after_file": go },
+    ])
+    .to_string();
+    let mut steps = steps::Steps::parse(&json).unwrap();
+    let ctx = egui::Context::default();
+    let mut queue: Vec<(u32, egui::Event)> = Vec::new();
+    let mut shots = Vec::new();
+    let mut clicked = Vec::new();
+    for frame in 1..=20u32 {
+        if frame == 8 {
+            std::fs::write(&go, b"").unwrap();
+        }
+        let input = egui::RawInput {
+            events: (queue.iter().filter(|(at, _)| *at == frame))
+                .map(|(_, e)| e.clone())
+                .collect(),
+            time: Some(f64::from(frame) * 0.25),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(input, |ui| {
+            ui.label("Not yet");
+            if frame >= 4 {
+                ui.label("Ready to go");
+                if ui.button("Go").clicked() {
+                    clicked.push(frame);
+                }
+            }
+            if let Some(shot) = steps.run_due(ui.ctx(), frame, &mut queue) {
+                shots.push((frame, shot));
+            }
+        });
+        out.textures_delta.clear();
+    }
+    let _ = std::fs::remove_file(&go);
+    // The shot waits for its text (shown from frame 4, settled for three frames and at
+    // least `SETTLE_SECS`); a step
+    // whose moment has passed is dropped; the click waits for its go-ahead file (frame 8,
+    // settled by 10), then is a real pointer move, press and release at the button.
+    assert_eq!(shots, [(6, std::path::PathBuf::from("ready.ppm"))]);
+    assert_eq!(clicked, [13]);
+    assert!(steps.is_empty());
+    assert!(matches!(queue[0], (11, egui::Event::PointerMoved(_))));
 }
 
 /// A file dropped on the window from the system: its path.
@@ -67,6 +119,7 @@ fn a_resource_file_dropped_on_the_window_from_the_system_joins_the_library_and_o
         script: Vec::new(),
         input_script: Vec::new(),
         shot: None,
+        steps: steps::Steps::default(),
         offer_starter: false,
     };
     let ctx = egui::Context::default();
