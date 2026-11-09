@@ -96,7 +96,7 @@ pub struct HomeSettings {
 /// The stored form. Card ids stay strings so a save from a later version with more cards
 /// still loads (unknown ids are dropped).
 #[derive(Serialize, Deserialize)]
-pub(crate) struct Stored {
+struct Stored {
     #[serde(default)]
     cards: Vec<StoredCard>,
     #[serde(default)]
@@ -164,6 +164,23 @@ impl HomeSettings {
             cards,
             open_at_launch: stored.open_at_launch,
         }
+    }
+
+    /// Whether [`from_json`](Self::from_json) keeps every card `json` holds: it reads, and
+    /// names each card it holds this version knows, once. A restore refuses a Backup whose
+    /// Home settings it would not (#258).
+    pub(crate) fn keeps_every_card(json: &str) -> bool {
+        let Ok(stored) = serde_json::from_str::<Stored>(json) else {
+            return false;
+        };
+        let mut seen = Vec::new();
+        stored.cards.iter().all(|c| match HomeCard::from_id(&c.id) {
+            Some(card) if !seen.contains(&card) => {
+                seen.push(card);
+                true
+            }
+            _ => false,
+        })
     }
 
     pub fn to_json(&self) -> String {

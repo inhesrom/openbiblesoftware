@@ -63,8 +63,12 @@ location must read, and so must every setting the app keeps as JSON (`JSON_SETTI
 settings, toolbar, keys, Update check settings, Home, Guide arrangements, Saved searches, Search history, recent
 searches and Command box entries, Copy verses, Collections, Resource tags, Visual filters,
 the Starter library state, Import reports, kept Attributions), each as the type its loader
-reads. The app reads each of those leniently at launch (an unreadable one left out or at its
-default), so without this a restore would drop or default them silently once the live data is
+reads. Settings the loader keeps only part of are checked as it reads them: a field of View,
+Toolbar or Update check settings must read; a Home arrangement or Toolbar must hold each card or
+Launcher this version knows once, a Guide arrangement each section of its Guide once (filtered to
+a Collection only where it can be); an Import report must be the report of the Resource its key
+names. The app reads each of those leniently at launch (an unreadable one left out or at its
+default, a repeated or unknown card or section dropped), so without this a restore would drop or default them silently once the live data is
 gone. A Backup with any of them is refused, naming each ("the Layout “Broken”", "the setting
 `search.saved` (Saved searches)"), with nothing changed. Plain-text settings (Log level, the
 last Notebook used...) are not checked: any text is one. A test

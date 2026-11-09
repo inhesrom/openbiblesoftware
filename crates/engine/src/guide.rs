@@ -497,7 +497,7 @@ pub struct GuideArrangement {
 /// The stored form. Section ids stay strings so an arrangement saved by a later version with
 /// more sections still loads (unknown ids are dropped).
 #[derive(Serialize, Deserialize)]
-pub(crate) struct Stored {
+struct Stored {
     sections: Vec<StoredPlace>,
 }
 
@@ -561,6 +561,31 @@ impl GuideArrangement {
             sections.insert(at, SectionPlace::new(*s));
         }
         Self { sections, filters }
+    }
+
+    /// Whether [`from_json`](Self::from_json) keeps every section `json` holds: it reads,
+    /// and names each section it holds one of `guide`'s, once, filtered to a Collection only
+    /// where the section can be. A restore refuses a Backup whose Guide arrangement it would
+    /// not (#258).
+    pub(crate) fn keeps_every_section(guide: Guide, json: &str) -> bool {
+        let Ok(stored) = serde_json::from_str::<Stored>(json) else {
+            return false;
+        };
+        let mut seen = Vec::new();
+        stored
+            .sections
+            .iter()
+            .all(|p| match GuideSection::from_id(&p.id) {
+                Some(section)
+                    if guide.sections().contains(&section)
+                        && !seen.contains(&section)
+                        && (p.collection.is_none() || section.filterable()) =>
+                {
+                    seen.push(section);
+                    true
+                }
+                _ => false,
+            })
     }
 
     pub fn to_json(&self) -> String {

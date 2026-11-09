@@ -6,8 +6,10 @@
 //! location, and the settings it keeps as JSON ([`JSON_SETTINGS`]). The app reads each of
 //! those leniently at launch: an unreadable one is left out or back at its default, and so is
 //! an unreadable field of a setting read field by field (a View setting, a Keyboard
-//! shortcut, an Update check flag). So a restore checks them first, and a Backup holding one the app could not read is refused,
-//! naming it, rather than silently losing it after the live data is gone.
+//! shortcut, an Update check flag), a repeated or unknown card of Home or section of a Guide
+//! arrangement, and an Import report filed under another Resource's key. So a restore checks
+//! them first, and a Backup holding one the app would not keep is refused, naming it, rather
+//! than silently losing it after the live data is gone.
 //!
 //! Plain-text settings (a Log level, the last Notebook used) are not checked: any text is
 //! one, and a value the app does not know is its default.
@@ -28,8 +30,9 @@ pub(crate) struct JsonSetting {
     pub key: &'static str,
     /// What the user calls it.
     pub what: &'static str,
-    /// Whether the app can read a value of it.
-    pub reads: fn(&str) -> bool,
+    /// Whether the app keeps all of a value of it, given the key it is under (a Guide
+    /// arrangement is one Guide's, an Import report one Resource's) and the value.
+    pub reads: fn(&str, &str) -> bool,
 }
 
 impl JsonSetting {
@@ -44,7 +47,7 @@ impl JsonSetting {
 }
 
 /// Whether `json` reads as a `T`, as the setting's loader reads it.
-fn reads<T: DeserializeOwned>(json: &str) -> bool {
+fn reads<T: DeserializeOwned>(_key: &str, json: &str) -> bool {
     serde_json::from_str::<T>(json).is_ok()
 }
 
@@ -75,7 +78,7 @@ fn is_number(v: &Value) -> bool {
 
 /// The View settings, as `appearance::apply_json` reads them, with the records from #37 (a
 /// `dark_page` flag and a boolean `verse_numbers`).
-fn reads_view(json: &str) -> bool {
+fn reads_view(_key: &str, json: &str) -> bool {
     object_with(
         json,
         &[
@@ -126,7 +129,7 @@ fn reads_fonts(v: &Value) -> bool {
 }
 
 /// The Toolbar, as `ToolbarSettings::from_json` reads it: each Launcher once.
-fn reads_toolbar(json: &str) -> bool {
+fn reads_toolbar(_key: &str, json: &str) -> bool {
     object_with(
         json,
         &[
@@ -156,7 +159,7 @@ fn reads_toolbar(json: &str) -> bool {
 
 /// The Keyboard shortcuts, as `KeyBindings::from_json` reads them: per command id, a key it
 /// can read or `null` for no key.
-fn reads_key_bindings(json: &str) -> bool {
+fn reads_key_bindings(_key: &str, json: &str) -> bool {
     let Ok(Value::Object(keys)) = serde_json::from_str::<Value>(json) else {
         return false;
     };
@@ -168,7 +171,7 @@ fn reads_key_bindings(json: &str) -> bool {
 }
 
 /// The Update check settings, as `Session::load_update_settings` reads them.
-fn reads_update_settings(json: &str) -> bool {
+fn reads_update_settings(_key: &str, json: &str) -> bool {
     object_with(
         json,
         &[
@@ -179,6 +182,26 @@ fn reads_update_settings(json: &str) -> bool {
             ("skipped", |v| v.is_null() || v.is_string()),
         ],
     )
+}
+
+/// A Guide arrangement, as `Session::load_guide_arrangements` reads it: under the key of a
+/// Guide, each of that Guide's sections once.
+fn reads_guide_arrangement(key: &str, json: &str) -> bool {
+    key.strip_prefix(crate::guide::ARRANGEMENT_PREF_PREFIX)
+        .and_then(crate::Guide::from_id)
+        .is_some_and(|guide| crate::guide::GuideArrangement::keeps_every_section(guide, json))
+}
+
+/// An Import report, as `Session::restore_import_reports` reads it: the report of the
+/// Resource its key names. `null`: the Resource was removed.
+fn reads_import_report(key: &str, json: &str) -> bool {
+    match serde_json::from_str::<Option<crate::import::ImportRecord>>(json) {
+        Ok(None) => true,
+        Ok(Some(record)) => {
+            key.strip_prefix(crate::import::REPORT_PREF_PREFIX) == Some(&record.resource_id)
+        }
+        Err(_) => false,
+    }
 }
 
 /// Every setting the app keeps as JSON, with how its loader reads it.
@@ -206,12 +229,12 @@ pub(crate) const JSON_SETTINGS: &[JsonSetting] = &[
     JsonSetting {
         key: crate::home::HOME_PREF,
         what: "Home",
-        reads: reads::<crate::home::Stored>,
+        reads: |_, json| crate::home::HomeSettings::keeps_every_card(json),
     },
     JsonSetting {
         key: crate::guide::ARRANGEMENT_PREF_PREFIX,
         what: "Guide arrangement",
-        reads: reads::<crate::guide::Stored>,
+        reads: reads_guide_arrangement,
     },
     JsonSetting {
         key: crate::saved_searches::SAVED_PREF,
@@ -267,7 +290,7 @@ pub(crate) const JSON_SETTINGS: &[JsonSetting] = &[
         // Removing a Resource writes `null` over its report.
         key: crate::import::REPORT_PREF_PREFIX,
         what: "Import report",
-        reads: reads::<Option<crate::import::ImportRecord>>,
+        reads: reads_import_report,
     },
     JsonSetting {
         key: crate::notes_export::ATTRIBUTION_PREF_PREFIX,
@@ -306,7 +329,7 @@ pub(crate) fn unreadable_records(data: &dyn UserData) -> Result<Vec<String>, Str
     }
     for (key, value) in data.preferences()? {
         if let Some(s) = JSON_SETTINGS.iter().find(|s| s.names(&key))
-            && !(s.reads)(&value)
+            && !(s.reads)(&key, &value)
         {
             out.push(format!("the setting `{key}` ({})", s.what));
         }

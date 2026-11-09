@@ -635,6 +635,107 @@ fn a_backup_with_an_unreadable_field_of_a_setting_is_refused_naming_it() {
     );
 }
 
+/// #258: a Home or Guide arrangement holding a card or section its loader drops (repeated,
+/// unknown, not that Guide's) and an Import report naming another Resource than its key are
+/// refused before any Safety backup, naming them; the loaders would silently drop them.
+#[test]
+fn a_backup_with_records_the_loaders_drop_is_refused_naming_them() {
+    let f = Fixture::new("dropped-records");
+    let mut s = f.session();
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
+    let backup = f.file("damaged.obsbackup");
+    damaged_copy(&f, &good, &backup, |db| {
+        db.set_preference(
+            "home",
+            r#"{"cards":[{"id":"verse_of_the_day","hidden":false},{"id":"verse_of_the_day","hidden":true}]}"#,
+        )
+        .unwrap();
+        db.set_preference(
+            "guide-arrangement/passage_guide",
+            r#"{"sections":[{"id":"commentaries"},{"id":"commentaries","hidden":true}]}"#,
+        )
+        .unwrap();
+        // A report of `web` under the key of `kjv`, and one under its own key.
+        let report = json!({
+            "resource_id": "web", "source": "web.zip", "phase": "Complete", "done": 1,
+            "total": 1, "report": null, "index": "Deferred", "error": null,
+        })
+        .to_string();
+        db.set_preference("import-report/kjv", &report).unwrap();
+        db.set_preference("import-report/web", &report).unwrap();
+    });
+    let before = dump(&s);
+
+    let refused = s.restore_preview(&backup).unwrap_err();
+    for named in [
+        "the setting `home` (Home)",
+        "the setting `guide-arrangement/passage_guide` (Guide arrangement)",
+        "the setting `import-report/kjv` (Import report)",
+        "Nothing was changed",
+    ] {
+        assert!(refused.contains(named), "{named}: {refused}");
+    }
+    assert!(!refused.contains("import-report/web"), "{refused}");
+    let err = s.run("data.restore", &path(&backup)).unwrap_err();
+    assert!(err.to_string().contains("(Home)"), "{err}");
+    assert_eq!(dump(&s), before);
+    assert!(s.last_restore().is_none());
+    assert!(
+        !s.kept_backups()
+            .iter()
+            .any(|b| b.kind == BackupKind::Safety)
+    );
+}
+
+/// Home and Guide arrangements are refused for each card or section their loaders drop, and
+/// read when each is known and held once.
+#[test]
+fn arrangements_refuse_cards_and_sections_their_loaders_drop() {
+    let reads = |key: &str, json: &str| {
+        let setting = crate::backup_check::JSON_SETTINGS
+            .iter()
+            .find(|j| j.names(key))
+            .unwrap();
+        (setting.reads)(key, json)
+    };
+    for (key, json) in [
+        (
+            "home",
+            r#"{"cards":[{"id":"verse_of_the_day","hidden":true}]}"#,
+        ),
+        ("home", r#"{"open_at_launch":true}"#),
+        (
+            "guide-arrangement/passage_guide",
+            r#"{"sections":[{"id":"cross_references","collapsed":true},{"id":"commentaries"}]}"#,
+        ),
+        ("import-report/kjv", "null"),
+    ] {
+        assert!(reads(key, json), "{key} {json}");
+    }
+    for (key, json) in [
+        ("home", r#"{"cards":[{"id":"nowhere"}]}"#),
+        (
+            "guide-arrangement/passage_guide",
+            r#"{"sections":[{"id":"nowhere"}]}"#,
+        ),
+        (
+            "guide-arrangement/nowhere",
+            r#"{"sections":[{"id":"commentaries"}]}"#,
+        ),
+        (
+            "guide-arrangement/word_study",
+            r#"{"sections":[{"id":"commentaries"}]}"#,
+        ),
+        (
+            "guide-arrangement/passage_guide",
+            r#"{"sections":[{"id":"cross_references","collection":"Bibles"}]}"#,
+        ),
+    ] {
+        assert!(!reads(key, json), "{key} {json}");
+    }
+}
+
 /// Each field-by-field setting refuses a field its loader would default or drop, and still
 /// reads what the app wrote before (#37's View record, old Selection key ids, no skipped
 /// release).
@@ -645,7 +746,7 @@ fn field_by_field_settings_refuse_unreadable_fields_and_read_older_records() {
             .iter()
             .find(|j| j.names(key))
             .unwrap();
-        (setting.reads)(json)
+        (setting.reads)(key, json)
     };
     for (key, json) in [
         (
