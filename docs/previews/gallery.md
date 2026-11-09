@@ -267,6 +267,13 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser in each 
 | ![Highlight styles, Light](gallery/highlight-styles-light-1x.png) | ![Highlight styles, Dark](gallery/highlight-styles-dark-1x.png) | ![Highlight styles, Sepia](gallery/highlight-styles-sepia-1x.png) |
 | [2×](gallery/highlight-styles-light-2x.png) | [2×](gallery/highlight-styles-dark-2x.png) | [2×](gallery/highlight-styles-sepia-2x.png) |
 
+### Theme editor
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Theme editor, Light](gallery/theme-editor-light-1x.png) | ![Theme editor, Dark](gallery/theme-editor-dark-1x.png) | ![Theme editor, Sepia](gallery/theme-editor-sepia-1x.png) |
+| [2×](gallery/theme-editor-light-2x.png) | [2×](gallery/theme-editor-dark-2x.png) | [2×](gallery/theme-editor-sepia-2x.png) |
+
 ### Copy verses
 
 | Light | Dark | Sepia |

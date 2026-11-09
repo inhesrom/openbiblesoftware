@@ -1526,7 +1526,9 @@ fn every_image_name() -> Vec<String> {
 fn gallery_page_shows_every_golden() {
     let names = every_image_name();
     let unique: std::collections::HashSet<_> = names.iter().collect();
-    assert_eq!(unique.len(), names.len(), "two surfaces share a name");
+    let mut seen = std::collections::HashSet::new();
+    let shared: Vec<_> = names.iter().filter(|n| !seen.insert(*n)).collect();
+    assert!(shared.is_empty(), "two surfaces share a name: {shared:?}");
     let page_path = root().join("docs/previews/gallery.md");
     let mut stale = Vec::new();
     for entry in std::fs::read_dir(goldens()).into_iter().flatten() {
@@ -1780,7 +1782,7 @@ const SITES: &[(&str, &str, &[&str])] = &[
     (
         "shell/report_problem.rs",
         "egui::Window::new(",
-        &["- Report a problem: it shows the operating system and the log (ADR 0018)"],
+        &["- Report a problem: it shows the operating system and the log (ADR 0019)"],
     ),
     (
         "shell/search_sidebar.rs",
@@ -1806,6 +1808,11 @@ const SITES: &[(&str, &str, &[&str])] = &[
         "shell/search_views.rs",
         "egui::ComboBox::from_id_salt(",
         &["search-chart-chooser"],
+    ),
+    (
+        "shell/theme_editor_window.rs",
+        "egui::Window::new(",
+        &["theme-editor"],
     ),
     (
         "shell/toolbar.rs",

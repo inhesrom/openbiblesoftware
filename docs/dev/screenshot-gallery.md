@@ -1,7 +1,7 @@
 # Screenshot gallery (#222)
 
 Every Tab kind, toolbar pane, menu, window, dialog and popover, drawn headlessly in Light, Dark
-and Sepia at 1× and 2×, and compared with its golden image (ADR 0018). The goldens are in
+and Sepia at 1× and 2×, and compared with its golden image (ADR 0019). The goldens are in
 `docs/previews/gallery/`; [`docs/previews/gallery.md`](../previews/gallery.md) shows them all.
 
 ## Running it
