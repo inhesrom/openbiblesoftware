@@ -16,6 +16,7 @@ mod interlinear;
 mod key_labels;
 mod marks;
 mod motion;
+mod note_margin;
 mod palette;
 mod pane;
 mod rich_clipboard;

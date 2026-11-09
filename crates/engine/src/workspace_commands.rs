@@ -154,6 +154,10 @@ pub const MENUS: &[Menu] = &[
             },
             C("view.red_letter"),
             C("view.footnote_markers"),
+            MenuItem::Choice {
+                title: "Note display",
+                command: "view.note_display",
+            },
             C("view.fonts"),
             MenuItem::ReadingLayout,
             Separator,
@@ -356,6 +360,9 @@ pub fn choices(s: &Session, command: &str) -> (Vec<(&'static str, &'static str)>
     }
     if let Some(reading) = crate::reading_layout::choices(s, command) {
         return reading;
+    }
+    if let Some(notes) = crate::note_display::choices(s, command) {
+        return notes;
     }
     match command {
         "view.theme" => (

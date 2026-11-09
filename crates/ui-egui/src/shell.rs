@@ -59,6 +59,7 @@ mod keys_tab;
 mod library_tab;
 mod missing_resource;
 mod note_editor;
+mod note_margin;
 mod notes_tab;
 mod page_tone;
 mod panel_motion;
@@ -174,6 +175,8 @@ struct TabUi {
     map: Option<atlas_tab::MapUi>,
     /// A Timeline Tab's view: where it looks and what it was fitted to (#185).
     timeline: Option<timeline_tab::TimelineUi>,
+    /// A Resource Tab's Note margin, in Margin mode (#210).
+    margin: note_margin::MarginUi,
 }
 
 /// A Resource Tab's location when it switched to a parallel resource (#151), in that
@@ -1402,13 +1405,19 @@ impl Shell {
             MenuItem::Choice { title, command } => {
                 let (options, current) = obs_engine::choices(&self.st.session, command);
                 let mut picked = None;
-                crate::components::menu(ui, (icons::blank(), title), |ui| {
-                    for (id, label) in options {
-                        if ui.selectable_label(id == current, label).clicked() {
-                            picked = Some(id);
-                            ui.close();
+                // A Tab's own choice (Note display, #210) waits for a Resource Tab.
+                let enabled = self.st.session.is_enabled(command);
+                ui.add_enabled_ui(enabled, |ui| {
+                    crate::components::menu(ui, (icons::blank(), title), |ui| {
+                        for (id, label) in options {
+                            if ui.selectable_label(id == current, label).clicked() {
+                                picked = Some(id);
+                                ui.close();
+                            }
                         }
-                    }
+                    })
+                    .response
+                    .on_disabled_hover_text("Focus a Resource Tab first");
                 });
                 if let Some(id) = picked {
                     self.run(command, &json!({ "value": id }));
@@ -2481,6 +2490,8 @@ impl State {
             .workspace
             .tab(tab)
             .is_none_or(|t| t.footnote_markers);
+        let note_display =
+            (self.session.workspace.tab(tab)).map_or_else(Default::default, |t| t.note_display);
         let restoring_at = (self.session.workspace.tab(tab))
             .filter(|t| !t.keeps_entries())
             .and_then(|t| t.history.current());
@@ -2532,6 +2543,7 @@ impl State {
         let pane_marks = crate::pane::PaneMarks {
             annotations: &marks,
             filters: Some(&mut t.filters),
+            note_display,
         };
         let out = reading_pane(
             ui,
@@ -2542,7 +2554,16 @@ impl State {
             pane_marks,
             found,
         );
-        let user_moved = out.user_moved || found_moved;
+        // The Note margin's cards (#210) before the movement is reported: the wheel over
+        // them moves the text as the wheel over the text does.
+        let margin_moved = self.note_margin(ui, tab, &out);
+        let Some(t) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        let Some(view) = t.view.as_mut() else {
+            return;
+        };
+        let user_moved = out.user_moved || found_moved || margin_moved;
         // A reopened Tab's scroll position (#214) goes back once the pane has drawn at its
         // width; the view keeps it across later relayouts until the user scrolls or it jumps.
         if let Some(anchor) = t.restore_scroll.take()

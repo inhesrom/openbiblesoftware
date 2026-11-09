@@ -3557,6 +3557,8 @@ mod keyboard_navigation;
 mod keyboard_shortcuts;
 #[path = "menu_audit_tests.rs"]
 mod menu_audit;
+#[path = "note_margin_tests.rs"]
+mod note_margin_ui;
 #[path = "page_tone_tests.rs"]
 mod page_tone;
 #[path = "reading_layout_tests.rs"]

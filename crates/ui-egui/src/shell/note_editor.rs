@@ -126,8 +126,10 @@ pub(super) fn note_editor(
     let sel = selection(ui.ctx(), id, text);
     // Why a button is off for this selection, if it is.
     let off = |f: Format| format_blocked(text, sel.clone(), f);
+    // Wrapped: in a narrow place (a Note margin card at its narrowest) the buttons go on a
+    // second row rather than past the edge.
     let toolbar = ui
-        .horizontal(|ui| {
+        .horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = space::XXS;
             for f in Format::TOOLBAR {
                 let (b, name) = match f.label() {

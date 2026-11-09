@@ -549,6 +549,7 @@ impl Session {
                         contents: false,
                         scroll: None,
                         footnote_markers_hidden: false,
+                        note_display: Default::default(),
                         search: None,
                         comparison: Default::default(),
                     });

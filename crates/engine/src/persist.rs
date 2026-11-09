@@ -143,6 +143,12 @@ pub struct TabSnapshot {
     /// The user hid the Tab's Footnote markers (#208).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub footnote_markers_hidden: bool,
+    /// How the Tab shows its Notes, when not Icons (#210).
+    #[serde(
+        default,
+        skip_serializing_if = "crate::note_display::NoteDisplay::is_default"
+    )]
+    pub note_display: crate::note_display::NoteDisplay,
     /// A Search Tab's search: its mode and fields (#259). Restored, it runs again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search: Option<crate::favorites::SavedSearch>,
@@ -170,6 +176,7 @@ impl TabSnapshot {
             contents: t.contents,
             scroll: None,
             footnote_markers_hidden: !t.footnote_markers,
+            note_display: t.note_display,
             search: (t.kind == TabKind::Tool(crate::workspace::Tool::Search))
                 .then(|| crate::favorites::SavedSearch::fields(&t.search))
                 .filter(|f| *f != crate::favorites::SavedSearch::default()),

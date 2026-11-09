@@ -588,6 +588,10 @@ _Avoid_: Folder, Collection, Tag
 A Notebook's setting for whether its Annotations are drawn in Resource text. Annotations in a Notebook with it off are still kept and listed; they are just not drawn.
 _Avoid_: Visible, Filter, Layer
 
+**Note display**:
+How one Resource Tab shows the Notes in its text, chosen in View → Note display for the focused Tab and kept with it in Layouts and the Last session: **Icons** (the default: a small Note marker where each Note is), **Margin** (the markers, and each Note as a card in the **Note margin**, a column beside the text), or **Hidden** (no Notes; Highlights still show). The Note margin's width follows the Tab's Reading column, and a Tab too narrow for it shows Icons. A card starts on the line of its Note's marker and scrolls with the text; cards that would overlap stack in text order, each with a leader line back to its line. A card shows the Note's first lines; clicking it shows the whole Note (a long one scrolls inside its card), and clicking that text edits it in place with the Note editor. Its links and Bible references are live, as in the Notes Tool. Notes from another Bible (Passage anchors) have cards there too, beside the verse number's marker.
+_Avoid_: Notes mode, Sidebar, Annotation view, Show in text (that is a Notebook's)
+
 **Anchor**:
 What ties an Annotation to the text. It is either a Passage anchor or a Text-range anchor.
 _Avoid_: Attachment, Link

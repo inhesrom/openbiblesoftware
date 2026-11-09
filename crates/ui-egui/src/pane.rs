@@ -5,7 +5,7 @@ use egui::{
     Color32, ColorImage, Mesh, Pos2, Rect, Sense, Shape, TextureHandle, TextureOptions, Ui, pos2,
     vec2,
 };
-use obs_engine::HighlightLook;
+use obs_engine::{HighlightLook, NoteDisplay};
 use obs_render::{GlyphAtlas, GlyphQuad};
 
 use crate::find::Found;
@@ -368,6 +368,11 @@ pub struct PaneOutput {
     pub context_clicked: bool,
     /// The Note marker under the pointer: the Note's id and the marker's screen rect.
     pub hovered_note: Option<(String, Rect)>,
+    /// Every Note marker drawn this frame, in Mark order (oldest first).
+    pub note_markers: Vec<NoteMarker>,
+    /// Where the Note margin is this frame, in Margin mode (#210); `None` in Icons and
+    /// Hidden, and in a pane too narrow for it (which shows Icons).
+    pub note_margin: Option<NoteMarginRoom>,
     /// The Note marker clicked this frame: the Note's id (it opens in the Notes Tool, #64).
     pub clicked_note: Option<String>,
     /// The user moved the view (wheel, keys, scrollbar, selection auto-scroll).
@@ -402,6 +407,28 @@ pub struct PaneOutput {
     pub drag_out: Option<DragOut>,
 }
 
+/// A Note marker as a reading pane drew it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NoteMarker {
+    /// The Note's id.
+    pub id: String,
+    /// The marker, in screen points.
+    pub rect: Rect,
+    /// It is beside a verse number (a Note from another Bible, #63), not in the text.
+    pub at_verse_number: bool,
+}
+
+/// The Note margin of a reading pane in Margin mode (#210), in screen points.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NoteMarginRoom {
+    /// The margin column, the pane's full height.
+    pub rect: Rect,
+    /// The text column's edge on the margin's side, where leader lines leave the text.
+    pub text_edge: f32,
+    /// The margin is left of the text (right-to-left text).
+    pub rtl: bool,
+}
+
 /// One Visual filter's matches in view (#211): its look, and the rectangles of its words in
 /// text coordinates (as [`range_rects`] gives them).
 pub type FilterRects = (obs_engine::StyleAppearance, Vec<[f32; 4]>);
@@ -414,6 +441,9 @@ pub struct PaneMarks<'a> {
     /// The Tab's Visual filters (#211), drawn under the Annotations: their matches in the
     /// blocks this frame shows.
     pub filters: Option<&'a mut crate::filters::FilterPainter>,
+    /// How the Tab shows its Notes (#210): Margin leaves room beside the text for the Note
+    /// cards the Shell draws there; Hidden draws no Note markers.
+    pub note_display: NoteDisplay,
 }
 
 /// Draw the reading pane into all the space `ui` has, and handle its input. `flash` marks a
@@ -431,7 +461,17 @@ pub fn reading_pane(
     pane_marks: PaneMarks<'_>,
     found: Found<'_>,
 ) -> PaneOutput {
-    let marks = pane_marks.annotations;
+    let shown_notes: Vec<Mark>;
+    let marks = match pane_marks.note_display {
+        NoteDisplay::Hidden => {
+            shown_notes = (pane_marks.annotations.iter())
+                .filter(|m| !m.kind.is_note())
+                .cloned()
+                .collect();
+            &shown_notes[..]
+        }
+        NoteDisplay::Margin | NoteDisplay::Icons => pane_marks.annotations,
+    };
     let mut out = PaneOutput::default();
     let rect = ui.available_rect_before_wrap();
     let response = ui.allocate_rect(rect, Sense::click_and_drag());
@@ -443,17 +483,49 @@ pub fn reading_pane(
     // about 70 characters.
     let room = (rect.width() - 2.0 * MARGIN - SCROLLBAR).max(size::TEXT_MIN);
     let settings = view.settings();
-    let measure = (settings.layout.column.ems()).map_or(room, |ems| room.min(settings.size * ems));
-    let left = rect.left() + MARGIN + ((room - measure) / 2.0).floor();
+    let rtl = view.doc.direction() == obs_model::Direction::Rtl;
+    // In Margin mode (#210) the text column and the Note margin are centred together; a pane
+    // too narrow for both shows Icons.
+    let split = (pane_marks.note_display == NoteDisplay::Margin)
+        .then(|| crate::note_margin::split(room, settings.size, settings.layout.column, rtl))
+        .flatten();
+    let (left, measure) = match split {
+        Some(s) => (rect.left() + MARGIN + s.text_left, s.measure),
+        None => {
+            let measure =
+                (settings.layout.column.ems()).map_or(room, |ems| room.min(settings.size * ems));
+            (
+                rect.left() + MARGIN + ((room - measure) / 2.0).floor(),
+                measure,
+            )
+        }
+    };
     let text_rect = Rect::from_min_max(pos2(left, rect.top()), pos2(left + measure, rect.bottom()));
+    out.note_margin = split.map(|s| {
+        let x = rect.left() + MARGIN + s.margin_left;
+        NoteMarginRoom {
+            rect: Rect::from_min_max(pos2(x, rect.top()), pos2(x + s.margin, rect.bottom())),
+            text_edge: if rtl {
+                text_rect.left()
+            } else {
+                text_rect.right()
+            },
+            rtl,
+        }
+    });
     view.set_width(text_rect.width());
     view.text_origin = [text_rect.left(), rect.top()];
     view.pane_rect = [rect.left(), rect.top(), rect.right(), rect.bottom()];
     view.set_clock(ui.input(|i| i.time));
     let before = view.position().0;
 
-    // Input: wheel and trackpad, keys, scrollbar drag.
-    if response.hovered() {
+    // Input: wheel and trackpad, keys, scrollbar drag. The wheel over the Note margin is the
+    // margin's (#210): an expanded card scrolls its own text first.
+    let over_margin = (out.note_margin.as_ref()).is_some_and(|m| {
+        ui.input(|i| i.pointer.hover_pos())
+            .is_some_and(|p| m.rect.contains(p))
+    });
+    if response.hovered() && !over_margin {
         let dy = ui.input(|i| i.smooth_scroll_delta.y);
         view.scroll_by(-dy);
     }
@@ -703,7 +775,6 @@ pub fn reading_pane(
             )
     });
     // Over the glyphs: the red underline, then Note markers at the end of their ranges.
-    let rtl = view.doc.direction() == obs_model::Direction::Rtl;
     let hover = response.hover_pos();
     let in_view: Vec<usize> = if marks
         .iter()
@@ -744,6 +815,11 @@ pub fn reading_pane(
                     continue;
                 };
                 paint_note_marker(&painter, marker, palette);
+                out.note_markers.push(NoteMarker {
+                    id: mark.id.clone(),
+                    rect: marker,
+                    at_verse_number: false,
+                });
                 if hover.is_some_and(|p| marker.expand(mark::HIT_SLOP).contains(p)) {
                     out.hovered_note = Some((mark.id.clone(), marker));
                     if response.clicked() {
@@ -781,6 +857,11 @@ pub fn reading_pane(
                     }
                     _ => {
                         paint_note_marker(&painter, r, palette);
+                        out.note_markers.push(NoteMarker {
+                            id: mark.id.clone(),
+                            rect: r,
+                            at_verse_number: true,
+                        });
                         if hover.is_some_and(|p| r.expand(mark::HIT_SLOP).contains(p)) {
                             out.hovered_note = Some((mark.id.clone(), r));
                         }

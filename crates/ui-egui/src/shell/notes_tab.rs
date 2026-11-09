@@ -28,7 +28,9 @@
 //!   the card in Last modified order, or out of the filter) cannot pull the editor out of
 //!   view mid-sentence; the list re-sorts when editing ends. The Shell checks the autosave
 //!   every frame, and ends the editing pass (saving it) in any frame the Notes Tab is not
-//!   drawn, so a Note is searchable, and safe, as soon as another Tab covers it.
+//!   drawn, so a Note is searchable, and safe, as soon as another Tab covers it. A Note card
+//!   in a reading pane's Note margin (#210, `note_margin.rs`) is edited through the same
+//!   [`CardEdit`], at [`EditPlace::Margin`]: one Note is edited at a time, wherever it is.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
@@ -66,16 +68,25 @@ pub(super) fn card_editor_id(id: &str) -> egui::Id {
     egui::Id::unique(("notes-card-edit", id))
 }
 
+/// Where a Note card is edited in place: the Notes Tool, or a reading pane's Note margin
+/// (#210). One Note is edited at a time, wherever it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EditPlace {
+    NotesTool,
+    Margin(TabId),
+}
+
 /// A Note card being edited in place.
 pub(super) struct CardEdit {
     pub(super) id: String,
+    pub(super) place: EditPlace,
     pub(super) text: String,
     /// The text as last saved.
     saved: String,
     /// Saved at least once in this editing pass: later saves join its undo step.
     saved_once: bool,
-    changed_at: f64,
-    focus: bool,
+    pub(super) changed_at: f64,
+    pub(super) focus: bool,
     /// Why the last save failed (the database refused the write). The editor stays open with
     /// the text and this message; the save is tried again a moment later.
     pub(super) error: Option<String>,
@@ -182,6 +193,8 @@ pub(super) struct NotesUi {
     pub(super) ref_parses: usize,
     /// The Notes Tab was drawn this frame.
     pub(super) shown: bool,
+    /// The Note margin editing a Note (#210) was drawn this frame.
+    pub(super) margin_shown: bool,
 }
 
 impl NotesUi {
@@ -422,12 +435,20 @@ impl State {
         let card = &self.notes_ui.cards[i].annotation;
         if edit && card.is_note() {
             let (id, body) = (card.id.clone(), card.body().to_string());
-            self.start_card_edit(&id, &body);
+            self.start_card_edit(&id, &body, EditPlace::NotesTool);
         }
     }
 
-    fn start_card_edit(&mut self, id: &str, body: &str) {
-        if self.notes_ui.editing.as_ref().is_some_and(|e| e.id == id) {
+    /// Start editing Note `id` in place at `place`; a Note edited elsewhere saves first.
+    /// `body` is the caller's copy of its text, which may be a frame old: the text edited is
+    /// the Note's as saved, and the same Note being edited elsewhere moves here with the text
+    /// typed so far, saved or not.
+    pub(super) fn start_card_edit(&mut self, id: &str, body: &str, place: EditPlace) {
+        if let Some(ed) = self.notes_ui.editing.as_mut().filter(|e| e.id == id) {
+            if ed.place != place {
+                ed.place = place;
+                ed.focus = true;
+            }
             return;
         }
         self.save_card_edit(true);
@@ -435,8 +456,13 @@ impl State {
         if self.notes_ui.editing.is_some() {
             return;
         }
+        // An edit that just ended (its editor lost the keys to this click) saved text the
+        // caller's copy may not have yet.
+        let saved = self.session.annotation(id).ok();
+        let body = saved.as_ref().map_or(body, |a| a.body());
         self.notes_ui.editing = Some(CardEdit {
             id: id.to_string(),
+            place,
             text: body.to_string(),
             saved: body.to_string(),
             saved_once: false,
@@ -499,10 +525,15 @@ impl State {
     /// last keystroke, or at once, ending the editing pass, if the Notes Tab was not drawn
     /// (another Tab covers it, or it closed), since its editor can no longer lose focus.
     pub(super) fn notes_after_frame(&mut self, ctx: &egui::Context) {
-        let shown = std::mem::take(&mut self.notes_ui.shown);
-        if self.notes_ui.editing.is_none() {
+        let tool = std::mem::take(&mut self.notes_ui.shown);
+        let margin = std::mem::take(&mut self.notes_ui.margin_shown);
+        let Some(place) = self.notes_ui.editing.as_ref().map(|e| e.place) else {
             return;
-        }
+        };
+        let shown = match place {
+            EditPlace::NotesTool => tool,
+            EditPlace::Margin(_) => margin,
+        };
         // A save that failed is retried on the autosave's clock even while the Tab is hidden.
         let failed = self
             .notes_ui
@@ -1032,7 +1063,8 @@ impl State {
         run: &mut Vec<(&'static str, Value)>,
     ) -> Rect {
         let a = &card.annotation;
-        let editing = self.notes_ui.editing.as_ref().is_some_and(|e| e.id == a.id);
+        let editing = (self.notes_ui.editing.as_ref())
+            .is_some_and(|e| e.id == a.id && e.place == EditPlace::NotesTool);
         if editing {
             let now = self.now;
             let mut finished = false;
@@ -1107,7 +1139,7 @@ impl State {
         );
         let r = r.on_hover_cursor(egui::CursorIcon::Text);
         if r.clicked() && !link_hit {
-            self.start_card_edit(&a.id, a.body());
+            self.start_card_edit(&a.id, a.body(), EditPlace::NotesTool);
         }
         rect
     }
@@ -1249,10 +1281,8 @@ impl State {
         self.body_links(ui, text_rect, &laid, body, run)
     }
 
-    /// Underline a body line's links and Bible references. Hovering a reference, or a link
-    /// to one, shows the reference popup and clicking it shows the Passage
-    /// (`notes.show_passage`, #18 rule 10; Ctrl/Cmd: a new Tab); a link to a web address
-    /// shows the address and clicking it opens it. Returns whether the pointer is on one.
+    /// Underline a body line's links and Bible references, and follow the one under the
+    /// pointer ([`State::note_link`]). Returns whether the pointer is on one.
     fn body_links(
         &mut self,
         ui: &Ui,
@@ -1261,41 +1291,8 @@ impl State {
         body: &NoteBodyLine,
         run: &mut Vec<(&'static str, Value)>,
     ) -> bool {
-        enum Target<'a> {
-            Passages(PassageList),
-            Url(&'a str),
-            /// Another page of the User guide (#218).
-            GuidePage(&'static obs_engine::GuidePage),
-            Other(&'a str),
-        }
-        let mut targets: Vec<(Range<usize>, Target)> = body
-            .references
-            .iter()
-            .map(|(r, list)| (r.clone(), Target::Passages(list.clone())))
-            .collect();
-        for m in &body.line.marks {
-            if let NoteMarkKind::Link(to) = &m.kind {
-                let target = match link_passages(to) {
-                    Some(list) => Target::Passages(list),
-                    None if ["https://", "http://", "mailto:"]
-                        .iter()
-                        .any(|p| to.starts_with(p)) =>
-                    {
-                        Target::Url(to)
-                    }
-                    None => match obs_engine::page_for_link(to) {
-                        Some(page) => Target::GuidePage(page),
-                        None => Target::Other(to),
-                    },
-                };
-                targets.push((m.range.clone(), target));
-            }
-        }
-        let pointer = ui.input(|i| i.pointer.hover_pos());
-        let clicked = ui.input(|i| i.pointer.primary_clicked());
-        let split = ui.input(|i| i.modifiers.command);
         let mut on = false;
-        for (range, target) in targets {
+        for (range, target) in note_link_targets(body) {
             let rects: Vec<Rect> = crate::compare_view::range_rects(laid, &range)
                 .into_iter()
                 .map(|[x0, y0, x1, y1]| {
@@ -1309,47 +1306,66 @@ impl State {
                     Stroke::new(stroke::HAIR, self.palette.link.gamma_multiply(alpha::SOFT)),
                 );
             }
-            if !(pointer.is_some_and(|p| rects.iter().any(|r| r.contains(p)))
-                && ui.rect_contains_pointer(rect))
-            {
-                continue;
-            }
-            on = true;
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-            match target {
-                Target::Passages(list) => {
-                    self.reference_popup(ui, std::slice::from_ref(&list));
-                    if clicked && let Some(p) = list.passages().first() {
-                        let passage = format_passage(*p, &Standard, RefStyle::Short);
-                        run.push((
-                            "notes.show_passage",
-                            json!({ "passage": passage, "split": split }),
-                        ));
-                    }
-                }
-                Target::Url(url) => {
-                    link_tip(ui, &format!("{url}\nClick to open it in the browser"));
-                    if clicked {
-                        ui.ctx().open_url(egui::OpenUrl::new_tab(url));
-                    }
-                }
-                Target::GuidePage(page) => {
-                    link_tip(ui, &format!("User guide: {}", page.title));
-                    if clicked {
-                        // Opens the User guide (or brings it to the front) at the page, from a
-                        // Note card as from the guide itself.
-                        run.push(("help.user_guide", json!({ "page": page.id })));
-                    }
-                }
-                Target::Other(to) => {
-                    link_tip(
-                        ui,
-                        &format!("“{to}” is not a Bible reference or a web address"),
-                    );
-                }
-            }
+            on |= self.note_link(ui, rect, &rects, &target, run);
         }
         on
+    }
+
+    /// A link or Bible reference in a Note's text, drawn at `rects` within `area` (wherever
+    /// the Note shows: a Notes Tool card or a Note margin card, #210). Hovering a reference,
+    /// or a link to one, shows the reference popup and clicking it shows the Passage
+    /// (`notes.show_passage`, #18 rule 10; Ctrl/Cmd: a new Tab); a link to a web address
+    /// shows the address and clicking it opens it. Returns whether the pointer is on it.
+    pub(super) fn note_link(
+        &mut self,
+        ui: &Ui,
+        area: Rect,
+        rects: &[Rect],
+        target: &NoteLinkTarget,
+        run: &mut Vec<(&'static str, Value)>,
+    ) -> bool {
+        let pointer = ui.input(|i| i.pointer.hover_pos());
+        if !(pointer.is_some_and(|p| rects.iter().any(|r| r.contains(p)))
+            && ui.rect_contains_pointer(area))
+        {
+            return false;
+        }
+        let clicked = ui.input(|i| i.pointer.primary_clicked());
+        let split = ui.input(|i| i.modifiers.command);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        match target {
+            NoteLinkTarget::Passages(list) => {
+                self.reference_popup(ui, std::slice::from_ref(list));
+                if clicked && let Some(p) = list.passages().first() {
+                    let passage = format_passage(*p, &Standard, RefStyle::Short);
+                    run.push((
+                        "notes.show_passage",
+                        json!({ "passage": passage, "split": split }),
+                    ));
+                }
+            }
+            NoteLinkTarget::Url(url) => {
+                link_tip(ui, &format!("{url}\nClick to open it in the browser"));
+                if clicked {
+                    ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+                }
+            }
+            NoteLinkTarget::GuidePage(page) => {
+                link_tip(ui, &format!("User guide: {}", page.title));
+                if clicked {
+                    // Opens the User guide (or brings it to the front) at the page, from a
+                    // Note card as from the guide itself.
+                    run.push(("help.user_guide", json!({ "page": page.id })));
+                }
+            }
+            NoteLinkTarget::Other(to) => {
+                link_tip(
+                    ui,
+                    &format!("“{to}” is not a Bible reference or a web address"),
+                );
+            }
+        }
+        true
     }
 
     /// Paint laid text with the text pipeline (glyph atlas) at `origin`.
@@ -1467,6 +1483,44 @@ impl State {
             ui.close();
         }
     }
+}
+
+/// Where a link or Bible reference in a Note's text goes.
+pub(super) enum NoteLinkTarget {
+    Passages(PassageList),
+    Url(String),
+    /// Another page of the User guide (#218).
+    GuidePage(&'static obs_engine::GuidePage),
+    Other(String),
+}
+
+/// A Note line's links and Bible references (live whether or not they are formatted, #186),
+/// as byte ranges of its text, with where each goes.
+pub(super) fn note_link_targets(body: &NoteBodyLine) -> Vec<(Range<usize>, NoteLinkTarget)> {
+    let mut targets: Vec<(Range<usize>, NoteLinkTarget)> = body
+        .references
+        .iter()
+        .map(|(r, list)| (r.clone(), NoteLinkTarget::Passages(list.clone())))
+        .collect();
+    for m in &body.line.marks {
+        if let NoteMarkKind::Link(to) = &m.kind {
+            let target = match link_passages(to) {
+                Some(list) => NoteLinkTarget::Passages(list),
+                None if ["https://", "http://", "mailto:"]
+                    .iter()
+                    .any(|p| to.starts_with(p)) =>
+                {
+                    NoteLinkTarget::Url(to.clone())
+                }
+                None => match obs_engine::page_for_link(to) {
+                    Some(page) => NoteLinkTarget::GuidePage(page),
+                    None => NoteLinkTarget::Other(to.clone()),
+                },
+            };
+            targets.push((m.range.clone(), target));
+        }
+    }
+    targets
 }
 
 /// A small tip by the pointer over a link.

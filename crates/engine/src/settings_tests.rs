@@ -84,6 +84,11 @@ fn every_preference_command_is_a_setting() {
             MenuItem::Command("app.settings") | MenuItem::Separator => {}
             // A Tab's own state, kept in Layouts with the Tab (#208), not a preference.
             MenuItem::Command("view.footnote_markers") => {}
+            // Also a Tab's own choice (#210).
+            MenuItem::Choice {
+                command: "view.note_display",
+                ..
+            } => {}
             MenuItem::Command(id) | MenuItem::Choice { command: id, .. } => wanted.push(id),
             MenuItem::Notebooks => wanted.push("notebook.show_in_text"),
             // A Tab's own choices; their defaults are Settings.
