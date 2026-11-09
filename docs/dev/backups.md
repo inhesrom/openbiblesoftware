@@ -60,7 +60,7 @@ Before any of it, `Session::restore_backup(path)` checks what the engine keeps i
 which the store cannot read (`backup_check.rs`, #258), on the Backup read into memory
 (`UserData::open_backup`): every Layout's Workspace snapshot and every Favorite's and Visit's
 location must read, and so must every setting the app keeps as JSON (`JSON_SETTINGS`: View
-settings, toolbar, keys, Update check settings, Home, Guide arrangements, Saved searches, Search history, recent
+settings, Custom theme, toolbar, keys, Update check settings, Home, Guide arrangements, Saved searches, Search history, recent
 searches and Command box entries, Copy verses, Collections, Resource tags, Visual filters,
 the Starter library state, Import reports, kept Attributions), each as the type its loader
 reads. Settings the loader keeps only part of are checked as it reads them: a field of View,

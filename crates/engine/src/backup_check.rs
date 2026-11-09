@@ -6,7 +6,7 @@
 //! location, and the settings it keeps as JSON ([`JSON_SETTINGS`]). The app reads each of
 //! those leniently at launch: an unreadable one is left out or back at its default, and so is
 //! an unreadable field of a setting read field by field (a View setting, a Keyboard
-//! shortcut, an Update check flag), a View Text size or Line spacing beyond what the app
+//! shortcut, an Update check flag), a Custom theme from a later version, a View Text size or Line spacing beyond what the app
 //! allows (it would be clamped), a Search history longer than the app keeps (its oldest
 //! entries would be dropped), a repeated or unknown card of Home or section of a Guide
 //! arrangement, and an Import report filed under another Resource's key. So a restore checks
@@ -222,6 +222,14 @@ pub(crate) const JSON_SETTINGS: &[JsonSetting] = &[
         key: crate::session::VIEW_PREF,
         what: "View settings (Text size, Theme, fonts)",
         reads: reads_view,
+    },
+    JsonSetting {
+        key: crate::custom_theme::CUSTOM_THEME_PREF,
+        what: "Custom theme",
+        reads: |_, json| {
+            serde_json::from_str::<crate::custom_theme::ThemeFile>(json)
+                .is_ok_and(|f| crate::custom_theme::CustomTheme::from_file(&f).is_ok())
+        },
     },
     JsonSetting {
         key: crate::toolbar_settings::TOOLBAR_PREF,

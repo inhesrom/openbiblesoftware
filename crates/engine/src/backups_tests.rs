@@ -768,6 +768,10 @@ fn field_by_field_settings_refuse_unreadable_fields_and_read_older_records() {
         ),
         ("updates", r#"{"auto_check":false,"skipped":null}"#),
         ("updates", r#"{"skipped":"0.2.0"}"#),
+        (
+            "custom-theme",
+            r##"{"format":"openbible-theme","version":1,"base":"high_contrast_dark","colors":{"ink":"#ffffff"}}"##,
+        ),
     ] {
         assert!(reads(key, json), "{key} {json}");
     }
@@ -788,6 +792,14 @@ fn field_by_field_settings_refuse_unreadable_fields_and_read_older_records() {
         ("key_bindings", r#"{"annotation.note":"Ctrl+Nowhere"}"#),
         ("updates", r#"{"auto_check":"false"}"#),
         ("updates", r#"{"skipped":1}"#),
+        (
+            "custom-theme",
+            r#"{"format":"x","version":1,"base":"light"}"#,
+        ),
+        (
+            "custom-theme",
+            r##"{"format":"openbible-theme","version":1,"base":"light","colors":{"nowhere":"#000000"}}"##,
+        ),
         ("view", r#"{"text_size":41}"#),
         ("view", r#"{"line_spacing":0.9}"#),
         ("view", r#"{"line_spacing":2.1}"#),
@@ -879,6 +891,11 @@ fn a_backup_of_what_the_app_writes_passes_the_restore_check() {
     let run = |s: &mut Session, id: &str, p: Value| {
         s.run(id, &p).unwrap_or_else(|e| panic!("{id}: {e}"));
     };
+    run(
+        &mut s,
+        "theme.set_color",
+        json!({ "role": "lapis", "color": "#FFD000" }),
+    );
     run(
         &mut s,
         "keys.set",
