@@ -242,11 +242,13 @@ impl State {
                 }
                 Some(p) if p.error.is_some() => {
                     let e = p.error.as_deref().unwrap_or_default();
+                    // A row of a list: the plain message, the error itself on hover (#223).
                     ui.label(
-                        RichText::new(format!("Could not read the {preview_abbreviation}: {e}"))
+                        RichText::new(format!("Could not read the {preview_abbreviation}."))
                             .small()
                             .color(c.warn),
-                    );
+                    )
+                    .on_hover_text(e);
                 }
                 Some(_) => {
                     ui.label(

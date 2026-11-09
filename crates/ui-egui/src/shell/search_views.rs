@@ -279,16 +279,14 @@ impl State {
         let muted = theme::c().muted;
         let Some((analysis, order)) = st.analysis_rows() else {
             ui.add_space(space::XXXL);
-            // A failed Analysis says why under the search box; no spinner here then.
+            // A failed Analysis says why, with Retry, over the results (#223); no skeleton
+            // here then.
             let failed = !st.analysis_running() && st.error.is_some();
-            ui.vertical_centered(|ui| {
+            crate::components::band_frame().show(ui, |ui| {
                 if failed {
                     ui.label(RichText::new("The Analysis could not be made.").color(muted));
                 } else {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label(RichText::new("Analysing the matched words…").color(muted));
-                    });
+                    crate::components::loading_state(ui, "Analysing the matched words…");
                 }
             });
             if !failed && !st.analysis_running() {

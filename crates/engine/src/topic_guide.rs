@@ -836,6 +836,11 @@ pub struct TopicGuides {
 }
 
 impl TopicGuides {
+    /// Forget why the directory failed to load, so the next ask loads it again (Retry, #223).
+    pub(crate) fn forget_failure(&mut self) {
+        self.failed = None;
+    }
+
     /// The text a Topic Guide Tab's chooser shows, if it shows one.
     pub fn choosing(&self, tab: TabId) -> Option<&str> {
         self.choosing.get(&tab).map(String::as_str)

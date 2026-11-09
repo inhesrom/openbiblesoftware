@@ -2829,16 +2829,26 @@ mod text_comparison {
             assert_eq!(errors.len(), 1);
             let error = errors[id].clone();
             let message = if is_base {
-                "Base Bible unavailable — differences not shown:"
+                "Base Bible unavailable: it could not be opened, so differences are not shown."
             } else {
-                "Bible unavailable:"
+                "Bible unavailable: it could not be opened."
             };
+            // #223: the plain message on the page, never the error itself.
+            assert!(texts_in(&h, cmp).iter().any(|s| s == message));
+            assert!(!texts_in(&h, cmp).iter().any(|s| s.contains(&error)));
+            let abbreviation = &doc.manifest.abbreviation;
+            let said = format!("{abbreviation} could not be opened.");
+            assert!(texts_in(&h, cmp).contains(&said), "{:?}", texts_in(&h, cmp));
+            assert!(h.find(crate::components::RETRY).is_some());
+            // Details shows the error on demand; Hide details folds it away.
+            h.click_text(crate::components::DETAILS);
             assert!(
+                texts_in(&h, cmp).iter().any(|s| s.contains(&error)),
+                "Details does not show the error: {:?}",
                 texts_in(&h, cmp)
-                    .iter()
-                    .any(|s| s.starts_with(message) && s.contains(&error))
             );
-            assert!(h.find("Retry unavailable Bibles").is_some());
+            h.click_text(crate::components::HIDE_DETAILS);
+            assert!(!texts_in(&h, cmp).iter().any(|s| s.contains(&error)));
             assert!(
                 texts_in(&h, cmp)
                     .iter()
@@ -2859,7 +2869,7 @@ mod text_comparison {
             h.frames(4);
             assert_eq!(h.shell.st.tabs[&cmp].comparison_errors[id], error);
             assert!(texts_in(&h, cmp).iter().any(|s| s.starts_with(message)));
-            h.click_text("Retry unavailable Bibles");
+            h.click_text(crate::components::RETRY);
             settle(&mut h, cmp);
             assert!(h.shell.st.tabs[&cmp].comparison_errors.is_empty());
             assert!(!texts_in(&h, cmp).iter().any(|s| s.starts_with(message)));
@@ -3561,6 +3571,8 @@ mod menu_audit;
 mod note_margin_ui;
 #[path = "page_tone_tests.rs"]
 mod page_tone;
+#[path = "pane_states_tests.rs"]
+mod pane_states;
 #[path = "reading_layout_tests.rs"]
 mod reading_layout;
 #[path = "recently_closed_tests.rs"]
@@ -3956,7 +3968,9 @@ mod get_bibles {
             h.texts()
         );
         assert!(h.find(NASB).is_some(), "cached catalog still listed");
-        assert!(h.find("Try again").is_some());
+        // #223: an error state, the fetch error itself behind Details.
+        assert!(h.find(crate::components::RETRY).is_some());
+        assert!(h.find(crate::components::DETAILS).is_some());
         // The rest of the app is unaffected: the Library still opens.
         h.open_menu("Library");
         h.click_text("Library");
@@ -3965,11 +3979,11 @@ mod get_bibles {
                 .iter()
                 .any(|(_, t)| t.iter().any(|t| t == "Library"))
         );
-        // Back online, Try again clears the banner.
+        // Back online, Retry clears the banner.
         repos.set_offline(false);
         let tab = h.tab_at("Get Resources");
         h.click(tab);
-        h.click_text("Try again");
+        h.click_text(crate::components::RETRY);
         settle(&mut h);
         assert!(
             !h.texts().iter().any(|t| t.starts_with("Offline:")),
@@ -4099,7 +4113,7 @@ mod get_bibles {
             "{:?}",
             h.texts()
         );
-        assert!(h.find(NASB).is_some() && h.find("Try again").is_some());
+        assert!(h.find(NASB).is_some() && h.find(crate::components::RETRY).is_some());
         h.screenshot(&shots.join("live-offline.ppm"));
         let tab = h.tab_at("NASB1995");
         h.click(tab);

@@ -622,16 +622,17 @@ pub fn comparison_pane(
                 label_h += text::CAPTION_LINE;
             }
             if let Some(error) = view.docs[row].doc.as_ref().err() {
+                // The plain message on the page (#223); screen readers get the error too.
                 let message = if is_base {
-                    format!("Base Bible unavailable — differences not shown: {error}")
+                    "Base Bible unavailable: it could not be opened, so differences are not shown."
                 } else {
-                    format!("Bible unavailable: {error}")
+                    "Bible unavailable: it could not be opened."
                 };
                 let galley =
-                    painter.layout(message.clone(), label_font.clone(), palette.ink, text_width);
+                    painter.layout(message.into(), label_font.clone(), palette.ink, text_width);
                 height = galley.size().y;
                 painter.galley(pos2(text_left, row_y + space::XS), galley, palette.ink);
-                accessible_text = message;
+                accessible_text = format!("{message} {error}");
             } else {
                 match &c.cell {
                     Cell::Text { text, .. } if !text.is_empty() => {

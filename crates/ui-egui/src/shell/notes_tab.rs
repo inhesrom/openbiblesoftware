@@ -861,19 +861,35 @@ impl State {
                 .tabs
                 .get(&tab)
                 .is_some_and(|t| !t.filter.trim().is_empty());
-            let message = if filtered {
-                "Nothing matches the filter"
+            let every = "Show every Notebook";
+            let (message, button) = if filtered {
+                ("Nothing matches the filter.", "Clear the filter")
             } else if self.session.notes.filter == NotesFilter::NeedsAttention {
-                "Nothing needs attention: every Annotation is anchored to its text."
+                (
+                    "Nothing needs attention: every Annotation is anchored to its text.",
+                    every,
+                )
             } else if self.session.notes.filter != NotesFilter::All {
-                "This Notebook is empty"
+                ("This Notebook is empty.", every)
             } else {
-                "No Notes or Highlights yet. Select text in a Bible, then pick a colour, or Note to write one."
+                (
+                    "No Notes or Highlights yet. Select text in a Bible, then pick a colour, or \
+                     Note to write one.",
+                    "Open the Library",
+                )
             };
             ui.add_space(space::XXXL);
-            ui.vertical_centered(|ui| {
-                ui.label(RichText::new(message).color(theme::c().muted));
-            });
+            if crate::components::empty_state(ui, message, button).clicked() {
+                if filtered {
+                    if let Some(t) = self.tabs.get_mut(&tab) {
+                        t.filter.clear();
+                    }
+                } else if button == every {
+                    self.run("notes.notebook", &json!({ "value": "all" }));
+                } else {
+                    self.run("library.open", &json!({}));
+                }
+            }
             return;
         }
         let mut scroll = egui::ScrollArea::vertical()

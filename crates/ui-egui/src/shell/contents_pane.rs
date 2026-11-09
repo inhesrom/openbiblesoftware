@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::Range;
 use std::sync::{Arc, Weak};
 
-use egui::{RichText, Sense, Ui, vec2};
+use egui::{Sense, Ui, vec2};
 use obs_engine::contents::{Contents, ContentsTarget};
 use obs_engine::{JobEventKind, JobId, JobQueue, TabId};
 use obs_model::ResourceType;
@@ -42,6 +42,9 @@ pub(crate) struct ContentsCache {
     jobs: Option<JobQueue>,
     pending: BTreeMap<JobId, (String, Weak<ReadingDoc>)>,
     ready: HashMap<String, (Weak<ReadingDoc>, Arc<Contents>)>,
+    /// Tests: builds wait, so the Contents pane stays loading (#223's loading state).
+    #[cfg(test)]
+    pub(crate) hold: bool,
 }
 
 impl ContentsCache {
@@ -62,7 +65,11 @@ impl ContentsCache {
                 JobQueue::inline()
             }
         });
-        if !jobs.is_threaded() {
+        #[cfg(test)]
+        let held = self.hold;
+        #[cfg(not(test))]
+        let held = false;
+        if !jobs.is_threaded() && !held {
             jobs.pump(1);
         }
         for event in jobs.drain_events() {
@@ -200,12 +207,19 @@ impl State {
         };
         let threaded = self.session.jobs().is_threaded();
         let Some(contents) = self.contents.get(&doc, threaded) else {
-            ui.label(RichText::new("Loading contents…").color(theme::c().muted));
-            ui.ctx().request_repaint();
+            crate::components::loading_state(ui, "Loading contents…");
             return;
         };
         if contents.is_empty() {
-            ui.label(RichText::new("No contents").color(theme::c().muted));
+            if crate::components::empty_state(
+                ui,
+                "This Resource has no contents to list.",
+                "Close Contents",
+            )
+            .clicked()
+            {
+                self.run("tab.contents", &serde_json::json!({ "tab": tab.0 }));
+            }
             return;
         }
         let Some(t) = self.tabs.get_mut(&tab) else {
@@ -251,8 +265,16 @@ impl State {
         } else {
             visible_rows(&contents, &state.expanded)
         };
-        if filtering && rows.is_empty() {
-            ui.label(RichText::new("No entry matches").color(theme::c().muted));
+        if filtering
+            && rows.is_empty()
+            && crate::components::empty_state(
+                ui,
+                "No entry matches the filter.",
+                "Clear the filter",
+            )
+            .clicked()
+        {
+            state.filter.clear();
         }
         ui.spacing_mut().item_spacing.y = space::XXS;
         let area = egui::ScrollArea::vertical()

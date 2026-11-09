@@ -252,7 +252,13 @@ impl State {
                     ui,
                     "Notebooks are kept in the User database, which is not open.",
                 ),
-                Err(e) => muted(ui, &format!("The Notebooks could not be read: {e}")),
+                // The plain message; the error itself on hover (#223).
+                Err(e) => {
+                    ui.label(
+                        RichText::new("The Notebooks could not be read.").color(theme::c().muted),
+                    )
+                    .on_hover_text(e);
+                }
             },
             SettingKind::HomeCards => {
                 let home = self.session.home_settings();

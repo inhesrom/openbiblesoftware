@@ -17,7 +17,7 @@ use obs_scripture::{Book, Passage, RefStyle, Standard, format_passage};
 use serde_json::json;
 
 use super::State;
-use super::guide_tab::hint_page;
+use super::guide_tab::{Action as GuideAction, hint_page};
 use super::guide_words::ROWS_SHOWN;
 use crate::theme;
 use crate::tokens::{size, space};
@@ -40,6 +40,8 @@ pub(super) enum FactbookAction {
     StopChoosing,
     /// The no-index hint's button (#135): Get Resources, the Starter library or Import.
     Command(&'static str, serde_json::Value),
+    /// An error state's Retry (#223).
+    Retry,
 }
 
 impl State {
@@ -54,11 +56,14 @@ impl State {
             .tab(tab)
             .and_then(|t| t.entry_history.current());
         let Some(Key::Headword(id)) = key else {
-            hint_page(
+            if hint_page(
                 ui,
                 "Type the name of a person or place in the box above (Abraham, John, Bethel), \
                  or click a name in a Passage Guide's People & places.",
-            );
+                "Show Abraham",
+            ) {
+                self.run("tab.go", &json!({ "tab": tab.0, "text": "Abraham" }));
+            }
             return;
         };
         let card = self.session.factbook_card(&id);
@@ -67,10 +72,7 @@ impl State {
             tab,
             Guide::Factbook,
             &Key::Headword(id.clone()),
-            &mut |_, ui| {
-                factbook_header(ui, &id, &card);
-                None
-            },
+            &mut |_, ui| factbook_header(ui, &id, &card).then_some(GuideAction::Retry),
         );
     }
 
@@ -100,17 +102,14 @@ impl State {
             });
             let chooser = match &status {
                 WordStatus::Loading => {
-                    ui.label(
-                        RichText::new(format!("Looking up “{name}”…")).color(theme::c().muted),
-                    );
-                    ui.ctx().request_repaint();
+                    crate::components::loading_state(ui, &format!("Looking up “{name}”…"));
                     return;
                 }
                 WordStatus::Failed(e) => {
-                    ui.label(
-                        RichText::new(format!("Could not look up “{name}”: {e}"))
-                            .color(theme::c().warn),
-                    );
+                    let message = format!("“{name}” could not be looked up.");
+                    if crate::components::error_state(ui, &message, e) {
+                        action = Some(FactbookAction::Retry);
+                    }
                     return;
                 }
                 WordStatus::Ready(c) => c,
@@ -423,6 +422,7 @@ impl State {
                 self.run("tab.go", &json!({ "tab": tab.0, "text": id }));
             }
             FactbookAction::StopChoosing => self.session.stop_choosing_factbook(tab),
+            FactbookAction::Retry => self.retry_failed(),
             FactbookAction::Article(a, new_tab) => self.open_article(tab, &a, new_tab),
             FactbookAction::Passage(p, new_tab) => self.open_key_passage(tab, p, new_tab),
             FactbookAction::Command(id, params) => {
@@ -439,7 +439,8 @@ impl State {
 }
 
 /// The header: name, what tells it apart, and its kind, region and where it is named.
-fn factbook_header(ui: &mut Ui, id: &str, card: &WordStatus<EntityCard>) {
+/// Returns whether an error state's Retry was clicked.
+fn factbook_header(ui: &mut Ui, id: &str, card: &WordStatus<EntityCard>) -> bool {
     let name = obs_engine::people_places::display_name(id);
     match card {
         WordStatus::Ready(c) => {
@@ -452,15 +453,16 @@ fn factbook_header(ui: &mut Ui, id: &str, card: &WordStatus<EntityCard>) {
             ui.label(RichText::new(c.details()).color(theme::c().muted));
         }
         WordStatus::Loading => {
-            ui.label(crate::components::title_text(name));
-            ui.label(RichText::new("Loading…").color(theme::c().muted));
-            ui.ctx().request_repaint();
+            ui.label(crate::components::title_text(&name));
+            crate::components::loading_state(ui, &format!("Loading {name}…"));
         }
         WordStatus::Failed(e) => {
-            ui.label(crate::components::title_text(name));
-            ui.label(RichText::new(e).color(theme::c().warn));
+            ui.label(crate::components::title_text(&name));
+            let message = format!("{name} could not be loaded.");
+            return crate::components::error_state(ui, &message, e);
         }
     }
+    false
 }
 
 /// A relative's name as a link to their Factbook (plain text when there is none).

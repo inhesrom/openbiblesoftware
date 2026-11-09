@@ -190,6 +190,16 @@ impl Session {
         &self.jobs
     }
 
+    /// Retry (#223): forget every Guide section, Word Study header and chooser, People &
+    /// places directory and topic directory that failed, so each is computed again the next
+    /// time a Tab asks for it.
+    pub fn retry_failed(&mut self) {
+        self.guides.forget_failures();
+        self.word_study.forget_failures();
+        self.factbooks.forget_failure();
+        self.topic_guides.forget_failure();
+    }
+
     /// Whether a command exists and is enabled now (menus grey out the rest).
     pub fn is_enabled(&self, id: &str) -> bool {
         self.commands.get(id).is_some_and(|c| (c.enabled)(self))

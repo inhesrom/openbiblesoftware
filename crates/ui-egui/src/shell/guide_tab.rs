@@ -1,8 +1,8 @@
 //! Guide Tabs (#53): the Guide's Key (a Passage Guide's or Exegetical Guide's Passage, a Word
 //! Study's header), then its sections in the Guide arrangement's order
 //! ([`State::guide_page`], shared by every kind of Guide). Sections come from the engine as pure data computed on the job queue
-//! ([`obs_engine::Session::guide_section`]); a section still computing shows "Loading…" and
-//! the frame goes on. Headers collapse on click and reorder by dragging; the arrangement is
+//! ([`obs_engine::Session::guide_section`]); a section still computing shows its loading state
+//! (#223) and the frame goes on; one that failed shows its error state, with Retry. Headers collapse on click and reorder by dragging; the arrangement is
 //! the engine's, per kind of Guide, so every Passage Guide shows the same one.
 
 use egui::{Align2, FontId, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
@@ -46,6 +46,8 @@ pub(super) enum Action {
     Choose(obs_scripture::StrongsNumber, bool),
     /// Word Study: close the English-word chooser.
     StopChoosing,
+    /// An error state's Retry (#223): load what failed again.
+    Retry,
     /// Word Study: expand (true) or collapse one Lexicon entry, by [`LexiconEntry::id`].
     ///
     /// [`LexiconEntry::id`]: obs_engine::LexiconEntry::id
@@ -92,11 +94,14 @@ impl State {
             .tab(tab)
             .and_then(|t| t.shown_passage());
         let Some(passage) = passage else {
-            hint_page(
+            if hint_page(
                 ui,
                 "Type a Passage in the box above (for example “Jn 3:16-18”), or put this Guide \
                  in a Bible's Link set to follow it.",
-            );
+                "Show John 3:16-18",
+            ) {
+                self.run("tab.go", &json!({ "tab": tab.0, "text": "Jn 3:16-18" }));
+            }
             return;
         };
         let Some(t) = self.tabs.get_mut(&tab) else {
@@ -297,6 +302,7 @@ impl State {
                     }),
                 );
             }
+            Action::Retry => self.retry_failed(),
             Action::Words(a) => self.words_action(tab, a),
             Action::Factbook(a) => self.factbook_action(tab, a),
             Action::Topic(a) => self.topic_action(tab, a),
@@ -350,16 +356,12 @@ impl State {
     ) -> Option<Action> {
         let data = match status {
             SectionStatus::Loading => {
-                ui.label(RichText::new("Loading…").color(theme::c().muted));
-                ui.ctx().request_repaint();
+                crate::components::loading_state(ui, &format!("Loading {}…", section.title()));
                 return None;
             }
             SectionStatus::Failed(e) => {
-                ui.label(
-                    RichText::new(format!("Could not load {}: {e}", section.title()))
-                        .color(theme::c().warn),
-                );
-                return None;
+                let message = format!("{} could not be loaded.", section.title());
+                return crate::components::error_state(ui, &message, e).then_some(Action::Retry);
             }
             SectionStatus::Ready(data) => data,
         };
@@ -379,15 +381,20 @@ impl State {
         }
         if data.is_empty()
             && let Some(name) = filter
+            && let Some(guide) = Guide::ALL
+                .into_iter()
+                .find(|g| g.sections().contains(&section))
         {
-            ui.label(
-                RichText::new(format!(
-                    "Nothing in the Collection “{name}” covers this. Choose “Every Resource” to \
-                     see the rest of your library."
-                ))
-                .color(theme::c().muted),
-            );
-            return None;
+            let message = format!("Nothing in the Collection “{name}” covers this.");
+            return crate::components::empty_state(ui, &message, "Show every Resource")
+                .on_hover_text("Show this section from your whole library")
+                .clicked()
+                .then(|| {
+                    Action::Command(
+                        "guide.filter_section",
+                        json!({ "guide": guide.id(), "section": section.id(), "collection": "" }),
+                    )
+                });
         }
         if data.is_empty() {
             let empty = self.session.guide_empty_state(key, section);
@@ -723,11 +730,15 @@ fn section_header(
     }
 }
 
-pub(super) fn hint_page(ui: &mut Ui, text: &str) {
-    crate::components::page_frame().show(ui, |ui| {
-        ui.set_min_size(ui.available_size());
-        ui.label(RichText::new(text).color(theme::c().muted));
-    });
+/// A Guide with no Key yet: what to type, and a Button that shows an example (#223). Returns
+/// whether it was clicked.
+pub(super) fn hint_page(ui: &mut Ui, text: &str, action: &str) -> bool {
+    crate::components::page_frame()
+        .show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            crate::components::empty_state(ui, text, action).clicked()
+        })
+        .inner
 }
 
 /// A filterable section's Collection chooser (#153), shown once the user has Collections:

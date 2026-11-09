@@ -42,6 +42,8 @@ pub(super) enum TopicAction {
     StopChoosing,
     /// An empty state's button (#135).
     Command(&'static str, serde_json::Value),
+    /// An error state's Retry (#223).
+    Retry,
 }
 
 /// One subtopic row of the Topical Bible entries: one topical index can have several entries
@@ -73,11 +75,14 @@ impl State {
             .tab(tab)
             .and_then(|t| t.entry_history.current());
         let Some(Key::Headword(topic)) = key else {
-            hint_page(
+            if hint_page(
                 ui,
                 "Type a topic in the box above (Forgiveness, Prayer, Faith), or put this Guide in \
                  a Dictionary's Link set to follow it.",
-            );
+                "Show Forgiveness",
+            ) {
+                self.run("tab.go", &json!({ "tab": tab.0, "text": "Forgiveness" }));
+            }
             return;
         };
         if let Some(t) = self.tabs.get_mut(&tab)
@@ -133,17 +138,14 @@ impl State {
             });
             let chooser = match &status {
                 WordStatus::Loading => {
-                    ui.label(
-                        RichText::new(format!("Looking up “{text}”…")).color(theme::c().muted),
-                    );
-                    ui.ctx().request_repaint();
+                    crate::components::loading_state(ui, &format!("Looking up “{text}”…"));
                     return;
                 }
                 WordStatus::Failed(e) => {
-                    ui.label(
-                        RichText::new(format!("Could not look up “{text}”: {e}"))
-                            .color(theme::c().warn),
-                    );
+                    let message = format!("“{text}” could not be looked up.");
+                    if crate::components::error_state(ui, &message, e) {
+                        action = Some(TopicAction::Retry);
+                    }
                     return;
                 }
                 WordStatus::Ready(c) => c,
@@ -461,6 +463,7 @@ impl State {
                 );
             }
             TopicAction::StopChoosing => self.session.stop_choosing_topic(tab),
+            TopicAction::Retry => self.retry_failed(),
             TopicAction::Command(id, params) => {
                 self.run(id, &params);
             }

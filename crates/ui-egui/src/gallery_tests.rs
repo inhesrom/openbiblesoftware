@@ -38,14 +38,14 @@ const PIXEL_TOLERANCE: f64 = 0.0001;
 const BLESS: &str = "OBS_GALLERY_BLESS";
 
 /// A Look: the Theme and Page tone a gallery image is drawn in.
-struct Look {
+pub(super) struct Look {
     slug: &'static str,
     title: &'static str,
     theme: &'static str,
     page_tone: &'static str,
 }
 
-const LOOKS: [Look; 3] = [
+pub(super) const LOOKS: [Look; 3] = [
     Look {
         slug: "light",
         title: "Light",
@@ -75,14 +75,17 @@ enum Section {
     PanesMenusAndWindows,
     DialogsAndPopovers,
     MenusAndChoosers,
+    /// Each surface's empty, loading and error states (#223).
+    States,
 }
 
 impl Section {
-    const ALL: [Section; 4] = [
+    const ALL: [Section; 5] = [
         Section::Tabs,
         Section::PanesMenusAndWindows,
         Section::DialogsAndPopovers,
         Section::MenusAndChoosers,
+        Section::States,
     ];
 
     fn heading(self) -> &'static str {
@@ -91,6 +94,7 @@ impl Section {
             Section::PanesMenusAndWindows => "Toolbar panes, menus and windows",
             Section::DialogsAndPopovers => "Dialogs and popovers",
             Section::MenusAndChoosers => "Menus and choosers in Tabs and windows",
+            Section::States => "Empty, loading and error states",
         }
     }
 }
@@ -158,6 +162,7 @@ fn surfaces() -> Vec<Surface> {
         (Section::PanesMenusAndWindows, menus_and_toolbar()),
         (Section::DialogsAndPopovers, dialogs_and_popovers()),
         (Section::MenusAndChoosers, menus_and_choosers()),
+        (Section::States, super::pane_states::pane_states()),
     ];
     for (section, list) in lists {
         for (name, open, is_open) in list {
@@ -343,7 +348,7 @@ fn night_reading(h: &mut Harness) {
     settle(h);
 }
 
-fn run_split(h: &mut Harness, id: &str, params: Value) {
+pub(super) fn run_split(h: &mut Harness, id: &str, params: Value) {
     let mut params = params;
     params["split"] = json!(true);
     h.shell.run(id, &params);
@@ -352,7 +357,7 @@ fn run_split(h: &mut Harness, id: &str, params: Value) {
 }
 
 /// Run jobs until the search indexes are built and no search is running.
-fn settle_search(h: &mut Harness) {
+pub(super) fn settle_search(h: &mut Harness) {
     for _ in 0..5000 {
         h.shell.st.session.jobs().pump(16);
         h.frame();
@@ -1106,7 +1111,7 @@ fn menus_and_choosers() -> Vec<Run> {
 // Drawing.
 
 /// A fresh launch with the gallery's fixtures in `look`.
-fn launch(name: &str, look: &Look) -> (Harness, Lab) {
+pub(super) fn launch(name: &str, look: &Look) -> (Harness, Lab) {
     let mut set = release_set();
     set.push(obs_engine::testing::topical_index("nave"));
     let tipnr = obs_engine::testing::tipnr();
@@ -1467,6 +1472,11 @@ fn gallery_menus_and_choosers() {
     gallery(Section::MenusAndChoosers);
 }
 
+#[test]
+fn gallery_states() {
+    gallery(Section::States);
+}
+
 // ---------------------------------------------------------------------------------------
 // The page.
 
@@ -1477,8 +1487,8 @@ fn page() -> String {
         "# Screenshot gallery\n\n\
          <!-- Written by `cargo xtask gallery --bless` (crates/ui-egui/src/gallery_tests.rs); \
          do not edit. -->\n\n\
-         Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser in each Look at \
-         1× (2× linked). These are the goldens CI compares the app against; see \
+         Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and each \
+         surface's empty, loading and error states, in each Look at 1× (2× linked). These are the goldens CI compares the app against; see \
          [docs/dev/screenshot-gallery.md](../dev/screenshot-gallery.md).\n",
     );
     for section in Section::ALL {

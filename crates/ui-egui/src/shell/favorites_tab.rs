@@ -11,6 +11,11 @@ use crate::icons::{self, Icon};
 use crate::theme;
 use crate::tokens::{size, space, text};
 
+/// The empty Favorites' and History's Button (#223).
+const OPEN_LIBRARY: &str = "Open the Library";
+/// The Button when nothing matches the filter.
+const CLEAR_FILTER: &str = "Clear the filter";
+
 /// Height of one History row (Visits and day headings alike).
 const HISTORY_ROW_H: f32 = size::ROW_COMPACT;
 
@@ -101,6 +106,7 @@ impl State {
             .unwrap_or_default();
         let split = self.split_held;
         let mut run: Option<(&'static str, Value)> = None;
+        let mut clear = false;
         crate::components::page_frame().show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             if self.session.user.is_none() {
@@ -116,7 +122,13 @@ impl State {
                     "No Favorites yet. Click the star in a Tab's header",
                     "favorite.add",
                 );
-                muted(ui, &format!("{star} to add the place it shows."));
+                let message = format!("{star} to add the place it shows.");
+                if crate::components::empty_state(ui, &message, OPEN_LIBRARY)
+                    .on_hover_text("Open a Resource from the Library, then star its Tab")
+                    .clicked()
+                {
+                    run = Some(("library.open", Value::Null));
+                }
                 return;
             }
             let shown: Vec<(i64, String, String)> = self
@@ -126,7 +138,15 @@ impl State {
                 .map(|f| (f.id, f.folder.clone(), f.label.clone()))
                 .collect();
             if shown.is_empty() {
-                muted(ui, "No Favorites match the filter.");
+                if crate::components::empty_state(
+                    ui,
+                    "No Favorites match the filter.",
+                    CLEAR_FILTER,
+                )
+                .clicked()
+                {
+                    clear = true;
+                }
                 return;
             }
             let folders = self.session.favorite_folders();
@@ -187,6 +207,9 @@ impl State {
                     }
                 });
         });
+        if clear && let Some(t) = self.tabs.get_mut(&tab) {
+            t.filter.clear();
+        }
         if let Some((id, params)) = run {
             self.run(id, &params);
         }
@@ -202,6 +225,7 @@ impl State {
         let split = self.split_held;
         let mut run: Option<(&'static str, Value)> = None;
         let mut confirm: Option<bool> = None;
+        let mut clear = false;
         crate::components::page_frame().show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             if self.session.user.is_none() {
@@ -212,11 +236,17 @@ impl State {
                 return;
             }
             if self.session.history().is_empty() {
-                muted(
+                if crate::components::empty_state(
                     ui,
-                    "History is empty. The places you go in any Tab are listed here, \
-                         newest first.",
-                );
+                    "History is empty. The places you go in any Tab are listed here, newest \
+                     first.",
+                    OPEN_LIBRARY,
+                )
+                .on_hover_text("Open a Resource from the Library")
+                .clicked()
+                {
+                    run = Some(("library.open", Value::Null));
+                }
                 return;
             }
             ui.horizontal(|ui| {
@@ -246,7 +276,15 @@ impl State {
                 }
             }
             if lines.is_empty() {
-                muted(ui, "Nothing in History matches the filter.");
+                if crate::components::empty_state(
+                    ui,
+                    "Nothing in History matches the filter.",
+                    CLEAR_FILTER,
+                )
+                .clicked()
+                {
+                    clear = true;
+                }
                 return;
             }
             egui::ScrollArea::vertical()
@@ -295,6 +333,9 @@ impl State {
             && let Some(t) = self.tabs.get_mut(&tab)
         {
             t.confirm_clear = on;
+        }
+        if clear && let Some(t) = self.tabs.get_mut(&tab) {
+            t.filter.clear();
         }
         if let Some((id, params)) = run {
             self.run(id, &params);

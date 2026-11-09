@@ -207,6 +207,81 @@ pub fn rule_stroke() -> Stroke {
     Stroke::new(stroke::HAIR, theme::c().rule)
 }
 
+// ---------------------------------------------------------------------------------------
+// Pane states (#223): every Tab and pane says the same way that it has nothing to show,
+// that it is loading, or that something failed.
+
+/// The Button of every [`error_state`].
+pub const RETRY: &str = "Retry";
+/// The link that shows an [`error_state`]'s details.
+pub const DETAILS: &str = "Details";
+/// The link that hides them again.
+pub const HIDE_DETAILS: &str = "Hide details";
+
+/// **EmptyState**: why there is nothing to show, then the one Button that would fill it
+/// (#135's pattern: "None in your library" with a way to get it). Returns the Button.
+pub fn empty_state(ui: &mut Ui, message: &str, action: &str) -> Response {
+    ui.add(egui::Label::new(RichText::new(message).color(theme::c().muted)).wrap());
+    ui.add_space(space::XS);
+    ui.add(button(action))
+}
+
+/// **Loading**: what is loading, in a hint line, over a skeleton of the text to come (faint
+/// bars with the loading shimmer, [`text_placeholder`]). Asks for the next frame, so the pane
+/// shows the result as soon as it is there.
+pub fn loading_state(ui: &mut Ui, what: &str) {
+    ui.label(hint_text(what));
+    let width = ui.available_width().min(size::PROSE);
+    let line = text::LABEL_LINE;
+    for share in crate::tokens::share::SKELETON {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(width, line), egui::Sense::hover());
+        text_placeholder(ui.painter(), rect.min, width * share, line, theme::c().rule);
+    }
+    ui.ctx().request_repaint();
+}
+
+/// **Progress**: how far a long task (a download, an import) is, with what it is doing.
+pub fn progress_bar(fraction: f32, what: impl Into<egui::WidgetText>) -> egui::ProgressBar {
+    egui::ProgressBar::new(fraction)
+        .desired_width(size::FIELD_WIDE)
+        .text(what)
+}
+
+/// **ErrorState**: what failed, in plain words, a [`RETRY`] Button, and the error itself
+/// (`details`, as the code that failed reported it) only after [`DETAILS`] is clicked.
+/// Returns whether Retry was clicked.
+pub fn error_state(ui: &mut Ui, message: &str, details: &str) -> bool {
+    let id = ui.scope_id().with(("error-details", message));
+    let mut open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    let mut retry = false;
+    let warn = theme::c().warn;
+    notice_frame(warn).show(ui, |ui| {
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = space::XS;
+            ui.add(icons::image(ui.ctx(), Icon::Warning, size::ICON, warn));
+            ui.add(egui::Label::new(RichText::new(message).color(theme::c().ink)).wrap());
+        });
+        ui.horizontal(|ui| {
+            retry = ui.add(button(RETRY)).clicked();
+            if !details.is_empty() {
+                let label = if open { HIDE_DETAILS } else { DETAILS };
+                if link(ui, label).clicked() {
+                    open = !open;
+                }
+            }
+        });
+        if open {
+            ui.add(
+                egui::Label::new(caption_text(details).color(theme::c().muted))
+                    .wrap()
+                    .selectable(true),
+            );
+        }
+    });
+    ui.data_mut(|d| d.insert_temp(id, open));
+    retry
+}
+
 /// The thumb of a custom-drawn view's scroll bar in `track` (the view's right edge,
 /// `size::SCROLLBAR` wide): `frac` of the way down, `shown` the share of the content in view.
 pub fn scroll_thumb(
