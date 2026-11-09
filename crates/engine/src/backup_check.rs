@@ -61,6 +61,11 @@ pub(crate) const JSON_SETTINGS: &[JsonSetting] = &[
         reads: reads::<serde_json::Value>,
     },
     JsonSetting {
+        key: crate::updates::UPDATES_PREF,
+        what: "Update check settings",
+        reads: reads::<serde_json::Value>,
+    },
+    JsonSetting {
         key: crate::home::HOME_PREF,
         what: "Home",
         reads: reads::<crate::home::Stored>,

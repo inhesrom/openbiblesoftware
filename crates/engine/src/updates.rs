@@ -74,7 +74,7 @@ pub const LAUNCH_CHECK_DELAY_SECS: f64 = 3.0;
 /// How many releases the pre-release check reads (newest first).
 const RELEASES_PER_PAGE: u32 = 20;
 /// Preference key of the Update settings.
-const UPDATES_PREF: &str = "updates";
+pub(crate) const UPDATES_PREF: &str = "updates";
 
 // ------------------------------------------------------------------------------- Versions
 
