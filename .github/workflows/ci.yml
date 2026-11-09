@@ -53,6 +53,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri libegl1 libxkbcommon-x11-0
+      # The Windows runner's OpenGL is GDI's 1.1 and the app needs 2.0+: Mesa's software
+      # renderer (llvmpipe), deployed system-wide, so the relaunched app gets it too.
+      - name: OpenGL for the app (Windows)
+        if: runner.os == 'Windows'
+        uses: ssciwr/setup-mesa-dist-win@v3
       - name: cargo xtask update-e2e
         shell: bash
         run: |
