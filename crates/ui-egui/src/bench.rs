@@ -488,6 +488,7 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
     scenarios.push(reading.report("reading-layout", interval_ms));
     scenarios.push(find.report("find", interval_ms));
     scenarios.push(filters.report("filters", interval_ms));
+    scenarios.push(resize_scenario(&mut bench).report("resize", interval_ms));
     let mut feature_errors = Vec::new();
     if cfg.shell_scenarios {
         // The reading panes' layouts are dropped first: the Shell lays out its own.
@@ -618,6 +619,31 @@ fn filters_scenario(bench: &mut Bench) -> Samples {
         });
     }
     bench.filters.clear();
+    s
+}
+
+/// A Panel's edge dragged (AUD-LAYOUT-TEXT-9, #255): every pane a point narrower or wider
+/// each frame, to and fro. Each frame takes the new width (every block's height estimated
+/// again, and the block at the top laid out at once to keep the reader's place, as a jump
+/// does) and then lays out within the budget as when scrolling; blocks laid out again
+/// off-thread show placeholders meanwhile. Its synchronous work is that budgeted layout, as
+/// a jump's is; the new width's cost shows in the frame time.
+fn resize_scenario(bench: &mut Bench) -> Samples {
+    bench.settle();
+    let mut s = Samples::default();
+    let widths: Vec<f32> = bench.views.iter().map(ReadingView::width).collect();
+    for f in 0..bench.cfg.tool_frames {
+        // 0, 1, …, 29, 30, 29, …: a point a frame.
+        let step = (f % 60).min(60 - f % 60) as f32;
+        bench.frame(&mut s, |views| {
+            for (v, w) in views.iter_mut().zip(&widths) {
+                v.set_width(w - step);
+            }
+        });
+    }
+    for (v, w) in bench.views.iter_mut().zip(widths) {
+        v.set_width(w);
+    }
     s
 }
 

@@ -349,6 +349,32 @@ fn width_changes_keep_the_reader_on_the_same_verse() {
     assert!(view.verse_top(v, 600.0).unwrap().abs() < 0.5);
 }
 
+/// AUD-LAYOUT-TEXT-9 (#255): a Panel's edge dragged re-estimates every block's height from
+/// what was measured of it once, without styling its paragraph again; new text settings
+/// measure again.
+#[test]
+fn width_changes_estimate_heights_without_styling_paragraphs_again() {
+    let mut view = view();
+    let blocks = view.doc.blocks.len() as u64;
+    assert_eq!(view.estimated, blocks);
+    let (_, wide) = view.position();
+    for w in [449.0, 448.0, 300.0, 600.0] {
+        view.set_width(w);
+    }
+    assert_eq!(
+        view.estimated, blocks,
+        "a width change styled paragraphs again"
+    );
+    view.set_width(300.0);
+    let (_, narrow) = view.position();
+    assert!(narrow > wide, "{narrow} at 300 pt, {wide} at 450 pt");
+    view.set_settings(TextSettings {
+        size: 24.0,
+        ..TextSettings::default()
+    });
+    assert_eq!(view.estimated, 2 * blocks);
+}
+
 #[test]
 fn palette_changes_do_not_relayout_or_reraster() {
     let mut view = view();
@@ -571,7 +597,8 @@ fn bench_runs_and_reports_every_scenario() {
             "interlinear",
             "reading-layout",
             "find",
-            "filters"
+            "filters",
+            "resize"
         ]
     );
     assert_eq!(report.scenarios[0].frames, 20);

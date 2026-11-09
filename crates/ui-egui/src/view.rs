@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use obs_layout::{LaidBlock, Paragraph, TextSettings, UnitPos, block_paragraph, estimate_height};
+use obs_layout::{HeightEstimate, LaidBlock, Paragraph, TextSettings, UnitPos, block_paragraph};
 use obs_scripture::Verse;
 
 use crate::doc::ReadingDoc;
@@ -124,6 +124,8 @@ pub struct ReadingView {
     sticky_text: Option<TextAnchor>,
     /// Blocks laid out so far, on any thread (for tests and the performance overlay).
     pub layouts: u64,
+    /// Blocks styled for a height estimate so far (for tests).
+    pub estimated: u64,
     client: LayoutClient,
     /// Bumped when width or settings change; worker results from older generations are dropped.
     generation: u64,
@@ -148,6 +150,10 @@ pub struct ReadingView {
     clock: f64,
     /// The height of the viewport last drawn.
     viewport: f32,
+    /// Every block's height estimate at any width, for the settings and interlinear lines
+    /// (their keys) it was measured with: a new width only does the arithmetic (#255).
+    estimates: Vec<HeightEstimate>,
+    estimates_key: Option<(u64, Option<u64>)>,
 }
 
 /// Block `i` of `doc` as a paragraph: with its interlinear lines when there are any (or, for
@@ -189,6 +195,7 @@ impl ReadingView {
             sticky: None,
             sticky_text: None,
             layouts: 0,
+            estimated: 0,
             client: LayoutClient::default(),
             generation: 0,
             pending_follow: None,
@@ -201,6 +208,8 @@ impl ReadingView {
             glide: None,
             clock: 0.0,
             viewport: 0.0,
+            estimates: Vec::new(),
+            estimates_key: None,
         };
         view.set_width(600.0);
         view
@@ -260,15 +269,23 @@ impl ReadingView {
         self.glide = None;
         // Keep the reader on the same verse across a relayout.
         let keep = self.current_location_opt();
-        let doc = Arc::clone(&self.doc);
-        let interlinear = self.interlinear.as_deref();
-        let estimates = (0..doc.blocks.len())
-            .map(|i| {
-                paragraph(&doc, i, &self.settings, interlinear, true)
-                    .map_or(0.0, |p| estimate_height(&p, self.width))
-            })
-            .collect();
-        self.heights = HeightIndex::new(estimates);
+        let key = (
+            self.settings.key(),
+            self.interlinear.as_ref().map(|s| s.key()),
+        );
+        if self.estimates_key != Some(key) {
+            let interlinear = self.interlinear.as_deref();
+            self.estimates = (0..self.doc.blocks.len())
+                .map(|i| {
+                    paragraph(&self.doc, i, &self.settings, interlinear, true)
+                        .map_or_else(HeightEstimate::default, |p| HeightEstimate::of(&p))
+                })
+                .collect();
+            self.estimates_key = Some(key);
+            self.estimated += self.estimates.len() as u64;
+        }
+        let width = self.width;
+        self.heights = HeightIndex::new(self.estimates.iter().map(|e| e.at(width)).collect());
         self.laid.clear();
         self.generation += 1;
         self.client.forget_pending();

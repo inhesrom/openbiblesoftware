@@ -566,6 +566,7 @@ mod tests {
             "find",
             "filters",
             "get-resources",
+            "resize",
         ] {
             assert!(
                 names.contains(&feature),
