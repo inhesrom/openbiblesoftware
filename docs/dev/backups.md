@@ -63,7 +63,9 @@ location must read, and so must every setting the app keeps as JSON (`JSON_SETTI
 settings, Custom theme, toolbar, keys, Update check settings, First-run tour, Home, Guide arrangements, Saved searches, Search history, recent
 searches and Command box entries, Copy verses, Collections, Resource tags, Visual filters,
 the Starter library state, Import reports, kept Attributions), each as the type its loader
-reads; a Layout must not hold two Tabs with one id (restoring it would keep only one of them).
+reads; a Layout must not hold two Tabs with one id (restoring it would keep only one of them);
+a Reading plan's start day must read (the loader leaves out a plan whose start day does not)
+and so must each of its Readings' Passages and day (the loader leaves out such a Reading).
 Settings the loader keeps only part of are checked as it reads them: a field of View,
 Toolbar, Update check settings or the First-run tour must read; a View Text size must not be above the maximum nor
 a Line spacing outside 1.0–2.0, which the loader would clamp (a Text size below the minimum is
@@ -148,7 +150,8 @@ uses):
   and Export everything refusing the User database; a refused restore keeping undo; Export
   everything's files, remembered Resource names of a removed Resource included; a Backup with
   an unreadable Layout, Favorite, Visit or JSON setting refused naming each, a Layout with two
-  Tabs of one id refused naming it, and one whose
+  Tabs of one id refused naming it, a Reading plan with an unreadable start day or Reading
+  refused naming the plan or the Reading, and one whose
   View values the loader would clamp or whose Search history it would cut refused too, while one of
   everything the app writes passes; every `*_PREF` constant known to the check; open Notes
   searches run again after a restore and after Undo restore.

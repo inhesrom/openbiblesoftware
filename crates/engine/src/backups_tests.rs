@@ -688,6 +688,91 @@ fn a_backup_with_records_the_loaders_drop_is_refused_naming_them() {
     );
 }
 
+/// #258: a Reading plan whose start day cannot be read is not loaded, and a Reading whose
+/// Passages or day cannot be read is left out of its plan; a Backup holding either is refused
+/// before any Safety backup, naming the plan or the Reading.
+#[test]
+fn a_backup_with_a_reading_plan_or_reading_the_loader_drops_is_refused_naming_it() {
+    let f = Fixture::new("unreadable-plan");
+    let mut s = f.session();
+    s.run(
+        "reading_plan.create",
+        &json!({ "template": "custom", "books": "Jude", "days": 3, "name": "Jude" }),
+    )
+    .unwrap();
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
+    let backup = f.file("damaged.obsbackup");
+    damaged_copy(&f, &good, &backup, |db| {
+        let plan = |name: &str, start: &str| obs_store::ReadingPlanRow {
+            id: 0,
+            name: name.to_string(),
+            template: "custom".to_string(),
+            bible_id: "kjv".to_string(),
+            start_day: start.to_string(),
+            weekdays: 0b111_1111,
+            created_at: 0,
+        };
+        let reading = |passages: &str, day: &str| obs_store::PlanReadingRow {
+            position: 0,
+            passages: passages.to_string(),
+            day: day.to_string(),
+            read_at: None,
+        };
+        db.add_reading_plan(
+            &plan("Broken start", "not-a-date"),
+            &[reading("Gen 1", "2024-01-01")],
+        )
+        .unwrap();
+        db.add_reading_plan(
+            &plan("Gospel", "2024-01-01"),
+            &[
+                reading("Matt 1", "2024-01-01"),
+                reading("Nowhere 9", "2024-01-02"),
+                reading("Matt 3", "someday"),
+            ],
+        )
+        .unwrap();
+    });
+    s.run(
+        "annotation.note",
+        &json!({ "body": "made after the backup" }),
+    )
+    .unwrap();
+    let before = dump(&s);
+    let plans_before = s.reading_plans().to_vec();
+
+    let refused = s.restore_preview(&backup).unwrap_err();
+    for named in [
+        "the Reading plan “Broken start”",
+        "Reading 2 of the Reading plan “Gospel”",
+        "Reading 3 of the Reading plan “Gospel”",
+        "Nothing was changed",
+    ] {
+        assert!(refused.contains(named), "{named}: {refused}");
+    }
+    for kept in ["Reading 1 of", "“Jude”"] {
+        assert!(!refused.contains(kept), "{kept}: {refused}");
+    }
+    let err = s.run("data.restore", &path(&backup)).unwrap_err();
+    assert!(
+        err.to_string().contains("the Reading plan “Broken start”"),
+        "{err}"
+    );
+    assert_eq!(dump(&s), before);
+    assert_eq!(s.reading_plans(), plans_before);
+    assert!(s.last_restore().is_none());
+    assert!(
+        !s.kept_backups()
+            .iter()
+            .any(|b| b.kind == BackupKind::Safety)
+    );
+    // The plan as the app wrote it still restores, every Reading kept.
+    s.restore_preview(&good).unwrap();
+    s.run("data.restore", &path(&good)).unwrap();
+    assert_eq!(s.reading_plans(), plans_before);
+}
+
 /// #258: a Layout holding two Tabs with one id reads, but restoring it keeps one Tab per id
 /// and drops the other; a Backup with one is refused before any Safety backup, naming it.
 #[test]
@@ -1014,6 +1099,11 @@ fn a_backup_of_what_the_app_writes_passes_the_restore_check() {
     run(&mut s, "favorite.add", json!({ "tab": bible }));
     s.record_history();
     run(&mut s, "layout.save", json!({ "name": "Study" }));
+    run(
+        &mut s,
+        "reading_plan.create",
+        json!({ "template": "custom", "books": "Jude", "days": 3 }),
+    );
 
     let backup = f.file("everything.obsbackup");
     s.run("data.back_up", &path(&backup)).unwrap();

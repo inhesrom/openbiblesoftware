@@ -3,7 +3,8 @@
 //! The store checks the database itself (`obs_store`'s `backup_store.rs`: every table,
 //! column and row readable, no row pointing at one that is not there). What the engine keeps
 //! *inside* rows is its own: a Layout's Workspace snapshot, a Favorite's or a Visit's
-//! location, and the settings it keeps as JSON ([`JSON_SETTINGS`]). The app reads each of
+//! location, a Reading plan's start day and each of its Readings' Passages and day, and the
+//! settings it keeps as JSON ([`JSON_SETTINGS`]). The app reads each of
 //! those leniently at launch: an unreadable one is left out or back at its default, and so is
 //! an unreadable field of a setting read field by field (a View setting, a Keyboard
 //! shortcut, an Update check flag, whether the First-run tour was shown), a Custom theme from a later version, a View Text size or Line spacing beyond what the app
@@ -26,6 +27,7 @@ use crate::appearance::{
 };
 use crate::favorites::TabLocation;
 use crate::persist::{UserData, WorkspaceSnapshot};
+use crate::reading_plans::{Reading, ReadingPlan};
 use crate::toolbar::Launcher;
 use crate::toolbar_settings::{LauncherLabels, ToolbarPosition};
 
@@ -370,6 +372,21 @@ pub(crate) fn unreadable_records(data: &dyn UserData) -> Result<Vec<String>, Str
         0 => {}
         1 => out.push("1 History visit".to_string()),
         n => out.push(format!("{n} History visits")),
+    }
+    for plan in data.reading_plans()? {
+        if ReadingPlan::start_of(&plan).is_none() {
+            out.push(format!("the Reading plan “{}”", plan.name));
+            continue;
+        }
+        for r in data.plan_readings(plan.id)? {
+            if Reading::from_row(&r).is_none() {
+                out.push(format!(
+                    "Reading {} of the Reading plan “{}”",
+                    r.position + 1,
+                    plan.name
+                ));
+            }
+        }
     }
     for (key, value) in data.preferences()? {
         if let Some(s) = JSON_SETTINGS.iter().find(|s| s.names(&key))

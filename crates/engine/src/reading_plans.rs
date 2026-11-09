@@ -517,30 +517,41 @@ pub struct ReadingPlan {
     pub readings: Vec<Reading>,
 }
 
+impl Reading {
+    /// The Reading a row holds; `None` (and the plan is loaded without it) when its
+    /// Passages or its day cannot be read.
+    pub(crate) fn from_row(r: &PlanReadingRow) -> Option<Self> {
+        let passages = parse_standard(&r.passages).ok()?;
+        Some(Self {
+            position: r.position,
+            label: format_passage_list(&passages, &Standard, RefStyle::Short),
+            passages,
+            day: PlanDate::parse(&r.day)?,
+            read: r.read_at.is_some(),
+        })
+    }
+}
+
 impl ReadingPlan {
+    /// The plan its rows hold; `None` (and the plan is not loaded) when its start day cannot
+    /// be read. A Reading that cannot be read is left out ([`Reading::from_row`]).
     fn from_rows(row: ReadingPlanRow, readings: Vec<PlanReadingRow>) -> Option<Self> {
-        let readings = readings
-            .into_iter()
-            .filter_map(|r| {
-                let passages = parse_standard(&r.passages).ok()?;
-                Some(Reading {
-                    position: r.position,
-                    label: format_passage_list(&passages, &Standard, RefStyle::Short),
-                    passages,
-                    day: PlanDate::parse(&r.day)?,
-                    read: r.read_at.is_some(),
-                })
-            })
-            .collect();
+        let start = Self::start_of(&row)?;
+        let readings = readings.iter().filter_map(Reading::from_row).collect();
         Some(Self {
             id: row.id,
             name: row.name,
             template: row.template,
             bible_id: row.bible_id,
-            start: PlanDate::parse(&row.start_day)?,
+            start,
             weekdays: Weekdays(row.weekdays),
             readings,
         })
+    }
+
+    /// The start day of a plan's row, as the loader reads it.
+    pub(crate) fn start_of(row: &ReadingPlanRow) -> Option<PlanDate> {
+        PlanDate::parse(&row.start_day)
     }
 
     /// Its last day: the day of its last Reading.
