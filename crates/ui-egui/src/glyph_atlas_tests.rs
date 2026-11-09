@@ -6,15 +6,15 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use egui::{Pos2, Rect, Shape, TextureId, vec2};
-use obs_layout::TextSettings;
+use egui::{Color32, Pos2, Rect, Shape, TextureId, vec2};
+use obs_layout::{LaidBlock, TextSettings};
 use obs_model::{
     KeyScheme, Manifest, ParaStyle, ResourceBuilder, ResourceType, SpanKind, TextAccumulator,
     UnitId, UnitKind,
 };
 use obs_scripture::{Book, Verse};
 
-use super::{AtlasTexture, PaneMarks, reading_pane};
+use super::{AtlasTexture, PaneMarks, TEXT_GPU_BUDGET, paint_runs, reading_pane};
 use crate::doc::ReadingDoc;
 use crate::find::Found;
 use crate::palette::Palette;
@@ -79,12 +79,8 @@ fn view(doc: Arc<ReadingDoc>) -> ReadingView {
     view
 }
 
-/// One frame of a reading pane filling a 640 × 900 window at 2x.
-fn frame(
-    ctx: &egui::Context,
-    view: &mut ReadingView,
-    atlas: &mut AtlasTexture,
-) -> egui::FullOutput {
+/// Input for a 640 × 900 window at 2x.
+fn window() -> egui::RawInput {
     let mut viewports = egui::ViewportIdMap::default();
     viewports.insert(
         egui::ViewportId::ROOT,
@@ -93,30 +89,84 @@ fn frame(
             ..Default::default()
         },
     );
-    ctx.run_ui(
-        egui::RawInput {
-            viewports,
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(640.0, 900.0))),
-            ..Default::default()
-        },
-        |ui| {
-            reading_pane(
-                ui,
-                view,
-                atlas,
-                &Palette::PAPER,
-                None,
-                PaneMarks::default(),
-                Found::default(),
-            );
-        },
-    )
+    egui::RawInput {
+        viewports,
+        screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(640.0, 900.0))),
+        ..Default::default()
+    }
 }
 
+/// One frame of a reading pane filling the window.
+fn frame(
+    ctx: &egui::Context,
+    view: &mut ReadingView,
+    atlas: &mut AtlasTexture,
+) -> egui::FullOutput {
+    ctx.run_ui(window(), |ui| {
+        reading_pane(
+            ui,
+            view,
+            atlas,
+            &Palette::PAPER,
+            None,
+            PaneMarks::default(),
+            Found::default(),
+        );
+    })
+}
+
+/// One frame that draws `blocks` (each at its origin) with `atlas`, the lines within `visible`.
+fn draw_blocks(
+    ctx: &egui::Context,
+    atlas: &mut AtlasTexture,
+    blocks: &[(Arc<LaidBlock>, Pos2)],
+    visible: Rect,
+) -> egui::FullOutput {
+    ctx.run_ui(window(), |ui| {
+        for (laid, origin) in blocks {
+            let runs = atlas.runs(ui.ctx(), laid, *origin, visible);
+            paint_runs(ui.painter(), runs, |_| Color32::BLACK);
+        }
+    })
+}
+
+/// Glyph quads of `blocks` (each at its origin) on the lines within `visible`, every one
+/// placed: as many atlases as it takes.
+fn glyphs_in_view(blocks: &[(Arc<LaidBlock>, Pos2)], visible: Rect) -> usize {
+    let mut atlas = obs_render::GlyphAtlas::new();
+    let mut quads = 0;
+    for (laid, origin) in blocks {
+        let mut from = 0;
+        loop {
+            let placed = atlas.quads_from(
+                laid,
+                [origin.x, origin.y],
+                SCALE,
+                [visible.top(), visible.bottom()],
+                from,
+            );
+            quads += placed.quads.len();
+            let Some(next) = placed.resume else { break };
+            atlas.start_over();
+            from = next;
+        }
+    }
+    quads
+}
+
+/// A frame grows the atlas twice, a block each (512² → 1024² → 2048²), and then needs it to
+/// start over. Its earlier blocks sample the textures replaced until the frame is painted, so
+/// starting over at once would hold 1 + 4 + 16 + 16 = 37 MiB: the glyphs past the full atlas
+/// wait for the next frame, which draws every glyph in view. GPU memory as painted stays
+/// within the text GPU budget in every frame, also when the view needs a start-over each frame
+/// (#255 review).
 /// Textures as a GPU holds them: coverage (alpha) and size.
 #[derive(Default)]
 struct Gpu {
     textures: HashMap<TextureId, ([usize; 2], Vec<u8>)>,
+    /// RGBA bytes of the textures held (egui's font texture left out) as the last frame was
+    /// painted: freed ones go after painting.
+    painted_bytes: usize,
 }
 
 /// A glyph as drawn: its box in device pixels and the coverage it samples.
@@ -170,6 +220,10 @@ impl Gpu {
                 }
             }
         }
+        self.painted_bytes = (self.textures.iter())
+            .filter(|(id, _)| **id != TextureId::default())
+            .map(|(_, ([w, h], _))| w * h * 4)
+            .sum();
         let mut drawn = Vec::new();
         for clipped in &output.shapes {
             let Shape::Mesh(mesh) = &clipped.shape else {
@@ -286,4 +340,47 @@ fn a_block_larger_than_the_atlas_paints_in_its_first_frame() {
     assert!(first.len() > 100, "{} glyphs", first.len());
     assert_eq!(first, second);
     assert_eq!(first, fresh);
+}
+
+#[test]
+fn growing_and_starting_over_stays_within_the_text_gpu_budget() {
+    let (latin, big) = (covered('\u{20}'..='\u{FF}'), covered('\u{20}'..='\u{2FFF}'));
+    let mut view = view(doc(&["Grace", &latin, &big]));
+    let blocks: Vec<_> = (view.visible(100_000.0).into_iter())
+        .map(|b| (b.laid, Pos2::new(20.0, b.top)))
+        .collect();
+    // 4,000 points: a little more than the largest atlas holds; 5,000: a start-over a frame.
+    for bottom in [4000.0, 5000.0] {
+        let visible = Rect::from_min_max(Pos2::ZERO, Pos2::new(640.0, bottom));
+        let ctx = egui::Context::default();
+        let (mut atlas, mut gpu) = (AtlasTexture::default(), Gpu::default());
+        let mut frames = Vec::new();
+        for _ in 0..4 {
+            let output = draw_blocks(&ctx, &mut atlas, &blocks, visible);
+            let repaint = output.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+            frames.push((gpu.paint(output), repaint));
+            // Spare textures are emptied to a pixel: 4 bytes each, at most one for each
+            // texture a frame can hold.
+            assert!(
+                gpu.painted_bytes <= TEXT_GPU_BUDGET + 4 * 4,
+                "{} bytes painted at {bottom} points",
+                gpu.painted_bytes
+            );
+        }
+        assert!(
+            atlas.atlas.stats().generation > 2,
+            "the atlas did not start over"
+        );
+        if bottom == 4000.0 {
+            let in_view = glyphs_in_view(&blocks, visible);
+            let (first, repaint) = &frames[0];
+            assert!(
+                first.len() < in_view,
+                "the first frame drew all {in_view} glyphs"
+            );
+            assert_eq!(*repaint, std::time::Duration::ZERO, "no frame asked for");
+            assert_eq!(frames[1].0.len(), in_view);
+            assert!(frames[2..].iter().all(|(f, _)| *f == frames[1].0));
+        }
+    }
 }

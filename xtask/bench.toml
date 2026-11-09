@@ -24,7 +24,8 @@ max_all_settle_frames = 3
 [budget]
 # UI-thread layout per frame, p99 over all frames.
 max_sync_layout_p99_ms = 2.0
-# Glyph atlas as uploaded (RGBA).
+# Glyph atlas as uploaded (RGBA). The reading pane holds every atlas texture a frame paints
+# with, replaced ones included, to the same 32 MiB (`TEXT_GPU_BUDGET`, #255).
 max_text_gpu_mib = 32.0
 
 # Feature scenarios (#183), each from the #19 targets: at most 1% missed frames while the

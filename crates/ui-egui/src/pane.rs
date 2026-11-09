@@ -21,18 +21,31 @@ use obs_scripture::Verse;
 
 const SCROLLBAR: f32 = size::SCROLLBAR;
 
+/// GPU memory the atlas's textures may take at once, as a frame is painted: #19's text GPU
+/// budget (`max_text_gpu_mib` in `xtask/bench.toml`).
+pub const TEXT_GPU_BUDGET: usize = 32 * 1024 * 1024;
+
 /// The atlas plus its GPU copy.
 ///
 /// Every draw pairs its quads with the texture as it is right after they are made
-/// ([`Self::runs`]): a later draw that grows the atlas or starts it over gets a texture of its
-/// own, and the one the earlier quads sample stays until it has been painted (#255).
+/// ([`Self::runs`]): a later draw in the same pass that grows the atlas or starts it over gets
+/// a texture of its own, and the one the earlier quads sample stays until that pass has been
+/// painted (#255). Those textures together stay within [`TEXT_GPU_BUDGET`]: a start-over that
+/// would go past it waits for the next frame.
+///
+/// Passes are counted in the root viewport's, as floating windows are immediate viewports drawn
+/// within its pass with this same atlas.
 pub struct AtlasTexture {
     pub atlas: GlyphAtlas,
-    handle: Option<TextureHandle>,
+    /// The texture the atlas is uploaded to, and the last pass that drew with it.
+    handle: Option<(TextureHandle, u64)>,
     generation: u64,
-    /// Textures replaced in a recent pass, with that pass: shapes of the frame still sample
-    /// them, and a frame can run more than one pass.
+    /// Textures replaced in a pass that drew with them, with that pass: its shapes sample them
+    /// until it is painted. In a later pass they are spare, emptied to one pixel (so the GPU
+    /// lets go of them before it paints again) and filled again rather than a texture made.
     retired: Vec<(u64, TextureHandle)>,
+    /// The root frame in which a draw last left glyphs for the next frame.
+    deferred: Option<u64>,
 }
 
 impl Default for AtlasTexture {
@@ -42,6 +55,7 @@ impl Default for AtlasTexture {
             handle: None,
             generation: u64::MAX,
             retired: Vec::new(),
+            deferred: None,
         }
     }
 }
@@ -65,35 +79,100 @@ fn coverage_image(coverage: &[u8], side: usize, region: [usize; 4]) -> ColorImag
     ColorImage::new([x1 - x0, y1 - y0], pixels)
 }
 
+/// The root viewport's pass: shapes of a pass sample what they were made with until it is
+/// painted, its immediate viewports' shapes included.
+fn root_pass(ctx: &egui::Context) -> u64 {
+    ctx.cumulative_pass_nr_for(egui::ViewportId::ROOT)
+}
+
 impl AtlasTexture {
-    /// Upload what changed and return the texture.
+    /// Upload what changed and return the texture, to draw with in this pass.
     fn sync(&mut self, ctx: &egui::Context) -> egui::TextureId {
+        let pass = root_pass(ctx);
+        for (at, spare) in &mut self.retired {
+            if *at < pass && spare.size() != [1, 1] {
+                spare.set(
+                    ColorImage::new([1, 1], vec![Color32::TRANSPARENT]),
+                    TextureOptions::NEAREST,
+                );
+            }
+        }
         let side = self.atlas.side();
         let generation = self.atlas.stats().generation;
-        let pass = ctx.cumulative_pass_nr();
-        self.retired.retain(|(at, _)| pass <= at + 1);
         if self.handle.is_none() || generation != self.generation {
             let img = coverage_image(self.atlas.coverage(), side, [0, 0, side, side]);
-            let handle = ctx.load_texture("glyph-atlas", img, TextureOptions::NEAREST);
-            if let Some(old) = self.handle.replace(handle) {
-                self.retired.push((pass, old));
-            }
+            let handle = match self.handle.take() {
+                // Nothing of this pass samples it yet: fill it anew.
+                Some((mut h, drawn)) if drawn < pass => {
+                    h.set(img, TextureOptions::NEAREST);
+                    h
+                }
+                // This pass's shapes sample it until painted: the atlas goes to another.
+                drawn => {
+                    let spare = (self.retired.iter())
+                        .position(|(at, _)| *at < pass)
+                        .map(|i| self.retired.swap_remove(i).1);
+                    let h = match spare {
+                        Some(mut h) => {
+                            h.set(img, TextureOptions::NEAREST);
+                            h
+                        }
+                        None => ctx.load_texture("glyph-atlas", img, TextureOptions::NEAREST),
+                    };
+                    if let Some((old, _)) = drawn {
+                        self.retired.push((pass, old));
+                    }
+                    h
+                }
+            };
+            self.handle = Some((handle, pass));
             self.generation = generation;
             let _ = self.atlas.take_dirty();
         } else if let Some(region) = self.atlas.take_dirty()
-            && let Some(h) = self.handle.as_mut()
+            && let Some((h, _)) = self.handle.as_mut()
         {
             let img = coverage_image(self.atlas.coverage(), side, region);
             h.set_partial([region[0], region[1]], img, TextureOptions::NEAREST);
         }
         self.handle
-            .as_ref()
-            .map_or(egui::TextureId::default(), TextureHandle::id)
+            .as_mut()
+            .map_or(egui::TextureId::default(), |(h, drawn)| {
+                *drawn = pass;
+                h.id()
+            })
+    }
+
+    /// GPU memory of the textures this pass's shapes sample: the atlas's and those it replaced
+    /// in this pass (spares are emptied before it is painted).
+    fn gpu_bytes(&self, pass: u64) -> usize {
+        let retired = (self.retired.iter())
+            .filter(|(at, _)| *at == pass)
+            .map(|(_, h)| h.byte_size());
+        self.handle.as_ref().map_or(0, |(h, _)| h.byte_size()) + retired.sum::<usize>()
+    }
+
+    /// Whether the atlas can start over now: its new texture would be one more until this pass
+    /// is painted.
+    fn room_to_start_over(&self, ctx: &egui::Context) -> bool {
+        let side = self.atlas.side();
+        self.gpu_bytes(root_pass(ctx)) + side * side * 4 <= TEXT_GPU_BUDGET
+    }
+
+    /// Glyphs left for the next frame: ask for it, unless the frame before left some too
+    /// (more glyphs in view than the budget holds; another frame would leave the same).
+    fn defer(&mut self, ctx: &egui::Context) {
+        let frame = ctx.cumulative_frame_nr_for(egui::ViewportId::ROOT);
+        if self.deferred.is_none_or(|d| d + 1 < frame) {
+            ctx.request_repaint();
+            ctx.request_repaint_of(egui::ViewportId::ROOT);
+        }
+        self.deferred = Some(frame);
     }
 
     /// The glyphs of `laid`, its top-left at `origin`, on the lines that reach into `visible`,
     /// each run with the texture it samples. More glyphs than the atlas holds at once come in
-    /// more than one run: the atlas starts over between them.
+    /// more than one run: the atlas starts over between them, as far as [`TEXT_GPU_BUDGET`]
+    /// allows in this pass. The glyphs it does not allow are left to the next frame.
     pub fn runs(
         &mut self,
         ctx: &egui::Context,
@@ -115,6 +194,10 @@ impl AtlasTexture {
             // further than the last; one that would not ends the draw.
             match placed.resume {
                 Some(next) if !(fresh && next == from) => {
+                    if !self.room_to_start_over(ctx) {
+                        self.defer(ctx);
+                        return runs;
+                    }
                     self.atlas.start_over();
                     (from, fresh) = (next, true);
                 }
