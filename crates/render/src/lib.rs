@@ -6,5 +6,5 @@
 mod atlas;
 mod raster;
 
-pub use atlas::{AtlasStats, GlyphAtlas, GlyphQuad, MAX_SIZE, SUBPIXEL_BINS};
+pub use atlas::{AtlasStats, GlyphAtlas, GlyphQuad, MAX_SIZE, PlacedGlyphs, SUBPIXEL_BINS};
 pub use raster::Rasterizer;

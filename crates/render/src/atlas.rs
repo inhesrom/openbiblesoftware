@@ -50,13 +50,31 @@ pub struct GlyphQuad {
     pub role: ColorRole,
 }
 
+/// Part of a block's glyphs placed in the atlas ([`GlyphAtlas::quads_from`]).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PlacedGlyphs {
+    pub quads: Vec<GlyphQuad>,
+    /// Where the atlas ran out of room: the index of the first glyph not placed, to go on
+    /// from once these quads are drawn and the atlas has started over. `None`: all placed.
+    pub resume: Option<usize>,
+}
+
+/// What the atlas has for a glyph.
+enum Slot {
+    Ink(Entry),
+    /// No outline (a space) or none that can be rastered: nothing to draw.
+    Blank,
+    /// No room left in the largest atlas.
+    Full,
+}
+
 /// Counters for the performance overlay and tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct AtlasStats {
     pub glyphs: usize,
     pub rasters: u64,
     pub side: usize,
-    /// Bumped when the atlas is regrown or reset: textures must be re-uploaded whole.
+    /// Bumped when the atlas grows or starts over: textures must be re-uploaded whole.
     pub generation: u64,
 }
 
@@ -223,116 +241,170 @@ impl GlyphAtlas {
         self.dirty.take()
     }
 
-    fn grow_or_reset(&mut self) {
-        if self.side < MAX_SIZE {
-            let ns = self.side * 2;
-            let mut c = vec![0; ns * ns];
-            for y in 0..self.side {
-                c[y * ns..y * ns + self.side]
-                    .copy_from_slice(&self.coverage[y * self.side..(y + 1) * self.side]);
-            }
-            self.coverage = c;
-            // Keep packing below the old content.
-            self.cursor = (1, self.side + 1);
-            self.side = ns;
-        } else {
-            self.coverage.iter_mut().for_each(|a| *a = 0);
-            self.map.clear();
-            self.cursor = (1, 1);
+    /// Double the atlas, keeping every glyph where it is (so quads made before stay right
+    /// in texels); `false` at [`MAX_SIZE`].
+    fn grow(&mut self) -> bool {
+        if self.side >= MAX_SIZE {
+            return false;
         }
+        let ns = self.side * 2;
+        let mut c = vec![0; ns * ns];
+        for y in 0..self.side {
+            c[y * ns..y * ns + self.side]
+                .copy_from_slice(&self.coverage[y * self.side..(y + 1) * self.side]);
+        }
+        self.coverage = c;
+        // Keep packing below the old content.
+        self.cursor = (1, self.side + 1);
+        self.side = ns;
+        self.row_height = 0;
+        self.dirty = None;
+        self.generation += 1;
+        true
+    }
+
+    /// Empty the atlas so it packs anew, at the size it has. Quads made before sample the
+    /// texture as it was: draw them with that texture, not with this one (#255).
+    pub fn start_over(&mut self) {
+        self.coverage.iter_mut().for_each(|a| *a = 0);
+        self.map.clear();
+        self.cursor = (1, 1);
         self.row_height = 0;
         self.dirty = None;
         self.generation += 1;
     }
 
-    fn alloc(&mut self, w: usize, h: usize) -> (usize, usize) {
+    /// Room for a `w` × `h` glyph, growing the atlas if it must; `None` when even the
+    /// largest atlas is full.
+    fn alloc(&mut self, w: usize, h: usize) -> Option<(usize, usize)> {
         loop {
             if self.cursor.0 + w + 1 > self.side {
                 self.cursor = (1, self.cursor.1 + self.row_height + 1);
                 self.row_height = 0;
             }
             if self.cursor.1 + h + 1 > self.side {
-                self.grow_or_reset();
-                continue;
+                if self.grow() {
+                    continue;
+                }
+                return None;
             }
             let p = self.cursor;
             self.cursor.0 += w + 1;
             self.row_height = self.row_height.max(h);
-            return p;
+            return Some(p);
         }
     }
 
-    fn entry(&mut self, key: GlyphKey) -> Option<Entry> {
+    fn entry(&mut self, key: GlyphKey) -> Slot {
         if let Some(e) = self.map.get(&key) {
-            return *e;
+            return e.map_or(Slot::Blank, Slot::Ink);
         }
         self.rasters += 1;
-        let e = raster(key).map(|(cov, w, h, left, top)| {
-            let (x, y) = self.alloc(w, h);
-            for row in 0..h {
-                let dst = (y + row) * self.side + x;
-                self.coverage[dst..dst + w].copy_from_slice(&cov[row * w..(row + 1) * w]);
-            }
-            let d = self.dirty.get_or_insert([x, y, x + w, y + h]);
-            *d = [d[0].min(x), d[1].min(y), d[2].max(x + w), d[3].max(y + h)];
-            Entry {
-                x: x as u16,
-                y: y as u16,
-                w: w as u16,
-                h: h as u16,
-                left,
-                top,
-            }
-        });
-        self.map.insert(key, e);
-        e
+        let Some((cov, w, h, left, top)) = raster(key) else {
+            self.map.insert(key, None);
+            return Slot::Blank;
+        };
+        // A glyph with no room is not kept: it is rastered again once there is room.
+        let Some((x, y)) = self.alloc(w, h) else {
+            return Slot::Full;
+        };
+        for row in 0..h {
+            let dst = (y + row) * self.side + x;
+            self.coverage[dst..dst + w].copy_from_slice(&cov[row * w..(row + 1) * w]);
+        }
+        let d = self.dirty.get_or_insert([x, y, x + w, y + h]);
+        *d = [d[0].min(x), d[1].min(y), d[2].max(x + w), d[3].max(y + h)];
+        let e = Entry {
+            x: x as u16,
+            y: y as u16,
+            w: w as u16,
+            h: h as u16,
+            left,
+            top,
+        };
+        self.map.insert(key, Some(e));
+        Slot::Ink(e)
     }
 
     /// Quads for every glyph of a laid block at `scale` device px per point, with the block's
-    /// top-left at `origin` (points). Positions snap to device pixels vertically and to a
-    /// quarter pixel horizontally.
+    /// top-left at `origin` (points), sampling the atlas as it is when this returns. Positions
+    /// snap to device pixels vertically and to a quarter pixel horizontally.
+    ///
+    /// When the glyphs do not all fit with those already in the atlas, it starts over once
+    /// ([`Self::start_over`]); glyphs past what even an empty atlas holds are left out. To
+    /// draw every glyph whatever their number, draw in parts with [`Self::quads_from`].
     pub fn quads(&mut self, block: &LaidBlock, origin: [f32; 2], scale: f32) -> Vec<GlyphQuad> {
-        loop {
-            let generation = self.generation;
-            let mut placed: Vec<(Entry, f32, f32, ColorRole)> = Vec::new();
-            for (line, item, x, y, glyph) in block.glyphs() {
-                let _ = line;
-                let px = item.style.size * scale;
-                let px_q = (px * 4.0).round() as u32;
-                let dev_x = (origin[0] + x) * scale;
-                let xi = dev_x.floor();
-                let bin = (((dev_x - xi) * f32::from(SUBPIXEL_BINS)) as u8).min(SUBPIXEL_BINS - 1);
-                let dev_y = ((origin[1] + y) * scale).round();
-                let key = GlyphKey {
-                    face: item.style.face,
-                    glyph,
-                    px_q,
-                    bin,
-                };
-                if let Some(e) = self.entry(key) {
-                    placed.push((e, xi, dev_y, item.style.role));
-                }
-            }
-            if self.generation != generation {
-                // The atlas grew or reset part-way: earlier entries may have moved.
+        let everywhere = [f32::NEG_INFINITY, f32::INFINITY];
+        let placed = self.quads_from(block, origin, scale, everywhere, 0);
+        if placed.resume.is_none() {
+            return placed.quads;
+        }
+        self.start_over();
+        self.quads_from(block, origin, scale, everywhere, 0).quads
+    }
+
+    /// Quads for the glyphs of a laid block from its `from`th on (in [`LaidBlock::glyphs`]
+    /// order), as [`Self::quads`] places them, for the lines that reach into `visible` (a
+    /// range of y, in the same points as `origin`). It stops where the atlas, grown to
+    /// [`MAX_SIZE`], has no room left: then [`PlacedGlyphs::resume`] says where to go on
+    /// from once this part is drawn and the atlas has started over. It never starts over
+    /// itself, so every quad it returns samples the atlas as it is when it returns.
+    pub fn quads_from(
+        &mut self,
+        block: &LaidBlock,
+        origin: [f32; 2],
+        scale: f32,
+        visible: [f32; 2],
+        from: usize,
+    ) -> PlacedGlyphs {
+        let mut placed: Vec<(Entry, f32, f32, ColorRole)> = Vec::new();
+        let mut resume = None;
+        for (i, (line, item, x, y, glyph)) in block.glyphs().enumerate().skip(from) {
+            // A line's ink can reach past its box (marks, descenders): a text size of slack.
+            let size = item.style.size;
+            if origin[1] + line.bottom + size < visible[0]
+                || origin[1] + line.top - size > visible[1]
+            {
                 continue;
             }
-            let s = self.side as f32;
-            return placed
-                .into_iter()
-                .map(|(e, xi, y, role)| {
-                    let x0 = (xi + e.left) / scale;
-                    let y0 = (y + e.top) / scale;
-                    GlyphQuad {
-                        min: [x0, y0],
-                        max: [x0 + f32::from(e.w) / scale, y0 + f32::from(e.h) / scale],
-                        uv_min: [f32::from(e.x) / s, f32::from(e.y) / s],
-                        uv_max: [f32::from(e.x + e.w) / s, f32::from(e.y + e.h) / s],
-                        role,
-                    }
-                })
-                .collect();
+            let px = size * scale;
+            let px_q = (px * 4.0).round() as u32;
+            let dev_x = (origin[0] + x) * scale;
+            let xi = dev_x.floor();
+            let bin = (((dev_x - xi) * f32::from(SUBPIXEL_BINS)) as u8).min(SUBPIXEL_BINS - 1);
+            let dev_y = ((origin[1] + y) * scale).round();
+            let key = GlyphKey {
+                face: item.style.face,
+                glyph,
+                px_q,
+                bin,
+            };
+            match self.entry(key) {
+                Slot::Ink(e) => placed.push((e, xi, dev_y, item.style.role)),
+                Slot::Blank => {}
+                Slot::Full => {
+                    resume = Some(i);
+                    break;
+                }
+            }
         }
+        // Growing kept every glyph in place, so all of them are normalized by the final side.
+        let s = self.side as f32;
+        let quads = placed
+            .into_iter()
+            .map(|(e, xi, y, role)| {
+                let x0 = (xi + e.left) / scale;
+                let y0 = (y + e.top) / scale;
+                GlyphQuad {
+                    min: [x0, y0],
+                    max: [x0 + f32::from(e.w) / scale, y0 + f32::from(e.h) / scale],
+                    uv_min: [f32::from(e.x) / s, f32::from(e.y) / s],
+                    uv_max: [f32::from(e.x + e.w) / s, f32::from(e.y + e.h) / s],
+                    role,
+                }
+            })
+            .collect();
+        PlacedGlyphs { quads, resume }
     }
 }
 
@@ -401,6 +473,122 @@ mod tests {
         let q = atlas.quads(&b, [0.0, 0.0], 1.5);
         assert!(!q.is_empty());
         assert!(q.iter().all(|q| q.role == ColorRole::Ink));
+    }
+
+    /// Every character from U+0020 to U+2FFF the Regular face has (controls and spaces left
+    /// out), a space after each, at `size`: at Text size 40 and 2x, far more glyphs than the
+    /// largest atlas holds at once (AUD-LAYOUT-TEXT-1, #255).
+    fn oversized_block(size: f32) -> LaidBlock {
+        let regular = obs_fonts::face(FaceId::Regular).unwrap();
+        let text: String = ('\u{20}'..='\u{2FFF}')
+            .filter(|&c| !c.is_control() && !c.is_whitespace() && regular.covers(c))
+            .flat_map(|c| [c, ' '])
+            .collect();
+        assert_eq!(text.chars().count(), 4622);
+        let p = snippet_paragraph(
+            &text,
+            ColorRole::Ink,
+            false,
+            &TextSettings {
+                size,
+                ..TextSettings::default()
+            },
+        );
+        layout(&p, 600.0, ShapeCache::shared())
+    }
+
+    /// Runs `f` on a thread and fails if it has not returned in a minute.
+    fn bounded<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(60))
+            .expect("GlyphAtlas::quads did not return")
+    }
+
+    #[test]
+    fn a_block_larger_than_the_atlas_returns() {
+        let (quads, stats) = bounded(|| {
+            let mut atlas = GlyphAtlas::new();
+            let quads = atlas.quads(&oversized_block(40.0), [0.0, 0.0], 2.0);
+            (quads.len(), atlas.stats())
+        });
+        assert!(quads > 0);
+        assert_eq!(stats.side, MAX_SIZE);
+    }
+
+    /// Ink under a quad, in the atlas as it is.
+    fn ink(atlas: &GlyphAtlas, q: &GlyphQuad) -> u32 {
+        let side = atlas.side() as f32;
+        let [x0, y0] = q.uv_min.map(|v| (v * side).round() as usize);
+        let [x1, y1] = q.uv_max.map(|v| (v * side).round() as usize);
+        (y0..y1)
+            .flat_map(|y| (x0..x1).map(move |x| (x, y)))
+            .map(|(x, y)| u32::from(atlas.coverage()[y * atlas.side() + x]))
+            .sum()
+    }
+
+    #[test]
+    fn a_block_larger_than_the_atlas_is_drawn_whole_in_parts() {
+        let b = oversized_block(40.0);
+        let mut atlas = GlyphAtlas::new();
+        let (mut from, mut parts, mut quads) = (0, 0, 0);
+        loop {
+            let placed = atlas.quads_from(&b, [0.0, 0.0], 2.0, [f32::MIN, f32::MAX], from);
+            parts += 1;
+            quads += placed.quads.len();
+            // Each part samples the atlas as it is before it starts over.
+            assert!(placed.quads.iter().all(|q| ink(&atlas, q) > 0));
+            match placed.resume {
+                Some(next) => {
+                    assert!(next > from, "no progress from glyph {from}");
+                    from = next;
+                    atlas.start_over();
+                }
+                None => break,
+            }
+        }
+        assert!(parts > 1, "the block fit in one atlas");
+        assert!(parts < 20, "{parts} parts");
+        // Every glyph with ink, once: one for each character but the spaces after them,
+        // less the few with no outline.
+        let glyphs = b.glyphs().count();
+        assert!(
+            quads * 2 + 100 >= glyphs && quads * 2 <= glyphs,
+            "{quads} of {glyphs}"
+        );
+    }
+
+    #[test]
+    fn only_the_lines_in_view_are_placed() {
+        let b = oversized_block(40.0);
+        let mut atlas = GlyphAtlas::new();
+        let placed = atlas.quads_from(&b, [0.0, -500.0], 2.0, [0.0, 800.0], 0);
+        assert_eq!(placed.resume, None, "a screenful filled the atlas");
+        assert!(placed.quads.len() > 100, "{}", placed.quads.len());
+        // Lines reaching into view, give or take a text size and a line.
+        for q in &placed.quads {
+            assert!(q.max[1] > -120.0 && q.min[1] < 920.0, "{q:?}");
+        }
+        assert!(placed.quads.len() * 4 < b.glyphs().count());
+    }
+
+    #[test]
+    fn growing_keeps_every_glyph_where_it_was() {
+        let mut atlas = GlyphAtlas::new();
+        let grace = block("Grace", false);
+        let before = atlas.quads(&grace, [0.0, 0.0], 2.0);
+        let side = atlas.side() as f32;
+        let at = |quads: &[GlyphQuad], side: f32| -> Vec<[f32; 2]> {
+            quads.iter().map(|q| q.uv_min.map(|v| v * side)).collect()
+        };
+        let texels = at(&before, side);
+        atlas.quads(&oversized_block(17.0), [0.0, 0.0], 2.0);
+        assert!(atlas.side() > side as usize, "the atlas did not grow");
+        let after = atlas.quads(&grace, [0.0, 0.0], 2.0);
+        assert_eq!(at(&after, atlas.side() as f32), texels);
+        assert!(after.iter().all(|q| ink(&atlas, q) > 0));
     }
 
     #[test]

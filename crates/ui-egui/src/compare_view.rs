@@ -5,7 +5,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use egui::{Align2, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
+use egui::{Align2, FontId, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use obs_engine::{Cell, ComparedBible, CopiedBible, Marks, VerseBlock, verse_blocks};
 use obs_layout::{ColorRole, LaidBlock, TextSettings, UnitPos};
 use obs_model::Direction;
@@ -544,14 +544,13 @@ pub fn comparison_pane(
         return out;
     }
 
-    let ppp = ui.ctx().pixels_per_point();
     let settings = view.settings;
     let text_left = left + LABEL_WIDTH;
     let text_width = view.text_width();
     let label_font = FontId::proportional(text::LABEL);
     let small = FontId::proportional(text::SMALL);
     let tint = palette.search_hit.gamma_multiply(alpha::STRONG);
-    let mut quads = Vec::new();
+    let mut runs = Vec::new();
     let mut tints: Vec<Rect> = Vec::new();
     // Find matches (#175): their rectangles, and whether each is the current one.
     let mut matches: Vec<(Rect, bool)> = Vec::new();
@@ -677,7 +676,12 @@ pub fn comparison_pane(
                                         ));
                                     }
                                 }
-                                quads.extend(atlas.atlas.quads(&laid, [text_left, row_y], ppp));
+                                runs.extend(atlas.runs(
+                                    ui.ctx(),
+                                    &laid,
+                                    pos2(text_left, row_y),
+                                    rect,
+                                ));
                                 height = laid.height;
                                 accessible_laid = Some(laid);
                             }
@@ -786,16 +790,7 @@ pub fn comparison_pane(
     for (r, current) in matches {
         crate::pane::paint_find_match(&painter, r, current, palette);
     }
-    let texture = atlas.sync(ui.ctx());
-    let mut mesh = Mesh::with_texture(texture);
-    for q in quads {
-        mesh.add_rect_with_uv(
-            Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
-            Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-            palette.color(q.role),
-        );
-    }
-    painter.add(Shape::mesh(mesh));
+    crate::pane::paint_runs(&painter, runs, |q| palette.color(q.role));
     for [x, _, b] in carets {
         let s = settings.size * mark::CARET_EMS;
         painter.line(

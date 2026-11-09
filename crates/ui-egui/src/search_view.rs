@@ -10,16 +10,15 @@
 
 use std::ops::Range;
 
-use egui::{Align2, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
+use egui::{Align2, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
 use obs_engine::library_search::row_label;
 use obs_engine::{BibleResults, LibraryResults, SearchTab};
 use obs_layout::{ColorRole, TextSettings};
-use obs_render::GlyphQuad;
 
 use crate::compare_view::range_rects;
 use crate::heights::HeightIndex;
 use crate::palette::Palette;
-use crate::pane::AtlasTexture;
+use crate::pane::{AtlasTexture, GlyphRun};
 use crate::tokens::{alpha, radius, scale, share, size, space, stroke, text};
 use crate::workers::SnippetCache;
 
@@ -241,7 +240,7 @@ struct Paint<'a> {
     palette: &'a Palette,
     accessible: bool,
     pane: egui::Id,
-    quads: Vec<GlyphQuad>,
+    runs: Vec<GlyphRun>,
     tints: Vec<Rect>,
     /// Hit areas: rect, row and hit.
     targets: Vec<(Rect, usize, usize)>,
@@ -332,7 +331,6 @@ pub fn search_pane(
     }
     view.apply_reveal();
 
-    let ppp = ui.ctx().pixels_per_point();
     let hover = ui
         .input(|i| i.pointer.hover_pos())
         .filter(|p| rect.contains(*p));
@@ -341,7 +339,7 @@ pub fn search_pane(
         palette,
         accessible,
         pane: response.id,
-        quads: Vec::new(),
+        runs: Vec::new(),
         tints: Vec::new(),
         targets: Vec::new(),
         frame: SearchFrame::default(),
@@ -353,8 +351,8 @@ pub fn search_pane(
     while i < rows && y < rect.bottom() {
         let background = painter.add(Shape::Noop);
         let (height, measured, top) = match (&bible, &library) {
-            (Some(r), _) => bible_row(ui, view, tab, r, i, left, y, atlas, ppp, &mut paint),
-            (None, Some(r)) => library_row(ui, view, tab, r, i, left, y, atlas, ppp, &mut paint),
+            (Some(r), _) => bible_row(ui, view, tab, r, i, left, y, atlas, &mut paint),
+            (None, Some(r)) => library_row(ui, view, tab, r, i, left, y, atlas, &mut paint),
             (None, None) => break,
         };
         if measured {
@@ -387,7 +385,7 @@ pub fn search_pane(
         i += 1;
     }
     let Paint {
-        quads,
+        runs,
         tints,
         targets,
         mut frame,
@@ -400,16 +398,7 @@ pub fn search_pane(
     for r in tints {
         painter.rect_filled(r, radius::XS, palette.search_hit);
     }
-    let texture = atlas.sync(ui.ctx());
-    let mut mesh = Mesh::with_texture(texture);
-    for q in quads {
-        mesh.add_rect_with_uv(
-            Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
-            Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-            palette.color(q.role),
-        );
-    }
-    painter.add(Shape::mesh(mesh));
+    crate::pane::paint_runs(&painter, runs, |q| palette.color(q.role));
 
     let (pos, total) = view.position();
     if total > f64::from(rect.height()) {
@@ -472,7 +461,6 @@ fn paint_laid(
     laid: &obs_layout::LaidBlock,
     highlights: &[Range<usize>],
     origin: Pos2,
-    ppp: f32,
 ) -> f32 {
     for r in highlights {
         for [x0, y0, x1, y1] in range_rects(laid, r) {
@@ -482,9 +470,8 @@ fn paint_laid(
             ));
         }
     }
-    paint
-        .quads
-        .extend(atlas.atlas.quads(laid, [origin.x, origin.y], ppp));
+    let painter = paint.painter;
+    (paint.runs).extend(atlas.runs(painter.ctx(), laid, origin, painter.clip_rect()));
     laid.height
 }
 
@@ -512,7 +499,6 @@ fn bible_row(
     left: f32,
     y: f32,
     atlas: &mut AtlasTexture,
-    ppp: f32,
     paint: &mut Paint<'_>,
 ) -> (f32, bool, f32) {
     let palette = paint.palette;
@@ -562,7 +548,7 @@ fn bible_row(
         });
         match (snippet, laid) {
             (Some(s), Some(laid)) => {
-                height = paint_laid(paint, atlas, &laid, &s.highlights, origin, ppp);
+                height = paint_laid(paint, atlas, &laid, &s.highlights, origin);
                 paint.frame.drawn += 1;
                 if paint.accessible {
                     crate::a11y::publish_comparison_row(
@@ -605,7 +591,6 @@ fn library_row(
     left: f32,
     y: f32,
     atlas: &mut AtlasTexture,
-    ppp: f32,
     paint: &mut Paint<'_>,
 ) -> (f32, bool, f32) {
     let palette = paint.palette;
@@ -642,7 +627,7 @@ fn library_row(
         text_width,
         &label_settings,
     ) {
-        Some(laid) => paint_laid(paint, atlas, &laid, &[], origin, ppp),
+        Some(laid) => paint_laid(paint, atlas, &laid, &[], origin),
         None => {
             measured = false;
             let h = view.line_height() * LABEL_SCALE;
@@ -660,7 +645,7 @@ fn library_row(
     });
     match (snippet, laid) {
         (Some(s), Some(laid)) => {
-            height = paint_laid(paint, atlas, &laid, &s.highlights, origin, ppp);
+            height = paint_laid(paint, atlas, &laid, &s.highlights, origin);
             paint.frame.drawn += 1;
             if paint.accessible {
                 let abbreviation = group.map_or("", |g| g.abbreviation.as_str());

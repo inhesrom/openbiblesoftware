@@ -35,7 +35,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::sync::Arc;
 
-use egui::{Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, UiBuilder, pos2, vec2};
+use egui::{Pos2, Rect, RichText, Sense, Stroke, Ui, UiBuilder, pos2, vec2};
 use obs_engine::{
     Card, CardOrder, Content, NoteBodyLine, Notebook, NotesFilter, NotesFormat, TabId,
     link_passages, note_body,
@@ -1341,19 +1341,7 @@ impl State {
 
     /// Paint laid text with the text pipeline (glyph atlas) at `origin`.
     fn paint_laid(&mut self, ui: &Ui, laid: &LaidBlock, origin: Pos2) {
-        let quads = self
-            .atlas
-            .atlas
-            .quads(laid, [origin.x, origin.y], ui.ctx().pixels_per_point());
-        let mut mesh = Mesh::with_texture(self.atlas.sync(ui.ctx()));
-        for q in quads {
-            mesh.add_rect_with_uv(
-                Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
-                Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-                self.palette.color(q.role),
-            );
-        }
-        ui.painter().add(Shape::mesh(mesh));
+        self.atlas.paint(ui.painter(), laid, origin, &self.palette);
     }
 
     /// Draw `text` with the text pipeline (glyph atlas), `width` wide; `None` (space kept)

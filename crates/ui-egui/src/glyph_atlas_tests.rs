@@ -1,0 +1,289 @@
+//! The reading pane's glyphs sample the glyphs they stand for, whatever the shared glyph
+//! atlas does while a frame is drawn: grows (AUD-LAYOUT-TEXT-2) or runs out of room
+//! (AUD-LAYOUT-TEXT-1, #255). A stand-in GPU applies each frame's texture deltas as eframe
+//! does (set before painting, free after) and reads back what every glyph quad samples.
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use egui::{Pos2, Rect, Shape, TextureId, vec2};
+use obs_layout::TextSettings;
+use obs_model::{
+    KeyScheme, Manifest, ParaStyle, ResourceBuilder, ResourceType, SpanKind, TextAccumulator,
+    UnitId, UnitKind,
+};
+use obs_scripture::{Book, Verse};
+
+use super::{AtlasTexture, PaneMarks, reading_pane};
+use crate::doc::ReadingDoc;
+use crate::find::Found;
+use crate::palette::Palette;
+use crate::view::ReadingView;
+
+/// Text size 40, the largest there is, at 2x.
+const SIZE: f32 = 40.0;
+const SCALE: f32 = 2.0;
+
+/// A Bible of one paragraph per text, a verse each.
+fn doc(texts: &[&str]) -> Arc<ReadingDoc> {
+    let mut m = Manifest::new("atlas-test", "Atlas test", "AT", ResourceType::Bible, "en");
+    m.key_schemes = vec![KeyScheme::Passage];
+    m.license = "LicenseRef-PD".into();
+    let mut b = ResourceBuilder::new(m);
+    let genesis = UnitId::book(Book::Genesis);
+    let mut t = TextAccumulator::new();
+    let paras: Vec<_> = texts
+        .iter()
+        .map(|text| {
+            let range = t.push(text);
+            t.push("\n");
+            range
+        })
+        .collect();
+    b.add_unit(genesis.clone(), UnitKind::BibleBook, None, t.into_string());
+    for (n, range) in (1..).zip(paras) {
+        b.add_span(
+            &genesis,
+            range.clone(),
+            SpanKind::Para {
+                style: ParaStyle::Prose,
+            },
+        );
+        b.add_verse(&genesis, range, Verse::new(Book::Genesis, 1, n), n);
+    }
+    Arc::new(ReadingDoc::from_resource(b.build().unwrap()))
+}
+
+/// Characters in `range` the Regular face has (controls and spaces left out), a space after
+/// each.
+fn covered(range: std::ops::RangeInclusive<char>) -> String {
+    let regular = obs_fonts::face(obs_fonts::FaceId::Regular).unwrap();
+    range
+        .filter(|&c| !c.is_control() && !c.is_whitespace() && regular.covers(c))
+        .flat_map(|c| [c, ' '])
+        .collect()
+}
+
+/// A view of `doc` at Text size 40, every block in a 600 × 900 pane laid out already, so a
+/// frame draws them all.
+fn view(doc: Arc<ReadingDoc>) -> ReadingView {
+    let mut view = ReadingView::new(
+        doc,
+        TextSettings {
+            size: SIZE,
+            ..TextSettings::default()
+        },
+    );
+    view.set_width(600.0);
+    view.visible(900.0);
+    view
+}
+
+/// One frame of a reading pane filling a 640 × 900 window at 2x.
+fn frame(
+    ctx: &egui::Context,
+    view: &mut ReadingView,
+    atlas: &mut AtlasTexture,
+) -> egui::FullOutput {
+    let mut viewports = egui::ViewportIdMap::default();
+    viewports.insert(
+        egui::ViewportId::ROOT,
+        egui::ViewportInfo {
+            native_pixels_per_point: Some(SCALE),
+            ..Default::default()
+        },
+    );
+    ctx.run_ui(
+        egui::RawInput {
+            viewports,
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(640.0, 900.0))),
+            ..Default::default()
+        },
+        |ui| {
+            reading_pane(
+                ui,
+                view,
+                atlas,
+                &Palette::PAPER,
+                None,
+                PaneMarks::default(),
+                Found::default(),
+            );
+        },
+    )
+}
+
+/// Textures as a GPU holds them: coverage (alpha) and size.
+#[derive(Default)]
+struct Gpu {
+    textures: HashMap<TextureId, ([usize; 2], Vec<u8>)>,
+}
+
+/// A glyph as drawn: its box in device pixels and the coverage it samples.
+type Drawn = ([i32; 4], Vec<u8>);
+
+/// The glyphs drawn, ink on white, as a PPM image `size` device pixels: written to
+/// `target/previews/glyph-atlas-{name}.ppm` when `UPDATE_PREVIEWS` is set.
+fn preview(name: &str, drawn: &[Drawn], size: [usize; 2]) {
+    if std::env::var_os("UPDATE_PREVIEWS").is_none() {
+        return;
+    }
+    let [w, h] = size;
+    let mut px = vec![255u8; w * h];
+    for ([x0, y0, x1, _], coverage) in drawn {
+        let gw = (x1 - x0) as usize;
+        for (k, a) in coverage.iter().enumerate() {
+            let (x, y) = (*x0 + (k % gw.max(1)) as i32, *y0 + (k / gw.max(1)) as i32);
+            if (0..w as i32).contains(&x) && (0..h as i32).contains(&y) {
+                let p = &mut px[y as usize * w + x as usize];
+                *p = (*p).min(255 - a);
+            }
+        }
+    }
+    let mut out = format!("P6\n{w} {h}\n255\n").into_bytes();
+    out.extend(px.iter().flat_map(|&v| [v, v, v]));
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/previews");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("glyph-atlas-{name}.ppm")), out).unwrap();
+}
+
+impl Gpu {
+    /// Paint a frame's output as eframe does: textures set first, the glyphs sampled, then
+    /// textures freed. Returns every textured quad, sorted.
+    fn paint(&mut self, mut output: egui::FullOutput) -> Vec<Drawn> {
+        for (id, deltas) in &output.textures_delta.set {
+            for delta in deltas {
+                let egui::ImageData::Color(image) = &delta.image;
+                let alpha: Vec<u8> = image.pixels.iter().map(|p| p.a()).collect();
+                match delta.pos {
+                    None => {
+                        self.textures.insert(*id, (image.size, alpha));
+                    }
+                    Some([x0, y0]) => {
+                        let ([w, _], pixels) = self.textures.get_mut(id).unwrap();
+                        for y in 0..image.size[1] {
+                            let row = &alpha[y * image.size[0]..(y + 1) * image.size[0]];
+                            let at = (y0 + y) * *w + x0;
+                            pixels[at..at + row.len()].copy_from_slice(row);
+                        }
+                    }
+                }
+            }
+        }
+        let mut drawn = Vec::new();
+        for clipped in &output.shapes {
+            let Shape::Mesh(mesh) = &clipped.shape else {
+                continue;
+            };
+            if mesh.texture_id == TextureId::default() {
+                continue;
+            }
+            let ([w, h], pixels) = &self.textures[&mesh.texture_id];
+            for quad in mesh.vertices.chunks(4) {
+                let (pos, uv) = (
+                    Rect::from_min_max(quad[0].pos, quad[3].pos),
+                    Rect::from_min_max(quad[0].uv, quad[3].uv),
+                );
+                let px = |v: f32| (v * SCALE).round() as i32;
+                let (u0, v0) = (
+                    (uv.min.x * *w as f32).round() as usize,
+                    (uv.min.y * *h as f32).round() as usize,
+                );
+                let (u1, v1) = (
+                    (uv.max.x * *w as f32).round() as usize,
+                    (uv.max.y * *h as f32).round() as usize,
+                );
+                let coverage = (v0..v1)
+                    .flat_map(|y| (u0..u1).map(move |x| (x, y)))
+                    .map(|(x, y)| pixels[y * w + x])
+                    .collect();
+                drawn.push((
+                    [px(pos.min.x), px(pos.min.y), px(pos.max.x), px(pos.max.y)],
+                    coverage,
+                ));
+            }
+        }
+        for id in &output.textures_delta.free {
+            self.textures.remove(id);
+        }
+        output.textures_delta.clear();
+        drawn.sort();
+        drawn
+    }
+}
+
+/// The glyphs of a pane drawn twice: in a frame where the atlas changes under it, then in one
+/// where every glyph is in the atlas already (so nothing can move).
+fn drawn_twice(view: &mut ReadingView, atlas: &mut AtlasTexture) -> (Vec<Drawn>, Vec<Drawn>) {
+    let ctx = egui::Context::default();
+    let mut gpu = Gpu::default();
+    let first = gpu.paint(frame(&ctx, view, atlas));
+    let generation = atlas.atlas.stats().generation;
+    let second = gpu.paint(frame(&ctx, view, atlas));
+    assert_eq!(
+        atlas.atlas.stats().generation,
+        generation,
+        "the second frame changed the atlas too"
+    );
+    (first, second)
+}
+
+/// AUD-LAYOUT-TEXT-2: a later block that grows the atlas leaves an earlier block's glyphs
+/// sampling the glyphs they stand for.
+#[test]
+fn a_block_that_grows_the_atlas_leaves_earlier_blocks_drawn_right() {
+    let latin = covered('\u{20}'..='\u{FF}');
+    let mut view = view(doc(&["Grace", &latin]));
+    let mut atlas = AtlasTexture::default();
+    let (first, second) = drawn_twice(&mut view, &mut atlas);
+    assert!(
+        atlas.atlas.stats().generation > 0,
+        "the second block did not grow the atlas"
+    );
+    preview("grown-first-frame", &first, [1280, 1800]);
+    assert!(first.len() > 100, "{} glyphs", first.len());
+    let wrong = first.iter().filter(|g| !second.contains(g)).count();
+    assert_eq!(
+        wrong,
+        0,
+        "{wrong} of {} glyphs sample other glyphs",
+        first.len()
+    );
+}
+
+/// AUD-LAYOUT-TEXT-1: a block with more glyphs than the largest atlas holds paints every glyph
+/// in view in its first frame, even when the atlas is full of other glyphs.
+#[test]
+fn a_block_larger_than_the_atlas_paints_in_its_first_frame() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let big = covered('\u{20}'..='\u{2FFF}');
+        let mut view = view(doc(&[&big]));
+        let mut atlas = AtlasTexture::default();
+        // Fill the atlas with the block's glyphs at other subpixel offsets, as a long session
+        // might.
+        let laid = Arc::clone(&view.visible(900.0)[0].laid);
+        for x in [0.3, 0.6] {
+            atlas.atlas.quads(&laid, [x, 0.0], SCALE);
+        }
+        let full = atlas.atlas.stats();
+        let (first, second) = drawn_twice(&mut view, &mut atlas);
+        let started_over = atlas.atlas.stats().generation > full.generation;
+        // Every glyph in view: as many as on a fresh atlas.
+        let fresh = Gpu::default().paint(frame(
+            &egui::Context::default(),
+            &mut view,
+            &mut AtlasTexture::default(),
+        ));
+        let _ = tx.send((full.side, started_over, first, second, fresh));
+    });
+    let (side, started_over, first, second, fresh) = rx
+        .recv_timeout(std::time::Duration::from_secs(120))
+        .expect("the reading pane did not finish its frames");
+    preview("oversized-first-frame", &first, [1280, 1800]);
+    assert_eq!(side, obs_render::MAX_SIZE);
+    assert!(started_over, "the glyphs in view fit beside the others");
+    assert!(first.len() > 100, "{} glyphs", first.len());
+    assert_eq!(first, second);
+    assert_eq!(first, fresh);
+}

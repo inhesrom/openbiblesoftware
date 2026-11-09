@@ -9,7 +9,7 @@
 
 use std::ops::Range;
 
-use egui::{Align2, Color32, FontId, Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, vec2};
+use egui::{Align2, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Ui, vec2};
 use obs_engine::{AnalysisColumn, ChartBy, HitGrid, ResultsView, SearchTab, TabId, chart_bars};
 use obs_layout::ColorRole;
 use serde_json::{Value, json};
@@ -530,19 +530,7 @@ impl State {
                 );
             }
         }
-        let quads =
-            self.atlas
-                .atlas
-                .quads(&laid, [origin.x, origin.y], ui.ctx().pixels_per_point());
-        let mut mesh = Mesh::with_texture(self.atlas.sync(ui.ctx()));
-        for q in quads {
-            mesh.add_rect_with_uv(
-                Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
-                Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-                palette.color(q.role),
-            );
-        }
-        painter.add(Shape::mesh(mesh));
+        self.atlas.paint(&painter, &laid, origin, &palette);
     }
 
     #[cfg(target_arch = "wasm32")]

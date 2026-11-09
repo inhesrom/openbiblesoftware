@@ -5,7 +5,7 @@
 //! the frame goes on. Headers collapse on click and reorder by dragging; the arrangement is
 //! the engine's, per kind of Guide, so every Passage Guide shows the same one.
 
-use egui::{Align2, FontId, Mesh, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui, pos2, vec2};
+use egui::{Align2, FontId, Rect, RichText, Sense, Stroke, Ui, pos2, vec2};
 use obs_engine::{CommentaryRow, Guide, GuideSection, SectionData, SectionStatus, TabId, TabKind};
 use obs_layout::{ColorRole, TextSettings};
 use obs_model::{Direction, Key};
@@ -566,22 +566,9 @@ impl State {
         if !ui.is_rect_visible(rect) {
             return;
         }
-        let quads = self.atlas.atlas.quads(
-            &laid,
-            [rect.left(), rect.top()],
-            ui.ctx().pixels_per_point(),
-        );
-        let mut mesh = Mesh::with_texture(self.atlas.sync(ui.ctx()));
-        for q in quads {
-            mesh.add_rect_with_uv(
-                Rect::from_min_max(Pos2::from(q.min), Pos2::from(q.max)),
-                Rect::from_min_max(Pos2::from(q.uv_min), Pos2::from(q.uv_max)),
-                self.palette.color(q.role),
-            );
-        }
         let painter = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
         painter.rect_filled(rect, 0.0, self.palette.page);
-        painter.add(Shape::mesh(mesh));
+        self.atlas.paint(&painter, &laid, rect.min, &self.palette);
     }
 
     /// Open a Commentary at a row's section: its Tab if one is open (Ctrl/Cmd-click: always
