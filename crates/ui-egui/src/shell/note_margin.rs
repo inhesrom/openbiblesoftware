@@ -417,8 +417,9 @@ struct Look {
 /// A card's text: the Note's lines with their Note formatting (#186): a heading in the
 /// display face, a list item after its bullet or number, a quote in quotation marks, bold,
 /// italics, and links and Bible references in the link colour. Collapsed, only its first
-/// [`COLLAPSED_ROWS`] rows, with "…" where it is cut. Returns where its links and Bible
-/// references are drawn, with where each goes.
+/// [`COLLAPSED_ROWS`] rows, with "…" where it is cut; a run of blank lines there is one gap
+/// that costs a row, so a collapsed card's height stays bounded. Returns where its links and
+/// Bible references are drawn, with where each goes.
 fn card_lines(
     ui: &mut Ui,
     body: &str,
@@ -429,8 +430,15 @@ fn card_lines(
     let mut links = Vec::new();
     let mut rows = if open { usize::MAX } else { COLLAPSED_ROWS };
     let mut shown = false;
+    // Whether the line before was blank (collapsed, a run of blanks is one gap).
+    let mut gap = false;
     let size = ui.style().text_styles[&egui::TextStyle::Body].size;
-    for bl in lines
+    // Trailing blank lines draw nothing (nor a "…" for them when collapsed).
+    let end = lines
+        .iter()
+        .rposition(|l| l.line.kind != NoteLineKind::Blank)
+        .map_or(0, |i| i + 1);
+    for bl in lines[..end]
         .iter()
         .skip_while(|l| l.line.kind == NoteLineKind::Blank)
     {
@@ -442,7 +450,13 @@ fn card_lines(
         let indent = |level: u8| "    ".repeat(usize::from(level));
         let (prefix, suffix, heading) = match line.kind {
             NoteLineKind::Blank => {
-                ui.add_space(space::XS);
+                if open {
+                    ui.add_space(space::XS);
+                } else if !gap {
+                    ui.add_space(space::XS);
+                    rows -= 1;
+                }
+                gap = true;
                 continue;
             }
             NoteLineKind::Heading(_) => (String::new(), "", true),
@@ -454,6 +468,7 @@ fn card_lines(
             NoteLineKind::Text => (String::new(), "", false),
         };
         shown = true;
+        gap = false;
         let plain = Look {
             bold: heading,
             italics: false,

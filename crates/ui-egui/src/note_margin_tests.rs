@@ -832,3 +832,47 @@ fn a_long_expanded_note_scrolls_inside_its_card_and_keeps_the_next_card_in_view(
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A collapsed Note with hundreds of blank lines between its words: the blank run is one
+/// gap within the collapsed rows, so its card stays short and the card after it stays in
+/// the pane.
+#[test]
+fn blank_lines_in_a_collapsed_note_do_not_push_the_next_card_out_of_view() {
+    let dir = folder("blanks");
+    let mut h = launch_with(&dir, &[kjv(), web()]);
+    h.screen = vec2(1900.0, 700.0);
+    let kjv = h.tab_id("KJV");
+    h.shell
+        .run("tab.go", &json!({ "tab": kjv.0, "text": "Rom 8:27" }));
+    settle_all(&mut h);
+    past_flash(&mut h);
+    let gappy = format!("First{}Last", "\n".repeat(250));
+    let blanks = note(&mut h, 28, "all things", &gappy);
+    let short = note(&mut h, 28, "we know", "First\nSecond\nThird");
+    let after = note(&mut h, 28, "work together", "After the gappy one.");
+    set_display(&mut h, "KJV", "margin");
+    let pane = h.shell.st.tabs[&kjv].margin.pane.unwrap();
+    let cards = margin(&h, "KJV");
+    assert_eq!(
+        cards.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+        [short.as_str(), blanks.as_str(), after.as_str()]
+    );
+    let (three, gappy, next) = (&cards[0], &cards[1], &cards[2]);
+    assert!(!gappy.expanded);
+    // No taller than a card of three text rows: one gap stands for the whole blank run.
+    assert!(
+        gappy.rect.height() <= three.rect.height() + 0.5,
+        "{gappy:?} vs {three:?}"
+    );
+    assert!(h.find("Last").is_some(), "{:?}", h.texts());
+    for c in &cards {
+        assert!(
+            c.rect.top() >= pane.top() - 0.5 && c.rect.bottom() <= pane.bottom() + 0.5,
+            "{c:?} is not in {pane:?}"
+        );
+    }
+    assert!(next.rect.top() >= gappy.rect.bottom() + CARD_GAP - 0.5);
+    assert!(h.find("After the gappy one.").is_some());
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
