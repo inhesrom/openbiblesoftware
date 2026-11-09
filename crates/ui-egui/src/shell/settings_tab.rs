@@ -48,6 +48,18 @@ fn shown(state: &State, setting: &Setting, query: &str) -> bool {
 }
 
 impl State {
+    /// A Setting that asks first was run from the Command box (Clear History, #226): Settings
+    /// Tab `tab` shows only it, asking Clear or Cancel.
+    pub(super) fn confirm_setting(&mut self, tab: TabId, setting: &'static str) {
+        let Some(found) = obs_engine::setting_by_id(setting) else {
+            return;
+        };
+        if let Some(t) = self.tabs.get_mut(&tab) {
+            t.filter = found.label.to_string();
+        }
+        self.settings_ui.confirming = Some(found.id);
+    }
+
     pub(super) fn settings_body(&mut self, ui: &mut Ui, tab: TabId) {
         let query = (self.tabs.get(&tab))
             .map(|t| t.filter.trim().to_lowercase())

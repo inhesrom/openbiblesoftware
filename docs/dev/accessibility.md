@@ -26,7 +26,7 @@ choosers) and Notes mode; the Bible Tab with interlinear lines on, and again wit
 Contents pane (#176) open.
 `every_pane_menu_and_window_names_its_interactive_nodes` does the same for the four toolbar
 panes (Library also while searching), the Command box's suggestions, the View and Help menus,
-Customize toolbar…, Fonts…, Copy verses…, the New Collection window and the right-click menu,
+Customize toolbar…, Fonts, Copy verses…, the New Collection window and the right-click menu,
 and checks Esc closes each.
 
 A node is **interactive** when AccessKit can click or focus it. Its **name** is its label,

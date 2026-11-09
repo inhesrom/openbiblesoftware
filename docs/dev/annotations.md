@@ -112,7 +112,7 @@ or deleted).
 `crates/ui-egui/src/marks.rs` and the reading pane (`pane.rs`) draw what is stored.
 
 - **Making them.** Releasing a selection (drag, double- or triple-click) shows a floating
-  toolbar above it: the active Highlight palette's swatches, `…` (Highlight styles…), ✏ Note,
+  toolbar above it: the active Highlight palette's swatches, `…` (Highlight styles), ✏ Note,
   Copy and Search this. Right-click shows the same actions as a menu (on the selection under
   the pointer, else on the clicked word). Keys: Alt+1…9 (the active palette's styles in its
   order, #181; see "Highlight styles and palettes" below), Ctrl+Shift+N
@@ -265,7 +265,7 @@ background job; the Notes Tool's side is in [notes-tool.md](notes-tool.md).
 
 `crates/engine/src/highlight_styles.rs` keeps them; `crates/ui-egui/src/palette.rs` turns a
 style into colours per Page tone; `crates/ui-egui/src/shell/highlight_styles_window.rs` is
-View → Highlight styles….
+View → Highlight styles.
 
 - **Rows.** `highlight_palettes` and `highlight_styles` (User database schema 10) are rows of
   the annotation tables: every edit is row `Change`s through `UserStore::apply_changes`, one

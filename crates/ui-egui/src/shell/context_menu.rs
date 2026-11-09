@@ -5,7 +5,7 @@
 //!
 //! | Target | Actions |
 //! |---|---|
-//! | Selection | the active palette's Highlight styles, Highlight styles…, Note…, Copy, Search this, Look up in Dictionary, Word Study… (the English-word chooser) |
+//! | Selection | the active palette's Highlight styles, Highlight styles, Note…, Copy, Search this, Look up in Dictionary, Word Study… (the English-word chooser) |
 //! | Verse | Passage Guide, Cross-references, Text Comparison, Copy with reference, Add Note on verse |
 //! | Lemma, Strong's number | Word Study, Open in preferred Lexicon, Pin in Word Info, Search Bible for it |
 //! | Morphology | Copy, Pin in Word Info |
@@ -333,7 +333,7 @@ fn actions_ui(
             item(
                 ui,
                 can_annotate,
-                egui::Button::new("Highlight styles…"),
+                egui::Button::new("Highlight styles"),
                 MenuAction::Annotate(Annotate::Styles),
                 no_db,
             );

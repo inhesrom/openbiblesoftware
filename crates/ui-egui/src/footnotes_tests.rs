@@ -292,13 +292,13 @@ fn the_keyboard_reaches_markers_and_the_popovers_links() {
     let (mut h, _files, tab) = bsb("keys", "Jn 1:19");
     h.ctx.enable_accesskit();
     let (m, at) = marker(&h, tab, "Isaiah 40:3");
-    // Click the text just before the marker so the pane has focus, then Tab to it.
+    // Click the text just before the marker, then Tab to it (past the menu bar's widgets).
     h.click(pos2(at.x - 40.0, at.y + 4.0));
     let widget = |h: &Harness| {
         h.shell.st.tabs[&tab].view.as_ref().map(|_| ())?;
         h.ctx.memory(|mem| mem.focused())
     };
-    for _ in 0..20 {
+    for _ in 0..40 {
         if pending(&h).is_some_and(|p| p.note == m.note) {
             break;
         }
@@ -981,7 +981,7 @@ fn enter_before_the_dwell_moves_focus_to_the_first_link_once_it_is_drawn() {
     let (mut h, _files, tab) = bsb("keys-cold", "Jn 1:19");
     let (m, at) = marker(&h, tab, "Isaiah 40:3");
     h.click(pos2(at.x - 40.0, at.y + 4.0));
-    for _ in 0..20 {
+    for _ in 0..40 {
         if pending(&h).is_some_and(|p| p.note == m.note) {
             break;
         }

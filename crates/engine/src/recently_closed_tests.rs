@@ -378,14 +378,16 @@ fn recently_closed_lists_the_last_twenty_newest_first_and_reopens_any_of_them() 
     );
     assert_eq!(s.recently_closed_labels().len(), 19);
     assert_eq!(s.recently_closed_labels()[0].1, "Psalms 25:1 · KJV");
-    // The Window menu holds Reopen closed Tab, Recently closed and Close Panel.
+    // The Window menu starts with Reopen closed Tab and Recently closed, then Close Tab and
+    // Close Panel.
     let window = MENUS.iter().find(|m| m.title == "Window").unwrap();
     assert_eq!(
-        window.items,
+        window.items[..5],
         [
             MenuItem::Command("tab.reopen_closed"),
             MenuItem::RecentlyClosed,
             MenuItem::Separator,
+            MenuItem::Command("tab.close"),
             MenuItem::Command("panel.close"),
         ]
     );
@@ -548,7 +550,7 @@ fn a_closed_tab_keeps_the_scroll_it_closed_with_whatever_happens_after() {
             },
         },
         ScrollCase {
-            name: "a Layout giving its id to another Tab, then Reset layout",
+            name: "a Layout giving its id to another Tab, then Reset Layout",
             before: |s, kjv| {
                 place(s, kjv, None, v(Book::Genesis, 30, 1));
                 s.run("layout.save", &json!({ "name": "Study" })).unwrap();

@@ -368,7 +368,7 @@ pub(super) fn paint_swatch(
     p.rect_stroke(rect, 3.0, stroke, egui::StrokeKind::Inside);
 }
 
-/// The "Highlight styles…" button that opens the styles window from the toolbar.
+/// The "Highlight styles" button that opens the styles window from the toolbar.
 const STYLES_BUTTON: &str = "…";
 
 /// The selection toolbar's buttons in a row; returns the one clicked. Without a User database
@@ -407,8 +407,8 @@ fn toolbar_row(
         }
         if ui
             .add_enabled(can_annotate, egui::Button::new(STYLES_BUTTON).small())
-            .on_hover_text("Highlight styles…")
-            .accessible_name("Highlight styles…")
+            .on_hover_text("Highlight styles")
+            .accessible_name("Highlight styles")
             .clicked()
         {
             picked = Some(Annotate::Styles);

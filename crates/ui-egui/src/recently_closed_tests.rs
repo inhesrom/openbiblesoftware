@@ -476,7 +476,7 @@ fn a_closed_tab_reopens_scrolled_where_it_closed_whatever_happens_after() {
             },
         },
         ScrollCase {
-            name: "a Layout giving TB's id to its own TB, then Reset layout",
+            name: "a Layout giving TB's id to its own TB, then Reset Layout",
             before: |h, tb| {
                 go(h, tb, "Gen 30:20");
                 h.shell.run("layout.save", &json!({ "name": "Study" }));

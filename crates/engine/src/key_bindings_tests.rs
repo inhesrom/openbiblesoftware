@@ -358,14 +358,20 @@ fn menu_path_names_the_menu_a_command_is_in() {
     }
 }
 
-/// #262 (WORKSPACE-MAC-9): List commands answers scripts with JSON the app has no place to
-/// show, so no menu item or key runs it to no effect.
+/// #262 (WORKSPACE-MAC-9) found List commands doing nothing from Help or its key. It is All
+/// commands now (#226): from Help or Ctrl+Shift+P it lists the commands in the Command box,
+/// and it still answers scripts with the JSON list.
 #[test]
-fn list_commands_is_for_scripts_only() {
+fn all_commands_shows_the_list_and_answers_scripts() {
     let mut s = Session::new(JobMode::Inline);
-    assert_eq!(s.menu_path("app.commands"), None);
-    assert_eq!(s.shortcut("app.commands"), None);
+    assert_eq!(
+        s.menu_path("app.commands").as_deref(),
+        Some("Help → All commands")
+    );
+    assert_eq!(s.shortcut("app.commands"), Some("Ctrl+Shift+P"));
+    s.workspace.take_effects();
     assert!(s.run("app.commands", &json!({})).unwrap().is_array());
+    assert!((s.workspace.take_effects()).contains(&crate::workspace::Effect::ListCommands));
 }
 
 /// Every command a key can run is listed once, grouped by its menu, with the Selection keys
@@ -391,7 +397,8 @@ fn every_binding_is_listed_once_by_menu_and_the_defaults_do_not_conflict() {
     assert_eq!(group("view.text_larger"), Some("View"));
     assert_eq!(group("help.keyboard_shortcuts"), Some("Help"));
     assert_eq!(group("selection.highlight_4"), Some(SELECTION_GROUP));
-    assert_eq!(group("tab.find"), Some(OTHER_GROUP));
+    assert_eq!(group("tab.find"), Some("Edit"));
+    assert_eq!(group("toolbar.library"), Some(OTHER_GROUP));
     assert_eq!(group("tab.go"), None);
     // Every command with a default key is listed.
     for spec in s.commands().iter().filter(|c| c.shortcut.is_some()) {

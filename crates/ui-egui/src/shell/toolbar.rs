@@ -15,7 +15,7 @@
 //!   dragging a row onto a Panel docks it there, onto a Panel's right edge in a new Panel
 //!   beside it (`toolbar.open_resource`).
 //! - **Guides:** each Guide with its own input box; Enter opens the Guide at what was typed.
-//! - **Tools:** the Tools menu's commands.
+//! - **Tools:** the Tools Launcher's commands ([`obs_engine::Launcher::items`]).
 //! - **Layouts:** saved and Built-in Layouts as cards with a thumbnail of their tiling; one
 //!   click loads one; Rename and Delete in place.
 //!
@@ -544,13 +544,12 @@ impl Shell {
         action
     }
 
-    /// A pane's footer links: the menu's commands that are not rows of their own, labelled
-    /// as the menu labels them.
+    /// A pane's footer links: the Launcher's commands that are not rows of their own,
+    /// labelled as the menus label them.
     fn footer(&self, which: Launcher) -> Vec<(&'static str, String, bool)> {
         let s = &self.st.session;
         which
-            .menu()
-            .items
+            .items()
             .iter()
             .filter_map(|i| match i {
                 MenuItem::Command(id) => Some(*id),
@@ -572,7 +571,7 @@ impl Shell {
             .collect()
     }
 
-    /// The Tools menu's commands whose label holds `query`: id, label, the key the user has
+    /// The Tools Launcher's commands whose label holds `query`: id, label, the key the user has
     /// for it now (#177; empty when cleared), enabled.
     fn tool_rows(&self, query: &str) -> Vec<(&'static str, &'static str, String, bool)> {
         let needle = query.trim().to_lowercase();
@@ -588,7 +587,7 @@ impl Shell {
             .collect()
     }
 
-    /// The Tools pane: a filter and the Tools menu's commands with their shortcuts.
+    /// The Tools pane: a filter and the Tools Launcher's commands with their shortcuts.
     fn tools_pane(&mut self, ui: &mut Ui) -> Option<Action> {
         let rows = self.tool_rows(&self.st.toolbar.query);
         let items: Vec<Item> = rows.iter().map(|(id, ..)| Item::Command(id)).collect();
@@ -806,7 +805,7 @@ impl Shell {
                             if saved.is_empty() {
                                 ui.label(
                                     egui::RichText::new(if needle.is_empty() {
-                                        "None yet: Save layout as… keeps the Workspace as it is now"
+                                        "None yet: Save Layout as… keeps the Workspace as it is now"
                                     } else {
                                         "No saved layout matches"
                                     })

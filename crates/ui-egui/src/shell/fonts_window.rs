@@ -249,7 +249,7 @@ impl State {
         }
     }
 
-    /// The Fonts window (View → Fonts…).
+    /// The Fonts window (View → Fonts).
     pub(super) fn fonts_window(&mut self, ctx: &egui::Context) {
         if !self.fonts_ui.open {
             return;

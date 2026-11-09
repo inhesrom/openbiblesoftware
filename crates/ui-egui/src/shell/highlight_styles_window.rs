@@ -1,4 +1,4 @@
-//! View → Highlight styles… (#181, ADR 0012): the user's own Highlight styles and palettes.
+//! View → Highlight styles (#181, ADR 0012): the user's own Highlight styles and palettes.
 //!
 //! - The palette row switches the active palette (the selection toolbar, right-click menu and
 //!   Alt+1…9 follow it), makes, renames and deletes palettes, and exports or imports one as

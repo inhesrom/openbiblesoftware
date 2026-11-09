@@ -132,7 +132,7 @@ pub(super) fn word_spot(h: &Harness, tab: TabId, word: &str) -> Pos2 {
 }
 
 /// Open the Hebrew Bible, make Word Info the Tools Panel's active Tab, and let layout settle.
-fn hebrew_harness() -> (Harness, TabId) {
+pub(super) fn hebrew_harness() -> (Harness, TabId) {
     let mut h = Harness::new();
     h.shell.run("resource.open", &json!({ "id": "heb-test" }));
     h.frames(4);
@@ -492,10 +492,10 @@ fn the_header_chip_unpins_and_copy_writes_the_cards() {
     let text = out["text"].as_str().unwrap();
     assert!(text.contains("H1254A"), "{text}");
     assert!(text.contains("Genesis 1:1 (HEB)"), "{text}");
-    // Word Study › opens the shown word (#55); Search this word works (#59).
+    // Word Study of this word opens the shown word (#55); Search this word works (#59).
     assert!(h.shell.st.session.is_enabled("word_info.word_study"));
     assert!(h.shell.st.session.is_enabled("word_info.search"));
-    assert!(h.find("Word Study").is_some());
+    assert!(h.find("Word Study of this word").is_some());
     assert!(h.find("Search this word").is_some());
 }
 

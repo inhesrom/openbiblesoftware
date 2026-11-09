@@ -27,10 +27,8 @@ const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "app.commands",
-        label: "List commands",
-        // For scripts (`obs-cli run app.commands`): it answers JSON, which the app has no
-        // place to show, so it is in no menu and has no key (#262).
-        shortcut: None,
+        label: "All commands",
+        shortcut: Some("Ctrl+Shift+P"),
         params: &[],
         enabled: always,
         run: list_commands,
@@ -155,7 +153,11 @@ fn version(_: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
     Ok(json!({ "version": env!("CARGO_PKG_VERSION") }))
 }
 
+/// Every command as JSON (`obs-cli run app.commands`); in the app, the Command box lists
+/// the ones it can run (Help → All commands, #226).
 fn list_commands(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
+    s.workspace
+        .push_effect(crate::workspace::Effect::ListCommands);
     let list: Vec<Value> = s
         .commands()
         .iter()

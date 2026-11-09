@@ -30,7 +30,7 @@ use serde_json::{Map, Value, json};
 use crate::command::{CommandError, CommandSpec, ParamKind, ParamSpec, Params, always};
 use crate::highlight_styles::STYLE_SLOTS;
 use crate::session::Session;
-use crate::workspace_commands::{MENUS, MenuItem};
+use crate::workspace_commands::{MENUS, menu_of};
 
 /// The User database preference holding the user's own keys.
 pub(crate) const KEY_BINDINGS_PREF: &str = "key_bindings";
@@ -448,16 +448,8 @@ fn same_key(a: &str, b: &str) -> bool {
 }
 
 /// Whether `spec` can run from a key: it needs no parameter but its Tab.
-fn runs_from_a_key(spec: &CommandSpec) -> bool {
+pub(crate) fn runs_from_a_key(spec: &CommandSpec) -> bool {
     spec.params.iter().all(|p| !p.required || p.name == "tab")
-}
-
-/// The menu `id` is in, if any.
-fn menu_of(id: &str) -> Option<&'static str> {
-    MENUS
-        .iter()
-        .find(|m| (m.items.iter()).any(|i| matches!(i, MenuItem::Command(c) if *c == id)))
-        .map(|m| m.title)
 }
 
 /// The groups of the Keyboard shortcuts Tab, in order.
@@ -497,9 +489,8 @@ impl Session {
     pub fn key_bindings(&self) -> Vec<KeyBinding> {
         let mut out: Vec<KeyBinding> = Vec::new();
         for m in MENUS {
-            for item in m.items {
-                if let MenuItem::Command(id) = item
-                    && let Some(spec) = self.commands().get(id)
+            for id in m.commands() {
+                if let Some(spec) = self.commands().get(id)
                     && runs_from_a_key(spec)
                     && out.iter().all(|b| b.id != spec.id)
                 {
@@ -734,7 +725,7 @@ const SWAP: ParamSpec = ParamSpec {
 pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "keys.set",
-        label: "Set keyboard shortcut",
+        label: "Set Keyboard shortcut",
         shortcut: None,
         params: &[
             COMMAND,
@@ -751,7 +742,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "keys.clear",
-        label: "Clear keyboard shortcut",
+        label: "Clear Keyboard shortcut",
         shortcut: None,
         params: &[COMMAND],
         enabled: always,
@@ -759,7 +750,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "keys.reset",
-        label: "Reset keyboard shortcut",
+        label: "Reset Keyboard shortcut",
         shortcut: None,
         params: &[COMMAND, SWAP],
         enabled: always,
@@ -767,7 +758,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "keys.reset_all",
-        label: "Reset all keyboard shortcuts",
+        label: "Reset all Keyboard shortcuts",
         shortcut: None,
         params: &[],
         enabled: always,

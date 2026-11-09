@@ -9,7 +9,7 @@
 | `xtask` | `starter` | Writes `starter-manifest.json`: per Resource its revision, content hash, `file_sha256`, `bytes`, and (since #131) title, abbreviation, Resource type, language and SPDX licence, so rows show before anything is downloaded. |
 | `obs-engine` | `starter` | Finds the bundle, the first-run sync, removals, revisions, Add back and the verified download. The download goes through the app's `Fetch` (`Session::set_fetch`); the engine opens no connection itself. |
 | `obs-engine` | `Session::added_to_library` | The Library entry path shared with Import: `Library::add` (so `STARTER_PREFERRED_ORDER` applies, and a revision keeps its place), save the Preferred order, remember names, Search index, re-anchoring. |
-| `obs-ui-egui` | `App::with_file` | Calls `sync_starter_library` at launch, after the library scan and the User database. With no bundle and nothing set up, opens **Library → Starter library…** on the first frame. |
+| `obs-ui-egui` | `App::with_file` | Calls `sync_starter_library` at launch, after the library scan and the User database. With no bundle and nothing set up, opens **Library → Starter library** on the first frame. |
 | `obs-ui-egui` | `starter_tab` | "Not in your Library" first, then "In your Library". One row per Starter Resource: type, abbreviation, size, licence badge, what it powers, and In Library / Add back / Download / Update. Download progress, Cancel and Retry. |
 | `apps/openbible` | `fetch::HttpFetch` | The HTTPS transport (unchanged from Get Bibles). |
 

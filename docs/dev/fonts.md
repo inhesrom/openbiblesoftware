@@ -1,6 +1,6 @@
 # Fonts: Reading fonts and the Interface font (#138)
 
-View → Fonts… (`view.fonts`) opens the Fonts window. Each slot — Latin text, Greek text,
+View → Fonts (`view.fonts`) opens the Fonts window. Each slot — Latin text, Greek text,
 Hebrew text, Interface — is a Bundled font or a font installed on the computer, chosen with
 `view.font {slot, family, style}` (an empty family is the Bundled font). See ADR 0004's #138
 amendment for the design.

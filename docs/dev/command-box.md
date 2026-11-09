@@ -25,13 +25,13 @@ draws the list and runs `command_box.run`. Ranks, highest first (equal ranks kee
 | 92 | a Resource's abbreviation or title (any case) | Open Bible, Open Lexicon … | focuses its most recent Tab, else `resource.open` |
 | 90 | a Bible reference: `jn 3:16`, `jn 3 16`, `1 jn 4 8`, `Rom 5:8; Jn 3:16` (first Passage) | Go to · *Bible* | see below |
 | 90 | a Strong's number: `G26`, `h1254a` | Word Study | `word_study.open` |
-| 85 | a menu command's label: `notes`, `history` | Command | that command |
+| 85 | a command's label: `notes`, `history`, `close tab` (any command the box lists, #226) | Command (with its key: `Command · Ctrl+W`) | that command, on the focused Tab if it needs one |
 | 80 | a Lemma in a Lexicon (`ἀγάπη`, `αγαπη`), or a transliteration in a Lexicon's transliteration index (`agape`, `chesed`) | Word Study (`ἀγάπη · G26`) | `word_study.open` |
 | 65 | words starting a Resource's abbreviation or title (`extended strongs`) | Open … | as above |
 | 60 | words starting a Layout's name | Layout | `layout.restore` |
 | 56 | a Saved search's name or query (`Session::saved_searches_matching`, #179) | Saved search | `search.open_saved` |
 | 55 | a Favorite's label or folder (`Session::favorites_matching`, #155) | Favorite | `favorite.open` |
-| 50 | words starting a menu command's label | Command | that command |
+| 50 | words starting a command's label | Command | that command |
 | 10 | anything | Search for “…” | `search.run` |
 | 5 | one to three words of letters that nothing above understood | Word Study (English) | `word_study.choose` |
 
@@ -46,6 +46,32 @@ Keys of the entry found by `lookup_key(Key::Lemma)`, and the non-alias Strong's 
 Preferred order, one suggestion per base number. On the Starter library this takes a few ms
 per keystroke (release build: `agape` 14 ms, `chesed` 25 ms, references and numbers < 1 ms);
 the UI asks only when the text changes. Without files (wasm) there are no Lemma suggestions.
+
+## All commands (#226)
+
+`>` at the start of the text lists commands only: with nothing after it, every command the
+box can run (`Session::listed_commands`: those needing no parameter but the focused Tab,
+except `SCRIPTING_COMMANDS` and `IN_PLACE_COMMANDS`), menu commands first in menu order, the
+disabled ones left out; with words after it, the commands whose label matches (whole label,
+then words starting the label's words, then words anywhere in it). There is no limit of
+eight: the dropdown scrolls, ↑/↓ keeping the highlight in view. Each shows its Keyboard
+shortcut, as the platform writes it (`⌘W` on macOS, #262). **Help → All commands** (`app.commands`, Ctrl+Shift+P) puts the keyboard in the
+box with `>` typed and the caret after it (`Effect::ListCommands`). A `>` text is not kept as
+a recent entry. `docs/dev/menus.md` says where every command is.
+
+A command run from the box behaves as from its menu, button or key:
+
+- The box empties before the command runs, so one that puts the keyboard back in it (All
+  commands, Command box) keeps what it put there; a failed run puts the text back.
+- The command run is the one the dropdown showed: the UI passes its id (`command`), since the
+  suggestions, found again, leave out disabled commands and one made possible meanwhile (an
+  Undo) would shift them.
+- Undo restore (`data.undo_restore`) is guarded as everywhere else (#217): the UI asks
+  `Session::command_box_choice` which command the chosen suggestion runs and, for a restore
+  or its undo, saves the Notes being written first (holding the undo back if the database
+  refuses them) and forgets the Notes Tab's drafts after.
+- Word Info's Copy (`word_info.copy`) hands its text to the UI as `Effect::CopyText`, which
+  writes the clipboard, so the box, a key and the Copy button all copy.
 
 ## Keyboard and mouse
 

@@ -283,13 +283,9 @@ impl State {
                 &json!({ "strongs": strongs.to_string(), "new_tab": new_tab }),
             );
         }
-        if let Some(id) = run
-            && let Some(out) = self.run(id, &json!({}))
-            && id == "word_info.copy"
-            && let Some(text) = out["text"].as_str()
-        {
-            ui.ctx().copy_text(text.to_string());
-            self.toast("Copied");
+        // Copy's text reaches the clipboard as an Effect, as from a key or the Command box.
+        if let Some(id) = run {
+            self.run(id, &json!({}));
         }
     }
 

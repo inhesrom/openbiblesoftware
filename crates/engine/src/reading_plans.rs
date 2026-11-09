@@ -1017,7 +1017,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "reading_plan.open",
-        label: "Open today's reading",
+        label: "Open Today's reading",
         shortcut: None,
         params: &[
             PLAN,

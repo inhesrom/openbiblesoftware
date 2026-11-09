@@ -36,7 +36,7 @@ const fn report(what: &'static str, key: Key, physical: Key, shift: bool) -> Rep
     }
 }
 
-/// A keyboard layout's reports for Larger text, Smaller text and Reset text size.
+/// A keyboard layout's reports for Larger text, Smaller text and Reset Text size.
 struct Layout {
     name: &'static str,
     larger: &'static [Report],

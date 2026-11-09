@@ -150,11 +150,11 @@ A label of the user's own on a Resource, set in its About Tab (such as "older" o
 _Avoid_: Category, Keyword, Label (as the name)
 
 **Starter library**:
-The set of Resources bundled with the installer, available offline from first launch. They are added to the library on the first launch; an installer without them offers to download them under Library → Starter library…, which also lists each one and adds back any that are missing.
+The set of Resources bundled with the installer, available offline from first launch. They are added to the library on the first launch; an installer without them offers to download them under Library → Starter library, which also lists each one and adds back any that are missing.
 _Avoid_: Default library, Base package
 
 **Removed Starter Resource**:
-A Starter library Resource the user removed from the library. It is remembered in the User database and never added back silently; Library → Starter library… lists it as Removed, with Add back.
+A Starter library Resource the user removed from the library. It is remembered in the User database and never added back silently; Library → Starter library lists it as Removed, with Add back.
 _Avoid_: Deleted resource, Hidden resource
 
 **Release archive**:
@@ -182,7 +182,7 @@ What a Resource's licence lets the user do. There are three. **Free to share**: 
 _Avoid_: Licence type, Free/Non-free, Open (unqualified, for the class)
 
 **Update available**:
-What Get Resources shows on a downloaded Resource when its SWORD repository now offers a newer `Version` of the module it was downloaded as; the Library menu counts them. Update (one Resource) or Update all downloads it and imports it as the Resource's next Resource revision. Updates are checked when the catalog is fetched, and nothing is downloaded until the user clicks. When the repositories cannot be reached, or only a catalog saved by an earlier run of the app is known, the Tab says updates could not be checked or when they last were, never that the Resources are up to date. Starter library Resources are updated with the Starter library, not here.
+What Get Resources shows on a downloaded Resource when its SWORD repository now offers a newer `Version` of the module it was downloaded as; the Library launcher and File → Get Resources… count them. Update (one Resource) or Update all downloads it and imports it as the Resource's next Resource revision. Updates are checked when the catalog is fetched, and nothing is downloaded until the user clicks. When the repositories cannot be reached, or only a catalog saved by an earlier run of the app is known, the Tab says updates could not be checked or when they last were, never that the Resources are up to date. Starter library Resources are updated with the Starter library, not here.
 _Avoid_: Upgrade, New version (as the name of the offer)
 
 **SWORD copy**:
@@ -356,8 +356,16 @@ One entry in History: a Tab's Current location just after the Tab was opened or 
 _Avoid_: History entry, Hit
 
 **Command box**:
-The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, a Saved search's name runs it, "pg Rom 8", "eg Jn 3:16", "compare Jn 3:16", "ws agape" and "tg forgiveness" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database.
+The box at the right of the menu bar (Ctrl+L) that reads what the user types and suggests what to do with it, best first: a Bible reference goes there in the focused Bible, a Strong's number or Lemma (or its transliteration, "agape") opens a Word Study, a Resource or Layout name opens it, a Saved search's name or a command's name ("close tab") runs it, "pg Rom 8", "eg Jn 3:16", "compare Jn 3:16", "ws agape" and "tg forgiveness" open that Guide or Tool, and anything else searches. An empty box lists its recent entries, kept in the User database; `>` lists All commands.
 _Avoid_: Omnibox, Search bar, Command palette (for the box)
+
+**All commands**:
+The Command box listing only commands (Help → All commands, Ctrl+Shift+P, or `>` typed in the box): every command it can run, menu commands first, each with its Keyboard shortcut; typing after `>` filters them, and a command that acts on a Tab acts on the focused one. Commands that need what only their own place has (a selection, a dropped item) and commands for scripts are not in it.
+_Avoid_: Command palette, Command list
+
+**Menu bar**:
+The row at the top of the main window with the menus File, Edit, View, Go, Tools, Window and Help, then the Launchers when the Toolbar is at the Top, then the Command box. A menu item that acts on a Tab acts on the focused one. The Launchers are not menus: each keeps its own list.
+_Avoid_: Main menu, Toolbar (for the menus)
 
 **Launcher**:
 A toolbar button with an icon and a label (Library, Guides, Tools, Layouts) that drops down what it launches, under itself; Alt+L, Alt+G, Alt+T and Alt+Y open them from the keyboard. The Library launcher searches the library by title, abbreviation, Resource type and language, and with nothing typed lists the Resources opened lately (Recent: those of the newest History Visits and of open Tabs) and the top of each type's Preferred order. The Layouts launcher shows saved and Built-in Layouts as cards with a thumbnail of their Panel tiling.
@@ -404,7 +412,7 @@ The bar Ctrl+F opens under a Resource or Text Comparison Tab's header (also the 
 _Avoid_: Search (for this), Find dialog, Quick find
 
 **Text size**:
-How large Resource text is drawn in every Tab, in points. View → Larger text, Smaller text and Reset text size change it (Ctrl/Cmd with +, = or numpad +; − or numpad −; 0). The default is 20 pt, the same for Bibles and every other Resource, and the readable range is 12–40 pt: a saved size below 12 (left by an older build) opens at the default once, with a notice. A point is a logical pixel, so on a 2× display text keeps its size and gets sharper. It never changes the Interface size.
+How large Resource text is drawn in every Tab, in points. View → Larger text, Smaller text and Reset Text size change it (Ctrl/Cmd with +, = or numpad +; − or numpad −; 0). The default is 20 pt, the same for Bibles and every other Resource, and the readable range is 12–40 pt: a saved size below 12 (left by an older build) opens at the default once, with a notice. A point is a logical pixel, so on a 2× display text keeps its size and gets sharper. It never changes the Interface size.
 _Avoid_: Zoom, Font size
 
 **Interface size**:
@@ -428,7 +436,7 @@ The font of the app's own menus, labels and buttons, chosen in View → Fonts. R
 _Avoid_: UI font, System font, Chrome font
 
 **Copy verses**:
-The window under Tools → Copy verses… that copies a Passage list from one or more Bibles as plain text, rich text or Markdown, after a preview: the reference before or after the text, verse numbers on or off, paragraphs or one verse per line, quotation marks, and full or abbreviated book names. It also prints them (Print / Save as PDF).
+The window under Edit → Copy verses… that copies a Passage list from one or more Bibles as plain text, rich text or Markdown, after a preview: the reference before or after the text, verse numbers on or off, paragraphs or one verse per line, quotation marks, and full or abbreviated book names. It also prints them (Print / Save as PDF).
 _Avoid_: Copy Bible Verses, Export verses
 
 **Copy preset**:
@@ -522,7 +530,7 @@ A look a Highlight is drawn in: a colour with a look (background, underline, box
 _Avoid_: Color, Tag, Label
 
 **Highlight palette**:
-A named, ordered set of Highlight styles, made, renamed, deleted, exported and imported (as a small JSON file) in View → Highlight styles…. One is active: the selection toolbar, the right-click menu and Alt+1…9 offer its styles in its order. A Highlight in a style of another palette still shows. The first palette is **Standard**, with the five built-in styles.
+A named, ordered set of Highlight styles, made, renamed, deleted, exported and imported (as a small JSON file) in View → Highlight styles. One is active: the selection toolbar, the right-click menu and Alt+1…9 offer its styles in its order. A Highlight in a style of another palette still shows. The first palette is **Standard**, with the five built-in styles.
 _Avoid_: Theme, Colour set
 
 **Visual filter**:
@@ -572,7 +580,7 @@ _Avoid_: Profile, User library, Settings file
 ### Your data
 
 **Backup**:
-One file (`.obsbackup`) holding everything in the User database, made with Back up now in Back up & restore (Tools → Back up & restore…, or Settings → Privacy and data), and restored with Restore from backup… after a preview of what will change (Notebooks, Notes, Highlights, Layouts, Reading plans, Favorites, History and Settings, now and after, with the Notebooks, Layouts and Reading plans it brings back or removes by name). A restore replaces all of the user's data, settings included (one the Backup does not have goes back to its default); the open Workspace stays as it is. A Backup knows its format version: one from an older app is upgraded as it is restored, one from a newer app is refused. The app also keeps Backups by itself, listed there with their dates and each restorable: one at each launch (the last five), one before an app upgrade changes the User database's format, and the Safety backups.
+One file (`.obsbackup`) holding everything in the User database, made with Back up now in Back up & restore (File → Back up & restore…, or Settings → Privacy and data), and restored with Restore from backup… after a preview of what will change (Notebooks, Notes, Highlights, Layouts, Reading plans, Favorites, History and Settings, now and after, with the Notebooks, Layouts and Reading plans it brings back or removes by name). A restore replaces all of the user's data, settings included (one the Backup does not have goes back to its default); the open Workspace stays as it is. A Backup knows its format version: one from an older app is upgraded as it is restored, one from a newer app is refused. The app also keeps Backups by itself, listed there with their dates and each restorable: one at each launch (the last five), one before an app upgrade changes the User database's format, and the Safety backups.
 _Avoid_: Snapshot, Archive, Export (for this), Restore point
 
 **Safety backup**:

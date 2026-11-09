@@ -24,7 +24,7 @@ and is saved in the User database as before.
 | Theme and Page tone | Theme, Page tone | `view.theme`, `view.page_tone` | `{value: system}`, `{value: auto}` |
 | Reading layout defaults | Line spacing, Verse numbers | `view.line_spacing`, `view.verse_numbers` | `{value: normal}`, `{value: superscript}` |
 | | Red letter, Show Highlights | `view.red_letter`, `view.highlights` (toggles) | the toggle, when off |
-| | Highlight styles (#181) | a button: View → Highlight styles… (`view.highlight_styles`) | none (an action; each style edit is undone with Ctrl+Z) |
+| | Highlight styles (#181) | a button: View → Highlight styles (`view.highlight_styles`) | none (an action; each style edit is undone with Ctrl+Z) |
 | | Notebooks in text | `notebook.show_in_text {id, show}` | `show: true` for each hidden one |
 | | Open Home at launch | `home.open_at_launch {on}` | `on: false` |
 | | Home cards, Guide sections | arranged on Home and in each Guide | `home.reset_cards`, `guide.reset_arrangement {guide}` for each arranged Guide |

@@ -208,7 +208,7 @@ fn copy_verses_copies_jn_3_16_18_in_kjv_and_bsb_with_a_preset_as_markdown_and_ri
     let mut h = launch(&dir);
     let clipboard = Arc::new(Clipboard::default());
     h.shell.set_rich_clipboard(clipboard.clone());
-    h.open_menu("Tools");
+    h.open_menu("Edit");
     h.click_text("Copy verses…");
     assert!(
         h.shell.st.copy_ui.open,

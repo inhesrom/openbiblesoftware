@@ -240,7 +240,7 @@ fn esc_cancels_reserved_keys_are_refused_and_clear_removes_the_key() {
     let mut h = Harness::new();
     let tab = open_keys(&mut h, "");
     // Unfiltered, the menus come first, each with its commands.
-    for group in ["LIBRARY", "GUIDES", "TOOLS"] {
+    for group in ["FILE", "EDIT", "VIEW"] {
         assert!(in_tab(&h, tab, group).is_some(), "{group}: {:?}", h.texts());
     }
     preview(&h, "keyboard-shortcuts-all");

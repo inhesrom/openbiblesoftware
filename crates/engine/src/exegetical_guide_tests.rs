@@ -472,12 +472,12 @@ fn a_chapter_or_range_command_keeps_the_whole_passage() {
 
 #[test]
 fn the_guides_menu_and_command_box_offer_the_exegetical_guide() {
-    let guides = MENUS.iter().find(|m| m.title == "Guides").unwrap();
+    // Tools → Exegetical Guide (#226) and the Guides Launcher.
+    assert_eq!(crate::menu_of("guide.exegetical_guide"), Some("Tools"));
     assert!(
-        guides
-            .items
-            .iter()
-            .any(|i| matches!(i, MenuItem::Command("guide.exegetical_guide")))
+        crate::Launcher::Guides
+            .items()
+            .contains(&MenuItem::Command("guide.exegetical_guide"))
     );
     let mut s = Session::new(JobMode::Inline);
     for text in ["eg jn 3:16", "exegetical guide John 3:16"] {

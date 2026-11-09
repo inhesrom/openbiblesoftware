@@ -46,7 +46,8 @@ fn hover(h: &mut Harness, p: Pos2) {
 fn assert_no_raw_keys(h: &Harness, mac: bool) {
     for t in h.texts() {
         for raw in [
-            "Comma",
+            // Not "Comma" alone: "Command" (the Command box's list) has it.
+            "+Comma",
             "Ctrl+Plus",
             "Ctrl+Minus",
             "Alt+Left",
@@ -69,7 +70,7 @@ fn assert_no_raw_keys(h: &Harness, mac: bool) {
 #[test]
 fn macos_shows_shortcuts_with_modifier_symbols_everywhere() {
     // The Command box.
-    let mut h = mac();
+    let h = mac();
     assert!(
         h.find("Go to, study, open or search (⌘L)").is_some(),
         "{:?}",
@@ -77,7 +78,17 @@ fn macos_shows_shortcuts_with_modifier_symbols_everywhere() {
     );
     assert_no_raw_keys(&h, true);
 
+    // A command's key in the Command box's list (#226).
+    let mut h = mac();
+    h.shell.run("command_box.focus", &json!({}));
+    h.frames(2);
+    h.events.push(Event::Text(">close tab".into()));
+    h.frames(3);
+    assert!(h.find("Command · ⌘W").is_some(), "{:?}", h.texts());
+    assert_no_raw_keys(&h, true);
+
     // The View menu.
+    let mut h = mac();
     h.open_menu("View");
     for want in ["⌘,", "⌘+", "⌘−", "⌘0"] {
         assert!(h.find(want).is_some(), "{want} not in {:?}", h.texts());
@@ -122,9 +133,12 @@ fn macos_shows_shortcuts_with_modifier_symbols_everywhere() {
         h.texts()
     );
 
-    // Help → Keyboard shortcuts.
+    // Help → Keyboard shortcuts, filtered by the shown sign (the File, Edit and View menus
+    // come first, #226, so the Tools keys are below the fold unfiltered).
     let mut h = mac();
-    h.shell.run("help.keyboard_shortcuts", &json!({}));
+    let out = h.shell.run("help.keyboard_shortcuts", &json!({})).unwrap();
+    let tab = obs_engine::TabId(out["tab"].as_u64().unwrap());
+    h.shell.st.tabs.get_mut(&tab).unwrap().filter = "⇧⌘".into();
     h.frames(3);
     for want in ["⇧⌘L", "⇧⌘F", "⇧⌘I"] {
         assert!(h.find(want).is_some(), "{want} not in {:?}", h.texts());
@@ -152,19 +166,22 @@ fn windows_and_linux_show_key_signs_not_egui_key_names() {
     assert_no_raw_keys(&h, false);
 }
 
-/// WORKSPACE-MAC-9: Help lists only items that do something on screen; List commands (JSON
-/// for scripts) is not one of them, and Ctrl+Shift+P runs nothing.
+/// WORKSPACE-MAC-9: Help lists only items that do something on screen. The old List
+/// commands did nothing; its place is All commands (#226), which Ctrl+Shift+P runs too and
+/// which lists the commands in the Command box.
 #[test]
 fn help_has_no_list_commands_item_that_does_nothing() {
     let mut h = Harness::new();
     h.open_menu("Help");
     assert!(h.find("Keyboard shortcuts").is_some(), "{:?}", h.texts());
     assert!(h.find("List commands").is_none(), "{:?}", h.texts());
+    assert!(h.find("All commands").is_some(), "{:?}", h.texts());
     key(&mut h, Key::Escape, Modifiers::NONE);
-    let before: Vec<String> = h.texts().iter().map(ToString::to_string).collect();
     key(&mut h, Key::P, Modifiers::COMMAND | Modifiers::SHIFT);
+    h.frames(2);
     assert!(h.shell.st.toast.is_none());
-    assert_eq!(h.texts(), before);
+    assert_eq!(h.shell.st.command_box.text, obs_engine::COMMANDS_PREFIX);
+    assert!(!h.shell.st.command_box.suggestions.is_empty());
 }
 
 /// WORKSPACE-MAC-8: the interface fonts have → (and the other arrows of interface text), and

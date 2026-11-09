@@ -359,6 +359,80 @@ fn clearing_history_asks_first() {
     assert!(h.shell.st.session.history().is_empty());
 }
 
+/// `text` typed into the Command box and Enter.
+fn run_from_the_command_box(h: &mut Harness, text: &str) {
+    h.shell.run("command_box.focus", &json!({}));
+    h.frames(2);
+    h.events.push(Event::Text(text.into()));
+    h.frames(2);
+    key(h, Key::Enter, Modifiers::NONE);
+}
+
+/// Clear History and Clear Search history run from the Command box (#226) ask first, as
+/// their Settings buttons do: Settings shows the row asking Clear or Cancel; Cancel keeps
+/// everything, Clear clears that one only.
+#[test]
+fn clearing_history_from_the_command_box_asks_first() {
+    let db = temp_db("settings-command-box-history");
+    let mut h = Harness::launch(Some(&db));
+    let bible = (h.shell.st.session.workspace.tabs())
+        .find(|t| matches!(t.kind, TabKind::Resource(_)))
+        .unwrap()
+        .id;
+    for place in ["Gen 1:1", "Gen 1:5"] {
+        h.shell
+            .run("tab.go", &json!({ "tab": bible.0, "text": place }));
+        h.frames(2);
+    }
+    h.shell.run("search.run", &json!({ "text": "light" }));
+    h.frames(2);
+    h.shell.save_session(true);
+    let visits = h.shell.st.session.history().len();
+    let searches = h.shell.st.session.search_history().len();
+    assert!(visits > 0 && searches > 0);
+
+    for (typed, asking, cleared) in [
+        (">clear history", "Clear History? This cannot be undone.", 0),
+        (
+            ">clear search history",
+            "Clear Search history? This cannot be undone.",
+            1,
+        ),
+    ] {
+        let counts = |h: &Harness| {
+            let s = &h.shell.st.session;
+            [s.history().len(), s.search_history().len()]
+        };
+        let before = counts(&h);
+        // Picking it only asks.
+        run_from_the_command_box(&mut h, typed);
+        let tab = h.tab_id("Settings");
+        assert_eq!(h.shell.st.session.workspace.focused(), Some(tab));
+        assert!(
+            in_tab(&h, tab, asking).is_some(),
+            "{typed}: {:?}",
+            h.texts()
+        );
+        assert_eq!(counts(&h), before, "{typed}: nothing cleared yet");
+        // Cancel keeps everything.
+        let p = beside(&h, tab, asking, "Cancel");
+        h.click(p);
+        assert!(in_tab(&h, tab, asking).is_none());
+        assert_eq!(counts(&h), before, "{typed}: Cancel keeps it");
+        // Asked again, Clear clears it.
+        run_from_the_command_box(&mut h, typed);
+        let p = beside(&h, tab, asking, "Clear");
+        h.click(p);
+        let after = counts(&h);
+        assert_eq!(after[cleared], 0, "{typed}");
+        assert_eq!(
+            after[1 - cleared],
+            before[1 - cleared],
+            "{typed}: only that one"
+        );
+    }
+}
+
 /// Privacy and data opens Back up & restore (#217) at once: opening a Tab needs no
 /// confirmation.
 #[test]

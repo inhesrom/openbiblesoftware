@@ -1038,6 +1038,192 @@ fn undo_restore_from_a_key_saves_the_card_being_edited_first() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// Undo restore run from the Command box (`>Undo restore`, #226) is guarded as from its button
+/// or a key: words waiting for their autosave are saved first and the editing pass ends; words
+/// the database refuses hold the undo back, their card and the box's text kept.
+#[test]
+fn undo_restore_from_the_command_box_saves_the_card_being_edited_first() {
+    use std::sync::atomic::Ordering;
+    let dir = folder("undo-restore-command-box");
+    let mut h = launch(&dir);
+    let (store, _) = obs_store::UserStore::open(&dir.join("failing.db")).unwrap();
+    let (store, failures) = obs_engine::testing::WritesFail::changes(store);
+    h.shell.st.session.attach_user(Box::new(store));
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Gen 31:49", "body": "The heap" }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let backup = dir.join("before.obsbackup");
+    let backup_path = json!({ "path": backup.to_string_lossy() });
+    h.shell.run("data.back_up", &backup_path).unwrap();
+    h.shell
+        .run("annotation.edit", &json!({ "id": id, "body": "Galeed" }))
+        .unwrap();
+    let saved = |h: &Harness| {
+        h.shell
+            .st
+            .session
+            .annotation(&id)
+            .unwrap()
+            .body()
+            .to_string()
+    };
+    let restore = |h: &mut Harness| {
+        h.shell.run("data.restore", &backup_path).unwrap();
+        assert_eq!(saved(h), "The heap", "the Backup's Note");
+        open_notes(h);
+    };
+    let autosave_window_passes = |h: &mut Harness| {
+        h.time += crate::shell::notes_tab::AUTOSAVE_SECS + 0.2;
+        h.frames(3);
+    };
+    let undo = json!({ "text": ">undo restore" });
+
+    // Words typed and not yet autosaved, the card keeping the keyboard: the box's command
+    // saves them, then undoes the restore.
+    restore(&mut h);
+    retype(&mut h, &id, "Typed after the restore");
+    assert!(card_editor(&h).is_some_and(|(_, e)| e.is_none()));
+    assert!(h.shell.run("command_box.run", &undo).is_some());
+    assert_eq!(saved(&h), "Galeed", "the data from before the restore");
+    assert!(h.shell.st.session.last_restore().is_none());
+    assert!(card_editor(&h).is_none(), "the editing pass ended");
+    autosave_window_passes(&mut h);
+    assert_eq!(
+        saved(&h),
+        "Galeed",
+        "no later save writes the old words over it"
+    );
+
+    // `>undo` names Undo restore first while nothing else can be undone. Saving the words
+    // makes an Undo of them, which `>undo` names first after; the restore is still what
+    // the box undoes, as it was found once before the words were saved.
+    restore(&mut h);
+    retype(&mut h, &id, "Typed again");
+    assert_eq!(
+        (h.shell.st.session.command_box_choice(">undo", 0)).map(|(_, a)| a),
+        Some(obs_engine::CommandBoxAction::Command("data.undo_restore"))
+    );
+    assert!((h.shell.run("command_box.run", &json!({ "text": ">undo" }))).is_some());
+    assert_eq!(saved(&h), "Galeed", "the data from before the restore");
+    assert!(h.shell.st.session.last_restore().is_none());
+    assert!(card_editor(&h).is_none(), "the editing pass ended");
+    autosave_window_passes(&mut h);
+    assert_eq!(saved(&h), "Galeed");
+
+    // Words the database refuses, typed into the box and Enter: nothing is undone, the card
+    // keeps its words and the box its text.
+    restore(&mut h);
+    failures.store(u32::MAX, Ordering::SeqCst);
+    retype(&mut h, &id, "Refused words");
+    h.shell.run("command_box.focus", &json!({}));
+    h.frames(2);
+    h.events.push(Event::Text(">undo restore".into()));
+    h.frames(2);
+    assert_eq!(
+        h.shell.st.command_box.suggestions[0].action,
+        obs_engine::CommandBoxAction::Command("data.undo_restore")
+    );
+    press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    h.frames(2);
+    assert_eq!(saved(&h), "The heap", "nothing was undone");
+    assert!(h.shell.st.session.last_restore().is_some());
+    assert_eq!(
+        card_editor(&h).map(|(t, _)| t).as_deref(),
+        Some("Refused words")
+    );
+    assert_eq!(h.shell.st.command_box.text, ">undo restore");
+
+    // The disk has room again: Enter saves the words first, then undoes the restore.
+    failures.store(0, Ordering::SeqCst);
+    h.shell.run("command_box.focus", &json!({}));
+    h.frames(2);
+    press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    h.frames(2);
+    assert_eq!(saved(&h), "Galeed");
+    assert!(h.shell.st.session.last_restore().is_none());
+    assert!(card_editor(&h).is_none());
+    autosave_window_passes(&mut h);
+    assert_eq!(saved(&h), "Galeed");
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The Command box runs the command its dropdown shows (#226). `>undo` lists Undo restore
+/// first while nothing else can be undone; a Note saved while the dropdown is open makes an
+/// Undo, which the suggestions found again would put first. Enter still undoes the restore.
+#[test]
+fn the_command_box_runs_the_command_shown_when_an_undo_appears_under_it() {
+    let dir = folder("command-box-shown");
+    let mut h = launch(&dir);
+    let id = h
+        .shell
+        .run(
+            "annotation.note",
+            &json!({ "passage": "Gen 31:49", "body": "The heap" }),
+        )
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let backup = dir.join("before.obsbackup");
+    let backup_path = json!({ "path": backup.to_string_lossy() });
+    h.shell.run("data.back_up", &backup_path).unwrap();
+    h.shell
+        .run("annotation.edit", &json!({ "id": id, "body": "Galeed" }))
+        .unwrap();
+    h.shell.run("data.restore", &backup_path).unwrap();
+    let saved = |h: &Harness| {
+        h.shell
+            .st
+            .session
+            .annotation(&id)
+            .unwrap()
+            .body()
+            .to_string()
+    };
+    assert_eq!(saved(&h), "The heap", "the Backup's Note");
+
+    h.shell.run("command_box.focus", &json!({}));
+    h.frames(2);
+    h.events.push(Event::Text(">undo".into()));
+    h.frames(2);
+    let restore = obs_engine::CommandBoxAction::Command("data.undo_restore");
+    assert_eq!(h.shell.st.command_box.suggestions[0].action, restore);
+    assert!(h.shell.st.command_box.dropdown.is_some());
+
+    // A Note saved while the dropdown is open (an autosave, a retried save) can be undone.
+    h.shell
+        .run("annotation.edit", &json!({ "id": id, "body": "Mizpah" }))
+        .unwrap();
+    h.frames(1);
+    assert_ne!(
+        (h.shell.st.session.command_box_choice(">undo", 0)).map(|(_, a)| a),
+        Some(restore.clone()),
+        "found again, `>undo` names another Undo first"
+    );
+    assert_eq!(
+        h.shell.st.command_box.suggestions[0].action, restore,
+        "the dropdown still shows Undo restore highlighted"
+    );
+    press_key(&mut h, egui::Key::Enter, Modifiers::NONE);
+    h.frames(2);
+    assert!(
+        h.shell.st.session.last_restore().is_none(),
+        "the restore was undone"
+    );
+    assert_eq!(saved(&h), "Galeed", "the data from before the restore");
+    assert!(h.shell.st.command_box.text.is_empty());
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// A refused save is retried on its own clock (#129): with the Notes Tab covered, its toast
 /// gone and nothing else moving, each failed try still asks for the frame of the next one, so
 /// the words save once the disk has room without the user touching the window.
