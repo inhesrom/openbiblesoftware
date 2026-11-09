@@ -281,6 +281,38 @@ fn offline_and_rate_limited_checks_say_so_and_offer_the_download_page() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+#[test]
+fn check_for_updates_during_the_launch_check_shows_its_failure_not_a_spinner() {
+    let dir = folder("launch-then-manual");
+    let releases = published(&[release("v1.3.0")]);
+    releases.hold(true);
+    let mut h = launch(&dir, &releases);
+    past_launch_delay(&mut h);
+    frames_until(&mut h, 120, |_| releases.requests().len() == 1);
+    h.open_menu("Help");
+    h.click_text("Check for updates…");
+    frames_until(&mut h, 30, |h| h.find("Checking for updates…").is_some());
+    releases.fail(
+        &MockReleases::latest_url(),
+        FetchError::Network("failed to lookup address information".into()),
+    );
+    releases.hold(false);
+    frames_until(&mut h, 300, |h| {
+        h.find("Could not check for updates").is_some()
+    });
+    h.frames(3);
+    assert!(
+        h.find("Could not reach GitHub. Check your internet connection and try again.")
+            .is_some(),
+        "{:?}",
+        h.texts()
+    );
+    assert!(h.find("Checking for updates…").is_none());
+    assert_eq!(releases.requests(), [MockReleases::latest_url()]);
+    drop(h);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[cfg(unix)]
 #[test]
 fn an_install_folder_without_write_permission_offers_only_the_download_page() {

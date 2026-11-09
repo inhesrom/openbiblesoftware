@@ -34,7 +34,8 @@ impl HttpFetch {
         let config = ureq::Agent::config_builder()
             .timeout_connect(Some(timeout))
             .timeout_recv_response(Some(timeout))
-            .user_agent(concat!("OpenBible/", env!("CARGO_PKG_VERSION")))
+            // The version About, the log and the Update check report (ADR 0017).
+            .user_agent(format!("OpenBible/{}", obs_engine::updates::APP_VERSION))
             // Statuses are read here: a 403 from GitHub may mean "rate limited" (#276).
             .http_status_as_error(false)
             .build();
@@ -285,7 +286,10 @@ mod tests {
             "{head}"
         );
         assert!(
-            head.contains(concat!("user-agent: openbible/", env!("CARGO_PKG_VERSION"))),
+            head.contains(&format!(
+                "user-agent: openbible/{}",
+                obs_engine::updates::APP_VERSION.to_ascii_lowercase()
+            )),
             "{head}"
         );
         for header in ["cookie", "authorization", "x-forwarded", "referer"] {

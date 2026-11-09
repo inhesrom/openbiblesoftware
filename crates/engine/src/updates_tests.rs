@@ -376,6 +376,70 @@ fn up_to_date_offline_and_rate_limited_checks_say_so_in_plain_words() {
     assert!(!s.updates().notice_shown());
 }
 
+#[test]
+fn check_for_updates_while_the_launch_check_runs_explains_its_failure() {
+    let lab = Lab::new("upgrade");
+    let releases = published(&[release("v1.3.0")]);
+    let mut s = lab.launch(&releases, JobMode::Threads(1));
+    // A slow network that then fails.
+    releases.hold(true);
+    assert!(s.launch_update_check().is_some());
+    // Help → Check for updates… while it runs: no second request, but it is now the user's.
+    s.run("help.check_for_updates", &json!({})).unwrap();
+    assert!(s.updates().notice_shown());
+    assert_eq!(
+        s.updates().status(),
+        &UpdateStatus::Checking { manual: true }
+    );
+    releases.fail(
+        &MockReleases::latest_url(),
+        FetchError::Network("failed to lookup address information".into()),
+    );
+    releases.hold(false);
+    settle(&mut s);
+    assert_eq!(
+        s.updates().status(),
+        &UpdateStatus::Failed {
+            error: UpdateError::Offline,
+            release: None
+        }
+    );
+    assert!(s.updates().notice_shown());
+    assert_eq!(releases.requests(), [MockReleases::latest_url()]);
+}
+
+#[test]
+fn replaced_files_a_failed_rollback_left_are_kept_and_block_another_update() {
+    if platform_target().is_none() {
+        return;
+    }
+    let lab = Lab::new("rollback-kept");
+    installed_archive(&lab.app(), b"old app");
+    let install = Install::of_exe(&lab.app().join(app_exe_name()));
+    assert_eq!(install.check_updatable(), Ok(()));
+    let work = lab.app().join(UPDATE_DIR);
+    std::fs::create_dir_all(work.join("old")).unwrap();
+    std::fs::create_dir_all(work.join("new")).unwrap();
+    std::fs::write(work.join("old").join(app_exe_name()), b"older app").unwrap();
+    std::fs::write(work.join(ROLLBACK_INCOMPLETE), b"could not put back").unwrap();
+    assert_eq!(
+        install.check_updatable(),
+        Err(UpdateError::RollbackIncomplete(work.join("old")))
+    );
+    assert!(
+        UpdateError::RollbackIncomplete(work.join("old"))
+            .message()
+            .contains("could not be put back")
+    );
+    // The launch clean-up keeps them and removes only the unpacked download.
+    clean_up_update_folder(&lab.app());
+    assert_eq!(
+        std::fs::read(work.join("old").join(app_exe_name())).unwrap(),
+        b"older app"
+    );
+    assert!(!work.join("new").exists());
+}
+
 /// Check, then Update now, and let it finish.
 fn update(s: &mut Session) {
     s.check_for_updates(true);

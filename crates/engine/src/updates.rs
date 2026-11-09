@@ -66,6 +66,9 @@ pub const INSTALL_MARKER: &str = "openbible-install.json";
 /// The folder beside the executable where an update is unpacked and the replaced files wait
 /// until the next launch removes them.
 pub const UPDATE_DIR: &str = ".openbible-update";
+/// Written into [`UPDATE_DIR`] when a failed update could not put every replaced file back:
+/// `old/` then holds the only copy of them, and [`clean_up_update_folder`] keeps it.
+pub const ROLLBACK_INCOMPLETE: &str = "rollback-incomplete.txt";
 /// How long after the first window appears the launch Update check starts, in seconds.
 pub const LAUNCH_CHECK_DELAY_SECS: f64 = 3.0;
 /// How many releases the pre-release check reads (newest first).
@@ -455,6 +458,9 @@ pub enum UpdateError {
     NotUpdatable,
     /// The download is not a Release archive this app can install.
     BadArchive(String),
+    /// Putting the new files in place failed, and so did putting some of the replaced ones
+    /// back: they are kept in this folder ([`ROLLBACK_INCOMPLETE`]).
+    RollbackIncomplete(PathBuf),
     Cancelled,
     /// Anything else, in a few words.
     Failed(String),
@@ -497,6 +503,12 @@ impl UpdateError {
             Self::BadArchive(why) => format!(
                 "The download is not a release archive this app can install ({why}). Nothing \
                  was changed."
+            ),
+            Self::RollbackIncomplete(dir) => format!(
+                "The update did not work, and some of the files it replaced could not be put \
+                 back. They are kept in {}; your Library and Notes were not changed. Get the \
+                 new version from the download page.",
+                dir.display()
             ),
             Self::Cancelled => "Update cancelled. Nothing was changed.".into(),
             Self::Failed(why) => {
@@ -665,6 +677,11 @@ impl Install {
             return Err(UpdateError::NotUpdatable);
         }
         platform_target().ok_or(UpdateError::NoDownload)?;
+        // The files a failed update could not put back are not risked on another one.
+        let work = self.dir.join(UPDATE_DIR);
+        if work.join(ROLLBACK_INCOMPLETE).exists() {
+            return Err(UpdateError::RollbackIncomplete(work.join("old")));
+        }
         let probe = self.dir.join(format!("{UPDATE_DIR}-probe"));
         match std::fs::write(&probe, b"") {
             Ok(()) => {
@@ -817,15 +834,32 @@ pub fn swap_in(install: &Install, staged: &Path) -> Result<PathBuf, UpdateError>
         }
     }
     if let Some(e) = failure {
+        let mut stuck = Vec::new();
         for (name, had_old, placed) in done.into_iter().rev() {
-            if placed {
-                let _ = std::fs::rename(install.dir.join(&name), staged.join(&name));
+            if placed && let Err(err) = std::fs::rename(install.dir.join(&name), staged.join(&name))
+            {
+                stuck.push(format!("{}: {err}", name.to_string_lossy()));
             }
-            if had_old {
-                let _ = std::fs::rename(old.join(&name), install.dir.join(&name));
+            if had_old && let Err(err) = std::fs::rename(old.join(&name), install.dir.join(&name)) {
+                stuck.push(format!("{}: {err}", name.to_string_lossy()));
             }
         }
-        return Err(e);
+        if stuck.is_empty() {
+            return Err(e);
+        }
+        // The replaced files left in `old/` are the only copy: keep them past the clean-up.
+        log::error!(
+            "update failed ({e:?}) and could not put back {}; the replaced files are kept in {}",
+            stuck.join(", "),
+            old.display()
+        );
+        let note = format!(
+            "An update of Open Bible Software failed and could not put these back:\n{}\n\
+             The files it replaced are in the old folder beside this note.\n",
+            stuck.join("\n")
+        );
+        let _ = std::fs::write(install.dir.join(UPDATE_DIR).join(ROLLBACK_INCOMPLETE), note);
+        return Err(UpdateError::RollbackIncomplete(old));
     }
     let exe = install
         .dir
@@ -837,10 +871,20 @@ pub fn swap_in(install: &Install, staged: &Path) -> Result<PathBuf, UpdateError>
 /// Remove what an update left beside the executable in `dir`: the replaced files (on
 /// Windows the old executable, which could not be deleted while it ran) and an unpacked
 /// download that was never installed. Called at launch, off the UI thread. Errors are
-/// ignored: whatever is still in use goes at a later launch.
+/// ignored: whatever is still in use goes at a later launch. After a failed update that
+/// could not put everything back ([`ROLLBACK_INCOMPLETE`]) the replaced files in `old/` are
+/// kept; only the unpacked download goes.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn clean_up_update_folder(dir: &Path) {
     let work = dir.join(UPDATE_DIR);
+    if work.join(ROLLBACK_INCOMPLETE).exists() {
+        log::warn!(
+            "keeping the files a failed update could not put back, in {}",
+            work.join("old").display()
+        );
+        let _ = std::fs::remove_dir_all(work.join("new"));
+        return;
+    }
     if work.exists() {
         match std::fs::remove_dir_all(&work) {
             Ok(()) => log::info!("removed the files the last update replaced"),
@@ -1095,11 +1139,15 @@ impl Session {
     /// to offer that was not skipped. Returns the job, or `None` while one is running.
     pub fn check_for_updates(&mut self, manual: bool) -> Option<JobId> {
         // While a check or download runs, or an installed update waits for Restart now, a
-        // new check would only hide where it is: the notice shows it instead.
+        // new check would only hide where it is: the notice shows it instead. A launch check
+        // still running becomes the user's, so its answer (or failure) is shown.
         if self.updates.job.is_some()
             || matches!(self.updates.status, UpdateStatus::Installed { .. })
         {
             if manual {
+                if let UpdateStatus::Checking { manual: m } = &mut self.updates.status {
+                    *m = true;
+                }
                 self.updates.notice = true;
             }
             return None;
@@ -1357,6 +1405,7 @@ impl Session {
                 } else {
                     // A launch check stays quiet when it cannot reach GitHub.
                     self.updates.status = UpdateStatus::Idle;
+                    self.updates.notice = false;
                 }
             }
         }

@@ -10,8 +10,9 @@
 //!   and offers Open the download page.
 //! - The first launch that checks automatically says so once, with Turn off.
 //!
-//! Restart now starts the new executable ([`UpdateUi::relaunch`], replaced in tests) and
-//! closes this window the usual way, so the Last session and any Note being written are saved.
+//! Restart now saves any Note being written and the Last session, then starts the new
+//! executable ([`UpdateUi::relaunch`], replaced in tests) and closes this window, so the new
+//! app never reads them before they are written.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -56,6 +57,9 @@ pub(crate) struct UpdateUi {
     pub(crate) launch_check: LaunchCheck,
     /// Restart now started the new app: close this window.
     close: bool,
+    /// Why Update now cannot replace this copy, probed once per release on offer (the probe
+    /// writes a file in the install folder), keyed by its tag.
+    cannot: Option<(String, Option<UpdateError>)>,
 }
 
 impl Default for UpdateUi {
@@ -64,6 +68,7 @@ impl Default for UpdateUi {
             relaunch: Arc::new(system_relaunch),
             launch_check: LaunchCheck::Off,
             close: false,
+            cannot: None,
         }
     }
 }
@@ -191,10 +196,21 @@ impl State {
                     });
                 });
         }
-        if updates.notice_shown() {
+        // A launch check that failed quietly has nothing to show.
+        if updates.notice_shown() && updates.status() != &UpdateStatus::Idle {
             let status = updates.status().clone();
             let current = updates.current().to_string();
-            let cannot = updates.cannot_update();
+            let cannot = match &status {
+                UpdateStatus::Available(release) => {
+                    let cached = (self.updates_ui.cannot.as_ref())
+                        .filter(|(tag, _)| tag == &release.tag)
+                        .map(|(_, why)| why.clone());
+                    let why = cached.unwrap_or_else(|| updates.cannot_update());
+                    self.updates_ui.cannot = Some((release.tag.clone(), why.clone()));
+                    why
+                }
+                _ => None,
+            };
             let signed = updates.source.public_key.is_some();
             let title = match &status {
                 UpdateStatus::Available(_) => "Update available",
@@ -217,12 +233,13 @@ impl State {
                 .show(ctx, |ui| {
                     ui.set_max_width(440.0);
                     match &status {
-                        UpdateStatus::Checking { .. } | UpdateStatus::Idle => {
+                        UpdateStatus::Checking { .. } => {
                             ui.horizontal(|ui| {
                                 ui.spinner();
                                 ui.label("Checking for updates…");
                             });
                         }
+                        UpdateStatus::Idle => {}
                         UpdateStatus::UpToDate => {
                             ui.label(format!(
                                 "You have the newest version of Open Bible Software ({current})."
@@ -404,7 +421,12 @@ fn failed_ui(
             acts.push(Act::OpenPage);
         }
         let retry = match (release, error) {
-            (_, UpdateError::NotWritable(_) | UpdateError::NotUpdatable) => None,
+            (
+                _,
+                UpdateError::NotWritable(_)
+                | UpdateError::NotUpdatable
+                | UpdateError::RollbackIncomplete(_),
+            ) => None,
             (Some(_), _) => Some("update.install"),
             (None, _) => Some("help.check_for_updates"),
         };

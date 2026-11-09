@@ -605,7 +605,7 @@ impl Shell {
                 Effect::OpenFolder(path) => self.st.open_folder(&path),
                 Effect::ReportProblem => self.st.show_report_problem(),
                 Effect::SaveDiagnosticsZip => self.st.show_diagnostics_zip(),
-                Effect::Restart(exe) => self.st.restart_into(&exe),
+                Effect::Restart(exe) => self.restart_now(&exe),
                 Effect::ShowHighlightStyles => self.st.styles_ui.open = true,
                 Effect::ShowVisualFilters => self.st.filters_ui.open = true,
                 Effect::FocusCommandBox => {
@@ -888,6 +888,24 @@ impl Shell {
         if let Err(e) = self.st.session.save_last_session() {
             self.st.toast(format!("Could not save the session: {e}"));
         }
+    }
+
+    /// Restart now (#276): save any Note being written and the Last session first, as closing
+    /// does, so the new app reads them; then start it and close this window. A Note that
+    /// cannot be saved stops the restart and shows why, as it stops closing.
+    fn restart_now(&mut self, exe: &std::path::Path) {
+        self.st.save_note();
+        self.st.save_card_edit(true);
+        if let Some(id) = self.st.notes_ui.editing.as_ref().map(|e| e.id.clone()) {
+            self.st.run("notes.open", &json!({ "id": id }));
+        }
+        if self.st.note_editor.is_some() || self.st.notes_ui.editing.is_some() {
+            self.st
+                .toast("Save or discard the Note being written, then click Restart now again.");
+            return;
+        }
+        self.save_session(true);
+        self.st.restart_into(exe);
     }
 
     /// Restore the Last session if there is one, else open the default layout. Returns
