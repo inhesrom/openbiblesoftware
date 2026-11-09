@@ -1160,7 +1160,7 @@ impl Updates {
         }
     }
 
-    fn to_json(&self) -> Value {
+    pub(crate) fn to_json(&self) -> Value {
         json!({
             "auto_check": self.auto_check,
             "prereleases": self.prereleases,

@@ -548,7 +548,7 @@ fn a_backup_with_an_unreadable_layout_setting_or_favorite_is_refused_naming_each
         db.set_preference("search.saved", "not JSON").unwrap();
         db.set_preference("library.collections", "{\"oops\":1}")
             .unwrap();
-        // Text settings are any text: not checked.
+        // A Log level the app does not know would be back at its default.
         db.set_preference("log_level", "not JSON").unwrap();
         db.save_layout("Broken", "not JSON").unwrap();
         db.add_favorite("", "John 3:16", "nowhere").unwrap();
@@ -568,11 +568,11 @@ fn a_backup_with_an_unreadable_layout_setting_or_favorite_is_refused_naming_each
         "1 History visit",
         "the setting `search.saved` (Saved searches)",
         "the setting `library.collections` (Collections)",
+        "the setting `log_level` (Log level)",
         "Nothing was changed",
     ] {
         assert!(refused.contains(named), "{named}: {refused}");
     }
-    assert!(!refused.contains("log_level"), "{refused}");
     let err = s.run("data.restore", &path(&backup)).unwrap_err();
     assert!(err.to_string().contains("the Layout “Broken”"), "{err}");
     assert_eq!(dump(&s), before);
@@ -927,17 +927,32 @@ fn a_backup_with_a_layout_of_two_tabs_with_one_id_is_refused_naming_it() {
     s.run("data.restore", &path(&good)).unwrap();
 }
 
+/// What the trial restore would not keep of the Backup `good` with the setting `key` set to
+/// `value` (written to a copy beside it): the lines a refusal names.
+fn unkept_setting(
+    f: &Fixture,
+    s: &Session,
+    good: &std::path::Path,
+    key: &str,
+    value: &str,
+) -> Vec<String> {
+    let backup = f.file("setting.obsbackup");
+    damaged_copy(f, good, &backup, |db| {
+        db.set_preference(key, value).unwrap()
+    });
+    let (opened, _) = s.user.as_ref().unwrap().open_backup(&backup).unwrap();
+    s.trial_restore(&*opened).unwrap()
+}
+
 /// Home and Guide arrangements are refused for each card or section their loaders drop, and
-/// read when each is known and held once.
+/// kept when each is known and held once. A key no loader reads (a Guide this version does
+/// not have) is restored as it is.
 #[test]
 fn arrangements_refuse_cards_and_sections_their_loaders_drop() {
-    let reads = |key: &str, json: &str| {
-        let setting = crate::backup_check::JSON_SETTINGS
-            .iter()
-            .find(|j| j.names(key))
-            .unwrap();
-        (setting.reads)(key, json)
-    };
+    let f = Fixture::new("arrangements");
+    let mut s = f.session();
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
     for (key, json) in [
         (
             "home",
@@ -949,18 +964,19 @@ fn arrangements_refuse_cards_and_sections_their_loaders_drop() {
             r#"{"sections":[{"id":"cross_references","collapsed":true},{"id":"commentaries"}]}"#,
         ),
         ("import-report/kjv", "null"),
+        (
+            "guide-arrangement/nowhere",
+            r#"{"sections":[{"id":"commentaries"}]}"#,
+        ),
     ] {
-        assert!(reads(key, json), "{key} {json}");
+        let unkept = unkept_setting(&f, &s, &good, key, json);
+        assert!(unkept.is_empty(), "{key} {json}: {unkept:?}");
     }
     for (key, json) in [
         ("home", r#"{"cards":[{"id":"nowhere"}]}"#),
         (
             "guide-arrangement/passage_guide",
             r#"{"sections":[{"id":"nowhere"}]}"#,
-        ),
-        (
-            "guide-arrangement/nowhere",
-            r#"{"sections":[{"id":"commentaries"}]}"#,
         ),
         (
             "guide-arrangement/word_study",
@@ -971,130 +987,146 @@ fn arrangements_refuse_cards_and_sections_their_loaders_drop() {
             r#"{"sections":[{"id":"cross_references","collection":"Bibles"}]}"#,
         ),
     ] {
-        assert!(!reads(key, json), "{key} {json}");
+        let unkept = unkept_setting(&f, &s, &good, key, json);
+        assert_eq!(unkept.len(), 1, "{key} {json}: {unkept:?}");
+        assert!(unkept[0].contains(&format!("`{key}`")), "{unkept:?}");
     }
 }
 
-/// Each field-by-field setting refuses a field its loader would default or drop, and still
-/// reads what the app wrote before (#37's View record, old Selection key ids, no skipped
-/// release).
+/// Each setting refuses a field its loader would default, drop or clamp, and keeps what the
+/// app wrote before (#37's View record, a Text size saved while it was the default, old
+/// Selection key ids, no skipped release).
 #[test]
-fn field_by_field_settings_refuse_unreadable_fields_and_read_older_records() {
-    let reads = |key: &str, json: &str| {
-        let setting = crate::backup_check::JSON_SETTINGS
-            .iter()
-            .find(|j| j.names(key))
-            .unwrap();
-        (setting.reads)(key, json)
-    };
-    for (key, json) in [
-        (
-            "view",
-            r#"{"text_size":18,"dark_page":true,"verse_numbers":false}"#,
-        ),
-        (
-            "view",
-            r#"{"theme":"light","fonts":{"greek":{"family":"Gentium"}},"reading_layout":null}"#,
-        ),
-        ("view", r#"{"some_later_field":1}"#),
-        (
-            "toolbar",
-            r#"{"position":"left","launchers":[{"id":"tools","shown":false}]}"#,
-        ),
-        (
-            "key_bindings",
-            r#"{"selection.highlight_yellow":"Ctrl+1","edit.undo":null}"#,
-        ),
-        ("updates", r#"{"auto_check":false,"skipped":null}"#),
-        ("updates", r#"{"skipped":"0.2.0"}"#),
-        ("tour", r#"{"shown":true}"#),
-        (
-            "custom-theme",
-            r##"{"format":"openbible-theme","version":1,"base":"high_contrast_dark","colors":{"ink":"#ffffff"}}"##,
-        ),
-    ] {
-        assert!(reads(key, json), "{key} {json}");
-    }
-    for (key, json) in [
-        ("view", "[]"),
-        ("view", r#"{"theme":"purple"}"#),
-        ("view", r#"{"red_letter":"yes"}"#),
-        ("view", r#"{"verse_numbers":"sideways"}"#),
-        ("view", r#"{"fonts":{"latin":{"family":3}}}"#),
-        ("view", r#"{"reading_layout":{"flow":"sideways"}}"#),
-        ("toolbar", r#"{"position":"middle"}"#),
-        (
-            "toolbar",
-            r#"{"launchers":[{"id":"tools"},{"id":"tools"}]}"#,
-        ),
-        ("toolbar", r#"{"launchers":[{"id":"tools","shown":"no"}]}"#),
-        ("key_bindings", r#"{"annotation.note":42}"#),
-        ("key_bindings", r#"{"annotation.note":"Ctrl+Nowhere"}"#),
-        // An old Selection key id beside its new one: the loader keeps one of the two.
-        (
-            "key_bindings",
-            r#"{"selection.highlight_1":"Alt+2","selection.highlight_yellow":"Alt+3"}"#,
-        ),
-        ("updates", r#"{"auto_check":"false"}"#),
-        ("updates", r#"{"skipped":1}"#),
-        ("tour", r#"{"shown":"yes"}"#),
-        ("tour", "not JSON"),
-        (
-            "custom-theme",
-            r#"{"format":"x","version":1,"base":"light"}"#,
-        ),
-        (
-            "custom-theme",
-            r##"{"format":"openbible-theme","version":1,"base":"light","colors":{"nowhere":"#000000"}}"##,
-        ),
-        ("view", r#"{"text_size":41}"#),
-        ("view", r#"{"line_spacing":0.9}"#),
-        ("view", r#"{"line_spacing":2.1}"#),
-    ] {
-        assert!(!reads(key, json), "{key} {json}");
-    }
-}
-
-/// #258: a View setting whose Text size or Line spacing the loader would clamp, and a Search
-/// history longer than the app keeps (the loader would drop the oldest), are refused by the
-/// preview and by restore before any Safety backup; the limits themselves, a Text size below
-/// the minimum (reset with a notice, #241) and a pre-#241 default size still read.
-#[test]
-fn a_backup_with_view_values_or_history_the_loaders_would_change_is_refused() {
-    let reads = |key: &str, json: &str| {
-        let setting = crate::backup_check::JSON_SETTINGS
-            .iter()
-            .find(|j| j.names(key))
-            .unwrap();
-        (setting.reads)(key, json)
-    };
+fn settings_refuse_fields_their_loaders_would_change_and_keep_older_records() {
+    let f = Fixture::new("fields");
+    let mut s = f.session();
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
     let history = |n: usize| {
         let entries: Vec<Value> = (0..n)
             .map(
                 |i| json!({ "search": { "mode": "bible", "query": format!("love {i}") }, "at": i }),
             )
             .collect();
-        let json = serde_json::to_string(&entries).unwrap();
-        // Each entry is one the loader reads.
-        let read: Vec<SearchHistoryEntry> = serde_json::from_str(&json).unwrap();
-        assert_eq!(read.len(), n);
-        json
+        serde_json::to_string(&entries).unwrap()
     };
     for (key, json) in [
+        (
+            "view",
+            r#"{"text_size":18,"dark_page":true,"verse_numbers":false}"#.to_string(),
+        ),
+        ("view", r#"{"verse_numbers":true}"#.to_string()),
+        (
+            "view",
+            r#"{"theme":"light","fonts":{"greek":{"family":"Gentium"}}}"#.to_string(),
+        ),
         ("view", r#"{"text_size":40,"line_spacing":2}"#.to_string()),
-        ("view", r#"{"text_size":8,"line_spacing":1}"#.to_string()),
+        // Saved while 17 was the default (before #241): the default now.
         ("view", r#"{"text_size":17}"#.to_string()),
+        ("view", r#"{"text_size":17,"text_size_default":17}"#.to_string()),
+        // Fields at their defaults say nothing to lose.
+        ("view", r#"{"some_later_field":false}"#.to_string()),
+        (
+            "toolbar",
+            r#"{"position":"left","launchers":[{"id":"tools","shown":false}]}"#.to_string(),
+        ),
+        (
+            "key_bindings",
+            r#"{"selection.highlight_yellow":"Ctrl+1","edit.undo":null}"#.to_string(),
+        ),
+        ("updates", r#"{"auto_check":false,"skipped":null}"#.to_string()),
+        ("updates", r#"{"skipped":"0.2.0"}"#.to_string()),
+        ("tour", r#"{"shown":true}"#.to_string()),
+        (
+            "custom-theme",
+            r##"{"format":"openbible-theme","version":1,"base":"high_contrast_dark","colors":{"ink":"#ffffff"}}"##.to_string(),
+        ),
         ("search.history", history(SEARCH_HISTORY_LIMIT)),
+        ("log_level", "debug".to_string()),
+        ("search.word_forms", "true".to_string()),
     ] {
-        assert!(reads(key, &json), "{key} {json}");
+        let unkept = unkept_setting(&f, &s, &good, key, &json);
+        assert!(unkept.is_empty(), "{key} {json}: {unkept:?}");
     }
+    for (key, json) in [
+        ("view", "[]".to_string()),
+        ("view", r#"{"theme":"purple"}"#.to_string()),
+        ("view", r#"{"red_letter":"yes"}"#.to_string()),
+        ("view", r#"{"verse_numbers":"sideways"}"#.to_string()),
+        ("view", r#"{"fonts":{"latin":{"family":3}}}"#.to_string()),
+        ("view", r#"{"reading_layout":{"flow":"sideways"}}"#.to_string()),
+        // Read as no Reading layout, so the default.
+        ("view", r#"{"reading_layout":null}"#.to_string()),
+        // A field this version does not know would be gone at the next save.
+        ("view", r#"{"some_later_field":1}"#.to_string()),
+        ("view", r#"{"text_size":41}"#.to_string()),
+        ("view", r#"{"line_spacing":0.9}"#.to_string()),
+        ("view", r#"{"line_spacing":2.1}"#.to_string()),
+        // Too small to read: reset to the default, with a notice, but reset all the same.
+        ("view", r#"{"text_size":8}"#.to_string()),
+        ("toolbar", r#"{"position":"middle"}"#.to_string()),
+        (
+            "toolbar",
+            r#"{"launchers":[{"id":"tools"},{"id":"tools"}]}"#.to_string(),
+        ),
+        (
+            "toolbar",
+            r#"{"launchers":[{"id":"tools","shown":"no"}]}"#.to_string(),
+        ),
+        ("toolbar", r#"{"launchers":[{"id":"nowhere"}]}"#.to_string()),
+        ("key_bindings", r#"{"annotation.note":42}"#.to_string()),
+        (
+            "key_bindings",
+            r#"{"annotation.note":"Ctrl+Nowhere"}"#.to_string(),
+        ),
+        // An old Selection key id beside its new one: the loader keeps one of the two.
+        (
+            "key_bindings",
+            r#"{"selection.highlight_1":"Alt+2","selection.highlight_yellow":"Alt+3"}"#
+                .to_string(),
+        ),
+        ("updates", r#"{"auto_check":"false"}"#.to_string()),
+        ("updates", r#"{"skipped":1}"#.to_string()),
+        ("tour", r#"{"shown":"yes"}"#.to_string()),
+        ("tour", "not JSON".to_string()),
+        (
+            "custom-theme",
+            r#"{"format":"x","version":1,"base":"light"}"#.to_string(),
+        ),
+        (
+            "custom-theme",
+            r##"{"format":"openbible-theme","version":1,"base":"light","colors":{"nowhere":"#000000"}}"##.to_string(),
+        ),
+        ("search.history", history(SEARCH_HISTORY_LIMIT + 1)),
+        ("search.saved", "not JSON".to_string()),
+        ("search.recent.notes", r#"["grace", 3]"#.to_string()),
+        ("command-box.recent", "{}".to_string()),
+        ("log_level", "loud".to_string()),
+        ("search.word_forms", "yes".to_string()),
+        ("reading.visual_filters_next_id", "many".to_string()),
+        ("starter-library", r#"{"oops":1}"#.to_string()),
+        ("resource-attribution/kjv/abc", r#"{"credit":3}"#.to_string()),
+    ] {
+        let unkept = unkept_setting(&f, &s, &good, key, &json);
+        assert_eq!(unkept.len(), 1, "{key} {json}: {unkept:?}");
+        assert!(unkept[0].contains(&format!("`{key}`")), "{unkept:?}");
+    }
+}
 
+/// #258: a View setting whose Text size or Line spacing the loader would clamp, and a Search
+/// history longer than the app keeps (the loader would drop the oldest), are refused by the
+/// preview and by restore before any Safety backup.
+#[test]
+fn a_backup_with_view_values_or_history_the_loaders_would_change_is_refused() {
     let f = Fixture::new("changed-values");
     let mut s = f.session();
     let good = f.file("good.obsbackup");
     s.run("data.back_up", &path(&good)).unwrap();
     let backup = f.file("damaged.obsbackup");
-    let too_long = history(SEARCH_HISTORY_LIMIT + 1);
+    let entries: Vec<Value> = (0..=SEARCH_HISTORY_LIMIT)
+        .map(|i| json!({ "search": { "mode": "bible", "query": format!("love {i}") }, "at": i }))
+        .collect();
+    let too_long = serde_json::to_string(&entries).unwrap();
     damaged_copy(&f, &good, &backup, |db| {
         db.set_preference("view", r#"{"text_size":999,"line_spacing":9}"#)
             .unwrap();
@@ -1109,7 +1141,7 @@ fn a_backup_with_view_values_or_history_the_loaders_would_change_is_refused() {
 
     let refused = s.restore_preview(&backup).unwrap_err();
     for named in [
-        "the setting `view` (View settings",
+        "the setting `view` (View settings)",
         "the setting `search.history` (Search history)",
         "Nothing was changed",
     ] {
@@ -1126,121 +1158,133 @@ fn a_backup_with_view_values_or_history_the_loaders_would_change_is_refused() {
     );
 }
 
-/// Everything the app itself writes passes the check: a Backup of a Session that has used
-/// every setting kept as JSON it can reach here previews and restores.
-#[test]
-fn a_backup_of_what_the_app_writes_passes_the_restore_check() {
-    let f = Fixture::new("app-writes");
-    let mut s = f.session();
+/// The Session after using every setting, record and list the app keeps in the User
+/// database that can be reached here.
+fn write_everything(s: &mut Session) {
     for setting in crate::settings::SETTINGS.iter().filter(|s| s.has_reset()) {
-        crate::settings_tests::change(&mut s, setting.id);
+        crate::settings_tests::change(s, setting.id);
     }
     let run = |s: &mut Session, id: &str, p: Value| {
         s.run(id, &p).unwrap_or_else(|e| panic!("{id}: {e}"));
     };
     run(
-        &mut s,
+        s,
         "theme.set_color",
         json!({ "role": "lapis", "color": "#FFD000" }),
     );
     run(
-        &mut s,
+        s,
         "keys.set",
         json!({ "command": "view.text_larger", "key": "Ctrl+ArrowUp" }),
     );
+    run(s, "home.hide_card", json!({ "card": "verse_of_the_day" }));
     run(
-        &mut s,
-        "home.hide_card",
-        json!({ "card": "verse_of_the_day" }),
-    );
-    run(
-        &mut s,
+        s,
         "guide.hide_section",
         json!({ "guide": "passage_guide", "section": "commentaries" }),
     );
     run(
-        &mut s,
+        s,
         "copy.option",
         json!({ "name": "layout", "value": "verse_per_line" }),
     );
-    run(&mut s, "copy.preset_save", json!({ "name": "Handout" }));
+    run(s, "copy.preset_save", json!({ "name": "Handout" }));
     run(
-        &mut s,
+        s,
         "collection.save",
         json!({ "name": "Bibles", "rules": "type:bible" }),
     );
+    run(s, "resource.tags", json!({ "id": "kjv", "tags": "older" }));
     run(
-        &mut s,
-        "resource.tags",
-        json!({ "id": "kjv", "tags": "older" }),
-    );
-    run(
-        &mut s,
+        s,
         "filter.save",
         json!({ "name": "Grace", "query": "grace", "look": "background", "color": "#ffd6aa" }),
     );
-    run(&mut s, "help.tour", json!({}));
-    run(&mut s, "tour.skip", json!({}));
-    run(&mut s, "annotation.note", json!({ "body": "grace" }));
+    run(s, "help.tour", json!({}));
+    run(s, "tour.skip", json!({}));
+    run(s, "annotation.note", json!({ "body": "grace" }));
     let out = s
         .run("search.run", &json!({ "text": "grace", "mode": "notes" }))
         .unwrap();
     run(
-        &mut s,
+        s,
         "search.save",
         json!({ "tab": out["tab"], "name": "Grace" }),
     );
-    run(&mut s, "command_box.run", json!({ "text": "Matt 5:43" }));
+    s.set_search_word_forms(true);
+    run(s, "command_box.run", json!({ "text": "Matt 5:43" }));
     let bible = s.run("resource.open", &json!({ "id": "kjv" })).unwrap()["tab"].clone();
-    run(
-        &mut s,
-        "tab.go",
-        json!({ "tab": bible, "text": "Matt 5:43" }),
-    );
-    run(&mut s, "favorite.add", json!({ "tab": bible }));
+    run(s, "tab.go", json!({ "tab": bible, "text": "Matt 5:43" }));
+    run(s, "favorite.add", json!({ "tab": bible }));
     s.record_history();
-    run(&mut s, "layout.save", json!({ "name": "Study" }));
+    run(s, "layout.save", json!({ "name": "Study" }));
     run(
-        &mut s,
+        s,
         "reading_plan.create",
         json!({ "template": "custom", "books": "Jude", "days": 3 }),
     );
+}
 
+/// Settings the trial restore does not compare: each names another record and falls back to
+/// the default when that record is gone, as at launch (see `backup_check.rs`).
+const NOT_COMPARED: &[&str] = &["highlights.palette", "annotations.last_notebook"];
+
+/// Everything the app itself writes is kept by the trial restore: a Backup of a Session that
+/// has used every setting it can reach here previews and restores, and every setting it wrote
+/// was compared.
+#[test]
+fn a_backup_of_what_the_app_writes_passes_the_restore_check() {
+    let f = Fixture::new("app-writes");
+    let mut s = f.session();
+    write_everything(&mut s);
     let backup = f.file("everything.obsbackup");
     s.run("data.back_up", &path(&backup)).unwrap();
-    let written: Vec<String> = s
+
+    let (opened, _) = s.user.as_ref().unwrap().open_backup(&backup).unwrap();
+    assert_eq!(s.trial_restore(&*opened).unwrap(), Vec::<String>::new());
+    let stored: std::collections::BTreeMap<String, String> = s
         .user
         .as_ref()
         .unwrap()
         .preferences()
         .unwrap()
         .into_iter()
-        .map(|(k, _)| k)
         .collect();
-    let unreached: Vec<&str> = crate::backup_check::JSON_SETTINGS
-        .iter()
-        .filter(|j| !written.iter().any(|k| j.names(k)))
-        .map(|j| j.key)
+    let compared: Vec<String> = s
+        .held_settings(&stored)
+        .into_iter()
+        .map(|h| h.key)
         .collect();
-    // Written only by the Starter library and by an Import.
-    assert_eq!(unreached, ["starter-library", "import-report/"]);
+    for key in stored.keys() {
+        assert!(
+            compared.contains(key) || NOT_COMPARED.contains(&key.as_str()),
+            "the trial restore does not compare `{key}`"
+        );
+    }
     let preview = s.restore_preview(&backup).unwrap();
     assert_eq!(preview.backup.layouts, ["Study"]);
     s.run("data.restore", &path(&backup)).unwrap();
+    let stored = crate::backup_check::StoredRecords::read(&*opened).unwrap();
+    assert_eq!(s.unkept_records(&stored), Vec::<String>::new());
 }
 
-/// Every setting the engine names with a constant is either checked as JSON on restore or
-/// known to be plain text, so a new JSON setting cannot be missed by the restore check.
+/// Every setting the engine names with a constant is compared by the trial restore or is a
+/// pointer it leaves alone ([`NOT_COMPARED`]), so a new setting cannot be missed.
 #[test]
-fn every_setting_the_engine_keeps_is_known_to_the_restore_check() {
-    const PLAIN_TEXT: &[&str] = &[
-        "highlights.palette",
-        "annotations.last_notebook",
-        "log_level",
-        "page-tone-hint",
-        "reading.visual_filters_next_id",
-        "search.word_forms",
-    ];
+fn every_setting_the_engine_keeps_is_compared_by_the_trial_restore() {
+    let f = Fixture::new("every-setting");
+    let mut s = f.session();
+    let attribution = "resource-attribution/kjv/abc";
+    let stored: std::collections::BTreeMap<String, String> = [(
+        attribution.to_string(),
+        r#"{"credit":"","confirmed_at":1}"#.to_string(),
+    )]
+    .into();
+    let compared: Vec<String> = s
+        .held_settings(&stored)
+        .into_iter()
+        .map(|h| h.key)
+        .collect();
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut keys = Vec::new();
     for entry in std::fs::read_dir(&src).unwrap() {
@@ -1265,14 +1309,358 @@ fn every_setting_the_engine_keeps_is_known_to_the_restore_check() {
     }
     assert!(keys.len() > 20, "{keys:?}");
     for key in keys {
-        let json = crate::backup_check::JSON_SETTINGS
+        let prefix = key.ends_with(['/', '.']);
+        let is_compared = compared
             .iter()
-            .any(|j| j.key == key);
+            .any(|c| *c == key || (prefix && c.starts_with(&key)));
         assert!(
-            json ^ PLAIN_TEXT.contains(&key.as_str()),
-            "`{key}`: add it to JSON_SETTINGS (backup_check.rs) or to PLAIN_TEXT here"
+            is_compared ^ NOT_COMPARED.contains(&key.as_str()),
+            "`{key}`: compare it in `Session::held_settings` (backup_check.rs) or add it to \
+             NOT_COMPARED"
         );
     }
+}
+
+/// #258 (review): a Reading plan or Reading whose date is far outside the calendar, and a
+/// Reading at the last position a database can hold, are refused by the preview and by
+/// restore, naming each, with nothing changed and no Safety backup; reading them panics
+/// nowhere.
+#[test]
+fn a_backup_with_dates_or_positions_at_their_limits_is_refused_without_a_panic() {
+    let f = Fixture::new("limits");
+    let mut s = f.session();
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
+    let backup = f.file("damaged.obsbackup");
+    damaged_copy(&f, &good, &backup, |db| {
+        let plan = |name: &str, start: &str| obs_store::ReadingPlanRow {
+            id: 0,
+            name: name.to_string(),
+            template: "custom".to_string(),
+            bible_id: "kjv".to_string(),
+            start_day: start.to_string(),
+            weekdays: 0b111_1111,
+            created_at: 0,
+        };
+        let reading = |passages: &str, day: &str| obs_store::PlanReadingRow {
+            position: 0,
+            passages: passages.to_string(),
+            day: day.to_string(),
+            read_at: None,
+        };
+        db.add_reading_plan(
+            &plan("Far future", "9223372036854775807-01-01"),
+            &[reading("Jude 1", "2024-01-01")],
+        )
+        .unwrap();
+        db.add_reading_plan(
+            &plan("Far day", "2024-01-01"),
+            &[reading("Jude 1", "-9223372036854775808-12-31")],
+        )
+        .unwrap();
+        db.add_reading_plan(
+            &plan("Last reading", "2024-01-01"),
+            &[
+                reading("Jude 1", "2024-01-01"),
+                reading("Nowhere 9", "2024-01-02"),
+            ],
+        )
+        .unwrap();
+        db.execute_unchecked(
+            "UPDATE plan_reading SET position = 4294967295 WHERE passages = 'Nowhere 9'",
+        )
+        .unwrap();
+    });
+    s.run(
+        "annotation.note",
+        &json!({ "body": "made after the backup" }),
+    )
+    .unwrap();
+    let before = dump(&s);
+    let plans_before = s.reading_plans().to_vec();
+
+    let refused = s.restore_preview(&backup).unwrap_err();
+    for named in [
+        "the Reading plan “Far future”",
+        "Reading 1 of the Reading plan “Far day”",
+        "Reading 4294967296 of the Reading plan “Last reading”",
+        "Nothing was changed",
+    ] {
+        assert!(refused.contains(named), "{named}: {refused}");
+    }
+    let err = s.run("data.restore", &path(&backup)).unwrap_err();
+    assert!(err.to_string().contains("Reading 4294967296"), "{err}");
+    assert_eq!(dump(&s), before);
+    assert_eq!(s.reading_plans(), plans_before);
+    assert!(s.last_restore().is_none());
+    assert!(
+        !s.kept_backups()
+            .iter()
+            .any(|b| b.kind == BackupKind::Safety)
+    );
+}
+
+/// #258: a loader panicking on a record it never expected refuses the Backup as damaged, in
+/// the preview and on restore, with nothing changed and no Safety backup; the app goes on.
+#[test]
+fn a_panic_while_loading_a_backup_refuses_it_as_damaged() {
+    let f = Fixture::new("panics");
+    let good = f.file("good.obsbackup");
+    f.session().run("data.back_up", &path(&good)).unwrap();
+    let mut s = Session::new(JobMode::Inline);
+    assert!(s.library.scan(&f.root.join("library")).is_empty());
+    let (store, _) = obs_store::UserStore::open(&f.root.join("user.db")).unwrap();
+    s.attach_user(Box::new(crate::testing::WritesFail {
+        copies_panic: true,
+        ..crate::testing::WritesFail::visits(store, 0)
+    }));
+    s.run(
+        "annotation.note",
+        &json!({ "body": "made after the backup" }),
+    )
+    .unwrap();
+    let before = dump(&s);
+
+    let refused = s.restore_preview(&good).unwrap_err();
+    assert!(
+        refused
+            .contains("it is damaged (the app stopped reading it: a Favorite no loader expected)"),
+        "{refused}"
+    );
+    assert!(refused.contains("Nothing was changed"), "{refused}");
+    let err = s.run("data.restore", &path(&good)).unwrap_err();
+    assert!(err.to_string().contains("it is damaged"), "{err}");
+    assert_eq!(dump(&s), before);
+    assert!(s.last_restore().is_none());
+    assert!(
+        !s.kept_backups()
+            .iter()
+            .any(|b| b.kind == BackupKind::Safety)
+    );
+    s.run("annotation.note", &json!({ "body": "still working" }))
+        .unwrap();
+}
+
+/// A step into a JSON value: a field of an object or an item of a list.
+#[derive(Debug, Clone)]
+enum Step {
+    Field(String),
+    Item(usize),
+}
+
+/// Every value inside `v` (and `v` itself), by its path.
+fn paths(v: &Value, at: &mut Vec<Step>, out: &mut Vec<Vec<Step>>) {
+    out.push(at.clone());
+    match v {
+        Value::Object(o) => {
+            for (k, x) in o {
+                at.push(Step::Field(k.clone()));
+                paths(x, at, out);
+                at.pop();
+            }
+        }
+        Value::Array(a) => {
+            for (i, x) in a.iter().enumerate() {
+                at.push(Step::Item(i));
+                paths(x, at, out);
+                at.pop();
+            }
+        }
+        _ => {}
+    }
+}
+
+fn at_mut<'a>(v: &'a mut Value, path: &[Step]) -> &'a mut Value {
+    path.iter().fold(v, |v, step| match step {
+        Step::Field(k) => &mut v[k.as_str()],
+        Step::Item(i) => &mut v[*i],
+    })
+}
+
+/// Values no loader expects in place of another.
+fn hostile_values() -> Vec<Value> {
+    vec![
+        Value::Null,
+        json!(1e300),
+        json!(-1),
+        json!(u64::MAX),
+        json!(i64::MIN),
+        json!("zz-unknown"),
+        json!(true),
+        json!([]),
+        json!({}),
+        json!([1, 2]),
+    ]
+}
+
+/// The mutations of a JSON value `v`, each with what it changed: each value inside it
+/// replaced by a hostile one (in turn, from `next`), each list given its first item again,
+/// each object a field this version does not know.
+fn mutations_of(v: &Value, next: &mut usize) -> Vec<(String, Value)> {
+    let hostile = hostile_values();
+    let mut all = Vec::new();
+    paths(v, &mut Vec::new(), &mut all);
+    let mut out = Vec::new();
+    for path in all {
+        let mut m = v.clone();
+        let to = hostile[*next % hostile.len()].clone();
+        *next += 1;
+        *at_mut(&mut m, &path) = to.clone();
+        out.push((format!("{path:?} = {to}"), m));
+        let mut m = v.clone();
+        match at_mut(&mut m, &path) {
+            Value::Array(a) if !a.is_empty() => {
+                let first = a[0].clone();
+                a.push(first);
+                out.push((format!("{path:?} repeats its first item"), m));
+            }
+            Value::Object(o) => {
+                o.insert("zz_later_field".into(), json!(7));
+                out.push((format!("{path:?} gains a field"), m));
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// SQL text: `s` quoted.
+fn quoted(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "''"))
+}
+
+/// #258 proof: every value of a Backup the app wrote, changed to one no loader expects (huge
+/// and negative numbers, wrong types, unknown ids, impossible dates, repeated items and ids,
+/// old and new ids of one shortcut, text that is not JSON), is either refused, by the preview
+/// and by restore alike, with the live data and the kept Backups unchanged, or restored with
+/// nothing changed by the restore and every loader keeping all of it. Nothing panics.
+#[test]
+fn every_change_to_a_backup_is_refused_cleanly_or_restored_whole() {
+    let f = Fixture::new("mutations");
+    let mut s = f.session();
+    write_everything(&mut s);
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
+    let user = s.user.as_ref().unwrap();
+
+    type Damage = Box<dyn Fn(&obs_store::UserStore)>;
+    let mut cases: Vec<(String, Damage)> = Vec::new();
+    let mut next = 0;
+    for (key, value) in user.preferences().unwrap() {
+        let k = key.clone();
+        cases.push((
+            format!("{key} = not JSON"),
+            Box::new(move |db| db.set_preference(&k, "not JSON{").unwrap()),
+        ));
+        let Ok(v) = serde_json::from_str::<Value>(&value) else {
+            continue;
+        };
+        for (change, m) in mutations_of(&v, &mut next) {
+            let (k, text) = (key.clone(), m.to_string());
+            cases.push((
+                format!("{key}: {change}"),
+                Box::new(move |db| db.set_preference(&k, &text).unwrap()),
+            ));
+        }
+    }
+    let row_json = |table: &str, column: &str, json: &str, next: &mut usize| {
+        let v: Value = serde_json::from_str(json).unwrap();
+        let mut out: Vec<(String, Damage)> = Vec::new();
+        for (change, m) in mutations_of(&v, next) {
+            let sql = format!("UPDATE {table} SET {column} = {}", quoted(&m.to_string()));
+            out.push((
+                format!("{table}.{column}: {change}"),
+                Box::new(move |db| {
+                    db.execute_unchecked(&sql).unwrap();
+                }),
+            ));
+        }
+        out
+    };
+    let favorite = &user.favorites().unwrap()[0].location;
+    cases.extend(row_json("favorite", "location", favorite, &mut next));
+    let visit = &user.history_as_of(0).unwrap()[0].location;
+    cases.extend(row_json("history", "location", visit, &mut next));
+    let layout = user.layout("Study").unwrap().unwrap();
+    cases.extend(row_json("layout", "snapshot", &layout, &mut next));
+    for sql in [
+        "UPDATE reading_plan SET start_day = '9223372036854775807-01-01'",
+        "UPDATE reading_plan SET start_day = '-9223372036854775808-01-01'",
+        "UPDATE reading_plan SET start_day = '2024-02-30'",
+        "UPDATE reading_plan SET start_day = '0-01-01'",
+        "UPDATE reading_plan SET start_day = '10000-01-01'",
+        "UPDATE reading_plan SET start_day = ''",
+        "UPDATE reading_plan SET weekdays = 255",
+        "UPDATE reading_plan SET weekdays = 0",
+        "UPDATE plan_reading SET day = '9223372036854775807-12-31' WHERE position = 0",
+        "UPDATE plan_reading SET day = '2024-1-1' WHERE position = 0",
+        "UPDATE plan_reading SET passages = 'Nowhere 9' WHERE position = 0",
+        "UPDATE plan_reading SET position = 4294967295 WHERE position = 0",
+        "UPDATE plan_reading SET position = 4294967295, passages = '' WHERE position = 0",
+        "UPDATE favorite SET location = 'not JSON'",
+        "UPDATE history SET location = 'not JSON'",
+        "UPDATE layout SET snapshot = 'not JSON'",
+        "UPDATE preference SET value = '{\"selection.highlight_1\":\"Alt+2\",\"selection.highlight_yellow\":\"Alt+3\"}' WHERE key = 'key_bindings'",
+    ] {
+        cases.push((
+            sql.to_string(),
+            Box::new(move |db| {
+                db.execute_unchecked(sql).unwrap();
+            }),
+        ));
+    }
+    assert!(cases.len() > 150, "{}", cases.len());
+
+    let kept_backups =
+        |s: &Session| -> Vec<PathBuf> { s.kept_backups().into_iter().map(|b| b.path).collect() };
+    let preferences = |s: &Session| s.user.as_ref().unwrap().preferences().unwrap();
+    let (mut refused, mut restored) = (0, 0);
+    let backup = f.file("changed.obsbackup");
+    for (what, damage) in &cases {
+        damaged_copy(&f, &good, &backup, |db| damage(db));
+        let before = (dump(&s), preferences(&s), kept_backups(&s));
+        let preview =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| s.restore_preview(&backup)))
+                .unwrap_or_else(|_| panic!("the preview panicked: {what}"));
+        let restore =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| s.restore_backup(&backup)))
+                .unwrap_or_else(|_| panic!("restore panicked: {what}"));
+        assert_eq!(preview.is_ok(), restore.is_ok(), "{what}: {preview:?}");
+        if restore.is_err() {
+            refused += 1;
+            assert_eq!(
+                (dump(&s), preferences(&s), kept_backups(&s)),
+                before,
+                "a refused restore changed something: {what}"
+            );
+            continue;
+        }
+        restored += 1;
+        let (written, _) = obs_store::UserStore::open_backup(&backup).unwrap();
+        // Loading the library confirms its Resources' Attributions from their manifests, as
+        // every launch does (#154); nothing else may change what was restored.
+        let restored_settings = |all: Vec<(String, String)>| -> Vec<(String, String)> {
+            all.into_iter()
+                .filter(|(k, _)| !k.starts_with("resource-attribution/"))
+                .collect()
+        };
+        assert_eq!(
+            restored_settings(preferences(&s)),
+            restored_settings(written.preferences().unwrap()),
+            "the restore changed the restored settings: {what}"
+        );
+        let stored = crate::backup_check::StoredRecords::read(&written).unwrap();
+        assert_eq!(
+            s.unkept_records(&stored),
+            Vec::<String>::new(),
+            "a loader did not keep all of it: {what}"
+        );
+        s.undo_restore().unwrap();
+    }
+    assert!(
+        refused > 50 && restored > 20,
+        "{refused} refused, {restored} restored"
+    );
 }
 
 /// #258: a restore replaces the Notes a Notes search found; open Search Tabs run their

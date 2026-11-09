@@ -190,11 +190,32 @@ pub struct KeyBindings {
 }
 
 impl KeyBindings {
-    fn to_json(&self) -> Value {
+    pub(crate) fn to_json(&self) -> Value {
         let map: Map<String, Value> = (self.overrides.iter())
             .map(|(id, key)| (id.clone(), key.clone().map_or(Value::Null, Value::String)))
             .collect();
         Value::Object(map)
+    }
+
+    /// A saved record with each Selection key's old id as its new one, as
+    /// [`Self::from_json`] reads it, for a restore to compare with what the app would write
+    /// back (#258). An old id whose new one the record holds too stays as it is: the loader
+    /// would keep only one of the two.
+    pub(crate) fn upgrade_record(v: &Value) -> Value {
+        let Some(map) = v.as_object() else {
+            return v.clone();
+        };
+        let mut out = Map::new();
+        for (id, key) in map {
+            let current = current_binding_id(id);
+            let id = if current != id && map.contains_key(current) {
+                id
+            } else {
+                current
+            };
+            out.insert(id.to_string(), key.clone());
+        }
+        Value::Object(out)
     }
 
     /// The keys of a saved record; a key that no longer reads is dropped (its default

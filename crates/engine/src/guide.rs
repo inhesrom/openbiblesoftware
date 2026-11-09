@@ -563,31 +563,6 @@ impl GuideArrangement {
         Self { sections, filters }
     }
 
-    /// Whether [`from_json`](Self::from_json) keeps every section `json` holds: it reads,
-    /// and names each section it holds one of `guide`'s, once, filtered to a Collection only
-    /// where the section can be. A restore refuses a Backup whose Guide arrangement it would
-    /// not (#258).
-    pub(crate) fn keeps_every_section(guide: Guide, json: &str) -> bool {
-        let Ok(stored) = serde_json::from_str::<Stored>(json) else {
-            return false;
-        };
-        let mut seen = Vec::new();
-        stored
-            .sections
-            .iter()
-            .all(|p| match GuideSection::from_id(&p.id) {
-                Some(section)
-                    if guide.sections().contains(&section)
-                        && !seen.contains(&section)
-                        && (p.collection.is_none() || section.filterable()) =>
-                {
-                    seen.push(section);
-                    true
-                }
-                _ => false,
-            })
-    }
-
     pub fn to_json(&self) -> String {
         let stored = Stored {
             sections: self
@@ -1338,7 +1313,7 @@ impl Guides {
 /// The start of the preference key of each Guide's Guide arrangement.
 pub(crate) const ARRANGEMENT_PREF_PREFIX: &str = "guide-arrangement/";
 
-fn pref(guide: Guide) -> String {
+pub(crate) fn pref(guide: Guide) -> String {
     format!("{ARRANGEMENT_PREF_PREFIX}{}", guide.id())
 }
 

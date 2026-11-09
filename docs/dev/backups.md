@@ -8,7 +8,7 @@ single-instance Tab with all of it.
 | Layer | Piece | Role |
 |---|---|---|
 | `obs-store` | `backup.rs`, `backup_store.rs` | `UserStore::back_up`, `open_backup`, `backup_contents`, `restore`, `refuse_own_file`, `backups`, `contents`, `preferences`, `local_time`; `BackupKind`, `BackupFile`, `BackupContents`. |
-| `obs-engine` | `backups.rs`, `backup_check.rs` | `UserData`'s backup methods; the check of what the engine keeps inside rows (`unreadable_records`, `JSON_SETTINGS`); the restore preview (`restore_lines`); reloading the Session after a restore; Undo restore; Export everything; commands `data.back_up`, `data.restore`, `data.undo_restore`, `data.export`. |
+| `obs-engine` | `backups.rs`, `backup_check.rs` | `UserData`'s backup methods; the trial restore of what the engine keeps inside rows (`Session::trial_restore`, `unkept_records`, `held_settings`); the restore preview (`restore_lines`); reloading the Session after a restore; Undo restore; Export everything; commands `data.back_up`, `data.restore`, `data.undo_restore`, `data.export`. |
 | `obs-ui-egui` | `shell/backups_tab.rs` | The Tab: native save/open dialogs on their own thread, the preview panel, the kept Backups list. |
 
 ## The Backup file
@@ -57,33 +57,54 @@ single-instance Tab with all of it.
    page size (`VACUUM`), then deleted, however the restore ends (a `ScratchFile` guard).
 
 `Session::restore_backup(path)` reads the Backup into memory once (`UserData::open_backup`),
-checks that copy, and hands the same copy to `UserData::restore` (`UserStore::restore_from`):
-the file is not read again, so one changed between the checks and the restore cannot put back
-anything unchecked (#258). Before anything is written, it checks what the engine keeps inside
-rows, which the store cannot read (`backup_check.rs`, #258): every Layout's Workspace snapshot and every Favorite's and Visit's
-location must read, and so must every setting the app keeps as JSON (`JSON_SETTINGS`: View
-settings, Custom theme, toolbar, keys, Update check settings, First-run tour, Home, Guide arrangements, Saved searches, Search history, recent
-searches and Command box entries, Copy verses, Collections, Resource tags, Visual filters,
-the Starter library state, Import reports, kept Attributions), each as the type its loader
-reads; a Layout must not hold two Tabs with one id (restoring it would keep only one of them);
-a Reading plan's start day must read (the loader leaves out a plan whose start day does not)
-and so must each of its Readings' Passages and day (the loader leaves out such a Reading).
-Settings the loader keeps only part of are checked as it reads them: a field of View,
-Toolbar, Keyboard shortcuts, Update check settings or the First-run tour must read; Keyboard
-shortcuts must not bind a Selection key under both its old id and its new one (the loader
-applies the old to the new and keeps one); a View Text size must not be above the maximum nor
-a Line spacing outside 1.0–2.0, which the loader would clamp (a Text size below the minimum is
-read: the app resets it with a notice, #241); a Search history must not hold more than
-`SEARCH_HISTORY_LIMIT` entries, which the loader would cut; a Home arrangement or Toolbar must hold each card or
-Launcher this version knows once, a Guide arrangement each section of its Guide once (filtered to
-a Collection only where it can be); an Import report must be the report of the Resource its key
-names. The app reads each of those leniently at launch (an unreadable one left out or at its
-default, a repeated or unknown card or section dropped), so without this a restore would drop or default them silently once the live data is
-gone. A Backup with any of them is refused, naming each ("the Layout “Broken”", "the setting
-`search.saved` (Saved searches)"), with nothing changed. Plain-text settings (Log level, the
-last Notebook used...) are not checked: any text is one. A test
-(`every_setting_the_engine_keeps_is_known_to_the_restore_check`) fails when a new `*_PREF`
-constant is in neither `JSON_SETTINGS` nor its plain-text list.
+loads that copy in a **trial restore**, and hands the same copy to `UserData::restore`
+(`UserStore::restore_from`): the file is not read again, so one changed meanwhile cannot put
+back anything the trial did not load (#258). The trial (`backup_check.rs`) is how the app
+knows a restore would keep everything the engine keeps *inside* rows, which the store cannot
+read. Rather than a check per kind of record (which kept drifting from the loaders, review
+rounds of #258), it runs the loaders themselves:
+
+1. `StoredRecords::read` takes what the Backup holds before anything loads it (loading writes:
+   a Text size too small to read is reset, the library's Attributions are confirmed).
+2. `UserData::copy_in_memory` copies the Backup page for page, and a Session of its own, with
+   this Session's library, attaches the copy exactly as a launch does (`attach_user`: every
+   loader), restores every Layout with `layout.restore`, and reads what is read on demand
+   (recent searches, Command box entries, Word forms, kept Attributions). This Session, the
+   Backup in memory and the file are not changed. The process's Log level, which loading
+   sets, is put back.
+3. `Session::unkept_records` compares what that Session holds with what the Backup held: every
+   Favorite and Visit (by id, each location kept), every Reading plan and each of its Readings
+   (by position), every Tab of every Layout (by id, each as stored, but those of Resources not
+   in the library, which a launch leaves out too), and every setting a loader reads
+   (`held_settings`: the value the app would write for it now). A setting is kept when its
+   value now holds every value the stored one holds (`holds`): the same number (as written or
+   as the app keeps it, `f32`), text and flag, each field of an object (one missing now only if
+   it carried nothing: `null`, `false`, `0`, empty), and each item of a list, matched once in
+   any order, so a repeated item kept once, an unknown id set back to its default, a clamped or
+   cut value, a wrong-typed field and a field this version does not know (with a value) all
+   count as lost. Records from an older version are first put in today's shape by their
+   loader's own upgrade (`appearance::upgrade_record`: #37's `dark_page` and boolean
+   `verse_numbers`, a Text size saved while it was the default; `KeyBindings::upgrade_record`:
+   old Selection key ids, unless the record holds the new id too, when the loader would keep
+   only one).
+4. A panic while loading (a record no loader expected) is caught (`catch_unwind`) and refuses
+   the Backup as damaged ("it is damaged (the app stopped reading it: …)"). The loaders the
+   reviews found panicking now refuse instead: `PlanDate::parse` reads only years 1–9999 and
+   days 1–31 before any arithmetic, and a Reading's number is counted in `u64`.
+
+A Backup with anything the trial did not keep is refused, naming each ("the Layout “Broken”",
+"the Favorite “John 3:16”", "2 History visits", "the Reading plan “Gospel”", "Reading 3 of the
+Reading plan “Gospel”", "the setting `search.saved` (Saved searches)"), before a Safety backup
+is taken, with nothing changed. Two settings are not compared, because they only name another
+record and fall back to the default when it is gone, as at launch: the last Notebook used and
+the active Highlight palette. A setting no loader reads (a Guide arrangement of a Guide this
+version does not have, the Import report of a Resource not in the library) is restored as it
+is; nothing reads or overwrites it. The Last session is not compared either: a restore keeps
+the open Workspace, and the next save writes it over the Backup's (ADR 0013). Two tests keep the
+trial complete: `every_setting_the_engine_keeps_is_compared_by_the_trial_restore` fails when a
+`*_PREF`, `*_PREF_PREFIX` or `*_KEY` constant is neither compared nor listed as a pointer, and
+`a_backup_of_what_the_app_writes_passes_the_restore_check` fails when a setting the app writes
+is not compared or not kept.
 
 `Session::restore_backup(path)` then sets the preferences `attach_user` only overwrites when the
 database has them (View settings and fonts, toolbar, Guide arrangements, Copy verses, Import
@@ -105,9 +126,8 @@ A restore that fails before step 2 changes nothing at all: the Session keeps its
 undo history included, and no Safety backup is taken.
 
 **Undo restore** (`data.undo_restore`, enabled after a restore in this run) restores the last
-restore's Safety backup, taking a Safety backup of its own. It skips the check of what the
-engine keeps inside rows: the Safety backup is the data as it was in use, and is put back as
-it was.
+restore's Safety backup, taking a Safety backup of its own. It skips the trial restore: the
+Safety backup is the data as it was in use, and is put back as it was.
 
 Before the Tab runs either, it saves the Note being written and the Notes card being edited
 (`settle_note_editors`, as closing the window does), so text typed before the restore is in
@@ -118,8 +138,8 @@ being typed, Delete Notebook's question, a Re-attach).
 
 ## The preview
 
-`Session::restore_preview(path)` runs the same check as `restore_backup` (a Backup it refuses
-shows why instead of a preview), then compares `UserData::contents()` (now) with the contents
+`Session::restore_preview(path)` runs the same trial restore as `restore_backup` (a Backup it
+refuses shows why instead of a preview), then compares `UserData::contents()` (now) with the contents
 of `open_backup(path)` (the migrated copy) as `RestoreLine`s: Notebooks, Notes, Highlights,
 Layouts, Reading plans, Favorites, History visits and Settings (preference rows), each with
 both counts, and for the named ones what comes back and what goes ("brings back “Romans”").
@@ -154,11 +174,18 @@ uses):
   default (compared with a Session launched on the Backup), font choices included; Back up now
   and Export everything refusing the User database; a refused restore keeping undo; Export
   everything's files, remembered Resource names of a removed Resource included; a Backup with
-  an unreadable Layout, Favorite, Visit or JSON setting refused naming each, a Layout with two
-  Tabs of one id refused naming it, a Reading plan with an unreadable start day or Reading
-  refused naming the plan or the Reading, and one whose
-  View values the loader would clamp or whose Search history it would cut refused too, while one of
-  everything the app writes passes; every `*_PREF` constant known to the check; open Notes
+  an unreadable Layout, Favorite, Visit or setting refused naming each, a Layout with two
+  Tabs of one id, a Reading plan with an unreadable start day or Reading, dates far outside
+  the calendar and a Reading at position `u32::MAX` refused naming each, settings whose loaders
+  would default, drop, clamp or cut a field refused while older records still restore, a
+  loader's panic refused as damaged, and one of everything the app writes passing;
+  `every_change_to_a_backup_is_refused_cleanly_or_restored_whole` changes each value of such a
+  Backup in turn (about 380 cases: huge and negative numbers, wrong types, unknown ids,
+  impossible dates, repeated items and ids, a shortcut under its old and new id, text that is
+  not JSON) and checks each is refused by preview and restore alike with the live data and
+  kept Backups unchanged, or restored with nothing changed by the restore and every loader of
+  the live Session keeping all of it, and that nothing panics; every `*_PREF` constant compared
+  by the trial; open Notes
   searches run again after a restore and after Undo restore.
 - `crates/store/tests/user_db.rs` (`a_refused_database_is_not_changed`): a newer or foreign
   database is refused at launch byte for byte unchanged (its journal mode is read, not set to

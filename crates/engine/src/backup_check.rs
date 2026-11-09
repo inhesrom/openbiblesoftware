@@ -1,404 +1,433 @@
-//! What a Backup must hold readable before a restore may replace the User database (#258).
+//! The trial restore (#258): what a restore of a Backup would lose, found by loading it.
 //!
 //! The store checks the database itself (`obs_store`'s `backup_store.rs`: every table,
 //! column and row readable, no row pointing at one that is not there). What the engine keeps
-//! *inside* rows is its own: a Layout's Workspace snapshot, a Favorite's or a Visit's
-//! location, a Reading plan's start day and each of its Readings' Passages and day, and the
-//! settings it keeps as JSON ([`JSON_SETTINGS`]). The app reads each of
-//! those leniently at launch: an unreadable one is left out or back at its default, and so is
-//! an unreadable field of a setting read field by field (a View setting, a Keyboard
-//! shortcut, an Update check flag, whether the First-run tour was shown), a Custom theme from a later version, a View Text size or Line spacing beyond what the app
-//! allows (it would be clamped), a Layout holding two Tabs with one id (restoring it would
-//! keep one of them), a Search history longer than the app keeps (its oldest
-//! entries would be dropped), a repeated or unknown card of Home or section of a Guide
-//! arrangement, and an Import report filed under another Resource's key. So a restore checks
-//! them first, and a Backup holding one the app would not keep is refused, naming it, rather
-//! than silently losing it after the live data is gone.
+//! *inside* rows (Layouts, Favorite and Visit locations, Reading plans' days and Passages, and
+//! the settings it keeps as JSON or text) only its loaders read, and they read leniently: an
+//! unreadable record is left out, an unreadable or unknown field is left at its default, a
+//! value out of range is clamped, a repeated entry is kept once. So rather than check each
+//! kind of record on its own (which drifts from the loaders), a restore first loads the
+//! Backup with the loaders themselves ([`Session::trial_restore`]):
 //!
-//! Plain-text settings (a Log level, the last Notebook used) are not checked: any text is
-//! one, and a value the app does not know is its default.
+//! 1. What the Backup holds is read first ([`StoredRecords`]), since loading writes. Then a
+//!    copy of it, in memory, is attached to a Session of its own with this
+//!    Session's library, exactly as a launch on it would ([`Session::attach_user`]), every
+//!    Layout is restored with `layout.restore`, and what is read on demand (recent searches,
+//!    Command box entries, Word forms, kept Attributions) is read.
+//! 2. What that Session then holds is compared with what the Backup holds
+//!    ([`Session::unkept_records`]): every Favorite, Visit, Reading plan, Reading and Layout
+//!    Tab must be there, each location as stored, and each setting the loaders read must be
+//!    what the app would write back for it now, holding every value the stored one holds
+//!    ([`holds`]). A record from an older version is first put in today's shape by the
+//!    loader's own upgrade (`appearance::upgrade_record`, `KeyBindings::upgrade_record`).
+//! 3. A panic while loading (a record no loader expected) is caught and refuses the Backup
+//!    as damaged.
+//!
+//! A Backup with anything the trial did not keep is refused, naming each, before a Safety
+//! backup is taken or anything is replaced. Two settings are not compared: the last Notebook
+//! used and the active Highlight palette only name another record, and fall back to the
+//! default when it is gone, as at launch. A setting no loader reads (a Guide arrangement of a
+//! Guide this version does not have) is restored as it is; nothing reads or overwrites it.
 
-use serde::de::DeserializeOwned;
-use serde_json::Value;
+use std::collections::BTreeMap;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use crate::appearance::{
-    FontSlot, InterfaceSize, LINE_SPACING_MAX, LINE_SPACING_MIN, PageTone, TEXT_SIZE_MAX, Theme,
-    VERSE_NUMBER_STYLES,
-};
-use crate::favorites::TabLocation;
+use serde::Serialize;
+use serde_json::{Value, json};
+
 use crate::persist::{UserData, WorkspaceSnapshot};
-use crate::reading_plans::{Reading, ReadingPlan};
-use crate::toolbar::Launcher;
-use crate::toolbar_settings::{LauncherLabels, ToolbarPosition};
+use crate::session::{JobMode, Session};
 
-/// A setting the app keeps as JSON in the User database.
-pub(crate) struct JsonSetting {
-    /// Its preference key; one ending in `/` or `.` is the start of one key per Guide,
-    /// search mode or Resource.
-    pub key: &'static str,
+/// One setting as a Session holds it after loading.
+pub(crate) struct HeldSetting {
+    /// Its preference key.
+    pub key: String,
     /// What the user calls it.
     pub what: &'static str,
-    /// Whether the app keeps all of a value of it, given the key it is under (a Guide
-    /// arrangement is one Guide's, an Import report one Resource's) and the value.
-    pub reads: fn(&str, &str) -> bool,
+    /// What the app would write for it now; `None` when the Session holds none of it, so a
+    /// stored one was left out.
+    pub value: Option<String>,
 }
 
-impl JsonSetting {
-    /// Whether `key` is this setting's key (or one it starts).
-    pub(crate) fn names(&self, key: &str) -> bool {
-        if self.key.ends_with(['/', '.']) {
-            key.starts_with(self.key)
-        } else {
-            key == self.key
-        }
+fn held(key: impl Into<String>, what: &'static str, value: Option<String>) -> HeldSetting {
+    HeldSetting {
+        key: key.into(),
+        what,
+        value,
     }
 }
 
-/// Whether `json` reads as a `T`, as the setting's loader reads it.
-fn reads<T: DeserializeOwned>(_key: &str, json: &str) -> bool {
-    serde_json::from_str::<T>(json).is_ok()
+fn written(v: &impl Serialize) -> Option<String> {
+    serde_json::to_string(v).ok()
 }
 
-/// A field check: whether the loader reads this present value rather than leaving it at
-/// its default.
-type FieldCheck = fn(&Value) -> bool;
-
-/// Whether `json` is an object each of whose `fields` that is present reads. The settings
-/// read field by field (View, Toolbar, Update check) leave a field they cannot read at its
-/// default, so a Backup holding one must be refused here. Fields the app does not know are
-/// ignored on load and here.
-fn object_with(json: &str, fields: &[(&str, FieldCheck)]) -> bool {
-    let Ok(Value::Object(v)) = serde_json::from_str::<Value>(json) else {
-        return false;
-    };
-    fields
-        .iter()
-        .all(|(name, reads)| v.get(*name).is_none_or(reads))
+/// What a User database holds that the trial restore compares, read before anything loads
+/// it: loading writes to it (a Text size too small to read is reset, the Attributions of the
+/// library's Resources are confirmed).
+pub(crate) struct StoredRecords {
+    preferences: BTreeMap<String, String>,
+    favorites: Vec<obs_store::FavoriteRow>,
+    visits: Vec<obs_store::VisitRow>,
+    plans: Vec<(obs_store::ReadingPlanRow, Vec<obs_store::PlanReadingRow>)>,
+    layouts: Vec<(String, Option<String>)>,
 }
 
-fn is_bool(v: &Value) -> bool {
-    v.is_boolean()
-}
-
-fn is_number(v: &Value) -> bool {
-    v.is_number()
-}
-
-/// The View settings, as `appearance::apply_json` reads them, with the records from #37 (a
-/// `dark_page` flag and a boolean `verse_numbers`). A Text size above the maximum or a Line
-/// spacing outside its range would be clamped, so is refused; a Text size below the minimum
-/// is read, since the app resets it with a notice (#241).
-fn reads_view(_key: &str, json: &str) -> bool {
-    object_with(
-        json,
-        &[
-            ("theme", |v| v.as_str().and_then(Theme::from_id).is_some()),
-            ("page_tone", |v| {
-                v.as_str().and_then(PageTone::from_id).is_some()
-            }),
-            ("dark_page", is_bool),
-            ("interface_size", |v| {
-                v.as_str().and_then(InterfaceSize::from_id).is_some()
-            }),
-            ("text_size", |v| {
-                v.as_f64().is_some_and(|s| s as f32 <= TEXT_SIZE_MAX)
-            }),
-            ("text_size_default", is_number),
-            ("line_spacing", |v| {
-                v.as_f64()
-                    .is_some_and(|s| (LINE_SPACING_MIN..=LINE_SPACING_MAX).contains(&(s as f32)))
-            }),
-            ("red_letter", is_bool),
-            ("highlights", is_bool),
-            ("reduce_motion", is_bool),
-            ("verse_numbers", |v| match v {
-                Value::String(s) => VERSE_NUMBER_STYLES.iter().any(|c| c.1 == s),
-                Value::Bool(_) => true,
-                _ => false,
-            }),
-            ("fonts", reads_fonts),
-            // Written as `null` only if the layout could not be written.
-            ("reading_layout", |v| {
-                v.is_null()
-                    || serde_json::from_value::<obs_layout::ReadingLayout>(v.clone()).is_ok()
-            }),
-        ],
-    )
-}
-
-/// The font choices of the View settings: per script slot, a family (blank: none chosen)
-/// with its style and whether its absence was noticed.
-fn reads_fonts(v: &Value) -> bool {
-    let Some(fonts) = v.as_object() else {
-        return false;
-    };
-    FontSlot::ALL.iter().all(|slot| {
-        fonts.get(slot.id()).is_none_or(|c| {
-            c.as_object().is_some_and(|c| {
-                c.get("family").is_some_and(Value::is_string)
-                    && c.get("style").is_none_or(Value::is_string)
-                    && c.get("missing_noticed").is_none_or(is_bool)
-            })
+impl StoredRecords {
+    pub(crate) fn read(user: &dyn UserData) -> Result<Self, String> {
+        let mut plans = Vec::new();
+        for plan in user.reading_plans()? {
+            let readings = user.plan_readings(plan.id)?;
+            plans.push((plan, readings));
+        }
+        let mut layouts = Vec::new();
+        for name in user.layouts()? {
+            let json = user.layout(&name)?;
+            layouts.push((name, json));
+        }
+        Ok(Self {
+            preferences: user.preferences()?.into_iter().collect(),
+            favorites: user.favorites()?,
+            visits: user
+                .history_as_of(i64::try_from(crate::get_bibles::now_secs()).unwrap_or(0))?,
+            plans,
+            layouts,
         })
-    })
+    }
 }
 
-/// The Toolbar, as `ToolbarSettings::from_json` reads it: each Launcher once.
-fn reads_toolbar(_key: &str, json: &str) -> bool {
-    object_with(
-        json,
-        &[
-            ("position", |v| {
-                v.as_str().and_then(ToolbarPosition::from_id).is_some()
-            }),
-            ("auto_hide", is_bool),
-            ("labels", |v| {
-                v.as_str().and_then(LauncherLabels::from_id).is_some()
-            }),
-            ("launchers", |v| {
-                let Some(list) = v.as_array() else {
-                    return false;
-                };
-                let mut seen = Vec::new();
-                list.iter().all(|item| {
-                    let launcher = item["id"].as_str().and_then(Launcher::from_id);
-                    let read = launcher.is_some_and(|l| !seen.contains(&l))
-                        && item.get("shown").is_none_or(is_bool);
-                    seen.extend(launcher);
-                    read
-                })
-            }),
-        ],
-    )
-}
+impl Session {
+    /// Load `backup` (a Backup read into memory) into a Session of its own, as a launch on it
+    /// would with this Session's library, and list what the app would not keep of it
+    /// ([`Session::unkept_records`]). The trial loads a copy, so `backup` is not changed, and
+    /// this Session is not either. A panic while loading refuses the Backup as damaged.
+    pub(crate) fn trial_restore(&self, backup: &dyn UserData) -> Result<Vec<String>, String> {
+        let stored = StoredRecords::read(backup)?;
+        let copy = backup.copy_in_memory()?;
+        let library = self.library.clone();
+        let tried = catch_unwind(AssertUnwindSafe(move || {
+            let mut trial = Session::new(JobMode::Inline);
+            trial.library = library;
+            trial.attach_user(copy);
+            trial.unkept_records(&stored)
+        }));
+        // Loading applied the Backup's Log level to the process: put this Session's back.
+        crate::diagnostics::set_log_level(self.log_level());
+        tried.map_err(|panic| {
+            format!(
+                "the app stopped reading it: {}",
+                crate::diagnostics::panic_message(&*panic)
+            )
+        })
+    }
 
-/// The Keyboard shortcuts, as `KeyBindings::from_json` reads them: per command id, a key it
-/// can read or `null` for no key. A Selection key's old id counts as its new one, so the
-/// two together would leave one binding out.
-fn reads_key_bindings(_key: &str, json: &str) -> bool {
-    let Ok(Value::Object(keys)) = serde_json::from_str::<Value>(json) else {
-        return false;
-    };
-    let mut ids = std::collections::BTreeSet::new();
-    keys.iter().all(|(id, key)| {
-        let read = match key {
-            Value::Null => true,
-            Value::String(k) => crate::key_bindings::canonical_key(k).is_ok(),
-            _ => false,
+    /// What this Session, having loaded a User database that held `stored`, did not keep of
+    /// it, one line each: "the Layout “Broken”", "the Favorite “John 3:16”", "2 History
+    /// visits", "the Reading plan “Gospel”", "Reading 3 of the Reading plan “Gospel”", "the
+    /// setting `view` (View settings)". Empty when it kept everything. Restores every Layout,
+    /// so the Workspace is not as it was.
+    pub(crate) fn unkept_records(&mut self, stored: &StoredRecords) -> Vec<String> {
+        let mut out = Vec::new();
+        for f in &stored.favorites {
+            let kept = self
+                .favorites()
+                .iter()
+                .find(|h| h.id == f.id)
+                .is_some_and(|h| keeps("", &f.location, &h.location.to_json()));
+            if !kept {
+                out.push(format!("the Favorite “{}”", f.label));
+            }
+        }
+        let lost_visits = stored
+            .visits
+            .iter()
+            .filter(|v| {
+                !self
+                    .history()
+                    .iter()
+                    .find(|h| h.id == v.id)
+                    .is_some_and(|h| keeps("", &v.location, &h.location.to_json()))
+            })
+            .count();
+        match lost_visits {
+            0 => {}
+            1 => out.push("1 History visit".to_string()),
+            n => out.push(format!("{n} History visits")),
+        }
+        for (plan, readings) in &stored.plans {
+            let Some(held) = self.reading_plan(plan.id) else {
+                out.push(format!("the Reading plan “{}”", plan.name));
+                continue;
+            };
+            for r in readings {
+                if !held.readings.iter().any(|h| h.position == r.position) {
+                    out.push(format!(
+                        "Reading {} of the Reading plan “{}”",
+                        u64::from(r.position) + 1,
+                        plan.name
+                    ));
+                }
+            }
+        }
+        for (name, json) in &stored.layouts {
+            if !self.keeps_layout(name, json.as_deref()) {
+                out.push(format!("the Layout “{name}”"));
+            }
+        }
+        for h in self.held_settings(&stored.preferences) {
+            let Some(value) = stored.preferences.get(&h.key) else {
+                continue;
+            };
+            let kept = match &h.value {
+                Some(now) => keeps(&h.key, value, now),
+                // Nothing held: kept only if the stored value said nothing either (`null`
+                // over the Import report of a removed Resource).
+                None => serde_json::from_str::<Value>(value).is_ok_and(|v| carries_nothing(&v)),
+            };
+            if !kept {
+                out.push(format!("the setting `{}` ({})", h.key, h.what));
+            }
+        }
+        out
+    }
+
+    /// Whether `layout.restore` keeps every Tab of the Layout `name` (its snapshot `json`) as
+    /// stored, but those of Resources not in the library, which it leaves out as a launch does.
+    fn keeps_layout(&mut self, name: &str, json: Option<&str>) -> bool {
+        let Some(stored) = json
+            .and_then(WorkspaceSnapshot::from_json)
+            .map(|s| s.without_missing(|id| self.library.get(id).is_some()))
+        else {
+            return false;
         };
-        read && ids.insert(crate::key_bindings::current_binding_id(id))
-    })
-}
-
-/// The Update check settings, as `Session::load_update_settings` reads them.
-fn reads_update_settings(_key: &str, json: &str) -> bool {
-    object_with(
-        json,
-        &[
-            ("auto_check", is_bool),
-            ("prereleases", is_bool),
-            ("explained", is_bool),
-            // `null`: no release skipped.
-            ("skipped", |v| v.is_null() || v.is_string()),
-        ],
-    )
-}
-
-/// Whether the First-run tour was shown, as `Session::load_tour` reads it (an unreadable one
-/// would start the tour again).
-fn reads_tour(_key: &str, json: &str) -> bool {
-    object_with(json, &[("shown", is_bool)])
-}
-
-/// A Guide arrangement, as `Session::load_guide_arrangements` reads it: under the key of a
-/// Guide, each of that Guide's sections once.
-fn reads_guide_arrangement(key: &str, json: &str) -> bool {
-    key.strip_prefix(crate::guide::ARRANGEMENT_PREF_PREFIX)
-        .and_then(crate::Guide::from_id)
-        .is_some_and(|guide| crate::guide::GuideArrangement::keeps_every_section(guide, json))
-}
-
-/// An Import report, as `Session::restore_import_reports` reads it: the report of the
-/// Resource its key names. `null`: the Resource was removed.
-fn reads_import_report(key: &str, json: &str) -> bool {
-    match serde_json::from_str::<Option<crate::import::ImportRecord>>(json) {
-        Ok(None) => true,
-        Ok(Some(record)) => {
-            key.strip_prefix(crate::import::REPORT_PREF_PREFIX) == Some(&record.resource_id)
+        if self
+            .run("layout.restore", &json!({ "name": name }))
+            .is_err()
+        {
+            return false;
         }
-        Err(_) => false,
+        let restored = self.workspace.snapshot();
+        restored.tabs.len() >= stored.tabs.len()
+            && stored.tabs.iter().all(|t| {
+                restored.tabs.iter().any(|r| {
+                    r.id == t.id
+                        && match (serde_json::to_value(t), serde_json::to_value(r)) {
+                            (Ok(t), Ok(r)) => holds(&t, &r),
+                            _ => false,
+                        }
+                })
+            })
     }
-}
 
-/// Every setting the app keeps as JSON, with how its loader reads it.
-pub(crate) const JSON_SETTINGS: &[JsonSetting] = &[
-    JsonSetting {
-        key: crate::session::VIEW_PREF,
-        what: "View settings (Text size, Theme, fonts)",
-        reads: reads_view,
-    },
-    JsonSetting {
-        key: crate::custom_theme::CUSTOM_THEME_PREF,
-        what: "Custom theme",
-        reads: |_, json| {
-            serde_json::from_str::<crate::custom_theme::ThemeFile>(json)
-                .is_ok_and(|f| crate::custom_theme::CustomTheme::from_file(&f).is_ok())
-        },
-    },
-    JsonSetting {
-        key: crate::toolbar_settings::TOOLBAR_PREF,
-        what: "Toolbar",
-        reads: reads_toolbar,
-    },
-    JsonSetting {
-        key: crate::key_bindings::KEY_BINDINGS_PREF,
-        what: "Keyboard shortcuts",
-        reads: reads_key_bindings,
-    },
-    JsonSetting {
-        key: crate::updates::UPDATES_PREF,
-        what: "Update check settings",
-        reads: reads_update_settings,
-    },
-    JsonSetting {
-        key: crate::tour::TOUR_PREF,
-        what: "First-run tour",
-        reads: reads_tour,
-    },
-    JsonSetting {
-        key: crate::home::HOME_PREF,
-        what: "Home",
-        reads: |_, json| crate::home::HomeSettings::keeps_every_card(json),
-    },
-    JsonSetting {
-        key: crate::guide::ARRANGEMENT_PREF_PREFIX,
-        what: "Guide arrangement",
-        reads: reads_guide_arrangement,
-    },
-    JsonSetting {
-        key: crate::saved_searches::SAVED_PREF,
-        what: "Saved searches",
-        reads: reads::<Vec<crate::saved_searches::NamedSearch>>,
-    },
-    JsonSetting {
-        key: crate::saved_searches::HISTORY_PREF,
-        what: "Search history",
-        // The loader keeps the newest `SEARCH_HISTORY_LIMIT` entries.
-        reads: |_, json| {
-            serde_json::from_str::<Vec<crate::saved_searches::SearchHistoryEntry>>(json)
-                .is_ok_and(|h| h.len() <= crate::saved_searches::SEARCH_HISTORY_LIMIT)
-        },
-    },
-    JsonSetting {
-        key: crate::bible_search::RECENT_PREF_PREFIX,
-        what: "recent searches",
-        reads: reads::<Vec<String>>,
-    },
-    JsonSetting {
-        key: crate::command_box::RECENT_PREF,
-        what: "recent Command box entries",
-        reads: reads::<Vec<String>>,
-    },
-    JsonSetting {
-        key: crate::copy_verses::OPTIONS_PREF,
-        what: "Copy verses options",
-        reads: reads::<crate::copy_verses::CopyOptions>,
-    },
-    JsonSetting {
-        key: crate::copy_verses::PRESETS_PREF,
-        what: "Copy presets",
-        reads: reads::<Vec<crate::copy_verses::CopyPreset>>,
-    },
-    JsonSetting {
-        key: crate::collections::COLLECTIONS_PREF,
-        what: "Collections",
-        reads: reads::<Vec<crate::collections::Collection>>,
-    },
-    JsonSetting {
-        key: crate::collections::TAGS_PREF,
-        what: "Resource tags",
-        reads: reads::<std::collections::BTreeMap<String, Vec<String>>>,
-    },
-    JsonSetting {
-        key: crate::visual_filters::VISUAL_FILTERS_PREF,
-        what: "Visual filters",
-        reads: reads::<Vec<crate::visual_filters::VisualFilter>>,
-    },
-    JsonSetting {
-        key: crate::starter::STATE_PREF,
-        what: "Starter library",
-        reads: reads::<crate::starter::StarterState>,
-    },
-    JsonSetting {
-        // Removing a Resource writes `null` over its report.
-        key: crate::import::REPORT_PREF_PREFIX,
-        what: "Import report",
-        reads: reads_import_report,
-    },
-    JsonSetting {
-        key: crate::notes_export::ATTRIBUTION_PREF_PREFIX,
-        what: "kept Attribution",
-        reads: reads::<crate::notes_export::KeptAttribution>,
-    },
-];
-
-/// Whether every Tab of a Layout has its own id: restoring the Layout keeps one Tab per id,
-/// so a second Tab with the same id would be dropped.
-fn holds_each_tab_once(snap: &WorkspaceSnapshot) -> bool {
-    let mut ids = std::collections::BTreeSet::new();
-    snap.tabs.iter().all(|t| ids.insert(t.id))
-}
-
-/// Everything in `data` (a Backup, read into memory) the app could not read once it is the
-/// User database, one line each: "the Layout “Broken”", "the setting `search.saved` (Saved
-/// searches)". Empty when it can all be read.
-pub(crate) fn unreadable_records(data: &dyn UserData) -> Result<Vec<String>, String> {
-    let mut out = Vec::new();
-    for name in data.layouts()? {
-        let readable = data
-            .layout(&name)?
-            .and_then(|json| WorkspaceSnapshot::from_json(&json))
-            .is_some_and(|snap| holds_each_tab_once(&snap));
-        if !readable {
-            out.push(format!("the Layout “{name}”"));
+    /// Every setting the loaders read, with what the app would write for it now. `stored`
+    /// names the kept Attributions, which are read on demand by key.
+    pub(crate) fn held_settings(&mut self, stored: &BTreeMap<String, String>) -> Vec<HeldSetting> {
+        let view = crate::appearance::to_json(&self.appearance, &self.text, &self.fonts);
+        let collections = self.library.collection_set();
+        let mut out = vec![
+            held(
+                crate::session::VIEW_PREF,
+                "View settings",
+                Some(view.to_string()),
+            ),
+            held(
+                crate::custom_theme::CUSTOM_THEME_PREF,
+                "Custom theme",
+                written(&self.custom_theme.to_file()),
+            ),
+            held(
+                crate::toolbar_settings::TOOLBAR_PREF,
+                "Toolbar",
+                Some(self.toolbar.to_json().to_string()),
+            ),
+            held(
+                crate::appearance::PAGE_TONE_HINT_PREF,
+                "Page tone hint",
+                self.page_tone_hinted.then(|| "shown".to_string()),
+            ),
+            held(crate::home::HOME_PREF, "Home", Some(self.home.to_json())),
+            held(
+                crate::copy_verses::OPTIONS_PREF,
+                "Copy verses options",
+                written(&self.copy_verses.options),
+            ),
+            held(
+                crate::copy_verses::PRESETS_PREF,
+                "Copy presets",
+                written(&self.copy_verses.presets),
+            ),
+            held(
+                crate::collections::COLLECTIONS_PREF,
+                "Collections",
+                written(&collections.collections),
+            ),
+            held(
+                crate::collections::TAGS_PREF,
+                "Resource tags",
+                written(&collections.tags),
+            ),
+            held(
+                crate::visual_filters::VISUAL_FILTERS_PREF,
+                "Visual filters",
+                written(&self.visual_filters.list),
+            ),
+            held(
+                crate::visual_filters::VISUAL_FILTERS_NEXT_ID_PREF,
+                "Visual filters",
+                Some(self.visual_filters.next_id.to_string()),
+            ),
+            held(
+                crate::saved_searches::SAVED_PREF,
+                "Saved searches",
+                written(&self.saved_searches()),
+            ),
+            held(
+                crate::saved_searches::HISTORY_PREF,
+                "Search history",
+                written(&self.search_history()),
+            ),
+            held(
+                crate::key_bindings::KEY_BINDINGS_PREF,
+                "Keyboard shortcuts",
+                Some(self.keys.to_json().to_string()),
+            ),
+            held(
+                crate::diagnostics::LOG_LEVEL_PREF,
+                "Log level",
+                Some(self.log_level().id().to_string()),
+            ),
+            held(
+                crate::updates::UPDATES_PREF,
+                "Update check settings",
+                Some(self.updates().to_json().to_string()),
+            ),
+            held(
+                crate::tour::TOUR_PREF,
+                "First-run tour",
+                Some(json!({ "shown": self.tour().shown() }).to_string()),
+            ),
+            held(
+                crate::starter::STATE_PREF,
+                "Starter library",
+                self.starter.state().and_then(written),
+            ),
+        ];
+        for guide in crate::Guide::ALL {
+            out.push(held(
+                crate::guide::pref(guide),
+                "Guide arrangement",
+                Some(self.guides.arrangement(guide).to_json()),
+            ));
         }
-    }
-    for f in data.favorites()? {
-        if TabLocation::from_json(&f.location).is_none() {
-            out.push(format!("the Favorite “{}”", f.label));
+        for entry in self.library.entries() {
+            let id = &entry.manifest.resource_id;
+            out.push(held(
+                crate::import::pref(id),
+                "Import report",
+                self.imports.reports.get(id).and_then(written),
+            ));
         }
-    }
-    let visits = data
-        .history_as_of(0)?
-        .into_iter()
-        .filter(|v| TabLocation::from_json(&v.location).is_none())
-        .count();
-    match visits {
-        0 => {}
-        1 => out.push("1 History visit".to_string()),
-        n => out.push(format!("{n} History visits")),
-    }
-    for plan in data.reading_plans()? {
-        if ReadingPlan::start_of(&plan).is_none() {
-            out.push(format!("the Reading plan “{}”", plan.name));
-            continue;
-        }
-        for r in data.plan_readings(plan.id)? {
-            if Reading::from_row(&r).is_none() {
-                out.push(format!(
-                    "Reading {} of the Reading plan “{}”",
-                    r.position + 1,
-                    plan.name
+        for (key, value) in stored {
+            if key.starts_with(crate::notes_export::ATTRIBUTION_PREF_PREFIX) {
+                out.push(held(
+                    key.clone(),
+                    "kept Attribution",
+                    crate::notes_export::KeptAttribution::read(value).and_then(|k| written(&k)),
                 ));
             }
         }
-    }
-    for (key, value) in data.preferences()? {
-        if let Some(s) = JSON_SETTINGS.iter().find(|s| s.names(&key))
-            && !(s.reads)(&key, &value)
-        {
-            out.push(format!("the setting `{key}` ({})", s.what));
+        // Read on demand.
+        for mode in crate::SearchMode::ALL {
+            out.push(held(
+                mode.preference_key(),
+                "recent searches",
+                written(&self.recent_searches(mode)),
+            ));
         }
+        out.push(held(
+            crate::command_box::RECENT_PREF,
+            "recent Command box entries",
+            written(&self.command_box_recent()),
+        ));
+        let word_forms = if self.search_word_forms() {
+            "true"
+        } else {
+            "false"
+        };
+        out.push(held(
+            crate::bible_search::WORD_FORMS_KEY,
+            "Word forms",
+            Some(word_forms.to_string()),
+        ));
+        out
     }
-    Ok(out)
+}
+
+/// Whether `now`, what the app would write for the setting `key` it read, keeps everything
+/// `stored` holds. JSON is compared as JSON ([`holds`]), after the loader's upgrade of an
+/// older record; other text as text.
+pub(crate) fn keeps(key: &str, stored: &str, now: &str) -> bool {
+    match (
+        serde_json::from_str::<Value>(stored),
+        serde_json::from_str::<Value>(now),
+    ) {
+        (Ok(stored), Ok(now)) => holds(&upgraded(key, &stored), &now),
+        _ => stored == now,
+    }
+}
+
+/// `stored` in the shape the app writes today, as the loader of `key` reads it.
+fn upgraded(key: &str, stored: &Value) -> Value {
+    match key {
+        crate::session::VIEW_PREF => crate::appearance::upgrade_record(stored),
+        crate::key_bindings::KEY_BINDINGS_PREF => {
+            crate::key_bindings::KeyBindings::upgrade_record(stored)
+        }
+        _ => stored.clone(),
+    }
+}
+
+/// Whether `now` holds every value `stored` does: each field of an object (one missing from
+/// `now` only if it carries nothing, [`carries_nothing`], as fields at their default are left
+/// out when written), each item of a list (in any order, each matched once, so a repeated
+/// item kept once does not count as kept), and the same number, text or flag. A number is
+/// the same when it is equal as written or as the app keeps it (`f32`). `now` may hold more:
+/// fields and items the app adds as defaults.
+pub(crate) fn holds(stored: &Value, now: &Value) -> bool {
+    match (stored, now) {
+        (Value::Number(a), Value::Number(b)) => {
+            a == b
+                || a.as_f64()
+                    .zip(b.as_f64())
+                    .is_some_and(|(a, b)| a == b || (a as f32) == (b as f32))
+        }
+        (Value::Array(a), Value::Array(b)) => {
+            let mut free: Vec<&Value> = b.iter().collect();
+            a.iter()
+                .all(|x| match free.iter().position(|y| holds(x, y)) {
+                    Some(i) => {
+                        free.remove(i);
+                        true
+                    }
+                    None => false,
+                })
+        }
+        (Value::Object(a), Value::Object(b)) => a.iter().all(|(k, v)| match b.get(k) {
+            Some(w) => holds(v, w),
+            None => carries_nothing(v),
+        }),
+        _ => stored == now,
+    }
+}
+
+/// Whether a value says nothing a writer leaving out defaults would write: `null`, `false`,
+/// `0`, empty text, an empty list, or an object of such values.
+fn carries_nothing(v: &Value) -> bool {
+    match v {
+        Value::Null => true,
+        Value::Bool(b) => !b,
+        Value::Number(n) => n.as_f64() == Some(0.0),
+        Value::String(s) => s.is_empty(),
+        Value::Array(a) => a.is_empty(),
+        Value::Object(o) => o.values().all(carries_nothing),
+    }
 }

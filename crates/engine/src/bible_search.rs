@@ -91,7 +91,7 @@ impl SearchMode {
         }
     }
 
-    fn preference_key(self) -> String {
+    pub(crate) fn preference_key(self) -> String {
         format!("{RECENT_PREF_PREFIX}{}", self.id())
     }
 }
@@ -135,7 +135,7 @@ impl InlineError {
 pub(crate) const RECENT_PREF_PREFIX: &str = "search.recent.";
 
 /// The User database preference that keeps the Word forms setting.
-const WORD_FORMS_KEY: &str = "search.word_forms";
+pub(crate) const WORD_FORMS_KEY: &str = "search.word_forms";
 
 /// Parse a query as a Bible or Library search runs it: with Word forms on, each bare
 /// English word also matches the other words of its stem (#180).

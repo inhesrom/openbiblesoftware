@@ -166,14 +166,15 @@ impl Session {
         self.user_db()?.back_up(dest)
     }
 
-    /// What restoring the Backup at `path` would change. Reading it changes nothing. A Backup
-    /// holding something the app could not read once restored (a Layout, a setting kept as
-    /// JSON; see `backup_check.rs`) is refused, naming each, so a restore never drops or
-    /// defaults anything silently.
+    /// What restoring the Backup at `path` would change. Reading it changes nothing. The
+    /// Backup is loaded first as a launch on it would load it (the trial restore,
+    /// `backup_check.rs`), and one holding anything the app would not keep that way (a Layout,
+    /// a Favorite, a setting it would set back to its default) is refused, naming each, so a
+    /// restore never drops or defaults anything silently.
     pub fn restore_preview(&self, path: &Path) -> Result<RestorePreview, String> {
         let user = self.user_db()?;
         let now = user.contents()?;
-        let (_, backup) = checked_backup(user, path)?;
+        let (_, backup) = checked_backup(self, path)?;
         Ok(RestorePreview {
             path: path.to_path_buf(),
             lines: restore_lines(&now, &backup),
@@ -185,11 +186,11 @@ impl Session {
 
     /// Restore the Backup at `path`: a Safety backup is taken, everything is replaced, and
     /// the Session reloads what it keeps of the User database. Returns the Safety backup. A
-    /// Backup the preview refuses changes nothing. What is restored is the copy read and
-    /// checked here, never the file read again, so a file changed meanwhile cannot slip past
-    /// the checks.
+    /// Backup the preview refuses changes nothing. What is restored is the copy read once and
+    /// loaded by the trial restore here, never the file read again, so a file changed
+    /// meanwhile cannot slip past it.
     pub fn restore_backup(&mut self, path: &Path) -> Result<PathBuf, String> {
-        let (backup, _) = checked_backup(self.user_db()?, path)?;
+        let (backup, _) = checked_backup(self, path)?;
         self.replace_user_data(path, &*backup)
     }
 
@@ -262,25 +263,25 @@ impl Session {
     }
 }
 
-/// The Backup at `path`, read into memory, and what it holds, if the app could read all of it
-/// once restored: the store checks the database, [`crate::backup_check`] what the engine keeps
-/// in its rows.
+/// The Backup at `path`, read into memory, and what it holds, if the app would keep all of it
+/// once restored: the store checks the database, and the trial restore
+/// ([`Session::trial_restore`]) loads a copy of it as a launch would.
 fn checked_backup(
-    user: &dyn crate::persist::UserData,
+    session: &Session,
     path: &Path,
 ) -> Result<(Box<dyn crate::persist::UserData>, BackupContents), String> {
-    let (backup, found) = user.open_backup(path)?;
-    let unreadable = crate::backup_check::unreadable_records(&*backup).map_err(|e| {
+    let (backup, found) = session.user_db()?.open_backup(path)?;
+    let unkept = session.trial_restore(&*backup).map_err(|e| {
         format!(
-            "{} is not a backup of your data: it is damaged ({e})",
+            "{} is not a backup of your data: it is damaged ({e}). Nothing was changed.",
             path.display()
         )
     })?;
-    if !unreadable.is_empty() {
+    if !unkept.is_empty() {
         return Err(format!(
-            "the Backup holds what the app could not read once restored, so it would be lost: \
+            "the Backup holds what the app could not keep once restored, so it would be lost: \
              {}. Nothing was changed.",
-            unreadable.join(", ")
+            unkept.join(", ")
         ));
     }
     let contents = BackupContents {

@@ -166,23 +166,6 @@ impl HomeSettings {
         }
     }
 
-    /// Whether [`from_json`](Self::from_json) keeps every card `json` holds: it reads, and
-    /// names each card it holds this version knows, once. A restore refuses a Backup whose
-    /// Home settings it would not (#258).
-    pub(crate) fn keeps_every_card(json: &str) -> bool {
-        let Ok(stored) = serde_json::from_str::<Stored>(json) else {
-            return false;
-        };
-        let mut seen = Vec::new();
-        stored.cards.iter().all(|c| match HomeCard::from_id(&c.id) {
-            Some(card) if !seen.contains(&card) => {
-                seen.push(card);
-                true
-            }
-            _ => false,
-        })
-    }
-
     pub fn to_json(&self) -> String {
         let stored = Stored {
             cards: self

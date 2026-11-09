@@ -109,6 +109,28 @@ impl UserStore {
         Ok((store, found))
     }
 
+    /// A copy of this database in memory, page for page, for a trial restore (#258): what the
+    /// app writes to it while reading it changes only the copy. Its path is this one's.
+    pub fn copy_in_memory(&self) -> Result<UserStore, StoreError> {
+        let mut conn = Connection::open_in_memory().map_err(sql)?;
+        rusqlite::backup::Backup::new(&self.conn, &mut conn)
+            .and_then(|b| b.run_to_completion(256, std::time::Duration::ZERO, None))
+            .map_err(sql)?;
+        conn.pragma_update(None, "foreign_keys", true)
+            .map_err(sql)?;
+        Ok(UserStore {
+            conn,
+            path: self.path.clone(),
+        })
+    }
+
+    /// Run `statement` on the database with no checks, to write rows the app never would
+    /// (tests of the restore's checks, #258).
+    #[cfg(feature = "test-support")]
+    pub fn execute_unchecked(&self, statement: &str) -> Result<usize, StoreError> {
+        self.conn.execute(statement, []).map_err(sql)
+    }
+
     /// Read everything the app reads of a User database, so a row it could not read refuses
     /// the Backup now rather than failing after the restore.
     fn read_everything(&self) -> Result<(), StoreError> {

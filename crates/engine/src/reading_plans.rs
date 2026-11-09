@@ -61,13 +61,18 @@ pub const WEEKDAY_NAMES: [&str; 7] = [
 ];
 
 impl PlanDate {
-    /// The day `YYYY-MM-DD` names, if it is a real date.
+    /// The day `YYYY-MM-DD` names, if it is a real date of the years 1 to 9999. Other years
+    /// are refused before any arithmetic, so a damaged one cannot overflow it (#258).
     pub fn parse(s: &str) -> Option<Self> {
         let mut parts = s.trim().split('-');
         let y: i64 = parts.next()?.parse().ok()?;
         let m: i64 = parts.next()?.parse().ok()?;
         let d: i64 = parts.next()?.parse().ok()?;
-        if parts.next().is_some() || !(1..=12).contains(&m) || d < 1 {
+        if parts.next().is_some()
+            || !(1..=9999).contains(&y)
+            || !(1..=12).contains(&m)
+            || !(1..=31).contains(&d)
+        {
             return None;
         }
         let date = Self::from_civil(y, m, d);
@@ -87,7 +92,7 @@ impl PlanDate {
 
     /// `(year, month, day)`, by Howard Hinnant's civil-from-days.
     pub fn civil(self) -> (i64, i64, i64) {
-        let z = self.0 + 719_468;
+        let z = self.0.saturating_add(719_468);
         let era = z.div_euclid(146_097);
         let doe = z - era * 146_097;
         let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
@@ -101,7 +106,7 @@ impl PlanDate {
 
     /// The day `n` days later (earlier when negative).
     pub fn plus(self, n: i64) -> Self {
-        Self(self.0 + n)
+        Self(self.0.saturating_add(n))
     }
 
     /// 0 for Monday … 6 for Sunday (1970-01-01 was a Thursday).
@@ -536,7 +541,7 @@ impl ReadingPlan {
     /// The plan its rows hold; `None` (and the plan is not loaded) when its start day cannot
     /// be read. A Reading that cannot be read is left out ([`Reading::from_row`]).
     fn from_rows(row: ReadingPlanRow, readings: Vec<PlanReadingRow>) -> Option<Self> {
-        let start = Self::start_of(&row)?;
+        let start = PlanDate::parse(&row.start_day)?;
         let readings = readings.iter().filter_map(Reading::from_row).collect();
         Some(Self {
             id: row.id,
@@ -547,11 +552,6 @@ impl ReadingPlan {
             weekdays: Weekdays(row.weekdays),
             readings,
         })
-    }
-
-    /// The start day of a plan's row, as the loader reads it.
-    pub(crate) fn start_of(row: &ReadingPlanRow) -> Option<PlanDate> {
-        PlanDate::parse(&row.start_day)
     }
 
     /// Its last day: the day of its last Reading.

@@ -369,6 +369,9 @@ pub trait UserData: std::fmt::Debug {
     /// a Safety backup, whose path is returned. The file it was read from is not read again:
     /// what is restored is the copy the engine checked (#258).
     fn restore(&mut self, backup: &dyn UserData) -> Result<PathBuf, String>;
+    /// A copy of everything in memory, for a trial restore (#258): writes to it change only
+    /// the copy.
+    fn copy_in_memory(&self) -> Result<Box<dyn UserData>, String>;
     /// The SQLite User database this is, if it is one; [`UserData::restore`] copies from it.
     #[cfg(not(target_arch = "wasm32"))]
     fn user_store(&self) -> Option<&obs_store::UserStore>;
@@ -524,6 +527,10 @@ impl UserData for obs_store::UserStore {
             .user_store()
             .ok_or("the Backup was not read by this User database")?;
         obs_store::UserStore::restore_from(self, backup).map_err(|e| e.to_string())
+    }
+    fn copy_in_memory(&self) -> Result<Box<dyn UserData>, String> {
+        let copy = obs_store::UserStore::copy_in_memory(self).map_err(|e| e.to_string())?;
+        Ok(Box::new(copy))
     }
     fn user_store(&self) -> Option<&obs_store::UserStore> {
         Some(self)

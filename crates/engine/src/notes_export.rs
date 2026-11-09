@@ -504,7 +504,7 @@ impl Session {
             .as_ref()?
             .preference(&resource_attribution_key(resource_id, content_hash))
             .ok()??;
-        serde_json::from_str(&value).ok()
+        KeptAttribution::read(&value)
     }
 
     /// Remember in the User database the credit revision `entry` asks for, so the quotes its
@@ -612,6 +612,13 @@ pub(crate) struct KeptAttribution {
     /// When (milliseconds since the Unix epoch) the library last showed this revision with
     /// this credit. Quotes taken after it were taken under a licence never saved.
     confirmed_at: i64,
+}
+
+impl KeptAttribution {
+    /// The kept Attribution a preference value holds, if it reads.
+    pub(crate) fn read(value: &str) -> Option<Self> {
+        serde_json::from_str(value).ok()
+    }
 }
 
 /// The start of the preference key of each [`KeptAttribution`].
