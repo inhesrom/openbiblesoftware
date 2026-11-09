@@ -169,7 +169,7 @@ impl Shell {
                         }
                         let list = egui::ScrollArea::vertical()
                             .id_salt(LIST)
-                            .max_height(ROW * (MAX_ROWS as f32 + 0.5));
+                            .max_height(ROW * MAX_ROWS as f32 + ROW / 2.0);
                         list.show(ui, |ui| {
                             let c = theme::c();
                             for (i, (s, detail)) in cb.suggestions.iter().zip(&details).enumerate()
