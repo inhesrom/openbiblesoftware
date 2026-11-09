@@ -63,6 +63,11 @@ const EMBEDDED_USE: &[(&str, &str)] = &[
         "Built into the app: the language names Get Resources shows and searches, in English \
          and in each language itself.",
     ),
+    (
+        "crates/layout/assets/hyphenation/",
+        "Built into the app: hyphenates English words in Justified text (View → Reading \
+         layout).",
+    ),
 ];
 
 /// Licence texts shown with a piece of data built into the app, by `ATTRIBUTION.toml` path
@@ -82,6 +87,11 @@ const EMBEDDED_TEXTS: &[(&str, &str, &str)] = &[
         "crates/engine/assets/languages/iso-639-3",
         "ISO 639-3 code tables terms of use",
         ISO_639_3_TERMS,
+    ),
+    (
+        "crates/layout/assets/hyphenation/",
+        "hyph-en-us copyright notice",
+        include_str!("../../layout/assets/hyphenation/hyph-en-us-notice.txt"),
     ),
 ];
 

@@ -38,6 +38,9 @@ pub enum MenuItem {
         title: &'static str,
         items: &'static [MenuItem],
     },
+    /// "Reading layout": a submenu of the focused Resource Tab's Reading layout choices, each
+    /// running `tab.reading_layout` (#209).
+    ReadingLayout,
     /// A submenu of exclusive choices: one `command` run with `{ "value": id }` per choice,
     /// the current one checked.
     Choice {
@@ -56,6 +59,7 @@ impl MenuItem {
             MenuItem::Command(id) | MenuItem::Choice { command: id, .. } => vec![*id],
             MenuItem::Notebooks => vec!["notebook.show_in_text"],
             MenuItem::RecentlyClosed => vec!["tab.reopen_closed"],
+            MenuItem::ReadingLayout => vec!["tab.reading_layout"],
             MenuItem::Favorites => vec!["favorite.open"],
             MenuItem::Layouts => vec!["layout.restore", "layout.rename", "layout.delete"],
             MenuItem::Resources => vec!["resource.open"],
@@ -150,6 +154,7 @@ pub const MENUS: &[Menu] = &[
             C("view.red_letter"),
             C("view.footnote_markers"),
             C("view.fonts"),
+            MenuItem::ReadingLayout,
             Separator,
             C("view.highlights"),
             C("view.highlight_styles"),
@@ -340,6 +345,9 @@ pub fn choices(s: &Session, command: &str) -> (Vec<(&'static str, &'static str)>
     }
     if let Some(levels) = crate::diagnostics::choices(s, command) {
         return levels;
+    }
+    if let Some(reading) = crate::reading_layout::choices(s, command) {
+        return reading;
     }
     match command {
         "view.theme" => (

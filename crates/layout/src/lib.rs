@@ -35,7 +35,9 @@ pub use present::{
     unit_blocks,
 };
 pub use spans::SpanIndex;
-pub use style::{ColorRole, RunStyle, TextSettings, VerseNumbers};
+pub use style::{
+    ColorRole, ColumnWidth, ReadingLayout, RunStyle, TextFlow, TextSettings, VerseNumbers,
+};
 
 #[cfg(test)]
 mod interlinear_tests;
@@ -43,5 +45,7 @@ mod interlinear_tests;
 mod line_breaking_tests;
 #[cfg(test)]
 mod reading_font_tests;
+#[cfg(test)]
+mod reading_layout_tests;
 #[cfg(test)]
 mod tests;

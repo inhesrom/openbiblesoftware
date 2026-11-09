@@ -511,7 +511,15 @@ fn bench_runs_and_reports_every_scenario() {
     let names: Vec<&str> = report.scenarios.iter().map(|s| s.name.as_str()).collect();
     assert_eq!(
         names,
-        ["steady", "fling", "jumps", "interlinear", "find", "filters"]
+        [
+            "steady",
+            "fling",
+            "jumps",
+            "interlinear",
+            "reading-layout",
+            "find",
+            "filters"
+        ]
     );
     assert_eq!(report.scenarios[0].frames, 20);
     assert!(report.blocks > 1000);
@@ -521,10 +529,12 @@ fn bench_runs_and_reports_every_scenario() {
     // Interlinear lines (#143) on every pane, scrolled for half the steady frames.
     assert_eq!(report.scenarios[3].frames, 10);
     // Find next (#175, #183): every step measured, each a jump that settles.
-    let find = &report.scenarios[4];
+    // Every Reading layout option on (#209), scrolled for half the steady frames.
+    assert_eq!(report.scenarios[4].frames, 10);
+    let find = &report.scenarios[5];
     assert!(find.settle_frames_max.is_some_and(|n| n <= 2), "{find:?}");
     // Three Visual filters (#211) on every pane, scrolled for half the steady frames.
-    assert_eq!(report.scenarios[5].frames, 10);
+    assert_eq!(report.scenarios[6].frames, 10);
     assert!(
         report.feature_errors.is_empty(),
         "{:?}",

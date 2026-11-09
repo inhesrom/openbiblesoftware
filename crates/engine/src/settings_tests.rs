@@ -86,6 +86,14 @@ fn every_preference_command_is_a_setting() {
             MenuItem::Command("view.footnote_markers") => {}
             MenuItem::Command(id) | MenuItem::Choice { command: id, .. } => wanted.push(id),
             MenuItem::Notebooks => wanted.push("notebook.show_in_text"),
+            // A Tab's own choices; their defaults are Settings.
+            MenuItem::ReadingLayout => wanted.extend([
+                "view.text_flow",
+                "view.large_chapter_numbers",
+                "view.section_headings",
+                "view.column_width",
+                "view.justified",
+            ]),
             other => panic!("the View menu has {other:?}: give it a Setting"),
         }
     }
@@ -127,6 +135,13 @@ fn every_stored_view_and_toolbar_field_has_a_setting() {
             "red_letter" => vec!["red_letter"],
             "verse_numbers" => vec!["verse_numbers"],
             "highlights" => vec!["highlights"],
+            "reading_layout" => vec![
+                "text_flow",
+                "large_chapter_numbers",
+                "section_headings",
+                "column_width",
+                "justified",
+            ],
             "fonts" => vec!["font_latin", "font_greek", "font_hebrew", "font_interface"],
             "position" => vec!["toolbar_position"],
             "auto_hide" => vec!["toolbar_auto_hide"],

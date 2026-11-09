@@ -16,6 +16,9 @@ const INTERLINEAR_WIDEN: f32 = 1.6;
 
 /// A height estimate for `para` at `width` px, from character counts and font size.
 pub fn estimate_height(para: &Paragraph, width: f32) -> f32 {
+    if para.hidden {
+        return 0.0;
+    }
     let mut text_width = 0.0f32;
     let mut line_size = 0.0f32;
     for r in &para.runs {

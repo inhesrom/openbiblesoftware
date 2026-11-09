@@ -6,6 +6,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, RwLock};
 
 use harfrust::{Buffer, Direction, Feature, ShapeOptions, ShaperFont, Tag};
+use skrifa::instance::{LocationRef, Size};
+use skrifa::{GlyphId, MetadataProvider};
 
 use crate::face::{FaceError, FaceId, face};
 
@@ -78,6 +80,21 @@ impl ShapedRun {
     pub fn missing_glyphs(&self) -> usize {
         self.glyphs.iter().filter(|g| g.id == 0).count()
     }
+}
+
+/// How far `run`'s glyphs reach above its baseline, in px (shaped with `style`): the top of
+/// their ink, not the face's ascent. `None` when no glyph has ink.
+pub fn ink_top(run: &ShapedRun, style: ShapeStyle) -> Option<f32> {
+    let f = face(style.face).ok()?;
+    let font = f.font_ref()?;
+    let metrics = font.glyph_metrics(Size::new(style.size()), LocationRef::default());
+    run.glyphs
+        .iter()
+        .filter_map(|g| {
+            let b = metrics.bounds(GlyphId::new(g.id))?;
+            (b.y_max > b.y_min).then_some(b.y_max + g.y)
+        })
+        .reduce(f32::max)
 }
 
 /// Lowercase ASCII letters only, keeping every byte offset, for small-caps text whose source

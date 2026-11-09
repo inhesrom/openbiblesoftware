@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::Arc;
 
-use obs_fonts::{Cluster, ShapeCache, ShapeStyle, ShapedRun};
+use obs_fonts::{Cluster, ShapeCache, ShapeStyle, ShapedRun, ink_top};
 use unicode_bidi::{BidiInfo, Level};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -40,17 +40,40 @@ pub struct LaidItem {
     word: Option<usize>,
     /// Whether it is the column's word itself (not the punctuation against it).
     in_word: bool,
+    /// Room a justified line adds to its space (#209): after the item in left-to-right
+    /// text, before it in right-to-left text. Its space's cluster takes it.
+    stretch: f32,
 }
 
 impl LaidItem {
-    /// Clusters with paragraph-text byte ranges and block x positions, in visual order.
+    /// Its left and right edges, with the room a justified line added to its space.
+    fn extent(&self) -> (f32, f32) {
+        if self.rtl {
+            (self.x - self.stretch, self.x + self.width)
+        } else {
+            (self.x, self.x + self.width + self.stretch)
+        }
+    }
+
+    /// Clusters with paragraph-text byte ranges and block x positions, in visual order. In a
+    /// justified line the space's cluster covers the room added to it.
     pub fn clusters(&self) -> impl Iterator<Item = (Range<usize>, f32, f32)> + '_ {
         let base = self.bytes.start;
+        let (stretch, width) = (self.stretch, self.shaped.width);
+        let rtl = self.rtl;
         self.shaped.clusters.iter().map(move |c| {
+            let (mut x0, mut x1) = (c.x0, c.x1);
+            if stretch > 0.0 {
+                if rtl && x0 <= 0.01 {
+                    x0 -= stretch;
+                } else if !rtl && x1 >= width - 0.01 {
+                    x1 += stretch;
+                }
+            }
             (
                 base + c.bytes.start..base + c.bytes.end,
-                self.x + c.x0,
-                self.x + c.x1,
+                self.x + x0,
+                self.x + x1,
             )
         })
     }
@@ -124,6 +147,26 @@ pub struct LaidBlock {
     pub lines: Vec<LaidLine>,
     /// Interlinear lines under its Tagged words (#143), line by line.
     pub cells: Vec<LaidCell>,
+    /// The box a drop numeral (#209) is drawn in, beside the first lines; its items are the
+    /// first line's.
+    drop_numeral: Option<DropBox>,
+}
+
+/// Where a drop numeral is drawn, in px from the block's top-left.
+#[derive(Debug, Clone, Copy)]
+struct DropBox {
+    /// The paragraph run it draws.
+    run: usize,
+    left: f32,
+    right: f32,
+    top: f32,
+    bottom: f32,
+}
+
+impl DropBox {
+    fn contains(&self, x: f32, y: f32) -> bool {
+        x >= self.left && x < self.right && y >= self.top && y < self.bottom
+    }
 }
 
 /// A shaped piece of an interlinear cell: one face and one bidi level.
@@ -260,8 +303,47 @@ fn shape_cell(runs: &[crate::paragraph::Run], cache: &ShapeCache) -> CellPieces 
     (text, pieces, width)
 }
 
-/// Lay `para` out at `width` px, shaping through `cache`.
+/// Lay `para` out at `width` px, shaping through `cache`. A drop numeral (#209) is sized to
+/// the lines it stands beside, which [`layout_lines`] only knows once it has laid them: with
+/// Interlinear lines (#143) or Hebrew metrics they are further apart than ordinary text.
 pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
+    let mut laid = layout_lines(para, width, cache);
+    let Some(run) = para.drop_numeral.filter(|&r| r < para.runs.len()) else {
+        return laid;
+    };
+    let mut fitted: Option<Paragraph> = None;
+    // A new size changes the numeral's width, which can move words between lines; the
+    // lines rarely change height for it, so the size settles at once.
+    for _ in 0..DROP_FITS {
+        let current = fitted.as_ref().unwrap_or(para).runs[run].style.size;
+        let Some(size) = laid.fitted_drop_size(run) else {
+            break;
+        };
+        if (size - current).abs() < 0.25 {
+            break;
+        }
+        let p = fitted.get_or_insert_with(|| para.clone());
+        p.runs[run].style.size = size;
+        laid = layout_lines(p, width, cache);
+    }
+    laid
+}
+
+/// Lay `para` out at `width` px, its drop numeral as large as it asks.
+fn layout_lines(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
+    if para.hidden {
+        return LaidBlock {
+            width,
+            height: 0.0,
+            rtl: para.rtl,
+            text: String::new(),
+            run_starts: Vec::new(),
+            sources: Vec::new(),
+            lines: Vec::new(),
+            cells: Vec::new(),
+            drop_numeral: None,
+        };
+    }
     let mut text = String::new();
     let mut run_starts = Vec::with_capacity(para.runs.len());
     for r in &para.runs {
@@ -274,6 +356,10 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
     let bidi = BidiInfo::new(&text, Some(base));
     let levels = &bidi.levels;
     let run_of = |p: usize| run_starts.partition_point(|&s| s <= p).saturating_sub(1);
+    // A drop numeral (#209) stands beside the first lines, out of their flow (and out of
+    // any Interlinear column, though no space parts it from the first word).
+    let drop_run = para.drop_numeral.filter(|&r| r < para.runs.len());
+    let drop_bytes = drop_run.map(|r| run_starts[r]..run_starts.get(r + 1).copied().unwrap_or(n));
 
     // Interlinear words (#143): their paragraph bytes and shaped lines.
     let rows = para.interlinear.as_ref().map_or(0, |il| il.rows);
@@ -298,9 +384,16 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
     // Each column takes the punctuation right against its word, up to a space or the next
     // column.
     for i in 0..columns.len() {
-        let floor = i.checked_sub(1).map_or(0, |p| columns[p].chunk.end);
-        let ceiling = columns.get(i + 1).map_or(n, |c| c.bytes.start);
+        let mut floor = i.checked_sub(1).map_or(0, |p| columns[p].chunk.end);
+        let mut ceiling = columns.get(i + 1).map_or(n, |c| c.bytes.start);
         let c = &mut columns[i];
+        if let Some(d) = &drop_bytes {
+            if d.end <= c.bytes.start {
+                floor = floor.max(d.end);
+            } else if d.start >= c.bytes.end {
+                ceiling = ceiling.min(d.start);
+            }
+        }
         let lead = text[floor..c.bytes.start]
             .char_indices()
             .rev()
@@ -373,8 +466,12 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
             breakable_after: breaks.contains(&b) || b == n,
             word: column_at(a),
             in_word: column_at(a).is_some_and(|c| columns[c].bytes.contains(&a)),
+            stretch: 0.0,
         });
     }
+
+    let (drop_items, items): (Vec<LaidItem>, Vec<LaidItem>) =
+        items.into_iter().partition(|it| Some(it.run) == drop_run);
 
     // How far each column's widest line reaches past it, then the space each pair of
     // neighbouring columns needs between them, shared between the two.
@@ -456,68 +553,131 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
             }
         }
     }
+    let drop_width: f32 = drop_items.iter().map(|i| i.width).sum();
+    let drop_space = if drop_items.is_empty() {
+        0.0
+    } else {
+        drop_width + drop_items[0].style.size * DROP_GAP
+    };
+    // Lines that must start at a run (One verse per line, #209), by paragraph byte.
+    let forced: HashSet<usize> = para
+        .line_starts
+        .iter()
+        .filter(|&&r| r < run_starts.len() && Some(r) != drop_run)
+        .map(|&r| run_starts[r])
+        .collect();
+
     // Greedy line filling over unbreakable chunks.
-    let available =
-        |first: bool| (width - para.inset - if first { para.indent } else { 0.0 }).max(1.0);
+    let available = |line: usize| {
+        let indent = if line == 0 { para.indent } else { 0.0 };
+        let drop = if line < DROP_LINES { drop_space } else { 0.0 };
+        (width - para.inset - indent - drop).max(1.0)
+    };
     let mut lines_items: Vec<Vec<LaidItem>> = Vec::new();
+    // Whether each line ends where a forced line starts the next (never justified).
+    let mut forced_ends: Vec<bool> = Vec::new();
     let mut cur: Vec<LaidItem> = Vec::new();
     let mut cur_w = 0.0f32;
     let mut chunk: Vec<LaidItem> = Vec::new();
     let mut chunk_w = 0.0f32;
     for it in items {
+        if forced.contains(&it.bytes.start) && !(cur.is_empty() && chunk.is_empty()) {
+            // A piece of a word before the verse that does not fit goes on a line of its own.
+            if !cur.is_empty()
+                && !chunk.is_empty()
+                && cur_w + chunk_w > available(lines_items.len())
+            {
+                lines_items.push(std::mem::take(&mut cur));
+                forced_ends.push(false);
+            }
+            cur.append(&mut chunk);
+            lines_items.push(std::mem::take(&mut cur));
+            forced_ends.push(true);
+            cur_w = 0.0;
+            chunk_w = 0.0;
+        }
         chunk_w += it.width;
         let br = it.breakable_after;
-        let trail = it.trailing_space;
         let end = it.bytes.end;
         let style = it.style;
         chunk.push(it);
+        // Place the chunk: on this line if it fits, else split by hyphenation or moved to the
+        // next line, where it is tried again (a word wider than a whole line is hyphenated
+        // there, and so is its tail if that is still too wide).
         if br {
-            let avail = available(lines_items.is_empty());
             // Broken at a soft hyphen, the line ends in a hyphen: leave room for it.
-            let hyphen = if end < n && ends_in_soft_hyphen(&text, end) {
+            let soft_hyphen = if end < n && ends_in_soft_hyphen(&text, end) {
                 hyphen_run(style, false, cache).map_or(0.0, |h| h.width)
             } else {
                 0.0
             };
-            let fits = cur.is_empty()
-                || if columns.is_empty() {
-                    cur_w + chunk_w - trail + hyphen <= avail
+            loop {
+                let avail = available(lines_items.len());
+                let trail = chunk.last().map_or(0.0, |i| i.trailing_space);
+                let fits = if columns.is_empty() {
+                    cur_w + chunk_w - trail + soft_hyphen <= avail
                 } else {
-                    // Interlinear columns take space at their edges, more at the line's
-                    // ends than between neighbours: measure the line as it would be drawn.
+                    // Interlinear columns take space at their edges, more at the line's ends
+                    // than between neighbours: measure the line as it would be drawn.
                     let line: Vec<LaidItem> = cur.iter().chain(&chunk).cloned().collect();
                     let (ordered, pads, hang) = arrange_line(line, levels, &columns, &text);
-                    line_content(&ordered, &pads, hang) + hyphen <= avail
+                    line_content(&ordered, &pads, hang) + soft_hyphen <= avail
                 };
-            if fits && !cur.is_empty() {
-                cur.append(&mut chunk);
-                cur_w += chunk_w;
-            } else {
-                if !cur.is_empty() {
+                if fits {
+                    cur.append(&mut chunk);
+                    cur_w += chunk_w;
+                    break;
+                }
+                if let Some((head, hyphen, tail)) = (para.hyphenate && chunk.len() == 1)
+                    .then(|| {
+                        let run_start = run_starts[chunk[0].run];
+                        hyphenate(&chunk[0], &text, run_start, avail - cur_w, cache)
+                    })
+                    .flatten()
+                {
+                    // The word's head and a hyphen end this line; its tail starts the next.
+                    cur.push(head);
+                    cur.push(hyphen);
                     lines_items.push(std::mem::take(&mut cur));
+                    forced_ends.push(false);
+                    cur_w = 0.0;
+                    chunk_w = tail.width;
+                    chunk = vec![tail];
+                } else if cur.is_empty() {
+                    // Alone on its line and still too wide (a long name in a narrow Panel):
+                    // wrap it between grapheme clusters so all of it stays in the column. An
+                    // interlinear column is never broken.
+                    if chunk_w - trail > avail && chunk.iter().all(|i| i.word.is_none()) {
+                        // Lines after the next are as wide or wider (a drop numeral narrows
+                        // only the first two).
+                        let mut pieces = split_overwide(
+                            std::mem::take(&mut chunk),
+                            avail,
+                            available(lines_items.len() + 1),
+                            &text,
+                            cache,
+                        );
+                        chunk = pieces.pop().unwrap_or_default();
+                        for piece in pieces {
+                            lines_items.push(piece);
+                            forced_ends.push(false);
+                        }
+                        chunk_w = chunk.iter().map(|i| i.width).sum();
+                    }
+                    cur.append(&mut chunk);
+                    cur_w = chunk_w;
+                    break;
+                } else {
+                    lines_items.push(std::mem::take(&mut cur));
+                    forced_ends.push(false);
+                    cur_w = 0.0;
                 }
-                // Alone on its line and still too wide (a long name in a narrow Panel):
-                // wrap it between grapheme clusters so all of it stays in the column. An
-                // interlinear column is never broken.
-                let avail = available(lines_items.is_empty());
-                if chunk_w - trail > avail && chunk.iter().all(|i| i.word.is_none()) {
-                    let mut pieces = split_overwide(
-                        std::mem::take(&mut chunk),
-                        avail,
-                        available(false),
-                        &text,
-                        cache,
-                    );
-                    chunk = pieces.pop().unwrap_or_default();
-                    lines_items.extend(pieces);
-                    chunk_w = chunk.iter().map(|i| i.width).sum();
-                }
-                cur.append(&mut chunk);
-                cur_w = chunk_w;
             }
             chunk_w = 0.0;
             if mandatory.contains(&end) {
+                // A line that ends where the text breaks it is never justified.
                 lines_items.push(std::mem::take(&mut cur));
+                forced_ends.push(true);
                 cur_w = 0.0;
             }
         }
@@ -525,12 +685,16 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
     cur.append(&mut chunk);
     if !cur.is_empty() || lines_items.is_empty() {
         lines_items.push(cur);
+        forced_ends.push(false);
     }
+    let last_line = lines_items.len() - 1;
 
-    let fallback = para
-        .runs
-        .first()
-        .map_or_else(|| RunStyle::body(16.0), |r| r.style);
+    // The text's style (not a drop numeral's), for empty lines and the room around
+    // interlinear lines.
+    let fallback = (para.runs.iter().enumerate())
+        .find(|&(r, _)| Some(r) != drop_run)
+        .or(para.runs.first().map(|r| (0, r)))
+        .map_or_else(|| RunStyle::body(16.0), |(_, r)| r.style);
     // Interlinear rows: each as tall as its tallest cell anywhere in the paragraph, so rows
     // line up from line to line.
     let row_extents: Vec<(f32, f32)> = (0..rows)
@@ -591,19 +755,51 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
         let line_height = natural * para.line_spacing;
         let content = line_content(&ordered, &edge_pads, hang);
         let first_indent = if li == 0 { para.indent } else { 0.0 };
+        let drop = if li < DROP_LINES { drop_space } else { 0.0 };
         let mut x = match (para.align, para.rtl) {
             (Align::Center, _) => ((width - content) / 2.0).max(0.0),
-            (Align::Start, false) => para.inset + first_indent,
-            (Align::Start, true) => width - para.inset - first_indent - content,
+            (Align::Start, false) => para.inset + first_indent + drop,
+            (Align::Start, true) => width - para.inset - first_indent - drop - content,
         };
+        // Justified text (#209): a full line's room goes into its spaces, all but the one at
+        // its logical end.
+        let stretches = |i: &LaidItem| {
+            i.bytes.end != end && i.trailing_space > 0.0 && text[i.bytes.clone()].ends_with(' ')
+        };
+        let justify_gap =
+            if para.justify && para.align == Align::Start && li < last_line && !forced_ends[li] {
+                let gaps = ordered.iter().filter(|i| stretches(i)).count();
+                let room = available(li) - content;
+                if gaps > 0 && room > 0.0 {
+                    room / gaps as f32
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            };
         if para.rtl && para.align == Align::Start {
-            // Hanging space sits at the logical end, which is the left edge in RTL.
+            // Hanging space sits at the logical end, which is the left edge in RTL; a
+            // justified line's room (taken in its spaces) moves its start that much left.
             x -= hang;
+            if justify_gap > 0.0 {
+                x -= available(li) - content;
+            }
         }
         for (item, [left, right]) in ordered.iter_mut().zip(&edge_pads) {
+            // A space is after its word in left-to-right text, and before it (on its left)
+            // in right-to-left text.
+            let gap = if stretches(item) { justify_gap } else { 0.0 };
+            if item.rtl {
+                x += gap;
+            }
             x += left;
             item.x = x;
+            item.stretch = gap;
             x += item.width + right;
+            if !item.rtl {
+                x += gap;
+            }
         }
         let top = y;
         let baseline = (top + (line_height - natural) / 2.0 + asc).round();
@@ -658,6 +854,7 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
                             breakable_after: false,
                             word: Some(w),
                             in_word: true,
+                            stretch: 0.0,
                         })
                         .collect();
                     let cell_levels: Vec<u8> = pieces.iter().map(|p| p.level).collect();
@@ -690,6 +887,14 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
             text_bottom,
         });
     }
+    let drop_numeral = if drop_items.is_empty() {
+        None
+    } else {
+        place_drop_numeral(&mut lines, drop_items, para, width)
+    };
+    if let Some(d) = drop_numeral {
+        y = y.max(d.bottom);
+    }
     LaidBlock {
         width,
         height: y + para.space_after,
@@ -699,6 +904,7 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
         sources,
         lines,
         cells,
+        drop_numeral,
     }
 }
 
@@ -763,6 +969,7 @@ fn reshape(
         breakable_after,
         word: it.word,
         in_word: it.in_word,
+        stretch: 0.0,
     })
 }
 
@@ -973,6 +1180,158 @@ fn line_content(ordered: &[LaidItem], edge_pads: &[[f32; 2]], hang: f32) -> f32 
     ordered.iter().map(|i| i.width).sum::<f32>() + padding - hang
 }
 
+/// How many lines a drop numeral stands beside.
+const DROP_LINES: usize = 2;
+/// How many times [`layout`] lays a paragraph out again to fit its drop numeral.
+const DROP_FITS: usize = 3;
+/// Space between a drop numeral and the text beside it, as a share of the numeral's size.
+const DROP_GAP: f32 = 0.08;
+
+/// Put a drop numeral's items beside the first lines (on the paragraph's start side), its
+/// baseline on the second line's; its items join the first line's. Returns the box it is drawn
+/// in, from the first line's top down to the block's bottom it needs.
+fn place_drop_numeral(
+    lines: &mut [LaidLine],
+    mut numeral: Vec<LaidItem>,
+    para: &Paragraph,
+    width: f32,
+) -> Option<DropBox> {
+    let first = lines.first()?;
+    let line_height = first.bottom - first.top;
+    let baseline = lines
+        .get(DROP_LINES - 1)
+        .map_or(first.baseline + line_height, |l| l.baseline);
+    let lowered = first.baseline - baseline;
+    let numeral_width: f32 = numeral.iter().map(|i| i.width).sum();
+    let left = if para.rtl {
+        width - para.inset - numeral_width
+    } else {
+        para.inset
+    };
+    let mut x = left;
+    let numeral_start = numeral.iter().map(|i| i.bytes.start).min().unwrap_or(0);
+    for it in &mut numeral {
+        it.x = x;
+        x += it.width;
+        it.style.raise = lowered;
+    }
+    let drawn = DropBox {
+        run: numeral.first()?.run,
+        left,
+        right: left + numeral_width,
+        top: first.top,
+        bottom: baseline + (first.bottom - first.baseline),
+    };
+    let first = &mut lines[0];
+    first.bytes.start = first.bytes.start.min(numeral_start);
+    if para.rtl {
+        first.items.extend(numeral);
+    } else {
+        numeral.append(&mut first.items);
+        first.items = numeral;
+    }
+    Some(drawn)
+}
+
+/// Split a word that does not fit in `room` px at the last English hyphenation point whose
+/// head and a hyphen fit (Justified text, #209): its head, the hyphen (drawn, not in the text:
+/// it has no clusters) and its tail. Only a plain run of Latin letters, left to right and
+/// outside any interlinear word, is hyphenated; never Greek or Hebrew. A tail left by an
+/// earlier split is split at the whole word's hyphenation points.
+fn hyphenate(
+    item: &LaidItem,
+    text: &str,
+    run_start: usize,
+    room: f32,
+    cache: &ShapeCache,
+) -> Option<(LaidItem, LaidItem, LaidItem)> {
+    if item.rtl || item.word.is_some() || item.style.raise != 0.0 {
+        return None;
+    }
+    let piece = text.get(item.bytes.clone())?;
+    // The word: its letters after any opening punctuation, up to its first non-letter.
+    let lead = piece.find(|c: char| c.is_ascii_alphabetic())?;
+    let len = piece[lead..]
+        .find(|c: char| !c.is_ascii_alphabetic())
+        .unwrap_or(piece.len() - lead);
+    // Another letter after or before the word (a non-ASCII one such as é) leaves it whole, and
+    // so does a soft hyphen: the text's own break points are the word's.
+    let joined = |c: char| c.is_alphabetic() || c == SOFT_HYPHEN;
+    if piece[lead + len..].starts_with(joined) {
+        return None;
+    }
+    let start = item.bytes.start;
+    // The whole word: a tail's head is on the line before, in its run just before it.
+    let before = if lead == 0 {
+        text[run_start..start]
+            .bytes()
+            .rev()
+            .take_while(u8::is_ascii_alphabetic)
+            .count()
+    } else {
+        0
+    };
+    let word_start = start + lead - before;
+    let word_end = start + lead + len;
+    let word = &text[word_start..word_end];
+    if !(MIN_HYPHENATED..=MAX_HYPHENATED).contains(&word.len())
+        || text[run_start..word_start].ends_with(joined)
+    {
+        return None;
+    }
+    let hyphen = cache.shape("-", item.style.shape_style(false)).ok()?;
+    let mut at = word_start;
+    let mut points = Vec::new();
+    for syllable in hypher::hyphenate(word, hypher::Lang::English) {
+        at += syllable.len();
+        if at > start && at < word_end {
+            points.push(at);
+        }
+    }
+    for &p in points.iter().rev() {
+        let head = cache
+            .shape(&text[start..p], item.style.shape_style(false))
+            .ok()?;
+        if head.width + hyphen.width > room {
+            continue;
+        }
+        let tail = cache
+            .shape(&text[p..item.bytes.end], item.style.shape_style(false))
+            .ok()?;
+        let piece_of = |shaped: Arc<ShapedRun>, bytes: Range<usize>, breakable_after| LaidItem {
+            x: 0.0,
+            width: shaped.width,
+            run: item.run,
+            rtl: false,
+            style: item.style,
+            trailing_space: shaped.trailing_space,
+            shaped,
+            bytes,
+            breakable_after,
+            word: None,
+            in_word: false,
+            stretch: 0.0,
+        };
+        let drawn_only = Arc::new(ShapedRun {
+            clusters: Vec::new(),
+            trailing_space: 0.0,
+            ..(*hyphen).clone()
+        });
+        return Some((
+            piece_of(head, start..p, true),
+            piece_of(drawn_only, p..p, true),
+            piece_of(tail, p..item.bytes.end, item.breakable_after),
+        ));
+    }
+    None
+}
+
+/// Shortest word hyphenated: two letters before the hyphen and three after (the English
+/// patterns' minimums).
+const MIN_HYPHENATED: usize = 5;
+/// Longest word looked up; longer runs of letters are not English words.
+const MAX_HYPHENATED: usize = 40;
+
 /// UAX #9 rule L2: from the highest level down to the lowest odd level, reverse every run of
 /// items at that level or higher.
 fn reorder(items: Vec<LaidItem>, levels: &[u8]) -> Vec<LaidItem> {
@@ -1001,6 +1360,45 @@ fn reorder(items: Vec<LaidItem>, levels: &[u8]) -> Vec<LaidItem> {
 }
 
 impl LaidBlock {
+    /// The size the drop numeral drawn from paragraph run `run` fits its lines at: the top of
+    /// its figures level with the top of figures as large as the first line's text, its
+    /// baseline on the second line's.
+    fn fitted_drop_size(&self, run: usize) -> Option<f32> {
+        let first = self.lines.first()?;
+        let numeral: Vec<&LaidItem> = first.items.iter().filter(|i| i.run == run).collect();
+        let size = numeral.first()?.style.size;
+        // How far below the first line's baseline the numeral's baseline is.
+        let lowered = -numeral[0].style.raise;
+        let top = numeral
+            .iter()
+            .filter_map(|i| ink_top(&i.shaped, i.style.shape_style(i.rtl)))
+            .reduce(f32::max)?;
+        if top <= 0.0 || size <= 0.0 {
+            return None;
+        }
+        let text = first
+            .items
+            .iter()
+            .filter(|i| i.run != run)
+            .map(|i| i.style.size)
+            .reduce(f32::max)?;
+        // Figures are `top / size` of their size tall.
+        Some(text + lowered * size / top)
+    }
+
+    /// The band, top to bottom in px, a range over `item` of line `li` is marked in: the
+    /// line's text, not its Interlinear lines (#143); a drop numeral's (#209) whole height.
+    pub fn range_band(&self, li: usize, item: &LaidItem) -> (f32, f32) {
+        if li == 0
+            && let Some(d) = self.drop_numeral.filter(|d| d.run == item.run)
+        {
+            return (d.top, d.bottom);
+        }
+        self.lines
+            .get(li)
+            .map_or((0.0, 0.0), |l| (l.top, l.text_bottom))
+    }
+
     fn run_of(&self, p: usize) -> usize {
         self.run_starts
             .partition_point(|&s| s <= p)
@@ -1049,6 +1447,9 @@ impl LaidBlock {
     /// it is that line's cell, as an [`InlineObject::InterlinearCell`] anchored at its word's
     /// first byte, with the word's paragraph bytes.
     pub fn hit(&self, x: f32, y: f32) -> Option<Hit> {
+        if self.drop_numeral.is_some_and(|d| d.contains(x, y)) {
+            return self.item_hit(&self.lines[0], x);
+        }
         let li = self.line_index_at(y);
         let line = self.lines.get(li)?;
         if y < line.top || y >= line.bottom {
@@ -1057,8 +1458,14 @@ impl LaidBlock {
         if y >= line.text_bottom {
             return self.cell_at(li, x, y).map(|c| self.cell_hit(c));
         }
+        self.item_hit(line, x)
+    }
+
+    /// The cluster of `line` at `x`.
+    fn item_hit(&self, line: &LaidLine, x: f32) -> Option<Hit> {
         for it in &line.items {
-            if x < it.x || x >= it.x + it.width {
+            let (left, right) = it.extent();
+            if x < left || x >= right {
                 continue;
             }
             for (bytes, x0, x1) in it.clusters() {
@@ -1069,6 +1476,16 @@ impl LaidBlock {
             }
         }
         None
+    }
+
+    /// Index of the line a point is on for hit-testing and selection: a drop numeral's
+    /// whole box is the first line's.
+    fn line_at(&self, x: f32, y: f32) -> usize {
+        if self.drop_numeral.is_some_and(|d| d.contains(x, y)) {
+            0
+        } else {
+            self.line_index_at(y)
+        }
     }
 
     /// The interlinear cell of line `li` under a point: within its row, from its column's
@@ -1106,27 +1523,33 @@ impl LaidBlock {
     /// space an interlinear column adds around its word) it is the nearer item's edge; under
     /// the text, among interlinear lines, it goes by x alone.
     pub fn caret_at(&self, x: f32, y: f32) -> usize {
-        let Some(line) = self.lines.get(self.line_index_at(y)) else {
+        let Some(line) = self.lines.get(self.line_at(x, y)) else {
             return 0;
         };
         if line.items.is_empty() {
             return line.bytes.start;
         }
-        let left = line.items.iter().map(|i| i.x).fold(f32::MAX, f32::min);
+        let left = line
+            .items
+            .iter()
+            .map(|i| i.extent().0)
+            .fold(f32::MAX, f32::min);
         let right = line
             .items
             .iter()
-            .map(|i| i.x + i.width)
+            .map(|i| i.extent().1)
             .fold(f32::MIN, f32::max);
         // Beyond the line: the boundary at its visual edge, as just inside it, so a drag across
         // the edge never jumps to the far end of a run in the other direction.
         if x < left || x >= right {
             let edge = if x < left {
-                line.items.iter().min_by(|a, b| a.x.total_cmp(&b.x))
+                line.items
+                    .iter()
+                    .min_by(|a, b| a.extent().0.total_cmp(&b.extent().0))
             } else {
                 line.items
                     .iter()
-                    .max_by(|a, b| (a.x + a.width).total_cmp(&(b.x + b.width)))
+                    .max_by(|a, b| a.extent().1.total_cmp(&b.extent().1))
             };
             let Some(it) = edge else {
                 return line.bytes.start;
@@ -1144,7 +1567,8 @@ impl LaidBlock {
             });
         }
         for it in &line.items {
-            if x < it.x || x >= it.x + it.width {
+            let (left, right) = it.extent();
+            if x < left || x >= right {
                 continue;
             }
             for (bytes, x0, x1) in it.clusters() {
@@ -1161,12 +1585,16 @@ impl LaidBlock {
         }
         // In a gap: the nearest item's nearer edge.
         let nearest = line.items.iter().min_by(|a, b| {
-            let d = |i: &LaidItem| (i.x - x).abs().min((i.x + i.width - x).abs());
+            let d = |i: &LaidItem| {
+                let (left, right) = i.extent();
+                (left - x).abs().min((right - x).abs())
+            };
             d(a).total_cmp(&d(b))
         });
         match nearest {
             Some(it) => {
-                let at_left = (it.x - x).abs() <= (it.x + it.width - x).abs();
+                let (left, right) = it.extent();
+                let at_left = (left - x).abs() <= (right - x).abs();
                 self.snap(if at_left ^ it.rtl {
                     it.bytes.start
                 } else {

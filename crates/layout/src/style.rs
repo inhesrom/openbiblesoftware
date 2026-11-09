@@ -2,6 +2,7 @@
 //! them from the active Page tone, so a theme change never re-lays-out text (#21 rule 4).
 
 use obs_fonts::{FaceId, ReadingFaces, ShapeStyle, face};
+use serde::{Deserialize, Serialize};
 
 /// What a piece of text is, for colouring. The painter maps each role to a colour per tone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -34,6 +35,69 @@ pub enum VerseNumbers {
     Hidden,
 }
 
+/// How a Bible's verses flow on the page (Reading layout, #209).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextFlow {
+    /// Paragraphs where the Bible starts them (the default).
+    #[default]
+    Paragraphs,
+    /// Every verse starts a line of its own.
+    VersePerLine,
+}
+
+/// How wide the reading column is drawn (Reading layout, #209). The pane centres it; a pane
+/// narrower than the column gets all its width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ColumnWidth {
+    Narrow,
+    /// About 70 characters a line (the default).
+    #[default]
+    Medium,
+    Wide,
+    /// The whole pane.
+    Full,
+}
+
+impl ColumnWidth {
+    /// The column's width in ems of the Text size; `None` for the whole pane.
+    pub fn ems(self) -> Option<f32> {
+        match self {
+            ColumnWidth::Narrow => Some(30.0),
+            ColumnWidth::Medium => Some(38.0),
+            ColumnWidth::Wide => Some(50.0),
+            ColumnWidth::Full => None,
+        }
+    }
+}
+
+/// How Resource text is laid out on the page (#209): set per Tab, with defaults in Settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ReadingLayout {
+    pub flow: TextFlow,
+    /// A drop numeral, two lines tall, at the start of each chapter.
+    pub large_chapter_numbers: bool,
+    /// A Bible's section headings are shown.
+    pub section_headings: bool,
+    pub column: ColumnWidth,
+    /// Prose is justified, and words of an English Resource are hyphenated to fit.
+    pub justified: bool,
+}
+
+impl Default for ReadingLayout {
+    fn default() -> Self {
+        Self {
+            flow: TextFlow::Paragraphs,
+            large_chapter_numbers: false,
+            section_headings: true,
+            column: ColumnWidth::Medium,
+            justified: false,
+        }
+    }
+}
+
 /// The user's text settings in v0.1 (#14 rule 12), plus per-script tuning.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextSettings {
@@ -54,6 +118,8 @@ pub struct TextSettings {
     /// The reading font of each script (View → Fonts, #138). A character the chosen face
     /// lacks is drawn in the bundled face for its script.
     pub fonts: ReadingFaces,
+    /// How the text flows on the page (#209).
+    pub layout: ReadingLayout,
 }
 
 impl Default for TextSettings {
@@ -67,6 +133,7 @@ impl Default for TextSettings {
             verse_numbers: VerseNumbers::Superscript,
             footnote_markers: true,
             fonts: ReadingFaces::default(),
+            layout: ReadingLayout::default(),
         }
     }
 }
@@ -87,6 +154,11 @@ impl TextSettings {
             u32::from(self.red_letter),
             self.verse_numbers as u32,
             u32::from(self.footnote_markers),
+            // The column width only changes the width, which the height index keys apart.
+            self.layout.flow as u32,
+            u32::from(self.layout.large_chapter_numbers),
+            u32::from(self.layout.section_headings),
+            u32::from(self.layout.justified),
         ]
         .into_iter()
         .chain(

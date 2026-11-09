@@ -415,6 +415,14 @@ _Avoid_: Search (for this), Find dialog, Quick find
 How large Resource text is drawn in every Tab, in points. View → Larger text, Smaller text and Reset Text size change it (Ctrl/Cmd with +, = or numpad +; − or numpad −; 0). The default is 20 pt, the same for Bibles and every other Resource, and the readable range is 12–40 pt: a saved size below 12 (left by an older build) opens at the default once, with a notice. A point is a logical pixel, so on a 2× display text keeps its size and gets sharper. It never changes the Interface size.
 _Avoid_: Zoom, Font size
 
+**Reading layout**:
+How Resource text flows on a reading pane's page: Paragraphs (where the Bible starts them) or One verse per line; Large chapter numbers (a numeral two lines tall opening each chapter); Section headings shown or hidden (a Bible's own headings only); the Reading column width (Narrow, Medium, Wide or Full width); and Justified text, with English words hyphenated to fit and Greek and Hebrew never hyphenated. Each Tab sets its own in View → Reading layout; whatever it has not set follows the defaults in Settings. A Tab's choices are saved in Layouts and the Last session. Changing one lays the text out again at the same Current location.
+_Avoid_: Text flow, Page layout, Reading mode, Layout (a saved Workspace)
+
+**Reading column**:
+The column of Resource text in a reading pane, centred in the pane: Medium is about 70 characters a line; Full width uses the whole pane.
+_Avoid_: Measure, Margins, Text width
+
 **Interface size**:
 One zoom on the whole app window: menus, Tab bars, headers and dialogs grow or shrink, with Resource text scaled along on top of its Text size (View → Interface size: Smaller, Default, Larger). It is kept in the User database. No Text size key changes it.
 _Avoid_: Zoom, UI scale, DPI

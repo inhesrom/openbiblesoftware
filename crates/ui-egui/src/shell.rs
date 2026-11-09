@@ -1344,8 +1344,83 @@ impl Shell {
                     }
                 });
             }
+            MenuItem::ReadingLayout => self.reading_layout_menu(ui),
             // Only the Library and Layouts Launchers' panes list these.
             MenuItem::Favorites | MenuItem::Layouts | MenuItem::Resources => {}
+        }
+    }
+}
+
+impl Shell {
+    /// View → Reading layout (#209): the focused Resource Tab's own choices, each run as
+    /// `tab.reading_layout`; what it has not chosen follows the defaults in Settings.
+    fn reading_layout_menu(&mut self, ui: &mut Ui) {
+        let workspace = &self.st.session.workspace;
+        let tab = workspace.focused().filter(|t| {
+            matches!(
+                workspace.tab(*t).map(|t| &t.kind),
+                Some(TabKind::Resource(_))
+            )
+        });
+        let mut run: Option<Value> = None;
+        ui.add_enabled_ui(tab.is_some(), |ui| {
+            ui.menu_button((icons::blank(), "Reading layout"), |ui| {
+                let Some(tab) = tab else {
+                    return;
+                };
+                let shown = self.st.session.reading_layout(tab);
+                for (flow, id, label) in obs_engine::TEXT_FLOWS {
+                    if ui.radio(shown.flow == flow, label).clicked() {
+                        run = Some(json!({ "flow": id }));
+                    }
+                }
+                ui.separator();
+                let toggles = [
+                    (
+                        "large_chapter_numbers",
+                        "Large chapter numbers",
+                        shown.large_chapter_numbers,
+                    ),
+                    (
+                        "section_headings",
+                        "Section headings",
+                        shown.section_headings,
+                    ),
+                    ("justified", "Justified text", shown.justified),
+                ];
+                for (param, label, mut on) in toggles {
+                    if ui.checkbox(&mut on, label).clicked() {
+                        run = Some(json!({ param: on }));
+                    }
+                }
+                ui.separator();
+                ui.label(
+                    RichText::new("Reading column width")
+                        .small()
+                        .color(theme::c().muted),
+                );
+                for (column, id, label) in obs_engine::COLUMN_WIDTHS {
+                    if ui.radio(shown.column == column, label).clicked() {
+                        run = Some(json!({ "column": id }));
+                    }
+                }
+                ui.separator();
+                let own = (self.st.session.workspace.tab(tab))
+                    .is_some_and(|t| !t.reading_layout.is_default());
+                if ui
+                    .add_enabled(own, egui::Button::new("Use defaults"))
+                    .on_hover_text("Follow the Reading layout defaults in Settings")
+                    .clicked()
+                {
+                    run = Some(json!({ "reset": true }));
+                }
+            })
+            .response
+            .on_disabled_hover_text("Focus a Resource Tab to choose its Reading layout");
+        });
+        if let (Some(mut params), Some(tab)) = (run, tab) {
+            params["tab"] = json!(tab.0);
+            self.run("tab.reading_layout", &params);
         }
     }
 }
@@ -2253,7 +2328,12 @@ impl State {
         self.interlinear_hint(ui, tab);
         let filters = self.filter_source(tab);
         let palette = self.palette;
-        let mut text = self.session.text;
+        // The Tab's own Reading layout over the defaults (#209). A change lays the text out
+        // again, keeping the Current location.
+        let mut text = obs_layout::TextSettings {
+            layout: self.session.reading_layout(tab),
+            ..self.session.text
+        };
         text.footnote_markers = self
             .session
             .workspace

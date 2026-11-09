@@ -18,6 +18,10 @@
 //!
 //! With `footnote_markers` off, no zero-width `note_ref`, `xref` or `scripture_ref` is laid out.
 //!
+//! The Reading layout (#209, `TextSettings::layout`) acts here too: a Bible's verses can each
+//! start a line, a chapter that opens a prose paragraph can open it with a drop numeral, a
+//! Bible's headings can be hidden, and prose can be justified.
+//!
 //! Each script's text uses its reading font (#138; by default Ezra SIL for Hebrew, at
 //! `hebrew_scale`, and Gentium Plus for everything else), falling back per cluster to the
 //! bundled face for characters the chosen font lacks. Verse and chapter numbers follow the
@@ -32,7 +36,7 @@ use obs_model::{Direction, NoteKind, ParaStyle, Span, SpanKind, TextUnit, UnitKi
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::paragraph::{Align, InlineObject, Paragraph, Run, RunSource};
-use crate::style::{ColorRole, RunStyle, TextSettings, VerseNumbers};
+use crate::style::{ColorRole, RunStyle, TextFlow, TextSettings, VerseNumbers};
 
 /// What kind of block a range of a unit is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +119,34 @@ pub fn block_paragraph(
     settings: &TextSettings,
 ) -> Paragraph {
     let size = settings.size;
+    let reading = settings.layout;
+    let bible = unit.kind == UnitKind::BibleBook;
+    // Section headings hidden (#209): a Bible's headings take no room. Other Resources'
+    // headings are their structure, and stay.
+    if bible && !reading.section_headings && matches!(block.kind, BlockKind::Heading(_)) {
+        return Paragraph {
+            rtl: direction == Direction::Rtl,
+            line_spacing: settings.line_spacing,
+            hebrew_line_height: settings.hebrew_line_height,
+            hidden: true,
+            ..Paragraph::default()
+        };
+    }
+    // Prose, lists and plain text may be justified, start each verse on a line of its own,
+    // and open a chapter with a drop numeral; poetry, headings and titles keep their lines.
+    let prose = matches!(
+        block.kind,
+        BlockKind::Plain | BlockKind::Paragraph(ParaStyle::Prose | ParaStyle::List)
+    );
+    let verse_per_line = bible && reading.flow == TextFlow::VersePerLine;
+    let mut out = BlockRuns {
+        runs: Vec::new(),
+        verse_per_line: verse_per_line
+            && matches!(block.kind, BlockKind::Paragraph(_) | BlockKind::Plain),
+        drop_numerals: bible && prose && reading.large_chapter_numbers,
+        line_starts: Vec::new(),
+        drop_numeral: None,
+    };
     let (base, space_before, space_after, indent, inset, align) = match block.kind {
         BlockKind::Heading(level) => {
             let scale = if level <= 1 { 1.12 } else { 1.0 };
@@ -216,7 +248,6 @@ pub fn block_paragraph(
     cuts.sort_unstable();
     cuts.dedup();
 
-    let mut runs: Vec<Run> = Vec::new();
     let pieces = cuts
         .windows(2)
         .map(|w| (w[0], w[1]))
@@ -227,7 +258,7 @@ pub fn block_paragraph(
             footnotes: &footnotes,
             rtl: direction == Direction::Rtl,
         };
-        push_objects(unit, &objects, a, &range, settings, body, &mut runs);
+        push_objects(unit, &objects, a, &range, settings, body, &mut out);
         if b <= a {
             continue;
         }
@@ -263,10 +294,16 @@ pub fn block_paragraph(
         } else {
             text.to_string()
         };
-        push_text(&mut runs, &text, a, flags, body, settings);
+        push_text(&mut out.runs, &text, a, flags, body, settings);
     }
+    // Verses that start their own lines, or a drop numeral, start flush.
+    let indent = if out.verse_per_line || out.drop_numeral.is_some() {
+        0.0
+    } else {
+        indent
+    };
     Paragraph {
-        runs,
+        runs: out.runs,
         rtl: direction == Direction::Rtl,
         line_spacing: settings.line_spacing,
         indent,
@@ -276,8 +313,38 @@ pub fn block_paragraph(
         align,
         hebrew_line_height: settings.hebrew_line_height,
         interlinear: None,
+        justify: reading.justified && prose,
+        hyphenate: false,
+        line_starts: out.line_starts,
+        drop_numeral: out.drop_numeral,
+        hidden: false,
     }
 }
+
+/// A block's runs as they are made, with what its Reading layout asks of its verse and
+/// chapter numbers (#209) and what [`push_objects`] found.
+struct BlockRuns {
+    runs: Vec<Run>,
+    /// Each verse starts a line.
+    verse_per_line: bool,
+    /// A chapter number at the very start of the block is a drop numeral.
+    drop_numerals: bool,
+    line_starts: Vec<usize>,
+    drop_numeral: Option<usize>,
+}
+
+/// How much larger than the text a drop numeral is, at `line_spacing`: its figures reach from
+/// the top of the first line's figures down to the second line's baseline. A first guess, from
+/// ordinary lines: [`crate::layout`] fits it to the lines as laid out (Interlinear lines,
+/// Hebrew metrics).
+pub fn drop_numeral_scale(line_spacing: f32) -> f32 {
+    1.0 + LINE_PITCH * line_spacing / FIGURE_HEIGHT
+}
+
+/// A line's natural height in ems of the text size (as [`crate::estimate_height`] counts it).
+const LINE_PITCH: f32 = 1.46;
+/// The height of Gentium Plus's figures, in ems.
+const FIGURE_HEIGHT: f32 = 0.72;
 
 /// `LORD` → `Lord` (drawn with `smcp`, so it reads as L + small capitals). Only ASCII changes
 /// case, so byte offsets are kept. A letter starts a word if the unit character before it is
@@ -370,7 +437,7 @@ fn push_objects(
     block: &Range<usize>,
     settings: &TextSettings,
     body: f32,
-    runs: &mut Vec<Run>,
+    out: &mut BlockRuns,
 ) {
     let marker = |text: String, face: FaceId, object: InlineObject| Run {
         text,
@@ -403,7 +470,7 @@ fn push_objects(
                 if nth.is_some_and(|n| n < cross_reference_notes_at(objects.spans, a).len()) {
                     continue;
                 }
-                runs.push(marker(
+                out.runs.push(marker(
                     "↗".into(),
                     FaceId::Regular,
                     InlineObject::ScriptureReference { span },
@@ -438,7 +505,7 @@ fn push_objects(
                         (glyph.to_string(), FaceId::Regular)
                     }
                 };
-                runs.push(marker(
+                out.runs.push(marker(
                     text,
                     face,
                     InlineObject::NoteMarker {
@@ -447,15 +514,37 @@ fn push_objects(
                     },
                 ));
             }
-            SpanKind::Verse { verse, .. }
-                if verse.verse > 0
-                    && block.contains(&a)
-                    && (settings.verse_numbers != VerseNumbers::Hidden || verse.verse == 1) =>
-            {
+            SpanKind::Verse { verse, .. } if verse.verse > 0 && block.contains(&a) => {
+                // One verse per line: the verse starts a line, number or not.
+                if out.verse_per_line && !out.line_starts.contains(&out.runs.len()) {
+                    out.line_starts.push(out.runs.len());
+                }
+                if settings.verse_numbers == VerseNumbers::Hidden && verse.verse != 1 {
+                    continue;
+                }
                 // Numbers follow the Latin reading font (bold), when it has the digits.
                 let numbers = FaceChooser::new(settings, true, false);
                 let number_face = |t: &str| numbers.face_for(ReadingScript::Latin, t);
-                let (text, style) = if verse.verse == 1 {
+                // A chapter's drop numeral opens a block whose text has not started yet.
+                let drop = verse.verse == 1
+                    && out.drop_numerals
+                    && out
+                        .runs
+                        .iter()
+                        .all(|r| matches!(r.source, RunSource::Object { .. }));
+                let (text, style) = if drop {
+                    out.drop_numeral = Some(out.runs.len());
+                    (
+                        verse.chapter.to_string(),
+                        RunStyle {
+                            face: number_face(&verse.chapter.to_string()),
+                            size: body * drop_numeral_scale(settings.line_spacing),
+                            small_caps: false,
+                            raise: 0.0,
+                            role: ColorRole::Accent,
+                        },
+                    )
+                } else if verse.verse == 1 {
                     (
                         format!("{}\u{00A0}", verse.chapter),
                         RunStyle {
@@ -489,7 +578,7 @@ fn push_objects(
                         },
                     )
                 };
-                runs.push(Run {
+                out.runs.push(Run {
                     text,
                     style,
                     source: RunSource::Object {
@@ -855,6 +944,6 @@ pub fn snippet_paragraph(
         space_after: 0.0,
         align: Align::Start,
         hebrew_line_height: settings.hebrew_line_height,
-        interlinear: None,
+        ..Paragraph::default()
     }
 }

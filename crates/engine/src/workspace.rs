@@ -467,6 +467,8 @@ pub struct Tab {
     pub interlinear: crate::interlinear::InterlinearLines,
     /// The Visual filters this Resource Tab switched on or off (#211).
     pub visual_filters: crate::visual_filters::TabFilters,
+    /// A Resource Tab's own Reading layout choices (#209).
+    pub reading_layout: crate::reading_layout::TabReadingLayout,
     /// A Resource Tab shows its Contents pane (#176).
     pub contents: bool,
     /// A Resource Tab shows Footnote markers in its text (#208); on unless the user hid them.
@@ -517,6 +519,7 @@ impl Tab {
             arriving_at: None,
             interlinear: t.interlinear,
             visual_filters: t.visual_filters,
+            reading_layout: t.reading_layout,
             contents: t.contents,
             footnote_markers: !t.footnote_markers_hidden,
             view_unit: None,
@@ -1198,6 +1201,7 @@ impl Workspace {
                 arriving_at: None,
                 interlinear: Default::default(),
                 visual_filters: Default::default(),
+                reading_layout: Default::default(),
                 contents: false,
                 footnote_markers: true,
                 view_unit: None,

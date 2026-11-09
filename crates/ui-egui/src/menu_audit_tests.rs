@@ -458,9 +458,10 @@ fn labels_follow_the_naming_rules() {
         menu_titles.push(m.title);
         titles(m.items, &mut menu_titles);
     }
-    for t in menu_titles
-        .into_iter()
-        .chain(["Notebooks in text", "Recently closed"])
+    for t in
+        menu_titles
+            .into_iter()
+            .chain(["Notebooks in text", "Recently closed", "Reading layout"])
     {
         if let Some(p) = label_problem(t, &terms) {
             problems.push(format!("menu {t:?}: {p}"));
@@ -500,6 +501,11 @@ fn menu_map(h: &Harness) -> String {
                 ),
                 MenuItem::RecentlyClosed => {
                     format!("| {indent}Recently closed ▸ | `tab.reopen_closed` (one per entry) | |")
+                }
+                MenuItem::ReadingLayout => {
+                    format!(
+                        "| {indent}Reading layout ▸ | `tab.reading_layout` (one per choice) | |"
+                    )
                 }
                 MenuItem::Submenu { title, items } => {
                     out.push_str(&format!("| {indent}{title} ▸ | | |\n"));

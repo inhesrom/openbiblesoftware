@@ -861,7 +861,10 @@ fn reading_text_keeps_a_comfortable_measure() {
         .find_map(|t| t.view.as_ref())
         .unwrap();
     assert!(
-        laid.width() <= crate::MEASURE_EMS * obs_layout::TextSettings::DEFAULT_SIZE + 0.5,
+        laid.width()
+            <= obs_layout::ColumnWidth::Medium.ems().unwrap()
+                * obs_layout::TextSettings::DEFAULT_SIZE
+                + 0.5,
         "{}",
         laid.width()
     );
@@ -3513,6 +3516,8 @@ mod keyboard_shortcuts;
 mod menu_audit;
 #[path = "page_tone_tests.rs"]
 mod page_tone;
+#[path = "reading_layout_tests.rs"]
+mod reading_layout;
 #[path = "recently_closed_tests.rs"]
 mod recently_closed;
 #[path = "settings_tests.rs"]

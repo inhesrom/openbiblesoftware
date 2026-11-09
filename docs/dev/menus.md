@@ -138,6 +138,7 @@ Checked for every command's label and every menu, choice and submenu title
 | Red letter | `view.red_letter` |  |
 | Footnote markers | `view.footnote_markers` |  |
 | Fonts | `view.fonts` |  |
+| Reading layout ▸ | `tab.reading_layout` (one per choice) | |
 | — | | |
 | Show Highlights | `view.highlights` |  |
 | Highlight styles | `view.highlight_styles` |  |

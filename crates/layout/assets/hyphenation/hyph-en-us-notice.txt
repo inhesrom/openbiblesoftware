@@ -1,0 +1,13 @@
+Hyphenation patterns for American English (hyph-en-us.tex, 2005-05-30), part of the
+hyph-utf8 package (https://www.hyphenation.org/tex), as compiled into the hypher crate
+(https://github.com/typst/hypher, tries/en.bin) that Justified text uses to hyphenate
+English words.
+
+Copyright (C) 1990, 2004, 2005 Gerard D.C. Kuiken
+
+Copying and distribution of this file, with or without modification, are permitted in any
+medium without royalty provided the copyright notice and this notice are preserved.
+
+The patterns are Donald E. Knuth's hyphen.tex patterns for Plain TeX with Gerard D.C.
+Kuiken's additions (ushyphmax.tex), based on the Hyphenation Exception Log published in
+TUGboat, Volume 10 (1989), No. 3, pp. 337-341.

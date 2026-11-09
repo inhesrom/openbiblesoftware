@@ -23,6 +23,8 @@ and is saved in the User database as before.
 | Interface size | Interface size | `view.interface_size` | `{value: default}` |
 | Theme and Page tone | Theme, Page tone | `view.theme`, `view.page_tone` | `{value: system}`, `{value: auto}` |
 | Reading layout defaults | Line spacing, Verse numbers | `view.line_spacing`, `view.verse_numbers` | `{value: normal}`, `{value: superscript}` |
+| | Paragraphs or verse per line, Reading column width (#209) | `view.text_flow`, `view.column_width` | `{value: paragraphs}`, `{value: medium}` |
+| | Large chapter numbers, Section headings, Justified text (#209) | `view.large_chapter_numbers {on}`, `view.section_headings {on}`, `view.justified {on}` | `on: false`, `on: true`, `on: false` |
 | | Red letter, Show Highlights | `view.red_letter`, `view.highlights` (toggles) | the toggle, when off |
 | | Highlight styles (#181) | a button: View → Highlight styles (`view.highlight_styles`) | none (an action; each style edit is undone with Ctrl+Z) |
 | | Notebooks in text | `notebook.show_in_text {id, show}` | `show: true` for each hidden one |

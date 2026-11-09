@@ -49,7 +49,7 @@ pub enum Align {
 }
 
 /// One block's worth of text, ready to lay out.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Paragraph {
     pub runs: Vec<Run>,
     /// Base direction (from the Resource's script direction, #14 rule 10).
@@ -66,6 +66,19 @@ pub struct Paragraph {
     pub hebrew_line_height: f32,
     /// Interlinear lines under its Tagged words (#143), when the Tab shows them.
     pub interlinear: Option<Interlinear>,
+    /// Full lines are justified: every line but the last, and the last before a run in
+    /// `line_starts` (Justified text, #209).
+    pub justify: bool,
+    /// With `justify`, a word that does not fit may be hyphenated by the English patterns.
+    /// Only words of Latin letters are; Greek, Hebrew and right-to-left text never are.
+    pub hyphenate: bool,
+    /// Runs (indexes into `runs`) that start a new line: each verse with One verse per line.
+    pub line_starts: Vec<usize>,
+    /// A run drawn as a drop numeral beside the first two lines, which make room for it
+    /// (Large chapter numbers, #209).
+    pub drop_numeral: Option<usize>,
+    /// Laid out with no lines and no height (a hidden section heading, #209).
+    pub hidden: bool,
 }
 
 impl Paragraph {
