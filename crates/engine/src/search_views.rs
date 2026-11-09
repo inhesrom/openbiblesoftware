@@ -730,9 +730,9 @@ impl Session {
         } else {
             "Show the Analysis of a Bible search first"
         })?;
-        std::fs::write(path, analysis.csv(order))
-            .map_err(|e| format!("Could not write {}: {e}", path.display()))?;
-        Ok(order.len())
+        let (csv, records) = (analysis.csv(order), order.len());
+        self.write_export(path, csv.as_bytes())?;
+        Ok(records)
     }
 }
 

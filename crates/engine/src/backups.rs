@@ -12,6 +12,7 @@
 //! of it, as at launch; the open Workspace stays as it is. **Undo restore**
 //! (`data.undo_restore`) restores the Safety backup the last restore took.
 
+use std::collections::HashSet;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -243,7 +244,6 @@ impl Session {
     /// the User database) at `dest`. It is a copy for reading elsewhere; the app restores
     /// Backups, not exports. `dest` is never the User database itself.
     pub fn export_everything(&self, dest: &Path) -> Result<DataExport, String> {
-        self.user_db()?.refuse_own_file(dest)?;
         let files = self.data_export_files()?;
         let annotations = self.user_db()?.annotations(None)?.len();
         let mut out = std::io::Cursor::new(Vec::new());
@@ -258,7 +258,7 @@ impl Session {
             }
             zip.finish().map_err(|e| e.to_string())?;
         }
-        std::fs::write(dest, out.into_inner()).map_err(|e| format!("{}: {e}", dest.display()))?;
+        self.write_export(dest, &out.into_inner())?;
         Ok(DataExport {
             files: files.into_iter().map(|(n, _)| n).collect(),
             annotations,
@@ -289,18 +289,11 @@ impl Session {
         files.push(("README.md".to_string(), README.to_string()));
 
         let notebooks = user.notebooks()?;
-        let mut used = Vec::<String>::new();
+        let mut used = HashSet::<String>::new();
         for n in &notebooks {
             let export = self.notes_export(&NotesSource::Notebook(Some(n.id.clone())))?;
             let file = export.file_name(crate::NotesFormat::Markdown);
-            let mut name = format!("notes/{file}");
-            let mut k = 2;
-            while used.contains(&name) {
-                let stem = file.trim_end_matches(".md");
-                name = format!("notes/{stem} ({k}).md");
-                k += 1;
-            }
-            used.push(name.clone());
+            let name = notebook_entry_name(&mut used, &file);
             files.push((name, export.markdown()));
         }
         // The remembered name of every Resource seen, so an Annotation on one since removed
@@ -496,6 +489,41 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
         },
     },
 ];
+
+/// The zip entry `notes/<file>` for a Notebook's Markdown file, with ` (2)`, ` (3)`… added
+/// until no name in `used` has the same [`file_name_key`], so no two survive as one file
+/// when the zip is extracted onto a disk that folds case (macOS, Windows). Adds it to `used`.
+pub(crate) fn notebook_entry_name(used: &mut HashSet<String>, file: &str) -> String {
+    let stem = file.strip_suffix(".md").unwrap_or(file);
+    let mut name = format!("notes/{file}");
+    let mut k = 2;
+    while !used.insert(file_name_key(&name)) {
+        name = format!("notes/{stem} ({k}).md");
+        k += 1;
+    }
+    name
+}
+
+/// `name` as a disk that ignores case and Unicode normalisation compares it: two names with
+/// the same key may be one file there. Each character is lower-cased, upper-cased, then
+/// lower-cased again, which joins every pair of names Unicode case folding joins: letters
+/// with more than one lower-case form (`Σ`, `σ` and final `ς`; `ſ` and `s`) and the sharp s
+/// in either case with `ss` (`ẞ` lower-cases to `ß`, which upper-cases to `SS`), as NTFS's
+/// upper-casing and APFS's case folding make them meet. The result is decomposed (NFD), as
+/// APFS and HFS+ treat `é` and `e` + combining acute as one name. Keys may join names a disk
+/// keeps apart (`ß` and `ss` on NTFS; dotless `ı` and `i`), which only costs a ` (2)`.
+/// Trailing periods and spaces are dropped, as Windows drops them from a name it opens
+/// (`a.txt.` and `a.txt ` are `a.txt` there).
+pub(crate) fn file_name_key(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization as _;
+    name.trim_end_matches(['.', ' '])
+        .nfd()
+        .flat_map(char::to_lowercase)
+        .flat_map(char::to_uppercase)
+        .flat_map(char::to_lowercase)
+        .nfd()
+        .collect()
+}
 
 fn path_of(command: &'static str, p: &Params<'_>) -> Result<PathBuf, CommandError> {
     p.str("path")

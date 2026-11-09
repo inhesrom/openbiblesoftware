@@ -49,6 +49,9 @@ mod drag_drop_tests;
 pub mod exegetical_guide;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod exegetical_guide_tests;
+pub mod export_file;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod export_file_tests;
 pub mod factbook;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod factbook_tests;
