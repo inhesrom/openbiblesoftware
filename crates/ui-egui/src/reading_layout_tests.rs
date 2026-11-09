@@ -11,6 +11,7 @@ use obs_layout::{
 use obs_scripture::{Book, Verse};
 
 use super::*;
+use crate::selection::{DocPos, range_rects};
 use crate::view::ReadingView;
 
 /// Visual evidence for `docs/previews/<name>.png` when `UPDATE_PREVIEWS` is set.
@@ -315,6 +316,52 @@ fn each_option_changes_bsb_john_3_and_keeps_the_current_location() {
         ReadingLayout::default()
     );
     assert_eq!(view(&mut h, tab).width(), medium);
+}
+
+/// A Highlight (or selection) over a chapter's first verse marks its drop numeral over the
+/// numeral's whole height, not only the first line's band.
+#[test]
+fn a_range_over_the_first_verse_marks_its_whole_drop_numeral() {
+    let (mut h, _lab) = launch("drop-range", &[bsb_john_3()]);
+    let tab = open_bsb(&mut h);
+    set(&mut h, tab, json!({ "large_chapter_numbers": true }));
+    let jn_3_1 = Verse::new(Book::John, 3, 1);
+    let v = view(&mut h, tab);
+    v.jump_to(jn_3_1);
+    let (unit, byte) = v.doc.verse_position(jn_3_1).unwrap();
+    let block = v.doc.block_at(unit, byte).unwrap();
+    let top = (v.visible(900.0).into_iter())
+        .find(|b| b.index == block)
+        .unwrap()
+        .top;
+    let laid = v.laid(block).unwrap();
+    let first = &laid.lines[0];
+    let numeral = &first.items[0];
+    assert_eq!(laid.text.get(numeral.bytes.clone()), Some("3"));
+    let range = (
+        DocPos { unit, byte },
+        DocPos {
+            unit,
+            byte: byte + 20,
+        },
+    );
+    let rects = range_rects(v, &[range], 900.0).remove(0);
+    let x = numeral.x + numeral.width / 2.0;
+    let marked = (rects.iter())
+        .find(|r| r[0] <= x && x <= r[2])
+        .expect("the numeral is marked");
+    let baseline = first.baseline - numeral.style.raise;
+    assert!(marked[1] <= top + first.top + 0.5, "{marked:?}");
+    assert!(
+        marked[3] >= top + baseline,
+        "{marked:?} stops above its baseline {}",
+        top + baseline
+    );
+    // The text beside it is marked in its own line's band.
+    let beside = (rects.iter())
+        .find(|r| r[0] >= numeral.x + numeral.width)
+        .unwrap();
+    assert_eq!(beside[3], top + first.text_bottom);
 }
 
 /// Narrow justified columns hyphenate English words: a hyphen is drawn, not added to the text,

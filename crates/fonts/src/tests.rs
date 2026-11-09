@@ -204,6 +204,24 @@ fn trailing_space_is_measured() {
 }
 
 #[test]
+fn ink_top_is_the_glyphs_height_above_the_baseline() {
+    let figures = |size: f32| {
+        let st = ShapeStyle::new(FaceId::Bold, size, false, false);
+        ink_top(&shape_uncached("3", st).unwrap(), st).unwrap()
+    };
+    // Figures stand about three quarters of an em tall, below the face's ascent.
+    let top = figures(100.0);
+    let (ascent, _, _) = face(FaceId::Bold).unwrap().metrics.scaled(100.0);
+    assert!(top > 50.0 && top < ascent, "{top}");
+    assert!(
+        (figures(50.0) - top / 2.0).abs() < 0.5,
+        "it scales with the size"
+    );
+    let st = style(FaceId::Regular, false);
+    assert_eq!(ink_top(&shape_uncached(" ", st).unwrap(), st), None);
+}
+
+#[test]
 fn svg_preview_draws_outlines() {
     let st = style(FaceId::Hebrew, true);
     let run = shape_uncached(GEN_1_1_HEB, st).unwrap();

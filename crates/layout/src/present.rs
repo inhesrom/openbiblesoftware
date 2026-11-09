@@ -334,7 +334,9 @@ struct BlockRuns {
 }
 
 /// How much larger than the text a drop numeral is, at `line_spacing`: its figures reach from
-/// the top of the first line's figures down to the second line's baseline.
+/// the top of the first line's figures down to the second line's baseline. A first guess, from
+/// ordinary lines: [`crate::layout`] fits it to the lines as laid out (Interlinear lines,
+/// Hebrew metrics).
 pub fn drop_numeral_scale(line_spacing: f32) -> f32 {
     1.0 + LINE_PITCH * line_spacing / FIGURE_HEIGHT
 }

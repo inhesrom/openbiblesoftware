@@ -32,7 +32,7 @@ pub use licenses::{FONT_LICENSES, FontLicense};
 pub use preview::{lines_svg, run_path};
 pub use reading::{Coverage, FaceSet, ReadingFaces, ReadingScript, script_coverage};
 pub use shape::{
-    CacheStats, Cluster, Glyph, ShapeCache, ShapeStyle, ShapedRun, shape_uncached,
+    CacheStats, Cluster, Glyph, ShapeCache, ShapeStyle, ShapedRun, ink_top, shape_uncached,
     small_caps_source,
 };
 pub use unicode_script::Script;

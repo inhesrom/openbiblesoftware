@@ -266,8 +266,11 @@ fn add_block_rects(
     if active.is_empty() {
         return;
     }
-    for line in &laid.lines {
+    for (li, line) in laid.lines.iter().enumerate() {
         for item in &line.items {
+            // The text's own band: interlinear lines under it are not part of a range (#143);
+            // a drop numeral is marked over all of it (#209).
+            let (y0, y1) = laid.range_band(li, item);
             let mut runs: Vec<Option<[f32; 4]>> = vec![None; active.len()];
             for (bytes, x0, x1) in item.clusters() {
                 // A text cluster covers unit bytes `[b, b + len)`: a ligature ("fi") is one
@@ -292,9 +295,7 @@ fn add_block_rects(
                             if let Some(r) = run.take() {
                                 out[i].push(r);
                             }
-                            // The text's own band: interlinear lines under it are
-                            // not part of a range (#143).
-                            *run = Some([x0, top + line.top, x1, top + line.text_bottom]);
+                            *run = Some([x0, top + y0, x1, top + y1]);
                         }
                         (_, false) => {
                             if let Some(r) = run.take() {

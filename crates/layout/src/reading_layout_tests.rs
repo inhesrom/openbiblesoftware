@@ -4,8 +4,8 @@
 
 use std::ops::Range;
 
-use obs_fonts::{FaceId, ShapeCache};
-use obs_model::{Direction, ParaStyle, Span, SpanKind, TextUnit, UnitId, UnitKind};
+use obs_fonts::{FaceId, ShapeCache, ShapeStyle, ink_top};
+use obs_model::{Direction, MorphemePart, ParaStyle, Span, SpanKind, TextUnit, UnitId, UnitKind};
 use obs_scripture::{Book, Verse};
 
 use super::*;
@@ -817,4 +817,172 @@ fn a_tail_is_split_at_its_whole_words_hyphenation_points() {
             );
         }
     }
+}
+
+/// `unit` with every word of its verses tagged, as an interlinear Bible tags them.
+fn tag_words(mut unit: TextUnit) -> TextUnit {
+    let verses: Vec<Range<usize>> = (unit.spans.iter())
+        .filter(|s| matches!(s.kind, SpanKind::Verse { .. }))
+        .map(|s| s.range())
+        .collect();
+    for verse in verses {
+        let mut at = verse.start;
+        for word in unit.text[verse.clone()].split(' ') {
+            if !word.is_empty() {
+                unit.spans.push(span(
+                    at..at + word.len(),
+                    SpanKind::TaggedWord {
+                        parts: vec![MorphemePart::new("G1".parse().unwrap())],
+                    },
+                ));
+            }
+            at += word.len() + 1;
+        }
+    }
+    unit.spans
+        .sort_by_key(|s| (s.start, std::cmp::Reverse(s.end)));
+    unit
+}
+
+/// [`lay`] with `rows` Interlinear lines (#143) under every Tagged word.
+fn lay_interlinear(
+    unit: &TextUnit,
+    direction: Direction,
+    layout_options: ReadingLayout,
+    width: f32,
+    rows: usize,
+) -> Vec<(BlockSource, LaidBlock)> {
+    let s = settings(layout_options);
+    unit_blocks(unit)
+        .into_iter()
+        .map(|b| {
+            let mut p = block_paragraph(unit, &b, direction, &s);
+            add_interlinear(&mut p, unit, &b, &s, rows, &mut |written, _| {
+                vec![written.to_uppercase(), "G1".into(), "N-NSM".into()]
+            });
+            let l = layout(&p, width, ShapeCache::shared());
+            (b, l)
+        })
+        .collect()
+}
+
+/// The drop numeral of `block` (its text is `numeral`) spans its first two lines as drawn:
+/// the top of its figures is level with the top of figures as large as the first line's
+/// text, its baseline on the second line's (below a one-line paragraph, a line's height
+/// down). Returns its size.
+fn assert_drop_numeral_spans_two_lines(block: &LaidBlock, numeral: &str) -> f32 {
+    let first = &block.lines[0];
+    let item = (first.items.iter())
+        .find(|i| block.text.get(i.bytes.clone()) == Some(numeral))
+        .unwrap();
+    let baseline = first.baseline - item.style.raise;
+    let second = block
+        .lines
+        .get(1)
+        .map_or(first.baseline + (first.bottom - first.top), |l| l.baseline);
+    assert!((baseline - second).abs() < 0.5, "{baseline} on {second}");
+    let figures = |size: f32| {
+        let style = ShapeStyle::new(item.style.face, size, false, item.rtl);
+        let shaped = ShapeCache::shared().shape(numeral, style).unwrap();
+        ink_top(&shaped, style).unwrap()
+    };
+    let top = baseline - figures(item.style.size);
+    let text = (first.items.iter())
+        .filter(|i| i.run != item.run)
+        .map(|i| i.style.size)
+        .fold(0.0, f32::max);
+    let level = first.baseline - figures(text);
+    assert!(
+        (top - level).abs() < 1.0,
+        "its top {top}, figures' {level}; size {} lines {}",
+        item.style.size,
+        block.lines.len()
+    );
+    assert!(
+        top > first.top && top < first.baseline - 0.5 * text,
+        "its top {top} is in the first line's text, {}..{}",
+        first.top,
+        first.baseline
+    );
+    item.style.size
+}
+
+#[test]
+fn a_drop_numeral_spans_its_first_two_lines_with_interlinear_lines() {
+    let dropped = ReadingLayout {
+        large_chapter_numbers: true,
+        ..ReadingLayout::default()
+    };
+    let john = tag_words(john_3());
+    let genesis = tag_words(hebrew_genesis_1());
+    let cases = [
+        (&john, Direction::Ltr, "3", 420.0),
+        (&genesis, Direction::Rtl, "1", 300.0),
+        // One line: the numeral's lower half is below it.
+        (&john, Direction::Ltr, "3", 4000.0),
+    ];
+    for (unit, direction, numeral, width) in cases {
+        let plain = lay(unit, direction, dropped, width, false);
+        let plain = prose(&plain);
+        let plain_size = assert_drop_numeral_spans_two_lines(plain, numeral);
+        let mut sizes = vec![plain_size];
+        for rows in 1..=3 {
+            let blocks = lay_interlinear(unit, direction, dropped, width, rows);
+            let block = prose(&blocks);
+            assert!(!block.cells.is_empty(), "the lines are shown");
+            assert_eq!(block.lines.len() == 1, width > 1000.0);
+            let size = assert_drop_numeral_spans_two_lines(block, numeral);
+            // The lines under the first line's words stand between it and the next: the
+            // numeral grows to span them.
+            assert!(
+                size > sizes.last().unwrap() + 2.0,
+                "{rows} rows at {width}: {size} after {sizes:?}"
+            );
+            sizes.push(size);
+            assert_drop_numeral_hits(
+                block,
+                numeral,
+                if direction == Direction::Rtl {
+                    Verse::new(Book::Genesis, 1, 1)
+                } else {
+                    Verse::new(Book::John, 3, 1)
+                },
+            );
+            // Nothing beside it overlaps it.
+            let n = (block.lines[0].items.iter())
+                .find(|i| block.text.get(i.bytes.clone()) == Some(numeral))
+                .unwrap();
+            let (left, right) = (n.x, n.x + n.width);
+            for line in &block.lines[..block.lines.len().min(2)] {
+                for it in line.items.iter().filter(|i| i.run != n.run) {
+                    assert!(it.x + it.width <= left + 0.5 || it.x >= right - 0.5);
+                }
+            }
+            for c in block.cells.iter().filter(|c| c.line < 2) {
+                assert!(c.x + c.width <= left + 0.5 || c.x >= right - 0.5, "{c:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_drop_numeral_is_marked_over_its_whole_height() {
+    let dropped = ReadingLayout {
+        large_chapter_numbers: true,
+        ..ReadingLayout::default()
+    };
+    let blocks = lay(&john_3(), Direction::Ltr, dropped, 420.0, false);
+    let block = prose(&blocks);
+    let first = &block.lines[0];
+    let numeral = &first.items[0];
+    assert_eq!(block.text.get(numeral.bytes.clone()), Some("3"));
+    let (top, bottom) = block.range_band(0, numeral);
+    assert!(top <= first.top);
+    assert!(
+        bottom >= first.baseline - numeral.style.raise,
+        "below its baseline"
+    );
+    // The text beside it is marked in its own line's band.
+    let text = &first.items[1];
+    assert_eq!(block.range_band(0, text), (first.top, first.text_bottom));
 }

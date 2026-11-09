@@ -33,11 +33,16 @@ view (`ReadingView::set_width`), which keys the height index on its own.
   (no first-line indent); paragraph spacing is kept.
 - **Large chapter numbers**: when a prose paragraph opens with a chapter's first verse, the
   chapter number becomes `Paragraph::drop_numeral`, sized so its figures reach from the first
-  line's figures to the second line's baseline (`drop_numeral_scale`). The first two lines are
-  inset by its width on the paragraph's start side (the right in Hebrew); a one-line paragraph
-  grows to hold it. It hit-tests as the chapter's first verse number over the whole box it is
-  drawn in, beside the second line too and below a one-line paragraph. Poetry keeps the inline
-  chapter number: its lines are blocks of their own.
+  line's figures to the second line's baseline. `drop_numeral_scale` is a first guess from
+  ordinary lines; `layout` then fits the size to the lines as laid out (measuring the
+  figures' ink with `obs_fonts::ink_top`), so Interlinear lines under the first line, or
+  Hebrew metrics, make it taller rather than pushing it below the opening text. The first
+  two lines are inset by its width on the paragraph's start side (the right in Hebrew); a
+  one-line paragraph grows to hold it. It hit-tests as the chapter's first verse number over
+  the whole box it is drawn in, beside the second line too and below a one-line paragraph,
+  and a selection or Highlight over the first verse marks that whole box
+  (`LaidBlock::range_band`). Poetry keeps the inline chapter number: its lines are blocks of
+  their own.
 - **Section headings hidden**: a Bible's `heading` blocks become `Paragraph::hidden`, laid out
   with no lines and no height. Other Resources' headings are their structure and stay.
 - **Justified text**: prose, list and plain paragraphs (not poetry, headings or titles) have

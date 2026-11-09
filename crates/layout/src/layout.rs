@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::Arc;
 
-use obs_fonts::{Cluster, ShapeCache, ShapeStyle, ShapedRun};
+use obs_fonts::{Cluster, ShapeCache, ShapeStyle, ShapedRun, ink_top};
 use unicode_bidi::{BidiInfo, Level};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -155,6 +155,8 @@ pub struct LaidBlock {
 /// Where a drop numeral is drawn, in px from the block's top-left.
 #[derive(Debug, Clone, Copy)]
 struct DropBox {
+    /// The paragraph run it draws.
+    run: usize,
     left: f32,
     right: f32,
     top: f32,
@@ -301,8 +303,34 @@ fn shape_cell(runs: &[crate::paragraph::Run], cache: &ShapeCache) -> CellPieces 
     (text, pieces, width)
 }
 
-/// Lay `para` out at `width` px, shaping through `cache`.
+/// Lay `para` out at `width` px, shaping through `cache`. A drop numeral (#209) is sized to
+/// the lines it stands beside, which [`layout_lines`] only knows once it has laid them: with
+/// Interlinear lines (#143) or Hebrew metrics they are further apart than ordinary text.
 pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
+    let mut laid = layout_lines(para, width, cache);
+    let Some(run) = para.drop_numeral.filter(|&r| r < para.runs.len()) else {
+        return laid;
+    };
+    let mut fitted: Option<Paragraph> = None;
+    // A new size changes the numeral's width, which can move words between lines; the
+    // lines rarely change height for it, so the size settles at once.
+    for _ in 0..DROP_FITS {
+        let current = fitted.as_ref().unwrap_or(para).runs[run].style.size;
+        let Some(size) = laid.fitted_drop_size(run) else {
+            break;
+        };
+        if (size - current).abs() < 0.25 {
+            break;
+        }
+        let p = fitted.get_or_insert_with(|| para.clone());
+        p.runs[run].style.size = size;
+        laid = layout_lines(p, width, cache);
+    }
+    laid
+}
+
+/// Lay `para` out at `width` px, its drop numeral as large as it asks.
+fn layout_lines(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
     if para.hidden {
         return LaidBlock {
             width,
@@ -651,10 +679,12 @@ pub fn layout(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
     }
     let last_line = lines_items.len() - 1;
 
-    let fallback = para
-        .runs
-        .first()
-        .map_or_else(|| RunStyle::body(16.0), |r| r.style);
+    // The text's style (not a drop numeral's), for empty lines and the room around
+    // interlinear lines.
+    let fallback = (para.runs.iter().enumerate())
+        .find(|&(r, _)| Some(r) != drop_run)
+        .or(para.runs.first().map(|r| (0, r)))
+        .map_or_else(|| RunStyle::body(16.0), |(_, r)| r.style);
     // Interlinear rows: each as tall as its tallest cell anywhere in the paragraph, so rows
     // line up from line to line.
     let row_extents: Vec<(f32, f32)> = (0..rows)
@@ -1142,6 +1172,8 @@ fn line_content(ordered: &[LaidItem], edge_pads: &[[f32; 2]], hang: f32) -> f32 
 
 /// How many lines a drop numeral stands beside.
 const DROP_LINES: usize = 2;
+/// How many times [`layout`] lays a paragraph out again to fit its drop numeral.
+const DROP_FITS: usize = 3;
 /// Space between a drop numeral and the text beside it, as a share of the numeral's size.
 const DROP_GAP: f32 = 0.08;
 
@@ -1174,6 +1206,7 @@ fn place_drop_numeral(
         it.style.raise = lowered;
     }
     let drawn = DropBox {
+        run: numeral.first()?.run,
         left,
         right: left + numeral_width,
         top: first.top,
@@ -1317,6 +1350,45 @@ fn reorder(items: Vec<LaidItem>, levels: &[u8]) -> Vec<LaidItem> {
 }
 
 impl LaidBlock {
+    /// The size the drop numeral drawn from paragraph run `run` fits its lines at: the top of
+    /// its figures level with the top of figures as large as the first line's text, its
+    /// baseline on the second line's.
+    fn fitted_drop_size(&self, run: usize) -> Option<f32> {
+        let first = self.lines.first()?;
+        let numeral: Vec<&LaidItem> = first.items.iter().filter(|i| i.run == run).collect();
+        let size = numeral.first()?.style.size;
+        // How far below the first line's baseline the numeral's baseline is.
+        let lowered = -numeral[0].style.raise;
+        let top = numeral
+            .iter()
+            .filter_map(|i| ink_top(&i.shaped, i.style.shape_style(i.rtl)))
+            .reduce(f32::max)?;
+        if top <= 0.0 || size <= 0.0 {
+            return None;
+        }
+        let text = first
+            .items
+            .iter()
+            .filter(|i| i.run != run)
+            .map(|i| i.style.size)
+            .reduce(f32::max)?;
+        // Figures are `top / size` of their size tall.
+        Some(text + lowered * size / top)
+    }
+
+    /// The band, top to bottom in px, a range over `item` of line `li` is marked in: the
+    /// line's text, not its Interlinear lines (#143); a drop numeral's (#209) whole height.
+    pub fn range_band(&self, li: usize, item: &LaidItem) -> (f32, f32) {
+        if li == 0
+            && let Some(d) = self.drop_numeral.filter(|d| d.run == item.run)
+        {
+            return (d.top, d.bottom);
+        }
+        self.lines
+            .get(li)
+            .map_or((0.0, 0.0), |l| (l.top, l.text_bottom))
+    }
+
     fn run_of(&self, p: usize) -> usize {
         self.run_starts
             .partition_point(|&s| s <= p)
