@@ -28,7 +28,9 @@
 //!   the card in Last modified order, or out of the filter) cannot pull the editor out of
 //!   view mid-sentence; the list re-sorts when editing ends. The Shell checks the autosave
 //!   every frame, and ends the editing pass (saving it) in any frame the Notes Tab is not
-//!   drawn, so a Note is searchable, and safe, as soon as another Tab covers it.
+//!   drawn, so a Note is searchable, and safe, as soon as another Tab covers it. A Note card
+//!   in a reading pane's Note margin (#210, `note_margin.rs`) is edited through the same
+//!   [`CardEdit`], at [`EditPlace::Margin`]: one Note is edited at a time, wherever it is.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
@@ -66,16 +68,25 @@ pub(super) fn card_editor_id(id: &str) -> egui::Id {
     egui::Id::unique(("notes-card-edit", id))
 }
 
+/// Where a Note card is edited in place: the Notes Tool, or a reading pane's Note margin
+/// (#210). One Note is edited at a time, wherever it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EditPlace {
+    NotesTool,
+    Margin(TabId),
+}
+
 /// A Note card being edited in place.
 pub(super) struct CardEdit {
     pub(super) id: String,
+    pub(super) place: EditPlace,
     pub(super) text: String,
     /// The text as last saved.
     saved: String,
     /// Saved at least once in this editing pass: later saves join its undo step.
     saved_once: bool,
-    changed_at: f64,
-    focus: bool,
+    pub(super) changed_at: f64,
+    pub(super) focus: bool,
     /// Why the last save failed (the database refused the write). The editor stays open with
     /// the text and this message; the save is tried again a moment later.
     pub(super) error: Option<String>,
@@ -182,6 +193,8 @@ pub(super) struct NotesUi {
     pub(super) ref_parses: usize,
     /// The Notes Tab was drawn this frame.
     pub(super) shown: bool,
+    /// The Note margin editing a Note (#210) was drawn this frame.
+    pub(super) margin_shown: bool,
 }
 
 impl NotesUi {
@@ -422,12 +435,13 @@ impl State {
         let card = &self.notes_ui.cards[i].annotation;
         if edit && card.is_note() {
             let (id, body) = (card.id.clone(), card.body().to_string());
-            self.start_card_edit(&id, &body);
+            self.start_card_edit(&id, &body, EditPlace::NotesTool);
         }
     }
 
-    fn start_card_edit(&mut self, id: &str, body: &str) {
-        if self.notes_ui.editing.as_ref().is_some_and(|e| e.id == id) {
+    /// Start editing Note `id` in place at `place`; a Note edited elsewhere saves first.
+    pub(super) fn start_card_edit(&mut self, id: &str, body: &str, place: EditPlace) {
+        if (self.notes_ui.editing.as_ref()).is_some_and(|e| e.id == id && e.place == place) {
             return;
         }
         self.save_card_edit(true);
@@ -437,6 +451,7 @@ impl State {
         }
         self.notes_ui.editing = Some(CardEdit {
             id: id.to_string(),
+            place,
             text: body.to_string(),
             saved: body.to_string(),
             saved_once: false,
@@ -499,10 +514,15 @@ impl State {
     /// last keystroke, or at once, ending the editing pass, if the Notes Tab was not drawn
     /// (another Tab covers it, or it closed), since its editor can no longer lose focus.
     pub(super) fn notes_after_frame(&mut self, ctx: &egui::Context) {
-        let shown = std::mem::take(&mut self.notes_ui.shown);
-        if self.notes_ui.editing.is_none() {
+        let tool = std::mem::take(&mut self.notes_ui.shown);
+        let margin = std::mem::take(&mut self.notes_ui.margin_shown);
+        let Some(place) = self.notes_ui.editing.as_ref().map(|e| e.place) else {
             return;
-        }
+        };
+        let shown = match place {
+            EditPlace::NotesTool => tool,
+            EditPlace::Margin(_) => margin,
+        };
         // A save that failed is retried on the autosave's clock even while the Tab is hidden.
         let failed = self
             .notes_ui
@@ -1032,7 +1052,8 @@ impl State {
         run: &mut Vec<(&'static str, Value)>,
     ) -> Rect {
         let a = &card.annotation;
-        let editing = self.notes_ui.editing.as_ref().is_some_and(|e| e.id == a.id);
+        let editing = (self.notes_ui.editing.as_ref())
+            .is_some_and(|e| e.id == a.id && e.place == EditPlace::NotesTool);
         if editing {
             let now = self.now;
             let mut finished = false;
@@ -1107,7 +1128,7 @@ impl State {
         );
         let r = r.on_hover_cursor(egui::CursorIcon::Text);
         if r.clicked() && !link_hit {
-            self.start_card_edit(&a.id, a.body());
+            self.start_card_edit(&a.id, a.body(), EditPlace::NotesTool);
         }
         rect
     }

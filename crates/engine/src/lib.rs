@@ -108,6 +108,7 @@ pub mod missing_resource;
 mod missing_resource_tests;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod morph_search_tests;
+pub mod note_display;
 pub mod notes;
 pub mod notes_export;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -272,6 +273,7 @@ pub use library_search::{
 pub use licence::{LicenceClass, LicenceFilter, licence_class};
 pub use link::LINK_SETS;
 pub use missing_resource::{EmptyState, MissingResource, StarterOffer, Tagging};
+pub use note_display::NoteDisplay;
 pub use notes::{
     Card, CardOrder, NoteBodyLine, NoteHit, NotesFilter, NotesResults, NotesTool, body_references,
     body_references_in, link_passages, note_body,

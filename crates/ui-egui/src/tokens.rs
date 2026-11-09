@@ -625,6 +625,32 @@ pub mod mark {
     pub const SWATCH_LETTER: f32 = 0.7;
 }
 
+/// The Note margin (#210): Note cards in a column beside the reading pane's text.
+pub mod note_margin {
+    /// The margin's width: this share of the Reading column's own width, between its
+    /// narrowest and widest, in points.
+    pub const SHARE: f32 = 0.4;
+    pub const CARD_MIN: f32 = 170.0;
+    pub const CARD_MAX: f32 = 340.0;
+    /// Between the text column and the margin; leader lines run in it.
+    pub const GUTTER: f32 = 22.0;
+    /// The narrowest text column a margin leaves, in ems of the Text size.
+    pub const MIN_TEXT_EMS: f32 = 16.0;
+    /// Between stacked cards.
+    pub const CARD_GAP: f32 = super::space::S;
+    /// A card starts this far above its Note marker's top, so its first row sits on the line.
+    pub const LIFT: f32 = super::space::S;
+    /// A card's height until it is drawn: its header and frame, and each row of text.
+    pub const ESTIMATE: f32 = 44.0;
+    pub const ESTIMATE_ROW: f32 = super::text::LABEL_LINE;
+    /// How much of the Note marker colour a card's fill and border take over the page.
+    pub const FILL_MIX: f32 = 0.06;
+    pub const BORDER_MIX: f32 = 0.35;
+    /// A leader line's share of the Note marker colour, at rest and with its card hovered.
+    pub const LEADER: f32 = 0.45;
+    pub const LEADER_HOVER: f32 = 0.9;
+}
+
 /// Charts and maps (the Timeline, the Atlas, Search's Chart and Grid): their geometry, and
 /// how much of a colour role a mark takes when mixed into the field colour.
 pub mod chart {

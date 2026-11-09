@@ -250,8 +250,13 @@ impl MarkCache {
         )
     }
 
-    fn annotation(&self, id: &str) -> Option<&Annotation> {
+    pub(super) fn annotation(&self, id: &str) -> Option<&Annotation> {
         self.annotations.iter().find(|a| a.id == id)
+    }
+
+    /// A Notebook's name, by id.
+    pub(super) fn notebook_name(&self, id: &str) -> Option<String> {
+        self.notebooks.get(id).cloned()
     }
 }
 

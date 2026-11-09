@@ -484,6 +484,8 @@ pub struct Tab {
     pub contents: bool,
     /// A Resource Tab shows Footnote markers in its text (#208); on unless the user hid them.
     pub footnote_markers: bool,
+    /// How a Resource Tab shows the Notes in its text (#210): Icons unless the user chose.
+    pub note_display: crate::note_display::NoteDisplay,
     /// The text unit at the top of the Tab's view, as the UI reports it from the live view
     /// each time it draws or moves it ([`Workspace::view_shows`]); `None` for a Bible, or
     /// until reported. Each history entry snapshots it as it is pushed (#176).
@@ -533,6 +535,7 @@ impl Tab {
             reading_layout: t.reading_layout,
             contents: t.contents,
             footnote_markers: !t.footnote_markers_hidden,
+            note_display: t.note_display,
             view_unit: None,
             passage: None,
             scroll: t.scroll,
@@ -1222,6 +1225,7 @@ impl Workspace {
                 reading_layout: Default::default(),
                 contents: false,
                 footnote_markers: true,
+                note_display: Default::default(),
                 view_unit: None,
                 passage: None,
                 scroll: None,

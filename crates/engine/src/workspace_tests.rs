@@ -612,6 +612,95 @@ fn view_footnote_markers_toggles_one_resource_tab_and_is_kept_in_layouts() {
     );
 }
 
+/// #210: View → Note display sets how one Resource Tab shows its Notes (the focused one by
+/// default): Margin, Icons (the default) or Hidden. A Layout and the Last session keep a
+/// Tab's choice; other kinds of Tab have none.
+#[test]
+fn view_note_display_sets_one_resource_tab_and_is_kept_in_layouts() {
+    let mut s = session();
+    let kjv = tab(&s.run("resource.open", &json!({ "id": "kjv" })).unwrap());
+    let web = tab(&s
+        .run("resource.open", &json!({ "id": "web", "split": true }))
+        .unwrap());
+    assert_eq!(
+        s.workspace.tab(kjv).unwrap().note_display,
+        NoteDisplay::Icons
+    );
+    assert!(s.is_enabled("view.note_display"));
+    assert_eq!(
+        crate::choices(&s, "view.note_display"),
+        (
+            vec![
+                ("margin", "Margin"),
+                ("icons", "Icons"),
+                ("hidden", "Hidden")
+            ],
+            "icons"
+        )
+    );
+    let out = s
+        .run("view.note_display", &json!({ "value": "margin" }))
+        .unwrap();
+    assert_eq!(
+        out,
+        json!({ "tab": web.0, "value": "margin" }),
+        "the focused Tab"
+    );
+    assert_eq!(crate::choices(&s, "view.note_display").1, "margin");
+    s.run(
+        "view.note_display",
+        &json!({ "tab": kjv.0, "value": "hidden" }),
+    )
+    .unwrap();
+    assert_eq!(
+        s.workspace.tab(kjv).unwrap().note_display,
+        NoteDisplay::Hidden
+    );
+    assert_eq!(
+        s.workspace.tab(web).unwrap().note_display,
+        NoteDisplay::Margin
+    );
+    assert!(
+        s.run("view.note_display", &json!({ "value": "sidebar" }))
+            .is_err()
+    );
+    let snap = s.workspace.snapshot();
+    let back = crate::persist::WorkspaceSnapshot::from_json(&snap.to_json()).unwrap();
+    assert_eq!(back, snap);
+    s.workspace.restore(back);
+    let shown: Vec<(String, NoteDisplay)> = s
+        .workspace
+        .tabs()
+        .map(|t| (t.title.clone(), t.note_display))
+        .collect();
+    assert!(
+        shown.contains(&("WEB".into(), NoteDisplay::Margin)),
+        "{shown:?}"
+    );
+    assert!(
+        shown.contains(&("KJV".into(), NoteDisplay::Hidden)),
+        "{shown:?}"
+    );
+    for t in s.workspace.tabs().map(|t| t.id).collect::<Vec<_>>() {
+        s.run(
+            "view.note_display",
+            &json!({ "tab": t.0, "value": "icons" }),
+        )
+        .unwrap();
+    }
+    // Tabs that show Icons save nothing extra.
+    assert!(!s.workspace.snapshot().to_json().contains("note_display"));
+    let tool = tab(&s.run("tool.word_info", &json!({})).unwrap());
+    assert!(!s.is_enabled("view.note_display"), "Word Info is focused");
+    assert!(
+        s.run(
+            "view.note_display",
+            &json!({ "tab": tool.0, "value": "margin" })
+        )
+        .is_err()
+    );
+}
+
 /// #240: the Page tone hint is due when the theme turns dark only for a light tone the user
 /// chose (Paper or Sepia), and only once per User database, across restarts.
 #[test]

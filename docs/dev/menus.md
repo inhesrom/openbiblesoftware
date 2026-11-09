@@ -138,6 +138,7 @@ Checked for every command's label and every menu, choice and submenu title
 | Verse numbers ▸ | `view.verse_numbers` (one per choice) | |
 | Red letter | `view.red_letter` |  |
 | Footnote markers | `view.footnote_markers` |  |
+| Note display ▸ | `view.note_display` (one per choice) | |
 | Fonts | `view.fonts` |  |
 | Reading layout ▸ | `tab.reading_layout` (one per choice) | |
 | — | | |
