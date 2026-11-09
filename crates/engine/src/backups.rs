@@ -505,14 +505,17 @@ pub(crate) fn notebook_entry_name(used: &mut HashSet<String>, file: &str) -> Str
 }
 
 /// `name` as a disk that ignores case and Unicode normalisation compares it: two names with
-/// the same key may be one file there. Each character is upper-cased then lower-cased, so
-/// letters with more than one lower-case form meet (`Σ`, `σ` and final `ς`; `ſ` and `s`), as
-/// NTFS's upper-casing and APFS's case folding make them meet; and the result is decomposed
-/// (NFD), as APFS and HFS+ treat `é` and `e` + combining acute as one name. Keys may join
-/// names a disk keeps apart (`ß` and `ss`), which only costs a ` (2)`.
+/// the same key may be one file there. Each character is lower-cased, upper-cased, then
+/// lower-cased again, which joins every pair of names Unicode case folding joins: letters
+/// with more than one lower-case form (`Σ`, `σ` and final `ς`; `ſ` and `s`) and the sharp s
+/// in either case with `ss` (`ẞ` lower-cases to `ß`, which upper-cases to `SS`), as NTFS's
+/// upper-casing and APFS's case folding make them meet. The result is decomposed (NFD), as
+/// APFS and HFS+ treat `é` and `e` + combining acute as one name. Keys may join names a disk
+/// keeps apart (`ß` and `ss` on NTFS; dotless `ı` and `i`), which only costs a ` (2)`.
 fn file_name_key(name: &str) -> String {
     use unicode_normalization::UnicodeNormalization as _;
     name.nfd()
+        .flat_map(char::to_lowercase)
         .flat_map(char::to_uppercase)
         .flat_map(char::to_lowercase)
         .nfd()

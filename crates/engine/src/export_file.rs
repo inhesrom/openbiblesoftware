@@ -8,9 +8,10 @@
 //! - replaces a file already there whole or not at all: the export is written to a scratch
 //!   file beside the destination and renamed over it only once complete, so a failed
 //!   export (a full disk, a file size limit) leaves the previous file byte-identical. The
-//!   scratch file is owner-only while it is written, and the export keeps the permissions
-//!   of the file it replaces, so a private export stays private. A read-only file is
-//!   not replaced: the export fails and leaves it as it was.
+//!   scratch file is created owner-only, so no one else can open it while it is written,
+//!   and the export keeps the permissions of the file it replaces, so a private export
+//!   stays private. A read-only file is not replaced: the export fails and leaves it as it
+//!   was.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -58,12 +59,15 @@ fn replace_file(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(e),
     };
-    let (scratch, mut file) = new_scratch_file(dest, refuse)?;
+    let (scratch, mut file) = new_scratch_file(dest, &refuse, Scratch::OwnerOnly)?;
     let written = (|| {
-        let created = owner_only(&file)?;
+        let permissions = match previous {
+            Some(previous) => previous,
+            None => new_file_permissions(dest, &refuse)?,
+        };
         file.write_all(bytes)?;
         file.sync_all()?;
-        file.set_permissions(previous.unwrap_or(created))?;
+        file.set_permissions(permissions)?;
         drop(file);
         std::fs::rename(&scratch, dest)
     })();
@@ -73,26 +77,38 @@ fn replace_file(
     written
 }
 
-/// Make the new, still empty scratch `file` readable by its owner only while the export is
-/// written to it, and return the permissions it was created with (a new file's defaults).
-#[cfg(unix)]
-fn owner_only(file: &std::fs::File) -> std::io::Result<std::fs::Permissions> {
-    use std::os::unix::fs::PermissionsExt as _;
-    let created = file.metadata()?.permissions();
-    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    Ok(created)
+/// The permissions a new file beside `dest` gets (on Unix `0666` less the umask, as
+/// `std::fs::write` would give it), read from an empty scratch file made for that and removed
+/// at once, so the process umask is never changed and the export's own scratch file is
+/// owner-only from the moment it exists.
+fn new_file_permissions(
+    dest: &Path,
+    refuse: impl Fn(&Path) -> Result<(), String>,
+) -> std::io::Result<std::fs::Permissions> {
+    let (probe, file) = new_scratch_file(dest, refuse, Scratch::NewFileDefaults)?;
+    let permissions = file.metadata().map(|m| m.permissions());
+    drop(file);
+    let removed = std::fs::remove_file(&probe);
+    let permissions = permissions?;
+    removed?;
+    Ok(permissions)
 }
 
-#[cfg(not(unix))]
-fn owner_only(file: &std::fs::File) -> std::io::Result<std::fs::Permissions> {
-    Ok(file.metadata()?.permissions())
+/// Whom a scratch file is readable by from the moment it is created.
+#[derive(Clone, Copy)]
+pub(crate) enum Scratch {
+    /// Its owner only (`0600` on Unix): the file an export is written to.
+    OwnerOnly,
+    /// Whoever a new file is readable by: an empty file made to learn that.
+    NewFileDefaults,
 }
 
 /// Create a scratch file beside `dest` under a name not already taken (a file there is
 /// never touched), so removing it afterwards only removes what this export made.
-fn new_scratch_file(
+pub(crate) fn new_scratch_file(
     dest: &Path,
     refuse: impl Fn(&Path) -> Result<(), String>,
+    readable_by: Scratch,
 ) -> std::io::Result<(PathBuf, std::fs::File)> {
     let mut last = None;
     for n in 0..1000u32 {
@@ -103,11 +119,10 @@ fn new_scratch_file(
         if refuse(&scratch).is_err() {
             continue;
         }
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&scratch)
-        {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        set_readable_by(&mut options, readable_by);
+        match options.open(&scratch) {
             Ok(file) => return Ok((scratch, file)),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last = Some(e),
             Err(e) => return Err(e),
@@ -115,3 +130,17 @@ fn new_scratch_file(
     }
     Err(last.unwrap_or_else(|| std::io::Error::other("no free name for a scratch file")))
 }
+
+/// Create the file readable by its owner only (`0600`) if so asked: set at creation, so no
+/// other user can open it between its creation and a later change of permissions.
+#[cfg(unix)]
+fn set_readable_by(options: &mut std::fs::OpenOptions, readable_by: Scratch) {
+    use std::os::unix::fs::OpenOptionsExt as _;
+    if let Scratch::OwnerOnly = readable_by {
+        options.mode(0o600);
+    }
+}
+
+/// Off Unix a file has no permission bits for other users to be kept from.
+#[cfg(not(unix))]
+fn set_readable_by(_options: &mut std::fs::OpenOptions, _readable_by: Scratch) {}

@@ -257,6 +257,45 @@ fn an_export_keeps_the_permissions_of_the_file_it_replaces() {
     }
 }
 
+/// The scratch file an export is written to is owner-only (`0600`) from the moment it is
+/// created, not changed to that afterwards: another user who opened it in between could read
+/// everything written to it later. A new export still gets a new file's permissions.
+#[cfg(unix)]
+#[test]
+fn an_export_scratch_file_is_owner_only_from_its_creation() {
+    use crate::export_file::{Scratch, new_scratch_file};
+    use std::os::unix::fs::PermissionsExt as _;
+    let f = Fixture::new("scratch-mode");
+    std::fs::create_dir_all(&f.root).unwrap();
+    let dest = f.file("export.md");
+    let mode = |file: &std::fs::File| file.metadata().unwrap().permissions().mode() & 0o777;
+
+    let (scratch, file) = new_scratch_file(&dest, |_| Ok(()), Scratch::OwnerOnly).unwrap();
+    assert_eq!(mode(&file), 0o600, "{}", scratch.display());
+    let (probe, defaults) = new_scratch_file(&dest, |_| Ok(()), Scratch::NewFileDefaults).unwrap();
+    let new_file_mode = mode(&defaults);
+    std::fs::remove_file(scratch).unwrap();
+    std::fs::remove_file(probe).unwrap();
+
+    let mut s = f.session();
+    s.run(
+        "notes.export",
+        &json!({ "format": "markdown", "path": dest.to_string_lossy() }),
+    )
+    .unwrap();
+    let exported = std::fs::metadata(&dest).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        exported, new_file_mode,
+        "a new export has a new file's permissions"
+    );
+    let left: Vec<_> = std::fs::read_dir(&f.root)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .filter(|n| n.to_string_lossy().ends_with(".partial"))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+}
+
 /// Re-exporting over a read-only file fails and leaves it byte-identical, with no scratch
 /// file left beside it, for every export command. (On Windows a read-only scratch file made
 /// to match it could not be removed after the rename over it failed.)
@@ -452,7 +491,8 @@ fn export_everything_names_notebooks_apart_on_a_case_insensitive_disk() {
     let f = Fixture::new("case");
     let mut s = f.session();
     // `Σ`, `σ` and final `ς` are one letter to a disk that folds case, though `ς` lower-cases
-    // to itself; `é` and `e` + combining acute are one name on macOS disks.
+    // to itself, and so are `ß` and `ẞ`, though `ẞ` lower-cases to `ß`, not `ss`; `é` and
+    // `e` + combining acute are one name on macOS disks.
     let names = [
         "Romans",
         "romans",
@@ -464,6 +504,8 @@ fn export_everything_names_notebooks_apart_on_a_case_insensitive_disk() {
         "\u{3c3}",
         "Caf\u{e9}",
         "Cafe\u{301}",
+        "\u{df}",
+        "\u{1e9e}",
     ];
     for (i, name) in names.iter().enumerate() {
         // `notebook.create` refuses a name another Notebook has in another case, so the
@@ -506,7 +548,7 @@ fn export_everything_names_notebooks_apart_on_a_case_insensitive_disk() {
         .map(|v| v.as_str().unwrap().to_string())
         .collect();
     let notes: Vec<&String> = files.iter().filter(|n| n.starts_with("notes/")).collect();
-    // The default Notebook and the five made here.
+    // The default Notebook and the ones made here.
     assert_eq!(notes.len(), names.len() + 1, "{notes:?}");
     // As NTFS compares names (each character upper-cased) and as APFS does (normalised).
     let folded: HashSet<String> = files
@@ -537,7 +579,8 @@ fn export_everything_names_notebooks_apart_on_a_case_insensitive_disk() {
 }
 
 /// Notebook file names that one disk or another takes for the same name get ` (2)`, ` (3)`…:
-/// case (`Σ`, `σ`, final `ς`; `ſ` and `s`) and normalisation (`é` and `e` + combining acute).
+/// case (`Σ`, `σ`, final `ς`; `ſ` and `s`; `ß`, `ẞ` and `ss`, as Unicode case folding joins
+/// them) and normalisation (`é` and `e` + combining acute).
 #[test]
 fn notebook_entry_names_are_apart_however_a_disk_compares_names() {
     let mut used = HashSet::new();
@@ -552,6 +595,9 @@ fn notebook_entry_names_are_apart_however_a_disk_compares_names() {
         "\u{17f}ion.md",
         "Sion.md",
         "Sion (2).md",
+        "\u{df}.md",
+        "\u{1e9e}.md",
+        "SS.md",
     ]
     .iter()
     .map(|file| crate::backups::notebook_entry_name(&mut used, file))
@@ -569,6 +615,9 @@ fn notebook_entry_names_are_apart_however_a_disk_compares_names() {
             "notes/\u{17f}ion.md",
             "notes/Sion (2).md",
             "notes/Sion (2) (2).md",
+            "notes/\u{df}.md",
+            "notes/\u{1e9e} (2).md",
+            "notes/SS (3).md",
         ]
     );
 }
