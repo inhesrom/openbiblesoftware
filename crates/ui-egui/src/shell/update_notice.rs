@@ -426,7 +426,7 @@ fn installed_ui(
     );
     ui.label(if backed_up {
         "Restart to use it. Your Library, Notes and settings were not changed; a backup of your \
-         data was taken first (Tools → Back up & restore…)."
+         data was taken first (File → Back up & restore…)."
     } else {
         "Restart to use it. Your Library, Notes and settings were not changed."
     });

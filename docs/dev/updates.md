@@ -17,7 +17,7 @@ The decision and its limits are [ADR 0017](../adr/0017-the-app-may-ask-github-fo
 
 | Command | Does |
 |---|---|
-| `help.check_for_updates` | Help → Check for updates…: check now and show the answer, even "No update available" |
+| `help.check_for_updates` | Help → Check for updates: check now and show the answer, even "No update available" |
 | `update.install` | Update now (from a script before the check has answered, it waits for it) |
 | `update.cancel` | Cancel the download |
 | `update.later` | Later / Close: hide the notice (a release on offer stays known) |

@@ -123,10 +123,18 @@ fn every_command_is_in_a_menu_the_command_box_or_its_own_place() {
     let in_menus: BTreeSet<&str> = menu_commands().into_iter().map(|(_, id)| id).collect();
     let sources = ui_sources();
     let run_by_the_ui = |id: &str| sources.contains(&format!("\"{id}\""));
-    // A choice only Settings offers (Log level): its row runs it with the value picked.
+    // A choice or a switch only Settings offers (Log level, Include pre-releases): its row
+    // runs it with the value picked.
     let a_settings_choice = |id: &str| {
-        (SETTINGS.iter())
-            .any(|s| matches!(s.kind, SettingKind::Choice { command, .. } if command == id))
+        SETTINGS.iter().any(|s| match s.kind {
+            SettingKind::Choice { command, .. } => command == id,
+            SettingKind::Toggle {
+                command,
+                param: Some(_),
+                ..
+            } => command == id,
+            _ => false,
+        })
     };
     let mut orphans = Vec::new();
     for spec in specs(&h) {

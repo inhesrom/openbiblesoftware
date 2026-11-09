@@ -992,7 +992,7 @@ fn lock_update_folder() -> std::sync::MutexGuard<'static, ()> {
 pub enum UpdateStatus {
     Idle,
     Checking {
-        /// Help → Check for updates… (the result is always shown) rather than at launch.
+        /// Help → Check for updates (the result is always shown) rather than at launch.
         manual: bool,
     },
     /// The last check found nothing newer.
@@ -1227,7 +1227,7 @@ impl Session {
     }
 
     /// Ask the release source for the newest release, on the job queue. `manual`: the user
-    /// asked (Help → Check for updates…), so the answer is shown even when there is nothing
+    /// asked (Help → Check for updates), so the answer is shown even when there is nothing
     /// new, and a failure is explained; a launch check speaks only when there is a release
     /// to offer that was not skipped. Returns the job, or `None` while one is running.
     pub fn check_for_updates(&mut self, manual: bool) -> Option<JobId> {
@@ -1587,7 +1587,7 @@ fn cancel(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
     Ok(json!({ "job": job.0 }))
 }
 
-/// Later: close the notice. A release on offer stays known (Help → Check for updates…
+/// Later: close the notice. A release on offer stays known (Help → Check for updates
 /// shows it again); a download or an installed update goes on.
 fn later(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
     s.updates.notice = false;
@@ -1679,7 +1679,7 @@ const ON: &[ParamSpec] = &[ParamSpec {
 pub(crate) const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "help.check_for_updates",
-        label: "Check for updates…",
+        label: "Check for updates",
         shortcut: None,
         params: &[],
         enabled: always,

@@ -177,9 +177,9 @@ fn the_notice_shows_the_release_notes_and_skip_this_version_persists() {
         "a skipped version stays quiet"
     );
     assert!(h.find(FIRST_RUN_NOTE).is_none());
-    // Help → Check for updates… still shows it.
+    // Help → Check for updates still shows it.
     h.open_menu("Help");
-    h.click_text("Check for updates…");
+    h.click_text("Check for updates");
     frames_until(&mut h, 300, |h| h.find("Update available").is_some());
     drop(h);
     std::fs::remove_dir_all(&dir).unwrap();
@@ -251,7 +251,7 @@ fn offline_and_rate_limited_checks_say_so_and_offer_the_download_page() {
         .run("updates.auto_check", &json!({ "on": false }))
         .unwrap();
     h.open_menu("Help");
-    h.click_text("Check for updates…");
+    h.click_text("Check for updates");
     frames_until(&mut h, 300, |h| {
         h.find("Could not check for updates").is_some()
     });
@@ -290,7 +290,7 @@ fn check_for_updates_during_the_launch_check_shows_its_failure_not_a_spinner() {
     past_launch_delay(&mut h);
     frames_until(&mut h, 120, |_| releases.requests().len() == 1);
     h.open_menu("Help");
-    h.click_text("Check for updates…");
+    h.click_text("Check for updates");
     frames_until(&mut h, 30, |h| h.find("Checking for updates…").is_some());
     releases.fail(
         &MockReleases::latest_url(),
@@ -336,7 +336,7 @@ fn an_install_folder_without_write_permission_offers_only_the_download_page() {
     let writable = std::fs::write(dir.join("app/probe"), b"").is_ok();
     let mut h = launch(&dir, &releases);
     h.open_menu("Help");
-    h.click_text("Check for updates…");
+    h.click_text("Check for updates");
     frames_until(&mut h, 300, |h| h.find("Update available").is_some());
     h.frames(5);
     if !writable {

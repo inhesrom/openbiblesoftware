@@ -33,7 +33,7 @@ openbible-<tag>-<target>/
 
 `starter/` beside the executable is the second place the app looks for a bundled Starter library ([Starter library](starter-library.md#finding-the-bundle)), so an unpacked archive needs no setup: on the first launch the app copies every Starter Resource, its prebuilt Search index caches and alias caches into the user's Library. The archive does not depend on where it is unpacked.
 
-`cargo xtask release-archive` writes it. An unpacked archive updates itself: Help → Check for updates… (and, with the setting on, every launch) asks the GitHub releases API for the latest release, and Update now downloads the archive for its platform, checks it against `SHA256SUMS`, backs up the User database and renames the new files into place ([ADR 0017](../adr/0017-the-app-may-ask-github-for-its-latest-release-and-replace-its-own-release-archive.md), [Update check and Update now](updates.md)). So the archive names must stay `openbible-<tag>-<target>.<tar.gz|zip>`.
+`cargo xtask release-archive` writes it. An unpacked archive updates itself: Help → Check for updates (and, with the setting on, every launch) asks the GitHub releases API for the latest release, and Update now downloads the archive for its platform, checks it against `SHA256SUMS`, backs up the User database and renames the new files into place ([ADR 0017](../adr/0017-the-app-may-ask-github-for-its-latest-release-and-replace-its-own-release-archive.md), [Update check and Update now](updates.md)). So the archive names must stay `openbible-<tag>-<target>.<tar.gz|zip>`.
 
 Before packing it checks that `starter-manifest.json` parses and that every `.obr` it lists is present with the `file_sha256` it names, so a broken artifact never ships.
 
@@ -61,7 +61,7 @@ cargo xtask release-smoke dist/release/openbible-dev-local.tar.gz --shot /tmp/fi
 
 ### The update check end to end
 
-`cargo xtask update-e2e` (CI job `update-e2e` on all three OSes; Linux under `xvfb-run`) builds the app as this version and as the next patch version (`OBS_BUILD_VERSION`), packs both as Release archives with a one-Bible Starter library, installs the first, serves the second from a mock release source on localhost (`OBS_UPDATE_URL`), and runs Check for updates…, Update now and Restart now. It passes when the next version runs from the same folder with the User database and the Library intact and a Before-update backup taken. See [Update check and Update now](updates.md).
+`cargo xtask update-e2e` (CI job `update-e2e` on all three OSes; Linux under `xvfb-run`) builds the app as this version and as the next patch version (`OBS_BUILD_VERSION`), packs both as Release archives with a one-Bible Starter library, installs the first, serves the second from a mock release source on localhost (`OBS_UPDATE_URL`), and runs Check for updates, Update now and Restart now. It passes when the next version runs from the same folder with the User database and the Library intact and a Before-update backup taken. See [Update check and Update now](updates.md).
 
 ## Release signing
 

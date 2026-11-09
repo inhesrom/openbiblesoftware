@@ -539,7 +539,7 @@ pub const SETTINGS: &[Setting] = &[
         "check_for_updates",
         S::Updates,
         "Check for updates",
-        "Ask GitHub for the newest release now (Help → Check for updates…)",
+        "Ask GitHub for the newest release now (Help → Check for updates)",
         "update updates upgrade new version release github check now",
         SettingKind::Action {
             command: "help.check_for_updates",

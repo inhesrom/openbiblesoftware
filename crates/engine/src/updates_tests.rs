@@ -303,7 +303,7 @@ fn skip_this_version_persists_and_quiets_the_launch_check_for_that_version_only(
         !s.updates().notice_shown(),
         "a skipped version is not offered at launch"
     );
-    // Help → Check for updates… still shows it.
+    // Help → Check for updates still shows it.
     s.check_for_updates(true);
     settle(&mut s);
     assert!(s.updates().notice_shown());
@@ -384,7 +384,7 @@ fn check_for_updates_while_the_launch_check_runs_explains_its_failure() {
     // A slow network that then fails.
     releases.hold(true);
     assert!(s.launch_update_check().is_some());
-    // Help → Check for updates… while it runs: no second request, but it is now the user's.
+    // Help → Check for updates while it runs: no second request, but it is now the user's.
     s.run("help.check_for_updates", &json!({})).unwrap();
     assert!(s.updates().notice_shown());
     assert_eq!(

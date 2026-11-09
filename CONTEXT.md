@@ -606,7 +606,7 @@ _Avoid_: Backup, Dump, Archive
 ### Updates
 
 **Update check**:
-The app asking this project's GitHub releases for the newest published version: a plain request for public release metadata, carrying nothing about the user, the computer or their data. With "Check for updates automatically" on (the default, in Settings → Updates) every launch makes one, a few seconds after the window appears; Help → Check for updates… makes one any time. It is the app's only network request of its own; with the setting off the app makes none unless the user checks. Pre-releases are offered only with "Include pre-releases" on. A newer version shows the update notice: the version, its release notes, Update now, Later and Skip this version (a skipped version is not offered again at launch).
+The app asking this project's GitHub releases for the newest published version: a plain request for public release metadata, carrying nothing about the user, the computer or their data. With "Check for updates automatically" on (the default, in Settings → Updates) every launch makes one, a few seconds after the window appears; Help → Check for updates makes one any time. It is the app's only network request of its own; with the setting off the app makes none unless the user checks. Pre-releases are offered only with "Include pre-releases" on. A newer version shows the update notice: the version, its release notes, Update now, Later and Skip this version (a skipped version is not offered again at launch).
 _Avoid_: Auto-update, Phone home, Telemetry, Ping
 
 **Update now**:
