@@ -819,11 +819,12 @@ fn a_long_expanded_note_scrolls_inside_its_card_and_keeps_the_next_card_in_view(
     let (y, _) = view(&mut h, kjv).position();
     wheel(&mut h, open.rect.center(), -60.0, 3);
     let open = margin(&h, "KJV").into_iter().next().unwrap();
-    let (offset, _) = open.scroll.unwrap();
+    let (offset, max) = open.scroll.unwrap();
     assert!(offset > 50.0, "{:?}", open.scroll);
     assert_eq!(view(&mut h, kjv).position().0, y);
-    // Its last line is there to read at the bottom of its text.
-    wheel(&mut h, open.rect.center(), -300.0, 4);
+    // Its last line is there to read at the bottom of its text. (Wheel steps land whole with
+    // Reduce motion on; one past the bottom of the card's text would scroll the Bible.)
+    wheel(&mut h, open.rect.center(), -(max - offset) / 4.0, 4);
     let open = margin(&h, "KJV").into_iter().next().unwrap();
     let (offset, max) = open.scroll.unwrap();
     assert!((offset - max).abs() < 1.0, "{:?}", open.scroll);
