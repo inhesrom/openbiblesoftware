@@ -7,6 +7,7 @@ mod a11y;
 pub mod bench;
 mod compare_view;
 mod doc;
+mod filters;
 mod find;
 mod heights;
 pub mod icons;

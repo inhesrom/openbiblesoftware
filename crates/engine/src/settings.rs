@@ -262,6 +262,17 @@ pub const SETTINGS: &[Setting] = &[
         },
     ),
     setting(
+        "visual_filters",
+        S::ReadingLayout,
+        "Visual filters",
+        "Colour the words that match a search as you read: Words of Christ, Imperatives and more",
+        "visual filters filter colour color words of christ red letter divine names imperatives search query",
+        SettingKind::Action {
+            command: "view.visual_filters",
+            confirm: false,
+        },
+    ),
+    setting(
         "notebooks_in_text",
         S::ReadingLayout,
         "Notebooks in text",

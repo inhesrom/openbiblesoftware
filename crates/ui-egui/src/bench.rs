@@ -195,6 +195,8 @@ struct Bench {
     reference_frame: usize,
     /// Every pane's Find bar has these matches (#175); a frame draws those in view.
     found: Vec<crate::FindMatch>,
+    /// Each pane's Visual filters (#211), in the `filters` scenario; none otherwise.
+    filters: Vec<crate::filters::FilterPainter>,
     interval: Duration,
     budget: Duration,
 }
@@ -228,6 +230,16 @@ impl Bench {
                 current: Some(k),
             };
             std::hint::black_box(crate::pane::found_rects(v, found, self.cfg.viewport.1));
+            // Visual filters (#211): the rectangles of the blocks in view's matches, as the
+            // pane draws them; matching itself is on a worker.
+            if let Some(painter) = self.filters.get_mut(k) {
+                let started = Instant::now();
+                std::hint::black_box(painter.rects(v, self.cfg.viewport.1, None));
+                sync += started.elapsed();
+                if painter.missing() > 0 {
+                    placeholders[k] += 1;
+                }
+            }
         }
         // Real native-target translation: a whole-Bible Passage against >31k map entries.
         // Switch spans periodically to include cold submission as well as cached hover polls.
@@ -271,7 +283,9 @@ impl Bench {
         let mut scratch = Samples::default();
         for _ in 0..600 {
             self.frame(&mut scratch, |_| {});
-            if self.views.iter().all(|v| !v.has_pending()) {
+            if self.views.iter().all(|v| !v.has_pending())
+                && self.filters.iter().all(|f| !f.is_pending())
+            {
                 return;
             }
         }
@@ -334,6 +348,7 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         reference_doc: large_reference_doc(),
         reference_frame: 0,
         found,
+        filters: Vec::new(),
         interval,
         budget: SYNC_BUDGET,
     };
@@ -439,9 +454,16 @@ pub fn run(doc: Arc<ReadingDoc>, cfg: BenchConfig) -> BenchReport {
         .collect();
     let lines = interlinear_scenario(&mut bench, interlinear.as_ref());
     let find = find_scenario(&mut bench);
-    all_sync.extend(lines.sync.iter().chain(&find.sync).copied());
+    let filters = filters_scenario(&mut bench);
+    all_sync.extend(
+        (lines.sync.iter())
+            .chain(&find.sync)
+            .chain(&filters.sync)
+            .copied(),
+    );
     scenarios.push(lines.report("interlinear", interval_ms));
     scenarios.push(find.report("find", interval_ms));
+    scenarios.push(filters.report("filters", interval_ms));
     let mut feature_errors = Vec::new();
     if cfg.shell_scenarios {
         // The reading panes' layouts are dropped first: the Shell lays out its own.
@@ -491,6 +513,50 @@ fn interlinear_scenario(
     for v in &mut bench.views {
         v.set_interlinear(None);
     }
+    s
+}
+
+/// Three Visual filters (#211) on every pane, scrolling as in `steady`: Divine names (about
+/// one Tagged word in six), Imperatives (the synthetic Bible is English: aligned through
+/// Strong's numbers with [`synthetic_hebrew_bible`]) and a phrase in Background. Each block's
+/// matches are found on a worker; a frame that draws a block in view without its matches
+/// counts as a placeholder frame.
+fn filters_scenario(bench: &mut Bench) -> Samples {
+    let mut filters = obs_engine::built_in_filters();
+    filters.retain(|f| f.id != "words-of-christ");
+    filters.push(obs_engine::VisualFilter {
+        id: "said-unto".into(),
+        name: "Said unto".into(),
+        query: "\"said unto\"".into(),
+        marked: None,
+        scope: String::new(),
+        look: obs_engine::HighlightLook::Background,
+        color: obs_engine::Rgb::new(255, 236, 140),
+        all_tabs: true,
+    });
+    let hebrew = synthetic_hebrew_bible();
+    bench.filters = (0..bench.views.len())
+        .map(|k| {
+            let mut painter = crate::filters::FilterPainter::default();
+            let original = crate::filters::OriginalBible::new(
+                obs_scripture::StrongsLanguage::Hebrew,
+                None,
+                Some(Arc::clone(&hebrew)),
+            );
+            let source = crate::filters::FilterSource::new(filters.clone(), vec![], vec![original]);
+            painter.set(Some((k as u64, source)));
+            painter
+        })
+        .collect();
+    bench.settle();
+    let mut s = Samples::default();
+    let dy = bench.cfg.steady_px;
+    for _ in 0..bench.cfg.steady_frames / 2 {
+        bench.frame(&mut s, |views| {
+            views.iter_mut().for_each(|v| v.scroll_by(dy))
+        });
+    }
+    bench.filters.clear();
     s
 }
 
@@ -553,20 +619,40 @@ pub fn synthetic_bible() -> Arc<ReadingDoc> {
 
 /// [`synthetic_bible`] as a Resource (`bench-bible`), for the feature scenarios' libraries.
 pub(crate) fn synthetic_bible_resource() -> Option<obs_model::Resource> {
-    // Strong's number, Lemma and Gloss.
-    const LEMMAS: &[(&str, &str, &str)] = &[
-        ("H1254", "בָּרָא", "to create"),
-        ("H430", "אֱלֹהִים", "God"),
-        ("H776", "אֶרֶץ", "land"),
-        ("H8064", "שָׁמַיִם", "heavens"),
-        ("H120", "אָדָם", "man"),
-        ("H3117", "יוֹם", "day"),
-        ("H216", "אוֹר", "light"),
-        ("H4325", "מַיִם", "water"),
-        ("H559", "אָמַר", "to say"),
-        ("H3068", "יְהוָה", "LORD"),
-        ("H1121", "בֵּן", "son"),
-        ("H3605", "כֹּל", "all"),
+    synthetic_tagged_bible("bench-bible", "Bench Bible", "BB", "en", false)
+}
+
+/// [`synthetic_bible`]'s text as an original-language Bible (`bench-hebrew`) whose Tagged
+/// words carry Morphology too (every "to say" an imperative), for the `filters` scenario to
+/// align `@imperative` through Strong's numbers (#211).
+pub(crate) fn synthetic_hebrew_bible() -> Arc<ReadingDoc> {
+    match synthetic_tagged_bible("bench-hebrew", "Bench Hebrew", "BH", "hbo", true) {
+        Some(r) => Arc::new(ReadingDoc::from_resource(r)),
+        None => unreachable!("synthetic hebrew bible is invalid"),
+    }
+}
+
+fn synthetic_tagged_bible(
+    id: &str,
+    title: &str,
+    abbrev: &str,
+    language: &str,
+    morph: bool,
+) -> Option<obs_model::Resource> {
+    // Strong's number, Lemma, Gloss and (for `morph`) Morphology.
+    const LEMMAS: &[(&str, &str, &str, &str)] = &[
+        ("H1254", "בָּרָא", "to create", "HVqp3ms"),
+        ("H430", "אֱלֹהִים", "God", "HNcmpa"),
+        ("H776", "אֶרֶץ", "land", "HNcbsa"),
+        ("H8064", "שָׁמַיִם", "heavens", "HNcmpa"),
+        ("H120", "אָדָם", "man", "HNcmsa"),
+        ("H3117", "יוֹם", "day", "HNcmsa"),
+        ("H216", "אוֹר", "light", "HNcbsa"),
+        ("H4325", "מַיִם", "water", "HNcmpa"),
+        ("H559", "אָמַר", "to say", "HVqv2ms"),
+        ("H3068", "יְהוָה", "LORD", "HNpm"),
+        ("H1121", "בֵּן", "son", "HNcmsc"),
+        ("H3605", "כֹּל", "all", "HNcmsc"),
     ];
     // Common words repeat as in real text; the rest are made from syllables, giving a
     // vocabulary of thousands of words so the shape cache sees realistic misses.
@@ -579,13 +665,7 @@ pub(crate) fn synthetic_bible_resource() -> Option<obs_model::Resource> {
         "na", "than", "she", "ba", "le", "vi", "ju", "dah", "gad", "ash", "er", "zeb", "u", "lun",
         "dan", "naph", "ta", "li", "jo", "seph", "re", "u", "ben", "sim", "e", "on",
     ];
-    let mut m = Manifest::new(
-        "bench-bible",
-        "Bench Bible",
-        "BB",
-        ResourceType::Bible,
-        "en",
-    );
+    let mut m = Manifest::new(id, title, abbrev, ResourceType::Bible, language);
     m.key_schemes = vec![KeyScheme::Passage];
     m.license = "LicenseRef-PD".into();
     let mut b = ResourceBuilder::new(m);
@@ -638,7 +718,8 @@ pub(crate) fn synthetic_bible_resource() -> Option<obs_model::Resource> {
                     // From the word's position, not `rand`: the text stays as it was.
                     let mix = (at as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 32;
                     if mix % 10 < 7 {
-                        let (strongs, lemma, gloss) = LEMMAS[(mix / 10) as usize % LEMMAS.len()];
+                        let (strongs, lemma, gloss, code) =
+                            LEMMAS[(mix / 10) as usize % LEMMAS.len()];
                         let mut part = obs_model::MorphemePart::new(
                             strongs
                                 .parse()
@@ -646,6 +727,7 @@ pub(crate) fn synthetic_bible_resource() -> Option<obs_model::Resource> {
                         );
                         part.lemma = Some(lemma.into());
                         part.gloss = Some(gloss.into());
+                        part.morph = morph.then(|| code.into());
                         tagged.push((at..at + w.len(), part));
                     }
                     at += w.len() + 1;

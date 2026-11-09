@@ -46,7 +46,9 @@ pub use manifest::{
     is_valid_resource_id,
 };
 pub use morph::{GrammarTerm, Morph, MorphError, MorphLanguage, MorphPart, PartOfSpeech, TermKind};
-pub use normalize::{FindFolded, NORMALIZER_VERSION, Token, fold_for_find, normalize, tokenize};
+pub use normalize::{
+    FindFolded, NORMALIZER_VERSION, Token, fold_for_find, normalize, searchable_text, tokenize,
+};
 pub use note_text::{
     NoteBlockKind, NoteHeading, NoteLine, NoteLineKind, NoteMark, NoteMarkKind, NoteShown,
     NoteShownMark, NoteSpan, escape_note_text, note_outline, note_plain_text, note_shown,
@@ -60,5 +62,5 @@ pub use translit::{
 pub use translit_academic::{transliterate_academic, without_cantillation};
 pub use unit::{
     BibleVerse, MorphemePart, NoteKind, ParaStyle, Span, SpanKind, TextAccumulator, TextUnit,
-    UnitId, UnitIdError, UnitKind,
+    UnitId, UnitIdError, UnitKind, overlaps_heading,
 };

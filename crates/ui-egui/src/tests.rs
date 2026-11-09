@@ -509,7 +509,10 @@ fn bench_runs_and_reports_every_scenario() {
     };
     let report = bench::run(bench::synthetic_bible(), cfg);
     let names: Vec<&str> = report.scenarios.iter().map(|s| s.name.as_str()).collect();
-    assert_eq!(names, ["steady", "fling", "jumps", "interlinear", "find"]);
+    assert_eq!(
+        names,
+        ["steady", "fling", "jumps", "interlinear", "find", "filters"]
+    );
     assert_eq!(report.scenarios[0].frames, 20);
     assert!(report.blocks > 1000);
     assert!(report.text_gpu_mib > 0.0);
@@ -520,6 +523,8 @@ fn bench_runs_and_reports_every_scenario() {
     // Find next (#175, #183): every step measured, each a jump that settles.
     let find = &report.scenarios[4];
     assert!(find.settle_frames_max.is_some_and(|n| n <= 2), "{find:?}");
+    // Three Visual filters (#211) on every pane, scrolled for half the steady frames.
+    assert_eq!(report.scenarios[5].frames, 10);
     assert!(
         report.feature_errors.is_empty(),
         "{:?}",

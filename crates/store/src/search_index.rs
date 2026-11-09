@@ -44,7 +44,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use obs_model::{
-    Key, KeyEntry, Manifest, Resource, ResourceType, SpanKind, TextUnit, UnitId, tokenize,
+    Key, KeyEntry, Manifest, Resource, ResourceType, SpanKind, TextUnit, UnitId, overlaps_heading,
+    searchable_text, tokenize,
 };
 use obs_scripture::{Passage, Verse};
 use obs_search::{
@@ -246,66 +247,46 @@ impl MorphCodes {
     }
 }
 
-/// Normalized words of `text[range]`, skipping `holes` (sorted, e.g. headings), appended to
-/// `out` with single spaces.
+/// Normalized words of `text[range]`, skipping `holes` (e.g. headings), appended to `out`
+/// with single spaces.
 fn push_words(
     text: &str,
     range: std::ops::Range<usize>,
-    holes: &[(usize, usize)],
+    holes: &[std::ops::Range<usize>],
     out: &mut String,
 ) {
-    let mut push = |a: usize, b: usize| {
-        if a < b
-            && let Some(piece) = text.get(a..b)
-        {
-            for t in tokenize(piece) {
-                if !out.is_empty() {
-                    out.push(' ');
-                }
-                out.push_str(&t.text);
-            }
+    for t in tokenize(&searchable_text(text, range, holes)) {
+        if !out.is_empty() {
+            out.push(' ');
         }
-    };
-    let mut at = range.start;
-    let first = holes.partition_point(|&(_, e)| e <= range.start);
-    for &(s, e) in &holes[first..] {
-        if s >= range.end {
-            break;
-        }
-        push(at, s.min(range.end));
-        at = at.max(e);
+        out.push_str(&t.text);
     }
-    push(at, range.end);
 }
 
 /// One unit's Tagged words and headings, sorted by start, for slicing by document.
 struct UnitMarks<'a> {
     tagged: Vec<(usize, usize, &'a [obs_model::MorphemePart])>,
-    headings: Vec<(usize, usize)>,
+    headings: Vec<std::ops::Range<usize>>,
 }
 
 impl<'a> UnitMarks<'a> {
     fn of(unit: &'a TextUnit) -> Self {
         let mut tagged = Vec::new();
-        let mut headings = Vec::new();
         for s in &unit.spans {
-            match &s.kind {
-                SpanKind::TaggedWord { parts } => {
-                    tagged.push((s.start as usize, s.end as usize, parts.as_slice()));
-                }
-                SpanKind::Heading { .. } if s.start < s.end => {
-                    headings.push((s.start as usize, s.end as usize));
-                }
-                _ => {}
+            if let SpanKind::TaggedWord { parts } = &s.kind {
+                tagged.push((s.start as usize, s.end as usize, parts.as_slice()));
             }
         }
         tagged.sort_by_key(|t| (t.0, t.1));
-        headings.sort_unstable();
-        Self { tagged, headings }
+        Self {
+            tagged,
+            headings: unit.heading_ranges(),
+        }
     }
 
     /// The `strong`, `lemma` and `morph` fields of the Tagged words that start inside
-    /// `range`.
+    /// `range`, less those in `headings` (a Bible Verse's, left out as its text leaves them:
+    /// [`obs_model::overlaps_heading`]).
     ///
     /// A `lemma:` term means words of one morpheme part's Lemma, anywhere in it, as the
     /// highlighter reads it (#257). So in `lemma` each part's Lemma ends at a
@@ -317,6 +298,7 @@ impl<'a> UnitMarks<'a> {
     fn fields(
         &self,
         range: std::ops::Range<usize>,
+        headings: &[std::ops::Range<usize>],
         codes: &mut MorphCodes,
     ) -> (String, String, String) {
         let mut strong = String::new();
@@ -329,9 +311,12 @@ impl<'a> UnitMarks<'a> {
             out.push_str(word);
         };
         let first = self.tagged.partition_point(|t| t.0 < range.start);
-        for (s, _, parts) in &self.tagged[first..] {
+        for (s, e, parts) in &self.tagged[first..] {
             if *s >= range.end {
                 break;
+            }
+            if overlaps_heading(headings, &(*s..*e)) {
+                continue;
             }
             for p in *parts {
                 let n = p.strongs;
@@ -395,42 +380,6 @@ fn key_at(keys: &[&KeyEntry], start: u32) -> Option<Key> {
         .map(|k| k.key.clone())
 }
 
-/// Paragraph ranges of a unit: its non-empty `para` spans (outermost first, nested ones
-/// skipped), plus every stretch outside them that holds a word (headings, unparagraphed
-/// entries).
-fn paragraphs(unit: &TextUnit) -> Vec<(usize, usize)> {
-    let mut paras: Vec<(usize, usize)> = unit
-        .spans
-        .iter()
-        .filter(|s| matches!(s.kind, SpanKind::Para { .. }) && s.start < s.end)
-        .map(|s| (s.start as usize, s.end as usize))
-        .collect();
-    paras.sort_by_key(|&(s, e)| (s, std::cmp::Reverse(e)));
-    let mut out: Vec<(usize, usize)> = Vec::new();
-    // A stretch outside the paragraphs, trimmed of white space, if it holds a word.
-    let gap = |a: usize, b: usize, out: &mut Vec<(usize, usize)>| {
-        let Some(t) = unit.text.get(a..b) else {
-            return;
-        };
-        if t.chars().any(char::is_alphanumeric) {
-            let start = a + (t.len() - t.trim_start().len());
-            let end = a + t.trim_end().len();
-            out.push((start, end));
-        }
-    };
-    let mut at = 0;
-    for (s, e) in paras {
-        if s < at {
-            continue; // nested inside (or overlapping) the previous paragraph
-        }
-        gap(at, s, &mut out);
-        out.push((s, e));
-        at = e;
-    }
-    gap(at, unit.text.len(), &mut out);
-    out
-}
-
 /// Every document of `r`, in id order, passed to `emit` with the unit's position in
 /// `r.units`. `emit` returns false to stop (cancelled).
 fn documents(
@@ -455,7 +404,7 @@ fn documents(
             let range = v.range();
             let mut text = String::new();
             push_words(&unit.text, range.clone(), &m.headings, &mut text);
-            let (strong, lemma, morph) = m.fields(range, codes);
+            let (strong, lemma, morph) = m.fields(range, &m.headings, codes);
             let last = Verse::new(v.verse.book, v.verse.chapter, v.last.max(v.verse.verse));
             let doc = Doc {
                 id: i64::try_from(ordinal).unwrap_or(i64::MAX),
@@ -482,10 +431,10 @@ fn documents(
     for (ui, unit) in r.units.iter().enumerate() {
         let marks = UnitMarks::of(unit);
         let unit_keys = keys.get(&unit.id).map_or(&[][..], Vec::as_slice);
-        for (s, e) in paragraphs(unit) {
+        for std::ops::Range { start: s, end: e } in unit.paragraphs() {
             let mut text = String::new();
             push_words(&unit.text, s..e, &[], &mut text);
-            let (strong, lemma, morph) = marks.fields(s..e, codes);
+            let (strong, lemma, morph) = marks.fields(s..e, &[], codes);
             if text.is_empty() && strong.is_empty() && lemma.is_empty() {
                 continue;
             }

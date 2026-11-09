@@ -151,6 +151,12 @@ impl Highlighter {
             && self.morph.is_empty()
     }
 
+    /// Whether it asks for Morphology or a Lemma (`@…`, `lemma:`), which only an
+    /// original-language Bible's words carry.
+    pub fn uses_original_language_data(&self) -> bool {
+        !self.lemmas.is_empty() || !self.morph.is_empty()
+    }
+
     /// Whether a query Strong's number matches a tagged one: an extended number matches
     /// exactly, a base number matches all its homographs (#16).
     fn strong_matches(&self, n: StrongsNumber) -> bool {
@@ -163,19 +169,43 @@ impl Highlighter {
 
     /// Which morpheme parts of a Tagged word match a `strong:`, `lemma:` or `@…` term.
     pub fn matching_parts(&self, parts: &[MorphemePart]) -> Vec<bool> {
-        parts
-            .iter()
-            .map(|p| {
-                self.strong_matches(p.strongs)
-                    || self.lemma_matches(p.lemma.as_deref())
-                    || self.morph.iter().any(|m| m.matches(p))
-            })
-            .collect()
+        parts.iter().map(|p| self.matches_part(p)).collect()
+    }
+
+    /// Whether one morpheme part matches a `strong:`, `lemma:` or `@…` term.
+    pub fn matches_part(&self, p: &MorphemePart) -> bool {
+        self.strong_matches(p.strongs)
+            || self.lemma_matches(p.lemma.as_deref())
+            || self.morph.iter().any(|m| m.matches(p))
+    }
+
+    /// Whether a Tagged word with morphemes `parts` lacks what it asks for: Morphology for a
+    /// `@…` term, a Lemma for a `lemma:` term (or a `@…` with one). Such a word cannot be
+    /// read by its own tags (Visual filters then take Strong's alignment, ADR 0017).
+    pub fn lacks_original_language_data(&self, parts: &[MorphemePart]) -> bool {
+        let has = |field: fn(&MorphemePart) -> Option<&str>| {
+            parts
+                .iter()
+                .any(|p| field(p).is_some_and(|v| !v.trim().is_empty()))
+        };
+        let wants_lemma = !self.lemmas.is_empty() || self.morph.iter().any(|m| m.lemmas.is_some());
+        (!self.morph.is_empty() && !has(|p| p.morph.as_deref()))
+            || (wants_lemma && !has(|p| p.lemma.as_deref()))
     }
 
     /// Byte ranges of `text` to highlight, sorted and merged. `tagged` lists the Tagged words
     /// in `text` (byte ranges of `text`) with their morpheme parts.
     pub fn ranges<'a, I>(&self, text: &str, tagged: I) -> Vec<Range<usize>>
+    where
+        I: IntoIterator<Item = (Range<usize>, &'a [MorphemePart])>,
+    {
+        merge(self.occurrences(text, tagged))
+    }
+
+    /// Each occurrence of a term in `text`, sorted and not merged: `Bless` and `Bless them`
+    /// both, where [`Self::ranges`] has one range. Proximity pairs occurrences as the Search
+    /// index does, each word or phrase on its own.
+    pub fn occurrences<'a, I>(&self, text: &str, tagged: I) -> Vec<Range<usize>>
     where
         I: IntoIterator<Item = (Range<usize>, &'a [MorphemePart])>,
     {
@@ -214,7 +244,10 @@ impl Highlighter {
                 }
             }
         }
-        merge(out)
+        out.retain(|r| r.start < r.end);
+        out.sort_by_key(|r| (r.start, r.end));
+        out.dedup();
+        out
     }
 }
 

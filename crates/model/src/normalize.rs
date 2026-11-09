@@ -7,6 +7,7 @@
 //! Words are runs of letters and digits (with their marks). Everything else separates words,
 //! including apostrophes, hyphens, Hebrew maqaf (U+05BE) and sof pasuq (U+05C3).
 
+use std::borrow::Cow;
 use std::ops::Range;
 
 use unicode_normalization::UnicodeNormalization;
@@ -170,6 +171,37 @@ pub fn tokenize(text: &str) -> Vec<Token> {
     tokens
 }
 
+/// `text[range]` as the Search index reads it (a Bible Verse without its headings): the
+/// bytes of `skipped` blanked to spaces, so they hold no word and every other byte keeps its
+/// offset in the slice. [`tokenize`] of it gives the words a search reads there, which
+/// Visual filters (#211) read alike.
+pub fn searchable_text<'a>(
+    text: &'a str,
+    range: Range<usize>,
+    skipped: &[Range<usize>],
+) -> Cow<'a, str> {
+    let Some(slice) = text.get(range.clone()) else {
+        return Cow::Borrowed("");
+    };
+    let holes: Vec<Range<usize>> = skipped
+        .iter()
+        .filter(|h| h.start < range.end && range.start < h.end && h.start < h.end)
+        .map(|h| h.start.max(range.start) - range.start..h.end.min(range.end) - range.start)
+        .collect();
+    if holes.is_empty() {
+        return Cow::Borrowed(slice);
+    }
+    let mut out = String::with_capacity(slice.len());
+    for (i, c) in slice.char_indices() {
+        if holes.iter().any(|h| h.start <= i && i < h.end) {
+            out.extend(std::iter::repeat_n(' ', c.len_utf8()));
+        } else {
+            out.push(c);
+        }
+    }
+    Cow::Owned(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,6 +234,26 @@ mod tests {
         assert_eq!(normalize("Naïve CAFÉ façade"), "naive cafe facade");
         assert_eq!(normalize("the LORD’s “word”"), "the lord's \"word\"");
         assert_eq!(normalize("‘thou’"), "'thou'");
+    }
+
+    #[test]
+    fn searchable_text_blanks_the_skipped_bytes_and_keeps_every_offset() {
+        let text = "Bless\nPersecution ἀγάπη\nbless them";
+        let heading = text.find("Persecution").unwrap()..text.find("\nbless").unwrap();
+        let read = searchable_text(text, 0..text.len(), std::slice::from_ref(&heading));
+        assert_eq!(read.len(), text.len());
+        let tokens = tokenize(&read);
+        let words: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
+        assert_eq!(words, ["bless", "bless", "them"]);
+        assert_eq!(&text[tokens[1].range.clone()], "bless");
+        // A slice of the text, and a hole only partly in it.
+        let from = text.find("ἀγάπη").unwrap();
+        let read = searchable_text(text, from..text.len(), &[heading]);
+        assert_eq!(tokenize(&read).len(), 2);
+        assert!(matches!(
+            searchable_text(text, 0..5, &[]),
+            std::borrow::Cow::Borrowed("Bless")
+        ));
     }
 
     #[test]

@@ -262,6 +262,68 @@ pub struct TextUnit {
     pub spans: Vec<Span>,
 }
 
+impl TextUnit {
+    /// The bytes of its headings, sorted by start: a Bible's Search index leaves them out of
+    /// the Verse they sit in ([`crate::searchable_text`]), and the Tagged words in them too
+    /// ([`overlaps_heading`]).
+    pub fn heading_ranges(&self) -> Vec<Range<usize>> {
+        let mut out: Vec<Range<usize>> = self
+            .spans
+            .iter()
+            .filter(|s| matches!(s.kind, SpanKind::Heading { .. }) && s.start < s.end)
+            .map(|s| s.start as usize..s.end as usize)
+            .collect();
+        out.sort_unstable_by_key(|r| (r.start, r.end));
+        out
+    }
+
+    /// The paragraphs a Resource outside Bibles is searched by (the Search index's documents,
+    /// which Visual filters read alike): the unit's non-empty `para` spans (outermost first,
+    /// nested ones skipped), plus every stretch outside them that holds a word (headings,
+    /// unparagraphed entries), trimmed of white space, in order.
+    pub fn paragraphs(&self) -> Vec<Range<usize>> {
+        let mut paras: Vec<Range<usize>> = self
+            .spans
+            .iter()
+            .filter(|s| matches!(s.kind, SpanKind::Para { .. }) && s.start < s.end)
+            .map(|s| s.start as usize..s.end as usize)
+            .collect();
+        paras.sort_by_key(|r| (r.start, std::cmp::Reverse(r.end)));
+        let mut out: Vec<Range<usize>> = Vec::new();
+        let gap = |a: usize, b: usize, out: &mut Vec<Range<usize>>| {
+            let Some(t) = self.text.get(a..b) else {
+                return;
+            };
+            if t.chars().any(char::is_alphanumeric) {
+                let start = a + (t.len() - t.trim_start().len());
+                let end = a + t.trim_end().len();
+                out.push(start..end);
+            }
+        };
+        let mut at = 0;
+        for p in paras {
+            if p.start < at {
+                continue; // nested inside (or overlapping) the previous paragraph
+            }
+            gap(at, p.start, &mut out);
+            at = p.end;
+            out.push(p);
+        }
+        gap(at, self.text.len(), &mut out);
+        out
+    }
+}
+
+/// Whether `bytes` (a Tagged word) overlap one of `headings` ([`TextUnit::heading_ranges`]).
+/// A Bible Verse's Search document leaves such a word out of its `strong`, `lemma` and
+/// `morph` fields, as it leaves the heading out of its text; Visual filters and Strong's
+/// alignment (#211) read Verses alike.
+pub fn overlaps_heading(headings: &[Range<usize>], bytes: &Range<usize>) -> bool {
+    headings
+        .iter()
+        .any(|h| h.start < bytes.end && bytes.start < h.end)
+}
+
 /// One Bible Verse in the Bible's own numbering, in document order (its index is the
 /// file-internal ordinal).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
