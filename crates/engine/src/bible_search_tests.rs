@@ -451,6 +451,31 @@ fn query_scope_and_bible_errors_are_inline() {
     cleanup(s, root);
 }
 
+/// A pasted 100,000-deep query (#254) is an inline query error in every search mode, checked
+/// on the UI thread before anything is searched, not a stack overflow.
+#[test]
+fn an_over_deep_query_is_an_inline_error_not_a_crash() {
+    let (mut s, root) = fixture("too-deep", false);
+    let q = format!("{}faith{}", "(".repeat(100_000), ")".repeat(100_000));
+    for mode in ["bible", "library", "notes"] {
+        let out = s
+            .run("search.run", &json!({ "text": q, "mode": mode }))
+            .unwrap();
+        assert_eq!(out["error"]["field"], "query", "{mode}");
+        let tab = TabId(out["tab"].as_u64().unwrap());
+        let e = s.search_tab(tab).unwrap().error.clone().unwrap();
+        assert!(
+            e.message.contains("nests too deeply"),
+            "{mode}: {}",
+            e.message
+        );
+        // The `(` one past `MAX_NESTING` is underlined.
+        assert_eq!(e.span, Some(10..11), "{mode}");
+        assert!(!s.bible_search_running(), "{mode}: nothing was searched");
+    }
+    cleanup(s, root);
+}
+
 #[test]
 fn recent_queries_are_kept_per_mode_in_the_user_database() {
     let (mut s, root) = fixture("recent", true);

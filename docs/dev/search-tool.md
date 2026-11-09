@@ -27,7 +27,12 @@ hits. The Search index caches they read are described in [search-index.md](searc
    Tool) runs `search.run`. The query is parsed and compiled on the UI thread so errors show
    at once, inline under the box. The Scope is read the same way. The query goes into the
    recent list for its mode, which is stored in the User database under
-   `search.recent.<mode>`.
+   `search.recent.<mode>`. A query may nest at most `MAX_NESTING` (10) parentheses, `NOT`s
+   and proximity operators inside one another (#254); a deeper one, such as a pasted
+   100,000 `(`, is an inline error at the token one level too deep. The parser and
+   everything after it recurse once per level, and FTS5's own parser overflows at about 30
+   nested groups, which the worst shape (`(hope OR man faith -works (…))`, three groups a
+   level) reaches at 13.
 2. For each chosen Bible (by default the ★ Bible, first in Preferred order) the engine opens
    its Ready index, or the stale one while it is rebuilt. Bibles still indexing are listed
    as "Indexing …" under the summary.

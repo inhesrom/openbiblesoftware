@@ -23,7 +23,7 @@
 //! English word also matches the other words of its stem ([`crate::stem`]).
 //!
 //! [`parse`] is lenient: unclosed quotes and parentheses are closed, stray `)` and dangling
-//! operators are ignored. Words go through the shared normalizer, so search is case- and
+//! operators are ignored; only nesting deeper than [`MAX_NESTING`] is an error. Words go through the shared normalizer, so search is case- and
 //! diacritic-insensitive. [`compile`] turns the [`Query`] into an FTS5 MATCH expression over
 //! the `text`, `strong` and `lemma` columns in which every term is a quoted string: nothing
 //! the user types ever reaches FTS5 as syntax.
@@ -240,6 +240,9 @@ pub enum QueryErrorKind {
     ProximityOperand,
     /// `BEFORE/n` or `WITHIN n verses` in a Notes search.
     ProximityInNotes,
+    /// More than [`MAX_NESTING`] parentheses, `NOT`s and proximity operators inside one
+    /// another (#254).
+    TooDeep,
 }
 
 impl fmt::Display for QueryErrorKind {
@@ -282,6 +285,10 @@ impl fmt::Display for QueryErrorKind {
             QueryErrorKind::ProximityInNotes => write!(
                 f,
                 "BEFORE/n and WITHIN n verses search Bibles and other Resources, not Notes (try NEAR/n)"
+            ),
+            QueryErrorKind::TooDeep => write!(
+                f,
+                "the query nests too deeply (at most {MAX_NESTING} parentheses, NOTs and proximity operators inside one another)"
             ),
         }
     }
@@ -414,9 +421,20 @@ fn lex(input: &str) -> Vec<(Lex, Range<usize>)> {
 
 // ------------------------------------------------------------------------------ parser
 
+/// How many parentheses, `NOT`s (or `-`) and proximity operators a query may have inside one
+/// another (#254); real queries nest two or three. The parser and everything that walks a
+/// [`Query`] or [`Plan`] (compiling, planning, highlighting, running, dropping it) recurse
+/// once per level, so the bound keeps a pasted query from overflowing the stack. It is this
+/// low for FTS5: its parser stack overflows at about 30 nested groups, and one level here
+/// can compile to three (`hope OR ((man AND faith AND (…)) NOT works)`, which FTS5 takes
+/// at most 12 deep).
+pub const MAX_NESTING: usize = 10;
+
 struct Parser {
     toks: Vec<(Lex, Range<usize>)>,
     pos: usize,
+    /// How many parentheses, `NOT`s and proximity operators the parser is inside.
+    nesting: usize,
 }
 
 fn is_op(l: &Lex, op: &str) -> bool {
@@ -471,6 +489,18 @@ impl Parser {
         let t = self.toks.get(self.pos).cloned();
         self.pos += 1;
         t
+    }
+
+    /// Go one nesting level deeper for the operator at `span`: a query error past
+    /// [`MAX_NESTING`], so neither the parser nor anything walking the [`Query`] recurses
+    /// without bound. Callers step back out with `self.nesting -= 1` (or restore it); an
+    /// error ends the parse, so error paths need not.
+    fn deeper(&mut self, span: Range<usize>) -> Result<(), QueryError> {
+        if self.nesting >= MAX_NESTING {
+            return Err(error(QueryErrorKind::TooDeep, span));
+        }
+        self.nesting += 1;
+        Ok(())
     }
 
     /// The proximity operator at token `i`, and how many tokens it takes.
@@ -551,19 +581,25 @@ impl Parser {
 
     /// proximity := operand (proximity-operator operand)*, binding tighter than AND and OR.
     fn proximity(&mut self, depth: usize) -> Result<Option<Query>, QueryError> {
+        let outer = self.nesting;
         let mut left = self.operand(depth)?;
         while let Some((op, len)) = self.proximity_op(self.pos) {
+            let op_span = self.toks[self.pos].1.start..self.toks[self.pos + len - 1].1.end;
             self.pos += len;
             // A dangling operator (`faith NEAR/5`) is ignored.
             if !self.term_follows() {
                 continue;
             }
+            // Each join wraps the ones before it: `a NEAR/1 b NEAR/1 c` is
+            // `(a NEAR/1 b) NEAR/1 c`, one level deeper per operator.
+            self.deeper(op_span)?;
             let right = self.operand(depth)?;
             left = match (left, right) {
                 (Some(l), Some(r)) => Some(op.join(l, r)),
                 (l, r) => l.or(r),
             };
         }
+        self.nesting = outer;
         Ok(left)
     }
 
@@ -640,7 +676,10 @@ impl Parser {
             if !self.term_follows() {
                 return Ok(None);
             }
-            return Ok(self.unary(depth)?.map(|q| {
+            self.deeper(op.clone())?;
+            let negated = self.unary(depth)?;
+            self.nesting -= 1;
+            return Ok(negated.map(|q| {
                 let span = op.start..q.span().end;
                 match q {
                     // `--x` and `NOT -x` cancel out.
@@ -661,7 +700,9 @@ impl Parser {
         };
         match lex {
             Lex::Open => {
+                self.deeper(span)?;
                 let inner = self.or(depth + 1)?;
+                self.nesting -= 1;
                 // Close it if the user did; otherwise it closes at the end.
                 if matches!(self.peek(), Some(Lex::Close)) {
                     self.pos += 1;
@@ -911,6 +952,7 @@ pub fn parse(input: &str) -> Result<Query, QueryError> {
     let mut p = Parser {
         toks: lex(input),
         pos: 0,
+        nesting: 0,
     };
     let mut parts = Vec::new();
     while p.pos < p.toks.len() {

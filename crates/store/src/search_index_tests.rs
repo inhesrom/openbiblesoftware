@@ -780,6 +780,63 @@ fn word_forms_find_the_other_words_of_a_stem() {
     assert_eq!(docs_with_word_forms(&index, "doth"), [0, 5]);
 }
 
+/// The deepest queries the parser allows (#254) run through planning, the second passes and
+/// FTS5 itself, and find what their shallow equivalents find.
+#[test]
+fn the_deepest_allowed_queries_run_against_a_real_index() {
+    let dir = TempDir::new("deepest");
+    let index = james_index(&dir);
+    let levels = obs_search::MAX_NESTING;
+    let table: &[(String, &str)] = &[
+        (
+            format!("{}faith{}", "(".repeat(levels), ")".repeat(levels)),
+            "faith",
+        ),
+        (
+            format!(
+                "{}patience{}",
+                "(faith OR ".repeat(levels),
+                ")".repeat(levels)
+            ),
+            "faith OR patience",
+        ),
+        (
+            format!("faith {}works", "-".repeat(levels - 1)),
+            "faith -works",
+        ),
+        (
+            format!("faith {}works", "NOT ".repeat(levels)),
+            "faith works",
+        ),
+        (
+            format!("faith{}", " WITHIN 2 verses works".repeat(levels)),
+            "faith WITHIN 2 verses works",
+        ),
+    ];
+    for (deep, shallow) in table {
+        assert_eq!(docs(&index, deep), docs(&index, shallow), "{shallow}");
+        assert_eq!(
+            docs_with_word_forms(&index, deep),
+            docs_with_word_forms(&index, shallow),
+            "{shallow}"
+        );
+    }
+    // Three FTS5 groups a level, around stemmed words that each index expands into groups
+    // of their own: the shape nearest FTS5's parser limit still runs.
+    let worst = format!(
+        "{}faith NEAR/1 work{}",
+        "(perfect OR man faith -dead ".repeat(levels - 1),
+        ")".repeat(levels - 1)
+    );
+    assert!(!docs_with_word_forms(&index, &worst).is_empty());
+    assert_eq!(
+        to_fts5(&format!("{}faith", "(".repeat(levels + 1)), &NoLexicon)
+            .map(|_| ())
+            .map_err(|e| e.kind),
+        Err(obs_search::QueryErrorKind::TooDeep)
+    );
+}
+
 /// A cache whose words cannot be read (damaged after it was opened) fails a Word forms
 /// search instead of finding nothing.
 #[test]
