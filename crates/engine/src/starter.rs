@@ -45,7 +45,7 @@ pub const MANIFEST_FORMAT: u32 = 1;
 pub const RELEASE_DOWNLOADS: &str = crate::credits::PUBLISHED_CHANGES;
 
 /// User database preference holding the [`StarterState`].
-const STATE_PREF: &str = "starter-library";
+pub(crate) const STATE_PREF: &str = "starter-library";
 
 /// One Starter Resource as a release manifest lists it. Fields the app does not need (unit
 /// ids) are ignored; the descriptive ones are absent from manifests written before #131.

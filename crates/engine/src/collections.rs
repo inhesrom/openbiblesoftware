@@ -257,8 +257,8 @@ impl Library {
 
 // ---------------------------------------------------------------------------------- session
 
-const COLLECTIONS_PREF: &str = "library.collections";
-const TAGS_PREF: &str = "library.tags";
+pub(crate) const COLLECTIONS_PREF: &str = "library.collections";
+pub(crate) const TAGS_PREF: &str = "library.tags";
 
 impl Session {
     /// Read the Collections and Resource tags from the User database.

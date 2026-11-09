@@ -516,3 +516,245 @@ fn back_up_and_restore_need_the_user_database() {
     assert_eq!(t.title, BACKUPS_TITLE);
     assert_eq!(crate::menu_of("data.backups"), Some("File"));
 }
+
+/// A copy of the Backup `from` written to `to`, with `damage` done to it first through the
+/// store (which keeps whatever text it is given).
+fn damaged_copy(
+    f: &Fixture,
+    from: &std::path::Path,
+    to: &std::path::Path,
+    damage: impl FnOnce(&obs_store::UserStore),
+) {
+    let db = f.root.join("damaging").join("user.db");
+    let _ = std::fs::remove_dir_all(db.parent().unwrap());
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    std::fs::copy(from, &db).unwrap();
+    let (store, _) = obs_store::UserStore::open(&db).unwrap();
+    damage(&store);
+    store.back_up(to).unwrap();
+}
+
+/// #258: a Backup holding a Layout, a Favorite or a setting kept as JSON that the app could
+/// not read is refused by the preview and by restore, naming each, before anything is
+/// touched; a restore would otherwise drop or default them silently.
+#[test]
+fn a_backup_with_an_unreadable_layout_setting_or_favorite_is_refused_naming_each() {
+    let f = Fixture::new("unreadable");
+    let mut s = f.session();
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
+    let backup = f.file("damaged.obsbackup");
+    damaged_copy(&f, &good, &backup, |db| {
+        db.set_preference("search.saved", "not JSON").unwrap();
+        db.set_preference("library.collections", "{\"oops\":1}")
+            .unwrap();
+        // Text settings are any text: not checked.
+        db.set_preference("log_level", "not JSON").unwrap();
+        db.save_layout("Broken", "not JSON").unwrap();
+        db.add_favorite("", "John 3:16", "nowhere").unwrap();
+        db.record_visit("John 3:17", "nowhere").unwrap();
+    });
+    s.run(
+        "annotation.note",
+        &json!({ "body": "made after the backup" }),
+    )
+    .unwrap();
+    let before = dump(&s);
+
+    let refused = s.restore_preview(&backup).unwrap_err();
+    for named in [
+        "the Layout “Broken”",
+        "the Favorite “John 3:16”",
+        "1 History visit",
+        "the setting `search.saved` (Saved searches)",
+        "the setting `library.collections` (Collections)",
+        "Nothing was changed",
+    ] {
+        assert!(refused.contains(named), "{named}: {refused}");
+    }
+    assert!(!refused.contains("log_level"), "{refused}");
+    let err = s.run("data.restore", &path(&backup)).unwrap_err();
+    assert!(err.to_string().contains("the Layout “Broken”"), "{err}");
+    assert_eq!(dump(&s), before);
+    assert!(s.last_restore().is_none());
+    assert!(
+        !s.kept_backups()
+            .iter()
+            .any(|b| b.kind == BackupKind::Safety)
+    );
+    // The undamaged Backup still restores.
+    s.restore_preview(&good).unwrap();
+    s.run("data.restore", &path(&good)).unwrap();
+}
+
+/// Everything the app itself writes passes the check: a Backup of a Session that has used
+/// every setting kept as JSON it can reach here previews and restores.
+#[test]
+fn a_backup_of_what_the_app_writes_passes_the_restore_check() {
+    let f = Fixture::new("app-writes");
+    let mut s = f.session();
+    for setting in crate::settings::SETTINGS.iter().filter(|s| s.has_reset()) {
+        crate::settings_tests::change(&mut s, setting.id);
+    }
+    let run = |s: &mut Session, id: &str, p: Value| {
+        s.run(id, &p).unwrap_or_else(|e| panic!("{id}: {e}"));
+    };
+    run(
+        &mut s,
+        "keys.set",
+        json!({ "command": "view.text_larger", "key": "Ctrl+ArrowUp" }),
+    );
+    run(
+        &mut s,
+        "home.hide_card",
+        json!({ "card": "verse_of_the_day" }),
+    );
+    run(
+        &mut s,
+        "guide.hide_section",
+        json!({ "guide": "passage_guide", "section": "commentaries" }),
+    );
+    run(
+        &mut s,
+        "copy.option",
+        json!({ "name": "layout", "value": "verse_per_line" }),
+    );
+    run(&mut s, "copy.preset_save", json!({ "name": "Handout" }));
+    run(
+        &mut s,
+        "collection.save",
+        json!({ "name": "Bibles", "rules": "type:bible" }),
+    );
+    run(
+        &mut s,
+        "resource.tags",
+        json!({ "id": "kjv", "tags": "older" }),
+    );
+    run(
+        &mut s,
+        "filter.save",
+        json!({ "name": "Grace", "query": "grace", "look": "background", "color": "#ffd6aa" }),
+    );
+    run(&mut s, "annotation.note", json!({ "body": "grace" }));
+    let out = s
+        .run("search.run", &json!({ "text": "grace", "mode": "notes" }))
+        .unwrap();
+    run(
+        &mut s,
+        "search.save",
+        json!({ "tab": out["tab"], "name": "Grace" }),
+    );
+    run(&mut s, "command_box.run", json!({ "text": "Matt 5:43" }));
+    let bible = s.run("resource.open", &json!({ "id": "kjv" })).unwrap()["tab"].clone();
+    run(
+        &mut s,
+        "tab.go",
+        json!({ "tab": bible, "text": "Matt 5:43" }),
+    );
+    run(&mut s, "favorite.add", json!({ "tab": bible }));
+    s.record_history();
+    run(&mut s, "layout.save", json!({ "name": "Study" }));
+
+    let backup = f.file("everything.obsbackup");
+    s.run("data.back_up", &path(&backup)).unwrap();
+    let written: Vec<String> = s
+        .user
+        .as_ref()
+        .unwrap()
+        .preferences()
+        .unwrap()
+        .into_iter()
+        .map(|(k, _)| k)
+        .collect();
+    let unreached: Vec<&str> = crate::backup_check::JSON_SETTINGS
+        .iter()
+        .filter(|j| !written.iter().any(|k| j.names(k)))
+        .map(|j| j.key)
+        .collect();
+    // Written only by the Starter library and by an Import.
+    assert_eq!(unreached, ["starter-library", "import-report/"]);
+    let preview = s.restore_preview(&backup).unwrap();
+    assert_eq!(preview.backup.layouts, ["Study"]);
+    s.run("data.restore", &path(&backup)).unwrap();
+}
+
+/// Every setting the engine names with a constant is either checked as JSON on restore or
+/// known to be plain text, so a new JSON setting cannot be missed by the restore check.
+#[test]
+fn every_setting_the_engine_keeps_is_known_to_the_restore_check() {
+    const PLAIN_TEXT: &[&str] = &[
+        "highlights.palette",
+        "annotations.last_notebook",
+        "log_level",
+        "page-tone-hint",
+        "reading.visual_filters_next_id",
+        "search.word_forms",
+    ];
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut keys = Vec::new();
+    for entry in std::fs::read_dir(&src).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "rs") {
+            continue;
+        }
+        for line in std::fs::read_to_string(&path).unwrap().lines() {
+            let Some((name, rest)) = line
+                .trim_start()
+                .trim_start_matches("pub ")
+                .trim_start_matches("pub(crate) ")
+                .strip_prefix("const ")
+                .and_then(|l| l.split_once(": &str = \""))
+            else {
+                continue;
+            };
+            if name.ends_with("_PREF") || name.ends_with("_PREF_PREFIX") || name.ends_with("_KEY") {
+                keys.push(rest.trim_end_matches("\";").to_string());
+            }
+        }
+    }
+    assert!(keys.len() > 20, "{keys:?}");
+    for key in keys {
+        let json = crate::backup_check::JSON_SETTINGS
+            .iter()
+            .any(|j| j.key == key);
+        assert!(
+            json ^ PLAIN_TEXT.contains(&key.as_str()),
+            "`{key}`: add it to JSON_SETTINGS (backup_check.rs) or to PLAIN_TEXT here"
+        );
+    }
+}
+
+/// #258: a restore replaces the Notes a Notes search found; open Search Tabs run their
+/// searches again over the restored data, keeping their query.
+#[test]
+fn a_restore_runs_open_notes_searches_again_over_the_restored_data() {
+    let f = Fixture::new("rerun");
+    let mut s = f.session();
+    let empty = f.file("empty.obsbackup");
+    s.run("data.back_up", &path(&empty)).unwrap();
+    s.run("annotation.note", &json!({ "body": "grace after backup" }))
+        .unwrap();
+    let out = s
+        .run("search.run", &json!({ "text": "grace", "mode": "notes" }))
+        .unwrap();
+    let tab = TabId(out["tab"].as_u64().unwrap());
+    let hits = |s: &Session| {
+        s.search_tab(tab)
+            .unwrap()
+            .notes
+            .as_ref()
+            .unwrap()
+            .hits
+            .len()
+    };
+    assert_eq!(hits(&s), 1);
+
+    s.run("data.restore", &path(&empty)).unwrap();
+    assert!(s.annotations(None).unwrap().is_empty());
+    assert_eq!(hits(&s), 0);
+    assert_eq!(s.search_tab(tab).unwrap().query, "grace");
+    assert_eq!(s.search_tab(tab).unwrap().selected, None);
+
+    s.run("data.undo_restore", &Value::Null).unwrap();
+    assert_eq!(hits(&s), 1);
+}

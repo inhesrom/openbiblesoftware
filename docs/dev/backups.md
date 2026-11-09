@@ -8,7 +8,7 @@ single-instance Tab with all of it.
 | Layer | Piece | Role |
 |---|---|---|
 | `obs-store` | `backup.rs`, `backup_store.rs` | `UserStore::back_up`, `open_backup`, `backup_contents`, `restore`, `refuse_own_file`, `backups`, `contents`, `preferences`, `local_time`; `BackupKind`, `BackupFile`, `BackupContents`. |
-| `obs-engine` | `backups.rs` | `UserData`'s backup methods; the restore preview (`restore_lines`); reloading the Session after a restore; Undo restore; Export everything; commands `data.back_up`, `data.restore`, `data.undo_restore`, `data.export`. |
+| `obs-engine` | `backups.rs`, `backup_check.rs` | `UserData`'s backup methods; the check of what the engine keeps inside rows (`unreadable_records`, `JSON_SETTINGS`); the restore preview (`restore_lines`); reloading the Session after a restore; Undo restore; Export everything; commands `data.back_up`, `data.restore`, `data.undo_restore`, `data.export`. |
 | `obs-ui-egui` | `shell/backups_tab.rs` | The Tab: native save/open dialogs on their own thread, the preview panel, the kept Backups list. |
 
 ## The Backup file
@@ -39,7 +39,9 @@ single-instance Tab with all of it.
    a User database (wrong `application_id`, or none) or is newer than this build
    (`StoreError::NewerFormat`), and runs the same forward-only migrations a launch runs. It then
    checks the result is whole, so a Backup the app could not use is refused here rather than
-   failing after it replaced the user's data: SQLite's `integrity_check` passes; every table,
+   failing after it replaced the user's data: SQLite's `integrity_check` passes; no row points
+   at one that is not there (`foreign_key_check`, which the integrity check skips: an
+   Annotation of a Notebook the file lacks would belong to none, #258); every table,
    column, index and trigger of a database freshly migrated to this build's version is there;
    every row of every table can be read; the Notes search index passes its own check; and
    every read the app makes of a User database (Notebooks, Annotations with their Anchors,
@@ -54,6 +56,21 @@ single-instance Tab with all of it.
    `backups/.user-restoring.<pid>-<n>.db` with the live
    page size (`VACUUM`), then deleted, however the restore ends (a `ScratchFile` guard).
 
+Before any of it, `Session::restore_backup(path)` checks what the engine keeps inside rows,
+which the store cannot read (`backup_check.rs`, #258), on the Backup read into memory
+(`UserData::open_backup`): every Layout's Workspace snapshot and every Favorite's and Visit's
+location must read, and so must every setting the app keeps as JSON (`JSON_SETTINGS`: View
+settings, toolbar, keys, Home, Guide arrangements, Saved searches, Search history, recent
+searches and Command box entries, Copy verses, Collections, Resource tags, Visual filters,
+the Starter library state, Import reports, kept Attributions), each as the type its loader
+reads. The app reads each of those leniently at launch (an unreadable one left out or at its
+default), so without this a restore would drop or default them silently once the live data is
+gone. A Backup with any of them is refused, naming each ("the Layout “Broken”", "the setting
+`search.saved` (Saved searches)"), with nothing changed. Plain-text settings (Log level, the
+last Notebook used...) are not checked: any text is one. A test
+(`every_setting_the_engine_keeps_is_known_to_the_restore_check`) fails when a new `*_PREF`
+constant is in neither `JSON_SETTINGS` nor its plain-text list.
+
 `Session::restore_backup(path)` then sets the preferences `attach_user` only overwrites when the
 database has them (View settings and fonts, toolbar, Guide arrangements, Copy verses, Import
 reports) back to their defaults (`forget_user_preferences`) and calls `attach_user` again, so a
@@ -63,13 +80,19 @@ History, Reading plans, Home, Copy presets, Collections, Saved searches, keys, t
 library state) and `annotations_revision` moves, so reading panes reload their Marks. The
 annotation undo history is cleared (its rows no longer exist). The Workspace on screen is kept,
 and the Last session cache is forgotten so the next save writes it over the Backup's. A Notes
-Tool showing a Notebook the Backup lacks goes back to All.
+Tool showing a Notebook the Backup lacks goes back to All. Search Tabs whose results come from
+the User database (Notes mode, and Library mode, whose Search scope names Collections) drop
+their results and run their searches again over the restored data (`rerun_searches_of_user_data`,
+as a Tab restored from a Workspace snapshot does: no Visit, no Search history entry), keeping
+their query.
 
 A restore that fails before step 2 changes nothing at all: the Session keeps its User database,
 undo history included, and no Safety backup is taken.
 
 **Undo restore** (`data.undo_restore`, enabled after a restore in this run) restores the last
-restore's Safety backup, taking a Safety backup of its own.
+restore's Safety backup, taking a Safety backup of its own. It skips the check of what the
+engine keeps inside rows: the Safety backup is the data as it was in use, and is put back as
+it was.
 
 Before the Tab runs either, it saves the Note being written and the Notes card being edited
 (`settle_note_editors`, as closing the window does), so text typed before the restore is in
@@ -80,8 +103,9 @@ being typed, Delete Notebook's question, a Re-attach).
 
 ## The preview
 
-`Session::restore_preview(path)` compares `UserData::contents()` (now) with
-`backup_contents(path)` (the migrated copy) as `RestoreLine`s: Notebooks, Notes, Highlights,
+`Session::restore_preview(path)` runs the same check as `restore_backup` (a Backup it refuses
+shows why instead of a preview), then compares `UserData::contents()` (now) with the contents
+of `open_backup(path)` (the migrated copy) as `RestoreLine`s: Notebooks, Notes, Highlights,
 Layouts, Reading plans, Favorites, History visits and Settings (preference rows), each with
 both counts, and for the named ones what comes back and what goes ("brings back “Romans”").
 `older_format` says the Backup is upgraded as it is restored. Previewing only reads the file.
@@ -105,8 +129,8 @@ uses):
 
 - `crates/store/tests/user_backup.rs`: one-file Backups; restore brings back a deleted
   Notebook and its Safety backup undoes it; an older Backup is migrated; newer, foreign and
-  missing files are refused with no Safety backup; a Backup missing a table, index or column
-  or with an unreadable row is refused by preview and restore with nothing changed; Back up now
+  missing files are refused with no Safety backup; a Backup missing a table, index or column,
+  with an unreadable row or with an Annotation of a missing Notebook is refused by preview and restore with nothing changed; Back up now
   refuses the database and its sidecar files by any path; the kept list; another page size;
   no scratch file left by a restore that fails.
 - `crates/engine/src/backups_tests.rs`: the #217 acceptance through commands (back up, delete a
@@ -114,7 +138,13 @@ uses):
   writing the Workspace after a restore; every preference the Backup lacks back at its
   default (compared with a Session launched on the Backup), font choices included; Back up now
   and Export everything refusing the User database; a refused restore keeping undo; Export
-  everything's files, remembered Resource names of a removed Resource included.
+  everything's files, remembered Resource names of a removed Resource included; a Backup with
+  an unreadable Layout, Favorite, Visit or JSON setting refused naming each, while one of
+  everything the app writes passes; every `*_PREF` constant known to the check; open Notes
+  searches run again after a restore and after Undo restore.
+- `crates/store/tests/user_db.rs` (`a_refused_database_is_not_changed`): a newer or foreign
+  database is refused at launch byte for byte unchanged (its journal mode is read, not set to
+  WAL, until it is accepted).
 - `crates/ui-egui/src/backups_tests.rs`: the Tab from the Tools menu, with injected dialogs:
   Back up now, preview, Restore, Undo restore, a kept Backup's Restore…, Export everything and
   a cancelled dialog. `UPDATE_PREVIEWS=1` writes `backups-*.ppm` to `target/previews/`.

@@ -361,8 +361,10 @@ pub trait UserData: std::fmt::Debug {
     fn update_backup(&self) -> Result<PathBuf, String>;
     /// What the User database holds now.
     fn contents(&self) -> Result<BackupContents, String>;
-    /// What the Backup at `path` holds, migrated to this build's format; the file is only read.
-    fn backup_contents(&self, path: &Path) -> Result<BackupContents, String>;
+    /// The Backup at `path`, read into memory and migrated to this build's format, with the
+    /// format version it was written in; the file is only read. Writes to it change only
+    /// the copy in memory.
+    fn open_backup(&self, path: &Path) -> Result<(Box<dyn UserData>, u32), String>;
     /// Replace everything with the Backup at `path`, after taking a Safety backup, whose path
     /// is returned. An unreadable or newer Backup changes nothing.
     fn restore(&mut self, path: &Path) -> Result<PathBuf, String>;
@@ -509,8 +511,9 @@ impl UserData for obs_store::UserStore {
     fn contents(&self) -> Result<BackupContents, String> {
         obs_store::UserStore::contents(self).map_err(|e| e.to_string())
     }
-    fn backup_contents(&self, path: &Path) -> Result<BackupContents, String> {
-        obs_store::UserStore::backup_contents(path).map_err(|e| e.to_string())
+    fn open_backup(&self, path: &Path) -> Result<(Box<dyn UserData>, u32), String> {
+        let (backup, found) = obs_store::UserStore::open_backup(path).map_err(|e| e.to_string())?;
+        Ok((Box::new(backup), found))
     }
     fn restore(&mut self, path: &Path) -> Result<PathBuf, String> {
         obs_store::UserStore::restore(self, path).map_err(|e| e.to_string())

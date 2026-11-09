@@ -18,6 +18,7 @@ pub mod appearance;
 pub mod atlas;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod atlas_tests;
+mod backup_check;
 pub mod backups;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod backups_tests;

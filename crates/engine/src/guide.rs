@@ -497,7 +497,7 @@ pub struct GuideArrangement {
 /// The stored form. Section ids stay strings so an arrangement saved by a later version with
 /// more sections still loads (unknown ids are dropped).
 #[derive(Serialize, Deserialize)]
-struct Stored {
+pub(crate) struct Stored {
     sections: Vec<StoredPlace>,
 }
 
@@ -1310,8 +1310,11 @@ impl Guides {
     }
 }
 
+/// The start of the preference key of each Guide's Guide arrangement.
+pub(crate) const ARRANGEMENT_PREF_PREFIX: &str = "guide-arrangement/";
+
 fn pref(guide: Guide) -> String {
-    format!("guide-arrangement/{}", guide.id())
+    format!("{ARRANGEMENT_PREF_PREFIX}{}", guide.id())
 }
 
 impl Session {

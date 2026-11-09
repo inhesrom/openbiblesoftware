@@ -30,7 +30,7 @@ impl JobMode {
 }
 
 /// Preference key of the View menu's settings.
-const VIEW_PREF: &str = "view";
+pub(crate) const VIEW_PREF: &str = "view";
 
 /// One running engine: library, services, the command registry and the job queue.
 #[derive(Debug)]

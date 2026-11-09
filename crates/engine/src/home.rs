@@ -96,7 +96,7 @@ pub struct HomeSettings {
 /// The stored form. Card ids stay strings so a save from a later version with more cards
 /// still loads (unknown ids are dropped).
 #[derive(Serialize, Deserialize)]
-struct Stored {
+pub(crate) struct Stored {
     #[serde(default)]
     cards: Vec<StoredCard>,
     #[serde(default)]

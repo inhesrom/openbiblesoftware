@@ -2437,8 +2437,8 @@ impl crate::UserData for WritesFail {
     fn contents(&self) -> Result<obs_store::BackupContents, String> {
         crate::UserData::contents(&self.store)
     }
-    fn backup_contents(&self, path: &Path) -> Result<obs_store::BackupContents, String> {
-        crate::UserData::backup_contents(&self.store, path)
+    fn open_backup(&self, path: &Path) -> Result<(Box<dyn crate::UserData>, u32), String> {
+        crate::UserData::open_backup(&self.store, path)
     }
     fn restore(&mut self, path: &Path) -> Result<PathBuf, String> {
         crate::UserData::restore(&mut self.store, path)

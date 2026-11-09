@@ -92,7 +92,7 @@ impl SearchMode {
     }
 
     fn preference_key(self) -> String {
-        format!("search.recent.{}", self.id())
+        format!("{RECENT_PREF_PREFIX}{}", self.id())
     }
 }
 
@@ -130,6 +130,9 @@ impl InlineError {
         }
     }
 }
+
+/// The start of the preference key of each mode's recent queries.
+pub(crate) const RECENT_PREF_PREFIX: &str = "search.recent.";
 
 /// The User database preference that keeps the Word forms setting.
 const WORD_FORMS_KEY: &str = "search.word_forms";
@@ -1007,6 +1010,27 @@ impl Session {
                 st.notice = notice;
             }
         }
+    }
+
+    /// After the User database was replaced (a restore, #258): the Search Tabs whose results
+    /// come from it (Notes mode; Library mode, whose Search scope names Collections) drop
+    /// those results and run their searches again over it, as a restored Tab does.
+    pub(crate) fn rerun_searches_of_user_data(&mut self) {
+        let tabs: Vec<TabId> = self
+            .workspace
+            .tabs()
+            .filter(|t| matches!(t.search.mode, SearchMode::Notes | SearchMode::Library))
+            .map(|t| t.id)
+            .collect();
+        for tab in tabs {
+            self.cancel_bible_jobs(tab);
+            if let Some(st) = self.search_tab_mut(tab) {
+                st.clear_results();
+                st.error = None;
+                st.rerun = !st.query.trim().is_empty();
+            }
+        }
+        self.rerun_restored_searches();
     }
 
     fn start_bible_search(&mut self, tab: TabId, st: &SearchTab) -> Option<InlineError> {
