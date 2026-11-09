@@ -371,6 +371,72 @@ mod tests {
         assert!(unit.spans.contains(&(1..3, SpanKind::Woj)));
     }
 
+    /// AUD-FORMATS-2 (#253): a milestone opened inside a note ends with the note; its
+    /// note-local offset is never applied to the unit's text.
+    #[test]
+    fn milestone_opened_in_a_note_closes_with_the_note() {
+        let mut w = Writer::new();
+        w.set_book(Some(Book::John));
+        w.start_chapter(3);
+        w.open_verse(Verse::new(Book::John, 3, 16), 16);
+        feed(
+            "<note>A<reference sID=\"r\" osisRef=\"John.3.16\"/>B</note>\u{e9}\u{e9}<reference eID=\"r\"/>",
+            &mut w,
+        );
+        let unit = w.finish_unit();
+        assert_eq!(unit.text, "\u{e9}\u{e9}");
+        assert!(
+            !unit
+                .spans
+                .iter()
+                .any(|(_, k)| matches!(k, SpanKind::ScriptureRef { .. })),
+            "{:?}",
+            unit.spans
+        );
+        let notes = w.take_notes();
+        assert_eq!(notes.len(), 1);
+        let note = &notes[0].1;
+        assert_eq!(note.text, "AB");
+        let refs: Vec<_> = note
+            .spans
+            .iter()
+            .filter(|(_, k)| matches!(k, SpanKind::ScriptureRef { .. }))
+            .map(|(r, _)| r.clone())
+            .collect();
+        assert_eq!(refs, vec![1..2]);
+    }
+
+    /// #253: a milestone note (`<note sID/>` … `<note eID/>`) ends everything opened inside
+    /// it, so an element closed after it never applies a note offset to the unit's text.
+    #[test]
+    fn element_opened_in_a_milestone_note_closes_with_the_note() {
+        let mut w = Writer::new();
+        w.set_book(Some(Book::John));
+        w.start_chapter(3);
+        w.open_verse(Verse::new(Book::John, 3, 16), 16);
+        feed(
+            "<note sID=\"n\"/>A<reference>John 3:16<note eID=\"n\"/>\u{e9}\u{e9}</reference>",
+            &mut w,
+        );
+        let unit = w.finish_unit();
+        assert_eq!(unit.text, "\u{e9}\u{e9}");
+        for (range, _) in &unit.spans {
+            assert!(unit.text.get(range.clone()).is_some(), "{:?}", unit.spans);
+        }
+        let notes = w.take_notes();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].1.text, "AJohn 3:16");
+        assert!(
+            notes[0]
+                .1
+                .spans
+                .iter()
+                .any(|(r, k)| *r == (1..10) && matches!(k, SpanKind::ScriptureRef { .. })),
+            "{:?}",
+            notes[0].1.spans
+        );
+    }
+
     #[test]
     fn cdata_preserves_literal_text_without_decoding_entities() {
         let mut w = Writer::new();

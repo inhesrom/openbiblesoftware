@@ -59,6 +59,38 @@ pub struct ReadingDoc {
     notes: std::collections::HashMap<UnitId, TextUnit>,
 }
 
+/// Every Verse and Key range slices its unit's text. The reader checks each unit's spans; this
+/// skips `load`'s whole-Resource validation, so the ranges that point into units are checked
+/// here, before anything slices with them (#253).
+#[cfg(not(target_arch = "wasm32"))]
+fn check_verse_and_key_ranges(
+    units: &[TextUnit],
+    verses: &[BibleVerse],
+    keys: &[KeyEntry],
+) -> Result<(), StoreError> {
+    let by_id: std::collections::HashMap<&UnitId, &TextUnit> =
+        units.iter().map(|u| (&u.id, u)).collect();
+    let ranges =
+        verses
+            .iter()
+            .map(|v| (&v.unit, "verse", v.range()))
+            .chain(keys.iter().filter_map(|k| {
+                Some((
+                    &k.unit,
+                    "key",
+                    k.range.map(|(s, e)| s as usize..e as usize)?,
+                ))
+            }));
+    for (unit, kind, range) in ranges {
+        // Keys may point at note units, which are kept apart; only reading units are sliced.
+        if let Some(u) = by_id.get(unit) {
+            u.check_range(kind, range)
+                .map_err(|e| StoreError::Invalid(obs_model::ValidationErrors(vec![e])))?;
+        }
+    }
+    Ok(())
+}
+
 /// Bible Verses by the Standard Passage they map to (ADR 0002), for finding where a Passage
 /// anchor shows in this Bible: entries sorted by Standard start, with the running maximum of
 /// their ends so a lookup can binary-search both sides.
@@ -90,7 +122,9 @@ impl ReadingDoc {
         for scheme in &reader.manifest().key_schemes {
             keys.extend(reader.keys(*scheme)?);
         }
-        let mut doc = Self::build(reader.manifest().clone(), units, reader.verses()?, keys);
+        let verses = reader.verses()?;
+        check_verse_and_key_ranges(&units, &verses, &keys)?;
+        let mut doc = Self::build(reader.manifest().clone(), units, verses, keys);
         doc.verse_map = reader.verse_map()?.map(std::sync::Arc::new);
         doc.volumes = reader.volumes()?;
         doc.notes = notes;
@@ -396,5 +430,32 @@ impl ReadingDoc {
             .zip(&self.verse_units)
             .rfind(|(v, u)| **u == unit && v.start as usize <= byte)
             .map(|(v, _)| v.verse)
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    /// AUD-FORMATS-1 (#253): a Verse or Key range that does not slice its unit is a file
+    /// error when the Resource opens, not a panic when it is read.
+    #[test]
+    fn verse_and_key_ranges_that_do_not_slice_their_unit_are_rejected() {
+        let resource = obs_store::sample_resource();
+        let (units, verses, keys) = (resource.units, resource.verses, resource.keys);
+        check_verse_and_key_ranges(&units, &verses, &keys).unwrap();
+
+        let mut bad = verses.clone();
+        bad[0].end = 100_000;
+        let err = check_verse_and_key_ranges(&units, &bad, &keys).unwrap_err();
+        assert!(err.to_string().contains("`verse` span"), "{err}");
+
+        let mut bad = keys.clone();
+        let key = bad.iter_mut().find(|k| k.range.is_some()).unwrap();
+        key.range = Some((9, 2));
+        let err = check_verse_and_key_ranges(&units, &verses, &bad).unwrap_err();
+        assert!(err.to_string().contains("`key` span"), "{err}");
     }
 }

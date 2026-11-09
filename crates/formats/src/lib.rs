@@ -7,6 +7,8 @@
 mod commentary;
 mod dataset;
 mod error;
+#[cfg(test)]
+mod hostile_input;
 mod lexicon;
 mod openbible;
 mod openbible_geo;

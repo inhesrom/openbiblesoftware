@@ -1176,6 +1176,11 @@ impl ObrReader {
         let mut out = Vec::new();
         for row in rows {
             let (start, end, kind, attrs) = row.map_err(sql)?;
+            if start > end {
+                return Err(corrupt(format!(
+                    "span {start}..{end} ends before it starts"
+                )));
+            }
             out.push(Span {
                 start: to_u32(start, "span start")?,
                 end: to_u32(end, "span end")?,
@@ -1343,13 +1348,17 @@ impl ResourceStore for ObrReader {
         let Some((ord, kind, title, text)) = row else {
             return Ok(None);
         };
-        Ok(Some(TextUnit {
+        let unit = TextUnit {
             id: id.clone(),
             kind: enum_from::<UnitKind>("unit kind", &kind)?,
             title,
             text,
             spans: self.spans_where(ord, "", &[])?,
-        }))
+        };
+        // Read lazily, a unit skips `load`'s validation; spans that do not slice its text
+        // would panic later, in layout (#253).
+        unit.check_span_ranges().map_err(StoreError::Invalid)?;
+        Ok(Some(unit))
     }
 
     fn unit_text(&self, id: &UnitId) -> Result<Option<(UnitKind, String)>, StoreError> {
