@@ -472,6 +472,20 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser in each 
 | ![Page tone hint, Light](gallery/page-tone-hint-light-1x.png) | ![Page tone hint, Dark](gallery/page-tone-hint-dark-1x.png) | ![Page tone hint, Sepia](gallery/page-tone-hint-sepia-1x.png) |
 | [2×](gallery/page-tone-hint-light-2x.png) | [2×](gallery/page-tone-hint-dark-2x.png) | [2×](gallery/page-tone-hint-sepia-2x.png) |
 
+### Update available
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Update available, Light](gallery/update-available-light-1x.png) | ![Update available, Dark](gallery/update-available-dark-1x.png) | ![Update available, Sepia](gallery/update-available-sepia-1x.png) |
+| [2×](gallery/update-available-light-2x.png) | [2×](gallery/update-available-dark-2x.png) | [2×](gallery/update-available-sepia-2x.png) |
+
+### Update checks note
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Update checks note, Light](gallery/update-checks-note-light-1x.png) | ![Update checks note, Dark](gallery/update-checks-note-dark-1x.png) | ![Update checks note, Sepia](gallery/update-checks-note-sepia-1x.png) |
+| [2×](gallery/update-checks-note-light-2x.png) | [2×](gallery/update-checks-note-dark-2x.png) | [2×](gallery/update-checks-note-sepia-2x.png) |
+
 ### About Open Bible
 
 | Light | Dark | Sepia |

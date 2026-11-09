@@ -6,7 +6,7 @@ draws every Tab kind, toolbar pane, menu, window, dialog and popover in Light, D
 1× and 2× and compares each image with a golden. We decided:
 
 1. **The goldens are lossless PNG files committed under `docs/previews/gallery/`**, one per
-   surface × Look × scale (100 surfaces, 600 images, about 140 MB at the default 1400 × 900-point
+   surface × Look × scale (102 surfaces, 612 images, about 145 MB at the default 1400 × 900-point
    window), and
    `docs/previews/gallery.md` shows them all on one page. `cargo xtask gallery --bless` writes
    only the goldens that are new or off beyond the tolerance, so a re-bless commits what
@@ -39,7 +39,7 @@ draws every Tab kind, toolbar pane, menu, window, dialog and popover in Light, D
 
 ## Consequences
 
-- The repository grows by about 140 MB, and by the size of the changed images each time goldens
+- The repository grows by about 145 MB, and by the size of the changed images each time goldens
   are re-blessed. A change that touches a colour used everywhere re-blesses most of them.
 - A pull request that changes the look must bless and commit the goldens. Two such pull
   requests conflict on the same golden; the second rebases and blesses again.

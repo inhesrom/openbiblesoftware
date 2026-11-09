@@ -302,6 +302,34 @@ fn until(h: &mut Harness, what: &str, done: impl Fn(&Harness) -> bool) {
     panic!("never saw {what}: {:?}", h.texts());
 }
 
+/// This is version 1.2.3, and the release source (a mock: nothing reaches the network) has
+/// published `tag`, with release notes.
+fn offer_updates(h: &mut Harness, tag: &str) {
+    use obs_engine::testing::{MockRelease, MockReleases};
+    let releases = std::sync::Arc::new(MockReleases::new());
+    releases.publish(&[MockRelease::with_archive(
+        tag,
+        "## What's new\n\nSearch is faster.\n\n- Notes are kept when a Resource is updated\n\
+         - A crash on start is fixed",
+        b"new app",
+    )]);
+    let s = &mut h.shell.st.session;
+    s.set_fetch(releases);
+    s.set_update_source(MockReleases::source());
+    s.set_current_version(obs_engine::updates::Version::parse("1.2.3").unwrap());
+}
+
+/// Run jobs and draw until `done` holds.
+fn until_settled(h: &mut Harness, what: &str, done: impl Fn(&Harness) -> bool) {
+    for _ in 0..600 {
+        if done(h) {
+            return;
+        }
+        settle(h);
+    }
+    panic!("never saw {what}: {:?}", h.texts());
+}
+
 /// The KJV's header: the row under its tab, in the left Panel.
 fn in_kjv_header(r: egui::Rect) -> bool {
     (80.0..100.0).contains(&r.top()) && r.right() < 930.0
@@ -674,6 +702,31 @@ fn dialogs_and_popovers() -> Vec<Run> {
                 h.frames(15);
             },
             |h| shows_start(h, "Page tone is set to"),
+        ),
+        (
+            "Update available",
+            |h| {
+                offer_updates(h, "v1.3.0");
+                h.shell.run("help.check_for_updates", &json!({}));
+                until_settled(h, "the update notice", |h| shows(h, "Update available"));
+                h.frames(5);
+            },
+            |h| shows(h, "Update available") && shows(h, "Skip this version"),
+        ),
+        (
+            "Update checks note",
+            |h| {
+                // The first launch that checks automatically says so, once.
+                offer_updates(h, "v1.2.3");
+                h.shell.arm_launch_update_check();
+                let delay = obs_engine::updates::LAUNCH_CHECK_DELAY_SECS * 60.0;
+                h.frames(delay as usize + 2);
+                until_settled(h, "the first launch check's note", |h| {
+                    h.shell.st.session.updates().first_run_note()
+                });
+                h.frames(5);
+            },
+            |h| shows(h, crate::shell::update_notice::FIRST_RUN_NOTE),
         ),
         (
             "About Open Bible",
@@ -1792,6 +1845,16 @@ const SITES: &[(&str, &str, &[&str])] = &[
         "shell/toolbar_bar.rs",
         "components::menu(",
         &["toolbar-menu-position"],
+    ),
+    (
+        "shell/update_notice.rs",
+        "egui::Area::new(",
+        &["update-checks-note"],
+    ),
+    (
+        "shell/update_notice.rs",
+        "egui::Window::new(",
+        &["update-available"],
     ),
     (
         "shell/visual_filters_window.rs",
