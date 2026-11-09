@@ -18,12 +18,14 @@ use std::time::UNIX_EPOCH;
 
 use rusqlite::{Connection, OpenFlags, params};
 
-use crate::backup::{BackupContents, BackupFile, BackupKind, SAFETY_BACKUPS};
+use crate::backup::{BackupContents, BackupFile, BackupKind, SAFETY_BACKUPS, UPDATE_BACKUPS};
 use crate::error::StoreError;
 use crate::user::{USER_APPLICATION_ID, USER_SCHEMA_VERSION, UserStore, backups_in, migrate, sql};
 
 /// The part of a Safety backup's file name after the database's stem.
 const SAFETY_INFIX: &str = "safety-";
+/// The part of a Before-update backup's file name after the database's stem (#276).
+const UPDATE_INFIX: &str = "update-";
 
 impl UserStore {
     /// Write a Backup of the whole database to `dest`, replacing a file there (but never the
@@ -300,8 +302,11 @@ impl UserStore {
             for (_, path) in backups_in(&dir, &stem)? {
                 out.push(backup_file(path, BackupKind::Launch));
             }
-            for (_, path) in safety_backups_in(&dir, &stem)? {
+            for (_, path) in numbered_backups_in(&dir, &stem, SAFETY_INFIX)? {
                 out.push(backup_file(path, BackupKind::Safety));
+            }
+            for (_, path) in numbered_backups_in(&dir, &stem, UPDATE_INFIX)? {
+                out.push(backup_file(path, BackupKind::BeforeUpdate));
             }
         }
         // Before-upgrade copies sit beside the database: `user.v8-<time>.bak`.
@@ -328,15 +333,27 @@ impl UserStore {
 
     /// Take a Safety backup and delete all but the newest [`SAFETY_BACKUPS`].
     fn safety_backup(&self) -> Result<PathBuf, StoreError> {
+        self.numbered_backup(SAFETY_INFIX, SAFETY_BACKUPS)
+    }
+
+    /// Take a Before-update backup, as Update now does just before it replaces the installed
+    /// app (#276), and delete all but the newest [`UPDATE_BACKUPS`]. Returns its path.
+    pub fn update_backup(&self) -> Result<PathBuf, StoreError> {
+        self.numbered_backup(UPDATE_INFIX, UPDATE_BACKUPS)
+    }
+
+    /// A Backup named `<stem>-<infix><n>.db` in the backups folder, `n` one past the newest
+    /// of its kind, keeping the newest `keep` of them.
+    fn numbered_backup(&self, infix: &str, keep: usize) -> Result<PathBuf, StoreError> {
         let dir = self.backup_dir();
         std::fs::create_dir_all(&dir).map_err(StoreError::Io)?;
         let stem = self.stem();
-        let existing = safety_backups_in(&dir, &stem)?;
+        let existing = numbered_backups_in(&dir, &stem, infix)?;
         let next = existing.last().map_or(1, |(n, _)| n + 1);
-        let dest = dir.join(format!("{stem}-{SAFETY_INFIX}{next:06}.db"));
+        let dest = dir.join(format!("{stem}-{infix}{next:06}.db"));
         self.back_up(&dest)?;
-        let mut all = safety_backups_in(&dir, &stem)?;
-        while all.len() > SAFETY_BACKUPS {
+        let mut all = numbered_backups_in(&dir, &stem, infix)?;
+        while all.len() > keep {
             let (_, oldest) = all.remove(0);
             std::fs::remove_file(&oldest).map_err(StoreError::Io)?;
         }
@@ -461,9 +478,14 @@ fn backup_file(path: PathBuf, kind: BackupKind) -> BackupFile {
     }
 }
 
-/// Safety backups of `stem` in `dir`, oldest first, with their sequence numbers.
-fn safety_backups_in(dir: &Path, stem: &str) -> Result<Vec<(u64, PathBuf)>, StoreError> {
-    let prefix = format!("{stem}-{SAFETY_INFIX}");
+/// Safety (or Before-update) backups of `stem` in `dir`, named with `infix`, oldest first,
+/// with their sequence numbers.
+fn numbered_backups_in(
+    dir: &Path,
+    stem: &str,
+    infix: &str,
+) -> Result<Vec<(u64, PathBuf)>, StoreError> {
+    let prefix = format!("{stem}-{infix}");
     let mut out: Vec<(u64, PathBuf)> = std::fs::read_dir(dir)
         .map_err(StoreError::Io)?
         .filter_map(Result::ok)

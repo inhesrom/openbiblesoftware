@@ -183,6 +183,27 @@ impl App {
         self
     }
 
+    /// Update checks (#276, ADR 0017): this executable's install (removing what the last
+    /// update replaced, off the UI thread), the release source (`OBS_UPDATE_URL` names a
+    /// mock one) and, when "Check for updates automatically" is on, one Update check a few
+    /// seconds after the first frame. Releases come through the transport
+    /// [`Self::with_fetch`] sets.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_update_checks(mut self) -> Self {
+        use obs_engine::updates::{Install, UpdateSource, clean_up_update_folder};
+        let session = self.shell.session_mut();
+        session.set_update_source(UpdateSource::from_env());
+        if let Some(install) = Install::current() {
+            let dir = install.dir.clone();
+            let _ = std::thread::Builder::new()
+                .name("update clean-up".into())
+                .spawn(move || clean_up_update_folder(&dir));
+            session.set_install(install);
+        }
+        self.shell.arm_launch_update_check();
+        self
+    }
+
     /// Hand the shell the app's installed fonts (View → Fonts, #138). Without them, only the
     /// bundled fonts can be chosen.
     pub fn with_system_fonts(mut self, fonts: std::sync::Arc<dyn SystemFonts>) -> Self {

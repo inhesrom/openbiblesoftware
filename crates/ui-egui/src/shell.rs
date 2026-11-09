@@ -76,6 +76,7 @@ mod toolbar;
 mod toolbar_bar;
 mod toolbar_look;
 mod topic_guide_tab;
+pub(crate) mod update_notice;
 mod visual_filters_window;
 mod word_info_tab;
 mod word_sections_view;
@@ -283,6 +284,8 @@ pub(crate) struct State {
     pub(crate) areas: keyboard_nav::AreaMarks,
     /// The hint offering Page tone Auto when the theme turns dark over a light tone (#240).
     page_tone_hint: page_tone::PageToneHint,
+    /// The launch Update check's clock, the update notice and Restart now (#276).
+    pub(crate) updates_ui: update_notice::UpdateUi,
 }
 
 /// A Tab whose drawing is timed each frame, for the bench's synchronous-work budget (#183,
@@ -374,6 +377,7 @@ impl Shell {
                 keyboard_to: None,
                 areas: Default::default(),
                 page_tone_hint: page_tone::PageToneHint::default(),
+                updates_ui: update_notice::UpdateUi::default(),
             },
             tree: Tree::empty(egui::Id::unique("workspace")),
             shown: Vec::new(),
@@ -408,6 +412,12 @@ impl Shell {
     /// bundled fonts can be chosen.
     pub fn set_system_fonts(&mut self, fonts: Arc<dyn crate::SystemFonts>) {
         self.st.fonts_ui.set_source(fonts);
+    }
+
+    /// Check for updates automatically once this launch, a few seconds after the first frame
+    /// (#276), when the setting is on. The desktop app arms it; tests and the bench do not.
+    pub fn arm_launch_update_check(&mut self) {
+        self.st.updates_ui.launch_check = update_notice::LaunchCheck::Armed;
     }
 
     /// The system clipboard, for copying rich text (Copy verses, #154).
@@ -595,6 +605,7 @@ impl Shell {
                 Effect::OpenFolder(path) => self.st.open_folder(&path),
                 Effect::ReportProblem => self.st.show_report_problem(),
                 Effect::SaveDiagnosticsZip => self.st.show_diagnostics_zip(),
+                Effect::Restart(exe) => self.st.restart_into(&exe),
                 Effect::ShowHighlightStyles => self.st.styles_ui.open = true,
                 Effect::ShowVisualFilters => self.st.filters_ui.open = true,
                 Effect::FocusCommandBox => {
@@ -919,9 +930,13 @@ impl Shell {
             || self.st.session.reanchoring.is_busy()
             || self.st.session.factbooks.is_busy()
             || self.st.session.topic_guides.is_busy()
+            || self.st.session.updates().is_downloading()
         {
             Some(std::time::Duration::from_millis(16))
-        } else if self.st.session.search.is_building() || self.st.folder_opening() {
+        } else if self.st.session.search.is_building()
+            || self.st.folder_opening()
+            || self.st.session.updates().is_busy()
+        {
             Some(std::time::Duration::from_millis(250))
         } else {
             None
@@ -959,6 +974,7 @@ impl Shell {
         self.st.poll_csv_picker();
         self.st.poll_zip_dialog();
         self.st.poll_folder_opening();
+        self.st.launch_update_check(ui.ctx());
         self.apply_effects();
         if let Some(after) = self.background_repaint() {
             ui.ctx().request_repaint_after(after);
@@ -1025,6 +1041,7 @@ impl Shell {
         // drawn (#64): checked here, since the Notes Tab's own code only runs while drawn.
         self.st.notes_after_frame(ui.ctx());
         self.apply_effects();
+        self.st.close_after_restart(ui.ctx());
         self.focus_os_window(ui.ctx());
         if let Some(text) = self.copy_out.take() {
             ui.ctx().copy_text(text);
@@ -3413,6 +3430,7 @@ impl State {
         self.copy_window(&ctx);
         self.collection_editor_window(&ctx);
         self.page_tone_hint_ui(&ctx);
+        self.update_notice(&ctx);
         self.report_problem_window(&ctx);
         if let Some((msg, t)) = &self.toast {
             if self.now - t < 4.0 {

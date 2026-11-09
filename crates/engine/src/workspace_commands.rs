@@ -245,6 +245,8 @@ pub const MENUS: &[Menu] = &[
             C("app.commands"),
             C("help.keyboard_shortcuts"),
             Separator,
+            C("help.check_for_updates"),
+            Separator,
             C("help.report_problem"),
             C("help.save_diagnostics_zip"),
             C("help.open_log_folder"),
@@ -1676,7 +1678,7 @@ fn word_info_search(s: &mut Session, _: Params<'_>) -> Result<Value, CommandErro
 fn about(s: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
     let body = format!(
         "Open Bible Software {}\n\nA Bible study app for open texts.\nLicensed MIT OR Apache-2.0.",
-        env!("CARGO_PKG_VERSION")
+        crate::updates::APP_VERSION
     );
     s.workspace.push_effect(Effect::Show {
         title: "About Open Bible".into(),

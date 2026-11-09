@@ -163,6 +163,9 @@ mod toolbar_tests;
 pub mod topic_guide;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod topic_guide_tests;
+pub mod updates;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod updates_tests;
 pub mod visual_filters;
 #[cfg(test)]
 mod visual_filters_tests;

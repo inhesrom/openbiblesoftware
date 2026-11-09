@@ -34,10 +34,11 @@ pub enum SettingsSection {
     LibraryAndDownloads,
     Search,
     PrivacyAndData,
+    Updates,
 }
 
 impl SettingsSection {
-    pub const ALL: [SettingsSection; 9] = [
+    pub const ALL: [SettingsSection; 10] = [
         SettingsSection::TextAndFonts,
         SettingsSection::InterfaceSize,
         SettingsSection::ThemeAndPageTone,
@@ -47,6 +48,7 @@ impl SettingsSection {
         SettingsSection::LibraryAndDownloads,
         SettingsSection::Search,
         SettingsSection::PrivacyAndData,
+        SettingsSection::Updates,
     ];
 
     pub fn title(self) -> &'static str {
@@ -60,6 +62,7 @@ impl SettingsSection {
             SettingsSection::LibraryAndDownloads => "Library folders and downloads",
             SettingsSection::Search => "Search",
             SettingsSection::PrivacyAndData => "Privacy and data",
+            SettingsSection::Updates => "Updates",
         }
     }
 }
@@ -503,6 +506,43 @@ pub const SETTINGS: &[Setting] = &[
         "backup back up restore export zip safety copy move computer data",
         SettingKind::Action {
             command: "data.backups",
+            confirm: false,
+        },
+    ),
+    setting(
+        "auto_update_check",
+        S::Updates,
+        "Check for updates automatically",
+        "A few seconds after each start, ask GitHub for the newest release. Only the release list is requested: nothing about you, this computer or your data is sent. Off: the app never connects unless you check yourself",
+        "update updates upgrade new version release github automatic check network online offline privacy",
+        SettingKind::Toggle {
+            command: "updates.auto_check",
+            param: Some("on"),
+            default: true,
+            get: |s| s.updates().auto_check(),
+        },
+    ),
+    setting(
+        "prerelease_updates",
+        S::Updates,
+        "Include pre-releases",
+        "Also offer test versions published before a release",
+        "update updates pre-release prerelease beta test version",
+        SettingKind::Toggle {
+            command: "updates.prereleases",
+            param: Some("on"),
+            default: false,
+            get: |s| s.updates().prereleases(),
+        },
+    ),
+    setting(
+        "check_for_updates",
+        S::Updates,
+        "Check for updates",
+        "Ask GitHub for the newest release now (Help → Check for updates…)",
+        "update updates upgrade new version release github check now",
+        SettingKind::Action {
+            command: "help.check_for_updates",
             confirm: false,
         },
     ),

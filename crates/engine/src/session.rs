@@ -103,6 +103,8 @@ pub struct Session {
     pub(crate) diagnostics: crate::diagnostics::Diagnostics,
     /// The last restore of a Backup, which Undo restore takes back (#217).
     pub(crate) last_restore: Option<crate::backups::LastRestore>,
+    /// The Update settings, check and Update now (#276).
+    pub(crate) updates: crate::updates::Updates,
     /// How SWORD repositories are reached (#91). The app installs its network transport;
     /// until then only local `file://` repositories answer.
     fetch: std::sync::Arc<dyn obs_formats::sword_repo::Fetch>,
@@ -155,6 +157,7 @@ impl Session {
             saved_session: None,
             diagnostics: crate::diagnostics::Diagnostics::default(),
             last_restore: None,
+            updates: crate::updates::Updates::default(),
             fetch: std::sync::Arc::new(obs_formats::sword_repo::LocalFetch),
         }
     }
@@ -238,6 +241,7 @@ impl Session {
         self.load_saved_searches();
         self.load_key_bindings();
         self.load_log_level();
+        self.load_update_settings();
         // Library load: Annotations made against another revision of a Resource move with
         // their text (or are orphaned) before it shows them (#65).
         self.remember_resource_names();

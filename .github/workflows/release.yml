@@ -9,8 +9,12 @@ name: Release
 # artifacts. Only the `push` event publishes, so a dry run can never overwrite release assets.
 # See docs/dev/releasing.md.
 #
-# TODO(#1): signing, macOS notarization and installers (msi/dmg/AppImage) wait for the
-# packaging decisions in #1. Until then the archives are unsigned.
+# SHA256SUMS is signed with minisign when the MINISIGN_SECRET_KEY secret exists (#276, ADR
+# 0017); the app's Update now checks that signature once the public key is compiled in. The
+# step is skipped, with a notice, while the secret is not set.
+#
+# TODO(#1): code signing, macOS notarization and installers (msi/dmg/AppImage) wait for the
+# packaging decisions in #1. Until then the archives themselves are unsigned.
 
 on:
   push:
@@ -92,6 +96,14 @@ jobs:
           # Only a pushed tag names the archives after the tag; dry runs (dispatch, PR) never do.
           if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/v* ]]; then
             version="$GITHUB_REF_NAME"
+            # The app compares release tags with its own version (Update check, #276): an app
+            # built from a tag that is not its version would offer itself as an update forever.
+            app=$(cargo metadata --no-deps --format-version 1 --locked \
+              | jq -r '.packages[] | select(.name == "openbible") | .version')
+            if [[ "v$app" != "$version" ]]; then
+              echo "::error::tag $version is not the workspace version v$app (bump Cargo.toml first)"
+              exit 1
+            fi
           else
             version="dev-${GITHUB_SHA::7}"
           fi
@@ -117,6 +129,22 @@ jobs:
             dist/starter/starter-build-report.md dist/release-assets/
           (cd dist/release-assets && sha256sum -- * > SHA256SUMS)
           ls -l dist/release-assets
+      - name: Sign SHA256SUMS (minisign)
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          # The key is created by the maintainer (docs/dev/releasing.md#release-signing); until
+          # the secret exists, releases carry SHA256SUMS only and the app says so.
+          if [[ -z "$MINISIGN_SECRET_KEY" ]]; then
+            echo "::notice::MINISIGN_SECRET_KEY is not set: SHA256SUMS is not signed (ADR 0017)"
+            exit 0
+          fi
+          sudo apt-get install -y --no-install-recommends minisign
+          key="$RUNNER_TEMP/minisign.key"
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
+          minisign -S -s "$key" -m dist/release-assets/SHA256SUMS -t "Open Bible Software $VERSION"
+          rm -f "$key"
+          ls -l dist/release-assets/SHA256SUMS.minisig
       - uses: actions/upload-artifact@v4
         with:
           name: release-assets
@@ -151,6 +179,7 @@ jobs:
             echo "Unsigned builds of Open Bible Software (working name) for Linux, macOS and Windows."
             echo "Unpack the archive for your platform and run \`openbible\`; the Starter library is in \`starter/\` beside it."
             echo "See docs/dev/releasing.md for what is in each archive."
+            echo "An unpacked archive updates itself: Help → Check for updates…, then Update now."
             echo
             cat dist/release-assets/starter-build-report.md
           } > release-notes.md

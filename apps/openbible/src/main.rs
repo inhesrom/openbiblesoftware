@@ -1,6 +1,6 @@
 //! Open Bible Software desktop app.
 //!
-//! `openbible [file.obr]` opens the app. `openbible --bench [--obr FILE] [--hz N] [--json OUT]
+//! `openbible [file.obr]` opens the app; `openbible --version` prints its version. `openbible --bench [--obr FILE] [--hz N] [--json OUT]
 //! [--interlinear-panes N] [--quick] [--no-shell-scenarios]` runs the headless
 //! scroll/fling/jump benchmark and its feature scenarios (`cargo xtask bench`).
 //! `openbible --bench --scale [--dir DIR] [--resources N] [--quick] [--json OUT]` runs the
@@ -251,6 +251,10 @@ fn main() -> ExitCode {
     // Cold start is measured from here (the scale scenario, #227).
     let started = std::time::Instant::now();
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|a| a == "--version") {
+        println!("openbible {}", obs_engine::updates::APP_VERSION);
+        return ExitCode::SUCCESS;
+    }
     if args.first().is_some_and(|a| a == "--bench") {
         return bench(&args[1..]);
     }
@@ -278,6 +282,7 @@ fn main() -> ExitCode {
                 obs_ui_egui::App::with_file(file)
                     .with_fetch(Arc::new(fetch::HttpFetch::new()))
                     .with_system_language(sys_locale::get_locale())
+                    .with_update_checks()
                     .with_system_fonts(Arc::new(fonts::FontdbFonts::system()))
                     .with_rich_clipboard(Arc::new(clipboard::SystemClipboard::default()))
                     .with_automation_from_env(),

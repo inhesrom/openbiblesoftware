@@ -33,7 +33,7 @@ impl State {
                             "Open Bible Software {} is built on open texts, open data, open \
                                  fonts and open-source software. Thank you to everyone credited \
                                  here.",
-                            env!("CARGO_PKG_VERSION")
+                            obs_engine::updates::APP_VERSION
                         ))
                         .color(theme::c().muted),
                     );

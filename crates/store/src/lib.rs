@@ -44,6 +44,7 @@ pub use annotation::{
 pub use annotation_store::DEFAULT_NOTEBOOK_NAME;
 pub use backup::{
     BACKUP_EXTENSION, BackupContents, BackupFile, BackupKind, ROLLING_BACKUPS, SAFETY_BACKUPS,
+    UPDATE_BACKUPS,
 };
 pub use error::StoreError;
 pub use favorites::{FavoriteRow, HISTORY_DAYS, HISTORY_LIMIT, VisitRow};

@@ -32,6 +32,15 @@ log.workspace = true
 # Writes Export everything's zip (#217) and the mock Open catalogue's USFM zip (feature
 # test-support, #134); the same version obs-formats reads with, so no new crate.
 zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
+# Update now (#276, ADR 0017): checks a release's SHA256SUMS against its detached minisign
+# signature, with the public key compiled in. No dependencies of its own; no network code.
+minisign-verify = "0.3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Update now (#276) unpacks a verified `.tar.gz` Release archive (the `.zip` uses `zip`
+# above); the same crates xtask writes them with.
+tar = { version = "0.4", default-features = false }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [features]
 # Mock SWORD repositories and the User database dump, for tests in this and dependent crates.

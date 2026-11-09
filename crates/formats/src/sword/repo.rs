@@ -24,6 +24,9 @@ pub enum FetchError {
     NotFound,
     /// The progress callback asked to stop.
     Cancelled,
+    /// The server is limiting how often this computer may ask (HTTP 429, or GitHub's 403
+    /// with no requests remaining, #276).
+    RateLimited,
     /// Anything else: no network, refused, timed out, bad status, unsupported scheme.
     Network(String),
 }
@@ -33,6 +36,7 @@ impl fmt::Display for FetchError {
         match self {
             Self::NotFound => f.write_str("not found"),
             Self::Cancelled => f.write_str("cancelled"),
+            Self::RateLimited => f.write_str("the server is limiting requests; try again later"),
             Self::Network(m) => f.write_str(m),
         }
     }
@@ -143,6 +147,10 @@ fn to_sword(url: &str, e: FetchError) -> sword_modules::Error {
         FetchError::Cancelled => sword_modules::Error::Network {
             url: url.to_string(),
             message: CANCELLED.into(),
+        },
+        FetchError::RateLimited => sword_modules::Error::Network {
+            url: url.to_string(),
+            message: FetchError::RateLimited.to_string(),
         },
         FetchError::Network(message) => sword_modules::Error::Network {
             url: url.to_string(),

@@ -15,6 +15,9 @@ pub const ROLLING_BACKUPS: usize = 5;
 /// How many Safety backups are kept.
 pub const SAFETY_BACKUPS: usize = 5;
 
+/// How many Before-update backups are kept (#276).
+pub const UPDATE_BACKUPS: usize = 5;
+
 /// Why the app kept a Backup by itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackupKind {
@@ -24,6 +27,8 @@ pub enum BackupKind {
     Safety,
     /// Taken before the app upgraded the User database's format.
     BeforeUpgrade,
+    /// Taken just before Update now replaced the installed app (#276).
+    BeforeUpdate,
 }
 
 impl BackupKind {
@@ -33,6 +38,7 @@ impl BackupKind {
             BackupKind::Launch => "At launch",
             BackupKind::Safety => "Safety backup",
             BackupKind::BeforeUpgrade => "Before an app upgrade",
+            BackupKind::BeforeUpdate => "Before an app update",
         }
     }
 }

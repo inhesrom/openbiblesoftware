@@ -10,6 +10,7 @@ mod release;
 mod starter;
 mod strongs_index;
 mod tvtms;
+mod update_e2e;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -40,6 +41,8 @@ starter library:
 releases (docs/dev/releasing.md):
   release-archive  pack the app and dist/starter/ into a Release archive (`--help`)
   release-smoke    launch an unpacked Release archive, check its Starter library got in (`--help`)
+  update-e2e       install this version from an archive, update it to the next from a mock
+                   release source and restart into it (`--help`, #276; needs a display)
 
 maintenance:
   tvtms <TVTMS.txt>   regenerate the embedded STEPBible TVTMS rules
@@ -85,6 +88,10 @@ fn run() -> Result<()> {
         "release-smoke" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             release::run_smoke(&root, &rest)
+        }
+        "update-e2e" => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            update_e2e::run(&root, &rest)
         }
         "licenses" => {
             let rest: Vec<String> = std::env::args().skip(2).collect();

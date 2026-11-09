@@ -124,6 +124,7 @@ pub fn registry() -> CommandRegistry {
         .chain(crate::command_box::COMMANDS)
         .chain(crate::copy_verses::COMMANDS)
         .chain(crate::diagnostics::COMMANDS)
+        .chain(crate::updates::COMMANDS)
         .chain(crate::notes_export::COMMANDS)
         .chain(crate::toolbar::COMMANDS)
         .chain(crate::interlinear::COMMANDS)
@@ -151,7 +152,7 @@ fn failed(command: &'static str, message: impl ToString) -> CommandError {
 }
 
 fn version(_: &mut Session, _: Params<'_>) -> Result<Value, CommandError> {
-    Ok(json!({ "version": env!("CARGO_PKG_VERSION") }))
+    Ok(json!({ "version": crate::updates::APP_VERSION }))
 }
 
 /// Every command as JSON (`obs-cli run app.commands`); in the app, the Command box lists

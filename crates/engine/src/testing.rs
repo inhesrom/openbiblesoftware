@@ -2431,6 +2431,9 @@ impl crate::UserData for WritesFail {
     fn backups(&self) -> Result<Vec<obs_store::BackupFile>, String> {
         crate::UserData::backups(&self.store)
     }
+    fn update_backup(&self) -> Result<std::path::PathBuf, String> {
+        crate::UserData::update_backup(&self.store)
+    }
     fn contents(&self) -> Result<obs_store::BackupContents, String> {
         crate::UserData::contents(&self.store)
     }
@@ -2644,4 +2647,277 @@ pub fn easton_topics() -> obs_model::Resource {
         b.add_key(Key::Headword(head.into()), &unit, None, false);
     }
     b.build().unwrap()
+}
+
+// ---------------------------------------------------------------- Mock release source (#276)
+
+/// Where [`MockReleases`] answers: no such host exists, and nothing ever connects to it.
+pub const MOCK_UPDATE_BASE: &str = "https://updates.invalid/openbible";
+
+/// The executable's file name on this platform.
+pub fn app_exe_name() -> String {
+    format!("openbible{}", std::env::consts::EXE_SUFFIX)
+}
+
+/// A mock GitHub release source for the Update check and Update now (#276): the releases API
+/// and asset URLs of [`crate::updates::UpdateSource::at`]`(MOCK_UPDATE_BASE)`, answered from
+/// memory. Every request is recorded with the thread that made it, and can be made to wait
+/// ([`MockReleases::hold`]) as a slow network would.
+#[derive(Debug, Default)]
+pub struct MockReleases {
+    files: Mutex<std::collections::BTreeMap<String, Result<Vec<u8>, FetchError>>>,
+    requests: Mutex<Vec<(String, std::thread::ThreadId)>>,
+    held: Mutex<bool>,
+    released: std::sync::Condvar,
+}
+
+/// One release to publish on a [`MockReleases`].
+#[derive(Debug, Clone)]
+pub struct MockRelease {
+    pub tag: String,
+    pub notes: String,
+    pub draft: bool,
+    pub prerelease: bool,
+    /// Assets by name.
+    pub assets: Vec<(String, Vec<u8>)>,
+}
+
+impl MockRelease {
+    /// Release `tag` with a Release archive for this platform holding `exe` (the new
+    /// executable's bytes) and a Starter library manifest, and a SHA256SUMS listing it.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_archive(tag: &str, notes: &str, exe: &[u8]) -> Self {
+        let target = crate::updates::platform_target().unwrap_or("unsupported-target");
+        let name = crate::updates::archive_asset_name(tag, target);
+        let archive = release_archive_bytes(&name, exe);
+        let mut release = Self {
+            tag: tag.into(),
+            notes: notes.into(),
+            draft: false,
+            prerelease: false,
+            assets: vec![(name, archive)],
+        };
+        release.write_checksums();
+        release
+    }
+
+    /// The Release archive's name and bytes.
+    pub fn archive(&self) -> (&str, &[u8]) {
+        let (name, bytes) = &self.assets[0];
+        (name, bytes)
+    }
+
+    /// (Re)write SHA256SUMS over every other asset.
+    pub fn write_checksums(&mut self) {
+        self.assets
+            .retain(|(n, _)| n != crate::updates::CHECKSUMS_ASSET);
+        let sums: String = (self.assets.iter())
+            .map(|(n, b)| format!("{}  {n}\n", crate::starter::sha256_hex(b)))
+            .collect();
+        self.assets
+            .push((crate::updates::CHECKSUMS_ASSET.into(), sums.into_bytes()));
+    }
+
+    fn json(&self) -> serde_json::Value {
+        let assets: Vec<serde_json::Value> = (self.assets.iter())
+            .map(|(name, bytes)| {
+                serde_json::json!({
+                    "name": name,
+                    "size": bytes.len(),
+                    "browser_download_url": MockReleases::asset_url(&self.tag, name),
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "tag_name": self.tag,
+            "name": format!("Open Bible Software {}", self.tag),
+            "body": self.notes,
+            "draft": self.draft,
+            "prerelease": self.prerelease,
+            "html_url": format!("{MOCK_UPDATE_BASE}/releases/tag/{}", self.tag),
+            "assets": assets,
+        })
+    }
+}
+
+/// A Release archive as `cargo xtask release-archive` writes it, in memory: one folder named
+/// like the archive with the executable, the licence files, the install marker and
+/// `starter/starter-manifest.json`. `.zip` for a name ending in `.zip`, else `.tar.gz`.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn release_archive_bytes(name: &str, exe: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let top = name
+        .trim_end_matches(".tar.gz")
+        .trim_end_matches(".zip")
+        .to_string();
+    let files: Vec<(String, Vec<u8>, u32)> = vec![
+        (app_exe_name(), exe.to_vec(), 0o755),
+        ("LICENSE-MIT".into(), b"MIT".to_vec(), 0o644),
+        ("LICENSE-APACHE".into(), b"Apache-2.0".to_vec(), 0o644),
+        (
+            crate::updates::INSTALL_MARKER.into(),
+            br#"{"kind": "archive"}"#.to_vec(),
+            0o644,
+        ),
+        (
+            "starter/starter-manifest.json".into(),
+            br#"{"format": 1, "resources": []}"#.to_vec(),
+            0o644,
+        ),
+    ];
+    if name.ends_with(".zip") {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        for (path, bytes, mode) in &files {
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated)
+                .unix_permissions(*mode);
+            zip.start_file(format!("{top}/{path}"), options).unwrap();
+            zip.write_all(bytes).unwrap();
+        }
+        zip.finish().unwrap().into_inner()
+    } else {
+        let gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        let mut tar = tar::Builder::new(gz);
+        for (path, bytes, mode) in &files {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Regular);
+            header.set_size(bytes.len() as u64);
+            header.set_mode(*mode);
+            header.set_cksum();
+            tar.append_data(&mut header, format!("{top}/{path}"), bytes.as_slice())
+                .unwrap();
+        }
+        tar.into_inner().unwrap().finish().unwrap()
+    }
+}
+
+/// An installed Release archive in `dir`, as a user unpacked it: `exe` as the executable,
+/// the licence files, the install marker and a Starter library manifest. Returns its
+/// [`crate::updates::Install`].
+#[cfg(not(target_arch = "wasm32"))]
+pub fn installed_archive(dir: &Path, exe: &[u8]) -> crate::updates::Install {
+    std::fs::create_dir_all(dir.join("starter")).unwrap();
+    std::fs::write(dir.join(app_exe_name()), exe).unwrap();
+    std::fs::write(dir.join("LICENSE-MIT"), b"MIT").unwrap();
+    std::fs::write(dir.join("LICENSE-APACHE"), b"Apache-2.0").unwrap();
+    std::fs::write(
+        dir.join(crate::updates::INSTALL_MARKER),
+        br#"{"kind": "archive"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("starter/starter-manifest.json"),
+        br#"{"format": 1, "resources": [], "old": true}"#,
+    )
+    .unwrap();
+    crate::updates::Install::of_exe(&dir.join(app_exe_name()))
+}
+
+impl MockReleases {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The release source to hand the Session.
+    pub fn source() -> crate::updates::UpdateSource {
+        crate::updates::UpdateSource::at(MOCK_UPDATE_BASE)
+    }
+
+    pub fn latest_url() -> String {
+        format!("{MOCK_UPDATE_BASE}/releases/latest")
+    }
+
+    pub fn list_url() -> String {
+        Self::source().check_url(true)
+    }
+
+    pub fn asset_url(tag: &str, name: &str) -> String {
+        format!("{MOCK_UPDATE_BASE}/download/{tag}/{name}")
+    }
+
+    /// Answer `url` with `bytes`.
+    pub fn serve(&self, url: &str, bytes: impl Into<Vec<u8>>) {
+        self.files
+            .lock()
+            .unwrap()
+            .insert(url.to_string(), Ok(bytes.into()));
+    }
+
+    /// Answer `url` with `error`.
+    pub fn fail(&self, url: &str, error: FetchError) {
+        self.files
+            .lock()
+            .unwrap()
+            .insert(url.to_string(), Err(error));
+    }
+
+    /// Publish `releases`, newest last: the last non-draft, non-pre-release one is
+    /// `/releases/latest`; the list has them all, newest first; every asset is served.
+    pub fn publish(&self, releases: &[MockRelease]) {
+        let latest = (releases.iter().rev()).find(|r| !r.draft && !r.prerelease);
+        match latest {
+            Some(r) => self.serve(&Self::latest_url(), r.json().to_string()),
+            None => self.fail(&Self::latest_url(), FetchError::NotFound),
+        }
+        let list: Vec<serde_json::Value> = releases.iter().rev().map(MockRelease::json).collect();
+        self.serve(
+            &Self::list_url(),
+            serde_json::Value::Array(list).to_string(),
+        );
+        for r in releases {
+            for (name, bytes) in &r.assets {
+                self.serve(&Self::asset_url(&r.tag, name), bytes.clone());
+            }
+        }
+    }
+
+    /// The URLs requested so far, oldest first.
+    pub fn requests(&self) -> Vec<String> {
+        (self.requests.lock().unwrap().iter())
+            .map(|(u, _)| u.clone())
+            .collect()
+    }
+
+    /// The threads the requests were made on, oldest first.
+    pub fn request_threads(&self) -> Vec<std::thread::ThreadId> {
+        (self.requests.lock().unwrap().iter())
+            .map(|(_, t)| *t)
+            .collect()
+    }
+
+    /// Make every request wait (`true`) until released (`false`).
+    pub fn hold(&self, held: bool) {
+        *self.held.lock().unwrap() = held;
+        self.released.notify_all();
+    }
+}
+
+impl Fetch for MockReleases {
+    fn get(&self, url: &str, progress: Progress<'_>) -> Result<Vec<u8>, FetchError> {
+        self.requests
+            .lock()
+            .unwrap()
+            .push((url.to_string(), std::thread::current().id()));
+        let mut held = self.held.lock().unwrap();
+        while *held {
+            held = self.released.wait(held).unwrap();
+        }
+        drop(held);
+        let answer = self.files.lock().unwrap().get(url).cloned();
+        let bytes = answer.unwrap_or(Err(FetchError::NotFound))?;
+        // In pieces, so progress and Cancel can be seen.
+        let total = bytes.len() as u64;
+        let step = (bytes.len() / 4).max(1);
+        let mut done = 0;
+        while done < bytes.len() {
+            done = (done + step).min(bytes.len());
+            if !progress(done as u64, Some(total)) {
+                return Err(FetchError::Cancelled);
+            }
+        }
+        if !progress(total, Some(total)) {
+            return Err(FetchError::Cancelled);
+        }
+        Ok(bytes)
+    }
 }
