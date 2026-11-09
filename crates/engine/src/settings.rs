@@ -39,7 +39,7 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    pub const ALL: [SettingsSection; 10] = [
+    pub const ALL: [SettingsSection; 11] = [
         SettingsSection::TextAndFonts,
         SettingsSection::InterfaceSize,
         SettingsSection::ThemeAndPageTone,
