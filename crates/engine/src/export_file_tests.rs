@@ -298,8 +298,9 @@ fn an_export_scratch_file_is_owner_only_from_its_creation() {
 
 /// An export whose destination is named as a scratch file would be is still written to a
 /// separate scratch file and renamed into place: the scratch name is never the destination's,
-/// nor one a disk that ignores case or Unicode normalisation takes for it, so the
-/// destination does not exist until the finished export is renamed onto it.
+/// nor one a disk that ignores case or Unicode normalisation, or Windows (which drops a
+/// name's trailing periods and spaces), takes for it, so the destination does not exist
+/// until the finished export is renamed onto it.
 #[test]
 fn an_export_scratch_file_is_never_the_destination() {
     use crate::backups::file_name_key;
@@ -307,17 +308,26 @@ fn an_export_scratch_file_is_never_the_destination() {
     let f = Fixture::new("scratch-is-dest");
     std::fs::create_dir_all(&f.root).unwrap();
     let pid = std::process::id();
+    let key = |p: &Path| file_name_key(&p.file_name().unwrap().to_string_lossy());
     for name in [
         format!(".obs-export-{pid}-0.partial"),
         format!(".OBS-EXPORT-{pid}-0.PARTIAL"),
         format!(".obſ-export-{pid}-0.partial"),
+        format!(".obs-export-{pid}-0.partial."),
+        format!(".obs-export-{pid}-0.partial "),
+        format!(".obs-export-{pid}-0.partial. ."),
     ] {
         let dest = f.file(&name);
+        let windows_name = name.trim_end_matches(['.', ' ']);
         for readable_by in [Scratch::OwnerOnly, Scratch::NewFileDefaults] {
             let (scratch, file) = new_scratch_file(&dest, |_| Ok(()), readable_by).unwrap();
             drop(file);
-            let key = |p: &Path| file_name_key(&p.file_name().unwrap().to_string_lossy());
-            assert_ne!(key(&scratch), key(&dest), "{name}");
+            assert_ne!(key(&scratch), key(&dest), "{name:?}");
+            assert_ne!(
+                scratch.file_name().unwrap().to_string_lossy(),
+                windows_name,
+                "{name:?}: the scratch file is the name Windows opens for the destination"
+            );
             assert!(
                 !dest.exists(),
                 "{name}: the destination exists before any rename"
@@ -338,13 +348,54 @@ fn an_export_scratch_file_is_never_the_destination() {
             let left: Vec<_> = std::fs::read_dir(&f.root)
                 .unwrap()
                 .map(|e| e.unwrap().path())
-                .filter(|p| p.extension().is_some_and(|e| e == "partial") && *p != dest)
+                .filter(|p| p.extension().is_some_and(|e| e == "partial") && key(p) != key(&dest))
                 .collect();
             assert!(left.is_empty(), "{name}: {command}: {left:?}");
         }
         drop(s);
         std::fs::remove_file(&dest).unwrap();
     }
+}
+
+/// A scratch name that turns out to be another name for the absent destination (as a
+/// Windows short `8.3` name can be, which no comparison of names predicts) is removed again
+/// and skipped, so the destination still does not exist until the export is renamed onto it.
+/// A link to the first scratch name stands in for such an alias here.
+#[cfg(unix)]
+#[test]
+fn an_export_scratch_file_is_never_another_name_for_the_destination() {
+    use crate::export_file::{Scratch, new_scratch_file};
+    let f = Fixture::new("scratch-aliases-dest");
+    std::fs::create_dir_all(&f.root).unwrap();
+    let first = format!(".obs-export-{}-0.partial", std::process::id());
+    let dest = f.file("export.md");
+    std::os::unix::fs::symlink(&first, &dest).unwrap();
+    for readable_by in [Scratch::OwnerOnly, Scratch::NewFileDefaults] {
+        let (scratch, file) = new_scratch_file(&dest, |_| Ok(()), readable_by).unwrap();
+        drop(file);
+        assert_ne!(scratch, f.file(&first));
+        assert!(!dest.exists(), "the destination exists before any rename");
+        assert!(
+            !f.file(&first).exists(),
+            "the skipped scratch file was left"
+        );
+        std::fs::remove_file(&scratch).unwrap();
+    }
+
+    let mut s = f.session();
+    s.run(
+        "notes.export",
+        &with_path(&json!({ "format": "markdown" }), &dest, None),
+    )
+    .unwrap();
+    assert!(!bytes(&dest).unwrap_or_default().is_empty());
+    assert!(!dest.is_symlink(), "the export replaced the link");
+    let left: Vec<_> = std::fs::read_dir(&f.root)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .filter(|n| n.to_string_lossy().ends_with(".partial"))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
 }
 
 /// Re-exporting over a read-only file fails and leaves it byte-identical, with no scratch

@@ -106,8 +106,11 @@ pub(crate) enum Scratch {
 
 /// Create a scratch file beside `dest` under a name not already taken (a file there is
 /// never touched), so removing it afterwards only removes what this export made. A name a
-/// disk that ignores case and Unicode normalisation could take for `dest` itself is skipped,
-/// so the export is never written straight into `dest` and renamed onto itself.
+/// disk that ignores case and Unicode normalisation, or Windows's trailing periods and
+/// spaces, could take for `dest` itself is skipped, so the export is never written straight
+/// into `dest` and renamed onto itself. A name `dest` turns out to be another name for all
+/// the same (`dest` was absent and now exists: a Windows short `8.3` name, a link) is
+/// removed again and skipped.
 pub(crate) fn new_scratch_file(
     dest: &Path,
     refuse: impl Fn(&Path) -> Result<(), String>,
@@ -132,13 +135,23 @@ pub(crate) fn new_scratch_file(
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
         set_readable_by(&mut options, readable_by);
+        let dest_was_absent = is_absent(dest);
         match options.open(&scratch) {
+            Ok(file) if dest_was_absent && !is_absent(dest) => {
+                drop(file);
+                std::fs::remove_file(&scratch)?;
+            }
             Ok(file) => return Ok((scratch, file)),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last = Some(e),
             Err(e) => return Err(e),
         }
     }
     Err(last.unwrap_or_else(|| std::io::Error::other("no free name for a scratch file")))
+}
+
+/// Whether nothing is at `path` (a link to nothing counts as nothing).
+fn is_absent(path: &Path) -> bool {
+    matches!(std::fs::metadata(path), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
 }
 
 /// Create the file readable by its owner only (`0600`) if so asked: set at creation, so no

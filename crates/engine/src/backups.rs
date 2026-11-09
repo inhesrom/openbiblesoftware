@@ -512,9 +512,12 @@ pub(crate) fn notebook_entry_name(used: &mut HashSet<String>, file: &str) -> Str
 /// upper-casing and APFS's case folding make them meet. The result is decomposed (NFD), as
 /// APFS and HFS+ treat `é` and `e` + combining acute as one name. Keys may join names a disk
 /// keeps apart (`ß` and `ss` on NTFS; dotless `ı` and `i`), which only costs a ` (2)`.
+/// Trailing periods and spaces are dropped, as Windows drops them from a name it opens
+/// (`a.txt.` and `a.txt ` are `a.txt` there).
 pub(crate) fn file_name_key(name: &str) -> String {
     use unicode_normalization::UnicodeNormalization as _;
-    name.nfd()
+    name.trim_end_matches(['.', ' '])
+        .nfd()
         .flat_map(char::to_lowercase)
         .flat_map(char::to_uppercase)
         .flat_map(char::to_lowercase)
