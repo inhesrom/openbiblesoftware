@@ -411,6 +411,18 @@ _Avoid_: Dashboard, Start page, Welcome screen
 One Passage a day from the app's own short list of well-known Passages, the same all day and the next in the list the next day, shown on Home in the ★ Bible; clicking it reads it there.
 _Avoid_: Daily verse, Devotional
 
+**User guide**:
+The guide to the app that ships inside it and works offline (Help → User guide, F1): task-based pages (Getting started, Read and compare, Link sets, Guides, Word Study, Search, Notes and Highlights, Get Resources, Layouts, Keyboard) in one Tab, its pages listed beside the page shown and its header box searching every page. A page is written as Note formatting and drawn as a Note is, with screenshots from the screenshot gallery; Bible references in it are live links, and links to other pages show them. It is not a Guide: it has no Key and joins no Link set.
+_Avoid_: Manual, Help file, Documentation (in the UI), Guide (unqualified, for this)
+
+**First-run tour**:
+A few Coach marks, one after another, that show a new user the toolbar, the Library, Link sets, the Passage Guide, Word Study on a right-click and Home. It runs over Home at the first launch with a User database, which then remembers it was shown, so it never starts by itself again, even if the app was closed during it; Help → Take the tour replays it. Skip tour or Esc ends it at any Coach mark.
+_Avoid_: Onboarding wizard, Walkthrough, Tutorial
+
+**Coach mark**:
+One step of the First-run tour: a small card beside the part of the window it explains, which is ringed, with Next (Done on the last), Back and Skip tour. It does not block the window, so what it points at can be tried while it shows; when that part is not on screen (the toolbar Auto-hidden, no Bible open) the card sits in the middle of the window.
+_Avoid_: Tooltip, Popover, Hint (for this)
+
 **Find bar**:
 The bar Ctrl+F opens under a Resource or Text Comparison Tab's header (also the Tab's ⋯ menu, Find…) to find words in that Resource only: every match in the whole Resource (or every row) is marked, the count reads "12 of 48", Enter / Shift+Enter (▼ ▲) move from match to match, scrolling to each, and Esc closes it and clears the marks. It matches as Search does (case, accents, breathings, Hebrew points and final forms ignored), with Match case, Whole word and Ignore diacritics (on by default; then, unless Match case is on, Latin letters also find Greek and Hebrew words by transliteration, "agape" → ἀγάπη). Its marks are an overlay, not Highlights, and are never saved. Search all Resources (Alt+Enter) runs the same words in the Search Tool.
 _Avoid_: Search (for this), Find dialog, Quick find

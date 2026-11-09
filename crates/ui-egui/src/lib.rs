@@ -239,7 +239,8 @@ impl App {
     /// `OBS_INPUT` is a JSON array of `[frame, egui::Event]` pairs, injected before that
     /// frame's UI. It exercises pointer/keyboard-only controls without OS input permissions.
     /// `OBS_STEPS` is a JSON array of steps that click buttons by label and take screenshots
-    /// once what they wait for is on screen (`steps::Step`).
+    /// once what they wait for is on screen (`steps::Step`). A scripted run skips the First-run
+    /// tour unless `OBS_TOUR=1`.
     pub fn with_automation_from_env(mut self) -> Self {
         if let Ok(script) = std::env::var("OBS_SCRIPT") {
             for step in script.split(';') {
@@ -274,6 +275,14 @@ impl App {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(60);
             self.shot = Some((at, PathBuf::from(path)));
+        }
+        // Scripted runs (smoke checks, screenshots) start on what they script, not on the
+        // First-run tour (#218), unless `OBS_TOUR=1` asks for it.
+        let scripted = ["OBS_SCRIPT", "OBS_INPUT", "OBS_STEPS", "OBS_SHOT"]
+            .iter()
+            .any(|v| std::env::var_os(v).is_some());
+        if scripted && std::env::var("OBS_TOUR").as_deref() != Ok("1") {
+            self.shell.run("tour.skip", &serde_json::json!({}));
         }
         self
     }

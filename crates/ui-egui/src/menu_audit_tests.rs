@@ -290,6 +290,7 @@ const PROPER_TERMS: &[&str] = &[
     "Today's reading",
     "Tool",
     "Topic Guide",
+    "User guide",
     "Verse of the day",
     "Word Info",
     "Word Study",

@@ -1115,8 +1115,9 @@ impl State {
     /// One line of a Note's text, formatted (#186): a gap for a blank line; a heading larger,
     /// bold and in the heading colour; a list item after its bullet or number, indented by
     /// its level; a quote line beside a rule; bold, italic, links and Bible references in the
-    /// text. Returns whether the pointer is on a link or reference.
-    fn body_line(
+    /// text. Returns whether the pointer is on a link or reference. The User guide's pages
+    /// are drawn by it too (#218).
+    pub(super) fn body_line(
         &mut self,
         ui: &mut Ui,
         body: &NoteBodyLine,
@@ -1263,6 +1264,8 @@ impl State {
         enum Target<'a> {
             Passages(PassageList),
             Url(&'a str),
+            /// Another page of the User guide (#218).
+            GuidePage(&'static obs_engine::GuidePage),
             Other(&'a str),
         }
         let mut targets: Vec<(Range<usize>, Target)> = body
@@ -1280,7 +1283,10 @@ impl State {
                     {
                         Target::Url(to)
                     }
-                    None => Target::Other(to),
+                    None => match obs_engine::page_for_link(to) {
+                        Some(page) => Target::GuidePage(page),
+                        None => Target::Other(to),
+                    },
                 };
                 targets.push((m.range.clone(), target));
             }
@@ -1325,6 +1331,14 @@ impl State {
                     link_tip(ui, &format!("{url}\nClick to open it in the browser"));
                     if clicked {
                         ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+                    }
+                }
+                Target::GuidePage(page) => {
+                    link_tip(ui, &format!("User guide: {}", page.title));
+                    if clicked {
+                        // Opens the User guide (or brings it to the front) at the page, from a
+                        // Note card as from the guide itself.
+                        run.push(("help.user_guide", json!({ "page": page.id })));
                     }
                 }
                 Target::Other(to) => {

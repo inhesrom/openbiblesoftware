@@ -168,9 +168,15 @@ mod toolbar_tests;
 pub mod topic_guide;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod topic_guide_tests;
+pub mod tour;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tour_tests;
 pub mod updates;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod updates_tests;
+pub mod user_guide;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod user_guide_tests;
 pub mod visual_filters;
 #[cfg(test)]
 mod visual_filters_tests;
@@ -307,6 +313,11 @@ pub use toolbar::{
 pub use toolbar_settings::{LauncherLabels, ToolbarPosition, ToolbarSettings};
 pub use topic_guide::{
     CitedPassage, Subtopic, TopicChoice, TopicChooser, TopicDirectory, TopicGuides, TopicalEntry,
+};
+pub use tour::{TOUR_STEPS, Tour, TourStep, TourTarget};
+pub use user_guide::{
+    GuideBlock, GuideMatch, GuidePage, USER_GUIDE, USER_GUIDE_TITLE, UserGuide, guide_blocks,
+    guide_images, guide_page, page_for_link, search_user_guide,
 };
 pub use visual_filters::{
     AlignedWords, DocumentSlice, FilterHit, FilterMatcher, MarkedText, TabFilters, VisualFilter,

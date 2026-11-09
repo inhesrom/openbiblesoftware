@@ -118,6 +118,9 @@ pub enum TabKind {
     /// Back up & restore (#217): Back up now, Restore from backup…, the Backups the app keeps
     /// and Export everything. Keyless, single instance.
     Backups,
+    /// Help → User guide (#218): the offline guide's pages, with a search box. Single
+    /// instance.
+    UserGuide,
     Guide(Guide),
     Tool(Tool),
 }
@@ -159,6 +162,7 @@ enum Slot {
     KeyboardShortcuts,
     Settings,
     Backups,
+    UserGuide,
     Guide(Guide),
     Tool(Tool),
 }
@@ -179,6 +183,7 @@ impl TabKind {
                 | TabKind::KeyboardShortcuts
                 | TabKind::Settings
                 | TabKind::Backups
+                | TabKind::UserGuide
                 | TabKind::Tool(
                     Tool::Notes
                         | Tool::WordInfo
@@ -204,10 +209,13 @@ impl TabKind {
 
     /// Whether Tabs of this kind belong with reading Panels: a new one goes to the last
     /// reading Panel when no Panel is remembered for it, and focusing one makes its Panel the
-    /// last reading Panel. Resources, and Home, which wants the room (#178) but is not Bible
-    /// content ([`TabKind::is_reading`]).
+    /// last reading Panel. Resources, and Home and the User guide, which want the room (#178,
+    /// #218) but are not Bible content ([`TabKind::is_reading`]).
     pub(crate) fn opens_in_reading_panel(&self) -> bool {
-        matches!(self, TabKind::Resource(_) | TabKind::Home)
+        matches!(
+            self,
+            TabKind::Resource(_) | TabKind::Home | TabKind::UserGuide
+        )
     }
 
     pub fn header_box(&self) -> HeaderBox {
@@ -215,6 +223,7 @@ impl TabKind {
             TabKind::Library
             | TabKind::KeyboardShortcuts
             | TabKind::Settings
+            | TabKind::UserGuide
             | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History) => HeaderBox::Filter,
             TabKind::Tool(Tool::WordInfo) => HeaderBox::FollowsHover,
             TabKind::Guide(Guide::WordStudy) => HeaderBox::Word,
@@ -256,6 +265,7 @@ impl TabKind {
                 | TabKind::KeyboardShortcuts
                 | TabKind::Settings
                 | TabKind::Backups
+                | TabKind::UserGuide
                 | TabKind::Guide(Guide::Factbook)
                 | TabKind::Tool(Tool::Notes | Tool::Favorites | Tool::History | Tool::ReadingPlans)
         )
@@ -289,6 +299,7 @@ impl TabKind {
             TabKind::KeyboardShortcuts => Slot::KeyboardShortcuts,
             TabKind::Settings => Slot::Settings,
             TabKind::Backups => Slot::Backups,
+            TabKind::UserGuide => Slot::UserGuide,
             TabKind::Guide(g) => Slot::Guide(*g),
             TabKind::Tool(t) => Slot::Tool(*t),
         }

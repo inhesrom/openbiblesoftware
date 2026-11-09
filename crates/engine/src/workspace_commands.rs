@@ -245,6 +245,9 @@ pub const MENUS: &[Menu] = &[
     Menu {
         title: "Help",
         items: &[
+            C("help.user_guide"),
+            C("help.tour"),
+            Separator,
             C("app.commands"),
             C("help.keyboard_shortcuts"),
             Separator,
@@ -1098,6 +1101,7 @@ pub(crate) fn title_of(s: &Session, kind: &TabKind) -> String {
         TabKind::KeyboardShortcuts => "Keyboard shortcuts".into(),
         TabKind::Settings => "Settings".into(),
         TabKind::Backups => BACKUPS_TITLE.into(),
+        TabKind::UserGuide => crate::user_guide::USER_GUIDE_TITLE.into(),
         TabKind::Resource(id) => s
             .library
             .get(id)
