@@ -12,7 +12,8 @@ and Sepia at 1× and 2×, and compared with its golden image (ADR 0018). The gol
 
 `cargo xtask ci` runs the same tests in its `test` gate, so CI fails on a difference. The tests
 are `crates/ui-egui/src/gallery_tests.rs` (`shell::tests::gallery::`); one test per section
-(Tabs; toolbar panes, menus and windows; dialogs and popovers) so they run in parallel.
+(Tabs; toolbar panes, menus and windows; dialogs and popovers; menus and choosers in Tabs and
+windows) so they run in parallel.
 
 ## Reading a failure
 
@@ -51,7 +52,16 @@ updates the goldens and the gallery passes again.
 
 A new Tab kind does not build until the accessibility audit's `every_tab_kind` and the
 gallery's `tab_title` name it; a new pane, menu or window in the audit's `every_overlay` is in
-the gallery too. A dialog or popover the audit does not open goes in `dialogs_and_popovers` in
-`gallery_tests.rs`. Then `cargo xtask gallery --bless`.
+the gallery too. Other menus, popovers, dialogs and choosers are in `menus_and_toolbar`,
+`dialogs_and_popovers` and `menus_and_choosers` in `gallery_tests.rs`: a name, what opens it,
+and what shows it is open (the gallery fails if it is not on screen when drawn).
 
-Left out: Report a problem (it shows the operating system and the log).
+`every_window_popover_menu_and_chooser_is_in_the_gallery` keeps the gallery complete: it counts
+each place `crates/ui-egui/src` opens a window, area, popup menu, context menu, menu or combo
+box, and fails until `SITES` names the surface that draws a new one (or says why none does).
+Then `cargo xtask gallery --bless`.
+
+Left out: Report a problem (it shows the operating system and the log) and a font family's
+style chooser (only for installed fonts, which differ by computer). The toolbar's right-click
+menu is drawn once (from a Launcher; its background and grip open the same menu), as are a
+Note card's menu (from its … button) and the Visual filters items (from the Filters menu).

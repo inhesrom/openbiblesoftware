@@ -1,5 +1,5 @@
-//! The Screenshot gallery (#222): every Tab kind, toolbar pane, menu, window, dialog and
-//! popover, drawn headlessly in each Look (Light, Dark, Sepia) at 1× and 2×, and compared
+//! The Screenshot gallery (#222): every Tab kind, toolbar pane, menu, window, dialog, popover
+//! and chooser, drawn headlessly in each Look (Light, Dark, Sepia) at 1× and 2×, and compared
 //! with its golden image in `docs/previews/gallery/` within a small tolerance.
 //! `docs/previews/gallery.md` shows every golden on one page (`docs/dev/screenshot-gallery.md`).
 //!
@@ -15,7 +15,8 @@
 use std::path::{Path, PathBuf};
 
 use egui::Key;
-use obs_engine::TabId;
+use obs_engine::{Launcher, TabId};
+use serde_json::Value;
 
 use super::a11y_audit::{Overlay, every_overlay, every_tab_kind, key, open_tab, type_text};
 use super::missing_resource::{Lab, release_set, settle, setup};
@@ -73,13 +74,15 @@ enum Section {
     Tabs,
     PanesMenusAndWindows,
     DialogsAndPopovers,
+    MenusAndChoosers,
 }
 
 impl Section {
-    const ALL: [Section; 3] = [
+    const ALL: [Section; 4] = [
         Section::Tabs,
         Section::PanesMenusAndWindows,
         Section::DialogsAndPopovers,
+        Section::MenusAndChoosers,
     ];
 
     fn heading(self) -> &'static str {
@@ -87,14 +90,15 @@ impl Section {
             Section::Tabs => "Tabs",
             Section::PanesMenusAndWindows => "Toolbar panes, menus and windows",
             Section::DialogsAndPopovers => "Dialogs and popovers",
+            Section::MenusAndChoosers => "Menus and choosers in Tabs and windows",
         }
     }
 }
 
 enum Open {
     Tab(TabKind),
-    Overlay(fn(&mut Harness)),
-    Run(fn(&mut Harness)),
+    /// What opens it, and what shows it is open.
+    Run(fn(&mut Harness), fn(&Harness) -> bool),
 }
 
 /// A surface of the gallery: its file name stem, its title on the page, and how to open it.
@@ -148,28 +152,42 @@ fn surfaces() -> Vec<Surface> {
             open: Open::Tab(kind),
         });
     }
-    for (name, open, _) in every_overlay() {
-        let open: fn(&mut Harness) = open;
-        out.push(Surface {
-            section: Section::PanesMenusAndWindows,
-            slug: slug(name),
-            title: name.into(),
-            open: Open::Overlay(open),
-        });
-    }
-    for (name, open) in dialogs_and_popovers() {
-        out.push(Surface {
-            section: Section::DialogsAndPopovers,
-            slug: slug(name),
-            title: name.into(),
-            open: Open::Run(open),
-        });
+    let lists = [
+        (Section::PanesMenusAndWindows, every_overlay()),
+        (Section::PanesMenusAndWindows, menus_and_toolbar()),
+        (Section::DialogsAndPopovers, dialogs_and_popovers()),
+        (Section::MenusAndChoosers, menus_and_choosers()),
+    ];
+    for (section, list) in lists {
+        for (name, open, is_open) in list {
+            out.push(Surface {
+                section,
+                slug: slug(name),
+                title: name.into(),
+                open: Open::Run(open, is_open),
+            });
+        }
     }
     out
 }
 
+/// Whether `surface` is on screen: its Tab focused, or what shows it is open.
+fn is_open(h: &Harness, surface: &Surface) -> bool {
+    match &surface.open {
+        Open::Tab(kind) => {
+            let ws = &h.shell.session().workspace;
+            let focused = ws.focused().and_then(|t| ws.tab(t)).map(|t| &t.kind);
+            match (kind, focused) {
+                (TabKind::ImportReport(_), Some(TabKind::ImportReport(_))) => true,
+                (kind, focused) => focused == Some(kind),
+            }
+        }
+        Open::Run(_, is_open) => is_open(h),
+    }
+}
+
 // ---------------------------------------------------------------------------------------
-// Dialogs and popovers the accessibility audit's overlays leave out.
+// Opening menus, popovers and choosers.
 
 fn right_click(h: &mut Harness, p: egui::Pos2) {
     h.events.push(Event::PointerMoved(p));
@@ -186,6 +204,56 @@ fn right_click(h: &mut Harness, p: egui::Pos2) {
     h.frames(2);
 }
 
+/// The pointer on `text` (a menu's item: its submenu opens).
+fn hover(h: &mut Harness, text: &str) {
+    let p = h.at(text);
+    h.events.push(Event::PointerMoved(p));
+    h.frames(4);
+}
+
+/// Where `text` is painted within the part of the window `keep` holds, the topmost first.
+fn spot(h: &Harness, text: &str, keep: impl Fn(egui::Rect) -> bool) -> egui::Pos2 {
+    (h.shapes.iter())
+        .filter(|(r, t)| t == text && keep(*r))
+        .map(|(r, _)| *r)
+        .min_by(|a, b| {
+            (a.top(), a.left())
+                .partial_cmp(&(b.top(), b.left()))
+                .unwrap()
+        })
+        .unwrap_or_else(|| panic!("{text:?} not on screen there: {:?}", h.texts()))
+        .center()
+}
+
+fn first(h: &Harness, text: &str) -> egui::Pos2 {
+    spot(h, text, |_| true)
+}
+
+fn popup(h: &Harness) -> bool {
+    egui::Popup::is_any_open(&h.ctx)
+}
+
+fn shows(h: &Harness, text: &str) -> bool {
+    h.find(text).is_some()
+}
+
+fn shows_start(h: &Harness, start: &str) -> bool {
+    h.texts().iter().any(|t| t.starts_with(start))
+}
+
+/// A menu item of command `id` is drawn (its label, maybe with a count after it).
+fn command_shown(h: &Harness, id: &str) -> bool {
+    let commands = h.shell.st.session.commands();
+    let label = commands.get(id).expect("a command").label;
+    shows_start(h, label)
+}
+
+/// Each option of the View menu's choice `command` is drawn.
+fn choice_shown(h: &Harness, command: &str) -> bool {
+    let (options, _) = obs_engine::choices(&h.shell.st.session, command);
+    options.iter().all(|(_, label)| shows(h, label))
+}
+
 /// A word of the KJV's text in the default layout.
 fn kjv_word(h: &Harness) -> egui::Pos2 {
     let kjv = h.tab_id("KJV");
@@ -195,6 +263,21 @@ fn kjv_word(h: &Harness) -> egui::Pos2 {
 fn selection_toolbar(h: &mut Harness) {
     let p = kjv_word(h);
     super::annotation::double_click(h, p);
+}
+
+/// "beginning" in Genesis 1:1 highlighted in the palette's first style.
+fn highlight_a_word(h: &mut Harness) {
+    selection_toolbar(h);
+    key(h, Key::Num1, Modifiers::ALT);
+    settle_all(h);
+}
+
+fn note_editor(h: &mut Harness) {
+    selection_toolbar(h);
+    key(h, Key::N, Modifiers::COMMAND | Modifiers::SHIFT);
+    h.events
+        .push(Event::Text("In the beginning: before all things.".into()));
+    h.frames(2);
 }
 
 /// The marker of the BSB's first Footnote proper (not a cross-reference note).
@@ -219,165 +302,749 @@ fn until(h: &mut Harness, what: &str, done: impl Fn(&Harness) -> bool) {
     panic!("never saw {what}: {:?}", h.texts());
 }
 
-type Run = (&'static str, fn(&mut Harness));
+/// The KJV's header: the row under its tab, in the left Panel.
+fn in_kjv_header(r: egui::Rect) -> bool {
+    (80.0..100.0).contains(&r.top()) && r.right() < 930.0
+}
+
+/// A Collection, for the choosers that offer one.
+fn night_reading(h: &mut Harness) {
+    h.shell
+        .run("collection.save", &json!({ "name": "Night reading" }));
+    settle(h);
+}
+
+fn run_split(h: &mut Harness, id: &str, params: Value) {
+    let mut params = params;
+    params["split"] = json!(true);
+    h.shell.run(id, &params);
+    settle(h);
+    settle_all(h);
+}
+
+/// Run jobs until the search indexes are built and no search is running.
+fn settle_search(h: &mut Harness) {
+    for _ in 0..5000 {
+        h.shell.st.session.jobs().pump(16);
+        h.frame();
+        let s = &h.shell.st.session;
+        if !s.search.is_building() && !s.bible_search_running() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    panic!("the search indexes were never built");
+}
+
+/// The Search Tab alone in the window, its indexes built, having searched for "God", in
+/// `mode`.
+fn search(h: &mut Harness, mode: &str) -> TabId {
+    // The launch's search cache is in its own folder.
+    h.shell.st.session.refresh_search_indexes();
+    settle_search(h);
+    h.shell.run("tool.search", &json!({}));
+    h.frames(2);
+    let tab = h.shell.session().workspace.focused().unwrap();
+    let others: Vec<TabId> = (h.shell.session().workspace.tabs())
+        .filter(|t| t.id != tab)
+        .map(|t| t.id)
+        .collect();
+    for t in others {
+        h.shell.run("tab.close", &json!({ "tab": t.0 }));
+    }
+    h.shell
+        .run("search.mode", &json!({ "tab": tab.0, "value": mode }));
+    h.shell
+        .run("search.run", &json!({ "tab": tab.0, "text": "God" }));
+    settle_search(h);
+    settle_all(h);
+    tab
+}
+
+/// The Notes Tab alone in the window: wide enough for its cards' … buttons.
+fn notes_alone(h: &mut Harness) {
+    h.shell.run("tool.notes", &json!({}));
+    h.frames(2);
+    let notes = h.shell.session().workspace.focused().unwrap();
+    let others: Vec<TabId> = (h.shell.session().workspace.tabs())
+        .filter(|t| t.id != notes)
+        .map(|t| t.id)
+        .collect();
+    for t in others {
+        h.shell.run("tab.close", &json!({ "tab": t.0 }));
+    }
+    settle(h);
+    settle_all(h);
+}
+
+fn leftmost(h: &Harness, text: &str) -> egui::Pos2 {
+    (h.shapes.iter())
+        .filter(|(_, t)| t == text)
+        .map(|(r, _)| *r)
+        .min_by(|a, b| a.left().total_cmp(&b.left()))
+        .unwrap_or_else(|| panic!("{text:?} not on screen: {:?}", h.texts()))
+        .center()
+}
+
+fn a_note(h: &mut Harness) {
+    h.shell.run(
+        "annotation.note",
+        &json!({ "passage": "Gen 1:1", "body": "**Beginnings**: before all things." }),
+    );
+}
+
+type Run = Overlay;
+
+/// The menu bar's other menus and their submenus, and the toolbar's own menus.
+fn menus_and_toolbar() -> Vec<Run> {
+    vec![
+        (
+            "File menu",
+            |h| h.open_menu("File"),
+            |h| popup(h) && command_shown(h, "data.backups"),
+        ),
+        (
+            "Edit menu",
+            |h| h.open_menu("Edit"),
+            |h| popup(h) && command_shown(h, "favorite.add"),
+        ),
+        (
+            "View menu, Theme",
+            |h| {
+                h.open_menu("View");
+                hover(h, "Theme");
+            },
+            |h| popup(h) && choice_shown(h, "view.theme"),
+        ),
+        (
+            "View menu, Reading layout",
+            |h| {
+                h.open_menu("View");
+                hover(h, "Reading layout");
+            },
+            |h| popup(h) && shows(h, "Large chapter numbers"),
+        ),
+        (
+            "View menu, Notebooks in text",
+            |h| {
+                h.open_menu("View");
+                hover(h, "Notebooks in text");
+            },
+            |h| popup(h) && shows(h, "My Notebook"),
+        ),
+        (
+            "Go menu",
+            |h| h.open_menu("Go"),
+            |h| popup(h) && command_shown(h, "command_box.focus"),
+        ),
+        (
+            "Tools menu",
+            |h| h.open_menu("Tools"),
+            |h| popup(h) && command_shown(h, "tool.timeline"),
+        ),
+        (
+            "Window menu, Recently closed",
+            |h| {
+                let word_info = h.tab_id("Word Info");
+                h.shell.run("tab.close", &json!({ "tab": word_info.0 }));
+                h.frames(3);
+                h.open_menu("Window");
+                hover(h, "Recently closed");
+            },
+            |h| popup(h) && shows(h, "Word Info"),
+        ),
+        (
+            "Window menu, Go to Panel",
+            |h| {
+                h.open_menu("Window");
+                hover(h, "Go to Panel");
+            },
+            |h| popup(h) && command_shown(h, "panel.focus_9"),
+        ),
+        (
+            "Toolbar menu, Position",
+            |h| {
+                let library = h.shell.st.toolbar.buttons[&Launcher::Library].center();
+                right_click(h, library);
+                hover(h, "Position");
+            },
+            |h| {
+                popup(h)
+                    && (obs_engine::ToolbarPosition::ALL.iter())
+                        .all(|(_, _, label)| shows(h, label))
+            },
+        ),
+        (
+            "More launchers",
+            |h| {
+                h.screen = egui::vec2(1100.0, 600.0);
+                h.frames(4);
+                let more = h.shell.st.toolbar.overflow.expect("a » button");
+                h.click(more.center());
+            },
+            |h| popup(h) && h.shell.st.toolbar.overflow.is_some(),
+        ),
+        (
+            "Toolbar, auto-hidden, shown at its edge",
+            |h| {
+                h.shell.run("view.toolbar_auto_hide", &json!({}));
+                h.events.push(Event::PointerMoved(egui::pos2(700.0, 1.0)));
+                h.frames(4);
+            },
+            |h| h.shell.st.session.toolbar.auto_hide && h.shell.st.toolbar.bar.is_some(),
+        ),
+    ]
+}
 
 fn dialogs_and_popovers() -> Vec<Run> {
     vec![
-        ("Selection toolbar", selection_toolbar),
-        ("Note editor", |h| {
-            selection_toolbar(h);
-            key(h, Key::N, Modifiers::COMMAND | Modifiers::SHIFT);
-            h.events
-                .push(Event::Text("In the beginning: before all things.".into()));
-            h.frames(2);
+        ("Selection toolbar", selection_toolbar, |h| {
+            shows(h, "Search this") && shows(h, "Note")
         }),
-        ("Footnote popover", |h| {
-            let bsb = open_bsb(h);
-            let at = footnote_marker(h, bsb);
-            h.events.push(Event::PointerMoved(at));
-            until(h, "the Footnote's popover", |h| {
-                h.shell.st.footnotes.shown().is_some()
-            });
-            h.frames(10);
-        }),
-        ("Reference preview", |h| {
-            let bsb = open_bsb(h);
-            h.click(cross_reference_marker(h, bsb));
-            let mut link = None;
-            until(h, "the cross-reference note's link", |h| {
-                h.shell
-                    .st
-                    .footnotes
-                    .shown()
-                    .is_some_and(|(_, f)| !f.link_rects.is_empty())
-            });
-            if let Some((_, f)) = h.shell.st.footnotes.shown() {
-                link = f.link_rects.first().map(|r| r.center());
-            }
-            h.events.push(Event::PointerMoved(link.unwrap()));
-            until(h, "the reference preview", |h| h.find("Gen 1:3").is_some());
-            h.frames(10);
-        }),
-        ("Tab switcher", |h| {
-            for id in ["tool.search", "tool.history"] {
-                h.shell.run(id, &json!({}));
-            }
-            settle_all(h);
-            let ctrl = Modifiers {
-                ctrl: true,
-                command: true,
-                ..Modifiers::NONE
-            };
-            h.modifiers = ctrl;
-            for pressed in [true, false] {
-                h.events.push(Event::Key {
-                    key: Key::Tab,
-                    physical_key: None,
-                    pressed,
-                    repeat: false,
-                    modifiers: ctrl,
+        ("Note editor", note_editor, |h| shows(h, "Open in Notes")),
+        (
+            "Footnote popover",
+            |h| {
+                let bsb = open_bsb(h);
+                let at = footnote_marker(h, bsb);
+                h.events.push(Event::PointerMoved(at));
+                until(h, "the Footnote's popover", |h| {
+                    h.shell.st.footnotes.shown().is_some()
                 });
-            }
-            h.frames(3);
-        }),
-        ("Find bar", |h| {
-            key(h, Key::F, Modifiers::COMMAND);
-            type_text(h, "light");
-            settle_all(h);
-        }),
-        ("Move Note", |h| {
-            let kjv = h.tab_id("KJV");
-            h.shell.st.confirm_reanchor(
-                "n".into(),
-                "Genesis 1:1 (KJV)".into(),
-                kjv,
-                json!({}),
-                "Genesis 1:2 (KJV)".into(),
-            );
-            h.frames(3);
-        }),
-        ("Delete Notebook", |h| {
-            let study = h
-                .shell
-                .run("notebook.create", &json!({ "name": "Study" }))
-                .unwrap()["id"]
-                .as_str()
-                .unwrap()
-                .to_string();
-            h.shell.run(
-                "annotation.note",
-                &json!({ "passage": "Gen 1:1", "body": "Beginnings", "notebook": study }),
-            );
-            h.shell.run("tool.notes", &json!({ "split": true }));
-            settle(h);
-            settle_all(h);
-            let p = h.at("Study");
-            right_click(h, p);
-            h.click_text("Delete…");
-            assert!(h.shell.st.notes_ui.deleting.is_some(), "{:?}", h.texts());
-        }),
-        ("Remove a Resource", |h| {
-            h.shell.run("library.remove", &json!({ "id": "mhc" }));
-            h.frames(3);
-            assert!(h.shell.st.confirm.is_some());
-        }),
-        ("Save layout as", |h| {
-            h.shell.run("layout.save", &json!({}));
-            h.frames(3);
-            type_text(h, "Study desk");
-        }),
-        ("Import a Resource", |h| {
-            h.shell.run("library.import", &json!({}));
-            h.frames(3);
-            assert!(h.shell.st.pick_import);
-        }),
-        ("Visual filters", |h| {
-            h.shell.run("view.visual_filters", &json!({}));
-            h.frames(3);
-        }),
-        ("Language chooser", |h| {
-            h.shell
-                .run("library.get_resources", &json!({ "split": true }));
-            settle(h);
-            settle_all(h);
-            h.click_text("All languages");
-            // Off the button, so its tooltip is not drawn over the list.
-            h.events
-                .push(Event::PointerMoved(egui::pos2(1395.0, 895.0)));
-            h.frames(3);
-            assert!(
-                h.find("Search languages: name or code").is_some(),
-                "{:?}",
-                h.texts()
-            );
-        }),
-        ("Page tone hint", |h| {
-            // The hint offers Auto when the theme turns dark over a light Page tone the user
-            // chose: the Look's own (Sepia) or else Paper. It stays open, back in the Look's
-            // theme, until answered.
-            let dark = h.ctx.theme() == egui::Theme::Dark;
-            let tone = match h.shell.session().appearance.page_tone {
-                obs_engine::PageTone::Auto => obs_engine::PageTone::Paper,
-                chosen => chosen,
-            };
-            h.shell
-                .run("view.page_tone", &json!({ "value": tone.id() }));
-            for theme in ["light", "dark", if dark { "dark" } else { "light" }] {
-                h.shell.run("view.theme", &json!({ "value": theme }));
-                h.frames(2);
-            }
-            let hint = format!(
-                "Page tone is set to {}. Use Auto to follow the theme?",
-                tone.label()
-            );
-            assert!(h.find(&hint).is_some(), "{:?}", h.texts());
-            // Past its fade-in.
-            h.frames(15);
-        }),
-        ("About Open Bible", |h| {
-            h.shell.run("help.about", &json!({}));
-            h.frames(3);
-        }),
+                h.frames(10);
+            },
+            |h| h.shell.st.footnotes.shown().is_some(),
+        ),
+        (
+            "Reference preview",
+            |h| {
+                let bsb = open_bsb(h);
+                h.click(cross_reference_marker(h, bsb));
+                let mut link = None;
+                until(h, "the cross-reference note's link", |h| {
+                    h.shell
+                        .st
+                        .footnotes
+                        .shown()
+                        .is_some_and(|(_, f)| !f.link_rects.is_empty())
+                });
+                if let Some((_, f)) = h.shell.st.footnotes.shown() {
+                    link = f.link_rects.first().map(|r| r.center());
+                }
+                h.events.push(Event::PointerMoved(link.unwrap()));
+                until(h, "the reference preview", |h| h.find("Gen 1:3").is_some());
+                h.frames(10);
+            },
+            |h| shows(h, "Gen 1:3"),
+        ),
+        (
+            "Tab switcher",
+            |h| {
+                for id in ["tool.search", "tool.history"] {
+                    h.shell.run(id, &json!({}));
+                }
+                settle_all(h);
+                let ctrl = Modifiers {
+                    ctrl: true,
+                    command: true,
+                    ..Modifiers::NONE
+                };
+                h.modifiers = ctrl;
+                for pressed in [true, false] {
+                    h.events.push(Event::Key {
+                        key: Key::Tab,
+                        physical_key: None,
+                        pressed,
+                        repeat: false,
+                        modifiers: ctrl,
+                    });
+                }
+                h.frames(3);
+            },
+            |h| h.shell.switcher.is_some(),
+        ),
+        (
+            "Find bar",
+            |h| {
+                key(h, Key::F, Modifiers::COMMAND);
+                type_text(h, "light");
+                settle_all(h);
+            },
+            |h| h.shell.st.tabs[&h.tab_id("KJV")].find.is_some(),
+        ),
+        (
+            "Move Note",
+            |h| {
+                let kjv = h.tab_id("KJV");
+                h.shell.st.confirm_reanchor(
+                    "n".into(),
+                    "Genesis 1:1 (KJV)".into(),
+                    kjv,
+                    json!({}),
+                    "Genesis 1:2 (KJV)".into(),
+                );
+                h.frames(3);
+            },
+            |h| h.shell.st.drag.confirm.is_some(),
+        ),
+        (
+            "Delete Notebook",
+            |h| {
+                let study = h
+                    .shell
+                    .run("notebook.create", &json!({ "name": "Study" }))
+                    .unwrap()["id"]
+                    .as_str()
+                    .unwrap()
+                    .to_string();
+                h.shell.run(
+                    "annotation.note",
+                    &json!({ "passage": "Gen 1:1", "body": "Beginnings", "notebook": study }),
+                );
+                run_split(h, "tool.notes", json!({}));
+                let p = h.at("Study");
+                right_click(h, p);
+                h.click_text("Delete…");
+            },
+            |h| h.shell.st.notes_ui.deleting.is_some(),
+        ),
+        (
+            "Remove a Resource",
+            |h| {
+                h.shell.run("library.remove", &json!({ "id": "mhc" }));
+                h.frames(3);
+            },
+            |h| h.shell.st.confirm.is_some(),
+        ),
+        (
+            "Save layout as",
+            |h| {
+                h.shell.run("layout.save", &json!({}));
+                h.frames(3);
+                type_text(h, "Study desk");
+            },
+            |h| h.shell.st.prompt.is_some(),
+        ),
+        (
+            "Import a Resource",
+            |h| {
+                h.shell.run("library.import", &json!({}));
+                h.frames(3);
+            },
+            |h| h.shell.st.pick_import,
+        ),
+        (
+            "Visual filters",
+            |h| {
+                h.shell.run("view.visual_filters", &json!({}));
+                h.frames(3);
+            },
+            |h| h.shell.st.filters_ui.open,
+        ),
+        (
+            "Language chooser",
+            |h| {
+                run_split(h, "library.get_resources", json!({}));
+                h.click_text("All languages");
+                // Off the button, so its tooltip is not drawn over the list.
+                h.events
+                    .push(Event::PointerMoved(egui::pos2(1395.0, 895.0)));
+                h.frames(3);
+            },
+            |h| shows(h, "Search languages: name or code"),
+        ),
+        (
+            "Page tone hint",
+            |h| {
+                // The hint offers Auto when the theme turns dark over a light Page tone the
+                // user chose: the Look's own (Sepia) or else Paper. It stays open, back in the
+                // Look's theme, until answered.
+                let dark = h.ctx.theme() == egui::Theme::Dark;
+                let tone = match h.shell.session().appearance.page_tone {
+                    obs_engine::PageTone::Auto => obs_engine::PageTone::Paper,
+                    chosen => chosen,
+                };
+                h.shell
+                    .run("view.page_tone", &json!({ "value": tone.id() }));
+                for theme in ["light", "dark", if dark { "dark" } else { "light" }] {
+                    h.shell.run("view.theme", &json!({ "value": theme }));
+                    h.frames(2);
+                }
+                // Past its fade-in.
+                h.frames(15);
+            },
+            |h| shows_start(h, "Page tone is set to"),
+        ),
+        (
+            "About Open Bible",
+            |h| {
+                h.shell.run("help.about", &json!({}));
+                h.frames(3);
+            },
+            |h| h.shell.st.window.is_some(),
+        ),
+    ]
+}
+
+/// The menus of Tab headers, rows and cards, and the choosers (drop-down lists) of Tabs and
+/// windows.
+fn menus_and_choosers() -> Vec<Run> {
+    vec![
+        (
+            "Tab menu, Add to Favorites folder",
+            |h| {
+                let more = spot(h, "[ellipsis]", in_kjv_header);
+                h.click(more);
+                hover(h, "Add to Favorites folder");
+            },
+            |h| popup(h) && command_shown(h, "tab.close") && shows(h, "Add to Favorites folder"),
+        ),
+        (
+            "Add Tab menu",
+            |h| {
+                let add = spot(h, "[plus]", |r| r.right() < 930.0);
+                h.click(add);
+            },
+            |h| popup(h) && shows(h, "KJV — KJV (test)"),
+        ),
+        (
+            "Tab right-click menu",
+            |h| {
+                let tab = h.tab_at("KJV");
+                right_click(h, tab);
+            },
+            |h| popup(h) && shows(h, "Float in new window") && shows(h, "Link set B"),
+        ),
+        (
+            "Link set menu",
+            |h| {
+                let chip = spot(h, "A", in_kjv_header);
+                h.click(chip);
+            },
+            |h| popup(h) && shows(h, "Link set B") && !shows(h, "Float in new window"),
+        ),
+        (
+            "Parallel resources chooser",
+            |h| {
+                let chooser = spot(h, "KJV", |r| in_kjv_header(r) && r.left() > 600.0);
+                h.click(chooser);
+            },
+            |h| popup(h) && shows_start(h, "BSB — "),
+        ),
+        (
+            "Filters menu",
+            |h| {
+                let filters = spot(h, "Filters", in_kjv_header);
+                h.click(filters);
+            },
+            |h| popup(h) && shows(h, "Visual filters in this Tab"),
+        ),
+        (
+            "Interlinear lines menu",
+            |h| {
+                let tab = h
+                    .shell
+                    .run(
+                        "resource.open",
+                        &json!({ "id": "tagnt-grace", "split": true }),
+                    )
+                    .unwrap()["tab"]
+                    .as_u64()
+                    .unwrap();
+                h.shell
+                    .run("tab.go", &json!({ "tab": tab, "text": "Lk 1:30" }));
+                h.shell
+                    .run("tab.interlinear", &json!({ "tab": tab, "on": true }));
+                settle(h);
+                settle_all(h);
+                // "Int." in a narrow Tab.
+                let label = h
+                    .find("Interlinear")
+                    .unwrap_or_else(|| h.find("Int.").unwrap());
+                // Beside the Interlinear toggle.
+                let lines = spot(h, "[chevron-down]", |r| {
+                    (r.center().y - label.center().y).abs() < 10.0
+                        && (r.center().x - label.center().x).abs() < 50.0
+                });
+                h.click(lines);
+            },
+            |h| popup(h) && shows(h, "Interlinear lines"),
+        ),
+        (
+            "Text comparison, add a Bible",
+            |h| {
+                run_split(h, "tool.text_comparison", json!({ "passage": "Gen 1:1" }));
+                h.click_text("+ Bible");
+            },
+            |h| popup(h) && (shows_start(h, "BSB — ") || shows(h, "Every Bible is shown")),
+        ),
+        (
+            "Library row menu, Collections",
+            |h| {
+                night_reading(h);
+                let row = spot(h, "KJV", |r| r.left() > 940.0 && r.top() > 200.0);
+                right_click(h, row);
+                hover(h, "Collections");
+            },
+            |h| popup(h) && shows(h, "Night reading") && shows(h, "Collections"),
+        ),
+        (
+            "Notebook menu",
+            |h| {
+                a_note(h);
+                run_split(h, "tool.notes", json!({}));
+                let p = leftmost(h, "My Notebook");
+                right_click(h, p);
+            },
+            |h| popup(h) && shows(h, "Rename…") && shows(h, "Delete…"),
+        ),
+        (
+            "Note card menu, Move to Notebook",
+            |h| {
+                h.shell.run("notebook.create", &json!({ "name": "Study" }));
+                a_note(h);
+                notes_alone(h);
+                h.click_text("…");
+                hover(h, "Move to Notebook");
+            },
+            |h| popup(h) && shows(h, "Go to text") && shows(h, "Move to Notebook"),
+        ),
+        (
+            "Highlight card menu, Highlight style",
+            |h| {
+                highlight_a_word(h);
+                notes_alone(h);
+                h.click_text("…");
+                hover(h, "Highlight style");
+            },
+            |h| popup(h) && shows(h, "Highlight style") && shows(h, "Red underline"),
+        ),
+        (
+            "Notes Export menu",
+            |h| {
+                a_note(h);
+                run_split(h, "tool.notes", json!({}));
+                h.click_text("Export…");
+            },
+            |h| popup(h) && shows(h, "Export as Markdown…"),
+        ),
+        (
+            "Favorite menu, Move to folder",
+            |h| {
+                let kjv = h.tab_id("KJV");
+                h.shell.run(
+                    "favorite.add",
+                    &json!({ "tab": kjv.0, "folder": "Sermons" }),
+                );
+                run_split(h, "tool.favorites", json!({}));
+                let row = first(h, "Genesis 1:1 · KJV");
+                right_click(h, row);
+                hover(h, "Move to folder");
+            },
+            |h| popup(h) && shows(h, "No folder"),
+        ),
+        (
+            "Search, Recent",
+            |h| {
+                search(h, "bible");
+                h.click_text("Recent");
+            },
+            |h| popup(h) && shows(h, "God"),
+        ),
+        (
+            "Search, scope presets",
+            |h| {
+                search(h, "bible");
+                let scope = h.at("Scope");
+                let presets = spot(h, "[chevron-down]", |r| {
+                    (r.center().y - scope.y).abs() < 10.0 && r.left() > scope.x
+                });
+                h.click(presets);
+            },
+            |h| popup(h) && shows(h, "New Testament"),
+        ),
+        (
+            "Search, add a Bible",
+            |h| {
+                search(h, "bible");
+                h.click_text("+ Bible");
+            },
+            |h| popup(h) && shows_start(h, "BSB — "),
+        ),
+        (
+            "Search, choose Resources",
+            |h| {
+                search(h, "library");
+                h.click_text("Choose…");
+            },
+            |h| popup(h),
+        ),
+        (
+            "Search, morphology chooser",
+            |h| {
+                search(h, "bible");
+                h.click_text("Morphology…");
+                let any = first(h, "Any");
+                h.click(any);
+            },
+            |h| popup(h),
+        ),
+        (
+            "Search, Notebook chooser",
+            |h| {
+                a_note(h);
+                search(h, "notes");
+                h.click_text("All Notebooks");
+            },
+            |h| popup(h) && shows(h, "My Notebook"),
+        ),
+        (
+            "Search, chart chooser",
+            |h| {
+                let tab = search(h, "bible");
+                h.shell
+                    .run("search.view", &json!({ "tab": tab.0, "value": "chart" }));
+                settle(h);
+                settle_all(h);
+                h.click_text("By chapter of…");
+            },
+            |h| popup(h) && shows(h, "Genesis"),
+        ),
+        (
+            "Saved search menu",
+            |h| {
+                let tab = search(h, "bible");
+                h.shell
+                    .run("search.save", &json!({ "tab": tab.0, "name": "Creation" }));
+                settle(h);
+                if !shows(h, "SAVED SEARCHES") {
+                    h.click_text("Saved & history");
+                }
+                let saved = h.at("Creation");
+                right_click(h, saved);
+            },
+            |h| popup(h) && shows(h, "Run in a new split"),
+        ),
+        (
+            "Highlight styles, palette chooser",
+            |h| {
+                h.shell.run("view.highlight_styles", &json!({}));
+                h.frames(3);
+                h.click_text("Standard");
+            },
+            |h| popup(h) && h.shell.st.styles_ui.open,
+        ),
+        (
+            "Highlight styles, look chooser",
+            |h| {
+                h.shell.run("view.highlight_styles", &json!({}));
+                h.frames(3);
+                let look = first(h, "Background");
+                h.click(look);
+            },
+            |h| popup(h) && shows(h, "Underline"),
+        ),
+        (
+            "Highlight styles, colour presets",
+            |h| {
+                h.shell.run("view.highlight_styles", &json!({}));
+                h.frames(3);
+                let presets = spot(h, "[chevron-down]", |r| r.left() > 400.0);
+                h.click(presets);
+            },
+            |h| popup(h) && h.shell.st.styles_ui.open,
+        ),
+        (
+            "Highlight styles, where a deleted style's Highlights go",
+            |h| {
+                highlight_a_word(h);
+                h.shell.run("view.highlight_styles", &json!({}));
+                h.frames(10);
+                let delete = first(h, "Delete…");
+                h.click(delete);
+                // The question makes the window taller: it moves to stay centred.
+                h.frames(10);
+                let question = (h.texts().into_iter())
+                    .position(|t| t.contains("Move them to:"))
+                    .map(|i| h.shapes[i].0)
+                    .unwrap_or_else(|| panic!("no question: {:?}", h.texts()));
+                let to = spot(h, "Green", |r| r.top() > question.bottom());
+                h.click(to);
+            },
+            |h| popup(h) && h.texts().iter().any(|t| t.contains("Move them to:")),
+        ),
+        (
+            "Visual filters, Also colour chooser",
+            |h| {
+                h.shell.run("view.visual_filters", &json!({}));
+                h.frames(3);
+                h.click_text("New filter…");
+                h.click_text("Nothing else");
+            },
+            |h| popup(h) && h.shell.st.filters_ui.open,
+        ),
+        (
+            "Visual filters, look chooser",
+            |h| {
+                h.shell.run("view.visual_filters", &json!({}));
+                h.frames(3);
+                h.click_text("New filter…");
+                let look = h.at("Look");
+                let chooser = spot(h, "Background", |r| (r.center().y - look.y).abs() < 10.0);
+                h.click(chooser);
+            },
+            |h| popup(h) && shows(h, "Underline"),
+        ),
+        (
+            "Fonts, font chooser",
+            |h| {
+                h.shell.run("view.fonts", &json!({}));
+                h.frames(3);
+                let latin = first(h, "Gentium Plus (bundled)");
+                h.click(latin);
+            },
+            |h| popup(h) && h.shell.st.fonts_ui.open,
+        ),
+        (
+            "Copy verses, preset chooser",
+            |h| {
+                h.shell
+                    .run("tool.copy_verses", &json!({ "passages": "Gen 1:1-3" }));
+                h.frames(3);
+                // Its preview drawn, the window has its size and place.
+                settle_all(h);
+                h.frames(10);
+                h.click_text("Custom");
+            },
+            |h| popup(h) && h.shell.st.copy_ui.open,
+        ),
+        (
+            "Note editor, Notebook chooser",
+            |h| {
+                note_editor(h);
+                let notebook = spot(h, "My Notebook", |r| r.left() < 900.0);
+                h.click(notebook);
+            },
+            |h| popup(h) && shows(h, "Open in Notes"),
+        ),
+        (
+            "Guide, Collection chooser",
+            |h| {
+                night_reading(h);
+                run_split(h, "guide.passage_guide", json!({ "passage": "Jn 3:16" }));
+                let chooser = first(h, "Every Resource");
+                h.click(chooser);
+            },
+            |h| popup(h) && shows(h, "Night reading"),
+        ),
+        (
+            "Reading plan, Bible chooser",
+            |h| {
+                run_split(h, "tool.reading_plans", json!({}));
+                h.click_text("First Bible (in your Preferred order)");
+            },
+            |h| popup(h),
+        ),
     ]
 }
 
@@ -435,23 +1102,16 @@ fn open(h: &mut Harness, lab: &Lab, how: &Open) {
         }
         // With something in them: a Note card, and a Favorite.
         Open::Tab(TabKind::Tool(Tool::Notes)) => {
-            h.shell.run(
-                "annotation.note",
-                &json!({ "passage": "Gen 1:1", "body": "**Beginnings**: before all things." }),
-            );
-            h.shell.run("tool.notes", &json!({ "split": true }));
-            settle(h);
-            settle_all(h);
+            a_note(h);
+            run_split(h, "tool.notes", json!({}));
         }
         Open::Tab(TabKind::Tool(Tool::Favorites)) => {
             let kjv = h.tab_id("KJV");
             h.shell.run("favorite.add", &json!({ "tab": kjv.0 }));
-            h.shell.run("tool.favorites", &json!({ "split": true }));
-            settle(h);
-            settle_all(h);
+            run_split(h, "tool.favorites", json!({}));
         }
         Open::Tab(kind) => open_tab(h, lab, kind),
-        Open::Overlay(f) | Open::Run(f) => f(h),
+        Open::Run(open, _) => open(h),
     }
     h.frames(10);
 }
@@ -709,6 +1369,13 @@ fn gallery(section: Section) {
             for (scale, scale_slug) in SCALES {
                 h.root_info.native_pixels_per_point = Some(scale);
                 h.frames(4);
+                assert!(
+                    is_open(&h, surface),
+                    "{} is not on screen in {} at {scale_slug}: {:?}",
+                    surface.title,
+                    look.title,
+                    h.texts()
+                );
                 let (width, height, rgb) = h.pixels();
                 let name = image_name(surface, look, scale_slug);
                 checked += 1;
@@ -741,6 +1408,11 @@ fn gallery_dialogs_and_popovers() {
     gallery(Section::DialogsAndPopovers);
 }
 
+#[test]
+fn gallery_menus_and_choosers() {
+    gallery(Section::MenusAndChoosers);
+}
+
 // ---------------------------------------------------------------------------------------
 // The page.
 
@@ -751,8 +1423,8 @@ fn page() -> String {
         "# Screenshot gallery\n\n\
          <!-- Written by `cargo xtask gallery --bless` (crates/ui-egui/src/gallery_tests.rs); \
          do not edit. -->\n\n\
-         Every Tab kind, toolbar pane, menu, window, dialog and popover in each Look at 1× \
-         (2× linked). These are the goldens CI compares the app against; see \
+         Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser in each Look at \
+         1× (2× linked). These are the goldens CI compares the app against; see \
          [docs/dev/screenshot-gallery.md](../dev/screenshot-gallery.md).\n",
     );
     for section in Section::ALL {
@@ -830,19 +1502,400 @@ fn gallery_page_shows_every_golden() {
     );
 }
 
-/// Each surface opens in its own launch: what one leaves behind is not in the next.
+/// Every Tab kind and every pane, menu and window of the accessibility audit is a surface.
 #[test]
 fn every_tab_kind_and_overlay_is_in_the_gallery() {
     let s = surfaces();
-    let tabs = s.iter().filter(|s| s.section == Section::Tabs).count();
-    let overlays: Vec<Overlay> = every_overlay();
-    assert_eq!(tabs, every_tab_kind().len());
-    assert_eq!(
-        s.iter()
-            .filter(|s| s.section == Section::PanesMenusAndWindows)
-            .count(),
-        overlays.len()
-    );
+    for kind in every_tab_kind() {
+        assert!(
+            s.iter()
+                .any(|s| matches!(&s.open, Open::Tab(k) if *k == kind)),
+            "{kind:?} is not in the gallery"
+        );
+    }
+    for (name, ..) in every_overlay() {
+        assert!(
+            s.iter().any(|s| s.title == name),
+            "{name} is not in the gallery"
+        );
+    }
+}
+
+/// How `crates/ui-egui/src` opens a window, popover, menu or chooser.
+const OPENERS: [&str; 8] = [
+    "egui::Window::new(",
+    "egui::Area::new(",
+    "egui::Popup::menu(",
+    "egui::Popup::context_menu(",
+    ".context_menu(|",
+    "components::menu(",
+    "ui.menu_button(",
+    "egui::ComboBox::from_id_salt(",
+];
+
+/// Each place in `crates/ui-egui/src` (outside the tests) that opens a window, popover, menu or
+/// chooser, by file and [`OPENERS`]: one entry per place, in the file's order, naming the
+/// gallery surfaces that draw it, or after `-` why none does.
+const SITES: &[(&str, &str, &[&str])] = &[
+    (
+        "components.rs",
+        "ui.menu_button(",
+        &["- the Menu component itself: each use is listed under components::menu("],
+    ),
+    (
+        "shell.rs",
+        "egui::Window::new(",
+        &["save-layout-as", "about-open-bible"],
+    ),
+    ("shell.rs", "egui::Area::new(", &["tab-reading-plans"]),
+    ("shell.rs", "egui::Popup::menu(", &["link-set-menu"]),
+    ("shell.rs", ".context_menu(|", &["tab-right-click-menu"]),
+    (
+        "shell.rs",
+        "components::menu(",
+        &[
+            "file-menu edit-menu view-menu go-menu tools-menu window-menu-go-to-panel help-menu",
+            "view-menu-theme",
+            "view-menu-notebooks-in-text",
+            "interlinear-lines-menu",
+            "text-comparison-add-a-bible",
+            "tab-menu-add-to-favorites-folder",
+            "add-tab-menu",
+        ],
+    ),
+    (
+        "shell.rs",
+        "ui.menu_button(",
+        &[
+            "window-menu-recently-closed",
+            "window-menu-go-to-panel",
+            "view-menu-reading-layout",
+        ],
+    ),
+    (
+        "shell.rs",
+        "egui::ComboBox::from_id_salt(",
+        &["parallel-resources-chooser"],
+    ),
+    (
+        "shell/annotate.rs",
+        "egui::Area::new(",
+        &["selection-toolbar", "note-editor"],
+    ),
+    (
+        "shell/annotate.rs",
+        "egui::ComboBox::from_id_salt(",
+        &["note-editor-notebook-chooser"],
+    ),
+    (
+        "shell/collections_ui.rs",
+        "egui::Window::new(",
+        &["new-collection"],
+    ),
+    (
+        "shell/collections_ui.rs",
+        "components::menu(",
+        &["library-row-menu-collections"],
+    ),
+    ("shell/command_box.rs", "egui::Area::new(", &["command-box"]),
+    (
+        "shell/context_menu.rs",
+        "egui::Popup::context_menu(",
+        &["right-click-menu"],
+    ),
+    (
+        "shell/copy_window.rs",
+        "egui::Window::new(",
+        &["copy-verses"],
+    ),
+    (
+        "shell/copy_window.rs",
+        "egui::ComboBox::from_id_salt(",
+        &["copy-verses-preset-chooser"],
+    ),
+    ("shell/drag_drop.rs", "egui::Window::new(", &["move-note"]),
+    (
+        "shell/favorites_tab.rs",
+        ".context_menu(|",
+        &["favorite-menu-move-to-folder"],
+    ),
+    (
+        "shell/favorites_tab.rs",
+        "components::menu(",
+        &[
+            "tab-menu-add-to-favorites-folder",
+            "favorite-menu-move-to-folder",
+        ],
+    ),
+    ("shell/fonts_window.rs", "egui::Window::new(", &["fonts"]),
+    (
+        "shell/fonts_window.rs",
+        "egui::ComboBox::from_id_salt(",
+        &[
+            "fonts-font-chooser",
+            "- a font family's styles: only for an installed family with several, and the \
+             installed fonts differ by computer",
+        ],
+    ),
+    (
+        "shell/footnotes.rs",
+        "egui::Area::new(",
+        &["footnote-popover reference-preview"],
+    ),
+    (
+        "shell/get_bibles_tab.rs",
+        "egui::Popup::menu(",
+        &["language-chooser"],
+    ),
+    (
+        "shell/guide_tab.rs",
+        "egui::ComboBox::from_id_salt(",
+        &["guide-collection-chooser"],
+    ),
+    (
+        "shell/highlight_styles_window.rs",
+        "egui::Window::new(",
+        &["highlight-styles"],
+    ),
+    (
+        "shell/highlight_styles_window.rs",
+        "egui::ComboBox::from_id_salt(",
+        &[
+            "highlight-styles-palette-chooser",
+            "highlight-styles-look-chooser",
+            "highlight-styles-where-a-deleted-style-s-highlights-go",
+        ],
+    ),
+    (
+        "shell/highlight_styles_window.rs",
+        "components::menu(",
+        &["highlight-styles-colour-presets"],
+    ),
+    (
+        "shell/import_tab.rs",
+        "egui::Window::new(",
+        &["import-a-resource"],
+    ),
+    (
+        "shell/keyboard_nav.rs",
+        "egui::Area::new(",
+        &["tab-switcher"],
+    ),
+    (
+        "shell/library_tab.rs",
+        "egui::Window::new(",
+        &["remove-a-resource"],
+    ),
+    (
+        "shell/library_tab.rs",
+        ".context_menu(|",
+        &["library-row-menu-collections"],
+    ),
+    (
+        "shell/notes_tab.rs",
+        "egui::Window::new(",
+        &["delete-notebook"],
+    ),
+    (
+        "shell/notes_tab.rs",
+        ".context_menu(|",
+        &[
+            "notebook-menu",
+            "- a card's right-click menu: its … button's menu (card_menu), drawn from the button",
+        ],
+    ),
+    (
+        "shell/notes_tab.rs",
+        "components::menu(",
+        &[
+            "note-card-menu-move-to-notebook highlight-card-menu-highlight-style",
+            "note-card-menu-move-to-notebook",
+            "highlight-card-menu-highlight-style",
+            "notes-export-menu",
+        ],
+    ),
+    (
+        "shell/page_tone.rs",
+        "egui::Area::new(",
+        &["page-tone-hint"],
+    ),
+    (
+        "shell/reading_plans_tab.rs",
+        "egui::ComboBox::from_id_salt(",
+        &["reading-plan-bible-chooser"],
+    ),
+    (
+        "shell/report_problem.rs",
+        "egui::Window::new(",
+        &["- Report a problem: it shows the operating system and the log (ADR 0018)"],
+    ),
+    (
+        "shell/search_sidebar.rs",
+        ".context_menu(|",
+        &["saved-search-menu"],
+    ),
+    (
+        "shell/search_tab.rs",
+        "components::menu(",
+        &[
+            "search-recent",
+            "search-scope-presets",
+            "search-add-a-bible",
+            "search-choose-resources",
+        ],
+    ),
+    (
+        "shell/search_tab.rs",
+        "egui::ComboBox::from_id_salt(",
+        &["search-morphology-chooser", "search-notebook-chooser"],
+    ),
+    (
+        "shell/search_views.rs",
+        "egui::ComboBox::from_id_salt(",
+        &["search-chart-chooser"],
+    ),
+    (
+        "shell/toolbar.rs",
+        "egui::Area::new(",
+        &[
+            "library-pane library-pane-searching",
+            "tools-pane",
+            "guides-pane",
+            "layouts-pane",
+        ],
+    ),
+    (
+        "shell/toolbar_bar.rs",
+        ".context_menu(|",
+        &[
+            "- the toolbar's menu (toolbar_menu) on its background: drawn as on a Launcher",
+            "- the toolbar's menu (toolbar_menu) on its grip: drawn as on a Launcher",
+            "toolbar-menu-position",
+        ],
+    ),
+    (
+        "shell/toolbar_bar.rs",
+        "egui::Popup::menu(",
+        &["more-launchers"],
+    ),
+    (
+        "shell/toolbar_bar.rs",
+        "egui::Area::new(",
+        &["toolbar-auto-hidden-shown-at-its-edge"],
+    ),
+    (
+        "shell/toolbar_bar.rs",
+        "egui::Window::new(",
+        &["customize-toolbar"],
+    ),
+    (
+        "shell/toolbar_bar.rs",
+        "components::menu(",
+        &["toolbar-menu-position"],
+    ),
+    (
+        "shell/visual_filters_window.rs",
+        "egui::Window::new(",
+        &["visual-filters"],
+    ),
+    (
+        "shell/visual_filters_window.rs",
+        "egui::ComboBox::from_id_salt(",
+        &[
+            "visual-filters-also-colour-chooser",
+            "visual-filters-look-chooser",
+        ],
+    ),
+    (
+        "shell/visual_filters_window.rs",
+        "ui.menu_button(",
+        &[
+            "filters-menu",
+            "- a narrow Tab's ⋯ menu's Visual filters: the Filters menu's items (filters_items)",
+        ],
+    ),
+];
+
+/// The places in `crates/ui-egui/src` outside the tests that open a window, popover, menu or
+/// chooser, by file (relative to `src`, with `/`) and opener, and how many.
+fn opener_sites() -> std::collections::BTreeMap<(String, &'static str), usize> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs")
+                && !path.to_string_lossy().ends_with("_tests.rs")
+            {
+                out.push(path);
+            }
+        }
+    }
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    walk(&src, &mut files);
+    let mut sites = std::collections::BTreeMap::new();
+    for path in files {
+        let text = std::fs::read_to_string(&path).unwrap();
+        let file = path
+            .strip_prefix(&src)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/");
+        for opener in OPENERS {
+            let n: usize = (text.lines())
+                .filter(|l| !l.trim_start().starts_with("//"))
+                .map(|l| l.matches(opener).count())
+                .sum();
+            if n > 0 {
+                sites.insert((file.clone(), opener), n);
+            }
+        }
+    }
+    sites
+}
+
+/// Review (#222): a window, popover, menu or chooser the app opens is in the gallery, or the
+/// gallery says why not. A new one fails here until a surface draws it.
+#[test]
+fn every_window_popover_menu_and_chooser_is_in_the_gallery() {
+    let slugs: std::collections::HashSet<String> = surfaces().into_iter().map(|s| s.slug).collect();
+    let listed: std::collections::BTreeMap<(String, &str), usize> = (SITES.iter())
+        .map(|(file, opener, entries)| ((file.to_string(), *opener), entries.len()))
+        .collect();
+    assert_eq!(listed.len(), SITES.len(), "a file and opener listed twice");
+    let found = opener_sites();
+    let mut problems = Vec::new();
+    for ((file, opener), n) in &found {
+        let have = listed.get(&(file.clone(), *opener)).copied().unwrap_or(0);
+        if have != *n {
+            problems.push(format!(
+                "src/{file} has {n} `{opener}` but SITES lists {have}: draw each new one in the \
+                 gallery and name its surface there (or say why it is left out)"
+            ));
+        }
+    }
+    for key in listed.keys() {
+        if !found.contains_key(key) {
+            problems.push(format!(
+                "SITES lists src/{} `{}`, no longer there",
+                key.0, key.1
+            ));
+        }
+    }
+    for (file, opener, entries) in SITES {
+        for entry in *entries {
+            if entry.starts_with("- ") {
+                continue;
+            }
+            for name in entry.split_whitespace() {
+                if !slugs.contains(name) {
+                    problems.push(format!("src/{file} `{opener}`: no surface {name}"));
+                }
+            }
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
 // ---------------------------------------------------------------------------------------
