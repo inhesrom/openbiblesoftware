@@ -7,7 +7,8 @@
 //! those leniently at launch: an unreadable one is left out or back at its default, and so is
 //! an unreadable field of a setting read field by field (a View setting, a Keyboard
 //! shortcut, an Update check flag), a Custom theme from a later version, a View Text size or Line spacing beyond what the app
-//! allows (it would be clamped), a Search history longer than the app keeps (its oldest
+//! allows (it would be clamped), a Layout holding two Tabs with one id (restoring it would
+//! keep one of them), a Search history longer than the app keeps (its oldest
 //! entries would be dropped), a repeated or unknown card of Home or section of a Guide
 //! arrangement, and an Import report filed under another Resource's key. So a restore checks
 //! them first, and a Backup holding one the app would not keep is refused, naming it, rather
@@ -323,6 +324,13 @@ pub(crate) const JSON_SETTINGS: &[JsonSetting] = &[
     },
 ];
 
+/// Whether every Tab of a Layout has its own id: restoring the Layout keeps one Tab per id,
+/// so a second Tab with the same id would be dropped.
+fn holds_each_tab_once(snap: &WorkspaceSnapshot) -> bool {
+    let mut ids = std::collections::BTreeSet::new();
+    snap.tabs.iter().all(|t| ids.insert(t.id))
+}
+
 /// Everything in `data` (a Backup, read into memory) the app could not read once it is the
 /// User database, one line each: "the Layout “Broken”", "the setting `search.saved` (Saved
 /// searches)". Empty when it can all be read.
@@ -331,7 +339,8 @@ pub(crate) fn unreadable_records(data: &dyn UserData) -> Result<Vec<String>, Str
     for name in data.layouts()? {
         let readable = data
             .layout(&name)?
-            .is_some_and(|json| WorkspaceSnapshot::from_json(&json).is_some());
+            .and_then(|json| WorkspaceSnapshot::from_json(&json))
+            .is_some_and(|snap| holds_each_tab_once(&snap));
         if !readable {
             out.push(format!("the Layout “{name}”"));
         }

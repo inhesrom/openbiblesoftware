@@ -688,6 +688,64 @@ fn a_backup_with_records_the_loaders_drop_is_refused_naming_them() {
     );
 }
 
+/// #258: a Layout holding two Tabs with one id reads, but restoring it keeps one Tab per id
+/// and drops the other; a Backup with one is refused before any Safety backup, naming it.
+#[test]
+fn a_backup_with_a_layout_of_two_tabs_with_one_id_is_refused_naming_it() {
+    let f = Fixture::new("repeated-tab");
+    let mut s = f.session();
+    for id in ["kjv", "web"] {
+        s.run("resource.open", &json!({ "id": id })).unwrap();
+    }
+    s.run("layout.save", &json!({ "name": "Study" })).unwrap();
+    let good = f.file("good.obsbackup");
+    s.run("data.back_up", &path(&good)).unwrap();
+    let backup = f.file("damaged.obsbackup");
+    damaged_copy(&f, &good, &backup, |db| {
+        let json = db.layout("Study").unwrap().unwrap();
+        let mut snap = WorkspaceSnapshot::from_json(&json).unwrap();
+        let kjv = snap
+            .tabs
+            .iter()
+            .position(|t| t.kind.resource_id() == Some("kjv"))
+            .unwrap();
+        let web = snap
+            .tabs
+            .iter()
+            .position(|t| t.kind.resource_id() == Some("web"))
+            .unwrap();
+        // The WEB Tab takes the KJV Tab's id, which its Panel holds once.
+        snap.tabs[web].id = snap.tabs[kjv].id;
+        let keep: std::collections::BTreeSet<u64> = snap.tabs.iter().map(|t| t.id).collect();
+        snap.layout = snap.layout.and_then(|l| l.retain_tabs(&keep));
+        assert!(WorkspaceSnapshot::from_json(&snap.to_json()).is_some());
+        db.save_layout("Study", &snap.to_json()).unwrap();
+    });
+    s.run(
+        "annotation.note",
+        &json!({ "body": "made after the backup" }),
+    )
+    .unwrap();
+    let before = dump(&s);
+
+    let refused = s.restore_preview(&backup).unwrap_err();
+    for named in ["the Layout “Study”", "Nothing was changed"] {
+        assert!(refused.contains(named), "{named}: {refused}");
+    }
+    let err = s.run("data.restore", &path(&backup)).unwrap_err();
+    assert!(err.to_string().contains("the Layout “Study”"), "{err}");
+    assert_eq!(dump(&s), before);
+    assert!(s.last_restore().is_none());
+    assert!(
+        !s.kept_backups()
+            .iter()
+            .any(|b| b.kind == BackupKind::Safety)
+    );
+    // The Layout as the app saved it still restores.
+    s.restore_preview(&good).unwrap();
+    s.run("data.restore", &path(&good)).unwrap();
+}
+
 /// Home and Guide arrangements are refused for each card or section their loaders drop, and
 /// read when each is known and held once.
 #[test]
