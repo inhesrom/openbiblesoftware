@@ -245,7 +245,7 @@ pub(crate) struct State {
     fonts_ui: fonts_window::FontsUi,
     /// The Highlight styles window (View → Highlight styles, #181).
     styles_ui: highlight_styles_window::StylesUi,
-    /// The Visual filters window (View → Visual filters…, #211).
+    /// The Visual filters window (View → Visual filters, #211).
     pub(crate) filters_ui: visual_filters_window::FiltersUi,
     /// The Reading plans Tool's New plan form (#147).
     plans_ui: reading_plans_tab::PlansUi,

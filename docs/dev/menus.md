@@ -141,6 +141,7 @@ Checked for every command's label and every menu, choice and submenu title
 | — | | |
 | Show Highlights | `view.highlights` |  |
 | Highlight styles | `view.highlight_styles` |  |
+| Visual filters | `view.visual_filters` |  |
 | Notebooks in text ▸ | `notebook.show_in_text` (one per Notebook) | |
 | — | | |
 | Toolbar position ▸ | `view.toolbar_position` (one per choice) | |

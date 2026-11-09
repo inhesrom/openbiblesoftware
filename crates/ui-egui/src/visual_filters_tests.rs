@@ -2,7 +2,7 @@
 //! imperatives of Romans 12 switched on from each Tab header's Filters menu colours the
 //! Greek imperatives in TAGNT and, through Strong's alignment, the English words that render
 //! them in the KJV; a Page tone switch recolours them without laying the text out again; and
-//! View → Visual filters… makes a filter, refusing Passages it cannot read.
+//! View → Visual filters makes a filter, refusing Passages it cannot read.
 
 use egui::Color32;
 use obs_engine::{Library, TabId};
@@ -295,14 +295,14 @@ fn type_into(h: &mut Harness, shown: &str, text: &str, replace: bool) {
     h.frame();
 }
 
-/// View → Visual filters… makes a filter: a Passage list it cannot read is refused under the
+/// View → Visual filters makes a filter: a Passage list it cannot read is refused under the
 /// form, and the filter saved is on in all Tabs, painting at once.
 #[test]
 fn the_visual_filters_window_makes_a_filter_and_says_why_it_refuses_one() {
     let (mut h, _files) = setup("window");
     let kjv = open_at(&mut h, "kjv", "Rom 12:2", true);
     h.open_menu("View");
-    h.click_text("Visual filters…");
+    h.click_text("Visual filters");
     h.frames(2);
     for name in ["Words of Christ", "Divine names", "Imperatives"] {
         assert!(h.find(name).is_some(), "{name}: {:?}", h.texts());

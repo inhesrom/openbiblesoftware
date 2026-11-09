@@ -772,7 +772,7 @@ pub(crate) const COMMANDS: &[CommandSpec] = &[
     ),
     simple(
         "view.visual_filters",
-        "Visual filters…",
+        "Visual filters",
         None,
         always,
         |s, _| {

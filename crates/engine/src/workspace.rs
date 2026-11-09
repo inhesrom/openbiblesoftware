@@ -835,7 +835,7 @@ pub enum Effect {
     ReportProblem,
     /// Open the Highlight styles window (View → Highlight styles, #181).
     ShowHighlightStyles,
-    /// Open the Visual filters window (View → Visual filters…, #211).
+    /// Open the Visual filters window (View → Visual filters, #211).
     ShowVisualFilters,
     /// A Resource Tab now shows another Resource (a parallel resource, or Back/Forward across
     /// a switch, #151): load it, at the Tab's location.
