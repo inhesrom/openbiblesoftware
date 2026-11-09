@@ -356,6 +356,10 @@ fn layout_lines(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
     let bidi = BidiInfo::new(&text, Some(base));
     let levels = &bidi.levels;
     let run_of = |p: usize| run_starts.partition_point(|&s| s <= p).saturating_sub(1);
+    // A drop numeral (#209) stands beside the first lines, out of their flow (and out of
+    // any Interlinear column, though no space parts it from the first word).
+    let drop_run = para.drop_numeral.filter(|&r| r < para.runs.len());
+    let drop_bytes = drop_run.map(|r| run_starts[r]..run_starts.get(r + 1).copied().unwrap_or(n));
 
     // Interlinear words (#143): their paragraph bytes and shaped lines.
     let rows = para.interlinear.as_ref().map_or(0, |il| il.rows);
@@ -380,9 +384,16 @@ fn layout_lines(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
     // Each column takes the punctuation right against its word, up to a space or the next
     // column.
     for i in 0..columns.len() {
-        let floor = i.checked_sub(1).map_or(0, |p| columns[p].chunk.end);
-        let ceiling = columns.get(i + 1).map_or(n, |c| c.bytes.start);
+        let mut floor = i.checked_sub(1).map_or(0, |p| columns[p].chunk.end);
+        let mut ceiling = columns.get(i + 1).map_or(n, |c| c.bytes.start);
         let c = &mut columns[i];
+        if let Some(d) = &drop_bytes {
+            if d.end <= c.bytes.start {
+                floor = floor.max(d.end);
+            } else if d.start >= c.bytes.end {
+                ceiling = ceiling.min(d.start);
+            }
+        }
         let lead = text[floor..c.bytes.start]
             .char_indices()
             .rev()
@@ -458,6 +469,9 @@ fn layout_lines(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
             stretch: 0.0,
         });
     }
+
+    let (drop_items, items): (Vec<LaidItem>, Vec<LaidItem>) =
+        items.into_iter().partition(|it| Some(it.run) == drop_run);
 
     // How far each column's widest line reaches past it, then the space each pair of
     // neighbouring columns needs between them, shared between the two.
@@ -539,10 +553,6 @@ fn layout_lines(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
             }
         }
     }
-    // A drop numeral (#209) stands beside the first lines, out of their flow.
-    let drop_run = para.drop_numeral.filter(|&r| r < para.runs.len());
-    let (drop_items, items): (Vec<LaidItem>, Vec<LaidItem>) =
-        items.into_iter().partition(|it| Some(it.run) == drop_run);
     let drop_width: f32 = drop_items.iter().map(|i| i.width).sum();
     let drop_space = if drop_items.is_empty() {
         0.0
@@ -770,10 +780,10 @@ fn layout_lines(para: &Paragraph, width: f32, cache: &ShapeCache) -> LaidBlock {
             };
         if para.rtl && para.align == Align::Start {
             // Hanging space sits at the logical end, which is the left edge in RTL; a
-            // justified line fills to its left edge instead.
+            // justified line's room (taken in its spaces) moves its start that much left.
             x -= hang;
             if justify_gap > 0.0 {
-                x = para.inset - hang;
+                x -= available(li) - content;
             }
         }
         for (item, [left, right]) in ordered.iter_mut().zip(&edge_pads) {

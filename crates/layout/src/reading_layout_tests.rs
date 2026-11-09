@@ -852,14 +852,26 @@ fn lay_interlinear(
     width: f32,
     rows: usize,
 ) -> Vec<(BlockSource, LaidBlock)> {
+    lay_interlinear_with(unit, direction, layout_options, width, rows, &|written| {
+        vec![written.to_uppercase(), "G1".into(), "N-NSM".into()]
+    })
+}
+
+/// [`lay_interlinear`] with the lines `cells` gives each written word.
+fn lay_interlinear_with(
+    unit: &TextUnit,
+    direction: Direction,
+    layout_options: ReadingLayout,
+    width: f32,
+    rows: usize,
+    cells: &dyn Fn(&str) -> Vec<String>,
+) -> Vec<(BlockSource, LaidBlock)> {
     let s = settings(layout_options);
     unit_blocks(unit)
         .into_iter()
         .map(|b| {
             let mut p = block_paragraph(unit, &b, direction, &s);
-            add_interlinear(&mut p, unit, &b, &s, rows, &mut |written, _| {
-                vec![written.to_uppercase(), "G1".into(), "N-NSM".into()]
-            });
+            add_interlinear(&mut p, unit, &b, &s, rows, &mut |written, _| cells(written));
             let l = layout(&p, width, ShapeCache::shared());
             (b, l)
         })
@@ -985,4 +997,102 @@ fn a_drop_numeral_is_marked_over_its_whole_height() {
     // The text beside it is marked in its own line's band.
     let text = &first.items[1];
     assert_eq!(block.range_band(0, text), (first.top, first.text_bottom));
+}
+
+#[test]
+fn a_drop_numeral_takes_no_part_in_the_first_words_interlinear_column() {
+    // Lines much wider than the short first word (Now, בְּרֵאשִׁ֖ית): centred on it, they
+    // would reach back over the numeral if its width counted as the word's punctuation.
+    let dropped = ReadingLayout {
+        large_chapter_numbers: true,
+        ..ReadingLayout::default()
+    };
+    let wide = |_: &str| vec!["WWWWWWWWWWWWWWWWWWWWWWWW".to_string()];
+    let john = tag_words(john_3());
+    let genesis = tag_words(hebrew_genesis_1());
+    for (unit, direction, numeral) in [
+        (&john, Direction::Ltr, "3"),
+        (&genesis, Direction::Rtl, "1"),
+    ] {
+        let blocks = lay_interlinear_with(unit, direction, dropped, 600.0, 1, &wide);
+        let block = prose(&blocks);
+        let n = (block.lines[0].items.iter())
+            .find(|i| block.text.get(i.bytes.clone()) == Some(numeral))
+            .unwrap();
+        let (left, right) = (n.x, n.x + n.width);
+        let first = block.cells.iter().min_by_key(|c| c.word.start).unwrap();
+        assert_eq!(first.line, 0);
+        assert!(first.width > 3.0 * n.width, "the line is wide: {first:?}");
+        for c in block.cells.iter().filter(|c| c.line < 2) {
+            assert!(
+                c.x + c.width <= left + 0.5 || c.x >= right - 0.5,
+                "{direction:?}: {c:?} overlaps the numeral at {left}..{right}"
+            );
+        }
+        for line in &block.lines[..block.lines.len().min(2)] {
+            for it in line.items.iter().filter(|i| i.run != n.run) {
+                assert!(it.x + it.width <= left + 0.5 || it.x >= right - 0.5);
+            }
+        }
+    }
+}
+
+#[test]
+fn justified_right_to_left_lines_keep_a_lists_inset() {
+    let unit = hebrew_genesis_1();
+    let (width, inset) = (300.0, 30.0);
+    for large_chapter_numbers in [false, true] {
+        let s = settings(ReadingLayout {
+            justified: true,
+            large_chapter_numbers,
+            ..ReadingLayout::default()
+        });
+        let b = unit_blocks(&unit)
+            .into_iter()
+            .find(|b| b.kind == BlockKind::Paragraph(ParaStyle::Prose))
+            .unwrap();
+        let mut p = block_paragraph(&unit, &b, Direction::Rtl, &s);
+        // As a list item's paragraph: inset from its start side, the right.
+        p.inset = inset;
+        p.indent = 0.0;
+        let block = layout(&p, width, ShapeCache::shared());
+        assert!(block.rtl && block.lines.len() > 3);
+        let numeral = (block.lines[0].items.iter())
+            .find(|i| block.text.get(i.bytes.clone()) == Some("1"))
+            .filter(|_| large_chapter_numbers);
+        if let Some(n) = numeral {
+            assert!(
+                (n.x + n.width - (width - inset)).abs() < 0.5,
+                "inside the inset"
+            );
+        }
+        let (last, full) = block.lines.split_last().unwrap();
+        for (i, line) in full.iter().enumerate() {
+            let text: Vec<&LaidItem> = (line.items.iter())
+                .filter(|it| numeral.is_none_or(|n| it.run != n.run))
+                .collect();
+            let left = text.iter().map(|it| it.x).fold(f32::MAX, f32::min);
+            let right = text
+                .iter()
+                .map(|it| it.x + it.width)
+                .fold(f32::MIN, f32::max);
+            let left = left
+                + (text.iter())
+                    .find(|it| it.bytes.end == line.bytes.end)
+                    .map_or(0.0, |it| it.shaped.trailing_space);
+            let start = match numeral {
+                Some(n) if i < 2 => n.x - n.style.size * 0.08,
+                _ => width - inset,
+            };
+            assert!(
+                (right - start).abs() < 0.5,
+                "{large_chapter_numbers} line {i} starts at {right}, not {start}"
+            );
+            assert!(
+                left.abs() < 0.5,
+                "{large_chapter_numbers} line {i} ends at {left}"
+            );
+        }
+        assert!(edges(&block, last).0 > 10.0, "the last line stays ragged");
+    }
 }
