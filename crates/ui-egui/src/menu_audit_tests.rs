@@ -587,7 +587,11 @@ fn every_menu_item_shows_its_label_and_shortcut() {
             h.texts()
         );
         if let Some(key) = s.shortcut(id) {
-            assert!(h.find(key).is_some(), "{id}'s {key} not shown in {menu}");
+            let shown = crate::key_labels::label(key);
+            assert!(
+                h.find(&shown).is_some(),
+                "{id}'s {shown} not shown in {menu}"
+            );
         }
     }
 }
@@ -606,7 +610,7 @@ fn a_tab_command_in_a_menu_runs_on_the_focused_tab() {
     assert!(h.shell.st.session.workspace.tab(heb).is_none());
     // The Go menu shows the focused Tab's movement keys.
     h.open_menu("Go");
-    assert!(h.find("Alt+Left").is_some(), "{:?}", h.texts());
+    assert!(h.find("Alt+←").is_some(), "{:?}", h.texts());
     escape(&mut h);
 }
 

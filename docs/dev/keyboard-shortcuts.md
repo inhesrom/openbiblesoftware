@@ -91,9 +91,10 @@ A hint that names a menu item takes its place from the menus (`Session::menu_pat
 hint (`shell::undo_hint`) reads "Edit → Undo brings it back (⌘Z)" when Undo is in a menu and
 "Undo (⌘Z) brings it back" while it is in none, so it never names a menu that is not there.
 
-Help no longer lists `app.commands` (List commands): it answers scripts with JSON the app has
-no place to show, so it has no menu item and no default key (`obs-cli run app.commands` still
-works).
+Help → List commands did nothing on screen (#262). Its command, `app.commands`, is **All
+commands** now (#226): Help → All commands and Ctrl+Shift+P put the keyboard in the Command box
+with `>` typed, listing every command it can run; `obs-cli run app.commands` still answers the
+JSON list.
 - A recorded key in use shows "Ctrl+F is already the key of “Find in Resource”." with
   **Swap keys** and **Cancel**; nothing is saved until one is chosen. When the other binding
   may not take the old key (`swap_refused`), the row says why and Swap keys is disabled.
@@ -106,11 +107,11 @@ works).
 
 - Engine: `key_bindings_tests.rs` (rebinding survives a restart, Reset, conflicts and swap,
   reserved keys, one spelling per key, every binding listed once with no conflicting
-  defaults, flagged conflicts, keys shown per platform, menu paths, List commands for scripts
-  only).
+  defaults, flagged conflicts, keys shown per platform, menu paths, All commands shown and answering
+  scripts).
 - UI, #262: `key_labels_tests.rs` (⌘ ⌥ ⇧ in the View menu, a Tab's ⋯ menu, the Tools pane,
   the Command box, tooltips and the Keyboard shortcuts Tab on macOS; key signs on
-  Windows/Linux; no List commands in Help; arrows and modifier symbols drawn with no
+  Windows/Linux; no List commands in Help, All commands in its place; arrows and modifier symbols drawn with no
   missing-glyph box), `icons_tests::every_character_of_ui_text_is_in_the_chrome_fonts`,
   `notes_tests::the_delete_notebook_undo_hint_names_a_real_menu_path_and_the_macos_key`.
 - UI: `keyboard_shortcuts_tests.rs` (the acceptance criteria with real key events and a

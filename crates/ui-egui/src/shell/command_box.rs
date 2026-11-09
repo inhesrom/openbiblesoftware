@@ -144,6 +144,9 @@ impl Shell {
     /// whether Alt was held).
     fn dropdown(&mut self, ui: &Ui, field: Rect) -> Option<(usize, bool)> {
         let cb = &mut self.st.command_box;
+        let details: Vec<String> = (cb.suggestions.iter())
+            .map(|s| shown_detail(&self.st.session, s))
+            .collect();
         let width = field.width().max(380.0);
         let mut clicked = None;
         let shown = egui::Area::new(egui::Id::unique(BOX_ID).with("dropdown"))
@@ -168,7 +171,8 @@ impl Shell {
                             .max_height(ROW * (MAX_ROWS as f32 + 0.5));
                         list.show(ui, |ui| {
                             let c = theme::c();
-                            for (i, s) in cb.suggestions.iter().enumerate() {
+                            for (i, (s, detail)) in cb.suggestions.iter().zip(&details).enumerate()
+                            {
                                 let (rect, resp) =
                                     ui.allocate_exact_size(vec2(width, ROW), Sense::click());
                                 if i == cb.selected && cb.scroll_to_selected {
@@ -181,15 +185,15 @@ impl Shell {
                                     painter.rect_filled(rect, 4.0, c.hover);
                                 }
                                 let font = egui::TextStyle::Body.resolve(ui.style());
-                                let detail = painter.text(
+                                let detail_rect = painter.text(
                                     pos2(rect.right() - 8.0, rect.center().y),
                                     Align2::RIGHT_CENTER,
-                                    &s.detail,
+                                    detail,
                                     font.clone(),
                                     c.muted,
                                 );
                                 let label = painter.layout_no_wrap(s.label.clone(), font, c.ink);
-                                let room = (detail.left() - rect.left() - 24.0).max(0.0);
+                                let room = (detail_rect.left() - rect.left() - 24.0).max(0.0);
                                 let clip = Rect::from_min_size(rect.min, vec2(room + 8.0, ROW));
                                 painter.with_clip_rect(clip).galley(
                                     pos2(rect.left() + 8.0, rect.center().y - label.size().y / 2.0),
@@ -201,7 +205,7 @@ impl Shell {
                                         egui::Role::ListBoxOption,
                                         true,
                                         i == cb.selected,
-                                        format!("{} · {}", s.label, s.detail),
+                                        format!("{} · {detail}", s.label),
                                     )
                                 });
                                 if resp.clicked() {
@@ -247,4 +251,15 @@ impl Shell {
             ui.memory_mut(|m| m.surrender_focus(egui::Id::unique(BOX_ID)));
         }
     }
+}
+
+/// `s`'s detail as shown: a command's key as the platform writes it (`⌘W` on macOS, #262).
+fn shown_detail(session: &obs_engine::Session, s: &Suggestion) -> String {
+    if let obs_engine::CommandBoxAction::Command(id) = s.action
+        && let Some(key) = session.shortcut(id)
+        && let Some(head) = s.detail.strip_suffix(key)
+    {
+        return format!("{head}{}", crate::key_labels::label(key));
+    }
+    s.detail.clone()
 }

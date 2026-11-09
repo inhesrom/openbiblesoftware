@@ -55,7 +55,7 @@ except `SCRIPTING_COMMANDS` and `IN_PLACE_COMMANDS`), menu commands first in men
 disabled ones left out; with words after it, the commands whose label matches (whole label,
 then words starting the label's words, then words anywhere in it). There is no limit of
 eight: the dropdown scrolls, ↑/↓ keeping the highlight in view. Each shows its Keyboard
-shortcut. **Help → All commands** (`app.commands`, Ctrl+Shift+P) puts the keyboard in the
+shortcut, as the platform writes it (`⌘W` on macOS, #262). **Help → All commands** (`app.commands`, Ctrl+Shift+P) puts the keyboard in the
 box with `>` typed and the caret after it (`Effect::ListCommands`). A `>` text is not kept as
 a recent entry. `docs/dev/menus.md` says where every command is.
 

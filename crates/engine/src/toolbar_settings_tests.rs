@@ -172,7 +172,7 @@ fn hidden_launchers_stay_reachable_through_the_command_box_and_the_command_list(
         .unwrap();
     }
     assert!(s.toolbar.shown().is_empty());
-    // The command list (Help → List commands, `obs-cli run app.commands`).
+    // The command list (Help → All commands, `obs-cli run app.commands`).
     let list = s.run("app.commands", &json!({})).unwrap();
     let listed: Vec<&str> = (list.as_array().unwrap().iter())
         .filter_map(|c| c["id"].as_str())
