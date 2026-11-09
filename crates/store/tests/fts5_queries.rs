@@ -232,3 +232,52 @@ fn fuzzed_queries_are_always_valid_fts5() {
     }
     assert!(ran > 5_000, "only {ran} ran");
 }
+
+/// Every query the parser accepts compiles to a MATCH expression FTS5's own parser can take
+/// (#254): its parser stack overflows at about 30 nested groups, and one query level can
+/// make three (`hope OR ((man AND faith AND (…)) NOT works)`). Each shape is tried at the
+/// deepest nesting `parse` allows, around a leaf that is itself a group of `NEAR`s.
+#[test]
+fn the_deepest_queries_the_parser_allows_are_valid_fts5() {
+    let c = index();
+    let leaf = "(faith OR hope) NEAR/1 (works OR man)";
+    let shapes: &[(&str, &str)] = &[
+        ("(hope OR man faith -works ", ")"),
+        ("(hope OR man faith -works NOT (dead OR man) ", ")"),
+        ("(hope man OR man faith -works -dead ", ")"),
+        ("(hope OR lemma:agape faith -works ", ")"),
+        ("(hope OR man (", "))"),
+        ("(hope OR man faith -(works ", "))"),
+        ("((hope OR man) faith -works OR ", ")"),
+        ("(faith OR ", ")"),
+        ("(", ")"),
+        ("faith -(", ")"),
+    ];
+    for (open, close) in shapes {
+        let nested = |n: usize| format!("{}{leaf}{}", open.repeat(n), close.repeat(n));
+        let deepest = (1..=obs_search::MAX_NESTING)
+            .take_while(|n| obs_search::parse(&nested(*n)).is_ok())
+            .last()
+            .unwrap_or_else(|| panic!("{open:?}: not even one level parses"));
+        let q = nested(deepest);
+        let Compiled::Match(expr) = to_fts5(&q, &lexicon).unwrap_or_else(|e| panic!("{q}: {e}"))
+        else {
+            panic!("{q}: not one MATCH expression");
+        };
+        let n: Result<i64, _> = c.query_row(
+            "SELECT count(*) FROM idx WHERE idx MATCH ?1",
+            [&expr],
+            |r| r.get(0),
+        );
+        if let Err(e) = n {
+            panic!("{open:?} x{deepest}: {q:?} -> {expr:?}: {e}");
+        }
+        assert_eq!(
+            obs_search::parse(&nested(deepest + 1))
+                .map(|_| ())
+                .map_err(|e| e.kind),
+            Err(obs_search::QueryErrorKind::TooDeep),
+            "{open:?}"
+        );
+    }
+}

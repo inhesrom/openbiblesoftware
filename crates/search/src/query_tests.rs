@@ -847,3 +847,97 @@ fn word_forms_match_every_word_of_the_stem_in_the_index() {
         Ok(Compiled::Match(r#"body : "loveth""#.into()))
     );
 }
+
+/// A query nested `levels` deep in one of the ways the parser recurses (#254): parentheses
+/// (closed or left open), `OR` groups, `NOT`, `-`, chains of proximity operators, and
+/// groups with a `NOT` around the next one (two levels each).
+fn nested_queries(levels: usize) -> Vec<(&'static str, String)> {
+    vec![
+        (
+            "parentheses",
+            format!("{}faith{}", "(".repeat(levels), ")".repeat(levels)),
+        ),
+        (
+            "unclosed parentheses",
+            format!("{}faith", "(".repeat(levels)),
+        ),
+        (
+            "OR groups",
+            format!("{}hope{}", "(faith OR ".repeat(levels), ")".repeat(levels)),
+        ),
+        ("NOT", format!("hope {}faith", "NOT ".repeat(levels))),
+        ("minus", format!("hope {}faith", "-".repeat(levels))),
+        ("NEAR/n", format!("faith{}", " NEAR/1 hope".repeat(levels))),
+        (
+            "BEFORE/n",
+            format!("faith{}", " BEFORE/1 hope".repeat(levels)),
+        ),
+        (
+            "WITHIN n verses",
+            format!("faith{}", " WITHIN 1 verses hope".repeat(levels)),
+        ),
+        (
+            "mixed",
+            format!(
+                "{}faith{}",
+                "(hope NOT ".repeat(levels.div_ceil(2)),
+                ")".repeat(levels.div_ceil(2))
+            ),
+        ),
+    ]
+}
+
+#[test]
+fn a_100k_deep_query_is_a_query_error_not_a_stack_overflow() {
+    for (kind, q) in nested_queries(100_000) {
+        let e = parse(&q).expect_err(kind);
+        assert_eq!(e.kind, QueryErrorKind::TooDeep, "{kind}");
+        assert_eq!(
+            e.to_string(),
+            "the query nests too deeply (at most 10 parentheses, NOTs and proximity operators inside one another)"
+        );
+        // The span underlines the token that went one level too deep.
+        assert!(e.span.end <= q.len() && e.span.start < e.span.end, "{kind}");
+        assert_eq!(to_fts5(&q, &lexicon).map(|_| ()), Err(e.clone()), "{kind}");
+        assert_eq!(
+            parse(&q).and_then(|q| compile_notes(&q)).map(|_| ()),
+            Err(e),
+            "{kind}"
+        );
+    }
+}
+
+#[test]
+fn the_deepest_allowed_query_parses_compiles_plans_and_highlights() {
+    assert_eq!(MAX_NESTING, 10);
+    for (kind, q) in nested_queries(MAX_NESTING) {
+        let parsed = parse(&q).unwrap_or_else(|e| panic!("{kind}: {e}"));
+        let forms = parsed.clone().with_word_forms();
+        assert!(
+            !crate::highlight::Highlighter::new(&forms, &lexicon).is_empty(),
+            "{kind}"
+        );
+        // A NEAR/n or BEFORE/n side is a word or phrase, so their chains are an ordinary
+        // query error; everything else compiles and plans.
+        let chained = matches!(kind, "NEAR/n" | "BEFORE/n");
+        for q in [&parsed, &forms] {
+            match compile(q, &lexicon) {
+                Ok(compiled) => assert!(!chained && !expanded(compiled).is_empty(), "{kind}"),
+                Err(e) => assert!(
+                    chained && e.kind == QueryErrorKind::ProximityOperand,
+                    "{kind}"
+                ),
+            }
+        }
+        if !chained && kind != "WITHIN n verses" {
+            compile_notes(&parsed).unwrap_or_else(|e| panic!("{kind}: {e}"));
+        }
+    }
+    for (kind, q) in nested_queries(MAX_NESTING + 3) {
+        assert_eq!(
+            parse(&q).map(|_| ()).map_err(|e| e.kind),
+            Err(QueryErrorKind::TooDeep),
+            "{kind}"
+        );
+    }
+}

@@ -17,8 +17,8 @@ pub use index::{
 };
 pub use morph::{MorphCategory, MorphCriteria, MorphCriterion};
 pub use query::{
-    Compiled, Field, IndexQuery, IndexVocabulary, LemmaLookup, NoLexicon, Pattern, Plan, Query,
-    QueryError, QueryErrorKind, compile, compile_notes, parse, to_fts5,
+    Compiled, Field, IndexQuery, IndexVocabulary, LemmaLookup, MAX_NESTING, NoLexicon, Pattern,
+    Plan, Query, QueryError, QueryErrorKind, compile, compile_notes, parse, to_fts5,
 };
 pub use stem::{stem, stem_prefix};
 
