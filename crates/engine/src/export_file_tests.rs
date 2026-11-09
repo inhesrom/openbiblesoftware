@@ -296,6 +296,57 @@ fn an_export_scratch_file_is_owner_only_from_its_creation() {
     assert!(left.is_empty(), "{left:?}");
 }
 
+/// An export whose destination is named as a scratch file would be is still written to a
+/// separate scratch file and renamed into place: the scratch name is never the destination's,
+/// nor one a disk that ignores case or Unicode normalisation takes for it, so the
+/// destination does not exist until the finished export is renamed onto it.
+#[test]
+fn an_export_scratch_file_is_never_the_destination() {
+    use crate::backups::file_name_key;
+    use crate::export_file::{Scratch, new_scratch_file};
+    let f = Fixture::new("scratch-is-dest");
+    std::fs::create_dir_all(&f.root).unwrap();
+    let pid = std::process::id();
+    for name in [
+        format!(".obs-export-{pid}-0.partial"),
+        format!(".OBS-EXPORT-{pid}-0.PARTIAL"),
+        format!(".obſ-export-{pid}-0.partial"),
+    ] {
+        let dest = f.file(&name);
+        for readable_by in [Scratch::OwnerOnly, Scratch::NewFileDefaults] {
+            let (scratch, file) = new_scratch_file(&dest, |_| Ok(()), readable_by).unwrap();
+            drop(file);
+            let key = |p: &Path| file_name_key(&p.file_name().unwrap().to_string_lossy());
+            assert_ne!(key(&scratch), key(&dest), "{name}");
+            assert!(
+                !dest.exists(),
+                "{name}: the destination exists before any rename"
+            );
+            std::fs::remove_file(&scratch).unwrap();
+        }
+
+        let mut s = f.session();
+        for (command, params) in [
+            ("notes.export", json!({ "format": "markdown" })),
+            ("data.export", json!({})),
+        ] {
+            s.run(command, &with_path(&params, &dest, None)).unwrap();
+            assert!(
+                !bytes(&dest).unwrap_or_default().is_empty(),
+                "{name}: {command} wrote the export"
+            );
+            let left: Vec<_> = std::fs::read_dir(&f.root)
+                .unwrap()
+                .map(|e| e.unwrap().path())
+                .filter(|p| p.extension().is_some_and(|e| e == "partial") && *p != dest)
+                .collect();
+            assert!(left.is_empty(), "{name}: {command}: {left:?}");
+        }
+        drop(s);
+        std::fs::remove_file(&dest).unwrap();
+    }
+}
+
 /// Re-exporting over a read-only file fails and leaves it byte-identical, with no scratch
 /// file left beside it, for every export command. (On Windows a read-only scratch file made
 /// to match it could not be removed after the rename over it failed.)

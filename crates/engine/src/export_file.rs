@@ -16,6 +16,7 @@
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
+use crate::backups::file_name_key;
 use crate::session::Session;
 
 /// The scratch file an export is written to before it is renamed into place is
@@ -104,18 +105,27 @@ pub(crate) enum Scratch {
 }
 
 /// Create a scratch file beside `dest` under a name not already taken (a file there is
-/// never touched), so removing it afterwards only removes what this export made.
+/// never touched), so removing it afterwards only removes what this export made. A name a
+/// disk that ignores case and Unicode normalisation could take for `dest` itself is skipped,
+/// so the export is never written straight into `dest` and renamed onto itself.
 pub(crate) fn new_scratch_file(
     dest: &Path,
     refuse: impl Fn(&Path) -> Result<(), String>,
     readable_by: Scratch,
 ) -> std::io::Result<(PathBuf, std::fs::File)> {
+    let dest_key = dest
+        .file_name()
+        .map(|name| file_name_key(&name.to_string_lossy()));
     let mut last = None;
     for n in 0..1000u32 {
-        let scratch = dest.with_file_name(format!(
+        let name = format!(
             "{SCRATCH_PREFIX}-{}-{n}.{SCRATCH_EXTENSION}",
             std::process::id()
-        ));
+        );
+        if dest_key.as_deref() == Some(file_name_key(&name).as_str()) {
+            continue;
+        }
+        let scratch = dest.with_file_name(name);
         if refuse(&scratch).is_err() {
             continue;
         }
