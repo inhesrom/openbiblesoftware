@@ -654,3 +654,73 @@ fn the_page_tone_hint_is_due_once_per_user_database_for_a_chosen_light_tone() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// WORKSPACE-MAC-1, AUD-UI-SHELL-2 (#256): closing the focused Tab focuses the Tab its Panel
+/// shows now (the one used there most recently), so the next Tab key acts on it at once.
+#[test]
+fn closing_the_focused_tab_focuses_the_tab_its_panel_shows_next() {
+    let mut s = session();
+    let a = tab(&s.run("resource.open", &json!({ "id": "kjv" })).unwrap());
+    let b = tab(&s.run("resource.open", &json!({ "id": "web" })).unwrap());
+    let c = tab(&s.run("resource.open", &json!({ "id": "kjv" })).unwrap());
+    assert_eq!(panel_of(&s, a), panel_of(&s, c));
+    // A was used after B: closing C shows A, not B (the last) or the first.
+    s.workspace.focus(a);
+    s.workspace.focus(c);
+    s.workspace.take_effects();
+    s.run("tab.close", &json!({ "tab": c.0 })).unwrap();
+    assert_eq!(s.workspace.focused(), Some(a));
+    assert_eq!(s.workspace.active_in(panel_of(&s, a)), Some(a));
+    assert_eq!(
+        s.workspace.take_effects(),
+        vec![Effect::Closed(c), Effect::Activate(a), Effect::Focus(a)]
+    );
+    // And again: the second close acts on what the first left focused.
+    s.run("tab.close", &json!({ "tab": a.0 })).unwrap();
+    assert_eq!(s.workspace.focused(), Some(b));
+    assert!(s.is_enabled("panel.close"), "a Panel is plainly there");
+}
+
+/// Closing the focused Tab with its Panel's last Tab focuses the Tab used most recently
+/// elsewhere.
+#[test]
+fn closing_a_panels_last_tab_focuses_the_most_recent_tab_left() {
+    let mut s = session();
+    let a = tab(&s.run("resource.open", &json!({ "id": "kjv" })).unwrap());
+    let lib = tab(&s.run("library.open", &json!({})).unwrap());
+    let b = tab(&s
+        .run("resource.open", &json!({ "id": "web", "split": true }))
+        .unwrap());
+    assert_ne!(panel_of(&s, a), panel_of(&s, b));
+    s.workspace.focus(lib);
+    s.workspace.focus(b);
+    s.run("tab.close", &json!({ "tab": b.0 })).unwrap();
+    assert_eq!(s.workspace.focused(), Some(lib));
+    // Close Panel does the same, once for the whole Panel.
+    s.workspace.focus(a);
+    s.workspace.take_effects();
+    s.run("panel.close", &json!({})).unwrap();
+    assert_eq!(s.workspace.focused(), Some(lib));
+    let focuses = (s.workspace.take_effects().into_iter())
+        .filter(|e| matches!(e, Effect::Focus(_)))
+        .count();
+    assert_eq!(focuses, 1);
+}
+
+/// The × closes in the UI ([`Workspace::sync_panels`]) refocus the same way, and a Panel
+/// whose active Tab went asks the UI to show its next one.
+#[test]
+fn a_tab_closed_with_its_x_hands_the_focus_to_its_panels_next_tab() {
+    let mut s = session();
+    let a = tab(&s.run("resource.open", &json!({ "id": "kjv" })).unwrap());
+    let b = tab(&s.run("resource.open", &json!({ "id": "web" })).unwrap());
+    let p = panel_of(&s, a);
+    assert_eq!(s.workspace.focused(), Some(b));
+    s.workspace.take_effects();
+    s.workspace.sync_panels(vec![(p, vec![a])]);
+    assert_eq!(s.workspace.focused(), Some(a));
+    assert_eq!(
+        s.workspace.take_effects(),
+        vec![Effect::Activate(a), Effect::Focus(a)]
+    );
+}

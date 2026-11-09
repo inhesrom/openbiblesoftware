@@ -312,9 +312,19 @@ pub struct Shell {
     pub(crate) switcher: Option<keyboard_nav::TabSwitcher>,
     /// F6 (true) or Shift+F6 asked to move the keyboard to another area (#215).
     next_area: Option<bool>,
-    /// A Tab the keyboard was sent to (#215), whose OS window is brought to the front at the
-    /// end of the frame.
-    os_focus_to: Option<TabId>,
+    /// The window (none: the main one) the keyboard was sent to: a Tab's (#215), or the main
+    /// window's for its Command box or Launchers (#256). Its OS window is brought to the front
+    /// at the end of the frame.
+    os_focus_to: Option<Option<obs_engine::WindowId>>,
+    /// The Tab in a floating OS window that was focused when the main window was brought to
+    /// the front for its Command box or Launchers: the main window gaining the keyboard leaves
+    /// it focused, the Tab they act on (#256).
+    main_raised_keeping: Option<TabId>,
+    /// The widget with the keyboard in each window (none: the main one) when its keys were
+    /// last read: a new one inside a Panel focuses that Panel's Tab (#256).
+    keyboard_seen: BTreeMap<Option<obs_engine::WindowId>, Option<egui::Id>>,
+    /// The layer the main window's dock was last drawn in, which its Panels' widgets are on.
+    dock_layer: Option<egui::LayerId>,
     /// Text a command asked to put on the clipboard (Word Info's Copy), written at the end of
     /// the frame.
     copy_out: Option<String>,
@@ -389,6 +399,9 @@ impl Shell {
             switcher: None,
             next_area: None,
             os_focus_to: None,
+            main_raised_keeping: None,
+            keyboard_seen: BTreeMap::new(),
+            dock_layer: None,
             copy_out: None,
             system_motion: Arc::new(crate::NoSystemMotion),
             panel_motion: Default::default(),
@@ -507,7 +520,7 @@ impl Shell {
                     self.st.opened(tab);
                     self.insert_tab(tab, placement);
                 }
-                Effect::Focus(tab) => self.make_active(tab),
+                Effect::Focus(tab) | Effect::Activate(tab) => self.make_active(tab),
                 Effect::Closed(tab) => {
                     self.remove_pane(tab);
                     self.st.tabs.remove(&tab);
@@ -519,7 +532,7 @@ impl Shell {
                 Effect::KeyboardToTab(tab) => {
                     self.make_active(tab);
                     self.st.keyboard_to(tab);
-                    self.os_focus_to = Some(tab);
+                    self.os_focus_to = Some(self.keys_window(tab));
                 }
                 Effect::NextArea { forward } => self.next_area = Some(forward),
                 Effect::Float {
@@ -634,20 +647,27 @@ impl Shell {
                 Effect::Restart(exe) => self.restart_now(&exe),
                 Effect::ShowHighlightStyles => self.st.styles_ui.open = true,
                 Effect::ShowVisualFilters => self.st.filters_ui.open = true,
+                // The Command box and the Launchers are the main window's: typed into from a
+                // floating OS window, they bring the main window to the front (#256).
                 Effect::FocusCommandBox => {
                     self.st.toolbar.close();
                     self.st.command_box.focus = true;
+                    self.raise_main_window();
                 }
                 Effect::ListCommands => {
                     self.st.toolbar.close();
                     self.st.command_box.list_commands();
+                    self.raise_main_window();
                 }
                 Effect::ConfirmSetting { tab, setting } => self.st.confirm_setting(tab, setting),
                 Effect::CopyText(text) => {
                     self.copy_out = Some(text);
                     self.st.toast("Copied");
                 }
-                Effect::OpenLauncher(which) => self.st.toolbar.toggle(which),
+                Effect::OpenLauncher(which) => {
+                    self.st.toolbar.toggle(which);
+                    self.raise_main_window();
+                }
                 Effect::Find { tab, text } => self.st.open_find(tab, text),
                 Effect::FindStep { tab, forward } => self.st.step_find(tab, forward),
                 Effect::CustomizeToolbar => {
@@ -1065,6 +1085,7 @@ impl Shell {
                     self.st.workspace_drag(ui, &[]);
                 } else {
                     self.main_drag_out(ui);
+                    self.dock_layer = Some(ui.layer_id());
                     let before = tile_handles::widgets_so_far(ui);
                     self.tree.ui(&mut self.st, ui);
                     let reduce = crate::motion::reduced(ui.ctx());
@@ -1142,6 +1163,7 @@ impl Shell {
     /// ([`Self::focus_in`]). The window gaining the keyboard, or a key run in it, makes that
     /// Tab the focused one.
     fn shortcuts(&mut self, ui: &mut Ui, window: Option<obs_engine::WindowId>) {
+        self.follow_keyboard(ui.ctx(), window);
         if let Some(f) = self.st.session.workspace.focused() {
             self.last_focused.insert(self.keys_window(f), f);
         }
@@ -1149,7 +1171,14 @@ impl Shell {
         let gained =
             ui.input(|i| (i.events.iter()).any(|e| matches!(e, egui::Event::WindowFocused(true))));
         if gained {
-            self.focus_here(focused);
+            // Brought to the front for the Command box or a Launcher: they act on the Tab
+            // focused when they were asked for, in the floating window they were asked from.
+            let kept = self.main_raised_keeping.take();
+            let keep =
+                window.is_none() && kept.is_some() && kept == self.st.session.workspace.focused();
+            if !keep {
+                self.focus_here(focused);
+            }
         }
         // A key being recorded in the Keyboard shortcuts Tab (#177) runs nothing in its window.
         if self.st.keys_ui.is_recording_in(ui) {
@@ -2174,6 +2203,13 @@ impl State {
                                 ui_state.flash = Some((crate::pane::Flash::Verse(v), self.now));
                             }
                         }
+                    } else if doc.manifest.resource_type == ResourceType::Bible
+                        && let Some(first) = doc.verses.first()
+                    {
+                        // Nowhere to start: the Bible starts at its first Verse, its location
+                        // from now on, drawn or not, so a jump made before it is drawn has
+                        // that to go Back to (#256).
+                        self.session.workspace.scrolled(tab, first.verse);
                     }
                     if entries {
                         let ws = &self.session.workspace;

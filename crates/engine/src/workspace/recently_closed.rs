@@ -109,8 +109,14 @@ impl Workspace {
             return false;
         };
         self.remember(panel, &tabs);
+        let window = (self.focused())
+            .filter(|f| tabs.contains(f))
+            .map(|f| self.window_of(f));
         for t in tabs {
-            self.close(t);
+            self.close_without_refocus(t);
+        }
+        if let Some(window) = window {
+            self.focus_after_close(panel, window);
         }
         true
     }

@@ -279,6 +279,10 @@ _Avoid_: MRU list, Tab picker, Recent tabs
 One open thing in a Panel: a Resource, a Guide, or a Tool.
 _Avoid_: View, Document
 
+**Focused Tab**:
+The Tab the keys, the menus and the Command box act on, marked in its header: the one last clicked, opened, or reached with the keyboard (Tab into its header or tab bar, Ctrl+1…9, Ctrl+Tab, F6). Closing it focuses the Tab its Panel shows next (the one used there most recently) or, with the Panel gone, the Tab used most recently in the same window, so the keys go on working without a click.
+_Avoid_: Current Tab, Selected Tab (each Panel's *active* Tab is just the one it shows)
+
 **Tool**:
 A Tab that is neither a Resource nor a Guide. In v0.1 the Tools are Text Comparison, Word Info, Search, and Notes; Cross-references, Favorites, History, Reading plans, the Atlas and the Timeline came later.
 _Avoid_: Utility, Widget

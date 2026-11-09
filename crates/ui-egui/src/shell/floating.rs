@@ -87,6 +87,8 @@ pub(crate) struct FloatingDock {
     pub(crate) native: bool,
     /// The user closed its window.
     pub(crate) close: bool,
+    /// The layer its dock was last drawn in, which its Panels' widgets are on.
+    pub(crate) layer: Option<egui::LayerId>,
 }
 
 impl FloatingDock {
@@ -101,6 +103,7 @@ impl FloatingDock {
             place_tries: 0,
             native: false,
             close: false,
+            layer: None,
         }
     }
 
@@ -506,6 +509,7 @@ impl Shell {
                 // The dock's behaviour finds Panels by tile in `st.panels`: this window's,
                 // while it is drawn.
                 std::mem::swap(&mut self.st.panels, &mut d.panels);
+                d.layer = Some(ui.layer_id());
                 let before = tile_handles::widgets_so_far(ui);
                 d.tree.ui(&mut self.st, ui);
                 tile_handles::after_tree(ui, &mut d.tree, before);
