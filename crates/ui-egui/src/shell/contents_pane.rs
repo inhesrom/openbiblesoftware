@@ -42,6 +42,9 @@ pub(crate) struct ContentsCache {
     jobs: Option<JobQueue>,
     pending: BTreeMap<JobId, (String, Weak<ReadingDoc>)>,
     ready: HashMap<String, (Weak<ReadingDoc>, Arc<Contents>)>,
+    /// Tests: builds wait, so the Contents pane stays loading (#223's loading state).
+    #[cfg(test)]
+    pub(crate) hold: bool,
 }
 
 impl ContentsCache {
@@ -62,7 +65,11 @@ impl ContentsCache {
                 JobQueue::inline()
             }
         });
-        if !jobs.is_threaded() {
+        #[cfg(test)]
+        let held = self.hold;
+        #[cfg(not(test))]
+        let held = false;
+        if !jobs.is_threaded() && !held {
             jobs.pump(1);
         }
         for event in jobs.drain_events() {

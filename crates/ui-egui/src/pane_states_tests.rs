@@ -150,6 +150,51 @@ fn failed_sections(h: &mut Harness, id: &str, params: Value) {
     settle(h);
 }
 
+/// Where an unreadable Resource's file is moved to.
+fn moved_away(path: &std::path::Path) -> std::path::PathBuf {
+    path.with_extension("obr-away")
+}
+
+/// Resource `id`'s file can no longer be read (it is moved away), as when a disk fails.
+fn unreadable(h: &mut Harness, id: &str) {
+    let path = h.shell.st.session.library.get(id).expect(id).path.clone();
+    std::fs::rename(&path, moved_away(&path)).unwrap();
+    h.shell.st.docs.remove(id);
+}
+
+/// Resource `id`'s file is back where it was.
+fn readable_again(h: &Harness, id: &str) {
+    let path = h.shell.st.session.library.get(id).expect(id).path.clone();
+    std::fs::rename(moved_away(&path), &path).unwrap();
+}
+
+/// The error states whose surface reads a Resource's file on the UI thread (so Retry reads it
+/// again at once, with no loading state): the state, and the Resource made unreadable.
+const UNREADABLE: [(&str, &str); 2] = [
+    ("Resource: error", "mhc"),
+    ("Text Comparison: error", "kjv-strongs"),
+];
+
+/// The error the focused Tab's error state was given: the read error of an unreadable
+/// Resource, or [`DETAIL`].
+fn the_error(h: &Harness) -> String {
+    let t = &h.shell.st.tabs[&focused_tab(h)];
+    (t.open_error.clone())
+        .or_else(|| t.comparison_errors.values().next().cloned())
+        .unwrap_or_else(|| DETAIL.into())
+}
+
+/// A Resource Tab for `id` with its Contents pane open.
+fn open_contents(h: &mut Harness, id: &str) {
+    let out = h
+        .shell
+        .run("resource.open", &json!({ "id": id, "split": true }));
+    let tab = out.unwrap()["tab"].as_u64().unwrap();
+    h.shell
+        .run("tab.contents", &json!({ "tab": tab, "on": true }));
+    h.frames(2);
+}
+
 /// Each surface's empty, loading and error states, as the Screenshot gallery draws them: a
 /// name, what brings the state about, and what shows it is on screen.
 pub(super) fn pane_states() -> Vec<Overlay> {
@@ -287,6 +332,26 @@ pub(super) fn pane_states() -> Vec<Overlay> {
             |h| focused(h, &TabKind::Guide(Guide::PassageGuide)) && error_shown(h),
         ),
         (
+            "Exegetical Guide: empty",
+            |h| open_unkeyed(h, TabKind::Guide(Guide::ExegeticalGuide)),
+            |h| {
+                focused(h, &TabKind::Guide(Guide::ExegeticalGuide)) && shows(h, "Show John 3:16-18")
+            },
+        ),
+        (
+            "Exegetical Guide: loading",
+            |h| {
+                hold(h);
+                open_split(h, "guide.exegetical_guide", json!({ "passage": "Jn 3:16" }));
+            },
+            |h| focused(h, &TabKind::Guide(Guide::ExegeticalGuide)) && loading_shown(h),
+        ),
+        (
+            "Exegetical Guide: error",
+            |h| failed_sections(h, "guide.exegetical_guide", json!({ "passage": "Jn 3:16" })),
+            |h| focused(h, &TabKind::Guide(Guide::ExegeticalGuide)) && error_shown(h),
+        ),
+        (
             "Word Study: empty",
             |h| open_unkeyed(h, TabKind::Guide(Guide::WordStudy)),
             |h| shows(h, "Show G26 (love)"),
@@ -303,6 +368,23 @@ pub(super) fn pane_states() -> Vec<Overlay> {
             "Word Study: error",
             |h| failed_sections(h, "guide.word_study", json!({ "strongs": "G26" })),
             |h| focused(h, &TabKind::Guide(Guide::WordStudy)) && error_shown(h),
+        ),
+        (
+            "Word Study chooser: loading",
+            |h| {
+                hold(h);
+                open_split(h, "word_study.choose", json!({ "words": "love" }));
+            },
+            |h| shows(h, "Looking up “love”…"),
+        ),
+        (
+            "Word Study chooser: error",
+            |h| {
+                hold(h);
+                open_split(h, "word_study.choose", json!({ "words": "love" }));
+                h.shell.st.session.fail_pending_word_studies(DETAIL);
+            },
+            |h| shows(h, "“love” could not be looked up.") && error_shown(h),
         ),
         (
             "Factbook: empty",
@@ -416,6 +498,44 @@ pub(super) fn pane_states() -> Vec<Overlay> {
             |h| focused(h, &TabKind::Tool(Tool::Timeline)) && error_shown(h),
         ),
         (
+            "Resource: nothing to read",
+            |h| open_split(h, "resource.open", json!({ "id": "tipnr" })),
+            |h| shows_start(h, "TIPNR has no text to read") && shows(h, "Show Abraham"),
+        ),
+        (
+            "Resource: error",
+            |h| {
+                unreadable(h, "mhc");
+                open_split(h, "resource.open", json!({ "id": "mhc" }));
+            },
+            |h| shows(h, "MHC could not be opened.") && error_shown(h),
+        ),
+        (
+            "Contents: loading",
+            |h| {
+                h.shell.st.contents.hold = true;
+                open_contents(h, "kjv-strongs");
+            },
+            |h| shows(h, "Loading contents…"),
+        ),
+        (
+            "Contents: empty",
+            |h| open_contents(h, "tipnr"),
+            |h| shows(h, "Close Contents"),
+        ),
+        (
+            "Text Comparison: error",
+            |h| {
+                unreadable(h, "kjv-strongs");
+                open_split(h, "tool.text_comparison", json!({ "passage": "Gen 1:1" }));
+            },
+            |h| {
+                focused(h, &TabKind::Tool(Tool::TextComparison))
+                    && shows(h, "KJV could not be opened.")
+                    && error_shown(h)
+            },
+        ),
+        (
             "Favorites: empty",
             |h| open_split(h, "tool.favorites", json!({})),
             |h| focused(h, &TabKind::Tool(Tool::Favorites)) && shows(h, "Open the Library"),
@@ -459,10 +579,11 @@ fn error_states_hide_the_error_until_details_and_retry_asks_again() {
         .map(|(n, ..)| n)
         .filter(|n| n.ends_with(": error") || n.ends_with(": offline"))
         .collect();
-    assert_eq!(errors.len(), 10, "{errors:?}");
+    assert_eq!(errors.len(), 14, "{errors:?}");
     for name in errors {
         let (mut h, _lab) = open_state(name);
-        let raw = |h: &Harness| h.texts().iter().any(|t| t.contains(DETAIL));
+        let error = the_error(&h);
+        let raw = |h: &Harness| h.texts().iter().any(|t| t.contains(&error));
         assert!(
             !raw(&h),
             "{name}: the raw error is on screen: {:?}",
@@ -473,6 +594,18 @@ fn error_states_hide_the_error_until_details_and_retry_asks_again() {
         assert!(shows(&h, HIDE_DETAILS), "{name}: no Hide details");
         h.click_text(HIDE_DETAILS);
         assert!(!raw(&h), "{name}: Hide details leaves the error shown");
+        if let Some((_, id)) = UNREADABLE.iter().find(|(n, _)| *n == name) {
+            // Read on the UI thread: Retry reads the file again at once.
+            readable_again(&h, id);
+            h.click_text(RETRY);
+            h.frames(2);
+            assert!(
+                !error_shown(&h),
+                "{name}: Retry did not read the Resource again: {:?}",
+                h.texts()
+            );
+            continue;
+        }
         // Retry, with nothing running the new attempt yet.
         h.shell.hold_jobs = true;
         h.click_text(RETRY);
@@ -491,6 +624,11 @@ fn error_states_hide_the_error_until_details_and_retry_asks_again() {
 fn empty_states_offer_a_button_that_fills_the_tab() {
     let cases = [
         ("Passage Guide: empty", "Show John 3:16-18", "John 3:16-18"),
+        (
+            "Exegetical Guide: empty",
+            "Show John 3:16-18",
+            "John 3:16-18",
+        ),
         ("Word Study: empty", "Show G26 (love)", "G26"),
         ("Atlas: empty", "Show Acts 13", "Acts 13"),
         ("Cross-references: empty", "Show John 3:16", "John 3:16"),
@@ -516,6 +654,18 @@ fn empty_states_offer_a_button_that_fills_the_tab() {
     let (mut h, _lab) = open_state("Library: empty");
     h.click_text(crate::shell::missing_resource::ADD_STARTER);
     assert!(focused(&h, &TabKind::StarterLibrary));
+    let (mut h, _lab) = open_state("Resource: nothing to read");
+    h.click_text("Show Abraham");
+    settle(&mut h);
+    assert!(focused(&h, &TabKind::Guide(Guide::Factbook)));
+    let (mut h, _lab) = open_state("Contents: empty");
+    let tab = focused_tab(&h);
+    h.click_text("Close Contents");
+    let ws = &h.shell.session().workspace;
+    assert!(
+        !ws.tab(tab).unwrap().contents,
+        "the Contents pane is still open"
+    );
 }
 
 /// Acceptance (#223): with nothing in the Library, no Tab is blank: each says something in
@@ -545,4 +695,32 @@ fn no_tab_is_blank_in_an_empty_library() {
             .collect();
         assert!(!said.is_empty(), "{kind:?} is blank in an empty Library");
     }
+}
+
+/// Acceptance (#223): a Cross-reference whose preview cannot be read (the ★ Bible's file is
+/// gone) says so in plain words, never with the read error.
+#[test]
+fn an_unreadable_cross_reference_preview_says_so_plainly() {
+    let (mut h, _lab) = super::gallery::launch("states-preview", &super::gallery::LOOKS[0]);
+    unreadable(&mut h, "kjv-strongs");
+    let passage =
+        obs_scripture::Passage::verse(obs_scripture::Verse::new(obs_scripture::Book::John, 3, 16));
+    let error =
+        obs_engine::cross_references::preferred_preview(&h.shell.st.session.library, passage)
+            .expect_err("the ★ Bible cannot be read");
+    open_split(
+        &mut h,
+        "tool.cross_references",
+        json!({ "passage": "Jn 3:16" }),
+    );
+    settle(&mut h);
+    assert!(
+        shows(&h, "The preview could not be read."),
+        "{:?}",
+        h.texts()
+    );
+    assert!(
+        !h.texts().iter().any(|t| t.contains(&error)),
+        "the raw error is on screen: {error}"
+    );
 }

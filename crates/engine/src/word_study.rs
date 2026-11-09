@@ -852,6 +852,33 @@ impl Session {
     pub fn stop_choosing(&mut self, tab: TabId) {
         self.word_study.choosing.remove(&tab);
     }
+
+    /// Tests: fail the Word Study headers and English-word choosers being computed with
+    /// `why`, as a failed job leaves them (#223's error states).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fail_pending_word_studies(&mut self, why: &str) {
+        let pending = std::mem::take(&mut self.word_study.pending);
+        for (id, wanted) in pending {
+            let failed = why.to_string();
+            match wanted {
+                Wanted::Header(n) => {
+                    self.word_study
+                        .headers
+                        .insert(n, WordStatus::Failed(failed));
+                }
+                Wanted::Chooser(words) => {
+                    self.word_study
+                        .choosers
+                        .insert(words, WordStatus::Failed(failed));
+                }
+                previews @ Wanted::Previews(..) => {
+                    self.word_study.pending.insert(id, previews);
+                    continue;
+                }
+            }
+            self.jobs().cancel(id);
+        }
+    }
 }
 
 /// Words as the chooser caches them: normalized words joined with single spaces.

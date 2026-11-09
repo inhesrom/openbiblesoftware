@@ -108,7 +108,10 @@ struct TabUi {
     /// The header box's text while it is being edited.
     edit: Option<String>,
     filter: String,
+    /// The header box's reference could not be gone to (what to type instead).
     error: Option<String>,
+    /// A Resource Tab's Resource could not be read: the error, shown on Details (#223).
+    open_error: Option<String>,
     /// A verse or Text range marked after a jump, and when the mark started.
     flash: Option<(crate::pane::Flash, f64)>,
     /// Library Tab: the language chips that are on, the selected row and the row whose
@@ -2084,6 +2087,54 @@ impl State {
         self.load(tab, TabUi::default(), None);
     }
 
+    /// A Resource Tab whose Resource has no text to read (a Cross-reference set or a People &
+    /// places index, whose data the Tools show): where it shows, and one Button (#223).
+    fn nothing_to_read(&mut self, ui: &mut Ui, doc: &ReadingDoc) {
+        let name = &doc.manifest.abbreviation;
+        let (message, button, id, params) = match doc.manifest.resource_type {
+            ResourceType::CrossReferenceSet => (
+                format!(
+                    "{name} has no text to read: its Cross-references show in the \
+                     Cross-references Tool and the Passage Guide."
+                ),
+                "Show John 3:16",
+                "tool.cross_references",
+                json!({ "passage": "Jn 3:16" }),
+            ),
+            ResourceType::PeopleAndPlaces => (
+                format!(
+                    "{name} has no text to read: its people and places show in the Factbook, \
+                     the Atlas and the Timeline."
+                ),
+                "Show Abraham",
+                "guide.factbook",
+                json!({ "name": "Abraham" }),
+            ),
+            _ => (
+                format!("{name} has no text to read."),
+                "Open the Library",
+                "library.open",
+                json!({}),
+            ),
+        };
+        if guide_tab::hint_page(ui, &message, button) {
+            self.run(id, &params);
+        }
+    }
+
+    /// Retry for a Resource Tab whose Resource could not be read (#223): read it again.
+    fn reopen(&mut self, tab: TabId) {
+        let Some(old) = self.tabs.remove(&tab) else {
+            return;
+        };
+        let ui_state = TabUi {
+            parked: old.parked,
+            header_controls: old.header_controls,
+            ..TabUi::default()
+        };
+        self.load(tab, ui_state, None);
+    }
+
     /// A Resource Tab now shows another Resource (#151): park where its view was scrolled
     /// and load the new one in a pane as wide, where Back or Forward scrolls it back to
     /// where it was parked.
@@ -2302,7 +2353,7 @@ impl State {
                     }
                     ui_state.view = Some(view);
                 }
-                Err(e) => ui_state.error = Some(e),
+                Err(e) => ui_state.open_error = Some(e),
             }
         }
         if let Some(TabKind::About(id)) = &kind
@@ -2517,10 +2568,25 @@ impl State {
             return;
         };
         let Some(view) = t.view.as_mut() else {
-            let msg = t.error.clone().unwrap_or_default();
-            ui.centered_and_justified(|ui| ui.colored_label(theme::c().warn, msg));
+            let Some(error) = t.open_error.clone() else {
+                return;
+            };
+            let name = match self.session.workspace.tab(tab).map(|t| &t.kind) {
+                Some(TabKind::Resource(id)) => (self.session.library.get(id))
+                    .map_or_else(|| id.clone(), |e| e.manifest.abbreviation.clone()),
+                _ => "This Resource".into(),
+            };
+            let message = format!("{name} could not be opened.");
+            if crate::components::error_state(ui, &message, &error) {
+                self.reopen(tab);
+            }
             return;
         };
+        if view.doc.blocks.is_empty() {
+            let doc = Arc::clone(&view.doc);
+            self.nothing_to_read(ui, &doc);
+            return;
+        }
         view.set_settings(text);
         // The flash fades out; with motion reduced it holds, then goes at once (#225).
         let reduce = crate::motion::reduced(ui.ctx());
@@ -2929,8 +2995,22 @@ impl State {
         }
         let extent = location.map(|v| comparison.extent(v)).unwrap_or_default();
         self.comparison_chips(ui, tab, &comparison, &bibles, base);
-        if !errors.is_empty() && ui.button("Retry unavailable Bibles").clicked() {
-            errors.clear();
+        if !errors.is_empty() {
+            // The plain message and Retry; the errors themselves on Details (#223).
+            let failed: Vec<&ComparisonBible> = docs.iter().filter(|d| d.doc.is_err()).collect();
+            let names: Vec<&str> = failed.iter().map(|d| d.abbreviation.as_str()).collect();
+            let message = if names.is_empty() {
+                "A Bible could not be opened.".to_string()
+            } else {
+                format!("{} could not be opened.", names.join(", "))
+            };
+            let details = (failed.iter())
+                .filter_map(|d| Some(format!("{}: {}", d.abbreviation, d.doc.as_ref().err()?)))
+                .collect::<Vec<_>>()
+                .join("\n");
+            if crate::components::error_state(ui, &message, &details) {
+                errors.clear();
+            }
         }
         let palette = self.palette;
         let Some(tab_ui) = self.tabs.get_mut(&tab) else {

@@ -380,6 +380,7 @@ impl State {
                 self.run("tab.go", &json!({ "tab": tab.0, "text": n.to_string() }));
             }
             Action::StopChoosing => self.session.stop_choosing(tab),
+            Action::Retry => self.retry_failed(),
             Action::Command(id, params) => {
                 self.run(id, &params);
             }

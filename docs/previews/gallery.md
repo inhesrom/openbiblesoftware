@@ -854,6 +854,27 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 | ![Passage Guide: error, Light](gallery/passage-guide-error-light-1x.png) | ![Passage Guide: error, Dark](gallery/passage-guide-error-dark-1x.png) | ![Passage Guide: error, Sepia](gallery/passage-guide-error-sepia-1x.png) |
 | [2×](gallery/passage-guide-error-light-2x.png) | [2×](gallery/passage-guide-error-dark-2x.png) | [2×](gallery/passage-guide-error-sepia-2x.png) |
 
+### Exegetical Guide: empty
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Exegetical Guide: empty, Light](gallery/exegetical-guide-empty-light-1x.png) | ![Exegetical Guide: empty, Dark](gallery/exegetical-guide-empty-dark-1x.png) | ![Exegetical Guide: empty, Sepia](gallery/exegetical-guide-empty-sepia-1x.png) |
+| [2×](gallery/exegetical-guide-empty-light-2x.png) | [2×](gallery/exegetical-guide-empty-dark-2x.png) | [2×](gallery/exegetical-guide-empty-sepia-2x.png) |
+
+### Exegetical Guide: loading
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Exegetical Guide: loading, Light](gallery/exegetical-guide-loading-light-1x.png) | ![Exegetical Guide: loading, Dark](gallery/exegetical-guide-loading-dark-1x.png) | ![Exegetical Guide: loading, Sepia](gallery/exegetical-guide-loading-sepia-1x.png) |
+| [2×](gallery/exegetical-guide-loading-light-2x.png) | [2×](gallery/exegetical-guide-loading-dark-2x.png) | [2×](gallery/exegetical-guide-loading-sepia-2x.png) |
+
+### Exegetical Guide: error
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Exegetical Guide: error, Light](gallery/exegetical-guide-error-light-1x.png) | ![Exegetical Guide: error, Dark](gallery/exegetical-guide-error-dark-1x.png) | ![Exegetical Guide: error, Sepia](gallery/exegetical-guide-error-sepia-1x.png) |
+| [2×](gallery/exegetical-guide-error-light-2x.png) | [2×](gallery/exegetical-guide-error-dark-2x.png) | [2×](gallery/exegetical-guide-error-sepia-2x.png) |
+
 ### Word Study: empty
 
 | Light | Dark | Sepia |
@@ -874,6 +895,20 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![Word Study: error, Light](gallery/word-study-error-light-1x.png) | ![Word Study: error, Dark](gallery/word-study-error-dark-1x.png) | ![Word Study: error, Sepia](gallery/word-study-error-sepia-1x.png) |
 | [2×](gallery/word-study-error-light-2x.png) | [2×](gallery/word-study-error-dark-2x.png) | [2×](gallery/word-study-error-sepia-2x.png) |
+
+### Word Study chooser: loading
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Word Study chooser: loading, Light](gallery/word-study-chooser-loading-light-1x.png) | ![Word Study chooser: loading, Dark](gallery/word-study-chooser-loading-dark-1x.png) | ![Word Study chooser: loading, Sepia](gallery/word-study-chooser-loading-sepia-1x.png) |
+| [2×](gallery/word-study-chooser-loading-light-2x.png) | [2×](gallery/word-study-chooser-loading-dark-2x.png) | [2×](gallery/word-study-chooser-loading-sepia-2x.png) |
+
+### Word Study chooser: error
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Word Study chooser: error, Light](gallery/word-study-chooser-error-light-1x.png) | ![Word Study chooser: error, Dark](gallery/word-study-chooser-error-dark-1x.png) | ![Word Study chooser: error, Sepia](gallery/word-study-chooser-error-sepia-1x.png) |
+| [2×](gallery/word-study-chooser-error-light-2x.png) | [2×](gallery/word-study-chooser-error-dark-2x.png) | [2×](gallery/word-study-chooser-error-sepia-2x.png) |
 
 ### Factbook: empty
 
@@ -986,6 +1021,41 @@ Every Tab kind, toolbar pane, menu, window, dialog, popover and chooser, and eac
 |---|---|---|
 | ![Timeline: error, Light](gallery/timeline-error-light-1x.png) | ![Timeline: error, Dark](gallery/timeline-error-dark-1x.png) | ![Timeline: error, Sepia](gallery/timeline-error-sepia-1x.png) |
 | [2×](gallery/timeline-error-light-2x.png) | [2×](gallery/timeline-error-dark-2x.png) | [2×](gallery/timeline-error-sepia-2x.png) |
+
+### Resource: nothing to read
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Resource: nothing to read, Light](gallery/resource-nothing-to-read-light-1x.png) | ![Resource: nothing to read, Dark](gallery/resource-nothing-to-read-dark-1x.png) | ![Resource: nothing to read, Sepia](gallery/resource-nothing-to-read-sepia-1x.png) |
+| [2×](gallery/resource-nothing-to-read-light-2x.png) | [2×](gallery/resource-nothing-to-read-dark-2x.png) | [2×](gallery/resource-nothing-to-read-sepia-2x.png) |
+
+### Resource: error
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Resource: error, Light](gallery/resource-error-light-1x.png) | ![Resource: error, Dark](gallery/resource-error-dark-1x.png) | ![Resource: error, Sepia](gallery/resource-error-sepia-1x.png) |
+| [2×](gallery/resource-error-light-2x.png) | [2×](gallery/resource-error-dark-2x.png) | [2×](gallery/resource-error-sepia-2x.png) |
+
+### Contents: loading
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Contents: loading, Light](gallery/contents-loading-light-1x.png) | ![Contents: loading, Dark](gallery/contents-loading-dark-1x.png) | ![Contents: loading, Sepia](gallery/contents-loading-sepia-1x.png) |
+| [2×](gallery/contents-loading-light-2x.png) | [2×](gallery/contents-loading-dark-2x.png) | [2×](gallery/contents-loading-sepia-2x.png) |
+
+### Contents: empty
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Contents: empty, Light](gallery/contents-empty-light-1x.png) | ![Contents: empty, Dark](gallery/contents-empty-dark-1x.png) | ![Contents: empty, Sepia](gallery/contents-empty-sepia-1x.png) |
+| [2×](gallery/contents-empty-light-2x.png) | [2×](gallery/contents-empty-dark-2x.png) | [2×](gallery/contents-empty-sepia-2x.png) |
+
+### Text Comparison: error
+
+| Light | Dark | Sepia |
+|---|---|---|
+| ![Text Comparison: error, Light](gallery/text-comparison-error-light-1x.png) | ![Text Comparison: error, Dark](gallery/text-comparison-error-dark-1x.png) | ![Text Comparison: error, Sepia](gallery/text-comparison-error-sepia-1x.png) |
+| [2×](gallery/text-comparison-error-light-2x.png) | [2×](gallery/text-comparison-error-dark-2x.png) | [2×](gallery/text-comparison-error-sepia-2x.png) |
 
 ### Favorites: empty
 

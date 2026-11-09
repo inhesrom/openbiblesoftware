@@ -492,7 +492,23 @@ impl State {
                 return;
             }
             Some(Err(e)) => {
-                ui.label(e);
+                // A row of a list: the plain message, the error itself on hover (#223).
+                let no_bible = (self.session.library)
+                    .of_type(obs_model::ResourceType::Bible)
+                    .next()
+                    .is_none();
+                if no_bible {
+                    ui.label(crate::components::hint_text(
+                        "Add a Bible to your library to see previews.",
+                    ));
+                } else {
+                    ui.label(
+                        egui::RichText::new("The preview could not be read.")
+                            .small()
+                            .color(crate::theme::c().warn),
+                    )
+                    .on_hover_text(e);
+                }
                 return;
             }
             Some(Ok(preview)) => preview,

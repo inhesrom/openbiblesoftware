@@ -2836,7 +2836,19 @@ mod text_comparison {
             // #223: the plain message on the page, never the error itself.
             assert!(texts_in(&h, cmp).iter().any(|s| s == message));
             assert!(!texts_in(&h, cmp).iter().any(|s| s.contains(&error)));
-            assert!(h.find("Retry unavailable Bibles").is_some());
+            let abbreviation = &doc.manifest.abbreviation;
+            let said = format!("{abbreviation} could not be opened.");
+            assert!(texts_in(&h, cmp).contains(&said), "{:?}", texts_in(&h, cmp));
+            assert!(h.find(crate::components::RETRY).is_some());
+            // Details shows the error on demand; Hide details folds it away.
+            h.click_text(crate::components::DETAILS);
+            assert!(
+                texts_in(&h, cmp).iter().any(|s| s.contains(&error)),
+                "Details does not show the error: {:?}",
+                texts_in(&h, cmp)
+            );
+            h.click_text(crate::components::HIDE_DETAILS);
+            assert!(!texts_in(&h, cmp).iter().any(|s| s.contains(&error)));
             assert!(
                 texts_in(&h, cmp)
                     .iter()
@@ -2857,7 +2869,7 @@ mod text_comparison {
             h.frames(4);
             assert_eq!(h.shell.st.tabs[&cmp].comparison_errors[id], error);
             assert!(texts_in(&h, cmp).iter().any(|s| s.starts_with(message)));
-            h.click_text("Retry unavailable Bibles");
+            h.click_text(crate::components::RETRY);
             settle(&mut h, cmp);
             assert!(h.shell.st.tabs[&cmp].comparison_errors.is_empty());
             assert!(!texts_in(&h, cmp).iter().any(|s| s.starts_with(message)));
