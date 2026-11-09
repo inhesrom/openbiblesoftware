@@ -7,7 +7,9 @@
 //! - **Restore** first reads the Backup into memory, checks it is a User database this build
 //!   can read (a newer format is refused), runs the migrations on it and checks the result is
 //!   whole (every table, column, index and trigger this build's format has, every row readable,
-//!   SQLite's integrity check passing), so nothing is touched if the file is unusable. Then it takes a Safety backup of the database as it is, and
+//!   no row pointing at one that is not there, SQLite's integrity check passing), so nothing
+//!   is touched if the file is unusable. Then it takes a Safety backup of the database as it
+//!   is, and
 //!   copies the Backup's pages over the live database in one step (rebuilding the copy with
 //!   the live database's page size first, if they differ).
 //! - Nothing is ever written over the live database or SQLite's files beside it
@@ -372,8 +374,8 @@ impl Drop for ScratchFile {
 }
 
 /// Why the migrated database `conn` is not whole, if it is not: a table, column, index or
-/// trigger this build's format has is missing, a row cannot be read, or SQLite's integrity
-/// check (and the Notes search index's own) fails.
+/// trigger this build's format has is missing, a row cannot be read, a row points at one that
+/// is not there, or SQLite's integrity check (and the Notes search index's own) fails.
 fn check_whole(conn: &Connection) -> Result<(), String> {
     let integrity: Vec<String> = conn
         .prepare("PRAGMA integrity_check")
@@ -384,6 +386,29 @@ fn check_whole(conn: &Connection) -> Result<(), String> {
         .map_err(|e| format!("it is damaged ({e})"))?;
     if integrity != ["ok"] {
         return Err(format!("it is damaged ({})", integrity.join("; ")));
+    }
+    // The integrity check does not look at foreign keys: an Annotation pointing at a Notebook
+    // the file lacks would belong to none (#258).
+    let dangling: Vec<(String, String, i64)> = conn
+        .prepare(
+            "SELECT \"table\", parent, COUNT(*) FROM pragma_foreign_key_check
+             GROUP BY \"table\", parent ORDER BY \"table\", parent",
+        )
+        .and_then(|mut s| {
+            s.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect()
+        })
+        .map_err(|e| format!("it is damaged ({e})"))?;
+    if !dangling.is_empty() {
+        let rows: Vec<String> = dangling
+            .iter()
+            .map(|(table, parent, n)| {
+                let rows = if *n == 1 { "row" } else { "rows" };
+                let point = if *n == 1 { "points" } else { "point" };
+                format!("{n} {rows} of `{table}` {point} at a missing row of `{parent}`")
+            })
+            .collect();
+        return Err(format!("it is damaged ({})", rows.join("; ")));
     }
     let mut reference = Connection::open_in_memory().map_err(|e| e.to_string())?;
     migrate(&mut reference, 0, USER_SCHEMA_VERSION).map_err(|e| e.to_string())?;
